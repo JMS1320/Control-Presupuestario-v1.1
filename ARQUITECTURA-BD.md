@@ -409,11 +409,22 @@ Sale de mirar los 849 movimientos de MSA y los 76 de PAM CC, que son los que el 
 ### La única columna realmente vacante
 | Columna | Estado |
 |---|---|
-| `tipo_de_movimiento` | `"Imputado"` en el **100 %** de MSA y PAM CC · **vacía** en las dos CA · **nunca se lee en el código** (sólo se escribe al importar CC) |
+| `tipo_de_movimiento` | era la única sin dueño: `"Imputado"` en el **100 %** de MSA y PAM CC, **vacía** en las CA y **nunca leída** en el código → **hoy guarda el CBU** |
 | `origen` | en CA es `"CA_GALICIA"` en el 100 % — traza de por qué importador entró. Bajo valor, pero ocupada |
 
-⚠️ Usar `tipo_de_movimiento` para otra cosa (p. ej. el CBU) funciona, pero deja una columna cuyo
-nombre miente. Decisión abierta → `PENDIENTES.md` § A-FEAT-20.
+### 🔑 `tipo_de_movimiento` guarda el CBU (decisión del usuario, 2026-08-10)
+**Sí, el nombre no corresponde.** Se eligió a conciencia, después de revisar las **37 columnas** de
+las 4 tablas: todas las demás tienen ocupante y el usuario prefirió no crear una columna nueva.
+
+Para que el nombre no confunda:
+- La pantalla de reglas rotula las columnas por **lo que guardan** (`CUIT`, `Concepto`, `CBU`), no
+  por su nombre técnico.
+- El valor vive en una sola constante, `COLUMNA_CBU` en `lib/extractos/parseo-movimiento.ts`, con
+  el motivo al lado.
+- El importador de CA lo comenta en el punto donde escribe.
+
+⚠️ **En cuenta corriente esta columna sigue significando otra cosa** (el `"Imputado"` del banco).
+El CBU es convención **sólo de las cuentas de Caja de Ahorro**.
 
 ## 7. Referencias
 

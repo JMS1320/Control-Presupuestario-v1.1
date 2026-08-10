@@ -11,15 +11,14 @@
  *   | `reglas_conciliacion`      | al conciliar | asigna cuenta contable por texto           |
  *   | `reglas_contable_interno`  | al conciliar | asigna contable / interno                  |
  *
- * Hasta 2026-08-09 esta tabla **no tenía pantalla**: las 49 reglas de PAM se cargaron por SQL.
+ * **La unidad de trabajo es la FORMA, no el tipo.** Un mismo tipo de movimiento llega escrito de
+ * maneras distintas —`TRANSFERENCIA A TERCEROS` viene en 3— y las reglas que cuentan líneas sólo
+ * valen dentro de una forma. Cada forma se configura por separado, con su propio ejemplo real.
  *
- * **La unidad de trabajo es el TIPO, no la regla.** Es lo que pidió el usuario y es como funciona
- * de verdad: un movimiento llega con N líneas y hay que decidir qué se hace con cada una. Editar
- * de a una regla obligaba a abrir el modal N veces y a acordarse de qué línea era cuál.
- *
- * Y lo que ya sabemos no se pregunta: el CUIT se reconoce solo y va a su columna, el nombre está
- * antes del CUIT, la línea 1 es el tipo. Todo propuesto y **editable**, incluido *sin asignar* —
- * porque un dato creíble en la columna equivocada es peor que un dato ausente.
+ * Lo que ya sabemos no se pregunta: el CUIT se reconoce solo y va a su columna, el nombre está
+ * antes del CUIT, el CBU son 22 dígitos, el banco empieza con «BANCO». Todo propuesto y
+ * **editable**, incluido *sin asignar* — porque un dato creíble en la columna equivocada es peor
+ * que un dato ausente.
  */
 
 import { useState, useEffect, useCallback, useMemo } from "react"
@@ -33,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, claseDeLinea, type LineaPropuesta } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -46,37 +45,48 @@ const CUENTAS_CA = IDS_CA.map(id => ({
   nombre: CUENTAS_BANCARIAS.find(c => c.id === id)?.nombre ?? id,
 }))
 
-/** Los cinco modos que sabe aplicar `lib/extractos/parseo-movimiento`. */
+/** Los modos que sabe aplicar `lib/extractos/parseo-movimiento`. */
 const TIPOS_REGLA = [
   { valor: "linea", label: "Línea N" },
   { valor: "cuit", label: "Busca el CUIT" },
+  { valor: "cbu", label: "Busca el CBU" },
+  { valor: "tarjeta", label: "Busca la tarjeta" },
   { valor: "pre_cuit", label: "Antes del CUIT" },
   { valor: "post_cuit", label: "Después del CUIT" },
   { valor: "nro_operacion", label: "Nº de operación" },
 ]
 
-/** Las columnas del extracto que el desglose puede llenar, con lo que va en cada una. */
+/**
+ * Las columnas del extracto, rotuladas por **lo que guardan**, no por su nombre técnico.
+ * La convención salió de medir los 849 movimientos de MSA → `ARQUITECTURA-BD.md` § 6b.
+ */
 const CAMPOS_DESTINO = [
-  { valor: "descripcion", label: "descripcion — el tipo" },
-  { valor: "leyendas_adicionales_1", label: "leyendas_1 — nombre / comercio" },
-  { valor: "leyendas_adicionales_2", label: "leyendas_2 — CUIT" },
-  { valor: "leyendas_adicionales_3", label: "leyendas_3 — concepto" },
-  { valor: "leyendas_adicionales_4", label: "leyendas_4 — libre" },
-  { valor: "numero_de_comprobante", label: "nro_comprobante — operación" },
-  { valor: "numero_de_terminal", label: "nro_terminal — identificador" },
-  { valor: "observaciones_cliente", label: "observaciones_cliente" },
+  { valor: "descripcion", label: "El tipo de movimiento" },
+  { valor: "leyendas_adicionales_1", label: "Nombre / comercio" },
+  { valor: "leyendas_adicionales_2", label: "CUIT" },
+  { valor: "leyendas_adicionales_3", label: "Concepto" },
+  { valor: "leyendas_adicionales_4", label: "Banco de la contraparte" },
+  { valor: "numero_de_comprobante", label: "Nº de operación / autorización" },
+  { valor: "numero_de_terminal", label: "Terminal / identificador" },
+  // Guarda el CBU pese al nombre de la columna: es la única de las 37 sin dueño.
+  // Acordado con el usuario 2026-08-10 → ARQUITECTURA-BD § 6b.
+  { valor: COLUMNA_CBU, label: "CBU" },
 ]
+
+const etiquetaCampo = (v: string | null) =>
+  CAMPOS_DESTINO.find(c => c.valor === v)?.label ?? v ?? ""
 
 /** Cómo se rotula cada contenido reconocido. */
 const ROTULO: Record<string, { txt: string; clase: string }> = {
-  tipo:          { txt: "tipo",        clase: "bg-gray-100 text-gray-700" },
-  cuit:          { txt: "CUIT",        clase: "bg-emerald-100 text-emerald-800" },
-  nombre:        { txt: "nombre",      clase: "bg-blue-100 text-blue-800" },
-  concepto:      { txt: "concepto",    clase: "bg-blue-50 text-blue-700" },
-  operacion:     { txt: "operación",   clase: "bg-violet-100 text-violet-800" },
-  cbu:           { txt: "CBU",         clase: "bg-amber-100 text-amber-800" },
-  tarjeta:       { txt: "tarjeta",     clase: "bg-amber-100 text-amber-800" },
-  autorizacion:  { txt: "autorización",clase: "bg-violet-50 text-violet-700" },
+  tipo:          { txt: "tipo",         clase: "bg-gray-100 text-gray-700" },
+  cuit:          { txt: "CUIT",         clase: "bg-emerald-100 text-emerald-800" },
+  nombre:        { txt: "nombre",       clase: "bg-blue-100 text-blue-800" },
+  concepto:      { txt: "concepto",     clase: "bg-blue-50 text-blue-700" },
+  operacion:     { txt: "operación",    clase: "bg-violet-100 text-violet-800" },
+  cbu:           { txt: "CBU",          clase: "bg-teal-100 text-teal-800" },
+  banco:         { txt: "banco",        clase: "bg-slate-100 text-slate-700" },
+  tarjeta:       { txt: "tarjeta",      clase: "bg-amber-100 text-amber-800" },
+  autorizacion:  { txt: "autorización", clase: "bg-violet-50 text-violet-700" },
   identificador: { txt: "identificador", clase: "bg-gray-100 text-gray-600" },
 }
 
@@ -90,7 +100,7 @@ interface Regla {
   grupo_de_conceptos: string | null
   orden: number | null
   activo: boolean
-  /** Forma a la que aplica. `null` = a todas. Puede no existir si falta el ALTER TABLE. */
+  /** Forma a la que aplica. `null` = a todas (reglas viejas, previas a la columna). */
   firma_forma?: string | null
 }
 
@@ -107,27 +117,14 @@ interface TipoInfo {
   tipo: string
   movimientos: number
   conRegla: boolean
-  /** Ejemplo de la forma mayoritaria. */
   lineas: string[]
-  /** Todas las formas del tipo. Si hay más de una, contar líneas es peligroso. */
   formatos: Formato[]
 }
 
 /** Una fila del editor: la línea + a dónde la manda el usuario. */
 interface Fila extends LineaPropuesta {
-  /** La regla que ya existía para esta línea, si la había. */
   reglaExistente: Regla | null
-  /**
-   * `todas` → la regla se guarda sin firma y vale para cualquier forma del tipo.
-   * `forma` → se guarda con la firma de la forma que se está mirando.
-   */
-  alcance: "todas" | "forma"
 }
-
-/** Los modos que BUSCAN el dato sirven en cualquier forma; contar líneas, sólo en la suya. */
-const MODOS_QUE_BUSCAN = ["cuit", "pre_cuit", "post_cuit", "nro_operacion"]
-const alcancePorDefecto = (modo: string, hayVariasFormas: boolean): "todas" | "forma" =>
-  !hayVariasFormas || MODOS_QUE_BUSCAN.includes(modo) ? "todas" : "forma"
 
 /**
  * A qué línea del ejemplo apunta una regla ya guardada. Sirve para pre-cargar el editor con lo
@@ -140,14 +137,15 @@ function lineaDeRegla(r: Regla, lineas: string[]): number {
     case "cuit": return idxCuit
     case "pre_cuit": return idxCuit >= 2 ? idxCuit - 1 : -1
     case "post_cuit": return idxCuit >= 0 ? idxCuit + 1 : -1
+    case "cbu": return lineas.findIndex(l => /^\d{22}$/.test(l.trim()))
+    case "tarjeta": return lineas.findIndex(l => /X{4,}/i.test(l) && /\d/.test(l))
     case "nro_operacion": return lineas.findIndex(l => /OPERACION|OP:/i.test(l))
   }
   return -1
 }
 
 export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
-  // La cuenta la elige el selector del modal, que es único para las tres solapas. Tener otro acá
-  // sería un segundo mando para lo mismo y podrían quedar apuntando a cuentas distintas.
+  // La cuenta la elige el selector del modal, que es único para las tres solapas.
   const cuenta = cuentaBancariaId ?? ""
   const esCajaDeAhorro = CUENTAS_CA.some(c => c.id === cuenta)
 
@@ -155,10 +153,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const [tipos, setTipos] = useState<TipoInfo[]>([])
   const [cargando, setCargando] = useState(true)
 
-  // Editor de un tipo entero
-  const [editando, setEditando] = useState<TipoInfo | null>(null)
+  // Editor de UNA forma de un tipo
+  const [editando, setEditando] = useState<{ tipo: TipoInfo; forma: Formato } | null>(null)
   const [filas, setFilas] = useState<Fila[]>([])
-  const [firmaBase, setFirmaBase] = useState("")
   const [fGrupo, setFGrupo] = useState("")
   const [grupoOriginal, setGrupoOriginal] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -187,97 +184,66 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     [reglas]
   )
 
-  /** Arma las filas del editor sobre una forma concreta del movimiento. */
-  const armarFilas = useCallback((t: TipoInfo, lineas: string[], firma: string) => {
-    const varias = (t.formatos?.length ?? 0) > 1
-    // Sólo se pre-cargan las reglas que aplican a ESTA forma: las genéricas y las de su firma.
-    // Las de otras formas se muestran aparte y no se tocan.
-    const existentes = reglasDe(t.tipo).filter(r => !r.firma_forma || r.firma_forma === firma)
-    const propuesta = proponerMapeo(lineas)
+  /** Las reglas que aplican a una forma: las suyas, más las viejas sin firma. */
+  const reglasDeForma = useCallback(
+    (tipo: string, firma: string) =>
+      reglasDe(tipo).filter(r => !r.firma_forma || r.firma_forma === firma),
+    [reglasDe]
+  )
 
-    return propuesta.map((p, i) => {
-      const ya = existentes.find(r => lineaDeRegla(r, lineas) === i)
+  /** Abre el editor de UNA forma: propone lo que sabemos y pre-carga lo que ya existe. */
+  const abrirForma = (t: TipoInfo, forma: Formato) => {
+    const existentes = reglasDeForma(t.tipo, forma.firma)
+    const filasNuevas: Fila[] = proponerMapeo(forma.texto).map((p, i) => {
+      const ya = existentes.find(r => lineaDeRegla(r, forma.texto) === i)
       return ya
         // Lo ya guardado manda sobre la propuesta: si el usuario decidió algo, se respeta.
-        ? { ...p, campo: ya.campo_destino ?? "", modo: ya.tipo_regla, reglaExistente: ya, seguro: true,
-            motivo: "Ya estaba configurado así",
-            alcance: (ya.firma_forma ? "forma" : "todas") as "todas" | "forma" }
-        : { ...p, reglaExistente: null, alcance: alcancePorDefecto(p.modo, varias) }
-    }) as Fila[]
-  }, [reglasDe])
-
-  /** Abre el editor del tipo sobre su forma mayoritaria. */
-  const abrirTipo = (t: TipoInfo) => {
-    const forma = t.formatos?.[0]
-    setFilas(armarFilas(t, forma?.texto ?? t.lineas, forma?.firma ?? ""))
-    setFirmaBase(forma?.firma ?? "")
+        ? { ...p, campo: ya.campo_destino ?? "", modo: ya.tipo_regla, reglaExistente: ya,
+            seguro: true, motivo: "Ya estaba configurado así" }
+        : { ...p, reglaExistente: null }
+    })
+    setFilas(filasNuevas)
     const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos ?? ""
     setFGrupo(grupo)
     setGrupoOriginal(grupo)
-    setEditando(t)
-  }
-
-  /** Cambia la forma sobre la que se está trabajando, conservando lo ya guardado. */
-  const cambiarFormato = (firma: string) => {
-    if (!editando) return
-    const f = editando.formatos.find(x => x.firma === firma)
-    if (!f) return
-    setFilas(armarFilas(editando, f.texto, firma))
-    setFirmaBase(firma)
+    setEditando({ tipo: t, forma })
   }
 
   const cambiarFila = (i: number, cambio: Partial<Fila>) =>
-    setFilas(fs => fs.map((x, j) => {
-      if (j !== i) return x
-      const nueva = { ...x, ...cambio }
-      // Cambiar de "contar" a "buscar" (o al revés) cambia a qué formas puede aplicar la regla,
-      // así que el alcance se recalcula salvo que el usuario lo haya tocado explícitamente.
-      if (cambio.modo !== undefined && cambio.alcance === undefined) {
-        nueva.alcance = alcancePorDefecto(cambio.modo, (editando?.formatos?.length ?? 0) > 1)
-      }
-      return nueva
-    }))
+    setFilas(fs => fs.map((x, j) => (j === i ? { ...x, ...cambio } : x)))
 
-  /** Reglas que existen pero no se pudieron ubicar en ninguna línea del ejemplo: no se tocan. */
+  /** Reglas de esta forma que no se pudieron ubicar en ninguna línea: no se tocan. */
   const huerfanas = useMemo(() => {
     if (!editando) return []
     const ubicadas = new Set(filas.map(f => f.reglaExistente?.id).filter(Boolean))
-    return reglasDe(editando.tipo)
-      .filter(r => !r.firma_forma || r.firma_forma === firmaBase)
-      .filter(r => !ubicadas.has(r.id))
-  }, [editando, filas, reglasDe, firmaBase])
+    return reglasDeForma(editando.tipo.tipo, editando.forma.firma).filter(r => !ubicadas.has(r.id))
+  }, [editando, filas, reglasDeForma])
 
-  /** Reglas de OTRAS formas del mismo tipo. Se listan para que se vean, y no se tocan. */
-  const deOtrasFormas = useMemo(() => {
-    if (!editando) return []
-    return reglasDe(editando.tipo).filter(r => r.firma_forma && r.firma_forma !== firmaBase)
-  }, [editando, reglasDe, firmaBase])
-
-  // Resumen de lo que va a pasar al guardar. Se muestra ANTES de tocar nada.
   const plan = useMemo(() => {
+    const firma = editando?.forma.firma ?? ""
     const alta = filas.filter(f => f.campo && !f.reglaExistente).length
     const cambio = filas.filter(f => f.campo && f.reglaExistente && (
       f.reglaExistente.campo_destino !== f.campo ||
       f.reglaExistente.tipo_regla !== f.modo ||
-      (f.reglaExistente.firma_forma ?? null) !== (f.alcance === "forma" ? firmaBase : null)
+      (f.reglaExistente.firma_forma ?? null) !== firma
     )).length
     const baja = filas.filter(f => !f.campo && f.reglaExistente).length
-    // Cambiar sólo el grupo también es un cambio: si no contara, el botón quedaría deshabilitado
     const soloGrupo = fGrupo.trim() !== grupoOriginal.trim()
     return { alta, cambio, baja, soloGrupo, total: alta + cambio + baja + (soloGrupo ? 1 : 0) }
-  }, [filas, fGrupo, grupoOriginal, firmaBase])
+  }, [filas, fGrupo, grupoOriginal, editando])
 
   const guardar = async () => {
     if (!editando) return
     setGuardando(true)
     try {
-      const tipo = editando.tipo.toUpperCase()
+      const tipo = editando.tipo.tipo.toUpperCase()
+      const firma = editando.forma.firma
       const grupo = fGrupo.trim() || null
       let orden = 0
 
       for (const f of filas) {
         if (!f.campo) {
-          // Sin asignar: si había una regla para esa línea, se borra — es la decisión del usuario
+          // Sin asignar: si había una regla para esa línea, se borra — decisión del usuario
           if (f.reglaExistente) {
             const { error } = await supabase.from("config_parseo_extracto").delete().eq("id", f.reglaExistente.id)
             if (error) throw error
@@ -287,15 +253,15 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         orden++
         const fila = {
           cuenta_bancaria_id: cuenta,
-          // En MAYÚSCULA: el match contra el texto del banco es exacto, y así no quedan dos
-          // reglas del mismo tipo escritas distinto.
+          // En MAYÚSCULA: el match contra el texto del banco es exacto.
           tipo_movimiento: tipo,
           campo_destino: f.campo,
           tipo_regla: f.modo,
           numero_linea: f.modo === "linea" ? f.numero : null,
           grupo_de_conceptos: grupo,
-          // `null` = vale para todas las formas del tipo. Con firma, sólo para ésta.
-          firma_forma: f.alcance === "forma" ? firmaBase : null,
+          // Toda regla queda atada a SU forma. Si mañana el banco manda una forma distinta, no
+          // se parsea y se ve — en vez de desglosarse con las reglas de otra.
+          firma_forma: firma,
           orden,
           activo: true,
         }
@@ -305,18 +271,17 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         if (error) throw error
       }
 
-      // El grupo es del TIPO entero, así que se alinea en TODAS sus reglas — también en las que
-      // no se pudieron ubicar en el ejemplo. Si no, quedarían dos grupos para el mismo tipo y el
-      // parseo tomaría el de la primera regla, que es un empate resuelto por orden de carga.
-      if (huerfanas.length > 0) {
+      // El grupo de conceptos es del TIPO, no de la forma: se alinea en todas sus reglas. Si no,
+      // el mismo tipo tendría dos grupos y el parseo tomaría el de la primera regla cargada.
+      const otras = reglasDe(tipo).filter(r => !filas.some(f => f.reglaExistente?.id === r.id))
+      if (otras.length > 0) {
         await supabase.from("config_parseo_extracto")
-          .update({ grupo_de_conceptos: grupo })
-          .in("id", huerfanas.map(r => r.id))
+          .update({ grupo_de_conceptos: grupo }).in("id", otras.map(r => r.id))
       }
 
       toast.success(
-        `${tipo}: ${plan.alta} nueva(s), ${plan.cambio} cambiada(s), ${plan.baja} borrada(s)` +
-        " — corré «Re-parsear» para aplicarlo a lo ya importado"
+        `${tipo} · forma de ${editando.forma.lineas} líneas: ${plan.alta} nueva(s), ` +
+        `${plan.cambio} cambiada(s), ${plan.baja} borrada(s) — corré «Re-parsear» para aplicarlo`
       )
       setEditando(null)
       cargar()
@@ -327,12 +292,17 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     }
   }
 
-  const borrarTipo = async (t: TipoInfo) => {
-    const rs = reglasDe(t.tipo)
-    if (!window.confirm(`¿Eliminar las ${rs.length} reglas de ${t.tipo}?\n\nLos movimientos ya importados no cambian hasta que corras Re-parsear.`)) return
+  const borrarReglasDeForma = async (t: TipoInfo, forma: Formato) => {
+    const rs = reglasDe(t.tipo).filter(r => r.firma_forma === forma.firma)
+    if (rs.length === 0) return
+    if (!window.confirm(
+      `¿Eliminar las ${rs.length} reglas de la forma de ${forma.lineas} líneas de ${t.tipo}?\n\n` +
+      `Sus ${forma.movimientos} movimiento(s) dejarán de desglosarse. Lo ya importado no cambia ` +
+      `hasta que corras Re-parsear.`
+    )) return
     const { error } = await supabase.from("config_parseo_extracto").delete().in("id", rs.map(r => r.id))
     if (error) { toast.error("Error: " + error.message); return }
-    toast.success(`Reglas de ${t.tipo} eliminadas`)
+    toast.success("Reglas eliminadas")
     cargar()
   }
 
@@ -355,13 +325,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     )
   }
 
-  const sinRegla = tipos.filter(t => !t.conRegla)
-  const conRegla = tipos.filter(t => t.conRegla)
-  // Reglas de tipos que hoy no tienen ningún movimiento cargado: no hay ejemplo que mostrar
+  // Una entrada por FORMA, que es la unidad real de configuración
+  const formasPendientes = tipos.flatMap(t =>
+    t.formatos.filter(f => reglasDeForma(t.tipo, f.firma).length === 0).map(f => ({ t, f }))
+  ).sort((a, b) => b.f.movimientos - a.f.movimientos)
+
+  const totalFormas = tipos.reduce((n, t) => n + t.formatos.length, 0)
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
-
-  const formatos = editando?.formatos ?? []
 
   /** El bloque de líneas del ejemplo, numerado. */
   const Ejemplo = ({ lineas }: { lineas: string[] }) => (
@@ -374,35 +345,70 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     </div>
   )
 
-  /**
-   * Todas las formas del tipo, no una sola. Mostrar un único ejemplo fue lo que dejó escribir
-   * reglas por número de línea que fallan en la otra forma (PENDIENTES § A-BUG-17).
-   */
-  const Formas = ({ t }: { t: TipoInfo }) => {
-    const fs = t.formatos ?? []
-    if (fs.length <= 1) return <Ejemplo lineas={t.lineas} />
+  /** Una forma: su ejemplo real a la izquierda y lo que producen sus reglas a la derecha. */
+  const BloqueForma = ({ t, f }: { t: TipoInfo; f: Formato }) => {
+    const rs = reglasDeForma(t.tipo, f.firma)
+    const sinReglas = rs.length === 0
     return (
-      <div className="space-y-1.5">
-        {fs.map(f => (
-          <div key={f.firma}>
-            <p className="mb-0.5 text-[10px] text-amber-700">
-              forma de {f.lineas} líneas · {f.movimientos} movimiento{f.movimientos === 1 ? "" : "s"}
-              {!f.cubierto && <strong className="ml-1 text-red-600">— sin cubrir, no se parsea</strong>}
-            </p>
+      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : ""}`}>
+        <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
+          <span className="text-xs font-medium text-gray-700">
+            Forma de {f.lineas} líneas
+          </span>
+          <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
+          {sinReglas
+            ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
+            : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"}</Badge>}
+          <Button size="sm" variant={sinReglas ? "outline" : "ghost"} className="ml-auto h-7 text-xs"
+            onClick={() => abrirForma(t, f)}>
+            {sinReglas
+              ? <><Plus className="mr-1 h-3 w-3" /> Configurar {f.lineas} líneas</>
+              : <><Pencil className="mr-1 h-3 w-3" /> Editar</>}
+          </Button>
+          {rs.some(r => r.firma_forma === f.firma) && (
+            <button className="text-red-500 hover:text-red-700" title="Eliminar las reglas de esta forma"
+              onClick={() => borrarReglasDeForma(t, f)}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="grid gap-2.5 p-2.5 md:grid-cols-2">
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Un movimiento real</p>
             <Ejemplo lineas={f.texto} />
           </div>
-        ))}
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Lo que queda guardado</p>
+            {sinReglas ? (
+              <p className="py-2 text-[11px] italic text-gray-400">
+                Nada: estos movimientos entran con el texto completo, sin desglosar.
+              </p>
+            ) : (
+              <table className="w-full text-[11px] leading-5">
+                <tbody>
+                  {rs.map(r => {
+                    const valor = aplicarRegla(f.texto, {
+                      campo_destino: r.campo_destino, tipo_regla: r.tipo_regla,
+                      numero_linea: r.numero_linea, grupo_de_conceptos: "",
+                    })
+                    return (
+                      <tr key={r.id}>
+                        <td className="pr-2 align-top text-gray-500">{etiquetaCampo(r.campo_destino)}</td>
+                        <td className="align-top font-mono font-medium text-gray-800">
+                          {valor || <span className="font-sans font-normal italic text-red-500">vacío</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
-
-  /** Chip de aviso cuando el tipo tiene más de una forma. */
-  const ChipFormas = ({ t }: { t: TipoInfo }) =>
-    (t.formatos?.length ?? 0) > 1 ? (
-      <Badge variant="outline" className="border-amber-400 bg-amber-50 text-[10px] text-amber-800">
-        {t.formatos.length} formas
-      </Badge>
-    ) : null
 
   return (
     <div className="space-y-4">
@@ -412,130 +418,71 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         </div>
       ) : (
         <>
-          {/* Lo que falta, primero: es la razón por la que se entra a esta pantalla */}
-          {sinRegla.length > 0 && (
+          {formasPendientes.length > 0 && (
             <Card className="border-sky-300 bg-sky-50">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-sky-900">
                   <FileWarning className="h-4 w-4" />
-                  {sinRegla.length} tipo{sinRegla.length === 1 ? "" : "s"} sin regla
+                  {formasPendientes.length} forma{formasPendientes.length === 1 ? "" : "s"} sin reglas
                 </CardTitle>
                 <p className="text-xs text-gray-600">
-                  Entraron con el texto completo pero sin desglosar. Ordenados por cantidad: el
-                  primero es el que más rinde escribir.
+                  Sus movimientos entran con el texto completo pero sin desglosar. Ordenadas por
+                  cantidad: la primera es la que más rinde escribir.
                 </p>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {sinRegla.map(t => (
-                  <div key={t.tipo} className="rounded border bg-white p-2.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-medium text-gray-800">{t.tipo}</span>
-                      <Badge variant="outline" className="text-[10px]">{t.movimientos} mov.</Badge>
-                      <ChipFormas t={t} />
-                      <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" onClick={() => abrirTipo(t)}>
-                        <Plus className="mr-1 h-3 w-3" /> Configurar {t.lineas.length} línea{t.lineas.length === 1 ? "" : "s"}
-                      </Button>
-                    </div>
-                    {t.lineas.length > 0 && <div className="mt-1.5"><Formas t={t} /></div>}
-                  </div>
-                ))}
+              <CardContent>
+                <div className="flex flex-wrap gap-1.5">
+                  {formasPendientes.map(({ t, f }) => (
+                    <button key={t.tipo + f.firma} onClick={() => abrirForma(t, f)}
+                      className="rounded border border-sky-300 bg-white px-2 py-1 text-left text-[11px] hover:border-sky-500">
+                      <span className="font-mono font-medium text-gray-800">{t.tipo}</span>
+                      <span className="ml-1.5 text-gray-500">{f.lineas} líneas · {f.movimientos} mov.</span>
+                    </button>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Las reglas que ya existen — CON su ejemplo y lo que extrae cada una */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-emerald-600" />
-                {reglas.length} regla{reglas.length === 1 ? "" : "s"} en{" "}
-                {new Set(reglas.map(r => r.tipo_movimiento.toUpperCase())).size} tipo(s)
+                {tipos.length} tipo(s) · {totalFormas} forma(s) · {reglas.length} regla(s)
               </CardTitle>
               <p className="text-xs text-gray-600">
-                Con un movimiento real de cada tipo y lo que la regla saca de él.
+                Cada forma se configura por separado, con su ejemplo real al lado de lo que produce.
+                El <strong>grupo de conceptos</strong> es del tipo entero.
               </p>
             </CardHeader>
             <CardContent>
-              {reglas.length === 0 ? (
+              {tipos.length === 0 ? (
                 <p className="py-4 text-center text-sm text-gray-400">
-                  Esta cuenta no tiene ninguna regla: nada se desglosa.
+                  No hay movimientos importados en esta cuenta.
                 </p>
               ) : (
-                <div className="space-y-3">
-                  {conRegla.map(t => {
-                    const rs = reglasDe(t.tipo)
+                <div className="space-y-4">
+                  {tipos.map(t => {
+                    const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos
                     return (
-                      <div key={t.tipo} className="rounded border">
-                        <div className="flex flex-wrap items-center gap-2 border-b bg-gray-50 px-2.5 py-1.5">
-                          <span className="font-mono text-xs font-medium">{t.tipo}</span>
+                      <div key={t.tipo}>
+                        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-sm font-medium text-gray-900">{t.tipo}</span>
                           <Badge variant="outline" className="text-[10px]">{t.movimientos} mov.</Badge>
-                          <ChipFormas t={t} />
-                          {rs[0]?.grupo_de_conceptos && (
-                            <Badge variant="outline" className="text-[10px]">{rs[0].grupo_de_conceptos}</Badge>
+                          {t.formatos.length > 1 && (
+                            <Badge variant="outline" className="border-amber-400 bg-amber-50 text-[10px] text-amber-800">
+                              {t.formatos.length} formas
+                            </Badge>
                           )}
-                          <Button size="sm" variant="ghost" className="ml-auto h-6 text-xs" onClick={() => abrirTipo(t)}>
-                            <Pencil className="mr-1 h-3 w-3" /> Editar
-                          </Button>
-                          <button className="text-red-500 hover:text-red-700" title="Eliminar las reglas de este tipo"
-                            onClick={() => borrarTipo(t)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {grupo && <Badge variant="outline" className="text-[10px]">{grupo}</Badge>}
                         </div>
-
-                        {/* Ejemplo real a la izquierda, lo que produce a la derecha */}
-                        <div className="grid gap-2.5 p-2.5 md:grid-cols-2">
-                          <div>
-                            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">
-                              {(t.formatos?.length ?? 0) > 1 ? "Las formas que llegan" : "Un movimiento real"}
-                            </p>
-                            <Formas t={t} />
-                          </div>
-                          <div>
-                            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Lo que guardan las reglas</p>
-                            <table className="w-full font-mono text-[11px] leading-5">
-                              <tbody>
-                                {rs.map(r => {
-                                  // Cada regla se evalúa en TODAS las formas del tipo: si trae
-                                  // clases distintas, la fila se marca en ámbar.
-                                  const fs = t.formatos?.length
-                                    ? t.formatos
-                                    : [{ firma: "u", lineas: t.lineas.length, movimientos: t.movimientos, texto: t.lineas }]
-                                  const vals = fs.map(fm => ({
-                                    fm,
-                                    valor: aplicarRegla(fm.texto, {
-                                      campo_destino: r.campo_destino, tipo_regla: r.tipo_regla,
-                                      numero_linea: r.numero_linea, grupo_de_conceptos: "",
-                                    }),
-                                  }))
-                                  const clases = new Set(vals.map(v => (v.valor ? claseDeLinea(v.valor, 1) : "vacio")))
-                                  const discrepa = vals.length > 1 && clases.size > 1
-                                  return (
-                                    <tr key={r.id} className={discrepa ? "bg-amber-50" : ""}>
-                                      <td className="pr-2 align-top text-gray-500">{r.campo_destino}</td>
-                                      <td className="align-top font-medium text-gray-800">
-                                        {vals.map(v => (
-                                          <div key={v.fm.firma} className="flex gap-1.5">
-                                            {vals.length > 1 && (
-                                              <span className="shrink-0 text-[10px] font-normal text-gray-400">{v.fm.lineas}L</span>
-                                            )}
-                                            {v.valor
-                                              ? <span className={discrepa ? "text-amber-800" : ""}>{v.valor}</span>
-                                              : <span className="font-normal italic text-red-500">vacío</span>}
-                                          </div>
-                                        ))}
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
+                        <div className="space-y-2 border-l-2 border-gray-200 pl-2.5">
+                          {t.formatos.map(f => <BloqueForma key={f.firma} t={t} f={f} />)}
                         </div>
                       </div>
                     )
                   })}
 
-                  {/* Reglas de tipos que hoy no tienen movimientos: existen pero no trabajan */}
                   {reglasSinMovimientos.length > 0 && (
                     <details className="rounded border bg-gray-50 px-2.5 py-2">
                       <summary className="cursor-pointer text-xs text-gray-600">
@@ -554,56 +501,54 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             </CardContent>
           </Card>
 
-          <p className="text-[11px] text-gray-500">
+          <p className="text-[11px] leading-4 text-gray-500">
             Una regla nueva <strong>no cambia sola</strong> lo ya importado: hay que correr
-            <strong> Re-parsear</strong> en Extracto Bancario. Se puede probar en seco antes de aplicar.
+            <strong> Re-parsear</strong> en Extracto Bancario, que se puede probar en seco antes de aplicar.
           </p>
         </>
       )}
 
-      {/* ── Editor del tipo: una fila por línea del movimiento ───────────────── */}
+      {/* ── Editor de una forma: una fila por línea del movimiento ───────────── */}
       <Dialog open={!!editando} onOpenChange={v => !v && setEditando(null)}>
-        <DialogContent className="max-w-4xl max-h-[88vh] overflow-y-auto">
+        <DialogContent className="max-h-[88vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-mono text-base">{editando?.tipo}</DialogTitle>
+            <DialogTitle className="font-mono text-base">{editando?.tipo.tipo}</DialogTitle>
           </DialogHeader>
 
-          {formatos.length > 1 && (
-            <div className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2">
+          <div className="-mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+            <Badge variant="outline" className="text-[10px]">
+              forma de {editando?.forma.lineas} líneas · {editando?.forma.movimientos} mov.
+            </Badge>
+            {(editando?.tipo.formatos.length ?? 0) > 1 && (
+              <span className="text-[11px] text-amber-700">
+                Este tipo tiene {editando?.tipo.formatos.length} formas — estas reglas valen sólo para ésta.
+              </span>
+            )}
+          </div>
+
+          {/* Las reglas viejas (sin forma) valían para TODAS. Al guardarlas acá quedan atadas a
+              ésta, y las otras formas se quedan sin nada. Es correcto, pero tiene que avisarse
+              ANTES de guardar: si no, el usuario ve desaparecer el desglose de movimientos que
+              no tocó y no sabe por qué. */}
+          {(editando?.tipo.formatos.length ?? 0) > 1 &&
+           filas.some(f => f.reglaExistente && !f.reglaExistente.firma_forma) && (
+            <div className="rounded border border-amber-400 bg-amber-50 px-2.5 py-2">
               <p className="text-xs font-medium text-amber-900">
-                Este tipo llega con {formatos.length} formas distintas
+                ⚠ Ojo: hay reglas que hoy valen para las {editando?.tipo.formatos.length} formas
               </p>
               <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
-                Cada regla decide si vale <strong>para todas</strong> o <strong>sólo para esta forma</strong>.
-                Por defecto, los modos que <strong>buscan</strong> (CUIT, antes/después del CUIT) valen
-                para todas, y los que <strong>cuentan líneas</strong> quedan atados a su forma —
-                porque contar sólo tiene sentido dentro de una.
+                Al guardar quedan atadas <strong>sólo a esta forma</strong>. Las otras
+                {" "}{(editando?.tipo.formatos.length ?? 1) - 1} se quedan sin reglas y sus movimientos
+                dejan de desglosarse hasta que las configures. Conviene <strong>terminar el tipo
+                entero</strong> de una sentada.
               </p>
-              <p className="mt-1 text-[11px] leading-4 text-amber-800">
-                ⚠️ Una forma <strong>sin cubrir</strong> no se parsea: sus movimientos quedan marcados
-                <strong> «Forma nueva»</strong> hasta que se le escriban reglas. Es a propósito —
-                así una forma nueva del banco se ve, en vez de desglosarse mal.
-              </p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] text-amber-900">Estoy mirando:</span>
-                {formatos.map(fm => (
-                  <button key={fm.firma} onClick={() => cambiarFormato(fm.firma)}
-                    className={`rounded border px-1.5 py-0.5 text-[11px] ${
-                      fm.firma === firmaBase
-                        ? "border-amber-500 bg-white font-medium text-amber-900"
-                        : "border-amber-200 bg-amber-100/60 text-amber-800 hover:bg-white"}`}>
-                    {fm.lineas} líneas · {fm.movimientos} mov.
-                    {!fm.cubierto && <span className="ml-1 text-red-600">sin cubrir</span>}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 
-          <p className="-mt-1 text-xs text-gray-600">
-            Una fila por línea del movimiento. Lo que el banco escribe siempre igual
-            —el CUIT, el nombre antes del CUIT, el tipo en la línea 1— ya viene propuesto;
-            el resto decidilo vos. <strong>Sin asignar</strong> también es una decisión válida.
+          <p className="text-xs text-gray-600">
+            Una fila por línea. Lo que el banco escribe siempre igual —el CUIT, el CBU, el nombre
+            antes del CUIT, el banco— ya viene propuesto; el resto decidilo vos.
+            <strong> Sin asignar</strong> también es una decisión válida.
           </p>
 
           <div className="overflow-x-auto rounded border">
@@ -613,28 +558,19 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                   <th className="px-2 py-1.5 font-medium">#</th>
                   <th className="px-2 py-1.5 font-medium">Lo que dice el banco</th>
                   <th className="px-2 py-1.5 font-medium">Cómo se extrae</th>
-                  <th className="px-2 py-1.5 font-medium">Va a la columna</th>
+                  <th className="px-2 py-1.5 font-medium">Se guarda como</th>
                   <th className="px-2 py-1.5 font-medium">Quedaría</th>
                 </tr>
               </thead>
               <tbody>
                 {filas.map((f, i) => {
                   const rot = ROTULO[f.contenido]
-                  // La regla se prueba contra CADA forma del tipo, no sólo contra la que está a la
-                  // vista. Es el punto entero de A-FEAT-18: una regla `linea 5` puede traer la
-                  // tarjeta en una forma y el nombre del banco en otra, y hasta ahora eso no se veia.
-                  const previas = f.campo
-                    ? formatos.map(fm => ({
-                        fm,
-                        valor: aplicarRegla(fm.texto, {
-                          campo_destino: f.campo, tipo_regla: f.modo,
-                          numero_linea: f.numero, grupo_de_conceptos: "",
-                        }),
-                      }))
-                    : []
-                  // Discrepa si en una forma saca una clase de dato y en otra, otra (o nada)
-                  const clases = new Set(previas.map(p => (p.valor ? claseDeLinea(p.valor, 1) : "vacio")))
-                  const discrepa = previas.length > 1 && clases.size > 1
+                  const previa = f.campo
+                    ? aplicarRegla(filas.map(x => x.texto), {
+                        campo_destino: f.campo, tipo_regla: f.modo,
+                        numero_linea: f.numero, grupo_de_conceptos: "",
+                      })
+                    : ""
                   const alerta = f.campo === "leyendas_adicionales_2" && f.modo !== "cuit"
                   return (
                     <tr key={i} className={`border-t align-top ${f.campo ? "" : "bg-gray-50/60"}`}>
@@ -653,21 +589,6 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                           disabled={!f.campo}>
                           {TIPOS_REGLA.map(t => <option key={t.valor} value={t.valor}>{t.label}</option>)}
                         </select>
-                        {formatos.length > 1 && f.campo && (
-                          <>
-                            <select className="mt-1 w-full rounded border bg-white px-1.5 py-1 text-[11px]"
-                              value={f.alcance}
-                              onChange={e => cambiarFila(i, { alcance: e.target.value as "todas" | "forma" })}>
-                              <option value="todas">vale para las {formatos.length} formas</option>
-                              <option value="forma">sólo la forma de {formatos.find(x => x.firma === firmaBase)?.lineas} líneas</option>
-                            </select>
-                            {f.alcance === "todas" && f.modo === "linea" && (
-                              <p className="mt-1 text-[10px] leading-4 text-amber-700">
-                                ⚠ Contar líneas no vale igual en todas las formas
-                              </p>
-                            )}
-                          </>
-                        )}
                       </td>
                       <td className="px-2 py-2">
                         <select className="w-full rounded border bg-white px-1.5 py-1 text-[11px]"
@@ -682,33 +603,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                           </p>
                         )}
                       </td>
-                      <td className={`px-2 py-2 font-mono text-[11px] ${discrepa ? "bg-amber-50" : ""}`}>
-                        {!f.campo ? (
-                          <span className="text-gray-400">—</span>
-                        ) : previas.length === 1 ? (
-                          previas[0].valor
-                            ? <span className="font-medium text-emerald-700">{previas[0].valor}</span>
-                            : <span className="text-red-600">vacío</span>
-                        ) : (
-                          <div className="space-y-0.5">
-                            {previas.map(p => (
-                              <div key={p.fm.firma} className="flex gap-1.5">
-                                <span className="shrink-0 text-[10px] text-gray-400">
-                                  {p.fm.lineas}L·{p.fm.movimientos}
-                                </span>
-                                {p.valor
-                                  ? <span className={discrepa ? "text-amber-800" : "font-medium text-emerald-700"}>{p.valor}</span>
-                                  : <span className="text-red-600">vacío</span>}
-                              </div>
-                            ))}
-                            {discrepa && (
-                              <p className="pt-0.5 text-[10px] leading-4 text-amber-700">
-                                ⚠ Trae cosas distintas según la forma. Probá un modo que
-                                <strong> busque</strong> en vez de contar líneas.
-                              </p>
-                            )}
-                          </div>
-                        )}
+                      <td className="px-2 py-2 font-mono text-[11px]">
+                        {!f.campo
+                          ? <span className="text-gray-400">—</span>
+                          : previa
+                            ? <span className="font-medium text-emerald-700">{previa}</span>
+                            : <span className="text-red-600">vacío</span>}
                       </td>
                     </tr>
                   )
@@ -717,17 +617,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             </table>
           </div>
 
-          {deOtrasFormas.length > 0 && (
-            <p className="rounded border bg-gray-50 px-2.5 py-2 text-[11px] text-gray-600">
-              Este tipo tiene además <strong>{deOtrasFormas.length} regla(s) propias de otras formas</strong>.
-              No se tocan desde acá: para editarlas, cambiá de forma arriba.
-            </p>
-          )}
-
           {huerfanas.length > 0 && (
             <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-              {huerfanas.length} regla(s) de este tipo apuntan a líneas que este movimiento no tiene
-              (otro movimiento puede tenerlas). <strong>No se tocan</strong> al guardar.
+              {huerfanas.length} regla(s) de esta forma apuntan a líneas que este movimiento no tiene.
+              <strong> No se tocan</strong> al guardar.
             </p>
           )}
 

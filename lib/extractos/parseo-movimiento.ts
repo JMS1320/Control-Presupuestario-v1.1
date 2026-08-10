@@ -72,6 +72,13 @@ export function extraerCuit(lineas: string[]): string {
   return ""
 }
 
+/** ¿La línea es un CBU? 22 dígitos. */
+export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
+/** ¿La línea es una tarjeta enmascarada? `4517XXXXXXXXXX11`. */
+export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
+/** ¿La línea nombra un banco? Todas empiezan con BANCO en los extractos del Galicia. */
+export const esBanco = (l: string) => /^BANCO\b/i.test(l.trim())
+
 /** Aplica una regla a las líneas del movimiento y devuelve el valor extraído. */
 export function aplicarRegla(lineas: string[], regla: ReglaParseo): string {
   switch (regla.tipo_regla) {
@@ -95,6 +102,16 @@ export function aplicarRegla(lineas: string[], regla: ReglaParseo): string {
       for (let i = 0; i < lineas.length - 1; i++) {
         if (esCuit(lineas[i])) return lineas[i + 1]?.trim() ?? ""
       }
+      return ""
+
+    case "cbu":
+      // 22 dígitos. Igual que `cuit`: lo encuentra esté en la línea que esté, así la regla
+      // sobrevive a que el banco corra las líneas.
+      for (const l of lineas) if (esCbu(l)) return l.trim()
+      return ""
+
+    case "tarjeta":
+      for (const l of lineas) if (esTarjeta(l)) return l.trim()
       return ""
 
     case "nro_operacion":
@@ -255,17 +272,32 @@ export async function cargarReglasParseo(
 //   leyendas_adicionales_1 el nombre / beneficiario / comercio
 //   leyendas_adicionales_2 EL CUIT — de acá lo lee el motor de conciliación
 //   leyendas_adicionales_3 el concepto
+//   leyendas_adicionales_4 el banco de la contraparte
 //   numero_de_comprobante  el número de operación o el código de autorización
 //   numero_de_terminal     identificadores largos del banco
+//   tipo_de_movimiento     EL CBU  ← decisión del usuario 2026-08-10, ver abajo
+//
+// ⚠️ `tipo_de_movimiento` guarda el CBU **a pesar de su nombre**. Se revisaron las 37 columnas de
+// las 4 tablas de extracto y es la única sin dueño: en cuenta corriente el banco manda siempre
+// `"Imputado"` (información cero) y en Caja de Ahorro nunca se llena. Todas las demás tienen un
+// ocupante legítimo — incluida `observaciones_cliente`, que en CA trae los **comentarios del
+// usuario** desde la columna «Comentarios» del Excel. La convención está documentada en
+// `ARQUITECTURA-BD.md` § 6b y la pantalla lo rotula como CBU, no por su nombre de columna.
 //
 // Lo que NO sabemos se propone **sin asignar**, nunca adivinando: un dato creíble en la columna
 // equivocada es peor que un dato ausente, porque nadie lo va a revisar.
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * La columna donde va el CBU. Se nombra acá para que el "por qué" viva junto al valor:
+ * es `tipo_de_movimiento` por descarte, no por su nombre. Ver el bloque de arriba.
+ */
+export const COLUMNA_CBU = "tipo_de_movimiento"
+
 /** Qué contenido reconocimos en una línea. `""` = no lo sabemos. */
 export type ContenidoLinea =
   | "tipo" | "cuit" | "nombre" | "concepto" | "operacion"
-  | "cbu" | "tarjeta" | "autorizacion" | "identificador" | ""
+  | "cbu" | "banco" | "tarjeta" | "autorizacion" | "identificador" | ""
 
 export interface LineaPropuesta {
   /** La línea tal cual vino del banco. */
@@ -284,8 +316,6 @@ export interface LineaPropuesta {
   motivo: string
 }
 
-export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
-export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
 const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
 const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
 
@@ -349,8 +379,12 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
         seguro: true, motivo: "11 dígitos: es el CUIT. Va donde el motor lo busca, y con el modo que lo encuentra aunque cambie de línea" }
 
     if (esCbu(texto))
-      return { ...base, contenido: "cbu" as const, campo: "", modo: "linea",
-        seguro: true, motivo: "22 dígitos: es un CBU. No hay columna para el CBU — asignarlo a la del CUIT la ensucia" }
+      return { ...base, contenido: "cbu" as const, campo: COLUMNA_CBU, modo: "cbu",
+        seguro: true, motivo: "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier forma" }
+
+    if (esBanco(texto))
+      return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
+        seguro: true, motivo: "Es el banco de la contraparte — misma columna que usa MSA" }
 
     if (esTarjeta(texto))
       return { ...base, contenido: "tarjeta" as const, campo: "", modo: "linea",

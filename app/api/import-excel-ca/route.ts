@@ -375,7 +375,10 @@ export async function POST(req: Request) {
         control,
         grupo_de_conceptos: parsed["grupo_de_conceptos"] ?? "",
         concepto: rawMovimiento,                // texto raw completo
-        tipo_de_movimiento: "",                  // CA no tiene campo equivalente
+        // ⚠️ Guarda el CBU, no el tipo. En Caja de Ahorro esta columna no tiene uso propio
+        // (en cuenta corriente el banco manda siempre "Imputado") y es la única sin dueño de las
+        // 37 de la tabla, así que se acordó destinarla al CBU — ver `ARQUITECTURA-BD.md` § 6b.
+        tipo_de_movimiento: parsed["tipo_de_movimiento"] ?? "",
         leyendas_adicionales_1: parsed["leyendas_adicionales_1"] ?? "",
         leyendas_adicionales_2: parsed["leyendas_adicionales_2"] ?? "",
         leyendas_adicionales_3: parsed["leyendas_adicionales_3"] ?? "",

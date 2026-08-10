@@ -236,8 +236,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
 | **A-BUG-19** | ✅ | **Bug** | **ARREGLADO Y TESTEADO 2026-08-10.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
-| A-FEAT-20 | 🔴 | Feat | **Homologar las columnas de Caja de Ahorro con MSA** + decidir dónde va el CBU. Convención medida sobre los datos → `ARQUITECTURA-BD.md` § 6b | → [A-FEAT-20](#a-feat-20) |
-| A-FEAT-21 | 🔴 | Feat | **Una tarjeta por forma** en vez de un tipo con selector de alcance. Propuesta del usuario: *saca* UI, no la agrega | → [A-FEAT-21](#a-feat-21) |
+| A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) |
+| A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
@@ -3847,7 +3847,23 @@ va a su lugar e incluso no hace falta que lo setee yo, ya que me puedo confundir
 convención no es una regla para recordar, es algo que **la app tiene que proponer sola**.
 `proponerMapeo()` ya hace eso; falta alinearlo a la convención completa (banco → `leyendas_4`).
 
-### 🔴 La decisión abierta: dónde va el CBU
+### ✅ RESUELTO 2026-08-10 — el CBU va a `tipo_de_movimiento`
+
+**Decisión del usuario.** Se eligió reusar la única columna sin dueño en vez de crear una nueva.
+La pantalla la rotula **«CBU»**, no por su nombre técnico, y la convención queda escrita en tres
+lugares: `ARQUITECTURA-BD.md` § 6b, el encabezado de `lib/extractos/parseo-movimiento.ts` y el
+comentario del importador de CA.
+
+Lo implementado junto con la decisión:
+- **Modos nuevos `cbu` y `tarjeta`** — buscan el dato donde esté, como `cuit`. Los detectores ya
+  existían (se usaban para la firma de forma); faltaba exponerlos.
+- **El banco va a `leyendas_adicionales_4`**, igual que en MSA. Se detecta solo (empieza con
+  `BANCO`) y se propone. En MA hoy cae en `numero_de_terminal`.
+- **El importador de CA** dejó de escribir `tipo_de_movimiento: ""` fijo.
+- Las columnas se eligen por **lo que guardan** (`CUIT`, `Concepto`, `Banco de la contraparte`),
+  no por su nombre — así el nombre desalineado de la columna del CBU no confunde a nadie.
+
+### La decisión, tal como se tomó
 El usuario propuso revisar **todas** las columnas por si alguna estaba libre. Se revisaron las 37 de
 cada tabla. Resultado:
 
@@ -3902,6 +3918,21 @@ dashboard parta el mismo concepto en dos.
 
 → Diseño: lista **agrupada por tipo**, con el grupo de conceptos arriba (uno, compartido) y **una
 tarjeta por forma** debajo, cada una con su ejemplo, su conteo y sus reglas.
+
+#### ✅ HECHO 2026-08-10 — falta testear
+- **La unidad de trabajo es la forma.** Cada una tiene su tarjeta con su ejemplo real, su conteo,
+  sus reglas y lo que producen. Se configura por separado.
+- **Se fueron** el selector de alcance por fila, los botones de cambio de forma y la previa en tres
+  columnas. Como estaba previsto, el rediseño **sacó** UI en vez de agregarla.
+- **Toda regla nueva queda atada a su forma.** Si el banco manda una forma distinta, no se parsea
+  y se ve — que es lo que pidió el usuario.
+- ⚠️ **Aviso nuevo, y es el que evita una sorpresa fea**: las 91 reglas viejas no tienen forma, así
+  que hoy valen para todas. Al guardar una forma **quedan atadas sólo a ésa** y las otras se quedan
+  sin reglas. El modal lo avisa antes de guardar y recomienda terminar el tipo entero de una vez.
+
+**Verificado contra el endpoint real**: `TRANSFERENCIA A TERCEROS` devuelve sus 3 formas (12/7/4)
+con `cubierto: true`, y el re-parseo en seco acotado a ese tipo informa 23 movimientos sin tocar
+nada. Las 91 reglas siguen en `firma_forma = null`, así que **nada cambió de comportamiento todavía**.
 
 ---
 

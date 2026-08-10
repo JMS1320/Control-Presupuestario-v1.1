@@ -823,7 +823,7 @@ La cuenta se elige en el selector de arriba del modal, el mismo que usan las otr
 5. Elegí el **grupo de conceptos** (es del tipo entero, no de cada línea) y **Guardar**. El botón
    dice cuántas reglas crea, cambia y borra.
 
-### 🔀 Cuando un tipo llega con varias formas
+### 🔀 Cada forma se configura por separado
 Un mismo tipo puede llegar escrito de maneras distintas. La tarjeta lo avisa con un chip
 **«N formas»** y las muestra todas, con cuántos movimientos tiene cada una.
 
@@ -837,19 +837,17 @@ línea 5 → nro_terminal      6L·12   4517XXXXXXXXXX11
                             ⚠ Trae cosas distintas según la forma.
 ```
 
-Los botones de arriba del editor permiten cambiar **qué forma estás mirando**.
+**Cada forma es su propia tarjeta**, con su ejemplo real, cuántos movimientos tiene y sus reglas.
+Se configuran por separado y no se pisan entre sí. Las tarjetas de un mismo tipo van agrupadas
+debajo de su nombre, y el **grupo de conceptos es del tipo entero** — se edita una vez y vale para
+todas sus formas.
 
-**Cada regla decide a qué formas aplica.** Debajo del modo aparece un segundo selector:
+Así, `TRANSFERENCIA A TERCEROS` se ve como tres bloques: el de 6 líneas con 12 movimientos, el de
+6 líneas con 4, y el de 5 líneas con 7. Cada uno se configura mirando su propio texto.
 
-- **«vale para las N formas»** — la regla se guarda sin atarse a ninguna forma.
-- **«sólo la forma de N líneas»** — se guarda atada a la forma que estás mirando.
-
-Por defecto, los modos que **buscan** valen para todas y los que **cuentan líneas** quedan atados a
-su forma, porque contar sólo tiene sentido dentro de una. Se puede cambiar.
-
-Así, en `TRANSFERENCIA A TERCEROS`, el CUIT y el nombre se escriben **una sola vez** (valen para las
-3 formas) y el CBU, la tarjeta y el concepto se escriben **por forma**, que es donde cambian de
-lugar.
+⚠️ **Terminá el tipo entero de una sentada.** Las reglas viejas —las que ya estaban antes de este
+cambio— valen para todas las formas. En cuanto guardás una forma, quedan atadas **sólo a ésa** y las
+otras se quedan sin reglas hasta que las configures. El editor te lo avisa antes de guardar.
 
 ### 🛑 Una forma sin cubrir NO se parsea
 Si un tipo tiene reglas atadas a formas y llega un movimiento de **otra** forma, el sistema
@@ -865,6 +863,28 @@ En la pantalla, una forma sin reglas propias aparece marcada **«sin cubrir, no 
 **No alcanza con contar líneas**: dos movimientos de 6 líneas pueden ser formas distintas si tienen
 las líneas cambiadas de lugar. Por eso la forma se calcula con la **clase de dato de cada línea**
 (CUIT, CBU, tarjeta, número, texto), no sólo con la cantidad.
+
+### 🗂️ Dónde va cada dato
+Las columnas se eligen por **lo que guardan**, no por su nombre técnico:
+
+| En la pantalla | Qué guarda |
+|---|---|
+| El tipo de movimiento | la primera línea |
+| Nombre / comercio | la contraparte |
+| **CUIT** | de acá lo lee el motor de conciliación |
+| Concepto | `VARIOS`, `HONORARIOS`… |
+| Banco de la contraparte | `BANCO DE GALICIA…` |
+| Nº de operación / autorización | `OP:…`, `A837` |
+| Terminal / identificador | números largos del banco |
+| **CBU** | los 22 dígitos |
+
+Es la misma convención que usa MSA. Y hay modos que **buscan** el dato en vez de contar líneas:
+*Busca el CUIT*, *Busca el CBU*, *Busca la tarjeta*, *Antes/Después del CUIT*. Ésos sobreviven a que
+el banco cambie el orden.
+
+> 🔎 Detalle técnico, por si alguna vez mirás la base: el CBU se guarda en la columna
+> `tipo_de_movimiento`. El nombre no corresponde y **es a propósito** — era la única columna libre
+> de las 37, y se decidió no crear una nueva. Está documentado en `ARQUITECTURA-BD.md` § 6b.
 
 ### 🔑 Dos cosas que conviene saber
 - **«Busca el CUIT» le gana a «Línea N».** Los modos que buscan (`Busca el CUIT`, `Antes del CUIT`,
