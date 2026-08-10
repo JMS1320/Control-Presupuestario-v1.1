@@ -238,7 +238,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
-| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10** — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. ⏳ **Falta que el usuario corra `sql/2026-08-10_firma_forma_parseo.sql`** + testear | → [A-FEAT-18](#a-feat-18) |
+| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10**, SQL corrido — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. Falta testear + ajustar las 3 reglas que fallan | → [A-FEAT-18](#a-feat-18) |
 | A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -3475,7 +3475,11 @@ SQL** — hasta que existan reglas con firma, todo se resuelve como hoy. `cargar
 `select("*")` justamente para eso: con el listado explícito de columnas, la consulta fallaría en
 cualquier entorno donde el ALTER no se corrió todavía.
 
-⏳ **Pendiente del usuario**: correr `sql/2026-08-10_firma_forma_parseo.sql` en el SQL Editor.
+✅ **SQL corrido 2026-08-10.** No había MCP de Supabase en la sesión (sus tools no estaban en el
+toolset, aunque la config estuviera en write), y tampoco hay RPC de SQL. Se corrió por la
+**Management API** con el token del `.mcp.json` — que es lo que el MCP llama por debajo.
+Control posterior: `ma_galicia` 42 reglas y `pam_galicia` 49, **las 91 en `NULL`** = valen para
+todas las formas. Ninguna fila modificada.
 
 #### ✅ CAMINO A — HECHO 2026-08-10, falta testear
 

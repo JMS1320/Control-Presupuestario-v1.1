@@ -3338,6 +3338,8 @@ CREATE INDEX IF NOT EXISTS idx_config_parseo_tipo_firma
 ```
 
 Script completo con el control posterior: **`sql/2026-08-10_firma_forma_parseo.sql`**. NO en backup.
+**✅ Corrido el 2026-08-10** por la Management API (no había MCP en la sesión). Control: 91 reglas,
+todas en `NULL`; ninguna fila modificada.
 
 - La firma la calcula la app (`firmaDeMovimiento`, `lib/extractos/parseo-movimiento.ts`): cantidad
   de líneas **+ la clase de dato de cada una**. ⚠️ **No alcanza con la cantidad** — dos formas de
