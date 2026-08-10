@@ -826,6 +826,8 @@ Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **1
    Antes quedaban todas en *pagar*.
 5. Repetí y elegí **Pagar sin retener**: se guardan con el estado, sin retención.
 6. En la grilla, escribí `10/8` en una fecha: tiene que quedar **10/08/2026**.
+7. **Fac C**: poné a pagar la factura de **Micelli** (Factura C). **No** tiene que proponer SICORE —
+   ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
 

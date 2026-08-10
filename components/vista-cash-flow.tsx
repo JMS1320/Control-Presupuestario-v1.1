@@ -71,6 +71,23 @@ const columnasDefinicion = [
 const quincenaDePago = (fila: { fecha_pago?: string | null }): string =>
   fila.fecha_pago ? generarQuincenaSicore(fila.fecha_pago) : ''
 
+/**
+ * Comprobantes **C**: los emite un monotributista, así que **nunca llevan retención SICORE**.
+ * 11 Factura C · 12 Nota de Débito C · 13 Nota de Crédito C.
+ * (Hoy en la BD sólo hay tipo 11, 40 comprobantes; los otros dos se incluyen porque es la misma
+ * razón — quien emite es monotributista — y así no hay que acordarse el día que aparezcan.)
+ */
+const TIPOS_COMPROBANTE_C = [11, 12, 13]
+
+/**
+ * ¿A esta factura se le puede retener SICORE?
+ *
+ * 🔑 **Una sola definición, usada por los dos caminos** — el lote y la fila individual. Antes el
+ * filtro de Fac C estaba sólo en `evaluarRetencionSicoreCF`, así que por el lote pasaban igual.
+ */
+const admiteSicore = (f: { tipo_comprobante?: number | null }): boolean =>
+  !TIPOS_COMPROBANTE_C.includes(Number(f.tipo_comprobante))
+
 /** Estados que significan que la plata sale: exigen fecha de pago antes de seguir. */
 const ESTADOS_QUE_PAGAN = ['pagar', 'preparado', 'programado', 'pagado', 'debito']
 
@@ -1420,8 +1437,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       if (cambiarEstadoLote) {
         // Sólo las FC de MSA pasan por SICORE; las de PAM/MA van por el camino directo (paso 5)
+        // Las Fac C quedan afuera acá mismo: van por el camino directo, sin pasar por SICORE.
         const esArcaAPagar = (f: CashFlowRow) =>
-          valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar' && esFilaMsa(f)
+          valorEstadoLote === 'pagar' && f.origen === 'ARCA' && f.estado !== 'pagar'
+          && esFilaMsa(f) && admiteSicore(f)
         // Lo que no es ARCA→pagar: estado directo
         todasFilas.filter(f => !esArcaAPagar(f)).forEach(f =>
           actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote })
@@ -1724,8 +1743,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     freshPending?: PendingSicore | null,
     freshCola?: CashFlowRow[]
   ) => {
-    // Fac C (tipo 11 = monotributista): NUNCA se le retiene (igual que el Modal) → guardar estado sin SICORE.
-    if ((fila as any).tipo_comprobante === 11) {
+    // Fac C (monotributista): NUNCA se le retiene → guardar estado sin SICORE.
+    if (!admiteSicore(fila)) {
       await cancelarSicoreCF(true, freshPending, freshCola)
       return
     }

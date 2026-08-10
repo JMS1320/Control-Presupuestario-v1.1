@@ -101,6 +101,15 @@ export interface CashFlowRow {
   nro_cuenta?: string | null
   // Campos SICORE (solo para filas ARCA)
   sicore?: string | null
+  /**
+   * Tipo de comprobante de ARCA. Lo necesita SICORE: a las **Fac C** (monotributista) no se les
+   * retiene nunca. En un grupo, `null` si sus facturas no son todas del mismo tipo.
+   *
+   * ⚠️ Antes no se mapeaba y el guard del componente hacía `(fila as any).tipo_comprobante === 11`
+   * — o sea, **código muerto**: la propiedad no existía y a las Fac C se les proponía retención
+   * igual. El `as any` fue lo que dejó pasar el error.
+   */
+  tipo_comprobante?: number | null
   imp_neto_gravado?: number
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
@@ -217,6 +226,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         tipo_cambio: f.tipo_cambio ?? 1,
         tc_pago: f.tc_pago ?? null,
         comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
+        tipo_comprobante: f.tipo_comprobante ?? null,
         grupo_pago_id: null,
       }
     })
@@ -279,6 +289,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         descuento_aplicado: Math.round(fs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0) * 100) / 100 || null,
         monto_a_abonar: Math.round(fs.reduce((s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0) * 100) / 100,
         comprobante_display: fs.map(f => `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`).join(' + '),
+        // Un grupo puede mezclar tipos. Sólo se declara el tipo si TODAS coinciden; si no, `null`
+        // y el grupo pasa por la evaluación de SICORE — es el lado seguro, porque si alguna no es
+        // C podría corresponder retención y saltearla sería peor que preguntar de más.
+        tipo_comprobante: fs.every(f => f.tipo_comprobante === fs[0].tipo_comprobante)
+          ? fs[0].tipo_comprobante ?? null
+          : null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: fs.length,
         ids_grupo: fs.map(f => f.id),

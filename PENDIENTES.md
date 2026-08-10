@@ -239,6 +239,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-20** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** 🔁 REGRESIÓN — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) |
 | A-FEAT-22 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Confirmar la fecha de pago ANTES de SICORE — hoy la fecha se asume y SICORE depende de ella. Proponer hoy, editable, con 3 salidas | → [A-FEAT-22](#a-feat-22) |
 | A-FEAT-23 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Al escribir una fecha con **día y mes pero sin año**, autocompletar con el año actual | → [A-FEAT-23](#a-feat-23) |
+| **A-BUG-22** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** A las **Fac C** se les proponía SICORE. El guard existía pero era **código muerto**: `tipo_comprobante` nunca llegaba a la fila | → [A-BUG-22](#a-bug-22) |
 | **A-BUG-21** | 🔴 | **Bug** | **ARCA calcula la quincena de SICORE desde `fecha_vencimiento`**, no desde la fecha de pago — misma falla que se arregló en Cash Flow. Y tiene una **copia local** de `generarQuincenaSicore` | → [A-BUG-21](#a-bug-21) |
 | A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) |
 | A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) |
@@ -3950,6 +3951,42 @@ tres guardas que cortan:
 lugares con `fecha_vencimiento || fecha_estimada`, y además **una copia local de
 `generarQuincenaSicore`** (línea 3255) que duplica la de `lib/sicore/quincena`. Es la misma regla y
 hay que aplicarla ahí, pero es otra pantalla y merece su propia pasada → nuevo ítem.
+
+### 🟡 <a id="a-bug-22"></a>A-BUG-22 — A las Fac C se les proponía SICORE (código muerto)
+
+**Reportado por el usuario 2026-08-10**: *"cuando pongo a pagar la factura de Micelli (FAC C) me
+propone SICORE, y ya habíamos visto que facturas C no debe proponer porque no llevan retención."*
+
+**Y tenía razón: el filtro estaba escrito.** En `evaluarRetencionSicoreCF`:
+
+```ts
+// Fac C (tipo 11 = monotributista): NUNCA se le retiene
+if ((fila as any).tipo_comprobante === 11) { … }
+```
+
+**Pero nunca se ejecutaba.** `tipo_comprobante` **no existía en la fila del Cash Flow**: el hook lo
+leía del comprobante ARCA sólo para armar el texto `"FC A - 00012"` y no lo pasaba a la fila. La
+comparación daba `undefined === 11` → `false`, siempre.
+
+> 🔑 **El `as any` fue lo que dejó pasar el error.** Sin él, TypeScript habría dicho que la
+> propiedad no existe. Es el mismo patrón que [A-BUG-19](#a-bug-19): el compilador tenía la
+> respuesta y se lo silenció.
+
+Y había un segundo problema debajo: el filtro estaba **sólo en el camino de la fila individual**.
+El lote (botón PAGOS) ni siquiera lo consultaba, así que aunque el dato hubiera llegado, por ahí
+seguían pasando.
+
+#### El arreglo
+1. **`tipo_comprobante` ahora llega a la fila.** En los grupos se declara sólo si **todas** las
+   facturas coinciden; si están mezcladas queda `null` y el grupo pasa por la evaluación — el lado
+   seguro, porque saltear una retención que corresponde es peor que preguntar de más.
+2. **Una sola definición**, `admiteSicore()`, usada por **los dos caminos**.
+3. Cubre la familia C completa: **11** Factura C · **12** ND C · **13** NC C. Hoy en la BD hay 40
+   comprobantes tipo 11 y ninguno de los otros dos; se incluyen porque el motivo es el mismo —quien
+   emite es monotributista— y así no hay que acordarse el día que aparezcan.
+
+**Falta testear** → poner a pagar la factura de **Micelli**: no tiene que proponer SICORE, ni desde
+la fila ni desde el lote.
 
 ### 🔴 <a id="a-bug-21"></a>A-BUG-21 — La misma falla de la fecha, en el módulo ARCA
 
