@@ -1085,7 +1085,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
       })
-  const toggleChip = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, val: string) => {
+  /**
+   * Click normal = prende/apaga ese chip.
+   * **Ctrl+click (o ⌘+click) = dejar SÓLO ése.**
+   *
+   * Motivo: con todos los chips prendidos, ir a "ver sólo uno" obligaba a apretar *ninguno* y
+   * después el que se quería. Dos pasos para lo que se hace todo el tiempo.
+   */
+  const toggleChip = (
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    val: string,
+    soloEste = false,
+  ) => {
+    if (soloEste) { setter(new Set([val])); return }
     setter(prev => { const n = new Set(prev); n.has(val) ? n.delete(val) : n.add(val); return n })
   }
   const verTodo = () => {
@@ -3283,7 +3295,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               {estadosDisponibles.map(e => (
                 <button
                   key={e}
-                  onClick={() => toggleChip(setChipsEstados, e)}
+                  onClick={(ev) => toggleChip(setChipsEstados, e, ev.ctrlKey || ev.metaKey)}
+                  title={`Click: prender/apagar «${e}» · Ctrl+click: ver SÓLO «${e}»`}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsEstados.has(e) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
                   {e} ({data.filter(f => f.estado === e).length})
@@ -3291,13 +3304,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               ))}
               <button onClick={() => setChipsEstados(new Set(estadosDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
               <button onClick={() => setChipsEstados(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+              <span className="ml-1 text-[10px] text-gray-400" title="Sirve en los chips de Estado y de Origen">ctrl+click = sólo ése</span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-xs font-semibold text-gray-600 mr-1">Origen:</span>
               {origenesDisponibles.map(o => (
                 <button
                   key={o}
-                  onClick={() => toggleChip(setChipsOrigenes, o)}
+                  onClick={(ev) => toggleChip(setChipsOrigenes, o, ev.ctrlKey || ev.metaKey)}
+                  title={`Click: prender/apagar «${o}» · Ctrl+click: ver SÓLO «${o}»`}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsOrigenes.has(o) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
                   {o} ({data.filter(f => f.origen === o).length})

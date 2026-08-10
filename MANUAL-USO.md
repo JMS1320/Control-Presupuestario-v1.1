@@ -811,6 +811,14 @@ Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de 
 factura califica por monto pero no tiene fecha de pago, se guarda **sin retención** y te avisa
 cuántas fueron. No se inventa la fecha con la de vencimiento ni con la estimada.
 
+### 🎛️ Chips de Estado y Origen: ctrl+click aísla
+- **Click** en un chip: lo prende o lo apaga.
+- **Ctrl+click** (⌘+click en Mac): deja **sólo ése** prendido.
+
+Antes, para pasar de "todos" a "ver sólo uno" había que apretar *ninguno* y después el que se
+quería. Ahora es un solo click. Sirve en las dos filas de chips, y el cartelito
+*«ctrl+click = sólo ése»* está al lado para no tener que acordarse.
+
 ### ✍️ Escribir fechas: el año se completa solo
 Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **10/08/2026**. Sirven
 `/`, `-` y `.`, y el año de dos dígitos (`5/3/26`). *Por ahora sólo en Cash Flow.*
@@ -826,7 +834,9 @@ Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **1
    Antes quedaban todas en *pagar*.
 5. Repetí y elegí **Pagar sin retener**: se guardan con el estado, sin retención.
 6. En la grilla, escribí `10/8` en una fecha: tiene que quedar **10/08/2026**.
-7. **Fac C**: poné a pagar la factura de **Micelli** (Factura C). **No** tiene que proponer SICORE —
+7. **Chips**: con todos prendidos, hacé **ctrl+click** en uno: tiene que quedar sólo ése. Probalo
+   en Estado y en Origen.
+8. **Fac C**: poné a pagar la factura de **Micelli** (Factura C). **No** tiene que proponer SICORE —
    ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
