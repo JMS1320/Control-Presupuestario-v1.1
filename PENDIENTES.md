@@ -235,7 +235,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
 | A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
-| **A-BUG-19** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
+| **A-BUG-19** | ✅ | **Bug** | **ARREGLADO Y TESTEADO 2026-08-10.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
 | A-FEAT-20 | 🔴 | Feat | **Homologar las columnas de Caja de Ahorro con MSA** + decidir dónde va el CBU. Convención medida sobre los datos → `ARQUITECTURA-BD.md` § 6b | → [A-FEAT-20](#a-feat-20) |
 | A-FEAT-21 | 🔴 | Feat | **Una tarjeta por forma** en vez de un tipo con selector de alcance. Propuesta del usuario: *saca* UI, no la agrega | → [A-FEAT-21](#a-feat-21) |
 | A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
@@ -3810,7 +3810,20 @@ el mismo criterio que los grupos de facturas.
 Cash Flow, pero ahora **lo dice** en vez de callarse. Si se quiere que marcarlas registre el pago de
 verdad, es el camino A que quedó sin decidir (ver arriba).
 
-**Falta testear** → repetir el test de AMS: marcar el pago, recargar, y que siga en verde.
+#### ✅ TESTEADO 2026-08-10
+El usuario volvió a marcar desde PAGOS y verificado contra la BD:
+
+```
+92a81880 · 07/08 · 518.188   pagado   ← el del test
+125f905f · 31/07 · 1.050.000 pagado   ← marcó también éste
+268d5fcf · 10/07 ·   969.421 pagar    ← sin tocar (es del período de junio)
+```
+
+Los dos quedaron guardados después de recargar. **Cerrado.**
+
+⚠️ Lo que NO cubre este arreglo y sigue abierto: marcar una fila de **sueldo del mes** desde Cash
+Flow. Hoy avisa que se gestiona desde Sueldos, en vez de callarse — pero no lo hace. Si se quiere
+que marcarla **registre el pago**, es el camino A (arriba). Decisión pendiente del usuario.
 
 ---
 
