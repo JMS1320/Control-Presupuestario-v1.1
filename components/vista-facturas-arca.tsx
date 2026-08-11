@@ -45,6 +45,13 @@ import { es } from "date-fns/locale"
 
 interface FacturaArca {
   id: string
+  /**
+   * Visible para el rol contable (Ulises). La columna existe en las 3 empresas y la consulta la
+   * trae porque hace `select('*')` — pero el tipo no la declaraba y se leía con `(f as any)`.
+   * Declararla saca ese `as any`: si algún día la consulta pasa a lista explícita de columnas y se
+   * la olvidan, el compilador avisa en vez de devolver `undefined` en silencio (auditoría A-OP-07).
+   */
+  visible_contable?: boolean | null
   fecha_emision: string
   tipo_comprobante: number
   tipo_comprobante_desc?: string | null
@@ -10035,7 +10042,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       )}
                       {!esContable && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (() => {
                         const sel = facturas.filter(f => facturasSeleccionadasPagos.has(f.id))
-                        const todasVisibles = sel.every(f => (f as any).visible_contable === true)
+                        const todasVisibles = sel.every(f => f.visible_contable === true)
                         return (
                           <Button
                             size="sm"

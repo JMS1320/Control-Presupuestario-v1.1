@@ -451,8 +451,18 @@ después) para afirmar "no rompí nada", **sin leer ninguno**. Y adentro estaban
    error que explica el bug que estás persiguiendo. Al triagear, **empezar por los del archivo que
    se está tocando**.
 2. **Un `as any` es un error del baseline que ni siquiera llegó al baseline.** `A-BUG-22` no aparece
-   en la lista justamente porque alguien lo silenció al escribirlo. Merecen su propio repaso:
-   `grep -c "as any"` sobre los archivos grandes.
+   en la lista justamente porque alguien lo silenció al escribirlo.
+   → ✅ **Repaso hecho 2026-08-11**, resultado completo en `ERRORES_CONOCIDOS.md`: de los 200, **45**
+   afirman que una propiedad existe y **sólo 1 era de dominio propio** (`visible_contable`, ya
+   arreglada). Los otros 15 sospechosos eran APIs del navegador y librerías — uso legítimo.
+   **No había un segundo A-BUG-22.** Quedan 29 `as any` cosméticos como backlog.
+
+#### ✅ Y el mecanismo ya está hecho (2026-08-11)
+`npm run type-check:diff` compara **por archivo** contra `scripts/type-errors-baseline.json` y falla
+si alguno empeora; `npm run type-check:baseline` fija el piso nuevo. Con eso *"no rompí nada"* deja
+de ser una afirmación de Claude y pasa a ser algo que el usuario verifica en un comando.
+Probado inyectando un error a propósito: lo detectó (`3 → 4`, exit 1).
+Lo que queda de A-OP-07 es el **triage** de los 113, empezando por los archivos que se tocan.
 
 > Esto convierte a A-OP-07 de "buena práctica" en **deuda con costo medido**: dos bugs que costaron
 > horas de diagnóstico estaban escritos, con archivo y línea, esperando que alguien los leyera.

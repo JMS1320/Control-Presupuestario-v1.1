@@ -82,9 +82,46 @@ convierte *"no rompí nada"* en algo **verificable por el usuario**, en vez de u
 3. **Si bajó**, fijar el nuevo piso con `npm run type-check:baseline` y decir en el commit cuáles
    se arreglaron. Así el número nunca vuelve a subir en silencio.
 
-⚠️ **`as any` no aparece acá** — justamente porque silencia el error antes de que llegue. Hay **200**
-en el código. La variante peligrosa es la que **afirma que una propiedad existe**
-(`(fila as any).tipo_comprobante`): eso fue `A-BUG-22`. Repaso pendiente en `A-OP-07`.
+### 🔍 Repaso de los `as any` — HECHO 2026-08-11
+
+`as any` **no aparece en el baseline**, justamente porque silencia el error antes de que llegue.
+Por eso `A-BUG-22` no estaba en la lista. Se auditaron los 200 del código, clasificados por **lo que
+hacen**, no por dónde están:
+
+| Forma | Cuántos | Riesgo |
+|---|---|---|
+| `as any[]` — castear el resultado de una consulta | **117** | ninguno: no afirma nada sobre el contenido |
+| cast suelto — pasar un objeto entero a otra función | **39** | bajo |
+| **`(x as any).prop` — AFIRMA que una propiedad existe** | **45** | 🔴 es la forma de `A-BUG-22` |
+
+De esas 45, la pregunta que importa es: **¿esa propiedad existe en algún tipo del repo?**
+
+- **29** → sí existe. El `as any` sobra, pero **el dato está**. Limpieza cosmética, sin riesgo.
+- **16** → no aparece declarada en ningún lado. Ésas se revisaron una por una:
+
+| Propiedad | Usos | Veredicto |
+|---|---|---|
+| `.showDirectoryPicker` | 7 | ✅ **API del navegador** (File System Access) que TypeScript todavía no tipa. Correcto |
+| `.lastAutoTable` | 6 | ✅ la agrega **jsPDF-autotable** en runtime. Correcto |
+| `.SSF` | 2 | ✅ interno de la librería **XLSX**. Correcto |
+| `.visible_contable` | 1 | ⚠️ **la única de dominio propio** → arreglada |
+
+**Conclusión: no había un segundo `A-BUG-22`.** Los 15 casos legítimos son librerías o APIs del
+navegador — exactamente para lo que sirve `as any`. El único de dominio propio era
+`visible_contable` en `vista-facturas-arca.tsx`: la columna existe en las 3 empresas y la consulta
+la traía (`select('*')`), así que **funcionaba** — pero el tipo no la declaraba. Se agregó al tipo
+y se sacó el `as any`.
+
+> 🔑 **La diferencia con `A-BUG-22`, que es la que conviene recordar**: allá la propiedad **no
+> llegaba** (el hook no la mapeaba) → `undefined === 11` → código muerto. Acá llegaba y funcionaba.
+> El `as any` sobre datos propios no siempre es un bug, pero **siempre es un aviso apagado**: si
+> mañana esa consulta pasa a lista explícita de columnas, deja de funcionar sin decir nada.
+
+**Regla que queda**: `as any` para librerías y APIs del navegador, sí. **Para leer una propiedad de
+un dato nuestro, no** — se declara en el tipo.
+
+**Backlog** (no urgente): los 29 `as any` que leen propiedades que sí existen en algún tipo. Sacarlos
+es cosmético hoy, pero cada uno es un aviso apagado de más.
 
 ---
 
