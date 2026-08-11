@@ -1,0 +1,23 @@
+{
+  "_comentario": "Errores de tipos por archivo. Generado por `npm run type-check:baseline`. No editar a mano: se regenera. El motivo de que sea POR ARCHIVO está en scripts/type-check-diff.mjs",
+  "generado": "2026-08-11",
+  "total": 113,
+  "archivos": {
+    "components/vista-facturas-arca.tsx": 45,
+    "app/api/import-excel-dinamico/route.ts": 14,
+    "components/vista-extracto-bancario.tsx": 11,
+    "components/vista-cash-flow.tsx": 9,
+    "components/vista-templates-egresos.tsx": 9,
+    "components/vista-sector-productivo.tsx": 6,
+    "components/vista-asignacion-arca.tsx": 4,
+    "components/vista-historico-facturas.tsx": 3,
+    "hooks/useMultiCashFlowData.ts": 3,
+    "app/api/import-excel/route.ts": 2,
+    "hooks/useAlertasTemplates.ts": 2,
+    "app/importador-nuevo/page.tsx": 1,
+    "components/reporte-detallado.tsx": 1,
+    "components/tab-terneros.tsx": 1,
+    "config/access-routes.ts": 1,
+    "scripts/reporte-categorias-templates.ts": 1
+  }
+}

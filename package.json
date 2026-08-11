@@ -6,7 +6,10 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "type-check": "tsc --noEmit -p tsconfig.json",
+    "type-check:diff": "node scripts/type-check-diff.mjs",
+    "type-check:baseline": "node scripts/type-check-diff.mjs --accept"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

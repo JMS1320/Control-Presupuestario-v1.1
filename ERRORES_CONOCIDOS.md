@@ -26,6 +26,68 @@
 
 ---
 
+## 🔢 Baseline de errores de TIPOS — por archivo (desde 2026-08-11)
+
+> **Se chequea con un comando, no de memoria:**
+> ```
+> npm run type-check:diff       compara contra el baseline · falla si algún archivo empeoró
+> npm run type-check:baseline   acepta el estado actual como nuevo piso
+> ```
+> El dato vive en `scripts/type-errors-baseline.json` (commiteado, así el chequeo corre en
+> cualquier máquina y la diferencia se ve en el diff). La tabla de abajo es la copia legible.
+
+### 🔴 Por qué es POR ARCHIVO y no un total
+Hasta 2026-08-10 el chequeo era comparar **el total**: 117 antes, 117 después → *"no rompí nada"*.
+Adentro de esos 117 estaban las causas de **dos bugs de una misma sesión**:
+
+| Bug | Qué había en el baseline | Qué costó |
+|---|---|---|
+| `A-BUG-19` | 4 errores en `vista-cash-flow.tsx` señalando el tipo mal | pagos de sueldos que la pantalla daba por guardados y **nunca se guardaban** |
+| `A-BUG-22` | *nada* — un `as any` lo silenció al escribirlo | a las **Fac C** se les proponía retención SICORE |
+
+El problema no era falta de atención: **117 es un muro que nadie lee**. Pero `vista-cash-flow.tsx`
+tenía **13**, y trece líneas se leen en diez segundos. Cambiar la unidad de medida es lo que
+convierte *"no rompí nada"* en algo **verificable por el usuario**, en vez de una afirmación de Claude.
+
+### 📋 El baseline (generado 2026-08-11 — 113 errores en 16 archivos)
+
+| Archivo | Errores |
+|---|---|
+| `components/vista-facturas-arca.tsx` | 45 |
+| `app/api/import-excel-dinamico/route.ts` | 14 |
+| `components/vista-extracto-bancario.tsx` | 11 |
+| `components/vista-cash-flow.tsx` | 9 |
+| `components/vista-templates-egresos.tsx` | 9 |
+| `components/vista-sector-productivo.tsx` | 6 |
+| `components/vista-asignacion-arca.tsx` | 4 |
+| `components/vista-historico-facturas.tsx` | 3 |
+| `hooks/useMultiCashFlowData.ts` | 3 |
+| `app/api/import-excel/route.ts` | 2 |
+| `hooks/useAlertasTemplates.ts` | 2 |
+| `app/importador-nuevo/page.tsx` | 1 |
+| `components/reporte-detallado.tsx` | 1 |
+| `components/tab-terneros.tsx` | 1 |
+| `config/access-routes.ts` | 1 |
+| `scripts/reporte-categorias-templates.ts` | 1 |
+
+> **Nota**: 45 de los 113 están en `components/vista-facturas-arca.tsx`, la pantalla que el
+> usuario decidió dar de baja cuando Cash Flow esté al 100 % (ver `PENDIENTES.md` § A-BUG-21). Sin
+> ella son 68 en 15 archivos.
+
+### 🧭 Cómo se usa al desarrollar
+1. **Antes de tocar un archivo**, mirar cuántos tiene y leerlos:
+   `npx tsc --noEmit -p tsconfig.json | grep "<archivo>"`. Son entre 1 y 14 en casi todos.
+2. **Al terminar**, `npm run type-check:diff`. Si un archivo que tocaste empeoró, **lo causó el
+   cambio en curso** — no es preexistente.
+3. **Si bajó**, fijar el nuevo piso con `npm run type-check:baseline` y decir en el commit cuáles
+   se arreglaron. Así el número nunca vuelve a subir en silencio.
+
+⚠️ **`as any` no aparece acá** — justamente porque silencia el error antes de que llegue. Hay **200**
+en el código. La variante peligrosa es la que **afirma que una propiedad existe**
+(`(fila as any).tipo_comprobante`): eso fue `A-BUG-22`. Repaso pendiente en `A-OP-07`.
+
+---
+
 ## 📋 Log de errores
 
 | Estado | Firma (archivo:línea + mensaje corto) | Comando | 1ª vez | Última vez | Veces | Notas |
