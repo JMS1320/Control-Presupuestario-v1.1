@@ -3337,9 +3337,58 @@ CREATE INDEX IF NOT EXISTS idx_config_parseo_tipo_firma
   ON public.config_parseo_extracto (cuenta_bancaria_id, tipo_movimiento, firma_forma);
 ```
 
-Script completo con el control posterior: **`sql/2026-08-10_firma_forma_parseo.sql`**. NO en backup.
 **✅ Corrido el 2026-08-10** por la Management API (no había MCP en la sesión). Control: 91 reglas,
-todas en `NULL`; ninguna fila modificada.
+todas en `NULL`; ninguna fila modificada. NO en backup.
+
+> ⚠️ `*.sql` está en `.gitignore`, así que **los scripts sueltos no llegan al repo**. El DDL va
+> siempre **acá adentro**, que es para lo que existe esta dimensión. Corregido 2026-08-11: antes
+> este bloque apuntaba a `sql/2026-08-10_firma_forma_parseo.sql`, un archivo que nunca se commiteó.
+
+### **2026-08-11: Notas para Claude desde la app (P-34)**
+
+Bandeja de entrada para dejar bugs e ideas **en el contexto donde pasan**, con captura de pantalla.
+Una nota es una **grabación de N capturas**, no un evento. Detalle → `PENDIENTES.md` § P-34.
+
+```sql
+CREATE TABLE IF NOT EXISTS public.notas_para_claude (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  titulo        text,
+  estado        text NOT NULL DEFAULT 'abierta',  -- abierta|finalizada|leida|descartada
+  resultado     text,          -- al leerla: ID en PENDIENTES.md o motivo del descarte
+  usuario       text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  finalizada_at timestamptz,
+  leida_at      timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS public.notas_capturas (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  nota_id    uuid NOT NULL REFERENCES public.notas_para_claude(id) ON DELETE CASCADE,
+  orden      int  NOT NULL,
+  texto      text,
+  ruta       text,   -- contexto que la app captura sola
+  pantalla   text,
+  modal      text,
+  titulo_doc text,
+  imagen     text,   -- captura comprimida como data URI (ver nota abajo)
+  user_agent text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notas_capturas_nota ON public.notas_capturas (nota_id, orden);
+CREATE INDEX IF NOT EXISTS idx_notas_estado        ON public.notas_para_claude (estado, created_at DESC);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.notas_para_claude TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.notas_capturas    TO anon, authenticated;
+```
+
+**✅ Corrido el 2026-08-11.** NO en backup.
+
+- **La imagen va en la fila, no en Storage**: el proyecto no usa Supabase Storage ni tiene buckets.
+  Se comprime en el navegador (1400 px, JPEG 0.72) → ~80-250 KB. Decisión reversible: si crece,
+  migrar a Storage es directo porque la columna tiene el origen.
+- `resultado` es lo que evita que se vuelva un tacho: **cada nota termina como ID de `PENDIENTES.md`
+  o descartada con motivo**.
 
 - La firma la calcula la app (`firmaDeMovimiento`, `lib/extractos/parseo-movimiento.ts`): cantidad
   de líneas **+ la clase de dato de cada una**. ⚠️ **No alcanza con la cantidad** — dos formas de

@@ -775,6 +775,54 @@ importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
 
 ---
 
+## 📝 Notas para Claude 🟡 *(nuevo 2026-08-11, sin testear)*
+
+> Diseño y motivos → `PENDIENTES.md` § P-34.
+
+Un botón **📝 fijo abajo a la derecha**, en toda la app, para dejar un bug o una idea **en el momento
+y el lugar donde pasa** — en vez de acordarte tres días después.
+
+### Cómo se usa
+1. Tocá **📝**. Se abre una ventanita: escribís qué pasó y **pegás la captura**.
+2. Para la captura: **Win + Shift + S** (recorte de Windows) y después **Ctrl + V** ahí adentro.
+3. Tocás **Empezar nota**. Aparece abajo una barra: *«Grabando · 1 captura»*.
+4. **Seguí usando la app normalmente.** Cuando quieras sumar otro paso, **Capturar** de nuevo.
+5. Cuando terminaste, **Finalizar** y le ponés un título.
+
+**La nota sigue grabando aunque cambies de pestaña.** Eso es a propósito: si un proceso sale mal,
+podés resetearlo, empezar de nuevo y capturar cada paso — así queda un caso reproducible en vez de
+un *"no anda"*.
+
+### Qué guarda solo, sin que escribas nada
+La pantalla en la que estabas, el modal abierto si había uno, la ruta y la hora. Vos escribís sólo
+la idea.
+
+### Por qué se pega la captura en vez de sacarla sola
+Porque los carteles que más interrumpen son los del **navegador**, y ninguna captura automática
+puede fotografiarlos. Pegando del portapapeles queda **exactamente lo que viste**.
+
+### Ver las notas
+**Click derecho** sobre el botón 📝. Muestra las notas con su estado: *sin leer* o *leída*, y si ya
+se convirtió en pendiente, con qué ID quedó.
+
+> 🔒 **Una nota no es un pendiente: es una bandeja de entrada.** Cuando Claude la lee, termina como
+> ítem con ID en `PENDIENTES.md` o descartada con motivo. Si no, en dos meses hay 80 notas que nadie
+> mira.
+
+### 🧪 Cómo probarlo <a id="a-test-28"></a>
+1. Tocá 📝 en cualquier pantalla, escribí algo y **Empezar nota**. Tiene que aparecer la barra
+   *«Grabando · 1 captura»*.
+2. **Cambiá de pestaña.** La barra tiene que seguir ahí — si desaparece, no sirve para grabar un
+   proceso.
+3. Sacá un recorte con Win+Shift+S y pegalo con Ctrl+V: tiene que verse la miniatura.
+4. **Capturar** una segunda vez desde otra pantalla y **Finalizar**.
+5. **Click derecho** en 📝: la nota tiene que estar, como *sin leer* y con **2 capturas**.
+6. ⚠️ Abrí un modal cualquiera y capturá desde ahí: en el recuadro gris tiene que decir el nombre
+   **de ese** modal, no *«Nueva nota para Claude»*. Si dice eso último, el contexto se está
+   capturando tarde.
+
+---
+
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.

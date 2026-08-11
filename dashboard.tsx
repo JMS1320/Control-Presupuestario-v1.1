@@ -35,6 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
+import { NotasParaClaude } from "@/components/notas-para-claude"
 import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
@@ -87,6 +88,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
       {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
           así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
       <Toaster richColors closeButton position="top-right" />
+      {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
+          aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
+          entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
+      <NotasParaClaude />
       <div className="mx-auto max-w-7xl space-y-6">
         {/* pestañas principales */}
         <Tabs defaultValue={getDefaultTab()} className="w-full">

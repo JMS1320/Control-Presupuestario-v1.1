@@ -1322,7 +1322,49 @@ viva fuera de la fuente única.
 Y **al abrir sesión, si hay notas sin leer, las menciona Claude** — no depende de que el usuario
 se acuerde de pedirlo.
 
-**Estado:** ⏸️ aprobada como idea, sin diseñar. Requiere 2 tablas nuevas → se acuerda antes.
+### ✅ HECHO 2026-08-11 — falta testear
+
+**Disparador**: el usuario contó que le aparecen **muchas alertas de error en la mecánica diaria**
+y no sabe si son bugs. Medido: hay **252 `toast.error` + 188 `alert()`** en la app y **cero captura
+global** — o sea, 440 lugares que le pueden poner un cartel en la cara y ningún registro de cuáles
+se disparan. Esta pantalla es el instrumento para caracterizarlos.
+
+#### 🔄 Cambio respecto del diseño original
+El dossier decía *"sin screenshots por ahora"*. **El usuario los pidió**, y tenía un motivo que el
+diseño original no había visto: los carteles que más interrumpen son `alert()` **nativos del
+navegador**, y **ninguna librería de captura de DOM puede fotografiarlos**.
+
+Por eso la captura **se pega del portapapeles** (`Win+Shift+S` → `Ctrl+V`) en vez de renderizarse:
+agarra exactamente lo que el usuario vio, incluidos los carteles nativos. Y de paso evita sumar
+`html2canvas` como dependencia.
+
+#### Dónde se guarda, y por qué no en Storage
+**Ya corrido.** Dos tablas, como estaba previsto. El DDL vive en
+`RECONSTRUCCION_SUPABASE_2026-01-07.md` § CAMBIOS POST-RECONSTRUCCIÓN — **no en un `.sql` suelto**,
+porque `*.sql` está en `.gitignore` y esos archivos no llegan al repo.
+
+La imagen va **comprimida dentro de la fila**, no en Supabase Storage: el proyecto **no usa Storage
+ni tiene buckets**, y montarlo implicaría bucket + políticas + un patrón de acceso nuevo para un
+volumen bajo. Se redimensiona a 1400 px y JPEG 0.72 en el navegador → ~80-250 KB. Si algún día
+crece, migrar es directo porque la columna tiene el origen. **Es una decisión reversible tomada para
+no arrastrar infraestructura que hoy no hace falta.**
+
+#### Cómo quedó
+- Botón 📝 fijo abajo a la derecha, en toda la app (montado en `dashboard.tsx`, fuera de las
+  pestañas: **la nota sigue grabando aunque cambies de pestaña**, que es lo que la hace una
+  grabación y no un evento).
+- Al capturar: texto + captura pegada + **contexto automático** (pantalla activa, modal abierto,
+  ruta, título). El contexto **se congela antes de abrir el modal** — si no, el modal se
+  fotografiaría a sí mismo como "el modal abierto" y se perdería dónde estaba el usuario.
+- Barra *«Grabando · N capturas · [Capturar] [Finalizar]»*.
+- **Click derecho en el botón**: lista de notas con su estado (`sin leer` / `leida`) y, si ya se
+  triageó, el ID de `PENDIENTES.md` en que terminó.
+
+#### 🔒 La regla sigue en pie y está escrita en la propia pantalla
+Una nota **no es un pendiente**: es bandeja de entrada. Al leerla termina como ítem con ID o
+descartada con motivo, y se marca `leida`. El campo `resultado` guarda cuál fue.
+
+**Falta testear** → `MANUAL-USO.md` § Notas para Claude.
 
 ---
 
