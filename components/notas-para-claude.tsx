@@ -55,6 +55,14 @@ interface Captura {
  * instrumentar cada una — y si alguna cambia, esto degrada a vacío en vez de romper.
  */
 function contextoActual() {
+  // En el SERVIDOR no hay `document`. Y esto corre durante el render: `useRef(contextoActual())`
+  // se evalúa también en SSR, así que sin este guard la página entera tiraba
+  // `ReferenceError: document is not defined` → **500 en /adminjms1320**.
+  // El contexto real igual se relee al capturar (`ctxRef.current = contextoActual()`), así que
+  // devolver vacío acá no pierde nada.
+  if (typeof document === "undefined") {
+    return { ruta: "", pantalla: "", modal: "", titulo_doc: "", user_agent: "" }
+  }
   const tab = document.querySelector('[role="tab"][data-state="active"]')
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
   return {

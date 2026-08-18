@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2, Building2 } from "lucide-react"
+import { TrendingUp, Calendar, AlertCircle, Link2, CheckCircle2, Trash2, Building2, ClipboardList } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { ConfiguradorIPC } from "./configurador-ipc"
 import { ModalFichaProveedor } from "./proveedores/modal-ficha-proveedor"
+import { ModalPendientes } from "./modal-pendientes"
 import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertasFcVenta } from "./alertas-fc-venta"
@@ -29,6 +30,7 @@ export function VistaPrincipal() {
   const [ultimoIPC, setUltimoIPC] = useState<UltimoIPC | null>(null)
   const [modalIPCAbierto, setModalIPCAbierto] = useState(false)
   const [modalProveedores, setModalProveedores] = useState(false)
+  const [modalPendientes, setModalPendientes] = useState(false)
   const [loading, setLoading] = useState(true)
 
   // Alertas SICORE
@@ -182,6 +184,13 @@ export function VistaPrincipal() {
         <Button variant="secondary" onClick={() => setModalProveedores(true)} className="flex items-center gap-2">
           <Building2 className="h-4 w-4" />
           Proveedores
+        </Button>
+
+        {/* Pendientes de desarrollo (P-37). Modal y no solapa: una 13ª rompe el grid-cols-12
+            del TabsList, mismo criterio que la ficha de proveedores. Esta vista ya es admin-only. */}
+        <Button variant="secondary" onClick={() => setModalPendientes(true)} className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4" />
+          Pendientes
         </Button>
 
         <Card className="flex-1 max-w-md">
@@ -426,6 +435,7 @@ export function VistaPrincipal() {
 
       {/* Ficha de proveedor — acceso general (también se abre desde otros contextos con cuitInicial) */}
       <ModalFichaProveedor open={modalProveedores} onClose={() => setModalProveedores(false)} />
+      <ModalPendientes open={modalPendientes} onClose={() => setModalPendientes(false)} />
 
       {/* Modal vinculación — wizard 2 pasos (compartido) */}
       <ModalVinculacionAnticipo controller={v} />
