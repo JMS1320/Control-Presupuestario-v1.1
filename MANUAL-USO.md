@@ -486,6 +486,43 @@ saldo impago inexistente.
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 🧭 Ingresos — navegación 🟡 (2026-08-18, sin testear)
+
+**Ahora son 2 niveles: primero la EMPRESA, después la vista.** Antes eran 8 solapas planas con la
+empresa en el nombre ("Ventas MSA", "Subdiarios MA"…).
+
+```
+Ingresos  →  [ MSA | PAM | MA ]
+                 └── Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería
+```
+
+**No todas las empresas muestran las 6** — y no es un olvido:
+
+| Vista | MSA | PAM | MA |
+|---|:-:|:-:|:-:|
+| Arrendamientos · Comprobantes · Subdiarios | ✅ | ✅ | ✅ |
+| Ventas (granos) · Ganadería · Cobros | ✅ | — | — |
+
+- **Ventas** y **Ganadería**: sólo MSA, por definición del negocio.
+- **Cobros**: sólo MSA porque el extracto de PAM y MA **no tiene la columna** que vincula un crédito
+  con una factura. Mostrarla diría "cobrado $0" siempre (ver `PENDIENTES.md` § A-FEAT-24).
+
+**Qué es cada una:**
+- **Comprobantes** = la *lista* de facturas de venta (el equivalente a Facturas en Egresos). Acá está el botón **Importar**.
+- **Subdiarios** = la *DDJJ por mes contable*: cuánta venta hubo en cada período. Acá no se importa nada.
+
+**En PAM y MA, Comprobantes tiene menos botones**: no están *Nueva liquidación*, *Editar* ni
+*Retenciones*, porque esos formularios son del circuito de granos de MSA. Para cargar un comprobante
+a mano en esas empresas, usá **Nuevo comprobante** desde su **Subdiario**.
+
+**Cómo probarlo:**
+1. Entrá a Ingresos: arriba las 3 empresas, debajo las vistas. Arranca en **MSA / Arrendamientos**.
+2. En **MSA** tienen que estar las **6** vistas y todo funcionar igual que antes (nada cambió).
+3. Pasá a **PAM**: quedan **3** vistas. Arrendamientos tiene que mostrar **sólo contratos de PAM** (hoy los 4 son de MSA → debería salir vacío).
+4. Si estabas parado en *Cobros* (MSA) y cambiás a PAM, te tiene que llevar a *Arrendamientos*, no dejarte en una solapa que no existe.
+5. **MA → Comprobantes**: la lista tiene que salir vacía (0 comprobantes) y **no** mostrar los de MSA. ⚠️ Este es el punto clave: si aparecen los de MSA, hay un schema mal derivado.
+6. En **MA/PAM → Comprobantes** tiene que estar **Importar** y **no** estar *Nueva liquidación*.
+
 ### 🔗 Alerta "Facturas de venta sin vincular" (pantalla de inicio) 🟡 (mejorada 2026-08-18, sin testear)
 
 **Qué es:** llegó una factura de venta y hay una venta esperando factura del mismo cliente. La app

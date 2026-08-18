@@ -253,6 +253,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) |
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
+| A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
+| **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
 | A-FEAT-23 | 🔴 | Feat | **La fijación de arrendamiento no emite el comprobante de venta** — `ventas_arrendamiento.comprobante_id` existe pero **nadie lo escribe ni lo lee** (sólo está en el tipo TS). El arrendamiento de PAM/MA hay que cargarlo dos veces: una en el contrato y otra a mano en el subdiario. Va contra el norte (cargar una sola vez) | → [A-FEAT-23](#a-feat-23) |
 | A-TEST-29 | 🔴 | Test | **Importador de ventas multiempresa** (2026-08-13) — estaba fijo en `msa`; ahora toma `empresa` y cada subdiario tiene su botón **Importar**. `MANUAL-USO.md` § Importar comprobantes de venta | → [A-TEST-29](#a-test-29) |
 | A-TEST-28 | 🔴 | Test | **Libro IVA Ventas: export igualado a Compras** (2026-08-13) — un solo botón genera PDF+Excel, pregunta carpeta, no sobrescribe; PDF con el formato de Compras (rango de fechas, TOTALES, página de alícuotas). Cierra **B-FEAT-06**. 6 pasos en `MANUAL-USO.md` § Export del Libro IVA | → [A-TEST-28](#a-test-28) |
@@ -7202,6 +7204,82 @@ UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
 
 **Testear:** entrar a la pantalla de inicio. Tienen que salir **las dos** facturas de Sanpa: la de
 mayo (match por CUIT, normal) y la de julio en ámbar, diciendo que `30712200662` es inválido.
+
+---
+
+## <a id="a-test-31"></a>A-TEST-31 — Ingresos reestructurado por jerarquía (2026-08-18)
+
+**Pedido del usuario:** *"reestructurar la vista por jerarquías: 1º seleccionar entre MSA, MA o PAM;
+luego arrendamientos, ventas, comprobantes, cobros, subdiarios"*. Y explícito: **sin cambios de
+funcionamiento**, sólo la jerarquía.
+
+**Antes:** 8 solapas planas con la empresa metida en el nombre — `Arrendamiento · Ganadería ·
+Ventas MSA · Comprobantes MSA · Cobros MSA · Subdiarios MSA · Subdiarios PAM · Subdiarios MA`.
+Había crecido por agregado: cada empresa nueva sumaba una solapa. Con 3 × 5 escalaba a 15.
+
+**Ahora:** nivel 1 empresa, nivel 2 vista. Qué ve cada una:
+
+| Vista | MSA | PAM | MA | Por qué |
+|---|:-:|:-:|:-:|---|
+| Arrendamientos | ✅ | ✅ | ✅ | tabla en `public` con columna `empresa` → es un **filtro**, no cambio de schema |
+| Comprobantes | ✅ | ✅ | ✅ | `comprobantes_venta` existe en los 3 |
+| Subdiarios | ✅ | ✅ | ✅ | ya era empresa-aware |
+| Ventas (granos) | ✅ | ✕ | ✕ | decisión del usuario. **`msa.ventas` tiene 0 filas**: el módulo está entero y nunca se usó |
+| Ganadería | ✅ | ✕ | ✕ | decisión del usuario |
+| Cobros | ✅ | ✕ | ✕ | **bloqueado por dato**, ver [A-FEAT-24](#a-feat-24) |
+
+### Lo que hubo que tocar para que la solapa no mienta
+
+`Comprobantes` tenía 6 `.schema('msa')` fijos. Ahora deriva de la empresa — **para MSA no cambia
+nada**. Pero tres tablas que usa **existen sólo en MSA**, así que fuera de MSA se saltean en vez de
+fallar: `retenciones_recibidas`, y `ventas` + `ventas_comprobantes` (el circuito de granos, vacío
+incluso en MSA).
+
+Y se ocultan fuera de MSA los botones que escriben por modales atados a ese schema:
+**Nueva liquidación**, **Editar** y **Retenciones** (`ModalLiquidacionMsa` escribe en `msa.ventas` y
+`msa.ventas_comprobantes`). Quedan disponibles listar, **Importar**, marcar cobrado y eliminar.
+Para cargar un comprobante a mano en PAM/MA está el alta del **Subdiario**, que ya soporta las 3.
+
+⚠️ Se evitó a propósito el patrón `empresa === 'MA' ? 'ma' : 'msa'`, que manda a MSA todo lo que no
+sea MA **sin fallar** — el bug silencioso que ya apareció dos veces en este proyecto.
+
+### El importador volvió a Comprobantes
+Criterio del usuario: *"el botón de importar lo veo en Comprobantes; en Subdiarios no"*. **El
+subdiario es la DDJJ por mes contable, no el lugar donde se cargan facturas.** Se sacó el botón que
+se le había puesto el 2026-08-13 y quedó sólo en Comprobantes — que ahora sirve a las 3 empresas,
+así que PAM y MA no pierden el camino de importación.
+
+**Testear** → `MANUAL-USO.md` § *Ingresos — navegación*.
+
+---
+
+## <a id="a-feat-24"></a>A-FEAT-24 — Cobros no puede existir en PAM/MA: falta el vínculo en el extracto
+
+`VistaCobrosVenta` muestra, por cada factura de venta, los **cobros** que la cancelaron. Los saca del
+extracto bancario, filtrando por `comprobante_venta_id`.
+
+**Esa columna existe en un solo lugar:**
+
+| Extracto | Schema | `comprobante_venta_id` |
+|---|---|:-:|
+| `msa_galicia` | `public` | ✅ |
+| `pam_galicia` | `public` | ❌ |
+| `pam_galicia_cc` | `public` | ❌ |
+| `ma_galicia` | **`ma`** | ❌ |
+
+O sea que en PAM y MA **no hay forma de decir que un crédito del banco cancela una factura**. No es
+un problema de mapeo de nombres: el dato no existe. Si se mostrara la solapa, todas las facturas
+dirían *"cobrado $0 · pendiente el total"* — que **miente peor que no estar**.
+
+**Para habilitarlo hacen falta dos cosas, en este orden:**
+1. `ALTER TABLE` agregando `comprobante_venta_id` a las 3 tablas (aditivo).
+2. Que **algo lo escriba**: hoy en MSA lo llena el motor de conciliación. Sin esa parte, la columna
+   queda tan vacía como ahora.
+
+**De paso, dos cosas a resolver cuando se encare:** los extractos no siguen un patrón derivable
+(`ma_galicia` vive en el schema `ma`, los otros en `public`), así que hace falta un **mapa explícito
+empresa → tabla**; y **PAM tiene dos cuentas** (`pam_galicia` y `pam_galicia_cc`), o sea que hay que
+consultar las dos y unir.
 
 ---
 

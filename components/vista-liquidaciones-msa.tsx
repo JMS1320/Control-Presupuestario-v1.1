@@ -16,6 +16,12 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 interface Props {
   userRole?: 'admin' | 'contable'
+  /**
+   * De qué empresa son los comprobantes. `comprobantes_venta` existe en los 3 schemas.
+   * Lo que NO existe fuera de `msa` son `retenciones_recibidas`, `ventas` y `ventas_comprobantes`
+   * (el circuito de granos): esos pasos se saltean en vez de fallar. Para MSA no cambia nada.
+   */
+  empresa?: 'MSA' | 'PAM' | 'MA'
 }
 
 const fmtAR = (n: number, dec = 2) =>
@@ -65,8 +71,11 @@ function calcular(l: LiquidacionMsa, retRecibidas = 0) {
   return { neto, totalOp, retenciones, importeNeto, pagoCond }
 }
 
-export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
+export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: Props) {
   const esAdmin = userRole === 'admin'
+  const schemaName = empresa.toLowerCase()
+  // El circuito de granos (ventas + retenciones sufridas) vive sólo en MSA.
+  const esMsa = empresa === 'MSA'
   const [liquidaciones, setLiquidaciones] = useState<LiquidacionMsa[]>([])
   const [ventasPorLiq, setVentasPorLiq] = useState<Map<string, { count: number, clientes: string[] }>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -82,17 +91,17 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     setLoading(true)
     try {
       const { data, error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_venta')
         .select('*')
         .order('fecha_liquidacion', { ascending: false })
       if (error) throw error
       setLiquidaciones((data || []) as LiquidacionMsa[])
 
-      // Retenciones imputadas aparte (retenciones_recibidas) por comprobante
+      // Retenciones imputadas aparte (retenciones_recibidas) por comprobante — sólo MSA
       const compIds = (data || []).map((c: any) => c.id)
       const rMap = new Map<string, number>()
-      if (compIds.length > 0) {
+      if (esMsa && compIds.length > 0) {
         const { data: rets } = await supabase
           .schema('msa').from('retenciones_recibidas')
           .select('comprobante_venta_id, monto').in('comprobante_venta_id', compIds)
@@ -103,7 +112,8 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
       }
       setRetMap(rMap)
 
-      // Conteo de ventas por liquidación
+      // Conteo de ventas por liquidación — el circuito de granos es sólo de MSA
+      if (!esMsa) { setVentasPorLiq(new Map()); return }
       const { data: pivot2 } = await supabase
         .schema('msa')
         .from('ventas_comprobantes')
@@ -131,7 +141,9 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     }
   }
 
-  useEffect(() => { cargar() }, [])
+  // Recarga al cambiar de empresa (si no, la solapa nueva mostraría los datos de la anterior)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar() }, [empresa])
 
   const filtradas = busqueda.trim()
     ? liquidaciones.filter(l => {
@@ -157,7 +169,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
   const toggleCobrado = async (l: LiquidacionMsa) => {
     if (l.estado === 'conciliado') { toast.error('Ya está conciliado (lo controla el motor de conciliación)'); return }
     const nuevo = l.estado === 'cobrado' ? 'a cobrar' : 'cobrado'
-    const { error } = await supabase.schema('msa').from('comprobantes_venta')
+    const { error } = await supabase.schema(schemaName).from('comprobantes_venta')
       .update({ estado: nuevo }).eq('id', l.id)
     if (error) { toast.error('Error: ' + error.message); return }
     toast.success(nuevo === 'cobrado' ? 'Marcado como cobrado' : 'Vuelto a "a cobrar"')
@@ -173,7 +185,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
     if (!window.confirm(mensaje)) return
     try {
       const { error } = await supabase
-        .schema('msa')
+        .schema(schemaName)
         .from('comprobantes_venta')
         .delete()
         .eq('id', l.id)
@@ -206,7 +218,10 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
               <FileSpreadsheet className="mr-2 h-4 w-4" />Importar ventas
             </Button>
           )}
-          {esAdmin && (
+          {/* El alta manual usa el modal de LIQUIDACIÓN DE GRANOS, que escribe en `msa.ventas` y
+              `msa.ventas_comprobantes` — tablas que sólo existen en MSA. Fuera de MSA se oculta:
+              esas empresas cargan por Importar, o a mano desde el alta del Subdiario. */}
+          {esAdmin && esMsa && (
             <Button onClick={abrirAlta} className="bg-blue-600 hover:bg-blue-700">
               <Plus className="mr-2 h-4 w-4" />Nueva liquidación
             </Button>
@@ -291,12 +306,19 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
                           )}
                           {esAdmin && (
                             <>
-                              <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
-                                <Percent className="h-3.5 w-3.5 text-orange-600" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => abrirEdicion(l)} title="Editar">
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
+                              {/* Retenciones y edición pasan por modales atados a MSA
+                                  (`retenciones_recibidas`, `ventas`, `ventas_comprobantes`).
+                                  Fuera de MSA se ocultan para no escribir en el schema equivocado. */}
+                              {esMsa && (
+                                <>
+                                  <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
+                                    <Percent className="h-3.5 w-3.5 text-orange-600" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => abrirEdicion(l)} title="Editar">
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
                               <Button size="sm" variant="ghost" onClick={() => eliminar(l)} title="Eliminar" className="text-red-600 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -324,6 +346,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin' }: Props) {
         onClose={() => setModalImport(false)}
         onImportado={cargar}
         userRole={userRole}
+        empresa={empresa}
       />
       <ModalRetencionesVenta
         open={!!retencionesDe}

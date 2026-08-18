@@ -8,14 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Search, Pencil, Trash2, FileText, CheckCircle, FileSpreadsheet, Upload } from "lucide-react"
+import { Plus, Search, Pencil, Trash2, FileText, CheckCircle, FileSpreadsheet } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { ModalComprobanteVentaMsa, type ComprobanteVenta } from "./modal-comprobante-venta-msa"
-import { ModalImportVentas } from "./modal-import-ventas"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_VENTAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario, desglosePorAlicuotaVentas } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/lib/subdiarios/carpeta-destino"
@@ -74,8 +73,6 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   const { carpetaPorDefecto, setCarpetaPorDefecto } = useCarpetaPorDefecto()
   const [generandoReportes, setGenerandoReportes] = useState(false)
 
-  // Importación de comprobantes de venta — cada subdiario importa los suyos
-  const [modalImport, setModalImport] = useState(false)
 
   // Cargar tipos de comprobante al montar
   useEffect(() => {
@@ -585,12 +582,8 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
               <Button variant="outline" onClick={() => setMostrarModalImputar(true)}>
                 Imputar período…
               </Button>
-              {esAdmin && (
-                <Button variant="outline" onClick={() => setModalImport(true)}
-                  title={`Importar "Mis Comprobantes Emitidos" de ARCA al subdiario de ${empresa}`}>
-                  <Upload className="mr-2 h-4 w-4" />Importar
-                </Button>
-              )}
+              {/* El importador vive en COMPROBANTES, no acá: el subdiario es la DDJJ por mes
+                  contable, no el lugar donde se cargan facturas (criterio del usuario). */}
               {esAdmin && (
                 <Button onClick={abrirAlta} className="bg-blue-600 hover:bg-blue-700">
                   <Plus className="mr-2 h-4 w-4" />Nuevo comprobante
@@ -796,15 +789,6 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
           </CardContent>
         </Card>
       )}
-
-      {/* Importar comprobantes de venta de esta empresa */}
-      <ModalImportVentas
-        open={modalImport}
-        onClose={() => setModalImport(false)}
-        onImportado={cargarPeriodo}
-        userRole={userRole}
-        empresa={empresa}
-      />
 
       {/* Modal alta/edición */}
       <ModalComprobanteVentaMsa

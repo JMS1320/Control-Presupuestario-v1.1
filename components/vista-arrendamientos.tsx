@@ -49,7 +49,12 @@ interface Venta {
   precio_pesos: number | null; monto_pesos: number | null; fecha_cobro: string | null
 }
 
-export function VistaArrendamientos() {
+/**
+ * @param empresa filtra los contratos de esa empresa. Los contratos viven en `public` con una
+ *   columna `empresa` (no hay una tabla por schema), así que acá es un filtro, no un cambio de
+ *   schema. Sin `empresa` se muestran todos — que es como venía funcionando.
+ */
+export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
   const [cargando, setCargando] = useState(true)
   const [contratos, setContratos] = useState<Contrato[]>([])
   const [cuotas, setCuotas] = useState<Cuota[]>([])
@@ -65,9 +70,10 @@ export function VistaArrendamientos() {
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const { data: cs } = await supabase
+      let q = supabase
         .from("contratos_arrendamiento").select("*").eq("activo", true)
-        .order("campania").order("centro_costo")
+      if (empresa) q = q.eq("empresa", empresa)
+      const { data: cs } = await q.order("campania").order("centro_costo")
       const ids = (cs || []).map((c: any) => c.id)
 
       const [{ data: qs }, { data: ps }, { data: ts }] = await Promise.all([
@@ -90,7 +96,7 @@ export function VistaArrendamientos() {
       setPrecios((ps || []) as PrecioGrano[])
       setTcs((ts || []) as TipoCambio[])
     } finally { setCargando(false) }
-  }, [])
+  }, [empresa])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -134,7 +140,8 @@ export function VistaArrendamientos() {
             después la factura.
           </p>
         </div>
-        <Button size="sm" onClick={() => setModalContrato({ empresa: "MSA", grano: "soja" })}>
+        {/* Un contrato nuevo nace en la empresa que estás mirando */}
+        <Button size="sm" onClick={() => setModalContrato({ empresa: empresa || "MSA", grano: "soja" })}>
           <Plus className="mr-1 h-4 w-4" /> Nuevo contrato
         </Button>
       </div>
