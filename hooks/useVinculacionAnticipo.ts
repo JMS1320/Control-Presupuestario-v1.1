@@ -101,8 +101,10 @@ async function buscarFacturasVentaCandidatas(cuit: string): Promise<FacturaCandi
   const [{ data: rets }, { data: ants }] = await Promise.all([
     supabase.schema('msa').from('retenciones_recibidas')
       .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids),
+    // Los cobros se imputan por `comprobante_venta_id`, NO por `factura_id`: esa última tiene
+    // FK a `msa.comprobantes_arca` y guardar ahí una venta lo rechaza la base.
     supabase.from('anticipos_proveedores')
-      .select('factura_id, monto').eq('tipo', 'cobro').in('factura_id', ids),
+      .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids),
   ])
 
   const imputado = new Map<string, number>()
@@ -111,7 +113,7 @@ async function buscarFacturasVentaCandidatas(cuit: string): Promise<FacturaCandi
     imputado.set(id, (imputado.get(id) || 0) + (Number(monto) || 0))
   }
   ;(rets || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
-  ;(ants || []).forEach((a: any) => sumar(a.factura_id, a.monto))
+  ;(ants || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto))
 
   return facturas.map(f => {
     const total = Number(f.imp_total) || 0
@@ -319,9 +321,11 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     }
 
     // 2) El anticipo queda imputado. `parcial` = entró pero la factura sigue con saldo.
+    //    Va en `comprobante_venta_id`, columna propia: `factura_id` tiene FK a
+    //    `msa.comprobantes_arca` y escribir ahí un id de venta lo rechaza la base.
     const { error: errAnt } = await supabase
       .from('anticipos_proveedores')
-      .update({ factura_id: fac.id, estado: cubierta ? 'vinculado' : 'parcial' })
+      .update({ comprobante_venta_id: fac.id, estado: cubierta ? 'vinculado' : 'parcial' })
       .eq('id', anticipoParaVincular.id)
     if (errAnt) throw errAnt
 

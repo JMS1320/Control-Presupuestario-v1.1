@@ -3323,6 +3323,42 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-08-18: Anticipos de COBRO — columna propia para la factura de venta**
+
+`anticipos_proveedores` guarda las dos puntas (columna `tipo`: `pago` | `cobro`), pero su
+`factura_id` tiene **FK a `msa.comprobantes_arca`**. Al vincular un anticipo de cobro se intentó
+reciclar esa columna para guardar un id de `comprobantes_venta` y **la base lo rechazó**:
+
+```
+insert or update on table "anticipos_proveedores" violates foreign key constraint
+"anticipos_proveedores_factura_id_fkey"
+```
+
+La FK hizo su trabajo: frenó el error en el momento en vez de dejar una fila apuntando a un uuid
+inexistente, que se habría descubierto meses después con números raros.
+
+```sql
+ALTER TABLE public.anticipos_proveedores
+  ADD COLUMN IF NOT EXISTS comprobante_venta_id uuid
+  REFERENCES msa.comprobantes_venta(id) ON DELETE SET NULL;
+
+COMMENT ON COLUMN public.anticipos_proveedores.comprobante_venta_id IS
+  'Factura de VENTA a la que se imputó este anticipo de cobro (tipo=''cobro''). Los anticipos de pago usan factura_id, que apunta a msa.comprobantes_arca.';
+
+CREATE INDEX IF NOT EXISTS idx_anticipos_comprobante_venta
+  ON public.anticipos_proveedores (comprobante_venta_id);
+```
+
+**✅ Corrido el 2026-08-18** por MCP (migración `anticipos_comprobante_venta_id`). Control: las dos
+FK conviven — `factura_id → msa.comprobantes_arca` y `comprobante_venta_id → msa.comprobantes_venta`.
+Aditivo, nullable, no toca ninguna fila existente ni el camino de compras. NO está en el backup.
+
+**Queda mejor que reciclar la columna**: es explícito (un pago usa una, un cobro la otra, sin
+adivinar por `tipo`) y la base garantiza que apunta a una venta real.
+⚠️ **"Sin vincular" ahora son DOS columnas**: toda consulta que busque anticipos pendientes tiene
+que pedir `factura_id IS NULL AND comprobante_venta_id IS NULL`, o los cobros imputados
+parcialmente se reclaman para siempre.
+
 ### **2026-08-13: Subdiario IVA Ventas para PAM y MA**
 
 Pedido del usuario: *"MA tendrá su subdiario de compras y ventas, como PAM también"*. Compras ya

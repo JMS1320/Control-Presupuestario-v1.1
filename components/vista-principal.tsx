@@ -97,8 +97,12 @@ export function VistaPrincipal() {
         // `tipo` va en el SELECT y NO se filtra: los anticipos de COBRO también hay que
         // reclamarlos. Con `.eq('tipo','pago')` quedaban invisibles acá y sin botón en Cash Flow,
         // o sea sin ninguna puerta de entrada (el de BALLESTER llevaba 4 meses colgado).
-        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado, tipo')
+        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, comprobante_venta_id, descripcion, estado, tipo')
+        // Sin vincular = sin NINGUNA de las dos columnas de vínculo. Los pagos usan `factura_id`
+        // (FK a compras) y los cobros `comprobante_venta_id` (FK a ventas). Mirando sólo la
+        // primera, un cobro imputado parcialmente seguía reclamándose acá para siempre.
         .is('factura_id', null)
+        .is('comprobante_venta_id', null)
         .neq('estado', 'vinculado')
         .neq('estado', 'externo')
         .order('fecha_pago', { ascending: false })

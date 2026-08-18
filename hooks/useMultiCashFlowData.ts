@@ -743,15 +743,17 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const [{ data: retenciones }, { data: anticiposCobro }] = await Promise.all([
           supabase.schema('msa').from('retenciones_recibidas')
             .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
+          // Por `comprobante_venta_id`, la columna propia de los cobros: `factura_id` tiene FK a
+          // `msa.comprobantes_arca` y nunca puede contener una venta.
           supabase.from('anticipos_proveedores')
-            .select('factura_id, monto').eq('tipo', 'cobro').in('factura_id', idsVentas),
+            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
         ])
         const sumar = (id: string | null, monto: any) => {
           if (!id) return
           imputadoPorComp.set(id, (imputadoPorComp.get(id) || 0) + (Number(monto) || 0))
         }
         ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
-        ;(anticiposCobro || []).forEach((a: any) => sumar(a.factura_id, a.monto))
+        ;(anticiposCobro || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto))
       }
 
       // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).

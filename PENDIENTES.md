@@ -7305,9 +7305,23 @@ no hay herencia de SICORE (las retenciones son **sufridas** y ya viven vinculada
 `comprobantes_venta` no tiene `monto_a_abonar` donde escribir un saldo, y en el extracto el vínculo
 es `comprobante_venta_id`. El camino de compras quedó **intacto**.
 
-**Sin cambios de estructura**: se usa `factura_id` del anticipo, desambiguado por `tipo`. Verificado
-que no contamina compras — `chequearDependenciasFC` filtra por un uuid de `comprobantes_arca`, y un
-anticipo de cobro apunta a uno de `comprobantes_venta`: no matchea, no confunde.
+### 🐛 El vínculo NO podía ir en `factura_id` — corregido el mismo día
+
+Primero se reusó `factura_id` "sin cambios de estructura", supuestamente verificado. **Falso**: esa
+columna tiene `FOREIGN KEY (factura_id) REFERENCES msa.comprobantes_arca(id)`. Al vincular, la base
+tiró `violates foreign key constraint "anticipos_proveedores_factura_id_fkey"`.
+
+Se había verificado **quién lee** `factura_id`, no **qué restricciones tiene la columna** — una capa
+de menos, el mismo modo de falla que con `anticipos_proveedores.tipo`. La FK hizo su trabajo: frenó
+el error en el momento en vez de dejar un uuid colgado que apareciera meses después.
+
+Arreglado con columna propia `comprobante_venta_id` + su FK a `msa.comprobantes_venta` (DDL en
+`RECONSTRUCCION` § 2026-08-18). Queda **mejor** que reciclar: explícito, con integridad, y sin
+depender de `tipo` para saber a qué tabla apunta.
+
+⚠️ **"Sin vincular" ahora son dos columnas**: `factura_id IS NULL AND comprobante_venta_id IS NULL`.
+La alerta de inicio miraba sólo la primera, así que un cobro parcial se habría reclamado para
+siempre. Corregido.
 
 ### Verificado contra los datos reales antes de darlo por hecho
 
