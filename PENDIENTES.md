@@ -253,6 +253,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) |
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
+| **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
@@ -7271,16 +7272,62 @@ idea que ya funciona en ventas de hacienda: *presupuestada → confirmada → fi
    ⚠️ Y el campo de **cuenta contable** del costo se deja previsto desde el día 1 aunque arranque
    vacío (hoy se escribe a mano): agregarlo después cuesta el doble.
 
+### ✅ ETAPA 0 — hecha 2026-08-18: el motor ya es una función pura
+
+`calcularMargen(d: DatosMargen): MargenActividad[]` vive en **`lib/presupuesto/margen.ts`**;
+`panel-margen.tsx` (653 líneas) es sólo la cáscara que le arma los datos. **No hay nada que extraer.**
+
+**Y los 3 overrides del caso de uso YA son parámetros de entrada:**
+
+| Override | Dónde entra |
+|---|---|
+| Cabezas | `DatosMargen.lotes[].cabezas` |
+| Hectáreas | `DatosMargen.hasPorActividad[actividad]` |
+| Monto del insumo | `DatosMargen.costos[].monto` |
+
+O sea: **el escenario no toca el motor.** Es armar el mismo `DatosMargen` con los overrides aplicados
+y llamar a la misma función. El test del escenario vacío pasa a ser cierto **por construcción**.
+
+**La etapa 3 casi desaparece:** `LineaMargen` ya trae `total`, `porHa` y `porCabeza`, y
+`MargenActividad` ya trae `margenPorHa`. Las dos columnas ya existen.
+
+**El trabajo grande pasó a ser la UI, no el cálculo.**
+
+### Dos cosas que la etapa 0 destapó — una era error mío, la otra un bug real
+
+**1. ✅ El divisor YA era existencia inicial — no había nada que cambiar.**
+Primero se afirmó que `margen.ts:661` inflaba el costo por cabeza al dividir por las cabezas
+vendidas. **Era una lectura equivocada.** `pct_mortandad` **no se aplica en ningún punto del
+margen**: sólo en `lib/productivo/racion.ts` (la ración) y en `analisis-productivo.tsx` (engorde,
+otra pantalla). En `calcularMargen`, `cabezasTotal` es la suma de cabezas de los lotes de la
+actividad, sin descontar mortandad → **eso ya es la existencia inicial**, que es el criterio que
+pidió el usuario. Y el análisis de engorde lo dice en su comentario: *"la ración de cada etapa usa
+la cantidad de INICIO"*. El criterio ya era consistente en el proyecto.
+
+**2. 🐛 ARREGLADO — el margen ignoraba el ajuste manual de cabezas.**
+`panel-margen.tsx:181` hacía `cabezas: Number(l.cantidad_calculada ?? l.cantidad)` — **prefería el
+calculado**. Verificado en `panel-lotes-hacienda.tsx:231-234` y el cartel de la línea 399:
+**`cantidad` es el valor con el ajuste a mano y `cantidad_calculada` es lo que dio la cuenta.**
+
+Efecto: corregías un lote de 200 a 195, en **Lotes** veías 195 con el cartel *"ajustado a mano, el
+cálculo da 200"*, y el **Margen facturaba 200**. No era sólo el divisor: la venta se calcula
+`cabezas × peso × precio`, así que eran **5 animales de ingreso inventado** (~$3 M con un ternero de
+200 kg a $3.000/kg). Contra `CLAUDE.md` § *Default del dato real, siempre editable*.
+
+Arreglado dando vuelta la precedencia. Chequeado que no hubiera otra ocurrencia del mismo patrón.
+**No mueve ningún número hoy**: de 5 lotes, ninguno tiene ajuste manual — era un bug **latente**,
+que aparecía la primera vez que se corrigiera un lote a mano.
+
 ### 📋 Plan por etapas
-1. **El escenario como dimensión de Márgenes** — selector *Real · Escenario A · Escenario B*. Mismo
-   motor; sin overrides tiene que dar **exactamente** lo mismo que hoy (ése es el test).
-2. **Los overrides del caso de uso**: cabezas, hectáreas por actividad, monto de insumo.
-3. **Columnas por cabeza y por tropa**, dividiendo por existencia inicial.
-4. **Enganche desde Historial de Pesadas**: "guardar como escenario" — no calcula nada nuevo, manda
-   al motor.
+0. ✅ **Entender el motor** — hecho, ver arriba.
+1. **El escenario como dimensión de Márgenes** — 2 tablas + selector *Real · Escenario A · B*.
+2. **Los overrides del caso de uso**: se aplican al armar `DatosMargen`; el motor no se toca.
+3. ~~El divisor por existencia inicial~~ — **ya estaba bien** (punto 1 de arriba). Las columnas
+   `porHa` / `porCabeza` también existen. **Esta etapa desapareció.**
+4. **Enganche desde Historial de Pesadas**: "guardar como escenario".
 5. **Comparar escenarios** y, opcionalmente, promover uno a presupuesto.
 
-**Estado: sólo diseño, 0 código.** El usuario pidió pensar y proponer.
+**Estado: diseño + etapa 0. 0 código de la feature.**
 
 ---
 

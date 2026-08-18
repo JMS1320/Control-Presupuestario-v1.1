@@ -178,7 +178,12 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
 
       const lotesOut: LoteVenta[] = ((lotes.data || []) as any[]).map(l => ({
         categoria: String(l.categoria),
-        cabezas: Number(l.cantidad_calculada ?? l.cantidad) || 0,
+        // `cantidad` MANDA: es el valor con el ajuste a mano. `cantidad_calculada` es lo que dio
+        // la cuenta automática y sólo se usa si no hay ajuste.
+        // Estaba al revés y el margen ignoraba la corrección manual: en Lotes veías 195 con el
+        // cartel "ajustado a mano, el cálculo da 200" y el margen facturaba 200 — 5 animales de
+        // ingreso inventado. Ver CLAUDE.md § Default del dato real, siempre editable.
+        cabezas: Number(l.cantidad ?? l.cantidad_calculada) || 0,
         peso_base_kg: Number(l.peso_base_kg) || 0,
         ganancia_diaria_kg: Number(l.ganancia_diaria_kg) || 0,
         fecha_disponible: l.fecha_disponible, fecha_peso: l.fecha_peso,
