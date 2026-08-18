@@ -334,7 +334,12 @@ npm test                             # tests
 ---
 
 ## 📊 Datos críticos
-- **Empresas / CUITs:** MSA `30617786016` · PAM `20044390222` · MA (schema `ma`).
+- **Empresas / CUITs:** MSA `30617786016` (MARTINEZ SOBRADO AGRO SRL) · PAM `20044390222`
+  (SUCESION DE PLACIDO ALBERTO MARTINEZ) · MA `27066824611` (MERCEDES ARECO).
+  Para encabezados de reportes salen de `DATOS_FISCALES` en `lib/empresas.ts` — **nunca
+  hardcodear**: el Libro IVA de PAM y MA salía con la razón social y el CUIT de MSA impresos.
+- **MA y PAM NO están inscriptas en IVA** y facturan sólo arrendamiento (Fac C): su "Libro IVA
+  Ventas" es en realidad un registro de ventas. Ver `PENDIENTES.md` § A-DEC-02.
 - **Schemas BD:** `public`, `msa`, `pam`, `ma`, `productivo`, `sueldos`. Detalle → `ARQUITECTURA-BD.md`.
 - **Env vars:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - **Branches:** `main` (prod, auto-deploy Vercel) · `desarrollo` (trabajo). Testing por preview de Vercel.

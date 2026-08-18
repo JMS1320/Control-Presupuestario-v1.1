@@ -257,7 +257,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) |
 | **P-35** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-35](#p-35) |
 | P-36 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-35](#p-35) |
-| A-TEST-32 | 🔴 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — el wizard sólo buscaba facturas de compra, así que los anticipos `tipo='cobro'` quedaban colgados para siempre (BALLESTER llevaba 4 meses). Ahora N cobros contra una factura, con el saldo recalculado. `MANUAL-USO.md` § Cobrar una factura de venta | → [A-TEST-32](#a-test-32) |
+| A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) |
+| A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
@@ -7332,6 +7333,44 @@ siempre. Corregido.
 | **Saldo a cobrar** | **$71.611.134** |
 | − Anticipo de cobro cargado (40 % exacto) | $31.305.120 |
 | **Saldo tras vincular** | **$40.306.014** ← la 2ª transferencia |
+
+### 🧾 El cartel del wizard no dejaba recomponer la cuenta
+
+El usuario, probando: *"78MM − 31MM no es 40MM, omite la info de los pagos vía las retenciones que
+está descontado pero no se muestra"*. Tenía razón: el paso 1 mostraba `Total factura $78.262.800`
+− `Anticipo $31.305.120` = `Saldo $40.306.014`, y esa resta **no cierra** (da 46.957.680). Los
+$6.651.666 de retenciones **se descontaban** (el saldo sale del neto) pero no tenían renglón.
+Un número que no se puede recomponer mirándolo es un número en el que no se confía.
+
+Se agregó la línea **"Retenciones y cobros previos"** en los dos pasos, calculada como
+`imp_total − monto_a_abonar`. En el segundo cobro ese renglón incluye también al primero.
+Y se sacó del encabezado el `🏛️ Retención: $0,00`: el SICORE se practica **al pagar**, en un cobro
+no aplica y mostrarlo en cero confunde.
+
+### ✅ TESTEADO por el usuario 2026-08-18 — *"quedó perfecto"*
+
+Verificado en la base: el anticipo de Sanpa quedó `estado='parcial'` con
+`comprobante_venta_id → 00010-00000021` y `factura_id` en null, como corresponde.
+
+**Falta probar todavía:** el **segundo** cobro ($40.306.014) que cierra la factura y la deja en
+`cobrada`, y el caso A completo (anticipo que cubre el total de una sola vez).
+
+### 🔴 Hallazgo: hay $134,1 M de cobros esperando este vínculo
+
+Al verificar quedó a la vista cuánto se había acumulado por no poder imputar cobros:
+
+| Cliente | Monto | Estado |
+|---|---|---|
+| Pedro Genta y Cia SA | $116.396.073,85 | pendiente_vincular |
+| Pedro Genta y Cia SA | $8.000.000 | pendiente_vincular |
+| Pedro Genta y Cia SA | $5.000.000 | parcial (desde mayo) |
+| Pedro Genta y Cia SA | $2.100.000 | pendiente_vincular |
+| BALLESTER Paulo — *"Venta 4 Vacas"* | $2.625.480 | pendiente_vincular (desde el 30/04) |
+
+**$134.121.553,85** de plata que entró y nunca se imputó a una factura — o sea, contada dos veces en
+el Cash Flow todo este tiempo ([A-BUG-27](#a-bug-27)). Los de Pedro Genta son ganadería: en
+`ventas_unificadas` hay una venta suya de $88.988.382 **sin CUIT en el contrato**, así que además
+no van a matchear por CUIT hasta cargarlo.
 
 **Testear** → `MANUAL-USO.md` § *Cobrar una factura de venta*.
 

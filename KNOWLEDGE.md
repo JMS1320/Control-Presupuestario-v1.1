@@ -52,6 +52,24 @@
 - **Templates funcionalidades avanzadas** - Replicación anual, ajuste inflación `#templates #avanzado #pendiente`
 - **Expansión PAM** - Replicar infraestructura MSA `#pam #expansion #pendiente`
 
+## ⚠️ `npm run build` NO valida tipos — usar `type-check:diff` `#build #tipos #2026-08-18`
+
+**Verificado el 2026-08-18**: el build imprimió `✓ Compiled successfully` con **2 errores de tipos
+adentro** (un rename dejó una referencia colgada en `useMultiCashFlowData.ts`). Los agarró
+`npm run type-check:diff`; el build no.
+
+**Consecuencia práctica:** "compila" no es evidencia de nada. Antes de decir que algo anda:
+
+```bash
+npm run type-check:diff    # compara POR ARCHIVO contra el baseline; sale 1 si alguno empeoró
+npm run build              # recién después, y para otra cosa
+```
+
+**Y aun con las dos en verde, la funcionalidad puede no estar alcanzable.** El mismo día se
+implementó la vinculación de anticipos de cobro con tipos y build OK, y el botón **no se dibujaba**
+porque dos condiciones filtraban por `tipo === 'pago'`. Compilar ≠ estar disponible: hay que llegar
+hasta el botón. Ver `PENDIENTES.md` § A-TEST-32.
+
 ## ⚠️ **REGLA IMPORTANTE NUEVA ETAPA:**
 **Al retomar objetivos**: Siempre reconfirmar qué está "terminado" vs "pendiente" para evitar complicaciones. El estado puede haber cambiado desde última documentación.
 

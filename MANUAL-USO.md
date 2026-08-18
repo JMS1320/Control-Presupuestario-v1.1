@@ -486,7 +486,7 @@ saldo impago inexistente.
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
-### 💵 Cobrar una factura de venta (1 o varias transferencias) 🟡 (2026-08-18, sin testear)
+### 💵 Cobrar una factura de venta (1 o varias transferencias) ✅ (2026-08-18, el 1er cobro testeado OK)
 
 **Sirve para registrar el cobro sin tener que conciliar todo el banco.** Es el espejo de los
 anticipos de compras.
@@ -506,13 +506,26 @@ El primero deja la factura en saldo parcial; el segundo la cierra y pasa a **cob
 > ⚠️ Las **retenciones** van por otro lado y **antes**: Ingresos → Comprobantes → ícono **%**.
 > Ya descuentan del saldo, así que no las cargues como cobro o vas a contar dos veces.
 
-**Cómo probarlo — con el caso real de Sanpa:**
+**El cartel del wizard tiene que cerrar solo.** Antes de confirmar, la cuenta se lee de arriba abajo:
+
+```
+Total factura                    $78.262.800
+Retenciones y cobros previos   − $6.651.666     ← retenciones ya cargadas + cobros anteriores
+Cobro aplicado                 − $31.305.120
+Saldo pendiente                  $40.306.014
+```
+
+Si esa resta no cierra, **cancelá**: hay algo que el cartel no te está mostrando.
+
+**Cómo se probó (caso Sanpa) — ✅ el 1er cobro anduvo OK:**
 1. Ingresos → MSA → Comprobantes: la factura **00010-00000021** es de **$78.262.800**.
-2. Ya tiene 2 retenciones cargadas (Ganancias $4.695.096 + IIBB $1.956.570 = **$6.651.666**).
-3. En Anticipos existentes está el cobro de **$31.305.120** en *pendiente_vincular*. Vinculalo a esa factura.
-4. Tiene que quedar **saldo $40.306.014** y el anticipo en **parcial**.
-5. Cargá el segundo cobro por **$40.306.014**, vinculalo → la factura pasa a **cobrada** y el saldo a 0.
-6. ⚠️ Chequeá que el wizard te ofrezca **facturas de venta**, no de compra. Si te muestra facturas de proveedor, el tipo del anticipo no está llegando.
+2. Ya tenía 2 retenciones cargadas (Ganancias $4.695.096 + IIBB $1.956.570 = **$6.651.666**).
+3. Cash Flow → Anticipos existentes: el cobro de **$31.305.120** → **Vincular**.
+4. Quedó **saldo $40.306.014** y el anticipo en **parcial**. ✅
+5. En el Cash Flow, la fila de la factura bajó de $71.611.134 a **$40.306.014** — deja de contarse dos veces.
+
+**🟡 Falta probar:** el **segundo cobro** por $40.306.014, que tiene que dejar la factura en
+**cobrada** con saldo 0; y el **caso A** (un cobro que cubre el total de una sola vez).
 
 ### 🧭 Ingresos — navegación 🟡 (2026-08-18, sin testear)
 
