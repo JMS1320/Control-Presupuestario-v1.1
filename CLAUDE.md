@@ -51,7 +51,98 @@ presentaciones). Cuando se acerca un evento, lo que ese evento necesita **pasa a
 
 ---
 
-## 🤖 REGLAS AUTOMÁTICAS
+## 🤖 REGLAS — LAS DOS SECCIONES OBLIGAN IGUAL
+
+> **La división es por DESTINO, no por jerarquía.** Dice a qué archivo maestro pertenece cada
+> regla — nada más. **Ninguna de las dos es opcional ni secundaria.**
+>
+> ⚠️ **El modo de falla de este archivo es leer las protocolares y saltear las específicas.**
+> Va justo al revés de lo que conviene: las protocolares son buenas prácticas que cualquiera
+> intuye a medias; **las específicas son las que NADIE puede inferir** — que las contrapartes van
+> a `public.proveedores` o que un template necesita su `categ` en `cuentas_contables` no se
+> deduce de ningún lado. Por eso van **primero**.
+
+---
+
+### 📍 ESPECÍFICAS DE ESTE PROYECTO
+*No se promueven al maestro salvo que el usuario lo decida. Cada una nació de un caso concreto acá.*
+
+### 👥 Contrapartes — toda importación debe registrarlas (REGLA)
+**Si entra un comprobante, su contraparte tiene que quedar en `public.proveedores`.** Vale para
+**compras (proveedor) y ventas (cliente)**, y para **todas** las vías: importadores masivos y
+altas manuales.
+- Al importar/registrar: **upsert** — crear si no existe (`es_cliente` / `es_proveedor` según
+  corresponda), y si ya existe marcar el flag que falte.
+- ⚠️ **Nunca sólo `UPDATE`**: si la contraparte no existe, matchea 0 filas, **no falla**, y el
+  hueco queda invisible. Ese es exactamente el bug B-BUG-CLIENTE-NO-SE-CREA.
+- `es_proveedor = true` sólo si tiene factura de compra a su nombre; los clientes puros van
+  en `false`.
+- Motivo: `proveedores` es el maestro del que salen CBU, mails, mensajes de transferencia y el
+  pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
+  cobros y conciliación aguas abajo.
+
+### 🏷️ Templates — siempre con su macro categoría (REGLA)
+Al crear un template, su `categ` **tiene que existir en `public.cuentas_contables`** con el
+`tipo` cargado (`ingreso` / `egreso` / `financiero` / `distribucion` / `NO`).
+
+De ese `tipo` dependen dos cosas del Presupuesto:
+- **si se presupuesta**: lo `financiero` (colocaciones, transferencias entre cuentas propias,
+  pago de tarjeta) no se proyecta, porque la plata no sale de la empresa;
+- **dónde aparece** cuando la grilla se ordena por la estructura del dashboard.
+
+Un template cuya categoría no está en el plan de cuentas se asume gasto y queda sin ubicación;
+el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
+fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
+
+⚠️ **Hoy las pantallas de alta NO lo validan** y por eso hay 23 categorías fuera del plan: el
+wizard ofrece las categorías de los templates existentes, no las del plan (ver `PENDIENTES.md`
+§ C-26). Al crear o clonar un template, chequear a mano que su `categ` exista en
+`cuentas_contables`.
+
+### 💰 Convención Inputs Monetarios (es-AR) — OBLIGATORIO
+Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
+
+```tsx
+// Input
+<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
+
+// Al guardar — parsear aceptando coma como decimal y punto como miles
+parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
+
+// Al pre-cargar un valor numérico existente en el input
+numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// 1234567.89 → "1.234.567,89"
+```
+- `type="text"` siempre (nunca `type="number"` para montos).
+- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`.
+- Filtros de monto: también `.replace(/\./g, '').replace(',', '.')` antes del `parseFloat`.
+
+### 🎚️ Default del dato real, siempre editable (REGLA)
+*Enunciada por el usuario 2026-08-18, **"para todo por lo general"** — no es de una feature.*
+
+> **Todo campo toma por default el dato real si existe, y se puede escribir a mano si no existe o
+> no se quiere usar.** Campo vacío = "usá el real". Campo lleno = "acá mando yo".
+
+- El valor puesto a mano es un **override (delta)**, **nunca una copia** de la fila. Copiar congela
+  el vínculo con el dato real: lo que no pisaste tiene que **mejorar solo** cuando mejora el origen.
+- Dejar el campo previsto **desde el día 1** aunque arranque vacío (ej.: la cuenta contable de un
+  costo que hoy se escribe a mano). Agregarlo después cuesta el doble.
+- Mostrar de dónde viene el valor cuando es automático, para que se note al pisarlo.
+
+**Motivo** (palabras del usuario): *"nos deja el diseño futuro desde hoy usando la data existente
+esté como esté"*. Sólo-manual duplica un dato que ya existe y los números dejan de coincidir;
+sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
+los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
+
+### 🔧 Git
+- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
+- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
+
+---
+
+### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
+*Viven también en el `CLAUDE_BASE.md` del usuario, fuera de este repo. Obligan igual que las de
+arriba: que sean portables no las hace genéricas ni negociables.*
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
@@ -78,24 +169,6 @@ enganchar algo nuevo con algo hecho hace meses. **Cuanto menos contexto haya, m�
 
 *Motivo: con 8 dimensiones, 14 módulos y 60+ memorias, el modo de falla real es rehacer algo ya
 resuelto o contradecir una decisión vieja sin enterarse.*
-
-### 💰 Convención Inputs Monetarios (es-AR) — OBLIGATORIO
-Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
-
-```tsx
-// Input
-<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
-
-// Al guardar — parsear aceptando coma como decimal y punto como miles
-parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
-
-// Al pre-cargar un valor numérico existente en el input
-numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-// 1234567.89 → "1.234.567,89"
-```
-- `type="text"` siempre (nunca `type="number"` para montos).
-- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`.
-- Filtros de monto: también `.replace(/\./g, '').replace(',', '.')` antes del `parseFloat`.
 
 ### 📚 Documentación — las 8 dimensiones (REGLA ABSOLUTA)
 *Decidido con el usuario 2026-08-02 → dossier [A-DOC-01](PENDIENTES.md#a-doc-01).*
@@ -156,38 +229,6 @@ vez), usando la tabla de arriba. Además de las 8:
 Al terminar de registrar, decir explícitamente **qué dimensiones se tocaron** (para que el usuario
 controle que no quedó nada desparramado).
 
-### 👥 Contrapartes — toda importación debe registrarlas (REGLA)
-**Si entra un comprobante, su contraparte tiene que quedar en `public.proveedores`.** Vale para
-**compras (proveedor) y ventas (cliente)**, y para **todas** las vías: importadores masivos y
-altas manuales.
-- Al importar/registrar: **upsert** — crear si no existe (`es_cliente` / `es_proveedor` según
-  corresponda), y si ya existe marcar el flag que falte.
-- ⚠️ **Nunca sólo `UPDATE`**: si la contraparte no existe, matchea 0 filas, **no falla**, y el
-  hueco queda invisible. Ese es exactamente el bug B-BUG-CLIENTE-NO-SE-CREA.
-- `es_proveedor = true` sólo si tiene factura de compra a su nombre; los clientes puros van
-  en `false`.
-- Motivo: `proveedores` es el maestro del que salen CBU, mails, mensajes de transferencia y el
-  pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
-  cobros y conciliación aguas abajo.
-
-### 🏷️ Templates — siempre con su macro categoría (REGLA)
-Al crear un template, su `categ` **tiene que existir en `public.cuentas_contables`** con el
-`tipo` cargado (`ingreso` / `egreso` / `financiero` / `distribucion` / `NO`).
-
-De ese `tipo` dependen dos cosas del Presupuesto:
-- **si se presupuesta**: lo `financiero` (colocaciones, transferencias entre cuentas propias,
-  pago de tarjeta) no se proyecta, porque la plata no sale de la empresa;
-- **dónde aparece** cuando la grilla se ordena por la estructura del dashboard.
-
-Un template cuya categoría no está en el plan de cuentas se asume gasto y queda sin ubicación;
-el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
-fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
-
-⚠️ **Hoy las pantallas de alta NO lo validan** y por eso hay 23 categorías fuera del plan: el
-wizard ofrece las categorías de los templates existentes, no las del plan (ver `PENDIENTES.md`
-§ C-26). Al crear o clonar un template, chequear a mano que su `categ` exista en
-`cuentas_contables`.
-
 ### 🛑 Datos — NUNCA modificar sin preguntar (REGLA ABSOLUTA)
 - **Prohibido** hacer `UPDATE` / `INSERT` / `DELETE` sobre **datos reales** (valores de filas) sin **preguntar al usuario primero**. Incluye "valores de prueba", diagnósticos, revertir, etc.
 - Aplica a la BD viva (MCP Supabase, SQL) y a cualquier dato del usuario. Para diagnosticar, **preguntar antes** y acordar qué tocar (o pedirle a él que lo haga desde la UI).
@@ -240,23 +281,6 @@ ese lugar afecte a todo lo que lo usa.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
 
-### 🎚️ Default del dato real, siempre editable (REGLA)
-*Enunciada por el usuario 2026-08-18, **"para todo por lo general"** — no es de una feature.*
-
-> **Todo campo toma por default el dato real si existe, y se puede escribir a mano si no existe o
-> no se quiere usar.** Campo vacío = "usá el real". Campo lleno = "acá mando yo".
-
-- El valor puesto a mano es un **override (delta)**, **nunca una copia** de la fila. Copiar congela
-  el vínculo con el dato real: lo que no pisaste tiene que **mejorar solo** cuando mejora el origen.
-- Dejar el campo previsto **desde el día 1** aunque arranque vacío (ej.: la cuenta contable de un
-  costo que hoy se escribe a mano). Agregarlo después cuesta el doble.
-- Mostrar de dónde viene el valor cuando es automático, para que se note al pisarlo.
-
-**Motivo** (palabras del usuario): *"nos deja el diseño futuro desde hoy usando la data existente
-esté como esté"*. Sólo-manual duplica un dato que ya existe y los números dejan de coincidir;
-sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
-los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
-
 ### 📝 Motivos, errores y testing (REGLA)
 - **Toda regla, decisión o pendiente lleva su motivo** (dónde duele, con el caso concreto que la
   originó). Motivo del motivo: el usuario prioriza con eso — *"las normas que tengan muchos
@@ -290,12 +314,24 @@ Y tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se us
 hacer**, que es cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
 pantalla no esté clara.
 
-### 📦 Para CLAUDE_BASE — cosas que sirven en TODOS los proyectos
+---
+
+### 📦 Para CLAUDE_BASE — la cola de candidatas a promover
 `CLAUDE_BASE.md` es la plantilla portable del usuario y **vive fuera de este repo**. Cuando
 aparece algo que no es propio de este proyecto sino que serviría para arrancar cualquiera, **se
 anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
 
+**Cómo se decide, ante la duda** *(criterio fijado 2026-08-18)*: **una regla dudosa se queda en
+ESPECÍFICAS** y se anota acá como candidata. El riesgo es asimétrico — una regla que queda local
+se promueve después gratis; una promovida por error **se mete en todos los proyectos y nadie se
+entera**. Promover es decisión del usuario, siempre.
+
 **Pendientes de pasar:**
+- **🎚️ Default del dato real, siempre editable** (2026-08-18) — ⚠️ **candidata a confirmar.** El
+  usuario la enunció *"para todo por lo general"*, pero después marcó que las reglas de esta tanda
+  eran específicas de acá. Quedó en ESPECÍFICAS hasta que él defina. Ver la § de arriba.
+- **💰 Convención Inputs Monetarios (es-AR)** — ⚠️ **candidata a confirmar.** Sirve en cualquier
+  proyecto argentino que maneje montos; si todos los del usuario lo son, va al maestro.
 - **📝 Notas del usuario desde la app** (2026-08-02) — un botón fijo para dejar notas *en el
   contexto donde se le ocurren*. Lo valioso no es la nota: es el contexto que se captura solo
   (pantalla, componente, registro abierto, filtros). Una nota es una **grabación de N capturas**
@@ -311,12 +347,6 @@ anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
   la regla de contexto, y la que más cuesta. Ver la § de arriba. Portable: en cualquier proyecto
   con algo de historia, el costo de duplicar no es el trabajo repetido sino **los números que no
   coinciden entre dos pantallas**.
-
-### 🔧 Git
-- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
-- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
-
----
 
 ## ⚡ Comandos de desarrollo
 ```bash
