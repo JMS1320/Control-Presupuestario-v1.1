@@ -259,6 +259,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-36 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-35](#p-35) |
 | A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) |
 | A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) |
+| **P-37** | 🔴 | Feat | **Panel de pendientes dentro de la app** (solo admin), agrupados urgente / secundario / test, y accesibles desde la sección que les corresponde. **Viable**: el índice tiene 166 filas con formato parseable. ⚠️ La app **lee** `PENDIENTES.md`, no guarda copia | → [P-37](#p-37) |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
@@ -7373,6 +7374,50 @@ el Cash Flow todo este tiempo ([A-BUG-27](#a-bug-27)). Los de Pedro Genta son ga
 no van a matchear por CUIT hasta cargarlo.
 
 **Testear** → `MANUAL-USO.md` § *Cobrar una factura de venta*.
+
+---
+
+## <a id="p-37"></a>P-37 — Panel de pendientes dentro de la app (2026-08-18)
+
+**Pedido del usuario:** un apartado **sólo para admin** con todos los pendientes de desarrollo,
+agrupados (*"pendiente de test abajo de todo, pendiente secundario, pendiente urgente"*), que
+además puedan verse **desde la sección de la app que les corresponde**, con un **chequeo general de
+que todos estén accesibles desde algún lado**.
+
+### Viabilidad: alta
+
+El índice de este archivo ya es casi una tabla de datos: **166 filas** con formato consistente
+`| ID | Estado | Prio | Ítem | Verificación |`. La agrupación sale directo de lo que ya está:
+
+| Grupo | Se deriva de |
+|---|---|
+| **Urgente** | 🔴 + Prio `Alta` |
+| **Secundario** | Prio `Media` / `Baja` |
+| **Test** (abajo de todo) | ID `A-TEST-*` o tipo `Test` |
+| Hechos | ✅ / 🟡 — se ocultan o van a un histórico |
+
+### 🔒 La restricción que manda: la app LEE, no copia
+
+`PENDIENTES.md` es la **fuente única** (`CLAUDE.md` § dimensión 1). Meter los pendientes en una
+tabla de BD sería duplicarla y quedaría desincronizada al primer commit.
+→ **Un API route que lee y parsea el `.md` del repo.** En Vercel el archivo viaja en el bundle, así
+que el panel siempre muestra lo del commit deployado. Sin tablas nuevas, sin sincronización.
+
+### ⚠️ El riesgo real, y su mitigación
+
+Hoy el índice es **prosa disciplinada, no un formato**: 166 filas escritas a mano. Si el parser
+exige rigor, el día que una fila salga distinta **desaparece del panel sin avisar** — el modo de
+falla de siempre. Mitigación obligatoria: **el parser reporta lo que no pudo leer** y el panel
+muestra un bloque *"N filas no parseadas"*. Nunca se pierde nada en silencio.
+
+### 🕳️ Lo que falta para la segunda mitad del pedido
+
+Ubicar cada pendiente en su sección de la app —y chequear cobertura— necesita **un dato que hoy no
+existe: a qué pantalla pertenece**. Propuesta: una columna opcional `Pantalla` en el índice. Los que
+no la tengan salen en **"sin ubicar"**, que *es* el chequeo de cobertura que pidió el usuario: la
+lista de pendientes que no se pueden alcanzar desde ninguna parte de la app.
+
+**Estado: sólo evaluación, 0 código.**
 
 ---
 

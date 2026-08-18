@@ -54,68 +54,21 @@ presentaciones). Cuando se acerca un evento, lo que ese evento necesita **pasa a
 ## 🤖 REGLAS — LAS DOS SECCIONES OBLIGAN IGUAL
 
 > **La división es por DESTINO, no por jerarquía.** Dice a qué archivo maestro pertenece cada
-> regla — nada más. **Ninguna de las dos es opcional ni secundaria.**
+> regla — nada más. **Ninguna de las dos secciones es opcional ni secundaria.**
 >
-> ⚠️ **El modo de falla de este archivo es leer las protocolares y saltear las específicas.**
-> Va justo al revés de lo que conviene: las protocolares son buenas prácticas que cualquiera
-> intuye a medias; **las específicas son las que NADIE puede inferir** — que las contrapartes van
-> a `public.proveedores` o que un template necesita su `categ` en `cuentas_contables` no se
-> deduce de ningún lado. Por eso van **primero**.
+> **Casi todo es común**: el usuario mantiene un `CLAUDE_BASE.md` fuera de este repo con las
+> reglas que usa en todos sus proyectos. Acá hay **una sola regla exclusiva**, y va primero.
+>
+> ⚠️ **Que una regla sea portable no la hace genérica.** Varias de las comunes se instancian acá
+> con nombres propios — el maestro se lleva el principio, este archivo conserva el **anclaje**
+> (`📍 Acá:`). Leer el principio y saltear el anclaje es el modo de falla de este archivo: el
+> principio se intuye a medias, pero que las contrapartes van a `public.proveedores` **no lo
+> deduce nadie**.
 
 ---
 
-### 📍 ESPECÍFICAS DE ESTE PROYECTO
-*No se promueven al maestro salvo que el usuario lo decida. Cada una nació de un caso concreto acá.*
-
-### 👥 Contrapartes — toda importación debe registrarlas (REGLA)
-**Si entra un comprobante, su contraparte tiene que quedar en `public.proveedores`.** Vale para
-**compras (proveedor) y ventas (cliente)**, y para **todas** las vías: importadores masivos y
-altas manuales.
-- Al importar/registrar: **upsert** — crear si no existe (`es_cliente` / `es_proveedor` según
-  corresponda), y si ya existe marcar el flag que falte.
-- ⚠️ **Nunca sólo `UPDATE`**: si la contraparte no existe, matchea 0 filas, **no falla**, y el
-  hueco queda invisible. Ese es exactamente el bug B-BUG-CLIENTE-NO-SE-CREA.
-- `es_proveedor = true` sólo si tiene factura de compra a su nombre; los clientes puros van
-  en `false`.
-- Motivo: `proveedores` es el maestro del que salen CBU, mails, mensajes de transferencia y el
-  pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
-  cobros y conciliación aguas abajo.
-
-### 🏷️ Templates — siempre con su macro categoría (REGLA)
-Al crear un template, su `categ` **tiene que existir en `public.cuentas_contables`** con el
-`tipo` cargado (`ingreso` / `egreso` / `financiero` / `distribucion` / `NO`).
-
-De ese `tipo` dependen dos cosas del Presupuesto:
-- **si se presupuesta**: lo `financiero` (colocaciones, transferencias entre cuentas propias,
-  pago de tarjeta) no se proyecta, porque la plata no sale de la empresa;
-- **dónde aparece** cuando la grilla se ordena por la estructura del dashboard.
-
-Un template cuya categoría no está en el plan de cuentas se asume gasto y queda sin ubicación;
-el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
-fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
-
-⚠️ **Hoy las pantallas de alta NO lo validan** y por eso hay 23 categorías fuera del plan: el
-wizard ofrece las categorías de los templates existentes, no las del plan (ver `PENDIENTES.md`
-§ C-26). Al crear o clonar un template, chequear a mano que su `categ` exista en
-`cuentas_contables`.
-
-### 💰 Convención Inputs Monetarios (es-AR) — OBLIGATORIO
-Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
-
-```tsx
-// Input
-<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
-
-// Al guardar — parsear aceptando coma como decimal y punto como miles
-parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
-
-// Al pre-cargar un valor numérico existente en el input
-numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-// 1234567.89 → "1.234.567,89"
-```
-- `type="text"` siempre (nunca `type="number"` para montos).
-- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`.
-- Filtros de monto: también `.replace(/\./g, '').replace(',', '.')` antes del `parseFloat`.
+### 📍 ESPECÍFICA DE ESTE PROYECTO — **una sola**
+*Todo el resto es común a todos los proyectos del usuario. Ésta es la única que NO se promueve.*
 
 ### 🎚️ Default del dato real, siempre editable (REGLA)
 *Enunciada por el usuario 2026-08-18, **"para todo por lo general"** — no es de una feature.*
@@ -134,15 +87,89 @@ esté como esté"*. Sólo-manual duplica un dato que ya existe y los números de
 sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
 los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
 
-### 🔧 Git
-- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
-- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
-
 ---
 
 ### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
-*Viven también en el `CLAUDE_BASE.md` del usuario, fuera de este repo. Obligan igual que las de
-arriba: que sean portables no las hace genéricas ni negociables.*
+*Viven también en el `CLAUDE_BASE.md` del usuario, fuera de este repo. Obligan igual que la de
+arriba.*
+
+> 🔗 **Algunas llevan un ANCLAJE de este proyecto** — el principio es portable, pero acá se
+> instancia con nombres propios (`public.proveedores`, `cuentas_contables`, es-AR, Vercel).
+> Está marcado con **`📍 Acá:`** dentro de cada regla. **Al pasar la regla al maestro se lleva el
+> principio y se deja el anclaje**; al leerla acá, el anclaje es tan obligatorio como el principio.
+
+### 👥 Contrapartes — toda importación debe registrarlas (REGLA)
+> **Principio (portable):** si entra un comprobante, su contraparte tiene que quedar en el maestro
+> de contrapartes. **Upsert, nunca sólo `UPDATE`.**
+> **📍 Acá:** el maestro es **`public.proveedores`**, con los flags `es_cliente` / `es_proveedor`.
+
+**Si entra un comprobante, su contraparte tiene que quedar en `public.proveedores`.** Vale para
+**compras (proveedor) y ventas (cliente)**, y para **todas** las vías: importadores masivos y
+altas manuales.
+- Al importar/registrar: **upsert** — crear si no existe (`es_cliente` / `es_proveedor` según
+  corresponda), y si ya existe marcar el flag que falte.
+- ⚠️ **Nunca sólo `UPDATE`**: si la contraparte no existe, matchea 0 filas, **no falla**, y el
+  hueco queda invisible. Ese es exactamente el bug B-BUG-CLIENTE-NO-SE-CREA.
+- `es_proveedor = true` sólo si tiene factura de compra a su nombre; los clientes puros van
+  en `false`.
+- Motivo: `proveedores` es el maestro del que salen CBU, mails, mensajes de transferencia y el
+  pre-filtro por CUIT del motor. Un comprobante cuya contraparte no está ahí rompe pagos,
+  cobros y conciliación aguas abajo.
+
+### 🏷️ Templates — siempre con su macro categoría (REGLA)
+> **Principio (portable):** una categoría no se usa si no existe antes en su maestro, con su
+> clasificación cargada. Si falta, el sistema asume un default y el número queda mal **sin avisar**.
+> **📍 Acá:** el maestro es **`public.cuentas_contables`** y la clasificación es la columna `tipo`.
+> Ésta es la regla con **más contenido propio de este dominio**: al pasarla al maestro queda casi
+> sólo el principio.
+
+Al crear un template, su `categ` **tiene que existir en `public.cuentas_contables`** con el
+`tipo` cargado (`ingreso` / `egreso` / `financiero` / `distribucion` / `NO`).
+
+De ese `tipo` dependen dos cosas del Presupuesto:
+- **si se presupuesta**: lo `financiero` (colocaciones, transferencias entre cuentas propias,
+  pago de tarjeta) no se proyecta, porque la plata no sale de la empresa;
+- **dónde aparece** cuando la grilla se ordena por la estructura del dashboard.
+
+Un template cuya categoría no está en el plan de cuentas se asume gasto y queda sin ubicación;
+el panel de métodos lo marca *"sin clasificar"*. Motivo: presupuestar una colocación como si
+fuera gasto infla el egreso con plata que sigue siendo de la empresa (el FCI daba ~$135 M).
+
+⚠️ **Hoy las pantallas de alta NO lo validan** y por eso hay 23 categorías fuera del plan: el
+wizard ofrece las categorías de los templates existentes, no las del plan (ver `PENDIENTES.md`
+§ C-26). Al crear o clonar un template, chequear a mano que su `categ` exista en
+`cuentas_contables`.
+
+### 💰 Convención Inputs Monetarios (es-AR) — OBLIGATORIO
+> **Principio (portable):** los montos se ingresan **como texto** en el formato local, nunca con
+> `type="number"`, y se parsean al guardar.
+> **📍 Acá:** el formato local es **es-AR** (coma decimal, punto de miles).
+
+Todo campo de texto donde el usuario ingrese un monto debe seguir este patrón:
+
+```tsx
+// Input
+<Input type="text" placeholder="0,00" value={valor} onChange={e => setValor(e.target.value)} />
+
+// Al guardar — parsear aceptando coma como decimal y punto como miles
+parseFloat(String(valor).replace(/\./g, '').replace(',', '.')) || 0
+
+// Al pre-cargar un valor numérico existente en el input
+numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// 1234567.89 → "1.234.567,89"
+```
+- `type="text"` siempre (nunca `type="number"` para montos).
+- Display en tabla: `numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })`.
+- Filtros de monto: también `.replace(/\./g, '').replace(',', '.')` antes del `parseFloat`.
+
+### 🔧 Git
+> **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
+> merge lo autoriza el usuario **después** de confirmar el testing.
+> **📍 Acá:** la rama de trabajo es **`desarrollo`** y la de producción **`main`**, con auto-deploy
+> de Vercel (por eso mergear = publicar).
+
+- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
+- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
@@ -322,16 +349,21 @@ aparece algo que no es propio de este proyecto sino que serviría para arrancar 
 anota acá** y el usuario lo pasa a su plantilla. Si no, se pierde.
 
 **Cómo se decide, ante la duda** *(criterio fijado 2026-08-18)*: **una regla dudosa se queda en
-ESPECÍFICAS** y se anota acá como candidata. El riesgo es asimétrico — una regla que queda local
+ESPECÍFICA** y se anota acá como candidata. El riesgo es asimétrico — una regla que queda local
 se promueve después gratis; una promovida por error **se mete en todos los proyectos y nadie se
 entera**. Promover es decisión del usuario, siempre.
 
-**Pendientes de pasar:**
-- **🎚️ Default del dato real, siempre editable** (2026-08-18) — ⚠️ **candidata a confirmar.** El
-  usuario la enunció *"para todo por lo general"*, pero después marcó que las reglas de esta tanda
-  eran específicas de acá. Quedó en ESPECÍFICAS hasta que él defina. Ver la § de arriba.
-- **💰 Convención Inputs Monetarios (es-AR)** — ⚠️ **candidata a confirmar.** Sirve en cualquier
-  proyecto argentino que maneje montos; si todos los del usuario lo son, va al maestro.
+**Al promover una regla con anclaje**: se lleva el **principio** y se deja acá el `📍 Acá:`. El
+maestro no debe tener nombres de tabla de este proyecto.
+
+**Pendientes de pasar** *(las 8 sin anclaje van tal cual; éstas hay que separarlas primero)*:
+- **👥 Contrapartes** → principio: *toda importación registra su contraparte en el maestro; upsert,
+  nunca sólo `UPDATE`, porque un UPDATE que no matchea **no falla** y el hueco queda invisible*.
+- **🏷️ Categoría en su maestro** → principio: *una categoría no se usa si no existe antes, con su
+  clasificación cargada; si falta, el sistema asume un default y el número queda mal sin avisar*.
+- **💰 Inputs monetarios** → principio: *montos como texto en el formato local, nunca `type="number"`*.
+- **🔧 Git** → principio: *nunca commitear a producción; el merge lo autoriza el usuario después
+  del testing*.
 - **📝 Notas del usuario desde la app** (2026-08-02) — un botón fijo para dejar notas *en el
   contexto donde se le ocurren*. Lo valioso no es la nota: es el contexto que se captura solo
   (pantalla, componente, registro abierto, filtros). Una nota es una **grabación de N capturas**
