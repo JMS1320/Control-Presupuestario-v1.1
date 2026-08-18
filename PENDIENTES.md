@@ -254,6 +254,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) |
+| **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) |
+| **P-35** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-35](#p-35) |
+| P-36 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-35](#p-35) |
 | A-TEST-32 | 🔴 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — el wizard sólo buscaba facturas de compra, así que los anticipos `tipo='cobro'` quedaban colgados para siempre (BALLESTER llevaba 4 meses). Ahora N cobros contra una factura, con el saldo recalculado. `MANUAL-USO.md` § Cobrar una factura de venta | → [A-TEST-32](#a-test-32) |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
@@ -7207,6 +7210,66 @@ UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
 
 **Testear:** entrar a la pantalla de inicio. Tienen que salir **las dos** facturas de Sanpa: la de
 mayo (match por CUIT, normal) y la de julio en ámbar, diciendo que `30712200662` es inválido.
+
+---
+
+## <a id="a-bug-27"></a>A-BUG-27 — El Cash Flow contaba la misma plata tres veces (2026-08-18)
+
+**Detectado por una nota del usuario desde la app** (*"Anticipos de ventas. Ej Sanpa"*): *"antes de
+vincular el anticipo veo esto de Sanpa en cash flow. ¿es correcto?"*. No lo era.
+
+Para **un** cobro de $78.262.800, el Cash Flow proyectaba **$181.179.054** en 4 filas:
+
+| Fila | Monto | Qué es | Cómo deja de contar |
+|---|---|---|---|
+| VENTA sin factura — arrendamiento Rojas | $78.262.800 | la **fijación** | al decir "Sí" en la alerta de inicio (sube `facturado`) |
+| VENTA — FC 00010-00000021 | $71.611.134 | la **factura** de esa fijación | al pasar a `conciliado` |
+| ANTICIPO COBRO | $31.305.120 | la **1ª transferencia** | al vincularlo ([A-TEST-32](#a-test-32)) |
+| VENTA — FC 00010-00000020 | $95.715.830,32 | otra cosa: campaña 25/26 | — |
+
+**Las tres salidas existían y ninguna se había podido ejercer**: la de la fijación porque la alerta
+ofrecía la factura equivocada ([A-BUG-25](#a-bug-25), CUIT mal tipeado), la del anticipo porque no
+había botón ([A-TEST-32](#a-test-32)).
+
+### Lo que faltaba, y era del cambio del día anterior
+
+`mapearVentas` calculaba `imp_total − retenciones` y **no restaba los anticipos de cobro
+vinculados**. En compras eso no hace falta porque al vincular se reduce `monto_a_abonar` de la
+factura; **`comprobantes_venta` no tiene esa columna**, así que la factura seguía mostrando el neto
+completo incluso después de vincular. O sea que el doble conteo **sobrevivía a la vinculación**.
+
+Arreglado: el mapa pasa a llamarse `imputadoPorComp` y suma **retenciones + anticipos de cobro
+vinculados**, sea cual sea su estado (`parcial` o `vinculado`) — si está imputado a la factura, ya
+no es un ingreso pendiente de ella.
+
+Con los datos reales: la FC de julio pasa de mostrar **$71.611.134** a **$40.306.014** en cuanto se
+vincule el anticipo, que es exactamente la 2ª transferencia.
+
+⚠️ **`npm run build` dijo "Compiled successfully" con 2 errores de tipos adentro** (el rename dejó
+una referencia colgada). Lo agarró `type-check:diff`. Es el motivo por el que ese script existe.
+
+---
+
+## <a id="p-35"></a>P-35 / P-36 — Notas desde la app: las capturas llegan vacías (2026-08-18)
+
+Primer uso real de las notas (P-34) para reportar, y salieron **dos fallas de la herramienta misma**
+más un hallazgo:
+
+**P-35a — las capturas están vacías.** Las 3 filas de `notas_capturas` tienen `length(imagen) = 0`.
+El texto, la pantalla y la ruta sí se guardan. Sin la imagen, Claude contesta a ciegas: en la nota de
+Sanpa el usuario mencionó **4 filas** y sólo se pudieron deducir 3 leyendo el código — la cuarta
+(la fijación del arrendamiento) apareció recién cuando él avisó que faltaba una.
+
+**P-35b — con un modal abierto la herramienta no se puede usar.** Textual del usuario:
+*"lo único, si salen modales esto no lo puedo usar"*. Es el peor momento para perderla: los modales
+son justamente donde aparecen los errores que se quieren reportar.
+
+**P-36 — hallazgo de la nota "Fecha de pago"**: al pasar una factura de Longo de *pagar* a *pagado*,
+pregunta si se quiere cambiar la fecha **aunque `fecha_pago` ya sea la de hoy**. Confirmación
+innecesaria en el camino más frecuente.
+
+> 🔒 Recordatorio del protocolo: **una nota no es un pendiente, es bandeja de entrada.** Termina como
+> ítem con ID acá o descartada con motivo, y se marca `estado='leida'` con el `resultado`.
 
 ---
 

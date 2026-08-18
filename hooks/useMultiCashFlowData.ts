@@ -482,12 +482,16 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   }
 
   // Mapear ventas (comprobantes_venta 'a cobrar') a formato Cash Flow.
-  // El ingreso esperado en banco = imp_total − retenciones (las retenciones no entran al banco).
-  const mapearVentas = (comprobantes: any[], retencionesPorComp: Map<string, number>): CashFlowRow[] => {
+  //
+  // El ingreso que TODAVÍA se espera en banco:
+  //     imp_total − retenciones sufridas − anticipos de cobro ya vinculados
+  // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
+  // fila, así que si no se restan la misma plata se cuenta dos veces.
+  const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>): CashFlowRow[] => {
     return comprobantes.map(c => {
       const total = Number(c.imp_total) || 0
-      const retenciones = retencionesPorComp.get(c.id) || 0
-      const netoACobrar = total - retenciones
+      const imputado = imputadoPorComp.get(c.id) || 0
+      const netoACobrar = total - imputado
       return {
         id: c.id,
         origen: 'VENTA' as const,
@@ -501,7 +505,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         centro_costo: c.centro_costo || '',
         cuit_proveedor: c.cuit_cliente || '',
         nombre_proveedor: c.denominacion_cliente || '',
-        detalle: `Venta ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim() + (retenciones > 0 ? ` (neto: total ${total} − ret ${retenciones})` : ''),
+        detalle: `Venta ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
+          + (imputado > 0 ? ` (neto: total ${total} − ret/anticipos ${imputado})` : ''),
         debitos: 0,
         creditos: netoACobrar,   // Cobro = crédito (dinero entra al banco)
         saldo_cta_cte: 0,
@@ -725,17 +730,28 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       if (errorVentas) console.error('Error cargando ventas a cobrar:', errorVentas)
 
       const idsVentas = (ventasACobrar || []).map(v => v.id)
-      const retencionesPorComp = new Map<string, number>()
+      // Lo ya imputado a cada factura de venta: retenciones sufridas + anticipos de cobro
+      // vinculados. Las dos cosas se restan del ingreso que todavía se espera en banco.
+      //
+      // Los ANTICIPOS son el agregado 2026-08-18: sin esto la misma plata se contaba dos veces
+      // —el anticipo como "entró" y la factura como "me deben"— porque `comprobantes_venta` no
+      // tiene un `monto_a_abonar` que se reduzca al vincular, como sí pasa en compras.
+      // Se restan sea cual sea el estado del anticipo (`parcial` o `vinculado`): si está imputado
+      // a la factura, ya no es un ingreso pendiente de ella.
+      const imputadoPorComp = new Map<string, number>()
       if (idsVentas.length > 0) {
-        const { data: retenciones } = await supabase
-          .schema('msa')
-          .from('retenciones_recibidas')
-          .select('comprobante_venta_id, monto')
-          .in('comprobante_venta_id', idsVentas)
-        ;(retenciones || []).forEach((r: any) => {
-          if (!r.comprobante_venta_id) return
-          retencionesPorComp.set(r.comprobante_venta_id, (retencionesPorComp.get(r.comprobante_venta_id) || 0) + (Number(r.monto) || 0))
-        })
+        const [{ data: retenciones }, { data: anticiposCobro }] = await Promise.all([
+          supabase.schema('msa').from('retenciones_recibidas')
+            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
+          supabase.from('anticipos_proveedores')
+            .select('factura_id, monto').eq('tipo', 'cobro').in('factura_id', idsVentas),
+        ])
+        const sumar = (id: string | null, monto: any) => {
+          if (!id) return
+          imputadoPorComp.set(id, (imputadoPorComp.get(id) || 0) + (Number(monto) || 0))
+        }
+        ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
+        ;(anticiposCobro || []).forEach((a: any) => sumar(a.factura_id, a.monto))
       }
 
       // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).
@@ -823,7 +839,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
-      const filasVentas = mapearVentas(ventasACobrar || [], retencionesPorComp)
+      const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp)
       const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
       const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
