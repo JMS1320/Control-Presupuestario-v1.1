@@ -4299,7 +4299,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                                    a.estado === 'parcial' ? 'Parcial' :
                                    a.estado === 'externo' ? 'Externo' : 'Pendiente'}
                                 </Badge>
-                                {a.tipo === 'pago' && a.estado !== 'vinculado' && a.estado !== 'externo' && (
+                                {/* También para `cobro`: se vincula contra facturas de VENTA.
+                                    Antes la condición era `a.tipo === 'pago'` y los anticipos de
+                                    cobro no tenían botón, así que no había forma de imputarlos. */}
+                                {a.estado !== 'vinculado' && a.estado !== 'externo' && (
                                   <Button
                                     size="sm"
                                     variant="outline"

@@ -94,11 +94,13 @@ export function VistaPrincipal() {
     try {
       const { data: anticipos } = await supabase
         .from('anticipos_proveedores')
-        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado')
+        // `tipo` va en el SELECT y NO se filtra: los anticipos de COBRO también hay que
+        // reclamarlos. Con `.eq('tipo','pago')` quedaban invisibles acá y sin botón en Cash Flow,
+        // o sea sin ninguna puerta de entrada (el de BALLESTER llevaba 4 meses colgado).
+        .select('id, nombre_proveedor, cuit_proveedor, monto, monto_sicore, descuento_aplicado, sicore, tipo_sicore, fecha_pago, factura_id, descripcion, estado, tipo')
         .is('factura_id', null)
         .neq('estado', 'vinculado')
         .neq('estado', 'externo')
-        .eq('tipo', 'pago')
         .order('fecha_pago', { ascending: false })
 
       if (!anticipos || anticipos.length === 0) {
@@ -267,12 +269,16 @@ export function VistaPrincipal() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium text-gray-900">{anticipo.nombre_proveedor}</span>
                           <span className="text-xs text-gray-500">{anticipo.cuit_proveedor}</span>
-                          <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
-                            {fmt(anticipo.monto)} pagado
+                          {/* En un anticipo de COBRO la plata entró, no salió. */}
+                          <span className={`text-xs px-2 py-0.5 rounded ${anticipo.tipo === 'cobro' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                            {fmt(anticipo.monto)} {anticipo.tipo === 'cobro' ? 'cobrado' : 'pagado'}
                           </span>
+                          {/* El SICORE es la retención que practicamos al pagar: no aplica al cobrar. */}
+                          {anticipo.tipo !== 'cobro' && (
                           <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
                             Ret. {anticipo.sicore} — {fmt(anticipo.monto_sicore || 0)}
                           </span>
+                          )}
                           {anticipo.descuento_aplicado ? (
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
                               Desc. {fmt(anticipo.descuento_aplicado)}
@@ -280,7 +286,7 @@ export function VistaPrincipal() {
                           ) : null}
                         </div>
                         <div className="mt-1 text-xs text-gray-500">
-                          Pagado: {fmtFecha(anticipo.fecha_pago)}
+                          {anticipo.tipo === 'cobro' ? 'Cobrado' : 'Pagado'}: {fmtFecha(anticipo.fecha_pago)}
                           <span className="ml-2 text-blue-600">
                             <Link2 className="h-3 w-3 inline mr-0.5" />
                             {candidatos.length} factura{candidatos.length > 1 ? 's' : ''} pendiente{candidatos.length > 1 ? 's' : ''}
