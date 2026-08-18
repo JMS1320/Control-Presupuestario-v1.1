@@ -6,6 +6,12 @@ import { toast } from "sonner"
 
 // Anticipo vinculable — los campos que necesita la lógica de vinculación.
 // Cualquier registro de anticipos_proveedores con estos campos sirve.
+//
+// ⚠️ `anticipos_proveedores` guarda LAS DOS PUNTAS: la columna `tipo` distingue `pago` (a un
+// proveedor, contra `comprobantes_arca`) de `cobro` (de un cliente, contra `comprobantes_venta`).
+// El nombre de la tabla engaña. Hasta 2026-08-18 el wizard sólo buscaba facturas de compra, así
+// que los anticipos de cobro se creaban y quedaban colgados en `pendiente_vincular` para siempre
+// (el de BALLESTER "Venta 4 Vacas" llevaba 4 meses). Ver PENDIENTES § A-FEAT-26.
 export interface AnticipoVinculable {
   id: string
   nombre_proveedor: string
@@ -19,7 +25,12 @@ export interface AnticipoVinculable {
   factura_id: string | null
   descripcion: string | null
   nro_cuenta?: string | null
+  /** `pago` (default) = compras · `cobro` = ventas. Decide contra qué facturas se vincula. */
+  tipo?: 'pago' | 'cobro'
 }
+
+/** ¿Es un anticipo de cobro (ventas)? Todo lo que no lo sea se comporta como antes. */
+const esCobro = (a: { tipo?: string | null } | null | undefined) => a?.tipo === 'cobro'
 
 export interface FacturaCandidato {
   id: string
@@ -43,9 +54,23 @@ export interface CalcVinculacion {
 
 const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
 
-// Busca facturas ARCA pendientes (no pagadas/conciliadas) del CUIT dado.
-// Reutilizable desde Vista Principal y Cash Flow.
-export async function buscarFacturasCandidatas(cuit: string): Promise<FacturaCandidato[]> {
+/**
+ * Facturas candidatas del CUIT dado.
+ *
+ * @param tipo `pago` (default) → facturas de COMPRA pendientes · `cobro` → facturas de VENTA
+ *   pendientes de cobrar.
+ *
+ * En ventas, `monto_a_abonar` no es una columna: se calcula como
+ * **imp_total − retenciones recibidas ya vinculadas − anticipos de cobro ya vinculados**.
+ * Ése es el saldo real que falta que entre por banco, y es lo que hace que dos transferencias
+ * contra una misma factura funcionen: la segunda ve el saldo que dejó la primera.
+ */
+export async function buscarFacturasCandidatas(
+  cuit: string,
+  tipo: 'pago' | 'cobro' = 'pago',
+): Promise<FacturaCandidato[]> {
+  if (tipo === 'cobro') return buscarFacturasVentaCandidatas(cuit)
+
   const { data } = await supabase
     .schema('msa')
     .from('comprobantes_arca')
@@ -56,6 +81,55 @@ export async function buscarFacturasCandidatas(cuit: string): Promise<FacturaCan
     .order('fecha_emision', { ascending: false })
     .limit(10)
   return (data as FacturaCandidato[]) || []
+}
+
+async function buscarFacturasVentaCandidatas(cuit: string): Promise<FacturaCandidato[]> {
+  const { data } = await supabase
+    .schema('msa')
+    .from('comprobantes_venta')
+    .select('id, denominacion_cliente, cuit_cliente, imp_total, fecha_liquidacion, estado, nro_cuenta')
+    .eq('cuit_cliente', cuit)
+    .not('estado', 'in', '("cobrado","conciliado","anterior")')
+    .order('fecha_liquidacion', { ascending: false })
+    .limit(10)
+
+  const facturas = (data as any[]) || []
+  if (facturas.length === 0) return []
+  const ids = facturas.map(f => f.id)
+
+  // Lo ya imputado a cada factura: retenciones sufridas + anticipos de cobro vinculados.
+  const [{ data: rets }, { data: ants }] = await Promise.all([
+    supabase.schema('msa').from('retenciones_recibidas')
+      .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids),
+    supabase.from('anticipos_proveedores')
+      .select('factura_id, monto').eq('tipo', 'cobro').in('factura_id', ids),
+  ])
+
+  const imputado = new Map<string, number>()
+  const sumar = (id: string | null, monto: any) => {
+    if (!id) return
+    imputado.set(id, (imputado.get(id) || 0) + (Number(monto) || 0))
+  }
+  ;(rets || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
+  ;(ants || []).forEach((a: any) => sumar(a.factura_id, a.monto))
+
+  return facturas.map(f => {
+    const total = Number(f.imp_total) || 0
+    const saldo = total - (imputado.get(f.id) || 0)
+    return {
+      id: f.id,
+      // Se mapea al mismo shape que compras para no bifurcar el modal.
+      denominacion_emisor: f.denominacion_cliente || '',
+      cuit: f.cuit_cliente || '',
+      imp_total: total,
+      fecha_emision: f.fecha_liquidacion || '',
+      monto_a_abonar: Math.max(0, saldo),
+      // En ventas no hay SICORE propio de la factura: las retenciones sufridas ya están
+      // descontadas arriba y viven en `retenciones_recibidas`.
+      monto_sicore: null,
+      nro_cuenta: f.nro_cuenta ?? null,
+    }
+  }).filter(f => f.monto_a_abonar > 0.01)
 }
 
 const TABLAS_BANCARIAS: { tabla: string, schema?: string }[] = [
@@ -174,7 +248,10 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     const descuento = anticipoParaVincular.descuento_aplicado || 0
     // ¿La factura ya tiene SICORE propio? Entonces su monto_a_abonar ya está neto de retención.
     const sicoreFactura = fac.monto_sicore || 0
-    const facturaTieneSicorePropio = sicoreFactura > 0
+    // En VENTAS se trabaja siempre sobre el saldo (`monto_a_abonar` ya viene neto de retenciones
+    // sufridas y de los anticipos de cobro anteriores) — es la misma mecánica que una factura de
+    // compra con SICORE propio, así que se reusa esa rama en vez de escribir una tercera.
+    const facturaTieneSicorePropio = sicoreFactura > 0 || esCobro(anticipoParaVincular)
 
     let cubierto: boolean
     let saldo: number
@@ -210,6 +287,88 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
   // Paso 2 → Paso 1 (botón Atrás)
   const volverASeleccion = () => setPasoWizard('seleccion')
 
+  /**
+   * Vinculación de un anticipo de COBRO a una factura de venta.
+   *
+   * Más simple que compras, y a propósito:
+   *  · No hay herencia de SICORE — en ventas las retenciones son *sufridas*, ya viven en
+   *    `retenciones_recibidas` vinculadas a la factura, y `monto_a_abonar` ya llega neto de ellas.
+   *  · `comprobantes_venta` no tiene columna de saldo: el saldo se **recalcula** cada vez desde
+   *    imp_total − retenciones − anticipos vinculados. Por eso N cobros sobre una misma factura
+   *    funcionan sin guardar nada intermedio.
+   *  · En el extracto el vínculo es `comprobante_venta_id`.
+   */
+  const confirmarVinculacionCobro = async (fac: FacturaCandidato) => {
+    if (!anticipoParaVincular || !calculo) return
+    const cubierta = calculo.caso === 'A'
+
+    // 1) La factura: sólo cambia de estado cuando queda saldada.
+    const updateFac: Record<string, any> = {}
+    if (cubierta) {
+      updateFac.estado = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'cobrado'
+    }
+    // Si la factura no tiene cuenta contable y el anticipo sí, la hereda.
+    if (!fac.nro_cuenta && anticipoParaVincular.nro_cuenta) {
+      updateFac.nro_cuenta = anticipoParaVincular.nro_cuenta
+    }
+    if (Object.keys(updateFac).length > 0) {
+      const { error } = await supabase
+        .schema('msa').from('comprobantes_venta')
+        .update(updateFac).eq('id', fac.id)
+      if (error) throw error
+    }
+
+    // 2) El anticipo queda imputado. `parcial` = entró pero la factura sigue con saldo.
+    const { error: errAnt } = await supabase
+      .from('anticipos_proveedores')
+      .update({ factura_id: fac.id, estado: cubierta ? 'vinculado' : 'parcial' })
+      .eq('id', anticipoParaVincular.id)
+    if (errAnt) throw errAnt
+
+    // 3) El movimiento del extracto, si se encuentra: es un CRÉDITO (entró plata).
+    let extractoActualizado = false
+    for (const { tabla, schema } of TABLAS_BANCARIAS) {
+      const client = schema ? supabase.schema(schema) : supabase
+
+      let { data: movs } = await client
+        .from(tabla).select('id, creditos, estado')
+        .eq('anticipo_id', anticipoParaVincular.id).limit(1)
+
+      if (!movs || movs.length === 0) {
+        const { data: porCuit } = await client
+          .from(tabla).select('id, creditos, estado, leyendas_adicionales_2')
+          .eq('fecha', anticipoParaVincular.fecha_pago)
+          .eq('leyendas_adicionales_2', anticipoParaVincular.cuit_proveedor)
+          .limit(10)
+        const match = (porCuit || []).find((m: any) =>
+          Math.abs((parseFloat(m.creditos) || 0) - anticipoParaVincular.monto) < Math.max(1, anticipoParaVincular.monto * 0.03))
+        if (match) movs = [match]
+      }
+
+      if (movs && movs.length > 0) {
+        await client.from(tabla).update({
+          comprobante_venta_id: fac.id,
+          anticipo_id: anticipoParaVincular.id,
+          estado: 'conciliado',
+          motivo_revision: null,
+        }).eq('id', movs[0].id)
+        extractoActualizado = true
+        break
+      }
+    }
+
+    const msgExtracto = extractoActualizado
+      ? ' Extracto actualizado.'
+      : ' (no se encontró el movimiento en el extracto — se vincula igual)'
+    toast.success(cubierta
+      ? `Cobro vinculado. Factura saldada por ${fmt(anticipoParaVincular.monto)}.${msgExtracto}`
+      : `Cobro parcial vinculado. Saldo a cobrar: ${fmt(calculo.saldo)}.${msgExtracto}`)
+
+    setModalVinculacion(false)
+    setAnticipoParaVincular(null)
+    await onVinculado?.()
+  }
+
   // Confirmar vinculación definitiva
   const confirmarVinculacion = async () => {
     if (!anticipoParaVincular || !facturaElegida || !calculo) return
@@ -217,6 +376,15 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     try {
       const fac = candidatosActivos.find(f => f.id === facturaElegida)
       if (!fac) throw new Error('Factura no encontrada')
+
+      // ── VENTAS ────────────────────────────────────────────────────────────────
+      // Camino propio y corto: una factura de venta no hereda SICORE (las retenciones sufridas
+      // ya están cargadas aparte y vinculadas), no tiene `monto_a_abonar` donde guardar el saldo
+      // —se recalcula— y en el extracto el vínculo es `comprobante_venta_id`.
+      if (esCobro(anticipoParaVincular)) {
+        await confirmarVinculacionCobro(fac)
+        return
+      }
 
       // Datos comunes que la FC hereda del anticipo.
       // Si la factura YA tiene SICORE propio, NO se pisa con el del anticipo (se preserva).

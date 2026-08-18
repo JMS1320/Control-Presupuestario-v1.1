@@ -486,6 +486,34 @@ saldo impago inexistente.
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 💵 Cobrar una factura de venta (1 o varias transferencias) 🟡 (2026-08-18, sin testear)
+
+**Sirve para registrar el cobro sin tener que conciliar todo el banco.** Es el espejo de los
+anticipos de compras.
+
+**Dónde:** Cash Flow → **Anticipos** → *Nuevo* → elegí **Cobro** (no Pago) → cliente, monto, fecha.
+
+Al guardar, si hay facturas de venta pendientes de ese CUIT, te ofrece vincularlo ahí mismo. Si no,
+lo vinculás después desde **Anticipos existentes** o desde la alerta de la pantalla de inicio.
+
+**Con dos transferencias**: cargás **un anticipo de cobro por cada una** y los vinculás a la misma
+factura. El saldo se recalcula solo:
+
+> **saldo = Total de la factura − retenciones ya cargadas − cobros ya vinculados**
+
+El primero deja la factura en saldo parcial; el segundo la cierra y pasa a **cobrada**.
+
+> ⚠️ Las **retenciones** van por otro lado y **antes**: Ingresos → Comprobantes → ícono **%**.
+> Ya descuentan del saldo, así que no las cargues como cobro o vas a contar dos veces.
+
+**Cómo probarlo — con el caso real de Sanpa:**
+1. Ingresos → MSA → Comprobantes: la factura **00010-00000021** es de **$78.262.800**.
+2. Ya tiene 2 retenciones cargadas (Ganancias $4.695.096 + IIBB $1.956.570 = **$6.651.666**).
+3. En Anticipos existentes está el cobro de **$31.305.120** en *pendiente_vincular*. Vinculalo a esa factura.
+4. Tiene que quedar **saldo $40.306.014** y el anticipo en **parcial**.
+5. Cargá el segundo cobro por **$40.306.014**, vinculalo → la factura pasa a **cobrada** y el saldo a 0.
+6. ⚠️ Chequeá que el wizard te ofrezca **facturas de venta**, no de compra. Si te muestra facturas de proveedor, el tipo del anticipo no está llegando.
+
 ### 🧭 Ingresos — navegación 🟡 (2026-08-18, sin testear)
 
 **Ahora son 2 niveles: primero la EMPRESA, después la vista.** Antes eran 8 solapas planas con la

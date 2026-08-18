@@ -109,15 +109,19 @@ export function VistaPrincipal() {
 
       setAnticiposSinVincular(anticipos)
 
-      // Para cada CUIT único, buscar facturas pendientes
-      const cuitsUnicos = [...new Set(anticipos.map((a: any) => a.cuit_proveedor))]
+      // Para cada CUIT único, buscar facturas pendientes.
+      // La clave incluye el TIPO: un mismo CUIT puede ser proveedor y cliente a la vez, y las
+      // candidatas de un anticipo de cobro son facturas de venta, no de compra.
+      const claveCand = (a: any) => `${a.cuit_proveedor}|${a.tipo === 'cobro' ? 'cobro' : 'pago'}`
+      const clavesUnicas = [...new Set(anticipos.map(claveCand))]
       const candidatosPorAnticipo: Record<string, FacturaCandidato[]> = {}
 
       await Promise.all(
-        cuitsUnicos.map(async (cuit) => {
-          const facturas = await buscarFacturasCandidatas(cuit as string)
+        clavesUnicas.map(async (clave) => {
+          const [cuit, tipo] = (clave as string).split('|')
+          const facturas = await buscarFacturasCandidatas(cuit, tipo as 'pago' | 'cobro')
           anticipos
-            .filter((a: any) => a.cuit_proveedor === cuit)
+            .filter((a: any) => claveCand(a) === clave)
             .forEach((a: any) => { candidatosPorAnticipo[a.id] = facturas })
         })
       )

@@ -2360,12 +2360,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       await cargarDatos()
       await cargarAnticiposExistentes()
 
-      // Auto-ofrecer vinculación: si es anticipo de pago y hay facturas pendientes del mismo CUIT
-      if (esPago && anticipoNuevo) {
-        const candidatos = await buscarFacturasCandidatas(cuitLimpio)
+      // Auto-ofrecer vinculación si hay facturas pendientes del mismo CUIT.
+      // Vale para las DOS puntas: un anticipo de pago busca facturas de compra y uno de cobro
+      // busca facturas de venta. Antes sólo se ofrecía para `pago` y los de cobro quedaban
+      // colgados en "pendiente_vincular" sin que nada los reclamara.
+      if (anticipoNuevo) {
+        const tipoAnt = esPago ? 'pago' : 'cobro'
+        const candidatos = await buscarFacturasCandidatas(cuitLimpio, tipoAnt)
         if (candidatos.length > 0) {
           const ok = window.confirm(
-            `Se encontraron ${candidatos.length} factura(s) pendiente(s) de ${anticipoNuevo.nombre_proveedor}.\n\n¿Querés vincular este anticipo a una factura ahora?`
+            `Se encontraron ${candidatos.length} factura(s) pendiente(s) de ${anticipoNuevo.nombre_proveedor}.\n\n¿Querés vincular este ${esPago ? 'anticipo' : 'cobro'} a una factura ahora?`
           )
           if (ok) {
             setModalAnticipo(false)
@@ -2401,9 +2405,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Vincular un anticipo ya existente a una factura (desde la pestaña "Anticipos Existentes")
   const vincularDesdeExistente = async (a: any) => {
-    const candidatos = await buscarFacturasCandidatas(a.cuit_proveedor)
+    const candidatos = await buscarFacturasCandidatas(a.cuit_proveedor, a.tipo === 'cobro' ? 'cobro' : 'pago')
     if (candidatos.length === 0) {
-      toast.info(`No hay facturas pendientes de ${a.nombre_proveedor}`)
+      toast.info(a.tipo === 'cobro'
+        ? `No hay facturas de venta pendientes de cobro de ${a.nombre_proveedor}`
+        : `No hay facturas pendientes de ${a.nombre_proveedor}`)
       return
     }
     setModalAnticipo(false)

@@ -26,14 +26,18 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
     setCuentaPreferida,
   } = controller
 
+  // Un anticipo de COBRO se vincula contra facturas de venta: cambia el vocabulario
+  // (cobrada / por cobrar) y no hay herencia de SICORE.
+  const esCobro = anticipoParaVincular?.tipo === 'cobro'
+
   return (
     <Dialog open={modalVinculacion} onOpenChange={cerrarModal}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>🔗 Vincular Anticipo a Factura</DialogTitle>
+          <DialogTitle>🔗 {esCobro ? 'Vincular Cobro a Factura de Venta' : 'Vincular Anticipo a Factura'}</DialogTitle>
           <DialogDescription>
             {pasoWizard === 'seleccion'
-              ? 'Paso 1 — Seleccioná la factura correspondiente'
+              ? `Paso 1 — Seleccioná la factura ${esCobro ? 'de venta' : 'correspondiente'}`
               : pasoWizard === 'confirmacion'
                 ? 'Paso 2 — Confirmá la vinculación'
                 : 'Marcar como vinculado externamente'}
@@ -236,15 +240,17 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                       <div className="font-semibold text-gray-700">Lo que va a suceder:</div>
                       {calculo.caso === 'A' ? (
                         <>
-                          <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>{extractoInfo?.estado === 'conciliado' ? 'conciliada' : 'pagada'}</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
-                          <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Anticipo → <strong>vinculado</strong> (desaparece del cash flow)</div>
-                          <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE, retención y descripción heredados a la factura</div>
+                          <div className="flex items-start gap-1"><span className="text-green-600">✓</span> Factura → <strong>{extractoInfo?.estado === 'conciliado' ? 'conciliada' : (esCobro ? 'cobrada' : 'pagada')}</strong> con neto <strong>{fmt(calculo.neto_pagado)}</strong> al {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
+                          <div className="flex items-start gap-1"><span className="text-green-600">✓</span> {esCobro ? 'Cobro' : 'Anticipo'} → <strong>vinculado</strong> (desaparece del cash flow)</div>
+                          {/* En ventas no hay herencia de SICORE: las retenciones sufridas ya están
+                              cargadas aparte y vinculadas a la factura. */}
+                          {!esCobro && <div className="flex items-start gap-1"><span className="text-green-600">✓</span> SICORE, retención y descripción heredados a la factura</div>}
                         </>
                       ) : (
                         <>
-                          <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Factura → saldo <strong>{fmt(calculo.saldo)}</strong> por pagar</div>
-                          <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Anticipo → <strong>parcial</strong> (permanece en cash flow hasta conciliar en banco)</div>
-                          <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE, retención y descripción copiados a la factura</div>
+                          <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> Factura → saldo <strong>{fmt(calculo.saldo)}</strong> por {esCobro ? 'cobrar' : 'pagar'}</div>
+                          <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> {esCobro ? 'Cobro' : 'Anticipo'} → <strong>parcial</strong> (permanece en cash flow hasta conciliar en banco)</div>
+                          {!esCobro && <div className="flex items-start gap-1"><span className="text-blue-600">✓</span> SICORE, retención y descripción copiados a la factura</div>}
                         </>
                       )}
                       {/* Info extracto bancario */}

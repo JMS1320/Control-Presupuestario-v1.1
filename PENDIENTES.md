@@ -254,6 +254,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) |
+| A-TEST-32 | 🔴 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — el wizard sólo buscaba facturas de compra, así que los anticipos `tipo='cobro'` quedaban colgados para siempre (BALLESTER llevaba 4 meses). Ahora N cobros contra una factura, con el saldo recalculado. `MANUAL-USO.md` § Cobrar una factura de venta | → [A-TEST-32](#a-test-32) |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
@@ -7206,6 +7207,56 @@ UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
 
 **Testear:** entrar a la pantalla de inicio. Tienen que salir **las dos** facturas de Sanpa: la de
 mayo (match por CUIT, normal) y la de julio en ámbar, diciendo que `30712200662` es inválido.
+
+---
+
+## <a id="a-test-32"></a>A-TEST-32 — Anticipos de cobro vinculables a facturas de venta (2026-08-18)
+
+**El caso.** Una factura de venta cobrada con **2 transferencias + 2 retenciones**, y el usuario
+quería *"chequear que el cobro está ok sin conciliar todo el banco"*.
+
+**El hallazgo.** `anticipos_proveedores` guarda **las dos puntas**: la columna `tipo` distingue
+`pago` (compras) de `cobro` (ventas). El nombre de la tabla engaña. Cash Flow **ya sabía crear**
+anticipos de cobro (`vista-cash-flow.tsx`, radio Pago/Cobro), pero
+`hooks/useVinculacionAnticipo.ts` buscaba candidatas **sólo en `msa.comprobantes_arca`** — 5
+consultas, ninguna a ventas. Resultado: se creaban y **quedaban colgados en `pendiente_vincular`
+para siempre**. El de BALLESTER (*"Venta 4 Vacas"*, $2.625.480) llevaba **4 meses** así.
+
+⚠️ Nota de método: primero se afirmó que "no existen anticipos de cobro" tras buscar sólo **nombres
+de tabla** con `%anticipo%`. La columna `tipo` era lo que faltaba mirar. Lo corrigió el usuario.
+Es exactamente el modo de falla que previene `CLAUDE.md` § Regla de contexto: *"si la evidencia es
+floja, decirlo — no afirmar que algo no existe"*.
+
+### Cómo quedó
+
+`buscarFacturasCandidatas(cuit, tipo)` bifurca. Para `cobro` busca en `msa.comprobantes_venta` y
+calcula el saldo, **que no es una columna**:
+
+> **saldo = `imp_total` − retenciones recibidas vinculadas − anticipos de cobro vinculados**
+
+Recalcularlo en vez de guardarlo es lo que hace que **N cobros sobre una misma factura funcionen**:
+el segundo anticipo ve el saldo que dejó el primero, sin estado intermedio que mantener.
+
+La vinculación de cobro tiene camino propio (`confirmarVinculacionCobro`) porque en ventas:
+no hay herencia de SICORE (las retenciones son **sufridas** y ya viven vinculadas aparte),
+`comprobantes_venta` no tiene `monto_a_abonar` donde escribir un saldo, y en el extracto el vínculo
+es `comprobante_venta_id`. El camino de compras quedó **intacto**.
+
+**Sin cambios de estructura**: se usa `factura_id` del anticipo, desambiguado por `tipo`. Verificado
+que no contamina compras — `chequearDependenciasFC` filtra por un uuid de `comprobantes_arca`, y un
+anticipo de cobro apunta a uno de `comprobantes_venta`: no matchea, no confunde.
+
+### Verificado contra los datos reales antes de darlo por hecho
+
+| Factura Sanpa 00010-00000021 | |
+|---|---|
+| Total | $78.262.800,00 |
+| − Retención Ganancias + IIBB (ya vinculadas) | $6.651.666 |
+| **Saldo a cobrar** | **$71.611.134** |
+| − Anticipo de cobro cargado (40 % exacto) | $31.305.120 |
+| **Saldo tras vincular** | **$40.306.014** ← la 2ª transferencia |
+
+**Testear** → `MANUAL-USO.md` § *Cobrar una factura de venta*.
 
 ---
 
