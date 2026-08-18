@@ -50,10 +50,14 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
             {/* Resumen anticipo — siempre visible */}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm space-y-1">
               <div className="font-semibold">{anticipoParaVincular.nombre_proveedor}</div>
-              <div className="text-gray-500 text-xs">{anticipoParaVincular.cuit_proveedor} — pagado {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
+              <div className="text-gray-500 text-xs">{anticipoParaVincular.cuit_proveedor} — {esCobro ? 'cobrado' : 'pagado'} {fmtFecha(anticipoParaVincular.fecha_pago)}</div>
               <div className="flex gap-4 mt-1 flex-wrap">
-                <span>💰 Monto anticipo: <strong>{fmt(anticipoParaVincular.monto)}</strong></span>
+                <span>💰 Monto {esCobro ? 'cobrado' : 'anticipo'}: <strong>{fmt(anticipoParaVincular.monto)}</strong></span>
+                {/* El SICORE es la retención que practicamos AL PAGAR: en un cobro no aplica y
+                    mostrarlo en $0,00 sólo confunde (las retenciones sufridas van en la factura). */}
+                {!esCobro && (
                 <span className="text-red-700">🏛️ Retención: <strong>{fmt(anticipoParaVincular.monto_sicore || 0)}</strong> ({anticipoParaVincular.tipo_sicore} — {anticipoParaVincular.sicore})</span>
+                )}
                 {anticipoParaVincular.descuento_aplicado ? (
                   <span className="text-blue-700">📉 Descuento: <strong>{fmt(anticipoParaVincular.descuento_aplicado)}</strong></span>
                 ) : null}
@@ -122,6 +126,9 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                 {/* Preview cálculo inline */}
                 {calculo && facturaElegida && (() => {
                   const fac = candidatosActivos.find(f => f.id === facturaElegida)
+                  // Lo que ya estaba imputado a la factura antes de este cobro: la diferencia entre
+                  // el total y lo que quedaba por cobrar (retenciones sufridas + cobros anteriores).
+                  const imputadoPrevio = (fac?.imp_total || 0) - (fac?.monto_a_abonar || 0)
                   return (
                     <div className={`rounded-lg p-3 text-sm space-y-1 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'}`}>
                       <div className="font-semibold mb-2">
@@ -131,7 +138,14 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                         <span className="text-gray-600">Total factura:</span>
                         <span className="font-medium">{fmt(fac?.imp_total || 0)}</span>
                         {calculo.sicoreFactura > 0 && (<><span className="text-gray-600">SICORE factura:</span><span className="font-medium text-red-700">− {fmt(calculo.sicoreFactura)}</span></>)}
-                        <span className="text-gray-600">Anticipo aplicado:</span>
+                        {/* En ventas, entre el total y el saldo hay retenciones sufridas y cobros
+                            anteriores ya imputados. Sin esta línea la cuenta NO cerraba a la vista:
+                            78.262.800 − 31.305.120 daba 46.957.680, no los 40.306.014 que salían. */}
+                        {esCobro && imputadoPrevio > 0.01 && (<>
+                          <span className="text-gray-600">Retenciones y cobros previos:</span>
+                          <span className="font-medium text-red-700">− {fmt(imputadoPrevio)}</span>
+                        </>)}
+                        <span className="text-gray-600">{esCobro ? 'Cobro aplicado:' : 'Anticipo aplicado:'}</span>
                         <span className="font-medium text-amber-700">− {fmt(anticipoParaVincular.monto)}</span>
                         {calculo.sicore > 0 && (<><span className="text-gray-600">Retención SICORE (anticipo):</span><span className="font-medium text-red-700">− {fmt(calculo.sicore)}</span></>)}
                         {calculo.descuento > 0 && (<><span className="text-gray-600">Descuento:</span><span className="font-medium text-blue-700">− {fmt(calculo.descuento)}</span></>)}
@@ -214,13 +228,16 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
             {/* PASO 2: Confirmación */}
             {pasoWizard === 'confirmacion' && calculo && (() => {
               const fac = candidatosActivos.find(f => f.id === facturaElegida)
+              const imputadoPrevio = (fac?.imp_total || 0) - (fac?.monto_a_abonar || 0)
               return (
                 <>
                   <div className={`rounded-lg p-4 text-sm space-y-2 border ${calculo.caso === 'A' ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-300'}`}>
                     <div className="font-semibold text-base mb-3">
                       {calculo.caso === 'A'
-                        ? (extractoInfo?.estado === 'conciliado' ? '✅ Factura cubierta — se marcará como CONCILIADA (pago ya en banco)' : '✅ Factura cubierta — se marcará como PAGADA')
-                        : '📋 Pago parcial — quedará saldo pendiente'}
+                        ? (extractoInfo?.estado === 'conciliado'
+                            ? '✅ Factura cubierta — se marcará como CONCILIADA (ya en banco)'
+                            : `✅ Factura cubierta — se marcará como ${esCobro ? 'COBRADA' : 'PAGADA'}`)
+                        : `📋 ${esCobro ? 'Cobro' : 'Pago'} parcial — quedará saldo pendiente`}
                     </div>
 
                     <div className="text-xs space-y-1">
@@ -229,7 +246,11 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                         <span className="text-gray-600">Total factura:</span>
                         <span>{fmt(fac?.imp_total || 0)}</span>
                         {calculo.sicoreFactura > 0 && (<><span className="text-gray-600">SICORE factura (se conserva):</span><span className="text-red-700">− {fmt(calculo.sicoreFactura)}</span></>)}
-                        <span className="text-gray-600">Anticipo aplicado:</span>
+                        {esCobro && imputadoPrevio > 0.01 && (<>
+                          <span className="text-gray-600">Retenciones y cobros previos:</span>
+                          <span className="text-red-700">− {fmt(imputadoPrevio)}</span>
+                        </>)}
+                        <span className="text-gray-600">{esCobro ? 'Cobro aplicado:' : 'Anticipo aplicado:'}</span>
                         <span className="text-amber-700">− {fmt(anticipoParaVincular.monto)}</span>
                         {calculo.sicore > 0 && (<><span className="text-gray-600">Retención SICORE anticipo ({anticipoParaVincular.tipo_sicore}):</span><span className="text-red-700">− {fmt(calculo.sicore)}</span></>)}
                         {calculo.descuento > 0 && (<><span className="text-gray-600">Descuento:</span><span className="text-blue-700">− {fmt(calculo.descuento)}</span></>)}
