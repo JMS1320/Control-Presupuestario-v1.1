@@ -2,7 +2,8 @@
  * POST /api/import-ventas
  *
  * Importa FACTURAS DE VENTA (ARCA "Mis Comprobantes Emitidos" o Excel del mismo formato)
- * a msa.comprobantes_venta. Espejo del importador de compras (import-facturas-arca) pero:
+ * a <empresa>.comprobantes_venta (MSA / PAM / MA). Espejo del importador de compras
+ * (import-facturas-arca) pero:
  *   - El otro (cliente) sale de las columnas RECEPTOR (no Emisor).
  *   - Nace con estado='a cobrar' + fecha_cobro_estimada (para el Cash Flow).
  *   - Al insertar, vincula retenciones_recibidas pendientes por CUIT del cliente.
@@ -112,9 +113,17 @@ export async function POST(req: Request) {
     const fechaCobro = (formData.get('fecha_cobro') as string) || null
     const modoPreview = formData.get('preview') === 'true'
 
+    // Empresa destino. Antes estaba fijo en 'msa' y por eso no se podían importar las ventas
+    // de MA ni de PAM aunque tuvieran su subdiario.
+    const empresa = ((formData.get('empresa') as string) || 'MSA').toUpperCase()
+    if (!['MSA', 'PAM', 'MA'].includes(empresa)) {
+      return NextResponse.json({ ok: false, error: `Empresa inválida: ${empresa}` }, { status: 400 })
+    }
+    const schemaName = empresa.toLowerCase()
+
     if (!file) return NextResponse.json({ ok: false, error: 'No se envió ningún archivo' }, { status: 400 })
 
-    console.log(`🧾 [import-ventas] archivo=${file.name} fecha_cobro=${fechaCobro} preview=${modoPreview}`)
+    console.log(`🧾 [import-ventas] empresa=${empresa} archivo=${file.name} fecha_cobro=${fechaCobro} preview=${modoPreview}`)
 
     // ── Parsear archivo (Excel: ignora fila 1 de info; CSV: separador ;) ──
     const esExcel = /\.(xlsx|xls)$/i.test(file.name)
@@ -162,7 +171,7 @@ export async function POST(req: Request) {
 
     // ── Dedup contra lo existente (tipo+punto+numero+cuit) ──
     const { data: existentes, error: errExist } = await supabase
-      .schema('msa').from('comprobantes_venta')
+      .schema(schemaName).from('comprobantes_venta')
       .select('tipo_comprobante, punto_venta, numero_desde, cuit_cliente')
     if (errExist) {
       console.error('🧾 [import-ventas] error leyendo existentes:', errExist)
@@ -183,7 +192,7 @@ export async function POST(req: Request) {
 
     // ── Insertar ──
     const { data: inserted, error: errIns } = await supabase
-      .schema('msa').from('comprobantes_venta')
+      .schema(schemaName).from('comprobantes_venta')
       .insert(nuevas).select('id, cuit_cliente, imp_total')
     if (errIns) {
       console.error('🧾 [import-ventas] error insertando:', errIns)
@@ -192,8 +201,11 @@ export async function POST(req: Request) {
     console.log(`🧾 [import-ventas] insertadas: ${inserted?.length}`)
 
     // ── Vincular retenciones pendientes por CUIT (cargadas antes de importar la factura) ──
+    // `retenciones_recibidas` sólo existe en el schema `msa`; para PAM/MA se saltea el paso
+    // en vez de fallar. Si esas empresas llegan a manejar retenciones sufridas, hay que crear
+    // la tabla en su schema y sacar este guard.
     let retVinculadas = 0
-    for (const comp of inserted || []) {
+    for (const comp of (schemaName === 'msa' ? (inserted || []) : [])) {
       const { data: rets, error: errRet } = await supabase
         .schema('msa').from('retenciones_recibidas')
         .update({ comprobante_venta_id: comp.id, updated_at: new Date().toISOString() })

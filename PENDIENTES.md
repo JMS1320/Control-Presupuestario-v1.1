@@ -248,6 +248,17 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
 | A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10**, SQL corrido — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. Falta testear + ajustar las 3 reglas que fallan | → [A-FEAT-18](#a-feat-18) |
 | A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
+| **A-BUG-24** | 🟡 | **Bug** | **HECHO 2026-08-13** — el PDF "Detalle de Pago" no sumaba el descuento al Total Cancelado (decía $520.978,69 sobre una FC de $548.398,62 cancelada entera). Arreglado en los 3 cálculos **y borrada la copia inline** de Egresos: ahora hay una sola implementación. Falta testear | → [A-BUG-24](#a-bug-24) |
+| A-FEAT-22 | 🟡 | Feat | **HECHO 2026-08-13** — subdiario de ventas para las 3 empresas: creada `pam.comprobantes_venta`, niveladas las 4 columnas que le faltaban a MA (sin ellas el importador fallaba) y agregado el tab **Subdiarios PAM**. Falta testear | → [A-FEAT-22](#a-feat-22) |
+| **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) |
+| **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
+| A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
+| A-FEAT-23 | 🔴 | Feat | **La fijación de arrendamiento no emite el comprobante de venta** — `ventas_arrendamiento.comprobante_id` existe pero **nadie lo escribe ni lo lee** (sólo está en el tipo TS). El arrendamiento de PAM/MA hay que cargarlo dos veces: una en el contrato y otra a mano en el subdiario. Va contra el norte (cargar una sola vez) | → [A-FEAT-23](#a-feat-23) |
+| A-TEST-29 | 🔴 | Test | **Importador de ventas multiempresa** (2026-08-13) — estaba fijo en `msa`; ahora toma `empresa` y cada subdiario tiene su botón **Importar**. `MANUAL-USO.md` § Importar comprobantes de venta | → [A-TEST-29](#a-test-29) |
+| A-TEST-28 | 🔴 | Test | **Libro IVA Ventas: export igualado a Compras** (2026-08-13) — un solo botón genera PDF+Excel, pregunta carpeta, no sobrescribe; PDF con el formato de Compras (rango de fechas, TOTALES, página de alícuotas). Cierra **B-FEAT-06**. 6 pasos en `MANUAL-USO.md` § Export del Libro IVA | → [A-TEST-28](#a-test-28) |
+| A-TEST-27 | 🔴 | Test | **Control de cuadratura del subdiario** (2026-08-13) — barra bajo los 2 bloques en Compras **y** Ventas: `Total − Neto − Exento/NG − IVA − Otros Trib. − sin crédito = 0`, con tolerancia por redondeo y listado de los comprobantes que no cierran. 4 pasos en `MANUAL-USO.md` § Control de cuadratura | → [A-TEST-27](#a-test-27) |
+| A-BUG-23 | 🟡 | **Bug** | **HECHO 2026-08-13** — el alta de comprobantes de venta estampaba `alicuota_iva = 21` por defecto, aun en operaciones 100% exentas (caso SANPA SEMILLAS 07/2026: IVA $0 con "21%" en el Libro). Se auto-reproducía: abrir el comprobante y guardar lo volvía a poner. Fila corregida a `null` + modal arreglado. Falta testear | → [A-BUG-23](#a-bug-23) |
+| A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
 (cero reglas), así que sus 96 movimientos sin desglosar **no son un fallo** — son trabajo pendiente.
@@ -276,7 +287,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 | B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` |
 | B-FEAT-04 | 🔴 | Media | Templates bancarios separar MSA/PAM/MA + reglas PAM/MA |
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos |
-| B-FEAT-06 | 🔴 | Media | Subdiario Ventas — igualar flujo a Compras (esperando que el usuario explique diferencias) |
+| B-FEAT-06 | 🟡 | Media | Subdiario Ventas — igualar flujo a Compras. **EXPORT HECHO 2026-08-13** (un click PDF+Excel, carpeta, formato de PDF igualado) → falta testear `A-TEST-28`. Queda pendiente la otra mitad que el usuario había mencionado: **cuándo se ven los comprobantes y cómo se imputan** |
 | B-FEAT-07 | 🔴 | Media | Proveedores — carga orgánica (poblar desde facturas/extractos, no de a uno) |
 | B-BUG-CLIENTE-NO-SE-CREA | 🔴 | Alta | **Las VENTAS no dan de alta el cliente en `proveedores`** (compras sí) — rompe la regla consensuada "si hay factura, tiene que estar en proveedores/clientes". Causa raíz identificada, ver [dossier](#b-bug-cliente-no-se-crea). (2026-07-28) |
 | B-FEAT-08 | 🔴 | Baja | Margen por superposición — órdenes agrícolas (diseño aprobado, ~25-30 líneas) |
@@ -7013,6 +7024,434 @@ Al agregar una pantalla que edita algo existente, **extraer primero la función 
 - **Ganadería en `ventas_unificadas`** → hoy no llega a Cash Flow (sí a Presupuesto).
 
 ---
+---
+
+## <a id="a-test-28"></a>A-TEST-28 — Libro IVA Ventas: export igualado a Compras (2026-08-13)
+
+Cierra la parte de **export** de [B-FEAT-06](#), que estaba esperando desde el 2026-06-10 a que el
+usuario explicara las diferencias.
+
+### Lo que era distinto, y cómo quedó
+
+| | Antes (Ventas) | Ahora (= Compras) |
+|---|---|---|
+| Disparo | 2 botones, `Excel` y `PDF` | **1 botón** "📊 Generar PDF + Excel (N)" |
+| Datos | el array pintado en pantalla | **re-consulta a la BD** del período |
+| Carpeta | ninguna, siempre Descargas | prompt de 3 opciones + carpeta recordada |
+| Nombre | `LIBRO IVA VENTAS MSA 2025-12.xlsx`, **pisaba** el anterior | `LIBRO IVA VENTAS MSA 25-12.xlsx` + ` (1)`, ` (2)` |
+| PDF: encabezado | sólo "Período MM/AAAA" | razón social + CUIT + **rango de fechas** + fecha de generación + total |
+| PDF: fila TOTALES | no había | sí |
+| PDF: página 2 | no había | **Desglose por Alícuotas** + los 2 bloques |
+| Cálculo | **3 copias** (pantalla, Excel, PDF) | 1 función compartida |
+
+### Los 4 archivos nuevos, y por qué son 4 y no 1
+
+| Archivo | Qué centraliza |
+|---|---|
+| `lib/subdiarios/subtotales.ts` | el resumen en 2 bloques + el desglose por alícuota |
+| `lib/subdiarios/carpeta-destino.ts` | elegir carpeta, nombre único, guardar |
+| `lib/subdiarios/cuadratura.ts` | el control (A-TEST-27) y las listas de tipos |
+| `hooks/useCarpetaPorDefecto.ts` | la carpeta recordada en localStorage |
+
+El comportamiento del selector de carpeta **no se cambió**: se movió tal cual, incluido el
+`prompt()` de 3 opciones, porque es el que el usuario ya tiene aprendido en Compras. Ahora que está
+en un solo lugar, cambiarlo por un modal mejora las dos pantallas de una vez.
+
+### Lo que NO pudo quedar idéntico, y por qué
+
+`comprobantes_venta` no tiene `otros_tributos`, ni `tipo_cambio`, ni columnas por tasa
+(`iva_21`, `neto_grav_iva_21`, …) — sólo un par `alicuota_iva` + `iva` por comprobante. Entonces:
+- **no hay columna Otros Tributos** (tampoco en el control de cuadratura);
+- **no hay conversión USD→$**;
+- el **Detalle por Alícuotas se agrupa** por `alicuota_iva` en vez de sumar columnas fijas;
+- **no se copió el par "IVA 21% / IVA Diferencial"**. Decidido con el usuario: como se vende
+  mayormente exento y al 10,5 %, esa columna quedaría casi siempre vacía y el 10,5 % entero caería
+  en "Diferencial". *(Al margen: "IVA Diferencial" = todo el IVA que no es 21 % — es una convención
+  de esta app, no de ARCA, que lleva una fila por alícuota.)*
+
+### De paso: la razón social ya no está hardcodeada
+
+El PDF de Compras escribía "MARTINEZ SOBRADO AGRO SRL / 30-61778601-6" **aunque estuvieras en PAM o
+MA**, y el de Ventas imprimía el literal `'CUIT MA'`. Ahora sale de `DATOS_FISCALES` en
+`lib/empresas.ts`. ⚠️ **Falta el CUIT de MA** — no está en ningún lado del repo; hasta que el usuario
+lo dé, el encabezado de MA sale sin CUIT (mejor que uno inventado en un libro de IVA).
+
+**Testear** → 6 pasos en `MANUAL-USO.md` § *Export del Libro IVA (Compras y Ventas)*.
+
+---
+
+## <a id="a-feat-22"></a>A-FEAT-22 — Subdiarios por empresa: qué falta para que MA y PAM estén completas
+
+**El pedido (2026-08-13):** *"MA tendrá su subdiario de compras y ventas, como PAM también"*.
+
+### Estado real relevado ese día
+
+| | Tabla en BD | Tab en la app | Filas |
+|---|---|---|---|
+| **Compras** MSA | ✅ `msa.comprobantes_arca` | ✅ | 390 |
+| **Compras** PAM | ✅ `pam.comprobantes_arca` | ✅ | 4 |
+| **Compras** MA | ✅ `ma.comprobantes_arca` | ✅ | 92 |
+| **Ventas** MSA | ✅ `msa.comprobantes_venta` | ✅ | 6 |
+| **Ventas** MA | ✅ `ma.comprobantes_venta` | ✅ | **0** |
+| **Ventas** PAM | ❌ **no existe** | ❌ | — |
+
+**Compras ya está completo en las 3.** Lo que falta es ventas.
+
+### ✅ Resuelto el 2026-08-13
+
+El usuario aclaró: **PAM y MA facturan sólo arrendamiento, Factura C — “no hay ni exento ni nada, es
+sólo factura con el total”.**
+
+1. **`pam.comprobantes_venta` creada** — clon exacto de MSA (`LIKE … INCLUDING ALL`) + GRANTs + RLS.
+   Se clonó **entera** aunque la mitad de las columnas queden en null: son nullables y no molestan,
+   mientras que una tabla magra obligaba a bifurcar importador, modal y subdiario. Las tres empresas
+   corren el mismo código.
+2. **Tab "Subdiarios PAM"** agregado en `vista-ingresos.tsx`.
+3. 🐛 **Hallazgo:** a `ma.comprobantes_venta` le faltaban **4 columnas** que sí tiene MSA
+   (`moneda`, `estado`, `fecha_cobro_estimada`, `centro_costo_id`). El importador inserta las tres
+   primeras → **importar a MA habría fallado**. Y `estado` + `fecha_cobro_estimada` son las que hacen
+   que una venta llegue al **Cash Flow** ("nace a cobrar"): sin ellas, las ventas de MA/PAM nunca
+   habrían alimentado la proyección. Niveladas.
+
+DDL completo → `RECONSTRUCCION_SUPABASE_2026-01-07.md` § CAMBIOS POST-RECONSTRUCCIÓN 2026-08-13.
+
+### 🚧 Lo que sigue abierto
+- **MA y PAM tienen 0 comprobantes de venta** — el usuario dijo que se importarán pronto.
+- **La clasificación Fac C** → ver [A-DEC-02](#a-dec-02). Es la que decide si su Libro IVA Ventas
+  muestra algo o sale en cero.
+- **Arrendamientos no crea el comprobante.** `ventas_arrendamiento` tiene la columna
+  `comprobante_id`, pero **nadie la escribe**: la fijación no genera la factura en
+  `comprobantes_venta`. Hoy los contratos ya se pueden marcar MSA/PAM/MA (el selector existe) pero
+  los 4 cargados son MSA. Ése es el vínculo que haría que el arrendamiento de PAM/MA aparezca solo
+  en su subdiario en vez de cargarse a mano.
+
+### ✅ Lo que ya se hizo (A-TEST-29)
+
+- `VistaSubdiariosVenta` y `ModalComprobanteVentaMsa` aceptan **PAM** y derivan el schema de la
+  empresa (`empresa.toLowerCase()`), en vez del `=== 'MA' ? 'ma' : 'msa'` que mandaba a MSA
+  cualquier cosa que no fuera MA — el clásico bug silencioso de escribir en el schema equivocado.
+- El **importador de ventas ya no está fijo en MSA** (ver A-TEST-29).
+
+---
+
+## <a id="a-bug-25"></a>A-BUG-25 — El CUIT de Sanpa está mal en 3 filas (2026-08-18)
+
+**Cómo apareció.** El usuario: *"tengo 2 facturas de Sanpa posibles de vincular… me propone sólo una
+y no la otra, que es la correcta"*. No era la pantalla: **son dos CUIT distintos.**
+
+| CUIT | Dónde vive | Verificador | |
+|---|---|---|---|
+| `30712200662` | `contratos_arrendamiento` Rojas **26/27** y **27/28** + `msa.comprobantes_venta` del **11/05** ($95.715.830,32, sin nº, cargada a mano) | debería terminar en **5** | ❌ **inválido** |
+| `30712200622` | `msa.comprobantes_venta` del **22/07** (nº 00010-00000021, $78.262.800) — **importada de ARCA** | termina en **2** | ✅ **válido** |
+
+**La prueba que lo cierra:** la venta del contrato de Rojas vale **$78.262.800,00**, *exactamente* el
+importe de la factura de julio. La de mayo ($95,7 M) no tiene nada que ver con esa venta.
+
+**Por qué la alerta ofrecía la equivocada:** matchea por CUIT. El contrato tiene el CUIT malo, así
+que la única factura que compartía ese CUIT era la de mayo. La de julio —la correcta— **no aparecía
+nunca, y sin ninguna explicación**: el clásico modo de falla de este proyecto, el silencio que miente.
+
+### 📄 Resuelto con el PDF de la factura (2026-08-18)
+
+El usuario aportó el original: `…/2025-2026/26-05/- Ventas/05-12 - Sanpa Campaña 25-26 - Cuota 3 de 3.pdf`.
+**La factura de mayo es real y es de otra campaña** — no era una carga de prueba:
+
+> Factura **A**, Pto Vta **00010**, Comp. Nro **00000020**, emitida **11/05/2026**,
+> SANPA SEMILLAS S.A. CUIT **30712200622**, concepto *"Arrendamiento Agrícola Campaña 2025/26 —
+> Cuota 3 de 3"*, **Importe Exento $95.715.830,32**, IVA $0, CAE 86195177307570.
+
+**Por eso los importes no cerraban:** la de mayo es la **última cuota de la campaña 25/26**; la venta
+contra la que se ofrecía es el contrato de Rojas **26/27**. En la alerta corresponde **"No, es otra
+cosa"**. La que sí es del 26/27 es la de julio (nº 00010-00000021, $78.262.800 — al peso).
+⚠️ No hay contrato cargado de la campaña **25/26**, así que la de mayo queda sin venta a la cual
+vincularse, y está bien que así sea.
+
+**El PDF también confirma que el CUIT bueno es `30712200622`**: los tres lugares con `...662` son
+carga manual, ninguno viene de ARCA.
+
+### ✅ Datos corregidos el 2026-08-18 (con autorización expresa del usuario)
+1. `contratos_arrendamiento` Rojas **26/27** y **27/28** → `cliente_cuit = 30712200622`. ✅ 2 filas.
+2. `msa.comprobantes_venta` `3e885754` (la de mayo) — **3 campos**; el resto ya estaba bien
+   (fecha, tipo, punto de venta **10**, número **20**, importes y concepto coinciden con el PDF): ✅
+   - `cuit_cliente` → `30712200622`
+   - `nro_comprobante` → `'00010-00000020'` (estaba en null)
+   - `alicuota_iva` → `null` — decía **21,00** sobre una factura **Exenta**: era
+     [A-BUG-23](#a-bug-23) otra vez. **Segunda fila afectada por el default de 21** → confirma que
+     el modal era la causa. El código ya está arreglado; el dato viejo no se arreglaba solo.
+
+### 🔴 Falta 1 fila: el CUIT malo también está en el maestro `proveedores`
+`public.proveedores` tiene a *Sanpa Semillas SA* con **`30712200662`**, y **no existe** ninguna fila
+con el CUIT correcto. Es el peor lugar donde puede estar: de ahí salen CBU, mails, mensajes de
+transferencia y el **pre-filtro por CUIT del motor de conciliación** (CLAUDE.md § Contrapartes).
+
+Chequeado antes de proponerlo: la PK es `id` (uuid) y `cuit` sólo tiene **UNIQUE**; **ninguna tabla
+referencia `proveedores` por FK**, así que el UPDATE es seguro y no hay conflicto de unicidad.
+
+```sql
+UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
+```
+**Esperando OK del usuario** (autorizó 3 filas; ésta es una cuarta que apareció al verificar).
+
+### ✅ Hecho: que no vuelva a pasar en silencio (A-TEST-30)
+- **`lib/cuit.ts`** (nuevo): validación por dígito verificador módulo 11, formateo y comparación.
+  Un CUIT inválido es **siempre** un error de carga, así que detectarlo es barato y certero.
+- **`alertas-fc-venta.tsx`**: segundo camino de match. Si el CUIT no coincide pero **el importe cierra
+  exacto** con lo que falta facturar, la factura se ofrece igual — en ámbar, primera en la lista, con
+  los dos CUIT enfrentados y marcando cuál tiene el verificador inválido. Y avisa que vincular
+  **no corrige el CUIT**: hay que arreglarlo en el contrato o el problema vuelve.
+
+**Testear:** entrar a la pantalla de inicio. Tienen que salir **las dos** facturas de Sanpa: la de
+mayo (match por CUIT, normal) y la de julio en ámbar, diciendo que `30712200662` es inválido.
+
+---
+
+## <a id="a-feat-23"></a>A-FEAT-23 — La fijación de arrendamiento no emite el comprobante de venta
+
+**El hueco.** El circuito de arrendamiento llega hasta la fijación y ahí se corta:
+
+```
+contrato_arrendamiento (tiene columna `empresa`: MSA/PAM/MA)
+   └── cuota_arrendamiento
+         └── venta_arrendamiento  ← la FIJACIÓN: toneladas, precio, TC, monto en pesos, fecha de cobro
+               └── comprobante_id ← ⚠️ la columna EXISTE y queda siempre en NULL
+```
+
+`comprobante_id` aparece **una sola vez en todo el repo**: en el tipo TypeScript
+(`lib/arrendamientos/calculo.ts:84`). El `insert` de la fijación
+(`vista-arrendamientos.tsx:511`) **no lo setea**, y ninguna pantalla lo lee. Alguien previó el
+vínculo y no lo llegó a implementar.
+
+**Qué significa en la práctica.** La fijación **es** la venta: cuando fijás precio queda determinado
+el importe exacto que se va a facturar. Pero la factura de arrendamiento hay que cargarla **a mano**
+en el subdiario, repitiendo cliente, importe y fecha. Dos cargas del mismo hecho, que pueden no
+coincidir — y nada avisa si difieren.
+
+**Por qué importa ahora.** Es el circuito de PAM y MA: su única venta es arrendamiento. Sin este
+vínculo, el subdiario que se les acaba de crear se llena tipeando. Con el vínculo, se llena solo.
+
+**Por qué es trabajo del norte.** *"Cada comprobante se carga una sola vez y alimenta la proyección"*
+(CLAUDE.md § Norte). Acá se carga dos veces, y `estado`/`fecha_cobro_estimada` — que son las que
+llevan la venta al Cash Flow — quedan en la carga manual, no en la fijación que ya sabe la fecha
+de cobro.
+
+### ✅ Aclarado por el usuario (2026-08-18): la factura NO se emite, se importa
+
+*"La factura de arrendamiento se importa desde ARCA directo. La idea es poder vincularla con la
+fijación."* Eso cambia el diseño y lo hace **mucho más chico**: no hay que generar comprobantes,
+hay que **vincular** el que ya llegó.
+
+Y el mecanismo **ya existe**: es `public.ventas_facturas` + la alerta `AlertasFcVenta` de la pantalla
+de inicio ("¿esta factura es de esta venta?"), que ya resuelve el vínculo para las ventas de
+`ventas_unificadas` — arrendamiento incluido. O sea que el circuito está más completo de lo que
+parecía. Lo que queda:
+
+1. **`ventas_arrendamiento.comprobante_id` es un vínculo huérfano**: nadie lo escribe ni lo lee, y
+   convive con `ventas_facturas`, que es el que sí se usa. **Hay que decidir cuál manda** y borrar
+   o completar el otro — dos formas de decir lo mismo es cómo se desincronizan los números.
+2. **El vínculo hoy es venta ↔ factura, no fijación ↔ factura.** Si una cuota se fija en varias
+   veces y llega una factura por cada fijación, hace falta bajar el detalle a la fijación.
+3. **Que el match no dependa sólo del CUIT** → ver [A-BUG-25](#a-bug-25), donde un dígito mal
+   tipeado hacía invisible la factura correcta.
+
+---
+
+## <a id="a-dec-02"></a>A-DEC-02 — Arrendamiento en Factura C: dónde va el importe (2026-08-13)
+
+El usuario aclaró que **PAM y MA facturan sólo arrendamiento, Factura C**, y que *"no hay ni exento
+ni nada, es sólo factura con el total"*. Eso choca con dos cosas que hoy están armadas de otra forma.
+
+> **Dato del usuario (2026-08-18): MA y PAM NO están inscriptas en IVA y no declaran.** O sea que
+> lo suyo no es un "Libro IVA Ventas" sino un **registro de ventas**. Eso vuelve *correcto* que su
+> bloque 1 esté vacío, y convierte la pregunta en una de **nombres y presentación**, no de números.
+> El usuario dijo que lo mira y define.
+
+### 1. Con sólo Fac C, el Libro IVA Ventas sale vacío
+
+`TIPOS_SIN_CREDITO_VENTAS = [11,12,13]` manda todos los comprobantes **C** al bloque 2. Si una
+empresa factura **únicamente** Fac C, su subdiario mostraría:
+- **📒 Libro IVA Ventas → $0,00** (bloque 1 sin una sola fila)
+- **📋 No generan débito fiscal → todo**
+
+Técnicamente correcto si PAM/MA son **monotributistas o exentas** (no generan débito, no liquidan
+IVA). Pero deja una pantalla que *parece* rota, y un "Libro IVA Ventas" en cero. Dos salidas:
+- **(a)** dejarlo así y renombrar los bloques cuando la empresa no liquida IVA;
+- **(b)** que la lista del bloque 2 dependa de la empresa: para una empresa cuyo universo es Fac C,
+  esos comprobantes **son** su libro y el bloque 2 no aplica.
+
+### 2. ✅ CERRADO — el total va en Operaciones Exentas, y está bien
+
+Los 2 comprobantes de arrendamiento de MSA de 07/2026 (PROVINVEST $50.000.850 y SANPA $78.262.800)
+tienen todo el importe en `imp_op_exentas`, con `imp_neto_gravado = 0` e `iva = 0`.
+
+**Confirmado por el usuario (2026-08-18): "corresponde a exento, como está importado de ARCA".**
+El arrendamiento rural es una operación exenta, así que la columna es la correcta y el importador
+la está mapeando bien. **No hay nada que cambiar acá.**
+
+Corolario práctico: en un comprobante de arrendamiento, **Neto Gravado y Alícuota van vacíos** —
+que es exactamente lo que arregla [A-BUG-23](#a-bug-23) (antes el modal estampaba 21 % por defecto).
+
+**⚠️ No se tocó ningún dato ni ninguna clasificación.** Queda abierto sólo el punto 1.
+
+---
+
+## <a id="a-test-29"></a>A-TEST-29 — Importador de ventas multiempresa (2026-08-13)
+
+**El hueco:** `app/api/import-ventas/route.ts` escribía `.schema('msa')` fijo en sus 3 consultas, y
+`modal-import-ventas.tsx` mandaba `empresa: 'MSA'` hardcodeado a la descarga de ARCA. Resultado: **no
+había forma de importar ventas de MA ni de PAM**, aunque MA ya tuviera su tabla y su subdiario.
+Y el modal se abría desde un solo lugar: la solapa *Comprobantes MSA*.
+
+**Qué cambió:**
+| Archivo | Cambio |
+|---|---|
+| `app/api/import-ventas/route.ts` | toma `empresa` del FormData (valida MSA/PAM/MA) y usa su schema |
+| `components/modal-import-ventas.tsx` | prop `empresa`: decide el schema **y** con qué CUIT entra a ARCA. El título lo muestra |
+| `components/vista-subdiarios-venta.tsx` | botón **Importar** en cada subdiario — cada empresa importa lo suyo |
+
+**Guard de retenciones:** `retenciones_recibidas` sólo existe en `msa`. Para PAM/MA el paso de
+vincular retenciones por CUIT se saltea en vez de fallar. Si esas empresas llegan a manejar
+retenciones sufridas, hay que crear la tabla en su schema y sacar el guard.
+
+**Testear** → `MANUAL-USO.md` § *Importar comprobantes de venta*.
+
+---
+
+## <a id="a-bug-24"></a>A-BUG-24 — Detalle de Pago: el Total Cancelado no incluye el descuento (2026-08-13)
+
+**El caso del usuario** (ALCORTA EDMUNDO ERNESTO, pago del 10/08/2026, FC 1-00010-00006268):
+
+| Total Factura | Ret. Ganancias | Descuento | Monto Transferido | Total Cancelado |
+|---|---|---|---|---|
+| 548.398,62 | 4.131,22 | 27.419,93 | 516.847,47 | **520.978,69** ❌ |
+
+`516.847,47 + 4.131,22 = 520.978,69`. Falta el descuento: con él da **548.398,62**, que es exactamente
+el Total Factura — la FC se canceló **entera**. Tal como sale, el PDF le dice al proveedor que le
+quedan $27.419,93 sin cancelar.
+
+**La relación que hay que respetar** (y que el usuario dice que ya estaba bien antes):
+
+> `Total Factura = Transferencia + Descuento + SICORE` → y eso **es** el Total Cancelado.
+
+**Dónde**, en `lib/pagos/pdf-detalle-pago.ts` — falta `descuento_aplicado` en los tres:
+| Línea | Qué calcula | Hoy |
+|---|---|---|
+| 95 | anticipo | `montoTransferido + (anticipo.monto_sicore \|\| 0)` |
+| 116 | fila por factura | `i.monto_a_abonar + (i.monto_sicore \|\| 0)` |
+| 130 | fila TOTAL | `totalTransferido + totalRet` |
+
+### El diagnóstico del usuario era exacto: había un camino paralelo
+
+Dijo *"se cambió o se hizo un script paralelo"* y *"hubo una corrección que no llegó a destino"*.
+Efectivamente **había dos implementaciones**, y el encabezado del lib lo confesaba por escrito:
+*"Copia VERBATIM de generarPDFDetallePago (vista-facturas-arca)… cuando se deprece el Modal se
+elimina la copia inline"*. Nunca se eliminó.
+
+| | Dónde | La usaba |
+|---|---|---|
+| lib | `lib/pagos/pdf-detalle-pago.ts` | Cash Flow + el mail encolado |
+| copia | `vista-facturas-arca.tsx` L5390-5553 (164 líneas) | Egresos (6 botones) |
+
+Las dos tenían el mismo bug del Total Cancelado — por eso salía mal desde las dos puntas. Y la
+copia **ni siquiera soportaba el desglose por medios de pago**, que sólo estaba en el lib.
+
+**Arreglo (2026-08-13):**
+1. Los 3 cálculos ahora suman `descuento_aplicado` (L95 anticipo · L116 por factura · L130 TOTAL).
+2. **Borrada la copia inline**: Egresos importa el lib. Una sola implementación, como decía el plan.
+3. Se subió al lib la única cosa que la copia hacía mejor: alinear las columnas de importe según la
+   **cantidad real de columnas**. Con índices fijos, un pago sin retención desalineaba la tabla.
+4. Comentario al tope del archivo con la relación que tiene que cerrar, para que no se vuelva a caer.
+
+**Ojo, ya estaba escrito el criterio correcto:** el desglose por medios (`hayMedios`) decía en su
+comentario *"la suma debe dar el total de la(s) factura(s)"* y sí listaba *Descuento pronto pago*.
+Las dos mitades del mismo PDF usaban criterios distintos. Ahora coinciden.
+
+**Falta testear:** regenerar el detalle de ALCORTA del 10/08/2026 (desde Egresos **y** desde Cash
+Flow) y verificar que Total Cancelado = **$548.398,62** = Total Factura. Y un pago **sin** descuento,
+para confirmar que no cambió.
+
+---
+
+## <a id="a-test-27"></a>A-TEST-27 — Control de cuadratura del subdiario (2026-08-13)
+
+**Qué es.** Pedido del usuario: un chequeo básico en el resumen del subdiario, en **Compras y en
+Ventas**, que verifique la identidad contable del período:
+
+> `Total general − Neto Gravado − Exento/No Gravado − IVA − Otros Tributos − (bloque sin crédito fiscal) = 0`
+
+El bloque sin crédito fiscal (Fac B y C en Compras) se resta como **importe total**, sin abrir
+columnas — que es además lo que pide ARCA: *en el Libro de Compras, para comprobantes B o C se
+informa 0 en el campo "cantidad de alícuotas"*.
+
+**Archivos:**
+| Archivo | Qué hace |
+|---|---|
+| `lib/subdiarios/cuadratura.ts` | **nuevo** — `verificarCuadratura()` + `TIPOS_SIN_CREDITO_COMPRAS` / `_VENTAS` |
+| `components/control-cuadratura-subdiario.tsx` | **nuevo** — la barra, compartida por las 2 pantallas |
+| `components/vista-facturas-arca.tsx` | usa la constante del lib (antes tenía la lista local) + render |
+| `components/vista-subdiarios-venta.tsx` | render (sin Otros Tributos, sin conversión por TC) |
+
+**La tolerancia no es pereza, es el dato real.** MSA 07/2026 cierra con **$0,01** de residuo,
+repartido en 4 facturas que vienen redondeadas desde ARCA (La Mercure −0,02; Telecom, Miceli y
+Deheza +0,01 c/u). Exigir cero exacto pintaría rojo todos los meses y el control pasaría a ser
+ruido que se ignora. Tolerancia = **$0,05 × cantidad de comprobantes**.
+
+**Lo que lo hace útil no es el número global, es la lista.** Debajo se despliegan los comprobantes
+cuyo `imp_total` no coincide con la suma de sus partes, con la diferencia de cada uno. El total
+avisa que algo pasa; la lista dice dónde.
+
+**Testear** → 4 pasos en `MANUAL-USO.md` § *Control de cuadratura*.
+
+---
+
+## <a id="a-bug-23"></a>A-BUG-23 — El alta de ventas estampaba IVA 21% en operaciones exentas (2026-08-13)
+
+**Cómo apareció.** El usuario estaba controlando el IVA Ventas de julio y vio que **SANPA SEMILLAS
+figuraba con alícuota 21 %** y PROVINVEST no. Preguntó si era un error del PDF. No lo era: el 21
+estaba **guardado en la fila**, en una operación **100 % exenta** ($78.262.800 en Op. Exentas, IVA $0).
+
+**Causa.** `components/modal-comprobante-venta-msa.tsx` tenía `useState('21')` como valor inicial de
+la alícuota, la reseteaba a `'21'` en el alta y — lo peor — **mostraba `'21'` cuando lo guardado era
+`null`**. Como además recalcula `IVA = neto × alícuota / 100` y el neto gravado era 0, el IVA daba 0:
+quedaba la combinación absurda de **alícuota 21 % con IVA $0**, sin que nadie eligiera ese 21.
+
+**Se auto-reproducía.** El `updated_at` de Sanpa era del mismo día en que el usuario lo estaba
+revisando: abrir el comprobante para mirarlo y guardar volvía a estamparle el 21. Un bug que se
+reinstala cada vez que lo vas a inspeccionar es peor que uno que falla siempre.
+
+**Arreglo (2026-08-13):**
+- Opción `— sin alícuota —` (`''`) primera y por defecto; el `null` guardado se muestra vacío.
+- Al guardar: `alicuota_iva = null` si no hay alícuota elegida **o si el neto gravado es 0**.
+- El recálculo automático del IVA no corre sin alícuota elegida (antes pisaba con 0 el IVA tipeado a mano).
+- **Dato corregido con autorización expresa del usuario**: la fila de Sanpa pasó a `alicuota_iva = null`.
+
+**Falta testear:** cargar una venta exenta y confirmar que no aparece ninguna alícuota; reabrir la
+de Sanpa, guardar sin tocar nada y verificar que **sigue** en null.
+
+---
+
+## <a id="a-dec-01"></a>A-DEC-01 — Ventas: qué tipos salen del Libro IVA Ventas (2026-08-13)
+
+**El problema.** En `vista-subdiarios-venta.tsx` el bloque 1 se arma con `tipo_comprobante !== 11`,
+pero el bloque 2 ("Monotributo") muestra **11 y 13**. No es una partición: una **NC C (tipo 13) cae
+en los dos** — se resta como Nota de Crédito del Libro IVA Ventas *y* aparece en el bloque
+Monotributo. Es el mismo defecto que en Compras se corrigió el 2026-07-15.
+
+**Por qué no se copia la lista de Compras.** `TIPOS_SIN_CREDITO_COMPRAS = [6,7,8,11,12,13]` incluye
+Fac B porque una **Fac B recibida no da crédito fiscal**. Pero una **Fac B emitida sí genera débito**
+y tiene que quedar **dentro** del Libro IVA Ventas: copiar la lista sacaría del libro ventas que
+tributan. Propuesta: `TIPOS_SIN_CREDITO_VENTAS = [11,12,13]`.
+
+**Urgencia real: ninguna, hoy.** `comprobantes_venta` tiene sólo tipos **1** (Fac A), **201** (FCE
+MiPyME A) y **332** (liquidación primaria de granos) — verificado 2026-08-13, en MSA; MA está vacía.
+El bloque Monotributo de Ventas nunca se dibuja. **Pero la decisión hay que tomarla antes** de que
+entre el primer comprobante C, no después.
+
+**Estado (actualizado 2026-08-13, tras el "perfecto todo" del usuario):** `[11,12,13]` quedó aplicado
+en **los tres lugares** — control de cuadratura, resumen en pantalla y los exports —, porque al
+unificar el cálculo en `lib/subdiarios/subtotales.ts` la pantalla pasó a usar la misma lista.
+**No cambia ningún número hoy** (no hay comprobantes C cargados) y revertirlo es cambiar una
+constante. Si el criterio correcto fuera otro, decirlo antes de que entre el primer comprobante C.
+
 ---
 
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)

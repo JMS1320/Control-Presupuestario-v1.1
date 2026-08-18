@@ -10,9 +10,13 @@ import { toast } from "sonner"
 
 /**
  * Modal para importar facturas de venta (ARCA "Mis Comprobantes Emitidos" o Excel del mismo formato)
- * a msa.comprobantes_venta vía /api/import-ventas. Pide la fecha de cobro estimada (para el Cash Flow).
+ * a <empresa>.comprobantes_venta vía /api/import-ventas. Pide la fecha de cobro estimada (Cash Flow).
+ *
+ * `empresa` decide DOS cosas: el schema donde se insertan y con qué CUIT se entra a ARCA.
+ * Antes estaba fija en MSA en los dos lados, así que las ventas de MA y PAM no se podían importar
+ * aunque tuvieran su subdiario.
  */
-export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admin' }: { open: boolean; onClose: () => void; onImportado: () => void; userRole?: 'admin' | 'contable' }) {
+export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admin', empresa = 'MSA' }: { open: boolean; onClose: () => void; onImportado: () => void; userRole?: 'admin' | 'contable'; empresa?: 'MSA' | 'PAM' | 'MA' }) {
   const [file, setFile] = useState<File | null>(null)
   const [fechaCobro, setFechaCobro] = useState('')
   const [cargando, setCargando] = useState(false)
@@ -33,7 +37,7 @@ export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admi
     try {
       const r = await fetch('/api/arca/descargar-comprobantes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa: 'MSA', password: arcaPassword, fechaDesde: arcaDesde, fechaHasta: arcaHasta, tipo: 'emitidos', userRole }),
+        body: JSON.stringify({ empresa, password: arcaPassword, fechaDesde: arcaDesde, fechaHasta: arcaHasta, tipo: 'emitidos', userRole }),
       })
       const d = await r.json()
       if (!r.ok) { toast.error('ARCA: ' + (d.error || `Error ${r.status}`)); return }
@@ -56,6 +60,7 @@ export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admi
     try {
       const fd = new FormData()
       fd.append('file', file)
+      fd.append('empresa', empresa)
       if (fechaCobro) fd.append('fecha_cobro', fechaCobro)
       if (modoPreview) fd.append('preview', 'true')
       const r = await fetch('/api/import-ventas', { method: 'POST', body: fd })
@@ -80,9 +85,12 @@ export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admi
     <Dialog open={open} onOpenChange={(v) => !v && !cargando && (reset(), onClose())}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5" />Importar facturas de venta</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="h-5 w-5" />Importar facturas de venta — {empresa}
+          </DialogTitle>
           <DialogDescription>
             Excel/CSV de ARCA "Mis Comprobantes Emitidos" (o mismo formato). Nacen como <b>a cobrar</b>.
+            Se importan al subdiario de <b>{empresa}</b>.
           </DialogDescription>
         </DialogHeader>
 

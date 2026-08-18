@@ -44,7 +44,7 @@ interface TipoComp {
 interface Props {
   open: boolean
   onOpenChange: (v: boolean) => void
-  empresa: 'MSA' | 'MA'
+  empresa: 'MSA' | 'PAM' | 'MA'
   comprobanteInicial?: ComprobanteVenta | null
   onGuardado?: () => void
 }
@@ -60,11 +60,15 @@ const parsearStd = (s: string): number => {
 const fmtAR = (n: number, dec = 2) =>
   n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 
-const ALICUOTAS_IVA = ['0', '10.5', '21'] as const
+// '' = sin alícuota. Va primero y es el valor por defecto: una operación exenta o no gravada
+// no tiene alícuota, y si el default fuera 21 quedaba estampado en la fila sin que nadie lo eligiera
+// (caso SANPA SEMILLAS 07/2026: 100% exento y guardado con alicuota_iva = 21 e IVA $0).
+const ALICUOTAS_IVA = ['', '0', '10.5', '21'] as const
+const etiquetaAlicuota = (a: string) => (a === '' ? '— sin alícuota —' : `${a.replace('.', ',')}%`)
 
 export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comprobanteInicial, onGuardado }: Props) {
   const esEdicion = !!comprobanteInicial?.id
-  const schemaName = empresa === 'MA' ? 'ma' : 'msa'
+  const schemaName = empresa.toLowerCase()
 
   // Estados del form
   const [fechaEmision, setFechaEmision] = useState('')
@@ -75,7 +79,7 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
   const [netoGravado, setNetoGravado] = useState('')
   const [netoNoGravado, setNetoNoGravado] = useState('')
   const [opExentas, setOpExentas] = useState('')
-  const [alicuotaIva, setAlicuotaIva] = useState('21')
+  const [alicuotaIva, setAlicuotaIva] = useState('')
   const [iva, setIva] = useState('')
   const [observaciones, setObservaciones] = useState('')
   const [cuentaContable, setCuentaContable] = useState<string | null>(null)
@@ -111,7 +115,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
       setNetoGravado(c.imp_neto_gravado != null ? fmtAR(Math.abs(Number(c.imp_neto_gravado))) : '')
       setNetoNoGravado(c.imp_neto_no_gravado != null ? fmtAR(Math.abs(Number(c.imp_neto_no_gravado))) : '')
       setOpExentas(c.imp_op_exentas != null ? fmtAR(Math.abs(Number(c.imp_op_exentas))) : '')
-      setAlicuotaIva(c.alicuota_iva != null ? String(c.alicuota_iva) : '21')
+      // Un null guardado se muestra vacío, NO como 21: si no, abrir el comprobante para mirarlo
+      // y guardar le estampaba una alícuota que nadie eligió.
+      setAlicuotaIva(c.alicuota_iva != null ? String(c.alicuota_iva) : '')
       setIva(c.iva != null ? fmtAR(Math.abs(Number(c.iva))) : '')
       setObservaciones(c.datos_adicionales || '')
       setCuentaContable(c.cuenta_contable || null)
@@ -126,7 +132,7 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
       setNetoGravado('')
       setNetoNoGravado('')
       setOpExentas('')
-      setAlicuotaIva('21')
+      setAlicuotaIva('')
       setIva('')
       setObservaciones('')
       setCuentaContable(null)
@@ -135,8 +141,11 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
     }
   }, [open, comprobanteInicial])
 
-  // Recalc IVA al cambiar alícuota o neto gravado
+  // Recalc IVA al cambiar alícuota o neto gravado.
+  // Sin alícuota elegida no se toca el IVA: el campo es editable a mano y pisarlo con 0
+  // borraba lo que el usuario acababa de tipear.
   useEffect(() => {
+    if (alicuotaIva === '') return
     const ng = parsearAR(netoGravado)
     const a = parsearStd(alicuotaIva)
     setIva(fmtAR(ng * a / 100))
@@ -185,7 +194,9 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
         imp_neto_gravado: ng,
         imp_neto_no_gravado: nng,
         imp_op_exentas: oe,
-        alicuota_iva: alicuotaIva ? parsearStd(alicuotaIva) : null,
+        // Sin neto gravado no hay alícuota que valga: se guarda null. Una operación exenta
+        // con "21%" pegado en la fila es lo que ensuciaba el Libro IVA Ventas.
+        alicuota_iva: (alicuotaIva !== '' && parsearAR(netoGravado) !== 0) ? parsearStd(alicuotaIva) : null,
         iva: i,
         imp_total: total,
         // Para que el subdiario no se confunda con el formato de liquidación,
@@ -309,8 +320,13 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
                 <Label className="text-xs">Alícuota IVA</Label>
                 <select className="w-full border rounded h-9 px-2 text-sm"
                   value={alicuotaIva} onChange={e => setAlicuotaIva(e.target.value)}>
-                  {ALICUOTAS_IVA.map(a => <option key={a} value={a}>{a.replace('.', ',')}%</option>)}
+                  {ALICUOTAS_IVA.map(a => <option key={a || 'sin'} value={a}>{etiquetaAlicuota(a)}</option>)}
                 </select>
+                {alicuotaIva !== '' && parsearAR(netoGravado) === 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    Sin Neto Gravado la alícuota no se guarda (queda vacía).
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">IVA (editable)</Label>

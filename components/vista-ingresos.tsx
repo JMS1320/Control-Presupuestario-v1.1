@@ -32,7 +32,7 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="arrendamientos" className="flex items-center gap-2">
                 <Wheat className="h-4 w-4" />
                 Arrendamiento
@@ -56,6 +56,10 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
               <TabsTrigger value="subdiarios-msa" className="flex items-center gap-2">
                 <BookOpen className="h-4 w-4" />
                 Subdiarios MSA
+              </TabsTrigger>
+              <TabsTrigger value="subdiarios-pam" className="flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                Subdiarios PAM
               </TabsTrigger>
               <TabsTrigger value="subdiarios-ma" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
@@ -86,6 +90,10 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'co
 
               <TabsContent value="subdiarios-msa" className="space-y-4">
                 <VistaSubdiariosVenta empresa="MSA" userRole={userRole} />
+              </TabsContent>
+
+              <TabsContent value="subdiarios-pam" className="space-y-4">
+                <VistaSubdiariosVenta empresa="PAM" userRole={userRole} />
               </TabsContent>
 
               <TabsContent value="subdiarios-ma" className="space-y-4">

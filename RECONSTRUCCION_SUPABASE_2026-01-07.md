@@ -3323,6 +3323,43 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-08-13: Subdiario IVA Ventas para PAM y MA**
+
+Pedido del usuario: *"MA tendrá su subdiario de compras y ventas, como PAM también"*. Compras ya
+estaba en las 3 empresas; **ventas no**: `pam.comprobantes_venta` no existía y a
+`ma.comprobantes_venta` le faltaban 4 columnas respecto de MSA.
+
+Las 4 que faltaban en MA **no eran cosméticas**: el importador de ventas inserta `moneda`, `estado`
+y `fecha_cobro_estimada`, así que importar a MA habría fallado. Y `estado` + `fecha_cobro_estimada`
+son las que hacen que una venta **llegue al Cash Flow** (nace "a cobrar") — sin ellas las ventas de
+MA/PAM nunca alimentarían la proyección.
+
+```sql
+-- 1) MA: nivelar con MSA (aditivo; la tabla tenía 0 filas)
+ALTER TABLE ma.comprobantes_venta ADD COLUMN IF NOT EXISTS moneda               varchar DEFAULT 'PES';
+ALTER TABLE ma.comprobantes_venta ADD COLUMN IF NOT EXISTS estado               varchar DEFAULT 'a cobrar';
+ALTER TABLE ma.comprobantes_venta ADD COLUMN IF NOT EXISTS fecha_cobro_estimada date;
+ALTER TABLE ma.comprobantes_venta ADD COLUMN IF NOT EXISTS centro_costo_id      uuid;
+
+-- 2) PAM: no existía. Clon exacto de MSA (columnas, tipos, defaults, índices)
+CREATE TABLE IF NOT EXISTS pam.comprobantes_venta (LIKE msa.comprobantes_venta INCLUDING ALL);
+
+-- 3) Mismos permisos/RLS que las otras dos (el schema `pam` ya estaba expuesto en PostgREST)
+ALTER TABLE pam.comprobantes_venta ENABLE ROW LEVEL SECURITY;
+CREATE POLICY allow_all_comprobantes_venta_pam
+  ON pam.comprobantes_venta FOR ALL USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON pam.comprobantes_venta TO anon, authenticated, service_role;
+```
+
+**✅ Corrido el 2026-08-13** por MCP (migración `ventas_multiempresa_pam_ma`). Control posterior:
+las 3 tablas con **53 columnas, RLS activa y 1 policy** cada una. NO está en el backup original.
+
+**Por qué se clonó entera y no una tabla magra**: PAM y MA facturan arrendamiento (Factura C, sólo
+el total), así que la mitad de las columnas — las de liquidación de granos (`coe`, `puerto`,
+`cosecha`, `factor`, `toneladas`…) — van a quedar en null. Se clonó igual para que **las tres
+empresas corran exactamente el mismo código**: son nullables y no molestan, mientras que una tabla
+distinta obliga a bifurcar importador, modal y subdiario. Ver `PENDIENTES.md` § A-FEAT-22.
+
 ### **2026-08-10: Parseo de extractos — reglas por FORMA del movimiento**
 
 Un mismo tipo de movimiento llega escrito de varias maneras. En `ma_galicia`,

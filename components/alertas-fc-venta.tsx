@@ -7,6 +7,13 @@
 //   NO → la factura responde a otra cosa: dos ingresos separados, y la venta sigue
 //        esperando su factura. La decisión se guarda para no volver a preguntar.
 // El match es por CUIT nomás: las ventas son pocas (decisión del usuario, 2026-07-26).
+//
+// …salvo que el CUIT esté mal tipeado, y ahí el match por CUIT falla EN SILENCIO. Pasó de verdad
+// (2026-08-18): contrato de Rojas con `30712200662` y factura de ARCA con `30712200622`, un dígito
+// de diferencia. La alerta ofrecía la factura equivocada (la que compartía el CUIT malo) y la
+// correcta —por el importe exacto de la venta— no aparecía nunca, sin ninguna explicación.
+// Por eso ahora hay un SEGUNDO camino: si el importe coincide exacto con lo que falta facturar,
+// el candidato se ofrece igual, marcado en ámbar con los dos CUIT a la vista.
 
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
@@ -15,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Link2, AlertTriangle, Check, X } from "lucide-react"
+import { esCuitValido, formatearCuit, mismoCuit } from "@/lib/cuit"
 
 const fmtPesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const fmtAR = (n: number) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -34,6 +42,10 @@ interface Candidato {
   nro_comprobante: string
   imp_total: number
   fecha_liquidacion: string | null
+  /** Cómo se encontró: por CUIT (lo normal) o por importe exacto con CUIT distinto. */
+  coincide_por: 'cuit' | 'importe'
+  /** El CUIT que trae la factura — sólo interesa cuando NO coincide con el de la venta. */
+  cuit_comprobante: string
 }
 
 export function AlertasFcVenta() {
@@ -74,11 +86,21 @@ export function AlertasFcVenta() {
       const out: Candidato[] = []
       for (const v of pendientes) {
         if (!v.cliente_cuit) continue
+        const monto = Number(v.monto_pesos) || 0
+        const remanente = monto - (Number(v.facturado) || 0)
+
         for (const c of comprobantes || []) {
-          if (String(c.cuit_cliente || "") !== String(v.cliente_cuit)) continue
           if (decididos.has(`${v.venta_id}|${c.id}`)) continue
-          const monto = Number(v.monto_pesos) || 0
-          const remanente = monto - (Number(v.facturado) || 0)
+
+          const porCuit = mismoCuit(c.cuit_cliente, v.cliente_cuit)
+          // Segundo camino: el importe cierra exacto con lo que falta facturar. Sirve justo
+          // cuando el CUIT está mal tipeado de un lado — que es cuando el match por CUIT no
+          // puede ayudar y, sin esto, la factura correcta quedaba invisible.
+          const porImporte = !porCuit &&
+            Math.abs((Number(c.imp_total) || 0) - remanente) < 0.01
+
+          if (!porCuit && !porImporte) continue
+
           out.push({
             venta_id: v.venta_id, venta_tipo: v.venta_tipo, empresa: v.empresa,
             centro_costo: v.centro_costo, cliente_nombre: v.cliente_nombre,
@@ -86,9 +108,14 @@ export function AlertasFcVenta() {
             facturado: Number(v.facturado) || 0, remanente,
             comprobante_id: c.id, nro_comprobante: c.nro_comprobante || "",
             imp_total: Number(c.imp_total) || 0, fecha_liquidacion: c.fecha_liquidacion,
+            coincide_por: porCuit ? 'cuit' : 'importe',
+            cuit_comprobante: String(c.cuit_cliente || ""),
           })
         }
       }
+      // Los que cierran por importe exacto van primero: son los más probables, y además
+      // arrastran un CUIT a corregir.
+      out.sort((a, b) => (a.coincide_por === b.coincide_por ? 0 : a.coincide_por === 'importe' ? -1 : 1))
 
       setCandidatos(out)
       // Default del monto asignado: lo que menos sea entre la factura y lo que falta facturar
@@ -153,14 +180,39 @@ export function AlertasFcVenta() {
         {candidatos.map(c => {
           const k = clave(c)
           const cubreTodo = parseAR(montos[k] ?? "0") >= c.remanente - 0.01
+          const cuitVentaOk = esCuitValido(c.cliente_cuit)
+          const cuitFacturaOk = esCuitValido(c.cuit_comprobante)
           return (
-            <div key={k} className="rounded border p-3 space-y-2">
+            <div key={k} className={`rounded border p-3 space-y-2 ${c.coincide_por === 'importe' ? 'border-amber-400 bg-amber-50/40' : ''}`}>
               <p className="text-sm">
                 Llegó la factura <strong>{c.nro_comprobante || "(sin nº)"}</strong> de{" "}
                 <strong>{c.cliente_nombre}</strong> por {fmtPesos(c.imp_total)}.
                 ¿Es de la venta de <strong>{c.centro_costo}</strong> ({fmtPesos(c.monto_venta)}
                 {c.facturado > 0 && `, ya facturada ${fmtPesos(c.facturado)}`})?
               </p>
+
+              {c.coincide_por === 'importe' && (
+                <div className="flex items-start gap-2 rounded bg-amber-100 px-3 py-2 text-xs text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    <strong>El importe coincide exacto, pero los CUIT no.</strong> Uno de los dos
+                    está mal cargado — por eso esta factura no aparecía por CUIT.
+                    <br />
+                    Venta/contrato: <strong>{formatearCuit(c.cliente_cuit)}</strong>{" "}
+                    {cuitVentaOk
+                      ? <span className="text-amber-700">(verificador OK)</span>
+                      : <span className="font-semibold text-red-700">← dígito verificador INVÁLIDO</span>}
+                    <br />
+                    Factura: <strong>{formatearCuit(c.cuit_comprobante)}</strong>{" "}
+                    {cuitFacturaOk
+                      ? <span className="text-amber-700">(verificador OK)</span>
+                      : <span className="font-semibold text-red-700">← dígito verificador INVÁLIDO</span>}
+                    <br />
+                    Vincular acá <strong>no corrige el CUIT</strong>: arreglalo en el contrato
+                    (Ingresos → Arrendamiento) o en el comprobante, o el problema vuelve.
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-end gap-3">
                 <div>

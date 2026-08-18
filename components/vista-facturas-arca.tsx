@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
+import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
@@ -37,6 +38,11 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
+import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
+import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
+import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
+import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
+import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -298,48 +304,10 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
 }
 
 // Resumen del subdiario en 2 bloques (compartido por el display en vivo y por el Excel/PDF → siempre iguales).
-//  - ivaCompras (SÍ genera crédito fiscal: Fac A, M): FC / NC / Neto con neto gravado, exento, IVA, otros, total.
-//  - monotributo (NO genera crédito fiscal: Fac B 6/7/8 + Fac C 11/12/13): Comprobantes / NC / Neto (imp_total).
-function calcularSubtotalesSubdiario(facturas: any[]) {
-  const tcFactura = (f: any) => Number(f.tipo_cambio) || 1
-  const sumarBloque = (lista: any[], abs: boolean) => lista.reduce((acc, f) => {
-    const tc = tcFactura(f)
-    const sgn = (v: number) => (abs ? Math.abs(v) : v)
-    acc.imp_total         += sgn(Number(f.imp_total) || 0) * tc
-    acc.iva               += sgn(Number(f.iva) || 0) * tc
-    acc.imp_neto_gravado  += sgn(Number(f.imp_neto_gravado) || 0) * tc
-    acc.exento_no_gravado += sgn((Number(f.imp_neto_no_gravado) || 0) + (Number(f.imp_op_exentas) || 0)) * tc
-    acc.otros_tributos    += sgn(Number(f.otros_tributos) || 0) * tc
-    return acc
-  }, { imp_total: 0, iva: 0, imp_neto_gravado: 0, exento_no_gravado: 0, otros_tributos: 0 })
-
-  const TIPOS_SIN_CREDITO = [6, 7, 8, 11, 12, 13]
-  const creditoFiscal = facturas.filter(f => !TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
-  const fcList = creditoFiscal.filter(f => (Number(f.imp_total) || 0) >= 0)
-  const ncList = creditoFiscal.filter(f => (Number(f.imp_total) || 0) < 0)
-  const sumFC = sumarBloque(fcList, false)
-  const sumNC = sumarBloque(ncList, true)
-  const sumNeto = {
-    imp_total:         sumFC.imp_total         - sumNC.imp_total,
-    iva:               sumFC.iva               - sumNC.iva,
-    imp_neto_gravado:  sumFC.imp_neto_gravado  - sumNC.imp_neto_gravado,
-    exento_no_gravado: sumFC.exento_no_gravado - sumNC.exento_no_gravado,
-    otros_tributos:    sumFC.otros_tributos    - sumNC.otros_tributos,
-  }
-
-  const sinCredito = facturas.filter(f => TIPOS_SIN_CREDITO.includes(f.tipo_comprobante))
-  const sinCredComprob = sinCredito.filter(f => (Number(f.imp_total) || 0) >= 0)
-  const sinCredNC = sinCredito.filter(f => (Number(f.imp_total) || 0) < 0)
-  const totalComprob = sinCredComprob.reduce((s, f) => s + (Number(f.imp_total) || 0) * tcFactura(f), 0)
-  const totalNC = sinCredNC.reduce((s, f) => s + Math.abs(Number(f.imp_total) || 0) * tcFactura(f), 0)
-
-  return {
-    ivaCompras: { fc: { ...sumFC, cantidad: fcList.length }, nc: { ...sumNC, cantidad: ncList.length }, neto: sumNeto },
-    monotributo: { fc: { total: totalComprob, cantidad: sinCredComprob.length }, nc: { total: totalNC, cantidad: sinCredNC.length }, neto: totalComprob - totalNC },
-    facturas_c: totalComprob,
-    cantidad_facturas_c: sinCredComprob.length,
-  }
-}
+// La función se mudó a `lib/subdiarios/subtotales.ts` para que el Libro IVA VENTAS use la misma
+// (antes tenía 3 copias propias del cálculo). Sigue devolviendo `.ivaCompras` / `.monotributo`.
+const calcularSubtotalesSubdiario = (facturas: any[]) =>
+  calcularSubtotalesSubdiarioLib(facturas, TIPOS_SIN_CREDITO_COMPRAS)
 
 export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: 'admin' | 'contable' } = {}) {
   const esContable = userRole === 'contable'
@@ -646,7 +614,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const setCarpetaPorDefecto = (carpeta: any) => {
     setCarpetaPorDefectoState(carpeta)
     if (carpeta) {
-      localStorage.setItem('carpetaPorDefectoDDJJ', JSON.stringify({
+      localStorage.setItem(LS_CARPETA_POR_DEFECTO, JSON.stringify({
         name: carpeta.name,
         // No podemos serializar el handle completo, solo el nombre para mostrar
       }))
@@ -656,7 +624,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Cargar carpeta por defecto al inicio (solo nombre para mostrar)
   useEffect(() => {
     try {
-      const carpetaGuardada = localStorage.getItem('carpetaPorDefectoDDJJ')
+      const carpetaGuardada = localStorage.getItem(LS_CARPETA_POR_DEFECTO)
       if (carpetaGuardada) {
         const carpetaInfo = JSON.parse(carpetaGuardada)
         // Solo mantenemos la info para mostrar, no el handle real
@@ -2386,58 +2354,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         return
       }
 
-      // Sistema de selección de carpeta mejorado
-      let directorioDestino = null
-      let ubicacionFinal = 'carpeta Descargas'
-      
-      if ('showDirectoryPicker' in window) {
-        try {
-          // Opciones de destino
-          const opciones = [
-            '1. Cambiar carpeta por defecto',
-            carpetaPorDefecto ? `2. Usar carpeta por defecto actual (${carpetaPorDefecto.name})` : '2. Establecer carpeta por defecto',
-            '3. Cancelar descarga',
-            '',
-            'Elige una opción (1, 2 o 3):'
-          ].join('\n')
-          
-          const respuesta = prompt(opciones)
-          
-          if (respuesta === '1') {
-            // Cambiar carpeta por defecto
-            const nuevaCarpetaPorDefecto = await (window as any).showDirectoryPicker({
-              startIn: carpetaPorDefecto || 'downloads' // Iniciar desde carpeta actual o Descargas
-            })
-            setCarpetaPorDefecto(nuevaCarpetaPorDefecto)
-            directorioDestino = nuevaCarpetaPorDefecto
-            ubicacionFinal = `nueva carpeta por defecto "${nuevaCarpetaPorDefecto.name}"`
-            console.log('📁 Nueva carpeta por defecto establecida:', nuevaCarpetaPorDefecto.name)
-          } else if (respuesta === '2') {
-            if (carpetaPorDefecto && !carpetaPorDefecto.isFromStorage) {
-              // Usar carpeta por defecto existente (handle real)
-              directorioDestino = carpetaPorDefecto
-              ubicacionFinal = `carpeta por defecto "${carpetaPorDefecto.name}"`
-              console.log('📁 Usando carpeta por defecto:', carpetaPorDefecto.name)
-            } else {
-              // Establecer carpeta por defecto (primera vez o recarga desde localStorage)
-              const nuevaCarpeta = await (window as any).showDirectoryPicker()
-              setCarpetaPorDefecto(nuevaCarpeta)
-              directorioDestino = nuevaCarpeta
-              ubicacionFinal = `carpeta por defecto establecida "${nuevaCarpeta.name}"`
-              console.log('📁 Carpeta por defecto establecida:', nuevaCarpeta.name)
-            }
-          } else {
-            // Opción 3 o cualquier otra cosa = Cancelar descarga
-            console.log('📁 Descarga cancelada por el usuario')
-            alert('📁 Descarga cancelada')
-            return // Salir sin generar archivos
-          }
-        } catch (error) {
-          console.log('Usuario canceló selección de carpeta')
-          alert('📁 Descarga cancelada')
-          return // Salir sin generar archivos
-        }
+      // Selección de carpeta — mismo flujo que usa ahora el Libro IVA Ventas (lib compartido)
+      const destino = await elegirCarpetaDestino(carpetaPorDefecto, setCarpetaPorDefecto)
+      if (destino.cancelado) {
+        alert('📁 Descarga cancelada')
+        return // Salir sin generar archivos
       }
+      const directorioDestino = destino.directorio
+      const ubicacionFinal = destino.ubicacion || 'carpeta Descargas'
 
       // Generar archivos con opción de carpeta personalizada
       console.log('🔍 DEBUG: Iniciando generación archivos con facturas:', facturasProcesar.length)
@@ -2458,37 +2382,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
-  // Función helper para generar nombres únicos de archivo
-  const generarNombreUnico = async (directorio: any, nombreBase: string, extension: string): Promise<string> => {
-    if (!directorio) return `${nombreBase}.${extension}` // Si no hay directorio personalizado, usar nombre base
-    
-    let contador = 0
-    let nombreFinal = `${nombreBase}.${extension}`
-    
-    try {
-      // Intentar acceder al archivo para ver si existe (sin crear)
-      while (true) {
-        try {
-          await directorio.getFileHandle(nombreFinal, { create: false })
-          // Si llegamos aquí, el archivo existe, intentar con siguiente número
-          contador++
-          nombreFinal = `${nombreBase} (${contador}).${extension}`
-          console.log(`📝 Archivo existe, probando: ${nombreFinal}`)
-        } catch (error) {
-          // Error significa que el archivo no existe, podemos usar este nombre
-          console.log(`📝 Nombre disponible encontrado: ${nombreFinal}`)
-          break
-        }
-      }
-    } catch (error) {
-      console.log('Error verificando archivos existentes:', error)
-      // En caso de error, usar el nombre base
-      nombreFinal = `${nombreBase}.${extension}`
-    }
-    
-    console.log(`✅ Nombre único final: ${nombreFinal}`)
-    return nombreFinal
-  }
+  // Nombres únicos (nunca sobrescribe): implementación compartida con el Libro IVA Ventas.
+  const generarNombreUnico = generarNombreUnicoLib
 
   // Generar Excel con opción de carpeta personalizada
   const generarExcelConCarpeta = async (facturas: FacturaArca[], periodo: string, directorio: any = null) => {
@@ -2634,11 +2529,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
-        const contenidoExcel = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-        const archivoHandle = await directorio.getFileHandle(filename, { create: true })
-        const writable = await archivoHandle.createWritable()
-        await writable.write(contenidoExcel)
-        await writable.close()
+        await guardarEnCarpeta(directorio, filename, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
         console.log('✅ Excel guardado en carpeta personalizada:', filename)
       } else {
         // Descargar normalmente
@@ -2674,11 +2565,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const ultimoDiaMes = new Date(parseInt(año), parseInt(mes), 0).getDate()
       const fechaFin = `${ultimoDiaMes.toString().padStart(2, '0')}/${mes.padStart(2, '0')}/${año}`
       
-      // Header profesional
+      // Header profesional — la empresa sale de la vista, no hardcodeada (antes PAM y MA
+      // salían con la razón social y el CUIT de MSA impresos en su propio Libro IVA).
+      const datosEmp = DATOS_FISCALES[empresa]
       doc.setFontSize(14)
       doc.setFont(undefined, 'bold')
-      doc.text('MARTINEZ SOBRADO AGRO SRL', 20, 15)
-      doc.text('30-61778601-6', 180, 15)
+      doc.text(datosEmp.razonSocial, 20, 15)
+      doc.text(cuitFormateado(datosEmp.cuit), 180, 15)
       doc.text('COMPRAS', 250, 15)
       
       doc.setFontSize(12)
@@ -2813,8 +2706,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // Header para página de desglose
       doc.setFontSize(14)
       doc.setFont(undefined, 'bold')
-      doc.text('MARTINEZ SOBRADO AGRO SRL', 20, 15)
-      doc.text('30-61778601-6', 180, 15)
+      doc.text(datosEmp.razonSocial, 20, 15)
+      doc.text(cuitFormateado(datosEmp.cuit), 180, 15)
       doc.text('DESGLOSE IVA POR ALÍCUOTAS', 200, 15)
       
       doc.setFontSize(12)
@@ -2901,11 +2794,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
         console.log('🔍 DEBUG PDF: Intentando guardar en carpeta personalizada:', directorio.name)
-        const contenidoPDF = doc.output('arraybuffer')
-        const archivoHandle = await directorio.getFileHandle(filename, { create: true })
-        const writable = await archivoHandle.createWritable()
-        await writable.write(contenidoPDF)
-        await writable.close()
+        await guardarEnCarpeta(directorio, filename, doc.output('arraybuffer'))
         console.log('✅ PDF guardado en carpeta personalizada:', filename)
       } else {
         // Descargar normalmente
@@ -5499,170 +5388,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   // Generar PDF detalle de pago (grupos ARCA o Templates)
-  const generarPDFDetallePago = async (
-    tipo: 'arca' | 'template',
-    proveedor: string,
-    cuit: string,
-    items: Array<{
-      comprobante: string
-      fecha: string
-      fecha_estimada?: string | null
-      imp_total: number
-      monto_sicore?: number | null
-      descuento_aplicado?: number | null
-      monto_a_abonar: number
-    }>,
-    anticipo?: {
-      monto: number
-      monto_sicore: number | null
-      descuento_aplicado: number | null
-      tipo_sicore: string | null
-      sicore: string | null
-      fecha_pago: string
-    } | null,
-    opciones?: { returnBase64?: boolean }
-  ): Promise<string | void> => {
-    try {
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pageW = doc.internal.pageSize.getWidth()
-      const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
-      const fmtFechaStr = (f: string) => {
-        const d = new Date(f + 'T12:00:00')
-        return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
-      }
-
-      // Fecha de pago: del anticipo si existe, si no fecha_estimada del primer item
-      const fechaPagoRaw = anticipo
-        ? anticipo.fecha_pago
-        : (items[0]?.fecha_estimada || null)
-      const fechaPago = fechaPagoRaw ? fmtFechaStr(fechaPagoRaw) : '-'
-
-      // ── Header ────────────────────────────────────────────────────────────
-      doc.setFontSize(16)
-      doc.setFont('helvetica', 'bold')
-      doc.text('DETALLE DE PAGO', pageW / 2, 18, { align: 'center' })
-
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'normal')
-      doc.text('MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6', pageW / 2, 25, { align: 'center' })
-
-      // ── Datos proveedor ────────────────────────────────────────────────────
-      doc.setFontSize(10)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Beneficiario:', 15, 36)
-      doc.setFont('helvetica', 'normal')
-      doc.text(proveedor, 45, 36)
-      doc.setFont('helvetica', 'bold')
-      doc.text('CUIT:', 15, 42)
-      doc.setFont('helvetica', 'normal')
-      doc.text(cuit, 30, 42)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Fecha de Pago:', 15, 48)
-      doc.setFont('helvetica', 'normal')
-      doc.text(fechaPago, 47, 48)
-
-      // ── Construir columnas y filas ─────────────────────────────────────────
-      // Si hay anticipo, las columnas de retención/descuento vienen del anticipo
-      const hayRetencion = anticipo
-        ? (anticipo.monto_sicore || 0) > 0
-        : items.some(i => (i.monto_sicore || 0) > 0)
-      const hayDescuento = anticipo
-        ? (anticipo.descuento_aplicado || 0) > 0
-        : items.some(i => (i.descuento_aplicado || 0) > 0)
-
-      const head: string[][] = [[
-        'Comprobante',
-        'Fecha',
-        'Total Factura',
-        ...(hayRetencion ? ['Retención Ganancias'] : []),
-        ...(hayDescuento ? ['Descuento'] : []),
-        'Monto Transferido',
-        'Total Cancelado',
-      ]]
-
-      let body: string[][]
-      if (anticipo) {
-        const montoTransferido = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
-        const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0)
-        body = items.map(i => [
-          i.comprobante,
-          i.fecha,
-          fmt(i.imp_total),
-          ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
-          ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
-          fmt(montoTransferido),
-          fmt(totalCancelado),
-        ])
-        const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
-        body.push([
-          'TOTAL', '',
-          fmt(totalBruto),
-          ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
-          ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
-          fmt(montoTransferido),
-          fmt(totalCancelado),
-        ])
-      } else {
-        body = items.map(i => {
-          const montoTransferido = i.monto_a_abonar
-          const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0)
-          return [
-            i.comprobante,
-            i.fecha,
-            fmt(i.imp_total),
-            ...(hayRetencion ? [i.monto_sicore ? fmt(i.monto_sicore) : '-'] : []),
-            ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
-            fmt(montoTransferido),
-            fmt(totalCancelado),
-          ]
-        })
-        const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
-        const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
-        const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
-        const totalTransferido = items.reduce((s, i) => s + i.monto_a_abonar, 0)
-        const totalCancelado = totalTransferido + totalRet
-        body.push([
-          'TOTAL', '',
-          fmt(totalBruto),
-          ...(hayRetencion ? [fmt(totalRet)] : []),
-          ...(hayDescuento ? [fmt(totalDesc)] : []),
-          fmt(totalTransferido),
-          fmt(totalCancelado),
-        ])
-      }
-
-      const ncols = head[0].length
-      autoTable(doc, {
-        startY: 56,
-        head,
-        body,
-        theme: 'striped',
-        headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-        bodyStyles: { fontSize: 9 },
-        columnStyles: {
-          2: { halign: 'right' },
-          [ncols - 3]: { halign: 'right' },
-          [ncols - 2]: { halign: 'right' },
-          [ncols - 1]: { halign: 'right', fontStyle: 'bold' },
-        },
-        didParseCell: (data: any) => {
-          if (data.row.index === body.length - 1 && data.section === 'body') {
-            data.cell.styles.fillColor = [220, 220, 220]
-            data.cell.styles.fontStyle = 'bold'
-          }
-        }
-      })
-
-      if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
-
-      const nombreArchivo = `DetallePago_${proveedor.replace(/\s+/g, '_').substring(0, 30)}_${fechaPago.replace(/\//g, '-')}.pdf`
-      doc.save(nombreArchivo)
-
-    } catch (error) {
-      console.error('Error generando PDF detalle de pago:', error)
-      alert('Error al generar PDF: ' + (error as Error).message)
-    }
-  }
+  // El comprobante de pago en PDF vive en `lib/pagos/pdf-detalle-pago.ts` — ÚNICA implementación.
+  // Acá había una copia inline con el mismo bug del Total Cancelado (A-BUG-24) y sin soporte
+  // para el desglose por medios de pago. Se borró: Egresos y Cash Flow usan la misma función.
 
   // ── Certificado de Retención Ganancias ────────────────────────────────────
   const generarCertificadoRetencion = async (registros: Array<{
@@ -6154,6 +5882,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
               )
             })()}
+
+            {/* Control: Total general − Neto − Exento/NG − IVA − Otros Trib. − (Fac B y C) = 0 */}
+            <ControlCuadraturaSubdiario
+              resultado={verificarCuadratura(facturasPeriodo, TIPOS_SIN_CREDITO_COMPRAS)}
+              etiquetaSinCredito="Fac B y C (sin crédito fiscal)"
+            />
           </CardContent>
         </Card>
         )

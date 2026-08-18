@@ -1,7 +1,15 @@
 // Capa compartida (UI-agnóstica): comprobante de pago en PDF.
-// Copia VERBATIM de generarPDFDetallePago (vista-facturas-arca) — misma lógica,
-// para que Cash Flow la reuse sin reescribir. Cuando se deprece el Modal (E5) el
-// Modal usará esta misma función y se elimina la copia inline. Ver MANUAL-USO § Pagos.
+//
+// ÚNICA implementación desde 2026-08-13. Antes había dos: ésta (Cash Flow) y una copia inline
+// en `vista-facturas-arca.tsx` (Egresos). Se borró la copia — las dos arrastraban el mismo bug
+// y sólo ésta soportaba el desglose por medios de pago. Ver PENDIENTES § A-BUG-24.
+//
+// 🔑 LA RELACIÓN QUE TIENE QUE CERRAR SIEMPRE:
+//        Total Factura = Monto Transferido + Retención (SICORE) + Descuento
+//    y eso ES el Total Cancelado. El descuento cancela factura aunque no salga plata por él.
+//    Omitirlo le dice al proveedor que le queda un saldo impago que no existe (caso ALCORTA
+//    10/08/2026: decía $520.978,69 sobre una factura de $548.398,62, justo el descuento de menos).
+//    El desglose por medios de abajo ya usaba este criterio; la tabla principal no.
 
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -92,7 +100,8 @@ export const generarPDFDetallePago = async (
     let body: string[][]
     if (anticipo) {
       const montoTransferido = anticipo.monto - (anticipo.monto_sicore || 0) - (anticipo.descuento_aplicado || 0)
-      const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0)
+      // Total Cancelado = transferencia + retención + descuento (ver nota arriba)
+      const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0) + (anticipo.descuento_aplicado || 0)
       const cols = (extra: string[]) => hayMedios ? extra : [...extra, fmt(montoTransferido), fmt(totalCancelado)]
       body = items.map(i => [
         i.comprobante,
@@ -113,7 +122,7 @@ export const generarPDFDetallePago = async (
     } else {
       body = items.map(i => {
         const montoTransferido = i.monto_a_abonar
-        const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0)
+        const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0) + (i.descuento_aplicado || 0)
         return [
           i.comprobante,
           i.fecha,
@@ -127,7 +136,7 @@ export const generarPDFDetallePago = async (
       const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
       const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
       const totalTransferido = items.reduce((s, i) => s + i.monto_a_abonar, 0)
-      const totalCancelado = totalTransferido + totalRet
+      const totalCancelado = totalTransferido + totalRet + totalDesc
       body.push([
         'TOTAL', '',
         fmt(totalBruto),
@@ -144,10 +153,17 @@ export const generarPDFDetallePago = async (
       theme: 'striped',
       headStyles: { fillColor: [40, 80, 40], textColor: 255, fontStyle: 'bold', fontSize: 9 },
       bodyStyles: { fontSize: 9 },
-      columnStyles: {
-        2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' },
-        5: { halign: 'right' }, 6: { halign: 'right' },
-      },
+      // De la columna 2 en adelante son todas importes. Se calcula sobre la cantidad real de
+      // columnas porque las de retención/descuento/transferido aparecen o no según el caso:
+      // con índices fijos, un pago sin retención desalineaba la tabla.
+      columnStyles: Object.fromEntries(
+        head[0].map((_, i) => i).filter(i => i >= 2).map(i => [
+          i,
+          i === head[0].length - 1 && !hayMedios
+            ? { halign: 'right', fontStyle: 'bold' }
+            : { halign: 'right' },
+        ])
+      ) as any,
       didParseCell: (data: any) => {
         if (data.row.index === body.length - 1 && data.section === 'body') {
           data.cell.styles.fillColor = [220, 220, 220]

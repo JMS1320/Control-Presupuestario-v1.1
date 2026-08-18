@@ -6,16 +6,25 @@
  * Lee SOLO los CUIT de variables de entorno (no son secretos):
  *   - ARCA_CUIT_PERSONAL          (CUIT que loguea para MSA/PAM)
  *   - ARCA_CUIT_EMPRESA_MSA       (CUIT a representar — MSA SRL)
+ *   - ARCA_CUIT_EMPRESA_PAM       (CUIT a representar — PAM)
  *   - ARCA_CUIT_PERSONAL_MA       (CUIT para entrar a MA)
  *
  * La password se recibe POR PARÁMETRO (el usuario la ingresa en el modal
  * de la app cada vez). Nunca se guarda en disco ni en BD ni en env vars.
+ *
+ * Sirve igual para `recibidos` (compras) y `emitidos` (ventas): es el mismo flujo con otra
+ * URL de ARCA, sin nada específico por empresa ni por tipo.
  */
 
 import { loginArca } from './login'
 import { descargarMisComprobantes, type DescargaResult } from './descargar'
 
-export type Empresa = 'MSA' | 'MA'
+/**
+ * Las 3 empresas. **PAM faltaba en el tipo** aunque `getCuits` siempre la manejó
+ * (`ARCA_CUIT_EMPRESA_PAM`) y el endpoint la valida: el tipo mentía y el route la pasaba con un
+ * cast. Corregido 2026-08-18.
+ */
+export type Empresa = 'MSA' | 'PAM' | 'MA'
 export type Tipo = 'recibidos' | 'emitidos'
 
 export interface DescargarArcaInput {

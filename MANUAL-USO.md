@@ -90,7 +90,7 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
 | Subtotales por estado (preparado/pagar/pendiente) | Modal (l.9271, 10037…) | ❌ portar |
 | Agrupar pagos/templates | Modal (l.9293/9381/9445) | ✅ `agruparSeleccionados` (lib/pagos/agrupar) + paridad fina (nombre combinado, responsable templates, monto en pesos) |
 | **Desagrupar** (deshacer grupo) | Modal (desagruparPago/desagruparTemplates) | ✅ **botón ✕ en la fila-grupo** (lib/pagos/desagrupar; deshace todo el grupo). En CF el grupo = 1 fila consolidada → no hay desagrupar parcial |
-| PDF detalle de pago | `generarPDFDetallePago` (l.5505) | ❌ extraer a util |
+| PDF detalle de pago | `lib/pagos/pdf-detalle-pago.ts` | ✅ **unificado 2026-08-13** — se borró la copia inline de Egresos (arrastraba el bug del Total Cancelado, A-BUG-24) |
 | Export Excel de pagos | Modal | ❌ extraer a util |
 | Cambiar estado (pagar/preparado/pagado) | ambos | ✅ ya |
 | Editar fechas/campos | hook | ✅ ya (fecha_pago incl.) |
@@ -440,6 +440,21 @@ Manda al proveedor un mail con el **Detalle de pago** en PDF adjunto (+ **certif
 
 Ambos botones llaman la misma función (`lib/pagos/encolar-mail-detalle`) → insertan el mail en la cola `public.mails_pago` (estado `pendiente`).
 
+### 🧮 Qué tiene que decir el PDF adjunto 🟡 (corregido 2026-08-13, sin testear)
+
+La relación que **siempre** tiene que cerrar en el Detalle de Pago:
+
+> **Total Factura = Monto Transferido + Retención (SICORE) + Descuento**, y eso **es** el Total Cancelado.
+
+El descuento por pronto pago **cancela factura** aunque no salga plata por él. Hasta el 2026-08-13 el
+Total Cancelado no lo sumaba: el pago de ALCORTA del 10/08 decía **$520.978,69** sobre una factura de
+**$548.398,62** — justo el descuento de $27.419,93 de menos —, o sea que le informaba al proveedor un
+saldo impago inexistente.
+
+**Cómo verificarlo:** abrí el detalle de un pago **con descuento**, desde Egresos *y* desde Cash Flow
+(antes eran dos códigos distintos, ahora es uno solo), y chequeá que la última columna dé igual al
+**Total Factura**. Con un pago sin descuento, nada tiene que haber cambiado.
+
 ### Panel de revisión + envío (Cash Flow → "✉ Mails de detalle")
 - Lista la cola por estado (pendiente / borrador / enviado / error). Podés **editar** destinatario, asunto y cuerpo, togglear los adjuntos (detalle / retención) y **borrar**.
 - **Guardar** = solo persiste tus ediciones (no envía).
@@ -470,6 +485,119 @@ Ambos botones llaman la misma función (`lib/pagos/encolar-mail-detalle`) → in
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
+
+### 🔗 Alerta "Facturas de venta sin vincular" (pantalla de inicio) 🟡 (mejorada 2026-08-18, sin testear)
+
+**Qué es:** llegó una factura de venta y hay una venta esperando factura del mismo cliente. La app
+pregunta *"¿esta factura es de esta venta?"*. Si decís **sí**, el Cash Flow deja de mostrar la venta
+y muestra la factura. Si decís **no**, quedan como dos ingresos y la venta sigue esperando.
+
+**El match es por CUIT** — pero **un CUIT mal tipeado hacía desaparecer la factura correcta sin
+decir nada**. Pasó con Sanpa: el contrato tenía `30712200662` y la factura de ARCA `30712200622`
+(un dígito), así que la alerta ofrecía una factura vieja y la correcta no aparecía nunca.
+
+**Ahora hay un segundo camino:** si el CUIT no coincide **pero el importe cierra exacto** con lo que
+falta facturar, la factura se ofrece igual — **en ámbar, primera de la lista**, mostrando los dos
+CUIT enfrentados y marcando cuál tiene el **dígito verificador inválido** (un CUIT inválido es
+siempre un error de carga).
+
+> ⚠️ **Vincular NO corrige el CUIT.** Si aceptás el vínculo pero no arreglás el CUIT en el contrato
+> (Ingresos → Arrendamiento) o en el comprobante, el problema vuelve con la próxima factura.
+
+**Cómo probarlo:**
+1. Entrá a la pantalla de inicio: tienen que aparecer **las dos** facturas de Sanpa.
+2. La de **julio** ($78.262.800) tiene que salir **en ámbar y primera**, avisando que `30712200662` es inválido y que el válido es `30712200622`.
+3. La de **mayo** ($95.715.830,32) sale en blanco, como match normal por CUIT.
+4. Corregí el CUIT del contrato de Rojas y recargá → la de julio tiene que pasar a match normal (sin ámbar).
+
+### 📤 Importar comprobantes de venta 🟡 (2026-08-13, sin testear)
+
+**Dónde:** Ingresos → **Subdiarios** de la empresa (MSA / MA) → botón **Importar**.
+Cada subdiario importa **a su propia empresa**: el modal lo dice en el título ("Importar facturas de
+venta — MA") y es también el CUIT con el que entra a ARCA.
+
+> Antes esto sólo existía en la solapa *Comprobantes MSA* y escribía siempre en MSA, aunque
+> estuvieras mirando MA.
+
+**Dos formas de traer los comprobantes:**
+1. **Directo de ARCA** — clave fiscal + rango de fechas → "Bajar de ARCA" (Mis Comprobantes Emitidos).
+2. **Archivo** — Excel/CSV de ARCA o del mismo formato.
+
+Después: *Fecha de cobro estimada* (la usa el Cash Flow) → **Previsualizar** (dice cuántas son nuevas
+y cuántas duplicadas, sin insertar nada) → **Importar**.
+
+**Cómo probarlo:**
+1. Subdiarios **MA** → Importar → el título tiene que decir **MA**.
+2. **Previsualizar** primero: no debe insertar nada, sólo contar.
+3. Importar y confirmar que los comprobantes aparecen en el subdiario **de MA**, no en el de MSA.
+4. Reimportar el mismo archivo → todas tienen que salir como **duplicadas**, 0 insertadas.
+5. En MSA, además, tiene que seguir informando *retenciones vinculadas* (en MA/PAM ese paso no corre porque `retenciones_recibidas` sólo existe en MSA).
+
+**Desde 2026-08-13 las tres empresas tienen subdiario de ventas**: Subdiarios **MSA**, **PAM** y
+**MA**, cada uno con su tabla propia y el mismo comportamiento. PAM y MA arrancan vacíos.
+
+> ⚠️ **PAM y MA facturan arrendamiento (Factura C, sólo el total).** Con comprobantes C, el bloque
+> "📒 Libro IVA Ventas" del resumen sale en **$0** y todo aparece en "no generan débito fiscal" —
+> está pendiente de definir si así corresponde (ver `PENDIENTES.md` § A-DEC-02).
+
+### 📥 Export del Libro IVA (Compras y Ventas) 🟡 (2026-08-13, sin testear)
+
+**Desde 2026-08-13 las dos pantallas funcionan igual.** En Ventas antes había dos botones separados
+(`Excel` y `PDF`) que bajaban siempre a Descargas pisando el archivo anterior.
+
+**Dónde:**
+- Compras → Egresos → Facturas → **Subdiarios** → Consultar período → **"📊 Generar PDF + Excel (N)"**
+- Ventas → Ingresos → **Subdiarios IVA Ventas** → Consultar período → **"📊 Generar PDF + Excel (N)"**
+
+**Qué pasa al apretarlo:**
+1. Re-consulta el período a la base (no usa lo que quedó pintado en pantalla).
+2. Pregunta dónde guardar, con 3 opciones:
+   - **1** = elegir otra carpeta (y queda como la nueva por defecto)
+   - **2** = usar la carpeta por defecto actual
+   - **3** = cancelar — *no genera nada*
+3. Genera **los dos archivos**: `LIBRO IVA COMPRAS 26-07.xlsx` y `.pdf` (año corto-mes).
+4. **Nunca sobrescribe**: si ya existe, agrega ` (1)`, ` (2)`.
+5. Avisa cuántos comprobantes salieron y en qué carpeta quedaron.
+
+> **Ojo con la carpeta después de recargar la página.** El navegador no puede guardar el permiso de
+> escritura, sólo el nombre. Si recargaste, la opción **2** te va a volver a abrir el selector una vez.
+> No es un error.
+>
+> En **Firefox y Safari** no existe el selector de carpetas: no pregunta nada y baja a Descargas.
+
+**El PDF, en las dos:** página 1 con el detalle comprobante por comprobante y fila **TOTALES
+GENERALES**; página 2 con el **Desglose por Alícuotas** y los **2 bloques** del resumen.
+
+**Diferencias que quedan entre Compras y Ventas** (son de la base, no del reporte): Ventas **no
+tiene** columna *Otros Tributos*, no convierte USD→$ y arma el desglose agrupando por la alícuota de
+cada comprobante. Tampoco tiene el par *IVA 21 % / IVA Diferencial*, que en ventas no sirve porque se
+vende mayormente exento y al 10,5 %.
+
+**Cómo probarlo:**
+1. **Compras, período 07/2026** → el botón dice "(37 facturas)". Apretá, elegí opción **3** → tiene que decir *"Descarga cancelada"* y **no** bajar ningún archivo.
+2. Repetí con opción **1**, elegí una carpeta → tienen que aparecer **los dos archivos** ahí.
+3. Volvé a apretar y elegí opción **2** → los archivos nuevos tienen que llamarse `… (1).xlsx` y `… (1).pdf`, **sin pisar** los anteriores.
+4. Abrí el PDF: encabezado con razón social, CUIT y *"desde el 01/07/2026 hasta el 31/07/2026"*; página 2 con alícuotas y los 2 bloques. Los 2 bloques tienen que dar **igual que la pantalla**.
+5. **Ventas, período 07/2026** (2 comprobantes) → mismo flujo, un solo botón. El PDF **no** debe tener columna *Otros Tributos*.
+6. ⚠️ **Si mirás PAM o MA**: el encabezado tiene que decir *su* razón social, no "MARTINEZ SOBRADO AGRO SRL" (era un bug). En **MA el CUIT sale vacío** porque no lo tenemos cargado — si lo pasás, se completa.
+
+### ✅ Control de cuadratura 🟡 (2026-08-13, sin testear)
+
+Debajo de los 2 bloques, tanto en **Compras** como en **Ventas**, sale una barra que verifica:
+
+> **Total general − Neto Gravado − Exento/No Gravado − IVA − Otros Tributos − (bloque sin crédito fiscal) = 0**
+
+- **Verde** = cuadra. Si el residuo son centavos, lo dice: *"es redondeo del emisor, dentro de la tolerancia"*.
+- **Rojo** = la diferencia supera la tolerancia (**$0,05 × cantidad de comprobantes**) → el período **no cierra**.
+- Si hay comprobantes que no cierran uno por uno, aparece **"Ver los N comprobantes que no cierran"**: los lista con Imp. Total, suma de las partes y la diferencia. **Ese listado es lo que sirve para arreglarlo** — el número global sólo avisa.
+
+**Por qué hay tolerancia:** los emisores redondean. En MSA 07/2026 el residuo fue de **$0,01** repartido en 4 facturas (La Mercure −0,02; Telecom, Miceli y Deheza +0,01 c/u) que vienen así desde ARCA. Exigir cero exacto daría rojo todos los meses y el control se volvería ruido.
+
+**Cómo probarlo:**
+1. Egresos → Facturas → Subdiarios → período **07/2026** → tiene que dar **verde**, diferencia **$0,01**, y el detalle debe listar esas 4 facturas.
+2. Abrí el detalle y verificá que para cada una `Imp. Total ≠ suma de partes` por 1 o 2 centavos.
+3. Ingresos → Subdiarios IVA Ventas → **07/2026** → verde, **$0,00** (2 comprobantes, ambos exentos). Ahí la barra **no** muestra el término *Otros Tributos*, porque Ventas no tiene esa columna.
+4. Para ver el rojo: elegí un período donde falte cargar un importe, o cambiale a mano el Imp. Total a una factura (⚠️ si tocás un dato, dejalo como estaba).
 
 ## 👷 Módulo: Sueldos 🟡 (lock de mes sin testear)
 

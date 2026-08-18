@@ -81,6 +81,28 @@ export function etiquetaEmpresas(empresas: string[]): string {
   return empresas.length > 0 ? empresas.join('/') : '—'
 }
 
+/**
+ * Datos fiscales para los encabezados de los reportes (Libro IVA, certificados, detalles de pago).
+ *
+ * Existe porque los PDF los tenían **hardcodeados a MSA**: el Libro IVA Compras escribía
+ * "MARTINEZ SOBRADO AGRO SRL / 30-61778601-6" aunque estuvieras mirando PAM o MA, y el de Ventas
+ * imprimía el literal `'CUIT MA'` en el lugar del CUIT.
+ *
+ * Datos confirmados por el usuario: MA (Mercedes Areco) el 2026-08-18.
+ */
+export const DATOS_FISCALES: Record<Empresa, { razonSocial: string; cuit: string | null }> = {
+  MSA: { razonSocial: 'MARTINEZ SOBRADO AGRO SRL', cuit: '30617786016' },
+  PAM: { razonSocial: 'SUCESION DE PLACIDO ALBERTO MARTINEZ', cuit: '20044390222' },
+  MA:  { razonSocial: 'MERCEDES ARECO', cuit: '27066824611' },
+}
+
+/** CUIT con guiones para encabezados: `30617786016` → `30-61778601-6`. */
+export function cuitFormateado(cuit: string | null): string {
+  if (!cuit) return ''
+  const d = cuit.replace(/\D/g, '')
+  return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : cuit
+}
+
 /** Color por empresa, para distinguirlas de un vistazo sin leer. */
 export const COLOR_EMPRESA: Record<Empresa, string> = {
   MSA: 'bg-blue-100 text-blue-800 border-blue-200',
