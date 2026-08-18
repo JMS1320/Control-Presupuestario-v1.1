@@ -253,6 +253,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) |
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) |
+| **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) |
 | A-FEAT-23 | 🔴 | Feat | **La fijación de arrendamiento no emite el comprobante de venta** — `ventas_arrendamiento.comprobante_id` existe pero **nadie lo escribe ni lo lee** (sólo está en el tipo TS). El arrendamiento de PAM/MA hay que cargarlo dos veces: una en el contrato y otra a mano en el subdiario. Va contra el norte (cargar una sola vez) | → [A-FEAT-23](#a-feat-23) |
@@ -7204,6 +7205,82 @@ UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
 
 **Testear:** entrar a la pantalla de inicio. Tienen que salir **las dos** facturas de Sanpa: la de
 mayo (match por CUIT, normal) y la de julio en ámbar, diciendo que `30712200662` es inválido.
+
+---
+
+## <a id="a-feat-25"></a>A-FEAT-25 — Escenarios de margen (diseño, 2026-08-18)
+
+**El pedido.** El usuario simula campañas en *Productivo → Recría → Historial de pesadas*: no elige
+el segmento actual, pone un total de terneros con datos actuales y proyecta una recría entera.
+Quiere poder **adjudicar costos directos** para completar la foto — *"a un lote de 195 terneros le
+pongo 30 has de avena, tantos USD, tal TC"* — con líneas total contra total y las dos columnas de
+siempre: **por individuo** y **por total de la tropa**.
+
+Y puso él mismo el límite correcto: *"no sería bueno duplicar o crear datos que en realidad salen de
+otro lado"* (los terneros salen de la campaña de cría, no se tipean).
+
+### 🔎 Lo que ya existe — NO hay que construirlo
+
+| Lo que parecía faltar | Dónde ya está |
+|---|---|
+| costo por hectárea (el verdeo) | `actividad_insumos`, modo **`monto_ha`** — comentado como *"el verdeo. NO escala con cabezas"* |
+| en USD, convertido al TC | `actividad_insumos.moneda` + `tipos_cambio.tc_presupuestado` |
+| hectáreas de un lote | `lote_tramos.hectareas` — *"sólo para los costos por hectárea"* |
+| hectáreas por campaña/actividad | `campo_campana_actividad.has_netas` |
+| la cadena de ajustes | `actividad_insumo_ajustes` (`base × IPC × +30 %`) |
+
+`panel-margen.tsx` **ya ensambla todo eso**. Construir costos directos dentro de Historial de Pesadas
+sería la **tercera implementación del mismo cálculo** — el error que ya se cometió con
+`presupuesto_variables` vs `actividad_insumos`.
+
+### 🕳️ Lo que falta de verdad: la dimensión escenario
+
+Verificado el 2026-08-18: **`panel-margen.tsx` calcula una sola foto por campaña, siempre desde datos
+reales. No guarda variantes.** La duda del usuario (*"no sé si en márgenes puedo"*) tenía razón: no.
+
+Son **tres** cosas distintas, y sólo existen dos:
+
+| | Qué es | Existe |
+|---|---|:-:|
+| Margen actual | lo que pasó / está pasando | ✅ |
+| Presupuesto | la proyección comprometida (caja) | ✅ |
+| **Escenario** | *"¿y si hago 195 terneros con 30 has de avena?"* | ❌ |
+
+### 🧭 El diseño: overrides, nunca una copia
+
+> Un escenario = una fila padre (`nombre`, campaña base, `notas`) + una tabla de **overrides**.
+> **Campo vacío = usá el dato real. Campo lleno = acá mando yo.**
+
+Copiar las filas congelaría el vínculo con lo real: a los tres meses habría cinco escenarios con
+precios viejos y ninguna forma de saber cuál mirar. Con overrides, **lo que no pisaste mejora solo**
+cuando mejora el dato real. Es la aplicación directa de la regla del usuario (ver abajo), y la misma
+idea que ya funciona en ventas de hacienda: *presupuestada → confirmada → fijada*.
+
+### ✅ Dos definiciones tomadas con el usuario (2026-08-18)
+
+1. **Los costos se aplican por EXISTENCIA INICIAL.** Con mortandad, las cabezas cambian dentro del
+   tramo: por cabeza inicial, final o promedio ponderado dan **tres números distintos**. Queda fijado
+   en *inicial* — y hay que respetarlo en toda pantalla que muestre "por cabeza", o dentro de tres
+   meses no coinciden.
+2. **Default del dato real, siempre editable.** *"Que tome el dato por default si existe y permita
+   poner a mano si no existe o no se quiere usar."* Es una **regla general del proyecto**, no de esta
+   feature. Aplicada acá: cabezas ← ciclo de cría · hectáreas ← `campo_campana_actividad.has_netas`
+   · USD/ha ← `actividad_insumos` · TC ← `tipos_cambio` · precio ← `precios_hacienda`; todos
+   pisables. Corolario del usuario: *"nos deja el diseño futuro desde hoy usando la data existente
+   esté como esté"*.
+   ⚠️ Y el campo de **cuenta contable** del costo se deja previsto desde el día 1 aunque arranque
+   vacío (hoy se escribe a mano): agregarlo después cuesta el doble.
+
+### 📋 Plan por etapas
+1. **El escenario como dimensión de Márgenes** — selector *Real · Escenario A · Escenario B*. Mismo
+   motor; sin overrides tiene que dar **exactamente** lo mismo que hoy (ése es el test).
+2. **Los overrides del caso de uso**: cabezas, hectáreas por actividad, monto de insumo.
+3. **Columnas por cabeza y por tropa**, dividiendo por existencia inicial.
+4. **Enganche desde Historial de Pesadas**: "guardar como escenario" — no calcula nada nuevo, manda
+   al motor.
+5. **Comparar escenarios** y, opcionalmente, promover uno a presupuesto.
+
+**Estado: sólo diseño, 0 código.** El usuario pidió pensar y proponer.
 
 ---
 

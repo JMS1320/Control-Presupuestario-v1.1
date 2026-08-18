@@ -240,6 +240,23 @@ ese lugar afecte a todo lo que lo usa.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
 
+### 🎚️ Default del dato real, siempre editable (REGLA)
+*Enunciada por el usuario 2026-08-18, **"para todo por lo general"** — no es de una feature.*
+
+> **Todo campo toma por default el dato real si existe, y se puede escribir a mano si no existe o
+> no se quiere usar.** Campo vacío = "usá el real". Campo lleno = "acá mando yo".
+
+- El valor puesto a mano es un **override (delta)**, **nunca una copia** de la fila. Copiar congela
+  el vínculo con el dato real: lo que no pisaste tiene que **mejorar solo** cuando mejora el origen.
+- Dejar el campo previsto **desde el día 1** aunque arranque vacío (ej.: la cuenta contable de un
+  costo que hoy se escribe a mano). Agregarlo después cuesta el doble.
+- Mostrar de dónde viene el valor cuando es automático, para que se note al pisarlo.
+
+**Motivo** (palabras del usuario): *"nos deja el diseño futuro desde hoy usando la data existente
+esté como esté"*. Sólo-manual duplica un dato que ya existe y los números dejan de coincidir;
+sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
+los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
+
 ### 📝 Motivos, errores y testing (REGLA)
 - **Toda regla, decisión o pendiente lleva su motivo** (dónde duele, con el caso concreto que la
   originó). Motivo del motivo: el usuario prioriza con eso — *"las normas que tengan muchos
