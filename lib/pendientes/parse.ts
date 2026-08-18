@@ -23,6 +23,32 @@
 
 export type GrupoPendiente = 'urgente' | 'secundario' | 'test' | 'hecho'
 
+/**
+ * Las 12 solapas reales de la app (`dashboard.tsx`). Es la lista contra la que se valida cada
+ * marca `@pantalla` — si no está acá, la marca está mal escrita.
+ */
+export const PANTALLAS = [
+  'principal', 'dashboard', 'distribucion', 'reporte', 'egresos', 'ingresos',
+  'cashflow', 'extracto', 'productivo', 'sueldos', 'presupuesto', 'importar',
+] as const
+export type Pantalla = typeof PANTALLAS[number]
+
+/**
+ * Marca de ubicación dentro del texto del ítem: `` `@cashflow` `` o `@cashflow`.
+ *
+ * Va en el TEXTO y no en una columna nueva porque el índice tiene 16 tablas con 10 formas de
+ * encabezado distintas: una columna habría que agregarla a las 16 y ensancharlas todas. La marca
+ * funciona igual en cualquier forma de tabla.
+ *
+ * Admite **varias** (`@cashflow @extracto`) porque un pendiente puede incidir en más de una
+ * pantalla, y admite sub-nivel opcional (`@ingresos/subdiarios`): manda el prefijo, el resto es
+ * detalle. Así se etiqueta grueso hoy y se afina después sin rehacer nada.
+ *
+ * ⚠️ El `@` NO puede venir pegado a una palabra: si no, un mail del texto
+ * (`go@bancogalicia.com.ar`) se leía como marca. Lo detectó el control al reportar `@gmail`.
+ */
+const RE_MARCA = /(?<![\w.@-])`?@([a-z]+)(\/[a-z0-9-]+)?`?/gi
+
 export interface Pendiente {
   id: string
   /** Crudo, como está en el archivo: 🔴 · 🟡 · ✅ · ⏸️ … */
@@ -37,6 +63,16 @@ export interface Pendiente {
   seccion: string | null
   linea: number
   grupo: GrupoPendiente
+  /**
+   * En qué pantallas se muestra. **Vacío = "sin ubicar" → se muestra en TODAS.**
+   * Así el invariante *"todo pendiente aparece en alguna pantalla"* se cumple por construcción:
+   * o tiene marcas y aparece en las suyas, o no tiene y aparece en todas.
+   */
+  pantallas: Pantalla[]
+  /** El sub-nivel de cada marca (`@ingresos/subdiarios` → `subdiarios`), si lo tiene. */
+  subPantallas: string[]
+  /** Marcas que NO coinciden con ninguna solapa real: error de tipeo. Ver `marcasDesconocidas`. */
+  marcasInvalidas: string[]
 }
 
 export interface FilaNoParseada {
@@ -61,6 +97,13 @@ export interface ResultadoPendientes {
   ignoradas: FilaNoParseada[]
   /** Parseadas + no parseadas + ignoradas. Para el control "no se perdió ninguna". */
   totalDetectadas: number
+  /**
+   * 🚨 Marcas `@algo` que no son ninguna de las 12 solapas — casi siempre un tipeo (`@cashflows`).
+   * Es el ÚNICO camino por el que un pendiente podría no mostrarse en ningún lado, así que se
+   * reporta fuerte. El pendiente igual cae a "sin ubicar" y sigue visible: se avisa del error,
+   * no se esconde el ítem.
+   */
+  marcasDesconocidas: { marca: string; ids: string[] }[]
 }
 
 /** Una fila del índice: `| A-BUG-27 | …` o `| **A-BUG-27** | …`. */
@@ -100,6 +143,43 @@ function limpiar(md: string): string {
 function anclaDe(texto: string): string | null {
   const m = texto.match(/\(#([a-z0-9-]+)\)/i)
   return m ? m[1] : null
+}
+
+/**
+ * Saca las marcas `@pantalla` del texto y las valida contra las 12 solapas reales.
+ *
+ * Devuelve también el texto **sin las marcas**: en el panel se ve el título limpio, la marca es
+ * metadato, no parte de la descripción.
+ */
+function extraerMarcas(texto: string): {
+  limpio: string; pantallas: Pantalla[]; subPantallas: string[]; invalidas: string[]
+} {
+  const pantallas: Pantalla[] = []
+  const subPantallas: string[] = []
+  const invalidas: string[] = []
+
+  const limpio = texto.replace(RE_MARCA, (_m, nombre: string, sub?: string) => {
+    const n = nombre.toLowerCase()
+    if ((PANTALLAS as readonly string[]).includes(n)) {
+      if (!pantallas.includes(n as Pantalla)) pantallas.push(n as Pantalla)
+      if (sub) subPantallas.push(sub.slice(1))
+    } else {
+      // No se traga el error: se reporta y el ítem queda "sin ubicar" (visible en todas).
+      invalidas.push(n)
+    }
+    return ''
+  })
+
+  return { limpio: limpio.replace(/\s{2,}/g, ' ').trim(), pantallas, subPantallas, invalidas }
+}
+
+/**
+ * ¿En qué pantallas se muestra este pendiente? **Sin marcas → en todas.**
+ * Es la función que hace cierto el invariante que pidió el usuario: *"el control duro de que todo
+ * esté siendo mostrado en alguna de las pantallas, aunque sea sin ubicar"*.
+ */
+export function pantallasDe(p: Pick<Pendiente, 'pantallas'>): readonly Pantalla[] {
+  return p.pantallas.length > 0 ? p.pantallas : PANTALLAS
 }
 
 /**
@@ -186,7 +266,9 @@ export function parsePendientes(md: string): ResultadoPendientes {
     // El título es la columna Ítem/Tema; si la tabla no la tiene, se cae a la última celda con texto.
     const tituloCrudo = campo('titulo') ?? c.slice(2).find(x => x.length > 0) ?? ''
     const detalleCrudo = campo('detalle')
-    const titulo = limpiar(tituloCrudo)
+    // Las marcas pueden estar en el ítem o en el detalle: se buscan en los dos.
+    const marcas = extraerMarcas(`${tituloCrudo} ${detalleCrudo ?? ''}`)
+    const titulo = limpiar(extraerMarcas(tituloCrudo).limpio)
     if (!titulo) {
       noParseadas.push({ linea: nro, texto: linea.slice(0, 160), motivo: 'fila sin texto de ítem' })
       continue
@@ -202,18 +284,30 @@ export function parsePendientes(md: string): ResultadoPendientes {
     pendientes.push({
       ...base,
       titulo,
-      detalle: detalleCrudo ? limpiar(detalleCrudo) || null : null,
+      detalle: detalleCrudo ? limpiar(extraerMarcas(detalleCrudo).limpio) || null : null,
       // El ancla puede estar en el detalle (`→ [A-BUG-27](#a-bug-27)`) o en el propio ítem.
       ancla: anclaDe(detalleCrudo || '') || anclaDe(tituloCrudo),
       seccion,
       linea: nro,
       grupo: grupoDe(base),
+      pantallas: marcas.pantallas,
+      subPantallas: marcas.subPantallas,
+      marcasInvalidas: marcas.invalidas,
     })
   }
+
+  // Marcas mal escritas, agrupadas por marca para que se vea el tipeo de una.
+  const porMarca = new Map<string, string[]>()
+  pendientes.forEach(p => p.marcasInvalidas.forEach(m => {
+    const ids = porMarca.get(m) || []
+    if (!ids.includes(p.id)) ids.push(p.id)
+    porMarca.set(m, ids)
+  }))
 
   return {
     pendientes, noParseadas, ignoradas,
     totalDetectadas: pendientes.length + noParseadas.length + ignoradas.length,
+    marcasDesconocidas: Array.from(porMarca.entries()).map(([marca, ids]) => ({ marca, ids })),
   }
 }
 

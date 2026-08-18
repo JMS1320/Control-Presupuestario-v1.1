@@ -321,6 +321,32 @@ ese lugar afecte a todo lo que lo usa.
 - **Testing**: no dar por terminado lo que no se probó. Decir siempre qué quedó sin testear y
   recordar los pendientes de test en las pausas naturales.
 
+### 🧮 Todo desarrollo termina con su CONTROL, y el control se ve (REGLA)
+*Enunciada por el usuario 2026-08-18. Universal.*
+
+> **Nada se da por terminado sin un control que verifique el resultado — y ese control se muestra
+> al usuario, no vive sólo en el código.**
+
+- **En una app de datos el control es objetivo**: existe una identidad que tiene que cerrar. No es
+  opinión ni "me parece que está bien". *(En otro dominio —una app de música— el control será otro,
+  pero alguno hay.)*
+- **Cuanto más condensado es el número, más control necesita.** Un total, un margen, un saldo: el
+  número de conclusión es el que **nadie puede verificar a ojo** y el que más caro sale si está mal.
+- **El mejor control es el camino inverso.** Recalcular al revés y comparar. Ej.: el presupuesto se
+  arma del pasado ± costos variables → **de atrás para adelante tiene que dar lo mismo**.
+- **Visible y proporcional**: si cierra, un ✓ discreto; si no, una alerta grande. Un control que
+  nadie ve no es un control.
+- **Tolerancia explícita** cuando el dominio la tiene (los emisores redondean), y **listando los
+  casos que la causan**: el número global avisa que algo pasa, **la lista es la que deja arreglarlo**.
+- ⚠️ **Nada se descarta en silencio.** Si algo no se pudo verificar, se muestra que no se pudo.
+
+**Motivo — los tres casos que la originaron, todos del mismo día:**
+`Total − Neto − Exento − IVA − Otros Trib. − sin crédito = 0` destapó $0,01 de redondeo repartido en
+4 facturas de ARCA (§ A-TEST-27). Un cartel que mostraba `78.262.800 − 31.305.120 = 40.306.014`
+—donde la resta **no cierra** porque faltaba el renglón de retenciones— hizo que el usuario
+desconfiara con razón (§ A-TEST-32). Y el Cash Flow proyectaba **$181 M por un cobro de $78 M** sin
+que nada lo señalara (§ A-BUG-27).
+
 ### 🧪 Una feature nueva se registra en DOS lados (REGLA)
 *Propuesta del usuario 2026-08-03: "cuando yo quiera probar la función, primero está en pendientes
 como sin test; segundo, como test está en manual de uso".*
@@ -356,7 +382,9 @@ entera**. Promover es decisión del usuario, siempre.
 **Al promover una regla con anclaje**: se lleva el **principio** y se deja acá el `📍 Acá:`. El
 maestro no debe tener nombres de tabla de este proyecto.
 
-**Pendientes de pasar** *(las 8 sin anclaje van tal cual; éstas hay que separarlas primero)*:
+**Pendientes de pasar** *(las que no tienen anclaje van tal cual; éstas hay que separarlas primero)*:
+- **🧮 Todo desarrollo termina con su control** (2026-08-18) — universal y sin anclaje: va tal cual.
+  Es la que más rinde en cualquier proyecto con números.
 - **👥 Contrapartes** → principio: *toda importación registra su contraparte en el maestro; upsert,
   nunca sólo `UPDATE`, porque un UPDATE que no matchea **no falla** y el hueco queda invisible*.
 - **🏷️ Categoría en su maestro** → principio: *una categoría no se usa si no existe antes, con su

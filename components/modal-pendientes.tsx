@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink } from "lucide-react"
-import type { Pendiente, FilaNoParseada, GrupoPendiente } from "@/lib/pendientes/parse"
+import type { Pendiente, FilaNoParseada, GrupoPendiente, Pantalla } from "@/lib/pendientes/parse"
+import { PANTALLAS, pantallasDe } from "@/lib/pendientes/parse"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 const REPO = 'https://github.com/JMS1320/Control-Presupuestario-v1.1/blob/desarrollo/PENDIENTES.md'
@@ -28,6 +29,7 @@ interface Respuesta {
   noParseadas: FilaNoParseada[]
   ignoradas: FilaNoParseada[]
   totalDetectadas: number
+  marcasDesconocidas: { marca: string; ids: string[] }[]
   generado_at: string
 }
 
@@ -45,6 +47,8 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   const [busqueda, setBusqueda] = useState('')
   const [verHechos, setVerHechos] = useState(false)
   const [verIgnoradas, setVerIgnoradas] = useState(false)
+  /** null = todas. `'__sin__'` = sólo los que no tienen marca de pantalla. */
+  const [pantalla, setPantalla] = useState<Pantalla | '__sin__' | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
@@ -63,6 +67,11 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   useEffect(() => { if (open && !data) cargar() }, [open, data, cargar])
 
   const filtrar = (lista: Pendiente[]) => {
+    // Filtro por pantalla PRIMERO. Un pendiente sin marca sale en TODAS: nunca queda escondido
+    // esperando que alguien lo etiquete (pedido explícito del usuario).
+    if (pantalla === '__sin__') lista = lista.filter(p => p.pantallas.length === 0)
+    else if (pantalla) lista = lista.filter(p => pantallasDe(p).includes(pantalla))
+
     const q = normalizarBusqueda(busqueda.trim())
     if (!q) return lista
     return lista.filter(p =>
@@ -137,6 +146,32 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
           </Button>
         </div>
 
+        {/* Filtro por pantalla. Sólo se ofrecen las que tienen algo marcado, más "sin ubicar". */}
+        {data && (() => {
+          const cuenta = (s: Pantalla) => data.pendientes.filter(p => p.pantallas.includes(s)).length
+          const sinUbicar = data.pendientes.filter(p => p.pantallas.length === 0).length
+          const conAlgo = PANTALLAS.filter(s => cuenta(s) > 0)
+          if (conAlgo.length === 0 && sinUbicar === 0) return null
+          const chip = (activo: boolean) =>
+            `rounded-full border px-2 py-0.5 text-[11px] ${activo ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`
+          return (
+            <div className="flex flex-wrap items-center gap-1">
+              <button className={chip(pantalla === null)} onClick={() => setPantalla(null)}>Todas</button>
+              {conAlgo.map(s => (
+                <button key={s} className={chip(pantalla === s)} onClick={() => setPantalla(s)}>
+                  @{s} <span className="text-gray-400">{cuenta(s)}</span>
+                </button>
+              ))}
+              {sinUbicar > 0 && (
+                <button className={chip(pantalla === '__sin__')} onClick={() => setPantalla('__sin__')}
+                        title="No tienen marca @pantalla — se muestran en todas las solapas">
+                  sin ubicar <span className="text-gray-400">{sinUbicar}</span>
+                </button>
+              )}
+            </div>
+          )
+        })()}
+
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {cargando && !data && (
             <p className="flex items-center gap-2 py-8 text-sm text-gray-400">
@@ -159,6 +194,25 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
                 de mirar la lista — si no, el panel muestra menos de lo que hay y nadie se entera. */}
             {data.noParseadas.length > 0
               && bloqueRaro('🚨 Filas del índice que NO se pudieron leer — el panel está incompleto', data.noParseadas, true)}
+
+            {/* Marca mal escrita: el único camino por el que un pendiente podría no mostrarse en
+                ningún lado. El ítem igual cae a "sin ubicar", pero el tipeo hay que corregirlo. */}
+            {data.marcasDesconocidas.length > 0 && (
+              <div className="rounded border border-red-400 bg-red-50 p-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-red-800">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Marcas @pantalla mal escritas ({data.marcasDesconocidas.length})
+                </div>
+                {data.marcasDesconocidas.map(m => (
+                  <p key={m.marca} className="mt-1 font-mono text-[10px] text-red-700">
+                    @{m.marca} → {m.ids.join(', ')}
+                  </p>
+                ))}
+                <p className="mt-1 text-[10px] text-red-700">
+                  Válidas: {PANTALLAS.map(s => '@' + s).join(' · ')}
+                </p>
+              </div>
+            )}
 
             {ORDEN.map(({ grupo, titulo, clases, ayuda }) => {
               const filas = filtrar(data.pendientes.filter(p => p.grupo === grupo))
