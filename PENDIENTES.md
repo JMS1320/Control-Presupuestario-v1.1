@@ -259,7 +259,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-45 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-44](#p-44) `@cashflow` |
 | A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) `@cashflow @principal` |
 | A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) `@cashflow` |
-| **P-46** | 🔴 | Feat | **Panel de pendientes dentro de la app** (solo admin), agrupados urgente / secundario / test, y accesibles desde la sección que les corresponde. **Viable**: el índice tiene 166 filas con formato parseable. ⚠️ La app **lee** `PENDIENTES.md`, no guarda copia | → [P-46](#p-46) `@principal` |
+| **P-46** | 🟡 | Feat | **HECHO 2026-08-19 — las 4 etapas.** Panel de pendientes en la app (Principal → Pendientes): lee `PENDIENTES.md`, agrupa en 6 categorías, filtra por pantalla, y cada solapa muestra su contador. **260 pendientes ubicados, 0 sin revisar.** Falta testear | → [P-46](#p-46) `@principal` |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) `@presupuesto @productivo` |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) `@ingresos` |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) `@ingresos` |
@@ -312,7 +312,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 |----|--------|------|------|
 | B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) `@presupuesto @ingresos` |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) `@cashflow @extracto` |
-| B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar |
+| B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar `@dashboard @presupuesto` |
 | B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` `@dashboard` |
 | B-FEAT-04 | 🔴 | Media | Templates bancarios separar MSA/PAM/MA + reglas PAM/MA `@extracto` |
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos `@extracto` |
@@ -8014,14 +8014,87 @@ exige rigor, el día que una fila salga distinta **desaparece del panel sin avis
 falla de siempre. Mitigación obligatoria: **el parser reporta lo que no pudo leer** y el panel
 muestra un bloque *"N filas no parseadas"*. Nunca se pierde nada en silencio.
 
-### 🕳️ Lo que falta para la segunda mitad del pedido
+---
 
-Ubicar cada pendiente en su sección de la app —y chequear cobertura— necesita **un dato que hoy no
-existe: a qué pantalla pertenece**. Propuesta: una columna opcional `Pantalla` en el índice. Los que
-no la tengan salen en **"sin ubicar"**, que *es* el chequeo de cobertura que pidió el usuario: la
-lista de pendientes que no se pueden alcanzar desde ninguna parte de la app.
+## ✅ HECHO 2026-08-19 — las 4 etapas
 
-**Estado: sólo evaluación, 0 código.**
+| Etapa | Qué | Dónde |
+|---|---|---|
+| 1 | Parser + endpoint | `lib/pendientes/parse.ts` · `app/api/pendientes/` |
+| 2 | La pantalla | `components/modal-pendientes.tsx` (Principal → Pendientes) |
+| 3 | Ubicación por pantalla + control duro | marcas `@pantalla` · `scripts/verificar-parser-pendientes.mts` |
+| 4 | Contador en cada solapa | `hooks/usePendientesPorPantalla.ts` · `dashboard.tsx` |
+
+**260 pendientes ubicados. Cola de "sin revisar": 0.**
+
+```
+@presupuesto 62 · @extracto 50 · @productivo 42 · @egresos 29 · @cashflow 25
+@ingresos 20 · @sueldos 11 · @principal 8 · @importar 7 · @reporte 3 · @dashboard 5
+@general 11 (operativo/doc: no pertenecen a ninguna pantalla)
+```
+
+### Las decisiones que definieron el diseño
+
+**La ubicación es una MARCA en el texto, no una columna.** El índice tiene 16 tablas con 10 formas
+de encabezado distintas: una columna habría que agregarla a las 16. `` `@cashflow` `` funciona en
+cualquiera. Admite varias (`@cashflow @extracto`) y sub-nivel (`@ingresos/subdiarios`).
+
+**El invariante se cumple por construcción**: sin marca = se muestra en TODAS. No se puede violar.
+El único agujero era una marca mal escrita (`@cashflows` → invisible), y está blindado: se valida
+contra las 12 solapas, el ítem cae a "sin ubicar" y el tipeo se reporta en rojo.
+
+**`@general` es lo que permite que la cola CIERRE.** Separa *"revisado, no va a ninguna pantalla"*
+de *"todavía no lo miré"*. Sin esa distinción la cola nunca llega a cero y se deja de mirar.
+
+**`auditar` y `obsoleto` salen de las secciones C y D del archivo**, no de una marca: el índice ya
+los tenía clasificados. Van plegados. Eso sacó 16 ítems de la cola sin escribir nada.
+
+**El color del contador es proporcional.** La primera versión pintaba de rojo cualquier solapa con
+≥1 urgente: quedaban **10 de 12 en rojo**. Con tramos (0 gris · 1-4 ámbar · 5+ rojo) queda una sola,
+y dice dónde está el bulto de verdad.
+
+### 🐛 Los 6 bugs que el propio desarrollo destapó
+
+| Bug | Cómo apareció |
+|---|---|
+| **`marcasDesconocidas` faltaba en el endpoint** | La página entera tiraba *"This page couldn't load"*. Se agregó el campo al parser y al modal, **no al endpoint que los conecta** |
+| **`notas-para-claude` rompía el SSR** | `document.querySelector` durante el render → 500 en `/adminjms1320`. **Preexistente**, ver [P-44](#p-44) |
+| **El filtro parecía roto** | Al elegir `@ingresos` entraban los 13 propios **+ 184 sin ubicar**: 197 ítems. Ahora van en bloques separados |
+| **El chip no coincidía con la lista** | 37 vs 48. Dos definiciones de "qué se muestra acá". Lo detectó el usuario |
+| **Pipes escapados** | `A-BUG-18` dice `\|\|` en su texto: el split los contaba como celdas y corría todo de columna |
+| **Filas con más celdas que su encabezado** | `P-19` vive bajo `\| ID \| Est \| Ítem \|` y tiene 4 celdas. La marca caía donde nadie mapea |
+
+⚠️ **Los 6 pasaron `type-check` y `build` en verde.** Ninguno se ve sin abrir la pantalla.
+
+### 🔢 IDs duplicados — el error de método, y el control que lo cierra
+
+Se crearon **5 IDs sobre IDs existentes** (`P-35/36/37`, `A-FEAT-22/23`) mirando el número más alto
+de cada familia. **`P-*` y `A-FEAT-*` no son listas continuas**: crecieron en tandas y quedaron
+huecos ocupados en el medio. Renumerados a `P-44/45/46` y `A-FEAT-27/28`.
+
+Peor que el error: **la evidencia estuvo delante y no se miró.** La salida del marcado imprimió
+`A-FEAT-22 → @ingresos` dos veces y se leyó como ruido del script.
+
+`verificar-parser-pendientes.mts` ahora **falla si hay IDs duplicados**. Antes de crear un ID:
+
+```bash
+for f in P A-FEAT A-BUG A-TEST; do
+  echo -n "$f-* → último: "
+  grep -oE "\b$f-[0-9]+\b" PENDIENTES.md | grep -oE "[0-9]+$" | sort -n | tail -1
+done
+```
+
+### 🕳️ Hallazgo lateral: Presupuesto no es lo que su nombre dice
+
+`@presupuesto` quedó con **62 pendientes, el doble que cualquier otra**. No está más atrasado:
+**concentra 10 botones de administración de maestros** (proveedores, cuentas contables, actividades,
+campos, variables, inversiones, sueldos, ingresos por actividad, margen, precios/TC). Es *donde se
+administran los maestros del sistema*, no sólo donde se proyecta.
+
+Y el plan de cuentas **no tiene una pantalla**: se toca desde **Dashboard** (categorías, interno) y
+desde **Presupuesto** (cuentas contables).
+
+**Falta testear** → `MANUAL-USO.md` § *Pendientes de desarrollo*.
 
 ---
 

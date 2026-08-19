@@ -486,6 +486,69 @@ saldo impago inexistente.
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 📋 Pendientes de desarrollo — verlos desde la app 🟡 (2026-08-19, sin testear)
+
+**Dónde:** **Principal → botón "Pendientes"**. Sólo admin. Es **lectura**: para cambiar un pendiente
+hay que editar `PENDIENTES.md`.
+
+**Qué muestra**, de arriba hacia abajo:
+
+| | |
+|---|---|
+| 🔴 **Urgente** | prioridad Alta o bugs |
+| 🟠 **Secundario** | Media / Baja |
+| 🧪 **Sin testear** | hecho pero falta probarlo |
+| 🔍 **A auditar juntos** | Sección C del archivo — plegado |
+| 🗄️ **Probablemente obsoleto** | Sección D — plegado |
+| ✅ Hechos · filas ignoradas | detrás de un toggle |
+
+Arriba hay un **buscador** (por ID, texto o sección) y **chips para filtrar por pantalla**. Cada
+ítem enlaza a su dossier en GitHub.
+
+**El número en cada solapa.** Arriba de todo, al lado del nombre de cada pestaña, hay un contador
+con sus pendientes vivos. **Gris** = ninguno urgente · **ámbar** = 1 a 4 · **rojo** = 5 o más. Pasás
+el mouse y te dice cuántos son urgentes.
+
+#### Cómo se etiqueta un pendiente
+
+Cada fila del índice puede cerrar con una marca que dice en qué pantalla se muestra:
+
+```markdown
+| A-BUG-30 | 🔴 | Bug | El motor no matchea X … | → [A-BUG-30](#a-bug-30) `@extracto` |
+```
+
+**No se tipea a mano** — hay comando:
+
+```bash
+npx tsx scripts/marcar-pendiente.mts A-BUG-30 extracto cashflow   # admite varias
+npx tsx scripts/marcar-pendiente.mts A-BUG-30 --quitar            # lo vuelve a "sin ubicar"
+npx tsx scripts/marcar-pendiente.mts --sin-ubicar                 # la cola de trabajo
+npx tsx scripts/marcar-pendiente.mts --pantallas                  # las 12 válidas + @general
+```
+
+- **`@general`** = revisado, no pertenece a ninguna pantalla (ej. *"MCP quedó en WRITE"*). Se ve en
+  todas, pero **no cuenta como pendiente de etiquetar**.
+- **Sin marca** = todavía no se revisó. También se ve en todas, y **sí** está en la cola.
+- ⚠️ **Conciliación no es una pantalla**: un bug del motor va `@extracto`.
+
+#### 🧮 El control — se corre, no se confía
+
+```bash
+npx tsx scripts/verificar-parser-pendientes.mts
+```
+
+**Sale con error** si hay IDs duplicados, filas del índice que no se pueden leer, marcas mal
+escritas, o algún pendiente que no llegue a ninguna pantalla. Correlo **después de agregar
+pendientes**, sobre todo si hay dos terminales trabajando.
+
+**Cómo probarlo:**
+1. Principal → Pendientes: tiene que abrir con **260 pendientes** y las 6 categorías.
+2. Filtrá por **@extracto**: el número del chip tiene que coincidir con lo que ves abajo. Si no, sale una alerta roja avisándolo (es un control, no un adorno).
+3. Al filtrar aparece un bloque **📥 Sin ubicar** al pie: hoy tiene que estar **vacío o no aparecer** (la cola está en cero).
+4. Buscá `A-BUG-27`: tiene que salir con su chip `@cashflow` y el link al dossier.
+5. Mirá las solapas de arriba: **Extracto** en rojo (18 urgentes), el resto ámbar o gris.
+6. Escribí a mano una marca inválida (`@conciliacion`) en cualquier fila y recargá: el panel tiene que avisarlo en rojo y el ítem caer a "sin ubicar". Después sacala.
+
 ### 💵 Cobrar una factura de venta (1 o varias transferencias) ✅ (2026-08-18, el 1er cobro testeado OK)
 
 **Sirve para registrar el cobro sin tener que conciliar todo el banco.** Es el espejo de los
