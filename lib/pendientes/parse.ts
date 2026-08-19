@@ -151,7 +151,10 @@ function claveDeColumna(nombre: string): string | null {
 function celdas(linea: string): string[] {
   // Se saca el pipe inicial y el final antes de cortar, si no aparecen celdas fantasma.
   const t = linea.trim().replace(/^\|/, '').replace(/\|$/, '')
-  return t.split('|').map(c => c.trim())
+  // ⚠️ Los pipes ESCAPADOS (`\|`) son texto, no separadores. Aparecen de verdad: A-BUG-18 dice
+  // `numero_de_comprobante \|\| observaciones_cliente`. Sin esto, la fila se parte en más celdas
+  // de las que tiene y todo lo que sigue queda corrido de columna.
+  return t.split(/(?<!\\)\|/).map(c => c.replace(/\\\|/g, '|').trim())
 }
 
 /** Markdown → texto plano, para que el panel no muestre asteriscos ni backticks. */
@@ -312,8 +315,11 @@ export function parsePendientes(md: string): ResultadoPendientes {
     // El título es la columna Ítem/Tema; si la tabla no la tiene, se cae a la última celda con texto.
     const tituloCrudo = campo('titulo') ?? c.slice(2).find(x => x.length > 0) ?? ''
     const detalleCrudo = campo('detalle')
-    // Las marcas pueden estar en el ítem o en el detalle: se buscan en los dos.
-    const marcas = extraerMarcas(`${tituloCrudo} ${detalleCrudo ?? ''}`)
+    // Las marcas se buscan en la LÍNEA ENTERA, no en las columnas mapeadas: son metadato de la
+    // fila, no de una celda. Si no, una fila con más celdas que su encabezado (pasa: P-19 vive
+    // bajo `| ID | Est | Ítem |` y tiene 4) esconde la marca en la columna que nadie mapea, y el
+    // pendiente aparece "sin ubicar" aunque esté etiquetado.
+    const marcas = extraerMarcas(linea)
     const titulo = limpiar(extraerMarcas(tituloCrudo).limpio)
     if (!titulo) {
       noParseadas.push({ linea: nro, texto: linea.slice(0, 160), motivo: 'fila sin texto de ítem' })
