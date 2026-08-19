@@ -12,7 +12,7 @@
  *   3. 🔒 EL INVARIANTE: **todo pendiente aparece en al menos una pantalla.**
  */
 import { readFileSync } from 'node:fs'
-import { parsePendientes, contarPorGrupo, pantallasDe, PANTALLAS } from '../lib/pendientes/parse'
+import { parsePendientes, contarPorGrupo, pantallasDe, faltaUbicar, PANTALLAS } from '../lib/pendientes/parse'
 
 const r = parsePendientes(readFileSync('PENDIENTES.md', 'utf8'))
 let fallo = false
@@ -24,11 +24,14 @@ console.log(`  NO parseadas ${r.noParseadas.length}`)
 console.log('\nPor grupo:', contarPorGrupo(r.pendientes))
 
 // ── Cobertura por pantalla ──────────────────────────────────────────────────
-const sinUbicar = r.pendientes.filter(p => p.pantallas.length === 0)
+// "Sin revisar" ≠ "sin pantalla": `@general` y las secciones C/D ya tienen su lugar.
+const sinRevisar = r.pendientes.filter(faltaUbicar)
+const conPantalla = r.pendientes.filter(p => p.pantallas.length > 0).length
+const generales = r.pendientes.filter(p => p.esGeneral).length
 const porPantalla = Object.fromEntries(PANTALLAS.map(s => [s, 0])) as Record<string, number>
 r.pendientes.forEach(p => p.pantallas.forEach(s => { porPantalla[s]++ }))
 
-console.log(`\nUbicados con marca: ${r.pendientes.length - sinUbicar.length} · sin ubicar: ${sinUbicar.length}`)
+console.log(`\nCon pantalla: ${conPantalla} · @general: ${generales} · SIN REVISAR: ${sinRevisar.length}`)
 console.log('Por pantalla (sólo los marcados):')
 Object.entries(porPantalla).filter(([, n]) => n > 0)
   .sort((a, b) => b[1] - a[1])
@@ -57,7 +60,7 @@ if (invisibles.length > 0) {
   invisibles.forEach(p => console.log(`  ${p.id} (L${p.linea})`))
 } else {
   console.log(`\n✅ Los ${r.pendientes.length} pendientes se muestran en alguna pantalla`
-    + (sinUbicar.length ? ` (${sinUbicar.length} sin ubicar → aparecen en todas).` : '.'))
+    + (sinRevisar.length ? ` (${sinRevisar.length} sin revisar → aparecen en todas).` : '.'))
 }
 
 if (fallo) process.exit(1)

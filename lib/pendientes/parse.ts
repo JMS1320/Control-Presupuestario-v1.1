@@ -21,7 +21,28 @@
 // decir nada, volvimos al modo de falla de este proyecto: el dato que desaparece sin avisar.
 // ════════════════════════════════════════════════════════════════════════════
 
-export type GrupoPendiente = 'urgente' | 'secundario' | 'test' | 'hecho'
+/**
+ * En qué bloque del panel cae el pendiente.
+ *
+ * `auditar` y `obsoleto` **no se etiquetan a mano**: salen de la sección del archivo donde vive la
+ * fila (C = dudosos a auditar juntos, D = histórico probablemente obsoleto). Es información que el
+ * índice ya tenía ordenada — usarla es objetivo; inventarles una pantalla sería adivinar.
+ */
+export type GrupoPendiente =
+  | 'urgente' | 'secundario' | 'test'
+  | 'auditar' | 'obsoleto' | 'hecho'
+
+/**
+ * Marca de "aplica a TODAS las pantallas" — `@general`.
+ *
+ * No es una pantalla: es la respuesta a *"¿dónde va?" → "en ningún lado en particular"*.
+ * Existe para separar dos cosas que sin ella se ven igual y no lo son:
+ *   · `@general`  → **revisado**: no pertenece a una pantalla (ej. "MCP quedó en WRITE").
+ *   · sin marca   → **todavía no lo revisé**.
+ * Las dos se muestran en todas las solapas, pero sólo la segunda está en la cola de trabajo. Sin
+ * esta distinción la cola nunca llega a cero y se deja de mirar.
+ */
+export const MARCA_GENERAL = 'general'
 
 /**
  * Las 12 solapas reales de la app (`dashboard.tsx`). Es la lista contra la que se valida cada
@@ -69,6 +90,8 @@ export interface Pendiente {
    * o tiene marcas y aparece en las suyas, o no tiene y aparece en todas.
    */
   pantallas: Pantalla[]
+  /** `@general`: revisado y no pertenece a ninguna pantalla → se muestra en todas. */
+  esGeneral: boolean
   /** El sub-nivel de cada marca (`@ingresos/subdiarios` → `subdiarios`), si lo tiene. */
   subPantallas: string[]
   /** Marcas que NO coinciden con ninguna solapa real: error de tipeo. Ver `marcasDesconocidas`. */
@@ -152,15 +175,18 @@ function anclaDe(texto: string): string | null {
  * metadato, no parte de la descripción.
  */
 function extraerMarcas(texto: string): {
-  limpio: string; pantallas: Pantalla[]; subPantallas: string[]; invalidas: string[]
+  limpio: string; pantallas: Pantalla[]; subPantallas: string[]; invalidas: string[]; general: boolean
 } {
   const pantallas: Pantalla[] = []
   const subPantallas: string[] = []
   const invalidas: string[] = []
+  let general = false
 
   const limpio = texto.replace(RE_MARCA, (_m, nombre: string, sub?: string) => {
     const n = nombre.toLowerCase()
-    if ((PANTALLAS as readonly string[]).includes(n)) {
+    if (n === MARCA_GENERAL) {
+      general = true
+    } else if ((PANTALLAS as readonly string[]).includes(n)) {
       if (!pantallas.includes(n as Pantalla)) pantallas.push(n as Pantalla)
       if (sub) subPantallas.push(sub.slice(1))
     } else {
@@ -170,7 +196,7 @@ function extraerMarcas(texto: string): {
     return ''
   })
 
-  return { limpio: limpio.replace(/\s{2,}/g, ' ').trim(), pantallas, subPantallas, invalidas }
+  return { limpio: limpio.replace(/\s{2,}/g, ' ').trim(), pantallas, subPantallas, invalidas, general }
 }
 
 /**
@@ -183,15 +209,35 @@ export function pantallasDe(p: Pick<Pendiente, 'pantallas'>): readonly Pantalla[
 }
 
 /**
+ * ¿Está pendiente de ubicar? Sólo si **no se revisó**: sin marca de pantalla, sin `@general`, y
+ * fuera de las secciones que ya tienen su lugar (auditar / obsoleto) o que están hechas.
+ * Es la definición de la cola de trabajo — la que tiene que poder llegar a cero.
+ */
+export function faltaUbicar(p: Pendiente): boolean {
+  return p.pantallas.length === 0
+    && !p.esGeneral
+    && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto'
+}
+
+/**
  * A qué grupo va cada pendiente. **Es la única regla de negocio del parser** y está acá sola a
  * propósito: agrupar distinto es cambiar esta función, no tocar el parseo.
  *
  * Criterio acordado con el usuario: *"pendiente de test abajo de todo, pendiente secundario,
  * pendiente urgente"*.
  */
-export function grupoDe(p: { id: string; estado: string; prioridad: string | null; tipo: string | null }): GrupoPendiente {
+export function grupoDe(
+  p: { id: string; estado: string; prioridad: string | null; tipo: string | null; seccion?: string | null },
+): GrupoPendiente {
   const estado = p.estado
   if (estado.includes('✅')) return 'hecho'
+
+  // Las secciones C y D del archivo YA dicen qué son estos ítems: dudosos a auditar con el usuario,
+  // e histórico probablemente obsoleto. Se respeta esa clasificación en vez de tratarlos como
+  // pendientes normales — y por eso tampoco necesitan marca de pantalla.
+  const sec = (p.seccion || '').toUpperCase()
+  if (sec.includes('SECCIÓN D') || sec.includes('SECCION D')) return 'obsoleto'
+  if (sec.includes('SECCIÓN C') || sec.includes('SECCION C')) return 'auditar'
 
   const esTest = /-TEST-/.test(p.id) || (p.tipo || '').toLowerCase().startsWith('test')
   // 🟡 en este proyecto significa "hecho, falta testear" → es trabajo de test, no un pendiente vivo.
@@ -289,8 +335,9 @@ export function parsePendientes(md: string): ResultadoPendientes {
       ancla: anclaDe(detalleCrudo || '') || anclaDe(tituloCrudo),
       seccion,
       linea: nro,
-      grupo: grupoDe(base),
+      grupo: grupoDe({ ...base, seccion }),
       pantallas: marcas.pantallas,
+      esGeneral: marcas.general,
       subPantallas: marcas.subPantallas,
       marcasInvalidas: marcas.invalidas,
     })
@@ -313,7 +360,9 @@ export function parsePendientes(md: string): ResultadoPendientes {
 
 /** Cuántos hay en cada grupo — para el resumen del panel. */
 export function contarPorGrupo(pendientes: Pendiente[]): Record<GrupoPendiente, number> {
-  const out: Record<GrupoPendiente, number> = { urgente: 0, secundario: 0, test: 0, hecho: 0 }
+  const out: Record<GrupoPendiente, number> = {
+    urgente: 0, secundario: 0, test: 0, auditar: 0, obsoleto: 0, hecho: 0,
+  }
   pendientes.forEach(p => { out[p.grupo]++ })
   return out
 }

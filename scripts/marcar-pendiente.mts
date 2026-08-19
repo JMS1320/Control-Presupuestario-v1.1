@@ -17,12 +17,14 @@
  * No reordena, no reformatea, no toca ninguna otra línea: sólo inserta la marca en la fila del ID.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
-import { parsePendientes, PANTALLAS, type Pantalla } from '../lib/pendientes/parse'
+import { parsePendientes, faltaUbicar, PANTALLAS, MARCA_GENERAL } from '../lib/pendientes/parse'
 
 const ARCHIVO = 'PENDIENTES.md'
 const args = process.argv.slice(2)
 
-const listaPantallas = () => PANTALLAS.map(s => '@' + s).join(' · ')
+/** `@general` es marca válida sin ser pantalla: "revisado, no va a ninguna en particular". */
+const VALIDAS: readonly string[] = [...PANTALLAS, MARCA_GENERAL]
+const listaPantallas = () => VALIDAS.map(s => '@' + s).join(' · ')
 
 if (args.length === 0 || args[0] === '--pantallas') {
   console.log(`\nPantallas válidas:\n  ${listaPantallas()}\n`)
@@ -35,7 +37,8 @@ const md = readFileSync(ARCHIVO, 'utf8')
 
 if (args[0] === '--sin-ubicar') {
   const { pendientes } = parsePendientes(md)
-  const sin = pendientes.filter(p => p.pantallas.length === 0 && p.grupo !== 'hecho')
+  // La cola real: sin revisar. Excluye `@general` y las secciones C/D, que ya tienen su lugar.
+  const sin = pendientes.filter(faltaUbicar)
   console.log(`\n${sin.length} pendientes sin ubicar (los "hechos" no se cuentan):\n`)
   sin.forEach(p => console.log(`  ${p.id.padEnd(12)} ${p.grupo.padEnd(11)} ${p.titulo.slice(0, 70)}`))
   console.log(`\nPara marcar:  npx tsx scripts/marcar-pendiente.mts ${sin[0]?.id ?? 'ID'} <pantalla>\n`)
@@ -54,7 +57,7 @@ if (marcas.length === 0 && !quitar) {
   process.exit(1)
 }
 
-const invalidas = marcas.filter(m => !(PANTALLAS as readonly string[]).includes(m))
+const invalidas = marcas.filter(m => !VALIDAS.includes(m))
 if (invalidas.length > 0) {
   console.error(`\n❌ No son pantallas: ${invalidas.map(m => '@' + m).join(' ')}`)
   console.error(`   Válidas: ${listaPantallas()}\n`)

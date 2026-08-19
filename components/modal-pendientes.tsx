@@ -33,11 +33,19 @@ interface Respuesta {
   generado_at: string
 }
 
-/** Orden de arriba hacia abajo, tal como lo pidió el usuario: test abajo de todo. */
-const ORDEN: { grupo: GrupoPendiente; titulo: string; clases: string; ayuda: string }[] = [
-  { grupo: 'urgente',    titulo: '🔴 Urgente',    clases: 'border-red-300 bg-red-50',       ayuda: 'prioridad Alta o bugs' },
-  { grupo: 'secundario', titulo: '🟠 Secundario', clases: 'border-amber-300 bg-amber-50',   ayuda: 'prioridad Media o Baja' },
-  { grupo: 'test',       titulo: '🧪 Sin testear', clases: 'border-blue-300 bg-blue-50',    ayuda: 'hecho pero falta probarlo' },
+/**
+ * Orden de arriba hacia abajo. Criterio del usuario: *"siempre se debe mostrar separado lo urgente
+ * de lo medio y lo que es sólo testear"*, y lo dudoso/obsoleto **visible pero muy fácil de obviar**.
+ *
+ * `auditar` y `obsoleto` salen de las secciones C y D del archivo, no de una marca: el índice ya
+ * los tenía clasificados. Van plegados — están, pero no compiten con el trabajo real.
+ */
+const ORDEN: { grupo: GrupoPendiente; titulo: string; clases: string; ayuda: string; plegado?: boolean }[] = [
+  { grupo: 'urgente',    titulo: '🔴 Urgente',     clases: 'border-red-300 bg-red-50',     ayuda: 'prioridad Alta o bugs' },
+  { grupo: 'secundario', titulo: '🟠 Secundario',  clases: 'border-amber-300 bg-amber-50', ayuda: 'prioridad Media o Baja' },
+  { grupo: 'test',       titulo: '🧪 Sin testear', clases: 'border-blue-300 bg-blue-50',   ayuda: 'hecho pero falta probarlo' },
+  { grupo: 'auditar',    titulo: '🔍 A auditar juntos', clases: 'border-gray-300 bg-gray-50', ayuda: 'Sección C — dudosos, se revisan con el usuario', plegado: true },
+  { grupo: 'obsoleto',   titulo: '🗄️ Probablemente obsoleto', clases: 'border-gray-200 bg-gray-50/60', ayuda: 'Sección D — histórico', plegado: true },
 ]
 
 export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -49,6 +57,8 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   const [verIgnoradas, setVerIgnoradas] = useState(false)
   /** null = todas. `'__sin__'` = sólo los que no tienen marca de pantalla. */
   const [pantalla, setPantalla] = useState<Pantalla | '__sin__' | null>(null)
+  /** Los grupos plegados (auditar / obsoleto) arrancan cerrados. */
+  const [desplegado, setDesplegado] = useState<Record<string, boolean>>({})
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
@@ -69,7 +79,9 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   const filtrar = (lista: Pendiente[]) => {
     // Filtro por pantalla PRIMERO. Un pendiente sin marca sale en TODAS: nunca queda escondido
     // esperando que alguien lo etiquete (pedido explícito del usuario).
-    if (pantalla === '__sin__') lista = lista.filter(p => p.pantallas.length === 0)
+    if (pantalla === '__sin__') lista = lista.filter(p =>
+      p.pantallas.length === 0 && !p.esGeneral
+      && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto')
     else if (pantalla) lista = lista.filter(p => pantallasDe(p).includes(pantalla))
 
     const q = normalizarBusqueda(busqueda.trim())
@@ -90,7 +102,14 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
       )}
       <div className="min-w-0 flex-1">
         <p className="text-xs leading-snug">{p.titulo}</p>
-        {p.seccion && <p className="mt-0.5 text-[10px] text-gray-400">{p.seccion}</p>}
+        <p className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-gray-400">
+          {/* Dónde se muestra: sus pantallas, `general` (revisado, va a todas) o nada (sin revisar). */}
+          {p.pantallas.map(s => (
+            <span key={s} className="rounded bg-blue-50 px-1 text-blue-700">@{s}</span>
+          ))}
+          {p.esGeneral && <span className="rounded bg-gray-100 px-1 text-gray-600">general</span>}
+          {p.seccion && <span>{p.seccion}</span>}
+        </p>
       </div>
       {/* El dossier vive en el .md del repo: se abre en GitHub, anclado al ítem. */}
       {p.ancla && (
@@ -149,7 +168,10 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
         {/* Filtro por pantalla. Sólo se ofrecen las que tienen algo marcado, más "sin ubicar". */}
         {data && (() => {
           const cuenta = (s: Pantalla) => data.pendientes.filter(p => p.pantallas.includes(s)).length
-          const sinUbicar = data.pendientes.filter(p => p.pantallas.length === 0).length
+          // "Sin ubicar" = sin revisar. `@general` y las secciones C/D ya tienen su lugar.
+          const sinUbicar = data.pendientes.filter(p =>
+            p.pantallas.length === 0 && !p.esGeneral
+            && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto').length
           const conAlgo = PANTALLAS.filter(s => cuenta(s) > 0)
           if (conAlgo.length === 0 && sinUbicar === 0) return null
           const chip = (activo: boolean) =>
@@ -214,16 +236,21 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
               </div>
             )}
 
-            {ORDEN.map(({ grupo, titulo, clases, ayuda }) => {
+            {ORDEN.map(({ grupo, titulo, clases, ayuda, plegado }) => {
               const filas = filtrar(data.pendientes.filter(p => p.grupo === grupo))
               if (filas.length === 0) return null
+              const abierto = !plegado || desplegado[grupo]
               return (
                 <div key={grupo} className={`rounded border p-2 ${clases}`}>
-                  <div className="mb-1 flex items-baseline gap-2">
+                  <button
+                    className={`mb-1 flex w-full items-baseline gap-2 text-left ${plegado ? 'cursor-pointer' : 'cursor-default'}`}
+                    onClick={() => plegado && setDesplegado(d => ({ ...d, [grupo]: !d[grupo] }))}
+                  >
                     <span className="text-sm font-semibold">{titulo}</span>
                     <span className="text-xs text-gray-500">({filas.length}) · {ayuda}</span>
-                  </div>
-                  <div className="rounded bg-white/70 px-2">{filas.map(fila)}</div>
+                    {plegado && <span className="ml-auto text-xs text-gray-400">{abierto ? '▲ ocultar' : '▼ ver'}</span>}
+                  </button>
+                  {abierto && <div className="rounded bg-white/70 px-2">{filas.map(fila)}</div>}
                 </div>
               )
             })}
