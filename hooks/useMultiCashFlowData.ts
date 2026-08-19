@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
+import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -707,7 +708,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // 5. Cargar pagos de sueldos (anticipos + pagos finales, no conciliados ni anteriores)
       const { data: anticiposSueldos, error: errorAntSueldos } = await supabase
         .from('sueldos_pagos')
-        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa)')
+        // El PERÍODO viaja con el pago: es lo que arma la referencia documental
+        // (`Haberes May 2026`). La fecha del pago no sirve — abril puede pagarse en junio.
+        // Mismo join que ya hacía la asignación manual (`vista-extracto-bancario.tsx`).
+        .select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado, empresa), periodo:sueldos_periodos(mes, anio)')
         .in('tipo', ['anticipo', 'sueldo'])
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
@@ -788,14 +792,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: a.empleado?.nombre ?? '',
         detalle: `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
         // `detalle` de arriba es decorativo, para la grilla del Cash Flow. Estos dos son los que
-        // viajan al extracto al conciliar (MODULO_CONCILIACION § 30.2/30.3) y **faltaban**: sin
-        // ellos el motor dejaba `comprobantes_pagados` en null y volcaba el texto decorativo
-        // —"Pago Saldo AMS - Pago Saldo Abr 2026", con la repetición incluida— dentro de `detalle`.
-        // La referencia documental de un sueldo es el PERÍODO, que es lo que trae `descripcion`
-        // ("Pago Saldo Abr 2026"); la fecha del pago no sirve, porque abril puede pagarse en junio.
-        comprobante_display: a.descripcion?.trim()
-          || `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''}`,
-        detalle_usuario: null,  // un sueldo no tiene nota del usuario: `detalle` es sólo suyo
+        // viajan al extracto al conciliar (MODULO_CONCILIACION § 30.2/30.3, convención cerrada con
+        // el usuario en PENDIENTES § A-FEAT-31): el comprobante sale del PERÍODO, y el detalle es
+        // sólo la especificación —"Lucresia", "Galicia"— sin repetir el período ni el nombre.
+        comprobante_display: comprobanteDeSueldo(a.tipo, a.periodo?.mes, a.periodo?.anio),
+        detalle_usuario: especificacionDeSueldo(a.descripcion),
         debitos: a.monto ?? 0,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -832,6 +833,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           cuit_proveedor: primero.empleado?.cuit_empleado ?? '',
           nombre_proveedor: primero.empleado?.nombre ?? '',
           detalle: detallesCombinados,
+          // Mismas 2 columnas que las filas individuales — **faltaban acá**, y por eso un grupo
+          // conciliado quedaba con `comprobantes_pagados` en null y el texto decorativo repetido
+          // dentro de `detalle`. El comprobante sale del período: si los miembros comparten período
+          // y tipo se usa el de ellos; si están mezclados, se deja el período sin sufijo.
+          comprobante_display: (() => {
+            const periodos = new Set(pagos.map(a => `${a.periodo?.mes}-${a.periodo?.anio}`))
+            const tipos = new Set(pagos.map(a => a.tipo))
+            if (periodos.size !== 1) return null
+            return comprobanteDeSueldo(
+              tipos.size === 1 ? primero.tipo : null,
+              primero.periodo?.mes,
+              primero.periodo?.anio,
+            )
+          })(),
+          // Las especificaciones de los miembros, sin las vacías y sin repetidas.
+          detalle_usuario: (() => {
+            const specs = [...new Set(
+              pagos.map(a => especificacionDeSueldo(a.descripcion)).filter(Boolean) as string[],
+            )]
+            return specs.length > 0 ? specs.join(' | ') : null
+          })(),
           debitos: totalDebitos,
           creditos: 0,
           saldo_cta_cte: 0,

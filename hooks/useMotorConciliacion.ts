@@ -6,6 +6,7 @@ import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
+import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -449,8 +450,16 @@ export function useMotorConciliacion() {
             } else if (matchCF.cashFlowRow.origen === 'ARCA') {
               extraIdsCF.comprobante_arca_id = matchCF.cashFlowRow.id
               if (matchCF.cashFlowRow.nro_cuenta) extraIdsCF.nro_cuenta = matchCF.cashFlowRow.nro_cuenta
-            } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
-              extraIdsCF.sueldo_pago_id = matchCF.cashFlowRow.id
+            } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
+              // Un grupo de sueldos tiene `id` = grupo_pago_id, que **no** es un `sueldo_pago_id`:
+              // meterlo ahí apuntaría a otra tabla. Se guarda el primer miembro, que sí es un pago
+              // y desde el cual se llega al grupo por su `grupo_pago_id`. Antes esta rama exigía
+              // `origen_tabla === 'sueldos.pagos'`, así que un grupo quedaba **sin vínculo
+              // ninguno** — conciliado y sin decir contra qué. Ver A-BUG-41.
+              const idsSueldo: string[] = matchCF.cashFlowRow.ids_grupo?.length
+                ? matchCF.cashFlowRow.ids_grupo
+                : [matchCF.cashFlowRow.id]
+              extraIdsCF.sueldo_pago_id = idsSueldo[0]
             } else if (matchCF.cashFlowRow.origen === 'VENTA') {
               extraIdsCF.comprobante_venta_id = matchCF.cashFlowRow.id
             }
@@ -542,7 +551,6 @@ export function useMotorConciliacion() {
             // (§ Contrapartes). Sin este fallback, un sueldo de alguien que no es proveedor quedaba
             // conciliado **sin ningún rastro de a quién se le pagó**. Ver A-BUG-39.
             const provDesdeMaestro = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
-            const provNombreCF = provDesdeMaestro || matchCF.cashFlowRow.nombre_proveedor || null
 
             // Si no tenemos nro_cuenta aún (match TEMPLATE), buscarlo en cuentas_contables
             if (!extraIdsCF.nro_cuenta && matchCF.cashFlowRow.categ && !sinCateg) {
@@ -554,26 +562,27 @@ export function useMotorConciliacion() {
               if (ccData?.nro_cuenta) extraIdsCF.nro_cuenta = ccData.nro_cuenta
             }
 
-            // A-BUG-07 — convención de `detalle`, la misma que usa la asignación manual:
-            //   1. lo que el usuario escribió en la fila del Cash Flow, si escribió algo
-            //   2. si no, se deriva: `<comprobante> — <proveedor>`
-            //   3. y si no hay ni eso, el detalle armado de la fila
-            // Antes iba `detalle_usuario || null`, así que un template conciliado por el motor
-            // quedaba trazado por ID pero **ilegible en la grilla**: no decía qué era.
-            const comprobanteCF = matchCF.cashFlowRow.comprobante_display
-            const detalleDerivado = comprobanteCF
-              ? `${comprobanteCF}${provNombreCF ? ' — ' + provNombreCF : ''}`
-              : (matchCF.cashFlowRow.detalle || null)
-            const detalleFinal = matchCF.cashFlowRow.detalle_usuario?.trim() || detalleDerivado
+            // Las 3 columnas salen del helper compartido (`lib/conciliacion/columnas-extracto`),
+            // que aplica la convención del § 30.1: proveedor = quién, comprobante = qué, y
+            // `detalle` **sólo la especificación** — sin repetir los otros dos.
+            //
+            // Esto reemplaza la derivación de A-BUG-07 (`detalle = "<comprobante> — <proveedor>"`),
+            // que existía para que la grilla se leyera. La grilla ya muestra esas dos columnas
+            // aparte, así que el motivo está saldado y la duplicación se va. Ver A-FEAT-31.
+            const columnas = columnasDelExtracto(
+              matchCF.cashFlowRow,
+              provDesdeMaestro,
+              (movimiento as any).detalle,   // lo que el usuario ya escribió nunca se pisa
+            )
 
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               categ: sinCateg ? null : matchCF.cashFlowRow.categ,
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
-              detalle: detalleFinal,
+              detalle: columnas.detalle,
               estado: estadoFinalConCateg,
               motivo_revision: motivoFinal,
-              proveedor_nombre: provNombreCF,
-              comprobantes_pagados: matchCF.cashFlowRow.comprobante_display || null,
+              proveedor_nombre: columnas.proveedor_nombre,
+              comprobantes_pagados: columnas.comprobantes_pagados,
               ...extraIdsCF,
               ...extraCF
             })
@@ -603,11 +612,22 @@ export function useMotorConciliacion() {
                   console.error('⚠️ La factura no se marcó como conciliada (no se encontró):',
                     matchCF.cashFlowRow.origen_tabla, idsArcaConciliar)
                 }
-              } else if (matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos') {
-                await supabase
+              } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
+                // Igual que ARCA y templates: si es un grupo se concilian TODOS sus miembros.
+                // Antes la rama exigía `origen_tabla === 'sueldos.pagos'` y un grupo no lo cumple:
+                // el movimiento bancario quedaba conciliado y **los pagos seguían en `pagado`**, o
+                // sea la misma plata visible dos veces (conciliada en el extracto y todavía por
+                // pagar en el Cash Flow). Ver A-BUG-41.
+                const idsSueldoConciliar: string[] = matchCF.cashFlowRow.ids_grupo?.length
+                  ? matchCF.cashFlowRow.ids_grupo
+                  : [matchCF.cashFlowRow.id]
+                const { count: sueldosConciliados } = await supabase
                   .from('sueldos_pagos')
-                  .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                  .update({ estado: 'conciliado' }, { count: 'exact' })
+                  .in('id', idsSueldoConciliar)
+                if (!sueldosConciliados) {
+                  console.error('⚠️ El pago de sueldo no se marcó conciliado:', idsSueldoConciliar)
+                }
               } else if (matchCF.cashFlowRow.origen === 'VENTA') {
                 await supabase
                   .schema('msa')

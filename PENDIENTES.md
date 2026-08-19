@@ -279,6 +279,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-BUG-41** | 🔴 | **Bug** | **HECHO 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
 | **A-FEAT-33** | 🟡 | Feat | **HECHO 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
 | **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
 | **A-BUG-39** | 🟡 | **Bug** | **HECHO 2026-08-19** — un sueldo conciliado quedaba **sin rastro de a quién se le pagó**: el motor buscaba el nombre sólo en `proveedores`, y un empleado que no está ahí (Wilson) dejaba `proveedor_nombre` en null y el `detalle` sin nombre. Ahora cae al nombre que ya trae la fila del Cash Flow. Falta testear | → [A-BUG-39](#a-bug-39) `@extracto` |
@@ -4147,6 +4148,51 @@ consecuencias, las dos que vio el usuario:
 
 ---
 
+## <a id="a-bug-41"></a>A-BUG-41 — El grupo de sueldos conciliaba a medias
+
+> **HECHO 2026-08-19, sin testear.** Apareció en el primer uso real de [A-FEAT-33](#a-feat-33): el
+> usuario agrupó los 2 pares de Sigot, corrió el motor, y el panel *Resultado de la corrida* marcó
+> **"— sin vínculo"** en ámbar en los dos. **El aviso que se había puesto el día anterior hizo
+> exactamente lo que tenía que hacer.**
+
+Auditando las filas apareció que era peor que un vínculo faltante:
+
+| Campo | Quedó | Debía |
+|---|---|---|
+| `proveedor_nombre` | `Ruben Sigot` | ✅ |
+| `comprobantes_pagados` | **null** | `Haberes Mar 2026 — a cuenta` |
+| `detalle` | `Anticipo Ruben Sigot - Anticipo Mar 2026 \| Anticipo Ruben Sigot - Anticipo Mar 2026` | vacío (no hay especificación) |
+| `sueldo_pago_id` | **null** | el primer miembro del grupo |
+| **`sueldos.pagos.estado`** | **`pagado`** (los 4) | `conciliado` |
+
+### 🔴 Lo grave era lo que no se veía
+El movimiento bancario quedó `conciliado` y **los pagos siguieron en `pagado`**. O sea que esos
+**$2.071.305** quedaron conciliados en el extracto **y al mismo tiempo pendientes de pagar en el
+Cash Flow**: la misma plata contada dos veces. Es el daño de [A-BUG-27](#a-bug-27) por otra puerta,
+y va directo contra el norte — el presupuesto se autoalimenta de ahí.
+
+### La causa: la misma condición, en dos lugares
+```ts
+// :452 y :606 — las dos exigían esto
+matchCF.cashFlowRow.origen === 'SUELDO' && matchCF.cashFlowRow.origen_tabla === 'sueldos.pagos'
+```
+Una fila de **grupo** tiene `origen_tabla = 'msa.grupos_pago'`, así que no entraba por ninguna de las
+dos: ni escribía el vínculo ni propagaba el estado.
+
+⚠️ **Y ARCA y templates ya lo tenían resuelto** con `ids_grupo` (líneas 584 y 592). Sueldos era el
+único origen sin eso. Al habilitar la agrupación (A-FEAT-33) no se revisó que el otro extremo la
+soportara: **se abrió la puerta de entrada sin mirar la de salida.**
+
+### Fix
+- **Estado**: se concilian **todos** los miembros (`.in('id', ids_grupo)`), con `count` y aviso en
+  consola si no actualizó ninguno — igual que ARCA.
+- **Vínculo**: se guarda el **primer miembro** del grupo en `sueldo_pago_id`. El `id` de la fila de
+  grupo es el `grupo_pago_id`, que apunta a otra tabla; desde el pago se llega al grupo igual.
+- **Columnas**: la fila de grupo ahora lleva `comprobante_display` y `detalle_usuario`, que sólo
+  tenían las individuales.
+
+---
+
 ## <a id="a-feat-33"></a>A-FEAT-33 — Agrupar sueldos desde el Cash Flow
 
 > **HECHO 2026-08-19, sin testear.** El usuario fue a agrupar los pagos de Sigot y le saltó
@@ -4481,6 +4527,31 @@ leyendo código.
 otra vez: **el primer caso que se toque construye el helper único** que arma las 3 columnas, y cada
 camino se va enchufando ahí a medida que le toca. Arreglar cada camino por su cuenta es reproducir
 exactamente el problema que estamos cerrando.
+
+### ✅ Paso 1 hecho — 2026-08-19: el helper existe y el motor lo usa
+
+`lib/conciliacion/columnas-extracto.ts` arma las 3 columnas en un solo lugar:
+
+| Función | Qué hace |
+|---|---|
+| `columnasDelExtracto(fila, nombreMaestro, detalleExistente)` | las 3 columnas, con el § 30.1 aplicado |
+| `comprobanteDeSueldo(tipo, mes, anio)` | `Haberes Mar 2026 — a cuenta` / `— saldo` |
+| `especificacionDeSueldo(descripcion)` | `"Anticipo May 2026 - Lucresia"` → `"Lucresia"` |
+
+Decisiones que quedan tomadas ahí:
+- **Se fue la derivación de A-BUG-07.** `detalle` ya no se arma como `<comprobante> — <proveedor>`.
+  La grilla muestra esas dos columnas aparte, así que el motivo estaba saldado.
+- **Lo que el usuario escribió nunca se pisa**: si el movimiento ya tenía `detalle`, manda ése.
+- Si la descripción de un pago **no** tiene la forma `<tipo> <Mes> <Año>`, se devuelve **entera** —
+  mejor de más que perder lo que escribió el usuario. Caso real: *"Formalmente un anticipo de sueldo
+  pero es eq a sus francos de Junio."*
+
+**Control**: `npx tsx scripts/verificar-columnas-extracto.mts` — 8 casos reales ya cargados, incluidos
+los tres de Sigot (`Lucresia` / `Galicia` / `Santander`) y los dos de texto libre. Correrlo después
+de tocar la convención.
+
+**Caminos migrados: 1 de 4** (motor por Cash Flow). Faltan motor por reglas, asignación manual y
+edición masiva — se enchufan cuando su caso aparezca conciliando.
 
 ---
 
