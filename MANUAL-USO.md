@@ -559,6 +559,32 @@ notas (P-34).
 4. Cerrá y volvé a abrir el panel: el comentario tiene que seguir ahí (está en la base, no en memoria).
 5. El ícono 💬 del pendiente ahora muestra **el número de comentarios**, en verde.
 
+#### ➕ Proponer un pendiente desde la app 🟡 (2026-08-19, sin testear)
+
+Botón **"Proponer"** arriba del panel. Ponés qué hay que hacer, opcionalmente el detalle, la
+prioridad y la pantalla — la pantalla se elige de la lista, no se escribe.
+
+**Queda como propuesta, no como pendiente.** Aparece arriba de todo en un bloque azul
+*"✍️ Propuestos por vos"* hasta que Claude lo incorpore a `PENDIENTES.md` con su **ID, sección y
+dossier**. La app **no puede escribir ese archivo** (Vercel es de sólo lectura), y aunque pudiera no
+debería: un pendiente necesita más que un título.
+
+Es la misma lógica que las notas: **bandeja de entrada, no fuente**. Cuando Claude lo incorpora,
+queda registrado en qué ID se convirtió.
+
+**Cómo probarlo:**
+1. Panel → **Proponer** → título, prioridad *Secundario*, pantalla *@cashflow* → Proponer.
+2. Tiene que aparecer arriba en el bloque azul, con la fecha.
+3. Cerrá y reabrí: sigue ahí (está en la base).
+
+#### 🚨 Comentarios sin pendiente
+
+Si un comentario apunta a un ID que **ya no está** en `PENDIENTES.md` —porque el pendiente se borró
+del archivo—, sale un bloque rojo *"Comentarios sin pendiente"* con el texto completo.
+
+**No es un error a corregir: es para que no se pierda lo que escribiste.** Borrar pendientes viejos
+está bien; lo que no está bien es que se lleven puesto un comentario tuyo sin avisar.
+
 #### 🧮 El control — se corre, no se confía
 
 ```bash

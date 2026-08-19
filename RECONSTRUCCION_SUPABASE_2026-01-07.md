@@ -3323,6 +3323,36 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-08-19: `pendientes_propuestos` — pendientes que propone el usuario**
+
+Misma lógica que los comentarios: la app no puede escribir `PENDIENTES.md`. Y aunque pudiera, un
+pendiente necesita **ID, sección, dossier y marca de pantalla** — eso lo arma Claude al incorporarlo.
+Es una **bandeja de entrada**, mismo patrón que las notas (P-34).
+
+```sql
+CREATE TABLE public.pendientes_propuestos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  titulo text NOT NULL,
+  descripcion text,
+  prioridad_sugerida text CHECK (prioridad_sugerida IN ('urgente','secundario','test')),
+  pantalla_sugerida text,                -- una de las 12; se valida en la app contra PANTALLAS
+  estado text NOT NULL DEFAULT 'propuesto'
+    CHECK (estado IN ('propuesto','incorporado','descartado')),
+  pendiente_id_asignado text,            -- el ID que le tocó al entrar al .md
+  motivo text,                           -- por qué se descartó, si se descartó
+  created_at timestamptz NOT NULL DEFAULT now(),
+  leido_at timestamptz
+);
+CREATE INDEX idx_pend_prop_sin_leer ON public.pendientes_propuestos (created_at) WHERE estado = 'propuesto';
+ALTER TABLE public.pendientes_propuestos ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pendientes_propuestos_all ON public.pendientes_propuestos FOR ALL USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.pendientes_propuestos TO anon, authenticated, service_role;
+```
+
+**✅ Corrido el 2026-08-19** por MCP. Probado: POST crea, y una pantalla inventada (`conciliacion`)
+se **rechaza con la lista de las 12 válidas** — si entrara, al incorporarlo el control la marcaría
+como marca inválida. NO está en el backup original.
+
 ### **2026-08-19: `pendientes_comentarios` — los comentarios del usuario sobre un pendiente**
 
 El usuario quiere dejarle mensajes a Claude **sobre un pendiente concreto**, desde la app y mientras

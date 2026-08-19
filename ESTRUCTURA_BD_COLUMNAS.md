@@ -50,6 +50,10 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, pendiente_id text, texto text, estado_usuario text ('terminado'|'chequeado'|'revisar'|'descartar'), autor text, pantalla text, created_at tstz, leido_at tstz`
 > ⚠️ **`pendiente_id` es TEXTO sin FK** (`'A-BUG-27'`): los pendientes viven en `PENDIENTES.md`, no en una tabla. **El `.md` es de Claude, esta tabla es del usuario** — la app corre en Vercel y no puede escribir el archivo. `leido_at` null = Claude no lo leyó (bandeja de entrada al abrir sesión). Si un ID se renumera, los comentarios quedan huérfanos **en silencio**. NO en backup — ver RECONSTRUCCION 2026-08-19. Ver `PENDIENTES.md` § P-46.
 
+### pendientes_propuestos  (2026-08-19 — pendientes que propone el usuario desde la app)
+`id uuid, titulo text, descripcion text, prioridad_sugerida text (urgente|secundario|test), pantalla_sugerida text, estado text (propuesto|incorporado|descartado), pendiente_id_asignado text, motivo text, created_at tstz, leido_at tstz`
+> **BANDEJA DE ENTRADA, no fuente.** El usuario propone; Claude lo pasa a `PENDIENTES.md` con su ID y marca `estado=incorporado` + `pendiente_id_asignado` — que deja el rastro de en qué se convirtió. La app **no puede escribir el .md** (Vercel read-only), y aunque pudiera no debería: un pendiente necesita ID, sección, dossier y marca de pantalla. NO en backup — ver RECONSTRUCCION 2026-08-19.
+
 ### lotes_transferencias
 `id uuid, fecha_generacion tstz, fecha_pago date, tipo varchar, empresa varchar, monto_total numeric, cantidad_items int, cantidad_excluidos int, cantidad_archivos int, user_role varchar, nombre_archivo varchar, observaciones text`
 

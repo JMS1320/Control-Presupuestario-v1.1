@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink, MessageSquare } from "lucide-react"
+import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink, MessageSquare, Plus } from "lucide-react"
 import type { Pendiente, FilaNoParseada, GrupoPendiente, Pantalla } from "@/lib/pendientes/parse"
 import { PANTALLAS } from "@/lib/pendientes/parse"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -31,6 +31,16 @@ interface Comentario {
   estado_usuario: string | null
   created_at: string
   leido_at: string | null
+}
+
+/** Pendiente propuesto por el usuario. Todavía NO está en el `.md`: Claude lo incorpora. */
+interface Propuesto {
+  id: string
+  titulo: string
+  descripcion: string | null
+  prioridad_sugerida: string | null
+  pantalla_sugerida: string | null
+  created_at: string
 }
 
 /** Los 4 estados que puede poner el usuario, al lado del de Claude sin pisarlo. */
@@ -86,6 +96,12 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   const [estadoCom, setEstadoCom] = useState<string>('')
   const [guardandoCom, setGuardandoCom] = useState(false)
 
+  // ── Proponer un pendiente nuevo (bandeja de entrada; Claude lo pasa al .md) ──
+  const [propuestos, setPropuestos] = useState<Propuesto[]>([])
+  const [proponiendo, setProponiendo] = useState(false)
+  const [nuevo, setNuevo] = useState({ titulo: '', descripcion: '', prioridad_sugerida: '', pantalla_sugerida: '' })
+  const [guardandoProp, setGuardandoProp] = useState(false)
+
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
     try {
@@ -122,7 +138,41 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
     }
   }, [])
 
-  useEffect(() => { if (open && !data) { cargar(); cargarComentarios() } }, [open, data, cargar, cargarComentarios])
+  const cargarPropuestos = useCallback(async () => {
+    try {
+      const r = await fetch('/api/pendientes/propuestos?rol=admin')
+      if (!r.ok) return
+      const d = await r.json()
+      setPropuestos(d.propuestos ?? [])
+    } catch { /* extra: si falla, el panel sigue andando */ }
+  }, [])
+
+  useEffect(() => {
+    if (open && !data) { cargar(); cargarComentarios(); cargarPropuestos() }
+  }, [open, data, cargar, cargarComentarios, cargarPropuestos])
+
+  const guardarPropuesto = async () => {
+    if (!nuevo.titulo.trim()) return
+    setGuardandoProp(true)
+    try {
+      const r = await fetch('/api/pendientes/propuestos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          titulo: nuevo.titulo.trim(),
+          descripcion: nuevo.descripcion.trim() || null,
+          prioridad_sugerida: nuevo.prioridad_sugerida || null,
+          pantalla_sugerida: nuevo.pantalla_sugerida || null,
+        }),
+      })
+      if (!r.ok) { const d = await r.json(); alert('No se pudo guardar: ' + (d.error ?? r.status)); return }
+      setNuevo({ titulo: '', descripcion: '', prioridad_sugerida: '', pantalla_sugerida: '' })
+      setProponiendo(false)
+      await cargarPropuestos()
+    } finally {
+      setGuardandoProp(false)
+    }
+  }
 
   const guardarComentario = async (pendienteId: string) => {
     if (!textoCom.trim()) return
@@ -311,10 +361,48 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
             <Input className="h-9 pl-8 text-sm" placeholder="Buscar por ID, texto o sección…"
                    value={busqueda} onChange={e => setBusqueda(e.target.value)} />
           </div>
+          <Button variant="outline" size="sm" onClick={() => setProponiendo(v => !v)}>
+            <Plus className="mr-1 h-3.5 w-3.5" />Proponer
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { setData(null); cargar() }} disabled={cargando}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${cargando ? 'animate-spin' : ''}`} />Actualizar
           </Button>
         </div>
+
+        {/* Proponer un pendiente. NO se escribe en el .md: queda como propuesta y Claude lo
+            incorpora con su ID, sección y dossier. Bandeja de entrada, igual que las notas. */}
+        {proponiendo && (
+          <div className="space-y-2 rounded border border-blue-300 bg-blue-50 p-2">
+            <p className="text-xs font-semibold text-blue-900">Proponer un pendiente</p>
+            <Input className="h-8 text-sm" autoFocus placeholder="Qué hay que hacer (una línea)"
+              value={nuevo.titulo} onChange={e => setNuevo(n => ({ ...n, titulo: e.target.value }))} />
+            <textarea className="w-full rounded border px-2 py-1 text-xs" rows={2}
+              placeholder="Detalle, contexto, por qué… (opcional)"
+              value={nuevo.descripcion} onChange={e => setNuevo(n => ({ ...n, descripcion: e.target.value }))} />
+            <div className="flex flex-wrap items-center gap-2">
+              <select className="h-7 rounded border px-1 text-[11px]" value={nuevo.prioridad_sugerida}
+                onChange={e => setNuevo(n => ({ ...n, prioridad_sugerida: e.target.value }))}>
+                <option value="">— prioridad —</option>
+                <option value="urgente">🔴 Urgente</option>
+                <option value="secundario">🟠 Secundario</option>
+                <option value="test">🧪 Para testear</option>
+              </select>
+              <select className="h-7 rounded border px-1 text-[11px]" value={nuevo.pantalla_sugerida}
+                onChange={e => setNuevo(n => ({ ...n, pantalla_sugerida: e.target.value }))}>
+                <option value="">— pantalla —</option>
+                {PANTALLAS.map(s => <option key={s} value={s}>@{s}</option>)}
+              </select>
+              <Button size="sm" className="h-7 text-xs" disabled={guardandoProp || !nuevo.titulo.trim()}
+                onClick={guardarPropuesto}>{guardandoProp ? 'Guardando…' : 'Proponer'}</Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs"
+                onClick={() => setProponiendo(false)}>Cancelar</Button>
+            </div>
+            <p className="text-[10px] text-blue-700">
+              Queda como <strong>propuesta</strong>. Claude la pasa a <code>PENDIENTES.md</code> con
+              su ID y dossier — la app no puede escribir ese archivo.
+            </p>
+          </div>
+        )}
 
         {/* Filtro por pantalla. Sólo se ofrecen las que tienen algo marcado, más "sin ubicar". */}
         {data && (() => {
@@ -368,6 +456,58 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
                 de mirar la lista — si no, el panel muestra menos de lo que hay y nadie se entera. */}
             {data.noParseadas.length > 0
               && bloqueRaro('🚨 Filas del índice que NO se pudieron leer — el panel está incompleto', data.noParseadas, true)}
+
+            {/* Propuestas del usuario todavía sin incorporar al .md. Van arriba porque son
+                trabajo que Claude no vio: si quedan al pie, se pierden. */}
+            {propuestos.length > 0 && (
+              <div className="rounded border border-blue-300 bg-blue-50 p-2">
+                <p className="mb-1 text-sm font-semibold text-blue-900">
+                  ✍️ Propuestos por vos ({propuestos.length}) · esperando que Claude los incorpore
+                </p>
+                <div className="space-y-1">
+                  {propuestos.map(p => (
+                    <div key={p.id} className="rounded bg-white/70 px-2 py-1 text-xs">
+                      <span className="font-medium">{p.titulo}</span>
+                      {p.descripcion && <span className="text-gray-600"> — {p.descripcion}</span>}
+                      <span className="ml-1 text-[10px] text-gray-400">
+                        {p.prioridad_sugerida && `· ${p.prioridad_sugerida} `}
+                        {p.pantalla_sugerida && `· @${p.pantalla_sugerida} `}
+                        · {new Date(p.created_at).toLocaleDateString('es-AR')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 🚨 Comentarios que apuntan a un ID que ya no está en el .md.
+                Pasa cuando un pendiente se borra del archivo (se resolvió, se descartó) — el
+                comentario queda flotando y, sin este bloque, DESAPARECE EN SILENCIO junto con lo
+                que el usuario había escrito. Es la debilidad de que `pendiente_id` sea texto sin FK:
+                no hay tabla de pendientes contra la cual referenciar, así que la integridad la
+                tiene que chequear la pantalla. */}
+            {(() => {
+              const ids = new Set(data.pendientes.map(p => p.id))
+              const huerfanos = comentarios.filter(c => !ids.has(c.pendiente_id))
+              if (huerfanos.length === 0) return null
+              return (
+                <div className="rounded border border-red-400 bg-red-50 p-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-red-800">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Comentarios sin pendiente ({huerfanos.length})
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-red-700">
+                    Apuntan a un ID que ya no está en <code>PENDIENTES.md</code>: el pendiente se
+                    borró o se renumeró. El comentario sigue acá para no perderlo.
+                  </p>
+                  {huerfanos.map(c => (
+                    <p key={c.id} className="mt-1 text-[11px] text-gray-700">
+                      <span className="font-mono text-red-700">{c.pendiente_id}</span> · {c.texto}
+                    </p>
+                  ))}
+                </div>
+              )
+            })()}
 
             {/* Marca mal escrita: el único camino por el que un pendiente podría no mostrarse en
                 ningún lado. El ítem igual cae a "sin ubicar", pero el tipeo hay que corregirlo. */}
