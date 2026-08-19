@@ -66,7 +66,18 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
       const r = await fetch('/api/pendientes?rol=admin')
       const d = await r.json()
       if (!r.ok) { setError(d.error || `Error ${r.status}`); return }
-      setData(d)
+      // Se completan los campos que falten en vez de confiar en la forma de la respuesta.
+      // Un campo ausente hacía `undefined.length` en el render → React tiraba el árbol entero y
+      // la app mostraba "This page couldn't load". Un panel de consulta NO puede tumbar la app.
+      setData({
+        grupos: { urgente: 0, secundario: 0, test: 0, auditar: 0, obsoleto: 0, hecho: 0, ...(d.grupos ?? {}) },
+        pendientes: d.pendientes ?? [],
+        noParseadas: d.noParseadas ?? [],
+        ignoradas: d.ignoradas ?? [],
+        marcasDesconocidas: d.marcasDesconocidas ?? [],
+        totalDetectadas: d.totalDetectadas ?? 0,
+        generado_at: d.generado_at ?? '',
+      })
     } catch (e) {
       setError((e as Error).message)
     } finally {

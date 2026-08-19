@@ -24,10 +24,15 @@ import { parsePendientes, contarPorGrupo } from '@/lib/pendientes/parse'
 export const runtime = 'nodejs'   // usa fs: no puede ser edge
 
 /**
- * El archivo sólo cambia con un deploy, así que se parsea una vez por instancia.
- * (7.800 líneas: parsearlo en cada request sería gratis igual, pero no hay motivo.)
+ * ⚠️ SIN CACHE, a propósito.
+ *
+ * Había un cache en memoria ("el archivo sólo cambia con un deploy"). **Era falso en desarrollo**:
+ * el `.md` cambia todo el tiempo —se agregan pendientes, se renumeran IDs— y el endpoint seguía
+ * sirviendo la versión con la que arrancó el server. Peor: si la forma de la respuesta cambia
+ * (campos nuevos), el cliente recibe la vieja y **explota al leer un campo que no está**.
+ *
+ * Parsear 7.800 líneas son ~10 ms. No vale una sola sorpresa.
  */
-let cache: { data: unknown; at: string } | null = null
 
 export async function GET(request: Request) {
   try {
@@ -38,22 +43,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Sólo admin' }, { status: 403 })
     }
 
-    if (!cache) {
-      const md = await readFile(path.join(process.cwd(), 'PENDIENTES.md'), 'utf8')
-      const r = parsePendientes(md)
-      cache = {
-        at: new Date().toISOString(),
-        data: {
-          grupos: contarPorGrupo(r.pendientes),
-          pendientes: r.pendientes,
-          noParseadas: r.noParseadas,
-          ignoradas: r.ignoradas,
-          totalDetectadas: r.totalDetectadas,
-        },
-      }
-    }
+    const md = await readFile(path.join(process.cwd(), 'PENDIENTES.md'), 'utf8')
+    const r = parsePendientes(md)
 
-    return NextResponse.json({ ...(cache.data as object), generado_at: cache.at })
+    return NextResponse.json({
+      grupos: contarPorGrupo(r.pendientes),
+      pendientes: r.pendientes,
+      noParseadas: r.noParseadas,
+      ignoradas: r.ignoradas,
+      marcasDesconocidas: r.marcasDesconocidas,
+      totalDetectadas: r.totalDetectadas,
+      generado_at: new Date().toISOString(),
+    })
   } catch (err) {
     // Si el .md no llegó al bundle, el error es éste y hay que mirar next.config.mjs.
     console.error('Error leyendo PENDIENTES.md:', err)
