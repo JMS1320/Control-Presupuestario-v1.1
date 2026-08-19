@@ -271,7 +271,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-28** | 🔴 | **Bug** | **HECHO 2026-08-18** — el CUIT del empleado se guarda **con guiones** (`20-28749254-6`) y el banco lo manda sin (`20287492546`); el motor los comparaba con `===`. El pre-filtro por CUIT estaba **muerto para todos los sueldos**, no sólo AMS. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
 | **A-BUG-29** | 🔴 | **Bug** | **HECHO 2026-08-18** — el pre-filtro por CUIT **excluía en vez de priorizar**: el fallback sólo se disparaba si el CUIT no tenía **ningún** candidato. Bastaba **una** factura del mismo CUIT para reducir el pool y no recuperarse nunca. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
 | **A-BUG-30** | 🟡 | **Bug** | **HECHO 2026-08-19** — al conciliar un **sueldo**, el motor dejaba `comprobantes_pagados` en **null** y volcaba el texto decorativo del Cash Flow en `detalle` (*"Pago Saldo AMS - Pago Saldo Abr 2026"*, repetido). Causa única: las filas individuales de sueldo no definían `comprobante_display` ni `detalle_usuario`. Falta testear | → [A-BUG-30](#a-bug-30) `@extracto @cashflow` |
-| **A-BUG-31** | 🔴 | **Bug** | **Reasignar un movimiento no limpia el vínculo anterior** — el débito del 01/06 se reasignó a `CAJA` y **siguió apuntando al mismo `sueldo_pago_id`** que el del 29/05: dos movimientos bancarios reclaman el mismo pago de $1,2 M. Conserva además el `motivo_revision` de cuando estaba en auditar | → [A-BUG-31](#a-bug-31) `@extracto` |
+| **A-BUG-31** | 🟡 | **Bug** | **HECHO 2026-08-19** — reasignar un movimiento **no limpiaba el vínculo anterior**: el débito del 01/06 pasó a `CAJA` y siguió apuntando al `sueldo_pago_id` del 29/05, con dos movimientos reclamando el mismo pago de $1,2 M. Ahora las 3 ramas de asignación limpian los vínculos ajenos + `motivo_revision`. **Fila corregida en BD con OK del usuario.** Falta testear | → [A-BUG-31](#a-bug-31) `@extracto` |
+| **A-BUG-32** | 🟡 | **Bug** | **Los 2 movimientos de AMS ya conciliados quedaron con los campos viejos** — el fix de [A-BUG-30](#a-bug-30) actúa de acá en adelante, pero las filas del 30/04 y 29/05 siguen con `comprobantes_pagados` en null y el `detalle` decorativo. **Es dato: pendiente de corregir con el usuario** | → [A-BUG-30](#a-bug-30) `@extracto` |
 | **A-FEAT-29** | 🟡 | Feat | **HECHO 2026-08-19** — panel **"Resultado de la corrida"**: las filas que tocó el motor se quedan a la vista aunque el filtro ya no las alcance, con su **antes → después**, hasta apretar *Actualizar y soltar*. Antes se conciliaban y desaparecían de la grilla antes de poder revisarlas. Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
@@ -3978,12 +3979,27 @@ Es la limitación 4 de `MODULO_CONCILIACION.md` (*"re-abrir no revierte los camb
 el otro lado: no es sólo que no revierta el origen, es que **no suelta el vínculo** al cambiar de
 destino. Cualquier reporte por `sueldo_pago_id` cuenta ese anticipo dos veces.
 
-**Qué haría falta**: al guardar una reasignación, limpiar los IDs de vínculo que no correspondan al
-destino nuevo (`comprobante_arca_id`, `sueldo_pago_id`, `template_id`/`template_cuota_id`,
-`comprobante_venta_id`) y borrar `motivo_revision` si el estado deja de ser `auditar`.
+### ✅ Resuelto 2026-08-19
 
-⚠️ **La fila del 01/06 sigue mal en la BD.** Es un dato real: no se toca sin acuerdo del usuario
-(`CLAUDE.md` § Datos).
+**Código**: helper `vinculosLimpios()` en `vista-extracto-bancario.tsx`, que las **3 ramas** de
+asignación (ARCA, Template, Sueldo) esparcen antes de poner lo suyo. Deja en null los 4 IDs de
+vínculo + `motivo_revision`, y recién después escribe el destino nuevo. Antes sólo limpiaba la rama
+de sueldos, y le faltaba `comprobante_venta_id`.
+
+⚠️ `comprobante_venta_id` se agrega **sólo si la tabla es `msa_galicia`**: la columna no existe en
+PAM ni MA (→ [A-FEAT-24](#a-feat-24)) y mandarla ahí haría fallar el UPDATE entero.
+
+**Dato** (con OK explícito del usuario): la fila del 01/06 quedó con `sueldo_pago_id = null` y
+`motivo_revision = null`, conservando `categ = CAJA` y `comprobantes_pagados = Caja`. Verificado
+después: el anticipo `5357b80c` lo reclama **un solo** movimiento, el del 29/05, que es el correcto.
+
+### 🔴 Lo que NO se corrigió solo — <a id="a-bug-32"></a>A-BUG-32
+El fix de [A-BUG-30](#a-bug-30) vale **de acá en adelante**. Las 2 filas de AMS que ya estaban
+conciliadas (30/04 y 29/05) **siguen con los campos viejos**: `comprobantes_pagados` en null y el
+`detalle` decorativo *"Pago Saldo AMS - Pago Saldo Abr 2026"*. Arreglarlas es un `UPDATE` de datos
+reales → pendiente de acuerdo con el usuario (`CLAUDE.md` § Datos). Valores correctos:
+`comprobantes_pagados = 'Pago Saldo Abr 2026'` / `'Anticipo May 2026'`, y `detalle` derivado igual
+que el resto.
 
 ---
 

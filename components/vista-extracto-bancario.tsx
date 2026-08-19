@@ -1337,6 +1337,30 @@ export function VistaExtractoBancario() {
   }
 
   // Ejecutar asignación manual
+  /**
+   * Los vínculos de un movimiento son **excluyentes**: o apunta a una factura ARCA, o a un pago de
+   * sueldo, o a un template, o a una venta. Al reasignar hay que limpiar los que no correspondan al
+   * destino nuevo, porque si no **el vínculo viejo queda pegado** (A-BUG-31): el débito del 01/06
+   * se reasignó a CAJA y siguió apuntando al pago de sueldo del 29/05, así que ese anticipo de
+   * $1,2 M quedó reclamado por dos movimientos bancarios distintos. Sólo la rama de sueldos
+   * limpiaba, y le faltaba la venta.
+   *
+   * `comprobante_venta_id` va aparte porque **la columna sólo existe en `public.msa_galicia`**
+   * (→ A-FEAT-24): mandarla en PAM o MA haría fallar el UPDATE entero.
+   */
+  const vinculosLimpios = () => {
+    const base: Record<string, any> = {
+      comprobante_arca_id: null,
+      sueldo_pago_id: null,
+      template_id: null,
+      template_cuota_id: null,
+      // Si el movimiento deja de estar en auditar, el motivo de revisión ya no aplica.
+      motivo_revision: null,
+    }
+    if (tablaActiva === 'msa_galicia') base.comprobante_venta_id = null
+    return base
+  }
+
   const ejecutarAsignacion = async () => {
     if (!movimientoAsignando) return
     setGuardandoAsignacion(true)
@@ -1446,6 +1470,7 @@ export function VistaExtractoBancario() {
         const { data: provTemplate } = cuitTemplate ? await supabase
           .from('proveedores').select('razon_social').eq('cuit', cuitTemplate).maybeSingle() : { data: null }
         const updateTemplate: Record<string, any> = {
+          ...vinculosLimpios(),
           template_id: templateElegido.id,
           template_cuota_id: cuotaId,
           categ: categFinal,
@@ -1503,6 +1528,7 @@ export function VistaExtractoBancario() {
         const { data: provArca } = cuitArca ? await supabase
           .from('proveedores').select('razon_social').eq('cuit', cuitArca).maybeSingle() : { data: null }
         const updateArca: Record<string, any> = {
+          ...vinculosLimpios(),
           comprobante_arca_id: arcaElegida.id,
           estado: 'conciliado',
           comprobantes_pagados: arcaElegida.display_referencia || null
@@ -1596,6 +1622,7 @@ export function VistaExtractoBancario() {
         }
 
         const updateSueldo: Record<string, any> = {
+          ...vinculosLimpios(),
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
           // `detalleSueldo` ya se calcula arriba y se descartaba escribiendo null (A-BUG-05 p.1)
@@ -1603,10 +1630,7 @@ export function VistaExtractoBancario() {
           estado: 'conciliado',
           proveedor_nombre: nombreEmpleado,
           comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
-          // Limpiar IDs de otros orígenes
-          template_id: null,
-          template_cuota_id: null,
-          comprobante_arca_id: null
+          // (la limpieza de los otros vínculos ya viene de `vinculosLimpios()` arriba)
         }
         updateSueldo.contable = contableManual.trim() || codigosSueldo.contable || ''
         updateSueldo.interno  = internoManual.trim()  || codigosSueldo.interno  || ''
