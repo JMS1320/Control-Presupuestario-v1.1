@@ -171,6 +171,79 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 - **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
 - Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
 
+### 🔀 Trabajo en paralelo — 2 terminales sobre el mismo directorio (REGLA)
+*Agregada 2026-08-18, al abrir una segunda terminal (conciliación + panel de pendientes a la vez).
+Acordada **entre las dos terminales**, y escrita acá —y no en el tablero— porque `.claude/` no va al
+repo: reglas permanentes en un archivo descartable es exactamente lo que no hay que hacer.*
+
+> ⏭️ **Con UNA sola terminal abierta, saltear esta sección entera.** Aplica sólo cuando hay 2 o más
+> sobre el mismo directorio.
+
+> **Principio (portable):** cuando hay más de una terminal abierta sobre el mismo working tree **no
+> hay aislamiento de ningún tipo** — mismo árbol de archivos, mismo índice de git, misma BD. Git no
+> protege nada: protege entre *commits*, y las dos terminales viven en el **mismo commit**. El único
+> mecanismo de protección es un **tablero declarado** que las dos leen y escriben.
+> **📍 Acá:** el tablero es **`.claude/SESION-PARALELA.md`** (gitignoreado; no es dimensión, es
+> operativo — mismo estatus que `memory/`). Ahí va **sólo el estado vivo**: quién tiene qué, qué va a
+> necesitar y qué quedó a medias. **Las reglas son éstas y no se duplican allá.**
+
+**Las 10 reglas.** Cada una con su motivo, porque el motivo es lo que hace que se respete a las 3 de
+la tarde del tercer día.
+
+**1 · Tomar antes de escribir.** Antes de editar un archivo, anotarlo en el tablero. Si ya está
+tomado por la otra terminal, **no se toca**: se avisa al usuario y se espera, o se hace otra cosa.
+*Motivo: dos ediciones al mismo archivo no dan conflicto —no hay merge—, dan **pérdida silenciosa**.
+La última escritura gana y la anterior desaparece sin que nadie se entere.*
+
+**2 · `git add` explícito, archivo por archivo.** Prohibidos `git add -A` / `git add .` /
+`commit -a`, y **todo** `checkout` / `stash` / `reset`.
+*Motivo: `git add -A` se lleva los archivos a medio hacer de la otra terminal a un commit que no es
+suyo; `checkout`/`stash`/`reset` directamente los borra. El working tree es uno: lo que una descarta,
+lo pierde la otra.*
+
+**3 · Recursos exclusivos — de a uno y avisando**: `npm run dev` (un solo puerto), `build` /
+`type-check` (escriben `.next/` y `tsconfig.tsbuildinfo`), `git commit` (el índice es uno solo),
+y **MCP en write / cambios de BD** (además, con el usuario presente — § Datos).
+*Motivo: dos builds simultáneos se corrompen entre sí y el error no dice por qué.*
+
+**4 · Archivos compartidos de alto tráfico** (`PENDIENTES.md`, éste, `MEMORY.md`, `MANUAL-USO.md`,
+`KNOWLEDGE.md`): los toca cualquier trabajo, así que no se pueden tomar para toda la sesión.
+**`Edit` puntual, nunca `Write` del archivo entero**; una terminal por vez; agregar **sin reordenar
+ni reformatear** lo que ya está, aunque quede mejor.
+*Motivo: un `Write` completo se lleva puesto lo que la otra agregó hace dos minutos.*
+
+**5 · No cambiar el formato de un archivo que la otra terminal está parseando.** Se puede agregar
+contenido; no cambiar la estructura (encabezados, columnas, formato de IDs, anclas). Al agregar, se
+copia el formato exacto de una entrada existente.
+*Motivo: el parser no falla, **parsea mal** — y eso se descubre tarde y mal. El silencio miente.*
+
+**6 · Nada destructivo sobre lo ajeno.** Ningún borrado, renombre, movimiento ni `--force` sobre
+archivos que no estén declarados como propios. Ante la duda, preguntar (§ Datos).
+
+**7 · Al cerrar (o al quedarse sin contexto): liberar y dejar escrito** qué quedó a medias — que es
+lo único que git no puede contar. Un archivo tomado y no liberado bloquea a la otra por nada.
+
+**8 · El tablero dice DE QUIÉN es; `git status` dice CÓMO está.** El tablero **no guarda ningún dato
+que git ya sepa** (nada de "commiteado"/"sin commitear"). Si aparece un archivo modificado que no
+tomé: **parar y avisar** — no revertirlo, no arreglarlo, no commitearlo.
+*Motivo: el dato duplicado se pudre en horas. Pasó el primer día: el tablero afirmaba un estado de
+git que ya era falso, y una regla apoyada en eso dispara falsas alarmas y tapa las verdaderas.*
+
+**9 · Entre terminales sólo se negocia la CONVIVENCIA.** Se conversa cómo no pisarse y los
+compromisos operativos que la otra debe cumplir. **El diseño de lo que cada una construye no se
+cruza**: eso va por separado, cada terminal con el usuario.
+*Motivo: si cada una opina del desarrollo de la otra, el usuario queda de intermediario entre dos
+diseños y no vuelve nunca a su trabajo.*
+
+**10 · Declarar también lo que se VA a tocar, no sólo lo tomado.** Además de la lista de tomados,
+cada terminal mantiene un *"voy a necesitar"* con los archivos de la **próxima etapa**, declarado
+**antes** de escribir la primera línea.
+*Motivo: el resto de las reglas protege el presente; ésta es la única que evita el choque en vez de
+administrarlo. Y el choque se ve cuando todavía es barato cambiar el diseño — pasó el primer día: el
+contador de pendientes iba a tocar `vista-extracto-bancario.tsx` (ajeno) y se movió a `dashboard.tsx`
+(sin dueño) antes de escribir nada. Un choque detectado por revisión es suerte; detectado por
+protocolo es diseño.*
+
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
 enganchar algo nuevo con algo hecho hace meses. **Cuanto menos contexto haya, más se aplica.**
@@ -392,6 +465,14 @@ maestro no debe tener nombres de tabla de este proyecto.
 - **💰 Inputs monetarios** → principio: *montos como texto en el formato local, nunca `type="number"`*.
 - **🔧 Git** → principio: *nunca commitear a producción; el merge lo autoriza el usuario después
   del testing*.
+- **🔀 Trabajo en paralelo con 2 terminales** (2026-08-18) — la **§ de arriba va tal cual**: las 10
+  reglas con sus motivos son portables y no tienen un solo nombre propio de este proyecto (el único
+  anclaje es la ruta del tablero, y va en el `📍 Acá:`). Principio: *con 2 terminales sobre el mismo
+  working tree no hay aislamiento y git no protege nada — la única protección es un tablero declarado
+  que ambas leen y escriben*. Evita el modo de falla peor: la **pérdida silenciosa** (dos ediciones
+  al mismo archivo no dan conflicto, gana la última).
+  ⚠️ Al promover: **las reglas viajan con sus motivos**. Se probó tenerlas resumidas en un lado y
+  completas en otro y duró horas — el lado resumido no alcanza para decidir nada.
 - **📝 Notas del usuario desde la app** (2026-08-02) — un botón fijo para dejar notas *en el
   contexto donde se le ocurren*. Lo valioso no es la nota: es el contexto que se captura solo
   (pantalla, componente, registro abierto, filtros). Una nota es una **grabación de N capturas**
