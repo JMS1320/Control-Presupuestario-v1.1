@@ -279,7 +279,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
-| **A-BUG-38** | 🟡 | **Bug** | **Wilson Barreto no tiene CUIT en `sueldos.empleados`** — pero el banco sí lo informa: `20333189349`. Sin el CUIT cargado, el pre-filtro del motor no lo puede usar y en el selector de contraparte aparece como *"sin CUIT"*. **Es dato: pendiente de cargar con el usuario** | → [A-BUG-38](#a-bug-38) `@sueldos @extracto` |
+| **A-BUG-38** | 🟡 | **Bug** | **HECHO 2026-08-19** — Wilson Barreto no tenía CUIT en `sueldos.empleados` aunque el banco sí lo informa. **Cargado con OK del usuario**: `20-33318934-9`. Ahora el pre-filtro del motor lo puede usar y deja de salir *"sin CUIT"* en el selector. Falta testear | → [A-BUG-38](#a-bug-38) `@sueldos @extracto` |
 | **A-FEAT-32** | 🟡 | Feat | **HECHO 2026-08-19** — el filtro de contraparte del Extracto ahora incluye **empleados**, no sólo proveedores: Alondra no aparecía porque es empleada y vive en `sueldos.empleados`. `ProveedorCombobox` tomó un flag `incluirEmpleados` (apagado por default, para no cambiarles nada a los 4 modales que ya lo usan). Falta testear | → [A-FEAT-32](#a-feat-32) `@extracto` |
 | **A-BUG-37** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — el motor decidía contra una **foto del Cash Flow tomada al montar la pantalla**: cualquier cambio hecho fuera de esa pestaña era invisible y el motor **escribía igual**. Ahora recarga al ejecutar. **Testeado**: se liberaron 2 pagos de Alondra por SQL y el motor los concilió **sin refrescar la app** | → [A-BUG-37](#a-bug-37) `@extracto @cashflow` |
 | **A-BUG-36** | 🔴 | **Bug** | **El motor concilia un movimiento BANCARIO contra un pago de CAJA** — el débito del 29/05 de $110.000 quedó vinculado a un pago de Ruben Sigot con `medio_pago = 'caja_sigot'` (y en `programado`), cuando el que correspondía era el de Alondra Olivo por el mismo monto y la misma fecha, en banco. El motor **no mira `medio_pago`** | → [A-BUG-36](#a-bug-36) `@extracto @sueldos` |
@@ -4154,9 +4154,8 @@ Consecuencias, las dos silenciosas:
 - En el selector de contraparte ([A-FEAT-32](#a-feat-32)) aparece como *"sin CUIT"*, y el filtro cae
   al nombre — que el banco escribe distinto según el movimiento.
 
-**Es un dato a cargar**, no un bug de código: `UPDATE sueldos.empleados SET cuit_empleado =
-'20-33318934-9' WHERE nombre = 'Wilson Barreto'`. ⚠️ Confirmar el CUIT con el usuario antes: sale del
-extracto, no de un documento.
+✅ **Cargado el 2026-08-19 con OK del usuario**: `cuit_empleado = '20-33318934-9'` (con guiones, como
+el resto de los empleados). Falta verificar en pantalla que el pre-filtro ya lo use.
 
 > 📌 Y sirve de recordatorio: el hueco lo destapó el extracto. Un CUIT que el banco informa y el
 > maestro no tiene es exactamente lo que § Contrapartes de `CLAUDE.md` pide no dejar pasar.
