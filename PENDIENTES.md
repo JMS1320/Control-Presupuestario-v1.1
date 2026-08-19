@@ -203,7 +203,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|--------|------|
 | A-DAT-01 | 🔴 | Stocks negativos agroquímicos — cargar compras (2,4 DB −42 · Coadyuvante −12,85 · Flumetsulam −11,2 · 2,4D −23,2 · Metsulfuron −0,15) `@productivo` |
 | A-DAT-02 | 🔴 | Revisar 4 facturas excluidas del fix motor (ICT NET 10558/10661/10762 + FERNANDEZ 1168) `@extracto` |
-| A-DAT-03 | 🔴 | Revisar Excel jerarquía de cuentas (`Jerarquia_Cuentas_Contables.xlsx`) |
+| A-DAT-03 | 🔴 | Revisar Excel jerarquía de cuentas (`Jerarquia_Cuentas_Contables.xlsx`) `@dashboard @presupuesto` |
 
 ### 🔬 Revisión Conciliación (2026-06-21) — SOLO ANÁLISIS (decidir qué hacer después)
 > 10 temas que el usuario pidió investigar. Estado: análisis en curso. NO tocar código todavía. Mapeo a la lista original del usuario entre paréntesis.
@@ -396,7 +396,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 | B-TEST-13 | 🔴 | Filtro "Solo NC" en Vista Pagos `@cashflow` |
 | B-TEST-14 | 🔴 | Fix vinculación anticipo — no ofrece facturas en estado `anterior` (caso Nuñez Omar) `@cashflow @principal` |
 | B-TEST-15 | 🔴 | Templates Caja → estado `programado` para proyecciones; cuotas de presupuesto eliminadas `@cashflow @egresos` |
-| B-TEST-16 | 🔴 | Excel de jerarquía de cuentas — `scripts/generar-jerarquia-cuentas.cjs` (jerarquía por `nombre_totalizadora`, no por número) |
+| B-TEST-16 | 🔴 | Excel de jerarquía de cuentas — `scripts/generar-jerarquia-cuentas.cjs` (jerarquía por `nombre_totalizadora`, no por número) `@dashboard @presupuesto` |
 | B-TEST-17 | 🔴 | InsumoCombobox — selector único en órdenes (buscador acento-insensible, no acepta texto libre, "➕ Nuevo insumo" crea en el momento) `@productivo` |
 | B-TEST-18 | 🔴 | Órdenes agrícolas — muestran insumos usados y cantidades (igual que ganaderas) `@productivo` |
 
