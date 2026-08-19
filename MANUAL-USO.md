@@ -1259,6 +1259,34 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 
 ---
 
+## 🏦 Resultado de la corrida + filtro de contraparte 🟡 *(nuevo 2026-08-19, sin testear)*
+
+> Detalle → `PENDIENTES.md` § A-FEAT-29 / A-FEAT-30. Test → § A-TEST-34.
+
+### Qué cambió
+- **Las filas ya no se te escapan.** Después de correr el motor, los movimientos que tocó **se
+  quedan a la vista** aunque tu filtro ya no los incluya (el caso de siempre: filtrás por
+  `pendiente` y al conciliarse desaparecen). Arriba aparece un panel azul con el **antes → después**
+  de cada uno. Cuando terminaste de revisar y tildar, apretás **Actualizar y soltar**.
+- **Filtro de contraparte**: un input al lado del buscador donde escribís **nombre o CUIT**,
+  indistinto. El CUIT se compara sin guiones, así que `20-28749254-6` y `20287492546` traen lo mismo.
+
+### Cómo probarlo
+1. Extracto → MSA Galicia → escribir **`20287492546`** en *Contraparte*. Tienen que salir sólo los
+   movimientos de AMS.
+2. Cambiar el input por **`Andres`**. Tienen que salir los mismos (busca por nombre también).
+3. Poner además el filtro de estado en **pendiente** y correr **Ejecutar Conciliación**.
+4. **Qué tiene que pasar**: los que se concilien **siguen en la grilla**, y arriba aparece el panel
+   *Resultado de la corrida* con cada fila y su `pendiente → conciliado`.
+5. Tildar los que estén bien como **revisados**, y recién ahí **Actualizar y soltar**. Ahí sí
+   desaparecen los que ya no cumplen el filtro.
+
+### Qué mirar en el panel
+- **Ámbar en "Se vinculó a"**: cambió de estado pero quedó **sin vínculo**. Es el caso a revisar.
+- **"sin cambio"**: el motor lo miró y no encontró nada. No es un error, es información.
+
+---
+
 ## 🏦 Conciliar sueldos que el motor no encuentra 🟡 *(nuevo 2026-08-18, sin testear)*
 
 > Diagnóstico completo → `PENDIENTES.md` § A-BUG-28 / A-BUG-29. Test → § A-TEST-33.

@@ -175,7 +175,26 @@ export function VistaExtractoBancario() {
   const [modoEdicion, setModoEdicion] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
-  
+
+  /**
+   * Filtro por contraparte — un solo input que acepta **nombre o CUIT** (A-FEAT-30).
+   * Busca en las 3 columnas donde puede estar: el nombre que resolvió el sistema
+   * (`proveedor_nombre`), el que escribió el banco (`leyendas_adicionales_1`) y el CUIT
+   * (`leyendas_adicionales_2`). El CUIT se compara **normalizado**, así que `20-28749254-6` y
+   * `20287492546` encuentran lo mismo — es la lección de A-BUG-28: el mismo CUIT se escribe de
+   * dos formas y comparar el texto crudo no encuentra nada.
+   */
+  const [filtroProveedor, setFiltroProveedor] = useState("")
+
+  /**
+   * "Resultado de la corrida" (A-FEAT-29). Después de ejecutar el motor, las filas que tocó se
+   * quedan a la vista **aunque el filtro ya no las alcance** (el caso típico: filtrás por
+   * `pendiente` y al conciliarse desaparecen antes de que puedas revisarlas y tildarlas).
+   * Se sueltan recién cuando el usuario aprieta **Actualizar**.
+   */
+  const [filasCorrida, setFilasCorrida] = useState<any[]>([])
+  const [estadoPrevioCorrida, setEstadoPrevioCorrida] = useState<Record<string, string>>({})
+
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
   const [editData, setEditData] = useState({
@@ -382,13 +401,14 @@ export function VistaExtractoBancario() {
     if (categsFiltro !== null) items.push(`${categsFiltro.size} categoría(s)`)
     if (busquedaCateg.trim()) items.push(`categ "${busquedaCateg.trim()}"`)
     if (busqueda.trim()) items.push(`búsqueda "${busqueda.trim()}"`)
+    if (filtroProveedor.trim()) items.push(`contraparte "${filtroProveedor.trim()}"`)
     if (busquedaDetalle.trim()) items.push(`detalle "${busquedaDetalle.trim()}"`)
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
   }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
-      busqueda, busquedaDetalle, filtroEstado, filtroRevisado, filtroCategEspecial])
+      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroCategEspecial])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -409,8 +429,34 @@ export function VistaExtractoBancario() {
         ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
       })
     }
+
+    // Filtro por contraparte: nombre o CUIT, en el mismo input.
+    const p = filtroProveedor.trim()
+    if (p) {
+      const pTexto = normalizarBusqueda(p)
+      const pCuit = p.replace(/[-.\s]/g, '')
+      const esCuit = /^\d{2,11}$/.test(pCuit)
+      lista = lista.filter(m => {
+        const mm = m as any
+        const porNombre = [mm.proveedor_nombre, mm.leyendas_adicionales_1]
+          .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(pTexto))
+        // El CUIT se compara sin guiones de los dos lados: el banco lo manda pegado y el maestro
+        // puede tenerlo con guiones (A-BUG-28).
+        const porCuit = esCuit && String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '').includes(pCuit)
+        return porNombre || porCuit
+      })
+    }
+
+    // Las filas de la última corrida del motor se muestran SIEMPRE, aunque el filtro ya no las
+    // alcance, hasta que el usuario apriete Actualizar. Van arriba para que se vean primero.
+    if (filasCorrida.length > 0) {
+      const yaEstan = new Set(lista.map(m => m.id))
+      const pinneadas = filasCorrida.filter(f => !yaEstan.has(f.id))
+      if (pinneadas.length > 0) lista = [...pinneadas, ...lista]
+    }
+
     return lista
-  }, [movimientos, categsFiltro, busqueda])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, filasCorrida])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -543,10 +589,39 @@ export function VistaExtractoBancario() {
       if (!ok) return
       setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesVisibles.length })
       await ejecutarConciliacion(cuenta, pendientesVisibles as any)
+      await capturarCorrida(cuenta, pendientesVisibles as any)
     } else {
       setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
+      const antes = movimientos.filter(m => (m as any).estado === 'pendiente')
       await ejecutarConciliacion(cuenta)
+      await capturarCorrida(cuenta, antes as any)
     }
+    recargar()
+  }
+
+  /**
+   * Guarda el "antes y después" de la corrida (A-FEAT-29): el estado previo de cada movimiento y
+   * cómo quedó en la BD. Las filas quedan pinneadas en la grilla hasta que el usuario apriete
+   * Actualizar, así puede revisarlas y tildarlas como revisadas antes de que el filtro se las lleve.
+   */
+  const capturarCorrida = async (cuenta: any, movs: any[]) => {
+    const ids = movs.map(m => m.id).filter(Boolean)
+    if (ids.length === 0) { setFilasCorrida([]); setEstadoPrevioCorrida({}); return }
+    setEstadoPrevioCorrida(Object.fromEntries(movs.map(m => [m.id, m.estado ?? ''])))
+    const db = cuenta.schema_bd && cuenta.schema_bd !== 'public'
+      ? supabase.schema(cuenta.schema_bd)
+      : supabase
+    const { data, error } = await db.from(cuenta.tabla_bd).select('*').in('id', ids)
+    // Si la relectura falla, se muestra el panel igual con lo que había: peor que no ver el
+    // resultado es creer que no pasó nada.
+    if (error) console.error('No se pudo releer la corrida:', error.message)
+    setFilasCorrida(data ?? [])
+  }
+
+  /** Suelta las filas pinneadas y vuelve a aplicar los filtros de verdad. */
+  const soltarCorrida = () => {
+    setFilasCorrida([])
+    setEstadoPrevioCorrida({})
     recargar()
   }
 
@@ -1978,6 +2053,84 @@ export function VistaExtractoBancario() {
         </Alert>
       )}
 
+      {/* Resultado de la corrida, fila por fila (A-FEAT-29).
+          El resumen numérico de abajo dice CUÁNTOS; esto dice CUÁLES y cómo quedó cada uno — que es
+          lo que hace falta para revisarlos. Las filas quedan pinneadas en la grilla mientras este
+          panel esté abierto, aunque el filtro ya no las alcance. */}
+      {filasCorrida.length > 0 && (
+        <Card className="border-blue-300 bg-blue-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-blue-900 flex items-center justify-between text-base">
+              <span className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5" />
+                Resultado de la corrida — {filasCorrida.length} movimiento(s)
+              </span>
+              <Button size="sm" variant="outline" onClick={soltarCorrida}>
+                Actualizar y soltar
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-xs text-blue-800 mb-2">
+              Estas filas se quedan a la vista aunque el filtro ya no las incluya. Revisalas, tildá
+              las que estén bien, y recién ahí apretá <strong>Actualizar y soltar</strong>.
+            </p>
+            <div className="max-h-64 overflow-y-auto rounded border border-blue-200 bg-white">
+              <table className="w-full text-xs">
+                <thead className="bg-blue-100 text-blue-900 sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Fecha</th>
+                    <th className="px-2 py-1 text-right">Importe</th>
+                    <th className="px-2 py-1 text-left">Antes → Después</th>
+                    <th className="px-2 py-1 text-left">Categ</th>
+                    <th className="px-2 py-1 text-left">Se vinculó a</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filasCorrida.map((f: any) => {
+                    const antes = estadoPrevioCorrida[f.id] ?? '—'
+                    const cambio = antes !== f.estado
+                    const importe = Number(f.debitos) > 0 ? Number(f.debitos) : Number(f.creditos || 0)
+                    const vinculo = f.comprobante_arca_id ? 'Factura ARCA'
+                      : f.sueldo_pago_id ? 'Pago de sueldo'
+                      : f.template_cuota_id || f.template_id ? 'Template'
+                      : f.comprobante_venta_id ? 'Factura de venta'
+                      : '—'
+                    return (
+                      <tr key={f.id} className="border-t border-blue-100">
+                        <td className="px-2 py-1 whitespace-nowrap">
+                          {f.fecha ? String(f.fecha).split('-').reverse().join('/') : ''}
+                        </td>
+                        <td className="px-2 py-1 text-right whitespace-nowrap">
+                          {importe.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className={`px-2 py-1 whitespace-nowrap ${cambio ? 'font-medium text-green-700' : 'text-gray-500'}`}>
+                          {antes} → {f.estado}
+                          {!cambio && ' (sin cambio)'}
+                          {f.motivo_revision ? ` · ${f.motivo_revision}` : ''}
+                        </td>
+                        <td className="px-2 py-1">{f.categ || <span className="text-red-600">sin categ</span>}</td>
+                        <td className="px-2 py-1">
+                          {vinculo}
+                          {vinculo === '—' && cambio && (
+                            <span className="text-amber-700"> — sin vínculo</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-blue-800">
+              {filasCorrida.filter((f: any) => (estadoPrevioCorrida[f.id] ?? '') !== f.estado).length} cambiaron
+              de estado · {filasCorrida.filter((f: any) => (estadoPrevioCorrida[f.id] ?? '') === f.estado).length} quedaron
+              igual
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Resultados del Proceso — resumen del último lote conciliado */}
       {resultados && (
         <Card className="border-green-200 bg-green-50">
@@ -2132,6 +2285,17 @@ export function VistaExtractoBancario() {
                     onChange={(e) => setBusqueda(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
                     className="h-9 text-sm"
+                  />
+                </div>
+                {/* Contraparte: nombre o CUIT en el mismo input (A-FEAT-30) */}
+                <div className="w-64">
+                  <Input
+                    placeholder="Contraparte: nombre o CUIT"
+                    value={filtroProveedor}
+                    onChange={(e) => setFiltroProveedor(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
+                    className={`h-9 text-sm ${filtroProveedor.trim() ? 'border-blue-400 bg-blue-50' : ''}`}
+                    title="Busca en el proveedor resuelto, en el nombre que manda el banco y en el CUIT. El CUIT se compara sin guiones: 20-28749254-6 y 20287492546 dan lo mismo."
                   />
                 </div>
                 <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>

@@ -787,6 +787,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: a.empleado?.cuit_empleado ?? '',
         nombre_proveedor: a.empleado?.nombre ?? '',
         detalle: `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''} - ${a.descripcion ?? ''}`,
+        // `detalle` de arriba es decorativo, para la grilla del Cash Flow. Estos dos son los que
+        // viajan al extracto al conciliar (MODULO_CONCILIACION § 30.2/30.3) y **faltaban**: sin
+        // ellos el motor dejaba `comprobantes_pagados` en null y volcaba el texto decorativo
+        // —"Pago Saldo AMS - Pago Saldo Abr 2026", con la repetición incluida— dentro de `detalle`.
+        // La referencia documental de un sueldo es el PERÍODO, que es lo que trae `descripcion`
+        // ("Pago Saldo Abr 2026"); la fecha del pago no sirve, porque abril puede pagarse en junio.
+        comprobante_display: a.descripcion?.trim()
+          || `${a.tipo === 'sueldo' ? 'Pago Saldo' : 'Anticipo'} ${a.empleado?.nombre ?? ''}`,
+        detalle_usuario: null,  // un sueldo no tiene nota del usuario: `detalle` es sólo suyo
         debitos: a.monto ?? 0,
         creditos: 0,
         saldo_cta_cte: 0,

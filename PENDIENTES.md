@@ -270,6 +270,11 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-BUG-23 | 🟡 | **Bug** | **HECHO 2026-08-13** — el alta de comprobantes de venta estampaba `alicuota_iva = 21` por defecto, aun en operaciones 100% exentas (caso SANPA SEMILLAS 07/2026: IVA $0 con "21%" en el Libro). Se auto-reproducía: abrir el comprobante y guardar lo volvía a poner. Fila corregida a `null` + modal arreglado. Falta testear | → [A-BUG-23](#a-bug-23) `@ingresos` |
 | **A-BUG-28** | 🔴 | **Bug** | **HECHO 2026-08-18** — el CUIT del empleado se guarda **con guiones** (`20-28749254-6`) y el banco lo manda sin (`20287492546`); el motor los comparaba con `===`. El pre-filtro por CUIT estaba **muerto para todos los sueldos**, no sólo AMS. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
 | **A-BUG-29** | 🔴 | **Bug** | **HECHO 2026-08-18** — el pre-filtro por CUIT **excluía en vez de priorizar**: el fallback sólo se disparaba si el CUIT no tenía **ningún** candidato. Bastaba **una** factura del mismo CUIT para reducir el pool y no recuperarse nunca. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
+| **A-BUG-30** | 🟡 | **Bug** | **HECHO 2026-08-19** — al conciliar un **sueldo**, el motor dejaba `comprobantes_pagados` en **null** y volcaba el texto decorativo del Cash Flow en `detalle` (*"Pago Saldo AMS - Pago Saldo Abr 2026"*, repetido). Causa única: las filas individuales de sueldo no definían `comprobante_display` ni `detalle_usuario`. Falta testear | → [A-BUG-30](#a-bug-30) `@extracto @cashflow` |
+| **A-BUG-31** | 🔴 | **Bug** | **Reasignar un movimiento no limpia el vínculo anterior** — el débito del 01/06 se reasignó a `CAJA` y **siguió apuntando al mismo `sueldo_pago_id`** que el del 29/05: dos movimientos bancarios reclaman el mismo pago de $1,2 M. Conserva además el `motivo_revision` de cuando estaba en auditar | → [A-BUG-31](#a-bug-31) `@extracto` |
+| **A-FEAT-29** | 🟡 | Feat | **HECHO 2026-08-19** — panel **"Resultado de la corrida"**: las filas que tocó el motor se quedan a la vista aunque el filtro ya no las alcance, con su **antes → después**, hasta apretar *Actualizar y soltar*. Antes se conciliaban y desaparecían de la grilla antes de poder revisarlas. Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
+| **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
+| A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-33 | 🔴 | Test | **Motor: CUIT normalizado + prioriza sin excluir** (2026-08-18) — correr la conciliación **acotada a los 4 movimientos de AMS** y verificar que 30/04 y 29/05 salen `conciliado`. `MANUAL-USO.md` § Conciliar sueldos que el motor no encuentra | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 
@@ -3925,6 +3930,90 @@ factura"** — y sin ningún error a la vista, que es el modo de falla de siempr
 Un sueldo que no concilia queda como movimiento sin imputar en el extracto **y** como pago abierto en
 el Cash Flow: la misma plata se ve dos veces y el presupuesto se autoalimenta de esa duplicación. Es
 el mismo daño que [A-BUG-27](#a-bug-27), por otra puerta.
+
+---
+
+## <a id="a-bug-30"></a>A-BUG-30 — El sueldo conciliado quedaba sin su referencia documental
+
+> **HECHO 2026-08-19, sin testear** (→ A-TEST-34). Lo encontró el usuario mirando cómo habían
+> quedado los 2 movimientos de AMS que el motor sí concilió: *"creo que hay campos que no se
+> llenaron como deberían"*. Tenía razón, y era **una sola causa para tres síntomas**.
+
+| Campo | Los viejos de AMS (bien) | Los nuevos | |
+|---|---|---|---|
+| `comprobantes_pagados` | `Mar 2026` | **null** | ❌ faltaba |
+| `detalle` | `Pago Saldo Mar 2026` | `Pago Saldo AMS - Pago Saldo Abr 2026` | ⚠️ texto decorativo, con "Pago Saldo" repetido |
+| `proveedor_nombre` | `AMS` | `Andres Martinez` | ⚠️ decisión abierta ↓ |
+
+**La causa**: `MODULO_CONCILIACION.md` § 30.3 define dos campos del `CashFlowRow` que son los que
+viajan al extracto — `comprobante_display` (la referencia documental) y `detalle_usuario` (sólo lo
+que escribió el usuario). **El mapeo de sueldos individuales no definía ninguno de los dos.** El
+motor escribe `comprobantes_pagados: cashFlowRow.comprobante_display || null` → null; y para
+`detalle` cae al fallback `cashFlowRow.detalle`, que es el texto decorativo de la grilla.
+
+**Fix** (`useMultiCashFlowData.ts`): las filas de sueldo ahora llevan `comprobante_display` con el
+**período** (`descripcion`: *"Pago Saldo Abr 2026"*) y `detalle_usuario: null`. El período y no la
+fecha del pago, porque **abril puede pagarse en junio** — de hecho pasó (los 2 del 05/06 son de
+abril y mayo).
+
+### 🟡 Decisión abierta — `AMS` o `Andres Martinez`
+`proveedor_nombre` sale de `buscarNombreProveedor(cuit)`, que lee `public.proveedores`. Los
+movimientos viejos dicen `AMS` (el nombre del empleado). **La misma persona con dos nombres en la
+misma columna** rompe el filtro de contraparte nuevo ([A-FEAT-30](#a-feat-29)). Hay que elegir uno
+—para sueldos probablemente el del empleado— pero es convención del usuario, no la decido sola.
+
+---
+
+## <a id="a-bug-31"></a>A-BUG-31 — Reasignar no limpia el vínculo anterior
+
+El débito del **01/06 · $1.200.000** estaba en `auditar` vinculado al anticipo de sueldo de AMS del
+29/05 (`sueldo_pago_id = 5357b80c`). El usuario lo reasignó a **CAJA**: quedó `conciliado`, con
+`categ = CAJA` y `comprobantes_pagados = Caja`… **y con el `sueldo_pago_id` viejo intacto.**
+
+Cuando el motor después concilió el movimiento del 29/05 —que es el que de verdad le corresponde—
+el resultado es que **dos movimientos bancarios distintos apuntan al mismo pago de $1,2 M**.
+Conserva además el `motivo_revision` *"Fecha no exacta: 3 días"* de cuando estaba en auditar.
+
+Es la limitación 4 de `MODULO_CONCILIACION.md` (*"re-abrir no revierte los cambios"*) vista desde
+el otro lado: no es sólo que no revierta el origen, es que **no suelta el vínculo** al cambiar de
+destino. Cualquier reporte por `sueldo_pago_id` cuenta ese anticipo dos veces.
+
+**Qué haría falta**: al guardar una reasignación, limpiar los IDs de vínculo que no correspondan al
+destino nuevo (`comprobante_arca_id`, `sueldo_pago_id`, `template_id`/`template_cuota_id`,
+`comprobante_venta_id`) y borrar `motivo_revision` si el estado deja de ser `auditar`.
+
+⚠️ **La fila del 01/06 sigue mal en la BD.** Es un dato real: no se toca sin acuerdo del usuario
+(`CLAUDE.md` § Datos).
+
+---
+
+## <a id="a-feat-29"></a>A-FEAT-29 / A-FEAT-30 — Que la corrida se pueda revisar, y buscar por contraparte
+
+> **HECHAS 2026-08-19, sin testear** (→ A-TEST-34).
+
+### A-FEAT-29 — "Resultado de la corrida"
+**Pedido textual del usuario**: *"tenemos que ver cómo hacemos para que no se me vayan los
+movimientos hasta que no le dé actualizar, ya que yo reviso cómo quedaron, los tildo como
+chequeados antes de refrescar y seguir con otros."*
+
+Pasaba esto: con el filtro en `pendiente`, un movimiento que el motor conciliaba **desaparecía de la
+grilla en el mismo instante** en que se resolvía — justo antes de poder mirarlo.
+
+- Las filas que tocó el motor quedan **pinneadas arriba** aunque el filtro ya no las alcance.
+- Un panel muestra **antes → después** de cada una, con la categ y a qué se vinculó (factura ARCA /
+  pago de sueldo / template / venta), y marca en ámbar las que cambiaron de estado **sin vínculo**.
+- Se sueltan con **Actualizar y soltar**, no antes.
+
+Es también el **control visible** que le faltaba al motor (`CLAUDE.md` § *Todo desarrollo termina con
+su control*): hasta ahora decía *"3 automáticos, 1 sin match"* en números, pero no **cuáles**.
+
+### A-FEAT-30 — Filtro por contraparte
+Un input que acepta **nombre o CUIT**, y busca en las 3 columnas donde puede estar: el proveedor que
+resolvió el sistema (`proveedor_nombre`), el que escribió el banco (`leyendas_adicionales_1`) y el
+CUIT (`leyendas_adicionales_2`). El CUIT se compara **normalizado** — `20-28749254-6` y
+`20287492546` encuentran lo mismo, que es la lección de [A-BUG-28](#a-bug-28).
+
+Antes no se podía: el buscador general recorre 11 columnas y **`proveedor_nombre` no era una de ellas**.
 
 ---
 
