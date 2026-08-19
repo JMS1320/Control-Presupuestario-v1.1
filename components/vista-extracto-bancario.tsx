@@ -51,6 +51,7 @@ import { ConfiguradorReglasParseo } from "./configurador-reglas-parseo"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
+import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
@@ -184,7 +185,7 @@ export function VistaExtractoBancario() {
    * `20287492546` encuentran lo mismo — es la lección de A-BUG-28: el mismo CUIT se escribe de
    * dos formas y comparar el texto crudo no encuentra nada.
    */
-  const [filtroProveedor, setFiltroProveedor] = useState("")
+  const [filtroProveedor, setFiltroProveedor] = useState<ProveedorSeleccionado>({ cuit: "", nombre: "" })
 
   /**
    * "Resultado de la corrida" (A-FEAT-29). Después de ejecutar el motor, las filas que tocó se
@@ -194,6 +195,8 @@ export function VistaExtractoBancario() {
    */
   const [filasCorrida, setFilasCorrida] = useState<any[]>([])
   const [estadoPrevioCorrida, setEstadoPrevioCorrida] = useState<Record<string, string>>({})
+  /** Sólo los IDs, para que la grilla no los suelte. Las filas de verdad viven en `movimientos`. */
+  const idsCorrida = useMemo(() => new Set(filasCorrida.map((f: any) => f.id)), [filasCorrida])
 
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
@@ -338,7 +341,7 @@ export function VistaExtractoBancario() {
   const schemaActivo = cuentaActivaObj?.schema_bd || 'public'
   // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
   const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   // Set de categs de templates (para validación de categ en extracto)
   const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
@@ -401,7 +404,9 @@ export function VistaExtractoBancario() {
     if (categsFiltro !== null) items.push(`${categsFiltro.size} categoría(s)`)
     if (busquedaCateg.trim()) items.push(`categ "${busquedaCateg.trim()}"`)
     if (busqueda.trim()) items.push(`búsqueda "${busqueda.trim()}"`)
-    if (filtroProveedor.trim()) items.push(`contraparte "${filtroProveedor.trim()}"`)
+    if (filtroProveedor.cuit || filtroProveedor.nombre) {
+      items.push(`contraparte "${filtroProveedor.nombre || filtroProveedor.cuit}"`)
+    }
     if (busquedaDetalle.trim()) items.push(`detalle "${busquedaDetalle.trim()}"`)
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
@@ -430,33 +435,42 @@ export function VistaExtractoBancario() {
       })
     }
 
-    // Filtro por contraparte: nombre o CUIT, en el mismo input.
-    const p = filtroProveedor.trim()
-    if (p) {
-      const pTexto = normalizarBusqueda(p)
-      const pCuit = p.replace(/[-.\s]/g, '')
-      const esCuit = /^\d{2,11}$/.test(pCuit)
+    // Filtro por contraparte. Sale del selector de proveedores, así que el CUIT es **el del
+    // maestro** y no un texto tipeado: dos proveedores distintos que se llamen parecido ya no se
+    // mezclan. Si hay CUIT, manda el CUIT (comparado sin guiones, A-BUG-28); si el proveedor
+    // elegido no tiene CUIT cargado, se cae al nombre.
+    const cuitFiltro = (filtroProveedor.cuit || '').replace(/[-.\s]/g, '')
+    const nombreFiltro = normalizarBusqueda(filtroProveedor.nombre || '')
+    if (cuitFiltro || nombreFiltro) {
       lista = lista.filter(m => {
         const mm = m as any
-        const porNombre = [mm.proveedor_nombre, mm.leyendas_adicionales_1]
-          .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(pTexto))
-        // El CUIT se compara sin guiones de los dos lados: el banco lo manda pegado y el maestro
-        // puede tenerlo con guiones (A-BUG-28).
-        const porCuit = esCuit && String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '').includes(pCuit)
-        return porNombre || porCuit
+        if (cuitFiltro) {
+          const cuitMov = String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '')
+          if (cuitMov && cuitMov === cuitFiltro) return true
+        }
+        if (!nombreFiltro) return false
+        return [mm.proveedor_nombre, mm.leyendas_adicionales_1]
+          .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(nombreFiltro))
       })
     }
 
-    // Las filas de la última corrida del motor se muestran SIEMPRE, aunque el filtro ya no las
-    // alcance, hasta que el usuario apriete Actualizar. Van arriba para que se vean primero.
-    if (filasCorrida.length > 0) {
+    // Las filas de la última corrida del motor se muestran SIEMPRE, aunque los filtros
+    // client-side ya no las alcancen, hasta que el usuario apriete Actualizar.
+    // ⚠️ Se toman **de `movimientos`** (donde las metió `inyectarFilas`), no del array del panel:
+    // tienen que ser las mismas filas de la lista para que el checkbox de revisado y los botones
+    // respondan. Y se reordena todo junto por `orden` descendente, igual que el servidor — con el
+    // prepend anterior las recién conciliadas salían arriba y la grilla quedaba desordenada.
+    if (idsCorrida.size > 0) {
       const yaEstan = new Set(lista.map(m => m.id))
-      const pinneadas = filasCorrida.filter(f => !yaEstan.has(f.id))
-      if (pinneadas.length > 0) lista = [...pinneadas, ...lista]
+      const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id))
+      if (faltantes.length > 0) {
+        lista = [...lista, ...faltantes]
+          .sort((a, b) => (Number((b as any).orden) || 0) - (Number((a as any).orden) || 0))
+      }
     }
 
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, filasCorrida])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -589,14 +603,17 @@ export function VistaExtractoBancario() {
       if (!ok) return
       setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesVisibles.length })
       await ejecutarConciliacion(cuenta, pendientesVisibles as any)
+      // Primero recargar y DESPUÉS capturar: al revés, el `setMovimientos` de la recarga pisaba las
+      // filas inyectadas y el panel quedaba mostrando movimientos que la grilla ya no tenía.
+      await recargar()
       await capturarCorrida(cuenta, pendientesVisibles as any)
     } else {
       setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
       const antes = movimientos.filter(m => (m as any).estado === 'pendiente')
       await ejecutarConciliacion(cuenta)
+      await recargar()
       await capturarCorrida(cuenta, antes as any)
     }
-    recargar()
   }
 
   /**
@@ -616,6 +633,8 @@ export function VistaExtractoBancario() {
     // resultado es creer que no pasó nada.
     if (error) console.error('No se pudo releer la corrida:', error.message)
     setFilasCorrida(data ?? [])
+    // Y se meten en la lista real, para que sean filas de verdad y no copias muertas.
+    inyectarFilas((data ?? []) as any)
   }
 
   /** Suelta las filas pinneadas y vuelve a aplicar los filtros de verdad. */
@@ -1949,6 +1968,7 @@ export function VistaExtractoBancario() {
     setBusquedaCategExtracto('')
     setBusquedaDetalleExtracto('')
     setBusqueda('')
+    setFiltroProveedor({ cuit: "", nombre: "" })
     setFiltroEstado('Todos')
     setFiltroCategEspecial(null)
     setSoloSinRevisar(false)
@@ -2311,15 +2331,16 @@ export function VistaExtractoBancario() {
                     className="h-9 text-sm"
                   />
                 </div>
-                {/* Contraparte: nombre o CUIT en el mismo input (A-FEAT-30) */}
-                <div className="w-64">
-                  <Input
-                    placeholder="Contraparte: nombre o CUIT"
+                {/* Contraparte: selector del maestro de proveedores (A-FEAT-30).
+                    Es `ProveedorCombobox`, el mismo que usan los modales de ventas y de reglas de
+                    import — busca por nombre o CUIT mientras se escribe y se elige de la lista.
+                    Antes era un input libre, y escribir "Andres Martinez" traía a todos los que se
+                    llamaran parecido; ahora el CUIT sale del maestro. */}
+                <div className="w-72">
+                  <ProveedorCombobox
                     value={filtroProveedor}
-                    onChange={(e) => setFiltroProveedor(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && aplicarFiltros()}
-                    className={`h-9 text-sm ${filtroProveedor.trim() ? 'border-blue-400 bg-blue-50' : ''}`}
-                    title="Busca en el proveedor resuelto, en el nombre que manda el banco y en el CUIT. El CUIT se compara sin guiones: 20-28749254-6 y 20287492546 dan lo mismo."
+                    onChange={setFiltroProveedor}
+                    label="Contraparte"
                   />
                 </div>
                 <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>

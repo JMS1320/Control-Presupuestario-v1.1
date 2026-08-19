@@ -1268,13 +1268,14 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
   quedan a la vista** aunque tu filtro ya no los incluya (el caso de siempre: filtrás por
   `pendiente` y al conciliarse desaparecen). Arriba aparece un panel azul con el **antes → después**
   de cada uno. Cuando terminaste de revisar y tildar, apretás **Actualizar y soltar**.
-- **Filtro de contraparte**: un input al lado del buscador donde escribís **nombre o CUIT**,
-  indistinto. El CUIT se compara sin guiones, así que `20-28749254-6` y `20287492546` traen lo mismo.
+- **Filtro de contraparte**: un **selector de proveedores** al lado del buscador. Escribís nombre o
+  CUIT y **elegís de la lista** — es el mismo `ProveedorCombobox` de los modales de ventas. Al
+  elegirlo, el CUIT sale del maestro, así que dos proveedores que se llamen parecido no se mezclan.
 
 ### Cómo probarlo
-1. Extracto → MSA Galicia → escribir **`20287492546`** en *Contraparte*. Tienen que salir sólo los
-   movimientos de AMS.
-2. Cambiar el input por **`Andres`**. Tienen que salir los mismos (busca por nombre también).
+1. Extracto → MSA Galicia → en *Contraparte* escribir **`Andres`** y **seleccionar** a Placido
+   Andres Martinez de la lista. Tienen que salir sólo sus movimientos.
+2. Probar lo mismo escribiendo el CUIT: **`20287492546`**.
 3. Poner además el filtro de estado en **pendiente** y correr **Ejecutar Conciliación**.
 4. **Qué tiene que pasar**: los que se concilien **siguen en la grilla**, y arriba aparece el panel
    *Resultado de la corrida* con cada fila y su `pendiente → conciliado`.
@@ -1284,6 +1285,16 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 ### Qué mirar en el panel
 - **Ámbar en "Se vinculó a"**: cambió de estado pero quedó **sin vínculo**. Es el caso a revisar.
 - **"sin cambio"**: el motor lo miró y no encontró nada. No es un error, es información.
+
+### Lo que se corrigió el 2026-08-19 y hay que verificar (A-BUG-34 / A-BUG-35)
+En la primera corrida real aparecieron tres cosas mal. Al probar, mirar puntualmente:
+1. **Que no aparezcan filas de fuera del filtro.** Poner *hasta 18/06* + contraparte + sólo
+   pendientes, conciliar, y verificar que **no** se cuelen movimientos de julio o agosto. Antes se
+   colaban porque al recargar se perdían todos los filtros de servidor.
+2. **Que el orden se respete.** Las recién conciliadas tienen que quedar **en su lugar por fecha**,
+   no todas juntas arriba.
+3. **Que el tilde de revisado funcione** sobre esas filas. Antes no respondía: eran copias, no las
+   filas de la lista.
 
 ---
 

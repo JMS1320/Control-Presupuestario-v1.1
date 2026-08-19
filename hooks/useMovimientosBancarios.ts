@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 
 export interface MovimientoBancario {
@@ -58,6 +58,15 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * Los últimos filtros con los que se cargó la lista. `recargar()` los reusa: antes llamaba a
+   * `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la
+   * grilla volvía con "los últimos 100 movimientos de la cuenta" y aparecían filas que el usuario
+   * había excluido a propósito (le pasó: filtró hasta el 18/06 y le aparecieron dos de julio y
+   * agosto). Ver A-BUG-34.
+   */
+  const ultimosFiltros = useRef<Record<string, any> | undefined>(undefined)
+
   // Cargar movimientos bancarios
   const cargarMovimientos = async (filtros?: {
     estado?: 'conciliado' | 'pendiente' | 'auditar' | 'Todos'
@@ -75,6 +84,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     try {
       setLoading(true)
       setError(null)
+      ultimosFiltros.current = filtros
 
       let query = (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
         .from(tabla)
@@ -245,10 +255,34 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
   }
 
   // Recargar datos
+  /**
+   * Recarga **respetando los últimos filtros aplicados** (A-BUG-34). Si nunca se filtró, usa el
+   * límite por defecto de siempre.
+   */
   const recargar = () => {
     const esTarjeta = tabla.includes('tarjeta')
-    cargarMovimientos({ limite: esTarjeta ? 5000 : 100 })
+    const limitePorDefecto = esTarjeta ? 5000 : 100
     cargarEstadisticas()
+    // Devuelve la promesa: quien recarga puede necesitar hacer algo DESPUÉS de que la lista quedó
+    // escrita (ej. inyectar las filas de la corrida, que si no las pisa el `setMovimientos`).
+    return cargarMovimientos({ ...(ultimosFiltros.current ?? {}), limite: ultimosFiltros.current?.limite ?? limitePorDefecto })
+  }
+
+  /**
+   * Mete filas puntuales en la lista aunque los filtros no las alcancen, y **respetando el orden**
+   * (por `orden` descendente, igual que el servidor). Lo usa el panel "Resultado de la corrida":
+   * los movimientos que el motor acaba de conciliar tienen que quedar a la vista para poder
+   * revisarlos y tildarlos, y **tienen que ser las mismas filas de la lista**, no copias — si no,
+   * el checkbox de revisado y los botones de la fila no responden. Ver A-FEAT-29 / A-BUG-35.
+   */
+  const inyectarFilas = (filas: MovimientoBancario[]) => {
+    if (!filas || filas.length === 0) return
+    setMovimientos(prev => {
+      const porId = new Map(prev.map(m => [m.id, m]))
+      filas.forEach(f => porId.set(f.id, f))
+      return Array.from(porId.values())
+        .sort((a, b) => (Number((b as any).orden) || 0) - (Number((a as any).orden) || 0))
+    })
   }
 
   return {
@@ -260,6 +294,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     cargarEstadisticas,
     actualizarMasivo,
     actualizarLocal,
-    recargar
+    recargar,
+    inyectarFilas
   }
 }
