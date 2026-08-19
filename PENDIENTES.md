@@ -279,6 +279,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
 | **A-BUG-39** | 🟡 | **Bug** | **HECHO 2026-08-19** — un sueldo conciliado quedaba **sin rastro de a quién se le pagó**: el motor buscaba el nombre sólo en `proveedores`, y un empleado que no está ahí (Wilson) dejaba `proveedor_nombre` en null y el `detalle` sin nombre. Ahora cae al nombre que ya trae la fila del Cash Flow. Falta testear | → [A-BUG-39](#a-bug-39) `@extracto` |
 | **A-DAT-04** | 🔴 | Dato | **Faltan reglas contable/interno para 3 empleados** — sólo AMS, JMS y Alondra tienen su regla Tipo C en `reglas_contable_interno`. Wilson Barreto y Ruben Sigot no, así que sus movimientos conciliados quedan con `contable` e `interno` **vacíos** | → [A-BUG-39](#a-bug-39) `@extracto @sueldos` |
 | **A-BUG-38** | 🟡 | **Bug** | **HECHO 2026-08-19** — Wilson Barreto no tenía CUIT en `sueldos.empleados` aunque el banco sí lo informa. **Cargado con OK del usuario**: `20-33318934-9`. Ahora el pre-filtro del motor lo puede usar y deja de salir *"sin CUIT"* en el selector. Falta testear | → [A-BUG-38](#a-bug-38) `@sueldos @extracto` |
@@ -4142,6 +4143,36 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-bug-40"></a>A-BUG-40 — El Cash Flow decía "banco" y mostraba caja
+
+> **HECHO 2026-08-19, sin testear.** Lo notó el usuario: *"¿es correcto que si escribo sigot en el
+> buscador rápido me muestre los pagos por caja sigot, cuando por default se muestra sólo banco?"*
+
+No, y **no era culpa del buscador**:
+
+```ts
+// vista-cash-flow.tsx:171 — el selector arranca en "banco"
+const [medioPagoFiltro, setMedioPagoFiltro] = useState('banco')
+// :1003 — pero el valor sólo viajaba al hook DENTRO de aplicarFiltros()...
+```
+…y `aplicarFiltros()` **no se llama al montar**, sólo desde el botón. O sea que la pantalla mostraba
+"banco" seleccionado y los datos traían banco **y** cajas. El buscador rápido y los chips de estado
+son client-side y filtran sobre eso: no salteaban el filtro, **el filtro nunca se había encendido**.
+
+Es la misma familia que [A-BUG-34](#a-bug-34): **la pantalla afirma un estado que no tiene**. Un
+filtro vacío que se ve vacío no engaña a nadie; uno que dice "banco" y muestra caja, sí.
+
+**Y acá pega donde duele**: un pago de caja **no tiene contrapartida bancaria**, así que mezclarlos
+en la grilla desde la que se decide qué conciliar induce al error. Es la versión de pantalla de
+[A-BUG-36](#a-bug-36) — allá el motor cruza banco con caja, acá la vista los mezcla sin avisar.
+
+**Fix** (decisión del usuario: *"por default que muestre sólo banco; si quiero ver otra cosa
+selecciono caja y listo"*, sin chips nuevos): el medio de pago pasa a ser **client-side y siempre
+activo**, aplicado **antes** de la búsqueda —primero se acota el universo, después se busca adentro—
+y ya no viaja al hook, para no filtrar dos veces ni volver a atar el efecto al botón.
 
 ---
 

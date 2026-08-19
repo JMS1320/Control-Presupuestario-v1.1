@@ -1000,7 +1000,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (busquedaDetalle.trim()) nuevosFiltros.busquedaDetalle = busquedaDetalle.trim()
     if (busquedaCateg.trim()) nuevosFiltros.busquedaCateg = busquedaCateg.trim()
     if (busquedaCUIT.trim()) nuevosFiltros.busquedaCUIT = busquedaCUIT.trim()
-    if (medioPagoFiltro && medioPagoFiltro !== 'todos') nuevosFiltros.medioPago = medioPagoFiltro
+    // `medioPago` NO viaja al hook: se aplica client-side y siempre (ver `datosPorMedio`, A-BUG-40).
+    // Mandarlo también acá filtraría dos veces y, peor, volvería a atar el efecto al botón.
 
     // La empresa siempre viaja: es un filtro de contexto, no uno de búsqueda
     nuevosFiltros.empresasFacturas = empresasFacturas
@@ -1054,10 +1055,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
   }
 
+  /**
+   * Medio de pago — **client-side y siempre activo** (A-BUG-40).
+   *
+   * El selector arranca en `banco` desde que se monta la pantalla, pero antes ese valor sólo viajaba
+   * al hook dentro de `aplicarFiltros()`, que no corre al montar. Resultado: la pantalla **decía**
+   * "banco" y mostraba también los pagos de caja. Con el buscador rápido saltaba a la vista —
+   * escribías "sigot" y aparecían los `caja_sigot`— y no era culpa del buscador: el filtro nunca se
+   * había encendido.
+   *
+   * Importa acá más que en otra pantalla: un pago de caja **no tiene contrapartida bancaria**, así
+   * que mezclarlos en la grilla desde la que se decide qué conciliar induce al error. Es la versión
+   * de pantalla de A-BUG-36.
+   *
+   * Va antes que la búsqueda a propósito: primero se acota el universo, después se busca adentro.
+   */
+  const datosPorMedio = medioPagoFiltro && medioPagoFiltro !== 'todos'
+    ? data.filter(fila => (fila.medio_pago || 'banco') === medioPagoFiltro)
+    : data
+
   // Filtrar datos según origen seleccionado en modo PAGOS
   // Filtro rápido por búsqueda (client-side, siempre activo)
   const datosConBusqueda = busquedaRapida.trim()
-    ? data.filter(fila => {
+    ? datosPorMedio.filter(fila => {
         const q = normalizarBusqueda(busquedaRapida).replace(/\./g, '')
         const normalizarMonto = (n: number) => n > 0
           ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
@@ -1071,7 +1091,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           normalizarMonto(fila.creditos).includes(q)
         )
       })
-    : data
+    : datosPorMedio
 
   // E1: valores disponibles para los chips + filtro operativo (siempre activo tras inicializar)
   const estadosDisponibles = Array.from(new Set(data.map(f => f.estado))).sort()
