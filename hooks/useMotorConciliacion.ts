@@ -113,7 +113,7 @@ export function useMotorConciliacion() {
   const [error, setError] = useState<string | null>(null)
   const [resultados, setResultados] = useState<any>(null)
 
-  const { data: cashFlowData } = useMultiCashFlowData()
+  const { data: cashFlowData, cargarDatos: recargarCashFlow } = useMultiCashFlowData()
   const { cargarReglasActivas } = useReglasConciliacion()
 
   // Helper: valor contable/interno es válido si no está vacío ni es "No Lleva"
@@ -269,8 +269,12 @@ export function useMotorConciliacion() {
     return data?.razon_social || null
   }
 
-  // Función para buscar match en Cash Flow
-  const buscarMatchCashFlow = (movimiento: MovimientoBancario): any => {
+  /**
+   * Busca match en el Cash Flow.
+   * `datos` se pasa por parámetro y no se toma del estado a propósito: el motor lo recarga justo
+   * antes de correr, y `setData` recién se ve en el próximo render (A-BUG-37).
+   */
+  const buscarMatchCashFlow = (movimiento: MovimientoBancario, datos: typeof cashFlowData): any => {
     // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
     const mov = movimiento as any
     const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
@@ -280,7 +284,7 @@ export function useMotorConciliacion() {
     const cuitBancario = extraerCuitBancario(movimiento)
 
     // Base: los haberes se buscan sólo contra sueldos; el resto, contra todo el Cash Flow.
-    const base = esHaberes ? cashFlowData.filter(cf => cf.origen === 'SUELDO') : cashFlowData
+    const base = esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos
 
     // El CUIT **prioriza, no excluye**. Antes el pool se reemplazaba por las filas de ese CUIT y el
     // fallback sólo se disparaba si no había NINGÚN candidato — o sea, por falta de CANDIDATOS y no
@@ -393,10 +397,17 @@ export function useMotorConciliacion() {
         console.log(`🎯 Modo acotado: conciliando solo ${movimientos.length} movimiento(s) filtrado(s)`)
       }
       const reglas = await cargarReglasActivas(cuenta.id)
-      
+
+      // Cash Flow FRESCO. El que vive en el estado es una foto tomada al montar la pantalla, así
+      // que cualquier cambio hecho fuera de esta pestaña —otra solapa, un SQL, otro usuario— era
+      // invisible y el motor decidía (y escribía) con datos vencidos. Pasó de verdad: se liberó un
+      // pago de sueldo en la BD, se corrió el motor sin refrescar, y no lo encontró porque en la
+      // foto seguía conciliado. Ver A-BUG-37.
+      const datosCF = (await recargarCashFlow()) ?? cashFlowData
+
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)
-      console.log(`- Cash Flow: ${cashFlowData.length}`)
+      console.log(`- Cash Flow: ${datosCF.length} (recargado al ejecutar)`)
       console.log(`- Reglas activas: ${reglas.length}`)
 
       // 2. Procesar cada movimiento
@@ -418,7 +429,7 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          const matchCF = buscarMatchCashFlow(movimiento)
+          const matchCF = buscarMatchCashFlow(movimiento, datosCF)
           if (matchCF.match) {
             resultado = {
               movimiento_id: movimiento.id,

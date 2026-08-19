@@ -865,9 +865,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       console.log(`✅ Cash Flow cargado: ${filasArca.length} ARCA + ${filasTemplates.length} Templates + ${filasAnticipos.length} Anticipos + ${filasSueldos.length} Sueldos + ${filasVentas.length} FC venta + ${filasVentasSinFC.length} ventas sin FC = ${filasConSaldo.length} total`)
 
+      // Además de setear el estado, se DEVUELVE la lista. `setData` recién se ve en el próximo
+      // render, así que quien necesita los datos frescos **en la misma corrida** (el motor de
+      // conciliación) no puede esperar al estado. Ver A-BUG-37.
+      return filasConSaldo
+
     } catch (error) {
       console.error('Error en useMultiCashFlowData:', error)
       setError(error instanceof Error ? error.message : 'Error desconocido')
+      return null
     } finally {
       setLoading(false)
     }
