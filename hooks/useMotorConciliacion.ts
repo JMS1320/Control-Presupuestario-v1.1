@@ -535,8 +535,14 @@ export function useMotorConciliacion() {
               ? 'Sin categ: requiere asignación de cuenta contable'
               : matchCF.motivo_revision
 
-            // Buscar nombre oficial del proveedor en BBDD proveedores
-            const provNombreCF = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
+            // Nombre de la contraparte: primero el maestro de proveedores (es el nombre oficial y
+            // el usuario lo prefiere: "Andres Martinez" y no la sigla). Si el CUIT no está ahí, se
+            // usa el nombre que ya trae la fila del Cash Flow — que para un sueldo es el del
+            // **empleado**, y los empleados no están en `proveedores` ni deben estarlo
+            // (§ Contrapartes). Sin este fallback, un sueldo de alguien que no es proveedor quedaba
+            // conciliado **sin ningún rastro de a quién se le pagó**. Ver A-BUG-39.
+            const provDesdeMaestro = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
+            const provNombreCF = provDesdeMaestro || matchCF.cashFlowRow.nombre_proveedor || null
 
             // Si no tenemos nro_cuenta aún (match TEMPLATE), buscarlo en cuentas_contables
             if (!extraIdsCF.nro_cuenta && matchCF.cashFlowRow.categ && !sinCateg) {

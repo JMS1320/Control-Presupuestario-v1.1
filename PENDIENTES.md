@@ -279,6 +279,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-BUG-39** | 🟡 | **Bug** | **HECHO 2026-08-19** — un sueldo conciliado quedaba **sin rastro de a quién se le pagó**: el motor buscaba el nombre sólo en `proveedores`, y un empleado que no está ahí (Wilson) dejaba `proveedor_nombre` en null y el `detalle` sin nombre. Ahora cae al nombre que ya trae la fila del Cash Flow. Falta testear | → [A-BUG-39](#a-bug-39) `@extracto` |
+| **A-DAT-04** | 🔴 | Dato | **Faltan reglas contable/interno para 3 empleados** — sólo AMS, JMS y Alondra tienen su regla Tipo C en `reglas_contable_interno`. Wilson Barreto y Ruben Sigot no, así que sus movimientos conciliados quedan con `contable` e `interno` **vacíos** | → [A-BUG-39](#a-bug-39) `@extracto @sueldos` |
 | **A-BUG-38** | 🟡 | **Bug** | **HECHO 2026-08-19** — Wilson Barreto no tenía CUIT en `sueldos.empleados` aunque el banco sí lo informa. **Cargado con OK del usuario**: `20-33318934-9`. Ahora el pre-filtro del motor lo puede usar y deja de salir *"sin CUIT"* en el selector. Falta testear | → [A-BUG-38](#a-bug-38) `@sueldos @extracto` |
 | **A-FEAT-32** | 🟡 | Feat | **HECHO 2026-08-19** — el filtro de contraparte del Extracto ahora incluye **empleados**, no sólo proveedores: Alondra no aparecía porque es empleada y vive en `sueldos.empleados`. `ProveedorCombobox` tomó un flag `incluirEmpleados` (apagado por default, para no cambiarles nada a los 4 modales que ya lo usan). Falta testear | → [A-FEAT-32](#a-feat-32) `@extracto` |
 | **A-BUG-37** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — el motor decidía contra una **foto del Cash Flow tomada al montar la pantalla**: cualquier cambio hecho fuera de esa pestaña era invisible y el motor **escribía igual**. Ahora recarga al ejecutar. **Testeado**: se liberaron 2 pagos de Alondra por SQL y el motor los concilió **sin refrescar la app** | → [A-BUG-37](#a-bug-37) `@extracto @cashflow` |
@@ -4140,6 +4142,56 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-bug-39"></a>A-BUG-39 — Un sueldo conciliado sin rastro de a quién se le pagó
+
+> **HECHO 2026-08-19, sin testear.** Lo vio el usuario al revisar cómo había quedado el movimiento
+> de Wilson: *"concilió pero no deja rastros de que sea Wilson a quien se le pagó. Diferente de
+> otros casos que vimos."*
+
+Así quedó el débito del 01/06 · $870.581 después de conciliar:
+
+| Campo | Valor |
+|---|---|
+| `proveedor_nombre` | **null** |
+| `comprobantes_pagados` | `Anticipo May 2026` |
+| `detalle` | `Anticipo May 2026` |
+| `contable` / `interno` | **vacíos** |
+
+Leído en la grilla: *"se pagó un anticipo de mayo"*. **A quién, no dice.**
+
+### Por qué con AMS sí funcionó
+El motor buscaba el nombre **sólo en `proveedores`**:
+```ts
+const provNombreCF = await buscarNombreProveedor(matchCF.cashFlowRow.cuit_proveedor)
+```
+AMS **está** en `proveedores` (tiene facturas ARCA a su nombre), así que el lookup devolvía
+*"Andres Martinez"*. **Wilson no está** —ni debe estar, no tiene factura de compra a su nombre
+(§ Contrapartes)— así que devolvía `null`, y de ahí en cascada el `detalle` quedaba sin nombre.
+
+Y el dato estaba a mano: la fila del Cash Flow ya trae `nombre_proveedor` con el nombre del
+**empleado**. El motor lo ignoraba.
+
+**Fix**: `proveedores` primero —es el nombre oficial y el usuario ya eligió esa convención— y si el
+CUIT no está ahí, se usa el nombre de la fila del Cash Flow.
+
+### <a id="a-dat-04"></a>A-DAT-04 — Y lo otro que faltaba: contable/interno vacíos
+`contable` e `interno` quedaron en `''` porque salen de una regla **Tipo C por empleado**
+(`reglas_contable_interno`), y **sólo 3 empleados la tienen**:
+
+| Empleado | contable | interno |
+|---|---|---|
+| AMS | `CTA AMS` | `Desglosar` |
+| JMS | `CTA JMS` | `Desglosar` |
+| Alondra Olivo | `RET 3 MA` | `DIST MA` |
+| **Wilson Barreto** | — | — |
+| **Ruben Sigot** | — | — |
+
+Eso **no es un bug de código**: es una regla que falta cargar. Pero explica por qué los movimientos
+de Wilson y Sigot van a seguir saliendo sin códigos aunque concilien bien. Hay que decidir con el
+usuario qué códigos les corresponden.
 
 ---
 
