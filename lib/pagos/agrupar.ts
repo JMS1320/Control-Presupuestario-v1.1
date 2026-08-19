@@ -4,7 +4,18 @@
 
 import { supabase } from "@/lib/supabase"
 
-export type OrigenAgrupable = 'ARCA' | 'TEMPLATE'
+export type OrigenAgrupable = 'ARCA' | 'TEMPLATE' | 'SUELDO'
+
+/**
+ * Tabla donde vive el `grupo_pago_id` de cada origen.
+ * ARCA va en el schema de su empresa; templates y sueldos siempre en `public` (sus tablas están
+ * expuestas ahí) con el grupo en `msa.grupos_pago`, por la FK.
+ */
+function tablaDeOrigen(origen: OrigenAgrupable, schema: string) {
+  if (origen === 'ARCA') return supabase.schema(schema).from('comprobantes_arca')
+  if (origen === 'SUELDO') return supabase.from('sueldos_pagos')
+  return supabase.from('cuotas_egresos_sin_factura')
+}
 
 export interface AgruparInput {
   /**
@@ -43,10 +54,8 @@ export async function agruparPagos(input: AgruparInput): Promise<string> {
   if (errGrupo || !grupo) throw new Error('Error al crear grupo: ' + (errGrupo?.message ?? ''))
 
   // 2. Asignar grupo_pago_id a los items
-  const q = origen === 'ARCA'
-    ? supabase.schema(schema).from('comprobantes_arca')
-    : supabase.from('cuotas_egresos_sin_factura')
-  const { error: errUpd } = await q.update({ grupo_pago_id: grupo.id }).in('id', ids)
+  const { error: errUpd } = await tablaDeOrigen(origen, schema)
+    .update({ grupo_pago_id: grupo.id }).in('id', ids)
   if (errUpd) throw new Error('Error al asignar grupo: ' + errUpd.message)
 
   return grupo.id as string

@@ -279,6 +279,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-FEAT-33** | 🟡 | Feat | **HECHO 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
 | **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
 | **A-BUG-39** | 🟡 | **Bug** | **HECHO 2026-08-19** — un sueldo conciliado quedaba **sin rastro de a quién se le pagó**: el motor buscaba el nombre sólo en `proveedores`, y un empleado que no está ahí (Wilson) dejaba `proveedor_nombre` en null y el `detalle` sin nombre. Ahora cae al nombre que ya trae la fila del Cash Flow. Falta testear | → [A-BUG-39](#a-bug-39) `@extracto` |
 | **A-DAT-04** | 🔴 | Dato | **Faltan reglas contable/interno para 3 empleados** — sólo AMS, JMS y Alondra tienen su regla Tipo C en `reglas_contable_interno`. Wilson Barreto y Ruben Sigot no, así que sus movimientos conciliados quedan con `contable` e `interno` **vacíos** | → [A-BUG-39](#a-bug-39) `@extracto @sueldos` |
@@ -4143,6 +4144,38 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-feat-33"></a>A-FEAT-33 — Agrupar sueldos desde el Cash Flow
+
+> **HECHO 2026-08-19, sin testear.** El usuario fue a agrupar los pagos de Sigot y le saltó
+> *"Agrupar disponible para FC (ARCA) y templates"*.
+
+**La función existía, pero en otra pantalla.** `agruparSueldos` estaba **inline en
+`vista-facturas-arca.tsx`** (Vista Pagos), con código propio: no pasaba por `lib/pagos/agrupar.ts`.
+El grupo `aa71dca9` de Sigot —los $1.028.648 del 01/06— se creó ahí el 01/06 a las 18:38.
+
+📌 **Dato del usuario (2026-08-19): Vista Pagos desde Egresos se está desactivando.** Así que lo que
+viva sólo ahí queda inaccesible. Esto vale para cualquier otra función que se encuentre en esa
+pantalla.
+
+### Por qué bloquear sueldos rompía la conciliación
+El banco debita **el lote entero** de una acreditación de haberes en **una sola línea**, y el sistema
+tiene **un pago por empleado**. El motor busca una fila del Cash Flow que valga lo mismo que el
+débito y **nunca suma combinaciones**. Sin agrupación no existe esa fila → el movimiento no concilia
+nunca. Es la causa de 3 de los pendientes de sueldos hasta el 18/06.
+
+### Qué se hizo
+- `lib/pagos/agrupar.ts` y `desagrupar.ts` aceptan `SUELDO`. La tabla sale de un helper
+  (`tablaDeOrigen`) en vez de un ternario repetido: ARCA en el schema de su empresa, **templates y
+  sueldos en `public`**, con el grupo siempre en `msa.grupos_pago` por la FK.
+- El Cash Flow deja de bloquearlo y arma la observación como lo hacía Vista Pagos
+  (`Sueldos agrupados: <nombres>`), para que los grupos viejos y los nuevos se lean igual.
+- Desagrupar también contempla `SUELDO`.
+
+**Sin restricción de empleado a propósito**: un lote de haberes junta a varios (el del 30/06 es Sigot
++ Barreto). El aviso de CUITs distintos que ya existía alcanza.
 
 ---
 

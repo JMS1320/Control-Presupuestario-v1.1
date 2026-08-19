@@ -1281,7 +1281,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const origenes = new Set(filas.map(f => f.origen))
     if (origenes.size > 1) { toast.error('Agrupá filas del mismo origen (todas FC o todas templates)'); return }
     const origen = filas[0].origen
-    if (origen !== 'ARCA' && origen !== 'TEMPLATE') { toast.error('Agrupar disponible para FC (ARCA) y templates'); return }
+    // SUELDO se sumó el 2026-08-19 (A-FEAT-33): el banco debita **el lote entero** de una
+    // acreditación de haberes en una sola línea, y el sistema tiene un pago por empleado. Sin poder
+    // agrupar, ninguna fila del Cash Flow vale lo que el banco debitó y el movimiento no concilia
+    // nunca. Existía en Vista Pagos, que se está desactivando, con una implementación propia.
+    if (origen !== 'ARCA' && origen !== 'TEMPLATE' && origen !== 'SUELDO') {
+      toast.error('Agrupar disponible para FC (ARCA), templates y sueldos'); return
+    }
     if (filas.some(f => f.grupo_pago_id)) { toast.error('Alguna fila ya pertenece a un grupo (desagrupá primero desde el Modal)'); return }
     // El grupo y las facturas tienen que vivir en el MISMO schema (hay FK), así que no se pueden
     // mezclar empresas en un grupo. Desde 2026-08-08 existe `grupos_pago` en pam y ma (A-FEAT-13-B).
@@ -1306,16 +1312,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const monto_total = filas.reduce((s, f) => s + (f.debitos || 0) * (origen === 'ARCA' ? (f.tc_pago ?? f.tipo_cambio ?? 1) : 1), 0)
     try {
       await agruparPagos({
-        // ARCA: el schema de la empresa de las facturas. TEMPLATE: siempre msa, porque el
-        // grupo_pago_id de las cuotas tiene FK a msa.grupos_pago.
+        // ARCA: el schema de la empresa de las facturas. TEMPLATE y SUELDO: siempre msa, porque su
+        // grupo_pago_id tiene FK a msa.grupos_pago.
         schema: origen === 'ARCA' ? schemaDeFila(filas[0]) : 'msa',
-        origen: origen as 'ARCA' | 'TEMPLATE',
+        origen: origen as 'ARCA' | 'TEMPLATE' | 'SUELDO',
         ids: filas.map(f => f.id),
         cuit: filas[0].cuit_proveedor || null,
         proveedor: proveedorGrupo || (filas[0].nombre_proveedor || ''),
         monto_total,
         estado: origen === 'ARCA' ? 'pagar' : (filas[0].estado || 'pendiente'),
-        observaciones: cuits.size > 1 ? `Multi-CUIT: ${[...cuits].join(', ')}` : null,
+        observaciones: origen === 'SUELDO'
+          ? `Sueldos agrupados: ${proveedoresUnicos.join(', ')}`
+          : (cuits.size > 1 ? `Multi-CUIT: ${[...cuits].join(', ')}` : null),
       })
       toast.success(`${filas.length} pagos agrupados`)
       setFilasSeleccionadas(new Set())
@@ -1328,7 +1336,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Deshacer un grupo (fila consolidada) → vuelven las FCs/cuotas individuales. Paridad con el Modal.
   const desagruparFilaGrupo = async (fila: CashFlowRow) => {
     if (!fila.grupo_pago_id || !(fila.facturas_agrupadas && fila.facturas_agrupadas > 1)) return
-    const origen = fila.origen === 'ARCA' ? 'ARCA' : 'TEMPLATE'
+    const origen = fila.origen === 'ARCA' ? 'ARCA' : fila.origen === 'SUELDO' ? 'SUELDO' : 'TEMPLATE'
     if (!window.confirm(`¿Deshacer el grupo (${fila.facturas_agrupadas} comprobantes)? Vuelven a ser individuales.`)) return
     try {
       // Mismo criterio que al agrupar: ARCA en el schema de su empresa, templates siempre en msa.
