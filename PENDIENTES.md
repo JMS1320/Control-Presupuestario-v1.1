@@ -279,8 +279,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
-| **A-BUG-41** | 🔴 | **Bug** | **HECHO 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
-| **A-FEAT-33** | 🟡 | Feat | **HECHO 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
+| **A-BUG-41** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
+| **A-FEAT-33** | ✅ | Feat | **HECHO + TESTEADO OK 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
 | **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
 | **A-BUG-39** | 🟡 | **Bug** | **HECHO 2026-08-19** — un sueldo conciliado quedaba **sin rastro de a quién se le pagó**: el motor buscaba el nombre sólo en `proveedores`, y un empleado que no está ahí (Wilson) dejaba `proveedor_nombre` en null y el `detalle` sin nombre. Ahora cae al nombre que ya trae la fila del Cash Flow. Falta testear | → [A-BUG-39](#a-bug-39) `@extracto` |
 | **A-DAT-04** | 🔴 | Dato | **Faltan reglas contable/interno para 3 empleados** — sólo AMS, JMS y Alondra tienen su regla Tipo C en `reglas_contable_interno`. Wilson Barreto y Ruben Sigot no, así que sus movimientos conciliados quedan con `contable` e `interno` **vacíos** | → [A-BUG-39](#a-bug-39) `@extracto @sueldos` |
@@ -4190,6 +4190,24 @@ soportara: **se abrió la puerta de entrada sin mirar la de salida.**
   grupo es el `grupo_pago_id`, que apunta a otra tabla; desde el pago se llega al grupo igual.
 - **Columnas**: la fila de grupo ahora lleva `comprobante_display` y `detalle_usuario`, que sólo
   tenían las individuales.
+
+### ✅ TESTEADO OK — 2026-08-19, auditado contra la BD
+
+El usuario revirtió las 2 filas a `pendiente` y volvió a correr. El panel pasó de *"— sin vínculo"* a
+**"Pago de sueldo"**, y la auditoría confirma las 3 cosas:
+
+| | 31/03 · $1.020.347 | 30/04 · $1.050.958 |
+|---|---|---|
+| `comprobantes_pagados` | **`Haberes Mar 2026 — a cuenta`** | **`Haberes Abr 2026 — a cuenta`** |
+| `detalle` | `null` ✅ *(la descripción era puro período → no queda especificación)* | `null` ✅ |
+| `proveedor_nombre` | `Ruben Sigot` | `Ruben Sigot` |
+| `sueldo_pago_id` | miembro del grupo ✅ | miembro del grupo ✅ |
+| **pagos del grupo** | **los 2 en `conciliado`** ✅ | **los 2 en `conciliado`** ✅ |
+
+**La identidad cierra**: `918.347 + 102.000 = 1.020.347` y `895.958 + 155.000 = 1.050.958`. Ningún
+miembro quedó a medio camino, así que el doble conteo se cerró.
+
+Queda pendiente sólo `contable`/`interno`, vacíos por falta de la regla de Sigot → [A-DAT-04](#a-bug-39).
 
 ---
 
