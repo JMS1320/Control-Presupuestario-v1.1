@@ -280,6 +280,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-BUG-42** | 🔴 | **Bug** | **ARREGLADO 2026-08-19, datos sin recuperar** — reasignar un movimiento a un template **BORRABA** la cuota que tenía vinculada, incluso si era la que el usuario acababa de elegir. Perdidas 2 cuotas reales (**$1,74 M**): Expensas Libertad 11/05 y Seguro Flota 02/06. Ahora se **suelta** (vuelve a `pendiente`) y se avisa. **Faltan recrear las 2 cuotas** | → [A-BUG-42](#a-bug-42) `@extracto` |
 | **A-BUG-41** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
 | **A-FEAT-33** | ✅ | Feat | **HECHO + TESTEADO OK 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
 | **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
@@ -4174,6 +4175,59 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-bug-42"></a>A-BUG-42 — Reasignar un movimiento **borraba** la cuota del template
+
+> **Arreglado 2026-08-19. Los datos perdidos NO están recuperados** — ver § abajo.
+> Lo encontró el usuario preguntando lo correcto: *"puse asignar, seleccioné la cuota existente y le
+> di ok. ¿lo que decís es que eso borró la cuota?"*. Sí.
+
+```ts
+// ANTES — vista-extracto-bancario.tsx, rama template y rama sueldo
+if (movimientoAsignando.template_cuota_id) {
+  await supabase.from('cuotas_egresos_sin_factura')
+    .delete().eq('id', movimientoAsignando.template_cuota_id)   // ← borraba
+}
+```
+
+### La secuencia exacta
+1. El motor deja el movimiento en `auditar` **con su cuota vinculada**.
+2. El usuario abre *Asignar*, elige el template y **selecciona esa misma cuota**.
+3. El código, **antes de mirar qué eligió**, borra la cuota apuntada — justo la elegida.
+4. Después hace `UPDATE … WHERE id = <la que acaba de borrar>` → **0 filas y sin error**. Un UPDATE
+   que no matchea **no falla** (la misma trampa de § Contrapartes en `CLAUDE.md`).
+5. Escribe el ID en el extracto → **puntero colgado**, en silencio.
+
+### Alcance medido
+De **11** `template_cuota_id` colgados en las 4 tablas de extracto, **9 son falsos positivos**:
+apuntan a **grupos de pago** (ARBA, Municipalidad SP), porque cuando el template está agrupado esa
+columna guarda un `grupos_pago.id`. *(Confuso —la columna se llama "cuota"— pero ahí no se perdió
+nada.)*
+
+**Cuotas realmente borradas: 2, $1.738.362,11**
+
+| Fecha | Importe | Template | Estado |
+|---|---:|---|---|
+| 11/05 | 1.165.390,11 | **Expensas Libertad** | 🔴 falta recrear |
+| 02/06 | 572.972,00 | **Seguro Flota** | 🔴 falta recrear |
+
+Las dos son reasignaciones, así que **el bug venía actuando desde mayo** sin que nadie lo notara.
+Ese gasto no está en ningún template → no está en el Cash Flow **ni en el presupuesto**.
+
+### Fix
+`soltarCuotaAnterior()`: la cuota **vuelve a `pendiente`** en vez de borrarse, y **si es la misma que
+el usuario eligió, no se toca**. Si era una cuota fantasma creada por una asignación previa, queda
+**a la vista** para borrarla a mano — que es la dirección correcta del error (§ Datos: *nada
+destructivo, find-or-create en vez de reemplazar*).
+
+Además, la asignación ahora **avisa** lo que soltó por el camino, y los errores del `catch` dejaron
+de morir sólo en la consola. *No queda ni un `.delete()` en `vista-extracto-bancario.tsx`.*
+
+### 🔴 Pendiente de datos — recrear las 2 cuotas
+1. **Seguro Flota**, junio: `$572.972`, y re-vincular el movimiento del 02/06.
+2. **Expensas Libertad**, mayo: `$1.165.390,11`, y re-vincular el del 11/05.
 
 ---
 

@@ -1367,6 +1367,46 @@ export function VistaExtractoBancario() {
    * `comprobante_venta_id` va aparte porque **la columna sólo existe en `public.msa_galicia`**
    * (→ A-FEAT-24): mandarla en PAM o MA haría fallar el UPDATE entero.
    */
+  /**
+   * Suelta la cuota que el movimiento tenía vinculada **sin borrarla** (A-BUG-42).
+   *
+   * Antes esto era un `DELETE`, con la intención de limpiar una cuota que el propio sistema había
+   * creado en una asignación anterior y quedaba huérfana. El problema es que **no distingue** esa
+   * cuota de una del template cargada por el usuario — y borraba las dos. Peor: si el usuario
+   * elegía en el modal **la misma cuota** que el movimiento ya tenía vinculada, el borrado corría
+   * primero y el `UPDATE` posterior no encontraba la fila. Un UPDATE que no matchea **no falla**,
+   * así que quedaba el extracto conciliado apuntando a una cuota inexistente, en silencio.
+   * Le pasó dos veces: Expensas Libertad (11/05, $1.165.390,11) y Seguro Flota (02/06, $572.972).
+   *
+   * Ahora se **desvincula**: la cuota vuelve a `pendiente` y reaparece en el Cash Flow. Si era una
+   * cuota fantasma creada por el sistema, queda **a la vista** para borrarla a mano — que es la
+   * dirección correcta del error (§ Datos: nada destructivo, find-or-create en vez de reemplazar).
+   *
+   * @returns el aviso para el usuario, o `null` si no hubo nada que soltar
+   */
+  const soltarCuotaAnterior = async (cuotaNuevaId?: string | null): Promise<string | null> => {
+    const anterior = movimientoAsignando?.template_cuota_id
+    if (!anterior) return null
+    // Si es la MISMA cuota que se está eligiendo, no hay nada que soltar.
+    if (cuotaNuevaId && cuotaNuevaId === anterior) return null
+
+    const { data, error } = await supabase
+      .from('cuotas_egresos_sin_factura')
+      .update({ estado: 'pendiente' })
+      .eq('id', anterior)
+      .select('id, monto')
+    if (error) {
+      console.error('No se pudo soltar la cuota anterior:', error.message)
+      return null
+    }
+    if (!data || data.length === 0) {
+      // La cuota ya no existe: es uno de los vínculos colgados que dejó el borrado viejo.
+      return '⚠️ El vínculo anterior apuntaba a una cuota que ya no existe (quedó de un borrado previo).'
+    }
+    const monto = Number(data[0].monto || 0)
+    return `ℹ️ La cuota que estaba vinculada antes ($${monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) volvió a "pendiente". Si no corresponde, borrala desde Templates.`
+  }
+
   const vinculosLimpios = () => {
     const base: Record<string, any> = {
       comprobante_arca_id: null,
@@ -1383,6 +1423,9 @@ export function VistaExtractoBancario() {
   const ejecutarAsignacion = async () => {
     if (!movimientoAsignando) return
     setGuardandoAsignacion(true)
+    // Avisos que la asignación junta por el camino y muestra al final. Antes, soltar o pisar algo
+    // pasaba en silencio (A-BUG-42): nada destructivo debería ser invisible.
+    const avisosAsignacion: string[] = []
     try {
       const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
       const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
@@ -1419,11 +1462,9 @@ export function VistaExtractoBancario() {
       }
 
       if (tabAsignar === 'template' && templateElegido) {
-        // Si es re-asignación, limpiar cuota anterior
-        if (movimientoAsignando.template_cuota_id) {
-          await supabase.from('cuotas_egresos_sin_factura')
-            .delete().eq('id', movimientoAsignando.template_cuota_id)
-        }
+        // Re-asignación: la cuota anterior se SUELTA, no se borra (A-BUG-42).
+        const avisoCuota = await soltarCuotaAnterior(cuotaElegida?.id)
+        if (avisoCuota) avisosAsignacion.push(avisoCuota)
         // Limpiar vínculo ARCA anterior si existía
         if (movimientoAsignando.comprobante_arca_id) {
           await dbCuenta().from(tablaActiva)
@@ -1607,11 +1648,9 @@ export function VistaExtractoBancario() {
         actualizarLocal(movimientoAsignando.id, updateArca)
 
       } else if (tabAsignar === 'sueldo' && sueldoElegido) {
-        // Limpiar vínculos anteriores si existían
-        if (movimientoAsignando.template_cuota_id) {
-          await supabase.from('cuotas_egresos_sin_factura')
-            .delete().eq('id', movimientoAsignando.template_cuota_id)
-        }
+        // Ídem: la cuota de template que hubiera antes se suelta, no se borra (A-BUG-42).
+        const avisoCuotaSueldo = await soltarCuotaAnterior(null)
+        if (avisoCuotaSueldo) avisosAsignacion.push(avisoCuotaSueldo)
         if (movimientoAsignando.comprobante_arca_id) {
           await dbCuenta().from(tablaActiva)
             .update({ comprobante_arca_id: null }).eq('id', movimientoAsignando.id)
@@ -1762,8 +1801,12 @@ export function VistaExtractoBancario() {
       }
 
       setModalAsignar(false)
+      // Lo que se soltó por el camino se dice. Un cambio que el usuario no pidió y no ve es el
+      // modo de falla que originó A-BUG-42.
+      if (avisosAsignacion.length > 0) alert(avisosAsignacion.join('\n\n'))
     } catch (err) {
       console.error('Error en asignación manual:', err)
+      alert('Error en la asignación: ' + ((err as Error)?.message || 'desconocido'))
     } finally {
       setGuardandoAsignacion(false)
     }
