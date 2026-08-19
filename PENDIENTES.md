@@ -82,9 +82,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-OP-03 | ✅ | Alta | **MERGEADO 2026-08-02** (`d5a9f69`, 134 commits desde el 15/07). Decisión del usuario: *"todo lo hecho viene muy bien y funciona, sería como hacer un punto seguro"*. Build limpio antes de mergear (exit 0, 34 rutas). Etiquetado **`punto-seguro-2026-08-02`** → volver es `git reset --hard punto-seguro-2026-08-02` | ✅ `main..desarrollo` = 0 |
 | A-OP-04 | ⏸️ | Media | Auditar Secciones C y D junto al usuario | — |
 | A-OP-05 | 🔴 | Baja | Carpeta vacía `arca-poc/` — borrar a mano (Windows handle) | — |
-| A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) |
-| A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) |
-| A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) |
+| A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) `@general` |
+| A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) `@general` |
+| A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) `@general` |
 
 ### 💰 PRESUPUESTO — lista del usuario 2026-08-02 (`P-NN`)
 > Batch dictado por el usuario el 2026-08-02. **Prefijo `P-`** = mejoras del módulo Presupuesto
@@ -96,7 +96,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|-----|------|
 | P-01 | ✅ | Botón **Actualizar** en el header del panel de cuentas (relee historia, config e IPC). 2026-08-02, sin testear |
 | P-02 | ❓ | **"Este mes sí/no"** en el mes de arranque: si ya se pagó, no presupuestar; si no, sí. *El usuario avisa que **contradice otras alternativas*** |
-| P-03 | ⏸️ | **Sueldo mensual de presupuesto por empleado.** ⚠️ Auditado 2026-08-02: **3 empleados en $0** (AMS, Vulcano, Paz) → faltan ~$38-60 M en 11 meses, y **HONORARIOS AMS no está presupuestado en ningún lado** (excluido de cuentas "va por sueldos", y en sueldos vale cero). **Espera decisión: toca la BD** → [P-03](#p-03) |
+| P-03 | ⏸️ | **Sueldo mensual de presupuesto por empleado.** ⚠️ Auditado 2026-08-02: **3 empleados en $0** (AMS, Vulcano, Paz) → faltan ~$38-60 M en 11 meses, y **HONORARIOS AMS no está presupuestado en ningún lado** (excluido de cuentas "va por sueldos", y en sueldos vale cero). **Espera decisión: toca la BD** → [P-03](#p-03) `@presupuesto @sueldos` |
 | P-04 | ❓ | **¿IPC siempre? ¿Está trabajando bien el IPC?** — auditar el modo |
 | P-05 | 🔗 | **Costos de producción** al presupuesto — ya abierto como C-7 / B-FEAT-COSTOS-PRODUCTIVOS |
 | P-06 | ❓ | **¿Las FC en dólares están bien tomadas** en el presupuesto? — auditar |
@@ -114,7 +114,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-18 | 🟢 | **Ver la FC desde el presupuesto**: botón "buscar FC" que devuelve el listado para elegir y recién ahí la muestra (no precargar) |
 | P-19 | 🟢 | **Períodos contables de templates — YA EXISTEN, hay que USARLOS.** ⚠️ Claude afirmó el 2026-08-02 que "no hay columna de campaña"; **es falso**, lo corrigió el usuario. `egresos_sin_factura` tiene **`año`** (label "26/27"), **`periodicidad`** ('anual'\|'bianual') y **`template_origen_id`** → el template del que se clonó. El generador escribe `año: targetLabel` al renovar. Lo que falta es que el **Presupuesto los lea** |
 | P-20 | ❓ | Repensar el diseño a la luz de los períodos — a ver **con el contexto específico de Templates** (decisión del usuario: no diseñar en abstracto) |
-| P-21 | ⏸️ | **Sueldo y SUSS con aguinaldo** — hoy los 11 meses futuros tienen el mismo monto congelado y **dic-26 y jun-27 no tienen SAC** (~$6 M cada uno). Va junto con P-03 → [P-03](#p-03) |
+| P-21 | ⏸️ | **Sueldo y SUSS con aguinaldo** — hoy los 11 meses futuros tienen el mismo monto congelado y **dic-26 y jun-27 no tienen SAC** (~$6 M cada uno). Va junto con P-03 → [P-03](#p-03) `@presupuesto @sueldos` |
 | P-22 | 🔗 | **Que templates se muestren como cuentas contables** — se cruza con C-19 / C-24 |
 | P-23 | ❓ | **Cuotas que dicen "templates" pero no autogeneran la próxima campaña** si no está llena |
 | P-24 | 🔗 | **Separar siempre en secciones**: lo que se proyecta, lo que no, y todos — C-22 paso 1 ya hizo EGRESOS/DISTRIBUCIONES |
@@ -124,17 +124,17 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | P-28 | ❓ | Alternativa: **último saldo ± movimientos**, y mostrar desde el último saldo |
 | P-29 | ✅ | **Impuesto Inmobiliario — NO es bug, es el caso testigo de que funciona.** Claude lo marcó como posible doble conteo; el usuario verificó (2026-08-02) que **toma bien las cuotas actuales y re-presupuesta bien el período siguiente**. **Usarlo como referencia de buen funcionamiento** al arreglar los demás |
 | P-30 | ⛔ | ~~No tomar "ret o dist"~~ — **DESESTIMADO por el usuario 2026-08-02**: *"ahora no sé qué quise decir"*. Si reaparece, se vuelve a abrir |
-| P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) |
-| P-42 | ⏸️ | 📍 **Donde se configura determina donde se muestra** (contracara de la regla A) + **las ventas presupuestadas piden actividad** + **no recargar lo que ya esta en Productivo** (venta de agosto, 55 machos) → [P-42](#p-42) |
-| P-41 | 🟡 | 🗺️ **Campos, actividades y has por campana** — ✅ **BD HECHA 2026-08-02**: `centros_costo.tipo`, tablas `campos`, `campo_partidas`, `campo_campana_actividad` + vista `control_has_por_campana`. Cargados 5 campos, 20 partidas y la campana 26/27. **Falta la UI** → [P-41](#p-41) |
-| P-40 | ⏸️ | 🔴 **El presupuesto se arma por RESPONSABLE, no por quien paga** — hoy el filtro mira solo `responsable` e ignora `responsable_interno`. **4 templates estan de mas en el presupuesto de MSA** (2 con interno JMS, 1 con MA, 1 mixto) → [P-40](#p-40) |
-| P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) |
-| P-39 | ⏸️ | 🔖 **Marcar una variable como "sin terminar a proposito"** — distingue el olvido de la decision; la alerta va en su propio renglon. Complementa el control de cobertura → [P-39](#p-39) |
+| P-32 | 🔴 | **Batería de controles — REQUISITO DE CIERRE del módulo.** *"Habrá muchos controles para sentirme seguro… es un requisito pasar por esto para considerar terminado el módulo y es uno de los puntos principales."* Hoy sólo existe `controlarPresupuesto()`. Ideas → [P-32](#p-32) `@presupuesto` |
+| P-42 | ⏸️ | 📍 **Donde se configura determina donde se muestra** (contracara de la regla A) + **las ventas presupuestadas piden actividad** + **no recargar lo que ya esta en Productivo** (venta de agosto, 55 machos) → [P-42](#p-42) `@presupuesto` |
+| P-41 | 🟡 | 🗺️ **Campos, actividades y has por campana** — ✅ **BD HECHA 2026-08-02**: `centros_costo.tipo`, tablas `campos`, `campo_partidas`, `campo_campana_actividad` + vista `control_has_por_campana`. Cargados 5 campos, 20 partidas y la campana 26/27. **Falta la UI** → [P-41](#p-41) `@presupuesto @productivo` |
+| P-40 | ⏸️ | 🔴 **El presupuesto se arma por RESPONSABLE, no por quien paga** — hoy el filtro mira solo `responsable` e ignora `responsable_interno`. **4 templates estan de mas en el presupuesto de MSA** (2 con interno JMS, 1 con MA, 1 mixto) → [P-40](#p-40) `@presupuesto` |
+| P-38 | ⏸️ | 📊 **Export del presupuesto para los socios** — varias hojas, Excel + PDF, **presentable** (estetica), con reportes sinteticos y desglose por capas. Hacerlo DESPUES de cerrar la estructura → [P-38](#p-38) `@presupuesto` |
+| P-39 | ⏸️ | 🔖 **Marcar una variable como "sin terminar a proposito"** — distingue el olvido de la decision; la alerta va en su propio renglon. Complementa el control de cobertura → [P-39](#p-39) `@presupuesto` |
 | P-36 | ⏸️ | 🏗️ **Bloque INVERSIONES** — lista a mano con nombre especifico ("2 silos de autoconsumo 7 Ton c/u"), centro de costo, **explicacion de por que se invierte**, monto y plazo → [P-36](#p-36) `@cashflow` |
 | P-37 | ⏸️ | ⭐ **Como se modelan las variables especificas** — el usuario: *"no quisiera armar 100 tablas pero tampoco se si se puede unificar"*. Respuesta: **CANTIDAD × PRECIO**, una sola tabla; lo que cambia es de donde sale cada uno. **Hay que cerrarla ANTES de escribir codigo de costos productivos** → [P-37](#p-37) `@principal` |
-| P-34 | ⏸️ | 📝 **Notas para Claude desde la app** — botón que captura el contexto solo (pantalla, componente, registro). Una nota es una **grabación de N capturas** con Finalizar, no un evento. Regla: la nota NO es un pendiente, es bandeja de entrada → [P-34](#p-34) |
-| P-35 | ⏸️ | 👷 **Modelo de sueldos para presupuesto** — dictado completo por el usuario: plantilla fija, aguinaldo 50% en jun/dic, francos aparte, extra anual, jornales, IPC en escalones, SUSS +50% en ene/jul. 🔴 **Cargas Sociales está en \$0 desde agosto** → [P-35](#p-35) |
-| P-33 | 🟡 | **Auditado 2026-08-02** → [P-33](#p-33). De las 9 cuentas excluidas, **sólo 4 lo están por diseño**: 4 son **features faltantes** disfrazadas de exclusión (IPC+%, elegir mes, cupo anual, costos directos) y 1 es un gasto dado de baja. **El presupuesto está subestimado en esas 4.** Falta implementarlas |
+| P-34 | ⏸️ | 📝 **Notas para Claude desde la app** — botón que captura el contexto solo (pantalla, componente, registro). Una nota es una **grabación de N capturas** con Finalizar, no un evento. Regla: la nota NO es un pendiente, es bandeja de entrada → [P-34](#p-34) `@general` |
+| P-35 | ⏸️ | 👷 **Modelo de sueldos para presupuesto** — dictado completo por el usuario: plantilla fija, aguinaldo 50% en jun/dic, francos aparte, extra anual, jornales, IPC en escalones, SUSS +50% en ene/jul. 🔴 **Cargas Sociales está en \$0 desde agosto** → [P-35](#p-35) `@presupuesto @sueldos` |
+| P-33 | 🟡 | **Auditado 2026-08-02** → [P-33](#p-33). De las 9 cuentas excluidas, **sólo 4 lo están por diseño**: 4 son **features faltantes** disfrazadas de exclusión (IPC+%, elegir mes, cupo anual, costos directos) y 1 es un gasto dado de baja. **El presupuesto está subestimado en esas 4.** Falta implementarlas `@presupuesto` |
 | P-31 | 🔗 | **Vincular las proyecciones de venta al presupuesto** — se cruza con A-FEAT-10 y con Ingresos/arrendamientos |
 
 ### 🐄 MARGEN POR ACTIVIDAD — módulo nuevo (2026-08-02)
@@ -151,9 +151,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 |----|--------|------|------|---------|
 | A-FEAT-09 | 🔴 | **Alta (fecha)** | **Papeles de trabajo del balance = export del sistema** — balance 25/26, corte 30/06/26, al contador **01/10/2026**. Puede no llegarse: decidir con tiempo | → [A-FEAT-09](#a-feat-09) |
 | A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) |
-| A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) |
+| A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) `@presupuesto` |
 | A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) |
-| A-FEAT-13 | 🔴 | **Alta** | **Cash Flow multi-empresa: las facturas de PAM y MA no se pueden pagar** — hoy el Cash Flow lee sólo `msa`, así que las 4 FC de PAM y las 92 de MA no tienen dónde registrarse. Plan acordado con el usuario 2026-08-07, 7 pasos | → [A-FEAT-13](#a-feat-13) |
+| A-FEAT-13 | 🔴 | **Alta** | **Cash Flow multi-empresa: las facturas de PAM y MA no se pueden pagar** — hoy el Cash Flow lee sólo `msa`, así que las 4 FC de PAM y las 92 de MA no tienen dónde registrarse. Plan acordado con el usuario 2026-08-07, 7 pasos | → [A-FEAT-13](#a-feat-13) `@cashflow` |
 
 ### 📚 Documentación (auditoría de dimensiones, 2026-08-02)
 > Origen: comparación de nuestro `CLAUDE.md` contra el `CLAUDE.md` de otro proyecto del usuario ("Remates Televisados"), que trajo reglas de proceso mejores. Salió de ahí `CLAUDE_BASE.md` (plantilla portable) + esta auditoría de los 31 `.md` del repo. **Casi todos esperan una decisión del usuario (⏸️), no trabajo de Claude.**
@@ -163,39 +163,39 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-DOC-01 | ✅ | **Alta** | **Lista de dimensiones cerrada** — DECIDIDO 2026-08-02: 8 dimensiones + regla de cierre + **Claude no crea dimensiones sin autorización**. Aplicado a `CLAUDE.md` | → [A-DOC-01](#a-doc-01) |
 | A-DOC-02 | ✅ | Media | 13 docs de módulo con 4 convenciones → **renombrados a `MODULO_*` 2026-08-02** (`git mv`, historial intacto) + `MODULO_ARCA.md` creado | → [A-DOC-02](#a-doc-02) |
 | A-DOC-02b | 🔴 | Baja | **Consolidar SICORE** — quedan `MODULO_SICORE.md` (51 KB) + `MODULO_SICORE_RETENCIONES.md` (12 KB) + la historia cruda en `arca-api/`. Abordar al tocar el módulo | → [A-DOC-02b](#a-doc-02b) |
-| A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) |
-| A-DOC-03 | ⏸️ | Baja | 3 archivos de reconstrucción (553 KB) del mismo tema; sólo 1 declarado | → [A-DOC-03](#a-doc-03) |
-| A-DOC-04 | ⏸️ | Baja | `README.md` (ago-2025) desactualizado y fuera de toda dimensión | → [A-DOC-04](#a-doc-04) |
+| A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) `@general` |
+| A-DOC-03 | ⏸️ | Baja | 3 archivos de reconstrucción (553 KB) del mismo tema; sólo 1 declarado | → [A-DOC-03](#a-doc-03) `@general` |
+| A-DOC-04 | ⏸️ | Baja | `README.md` (ago-2025) desactualizado y fuera de toda dimensión | → [A-DOC-04](#a-doc-04) `@general` |
 | A-DOC-05 | ✅ | Media | 5 `.md` huérfanos — RESUELTOS 2026-08-02: sesión→HISTORIAL · `Usuarios.md`→`MODULO_USUARIOS.md` (+ [A-SEC-03](#a-sec-03)) · 2 de ARCA→`MODULO_ARCA.md` · las plantillas se las lleva el usuario | → [A-DOC-05](#a-doc-05) |
 | A-DOC-06 | ✅ | Media | 6 reglas permanentes vivían **sólo en memoria** — SUBIDAS a `CLAUDE.md` 2026-08-02 (2 § nuevas + 1 bullet); memorias reducidas a punteros | → [A-DOC-06](#a-doc-06) |
 | A-DOC-07 | ✅ | Media | Qué es + **norte** en `CLAUDE.md` (2026-08-02). Norte = presupuesto autoalimentado; **todo alimenta al presupuesto**. Queda **abierto a ampliación** por el usuario | → [A-DOC-07](#a-doc-07) |
 | A-DOC-08 | ✅ | Media | Lista de 47 ítems sin testear vivía en memoria y **B-TEST-10 la citaba desde acá** — MIGRADA 2026-08-02: 8 filas nuevas (`B-TEST-11..18`) + 28 a [C-01](#c-01) transcriptos | → [A-DOC-08](#a-doc-08) |
-| A-DOC-10 | 🔴 | Media | **Otras 19 fugas doc→memoria** — `B-TEST-10` NO era la única: hay ~19 `"Detalle: memory/…"` repartidas en 5 dimensiones. Hay que absorber el contenido | → [A-DOC-10](#a-doc-10) |
+| A-DOC-10 | 🔴 | Media | **Otras 19 fugas doc→memoria** — `B-TEST-10` NO era la única: hay ~19 `"Detalle: memory/…"` repartidas en 5 dimensiones. Hay que absorber el contenido | → [A-DOC-10](#a-doc-10) `@general` |
 
 ### Bugs (sesiones de junio)
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-BUG-01 | 🔴 | Media | Grupos de Pago — 6 bugs caso Alcorta | → [A-BUG-01](#a-bug-01) |
-| A-BUG-02 | 🔴 | Media | Grupo ARBA `a177c1fb` desfase $5.701,30 | → [A-BUG-02](#a-bug-02) |
-| A-BUG-03 | 🔴 | Media | Modo Admin facturas — modificar campos no funciona | → [A-BUG-03](#a-bug-03) |
-| A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) |
-| A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) |
+| A-BUG-01 | 🔴 | Media | Grupos de Pago — 6 bugs caso Alcorta | → [A-BUG-01](#a-bug-01) `@egresos @cashflow` |
+| A-BUG-02 | 🔴 | Media | Grupo ARBA `a177c1fb` desfase $5.701,30 | → [A-BUG-02](#a-bug-02) `@egresos @cashflow` |
+| A-BUG-03 | 🔴 | Media | Modo Admin facturas — modificar campos no funciona | → [A-BUG-03](#a-bug-03) `@egresos` |
+| A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) `@extracto` |
+| A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
 |----|--------|------|---------|
-| A-TEST-01 | 🔴 | Lotes Galicia — export Excel banco | → [A-TEST-01](#a-test-01) |
-| A-TEST-02 | 🔴 | GAS PDF — descarga automática facturas | → [A-TEST-02](#a-test-02) |
-| A-TEST-03 | 🔴 | Módulo ARCA Mis Comprobantes | → [A-TEST-03](#a-test-03) |
-| A-TEST-04 | 🔴 | SICORE estado_quincena + anulación | → [A-TEST-04](#a-test-04) |
-| A-TEST-05 | 🔴 | Tarjetas — probar PDF real | → [A-TEST-05](#a-test-05) |
-| A-TEST-06 | 🟡 | Refactor fechas FASE TEMPLATES (`fecha_pago` separado de venc) — testear en preview ANTES de fase ARCA | → [A-TEST-06](#a-test-06) |
+| A-TEST-01 | 🔴 | Lotes Galicia — export Excel banco | → [A-TEST-01](#a-test-01) `@egresos @cashflow` |
+| A-TEST-02 | 🔴 | GAS PDF — descarga automática facturas | → [A-TEST-02](#a-test-02) `@egresos` |
+| A-TEST-03 | 🔴 | Módulo ARCA Mis Comprobantes | → [A-TEST-03](#a-test-03) `@egresos` |
+| A-TEST-04 | 🔴 | SICORE estado_quincena + anulación | → [A-TEST-04](#a-test-04) `@egresos` |
+| A-TEST-05 | 🔴 | Tarjetas — probar PDF real | → [A-TEST-05](#a-test-05) `@extracto` |
+| A-TEST-06 | 🟡 | Refactor fechas FASE TEMPLATES (`fecha_pago` separado de venc) — testear en preview ANTES de fase ARCA | → [A-TEST-06](#a-test-06) `@egresos @cashflow` |
 
 ### Seguridad
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) |
-| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) |
+| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
+| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. |
 
 ### Datos (los carga el usuario)
@@ -210,17 +210,17 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Estado | Tipo | Tema (nº del usuario) | Detalle |
 |----|--------|------|------------------------|---------|
-| A-BUG-04 | 🔍 | Bug | Motor no concilia casi ningún sueldo (#1) | → [A-BUG-04](#a-bug-04) |
-| A-BUG-05 | 🔍 | Bug | Conciliación manual (reasignar) borra/no copia datos: nro_cuenta, proveedor, detalle (#2) | → [A-BUG-05](#a-bug-05) |
-| A-FEAT-01 | 🔴 | Feat | Correr el motor acotado a lo filtrado/en pantalla (#3) — ✅ IMPLEMENTADO, falta testear | → [A-FEAT-01](#a-feat-01) |
-| A-BUG-06 | 🔍 | Bug | Reasignar muestra a veces pocas y a veces muchas FC — lógica poco clara (#4) | → [A-BUG-06](#a-bug-06) |
-| A-BUG-07 | 🔍 | Bug | Detalle no homogéneo entre las formas de conciliar; templates ¿llenan detalle+cuota? (#5) | → [A-BUG-07](#a-bug-07) |
-| A-BUG-08 | 🔍 | Bug | Conciliación de sueldos ¿llena detalle? — verificar con la última conciliación (#6) | → [A-BUG-08](#a-bug-08) |
-| A-FEAT-02 | 🔍 | Feat | Editar extracto: ofrece cuentas contables pero NO templates (#7) | → [A-FEAT-02](#a-feat-02) |
-| A-FEAT-03 | 🔍 | Feat | Contable/Interno: mostrar los existentes para no duplicar parecidos (#8) | → [A-FEAT-03](#a-feat-03) |
-| A-FEAT-04 | 🔍 | Feat | DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (arquitectura) (#9) | → [A-FEAT-04](#a-feat-04) |
-| A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) |
-| A-BUG-13 | ⏸️ | Bug | **Una regla uni-responsable no matchea un template multi-responsable** — `MSA/PAM` no encuentra la regla de `MSA` ni la de `PAM`. Postergado por el usuario **para los ajustes finales** | → [A-BUG-13](#a-bug-13) |
+| A-BUG-04 | 🔍 | Bug | Motor no concilia casi ningún sueldo (#1) | → [A-BUG-04](#a-bug-04) `@extracto` |
+| A-BUG-05 | 🔍 | Bug | Conciliación manual (reasignar) borra/no copia datos: nro_cuenta, proveedor, detalle (#2) | → [A-BUG-05](#a-bug-05) `@extracto` |
+| A-FEAT-01 | 🔴 | Feat | Correr el motor acotado a lo filtrado/en pantalla (#3) — ✅ IMPLEMENTADO, falta testear | → [A-FEAT-01](#a-feat-01) `@extracto` |
+| A-BUG-06 | 🔍 | Bug | Reasignar muestra a veces pocas y a veces muchas FC — lógica poco clara (#4) | → [A-BUG-06](#a-bug-06) `@extracto` |
+| A-BUG-07 | 🔍 | Bug | Detalle no homogéneo entre las formas de conciliar; templates ¿llenan detalle+cuota? (#5) | → [A-BUG-07](#a-bug-07) `@extracto` |
+| A-BUG-08 | 🔍 | Bug | Conciliación de sueldos ¿llena detalle? — verificar con la última conciliación (#6) | → [A-BUG-08](#a-bug-08) `@extracto @sueldos` |
+| A-FEAT-02 | 🔍 | Feat | Editar extracto: ofrece cuentas contables pero NO templates (#7) | → [A-FEAT-02](#a-feat-02) `@extracto` |
+| A-FEAT-03 | 🔍 | Feat | Contable/Interno: mostrar los existentes para no duplicar parecidos (#8) | → [A-FEAT-03](#a-feat-03) `@extracto` |
+| A-FEAT-04 | 🔍 | Feat | DIST MA + retención SICORE: la retención también es DIST MA pero SICORE agrupa (arquitectura) (#9) | → [A-FEAT-04](#a-feat-04) `@extracto @egresos` |
+| A-BUG-09 | 🔍 | Bug | Revisar no-conciliados que deberían haber conciliado (mismo monto) + reglas a agregar (#10) | → [A-BUG-09](#a-bug-09) `@extracto` |
+| A-BUG-13 | ⏸️ | Bug | **Una regla uni-responsable no matchea un template multi-responsable** — `MSA/PAM` no encuentra la regla de `MSA` ni la de `PAM`. Postergado por el usuario **para los ajustes finales** | → [A-BUG-13](#a-bug-13) `@extracto` |
 
 ### 🧩 Parseo de extractos (Caja de Ahorro) — huecos abiertos 2026-08-09
 > Salieron de revisar los datos reales con el usuario. **Decisión suya: no se arreglan de a uno
@@ -228,26 +228,26 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Estado | Tipo | Tema | Detalle |
 |----|--------|------|------|---------|
-| A-BUG-14 | 🔴 | Bug | **PAM perdió el CUIT en 2 de 25 movimientos** — la cuenta SÍ está parseada, así que acá el desglose falló de verdad | → [A-BUG-14](#a-bug-14) |
-| A-BUG-15 | 🔴 | Bug | `Nro Operacion: 200112733` **no lo agarra** el modo *Nº de operación* (busca `OP:` u `OPERACION␣`, y acá hay dos puntos) | → [A-BUG-15](#a-bug-15) |
-| A-BUG-16 | 🟡 | Riesgo | Una regla `línea N → leyendas_adicionales_2` puede meter **el CBU en la columna del CUIT** y la contraparte deja de matchear sin aviso. **Mitigado** en la UI, no cerrado | → [A-BUG-16](#a-bug-16) |
+| A-BUG-14 | 🔴 | Bug | **PAM perdió el CUIT en 2 de 25 movimientos** — la cuenta SÍ está parseada, así que acá el desglose falló de verdad | → [A-BUG-14](#a-bug-14) `@extracto` |
+| A-BUG-15 | 🔴 | Bug | `Nro Operacion: 200112733` **no lo agarra** el modo *Nº de operación* (busca `OP:` u `OPERACION␣`, y acá hay dos puntos) | → [A-BUG-15](#a-bug-15) `@extracto` |
+| A-BUG-16 | 🟡 | Riesgo | Una regla `línea N → leyendas_adicionales_2` puede meter **el CBU en la columna del CUIT** y la contraparte deja de matchear sin aviso. **Mitigado** en la UI, no cerrado | → [A-BUG-16](#a-bug-16) `@extracto` |
 | A-FEAT-14 | ✅ | Feat | Las reglas vigentes no mostraban ejemplo — **HECHO 2026-08-09** (`9cffeef`), falta testear | → [A-FEAT-14](#a-feat-14) |
-| **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) |
-| A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) |
-| A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) |
+| **A-BUG-17** | 🔴 | **Bug** | **Un mismo tipo llega con dos formatos distintos y las reglas por número de línea fallan en el 30 %** — `TRANSFERENCIA A TERCEROS` viene con 5 o con 6 líneas, y el CUIT cambia de lugar. Encontrado al revisar las reglas que cargó el usuario | → [A-BUG-17](#a-bug-17) `@extracto` |
+| A-FEAT-15 | 🔴 | Feat | La pantalla muestra **un** movimiento de ejemplo por tipo y no avisa si hay más de un formato. Es lo que dejó pasar A-BUG-17 | → [A-BUG-17](#a-bug-17) `@extracto` |
+| A-FEAT-16 | 🟡 | Feat | La tarjeta y el código de autorización van a **columnas invertidas** según el tipo. Decidir una convención y unificar | → [A-FEAT-16](#a-feat-16) `@extracto` |
 | **A-BUG-19** | ✅ | **Bug** | **ARREGLADO Y TESTEADO 2026-08-10.** Cash Flow: los sueldos vuelven a «pagar» solos — se marcan como pagados, y al salir y volver a Cash Flow están de nuevo pendientes. Reportado por el usuario 2026-08-10 | → [A-BUG-19](#a-bug-19) |
-| **A-BUG-20** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** 🔁 REGRESIÓN — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) |
+| **A-BUG-20** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** 🔁 REGRESIÓN — cancelar el cartel de SICORE **no aborta el proceso**: el lote queda a medias, todas en `pagar`. Ya se había arreglado antes y volvió | → [A-BUG-20](#a-bug-20) `@cashflow` |
 | A-FEAT-22 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Confirmar la fecha de pago ANTES de SICORE — hoy la fecha se asume y SICORE depende de ella. Proponer hoy, editable, con 3 salidas | → [A-FEAT-22](#a-feat-22) `@ingresos` |
 | A-FEAT-23 | 🟡 | Feat | **HECHO 2026-08-10, sin testear.** Al escribir una fecha con **día y mes pero sin año**, autocompletar con el año actual | → [A-FEAT-23](#a-feat-23) `@ingresos` |
-| **A-BUG-22** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** A las **Fac C** se les proponía SICORE. El guard existía pero era **código muerto**: `tipo_comprobante` nunca llegaba a la fila | → [A-BUG-22](#a-bug-22) |
-| **A-BUG-21** | 🔴 | **Bug** | **ARCA calcula la quincena de SICORE desde `fecha_vencimiento`**, no desde la fecha de pago — misma falla que se arregló en Cash Flow. Y tiene una **copia local** de `generarQuincenaSicore` | → [A-BUG-21](#a-bug-21) |
-| A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) |
-| A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) |
-| A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) |
+| **A-BUG-22** | 🟡 | **Bug** | **ARREGLADO 2026-08-10, sin testear.** A las **Fac C** se les proponía SICORE. El guard existía pero era **código muerto**: `tipo_comprobante` nunca llegaba a la fila | → [A-BUG-22](#a-bug-22) `@cashflow` |
+| **A-BUG-21** | 🔴 | **Bug** | **ARCA calcula la quincena de SICORE desde `fecha_vencimiento`**, no desde la fecha de pago — misma falla que se arregló en Cash Flow. Y tiene una **copia local** de `generarQuincenaSicore` | → [A-BUG-21](#a-bug-21) `@egresos` |
+| A-FEAT-20 | 🟡 | Feat | **HECHO 2026-08-10** — CBU → `tipo_de_movimiento` (decisión del usuario), banco → `leyendas_4`, modos `cbu` y `tarjeta`. Falta testear | → [A-FEAT-20](#a-feat-20) `@extracto` |
+| A-FEAT-21 | 🟡 | Feat | **HECHO 2026-08-10** — una tarjeta por forma; se fue el selector de alcance y el de formas. Falta testear | → [A-FEAT-21](#a-feat-21) `@extracto` |
+| A-TEST-26 | 🔴 | Test | **Reglas de parseo + Re-parsear + formas múltiples** (2026-08-09/10) — configurar un tipo, ver la vista previa **en todas las formas**, guardar, re-parsear en seco y aplicar. `MANUAL-USO.md` § Reglas de parseo | → [A-TEST-26](#a-test-26) `@extracto` |
 | **A-BUG-18** | 🔴 | **Bug** | **Una regla de conciliación por CUIT NO mira donde el parseo escribe el CUIT** — lee `numero_de_comprobante \|\| observaciones_cliente`, pero el parseo lo guarda en `leyendas_adicionales_2`. En Caja de Ahorro nunca puede matchear | → [A-BUG-18](#a-bug-18) |
-| A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) |
-| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10**, SQL corrido — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. Falta testear + ajustar las 3 reglas que fallan | → [A-FEAT-18](#a-feat-18) |
-| A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
+| A-FEAT-17 | 🔴 | Feat | **Reglas de conciliación a partir del parseo** — propuesta en 4 niveles, del que ya funciona solo al CUIT → proveedor → factura. Pedido del usuario 2026-08-09 | → [A-FEAT-17](#a-feat-17) `@extracto` |
+| A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10**, SQL corrido — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. Falta testear + ajustar las 3 reglas que fallan | → [A-FEAT-18](#a-feat-18) `@extracto` |
+| A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) `@extracto` |
 | **A-BUG-24** | 🟡 | **Bug** | **HECHO 2026-08-13** — el PDF "Detalle de Pago" no sumaba el descuento al Total Cancelado (decía $520.978,69 sobre una FC de $548.398,62 cancelada entera). Arreglado en los 3 cálculos **y borrada la copia inline** de Egresos: ahora hay una sola implementación. Falta testear | → [A-BUG-24](#a-bug-24) `@egresos @cashflow` |
 | A-FEAT-27 | 🟡 | Feat | **HECHO 2026-08-13** — subdiario de ventas para las 3 empresas: creada `pam.comprobantes_venta`, niveladas las 4 columnas que le faltaban a MA (sin ellas el importador fallaba) y agregado el tab **Subdiarios PAM**. Falta testear | → [A-FEAT-27](#a-feat-27) `@ingresos` |
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) `@ingresos` |
@@ -255,7 +255,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) `@principal` |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) `@presupuesto` |
 | **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) `@cashflow` |
-| **P-44** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-44](#p-44) |
+| **P-44** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-44](#p-44) `@general` |
 | P-45 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-44](#p-44) `@cashflow` |
 | A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) `@cashflow @principal` |
 | A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) `@cashflow` |
@@ -273,12 +273,12 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-30** | 🟡 | **Bug** | **HECHO 2026-08-19** — al conciliar un **sueldo**, el motor dejaba `comprobantes_pagados` en **null** y volcaba el texto decorativo del Cash Flow en `detalle` (*"Pago Saldo AMS - Pago Saldo Abr 2026"*, repetido). Causa única: las filas individuales de sueldo no definían `comprobante_display` ni `detalle_usuario`. Falta testear | → [A-BUG-30](#a-bug-30) `@extracto @cashflow` |
 | **A-BUG-31** | 🟡 | **Bug** | **HECHO 2026-08-19** — reasignar un movimiento **no limpiaba el vínculo anterior**: el débito del 01/06 pasó a `CAJA` y siguió apuntando al `sueldo_pago_id` del 29/05, con dos movimientos reclamando el mismo pago de $1,2 M. Ahora las 3 ramas de asignación limpian los vínculos ajenos + `motivo_revision`. **Fila corregida en BD con OK del usuario.** Falta testear | → [A-BUG-31](#a-bug-31) `@extracto` |
 | **A-BUG-32** | 🟡 | **Bug** | **HECHO 2026-08-19** — los 2 movimientos de AMS ya conciliados habían quedado con los campos viejos (el fix de [A-BUG-30](#a-bug-30) sólo actúa de ahí en adelante). **Filas corregidas en BD con OK del usuario**: `comprobantes_pagados` = `Pago Saldo Abr 2026` / `Anticipo May 2026` y su `detalle` derivado | → [A-BUG-30](#a-bug-30) `@extracto` |
-| **A-BUG-33** | 🔴 | **Bug** | **Dos pagos de sueldo están en `conciliado` sin que NINGÚN movimiento bancario los reclame** (AMS 05/06: $24.863 y $239.648). Verificado en las 4 tablas de extracto: cero referencias. Como el Cash Flow excluye lo conciliado, sus débitos **no tienen contra qué matchear nunca**. **Es dato: pendiente de acordar** | → [A-BUG-33](#a-bug-33) `@extracto @sueldos` |
+| **A-BUG-33** | 🔴 | **Bug** | **15 pagos de sueldo en `conciliado` sin que NINGÚN movimiento bancario los reclame — $16,9 M** (cruzado contra las 4 tablas de extracto). Como el Cash Flow excluye lo conciliado, sus débitos **no tienen contra qué matchear nunca**. Causa según el usuario: *"había un bug en sueldos que iban a conciliado directo"*, **sin saber si sigue vivo**. Dossier con la foto al 2026-08-19 y el control para repetirlo | → [A-BUG-33](#a-bug-33) `@extracto @sueldos` |
 | A-FEAT-31 | 🟡 | Feat | **Homogeneizar las columnas del extracto** — el criterio de qué va en `detalle` cambia según el origen (en facturas no se repite el proveedor porque ya tiene su columna; en otros sí). Observación del usuario 2026-08-19: *"eso será una homogeneización posterior"* | → [A-FEAT-31](#a-feat-31) `@extracto` |
 | **A-FEAT-29** | 🟡 | Feat | **HECHO 2026-08-19** — panel **"Resultado de la corrida"**: las filas que tocó el motor se quedan a la vista aunque el filtro ya no las alcance, con su **antes → después**, hasta apretar *Actualizar y soltar*. Antes se conciliaban y desaparecían de la grilla antes de poder revisarlas. Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
-| A-TEST-33 | 🔴 | Test | **Motor: CUIT normalizado + prioriza sin excluir** (2026-08-18) — correr la conciliación **acotada a los 4 movimientos de AMS** y verificar que 30/04 y 29/05 salen `conciliado`. `MANUAL-USO.md` § Conciliar sueldos que el motor no encuentra | → [A-BUG-28](#a-bug-28) `@extracto` |
+| A-TEST-33 | ✅ | Test | **TESTEADO OK 2026-08-19** — motor con CUIT normalizado + prioriza sin excluir. El usuario corrió la conciliación acotada sobre los 4 movimientos de AMS: **30/04 y 29/05 salieron `conciliado`** con su pago vinculado, y los 2 del 05/06 quedaron pendientes como estaba previsto | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -289,11 +289,11 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 ### 📎 GAS PDF — hallazgos 2026-06-21 (revisión del módulo)
 | ID | Estado | Tipo | Tema | Detalle |
 |----|--------|------|------|---------|
-| A-FEAT-06 | 🔴 | Feat | Modal Buscar PDFs con selección (individual/todo-nada/Solo Buscar) + rango fechas + cancelar — ✅ IMPLEMENTADO, falta testear | → [A-TEST-02](#a-test-02) |
-| A-BUG-10 | 🟡 | Bug | `fc='No'`/`NO Mail` ya NO se auto-buscan (modal pre-selecciona solo Buscar/null). Falta Parte B (import default) | → [A-TEST-02](#a-test-02) |
-| A-FEAT-05 | ⏸️ | Feat | Editor de `fc` solo ofrece Sí/No/Portal — no se puede marcar 'Buscar' (mitigado: el modal deja buscar cualquiera a mano) | → [A-TEST-02](#a-test-02) |
-| A-FEAT-07 | 🔴 | Feat | **Parte B** — import default `fc='Buscar'` — ✅ IMPLEMENTADO (nulls viejos NO se migran por decisión del usuario; Portal ya funcional vía imputación), falta testear | → [A-TEST-02](#a-test-02) |
-| A-FEAT-08 | 🔴 | Feat | **Parte C** — ✅ auto-crear proveedor al importar · ✅ backfill 32 proveedores creados (2026-06-21) · ✅ auto-disparo post-import gated APAGADO (`NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT`). Falta testear | → [A-TEST-02](#a-test-02) |
+| A-FEAT-06 | 🔴 | Feat | Modal Buscar PDFs con selección (individual/todo-nada/Solo Buscar) + rango fechas + cancelar — ✅ IMPLEMENTADO, falta testear | → [A-TEST-02](#a-test-02) `@egresos` |
+| A-BUG-10 | 🟡 | Bug | `fc='No'`/`NO Mail` ya NO se auto-buscan (modal pre-selecciona solo Buscar/null). Falta Parte B (import default) | → [A-TEST-02](#a-test-02) `@egresos` |
+| A-FEAT-05 | ⏸️ | Feat | Editor de `fc` solo ofrece Sí/No/Portal — no se puede marcar 'Buscar' (mitigado: el modal deja buscar cualquiera a mano) | → [A-TEST-02](#a-test-02) `@egresos` |
+| A-FEAT-07 | 🔴 | Feat | **Parte B** — import default `fc='Buscar'` — ✅ IMPLEMENTADO (nulls viejos NO se migran por decisión del usuario; Portal ya funcional vía imputación), falta testear | → [A-TEST-02](#a-test-02) `@egresos @importar` |
+| A-FEAT-08 | 🔴 | Feat | **Parte C** — ✅ auto-crear proveedor al importar · ✅ backfill 32 proveedores creados (2026-06-21) · ✅ auto-disparo post-import gated APAGADO (`NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT`). Falta testear | → [A-TEST-02](#a-test-02) `@egresos @importar` |
 
 ---
 
@@ -302,7 +302,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 ### Features a medio hacer
 | ID | Estado | Prio | Ítem |
 |----|--------|------|------|
-| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) |
+| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) `@presupuesto @ingresos` |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) |
 | B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar |
 | B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` |
@@ -310,7 +310,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 | B-FEAT-05 | 🔴 | Media | Plan reglas+templates bancarios PAM/MA — Paso 4 (CAJA / CRED P); pasos 1-3 hechos |
 | B-FEAT-06 | 🟡 | Media | Subdiario Ventas — igualar flujo a Compras. **EXPORT HECHO 2026-08-13** (un click PDF+Excel, carpeta, formato de PDF igualado) → falta testear `A-TEST-28`. Queda pendiente la otra mitad que el usuario había mencionado: **cuándo se ven los comprobantes y cómo se imputan** |
 | B-FEAT-07 | 🔴 | Media | Proveedores — carga orgánica (poblar desde facturas/extractos, no de a uno) |
-| B-BUG-CLIENTE-NO-SE-CREA | 🔴 | Alta | **Las VENTAS no dan de alta el cliente en `proveedores`** (compras sí) — rompe la regla consensuada "si hay factura, tiene que estar en proveedores/clientes". Causa raíz identificada, ver [dossier](#b-bug-cliente-no-se-crea). (2026-07-28) |
+| B-BUG-CLIENTE-NO-SE-CREA | 🔴 | Alta | **Las VENTAS no dan de alta el cliente en `proveedores`** (compras sí) — rompe la regla consensuada "si hay factura, tiene que estar en proveedores/clientes". Causa raíz identificada, ver [dossier](#b-bug-cliente-no-se-crea). (2026-07-28) `@ingresos` |
 | B-FEAT-08 | 🔴 | Baja | Margen por superposición — órdenes agrícolas (diseño aprobado, ~25-30 líneas) |
 | B-FEAT-09 | 🔴 | Baja | Editar empleado existente (hoy sólo SQL) |
 | B-FEAT-10 | 🔴 | Baja | `formatoCantidad('L')` — muestra ml como L ("1122 L" vs "1,122 L") |
@@ -348,7 +348,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 | A-TEST-23 | 🔴 | **Ingresos → Ganadería: cría y recría separadas** (2026-08-05) — por actividad y por campaña, con el desglose *destetados − se guardan = a vender*, las confirmadas y el disponible. Usa la **misma valuación que el Presupuesto**: si los números difieren entre las dos pantallas, hay un bug |
 | A-TEST-20 | 🔴 | **Aviso: marca de reposición ≠ categoría Torito** (2026-08-05) — sólo en machos, porque *un torito no está capado: es un hecho, no un plan*. Dice las dos salidas (sacar marcas / recategorizar). 3 pasos en `MANUAL-USO.md` § La marca de reposición. ⚠️ El paso 2 es el que valida el criterio: marcar una **hembra** NO debe avisar |
 | A-TEST-25 | 🔴 | **Cash Flow multiempresa** (2026-08-08) — las FC de PAM y MA aparecen y se pueden pagar; columna Empresa; dos filtros con defaults distintos; SICORE/echeq/agrupar sólo MSA. `MANUAL-USO.md` § Cash Flow multiempresa, 7 pasos. ⚠️ **El paso 4 es el que caza el error caro**: pagar una FC de PAM y verificar que el cambio quedó **en PAM**; si el guardado dice OK pero al recargar volvió atrás, la escritura fue al schema equivocado. Hay 4 FC de PAM y 92 de MA para probar |
-| A-TEST-24 | 🔴 | **Ficha de proveedor** (2026-08-07) — modal de consulta desde *Principal → Proveedores* y desde el ícono 🏢 del control de subas. Datos del maestro + últimas facturas + últimos pagos + anticipos. `MANUAL-USO.md` § Ficha de proveedor, 6 pasos. ⚠️ **Lo no testeado de verdad es el botón Editar**: la lectura se verificó contra la BD, pero **el guardado no se probó** (no se tocan datos reales sin permiso) y el PATCH ahora acepta 14 campos que antes no eran editables por ninguna pantalla. Probar primero con un campo inocuo (`notas`). Dossier → [A-TEST-24](#a-test-24) |
+| A-TEST-24 | 🔴 | **Ficha de proveedor** (2026-08-07) — modal de consulta desde *Principal → Proveedores* y desde el ícono 🏢 del control de subas. Datos del maestro + últimas facturas + últimos pagos + anticipos. `MANUAL-USO.md` § Ficha de proveedor, 6 pasos. ⚠️ **Lo no testeado de verdad es el botón Editar**: la lectura se verificó contra la BD, pero **el guardado no se probó** (no se tocan datos reales sin permiso) y el PATCH ahora acepta 14 campos que antes no eran editables por ninguna pantalla. Probar primero con un campo inocuo (`notas`). Dossier → [A-TEST-24](#a-test-24) `@principal` |
 | G-03 | ✅ | **~~Un lote 100 % vendido se marca como «desactualizado»~~** — RESUELTO 2026-08-05: `desactualizado()` no compara cuando el saldo es 0. Con saldo 0 los animales que quedan en la pesada son **los que NO se vendieron**, así que el lote siempre iba a diferir, y el aviso invitaba a correr «Desde pesada» — que **reescribiría una venta ya hecha**. Ver abajo el detalle original |
 | ~~G-03~~ | 📎 | *(detalle)* **Un lote 100 % vendido se marcaba como «desactualizado»** — *Productivo → Evolución Rodeo → Cabezas disponibles*. El lote de 55 terneros tiene `vendidas 55 · quedan 0` y el panel igual avisa *"corré «Desde pesada» para traer los números nuevos"*. ⚠️ **Es una invitación a reescribir una venta ya hecha**: los 40 que quedan NO son de ese lote, son los que *no* se vendieron. La comparación lote↔pesada sólo tiene sentido mientras el lote tenga saldo. Los números en sí están bien (55→40 y 275→227,7 kg son correctos: los vendidos eran los más pesados) |
 | G-04 | 🟡 | **El título «Cabezas disponibles para vender» miente: muestra LOTES** — lo que no tiene lote no aparece. Hoy quedan **40 terneros** y **21 terneras** de recría sin lote y son invisibles ahí; el badge dice **309**, que son sólo los 4 lotes de destete. El disponible-por-diferencia sí existe pero vive en *Presupuesto* y en *Ingresos → Ganadería*. O el panel muestra también el disponible, o el título dice «Lotes de venta» |
@@ -3298,13 +3298,13 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 #### ✅ Mejorado
 | # | Qué | Detalle |
 |---|---|---|
-| **A-BUG-06** | Los candidatos al reasignar eran erráticos | Comparaba la descripción del banco contra **la primera palabra** del proveedor: `LA MERCURE S.R.L.` buscaba `la` y matcheaba casi todo; `DE NEVARES…` buscaba `de`. Ahora parte el nombre en palabras con contenido (≥4 letras, sin `srl`/`sociedad`/etc.) y alcanza con que la descripción nombre alguna. Verificado con 8 casos reales |
+| **A-BUG-06** | Los candidatos al reasignar eran erráticos | Comparaba la descripción del banco contra **la primera palabra** del proveedor: `LA MERCURE S.R.L.` buscaba `la` y matcheaba casi todo; `DE NEVARES…` buscaba `de`. Ahora parte el nombre en palabras con contenido (≥4 letras, sin `srl`/`sociedad`/etc.) y alcanza con que la descripción nombre alguna. Verificado con 8 casos reales `@extracto` |
 | **A-BUG-06b** | **Los ingresos no recibían ninguna propuesta** | El monto se comparaba sólo contra `debitos`, que en un crédito es 0 → división por cero. Ahora usa débito **o** crédito. Eran **6 de los 39** pendientes de MSA |
 | **A-BUG-06c** | Sin tilde no matcheaba | Usaba `toLowerCase()` en vez del `normalizarBusqueda` que el proyecto ya tenía |
-| **A-BUG-07** | El motor dejaba el movimiento ilegible | Escribía `detalle_usuario \|\| null`: un template conciliado quedaba trazado por ID pero sin decir qué era. Ahora aplica **la misma convención que el manual**: lo que el usuario escribió → si no, `<comprobante> — <proveedor>` |
-| **A-FEAT-03** | Códigos contable/interno de texto libre | `<datalist>` con los códigos **ya usados en esa cuenta**, en el modal de asignación **y en el panel de edición masiva** — que es donde más fácil se cuelan variantes, porque el valor se aplica a muchos movimientos de una. Se recargan al cambiar de cuenta. Motivo: conviven `RET 3 PAM`, `RET PAM`, `RET 1 PAM`, y `Ver` con `VER` |
+| **A-BUG-07** | El motor dejaba el movimiento ilegible | Escribía `detalle_usuario \|\| null`: un template conciliado quedaba trazado por ID pero sin decir qué era. Ahora aplica **la misma convención que el manual**: lo que el usuario escribió → si no, `<comprobante> — <proveedor>` `@extracto` |
+| **A-FEAT-03** | Códigos contable/interno de texto libre | `<datalist>` con los códigos **ya usados en esa cuenta**, en el modal de asignación **y en el panel de edición masiva** — que es donde más fácil se cuelan variantes, porque el valor se aplica a muchos movimientos de una. Se recargan al cambiar de cuenta. Motivo: conviven `RET 3 PAM`, `RET PAM`, `RET 1 PAM`, y `Ver` con `VER` `@extracto` |
 | **Chip de empresa** | En **facturas, templates, sueldos y grupos** | Entiende la lista (`MSA/PAM`) y no marca retiro si **alguna** de sus empresas es la de la cuenta. En grupos, la empresa es la **unión** de la de sus miembros |
-| **A-FEAT-02** | ⚠️ **Ya estaba resuelto** | El dossier decía que Editar no ofrecía templates. **Está desactualizado**: el combobox "Vincular a" del panel masivo se alimenta de `[...facturasFormateadas, ...templatesFormateados]`, o sea que ofrece las dos cosas desde antes. Sólo falta verificarlo en pantalla |
+| **A-FEAT-02** | ⚠️ **Ya estaba resuelto** | El dossier decía que Editar no ofrecía templates. **Está desactualizado**: el combobox "Vincular a" del panel masivo se alimenta de `[...facturasFormateadas, ...templatesFormateados]`, o sea que ofrece las dos cosas desde antes. Sólo falta verificarlo en pantalla `@extracto` |
 | **Dato** | `Aportes Domesticas (MA)` | `RET MA` → **`RET 3 MA`** (corregido a pedido del usuario) |
 
 #### ⏳ Pendientes de DEFINICIÓN del usuario
@@ -3318,8 +3318,8 @@ Informe completo con los datos de la BD, ejemplos y propuestas:
 #### 🔴 Pendientes de TRABAJO (acordados, sin hacer)
 | # | Qué |
 |---|---|
-| **A-BUG-09** | Auditar los movimientos que quedaron sin conciliar existiendo una fila del Cash Flow por el mismo monto, y convertir cada caso en regla. **Acordado hacerlo ANTES de conciliar en masa** |
-| **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro |
+| **A-BUG-09** | Auditar los movimientos que quedaron sin conciliar existiendo una fila del Cash Flow por el mismo monto, y convertir cada caso en regla. **Acordado hacerlo ANTES de conciliar en masa** `@extracto` |
+| **A-FEAT-01** | Está implementado (corre sólo sobre lo filtrado, con aviso). **Falta testear.** ⚠️ El límite de 100 registros **no** cuenta como filtro `@extracto` |
 | **Regla específica por proveedor** | La capa 1 exige `template_id`, así que una **factura** recurrente no puede tener tratamiento propio |
 
 ### ✅ Re-parseo de extractos + aviso de movimientos sin desglosar (2026-08-09)
@@ -4007,12 +4007,75 @@ O sea que llegaron a `conciliado` **sin contrapartida bancaria**. Y como el Cash
 conciliado (`useMultiCashFlowData.ts`, `.neq('estado','conciliado')`), esos 2 pagos **ya no son
 candidatos de nada**: sus débitos no tienen contra qué matchear, ni ahora ni nunca.
 
-**Lo acordado con el usuario**: volverlos a `pagado` en Sueldos y correr el motor sobre esos 2
-movimientos. Es un `UPDATE` de datos reales → **no se ejecuta sin su OK explícito**.
+✅ **Los 2 de AMS volvieron a `pagado` el 2026-08-19, con OK del usuario.** Quedan listos para que
+el motor corra sobre sus 2 movimientos del 05/06.
 
-**Lo que falta entender** (y es lo que evita que vuelva a pasar): *cómo* llegaron a `conciliado`.
-Un pago que se concilia sin movimiento bancario es una conciliación que no ocurrió. Mientras no se
-sepa, el arreglo es sobre el síntoma.
+### 🔴 No eran 2: son **15 pagos, $16.912.451,70**
+
+Al medirlo bien —el control es *"todo pago `conciliado` tiene un movimiento bancario que lo
+reclama"*, cruzando las 4 tablas de extracto— aparecieron **15**, no 2:
+
+| | Pagos | Con movimiento | **Sin movimiento** | Monto sin movimiento |
+|---|---:|---:|---:|---:|
+| `conciliado` | 48 | 33 | **15** | **$16.912.451,70** |
+| `pagado` | 28 | 2 | 26 | $16.129.905,30 |
+| `programado` | 18 | 1 | 17 | $5.825.290,00 |
+| `anterior` | 8 | 0 | 8 | $7.231.827,46 |
+
+*(Sólo la fila `conciliado` es anomalía. En `pagado`/`programado` es normal no tener movimiento
+todavía; `anterior` es histórico fuera del circuito.)*
+
+**Foto al 2026-08-19 — los 15:**
+
+| Fecha | Empleado | Tipo | Monto | Descripción |
+|---|---|---|---:|---|
+| 18/02 | Wilson Barreto | anticipo | 257.240,00 | Compras en Supermercado |
+| 22/05 | Alondra Olivo | anticipo | 105.000,00 | Anticipo May 2026 |
+| 29/05 | Alondra Olivo | anticipo | 110.000,00 | Anticipo May 2026 |
+| 01/06 | Wilson Barreto | anticipo | 870.581,00 | Anticipo May 2026 |
+| 01/06 | Alondra Olivo | anticipo | 285.000,00 | Anticipo May 2026 |
+| 01/06 | JMS | anticipo | 3.550.887,00 | Anticipo May 2026 |
+| 01/06 | Ruben Sigot | anticipo | 150.000,00 | Anticipo May 2026 - Santander |
+| 01/06 | Ruben Sigot | anticipo | 878.648,00 | Anticipo May 2026 - Galicia |
+| 30/06 | JMS | sueldo | 5.326.331,00 | Pago Saldo Jun 2026 |
+| 30/06 | Ruben Sigot | anticipo | 691.061,70 | Anticipo Jun 2026 |
+| 30/06 | Ruben Sigot | anticipo | 125.000,00 | Anticipo Jun 2026 |
+| 30/06 | Ruben Sigot | anticipo | 1.487.477,00 | Anticipo Jun 2026 |
+| 30/06 | Wilson Barreto | anticipo | 1.086.893,00 | Anticipo Jun 2026 |
+| 30/06 | AMS | anticipo | 1.400.000,00 | Anticipo Jun 2026 |
+| 30/06 | Alondra Olivo | anticipo | 588.333,00 | Anticipo Jun 2026 |
+
+Todos `medio_pago = 'banco'`, o sea que **todos deberían tener su débito en el extracto**. Se
+concentran en dos fechas (**01/06** y **30/06**), lo que apunta a un evento puntual y no a un goteo.
+
+### La causa, según el usuario
+> *"Había un bug en sueldos que iban a conciliado directo. No sabemos si ya se resolvió."*
+
+Por eso **no alcanza con arreglar los 15**: mientras no se sepa si el bug sigue vivo, cada tanda de
+sueldos nueva puede volver a generarlos. Un pago conciliado sin movimiento bancario es una
+conciliación que no ocurrió — y del lado del extracto se ve como *"el motor no encuentra nada"*,
+que fue exactamente el síntoma con el que empezó todo esto.
+
+### ▶️ Cómo proceder cuando el usuario pague sueldos nuevos
+Volver a correr el control de arriba y comparar contra esta foto:
+- **Si aparecen nuevos en `conciliado` sin movimiento** → el bug sigue vivo, hay que buscarlo en el
+  alta de pagos de Sueldos (no en el motor).
+- **Si no aparecen** → el bug está resuelto y quedan sólo estos 15 para limpiar.
+
+```sql
+with reclamados as (
+  select sueldo_pago_id::text as id from msa_galicia where sueldo_pago_id is not null
+  union select sueldo_pago_id::text from pam_galicia where sueldo_pago_id is not null
+  union select sueldo_pago_id::text from pam_galicia_cc where sueldo_pago_id is not null
+  union select sueldo_pago_id::text from ma.ma_galicia where sueldo_pago_id is not null
+)
+select p.fecha, e.nombre, p.tipo, p.monto, p.descripcion
+from sueldos.pagos p
+join sueldos.empleados e on e.id = p.empleado_id
+left join reclamados r on r.id = p.id::text
+where p.estado = 'conciliado' and r.id is null and p.fecha >= '2026-01-01'
+order by p.fecha;
+```
 
 ---
 
@@ -4026,8 +4089,9 @@ conciliadas (30/04 y 29/05) quedaron con los campos viejos: `comprobantes_pagado
 derivación que usa el resto del sistema.
 
 📌 **Convención confirmada por el usuario**: en `proveedor_nombre` va el **nombre completo**
-(`Andres Martinez`, el del maestro de proveedores), no la sigla. Quedan 4 filas viejas de feb/mar
-que dicen `AMS` — normalizarlas es dato y está sin decidir.
+(`Andres Martinez`, el del maestro de proveedores), no la sigla. Las 4 filas viejas de feb/mar que
+dicen `AMS` **no se tocan por ahora**: el usuario las mandó al lote de
+[A-FEAT-31](#a-feat-31) — *"luego homogeneizaremos casos sueltos"*.
 
 ---
 
@@ -4697,7 +4761,7 @@ No es un bug: necesitan **regla de texto**, no match por monto.
 | 9 | Template `MSA/PAM` con filtros | ✅ OK |
 | 10 | Sueldo de Alondra con chip MA | ⏳ pendiente |
 | 11 | Anticipo sin empresa | ✅ OK |
-| A-TEST-24 | Ficha de proveedor — **botón Editar** | ✅ OK (era lo único nunca ejecutado) |
+| A-TEST-24 | Ficha de proveedor — **botón Editar** | ✅ OK (era lo único nunca ejecutado) `@principal` |
 
 ### 🔍 Auditoría del "Cancelar" de SICORE (2026-08-08) — no movió nada
 El usuario pasó una FC de Alcorta a *pagar*, apareció SICORE, apretó **Cancelar** y quedó la duda

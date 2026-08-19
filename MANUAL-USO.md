@@ -1287,7 +1287,7 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 
 ---
 
-## 🏦 Conciliar sueldos que el motor no encuentra 🟡 *(nuevo 2026-08-18, sin testear)*
+## 🏦 Conciliar sueldos que el motor no encuentra ✅ *(testeado OK 2026-08-19)*
 
 > Diagnóstico completo → `PENDIENTES.md` § A-BUG-28 / A-BUG-29. Test → § A-TEST-33.
 
