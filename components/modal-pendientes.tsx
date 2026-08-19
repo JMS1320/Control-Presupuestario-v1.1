@@ -93,6 +93,17 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
     && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto'
 
   /**
+   * ¿Este pendiente se muestra al filtrar por esta pantalla?
+   *
+   * **Una sola definición para el contador del chip y para la lista.** Estaban separadas y decían
+   * cosas distintas: el chip contaba sólo `pantallas.includes(s)` y la lista mostraba eso **+ los
+   * `@general`**. Resultado: el chip decía 37 y abajo aparecían 48. Un contador que no coincide con
+   * lo que hay debajo destruye la confianza en toda la pantalla — y lo detectó el usuario, no el
+   * control (ver `CLAUDE.md` § Todo desarrollo termina con su control).
+   */
+  const enPantalla = (p: Pendiente, s: Pantalla) => p.pantallas.includes(s) || p.esGeneral
+
+  /**
    * Filtra por pantalla y por texto.
    *
    * ⚠️ Al elegir una pantalla se muestran **sólo los que la tienen marcada**, no los sin revisar.
@@ -113,7 +124,7 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
 
   const filtrar = (lista: Pendiente[]) => {
     if (pantalla === '__sin__') lista = lista.filter(sinRevisar)
-    else if (pantalla) lista = lista.filter(p => p.pantallas.includes(pantalla) || p.esGeneral)
+    else if (pantalla) lista = lista.filter(p => enPantalla(p, pantalla))
     return filtrarTexto(lista)
   }
 
@@ -191,7 +202,8 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
 
         {/* Filtro por pantalla. Sólo se ofrecen las que tienen algo marcado, más "sin ubicar". */}
         {data && (() => {
-          const cuenta = (s: Pantalla) => data.pendientes.filter(p => p.pantallas.includes(s)).length
+          // MISMA función que usa la lista: el número del chip es lo que vas a ver al hacer clic.
+          const cuenta = (s: Pantalla) => data.pendientes.filter(p => enPantalla(p, s)).length
           // "Sin ubicar" = sin revisar. `@general` y las secciones C/D ya tienen su lugar.
           const sinUbicar = data.pendientes.filter(p =>
             p.pantallas.length === 0 && !p.esGeneral
@@ -278,6 +290,25 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
                 </div>
               )
             })}
+
+            {/* 🧮 CONTROL A LA VISTA (CLAUDE.md § Todo desarrollo termina con su control).
+                El chip dice un número y abajo hay una lista: si no coinciden, el panel miente.
+                Pasó — el chip decía 37 y la lista mostraba 48 — y lo detectó el usuario, no el
+                sistema. Ahora se recuentan las dos cosas y se avisa si difieren. */}
+            {pantalla && pantalla !== '__sin__' && (() => {
+              const enChip = data.pendientes.filter(p => enPantalla(p, pantalla)).length
+              const enLista = ORDEN.reduce((n, { grupo }) =>
+                n + data.pendientes.filter(p => p.grupo === grupo && enPantalla(p, pantalla)).length, 0)
+              const hechos = data.pendientes.filter(p => p.grupo === 'hecho' && enPantalla(p, pantalla)).length
+              if (enChip === enLista + hechos) return null
+              return (
+                <div className="rounded border border-red-400 bg-red-50 p-2 text-xs text-red-800">
+                  🚨 <strong>El contador no cuadra con la lista.</strong> El chip dice {enChip} y
+                  abajo hay {enLista} + {hechos} hechos = {enLista + hechos}. Faltan{' '}
+                  {Math.abs(enChip - enLista - hechos)}: hay un grupo que no se está mostrando.
+                </div>
+              )
+            })()}
 
             {/* Con una pantalla elegida: los SIN REVISAR van acá, aparte y plegados.
                 Siguen apareciendo en todas las solapas (pedido del usuario) pero no se mezclan
