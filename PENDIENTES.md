@@ -149,10 +149,10 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-FEAT-09 | 🔴 | **Alta (fecha)** | **Papeles de trabajo del balance = export del sistema** — balance 25/26, corte 30/06/26, al contador **01/10/2026**. Puede no llegarse: decidir con tiempo | → [A-FEAT-09](#a-feat-09) |
-| A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) |
+| A-FEAT-09 | 🔴 | **Alta (fecha)** | **Papeles de trabajo del balance = export del sistema** — balance 25/26, corte 30/06/26, al contador **01/10/2026**. Puede no llegarse: decidir con tiempo | → [A-FEAT-09](#a-feat-09) `@reporte` |
+| A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) `@reporte` |
 | A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) `@presupuesto` |
-| A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) |
+| A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) `@reporte` |
 | A-FEAT-13 | 🔴 | **Alta** | **Cash Flow multi-empresa: las facturas de PAM y MA no se pueden pagar** — hoy el Cash Flow lee sólo `msa`, así que las 4 FC de PAM y las 92 de MA no tienen dónde registrarse. Plan acordado con el usuario 2026-08-07, 7 pasos | → [A-FEAT-13](#a-feat-13) `@cashflow` |
 
 ### 📚 Documentación (auditoría de dimensiones, 2026-08-02)
@@ -280,7 +280,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-36** | 🔴 | **Bug** | **El motor concilia un movimiento BANCARIO contra un pago de CAJA** — el débito del 29/05 de $110.000 quedó vinculado a un pago de Ruben Sigot con `medio_pago = 'caja_sigot'` (y en `programado`), cuando el que correspondía era el de Alondra Olivo por el mismo monto y la misma fecha, en banco. El motor **no mira `medio_pago`** | → [A-BUG-36](#a-bug-36) `@extracto @sueldos` |
-| A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
+| A-TEST-34 | ✅ | Test | **TESTEADO OK 2026-08-19** — el usuario corrió el motor sobre 2 movimientos de JMS con el filtro de contraparte puesto: el del 14/05 concilió, **el conciliado no desapareció de la grilla**, el orden se mantuvo y **el tilde de revisado respondió**. Cubre A-FEAT-29, A-FEAT-30, A-BUG-34 y A-BUG-35 | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-33 | ✅ | Test | **TESTEADO OK 2026-08-19** — motor con CUIT normalizado + prioriza sin excluir. El usuario corrió la conciliación acotada sobre los 4 movimientos de AMS: **30/04 y 29/05 salieron `conciliado`** con su pago vinculado, y los 2 del 05/06 quedaron pendientes como estaba previsto | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 

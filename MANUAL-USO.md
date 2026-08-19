@@ -1259,7 +1259,7 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 
 ---
 
-## 🏦 Resultado de la corrida + filtro de contraparte 🟡 *(nuevo 2026-08-19, sin testear)*
+## 🏦 Resultado de la corrida + filtro de contraparte ✅ *(testeado OK 2026-08-19)*
 
 > Detalle → `PENDIENTES.md` § A-FEAT-29 / A-FEAT-30. Test → § A-TEST-34.
 
