@@ -251,7 +251,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-24** | 🟡 | **Bug** | **HECHO 2026-08-13** — el PDF "Detalle de Pago" no sumaba el descuento al Total Cancelado (decía $520.978,69 sobre una FC de $548.398,62 cancelada entera). Arreglado en los 3 cálculos **y borrada la copia inline** de Egresos: ahora hay una sola implementación. Falta testear | → [A-BUG-24](#a-bug-24) `@egresos @cashflow` |
 | A-FEAT-27 | 🟡 | Feat | **HECHO 2026-08-13** — subdiario de ventas para las 3 empresas: creada `pam.comprobantes_venta`, niveladas las 4 columnas que le faltaban a MA (sin ellas el importador fallaba) y agregado el tab **Subdiarios PAM**. Falta testear | → [A-FEAT-27](#a-feat-27) `@ingresos` |
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) `@ingresos` |
-| **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) `@principal @ingresos` |
+| **A-BUG-25** | ✅ | **Bug** | **RESUELTO 2026-08-18** — el CUIT de Sanpa estaba mal tipeado (`30712200662`, dígito verificador inválido) en **4 lugares**: los 2 contratos de Rojas, la FC del 11/05 y el maestro `proveedores`. Los 4 corregidos a `30712200622` con autorización del usuario. Por eso la alerta ofrecía la factura equivocada | → [A-BUG-25](#a-bug-25) `@principal @ingresos` |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) `@principal` |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) `@presupuesto` |
 | **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) `@cashflow` |
@@ -7946,18 +7946,29 @@ carga manual, ninguno viene de ARCA.
      [A-BUG-23](#a-bug-23) otra vez. **Segunda fila afectada por el default de 21** → confirma que
      el modal era la causa. El código ya está arreglado; el dato viejo no se arreglaba solo.
 
-### 🔴 Falta 1 fila: el CUIT malo también está en el maestro `proveedores`
-`public.proveedores` tiene a *Sanpa Semillas SA* con **`30712200662`**, y **no existe** ninguna fila
-con el CUIT correcto. Es el peor lugar donde puede estar: de ahí salen CBU, mails, mensajes de
-transferencia y el **pre-filtro por CUIT del motor de conciliación** (CLAUDE.md § Contrapartes).
+### ✅ La 4ª fila: el CUIT malo también estaba en el maestro `proveedores` — corregido
+`public.proveedores` tenía a *Sanpa Semillas SA* con `30712200662`. **Es el peor lugar donde podía
+estar**: de ahí salen CBU, mails, mensajes de transferencia y el **pre-filtro por CUIT del motor de
+conciliación** (CLAUDE.md § Contrapartes). Apareció recién al verificar los otros tres.
 
-Chequeado antes de proponerlo: la PK es `id` (uuid) y `cuit` sólo tiene **UNIQUE**; **ninguna tabla
-referencia `proveedores` por FK**, así que el UPDATE es seguro y no hay conflicto de unicidad.
+Chequeado antes de tocarlo: la PK es `id` (uuid), `cuit` sólo tiene UNIQUE, y **ninguna tabla
+referencia `proveedores` por FK** → sin conflicto de unicidad ni cascada.
 
 ```sql
 UPDATE public.proveedores SET cuit = '30712200622' WHERE cuit = '30712200662';
 ```
-**Esperando OK del usuario** (autorizó 3 filas; ésta es una cuarta que apareció al verificar).
+**✅ Corrido el 2026-08-18** con autorización del usuario. **Los 4 lugares quedaron en
+`30712200622`**, verificado por consulta.
+
+### 📌 Lo que este bug deja como aprendizaje
+
+**Un CUIT mal tipeado no se nota.** Parece un número correcto, entra en la BD, y después rompe los
+matches **en silencio** — la alerta ofrecía la factura equivocada y la correcta no aparecía nunca,
+sin ninguna explicación.
+
+Por eso salió `lib/cuit.ts`: **validación por dígito verificador (módulo 11)**. Un CUIT inválido es
+**siempre** un error de carga, así que detectarlo es barato y certero. `...662` da 5 y termina en 2
+→ inválido; `...622` da 2 → válido. Conviene usarlo en toda alta que reciba un CUIT a mano.
 
 ### ✅ Hecho: que no vuelva a pasar en silencio (A-TEST-30)
 - **`lib/cuit.ts`** (nuevo): validación por dígito verificador módulo 11, formateo y comparación.

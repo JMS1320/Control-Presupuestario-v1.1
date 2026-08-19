@@ -359,6 +359,29 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 
 ### 6.2 Links lógicos (SIN FK — los llena el motor/UI)
 - Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`. No hay constraint porque cruzan schemas.
+- **`pendientes_comentarios.pendiente_id` → un ID de `PENDIENTES.md`** (`'A-BUG-27'`). Es el único link que **no apunta a la BD sino a un archivo**: los pendientes viven en un `.md` versionado, no en una tabla. Ver § 6c.
+
+### 6c. Las 3 bandejas de entrada del usuario (2026-08-19)
+
+Tres tablas donde el usuario le escribe a Claude desde la app. **Ninguna es fuente de verdad**: son
+bandeja de entrada, y lo que entra termina como ítem con ID en `PENDIENTES.md` o descartado con
+motivo.
+
+| Tabla | Qué recibe | Se cierra con |
+|---|---|---|
+| `notas_para_claude` + `notas_capturas` | *"esto no anda"*, con captura y contexto (P-34) | `estado='leida'` + `resultado` |
+| `pendientes_comentarios` | comentario sobre un pendiente **que ya existe** | `leido_at` |
+| `pendientes_propuestos` | un pendiente **nuevo** que propone el usuario | `estado='incorporado'` + `pendiente_id_asignado` |
+
+**Por qué en BD y no en el `.md`:** la app corre en Vercel, con **filesystem de sólo lectura** — no
+puede escribir `PENDIENTES.md`. Nunca. Y es el diseño correcto, no un rodeo: **el `.md` es de Claude
+(va a git, se versiona), la BD es del usuario** (escribe en el momento, desde la pantalla). El ID los
+une y ninguno pisa al otro. El usuario puede además poner **su propio estado** —`terminado`,
+`chequeado`, `revisar`, `descartar`— **al lado** del de Claude, sin reemplazarlo.
+
+⚠️ **Sin FK, la integridad la chequea la pantalla.** Si un pendiente se borra del `.md`, sus
+comentarios quedan huérfanos: el panel los muestra en un bloque rojo para que no se pierdan en
+silencio. Ver `PENDIENTES.md` § P-46.
 
 ### 6.3 Jerarquías por módulo
 - **Templates**: `templates_master` → `egresos_sin_factura` (template) → `cuotas_egresos_sin_factura` (cuotas). Cada cuota se concilia contra un movimiento.

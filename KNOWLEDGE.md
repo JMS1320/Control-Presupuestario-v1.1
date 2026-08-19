@@ -52,6 +52,22 @@
 - **Templates funcionalidades avanzadas** - Replicación anual, ajuste inflación `#templates #avanzado #pendiente`
 - **Expansión PAM** - Replicar infraestructura MSA `#pam #expansion #pendiente`
 
+## 🗺️ Dónde vive cada cosa en la app — lo que el nombre no dice `#navegacion #2026-08-19`
+
+Salió al ubicar los 260 pendientes por pantalla. Tres cosas que **no se deducen del nombre de la
+solapa** y que hacen perder tiempo cada vez:
+
+**PRESUPUESTO no es sólo proyección: es donde se administran los maestros.** Concentra 10 botones:
+proveedores · cuentas contables · actividades · campos · variables · inversiones · sueldos ·
+ingresos por actividad · margen · precios y TC. Por eso acumula el doble de pendientes que cualquier
+otra pantalla — no está más atrasada, **abarca más**.
+
+**El plan de cuentas NO tiene pantalla propia.** Se toca desde dos lugares:
+- **Dashboard** → categorías, interno
+- **Presupuesto** → cuentas contables
+
+**TARJETAS no tiene vista propia**: vive dentro de `components/vista-extracto-bancario.tsx`.
+
 ## ⚠️ `npm run build` NO valida tipos — usar `type-check:diff` `#build #tipos #2026-08-18`
 
 **Verificado el 2026-08-18**: el build imprimió `✓ Compiled successfully` con **2 errores de tipos
