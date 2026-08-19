@@ -272,7 +272,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-29** | 🔴 | **Bug** | **HECHO 2026-08-18** — el pre-filtro por CUIT **excluía en vez de priorizar**: el fallback sólo se disparaba si el CUIT no tenía **ningún** candidato. Bastaba **una** factura del mismo CUIT para reducir el pool y no recuperarse nunca. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
 | **A-BUG-30** | 🟡 | **Bug** | **HECHO 2026-08-19** — al conciliar un **sueldo**, el motor dejaba `comprobantes_pagados` en **null** y volcaba el texto decorativo del Cash Flow en `detalle` (*"Pago Saldo AMS - Pago Saldo Abr 2026"*, repetido). Causa única: las filas individuales de sueldo no definían `comprobante_display` ni `detalle_usuario`. Falta testear | → [A-BUG-30](#a-bug-30) `@extracto @cashflow` |
 | **A-BUG-31** | 🟡 | **Bug** | **HECHO 2026-08-19** — reasignar un movimiento **no limpiaba el vínculo anterior**: el débito del 01/06 pasó a `CAJA` y siguió apuntando al `sueldo_pago_id` del 29/05, con dos movimientos reclamando el mismo pago de $1,2 M. Ahora las 3 ramas de asignación limpian los vínculos ajenos + `motivo_revision`. **Fila corregida en BD con OK del usuario.** Falta testear | → [A-BUG-31](#a-bug-31) `@extracto` |
-| **A-BUG-32** | 🟡 | **Bug** | **Los 2 movimientos de AMS ya conciliados quedaron con los campos viejos** — el fix de [A-BUG-30](#a-bug-30) actúa de acá en adelante, pero las filas del 30/04 y 29/05 siguen con `comprobantes_pagados` en null y el `detalle` decorativo. **Es dato: pendiente de corregir con el usuario** | → [A-BUG-30](#a-bug-30) `@extracto` |
+| **A-BUG-32** | 🟡 | **Bug** | **HECHO 2026-08-19** — los 2 movimientos de AMS ya conciliados habían quedado con los campos viejos (el fix de [A-BUG-30](#a-bug-30) sólo actúa de ahí en adelante). **Filas corregidas en BD con OK del usuario**: `comprobantes_pagados` = `Pago Saldo Abr 2026` / `Anticipo May 2026` y su `detalle` derivado | → [A-BUG-30](#a-bug-30) `@extracto` |
+| **A-BUG-33** | 🔴 | **Bug** | **Dos pagos de sueldo están en `conciliado` sin que NINGÚN movimiento bancario los reclame** (AMS 05/06: $24.863 y $239.648). Verificado en las 4 tablas de extracto: cero referencias. Como el Cash Flow excluye lo conciliado, sus débitos **no tienen contra qué matchear nunca**. **Es dato: pendiente de acordar** | → [A-BUG-33](#a-bug-33) `@extracto @sueldos` |
+| A-FEAT-31 | 🟡 | Feat | **Homogeneizar las columnas del extracto** — el criterio de qué va en `detalle` cambia según el origen (en facturas no se repite el proveedor porque ya tiene su columna; en otros sí). Observación del usuario 2026-08-19: *"eso será una homogeneización posterior"* | → [A-FEAT-31](#a-feat-31) `@extracto` |
 | **A-FEAT-29** | 🟡 | Feat | **HECHO 2026-08-19** — panel **"Resultado de la corrida"**: las filas que tocó el motor se quedan a la vista aunque el filtro ya no las alcance, con su **antes → después**, hasta apretar *Actualizar y soltar*. Antes se conciliaban y desaparecían de la grilla antes de poder revisarlas. Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
@@ -3993,13 +3995,58 @@ PAM ni MA (→ [A-FEAT-24](#a-feat-24)) y mandarla ahí haría fallar el UPDATE 
 `motivo_revision = null`, conservando `categ = CAJA` y `comprobantes_pagados = Caja`. Verificado
 después: el anticipo `5357b80c` lo reclama **un solo** movimiento, el del 29/05, que es el correcto.
 
+## <a id="a-bug-33"></a>A-BUG-33 — Pagos de sueldo en `conciliado` que nadie reclama
+
+Los 2 pagos de AMS del **05/06** (`$24.863` Pago Saldo Abr y `$239.648` Pago Saldo May) están en
+estado **`conciliado`**, pero sus débitos en el extracto siguen en `pendiente`.
+
+**Verificado**: ningún movimiento bancario los referencia. Cero filas con esos `sueldo_pago_id` en
+las **4** tablas de extracto (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma.ma_galicia`).
+
+O sea que llegaron a `conciliado` **sin contrapartida bancaria**. Y como el Cash Flow excluye lo
+conciliado (`useMultiCashFlowData.ts`, `.neq('estado','conciliado')`), esos 2 pagos **ya no son
+candidatos de nada**: sus débitos no tienen contra qué matchear, ni ahora ni nunca.
+
+**Lo acordado con el usuario**: volverlos a `pagado` en Sueldos y correr el motor sobre esos 2
+movimientos. Es un `UPDATE` de datos reales → **no se ejecuta sin su OK explícito**.
+
+**Lo que falta entender** (y es lo que evita que vuelva a pasar): *cómo* llegaron a `conciliado`.
+Un pago que se concilia sin movimiento bancario es una conciliación que no ocurrió. Mientras no se
+sepa, el arreglo es sobre el síntoma.
+
+---
+
 ### 🔴 Lo que NO se corrigió solo — <a id="a-bug-32"></a>A-BUG-32
 El fix de [A-BUG-30](#a-bug-30) vale **de acá en adelante**. Las 2 filas de AMS que ya estaban
-conciliadas (30/04 y 29/05) **siguen con los campos viejos**: `comprobantes_pagados` en null y el
-`detalle` decorativo *"Pago Saldo AMS - Pago Saldo Abr 2026"*. Arreglarlas es un `UPDATE` de datos
-reales → pendiente de acuerdo con el usuario (`CLAUDE.md` § Datos). Valores correctos:
-`comprobantes_pagados = 'Pago Saldo Abr 2026'` / `'Anticipo May 2026'`, y `detalle` derivado igual
-que el resto.
+conciliadas (30/04 y 29/05) quedaron con los campos viejos: `comprobantes_pagados` en null y el
+`detalle` decorativo *"Pago Saldo AMS - Pago Saldo Abr 2026"*.
+
+✅ **Corregidas en BD el 2026-08-19, con OK del usuario**: `comprobantes_pagados` =
+`Pago Saldo Abr 2026` / `Anticipo May 2026`, y `detalle` = `<período> — Andres Martinez`, que es la
+derivación que usa el resto del sistema.
+
+📌 **Convención confirmada por el usuario**: en `proveedor_nombre` va el **nombre completo**
+(`Andres Martinez`, el del maestro de proveedores), no la sigla. Quedan 4 filas viejas de feb/mar
+que dicen `AMS` — normalizarlas es dato y está sin decidir.
+
+---
+
+## <a id="a-feat-31"></a>A-FEAT-31 — Homogeneizar las columnas del extracto
+
+Observación del usuario, 2026-08-19: *"creo que en detalles no se pone el proveedor cuando son
+facturas ya que se llena el proveedor en su lugar"*.
+
+El criterio de qué va en `detalle` **cambia según el origen**: en la rama ARCA se arma
+`<comprobante> — <proveedor>`, y en otras el proveedor no se repite porque ya tiene su columna
+propia. `MODULO_CONCILIACION.md` § 30.1 fija los roles (`proveedor_nombre` = quién cobró,
+`comprobantes_pagados` = qué se pagó, `detalle` = nota del usuario) pero **el código no los respeta
+igual en todos los caminos**.
+
+El usuario lo dejó explícitamente para después: *"eso será una homogeneización posterior"*. Cuando
+se haga, la referencia es § 30.1/30.2 y hay que recorrer los 4 caminos de escritura del extracto
+(motor Cash Flow, motor reglas, asignación manual y edición masiva).
+
+---
 
 ---
 
