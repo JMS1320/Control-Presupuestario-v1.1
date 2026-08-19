@@ -279,6 +279,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
+| **A-BUG-36** | 🔴 | **Bug** | **El motor concilia un movimiento BANCARIO contra un pago de CAJA** — el débito del 29/05 de $110.000 quedó vinculado a un pago de Ruben Sigot con `medio_pago = 'caja_sigot'` (y en `programado`), cuando el que correspondía era el de Alondra Olivo por el mismo monto y la misma fecha, en banco. El motor **no mira `medio_pago`** | → [A-BUG-36](#a-bug-36) `@extracto @sueldos` |
 | A-TEST-34 | 🔴 | Test | **Resultado de la corrida + filtro de contraparte + campos del sueldo** (2026-08-19) — correr el motor con filtro puesto y verificar que las filas no se escapan; buscar AMS por nombre y por CUIT. `MANUAL-USO.md` § Resultado de la corrida | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-33 | ✅ | Test | **TESTEADO OK 2026-08-19** — motor con CUIT normalizado + prioriza sin excluir. El usuario corrió la conciliación acotada sobre los 4 movimientos de AMS: **30/04 y 29/05 salieron `conciliado`** con su pago vinculado, y los 2 del 05/06 quedaron pendientes como estaba previsto | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
@@ -4136,6 +4137,33 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-bug-36"></a>A-BUG-36 — El motor cruza el banco con la caja
+
+Encontrado al repasar los sueldos sin conciliar hasta el 18/06 (2026-08-19).
+
+El débito del **29/05 · $110.000** de `msa_galicia` quedó en `auditar` vinculado a
+`sueldo_pago_id = 566df873`, que es un pago de **Ruben Sigot** con **`medio_pago = 'caja_sigot'`**,
+fecha 01/06 y estado `programado`.
+
+El que correspondía era el de **Alondra Olivo**: mismo monto ($110.000), **misma fecha** (29/05),
+`medio_pago = 'banco'`, y además el beneficiario que informa el banco en la leyenda es
+*"Alondra Aylin Olivo"*. El motor eligió el de caja porque **no mira `medio_pago`** — le alcanza con
+monto y fecha ±5 días.
+
+**Por qué importa más de lo que parece**: un pago de caja **no tiene** contrapartida en el extracto
+bancario, por definición. Vincularlo a un débito del banco:
+1. deja al movimiento bancario verdadero sin candidato, y
+2. marca como conciliado un pago de caja que nunca pasó por el banco.
+
+Es el mismo daño que [A-BUG-33](#a-bug-33) pero generado por el motor en vez de por Sueldos.
+
+**Fix propuesto**: al conciliar contra una cuenta de tipo `banco`, el pool de sueldos debe
+restringirse a `medio_pago = 'banco'`; y al conciliar una **caja**, a esa caja. La info está en el
+`CashFlowRow` (`medio_pago`), así que es un filtro más en el pre-filtro. ⚠️ Verificar antes qué
+valores tiene `medio_pago` en la práctica (hay `banco`, `caja_sigot`, y probablemente otros).
 
 ---
 
