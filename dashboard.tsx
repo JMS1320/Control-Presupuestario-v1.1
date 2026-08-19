@@ -17,6 +17,7 @@ import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
 import { VistaPrincipal } from "./components/vista-principal"
+import { usePendientesPorPantalla } from "./hooks/usePendientesPorPantalla"
 import { VistaSectorProductivo } from "./components/vista-sector-productivo"
 import { TabSueldos } from "./components/tab-sueldos"
 import { TabPresupuesto } from "./components/tab-presupuesto"
@@ -43,6 +44,35 @@ interface ControlPresupuestarioProps {
 }
 
 export default function ControlPresupuestario({ userRole = 'admin' }: ControlPresupuestarioProps) {
+  // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
+  // y el contable no trabaja los pendientes de desarrollo.
+  const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
+
+  /**
+   * El número al lado del nombre de la solapa: cuántos pendientes vivos tiene.
+   *
+   * El COLOR es proporcional a los urgentes, no binario. Con "rojo si hay ≥1 urgente" quedaban
+   * **10 de 12 solapas en rojo** — y un indicador encendido en todos lados deja de comunicar.
+   * Con tramos, el rojo señala dónde está el bulto de verdad (hoy: extracto, con 18).
+   *
+   * Devuelve null si no hay nada o si el fetch falló — la navegación no depende de esto.
+   */
+  const badgePendientes = (pantalla: string) => {
+    const c = pendientesPorPantalla[pantalla]
+    if (!c || c.total === 0) return null
+    const color = c.urgentes >= 5 ? 'bg-red-100 text-red-700'
+      : c.urgentes > 0 ? 'bg-amber-100 text-amber-700'
+      : 'bg-gray-200 text-gray-600'
+    return (
+      <span
+        title={`${c.total} pendiente(s)${c.urgentes ? ` · ${c.urgentes} urgente(s)` : ''} — se ven en Principal → Pendientes`}
+        className={`ml-1 rounded-full px-1.5 text-[10px] leading-4 ${color}`}
+      >
+        {c.total}
+      </span>
+    )
+  }
+
   // Obtener el año actual dinámicamente
   const añoActual = new Date().getFullYear()
 
@@ -100,72 +130,84 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <TabsTrigger value="principal" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
                 Principal
+                {badgePendientes("principal")}
               </TabsTrigger>
             )}
             {shouldShowTab('dashboard') && (
               <TabsTrigger value="dashboard" className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
                 Dashboard
+                {badgePendientes("dashboard")}
               </TabsTrigger>
             )}
             {shouldShowTab('distribucion') && (
               <TabsTrigger value="distribucion" className="flex items-center gap-2">
                 <Users className="h-4 w-4" />
                 Distribución Socios
+                {badgePendientes("distribucion")}
               </TabsTrigger>
             )}
             {shouldShowTab('reporte') && (
               <TabsTrigger value="reporte" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Reporte Detallado
+                {badgePendientes("reporte")}
               </TabsTrigger>
             )}
             {shouldShowTab('egresos') && (
               <TabsTrigger value="egresos" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Egresos
+                {badgePendientes("egresos")}
               </TabsTrigger>
             )}
             {shouldShowTab('ingresos') && (
               <TabsTrigger value="ingresos" className="flex items-center gap-2">
                 <ArrowUpRight className="h-4 w-4" />
                 Ingresos
+                {badgePendientes("ingresos")}
               </TabsTrigger>
             )}
             {shouldShowTab('cashflow') && (
               <TabsTrigger value="cashflow" className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
                 Cash Flow
+                {badgePendientes("cashflow")}
               </TabsTrigger>
             )}
             {shouldShowTab('extracto') && (
               <TabsTrigger value="extracto" className="flex items-center gap-2">
                 <Banknote className="h-4 w-4" />
                 Extracto Bancario
+                {badgePendientes("extracto")}
               </TabsTrigger>
             )}
             {shouldShowTab('productivo') && (
               <TabsTrigger value="productivo" className="flex items-center gap-2">
                 <Tractor className="h-4 w-4" />
                 Productivo
+                {badgePendientes("productivo")}
               </TabsTrigger>
             )}
             {shouldShowTab('sueldos') && (
               <TabsTrigger value="sueldos" className="flex items-center gap-2">
                 <Landmark className="h-4 w-4" />
                 Sueldos
+                {badgePendientes("sueldos")}
               </TabsTrigger>
             )}
             {shouldShowTab('presupuesto') && (
               <TabsTrigger value="presupuesto" className="flex items-center gap-2">
                 <PieChart className="h-4 w-4" />
                 Presupuesto
+                {badgePendientes("presupuesto")}
               </TabsTrigger>
             )}
             {shouldShowTab('importar') && (
               <TabsTrigger value="importar" className="flex items-center gap-2">
                 <Upload className="h-4 w-4" />
                 Importar Excel
+                {badgePendientes("importar")}
               </TabsTrigger>
             )}
           </TabsList>
