@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink } from "lucide-react"
 import type { Pendiente, FilaNoParseada, GrupoPendiente, Pantalla } from "@/lib/pendientes/parse"
-import { PANTALLAS, pantallasDe } from "@/lib/pendientes/parse"
+import { PANTALLAS } from "@/lib/pendientes/parse"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 const REPO = 'https://github.com/JMS1320/Control-Presupuestario-v1.1/blob/desarrollo/PENDIENTES.md'
@@ -87,14 +87,21 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
 
   useEffect(() => { if (open && !data) cargar() }, [open, data, cargar])
 
-  const filtrar = (lista: Pendiente[]) => {
-    // Filtro por pantalla PRIMERO. Un pendiente sin marca sale en TODAS: nunca queda escondido
-    // esperando que alguien lo etiquete (pedido explícito del usuario).
-    if (pantalla === '__sin__') lista = lista.filter(p =>
-      p.pantallas.length === 0 && !p.esGeneral
-      && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto')
-    else if (pantalla) lista = lista.filter(p => pantallasDe(p).includes(pantalla))
+  /** Sin marca de pantalla y sin revisar: se muestra en todas, pero NO es de ninguna. */
+  const sinRevisar = (p: Pendiente) =>
+    p.pantallas.length === 0 && !p.esGeneral
+    && p.grupo !== 'hecho' && p.grupo !== 'auditar' && p.grupo !== 'obsoleto'
 
+  /**
+   * Filtra por pantalla y por texto.
+   *
+   * ⚠️ Al elegir una pantalla se muestran **sólo los que la tienen marcada**, no los sin revisar.
+   * Los sin revisar *siguen* apareciendo en todas las solapas — pero van en un bloque **aparte**
+   * al pie. Antes se mezclaban acá y el filtro parecía roto: elegías `@ingresos` (13) y seguías
+   * viendo 197 ítems, porque los 184 sin ubicar entraban en cualquier filtro.
+   */
+  /** Sólo el buscador de texto. Se usa suelto en el bloque de "sin ubicar". */
+  const filtrarTexto = (lista: Pendiente[]) => {
     const q = normalizarBusqueda(busqueda.trim())
     if (!q) return lista
     return lista.filter(p =>
@@ -102,6 +109,12 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
       || normalizarBusqueda(p.titulo).includes(q)
       || normalizarBusqueda(p.detalle || '').includes(q)
       || normalizarBusqueda(p.seccion || '').includes(q))
+  }
+
+  const filtrar = (lista: Pendiente[]) => {
+    if (pantalla === '__sin__') lista = lista.filter(sinRevisar)
+    else if (pantalla) lista = lista.filter(p => p.pantallas.includes(pantalla) || p.esGeneral)
+    return filtrarTexto(lista)
   }
 
   const fila = (p: Pendiente) => (
@@ -265,6 +278,28 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
                 </div>
               )
             })}
+
+            {/* Con una pantalla elegida: los SIN REVISAR van acá, aparte y plegados.
+                Siguen apareciendo en todas las solapas (pedido del usuario) pero no se mezclan
+                con los que sí son de esta pantalla — que era lo que hacía parecer roto el filtro. */}
+            {pantalla && pantalla !== '__sin__' && (() => {
+              const filas = data.pendientes.filter(sinRevisar)
+              if (filas.length === 0) return null
+              const abierto = desplegado['__sinrevisar__']
+              return (
+                <div className="rounded border border-dashed border-gray-300 bg-gray-50 p-2">
+                  <button className="flex w-full items-baseline gap-2 text-left"
+                    onClick={() => setDesplegado(d => ({ ...d, __sinrevisar__: !d.__sinrevisar__ }))}>
+                    <span className="text-sm font-semibold text-gray-600">📥 Sin ubicar</span>
+                    <span className="text-xs text-gray-500">
+                      ({filas.length}) · todavía sin revisar — aparecen en todas las pantallas
+                    </span>
+                    <span className="ml-auto text-xs text-gray-400">{abierto ? '▲ ocultar' : '▼ ver'}</span>
+                  </button>
+                  {abierto && <div className="mt-1 rounded bg-white/70 px-2">{filtrarTexto(filas).map(fila)}</div>}
+                </div>
+              )
+            })()}
 
             <div className="flex flex-wrap gap-3 pt-1 text-xs">
               <button className="text-gray-500 underline" onClick={() => setVerHechos(v => !v)}>
