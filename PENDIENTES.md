@@ -274,7 +274,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-BUG-31** | 🟡 | **Bug** | **HECHO 2026-08-19** — reasignar un movimiento **no limpiaba el vínculo anterior**: el débito del 01/06 pasó a `CAJA` y siguió apuntando al `sueldo_pago_id` del 29/05, con dos movimientos reclamando el mismo pago de $1,2 M. Ahora las 3 ramas de asignación limpian los vínculos ajenos + `motivo_revision`. **Fila corregida en BD con OK del usuario.** Falta testear | → [A-BUG-31](#a-bug-31) `@extracto` |
 | **A-BUG-32** | 🟡 | **Bug** | **HECHO 2026-08-19** — los 2 movimientos de AMS ya conciliados habían quedado con los campos viejos (el fix de [A-BUG-30](#a-bug-30) sólo actúa de ahí en adelante). **Filas corregidas en BD con OK del usuario**: `comprobantes_pagados` = `Pago Saldo Abr 2026` / `Anticipo May 2026` y su `detalle` derivado | → [A-BUG-30](#a-bug-30) `@extracto` |
 | **A-BUG-33** | 🔴 | **Bug** | **15 pagos de sueldo en `conciliado` sin que NINGÚN movimiento bancario los reclame — $16,9 M** (cruzado contra las 4 tablas de extracto). Como el Cash Flow excluye lo conciliado, sus débitos **no tienen contra qué matchear nunca**. Causa según el usuario: *"había un bug en sueldos que iban a conciliado directo"*, **sin saber si sigue vivo**. Dossier con la foto al 2026-08-19 y el control para repetirlo | → [A-BUG-33](#a-bug-33) `@extracto @sueldos` |
-| A-FEAT-31 | 🟡 | Feat | **Homogeneizar las columnas del extracto** — el criterio de qué va en `detalle` cambia según el origen (en facturas no se repite el proveedor porque ya tiene su columna; en otros sí). Observación del usuario 2026-08-19: *"eso será una homogeneización posterior"* | → [A-FEAT-31](#a-feat-31) `@extracto` |
+| **A-FEAT-31** | 🔴 | Feat | **Homogeneizar las columnas del extracto** — la convención ya existe (`MODULO_CONCILIACION.md` § 30) pero los **4 caminos** que escriben al extracto no la respetan igual. ⚠️ Antes de tocar nada hay que **resolver una contradicción**: § 30.1 dice que `detalle` nunca se autocompleta y A-BUG-07 lo hizo derivar para que la grilla se leyera. Dossier con la convención, la contradicción y los 6 casos que hoy no cumplen | → [A-FEAT-31](#a-feat-31) `@extracto` |
 | **A-FEAT-29** | 🟡 | Feat | **HECHO 2026-08-19** — panel **"Resultado de la corrida"**: las filas que tocó el motor se quedan a la vista aunque el filtro ya no las alcance, con su **antes → después**, hasta apretar *Actualizar y soltar*. Antes se conciliaban y desaparecían de la grilla antes de poder revisarlas. Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
@@ -4307,18 +4307,65 @@ valores tiene `medio_pago` en la práctica (hay `banco`, `caja_sigot`, y probabl
 
 ## <a id="a-feat-31"></a>A-FEAT-31 — Homogeneizar las columnas del extracto
 
-Observación del usuario, 2026-08-19: *"creo que en detalles no se pone el proveedor cuando son
-facturas ya que se llena el proveedor en su lugar"*.
+> **Pedido del usuario al cerrar la sesión del 2026-08-19**: *"hay una regla estándar que usamos
+> para cómo se llena en la conciliación. La marcamos para facturas sobre todo. Deberíamos intentar
+> que todo salga igual… tratar de ver que dejamos asentado que queríamos."*
+>
+> **La regla existe y está escrita**: `MODULO_CONCILIACION.md` § 30, de 2026-05-21. Este dossier no
+> la reinventa — la trae acá para que sea el punto de partida, y **suma lo que se descubrió hoy**.
 
-El criterio de qué va en `detalle` **cambia según el origen**: en la rama ARCA se arma
-`<comprobante> — <proveedor>`, y en otras el proveedor no se repite porque ya tiene su columna
-propia. `MODULO_CONCILIACION.md` § 30.1 fija los roles (`proveedor_nombre` = quién cobró,
-`comprobantes_pagados` = qué se pagó, `detalle` = nota del usuario) pero **el código no los respeta
-igual en todos los caminos**.
+### 1. La convención que queríamos (§ 30.1)
 
-El usuario lo dejó explícitamente para después: *"eso será una homogeneización posterior"*. Cuando
-se haga, la referencia es § 30.1/30.2 y hay que recorrer los 4 caminos de escritura del extracto
-(motor Cash Flow, motor reglas, asignación manual y edición masiva).
+| Columna | Rol | Ejemplo |
+|---|---|---|
+| `proveedor_nombre` | **Quién** cobró o cobra | `ALCORTA EDMUNDO`, `Wilson Barreto`, `Banco Galicia` |
+| `comprobantes_pagados` | **Qué** se pagó — la referencia documental | `FC - 1234`, `Anticipo May 2026`, `Seguro Flota` |
+| `detalle` | La **nota del usuario**, y nada más | `null` si el usuario no escribió nada |
+
+**Regla textual del § 30.1**: *"`detalle` NUNCA se llena automáticamente con FC, proveedor ni
+período. Esos datos ya están en sus columnas propias."*
+
+Y § 30.2 fija el **formato de `comprobantes_pagados` por origen** (ARCA individual y agrupada,
+template, sueldo, anticipo, bancario), con la convención `FC/NC/ND - {numero}` sin punto de venta ni
+ceros. § 30.3 define el mecanismo: el `CashFlowRow` lleva `comprobante_display` y `detalle_usuario`,
+que son los dos campos que viajan al extracto — separados a propósito del `detalle` decorativo que
+usa la grilla del Cash Flow.
+
+### 2. ⚠️ La contradicción que hay que resolver primero
+
+**El repo tiene dos decisiones opuestas sobre `detalle`, tomadas en momentos distintos, y nadie las
+reconcilió:**
+
+| Dónde | Qué dice |
+|---|---|
+| `MODULO_CONCILIACION.md` § 30.1 (2026-05-21) | `detalle` **nunca** se llena automáticamente |
+| `useMotorConciliacion.ts`, comentario de **A-BUG-07** | `detalle` se **deriva** a `<comprobante> — <proveedor>`, porque *"un template conciliado por el motor quedaba trazado por ID pero **ilegible en la grilla**: no decía qué era"* |
+
+Las dos tienen razón en su contexto: la convención quiere columnas limpias sin redundancia; A-BUG-07
+quiere que la grilla se **lea**. **La homogeneización empieza por elegir una** — probablemente
+respetando el § 30.1 y arreglando la legibilidad en la grilla (mostrando las columnas que
+corresponden) en vez de duplicando el dato en `detalle`.
+
+### 3. Lo que hoy NO cumple la convención
+
+| Caso | Qué pasa | Estado |
+|---|---|---|
+| Sueldos: faltaban `comprobante_display` y `detalle_usuario` en la fila del Cash Flow | `comprobantes_pagados` en null y texto decorativo en `detalle` | ✅ [A-BUG-30](#a-bug-30) |
+| Sueldos: el nombre salía sólo de `proveedores` | un empleado que no es proveedor quedaba **sin nombre** | ✅ [A-BUG-39](#a-bug-39) |
+| Reasignar no limpiaba los vínculos viejos | dos movimientos reclamando el mismo pago | ✅ [A-BUG-31](#a-bug-31) |
+| Filas viejas con la sigla (`AMS`) en vez del nombre completo | 4 filas de feb/mar, inconsistentes con el resto | 🔴 pendiente, van en este lote |
+| `contable` / `interno` vacíos por falta de regla por empleado | Wilson y Sigot | 🔴 [A-DAT-04](#a-bug-39) |
+| **226 filas `pendiente` con `categ = 'INVALIDA:'`** | valor idéntico en todas → escritura masiva, no uso normal | 🔴 sin investigar |
+
+### 4. Alcance cuando se encare
+Los **4 caminos** que escriben al extracto, que hoy no coinciden entre sí (§ 30.4):
+1. motor — match por Cash Flow
+2. motor — match por reglas / `llena_template`
+3. asignación manual (las 4 pestañas del modal)
+4. edición masiva
+
+⚠️ Y el orden importa: **primero la decisión del punto 2**, después tocar los 4 caminos. Al revés se
+homogeneiza contra un criterio que después se cambia.
 
 ---
 
