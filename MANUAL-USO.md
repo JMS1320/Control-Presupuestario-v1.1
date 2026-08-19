@@ -1259,6 +1259,43 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 
 ---
 
+## 🏦 Conciliar sueldos que el motor no encuentra 🟡 *(nuevo 2026-08-18, sin testear)*
+
+> Diagnóstico completo → `PENDIENTES.md` § A-BUG-28 / A-BUG-29. Test → § A-TEST-33.
+
+### Qué se arregló
+El motor **no encontraba pagos de sueldo que existían**, con el monto y la fecha exactos. Dos causas
+que se sumaban:
+- el CUIT del empleado se guarda **con guiones** (`20-28749254-6`) y el banco lo manda **sin**
+  (`20287492546`), así que el filtro por CUIT nunca coincidía;
+- y cuando el banco informaba un CUIT, el motor buscaba **sólo** entre las filas de ese CUIT. Si el
+  empleado además tenía una **factura ARCA** cargada, esa factura ocupaba todo el espacio de búsqueda
+  y el sueldo quedaba afuera.
+
+Ahora el CUIT **prioriza pero no excluye**: se busca primero entre las filas de ese CUIT y, si ahí no
+aparece, se busca en todo el Cash Flow.
+
+### Cómo probarlo
+1. Extracto Bancario → cuenta **MSA Galicia**.
+2. Filtrar por estado **pendiente** y buscar los movimientos de **"Placido Andres Martinez"**
+   (son los pagos de sueldo de AMS).
+3. Seleccionar los **4**: `30/04 · 1.790.087,55` · `29/05 · 1.200.000` · `05/06 · 24.863` ·
+   `05/06 · 239.648`.
+4. Correr **Ejecutar Conciliación** (corre sólo sobre lo seleccionado).
+5. **Qué tiene que pasar**:
+   - `30/04` y `29/05` → **conciliado** (fecha exacta), con la categ `Sueldos` y el pago vinculado.
+   - `05/06 · 24.863` y `05/06 · 239.648` → **siguen sin conciliar**, y es lo esperado: sus pagos ya
+     están en estado `conciliado` en Sueldos, así que salieron del Cash Flow y no son candidatos.
+     Ésos hay que resolverlos desde Sueldos.
+6. **Control**: en Sueldos, los pagos del 30/04 y 29/05 tienen que quedar en `conciliado`.
+
+⚠️ **Antes de correrlo, mirar el anticipo de 1.200.000 del 29/05.** Hoy ese pago está tomado por la
+*Extracción en Autoservicio del 01/06*, que quedó en **auditar** por 3 días de diferencia. Si le das
+el OK a esa primero, el pago pasa a conciliado y el movimiento del 29/05 —que es el correcto: misma
+fecha, mismo monto, mismo beneficiario— se queda sin candidato.
+
+---
+
 ## 🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
 
 > Diseño, reglas y huecos → `PENDIENTES.md` § A-FEAT-13 y § A-BUG-09.

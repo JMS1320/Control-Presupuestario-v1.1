@@ -236,6 +236,13 @@ export function useMotorConciliacion() {
     }
   }
 
+  // Normalizar CUIT para comparar: el mismo CUIT se guarda distinto según de dónde venga.
+  // `sueldos.empleados.cuit_empleado` lo tiene CON guiones (`20-28749254-6`) y el banco lo manda
+  // sin (`20287492546`), así que un `===` entre los dos nunca daba verdadero y el pre-filtro por
+  // CUIT quedaba muerto para TODOS los sueldos. Ver A-BUG-28 en PENDIENTES.md.
+  const normalizarCuit = (cuit: string | null | undefined): string =>
+    (cuit || '').replace(/[-.\s]/g, '')
+
   // Extraer CUIT válido de leyendas_adicionales_2 (si existe)
   const extraerCuitBancario = (movimiento: MovimientoBancario): string | null => {
     // El tipo dice leyendas_adicionales2 pero BD devuelve leyendas_adicionales_2
@@ -264,9 +271,6 @@ export function useMotorConciliacion() {
 
   // Función para buscar match en Cash Flow
   const buscarMatchCashFlow = (movimiento: MovimientoBancario): any => {
-    const toleranciaDias = 5
-    const fechaMovimiento = new Date(movimiento.fecha)
-
     // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
     const mov = movimiento as any
     const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
@@ -275,22 +279,38 @@ export function useMotorConciliacion() {
     // Pre-filtro por CUIT bancario: si el banco informa CUIT, buscar solo en ese proveedor
     const cuitBancario = extraerCuitBancario(movimiento)
 
-    let pool: typeof cashFlowData
-    if (esHaberes) {
-      // Haberes → restringir a sueldos; si además hay CUIT, filtrar por ese empleado
-      const sueldos = cashFlowData.filter(cf => cf.origen === 'SUELDO')
-      pool = cuitBancario
-        ? sueldos.filter(cf => cf.cuit_proveedor === cuitBancario)
-        : sueldos
-      // Fallback: si no encontró sueldos con ese CUIT, usar todos los sueldos
-      if (pool.length === 0 && cuitBancario) pool = sueldos
-    } else {
-      const candidatos = cuitBancario
-        ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario)
-        : cashFlowData
-      // Si hay CUIT pero no hay candidatos con ese CUIT, buscar en todo (fallback)
-      pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+    // Base: los haberes se buscan sólo contra sueldos; el resto, contra todo el Cash Flow.
+    const base = esHaberes ? cashFlowData.filter(cf => cf.origen === 'SUELDO') : cashFlowData
+
+    // El CUIT **prioriza, no excluye**. Antes el pool se reemplazaba por las filas de ese CUIT y el
+    // fallback sólo se disparaba si no había NINGÚN candidato — o sea, por falta de CANDIDATOS y no
+    // por falta de MATCH. Bastaba una factura ARCA del mismo CUIT para que el pool quedara reducido
+    // a esa factura y el pago que sí correspondía no estuviera ahí para ser encontrado (caso AMS:
+    // dejó de conciliar el día que cargó 2 facturas). Ahora se busca primero en las filas de ese
+    // CUIT y, si ahí no hay match, se busca en toda la base. Ver A-BUG-29 en PENDIENTES.md.
+    const cuitNormalizado = normalizarCuit(cuitBancario)
+    const conCuit = cuitNormalizado
+      ? base.filter(cf => normalizarCuit(cf.cuit_proveedor) === cuitNormalizado)
+      : []
+    const pools = conCuit.length > 0 ? [conCuit, base] : [base]
+
+    for (const pool of pools) {
+      const resultado = buscarEnPool(movimiento, pool)
+      if (resultado) return resultado
     }
+
+    return { match: false }
+  }
+
+  /**
+   * Busca el match dentro de un pool ya acotado. Devuelve `null` si no hay, para que el llamador
+   * pueda reintentar con un pool más amplio.
+   * (Se define después de `buscarMatchCashFlow` sólo por orden de lectura: las dos son consts del
+   * cuerpo del hook y ya están inicializadas cuando `ejecutarConciliacion` las llama.)
+   */
+  const buscarEnPool = (movimiento: MovimientoBancario, pool: any[]): any => {
+    const toleranciaDias = 5
+    const fechaMovimiento = new Date(movimiento.fecha)
 
     // Buscar por débitos
     if (movimiento.debitos > 0) {
@@ -352,7 +372,9 @@ export function useMotorConciliacion() {
       }
     }
 
-    return { match: false }
+    // Sin match en ESTE pool. `null` (y no `{ match: false }`) para que el llamador distinga
+    // "acá no está" de "no está en ningún lado" y pueda reintentar con el pool ampliado.
+    return null
   }
 
   // Función principal de conciliación

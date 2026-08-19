@@ -268,6 +268,9 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-TEST-28 | 🔴 | Test | **Libro IVA Ventas: export igualado a Compras** (2026-08-13) — un solo botón genera PDF+Excel, pregunta carpeta, no sobrescribe; PDF con el formato de Compras (rango de fechas, TOTALES, página de alícuotas). Cierra **B-FEAT-06**. 6 pasos en `MANUAL-USO.md` § Export del Libro IVA | → [A-TEST-28](#a-test-28) `@ingresos` |
 | A-TEST-27 | 🔴 | Test | **Control de cuadratura del subdiario** (2026-08-13) — barra bajo los 2 bloques en Compras **y** Ventas: `Total − Neto − Exento/NG − IVA − Otros Trib. − sin crédito = 0`, con tolerancia por redondeo y listado de los comprobantes que no cierran. 4 pasos en `MANUAL-USO.md` § Control de cuadratura | → [A-TEST-27](#a-test-27) `@egresos @ingresos` |
 | A-BUG-23 | 🟡 | **Bug** | **HECHO 2026-08-13** — el alta de comprobantes de venta estampaba `alicuota_iva = 21` por defecto, aun en operaciones 100% exentas (caso SANPA SEMILLAS 07/2026: IVA $0 con "21%" en el Libro). Se auto-reproducía: abrir el comprobante y guardar lo volvía a poner. Fila corregida a `null` + modal arreglado. Falta testear | → [A-BUG-23](#a-bug-23) `@ingresos` |
+| **A-BUG-28** | 🔴 | **Bug** | **HECHO 2026-08-18** — el CUIT del empleado se guarda **con guiones** (`20-28749254-6`) y el banco lo manda sin (`20287492546`); el motor los comparaba con `===`. El pre-filtro por CUIT estaba **muerto para todos los sueldos**, no sólo AMS. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
+| **A-BUG-29** | 🔴 | **Bug** | **HECHO 2026-08-18** — el pre-filtro por CUIT **excluía en vez de priorizar**: el fallback sólo se disparaba si el CUIT no tenía **ningún** candidato. Bastaba **una** factura del mismo CUIT para reducir el pool y no recuperarse nunca. Falta testear | → [A-BUG-28](#a-bug-28) `@extracto` |
+| A-TEST-33 | 🔴 | Test | **Motor: CUIT normalizado + prioriza sin excluir** (2026-08-18) — correr la conciliación **acotada a los 4 movimientos de AMS** y verificar que 30/04 y 29/05 salen `conciliado`. `MANUAL-USO.md` § Conciliar sueldos que el motor no encuentra | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -3845,6 +3848,83 @@ presupuesto, y uno mal clasificado llega **mal** — el caso `FCI` es el ejemplo
 conciliación desde el parseo es trabajo del norte, no una desviación.
 
 ---
+
+## <a id="a-bug-28"></a>A-BUG-28 / A-BUG-29 — El pre-filtro por CUIT tapaba el sueldo que tenía que encontrar
+
+> **HECHO 2026-08-18, sin testear** (→ A-TEST-33). Encontrado a partir de una **nota del usuario
+> desde la app** (*"Conciliacion sueldos AMS"*): 4 débitos corridos por el motor que no conciliaron.
+
+### El caso testigo
+
+AMS es un empleado (`sueldos.empleados`, CUIT `20-28749254-6`) al que el banco le transfiere como
+*Trf Inmed Proveed* a nombre de "Placido Andres Martinez". Sus 4 movimientos, todos con **diferencia
+de monto 0,00 y fecha idéntica** contra su pago en Sueldos:
+
+| Extracto | Pago en Sueldos | Dif. | Estado del pago |
+|---|---|---:|---|
+| 30/04 · 1.790.087,55 | Pago Saldo Abr, 30/04 | 0,00 | `pagado` |
+| 29/05 · 1.200.000 | Anticipo May, 29/05 | 0,00 | `pagado` |
+| 05/06 · 24.863 | Pago Saldo Abr, 05/06 | 0,00 | `conciliado` |
+| 05/06 · 239.648 | Pago Saldo May, 05/06 | 0,00 | `conciliado` |
+
+**Y hasta marzo conciliaban solos** (27/02 y 31/03, diferencia 0,00, conciliados por el motor).
+Dejaron de hacerlo cuando AMS cargó **2 facturas ARCA** (26 y 27/06: $25,5 M en PAM y $15,3 M en
+MSA, las dos `pendiente`). Ese es el hilo que destapó todo.
+
+### <a id="a-bug-28-detalle"></a>A-BUG-28 — el CUIT del empleado se guarda con guiones
+
+`sueldos.empleados.cuit_empleado` guarda `20-28749254-6`; el banco escribe `20287492546` en
+`leyendas_adicionales_2`; el motor los comparaba con `===`. **Nunca podía dar verdadero para ningún
+empleado.** En `proveedores` no pasa porque ahí el CUIT se guarda limpio — es la misma clase de bug
+que [A-BUG-18](#a-bug-18): dos lugares leyendo el mismo dato con distinto formato.
+
+**Fix**: `normalizarCuit()` (saca guiones, espacios y puntos) aplicada a los **dos** lados de la
+comparación, en el pre-filtro y en el de haberes.
+
+### <a id="a-bug-29-detalle"></a>A-BUG-29 — el pre-filtro excluía en vez de priorizar
+
+```ts
+// ANTES — useMotorConciliacion.ts:288-292
+const candidatos = cuitBancario ? cashFlowData.filter(cf => cf.cuit_proveedor === cuitBancario) : cashFlowData
+pool = (cuitBancario && candidatos.length === 0) ? cashFlowData : candidatos
+```
+
+El fallback se disparaba por **falta de candidatos**, no por **falta de match**. Con las 2 facturas
+de AMS en el Cash Flow, `candidatos` devolvía esas 2 facturas → el fallback no se disparaba → el pool
+quedaba reducido a $15,3 M y $25,5 M, y el pago de sueldo de $1.790.087,55 **no estaba ahí para ser
+encontrado**.
+
+**Fix**: el CUIT ahora **prioriza**. Se busca primero en los candidatos de ese CUIT y, si no hay
+match, se busca en todo el Cash Flow. Basta con que el match exista para que se encuentre.
+
+### Por qué los dos juntos y no cada uno por su lado
+Solos parecen inofensivos: A deja el pre-filtro sin efecto (y hay fallback), B reduce el pool (pero
+el CUIT debería alcanzar). **Juntos dan "el sueldo de AMS no concilia nunca desde que AMS tiene una
+factura"** — y sin ningún error a la vista, que es el modo de falla de siempre: *el silencio miente*.
+
+### Lo que NO arregla, y queda abierto
+- **Los 2 del 05/06**: su pago ya está en `conciliado` con el movimiento bancario todavía
+  `pendiente`, así que el Cash Flow los excluye (`useMultiCashFlowData.ts`, `.neq('estado','conciliado')`)
+  y **dejan de ser candidatos para siempre**. Hay que resolverlo por el lado de Sueldos.
+- **Tolerancia de monto = 0.** El motor exige el monto idéntico (`cf.debitos !== movimiento.debitos`)
+  mientras tolera ±5 días en la fecha. 29 centavos se tratan igual que un monto distinto: no matchea
+  y no queda rastro. La pantalla de propuestas manuales **sí** tolera (±$2 ó ±0,1%,
+  `vista-extracto-bancario.tsx:105`), así que la app se contradice consigo misma. Los casos reales
+  son de AMS: 04/02 (−$0,29) y 09/03 (+$0,30), que el usuario terminó conciliando a mano.
+  → falta decidir si el monto también debería tener camino a `auditar`.
+- **`find` toma el primero, no el mejor**: dentro de ±5 días se queda con el primer candidato, sin
+  preferir fecha exacta ni desempatar. Por eso el anticipo de AMS del 29/05 quedó tomado por la
+  *Extracción en Autoservicio del 01/06* (`auditar`, 3 días) en vez de por la transferencia del
+  29/05, que era misma fecha, mismo monto y mismo beneficiario. ⚠️ Si se le da OK a la del 01/06, el
+  movimiento del 29/05 queda huérfano.
+- **Las 226 filas `pendiente` de `msa_galicia` tienen todas `categ = 'INVALIDA:'`** — el valor que
+  dispara el botón rojo "Re-asignar". Un valor idéntico en las 226 sugiere una escritura masiva, no
+  el uso normal. Sin investigar.
+
+### 🔗 Cómo incide en el presupuesto (§ norte)
+Un sueldo que no concilia queda como movimiento sin imputar en el extracto **y** como pago abierto en
+el Cash Flow: la misma plata se ve dos veces y el presupuesto se autoalimenta de esa duplicación. Es
+el mismo daño que [A-BUG-27](#a-bug-27), por otra puerta.
 
 ---
 
