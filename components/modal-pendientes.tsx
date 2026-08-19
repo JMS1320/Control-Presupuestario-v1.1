@@ -16,12 +16,30 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink } from "lucide-react"
+import { Loader2, AlertTriangle, Search, RefreshCw, ExternalLink, MessageSquare } from "lucide-react"
 import type { Pendiente, FilaNoParseada, GrupoPendiente, Pantalla } from "@/lib/pendientes/parse"
 import { PANTALLAS } from "@/lib/pendientes/parse"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 const REPO = 'https://github.com/JMS1320/Control-Presupuestario-v1.1/blob/desarrollo/PENDIENTES.md'
+
+/** Comentario del usuario. Vive en BD (`pendientes_comentarios`), NO en el `.md`. */
+interface Comentario {
+  id: string
+  pendiente_id: string
+  texto: string
+  estado_usuario: string | null
+  created_at: string
+  leido_at: string | null
+}
+
+/** Los 4 estados que puede poner el usuario, al lado del de Claude sin pisarlo. */
+const ESTADOS_USUARIO = [
+  { v: 'terminado', label: '✅ Yo lo doy por terminado' },
+  { v: 'chequeado', label: '👀 Lo chequeé' },
+  { v: 'revisar',   label: '🔍 Hay que revisarlo' },
+  { v: 'descartar', label: '🗑️ Se puede descartar' },
+]
 
 interface Respuesta {
   grupos: Record<GrupoPendiente, number>
@@ -60,6 +78,14 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
   /** Los grupos plegados (auditar / obsoleto) arrancan cerrados. */
   const [desplegado, setDesplegado] = useState<Record<string, boolean>>({})
 
+  // ── Comentarios del usuario (viven en BD, no en el .md) ───────────────────
+  const [comentarios, setComentarios] = useState<Comentario[]>([])
+  /** Qué pendiente tiene el cuadro de comentario abierto. */
+  const [comentando, setComentando] = useState<string | null>(null)
+  const [textoCom, setTextoCom] = useState('')
+  const [estadoCom, setEstadoCom] = useState<string>('')
+  const [guardandoCom, setGuardandoCom] = useState(false)
+
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
     try {
@@ -85,7 +111,39 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
     }
   }, [])
 
-  useEffect(() => { if (open && !data) cargar() }, [open, data, cargar])
+  const cargarComentarios = useCallback(async () => {
+    try {
+      const r = await fetch('/api/pendientes/comentarios?rol=admin')
+      if (!r.ok) return
+      const d = await r.json()
+      setComentarios(d.comentarios ?? [])
+    } catch {
+      // Los comentarios son un extra: si fallan, el panel sigue mostrando los pendientes.
+    }
+  }, [])
+
+  useEffect(() => { if (open && !data) { cargar(); cargarComentarios() } }, [open, data, cargar, cargarComentarios])
+
+  const guardarComentario = async (pendienteId: string) => {
+    if (!textoCom.trim()) return
+    setGuardandoCom(true)
+    try {
+      const r = await fetch('/api/pendientes/comentarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pendiente_id: pendienteId,
+          texto: textoCom.trim(),
+          estado_usuario: estadoCom || null,
+        }),
+      })
+      if (!r.ok) { const d = await r.json(); alert('No se pudo guardar: ' + (d.error ?? r.status)); return }
+      setTextoCom(''); setEstadoCom(''); setComentando(null)
+      await cargarComentarios()
+    } finally {
+      setGuardandoCom(false)
+    }
+  }
 
   /** Sin marca de pantalla y sin revisar: se muestra en todas, pero NO es de ninguna. */
   const sinRevisar = (p: Pendiente) =>
@@ -128,33 +186,91 @@ export function ModalPendientes({ open, onClose }: { open: boolean; onClose: () 
     return filtrarTexto(lista)
   }
 
-  const fila = (p: Pendiente) => (
-    <div key={`${p.id}-${p.linea}`} className="flex items-start gap-2 border-t py-1.5 first:border-t-0">
-      <Badge variant="outline" className="shrink-0 font-mono text-[11px]">{p.id}</Badge>
-      <span className="shrink-0 text-sm">{p.estado}</span>
-      {(p.prioridad || p.tipo) && (
-        <span className="shrink-0 text-[11px] text-gray-500">{p.prioridad || p.tipo}</span>
-      )}
-      <div className="min-w-0 flex-1">
-        <p className="text-xs leading-snug">{p.titulo}</p>
-        <p className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-gray-400">
-          {/* Dónde se muestra: sus pantallas, `general` (revisado, va a todas) o nada (sin revisar). */}
-          {p.pantallas.map(s => (
-            <span key={s} className="rounded bg-blue-50 px-1 text-blue-700">@{s}</span>
-          ))}
-          {p.esGeneral && <span className="rounded bg-gray-100 px-1 text-gray-600">general</span>}
-          {p.seccion && <span>{p.seccion}</span>}
-        </p>
+  const fila = (p: Pendiente) => {
+    const mios = comentarios.filter(c => c.pendiente_id === p.id)
+    const abierto = comentando === p.id
+    return (
+    <div key={`${p.id}-${p.linea}`} className="border-t py-1.5 first:border-t-0">
+      <div className="flex items-start gap-2">
+        <Badge variant="outline" className="shrink-0 font-mono text-[11px]">{p.id}</Badge>
+        <span className="shrink-0 text-sm">{p.estado}</span>
+        {(p.prioridad || p.tipo) && (
+          <span className="shrink-0 text-[11px] text-gray-500">{p.prioridad || p.tipo}</span>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs leading-snug">{p.titulo}</p>
+          <p className="mt-0.5 flex flex-wrap gap-1 text-[10px] text-gray-400">
+            {/* Dónde se muestra: sus pantallas, `general` (revisado, va a todas) o nada (sin revisar). */}
+            {p.pantallas.map(s => (
+              <span key={s} className="rounded bg-blue-50 px-1 text-blue-700">@{s}</span>
+            ))}
+            {p.esGeneral && <span className="rounded bg-gray-100 px-1 text-gray-600">general</span>}
+            {p.seccion && <span>{p.seccion}</span>}
+          </p>
+        </div>
+        <button
+          onClick={() => { setComentando(abierto ? null : p.id); setTextoCom(''); setEstadoCom('') }}
+          title="Dejarle un comentario a Claude sobre este pendiente"
+          className={`shrink-0 rounded px-1 text-[11px] ${mios.length ? 'bg-green-100 text-green-700' : 'text-gray-400 hover:bg-gray-100'}`}
+        >
+          <MessageSquare className="inline h-3.5 w-3.5" />{mios.length > 0 && ` ${mios.length}`}
+        </button>
+        {/* El dossier vive en el .md del repo: se abre en GitHub, anclado al ítem. */}
+        {p.ancla && (
+          <a href={`${REPO}#${p.ancla}`} target="_blank" rel="noreferrer"
+             className="shrink-0 text-blue-600 hover:text-blue-800" title="Ver el dossier en GitHub">
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
       </div>
-      {/* El dossier vive en el .md del repo: se abre en GitHub, anclado al ítem. */}
-      {p.ancla && (
-        <a href={`${REPO}#${p.ancla}`} target="_blank" rel="noreferrer"
-           className="shrink-0 text-blue-600 hover:text-blue-800" title="Ver el dossier en GitHub">
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+
+      {/* Los comentarios del usuario: van SIEMPRE visibles si existen, en verde para que se
+          distingan de un vistazo del texto del pendiente, que es de Claude y viene del .md. */}
+      {mios.length > 0 && (
+        <div className="ml-6 mt-1 space-y-1">
+          {mios.map(c => (
+            <div key={c.id} className="rounded border-l-2 border-green-400 bg-green-50 px-2 py-1 text-[11px]">
+              {c.estado_usuario && (
+                <span className="mr-1 font-medium text-green-800">
+                  {ESTADOS_USUARIO.find(e => e.v === c.estado_usuario)?.label ?? c.estado_usuario}
+                </span>
+              )}
+              <span className="text-gray-700">{c.texto}</span>
+              <span className="ml-1 text-gray-400">
+                · {new Date(c.created_at).toLocaleDateString('es-AR')}
+                {!c.leido_at && <span className="ml-1 text-amber-600">· sin leer</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {abierto && (
+        <div className="ml-6 mt-1 space-y-1 rounded border bg-white p-2">
+          <textarea
+            className="w-full rounded border px-2 py-1 text-xs" rows={2} autoFocus
+            placeholder="Lo que quieras decirme sobre este pendiente…"
+            value={textoCom} onChange={e => setTextoCom(e.target.value)}
+          />
+          <div className="flex items-center gap-2">
+            <select className="h-7 rounded border px-1 text-[11px]"
+                    value={estadoCom} onChange={e => setEstadoCom(e.target.value)}>
+              <option value="">— sin cambiar el estado —</option>
+              {ESTADOS_USUARIO.map(e => <option key={e.v} value={e.v}>{e.label}</option>)}
+            </select>
+            <Button size="sm" className="h-7 text-xs" disabled={guardandoCom || !textoCom.trim()}
+                    onClick={() => guardarComentario(p.id)}>
+              {guardandoCom ? 'Guardando…' : 'Guardar'}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setComentando(null)}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       )}
     </div>
-  )
+    )
+  }
 
   const bloqueRaro = (titulo: string, filas: FilaNoParseada[], alarma: boolean) => (
     <div className={`rounded border p-2 ${alarma ? 'border-red-400 bg-red-50' : 'border-gray-200 bg-gray-50'}`}>

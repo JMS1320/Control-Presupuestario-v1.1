@@ -531,6 +531,34 @@ npx tsx scripts/marcar-pendiente.mts --pantallas                  # las 12 váli
 - **Sin marca** = todavía no se revisó. También se ve en todas, y **sí** está en la cola.
 - ⚠️ **Conciliación no es una pantalla**: un bug del motor va `@extracto`.
 
+#### 💬 Dejarle un comentario a Claude sobre un pendiente 🟡 (2026-08-19, sin testear)
+
+En cada pendiente hay un ícono 💬. Lo apretás, escribís, y opcionalmente le ponés **tu estado**:
+
+| | |
+|---|---|
+| ✅ **Yo lo doy por terminado** | vos creés que ya está, aunque Claude lo tenga en 🔴 |
+| 👀 **Lo chequeé** | lo miraste |
+| 🔍 **Hay que revisarlo** | algo no cierra |
+| 🗑️ **Se puede descartar** | ya no aplica |
+
+Los comentarios se ven **en verde debajo del pendiente**, para distinguirlos de un vistazo del texto
+del ítem — que es de Claude y viene del `.md`. Los no leídos dicen **"sin leer"**.
+
+> **Tu estado NO pisa el de Claude.** Él dice 🔴 en el `.md`; vos decís *"para mí está terminado"*
+> desde la app. Los dos quedan visibles y la diferencia se ve. El `.md` es de Claude, la base es
+> tuya, y el ID los une — **la app no puede escribir el `.md`** (Vercel es de sólo lectura).
+
+**Al abrir sesión, Claude lee los que estén sin leer** y te los menciona, igual que hace con las
+notas (P-34).
+
+**Cómo probarlo:**
+1. Abrí el panel, elegí cualquier pendiente y apretá 💬.
+2. Escribí algo y elegí *"Lo chequeé"* → Guardar.
+3. Tiene que aparecer **en verde debajo del ítem**, con la fecha y la marca **"sin leer"**.
+4. Cerrá y volvé a abrir el panel: el comentario tiene que seguir ahí (está en la base, no en memoria).
+5. El ícono 💬 del pendiente ahora muestra **el número de comentarios**, en verde.
+
 #### 🧮 El control — se corre, no se confía
 
 ```bash

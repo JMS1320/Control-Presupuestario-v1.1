@@ -210,7 +210,14 @@ y **MCP en write / cambios de BD** (además, con el usuario presente — § Dato
 `KNOWLEDGE.md`): los toca cualquier trabajo, así que no se pueden tomar para toda la sesión.
 **`Edit` puntual, nunca `Write` del archivo entero**; una terminal por vez; agregar **sin reordenar
 ni reformatear** lo que ya está, aunque quede mejor.
-*Motivo: un `Write` completo se lleva puesto lo que la otra agregó hace dos minutos.*
+**Y el que edita commitea enseguida**, en un commit propio y chico: no se acumulan cambios en el
+working tree "para después". Si al hacer `git diff` aparece trabajo ajeno, **no se intenta
+separarlo** — se commitea junto y el mensaje lo dice (*"incluye N marcas de la otra terminal"*).
+*Motivo: un `Write` completo se lleva puesto lo que la otra agregó hace dos minutos. Y lo otro pasó
+dos veces en una hora: 75 marcas `@pantalla` viajaron dentro de un commit sobre sueldos. Nada se
+perdió, pero el historial miente sobre la autoría. Se intentó separar los cambios con un patch
+selectivo y **no funcionó**: entre mirar el diff y commitear hay una ventana en la que la otra
+escribe. Un historial honesto vale más que uno prolijo pero inexacto.*
 
 **5 · No cambiar el formato de un archivo que la otra terminal está parseando.** Se puede agregar
 contenido; no cambiar la estructura (encabezados, columnas, formato de IDs, anclas). Al agregar, se
@@ -243,6 +250,33 @@ administrarlo. Y el choque se ve cuando todavía es barato cambiar el diseño �
 contador de pendientes iba a tocar `vista-extracto-bancario.tsx` (ajeno) y se movió a `dashboard.tsx`
 (sin dueño) antes de escribir nada. Un choque detectado por revisión es suerte; detectado por
 protocolo es diseño.*
+
+**11 · Arrancar y cerrar: el protocolo NO se negocia cada vez.**
+
+**Al ABRIR** una segunda terminal — decirle en el primer mensaje: *"hay otra terminal trabajando;
+leé `CLAUDE.md` § Trabajo en paralelo y `.claude/SESION-PARALELA.md`"*. Y después, sólo tres cosas:
+1. **Declarar** en el tablero lo tomado y el *"voy a necesitar"* (reglas 1 y 10).
+2. **Leer** lo que declaró la otra.
+3. **Empezar.**
+
+⚠️ **No se re-discuten las 11 reglas.** Ya están acordadas y con sus motivos: discutirlas de nuevo
+cuesta media hora y termina en lo mismo. Lo único que se conversa es **lo específico de esta
+sesión** — qué toma cada una y dónde se cruzan. Si aparece un hueco real del protocolo, se propone
+al final, no al principio.
+
+**Al CERRAR la doble sesión — lo aprendido SUBE, el tablero se VACÍA:**
+
+| Qué | A dónde | Por qué |
+|---|---|---|
+| Lo aprendido sobre **convivencia** (huecos, reglas nuevas, correcciones) | **acá**, a esta § | `.claude/` está gitignoreado: lo que quede ahí **se pierde en el primer clone** |
+| Lo que quedó **a medias del trabajo** | `PENDIENTES.md`, con su ID | es trabajo, no protocolo |
+| El **estado vivo** (quién tenía qué) | se borra | ya no le sirve a nadie |
+| Las conversaciones **T1 ↔ T2** | se borran | eran para acordar, no para archivar |
+
+*Motivo: el tablero es descartable **por diseño** — y ahí está el riesgo. Esta § existe porque las
+reglas nacieron en el tablero y casi se pierden: hubo que mudarlas. Si el aprendizaje de cada sesión
+se queda en `.claude/`, la próxima empieza de cero y se vuelve a negociar todo. **Que la próxima sea
+corta depende de que ésta suba lo que aprendió.***
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que

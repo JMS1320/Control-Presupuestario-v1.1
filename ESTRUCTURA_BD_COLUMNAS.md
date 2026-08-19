@@ -46,6 +46,10 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### indices_ipc
 `id uuid, anio int, mes int, valor_ipc numeric, variacion_mensual numeric, variacion_interanual numeric, variacion_acumulada numeric, fuente text, observaciones text, created_at tstz, updated_at tstz`
 
+### pendientes_comentarios  (2026-08-19 — comentarios del usuario sobre un pendiente)
+`id uuid, pendiente_id text, texto text, estado_usuario text ('terminado'|'chequeado'|'revisar'|'descartar'), autor text, pantalla text, created_at tstz, leido_at tstz`
+> ⚠️ **`pendiente_id` es TEXTO sin FK** (`'A-BUG-27'`): los pendientes viven en `PENDIENTES.md`, no en una tabla. **El `.md` es de Claude, esta tabla es del usuario** — la app corre en Vercel y no puede escribir el archivo. `leido_at` null = Claude no lo leyó (bandeja de entrada al abrir sesión). Si un ID se renumera, los comentarios quedan huérfanos **en silencio**. NO en backup — ver RECONSTRUCCION 2026-08-19. Ver `PENDIENTES.md` § P-46.
+
 ### lotes_transferencias
 `id uuid, fecha_generacion tstz, fecha_pago date, tipo varchar, empresa varchar, monto_total numeric, cantidad_items int, cantidad_excluidos int, cantidad_archivos int, user_role varchar, nombre_archivo varchar, observaciones text`
 

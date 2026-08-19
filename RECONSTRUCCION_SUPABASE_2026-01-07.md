@@ -3323,6 +3323,42 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### **2026-08-19: `pendientes_comentarios` — los comentarios del usuario sobre un pendiente**
+
+El usuario quiere dejarle mensajes a Claude **sobre un pendiente concreto**, desde la app y mientras
+trabaja, con **su propio estado** al lado del de Claude.
+
+**Por qué en BD y no en `PENDIENTES.md`:** la app corre en Vercel, donde el filesystem es de **sólo
+lectura** — la app no puede escribir el `.md`. Nunca. Y el usuario lo pidió así: *"con que sólo haya
+comentarios míos desde la app que se diferencien a los tuyos desde el `.md` ya sería suficiente"*.
+La separación no es un compromiso, es el diseño: **el `.md` es de Claude, la BD es del usuario**, y
+el ID los une.
+
+```sql
+CREATE TABLE public.pendientes_comentarios (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  pendiente_id text NOT NULL,        -- 'A-BUG-27' — TEXTO, no FK (los pendientes viven en un .md)
+  texto text NOT NULL,
+  estado_usuario text CHECK (estado_usuario IN ('terminado','chequeado','revisar','descartar')),
+  autor text NOT NULL DEFAULT 'usuario',
+  pantalla text,                     -- contexto que se captura solo, como en las notas (P-34)
+  created_at timestamptz NOT NULL DEFAULT now(),
+  leido_at timestamptz               -- null = Claude no lo leyó → bandeja de entrada al abrir sesión
+);
+CREATE INDEX idx_pend_coment_pendiente ON public.pendientes_comentarios (pendiente_id);
+CREATE INDEX idx_pend_coment_sin_leer  ON public.pendientes_comentarios (created_at) WHERE leido_at IS NULL;
+ALTER TABLE public.pendientes_comentarios ENABLE ROW LEVEL SECURITY;
+CREATE POLICY pendientes_comentarios_all ON public.pendientes_comentarios FOR ALL USING (true) WITH CHECK (true);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.pendientes_comentarios TO anon, authenticated, service_role;
+```
+
+**✅ Corrido el 2026-08-19** por MCP (migración `pendientes_comentarios`). Probado punta a punta:
+POST crea, GET lista, sin `rol=admin` da 403. NO está en el backup original.
+
+⚠️ **`pendiente_id` es texto sin FK** — no hay tabla de pendientes contra la cual referenciar. Si un
+ID se renumera (pasó: `P-37` → `P-46`), los comentarios quedan **huérfanos en silencio**. El control
+debería avisar de comentarios que apuntan a un ID que ya no existe → pendiente.
+
 ### **2026-08-18: Anticipos de COBRO — columna propia para la factura de venta**
 
 `anticipos_proveedores` guarda las dos puntas (columna `tipo`: `pago` | `cobro`), pero su
