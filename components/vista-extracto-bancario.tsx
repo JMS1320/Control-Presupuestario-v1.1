@@ -2341,6 +2341,7 @@ export function VistaExtractoBancario() {
                     value={filtroProveedor}
                     onChange={setFiltroProveedor}
                     label="Contraparte"
+                    incluirEmpleados
                   />
                 </div>
                 <Select value={filtroEstado} onValueChange={(value: any) => setFiltroEstado(value)}>

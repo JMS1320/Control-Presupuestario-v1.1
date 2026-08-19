@@ -13,6 +13,8 @@ interface Proveedor {
   cuit: string
   razon_social: string
   nombre_fantasia: string | null
+  /** De qué maestro salió. Sólo se llena cuando el combobox incluye empleados. */
+  origen?: 'proveedor' | 'empleado'
 }
 
 export interface ProveedorSeleccionado {
@@ -26,9 +28,18 @@ interface Props {
   label?: string         // "Proveedor" | "Cliente"
   required?: boolean
   disabled?: boolean
+  /**
+   * Suma los **empleados** a la lista, además de los proveedores.
+   * Va apagado por default a propósito: los modales de venta y de reglas de import eligen una
+   * contraparte comercial y un empleado ahí no tiene sentido. Lo enciende el filtro del Extracto,
+   * donde la contraparte de una transferencia de sueldo **es** el empleado — y los empleados no
+   * están en `proveedores` (ni deben estar: `es_proveedor` es sólo para quien tiene factura de
+   * compra a su nombre, § Contrapartes en CLAUDE.md).
+   */
+  incluirEmpleados?: boolean
 }
 
-export function ProveedorCombobox({ value, onChange, label = "Proveedor", required, disabled }: Props) {
+export function ProveedorCombobox({ value, onChange, label = "Proveedor", required, disabled, incluirEmpleados = false }: Props) {
   const [proveedores, setProveedores] = useState<Proveedor[]>([])
   const [loading, setLoading] = useState(false)
   const [busqueda, setBusqueda] = useState("")
@@ -47,14 +58,37 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
         .select("cuit, razon_social, nombre_fantasia")
         .eq("activo", true)
         .order("razon_social")
+
+      let lista: Proveedor[] = (data || []).map(p => ({ ...p, origen: 'proveedor' as const }))
+
+      if (incluirEmpleados) {
+        const { data: emps } = await supabase
+          .schema("sueldos")
+          .from("empleados")
+          .select("nombre, cuit_empleado, empresa")
+          .eq("activo", true)
+          .order("nombre")
+        const empleados: Proveedor[] = (emps || []).map(e => ({
+          // El CUIT del empleado se guarda CON guiones y en el extracto viene sin (A-BUG-28).
+          // Se normaliza acá para que quien reciba la selección compare contra un solo formato.
+          cuit: (e.cuit_empleado || "").replace(/[-.\s]/g, ""),
+          razon_social: e.nombre,
+          nombre_fantasia: e.empresa || null,
+          origen: 'empleado' as const,
+        }))
+        // Si un empleado además está como proveedor, gana el proveedor: es el maestro comercial.
+        const cuitsProveedor = new Set(lista.map(p => p.cuit))
+        lista = [...lista, ...empleados.filter(e => !e.cuit || !cuitsProveedor.has(e.cuit))]
+      }
+
       if (!cancelado) {
-        setProveedores(data || [])
+        setProveedores(lista)
         setLoading(false)
       }
     }
     cargar()
     return () => { cancelado = true }
-  }, [])
+  }, [incluirEmpleados])
 
   // Cerrar dropdown al click afuera
   useEffect(() => {
@@ -168,16 +202,22 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
               </div>
             ) : (
               <>
-                {resultados.map((p) => (
+                {resultados.map((p, i) => (
                   <button
-                    key={p.cuit}
+                    // Un empleado puede no tener CUIT cargado, así que el CUIT solo no alcanza como key.
+                    key={`${p.origen ?? 'p'}-${p.cuit || p.razon_social}-${i}`}
                     type="button"
                     onClick={() => seleccionar(p)}
                     className="w-full text-left px-3 py-2 hover:bg-gray-100 border-b last:border-b-0"
                   >
-                    <div className="text-sm font-medium truncate">{p.razon_social}</div>
+                    <div className="text-sm font-medium truncate flex items-center gap-2">
+                      {p.razon_social}
+                      {p.origen === 'empleado' && (
+                        <Badge variant="secondary" className="text-[10px] shrink-0">empleado</Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500 flex items-center gap-2">
-                      <span className="font-mono">{p.cuit}</span>
+                      <span className="font-mono">{p.cuit || 'sin CUIT'}</span>
                       {p.nombre_fantasia && <Badge variant="outline" className="text-[10px]">{p.nombre_fantasia}</Badge>}
                     </div>
                   </button>
