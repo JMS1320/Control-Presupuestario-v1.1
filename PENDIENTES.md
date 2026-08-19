@@ -4357,15 +4357,66 @@ corresponden) en vez de duplicando el dato en `detalle`.
 | `contable` / `interno` vacíos por falta de regla por empleado | Wilson y Sigot | 🔴 [A-DAT-04](#a-bug-39) |
 | **226 filas `pendiente` con `categ = 'INVALIDA:'`** | valor idéntico en todas → escritura masiva, no uso normal | 🔴 sin investigar |
 
-### 4. Alcance cuando se encare
+### 3.bis La convención para SUELDOS, cerrada con el usuario (2026-08-19)
+
+> Palabras del usuario: *"teniendo una columna llamada proveedor y una llamada comprobante, esos dos
+> datos no hace falta ponerlos en detalle. Detalle va para la especificación que puede haber o no."*
+
+| Columna | Contenido | De dónde sale |
+|---|---|---|
+| `proveedor_nombre` | el **empleado** | `empleado.nombre` (fallback ya hecho → [A-BUG-39](#a-bug-39)) |
+| `comprobantes_pagados` | **`Haberes <Mes> <Año>`**, distinguiendo a cuenta / saldo | el **período** (`sueldos_periodos.mes/anio`) + `pagos.tipo` |
+| `detalle` | la **especificación**, si la hay: `Cuota Alimentaria Lucresia` | `pagos.descripcion`, sacándole el período |
+
+**Tres definiciones que se tomaron:**
+
+1. **El comprobante sale del PERÍODO, no de la descripción.** Hoy copia `pagos.descripcion` y por eso
+   salió `Anticipo May 2026`. El caso feo ya está cargado: el pago de Wilson del 24/07 tiene como
+   descripción *"Formalmente un anticipo de sueldo pero es eq a sus francos de Junio"* — **eso entero
+   iría a la columna del comprobante**.
+   ⚠️ **La pieza ya existe en el otro camino**: la asignación manual joinea
+   `sueldos_periodos(mes, anio)` y arma el label (`vista-extracto-bancario.tsx:1624`). El motor no.
+
+2. **El comprobante DEBE distinguir** *a cuenta* de *saldo*. Si no, un pago a cuenta y el saldo del
+   mismo mes quedarían con el mismo comprobante en dos movimientos distintos.
+   📌 **Corrección de vocabulario del usuario**: lo que el sistema llama `anticipo` **está mal
+   dicho** — *"puede ser en fecha de pago a fin de mes; si hacés 4 pagos terminan quedando 3
+   anticipos más 1 saldo, cuando en realidad son **3 pagos a cuenta más el pago del saldo**"*.
+   Formato propuesto (falta confirmar el texto exacto): `Haberes May 2026 — a cuenta` /
+   `Haberes May 2026 — saldo`.
+   *(Dato del usuario para más adelante: el saldo suele ser **los francos**, que se pagan al final y
+   salen **por caja**. Por ahora se deja así.)*
+
+3. **`detalle` es la descripción del pago**, no `null`. ⚠️ Corrige lo que se hizo el 2026-08-19 en
+   [A-BUG-30](#a-bug-30), donde se puso `detalle_usuario: null` con el argumento de que "un sueldo no
+   tiene nota del usuario". **Falso**: el usuario ya la usa — `"Anticipo May 2026 - Lucresia"`,
+   `"- Galicia"`, `"- Santander"`. Con el punto 1, la descripción **se parte**: el período va al
+   comprobante y el resto al detalle.
+
+**Consecuencia a mirar de frente**: las descripciones ya cargadas mezclan período y especificación.
+Al partirlas, las viejas quedan con el período repetido en las dos columnas. O se migran, o se
+convive hasta que roten.
+
+### 4. Alcance y **método** — decidido con el usuario
+
 Los **4 caminos** que escriben al extracto, que hoy no coinciden entre sí (§ 30.4):
 1. motor — match por Cash Flow
 2. motor — match por reglas / `llena_template`
 3. asignación manual (las 4 pestañas del modal)
 4. edición masiva
 
-⚠️ Y el orden importa: **primero la decisión del punto 2**, después tocar los 4 caminos. Al revés se
-homogeneiza contra un criterio que después se cambia.
+> **Cómo se hace, textual del usuario (2026-08-19):** *"vamos a ir probando conciliar los pendientes
+> y debería ir saltando esto. Entonces vamos homogeneizando **desde la prueba** y no todo junto y
+> luego volver a corregir."*
+
+O sea: **NO un refactor de los 4 caminos de una.** Cada divergencia se arregla **cuando aparece
+conciliando un caso real** — que es como salieron los 9 bugs de esta sesión, y ninguno se encontró
+leyendo código.
+
+⚠️ Con una salvedad, para que el método incremental no termine en cuatro implementaciones distintas
+otra vez: **el primer caso que se toque construye el helper único** que arma las 3 columnas, y cada
+camino se va enchufando ahí a medida que le toca. Arreglar cada camino por su cuenta es reproducir
+exactamente el problema que estamos cerrando.
 
 ---
 
