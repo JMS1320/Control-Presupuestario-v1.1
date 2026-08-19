@@ -85,6 +85,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) `@general` |
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) `@general` |
 | A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) `@general` |
+| A-OP-09 | 🔴 | Media | **Comentarios huérfanos**: si un ID desaparece de `PENDIENTES.md`, sus comentarios en BD quedan colgados **sin que nada avise**. El control debe detectarlo | → [A-OP-09](#a-op-09) `@general` |
 
 ### 💰 PRESUPUESTO — lista del usuario 2026-08-02 (`P-NN`)
 > Batch dictado por el usuario el 2026-08-02. **Prefijo `P-`** = mejoras del módulo Presupuesto
@@ -538,6 +539,34 @@ Lo que queda de A-OP-07 es el **triage** de los 113, empezando por los archivos 
 3. Asegurar que el proceso incluya los **cambios no-backup** documentados en `RECONSTRUCCION_SUPABASE` § CAMBIOS POST-RECONSTRUCCIÓN.
 
 **Relación:** complementa A-SEC-01 (si `anon` puede truncar todo, un restore confiable es la red de seguridad).
+
+---
+
+## <a id="a-op-09"></a>A-OP-09 — Comentarios huérfanos: el ID vive en un `.md`, el comentario en la BD (2026-08-19)
+
+`pendientes_comentarios.pendiente_id` es **texto sin FK**, y no puede ser otra cosa: apunta a un ID
+que vive en `PENDIENTES.md`, no en una tabla. **Postgres no puede proteger un vínculo a un archivo.**
+
+**El agujero:** si un pendiente se renumera o se borra del `.md`, sus comentarios quedan colgados y
+**nadie se entera**. El usuario escribió algo, y ese algo desaparece de la pantalla en silencio —
+exactamente el modo de falla que más caro sale en este proyecto.
+
+⚠️ **Renumerar un ID "no debería pasar nunca"… y pasó 5 veces el 2026-08-19**, por crear IDs sobre
+IDs ya ocupados (`P-*` y `A-FEAT-*` tienen huecos en el medio). Ese día todavía no había
+comentarios cargados, así que salió gratis. La próxima vez no.
+
+**Qué hay que hacer** — es un control, no una feature *(§ CLAUDE.md · Todo desarrollo termina con su
+control)*:
+1. `scripts/verificar-parser-pendientes.mts` consulta los `pendiente_id` distintos de la tabla y
+   avisa si alguno **no existe** en el `.md`. Mismo criterio para
+   `pendientes_propuestos.pendiente_id_asignado`.
+2. El panel muestra los huérfanos en un bloque aparte en vez de descartarlos — **nada se descarta en
+   silencio**.
+3. **Fix de fondo, no mitigación:** que renumerar deje de ser una operación a mano. Un
+   `scripts/renumerar-pendiente.mts` que mueva el ID en el `.md` **y** haga el `UPDATE` de las dos
+   tablas en el mismo paso. Mientras eso no exista, el control (1) es lo único que avisa.
+
+**Relación:** [P-46](#p-46) lo creó · el aprendizaje de método está en el cierre del 2026-08-19.
 
 ---
 
