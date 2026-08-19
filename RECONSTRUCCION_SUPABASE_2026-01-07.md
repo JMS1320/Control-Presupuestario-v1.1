@@ -3394,7 +3394,8 @@ las 3 tablas con **53 columnas, RLS activa y 1 policy** cada una. NO está en el
 el total), así que la mitad de las columnas — las de liquidación de granos (`coe`, `puerto`,
 `cosecha`, `factor`, `toneladas`…) — van a quedar en null. Se clonó igual para que **las tres
 empresas corran exactamente el mismo código**: son nullables y no molestan, mientras que una tabla
-distinta obliga a bifurcar importador, modal y subdiario. Ver `PENDIENTES.md` § A-FEAT-22.
+distinta obliga a bifurcar importador, modal y subdiario. Ver `PENDIENTES.md` § A-FEAT-27
+*(era A-FEAT-22; renumerado el 2026-08-19 porque ese ID ya estaba ocupado)*.
 
 ### **2026-08-10: Parseo de extractos — reglas por FORMA del movimiento**
 

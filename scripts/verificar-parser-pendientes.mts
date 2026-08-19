@@ -37,6 +37,20 @@ Object.entries(porPantalla).filter(([, n]) => n > 0)
   .sort((a, b) => b[1] - a[1])
   .forEach(([s, n]) => console.log(`  @${s.padEnd(13)} ${n}`))
 
+// ── 0. IDs duplicados ───────────────────────────────────────────────────────
+// El ID es la identidad del pendiente: dos filas con el mismo ID son dos cosas distintas que se
+// pisan. El ancla del dossier apunta a una sola, así que la otra queda sin detalle — y al hablar
+// ("mirá el P-37") nadie sabe de cuál. Pasó de verdad: se crearon P-35/36/37 sobre IDs existentes
+// y el control no lo vio porque no lo chequeaba.
+const porId = new Map<string, number[]>()
+r.pendientes.forEach(p => porId.set(p.id, [...(porId.get(p.id) ?? []), p.linea]))
+const duplicados = [...porId.entries()].filter(([, ls]) => ls.length > 1)
+if (duplicados.length > 0) {
+  fallo = true
+  console.log('\n🚨 IDs DUPLICADOS — dos pendientes distintos con el mismo nombre:')
+  duplicados.forEach(([id, ls]) => console.log(`  ${id} → líneas ${ls.join(', ')}`))
+}
+
 // ── 1. Filas ilegibles ──────────────────────────────────────────────────────
 if (r.noParseadas.length > 0) {
   fallo = true

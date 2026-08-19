@@ -249,21 +249,21 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-FEAT-18 | 🟡 | Feat | **Identidad del tipo = 1ª línea + forma.** **Caminos A y B HECHOS 2026-08-10**, SQL corrido — reglas por forma (`firma_forma`) y, si la forma no coincide, **no se parsea**. Falta testear + ajustar las 3 reglas que fallan | → [A-FEAT-18](#a-feat-18) |
 | A-FEAT-19 | 🔴 | Feat | **Chequeo de consistencia de las reglas cargadas** — el usuario no está seguro de haber adjudicado bien las columnas | → [A-FEAT-19](#a-feat-19) |
 | **A-BUG-24** | 🟡 | **Bug** | **HECHO 2026-08-13** — el PDF "Detalle de Pago" no sumaba el descuento al Total Cancelado (decía $520.978,69 sobre una FC de $548.398,62 cancelada entera). Arreglado en los 3 cálculos **y borrada la copia inline** de Egresos: ahora hay una sola implementación. Falta testear | → [A-BUG-24](#a-bug-24) `@egresos @cashflow` |
-| A-FEAT-22 | 🟡 | Feat | **HECHO 2026-08-13** — subdiario de ventas para las 3 empresas: creada `pam.comprobantes_venta`, niveladas las 4 columnas que le faltaban a MA (sin ellas el importador fallaba) y agregado el tab **Subdiarios PAM**. Falta testear | → [A-FEAT-22](#a-feat-22) `@ingresos` |
+| A-FEAT-27 | 🟡 | Feat | **HECHO 2026-08-13** — subdiario de ventas para las 3 empresas: creada `pam.comprobantes_venta`, niveladas las 4 columnas que le faltaban a MA (sin ellas el importador fallaba) y agregado el tab **Subdiarios PAM**. Falta testear | → [A-FEAT-27](#a-feat-27) `@ingresos` |
 | **A-DEC-02** | 🔴 | Decisión | **MA y PAM no están inscriptas en IVA** (confirmado 2026-08-18): facturan sólo arrendamiento en Fac C, así que su "Libro IVA Ventas" sale en $0 y todo cae en el bloque de abajo. Es correcto en los números → queda decidir **cómo se llaman los bloques** cuando la empresa no liquida IVA. *(El punto 2, el total en `imp_op_exentas`, quedó cerrado: es lo correcto.)* | → [A-DEC-02](#a-dec-02) `@ingresos` |
 | **A-BUG-25** | 🔴 | **Bug** | **CUIT de Sanpa mal tipeado en 3 filas** — los contratos de Rojas (26/27 y 27/28) y la FC del 11/05 tienen `30712200662`, con **dígito verificador inválido**. El correcto es `30712200622` (el que trae ARCA). Por eso la alerta ofrecía la factura equivocada. **Dato real: pendiente de corregir con el usuario** | → [A-BUG-25](#a-bug-25) `@principal @ingresos` |
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) `@principal` |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) `@presupuesto` |
 | **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) `@cashflow` |
-| **P-35** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-35](#p-35) |
-| P-36 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-35](#p-35) `@cashflow` |
+| **P-44** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-44](#p-44) |
+| P-45 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-44](#p-44) `@cashflow` |
 | A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) `@cashflow @principal` |
 | A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) `@cashflow` |
-| **P-37** | 🔴 | Feat | **Panel de pendientes dentro de la app** (solo admin), agrupados urgente / secundario / test, y accesibles desde la sección que les corresponde. **Viable**: el índice tiene 166 filas con formato parseable. ⚠️ La app **lee** `PENDIENTES.md`, no guarda copia | → [P-37](#p-37) `@principal` |
+| **P-46** | 🔴 | Feat | **Panel de pendientes dentro de la app** (solo admin), agrupados urgente / secundario / test, y accesibles desde la sección que les corresponde. **Viable**: el índice tiene 166 filas con formato parseable. ⚠️ La app **lee** `PENDIENTES.md`, no guarda copia | → [P-46](#p-46) `@principal` |
 | **A-FEAT-25** | 🔴 | Feat | **Escenarios de margen** (diseño, 2026-08-18) — poder guardar hipótesis ("195 terneros con 30 has de avena") sin ensuciar lo real. Márgenes **no guarda variantes** hoy, pero ya tiene todo el motor. El escenario = **overrides sobre lo real**, no una copia. 2 definiciones tomadas: costos por **existencia inicial**, y **default del dato real siempre editable** | → [A-FEAT-25](#a-feat-25) `@presupuesto @productivo` |
 | A-TEST-31 | 🔴 | Test | **Ingresos por jerarquía empresa → vista** (2026-08-18) — de 8 solapas planas a 2 niveles: MSA/PAM/MA y adentro Arrendamientos · Ventas · Comprobantes · Cobros · Subdiarios · Ganadería. Sin cambios de funcionamiento. `MANUAL-USO.md` § Ingresos | → [A-TEST-31](#a-test-31) `@ingresos` |
 | **A-FEAT-24** | 🔴 | Feat | **Cobros no puede existir en PAM/MA**: `comprobante_venta_id` está sólo en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`, `pam_galicia_cc`) y MA (`ma.ma_galicia`) **no tienen la columna**, así que ahí un cobro no se puede vincular a una factura | → [A-FEAT-24](#a-feat-24) `@ingresos` |
-| A-FEAT-23 | 🔴 | Feat | **La fijación de arrendamiento no emite el comprobante de venta** — `ventas_arrendamiento.comprobante_id` existe pero **nadie lo escribe ni lo lee** (sólo está en el tipo TS). El arrendamiento de PAM/MA hay que cargarlo dos veces: una en el contrato y otra a mano en el subdiario. Va contra el norte (cargar una sola vez) | → [A-FEAT-23](#a-feat-23) `@ingresos` |
+| A-FEAT-28 | 🔴 | Feat | **La fijación de arrendamiento no emite el comprobante de venta** — `ventas_arrendamiento.comprobante_id` existe pero **nadie lo escribe ni lo lee** (sólo está en el tipo TS). El arrendamiento de PAM/MA hay que cargarlo dos veces: una en el contrato y otra a mano en el subdiario. Va contra el norte (cargar una sola vez) | → [A-FEAT-28](#a-feat-28) `@ingresos` |
 | A-TEST-29 | 🔴 | Test | **Importador de ventas multiempresa** (2026-08-13) — estaba fijo en `msa`; ahora toma `empresa` y cada subdiario tiene su botón **Importar**. `MANUAL-USO.md` § Importar comprobantes de venta | → [A-TEST-29](#a-test-29) `@ingresos` |
 | A-TEST-28 | 🔴 | Test | **Libro IVA Ventas: export igualado a Compras** (2026-08-13) — un solo botón genera PDF+Excel, pregunta carpeta, no sobrescribe; PDF con el formato de Compras (rango de fechas, TOTALES, página de alícuotas). Cierra **B-FEAT-06**. 6 pasos en `MANUAL-USO.md` § Export del Libro IVA | → [A-TEST-28](#a-test-28) `@ingresos` |
 | A-TEST-27 | 🔴 | Test | **Control de cuadratura del subdiario** (2026-08-13) — barra bajo los 2 bloques en Compras **y** Ventas: `Total − Neto − Exento/NG − IVA − Otros Trib. − sin crédito = 0`, con tolerancia por redondeo y listado de los comprobantes que no cierran. 4 pasos en `MANUAL-USO.md` § Control de cuadratura | → [A-TEST-27](#a-test-27) `@egresos @ingresos` |
@@ -7170,7 +7170,7 @@ lo dé, el encabezado de MA sale sin CUIT (mejor que uno inventado en un libro d
 
 ---
 
-## <a id="a-feat-22"></a>A-FEAT-22 — Subdiarios por empresa: qué falta para que MA y PAM estén completas
+## <a id="a-feat-27"></a>A-FEAT-27 — Subdiarios por empresa: qué falta para que MA y PAM estén completas
 
 **El pedido (2026-08-13):** *"MA tendrá su subdiario de compras y ventas, como PAM también"*.
 
@@ -7332,21 +7332,21 @@ una referencia colgada). Lo agarró `type-check:diff`. Es el motivo por el que e
 
 ---
 
-## <a id="p-35"></a>P-35 / P-36 — Notas desde la app: las capturas llegan vacías (2026-08-18)
+## <a id="p-44"></a>P-44 / P-45 — Notas desde la app: las capturas llegan vacías (2026-08-18)
 
 Primer uso real de las notas (P-34) para reportar, y salieron **dos fallas de la herramienta misma**
 más un hallazgo:
 
-**P-35a — las capturas están vacías.** Las 3 filas de `notas_capturas` tienen `length(imagen) = 0`.
+**P-44a — las capturas están vacías.** Las 3 filas de `notas_capturas` tienen `length(imagen) = 0`.
 El texto, la pantalla y la ruta sí se guardan. Sin la imagen, Claude contesta a ciegas: en la nota de
 Sanpa el usuario mencionó **4 filas** y sólo se pudieron deducir 3 leyendo el código — la cuarta
 (la fijación del arrendamiento) apareció recién cuando él avisó que faltaba una.
 
-**P-35b — con un modal abierto la herramienta no se puede usar.** Textual del usuario:
+**P-44b — con un modal abierto la herramienta no se puede usar.** Textual del usuario:
 *"lo único, si salen modales esto no lo puedo usar"*. Es el peor momento para perderla: los modales
 son justamente donde aparecen los errores que se quieren reportar.
 
-**P-36 — hallazgo de la nota "Fecha de pago"**: al pasar una factura de Longo de *pagar* a *pagado*,
+**P-45 — hallazgo de la nota "Fecha de pago"**: al pasar una factura de Longo de *pagar* a *pagado*,
 pregunta si se quiere cambiar la fecha **aunque `fecha_pago` ya sea la de hoy**. Confirmación
 innecesaria en el camino más frecuente.
 
@@ -7457,7 +7457,7 @@ no van a matchear por CUIT hasta cargarlo.
 
 ---
 
-## <a id="p-37"></a>P-37 — Panel de pendientes dentro de la app (2026-08-18)
+## <a id="p-46"></a>P-46 — Panel de pendientes dentro de la app (2026-08-18)
 
 **Pedido del usuario:** un apartado **sólo para admin** con todos los pendientes de desarrollo,
 agrupados (*"pendiente de test abajo de todo, pendiente secundario, pendiente urgente"*), que
@@ -7699,7 +7699,7 @@ consultar las dos y unir.
 
 ---
 
-## <a id="a-feat-23"></a>A-FEAT-23 — La fijación de arrendamiento no emite el comprobante de venta
+## <a id="a-feat-28"></a>A-FEAT-28 — La fijación de arrendamiento no emite el comprobante de venta
 
 **El hueco.** El circuito de arrendamiento llega hasta la fijación y ahí se corta:
 
