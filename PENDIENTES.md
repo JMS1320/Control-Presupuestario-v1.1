@@ -280,7 +280,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
-| **A-BUG-43** | 🔴 | **Bug** | **Las 4 tablas de extracto no tienen NI UNA foreign key** — las 5 columnas de vínculo (`comprobante_arca_id`, `sueldo_pago_id`, `template_id`, `template_cuota_id`, `comprobante_venta_id`) aceptan cualquier UUID inventado. Por eso [A-BUG-42](#a-bug-42) borró 2 cuotas y **nadie se enteró en 3 meses**. ⚠️ Antes de crearlas hay que decidir qué pasa con `template_cuota_id` cuando guarda un **grupo de pago** (9 casos hoy) | → [A-BUG-43](#a-bug-43) `@extracto` |
+| **A-BUG-43** | 🔴 | **Bug** | **Las 4 tablas de extracto no tienen NI UNA foreign key**, y la causa de fondo es de **modelo**: `comprobante_arca_id` y `template_cuota_id` a veces guardan un **grupo de pago** (17 casos, **$15,6 M**), así que **cualquier JOIN los pierde en silencio**. ✅ **Modelo A decidido** (columna `grupo_pago_id` propia) — ⏸️ **no se ejecuta ahora** por decisión del usuario. Plan en 5 fases listo en el dossier | → [A-BUG-43](#a-bug-43) `@extracto` |
 | **A-BUG-42** | 🟡 | **Bug** | **HECHO 2026-08-19 + datos recuperados 2026-08-20** — reasignar un movimiento a un template **BORRABA** la cuota que tenía vinculada, incluso si era la que el usuario acababa de elegir. Perdió 2 cuotas reales (**$1,74 M**): Expensas Libertad 11/05 y Seguro Flota 02/06. Ahora se **suelta** (vuelve a `pendiente`) y se avisa. Cuotas recreadas y re-vinculadas. Falta testear | → [A-BUG-42](#a-bug-42) `@extracto` |
 | **A-BUG-41** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
 | **A-FEAT-33** | ✅ | Feat | **HECHO + TESTEADO OK 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
@@ -4241,12 +4241,19 @@ backup (→ § CAMBIOS POST-RECONSTRUCCIÓN de `RECONSTRUCCION_SUPABASE_2026-01-
 
 ### 📋 Plan de acción — 5 fases, en este orden
 
-**Fase 0 · Decidir el modelo** *(decisión del usuario, sin código)*
-Cómo se representa *"este movimiento pagó un GRUPO"*:
-- **A — columna propia `grupo_pago_id`** en las 4 tablas. Cada columna apunta a una sola tabla, las
-  FKs se pueden crear y los JOIN dejan de perder filas. **Recomendada.**
-- **B — dejarlo como está** y poner FK sólo en las 3 columnas sanas. Barato, pero convive con la
-  ambigüedad y los JOIN siguen perdiendo los 17.
+**Fase 0 · Decidir el modelo** — ✅ **DECIDIDO por el usuario 2026-08-20: MODELO A.**
+> *"la idea sería hacer el modelo A pero NO hacerlo ahora. Dejarlo bien documentado."*
+
+**Modelo A** = columna propia **`grupo_pago_id`** en las 4 tablas de extracto. Cada columna de
+vínculo apunta a **una sola** tabla; las FKs se pueden crear y los JOIN dejan de perder filas.
+
+*(Se descartó el modelo B —FK sólo en las 3 columnas sanas, dejando la ambigüedad— porque es más
+barato pero **no arregla el problema que ya cuesta hoy**: los JOIN seguirían perdiendo los 17
+movimientos.)*
+
+⏸️ **No se ejecuta ahora, por decisión del usuario.** No bloquea la conciliación, y la Fase 3 es un
+barrido de código que sacaría del trabajo en curso. Las fases 1-4 quedan listas para arrancar sin
+volver a averiguar nada.
 
 **Fase 1 · Migrar los 17 casos** *(dato — con backup y confirmación)*
 Mover el valor a `grupo_pago_id` y dejar la columna vieja en `null`. Reversible: se sabe cuáles son.
