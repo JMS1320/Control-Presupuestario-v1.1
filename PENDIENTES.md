@@ -59,11 +59,56 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 - **C** — Dudosos / a auditar juntos (probable que ya no apliquen).
 - **D** — Histórico CLAUDE.md (casi todo obsoleto).
 
+⚠️ **El prefijo dice dónde NACIÓ el ítem, no dónde está hoy.** Cada estrato numeró desde 1 por su
+cuenta, así que `A-FEAT-01` y `B-FEAT-01` son **dos pendientes distintos**. Al promover un ítem, el
+ID **no cambia** (ver regla de identidad, abajo): un `B-*` confirmado sigue siendo `B-*` y sólo se
+mueve de sección.
+
+---
+
+### 🔒 El ID es INMUTABLE (2026-08-20)
+
+> **Un ID no se renumera, no se reusa y no se borra nunca.**
+
+- ¿Quedó mal clasificado? Un bug que era feature, algo que cambia de prioridad, un `B-*` que se
+  confirma → **se mueve de sección con su ID puesto**. No se le busca un ID "que corresponda".
+- ¿Se resolvió? → ✅, **y la fila se queda**. Ver la lápida, abajo.
+- ¿Se creó por error o duplicado? → se marca como tal; **el número no vuelve a la bolsa.**
+- Antes de crear un ID nuevo: **mirar el archivo.** `P-*` y `A-FEAT-*` no son listas continuas,
+  tienen huecos ocupados en el medio. El control avisa si hay duplicados, pero avisa *después*.
+
+**Motivo — dos, y el segundo es el caro:**
+
+1. **El ID es la identidad; el resto del string es sólo etiqueta.** `A-BUG-25` codifica estrato +
+   tipo + secuencia, o sea *clasificación*. Todo identificador que codifica una clasificación va a
+   tener que cambiar cuando la clasificación cambie — y ahí se rompe todo lo que apuntaba a él.
+2. **Hay ~190 referencias entrantes** que ningún motor puede validar: 13 anclas desde otras
+   dimensiones (7 en `CLAUDE.md`), ~83 menciones en los demás `.md`, y **94 en el código**, en 19
+   archivos. Más los **comentarios que escribe el usuario desde la app**
+   (`pendientes_comentarios.pendiente_id`), que son texto **sin FK y no pueden tenerla**: apuntan a
+   un ID que vive en un `.md`, y Postgres no puede proteger un vínculo a un archivo.
+
+Renumerar un ID deja todo eso colgado **en silencio**. Pasó 5 veces el 2026-08-19 (por crear IDs
+sobre IDs ocupados) y salió gratis sólo porque todavía no había comentarios cargados.
+→ [A-OP-09](#a-op-09)
+
+### 🪦 Al archivar, queda la lápida
+
+Cuando un ítem resuelto se manda a `CLAUDE_HISTORICO.md`: **se va el dossier, se queda la fila del
+índice** — con ✅ y el link a dónde fue. **El ID nunca sale de este archivo.**
+
+*Motivo: archivar es hoy la vía realista al huérfano — más que el renumerado, que ya está tapado por
+el control de duplicados. Y hay un efecto lateral que la justifica sola: de los ~8.900 renglones de
+este archivo, casi todos son dossier (99 dossiers contra ~1.000 filas de índice). Sacar los dossiers
+cerrados lo achica de verdad **sin perder un solo ID**.*
+
 **Regla de mantenimiento (Claude — SIEMPRE):**
 1. Feature nueva implementada → fila 🔴 `A-TEST-xx` en el índice.
 2. Cuando analizamos un problema y surge razonamiento que vale guardar → crear/ampliar su dossier en DETALLES con el mismo ID.
-3. Usuario confirma testeo/resolución → ✅ y limpiar al cerrar sesión.
+3. Usuario confirma testeo/resolución → ✅ y limpiar al cerrar sesión. **La fila se queda** (lápida).
 4. Promover de B/C/D a A cuando se confirma vigencia (y recién ahí escribir su dossier).
+   ⚠️ **Promover mueve el ítem de sección, NO le cambia el ID** — `B-FEAT-01` promovido sigue siendo
+   `B-FEAT-01`. Renombrarlo a `A-FEAT-01` pisaría otro pendiente que ya existe.
 5. Al cerrar sesión → revisar que la Sección A esté al día.
 6. Cuando el usuario pregunte "qué falta" → leer **sólo el ÍNDICE de este archivo**.
 
@@ -85,7 +130,7 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | A-OP-06 | 🔴 | Baja | Limpieza raíz: ~40 archivos sueltos (.xlsx/.csv/.pdf/.md untracked) **+ varios `tmpclaude-XXXX-cwd`** (temporales). ⚠️ Claude debe EXPLICAR qué es cada grupo antes de tocar | → [A-OP-06](#a-op-06) `@general` |
 | A-OP-07 | 🔴 | Baja | **Triagear errores previos** del baseline (cuando haya entradas + tiempo). Log: `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) `@general` |
 | A-OP-08 | 🔍 | **A verificar** | **Backup/restore Supabase confiable** — el CLAUDE histórico repetía "nunca logramos subir backup, prerequisito ABSOLUTO antes de datos reales, prioridad MÁXIMA". Puede estar parcialmente resuelto por la reconstrucción de enero (vía scripts). **Verificar si sigue vigente** y, si sí, lograr un backup/restore probado antes de producción | → [A-OP-08](#a-op-08) `@general` |
-| A-OP-09 | 🔴 | Media | **Comentarios huérfanos**: si un ID desaparece de `PENDIENTES.md`, sus comentarios en BD quedan colgados **sin que nada avise**. El control debe detectarlo | → [A-OP-09](#a-op-09) `@general` |
+| A-OP-09 | 🔴 | Baja | **Comentarios huérfanos** — el fix de fondo ya está (ID inmutable + lápida, § Cómo usar este archivo). Queda la **red**: que el control y el panel los muestren | → [A-OP-09](#a-op-09) `@general` |
 
 ### 💰 PRESUPUESTO — lista del usuario 2026-08-02 (`P-NN`)
 > Batch dictado por el usuario el 2026-08-02. **Prefijo `P-`** = mejoras del módulo Presupuesto
@@ -553,20 +598,30 @@ que vive en `PENDIENTES.md`, no en una tabla. **Postgres no puede proteger un v�
 **nadie se entera**. El usuario escribió algo, y ese algo desaparece de la pantalla en silencio —
 exactamente el modo de falla que más caro sale en este proyecto.
 
-⚠️ **Renumerar un ID "no debería pasar nunca"… y pasó 5 veces el 2026-08-19**, por crear IDs sobre
-IDs ya ocupados (`P-*` y `A-FEAT-*` tienen huecos en el medio). Ese día todavía no había
-comentarios cargados, así que salió gratis. La próxima vez no.
+## ✅ El fix de fondo YA ESTÁ (2026-08-20) — esto es la red
 
-**Qué hay que hacer** — es un control, no una feature *(§ CLAUDE.md · Todo desarrollo termina con su
-control)*:
-1. `scripts/verificar-parser-pendientes.mts` consulta los `pendiente_id` distintos de la tabla y
-   avisa si alguno **no existe** en el `.md`. Mismo criterio para
-   `pendientes_propuestos.pendiente_id_asignado`.
-2. El panel muestra los huérfanos en un bloque aparte en vez de descartarlos — **nada se descarta en
-   silencio**.
-3. **Fix de fondo, no mitigación:** que renumerar deje de ser una operación a mano. Un
-   `scripts/renumerar-pendiente.mts` que mueva el ID en el `.md` **y** haga el `UPDATE` de las dos
-   tablas en el mismo paso. Mientras eso no exista, el control (1) es lo único que avisa.
+Se descartó migrar los pendientes a una tabla: no arregla la causa (si el PK es `A-BUG-25`, el
+problema es idéntico y la FK sólo lo hace fallar fuerte) y da vuelta la frontera hacia el lado que
+**nadie puede validar** — ~190 referencias entrantes desde `.md` y código, donde no hay FK posible.
+
+En su lugar, dos reglas de costo cero, ya escritas en § *Cómo usar este archivo*:
+- **🔒 El ID es inmutable** — no se renumera, no se reusa, no se borra. Y **promover B→A ya no
+  renombra**: el estándar mismo obligaba a renumerar contra un espacio ocupado (`A-FEAT-01` y
+  `B-FEAT-01` son ítems distintos). Corregido.
+- **🪦 Al archivar queda la lápida** — el dossier se va al histórico, la fila del índice se queda.
+
+**Lo que queda de A-OP-09 es la mitigación**: no evita el huérfano, lo hace **visible**. Vale
+tenerla igual, porque el ID inmutable depende de que Claude respete una regla — y el 2026-08-19
+quedó probado que eso falla.
+
+1. `scripts/verificar-parser-pendientes.mts` consulta los `pendiente_id` distintos de las dos
+   tablas y avisa si alguno **no existe** en el `.md` (ídem
+   `pendientes_propuestos.pendiente_id_asignado`).
+   ⚠️ **Si no puede conectarse a la BD tiene que decirlo fuerte, no pasar en verde.** Un control que
+   se saltea en silencio es peor que no tenerlo: te deja creyendo que verificó.
+2. El panel muestra los huérfanos en un **bloque aparte** en vez de descartarlos. Es la única capa
+   que ve el usuario — si él escribió algo, no puede desaparecer de la pantalla porque su pendiente
+   se archivó.
 
 **Relación:** [P-46](#p-46) lo creó · el aprendizaje de método está en el cierre del 2026-08-19.
 
