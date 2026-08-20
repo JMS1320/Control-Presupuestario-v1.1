@@ -351,9 +351,10 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
 | **A-FEAT-37** | 🟡 | Feat | **La mortandad tiene que mostrar motivo + observación + caravana encadenados**, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
-| **A-DAT-05** | 🔴 | Dato | **Los 4 movimientos del pase a CUT de febrero tienen el `tipo` equivocado** (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
+| **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
 | A-TEST-35 | ✅ | Test | **TESTEADO OK 2026-08-20 por el usuario en el preview.** Planilla de Hacienda con el `Stock Anterior` corregido ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
+| A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -9290,6 +9291,43 @@ Los 4 movimientos del 18/02/2026 están con `tipo = 'ajuste_stock'` y deberían 
 🛑 **Es un `UPDATE` sobre datos reales → requiere OK explícito del usuario** (`CLAUDE.md` § Datos).
 Hacerlo **después** de [A-BUG-45](#a-bug-45), o el próximo tacto vuelve a generar lo mismo.
 
+### ✅ HECHO 2026-08-20 — con OK explícito del usuario, después de [A-BUG-45](#a-bug-45)
+
+```sql
+UPDATE productivo.movimientos_hacienda SET tipo = 'cambio_categoria'
+ WHERE tipo = 'ajuste_stock' AND observaciones ILIKE '%tacto%';   -- 4 filas
+```
+
+**4 filas**, todas del 18/02/2026, los IDs que ya estaban identificados. **Sólo cambió la columna
+`tipo`**: cantidades, fechas y observaciones intactas.
+
+**Controles sobre la BD, después del UPDATE**: quedan **0** `ajuste_stock` de tacto · siguen los
+mismos **33** movimientos (no se creó ni borró nada) · las reclasificaciones netean **0** · el stock
+total sigue en **356**.
+
+**Verificación sobre las planillas** (`_CORREGIDO` → `_TACTO`), y salió como estaba previsto:
+
+| Fila de febrero | Antes | Ahora |
+|---|---:|---:|
+| Mortandad — Vaca | 7 | **0** |
+| Mortandad — Vaq. Preñada | 1 | **0** |
+| **Mortandad — Total** | **9** | **1** |
+| Compras — CUT/Descarte | 8 | **0** |
+| Reclas. − — Vaca / Vaq. Preñada | 0 / 0 | **7 / 1** |
+| Reclas. + — CUT/Descarte | 0 | **8** |
+
+🎯 **El control clave pasó**: `Stock Anterior`, `Ingresos`, `Egresos` y `Existencia Final` **no
+aparecen en el diff**. Los 8 animales se movieron *entre* filas sin entrar ni salir. Y **marzo a
+agosto: cero cambios**. La mortandad de febrero queda en **1** — la ternera de Onetto, la única baja
+real del mes.
+
+📌 **Evidencia lateral para [A-FEAT-38](#a-feat-38)**: el diff de la hoja *Detalle* vino con **60+
+celdas de puro reordenamiento**. El `UPDATE` cambió el orden en que Postgres devuelve las filas del
+18/02 y del 23/02 y, como el detalle se ordena sólo por fecha, salieron barajadas. Verificado que el
+contenido es idéntico (mismo conjunto de filas en las 8 planillas). **Un reporte que se archiva y
+sale distinto en cada corrida hace que comparar dos versiones sea casi imposible** — es el mejor
+argumento para el orden estable, y apareció solo.
+
 ---
 
 ## <a id="a-dat-06"></a>A-DAT-06 — La venta del 04/08 no cierra: falta el 3 %
@@ -9332,6 +9370,40 @@ Cubre [A-BUG-44](#a-bug-44). Todo se prueba desde **Productivo → Hacienda**.
 📸 Para comparar están las dos tandas completas (Excel + PDF, 8 períodos cada una):
 `backup_planillas_hacienda_2026-08-20/` (antes) y `planillas_hacienda_2026-08-20_CORREGIDO/`
 (después). Ninguna de las dos está en git.
+
+---
+
+## <a id="a-test-36"></a>A-TEST-36 — El pase a CUT sale como reclasificación, no como muerte
+
+Cubre [A-BUG-45](#a-bug-45) (código) y [A-DAT-05](#a-dat-05) (los 4 movimientos de febrero).
+
+**1 · La planilla de Febrero 2026** — Productivo → Hacienda → Planilla → Mes → Febrero:
+
+| Fila | Tiene que decir | Antes decía |
+|---|---:|---:|
+| **Mortandad — Total General** | **1** | 9 |
+| Mortandad — Vaca / Vaq. Preñada | 0 / 0 | 7 / 1 |
+| Compras — CUT/Descarte | **0** | 8 |
+| Reclas. − — Vaca / Vaq. Preñada | **7 / 1** | 0 / 0 |
+| Reclas. + — CUT/Descarte | **8** | 0 |
+
+La **Mortandad de 1** es la ternera de Onetto, la única baja real del mes.
+
+**2 · Lo que NO tiene que cambiar** — es la mitad importante del test:
+- `Stock Anterior`, `Ingresos`, `Egresos` y `Existencia Final` de febrero: **iguales** (421 el
+  cierre). Los 8 animales se mueven *entre* filas, no entran ni salen.
+- **Marzo a agosto: ni un número distinto.** Agosto sigue cerrando en **356**.
+
+**3 · En la hoja *Detalle* de febrero**, los 4 movimientos del 18/02 tienen que aparecer como
+`Reclas. +` / `Reclas. −` en vez de `Ajuste + (en Compras)` / `Ajuste - (en Mortandad)`.
+
+**4 · El fix del código sólo se puede probar con un tacto nuevo.** Al registrar el próximo tacto con
+vacías, los 2 movimientos que se generan tienen que salir con `tipo = 'cambio_categoria'` y caer en
+las filas de reclasificación, no en Mortandad/Compras. **Hasta que eso pase, A-BUG-45 no está
+verificado.**
+
+📸 Tandas para comparar: `planillas_hacienda_2026-08-20_CORREGIDO/` (antes de este cambio) y
+`planillas_hacienda_2026-08-20_TACTO/` (después). Ninguna está en git.
 
 ---
 
