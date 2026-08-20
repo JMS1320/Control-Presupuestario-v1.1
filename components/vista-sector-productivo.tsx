@@ -1258,6 +1258,10 @@ function TabHacienda() {
                 sexo: 'Hembra',
                 categoria_id: catDestino!.id,
                 categoria_previa: catOrigen?.nombre || '',
+                // La fecha REAL de ingreso a la categoría, que es la del movimiento — nunca
+                // `created_at`, que es cuándo se cargó. La planilla filtra el detalle del CUT
+                // por este campo, y sin él el animal no aparecía en el reporte (A-BUG-47).
+                fecha_alta: nuevoMov.fecha,
                 activo: true,
                 es_torito: false,
               }
@@ -4553,6 +4557,9 @@ function SubTabOrdenesAplicacion() {
                         sexo: 'Hembra',
                         categoria_id: catCUTid,
                         categoria_previa: ciclo?.rodeo || 'Vaca',
+                        // Fecha real de ingreso al CUT = la del tacto, no `created_at` (A-BUG-47).
+                        // Sin esto la caravana no aparecía en el detalle del CUT de la planilla.
+                        fecha_alta: fecha,
                         activo: true,
                         es_torito: false,
                       }

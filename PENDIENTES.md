@@ -342,10 +342,11 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-44** | 🟡 | **Bug** | **HECHO 2026-08-20 — falta testear ([A-TEST-35](#a-test-35))** · La Planilla de Hacienda exageraba el rodeo en 16 cabezas — `Stock Anterior` sumaba los movimientos anteriores **en crudo** (`vista-sector-productivo.tsx:1410`) sin mirar el `tipo`, y ventas y mortandades se guardan **positivas**: las suma en vez de restarlas. Cada venta o muerte agrega **el doble de su tamaño** al error, y no se corrige nunca solo. Agosto/2026 dice **372**, hay **356**. ✅ **Decidido: se corrige el REPORTE, no el signo** — la pestaña Stock (`:1148`) y `confirmar-venta.ts` dependen de la convención positiva. Fix de 1 línea, **ningún dato se toca** | → [A-BUG-44](#a-bug-44) `@productivo` |
 | **A-BUG-45** | 🟡 | **Bug** | **HECHO 2026-08-20 (código) — falta el arreglo de los datos viejos ([A-DAT-05](#a-dat-05))** · El tacto registraba el pase a CUT como `ajuste_stock` en vez de `cambio_categoria`. El reporte rotula `ajuste −` como *Mortandad* y `ajuste +` como *Compras*, así que la planilla de febrero **declara muertas a 8 vacas vivas** — y dos páginas después las lista como *Activa*. El camino manual sí lo hace bien (se ve en marzo): cambiar el `tipo` en 2 líneas, los signos ya están bien | → [A-BUG-45](#a-bug-45) `@productivo` |
 | **A-BUG-46** | 🔴 | **Bug** | **Pasar hacienda a CUT sin tipear caravanas no crea el individuo y no avisa** (`:1247` — el alta está condicionada a `nuevoMov.caravanas.trim()`). En agosto entró 1 vaquillona: la grilla dice **17** y la página nominal lista **8**. El animal entra al stock sin nombre, en silencio | → [A-BUG-46](#a-bug-46) `@productivo` |
-| **A-BUG-47** | 🔴 | **Bug** | **`fecha_alta` no se setea al crear caravanas** (ni el tacto `:4532` ni el alta manual `:1250`), y la página del CUT filtra por `fecha_alta <= hasta`, que en Postgres **excluye los NULL**. Hoy no se nota porque las 12 del CUT se completaron a mano en abril/2026, pero **la próxima caravana no aparecería en la planilla**. Ya hay 8 terneros con `fecha_alta` nula | → [A-BUG-47](#a-bug-47) `@productivo` |
+| **A-BUG-47** | 🟡 | **Bug** | **HECHO 2026-08-20 (los 2 caminos que alimentan el CUT) — falta testear** · Los otros 3 caminos de alta van en [A-BUG-51](#a-bug-51) · `fecha_alta` no se seteaba al crear caravanas (ni el tacto `:4532` ni el alta manual `:1250`), y la página del CUT filtra por `fecha_alta <= hasta`, que en Postgres **excluye los NULL**. Hoy no se nota porque las 12 del CUT se completaron a mano en abril/2026, pero **la próxima caravana no aparecería en la planilla**. Ya hay 8 terneros con `fecha_alta` nula | → [A-BUG-47](#a-bug-47) `@productivo` |
 | **A-BUG-48** | 🟡 | **Bug** | **Tres fragilidades en el registro de tacto**: el UUID del CUT está **hardcodeado** (`:4510`) y 20 líneas después la misma categoría se busca **por nombre** (`:4529`) · el rodeo se cruza con la categoría por **nombre exacto** y el `if` **no tiene `else`**, así que si no matchea **no se registra el movimiento, sin avisar** (`:4509`) · el **tacto retrospectivo no mueve el stock** (`:4507`), dejando ciclo y hacienda en desacuerdo | → [A-BUG-48](#a-bug-48) `@productivo` |
 | **A-BUG-49** | 🟡 | **Bug** | **La Planilla de Hacienda hardcodea la razón social** (`Ea. Nazarenas` / `de Martinez Sobrado` en `:1543`, `:1691` y `:1860`), contra `CLAUDE.md` § Datos críticos — mismo patrón que sacaba el Libro IVA de PAM y MA con el CUIT de MSA impreso. Hoy no molesta: un solo establecimiento y `movimientos_hacienda` no tiene columna de empresa | → [A-BUG-49](#a-bug-49) `@productivo` |
 | **A-BUG-50** | 🟡 | **Bug** | **Los movimientos de categorías que no están en las 12 columnas de la planilla se descartan en silencio** (`:1418` — `if (col === undefined) return`). Hoy inofensivo: las 3 que quedan afuera (`Novillito`, `Ternera`, `Ternero`) están inactivas y con 0 movimientos. Pero una categoría nueva desaparecería del reporte sin aviso | → [A-BUG-50](#a-bug-50) `@productivo` |
+| **A-BUG-51** | 🟡 | **Bug** | **Otros 3 caminos dan de alta caravanas sin `fecha_alta`** — el alta manual de la pantalla de Terneros (`tab-terneros.tsx:323`), el **importador de terneros** (`import-terneros/route.ts:174`) y el **importador de pesadas** cuando la caravana no existe (`import-pesadas/route.ts:322`, que inserta con **un solo campo**: `caravana_oficial`). Son los caminos por los que entra un individuo sin fecha ni categoría. No afectan a la Planilla de Hacienda (crean terneros, no CUT) — abordar al tocar la pantalla de Terneros. Hermano de [A-BUG-47](#a-bug-47) | → [A-BUG-51](#a-bug-51) `@productivo` |
 | **A-FEAT-34** | 🔴 | Feat | **Rediseñar la página CUT/Descarte + su control de cierre** — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
 | **A-FEAT-35** | 🔴 | Feat | **Sacar kilos y montos del detalle de la Planilla de Hacienda.** Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
@@ -9118,6 +9119,46 @@ Y la página del CUT de la planilla filtra por **`fecha_alta <= hasta`** (`:1458
 
 ⚠️ `fecha_alta` es la **fecha real de ingreso a la categoría**, no `created_at` — el motivo completo
 está en `MODULO_HACIENDA.md` § 6.4. Al arreglarlo, tiene que tomar la fecha del **movimiento**.
+
+### ✅ HECHO 2026-08-20 — los 2 caminos que alimentan el CUT
+
+Los dos `insert` ahora guardan `fecha_alta` con la fecha del movimiento: el del tacto
+(`fecha` de la orden) y el del cambio de categoría manual (`nuevoMov.fecha`).
+`npm run type-check:diff`: **113 → 113**.
+
+**Qué NO se tocó, a propósito**: hay **5** caminos que dan de alta filas en `terneros`, no 2. Los
+otros tres (alta manual de la pantalla de Terneros y los dos importadores) tampoco setean
+`fecha_alta`, pero **no afectan a la Planilla de Hacienda** —crean terneros, no animales de CUT— y
+ampliar el alcance acá era meterse en la pantalla de Terneros. Van en [A-BUG-51](#a-bug-51).
+
+📌 **Qué es un animal sin `fecha_alta`**, para no volver a preguntarlo: al 2026-08-20 son los **8
+toros** cargados el 26/04/2026, con caravana interna (3, 7, 18, 42, 48, 49, 67, 68) y sin oficial.
+Son **carga inicial de inventario**: ya estaban en el campo cuando arrancó el sistema, así que nunca
+"ingresaron" por un movimiento y la pregunta *"¿cuándo entró?"* no tiene respuesta. **No es un error
+de carga.** Decisión del usuario: **nunca se omiten por no tener fecha** — van en un bloque aparte.
+
+*(Observación al pasar, sin perseguir: el stock dice **16 toros** y hay **8** identificados. Es la
+misma brecha entre cabezas e individuos que va a destapar el control de [A-FEAT-34](#a-feat-34).)*
+
+---
+
+## <a id="a-bug-51"></a>A-BUG-51 — Los otros 3 caminos de alta tampoco setean `fecha_alta`
+
+Hermano de [A-BUG-47](#a-bug-47), que arregló los 2 que alimentan el CUT. Faltan:
+
+| Camino | Dónde |
+|---|---|
+| Alta manual en la pantalla de Terneros | `components/tab-terneros.tsx:323` |
+| Importador de terneros | `app/api/import-terneros/route.ts:174` |
+| Importador de pesadas, cuando la caravana no existe | `app/api/import-pesadas/route.ts:322` |
+
+El tercero es el más filoso: inserta con **un solo campo** (`caravana_oficial`), así que crea un
+individuo **sin fecha, sin categoría y sin sexo**. Es el camino por el que más fácil entra una
+caravana incompleta.
+
+**No afecta a la Planilla de Hacienda**: esos caminos crean terneros, y la página del CUT sólo mira
+la categoría CUT. Por eso quedó afuera del alcance de la etapa 3. **Abordar al tocar la pantalla de
+Terneros**, junto con las 116 filas fantasma de [A-BUG-44](#a-bug-44).
 
 ---
 
