@@ -4196,6 +4196,32 @@ Cualquiera acepta un UUID inventado. **Es lo que dejó pasar [A-BUG-42](#a-bug-4
 se borró una cuota, el puntero quedó apuntando a la nada y no falló nada. Con una FK, el `DELETE`
 habría fallado o habría dejado el vínculo en `null` — visible en el momento.
 
+### 📊 Estado medido — 2026-08-20
+
+**Cero punteros realmente colgados** en las 4 tablas. Todo lo que no resuelve es **un grupo de pago**:
+
+| Tabla | ARCA | Sueldo | Template | Cuota | Venta |
+|---|---|---|---|---|---|
+| `msa_galicia` | 108 · **8 son grupos** | 47 ✅ | 472 ✅ | **9 son grupos** | 1 ✅ |
+| `pam_galicia` | ✅ | ✅ | ✅ | ✅ | *(no existe)* |
+| `pam_galicia_cc` | ✅ | ✅ | ✅ | ✅ | *(no existe)* |
+| `ma.ma_galicia` | ✅ | ✅ | ✅ | ✅ | *(no existe)* |
+
+### 🔴 El problema real no es de integridad: es de MODELO
+
+**Dos columnas guardan dos cosas distintas según el caso:**
+
+| Columna | A veces apunta a | Y otras veces a |
+|---|---|---|
+| `comprobante_arca_id` | `{schema}.comprobantes_arca` | **`msa.grupos_pago`** (8 casos) |
+| `template_cuota_id` | `cuotas_egresos_sin_factura` | **`msa.grupos_pago`** (9 casos) |
+
+Eso es lo que **impide** la FK: una columna no puede declararse apuntando a dos tablas.
+
+Y tiene un costo que ya se paga hoy, independiente de las FKs: **cualquier consulta que haga JOIN
+por esas columnas pierde esos 17 movimientos en silencio** — **$15.641.213,21**. Pasó al escribir
+este mismo dossier: un `LEFT JOIN` contra cuotas devolvió `null` y pareció un dato faltante.
+
 ### ⚠️ Tres cosas que hay que resolver ANTES de crear las FKs
 
 1. **`template_cuota_id` a veces guarda un GRUPO, no una cuota.** Cuando el template está agrupado,
@@ -4212,6 +4238,35 @@ habría fallado o habría dejado el vínculo en `null` — visible en el momento
 
 ⚠️ Es cambio de **estructura de BD**: requiere el MCP en write o el SQL Editor, y no entra en el
 backup (→ § CAMBIOS POST-RECONSTRUCCIÓN de `RECONSTRUCCION_SUPABASE_2026-01-07.md`).
+
+### 📋 Plan de acción — 5 fases, en este orden
+
+**Fase 0 · Decidir el modelo** *(decisión del usuario, sin código)*
+Cómo se representa *"este movimiento pagó un GRUPO"*:
+- **A — columna propia `grupo_pago_id`** en las 4 tablas. Cada columna apunta a una sola tabla, las
+  FKs se pueden crear y los JOIN dejan de perder filas. **Recomendada.**
+- **B — dejarlo como está** y poner FK sólo en las 3 columnas sanas. Barato, pero convive con la
+  ambigüedad y los JOIN siguen perdiendo los 17.
+
+**Fase 1 · Migrar los 17 casos** *(dato — con backup y confirmación)*
+Mover el valor a `grupo_pago_id` y dejar la columna vieja en `null`. Reversible: se sabe cuáles son.
+
+**Fase 2 · Crear las FKs** *(estructura — MCP en write o SQL Editor)*
+17 columnas + la nueva. **`ON DELETE SET NULL`**, no `RESTRICT`: si se borra el destino, el
+movimiento queda *"conciliado sin vínculo"* — que el panel de la corrida **ya marca en ámbar**.
+`RESTRICT` frenaría borrados legítimos y empujaría a la gente a esquivar la app.
+⚠️ No entra en el backup → anotar en `RECONSTRUCCION_SUPABASE_2026-01-07.md` § CAMBIOS POST-RECONSTRUCCIÓN.
+
+**Fase 3 · El código que lee esas columnas**
+Los que hoy asumen "cuota" o "factura" tienen que contemplar el grupo: los 4 caminos de escritura,
+el Cash Flow y los reportes. Es donde está el grueso del trabajo.
+
+**Fase 4 · Control permanente**
+El SQL de abajo, corrido junto con los otros controles. Debe dar **0** siempre.
+
+⚠️ **Esto NO bloquea la conciliación en curso.** Es deuda estructural: se puede seguir conciliando
+mientras tanto. Lo que sí conviene es no dejarlo indefinidamente, porque cada mes que pasa suma
+movimientos agrupados a los 17.
 
 ### Mientras tanto — el control que sí se puede correr hoy
 ```sql
