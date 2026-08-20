@@ -280,7 +280,8 @@ El índice dice *qué* falta; los detalles dicen *por qué / cómo lo analizamos
 | **A-FEAT-30** | 🟡 | Feat | **HECHO 2026-08-19** — filtro por **contraparte** en el Extracto: un solo input que acepta **nombre o CUIT**, y compara el CUIT sin guiones (`20-28749254-6` = `20287492546`). Falta testear | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | **A-BUG-34** | 🟡 | **Bug** | **HECHO 2026-08-19** — `recargar()` llamaba a `cargarMovimientos({ limite: 100 })` **sin ningún filtro**, así que después de conciliar la grilla volvía con "los últimos 100 de la cuenta". El usuario filtró hasta el 18/06 y le aparecieron dos movimientos de julio y agosto. **Preexistente**, se hizo visible ahora. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
 | **A-BUG-35** | 🟡 | **Bug** | **HECHO 2026-08-19** — las filas del panel *Resultado de la corrida* eran **copias**: salían todas juntas arriba rompiendo el orden, y el checkbox de revisado no respondía porque no eran las filas de la lista. Ahora se inyectan en la lista real y se reordena por `orden`. Falta testear | → [A-BUG-34](#a-bug-34) `@extracto` |
-| **A-BUG-42** | 🔴 | **Bug** | **ARREGLADO 2026-08-19, datos sin recuperar** — reasignar un movimiento a un template **BORRABA** la cuota que tenía vinculada, incluso si era la que el usuario acababa de elegir. Perdidas 2 cuotas reales (**$1,74 M**): Expensas Libertad 11/05 y Seguro Flota 02/06. Ahora se **suelta** (vuelve a `pendiente`) y se avisa. **Faltan recrear las 2 cuotas** | → [A-BUG-42](#a-bug-42) `@extracto` |
+| **A-BUG-43** | 🔴 | **Bug** | **Las 4 tablas de extracto no tienen NI UNA foreign key** — las 5 columnas de vínculo (`comprobante_arca_id`, `sueldo_pago_id`, `template_id`, `template_cuota_id`, `comprobante_venta_id`) aceptan cualquier UUID inventado. Por eso [A-BUG-42](#a-bug-42) borró 2 cuotas y **nadie se enteró en 3 meses**. ⚠️ Antes de crearlas hay que decidir qué pasa con `template_cuota_id` cuando guarda un **grupo de pago** (9 casos hoy) | → [A-BUG-43](#a-bug-43) `@extracto` |
+| **A-BUG-42** | 🟡 | **Bug** | **HECHO 2026-08-19 + datos recuperados 2026-08-20** — reasignar un movimiento a un template **BORRABA** la cuota que tenía vinculada, incluso si era la que el usuario acababa de elegir. Perdió 2 cuotas reales (**$1,74 M**): Expensas Libertad 11/05 y Seguro Flota 02/06. Ahora se **suelta** (vuelve a `pendiente`) y se avisa. Cuotas recreadas y re-vinculadas. Falta testear | → [A-BUG-42](#a-bug-42) `@extracto` |
 | **A-BUG-41** | ✅ | **Bug** | **HECHO + TESTEADO OK 2026-08-19** — al conciliar un **grupo de sueldos**, el movimiento quedaba conciliado **sin vínculo** y **los pagos seguían en `pagado`**: la misma plata conciliada en el extracto y todavía por pagar en el Cash Flow. Las dos ramas exigían `origen_tabla === 'sueldos.pagos'`, que un grupo no cumple. ARCA y templates ya usaban `ids_grupo`; sueldos era el único que no. Falta testear | → [A-BUG-41](#a-bug-41) `@extracto @cashflow` |
 | **A-FEAT-33** | ✅ | Feat | **HECHO + TESTEADO OK 2026-08-19** — **agrupar sueldos desde el Cash Flow**. Existía sólo en Vista Pagos (que se está desactivando) y con implementación propia; el Cash Flow lo bloqueaba. Sin agrupar, un débito de acreditación de haberes —que el banco manda como **una sola línea por todo el lote**— no tiene ninguna fila del Cash Flow que valga lo mismo y no concilia nunca. Falta testear | → [A-FEAT-33](#a-feat-33) `@cashflow @sueldos` |
 | **A-BUG-40** | 🟡 | **Bug** | **HECHO 2026-08-19** — el Cash Flow **decía "banco" y mostraba caja**: el selector de medio de pago arranca en `banco` pero su valor sólo viajaba dentro de `aplicarFiltros()`, que no corre al montar. Se veía al buscar *"sigot"* y aparecer los `caja_sigot`. Ahora es client-side y **siempre activo**. Falta testear | → [A-BUG-40](#a-bug-40) `@cashflow` |
@@ -4178,6 +4179,51 @@ consecuencias, las dos que vio el usuario:
 
 ---
 
+## <a id="a-bug-43"></a>A-BUG-43 — El extracto no tiene foreign keys
+
+Verificado 2026-08-19: `information_schema` devuelve **cero** constraints de tipo `FOREIGN KEY` en
+`msa_galicia`. Y la tabla tiene **5 columnas que son punteros**:
+
+| Columna | Debería apuntar a |
+|---|---|
+| `comprobante_arca_id` | `{schema}.comprobantes_arca` |
+| `sueldo_pago_id` | `sueldos.pagos` |
+| `template_id` | `egresos_sin_factura` |
+| `template_cuota_id` | `cuotas_egresos_sin_factura` |
+| `comprobante_venta_id` | `msa.comprobantes_venta` |
+
+Cualquiera acepta un UUID inventado. **Es lo que dejó pasar [A-BUG-42](#a-bug-42) durante 3 meses**:
+se borró una cuota, el puntero quedó apuntando a la nada y no falló nada. Con una FK, el `DELETE`
+habría fallado o habría dejado el vínculo en `null` — visible en el momento.
+
+### ⚠️ Tres cosas que hay que resolver ANTES de crear las FKs
+
+1. **`template_cuota_id` a veces guarda un GRUPO, no una cuota.** Cuando el template está agrupado,
+   ahí va un `msa.grupos_pago.id` — hoy son **9 movimientos** (ARBA, Municipalidad SP). Una FK contra
+   `cuotas_egresos_sin_factura` los rechazaría a todos. Hay que decidir primero si ese uso se
+   mantiene (y entonces hace falta **una columna aparte** para el grupo) o si se corrige.
+2. **Decisión de comportamiento**: al borrar una cuota conciliada, ¿la base **impide** el borrado
+   (`RESTRICT`) o **desvincula** el movimiento (`SET NULL`)? Las dos son defendibles. `SET NULL` es
+   más suave y deja el movimiento visible como "conciliado sin vínculo", que el panel ya marca en
+   ámbar.
+3. **Alcance**: son **4 tablas** (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma.ma_galicia`) ×
+   hasta 5 columnas. Y `comprobante_venta_id` **sólo existe en `msa_galicia`**
+   (→ [A-FEAT-24](#a-feat-24)), así que no es un patrón uniforme.
+
+⚠️ Es cambio de **estructura de BD**: requiere el MCP en write o el SQL Editor, y no entra en el
+backup (→ § CAMBIOS POST-RECONSTRUCCIÓN de `RECONSTRUCCION_SUPABASE_2026-01-07.md`).
+
+### Mientras tanto — el control que sí se puede correr hoy
+```sql
+select count(*) from msa_galicia m
+where m.template_cuota_id is not null
+  and not exists (select 1 from cuotas_egresos_sin_factura c where c.id = m.template_cuota_id)
+  and not exists (select 1 from msa.grupos_pago g where g.id = m.template_cuota_id);
+-- al 2026-08-20: 0
+```
+
+---
+
 ## <a id="a-bug-42"></a>A-BUG-42 — Reasignar un movimiento **borraba** la cuota del template
 
 > **Arreglado 2026-08-19. Los datos perdidos NO están recuperados** — ver § abajo.
@@ -4225,9 +4271,19 @@ destructivo, find-or-create en vez de reemplazar*).
 Además, la asignación ahora **avisa** lo que soltó por el camino, y los errores del `catch` dejaron
 de morir sólo en la consola. *No queda ni un `.delete()` en `vista-extracto-bancario.tsx`.*
 
-### 🔴 Pendiente de datos — recrear las 2 cuotas
-1. **Seguro Flota**, junio: `$572.972`, y re-vincular el movimiento del 02/06.
-2. **Expensas Libertad**, mayo: `$1.165.390,11`, y re-vincular el del 11/05.
+### ✅ Datos recuperados — 2026-08-20, con OK del usuario
+
+| Template | Cuota creada | Importe | Movimiento re-vinculado |
+|---|---|---:|---|
+| Seguro Flota | **#12**, 02/06 | 572.972,00 | 02/06 ✅ |
+| Expensas Libertad | **#5**, 11/05 | 1.165.390,11 | 11/05 ✅ |
+
+Los números de cuota **confirman el borrado**: a Expensas Libertad le faltaba exactamente la **5**
+en una serie 1-12 que estaba completa. Las dos quedaron con `descripcion` marcando que son
+recreadas, y con `fecha_estimada` = la fecha real del débito (que es lo que hace la propia
+asignación manual al vincular).
+
+**Control**: `template_cuota_id` colgados que no son grupos → **0**.
 
 ---
 
