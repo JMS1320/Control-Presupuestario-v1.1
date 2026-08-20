@@ -1406,8 +1406,17 @@ function TabHacienda() {
     const nAdultos = CATS_PLANILLA.length
     const nTern = CATS_TERNEROS.length
 
+    // El signo NO alcanza para saber si un movimiento suma o resta: venta y mortandad se
+    // guardan POSITIVAS (sólo ajuste_stock y cambio_categoria llevan signo). Hay que mirar
+    // el tipo, con el mismo criterio que la pestaña Stock (:1146-1152), para que den lo mismo.
+    // Sumar en crudo hacía que cada venta o muerte inflara el arranque en el doble de su
+    // tamaño, y el error se arrastraba de mes en mes (A-BUG-44).
     const stockAnterior = new Array(nCols).fill(0)
-    movsAnteriores.forEach(m => { const col = catToCol[m.categoria_id]; if (col !== undefined) stockAnterior[col] += m.cantidad })
+    movsAnteriores.forEach(m => {
+      const col = catToCol[m.categoria_id]
+      if (col === undefined) return
+      stockAnterior[col] += (m.tipo === 'venta' || m.tipo === 'mortandad') ? -m.cantidad : m.cantidad
+    })
 
     const filas: Record<string, number[]> = {
       compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),

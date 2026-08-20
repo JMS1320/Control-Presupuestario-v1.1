@@ -1,12 +1,16 @@
 // Exporta las Planillas de Hacienda igual que el botón de la app, pero en lote.
 //
-// ⚠️ ESTE SCRIPT REPLICA LA LÓGICA DE LA APP **TAL CUAL ESTÁ HOY**, bugs incluidos.
-// Es a propósito: sirve de backup/foto del estado actual, y una foto retocada no sirve
-// para comparar contra lo que venga después. El espejo es
+// ⚠️ ESTE SCRIPT REPLICA LA LÓGICA DE LA APP **TAL CUAL ESTÁ**. El espejo es
 // `components/vista-sector-productivo.tsx` → `calcularDatosPlanilla()` (~:1384) y
 // `exportarPlanillaHacienda()` (~:1528).
 //
-// Si algún día se corrige la app, este script hay que corregirlo igual — o queda mintiendo.
+// **Cada fix de la app hay que aplicarlo acá también, o el script queda mintiendo.**
+// Aplicados hasta ahora:
+//   · 2026-08-20 — A-BUG-44: `stockAnterior` mira el tipo en vez de sumar en crudo.
+//
+// 📸 La foto del estado ANTERIOR al fix quedó en `backup_planillas_hacienda_2026-08-20/`
+// (generada con la versión que replicaba el bug). No regenerar sobre esa carpeta: es la
+// referencia contra la que se comparan las correcciones.
 //
 //   npx tsx scripts/export-planilla-hacienda.mts [carpeta-destino]
 //
@@ -97,10 +101,14 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
   const nAdultos = CATS_PLANILLA.length
   const nTern = CATS_TERNEROS.length
 
-  // ⚠️ Suma cruda, igual que la app (:1410). Ventas y mortandades se guardan POSITIVAS,
-  // así que acá SUMAN en vez de restar. Se replica el comportamiento, no se corrige.
+  // Mira el TIPO, igual que la app (:1410) desde el fix de A-BUG-44: venta y mortandad se
+  // guardan POSITIVAS, así que sumarlas en crudo inflaba el arranque en el doble de su tamaño.
   const stockAnterior = new Array(nCols).fill(0)
-  movsAnteriores.forEach((m: any) => { const col = catToCol[m.categoria_id]; if (col !== undefined) stockAnterior[col] += m.cantidad })
+  movsAnteriores.forEach((m: any) => {
+    const col = catToCol[m.categoria_id]
+    if (col === undefined) return
+    stockAnterior[col] += (m.tipo === "venta" || m.tipo === "mortandad") ? -m.cantidad : m.cantidad
+  })
 
   const filas: Record<string, number[]> = {
     compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),

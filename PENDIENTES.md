@@ -339,7 +339,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-34 | ✅ | Test | **TESTEADO OK 2026-08-19** — el usuario corrió el motor sobre 2 movimientos de JMS con el filtro de contraparte puesto: el del 14/05 concilió, **el conciliado no desapareció de la grilla**, el orden se mantuvo y **el tilde de revisado respondió**. Cubre A-FEAT-29, A-FEAT-30, A-BUG-34 y A-BUG-35 | → [A-FEAT-29](#a-feat-29) `@extracto` |
 | A-TEST-33 | ✅ | Test | **TESTEADO OK 2026-08-19** — motor con CUIT normalizado + prioriza sin excluir. El usuario corrió la conciliación acotada sobre los 4 movimientos de AMS: **30/04 y 29/05 salieron `conciliado`** con su pago vinculado, y los 2 del 05/06 quedaron pendientes como estaba previsto | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
-| **A-BUG-44** | 🔴 | **Bug** | **La Planilla de Hacienda exagera el rodeo en 16 cabezas** — `Stock Anterior` suma los movimientos anteriores **en crudo** (`vista-sector-productivo.tsx:1410`) sin mirar el `tipo`, y ventas y mortandades se guardan **positivas**: las suma en vez de restarlas. Cada venta o muerte agrega **el doble de su tamaño** al error, y no se corrige nunca solo. Agosto/2026 dice **372**, hay **356**. ✅ **Decidido: se corrige el REPORTE, no el signo** — la pestaña Stock (`:1148`) y `confirmar-venta.ts` dependen de la convención positiva. Fix de 1 línea, **ningún dato se toca** | → [A-BUG-44](#a-bug-44) `@productivo` |
+| **A-BUG-44** | 🟡 | **Bug** | **HECHO 2026-08-20 — falta testear ([A-TEST-35](#a-test-35))** · La Planilla de Hacienda exageraba el rodeo en 16 cabezas — `Stock Anterior` sumaba los movimientos anteriores **en crudo** (`vista-sector-productivo.tsx:1410`) sin mirar el `tipo`, y ventas y mortandades se guardan **positivas**: las suma en vez de restarlas. Cada venta o muerte agrega **el doble de su tamaño** al error, y no se corrige nunca solo. Agosto/2026 dice **372**, hay **356**. ✅ **Decidido: se corrige el REPORTE, no el signo** — la pestaña Stock (`:1148`) y `confirmar-venta.ts` dependen de la convención positiva. Fix de 1 línea, **ningún dato se toca** | → [A-BUG-44](#a-bug-44) `@productivo` |
 | **A-BUG-45** | 🔴 | **Bug** | **El tacto registra el pase a CUT como `ajuste_stock` en vez de `cambio_categoria`** (`:4513-4522`). El reporte rotula `ajuste −` como *Mortandad* y `ajuste +` como *Compras*, así que la planilla de febrero **declara muertas a 8 vacas vivas** — y dos páginas después las lista como *Activa*. El camino manual sí lo hace bien (se ve en marzo): cambiar el `tipo` en 2 líneas, los signos ya están bien | → [A-BUG-45](#a-bug-45) `@productivo` |
 | **A-BUG-46** | 🔴 | **Bug** | **Pasar hacienda a CUT sin tipear caravanas no crea el individuo y no avisa** (`:1247` — el alta está condicionada a `nuevoMov.caravanas.trim()`). En agosto entró 1 vaquillona: la grilla dice **17** y la página nominal lista **8**. El animal entra al stock sin nombre, en silencio | → [A-BUG-46](#a-bug-46) `@productivo` |
 | **A-BUG-47** | 🔴 | **Bug** | **`fecha_alta` no se setea al crear caravanas** (ni el tacto `:4532` ni el alta manual `:1250`), y la página del CUT filtra por `fecha_alta <= hasta`, que en Postgres **excluye los NULL**. Hoy no se nota porque las 12 del CUT se completaron a mano en abril/2026, pero **la próxima caravana no aparecería en la planilla**. Ya hay 8 terneros con `fecha_alta` nula | → [A-BUG-47](#a-bug-47) `@productivo` |
@@ -353,6 +353,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
 | **A-DAT-05** | 🔴 | Dato | **Los 4 movimientos del pase a CUT de febrero tienen el `tipo` equivocado** (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
+| A-TEST-35 | 🔴 | Test | **Planilla de Hacienda con el `Stock Anterior` corregido** ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
 
 ⚠️ **Distinción que pidió el usuario y hay que respetar al triar**: en **MA nunca se parseó nada**
@@ -9015,6 +9016,37 @@ convención positiva, y `confirmar-venta.ts` también escribe en positivo.
 **Alcance**: una línea. `stockAnterior` tiene que mirar el `tipo` igual que `cargarDatos()`.
 **Ningún dato se toca.**
 
+### ✅ HECHO 2026-08-20 — falta testear en la app ([A-TEST-35](#a-test-35))
+
+**Qué se tocó**: `vista-sector-productivo.tsx:1409-1418` (dentro de `calcularDatosPlanilla`, que la
+llaman **sólo** el preview del modal y el export) y su espejo en
+`scripts/export-planilla-hacienda.mts`. **Nada más.** Verificado por grep que `stockAnterior` no
+existe fuera de esa función.
+
+**Lo que NO se tocó, a pedido del usuario**: la pestaña Stock (`:1146`) y las órdenes (`:3740`), que
+ya estaban bien — unificar las 4 copias del cálculo es riesgo sobre código que anda, y se descartó.
+Tampoco `tab-terneros.tsx`, que tiene el **mismo bug** con efecto propio → ver más abajo.
+
+**Verificación — diff celda por celda contra la foto anterior** (`backup_planillas_hacienda_2026-08-20/`
+contra `planillas_hacienda_2026-08-20_CORREGIDO/`):
+
+- **42 celdas distintas, 0 fuera de la hoja *Planilla*.** La hoja *Detalle* y el detalle de
+  CUT quedaron idénticos byte a byte.
+- Sólo se movieron **2 filas**: `Stock Anterior` y `Existencia Final`. Las otras 8 (Compras,
+  Nacimientos, Reclas. +, Ingresos, Ventas, Mortandad, Reclas. −, Egresos), intactas.
+- Sólo **3 categorías**: CUT/Descarte, Ternero y Ternera — más los subtotales que arrastran.
+- **Febrero y marzo, idénticos**, que es lo correcto: febrero no tiene período anterior y marzo no
+  tenía ventas ni muertes antes.
+- La cadena engancha ahora en **los 6 eslabones**, y agosto da **356** = la punta a punta = la
+  pestaña Stock.
+- `npm run type-check:diff`: **113 → 113**, ningún archivo empeoró.
+
+⚠️ **El mismo bug vive en `components/tab-terneros.tsx:462-464`** (`+ m.cantidad`, suma cruda) y ahí
+pega más fuerte: cree que hay **158** Ternero Recría donde hay **42**, y como las filas fantasma son
+`stock − individuos activos` (`:780`), muestra **116 filas fantasma** — confirmado por el usuario en
+la app. **Queda sin corregir**, para mirarlo aparte y con cuidado: es un detalle roto dentro de una
+vista que por lo demás funciona bien (los chips de recría cuentan individuos y salen correctos).
+
 ---
 
 ## <a id="a-bug-45"></a>A-BUG-45 — El tacto genera `ajuste_stock` en vez de `cambio_categoria`
@@ -9255,6 +9287,31 @@ venta, por eso lo cargué sin gastos de venta"*. Entonces **el 3 % queda sin exp
 
 Sale de la Planilla de Hacienda por [A-FEAT-35](#a-feat-35), pero **el número sigue vivo donde se
 use**: ventas y presupuesto. Es la única cosa de toda la auditoría que quedó sin cerrar.
+
+---
+
+## <a id="a-test-35"></a>A-TEST-35 — Planilla de Hacienda con el `Stock Anterior` corregido
+
+Cubre [A-BUG-44](#a-bug-44). Todo se prueba desde **Productivo → Hacienda**.
+
+1. **El número.** Planilla → modo **Mes** → **Agosto 2026**. `Total General` de la fila
+   *Existencia Final* tiene que dar **356** (antes daba 372). Y en la misma fila:
+   CUT/Descarte **9**, Ternero **42**, Ternera **81**.
+2. **Los tres números tienen que coincidir entre sí**, que es el control de verdad:
+   - la pestaña **Stock** (suma 356),
+   - la planilla en **modo Rango** del **15/02/2026 al 20/08/2026** (356),
+   - la planilla de **Agosto** (356).
+3. **La cadena.** Sacar las 7 planillas mensuales: el `Stock Anterior` de cada mes tiene que ser la
+   `Existencia Final` del mes anterior, **en los 6 eslabones**. Antes fallaba en 4.
+4. **Lo que NO tiene que haber cambiado** — es tan importante como lo que sí:
+   - **febrero y marzo, idénticos** a como salían antes;
+   - las filas **Compras, Nacimientos, Reclas. +, Ingresos, Ventas, Mortandad, Reclas. −,
+     Egresos**, sin un solo número distinto;
+   - la hoja **Detalle** y la página de **CUT/Descarte**, iguales.
+
+📸 Para comparar están las dos tandas completas (Excel + PDF, 8 períodos cada una):
+`backup_planillas_hacienda_2026-08-20/` (antes) y `planillas_hacienda_2026-08-20_CORREGIDO/`
+(después). Ninguna de las dos está en git.
 
 ---
 
