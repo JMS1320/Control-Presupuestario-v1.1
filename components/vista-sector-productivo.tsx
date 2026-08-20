@@ -4519,13 +4519,18 @@ function SubTabOrdenesAplicacion() {
             const catCUT = 'ce627450-565c-4c68-b8ea-81deab93eabf' // Vaca CUT/Descarte
 
             if (catOrigen) {
+              // `cambio_categoria`, NO `ajuste_stock`: el animal no se muere ni se compra, cambia
+              // de categoria. El par ya viene con la forma correcta (-N en origen, +N en destino).
+              // Con `ajuste_stock` la planilla lo rotulaba Mortandad / Compras y declaraba muertas
+              // a vacas vivas (A-BUG-45). Para el stock los dos tipos pesan igual, asi que este
+              // cambio no mueve ninguna cabeza: solo cambia como lo muestra el reporte.
               await supabase.schema('productivo').from('movimientos_hacienda').insert([
                 {
-                  fecha, categoria_id: catOrigen.id, tipo: 'ajuste_stock',
+                  fecha, categoria_id: catOrigen.id, tipo: 'cambio_categoria',
                   cantidad: -vacias, observaciones: 'Vacias tacto - pasan a CUT'
                 },
                 {
-                  fecha, categoria_id: catCUT, tipo: 'ajuste_stock',
+                  fecha, categoria_id: catCUT, tipo: 'cambio_categoria',
                   cantidad: vacias, observaciones: 'Vacias tacto - ingreso CUT'
                 }
               ])

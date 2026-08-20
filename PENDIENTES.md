@@ -340,7 +340,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-33 | ✅ | Test | **TESTEADO OK 2026-08-19** — motor con CUIT normalizado + prioriza sin excluir. El usuario corrió la conciliación acotada sobre los 4 movimientos de AMS: **30/04 y 29/05 salieron `conciliado`** con su pago vinculado, y los 2 del 05/06 quedaron pendientes como estaba previsto | → [A-BUG-28](#a-bug-28) `@extracto` |
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 | **A-BUG-44** | 🟡 | **Bug** | **HECHO 2026-08-20 — falta testear ([A-TEST-35](#a-test-35))** · La Planilla de Hacienda exageraba el rodeo en 16 cabezas — `Stock Anterior` sumaba los movimientos anteriores **en crudo** (`vista-sector-productivo.tsx:1410`) sin mirar el `tipo`, y ventas y mortandades se guardan **positivas**: las suma en vez de restarlas. Cada venta o muerte agrega **el doble de su tamaño** al error, y no se corrige nunca solo. Agosto/2026 dice **372**, hay **356**. ✅ **Decidido: se corrige el REPORTE, no el signo** — la pestaña Stock (`:1148`) y `confirmar-venta.ts` dependen de la convención positiva. Fix de 1 línea, **ningún dato se toca** | → [A-BUG-44](#a-bug-44) `@productivo` |
-| **A-BUG-45** | 🔴 | **Bug** | **El tacto registra el pase a CUT como `ajuste_stock` en vez de `cambio_categoria`** (`:4513-4522`). El reporte rotula `ajuste −` como *Mortandad* y `ajuste +` como *Compras*, así que la planilla de febrero **declara muertas a 8 vacas vivas** — y dos páginas después las lista como *Activa*. El camino manual sí lo hace bien (se ve en marzo): cambiar el `tipo` en 2 líneas, los signos ya están bien | → [A-BUG-45](#a-bug-45) `@productivo` |
+| **A-BUG-45** | 🟡 | **Bug** | **HECHO 2026-08-20 (código) — falta el arreglo de los datos viejos ([A-DAT-05](#a-dat-05))** · El tacto registraba el pase a CUT como `ajuste_stock` en vez de `cambio_categoria`. El reporte rotula `ajuste −` como *Mortandad* y `ajuste +` como *Compras*, así que la planilla de febrero **declara muertas a 8 vacas vivas** — y dos páginas después las lista como *Activa*. El camino manual sí lo hace bien (se ve en marzo): cambiar el `tipo` en 2 líneas, los signos ya están bien | → [A-BUG-45](#a-bug-45) `@productivo` |
 | **A-BUG-46** | 🔴 | **Bug** | **Pasar hacienda a CUT sin tipear caravanas no crea el individuo y no avisa** (`:1247` — el alta está condicionada a `nuevoMov.caravanas.trim()`). En agosto entró 1 vaquillona: la grilla dice **17** y la página nominal lista **8**. El animal entra al stock sin nombre, en silencio | → [A-BUG-46](#a-bug-46) `@productivo` |
 | **A-BUG-47** | 🔴 | **Bug** | **`fecha_alta` no se setea al crear caravanas** (ni el tacto `:4532` ni el alta manual `:1250`), y la página del CUT filtra por `fecha_alta <= hasta`, que en Postgres **excluye los NULL**. Hoy no se nota porque las 12 del CUT se completaron a mano en abril/2026, pero **la próxima caravana no aparecería en la planilla**. Ya hay 8 terneros con `fecha_alta` nula | → [A-BUG-47](#a-bug-47) `@productivo` |
 | **A-BUG-48** | 🟡 | **Bug** | **Tres fragilidades en el registro de tacto**: el UUID del CUT está **hardcodeado** (`:4510`) y 20 líneas después la misma categoría se busca **por nombre** (`:4529`) · el rodeo se cruza con la categoría por **nombre exacto** y el `if` **no tiene `else`**, así que si no matchea **no se registra el movimiento, sin avisar** (`:4509`) · el **tacto retrospectivo no mueve el stock** (`:4507`), dejando ciclo y hacienda en desacuerdo | → [A-BUG-48](#a-bug-48) `@productivo` |
@@ -9067,6 +9067,26 @@ bien hecha, con `cambio_categoria`, porque se cargó desde el modal de movimient
 **El fix**: cambiar el `tipo` en esas 2 líneas. **Los signos ya están bien** (`−N` / `+N`, el mismo
 par espejo que usa `guardarMovimiento`), así que el pase cae solo en *Reclas. −* / *Reclas. +*.
 **No hay que tocar la planilla.** Los datos viejos van aparte: [A-DAT-05](#a-dat-05).
+
+### ✅ HECHO 2026-08-20 (el código) — falta [A-DAT-05](#a-dat-05) para que se vea
+
+**Por qué el cambio es seguro, verificado antes de tocar**: los **tres** lugares que calculan stock
+desde los movimientos ya contemplan `cambio_categoria`, y en los tres pesa **exactamente igual** que
+`ajuste_stock` (pestaña Stock `:1150` · órdenes `:3755-3757` · `Stock Anterior` de la planilla).
+**Cambiar el tipo no mueve ni una cabeza de stock en ninguna pantalla** — sólo cambia cómo lo rotula
+el reporte, que es lo que se busca.
+
+**Qué se tocó**: los 2 `insert` del bloque de tacto. Nada más. Las observaciones quedan igual.
+
+**Efecto lateral bueno**: después de este cambio **ningún camino del código genera `ajuste_stock`
+automáticamente** (verificado por grep). Pasa a ser sólo lo que el usuario elige a mano en el
+desplegable, que es lo que un ajuste debería ser.
+
+`npm run type-check:diff`: **113 → 113**.
+
+⚠️ **Todavía no se ve nada en la app**: los 4 movimientos de febrero siguen con el tipo viejo. El
+efecto visible llega con [A-DAT-05](#a-dat-05). Y el fix del código recién se puede testear **cuando
+se registre el próximo tacto**.
 
 ---
 
