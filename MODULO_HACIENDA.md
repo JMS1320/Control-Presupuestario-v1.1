@@ -1,0 +1,726 @@
+# MÓDULO HACIENDA — Stock, movimientos y Planilla de Hacienda
+
+> **Estado**: 🟨 **PRIMERA REDACCIÓN — a chequear con el usuario.**
+> **Fecha**: 2026-08-20
+> **Origen**: el módulo se construyó entre febrero y abril de 2026 **sin documentación de dimensión**.
+> Lo que había estaba desparramado en notas de sesión y en el propio código. Este archivo lo
+> consolida y **verifica cada afirmación contra el código y contra la BD** — pero como el material
+> de partida estaba disperso, es probable que algo esté mal interpretado. Corregir encima.
+
+---
+
+## 📖 Cómo leer este archivo
+
+| Marca | Qué significa |
+|---|---|
+| 🟩 | **Objetivo** — leído en el código (con `archivo:línea`) o medido en la BD el 2026-08-20 |
+| 🟨 | **Interpretado** — deducción mía sobre el *por qué* o el *para qué*. Es lo que puede estar mal |
+| ❓ | **Pregunta abierta** — necesita respuesta del usuario, no la puedo sacar del repo |
+
+Todo lo que sigue está en **un solo archivo**: `components/vista-sector-productivo.tsx`,
+componente `TabHacienda()` (arranca en `:992`). No hay `lib/` propio: la lógica vive en el
+componente. 🟨 *Eso explica por qué nunca se documentó: no hay un módulo que abrir, hay un tab.*
+
+---
+
+## 1 · Qué es el módulo
+
+🟩 Lleva el **stock de hacienda por categoría** de Ea. Nazarenas, alimentado por un registro de
+**movimientos**, y emite la **Planilla de Hacienda**: el reporte de existencias de un período, en
+el formato de la planilla de papel del establecimiento.
+
+🟩 Convive con `MODULO_TERNEROS.md`, que es el registro **individual** (caravana por caravana,
+pesadas). Este módulo trabaja en **bulk**: "7 vacas al CUT", sin decir cuáles.
+
+🟨 La frontera entre los dos es la unidad de conteo: **cabeza identificada** (terneros) vs
+**cabezas por categoría** (hacienda). Los dos lados se tocan en dos puntos, y ambos son de una
+sola dirección: un movimiento de hacienda puede dar de baja caravanas, pero una caravana nunca
+genera un movimiento.
+
+---
+
+## 2 · Dónde vive el dato
+
+🟩 Schema `productivo`. Estructura completa en `ESTRUCTURA_BD_COLUMNAS.md:129-131`.
+
+| Tabla | Para qué | Estado al 2026-08-20 |
+|---|---|---|
+| `categorias_hacienda` | maestro de categorías (`nombre`, `activo`) | **15 filas**, 3 inactivas |
+| `movimientos_hacienda` | el libro de entradas y salidas | **33 filas**, del 2026-02-15 al 2026-08-09 |
+| `stock_hacienda` | *(existe)* | **VACÍA — y nadie la lee** |
+
+### ⚠️ `stock_hacienda` es una tabla muerta
+
+🟩 Tiene 0 filas y **ningún código la consulta**. El stock se calcula **en memoria** sumando los
+movimientos, cada vez que se abre la pestaña (`:1139-1157`).
+
+🟨 Es un resto del diseño original: la tabla se creó pensando en un stock materializado y después
+se resolvió por recálculo. Mientras el volumen sea de decenas de movimientos no molesta; el día
+que haya miles, recalcular todo en el browser en cada carga va a doler.
+
+*(Ya está señalado en `PENDIENTES.md` como "vacía y sin dimensión" — líneas 5821, 5838 y 8045.)*
+
+---
+
+## 3 · Las categorías: 15 en la BD, 12 en la planilla
+
+🟩 Las 15 de `categorias_hacienda`, con su saldo de movimientos al 2026-08-20:
+
+| Categoría | Activa | ¿Columna en la planilla? |
+|---|:--:|---|
+| Vaca · Vaquillona Preñada · Vaca CUT/Descarte · Toro | ✅ | ✅ grupo **CRÍA** |
+| Ternero Recria · Ternera Recria · Torito · Vaquillona de Reposicion · Novillo · Vaquillona Engorde | ✅ | ✅ grupo **RECRÍA / ENGORDE** |
+| Ternero al Pie · Ternera al Pie | ✅ | ✅ bloque **Terneros** (subtotal aparte) |
+| **Novillito · Ternera · Ternero** | ❌ inactivas | ❌ **no tienen columna** |
+
+🟩 La planilla no lee las categorías de la BD: tiene la lista **escrita a mano** en el código
+(`CATS_PLANILLA` en `:1344` y `CATS_TERNEROS` en `:1356`), y las cruza contra la BD **por nombre
+en minúsculas** (`:1402`).
+
+🟩 Un movimiento de una categoría que no está en esa lista **se descarta sin avisar**
+(`:1418` — `if (col === undefined) return`). Hoy no se pierde nada: las 3 que quedan afuera están
+inactivas y tienen **0 movimientos**.
+
+🟨 Las 3 sueltas parecen categorías viejas reemplazadas por las de "Recria" (`Ternero` → `Ternero
+Recria`). Se desactivaron en vez de borrarse, que es lo correcto. ❓ **Confirmar**: ¿`Novillito`
+se dejó de usar a propósito, o falta darle columna?
+
+---
+
+## 4 · Los movimientos — el corazón del módulo
+
+### 4.1 · Los seis tipos
+
+🟩 El selector ofrece seis (`:983-990`). Al 2026-08-20 **sólo se usaron cuatro**:
+
+| Tipo | Qué es | Filas hoy |
+|---|---|---:|
+| `ajuste_stock` | corrección manual, en ambos sentidos. **Es como entró el stock inicial** | 11 |
+| `cambio_categoria` | reclasificación (un animal pasa de una categoría a otra) | 14 |
+| `mortandad` | muerte | 6 |
+| `venta` | venta | 2 |
+| `compra` | compra | **0** |
+| `nacimiento` | nacimiento | **0** |
+
+❓ Los nacimientos **todavía no se cargaron nunca** porque la app es nueva y se van a empezar a
+cargar pronto — decisión abierta de si entran por acá o desde el ciclo de cría.
+🟨 Mientras tanto, las filas *Compras* y *Nacimientos* de la planilla salen siempre en cero, y eso
+**no es un error**: es que el dato todavía no existe.
+
+### 4.2 · 🔴 La convención de signos — lo más importante de este archivo
+
+🟩 Medido sobre las 33 filas: **`cantidad` se guarda SIEMPRE POSITIVA**, salvo en dos casos.
+
+| Tipo | Signo guardado | Verificado |
+|---|---|---|
+| `venta` | **positivo** | 2 de 2 positivas (4 y 55 cabezas) |
+| `mortandad` | **positivo** | 6 de 6 positivas |
+| `ajuste_stock` | **con signo** (+ suma, − resta) | 8 positivos, 3 negativos |
+| `cambio_categoria` | **con signo** (− en el origen, + en el destino) | 7 y 7, **suma exacta 0** |
+
+🟩 O sea: **el signo NO alcanza para saber si un movimiento suma o resta.** Hay que mirar el
+`tipo`. Una venta de 55 cabezas está guardada como `+55` y **resta** 55 del stock.
+
+🟨 Ésta es la regla que hay que tener presente antes de tocar cualquier cálculo del módulo, y la
+que ya produjo una diferencia real — ver § 8.
+
+### 4.3 · El cambio de categoría escribe DOS filas espejo
+
+🟩 `guardarMovimiento()` (`:1210-1273`) inserta **dos** movimientos: `−N` en la categoría origen y
+`+N` en la destino, ambos con `tipo = 'cambio_categoria'` y la misma fecha (`:1219-1231`).
+
+🟨 De ahí sale un control que hoy no existe pero es gratis: **la suma de todos los
+`cambio_categoria` tiene que dar exactamente 0**, porque ningún animal se crea ni desaparece al
+reclasificarse. 🟩 Medido: **da 0** ✓. Si algún día no diera, hay una fila espejo perdida.
+
+### 4.4 · Los efectos laterales sobre las caravanas
+
+🟩 Tres, todos en una sola dirección (hacienda → terneros):
+
+| Cuándo | Qué hace | Línea |
+|---|---|---|
+| `cambio_categoria` con individuos seleccionados | les cambia `categoria_id` | `:1235-1243` |
+| `cambio_categoria` **hacia CUT/Descarte** con caravanas tipeadas | **da de alta** filas en `terneros`, parseando `"caravana - pelo - motivo"` | `:1245-1267` |
+| `venta` o `mortandad` con caravanas elegidas | `activo=false` + `fecha_baja` + `motivo_baja` | `:1300-1316` |
+
+🟨 El alta automática al CUT es la razón de que el detalle CUT de la planilla exista: son las únicas
+caravanas que este módulo crea por su cuenta.
+
+### 4.5 · Lo que NO tiene la tabla
+
+🟩 `movimientos_hacienda` **no tiene columna de empresa ni de establecimiento**. Todo el módulo
+asume Ea. Nazarenas, y la razón social está **escrita a mano** en el export (`:1543`, `:1691` y
+`:1860`).
+
+🟨 Choca con `CLAUDE.md` § Datos críticos (*"nunca hardcodear: sale de `DATOS_FISCALES` en
+`lib/empresas.ts`"*), que existe porque el Libro IVA de PAM y MA salía con el CUIT de MSA impreso.
+Hoy no molesta —hay un solo establecimiento— pero es el mismo patrón. ❓ Decisión del usuario.
+
+---
+
+## 5 · Cómo se calcula el stock (pestaña *Stock*)
+
+🟩 `cargarDatos()` (`:1128-1157`) trae **todos** los movimientos y los acumula por categoría:
+
+```
+compra, nacimiento          →  suma cantidad
+venta, mortandad            →  RESTA cantidad      (:1148-1149)
+ajuste_stock, cambio_categ. →  suma cantidad con su signo
+```
+
+🟩 Sólo se muestran las categorías con cantidad **distinta de cero** (`:1155`).
+
+🟨 Esta es la implementación **correcta** de la convención de § 4.2, y es el patrón contra el que
+hay que comparar cualquier otro cálculo del módulo.
+
+---
+
+## 6 · La Planilla de Hacienda
+
+### 6.1 · Qué es
+
+🟩 Botón **Planilla** en el encabezado de Stock de Hacienda (`:1898-1901`). Abre un modal que pide
+el período, muestra un **preview** en pantalla y permite descargar **Excel + PDF**.
+
+🟨 Reproduce la planilla de papel del establecimiento: **categorías en columnas, conceptos en
+filas**, y la existencia final como resultado.
+
+### 6.2 · El período
+
+🟩 Dos modos (`:1362-1378`):
+- **Mes**: se elige mes y año → del día 1 al último día del mes.
+- **Rango**: dos fechas libres.
+
+### 6.3 · La grilla — 10 filas y 15 columnas
+
+🟩 Las filas, en orden (`:1470-1481`), con las 4 resaltadas en negrita:
+
+| # | Fila | Cómo sale |
+|---|---|---|
+| 1 | **Stock Anterior** | suma de todos los movimientos **anteriores** a la fecha de inicio |
+| 2 | Compras | `compra` + los `ajuste_stock` **positivos** |
+| 3 | Nacimientos | `nacimiento` |
+| 4 | Reclas. + | `cambio_categoria` positivos |
+| 5 | **Ingresos** | 2 + 3 + 4 |
+| 6 | Ventas | `venta` |
+| 7 | Mortandad | `mortandad` + los `ajuste_stock` **negativos** |
+| 8 | Reclas. − | `cambio_categoria` negativos |
+| 9 | **Egresos** | 6 + 7 + 8 |
+| 10 | **Existencia Final** | 1 + 5 − 9 |
+
+🟩 **Los ajustes de stock no tienen fila propia**: los positivos se muestran dentro de *Compras* y
+los negativos dentro de *Mortandad* (`:1424-1427`). En la hoja *Detalle* sí se distinguen, con la
+etiqueta `Ajuste + (en Compras)` / `Ajuste - (en Mortandad)` (`:1604`).
+
+🟨 Que el ajuste inicial de 188 cabezas aparezca como "Compras" es engañoso a la vista, pero el
+detalle lo aclara. ❓ ¿Preferís que los ajustes tengan su propia fila?
+
+🟩 Las columnas: 10 categorías adultas (**CRÍA** 4 + **RECRÍA/ENGORDE** 6) · **Subtotal Adultos** ·
+2 de terneros al pie · **Subtotal Terneros** · **Total General** (`:1445-1449`).
+
+🟩 Al pie, **Total Vientres** = `Vaca` + `Vaquillona Preñada` de la Existencia Final (`:1492-1493`).
+
+🟨 Se toma por **posición fija** (índices 0 y 1), no por nombre: si alguien reordena `CATS_PLANILLA`,
+el Total Vientres cambia de significado en silencio.
+
+### 6.4 · El detalle CUT / Descarte
+
+🟩 Lista las caravanas que estaban en CUT **al cierre del período**, con Fecha Alta, Tipo (categoría
+previa), Pelo, Motivo y Estado (`:1451-1468`). Filtra por **`fecha_alta <= hasta`**, y marca
+`Baja` si `fecha_baja` es posterior al período.
+
+🟩 **Por qué `fecha_alta` y no `created_at`**: todos los registros de CUT se insertaron en la BD el
+27/04/2026, sin relación con cuándo entraron realmente al CUT. `created_at` habría puesto a todos
+en abril. Y no se puede sacar del movimiento porque **no hay FK entre `movimientos_hacienda` y
+`terneros`**: el movimiento es bulk ("7 vacas al CUT") y no dice cuáles.
+
+🟨 Es la decisión más fina del módulo y la más fácil de romper sin darse cuenta: **cualquier alta
+nueva en `terneros` tiene que traer `fecha_alta` con la fecha del movimiento real**, no la del día
+en que se cargó.
+
+---
+
+## 7 · El export
+
+🟩 `exportarPlanillaHacienda()` (`:1528-1879`). Genera **los dos archivos de una sola vez**.
+
+**Excel** — 2 hojas:
+- **Planilla**: encabezado de 4 líneas (`Ea. Nazarenas` / `de Martinez Sobrado` /
+  `PLANILLA DE HACIENDA` / período), fila de grupos con merges, fila de categorías, las 10 filas,
+  y el Total Vientres al pie.
+- **Detalle**: un renglón por movimiento del período (fecha, tipo, categoría, cantidad, peso,
+  $/kg, monto, contraparte, observaciones) y, si hay, el bloque **DETALLE CUT/DESCARTE**.
+
+**PDF** — apaisado A4, hasta 3 páginas: la planilla, el detalle de movimientos (sólo si hay) y el
+detalle CUT (siempre en página propia). Paleta sepia, pie con período y paginación en todas.
+
+🟩 Dos detalles del PDF que parecen arbitrarios y no lo son:
+- **No hay doble encabezado de grupo**: el `colSpan` rompía `autoTable`, así que CRÍA y RECRÍA van
+  como prefijo en la primera columna de cada grupo (`:1706-1719`).
+- **`sanitizarPDF()`** (`:1775`) reemplaza flechas y bullets por guiones: helvetica no los tiene y
+  salían como basura.
+
+🟩 **Dónde se guarda**: si el browser soporta `showDirectoryPicker`, pregunta la carpeta y escribe
+los dos archivos ahí; si se cancela o no lo soporta, caen en Descargas (`:1648-1676`).
+
+🟩 **Nombre**: `Planilla_Hacienda_2026-08.xlsx` (modo mes) o
+`Planilla_Hacienda_2026-02-15_2026-08-20.xlsx` (modo rango).
+
+---
+
+## 8 · Qué controla la planilla, y contra qué
+
+🟩 **La `Existencia Final` es una cuenta teórica**: dice lo que **debería** haber si todos los
+movimientos se cargaron bien.
+
+🟨 Por eso el control no es interno —la identidad `1 + 5 − 9` cierra siempre por construcción—
+sino **externo**: se contrasta contra el **recuento físico** del campo. Si no coinciden, hay
+movimientos sin cargar, mal cargados, o de más. *(Criterio del usuario, 2026-08-20.)*
+
+### 🔴 Un control que hoy la planilla no hace, y falla
+
+🟩 **El `Stock Anterior` de un mes tiene que ser la `Existencia Final` del mes anterior.** Medido
+sobre las 7 planillas mensuales generadas el 2026-08-20:
+
+| Mes | Existencia Final | Stock Anterior del siguiente | Diferencia |
+|---|---:|---:|---:|
+| Febrero | 421 | 421 | ✅ 0 |
+| Marzo | 417 | 425 | ❌ **+8** |
+| Abril | 423 | 427 | ❌ **+4** |
+| Mayo | 427 | 427 | ✅ 0 |
+| Junio | 426 | 428 | ❌ **+2** |
+| Julio | 427 | 429 | ❌ **+2** |
+| Agosto | **372** | — | arrastre total **+16** |
+
+🟩 La planilla **punta a punta** (que arranca en cero y no puede arrastrar) termina en **356**. La
+mensual de agosto termina en **372**. La diferencia son exactamente las **16** cabezas del arrastre.
+
+🟩 **La causa**: `Stock Anterior` suma los movimientos anteriores **en crudo** (`:1410` —
+`stockAnterior[col] += m.cantidad`), sin mirar el `tipo`. Como las ventas y mortandades se guardan
+positivas (§ 4.2), las **suma** en lugar de restarlas. Las filas del período no tienen el problema
+porque usan `Math.abs` y después restan (`:1422-1423`, `:1440`).
+
+⏸️ **Diagnóstico presentado al usuario el 2026-08-20; sin corregir, a la espera de que contraste
+las planillas contra el campo.** No se toca el código hasta esa confirmación.
+
+---
+
+## 9 · Cómo incide en el presupuesto
+
+🟩 **Hoy: no incide.** La planilla es un reporte de salida; nada la lee.
+
+🟩 Y el presupuesto **no cuenta las cabezas desde acá**: `lib/ganaderia/disponibilidad.ts:12-13`
+dice que la existencia sale de *"la pesada para el stock de hoy, el ciclo para los destetes
+futuros"*.
+
+🟨 O sea que hay **dos maneras distintas de responder "cuántas cabezas hay"** y nada las cruza.
+Por § Norte de `CLAUDE.md` eso es un hueco, no un no-problema. Queda anotado acá; fuera del alcance
+de la sesión del 2026-08-20 por decisión del usuario (*"nos vamos a concentrar en la planilla"*).
+
+---
+
+## 10 · Archivos
+
+| Qué | Dónde |
+|---|---|
+| Todo el módulo | `components/vista-sector-productivo.tsx` → `TabHacienda()` (`:992`) |
+| Cálculo de la planilla | `calcularDatosPlanilla()` (`:1384`) — compartido por preview y export |
+| Export Excel + PDF | `exportarPlanillaHacienda()` (`:1528`) |
+| Export en lote (backup) | `scripts/export-planilla-hacienda.mts` |
+| Registro individual | `MODULO_TERNEROS.md` |
+| Estructura de tablas | `ESTRUCTURA_BD_COLUMNAS.md:129-131` · `ARQUITECTURA-BD.md:115` |
+| Errores de tipos preexistentes | `ERRORES_CONOCIDOS.md` — 6 en este archivo, 2 son `categorias` no definido (`:379`, `:4506`) |
+
+### El script de export en lote
+
+🟩 `npx tsx scripts/export-planilla-hacienda.mts [carpeta]` genera **una planilla por mes** desde el
+primer movimiento hasta hoy, **más una punta a punta**, cada una en **Excel y PDF** (los mismos dos
+archivos que emite el botón de la app), e imprime la cadena de Stock Anterior / Existencia Final
+para ver si engancha.
+
+🟩 Única diferencia con el código de la app: `jsPDF` se importa como **named export**, porque el
+default no es constructor fuera del browser. Todo lo demás —colores, merges, saltos de página,
+`sanitizarPDF()`, el pie con paginación— es idéntico.
+
+⚠️ **Replica la lógica de la app tal cual está, bugs incluidos** — es a propósito: sirve de foto del
+estado actual, y una foto retocada no sirve para comparar. **Si se corrige la app, hay que corregir
+el script igual, o el backup empieza a mentir.**
+
+---
+
+## 11 · ❓ Lo que falta chequear con el usuario
+
+1. **El arrastre de 16 cabezas** (§ 8) — ¿el número real del campo es 356 o 372?
+2. **`Novillito`** — ¿fuera de uso a propósito, o le falta columna en la planilla?
+3. **Los ajustes de stock dentro de Compras/Mortandad** — ¿conviene fila propia?
+4. **Nacimientos** — cuando se empiecen a cargar, ¿movimiento o ciclo de cría?
+5. **La razón social hardcodeada** — ¿se deja así (un solo establecimiento) o sale de `lib/empresas.ts`?
+6. **Categorías descartadas en silencio** — ¿avisar cuando un movimiento queda fuera de la planilla?
+
+*Ninguno de los seis está registrado todavía en `PENDIENTES.md`: el usuario pidió verlos antes.*
+
+---
+
+## 12 · 🔍 Auditoría planilla por planilla (EN CURSO — 2026-08-20)
+
+> **Método acordado con el usuario**: se audita **una planilla por vez**, se anotan acá los errores
+> y mejoras, y **recién con el panorama completo se encara la corrección en conjunto**. Nada se
+> arregla mientras la auditoría está abierta.
+>
+> **Estado**: Febrero ✅ auditada · Marzo → en curso · Abril a Agosto → pendientes.
+> Los archivos auditados están en `backup_planillas_hacienda_2026-08-20/` (Excel + PDF, 8 períodos).
+
+### 12.1 · 🔴 EL HALLAZGO DE FONDO — el tacto genera `ajuste_stock`, no `cambio_categoria`
+
+🟩 **No es un error de carga: lo hace el código.** Al registrar un tacto, `vista-sector-productivo.tsx:4513-4522`
+inserta **dos movimientos de tipo `ajuste_stock`** para pasar las vacías a CUT:
+
+```ts
+{ fecha, categoria_id: catOrigen.id, tipo: 'ajuste_stock',
+  cantidad: -vacias, observaciones: 'Vacias tacto - pasan a CUT' },
+{ fecha, categoria_id: catCUT,       tipo: 'ajuste_stock',
+  cantidad:  vacias, observaciones: 'Vacias tacto - ingreso CUT' }
+```
+
+🟩 Esas dos observaciones son **exactamente** las que aparecen en la planilla de febrero. O sea que
+corregir los datos viejos **no alcanza**: el próximo tacto vuelve a generar lo mismo.
+
+🟩 **Qué produce en el reporte** (§ 6.3): `ajuste_stock` negativo cae en **Mortandad** y positivo en
+**Compras**. Entonces un pase a CUT sale como *"se murieron N vacas"* + *"se compraron N vacas de
+descarte"*. En febrero: **8 animales vivos declarados muertos**.
+
+🟨 **Propuesta — cambiar el `tipo`, no los signos.** El movimiento ya se escribe con la forma
+correcta (`−N` en origen, `+N` en destino: el mismo par espejo de § 4.3). Lo único mal es la
+etiqueta. Cambiando `'ajuste_stock'` por `'cambio_categoria'` en esas dos líneas, el pase a CUT cae
+en *Reclas. −* / *Reclas. +*, que es donde corresponde, y la Mortandad deja de mentir. **No hay que
+tocar la planilla.**
+
+⚠️ **Dos partes, y las dos hacen falta**: (a) el código, para lo que viene; (b) los movimientos ya
+cargados, para lo que está. La (b) es un `UPDATE` sobre datos reales → **requiere autorización
+explícita del usuario** (`CLAUDE.md` § Datos).
+
+### 12.2 · Tres cosas más que aparecieron al leer ese código
+
+🟩 **a · El UUID del CUT está hardcodeado.** `:4510` → `const catCUT = 'ce627450-...'`. Verificado:
+hoy apunta bien a *Vaca CUT/Descarte*. Pero **20 líneas más abajo** (`:4529`) la misma categoría se
+busca **por nombre** (`nombre.toLowerCase().includes('cut')`). Dos maneras distintas de encontrar lo
+mismo en el mismo bloque. 🟨 Un UUID literal en un proyecto que **ya reconstruyó la base una vez** es
+una bomba de tiempo: si cambia, el insert apunta a otra categoría o a ninguna, y no avisa.
+
+🟩 **b · El rodeo se cruza con la categoría por nombre exacto** (`:4509` →
+`categoriasHacienda.find(c => c.nombre === ciclo?.rodeo)`). Hoy funciona porque los ciclos se llaman
+`Vaca` y `Vaquillona Preñada`, que son nombres de categoría. 🟨 Si mañana un rodeo se llama
+*"Rodeo General"*, `catOrigen` queda `undefined`, el `if (catOrigen)` **no tiene `else`** y **no se
+registra ningún movimiento, sin un solo aviso**. El tacto se guarda, el stock no se mueve.
+
+🟩 **c · Las caravanas del CUT se dan de alta SIN `fecha_alta`.** El insert en `terneros` de
+`:4532-4546` (y el equivalente manual de `:1250-1265`) no setea `fecha_alta`. 🟨 Y el detalle CUT de
+la planilla filtra por `fecha_alta <= hasta` (§ 6.4), que en Postgres **excluye los `NULL`**: una
+caravana cargada por el próximo tacto **no aparecería en la planilla**. Hoy no se nota porque las 12
+del CUT tienen `fecha_alta` cargada a mano en abril de 2026 — verificado: 0 nulos en CUT, pero **8
+terneros con `fecha_alta` nula** en otras categorías.
+
+🟩 **d · El tacto retrospectivo no mueve el stock.** Si se tilda *carga retrospectiva*, el bloque
+entero de movimientos se saltea (`:4507`). El ciclo queda con sus `cabezas_vacias` y la hacienda no.
+🟨 Es deliberado, pero deja ciclo y stock diciendo cosas distintas sin que nada lo señale.
+
+### 12.3 · Planilla de FEBRERO 2026 — auditada
+
+**Aritmética**: ✅ cierra en las 15 columnas. **Reclasificaciones**: ✅ `Reclas. − = Reclas. + = 194`.
+**Terneros al pie terminan en 0**: ✅ correcto, se destetaron todos.
+🟩 **El stock inicial cargado en febrero es correcto** (confirmado por el usuario).
+
+| # | Qué dice mal el reporte | Causa | Dónde se arregla |
+|---|---|---|---|
+| **F-1** 🔴 | **Mortandad 8** (7 Vaca + 1 Vaq. Preñada) — animales vivos | § 12.1 | código + datos |
+| **F-2** 🔴 | **Compras CUT/Descarte 8** — animales propios contados como comprados | § 12.1 | ídem |
+| **F-3** 🔴 | La ternera perdida en Onetto sale como **Mortandad**. No murió: se perdió (*"no se señaló y no la reconoció como nuestra"*) | `ajuste_stock` negativo se rotula *Mortandad* | la planilla necesita **fila propia de Ajustes**, o un tipo `perdida` |
+| **F-4** 🟡 | El **recuento inicial de 430 cabezas** figura en **Compras** | ídem | fila **Existencia Inicial / Recuento** |
+| **F-5** 🟡 | El recuento es **al 29/01** pero está cargado el **15/02**: no existe en la planilla de enero y entra como movimiento de febrero | dato | decidir con el usuario |
+| **F-6** 🟢 | 5 cabezas de *"cambio de sexo por control"* van dentro de Reclasificaciones: son **corrección de carga**, no movimiento del rodeo | diseño | sólo saberlo |
+
+**La contradicción que resume todo**: la misma planilla de febrero declara **muertas** a 8 vacas
+arriba y las lista como **Activa** en el detalle CUT abajo.
+
+### 12.4 · Mejoras del reporte como documento (transversales, no de un mes)
+
+| # | Qué | Por qué |
+|---|---|---|
+| **R-1** | El detalle **no tiene orden dentro del mismo día** (`.order('fecha')` sin criterio secundario). Las 6 filas del recuento salen Torito, Ternera, Vaq. Preñada, Ternero, Vaca, Toro | un reporte que se archiva tiene que salir siempre igual; y los dos lados de una reclasificación deberían quedar juntos (en febrero pasó de casualidad) |
+| **R-2** | **No hay fecha de emisión** en el encabezado | un movimiento retroactivo cambia una planilla ya emitida y no hay forma de saber qué versión es cuál. Para papeles de trabajo importa |
+| **R-3** | El cero se ve **`-` en el PDF y `0` en el Excel** (`fmtNum` sólo se aplica al PDF) | el mismo reporte con dos caras |
+| **R-4** | Tres columnas **siempre vacías** (Vaq. Reposición, Novillo, Vaq. Engorde) en un PDF de 15 columnas a 6,5 pt | ❓ si el formulario de papel las lleva, se dejan |
+
+### 12.5 · Planilla de MARZO 2026 — auditada
+
+3 movimientos. **Aritmética**: ✅ cierra. **Cadena**: ✅ Stock Anterior 421 = Existencia Final de
+febrero 421 — **es el último mes que engancha**.
+
+| # | Qué | Veredicto del usuario |
+|---|---|---|
+| **M-1** 🟢 | El pase a CUT de marzo **está bien hecho** (`cambio_categoria`, *"Cambio categ → Vaca CUT/Descarte"*). Misma operación que febrero, resultado opuesto, porque se cargó desde el **modal de movimientos** y no desde el tacto | ✅ **correcto** — confirma que lo que hay que arreglar es el tacto (§ 12.1), no el camino manual |
+| **M-2** | La venta del 30/03 (4 CUT) no tiene kilos, precio, monto ni cliente; el comprador está en observaciones (*"Via Pino Torillo"*) | ❌ **NO es bug** — *"yo no lo puse así, es otra cosa"*. Carga incompleta a propósito, no defecto del sistema. **Descartado** |
+| **M-3** | *(mi lectura era incorrecta)* El motivo que muestra la pág. 3 es el de **ingreso** al CUT, y está bien que sea así | ❌ **no es bug** — pero **sí hay que mejorar la página 3**: ver § 12.6 |
+| **M-4** 🟡 | De la grilla no surge que los 4 que entraron al CUT sean los 4 que salieron | 🔁 se resuelve con § 12.6, *"aunque no queda tan claro tampoco"* |
+| **M-5** | El `+8` de abril es exactamente **2 × las 4 ventas de marzo** — la causa del arrastre es esta venta | ⏸️ **se ve después** |
+
+🟩 **M-6 — lo encontré al revisar la página 3: la lista crece para siempre.** La consulta filtra
+sólo por `categoria_id = CUT` y `fecha_alta <= hasta` (`:1455-1458`), **sin mirar `fecha_baja`**. Un
+animal que pasó por el CUT queda en esa lista **para siempre**, aunque se haya vendido dos años
+antes. En marzo ya se ve: 12 filas para una categoría que tiene 8 cabezas.
+
+### 12.6 · 📄 Rediseño de la página 3 (Detalle CUT/Descarte) — propuesta
+
+> **Criterio del usuario (2026-08-20)**: *"la pág. 3 está hecha justamente para entender la
+> categoría descarte, que siempre tiene detalles y se precisa tener bien bien"*. Las páginas 1
+> (tabla) y 2 (detalle de movimientos) **quedan como están** — en la 2 no se pueden poner motivos
+> porque son distintos para cada individuo.
+
+**Estructura propuesta: dos bloques, más una línea de cierre.**
+
+```
+┌─ A · VENÍAN DE ANTES ──────────────────  (= Stock Anterior de la columna CUT)
+│  caravana · fecha alta · tipo · pelo · motivo de ingreso · ESTADO AL CIERRE
+├─ B · ENTRARON EN EL PERÍODO ───────────  (= Reclas. + de la columna CUT)
+│  mismas columnas
+└─ CIERRE
+     Venían de antes      8
+   + Entraron             4
+   − Salieron             4     (4 vendidas)
+   = Quedan al cierre     8     ✓ coincide con Existencia Final CUT de la página 1
+```
+
+**Las salidas no llevan bloque propio**: van como **columna "Estado al cierre"** dentro del bloque
+donde nació cada animal — `Sigue en CUT` · `Vendida 30/03` · `Muerta 12/05`. Así se ve de un vistazo
+que de las 4 que entraron, 3 se vendieron y 1 sigue.
+
+🟨 **Y esto responde la pregunta del usuario** (*"¿y si se agregan 4 pero se vendieron 3?"*): el
+bloque B lista las 4 con su motivo de ingreso, la columna de estado marca 3 como *Vendida* y 1 como
+*Sigue*, y la línea de cierre hace `8 + 4 − 3 = 9`.
+
+**🎯 Y ahí aparece el mejor control del módulo, gratis.** La página 1 cuenta **cabezas** (sale de
+`movimientos_hacienda`, que es bulk); la página 3 cuenta **individuos** (sale de `terneros`, que es
+nominal). **Tienen que dar lo mismo.** Si no dan, es que una venta o una baja no se atribuyó a las
+caravanas — que es justamente el error que hoy no se ve. El descuadre **es** el control:
+
+> `Existencia Final CUT (pág. 1)` ≠ `Quedan al cierre (pág. 3)` → **falta atribuir N cabezas a
+> caravanas concretas**
+
+Es el criterio de `CLAUDE.md` § *Todo desarrollo termina con su control* aplicado acá: el camino
+inverso, y visible. Y de paso **resuelve M-6**, porque el bloque A sólo incluye a los que estaban
+vivos en el CUT al inicio del período, no a todos los que pasaron alguna vez.
+
+❓ **Falta decidir**: qué pasa con un animal que entra y sale **dentro del mismo período** (aparece
+en B con estado *Vendida*, y en el cierre suma en Entraron y en Salieron).
+✅ **Resuelto por el usuario al auditar abril**: **sí debe aparecer**. Es el caso de marzo — las 4
+entraron y se vendieron el mismo mes, y ahí el detalle **es correcto**. Lo que no debe aparecer es
+un animal vendido en un período **anterior** (ver A-5).
+
+### 12.7 · Planilla de ABRIL 2026 — auditada
+
+4 movimientos. **Es el mes donde el arrastre se hace visible sin salir del documento.**
+
+| # | Qué | Veredicto del usuario |
+|---|---|---|
+| **A-1** 🔴 | `Stock Anterior` de CUT = **16**; las cabezas reales son **8**. Medido: 8 (feb) + 4 (entran 29/03) + 4 (**la venta del 30/03 sumada en vez de restada**) = 16. Las demás columnas están bien porque ninguna otra había tenido ventas ni mortandades: **todo el `+8` del mes vive en una sola celda**, y la `Existencia Final` queda en 16 | ✅ de acuerdo — con **decisión de diseño**, ver abajo |
+| **A-2** 🔴 | El mismo archivo dice **16 cabezas** en la pág. 1 y lista **8 activas** en la pág. 3 | ✅ **añadir el control** (§ 12.6) |
+| **A-3** 🟡 | Las 2 mortandades salen **mudas** (observaciones vacías), pero el dato existe completo en `terneros`: caravanas **299** (*"aguachado, debajo de 100 kg, medio rengo"*) y **291** (*"empaste, inspección Gregorio"*). El reporte lee `movimientos_hacienda.observaciones` y el motivo vive en `terneros.motivo_baja` | ✅ ya lo había visto. **Dos cosas**: (a) que la mortandad muestre su motivo; (b) el detalle hoy **lista todo corrido** — la idea es **segmentarlo** (por motivo o similar). Propuesta a elaborar |
+| **A-4** 🟢 | `Torito → Toro` (8 cab.) con `cambio_categoria`, correcto. Torito 15→7, Toro 8→16, Ternero Recría 100→98 | ✅ ok |
+| **A-5** 🟡 | La pág. 3 vuelve a listar las 4 vendidas en marzo | ✅ **exacto: acá ya no deberían aparecer.** En **marzo sí** corresponde, porque ingresaron y salieron en el mismo mes |
+
+### 12.8 · 🔑 DECISIÓN — se corrige el REPORTE, no el signo del movimiento
+
+> **Decidido por el usuario, 2026-08-20.** Ante el arrastre de § 8, había dos caminos: cambiar cómo
+> el reporte interpreta el signo, o cambiar el signo con que se guardan ventas y mortandades.
+>
+> **Se corrige el reporte.** Palabras del usuario: *"la app es muy extensa y tiene muchos lugares
+> que afectan a otros… cambiar el signo podría corregir el reporte y descompaginar muchas otras
+> cosas que hoy funcionan bien"*.
+
+🟩 **La evidencia le da la razón, y conviene dejarla escrita para que nadie reabra la discusión**:
+la pestaña Stock hace `cantidad -= m.cantidad` para venta y mortandad (`:1148-1149`), que **depende
+de que estén guardadas en positivo**. Invertir el signo en la BD rompería el stock —que hoy anda
+bien— para arreglar el reporte. Y `confirmar-venta.ts` también escribe en positivo.
+
+**Alcance del fix**: una sola línea, `:1410`. `stockAnterior` tiene que mirar el `tipo` igual que lo
+hace `cargarDatos()`, en vez de sumar en crudo. **Ningún dato se toca.**
+
+⏸️ **No se ejecuta todavía**: la auditoría sigue abierta y se corrige todo junto al final.
+
+### 12.9 · Planilla de MAYO 2026 — auditada
+
+**Cero movimientos en el mes** — y aun así es la planilla más elocuente de la auditoría.
+
+| # | Qué | Veredicto del usuario |
+|---|---|---|
+| **Y-1** 🔴 | El arrastre suma una **segunda columna**, ahora por mortandad: Ternero Recría arranca en **102** cuando abril cerró en **98** (100 + 2 muertes sumadas en vez de restadas). Ya no es un problema del CUT: pasa en cualquier columna que haya tenido una venta o una muerte | ✅ **correcto** |
+| **Y-2** 🟡 | La página del CUT lista 12 caravanas: las 8 reales **más las 4 vendidas en marzo**, dos meses y dos cierres después | ✅ **sólo sobran las vendidas.** ⚠️ *Corrección del usuario a mi lectura*: **el detalle de las existentes tiene que estar SIEMPRE**, aunque se repita idéntico de un mes al otro. No es redundancia: es el inventario nominal de la categoría |
+| **Y-3** 🟡 | Un mes vacío emite una hoja *Detalle* con encabezados y ninguna fila | ✅ **que diga "Sin movimientos en el período"** |
+
+🟩 **El estado de mayo, medido** — la planilla de un mes en el que no pasó nada:
+
+| Columna | Dice | Es | Error |
+|---|---:|---:|---:|
+| CUT/Descarte | 16 | 8 | **+8** |
+| Ternero Recría | 102 | 98 | **+4** |
+| **Total General** | **427** | **415** | **+12** |
+
+🟨 Lo que hace a mayo el caso más fuerte: **no hay ningún movimiento en el detalle que permita
+darse cuenta**. Las dos hojas se ven impecables y el total está mal en 12 cabezas.
+
+⚠️ **Dato de formato que hay que tener presente al rediseñar**: la página del CUT **no siempre es la
+3**. Cuando el mes no tiene movimientos, la página de detalle no se genera y el CUT queda en la
+**página 2** (`:1793` — `if (detalleBody.length > 0)`). Referirse a ella por número es frágil.
+
+### 12.10 · Planilla de JUNIO 2026 — auditada
+
+1 movimiento: una mortandad de Ternera Recría el 26/06. Ternera Recría 82 → 81 ✓.
+
+| # | Qué | Veredicto del usuario |
+|---|---|---|
+| **J-1** 🟡 | La misma muerte está **partida en dos lugares** y el reporte muestra una mitad. El movimiento trae *"Se la detectó pero no llegaron a salvar. Piquete Tapera Alfalfa"*; la caravana **222** (`032 010012326587`) trae `motivo_baja = "Empaste"` | ✅ **hipótesis confirmada**: la app registra **dos cosas distintas** —un **motivo** y una **observación**— y la planilla trae sólo una. **Hay que encadenarlas.** Y **la caravana siempre debe indicarse** |
+| **J-2** 🔴 | La cadena engancha (427 = 427) **y el número igual está mal**: arrastra +12 desde mayo, porque mayo no tuvo ventas ni muertes y se limitó a pasar el error intacto | ✅ **hay que mejorar los controles** |
+| **J-3** 🟡 | La página del CUT, idéntica: las mismas 12 filas con las 4 vendidas en marzo, ya tres meses atrás | ✅ ok (mismo caso que Y-2 / A-5) |
+
+🟨 **Consecuencia de J-2 para el diseño del control** — vale la pena que quede escrito: verificar que
+un mes **engancha** con el anterior detecta **el mes en que el error se produce**, no el error
+**acumulado**. Un mes tranquilo lo camufla entero. El control que sirve es el otro: **cabezas
+(página 1) contra individuos (página del CUT)**, y contra el **recuento físico**.
+
+🟨 **Cómo implementar J-1** — no hay FK entre `movimientos_hacienda` y `terneros` (§ 6.4), así que la
+mortandad se cruza por **fecha + categoría**: los `terneros` con `fecha_baja = fecha del movimiento`
+y la misma `categoria_id`. Verificado que funciona en los 3 casos reales (15/04, 25/04, 26/06).
+Y el cruce trae su propio control gratis: **si la cantidad del movimiento no coincide con la cantidad
+de caravanas encontradas, hay muertes sin atribuir** — que es justamente la alerta que
+`MODULO_TERNEROS.md` § 9 ya describe para la pantalla de terneros.
+
+### 12.11 · Planilla de JULIO 2026 — auditada
+
+1 movimiento: mortandad de Ternero Recría el 02/07. **Tercera columna contaminada.**
+
+| # | Qué | Veredicto |
+|---|---|---|
+| **Jl-1** 🔴 | Ternera Recría arranca julio en **83**; junio cerró en **81**. Son 2 × la muerte de junio | ✅ ok |
+| **Jl-2** 🟡 | Segundo caso de J-1, y más filoso: el movimiento dice *"Revisado por whatsapp, no mancha, sin causa comprobable"* y la caravana **184** dice `motivo_baja = "Muerte Súbita"`. **La planilla muestra la mitad que menos informa** | ✅ ok |
+| **Jl-3** 🟡 | Página del CUT sin novedad: cuarto mes consecutivo mostrando las 4 vendidas en marzo | ✅ ok |
+
+🟩 **El arrastre al cierre de julio, medido columna por columna:**
+
+| Columna | Dice | Es | Error | Origen |
+|---|---:|---:|---:|---|
+| CUT/Descarte | 16 | 8 | **+8** | venta de 4 en marzo |
+| Ternero Recría | 101 | 97 | **+4** | 2 muertes en abril |
+| Ternera Recría | 83 | 81 | **+2** | 1 muerte en junio |
+| **Total General** | **427** | **413** | **+14** | |
+
+🟨 **El patrón, ya completo**: cada venta y cada muerte agrega al error **el doble de su tamaño**, y
+el error **no se corrige nunca solo — sólo crece**. Cinco meses después del arranque, la planilla
+exagera el rodeo en 14 cabezas.
+
+### 12.12 · Planilla de AGOSTO 2026 — auditada (última)
+
+5 movimientos, el mes más cargado: la venta de 55 terneros, un pase a CUT y 2 mortandades de adultos.
+
+| # | Qué | Veredicto del usuario |
+|---|---|---|
+| **Ag-1** 🔴 | Las 3 columnas de plata no multiplican: 16.180 kg × $5.670 = **$91.740.600**, y el monto dice **$88.988.382** — exactamente el **97,0000 %** | ✅ **decisión: sacar plata y kilos de esta planilla.** *"En esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. ⚠️ Y el 3 % **no son gastos de venta**: *"no tuvo gastos de venta, por eso lo cargué sin gastos"* → **queda sin explicación**, ver § 12.13-D |
+| **Ag-2** 🔴 | Entra 1 vaquillona al CUT el 08/08 (grilla 16 → **17**) y **no existe ninguna caravana con `fecha_alta` en agosto**: la página nominal sigue listando las 8 de febrero | ✅ **debería figurar** — *"no sé por qué no figurará si el resto sí"*. **Causa encontrada**, ver abajo |
+| **Ag-3** 🟡 | Las 2 mortandades traen la caravana **como texto libre** (*"Caravana C607 Negra"*, *"B708 Negra madre de ternero 127"*). Verificado: **C607 y B708 no existen en `terneros`** — la tabla nominal es de terneros, los adultos no están | ✅ **no es tan problema**: *"si no está el dato puede no ponerse nada, y si lo pongo en obs termina estando porque eso se concatena"* |
+| **Ag-4** 🟡 | Cierre **372** contra **356** reales (+16). El 356 coincide exacto con la planilla punta a punta | ✅ ok. **Total Vientres 201 está correcto** |
+| **❓** | ¿La vaquillona que pasó a CUT y la C607 que murió son el mismo animal? | ✅ **son DOS distintas**: una murió, la otra mal parió y se reclasifica. **La carga está bien** |
+
+🟩 **Ag-2 — la causa, encontrada en el código.** El alta de caravanas al pasar algo a CUT está
+condicionada a que el usuario **haya tipeado algo en el textarea**: `:1247` →
+`if (esDestinosCUT && nuevoMov.caravanas.trim())`. Si el campo queda vacío, el movimiento se
+registra igual y **no se crea ninguna caravana, sin un solo aviso**. Por eso la de febrero (cargada
+por el tacto, con caravanas tipeadas) sí figura y la de agosto no.
+
+🟨 Es el mismo modo de falla de siempre: **el silencio miente**. Y es exactamente lo que el control
+de § 12.6 detecta — si la grilla dice 17 y la página nominal lista 8, falta ponerle nombre a 9.
+
+---
+
+## 13 · 🗺️ PANORAMA COMPLETO — auditoría cerrada (2026-08-20)
+
+> **Las 7 planillas mensuales + la punta a punta, auditadas una por una con el usuario.** Cada ítem
+> lleva su veredicto. Nada de esto está ejecutado: es el plan de lo que hay que hacer.
+
+### A · El número, que es lo primero
+
+| | Cabezas |
+|---|---:|
+| Lo que dice la planilla de agosto | **372** |
+| Lo que hay | **356** |
+| Error acumulado | **+16** |
+
+🟩 Confirmado por dos caminos independientes: la planilla **punta a punta** (que arranca de cero y
+no puede arrastrar) da **356**, y la suma columna por columna también. El error se reparte en
+CUT **+8**, Ternero Recría **+6**, Ternera Recría **+2**.
+
+🟨 **La regla del arrastre**: cada venta y cada muerte suma al error **el doble de su tamaño**, para
+siempre. Nunca se corrige solo. Un mes sin movimientos no lo genera pero tampoco lo limpia — lo
+pasa intacto (junio).
+
+### B · Lo que hay que corregir — ordenado por lo que más duele
+
+| # | Qué | Dónde | Origen |
+|---|---|---|---|
+| **1** 🔴 | **`Stock Anterior` tiene que mirar el `tipo`**, no sumar en crudo. Una línea. **Ningún dato se toca** | `:1410` | § 8, A-1 |
+| **2** 🔴 | **El tacto debe generar `cambio_categoria`, no `ajuste_stock`.** Cambiar el `tipo` en 2 líneas; los signos ya están bien. **+ corregir los 4 movimientos de febrero** (requiere OK explícito: son datos) | `:4515`, `:4519` | § 12.1, F-1/F-2 |
+| **3** 🔴 | **Sacar plata y kilos del detalle**: la planilla es de **movimientos de stock**, no de ventas | hoja *Detalle* y pág. de movimientos | Ag-1 |
+| **4** 🔴 | **Rediseñar la página del CUT**: bloque *venían de antes* + bloque *entraron en el período*, columna **Estado al cierre**, y línea de cierre. **No listar los vendidos en períodos anteriores**; sí los que entran y salen dentro del mismo período | § 12.6 | M-3, A-5, Y-2 |
+| **5** 🔴 | **Control cabezas (grilla) vs individuos (nominal)** — el mejor control del módulo, y sale gratis del punto 4 | § 12.6 | A-2, Ag-2 |
+| **6** 🔴 | **Al pasar algo a CUT sin tipear caravanas, avisar.** Hoy se registra en silencio y el animal queda sin nombre | `:1247` | Ag-2 |
+| **7** 🟡 | **Fila propia para los Ajustes.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` se rotula *Mortandad*: las dos mienten | § 6.3 | F-3, F-4 |
+| **8** 🟡 | **Fila / concepto de Existencia Inicial** para el recuento de arranque, hoy dentro de *Compras* (430 cabezas) | § 6.3 | F-4 |
+| **9** 🟡 | **La mortandad tiene que mostrar su motivo, su observación y su caravana**, encadenados. El cruce es por **fecha + categoría** (no hay FK) | § 12.10 | A-3, J-1, Jl-2 |
+| **10** 🟡 | **Segmentar el detalle de movimientos** (hoy lista todo corrido) — por motivo o similar, **a definir** | hoja *Detalle* | A-3 |
+| **11** 🟡 | **"Sin movimientos en el período"** en vez de una tabla vacía | pág. de movimientos | Y-3 |
+| **12** 🟡 | **Orden estable del detalle** (hoy `.order('fecha')` sin criterio secundario) y los dos lados de una reclasificación juntos | `:1600` | R-1 |
+| **13** 🟡 | **Fecha de emisión** en el encabezado | encabezado | R-2 |
+| **14** 🟡 | El cero se ve **`-` en PDF y `0` en Excel** | `fmtNum` | R-3 |
+
+### C · Deuda del módulo que apareció leyendo el código (no salió de las planillas)
+
+| # | Qué | Dónde |
+|---|---|---|
+| **15** 🔴 | **`fecha_alta` no se setea** al crear caravanas (ni en el tacto ni en el alta manual). La página del CUT filtra por `fecha_alta <= hasta`, que **excluye los NULL**: una caravana nueva no aparecería | `:1250`, `:4532` |
+| **16** 🟡 | **UUID del CUT hardcodeado** (`:4510`) y, 20 líneas después, la misma categoría buscada **por nombre** (`:4529`) | § 12.2-a |
+| **17** 🟡 | **Rodeo ↔ categoría por nombre exacto**, y el `if` **no tiene `else`**: si no matchea, no se registra el movimiento y no avisa | `:4509` |
+| **18** 🟡 | **Tacto retrospectivo no mueve el stock**: el ciclo queda con sus vacías y la hacienda no | `:4507` |
+| **19** 🟡 | **La razón social está hardcodeada** contra `CLAUDE.md` § Datos críticos | `:1543`, `:1691`, `:1860` |
+| **20** 🟡 | **Movimientos de categorías fuera de la planilla se descartan en silencio** (hoy inofensivo: las 3 que faltan están inactivas y con 0 movimientos) | `:1418` |
+| **21** 🟢 | **`stock_hacienda` es una tabla muerta** (0 filas, nadie la lee) | § 2 |
+
+### D · Decisiones tomadas — no se re-discuten
+
+1. **Se corrige el REPORTE, no el signo de los movimientos** (§ 12.8). Motivo: la pestaña Stock y
+   `confirmar-venta.ts` ya dependen de la convención positiva; invertirla rompería lo que anda.
+2. **La planilla es de movimientos de stock**: sin kilos ni montos de venta (Ag-1).
+3. **El detalle de las existentes en CUT va siempre**, aunque se repita idéntico mes a mes (Y-2).
+4. **Un animal que entra y sale en el mismo período sí aparece** (marzo es el caso correcto).
+5. **Las 4 vacas de marzo y las 2 vaquillonas de agosto están bien cargadas** — confirmado por el usuario.
+
+### E · Descartado como bug
+
+- **M-2** — la venta de marzo sin kilos, precio, monto ni cliente: *"yo no lo puse así, no es bug"*.
+- **M-3** — el motivo que muestra la página del CUT es el de **ingreso**, y está bien que sea así.
+- **Ag-3** — la caravana de un adulto como texto libre en observaciones: aceptable, *"eso se concatena"*.
+
+### F · Preguntas abiertas
+
+1. 🔴 **El 3 % de la venta de agosto no tiene explicación.** El usuario dice que no hubo gastos de
+   venta, pero `monto_total` es exactamente el 97 % de `peso × precio`. Sale de esta planilla (punto
+   3), pero **el número sigue vivo donde se use** — ventas, presupuesto.
+2. **`Novillito`** — ¿fuera de uso a propósito, o le falta columna?
+3. **Nacimientos** — cuando se empiecen a cargar, ¿movimiento o ciclo de cría?
+4. **Razón social** — ¿se deja hardcodeada (un solo establecimiento) o sale de `lib/empresas.ts`?
+5. **Tres columnas siempre vacías** (Vaq. Reposición, Novillo, Vaq. Engorde) — ¿el formulario de
+   papel las lleva?
+6. **Adultos sin registro nominal** — ¿se formaliza alguna vez o se acepta el texto libre?
+
+### G · Lo que sigue
+
+⏸️ **Nada ejecutado.** Al pasar a la etapa de corrección, estos ítems tienen que bajar a
+`PENDIENTES.md` con su ID y su marca `@productivo`, porque son trabajo pendiente y esa es su
+dimensión. Este archivo queda como el **diseño y el diagnóstico**; la lista de trabajo vive allá.
