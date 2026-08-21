@@ -341,13 +341,13 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-DEC-01 | 🔴 | Decisión | **Ventas: qué tipos salen del Libro IVA Ventas.** Hoy el bloque 1 filtra sólo `≠ 11`, así que una **NC C (13) se cuenta dos veces** (como NC del Libro y como NC del bloque Monotributo). No copiar la lista de Compras: una Fac **B emitida sí genera débito** y debe quedar en el Libro. Propuesta: `[11,12,13]`. Sin impacto hoy (`comprobantes_venta` sólo tiene tipos 1, 201 y 332) | → [A-DEC-01](#a-dec-01) `@ingresos` |
 | **A-BUG-44** | 🟡 | **Bug** | **HECHO 2026-08-20 — falta testear ([A-TEST-35](#a-test-35))** · La Planilla de Hacienda exageraba el rodeo en 16 cabezas — `Stock Anterior` sumaba los movimientos anteriores **en crudo** (`vista-sector-productivo.tsx:1410`) sin mirar el `tipo`, y ventas y mortandades se guardan **positivas**: las suma en vez de restarlas. Cada venta o muerte agrega **el doble de su tamaño** al error, y no se corrige nunca solo. Agosto/2026 dice **372**, hay **356**. ✅ **Decidido: se corrige el REPORTE, no el signo** — la pestaña Stock (`:1148`) y `confirmar-venta.ts` dependen de la convención positiva. Fix de 1 línea, **ningún dato se toca** | → [A-BUG-44](#a-bug-44) `@productivo` |
 | **A-BUG-45** | 🟡 | **Bug** | **HECHO 2026-08-20 (código) — falta el arreglo de los datos viejos ([A-DAT-05](#a-dat-05))** · El tacto registraba el pase a CUT como `ajuste_stock` en vez de `cambio_categoria`. El reporte rotula `ajuste −` como *Mortandad* y `ajuste +` como *Compras*, así que la planilla de febrero **declara muertas a 8 vacas vivas** — y dos páginas después las lista como *Activa*. El camino manual sí lo hace bien (se ve en marzo): cambiar el `tipo` en 2 líneas, los signos ya están bien | → [A-BUG-45](#a-bug-45) `@productivo` |
-| **A-BUG-46** | 🔴 | **Bug** | **Pasar hacienda a CUT sin tipear caravanas no crea el individuo y no avisa** (`:1247` — el alta está condicionada a `nuevoMov.caravanas.trim()`). En agosto entró 1 vaquillona: la grilla dice **17** y la página nominal lista **8**. El animal entra al stock sin nombre, en silencio | → [A-BUG-46](#a-bug-46) `@productivo` |
+| **A-BUG-46** | 🟡 | **Bug** | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Pasar hacienda a CUT sin tipear caravanas no creaba el individuo y no avisaba (`:1247` — el alta está condicionada a `nuevoMov.caravanas.trim()`). En agosto entró 1 vaquillona: la grilla dice **17** y la página nominal lista **8**. El animal entra al stock sin nombre, en silencio | → [A-BUG-46](#a-bug-46) `@productivo` |
 | **A-BUG-47** | 🟡 | **Bug** | **HECHO 2026-08-20 (los 2 caminos que alimentan el CUT) — falta testear** · Los otros 3 caminos de alta van en [A-BUG-51](#a-bug-51) · `fecha_alta` no se seteaba al crear caravanas (ni el tacto `:4532` ni el alta manual `:1250`), y la página del CUT filtra por `fecha_alta <= hasta`, que en Postgres **excluye los NULL**. Hoy no se nota porque las 12 del CUT se completaron a mano en abril/2026, pero **la próxima caravana no aparecería en la planilla**. Ya hay 8 terneros con `fecha_alta` nula | → [A-BUG-47](#a-bug-47) `@productivo` |
 | **A-BUG-48** | 🟡 | **Bug** | **Tres fragilidades en el registro de tacto**: el UUID del CUT está **hardcodeado** (`:4510`) y 20 líneas después la misma categoría se busca **por nombre** (`:4529`) · el rodeo se cruza con la categoría por **nombre exacto** y el `if` **no tiene `else`**, así que si no matchea **no se registra el movimiento, sin avisar** (`:4509`) · el **tacto retrospectivo no mueve el stock** (`:4507`), dejando ciclo y hacienda en desacuerdo | → [A-BUG-48](#a-bug-48) `@productivo` |
 | **A-BUG-49** | 🟡 | **Bug** | **La Planilla de Hacienda hardcodea la razón social** (`Ea. Nazarenas` / `de Martinez Sobrado` en `:1543`, `:1691` y `:1860`), contra `CLAUDE.md` § Datos críticos — mismo patrón que sacaba el Libro IVA de PAM y MA con el CUIT de MSA impreso. Hoy no molesta: un solo establecimiento y `movimientos_hacienda` no tiene columna de empresa | → [A-BUG-49](#a-bug-49) `@productivo` |
 | **A-BUG-50** | 🟡 | **Bug** | **Los movimientos de categorías que no están en las 12 columnas de la planilla se descartan en silencio** (`:1418` — `if (col === undefined) return`). Hoy inofensivo: las 3 que quedan afuera (`Novillito`, `Ternera`, `Ternero`) están inactivas y con 0 movimientos. Pero una categoría nueva desaparecería del reporte sin aviso | → [A-BUG-50](#a-bug-50) `@productivo` |
 | **A-BUG-51** | 🟡 | **Bug** | **Otros 3 caminos dan de alta caravanas sin `fecha_alta`** — el alta manual de la pantalla de Terneros (`tab-terneros.tsx:323`), el **importador de terneros** (`import-terneros/route.ts:174`) y el **importador de pesadas** cuando la caravana no existe (`import-pesadas/route.ts:322`, que inserta con **un solo campo**: `caravana_oficial`). Son los caminos por los que entra un individuo sin fecha ni categoría. No afectan a la Planilla de Hacienda (crean terneros, no CUT) — abordar al tocar la pantalla de Terneros. Hermano de [A-BUG-47](#a-bug-47) | → [A-BUG-51](#a-bug-51) `@productivo` |
-| **A-FEAT-34** | 🔴 | Feat | **Rediseñar la página CUT/Descarte + su control de cierre** — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
+| **A-FEAT-34** | 🟡 | Feat | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Rediseñar la página CUT/Descarte + su control de cierre — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
 | **A-FEAT-35** | 🔴 | Feat | **Sacar kilos y montos del detalle de la Planilla de Hacienda.** Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
 | **A-FEAT-37** | 🟡 | Feat | **La mortandad tiene que mostrar motivo + observación + caravana encadenados**, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
@@ -355,6 +355,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
 | A-TEST-35 | ✅ | Test | **TESTEADO OK 2026-08-20 por el usuario en el preview.** Planilla de Hacienda con el `Stock Anterior` corregido ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
+| A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
 
@@ -9411,6 +9412,48 @@ Cubre [A-BUG-44](#a-bug-44). Todo se prueba desde **Productivo → Hacienda**.
 📸 Para comparar están las dos tandas completas (Excel + PDF, 8 períodos cada una):
 `backup_planillas_hacienda_2026-08-20/` (antes) y `planillas_hacienda_2026-08-20_CORREGIDO/`
 (después). Ninguna de las dos está en git.
+
+---
+
+## <a id="a-test-37"></a>A-TEST-37 — La página CUT como conciliación, con su control
+
+Cubre [A-FEAT-34](#a-feat-34), [A-BUG-46](#a-bug-46) y [A-BUG-47](#a-bug-47).
+
+**1 · Marzo 2026 — el caso que cierra.** La página del CUT tiene que salir así:
+
+```
+A · VENÍAN DE ANTES (8)      A346 · A935 · B079 · B616 · B687 · B744 · C561 · Sin identificar
+                             todas → Sigue en CUT
+B · ENTRARON EN EL PERÍODO (4)
+   414 Lengua de Palo · 562 Respiratorio · 610 Machorra · 724 Diarrea Conserva
+                             todas → Salió 30/03/2026 — Vendido
+CIERRE   venían 8 + entraron 4 − salieron 4 = quedan 8
+         Existencia Final CUT (cabezas) = 8      ✓ OK
+```
+
+De un vistazo se ve que **las 4 que entraron son las 4 que salieron**, con su motivo de ingreso y su
+fecha y motivo de salida.
+
+**2 · Agosto 2026 — el caso que NO cierra, y tiene que gritar.**
+- Las 4 vendidas en marzo **ya no aparecen** (antes seguían saliendo 5 meses después).
+- El cierre da `8 + 0 − 0 = 8` contra **9 cabezas** en la grilla.
+- Tiene que salir la **alerta**: *"faltan 1 cabeza sin identificar con caravana"* — en el PDF con
+  recuadro rojo, en el preview con fondo rojo. Es la vaquillona del 08/08.
+
+**3 · Lo que NO tiene que cambiar**: la hoja **Planilla**, ni un número, en ninguna de las 7
+mensuales. Sólo cambió la página del CUT.
+
+**4 · El aviso al mover a CUT sin caravanas** (avisa, **no bloquea**): en *Movimientos → Cambio de
+Categoría*, destino CUT/Descarte, dejar el campo de caravanas vacío y guardar. Tiene que preguntar
+si se sigue, dejar **cancelar** para volver a cargarlas, y si se sigue: registrar el movimiento
+igual + un aviso de que la planilla va a marcar el descuadre. **Mismo aviso al registrar un tacto**
+con vacías y sin caravanas.
+
+**5 · `fecha_alta`** ([A-BUG-47](#a-bug-47)): al cargar caravanas nuevas al CUT, tienen que aparecer
+en el bloque B con la **fecha del movimiento**, no la del día en que se cargaron.
+
+📸 Tandas: `planillas_hacienda_2026-08-20_TACTO/` (antes) y `planillas_hacienda_2026-08-20_CUT/`
+(después).
 
 ---
 

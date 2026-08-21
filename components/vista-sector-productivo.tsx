@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1215,6 +1215,24 @@ function TabHacienda() {
       const catOrigen = categorias.find(c => c.id === nuevoMov.categoria_id)
       const catDestino = categorias.find(c => c.id === nuevoMov.categoria_destino_id)
 
+      // ── Aviso: entrar al CUT sin decir CUÁLES animales ──────────────────────────
+      // Se ADVIERTE, no se bloquea. Bloquear parece más seguro pero empuja al peor
+      // resultado: si en el momento no tenés las caravanas a mano, terminás no
+      // registrando el movimiento y se pierde el dato entero en vez de sólo el detalle.
+      // El descuadre queda visible en la planilla (§ cierre del CUT) hasta que se complete.
+      const vaAlCUT = !!(catDestino?.nombre.toLowerCase().includes('cut')
+        || catDestino?.nombre.toLowerCase().includes('descarte'))
+      const sinCaravanas = vaAlCUT && !nuevoMov.caravanas.trim() && ternerosSeleccionadosCambio.size === 0
+      if (sinCaravanas) {
+        const seguir = confirm(
+          `Vas a mover ${N} ${N === 1 ? 'cabeza' : 'cabezas'} a ${catDestino?.nombre} sin identificar cuáles.\n\n` +
+          `El movimiento se registra igual, pero esos animales no van a figurar en el detalle ` +
+          `de la planilla y va a quedar un descuadre entre cabezas e individuos.\n\n` +
+          `¿Seguir sin cargar las caravanas?`
+        )
+        if (!seguir) return
+      }
+
       // Egreso de categoría origen
       const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
         fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_id,
@@ -1243,8 +1261,7 @@ function TabHacienda() {
       }
 
       // Caravanas (solo si destino es CUT/Descarte) → registrar en terneros
-      const esDestinosCUT = catDestino?.nombre.toLowerCase().includes('cut') || catDestino?.nombre.toLowerCase().includes('descarte')
-      if (esDestinosCUT && nuevoMov.caravanas.trim()) {
+      if (vaAlCUT && nuevoMov.caravanas.trim()) {
         const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
         if (lineas.length > 0) {
           await supabase.schema('productivo').from('terneros').insert(
@@ -1271,6 +1288,13 @@ function TabHacienda() {
       }
 
       toast.success(`Cambio de categoría registrado${ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
+      if (sinCaravanas) {
+        toast.warning(
+          `${N} ${N === 1 ? 'cabeza entró' : 'cabezas entraron'} a ${catDestino?.nombre} sin caravana. ` +
+          `La planilla va a marcar el descuadre hasta que las cargues.`,
+          { duration: 8000 }
+        )
+      }
       setMostrarModalMov(false)
       resetNuevoMov()
       cargarDatos()
@@ -1342,6 +1366,13 @@ function TabHacienda() {
     rows: { label: string; vals: (string | number)[]; highlight?: boolean }[]
     totalVientres: string
     cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+    cut?: {
+      bloqueA: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+      bloqueB: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+      bloqueC: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[]
+      venian: number; entraron: number; salieron: number; quedan: number
+      cabezasGrilla: number; descuadre: number
+    }
   } | null>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
 
@@ -1461,24 +1492,75 @@ function TabHacienda() {
       return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
     }
 
-    // CUT detail — filtrar por fecha_alta <= hasta (fecha real de ingreso a la categoría)
+    // ═══ Detalle CUT/Descarte — CONCILIACIÓN de la categoría, no una lista plana ═══
+    //
+    // La página existe para entender el descarte, que siempre tiene detalles y hay que tenerlos
+    // bien. Antes era una lista de TODO lo que alguna vez pasó por el CUT, que crecía para
+    // siempre: en agosto seguía mostrando 4 vacas vendidas cinco meses antes.
+    //
+    // Ahora son dos bloques + un cierre que tiene que cuadrar contra la grilla:
+    //   A · venían de antes          (= Stock Anterior de la columna CUT)
+    //   B · entraron en el período   (= Reclas. + de la columna CUT)
+    //   C · sin fecha de alta        (no se pueden ubicar en el tiempo, pero NO se omiten)
+    //   cierre: venían + entraron − salieron = quedan
+    //
+    // El control de verdad está en la última línea: la página 1 cuenta CABEZAS (de
+    // `movimientos_hacienda`, que es bulk) y ésta cuenta INDIVIDUOS (de `terneros`, nominal).
+    // Si no dan lo mismo, hay animales que entraron o salieron sin ponerles nombre (A-FEAT-34).
+    type FilaCUT = { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }
     const cutCatId = catIdMap['vaca cut/descarte']
-    let cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
+    const cut = {
+      bloqueA: [] as FilaCUT[], bloqueB: [] as FilaCUT[], bloqueC: [] as FilaCUT[],
+      venian: 0, entraron: 0, salieron: 0, quedan: 0, cabezasGrilla: 0, descuadre: 0,
+    }
     if (cutCatId) {
       const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
-        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, fecha_alta')
+        .select('caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, motivo_baja, fecha_alta')
         .eq('categoria_id', cutCatId)
-        .lte('fecha_alta', hasta)
-      cutData = (cutTerneros || [])
-        .map(d => ({
-          caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
-          fechaAlta: d.fecha_alta ? d.fecha_alta.split('-').reverse().join('/') : '-',
-          tipo: d.categoria_previa || '-',
-          pelo: d.pelo || '-',
-          motivo: d.observaciones || '-',
-          estado: (!d.fecha_baja || d.fecha_baja > hasta) ? 'Activa' : 'Baja',
-        }))
+
+      const aFila = (d: any): FilaCUT => ({
+        caravana: d.caravana_oficial || d.caravana_interna || 'Sin identificar',
+        fechaAlta: d.fecha_alta ? d.fecha_alta.split('-').reverse().join('/') : 'sin fecha',
+        tipo: d.categoria_previa || '-',
+        pelo: d.pelo || '-',
+        motivo: d.observaciones || '-',
+        // No clasificamos el motivo de salida: se muestra el texto que cargó el usuario.
+        // Adivinar si "Vendido" significa venta es peor que mostrarlo tal cual.
+        estado: (!d.fecha_baja || d.fecha_baja > hasta)
+          ? 'Sigue en CUT'
+          : `Salió ${d.fecha_baja.split('-').reverse().join('/')}${d.motivo_baja ? ' — ' + d.motivo_baja : ''}`,
+      })
+
+      for (const d of (cutTerneros || []) as any[]) {
+        const alta: string | null = d.fecha_alta
+        const baja: string | null = d.fecha_baja
+
+        if (!alta) { cut.bloqueC.push(aFila(d)); continue }   // nunca se omite
+        if (alta > hasta) continue                            // entró después del período
+        if (alta < desde) {
+          if (baja && baja < desde) continue                  // ya se había ido: no es del período
+          cut.bloqueA.push(aFila(d))
+        } else {
+          cut.bloqueB.push(aFila(d))
+        }
+      }
+
+      const ordenar = (f: FilaCUT[]) => f.sort((a, b) => a.caravana.localeCompare(b.caravana))
+      ordenar(cut.bloqueA); ordenar(cut.bloqueB); ordenar(cut.bloqueC)
+
+      const todas = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
+      cut.venian = cut.bloqueA.length
+      cut.entraron = cut.bloqueB.length
+      cut.salieron = todas.filter(f => f.estado !== 'Sigue en CUT').length
+      cut.quedan = todas.filter(f => f.estado === 'Sigue en CUT').length
+
+      // El contraste con la grilla: cabezas (bulk) contra individuos (nominal)
+      const idxCUT = todasCats.findIndex(c => c.db.toLowerCase() === 'vaca cut/descarte')
+      cut.cabezasGrilla = idxCUT >= 0 ? existenciaFinal[idxCUT] : 0
+      cut.descuadre = cut.cabezasGrilla - cut.quedan
     }
+    // Compatibilidad: el resto del código sigue viendo una lista plana
+    const cutData = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
 
     const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
       { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
@@ -1506,7 +1588,7 @@ function TabHacienda() {
     const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
 
     return {
-      headers, builtRows, cutData, totalVientres,
+      headers, builtRows, cutData, cut, totalVientres,
       filas, stockAnterior, ingresos, egresos, existenciaFinal,
       catIdMap, catNameMap, catToCol, nAdultos, nTern, nCols, buildRow, sumar,
       rowDefs,
@@ -1530,6 +1612,7 @@ function TabHacienda() {
         rows: datos.builtRows,
         totalVientres: `Vaca (${fmtNum(datos.existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(datos.existenciaFinal[1])}) = ${fmtNum(datos.totalVientres)}`,
         cutData: datos.cutData,
+        cut: datos.cut,
       })
     } catch (err: any) {
       toast.error('Error: ' + err.message)
@@ -1544,7 +1627,7 @@ function TabHacienda() {
     try {
       const { desde, hasta, periodoLabel } = resolverRangoFechas()
       const datos = await calcularDatosPlanilla(desde, hasta)
-      const { headers, builtRows, cutData, totalVientres, catNameMap,
+      const { headers, builtRows, cutData, cut, totalVientres, catNameMap,
         filas, stockAnterior, ingresos, egresos, existenciaFinal,
         nAdultos, nTern, buildRow, rowDefs } = datos
       const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
@@ -1629,14 +1712,34 @@ function TabHacienda() {
         ])
       }
 
-      // Hoja 2 parte 2: Detalle CUT/Descarte
-      if (cutData.length > 0) {
+      // Hoja 2 parte 2: Detalle CUT/Descarte — conciliación en bloques + cierre
+      if (cutData.length > 0 || cut.cabezasGrilla > 0) {
+        const cabecera = ['Caravana', 'Fecha Alta', 'Tipo', 'Pelo', 'Motivo de ingreso', 'Estado al cierre']
+        const bloque = (titulo: string, filas: typeof cut.bloqueA) => {
+          if (filas.length === 0) return
+          detalleAoa.push([])
+          detalleAoa.push([`${titulo} (${filas.length})`])
+          detalleAoa.push(cabecera)
+          for (const d of filas) detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+        }
+
         detalleAoa.push([])
         detalleAoa.push(['DETALLE CUT/DESCARTE'])
-        detalleAoa.push(['Caravana', 'Fecha Alta', 'Tipo', 'Pelo', 'Motivo', 'Estado'])
-        for (const d of cutData) {
-          detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
-        }
+        bloque('A - VENIAN DE ANTES', cut.bloqueA)
+        bloque('B - ENTRARON EN EL PERIODO', cut.bloqueB)
+        bloque('C - SIN FECHA DE ALTA', cut.bloqueC)
+
+        detalleAoa.push([])
+        detalleAoa.push(['CIERRE DE LA CATEGORIA'])
+        detalleAoa.push(['', 'Venían de antes', cut.venian])
+        detalleAoa.push(['', 'Entraron en el período', cut.entraron])
+        detalleAoa.push(['', 'Salieron', -cut.salieron])
+        detalleAoa.push(['', 'Quedan al cierre (individuos)', cut.quedan])
+        detalleAoa.push(['', 'Existencia Final CUT (cabezas, página 1)', cut.cabezasGrilla])
+        detalleAoa.push(['', cut.descuadre === 0
+          ? 'OK - los individuos coinciden con las cabezas'
+          : `ATENCION: faltan ${Math.abs(cut.descuadre)} ${Math.abs(cut.descuadre) === 1 ? 'cabeza' : 'cabezas'} sin identificar con caravana`,
+          cut.descuadre === 0 ? '' : cut.descuadre])
       }
 
       const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
@@ -1833,7 +1936,7 @@ function TabHacienda() {
       }
 
       // ═══ DETALLE CUT/DESCARTE — página separada ═══
-      if (cutData.length > 0) {
+      if (cutData.length > 0 || cut.cabezasGrilla > 0) {
         doc.addPage('a4', 'landscape')
         doc.setFontSize(13)
         doc.setFont('helvetica', 'bold')
@@ -1845,8 +1948,19 @@ function TabHacienda() {
         doc.setDrawColor(...sepiaClaro)
         doc.line(15, 24, pageW - 15, 24)
 
-        const cutHeaders = ['Caravana', 'Fecha Alta', 'Tipo (Cat. Previa)', 'Pelo', 'Motivo', 'Estado']
-        const cutBody = cutData.map(d => [d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+        const cutHeaders = ['Caravana', 'Fecha Alta', 'Tipo (Cat. Previa)', 'Pelo', 'Motivo de ingreso', 'Estado al cierre']
+        // Las filas de titulo de bloque van como fila del cuerpo, para que autoTable las pagine
+        const cutBody: string[][] = []
+        const marcaBloque = new Set<number>()
+        const agregar = (titulo: string, filas: typeof cut.bloqueA) => {
+          if (filas.length === 0) return
+          marcaBloque.add(cutBody.length)
+          cutBody.push([`${titulo} (${filas.length})`, '', '', '', '', ''])
+          for (const d of filas) cutBody.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+        }
+        agregar('A - VENIAN DE ANTES', cut.bloqueA)
+        agregar('B - ENTRARON EN EL PERIODO', cut.bloqueB)
+        agregar('C - SIN FECHA DE ALTA', cut.bloqueC)
 
         autoTable(doc, {
           startY: 28,
@@ -1857,11 +1971,52 @@ function TabHacienda() {
           headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center' },
           columnStyles: { 5: { halign: 'center' } },
           didParseCell: (data: any) => {
-            if (data.section === 'body' && data.column.index === 5) {
-              if (data.cell.raw === 'Baja') data.cell.styles.textColor = [160, 60, 60]
+            if (data.section !== 'body') return
+            if (marcaBloque.has(data.row.index)) {
+              data.cell.styles.fillColor = fondoResaltado
+              data.cell.styles.fontStyle = 'bold'
+              data.cell.styles.halign = 'left'
+            } else if (data.column.index === 5 && String(data.cell.raw).startsWith('Salió')) {
+              data.cell.styles.textColor = [160, 60, 60]
             }
           },
         })
+
+        // ── Cierre de la categoría: el control ──
+        let y = ((doc as any).lastAutoTable?.finalY || 100) + 8
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'bold')
+        doc.setTextColor(...sepia)
+        doc.text('CIERRE DE LA CATEGORIA', 15, y)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(40, 30, 20)
+        const renglon = (t: string, n: number | string) => {
+          y += 5
+          doc.text(t, 20, y)
+          doc.text(String(n), 90, y, { align: 'right' })
+        }
+        renglon('Venían de antes', cut.venian)
+        renglon('+ Entraron en el período', cut.entraron)
+        renglon('- Salieron', cut.salieron)
+        renglon('= Quedan al cierre (individuos)', cut.quedan)
+        renglon('Existencia Final CUT (cabezas, pág. 1)', cut.cabezasGrilla)
+
+        y += 7
+        if (cut.descuadre === 0) {
+          doc.setTextColor(60, 120, 60)
+          doc.setFontSize(9)
+          doc.text('OK - los individuos coinciden con las cabezas de la planilla', 15, y)
+        } else {
+          // Alerta grande: un control que no se ve no es un control
+          doc.setFillColor(250, 235, 235)
+          doc.rect(15, y - 5, pageW - 30, 11, 'F')
+          doc.setTextColor(160, 60, 60)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(10)
+          const n = Math.abs(cut.descuadre)
+          doc.text(`ATENCION: faltan ${n} ${n === 1 ? 'cabeza' : 'cabezas'} sin identificar con caravana`, 18, y + 2)
+          doc.setFont('helvetica', 'normal')
+        }
       }
 
       // Footer en todas las páginas
@@ -2537,8 +2692,9 @@ function TabHacienda() {
                 </table>
                 <p className="text-xs text-stone-600 mt-2 font-medium">Total Vientres: {previewPlanilla.totalVientres}</p>
 
-                {/* CUT Detail */}
-                {previewPlanilla.cutData.length > 0 && (
+                {/* Detalle CUT / Descarte — conciliación en bloques + cierre */}
+                {previewPlanilla.cut && (previewPlanilla.cut.bloqueA.length > 0 || previewPlanilla.cut.bloqueB.length > 0
+                  || previewPlanilla.cut.bloqueC.length > 0 || previewPlanilla.cut.cabezasGrilla > 0) && (
                   <div className="mt-4">
                     <h4 className="text-sm font-semibold text-stone-700 mb-1">Detalle CUT / Descarte</h4>
                     <table className="text-xs border-collapse">
@@ -2548,23 +2704,65 @@ function TabHacienda() {
                           <th className="border px-2 py-1">Fecha Alta</th>
                           <th className="border px-2 py-1">Tipo</th>
                           <th className="border px-2 py-1">Pelo</th>
-                          <th className="border px-2 py-1">Motivo</th>
-                          <th className="border px-2 py-1">Estado</th>
+                          <th className="border px-2 py-1">Motivo de ingreso</th>
+                          <th className="border px-2 py-1">Estado al cierre</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {previewPlanilla.cutData.map((d, i) => (
-                          <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
-                            <td className="border px-2 py-0.5">{d.caravana}</td>
-                            <td className="border px-2 py-0.5">{d.fechaAlta}</td>
-                            <td className="border px-2 py-0.5">{d.tipo}</td>
-                            <td className="border px-2 py-0.5">{d.pelo}</td>
-                            <td className="border px-2 py-0.5">{d.motivo}</td>
-                            <td className={`border px-2 py-0.5 text-center ${d.estado === 'Baja' ? 'text-red-600' : ''}`}>{d.estado}</td>
-                          </tr>
+                        {([
+                          ['A · Venían de antes', previewPlanilla.cut.bloqueA],
+                          ['B · Entraron en el período', previewPlanilla.cut.bloqueB],
+                          ['C · Sin fecha de alta', previewPlanilla.cut.bloqueC],
+                        ] as const).map(([titulo, filas]) => filas.length === 0 ? null : (
+                          <Fragment key={titulo}>
+                            <tr className="bg-amber-50">
+                              <td colSpan={6} className="border px-2 py-1 font-semibold text-amber-900">
+                                {titulo} ({filas.length})
+                              </td>
+                            </tr>
+                            {filas.map((d, i) => (
+                              <tr key={titulo + i} className={i % 2 === 0 ? 'bg-white' : 'bg-stone-50'}>
+                                <td className="border px-2 py-0.5">{d.caravana}</td>
+                                <td className="border px-2 py-0.5">{d.fechaAlta}</td>
+                                <td className="border px-2 py-0.5">{d.tipo}</td>
+                                <td className="border px-2 py-0.5">{d.pelo}</td>
+                                <td className="border px-2 py-0.5">{d.motivo}</td>
+                                <td className={`border px-2 py-0.5 ${d.estado.startsWith('Salió') ? 'text-red-600' : ''}`}>{d.estado}</td>
+                              </tr>
+                            ))}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
+
+                    {/* Cierre de la categoría — el control */}
+                    <div className="mt-2 text-xs text-stone-700">
+                      <div className="font-semibold text-stone-800 mb-0.5">Cierre de la categoría</div>
+                      <table className="border-collapse">
+                        <tbody>
+                          {[
+                            ['Venían de antes', previewPlanilla.cut.venian],
+                            ['+ Entraron en el período', previewPlanilla.cut.entraron],
+                            ['− Salieron', previewPlanilla.cut.salieron],
+                            ['= Quedan al cierre (individuos)', previewPlanilla.cut.quedan],
+                            ['Existencia Final CUT (cabezas, grilla)', previewPlanilla.cut.cabezasGrilla],
+                          ].map(([t, n]) => (
+                            <tr key={String(t)}>
+                              <td className="pr-4 py-0.5">{t}</td>
+                              <td className="text-right py-0.5 font-medium">{fmtNum(n as number)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {previewPlanilla.cut.descuadre === 0 ? (
+                        <p className="mt-1 text-emerald-700">✓ Los individuos coinciden con las cabezas de la planilla</p>
+                      ) : (
+                        <p className="mt-1 rounded border border-red-300 bg-red-50 px-2 py-1 font-semibold text-red-700">
+                          ⚠ Faltan {Math.abs(previewPlanilla.cut.descuadre)}{' '}
+                          {Math.abs(previewPlanilla.cut.descuadre) === 1 ? 'cabeza' : 'cabezas'} sin identificar con caravana
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -4347,6 +4545,23 @@ function SubTabOrdenesAplicacion() {
         return
       }
     }
+    // ── Aviso: tacto con vacías pero sin las caravanas ──────────────────────────
+    // Mismo criterio que el cambio de categoría manual: se advierte, no se bloquea.
+    // Sin caravanas, las vacías entran al CUT como cabezas pero sin nombre, y la
+    // planilla marca el descuadre entre cabezas e individuos (A-BUG-46).
+    if (laborEspecial === 'tacto' && cicloSeleccionado && !cargaRetrospectiva) {
+      const nVacias = parseInt(cabezasVacias) || 0
+      if (nVacias > 0 && !caravanasVacias.trim()) {
+        const seguir = confirm(
+          `Vas a mandar ${nVacias} ${nVacias === 1 ? 'vaca vacía' : 'vacas vacías'} al CUT sin identificar cuáles.\n\n` +
+          `El tacto se registra igual, pero esos animales no van a figurar en el detalle de la ` +
+          `planilla y va a quedar un descuadre entre cabezas e individuos.\n\n` +
+          `¿Seguir sin cargar las caravanas?`
+        )
+        if (!seguir) return
+      }
+    }
+
     // Filtrar lineas vacías (sin insumo seleccionado)
     const lineasValidas = lineas.filter(l => l.insumo_nombre || l.insumo_stock_id)
 
@@ -4570,6 +4785,13 @@ function SubTabOrdenesAplicacion() {
             }
           }
           toast.success(`Tacto registrado: ${prenadas} preñadas, ${vacias} vacias`)
+          if (vacias > 0 && !cargaRetrospectiva && !caravanasVacias.trim()) {
+            toast.warning(
+              `${vacias} ${vacias === 1 ? 'vaca entró' : 'vacas entraron'} al CUT sin caravana. ` +
+              `La planilla va a marcar el descuadre hasta que las cargues.`,
+              { duration: 8000 }
+            )
+          }
         }
 
         if (laborEspecial === 'paricion' && cicloSeleccionado) {

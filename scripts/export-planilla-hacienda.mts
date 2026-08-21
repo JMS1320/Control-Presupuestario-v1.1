@@ -156,22 +156,56 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
     return [label, ...vals.slice(0, nAdultos), subAdultos, ...vals.slice(nAdultos), subTern, subAdultos + subTern]
   }
 
+  // Detalle CUT — conciliacion en 2 bloques + cierre, espejo de la app (A-FEAT-34)
+  type FilaCUT = { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }
   const cutCatId = catIdMap["vaca cut/descarte"]
-  let cutData: { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }[] = []
+  const cut = {
+    bloqueA: [] as FilaCUT[], bloqueB: [] as FilaCUT[], bloqueC: [] as FilaCUT[],
+    venian: 0, entraron: 0, salieron: 0, quedan: 0, cabezasGrilla: 0, descuadre: 0,
+  }
   if (cutCatId) {
     const { data: cutTerneros } = await supabase.schema("productivo").from("terneros")
-      .select("caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, fecha_alta")
+      .select("caravana_oficial, caravana_interna, categoria_previa, pelo, observaciones, fecha_baja, motivo_baja, fecha_alta")
       .eq("categoria_id", cutCatId)
-      .lte("fecha_alta", hasta)
-    cutData = (cutTerneros || []).map((d: any) => ({
+
+    const aFila = (d: any): FilaCUT => ({
       caravana: d.caravana_oficial || d.caravana_interna || "Sin identificar",
-      fechaAlta: d.fecha_alta ? ddmmyyyy(d.fecha_alta) : "-",
+      fechaAlta: d.fecha_alta ? ddmmyyyy(d.fecha_alta) : "sin fecha",
       tipo: d.categoria_previa || "-",
       pelo: d.pelo || "-",
       motivo: d.observaciones || "-",
-      estado: (!d.fecha_baja || d.fecha_baja > hasta) ? "Activa" : "Baja",
-    }))
+      estado: (!d.fecha_baja || d.fecha_baja > hasta)
+        ? "Sigue en CUT"
+        : `Salió ${ddmmyyyy(d.fecha_baja)}${d.motivo_baja ? " — " + d.motivo_baja : ""}`,
+    })
+
+    for (const d of (cutTerneros || []) as any[]) {
+      const alta: string | null = d.fecha_alta
+      const baja: string | null = d.fecha_baja
+      if (!alta) { cut.bloqueC.push(aFila(d)); continue }
+      if (alta > hasta) continue
+      if (alta < desde) {
+        if (baja && baja < desde) continue
+        cut.bloqueA.push(aFila(d))
+      } else {
+        cut.bloqueB.push(aFila(d))
+      }
+    }
+
+    const ordenar = (f: FilaCUT[]) => f.sort((a, b) => a.caravana.localeCompare(b.caravana))
+    ordenar(cut.bloqueA); ordenar(cut.bloqueB); ordenar(cut.bloqueC)
+
+    const todas = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
+    cut.venian = cut.bloqueA.length
+    cut.entraron = cut.bloqueB.length
+    cut.salieron = todas.filter(f => f.estado !== "Sigue en CUT").length
+    cut.quedan = todas.filter(f => f.estado === "Sigue en CUT").length
+
+    const idxCUT = todasCats.findIndex(c => c.db.toLowerCase() === "vaca cut/descarte")
+    cut.cabezasGrilla = idxCUT >= 0 ? existenciaFinal[idxCUT] : 0
+    cut.descuadre = cut.cabezasGrilla - cut.quedan
   }
+  const cutData = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
 
   const rowDefs = [
     { label: "Stock Anterior", vals: stockAnterior },
@@ -189,13 +223,13 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
   const builtRows = rowDefs.map(r => ({ label: r.label, vals: buildRow(r.label, r.vals) }))
   const totalVientres = existenciaFinal[0] + existenciaFinal[1]
 
-  return { builtRows, cutData, totalVientres, catNameMap, filas,
+  return { builtRows, cutData, cut, totalVientres, catNameMap, filas,
     stockAnterior, existenciaFinal, nAdultos, nTern, descartados, desde, hasta }
 }
 
 // ── Espejo del armado del Excel (:1541-1642) ────────────────────────────────
 async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any[]) {
-  const { builtRows, cutData, totalVientres, catNameMap, nAdultos, nTern } = datos
+  const { builtRows, cutData, cut, totalVientres, catNameMap, nAdultos, nTern } = datos
   const nCria = CATS_PLANILLA.filter(c => c.grupo === "cria").length
   const nRecria = CATS_PLANILLA.filter(c => c.grupo === "recria").length
 
@@ -252,11 +286,32 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
       m.proveedor_cliente || "", m.observaciones || ""])
   }
 
-  if (cutData.length > 0) {
+  if (cutData.length > 0 || cut.cabezasGrilla > 0) {
+    const cabecera = ["Caravana", "Fecha Alta", "Tipo", "Pelo", "Motivo de ingreso", "Estado al cierre"]
+    const bloque = (titulo: string, filas: any[]) => {
+      if (filas.length === 0) return
+      detalleAoa.push([])
+      detalleAoa.push([`${titulo} (${filas.length})`])
+      detalleAoa.push(cabecera)
+      for (const d of filas) detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+    }
     detalleAoa.push([])
     detalleAoa.push(["DETALLE CUT/DESCARTE"])
-    detalleAoa.push(["Caravana", "Fecha Alta", "Tipo", "Pelo", "Motivo", "Estado"])
-    for (const d of cutData) detalleAoa.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+    bloque("A - VENIAN DE ANTES", cut.bloqueA)
+    bloque("B - ENTRARON EN EL PERIODO", cut.bloqueB)
+    bloque("C - SIN FECHA DE ALTA", cut.bloqueC)
+
+    detalleAoa.push([])
+    detalleAoa.push(["CIERRE DE LA CATEGORIA"])
+    detalleAoa.push(["", "Venían de antes", cut.venian])
+    detalleAoa.push(["", "Entraron en el período", cut.entraron])
+    detalleAoa.push(["", "Salieron", -cut.salieron])
+    detalleAoa.push(["", "Quedan al cierre (individuos)", cut.quedan])
+    detalleAoa.push(["", "Existencia Final CUT (cabezas, página 1)", cut.cabezasGrilla])
+    detalleAoa.push(["", cut.descuadre === 0
+      ? "OK - los individuos coinciden con las cabezas"
+      : `ATENCION: faltan ${Math.abs(cut.descuadre)} ${Math.abs(cut.descuadre) === 1 ? "cabeza" : "cabezas"} sin identificar con caravana`,
+      cut.descuadre === 0 ? "" : cut.descuadre])
   }
 
   const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
@@ -275,7 +330,7 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
 
 // ── Espejo del PDF (:1678-1870) ─────────────────────────────────────────────
 function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
-  const { builtRows, cutData, totalVientres, catNameMap, existenciaFinal, nAdultos, nTern } = datos
+  const { builtRows, cutData, cut, totalVientres, catNameMap, existenciaFinal, nAdultos, nTern } = datos
 
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
   const pageW = doc.internal.pageSize.getWidth()
@@ -386,7 +441,7 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
   }
 
   // ── Página CUT/Descarte (siempre en hoja propia) ──
-  if (cutData.length > 0) {
+  if (cutData.length > 0 || cut.cabezasGrilla > 0) {
     doc.addPage("a4", "landscape")
     doc.setFontSize(13)
     doc.setFont("helvetica", "bold")
@@ -398,20 +453,61 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
     doc.setDrawColor(...sepiaClaro)
     doc.line(15, 24, pageW - 15, 24)
 
+    const cutBody: string[][] = []
+    const marcaBloque = new Set<number>()
+    const agregar = (titulo: string, filas: any[]) => {
+      if (filas.length === 0) return
+      marcaBloque.add(cutBody.length)
+      cutBody.push([`${titulo} (${filas.length})`, "", "", "", "", ""])
+      for (const d of filas) cutBody.push([d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado])
+    }
+    agregar("A - VENIAN DE ANTES", cut.bloqueA)
+    agregar("B - ENTRARON EN EL PERIODO", cut.bloqueB)
+    agregar("C - SIN FECHA DE ALTA", cut.bloqueC)
+
     autoTable(doc, {
       startY: 28,
-      head: [["Caravana", "Fecha Alta", "Tipo (Cat. Previa)", "Pelo", "Motivo", "Estado"]],
-      body: cutData.map((d: any) => [d.caravana, d.fechaAlta, d.tipo, d.pelo, d.motivo, d.estado]),
+      head: [["Caravana", "Fecha Alta", "Tipo (Cat. Previa)", "Pelo", "Motivo de ingreso", "Estado al cierre"]],
+      body: cutBody,
       theme: "grid",
       styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
       headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: "bold", halign: "center" },
       columnStyles: { 5: { halign: "center" } },
       didParseCell: (data: any) => {
-        if (data.section === "body" && data.column.index === 5 && data.cell.raw === "Baja") {
+        if (data.section !== "body") return
+        if (marcaBloque.has(data.row.index)) {
+          data.cell.styles.fillColor = fondoResaltado
+          data.cell.styles.fontStyle = "bold"
+          data.cell.styles.halign = "left"
+        } else if (data.column.index === 5 && String(data.cell.raw).startsWith("Salió")) {
           data.cell.styles.textColor = [160, 60, 60]
         }
       },
     })
+
+    let y = ((doc as any).lastAutoTable?.finalY || 100) + 8
+    doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(...sepia)
+    doc.text("CIERRE DE LA CATEGORIA", 15, y)
+    doc.setFont("helvetica", "normal"); doc.setTextColor(40, 30, 20)
+    const renglon = (t: string, n: number) => { y += 5; doc.text(t, 20, y); doc.text(String(n), 90, y, { align: "right" }) }
+    renglon("Venían de antes", cut.venian)
+    renglon("+ Entraron en el período", cut.entraron)
+    renglon("- Salieron", cut.salieron)
+    renglon("= Quedan al cierre (individuos)", cut.quedan)
+    renglon("Existencia Final CUT (cabezas, pág. 1)", cut.cabezasGrilla)
+
+    y += 7
+    if (cut.descuadre === 0) {
+      doc.setTextColor(60, 120, 60)
+      doc.text("OK - los individuos coinciden con las cabezas de la planilla", 15, y)
+    } else {
+      doc.setFillColor(250, 235, 235)
+      doc.rect(15, y - 5, pageW - 30, 11, "F")
+      doc.setTextColor(160, 60, 60); doc.setFont("helvetica", "bold"); doc.setFontSize(10)
+      const n = Math.abs(cut.descuadre)
+      doc.text(`ATENCION: faltan ${n} ${n === 1 ? "cabeza" : "cabezas"} sin identificar con caravana`, 18, y + 2)
+      doc.setFont("helvetica", "normal")
+    }
   }
 
   // Pie en todas las páginas
