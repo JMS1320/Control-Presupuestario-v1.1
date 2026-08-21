@@ -1314,3 +1314,76 @@ toros no se le aplica a las vacas.
 
 **Cómo se detecta:** si dos costos con bases distintas dan el mismo número, la base no se está
 aplicando. Es la prueba más rápida.
+
+---
+
+## Al cambiar un reporte, la foto anterior ES el control `#reportes #control #2026-08-21`
+
+**El método**, que salió de corregir la Planilla de Hacienda y sirve para cualquier reporte
+(subdiarios, Libro IVA, Cash Flow):
+
+1. **Antes de tocar nada**, generar el reporte completo — todos los períodos — y guardarlo.
+2. Hacer el cambio.
+3. Regenerar en una **carpeta nueva** (nunca encima de la foto anterior) y **comparar celda por
+   celda**.
+4. **Escribir la predicción antes de mirar el diff.** Ahí está el valor: si predije que sólo se
+   mueven dos filas y se movieron cinco, rompí algo. Sin predicción, el diff es un dato; con
+   predicción, es un control.
+
+**Lo que rindió en la práctica**: "42 celdas distintas y **0 fuera de la hoja Planilla**" es una
+frase que prueba mucho más que "anda bien". Y en otra tanda: *"la hoja Planilla quedó idéntica en
+las 7 mensuales, sólo cambió la página del CUT"* — eso descarta de un tiro toda una clase de
+regresiones.
+
+⚠️ **El script que genera la foto tiene que replicar la app, y hay que corregirlo junto con ella.**
+Si la app se arregla y el generador no, el backup empieza a mentir y el método se da vuelta en
+contra. Va escrito en el encabezado del script, con la lista de fixes aplicados.
+
+**Un efecto lateral útil**: al comparar dos corridas apareció un diff de 60+ celdas que **no era un
+cambio de contenido, era reordenamiento** — el detalle se ordenaba sólo por fecha y las filas del
+mismo día salían en el orden que devolvía Postgres, que cambia con cada `UPDATE`. Se verificó
+comparando las filas **como conjunto**. Moraleja: **un reporte que se archiva tiene que salir
+siempre en el mismo orden**, o comparar dos versiones se vuelve imposible.
+
+---
+
+## Un roll-forward que "engancha" no prueba que el número esté bien `#reportes #control #2026-08-21`
+
+En un reporte de existencias, el control obvio es que el **saldo inicial de un período sea el final
+del anterior**. Sirve, pero **detecta el período en que se produce el error, no el error acumulado**:
+un período tranquilo lo pasa intacto y el control da ✓ con el número mal.
+
+Caso real: junio enganchaba perfecto con mayo (427 = 427) y **los dos venían con +12 cabezas de
+más**, porque mayo no había tenido ni ventas ni muertes y se limitó a arrastrar el error.
+
+**Los controles que sí prueban algo**, en orden de fuerza:
+1. Contra el **mundo físico** (el recuento a campo). Es el único externo de verdad.
+2. Contra **la misma cifra calculada por otro camino**: el reporte punta a punta arranca de cero y
+   no puede arrastrar, así que si difiere del acumulado mes a mes, hay arrastre.
+3. Contra **la misma cifra medida en otra unidad**: cabezas (agregado) contra individuos
+   (nominal). El descuadre señala exactamente lo que falta cargar.
+
+Los tres son baratos y ninguno depende de que el cálculo interno "cierre" — que es justo lo que un
+cálculo hecho por construcción hace siempre.
+
+---
+
+## La misma cuenta escrita 4 veces: 2 bien y 2 mal `#refactor #2026-08-21`
+
+`movimientos_hacienda` guarda `cantidad` **siempre positiva** salvo en `ajuste_stock` y
+`cambio_categoria`. O sea que **el signo no alcanza para saber si un movimiento suma o resta: hay
+que mirar el `tipo`**. Esa regla estaba implementada **cuatro veces** en el proyecto — dos
+correctas (pestaña Stock y órdenes de aplicación) y dos incorrectas (el `Stock Anterior` de la
+planilla y las filas fantasma de terneros, que mostraba **158** animales donde había **42**).
+
+**Dos lecciones que tiran para lados opuestos, y las dos valen:**
+- La duplicación es la causa: una sola definición no se puede desincronizar.
+- **Pero unificarla no siempre es la jugada.** El usuario decidió tocar **sólo el lugar roto** y
+  dejar los dos que funcionan como estaban: *"la app es muy extensa y tiene muchos lugares que
+  afectan a otros; cambiar esto podría descompaginar cosas que hoy andan bien"*. Refactorizar
+  código que funciona, en el mismo movimiento en que se arregla un bug, **mezcla un cambio
+  verificable con uno que no lo es**.
+
+**Y el mismo dato decidió otra cosa**: se corrigió **el reporte** y no el signo guardado en la BD,
+justamente porque 2 de los 4 lugares ya dependían de la convención positiva. Contar quién depende de
+qué **antes** de elegir el lado a tocar es lo que evitó romper lo que andaba.

@@ -1,11 +1,14 @@
 # MÓDULO HACIENDA — Stock, movimientos y Planilla de Hacienda
 
-> **Estado**: 🟨 **PRIMERA REDACCIÓN — a chequear con el usuario.**
-> **Fecha**: 2026-08-20
+> **Estado**: 🟢 **VIGENTE** — redactado 2026-08-20, actualizado 2026-08-21 con las correcciones
+> aplicadas. Los §§ 1-11 describen **cómo está el módulo hoy**; los §§ 12-13 son la auditoría que
+> las originó y se conservan porque tienen los motivos.
 > **Origen**: el módulo se construyó entre febrero y abril de 2026 **sin documentación de dimensión**.
 > Lo que había estaba desparramado en notas de sesión y en el propio código. Este archivo lo
-> consolida y **verifica cada afirmación contra el código y contra la BD** — pero como el material
-> de partida estaba disperso, es probable que algo esté mal interpretado. Corregir encima.
+> consolida y **verifica cada afirmación contra el código y contra la BD**.
+>
+> ⚠️ **Lo hecho el 20 y 21 de agosto está aplicado y pusheado, pero el usuario todavía no lo testeó
+> en la app** — ver `PENDIENTES.md` § A-TEST-36, A-TEST-37 y A-TEST-38.
 
 ---
 
@@ -223,11 +226,40 @@ detalle lo aclara. ❓ ¿Preferís que los ajustes tengan su propia fila?
 🟨 Se toma por **posición fija** (índices 0 y 1), no por nombre: si alguien reordena `CATS_PLANILLA`,
 el Total Vientres cambia de significado en silencio.
 
-### 6.4 · El detalle CUT / Descarte
+### 6.4 · El detalle CUT / Descarte — la conciliación de la categoría
 
-🟩 Lista las caravanas que estaban en CUT **al cierre del período**, con Fecha Alta, Tipo (categoría
-previa), Pelo, Motivo y Estado (`:1451-1468`). Filtra por **`fecha_alta <= hasta`**, y marca
-`Baja` si `fecha_baja` es posterior al período.
+🟩 **No es una lista: es una conciliación** (rediseñado 2026-08-21, § 12.6). Tres bloques y un
+cierre:
+
+| Bloque | Qué entra |
+|---|---|
+| **A · Venían de antes** | `fecha_alta < desde` y vivos al arrancar (sin baja, o baja dentro del período) |
+| **B · Entraron en el período** | `fecha_alta` entre `desde` y `hasta` |
+| **C · Sin fecha de alta** | `fecha_alta` nula — **nunca se omiten**, decisión del usuario |
+
+🟩 Cada fila lleva **Estado al cierre**: `Sigue en CUT`, o `Salió DD/MM — <motivo_baja>`.
+🟨 **El motivo de salida no se clasifica**: se muestra el texto que cargó el usuario. Adivinar si
+*"Vendido"* significa venta es peor que mostrarlo tal cual.
+
+🟩 Los que salieron en períodos **anteriores** ya no aparecen (antes la lista crecía para siempre:
+en agosto seguía mostrando 4 vacas vendidas en marzo).
+
+🟩 **El cierre, y el mejor control del módulo:**
+
+```
+venían + entraron − salieron = quedan   (individuos, de `terneros`)
+                    contra              Existencia Final CUT (cabezas, de `movimientos_hacienda`)
+```
+
+🟨 Las dos fuentes miden lo mismo en unidades distintas: **la grilla cuenta cabezas en bulk y esta
+página cuenta individuos con nombre**. Si no coinciden, hay animales que entraron o salieron sin
+identificar. Sale ✓ verde si cierra, y una **alerta roja** si no. Al 2026-08-21 agosto da **9
+cabezas contra 8 individuos** — la vaquillona del 08/08 que entró sin caravana.
+
+⚠️ **La página del CUT no siempre es la 3**: si el mes no tiene movimientos, la de detalle no se
+genera y el CUT queda en la 2.
+
+### 6.5 · Por qué el CUT filtra por `fecha_alta`
 
 🟩 **Por qué `fecha_alta` y no `created_at`**: todos los registros de CUT se insertaron en la BD el
 27/04/2026, sin relación con cuándo entraron realmente al CUT. `created_at` habría puesto a todos
@@ -237,6 +269,15 @@ en abril. Y no se puede sacar del movimiento porque **no hay FK entre `movimient
 🟨 Es la decisión más fina del módulo y la más fácil de romper sin darse cuenta: **cualquier alta
 nueva en `terneros` tiene que traer `fecha_alta` con la fecha del movimiento real**, no la del día
 en que se cargó.
+
+🟩 **Los dos caminos que alimentan el CUT ya la setean** (arreglado 2026-08-21, A-BUG-47). Los otros
+tres que dan de alta terneros —el alta manual de la pantalla de Terneros y los dos importadores—
+**todavía no**: `PENDIENTES.md` § A-BUG-51.
+
+🟩 **Qué es un animal sin `fecha_alta`**: al 2026-08-21 son los **8 toros** cargados el 26/04/2026,
+con caravana interna y sin oficial. Son **carga inicial de inventario** — ya estaban en el campo
+cuando arrancó el sistema, así que la pregunta *"¿cuándo entró?"* no tiene respuesta. **No es un
+error de carga**, y por eso van al bloque C en vez de omitirse.
 
 ---
 
@@ -248,8 +289,12 @@ en que se cargó.
 - **Planilla**: encabezado de 4 líneas (`Ea. Nazarenas` / `de Martinez Sobrado` /
   `PLANILLA DE HACIENDA` / período), fila de grupos con merges, fila de categorías, las 10 filas,
   y el Total Vientres al pie.
-- **Detalle**: un renglón por movimiento del período (fecha, tipo, categoría, cantidad, peso,
-  $/kg, monto, contraparte, observaciones) y, si hay, el bloque **DETALLE CUT/DESCARTE**.
+- **Detalle**: un renglón por movimiento del período — **fecha, tipo, categoría, cantidad,
+  contraparte y observaciones** — y debajo el bloque **DETALLE CUT/DESCARTE** con su cierre.
+
+🟩 **Sin kilos ni montos** (2026-08-21, A-FEAT-35). Decisión del usuario: *"en esta planilla no debe
+figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. 🟨 Además, las tres columnas
+de plata **no multiplicaban**: mostraban un precio bruto al lado de un monto neto (ver A-DAT-06).
 
 **PDF** — apaisado A4, hasta 3 páginas: la planilla, el detalle de movimientos (sólo si hay) y el
 detalle CUT (siempre en página propia). Paleta sepia, pie con período y paginación en todas.
@@ -263,8 +308,29 @@ detalle CUT (siempre en página propia). Paleta sepia, pie con período y pagina
 🟩 **Dónde se guarda**: si el browser soporta `showDirectoryPicker`, pregunta la carpeta y escribe
 los dos archivos ahí; si se cancela o no lo soporta, caen en Descargas (`:1648-1676`).
 
-🟩 **Nombre**: `Planilla_Hacienda_2026-08.xlsx` (modo mes) o
-`Planilla_Hacienda_2026-02-15_2026-08-20.xlsx` (modo rango).
+🟩 **Nombre**: `Planilla_Hacienda_2026-08.xlsx` (mes entero) o
+`Planilla_Hacienda_2026-02-15_2026-08-21.xlsx` (rango).
+
+### 7.1 · Una planilla, o una por mes (2026-08-21, A-FEAT-39)
+
+🟩 Con **Rango Personalizado** el modal pregunta *"¿Cómo querés el resultado?"*: **una sola punta a
+punta** (default) o **una por cada mes del rango**, en una sola pasada.
+
+🟩 Los meses de las **puntas se recortan al rango**, y el título lo dice
+(*"15/02/2026 al 28/02/2026"*). El nombre del mes sólo se usa si el mes está **entero**.
+🟨 Rotular *"Febrero 2026"* un archivo que tiene medio febrero sería mentir sobre su contenido.
+
+🟩 La carpeta se elige **una sola vez** para toda la tanda, con progreso *"Generando N de M…"*. Si
+el navegador no soporta `showDirectoryPicker`, **avisa antes**: sin carpeta cada archivo cae como
+descarga suelta y el browser bloquea la descarga múltiple, dejando la tanda a medias sin avisar.
+
+🟩 Con *una por mes* **no hay preview** (muestra una sola planilla) y el botón pasa a ser
+*Exportar N planillas*.
+
+🟩 **La estructura que lo hace posible**: `construirPlanilla(desde, hasta, label)` arma el Excel y el
+PDF y **no guarda nada**; el orquestador `exportarPlanillaHacienda()` resuelve los períodos con
+`resolverPeriodosExport()`, pide la carpeta una vez y guarda. 🟨 Sin esa separación no se podía
+emitir una tanda.
 
 ---
 
@@ -277,7 +343,15 @@ movimientos se cargaron bien.
 sino **externo**: se contrasta contra el **recuento físico** del campo. Si no coinciden, hay
 movimientos sin cargar, mal cargados, o de más. *(Criterio del usuario, 2026-08-20.)*
 
-### 🔴 Un control que hoy la planilla no hace, y falla
+### ✅ El arrastre de 16 cabezas — CORREGIDO el 2026-08-20
+
+> Lo que sigue es **el diagnóstico original**, que se conserva porque explica el mecanismo y porque
+> los números son la referencia del test ([A-TEST-35](PENDIENTES.md#a-test-35), ✅ testeado OK).
+> **Ya está arreglado**: `Stock Anterior` mira el `tipo` en vez de sumar en crudo, la cadena
+> engancha en los 6 eslabones y agosto cierra en **356**, igual que la planilla punta a punta y que
+> la pestaña Stock.
+
+### 🔴 El control que la planilla no hacía, y falla (diagnóstico del 2026-08-20)
 
 🟩 **El `Stock Anterior` de un mes tiene que ser la `Existencia Final` del mes anterior.** Medido
 sobre las 7 planillas mensuales generadas el 2026-08-20:
@@ -300,8 +374,8 @@ mensual de agosto termina en **372**. La diferencia son exactamente las **16** c
 positivas (§ 4.2), las **suma** en lugar de restarlas. Las filas del período no tienen el problema
 porque usan `Math.abs` y después restan (`:1422-1423`, `:1440`).
 
-⏸️ **Diagnóstico presentado al usuario el 2026-08-20; sin corregir, a la espera de que contraste
-las planillas contra el campo.** No se toca el código hasta esa confirmación.
+✅ **Corregido el 2026-08-20 y testeado OK por el usuario.** Se arregló **el reporte, no el signo**
+guardado en la BD — la decisión y su motivo están en § 12.8. Fue **una línea**, ningún dato tocado.
 
 ---
 
@@ -324,8 +398,10 @@ de la sesión del 2026-08-20 por decisión del usuario (*"nos vamos a concentrar
 | Qué | Dónde |
 |---|---|
 | Todo el módulo | `components/vista-sector-productivo.tsx` → `TabHacienda()` (`:992`) |
-| Cálculo de la planilla | `calcularDatosPlanilla()` (`:1384`) — compartido por preview y export |
-| Export Excel + PDF | `exportarPlanillaHacienda()` (`:1528`) |
+| Cálculo de la planilla | `calcularDatosPlanilla(desde, hasta)` — compartido por preview y export |
+| Armado de **una** planilla | `construirPlanilla(desde, hasta, label)` → devuelve `{ wb, doc }`, **no guarda** |
+| Qué períodos emitir | `resolverPeriodosExport()` — una sola o una por mes, con recorte de puntas |
+| Orquestador del export | `exportarPlanillaHacienda()` — carpeta una vez, loop, progreso |
 | Export en lote (backup) | `scripts/export-planilla-hacienda.mts` |
 | Registro individual | `MODULO_TERNEROS.md` |
 | Estructura de tablas | `ESTRUCTURA_BD_COLUMNAS.md:129-131` · `ARQUITECTURA-BD.md:115` |
@@ -348,16 +424,25 @@ el script igual, o el backup empieza a mentir.**
 
 ---
 
-## 11 · ❓ Lo que falta chequear con el usuario
+## 11 · ❓ Lo que sigue abierto
 
-1. **El arrastre de 16 cabezas** (§ 8) — ¿el número real del campo es 356 o 372?
-2. **`Novillito`** — ¿fuera de uso a propósito, o le falta columna en la planilla?
-3. **Los ajustes de stock dentro de Compras/Mortandad** — ¿conviene fila propia?
-4. **Nacimientos** — cuando se empiecen a cargar, ¿movimiento o ciclo de cría?
-5. **La razón social hardcodeada** — ¿se deja así (un solo establecimiento) o sale de `lib/empresas.ts`?
-6. **Categorías descartadas en silencio** — ¿avisar cuando un movimiento queda fuera de la planilla?
+**Resueltos** desde la primera redacción: el arrastre de 16 cabezas (era **356**, corregido y
+testeado) · los ajustes de stock **siguen** dentro de Compras/Mortandad, pero ya está decidido
+darles fila propia ([A-FEAT-36](PENDIENTES.md#a-feat-36)) · las categorías descartadas en silencio
+quedaron registradas ([A-BUG-50](PENDIENTES.md#a-bug-50)).
 
-*Ninguno de los seis está registrado todavía en `PENDIENTES.md`: el usuario pidió verlos antes.*
+**Abiertas, todas en [A-DEC-03](PENDIENTES.md#a-dec-03):**
+
+1. **`Novillito`** — ¿fuera de uso a propósito, o le falta columna en la planilla?
+2. **Nacimientos** — nunca se cargó ninguno; cuando empiecen, ¿movimiento o ciclo de cría?
+3. **Las 3 columnas siempre vacías** — ¿se dejan por fidelidad al formulario de papel?
+4. **Adultos sin registro nominal** — ¿se formaliza, o se acepta la caravana como texto libre?
+5. **La razón social hardcodeada** — ¿se deja, o sale de `lib/empresas.ts`? ([A-BUG-49](PENDIENTES.md#a-bug-49))
+6. **`stock_hacienda`** — tabla vacía que nadie lee: ¿se materializa o se borra?
+
+**Y una que no es del módulo pero salió de acá**: el **3 % sin explicación** de la venta del 04/08
+([A-DAT-06](PENDIENTES.md#a-dat-06)). Ya no ensucia la planilla, pero el número sigue vivo en
+ventas y presupuesto.
 
 ---
 
@@ -643,7 +728,20 @@ de § 12.6 detecta — si la grilla dice 17 y la página nominal lista 8, falta 
 ## 13 · 🗺️ PANORAMA COMPLETO — auditoría cerrada (2026-08-20)
 
 > **Las 7 planillas mensuales + la punta a punta, auditadas una por una con el usuario.** Cada ítem
-> lleva su veredicto. Nada de esto está ejecutado: es el plan de lo que hay que hacer.
+> lleva su veredicto.
+>
+> ⚠️ **Este panorama es del 2026-08-20 y ya se ejecutó buena parte.** El estado vivo de cada ítem
+> está en `PENDIENTES.md`; acá se conserva el diagnóstico con sus motivos, que es lo que no
+> conviene perder.
+>
+> **Hecho al 2026-08-21 (8 de 21)**: `A-BUG-44` (el arrastre, ✅ testeado) · `A-BUG-45` + `A-DAT-05`
+> (el tacto y los 4 movimientos de febrero) · `A-BUG-46` (aviso sin bloquear) · `A-BUG-47`
+> (`fecha_alta`) · `A-FEAT-34` (página del CUT + control) · `A-FEAT-35` (fuera plata y kilos) ·
+> `A-FEAT-39` (export de varias planillas, no estaba en la lista original: lo pidió el usuario
+> después).
+>
+> **Pendiente**: `A-FEAT-36/37/38` (fila de Ajustes, mortandad completa, formato) ·
+> `A-BUG-48/49/50/51` (deuda del código) · `A-DEC-03` y `A-DAT-06` (decisiones).
 
 ### A · El número, que es lo primero
 
