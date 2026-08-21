@@ -356,6 +356,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
 | A-TEST-35 | ✅ | Test | **TESTEADO OK 2026-08-20 por el usuario en el preview.** Planilla de Hacienda con el `Stock Anterior` corregido ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
 | **A-FEAT-39** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-38](#a-test-38))** · **Exportar varias planillas de una** — con un rango, el modal pregunta si querés **una sola punta a punta** o **una por cada mes**. Antes había que repetir el export mes por mes. La carpeta se elige **una sola vez** para toda la tanda y va con progreso. Los meses de las puntas se **recortan al rango** y el título lo dice (*"15/02/2026 al 28/02/2026"*) en vez de fingir que es el mes entero | → [A-FEAT-39](#a-feat-39) `@productivo` |
+| **A-FEAT-40** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · **Las cabezas sin caravana ya figuran en el detalle del CUT.** La condición para aparecer es estar **identificado**, no tener caravana: el movimiento dice de dónde viene, cuándo y por qué. Salen como `(sin caravana)` con esos datos. El aviso pasó de 🔴 *"falta identificar"* a 🟠 *"N de M sin caravana"*, y el rojo queda para el descuadre real contra la grilla. **Sale también el `Proveedor/Cliente`** del reporte | → [A-FEAT-40](#a-feat-40) `@productivo` |
+| **A-DAT-07** | 🟡 | Dato | **HECHO 2026-08-21 con OK del usuario** — la venta de 4 vacas CUT del 30/03 no tenía cliente. Alta de **BALLESTER PAULO CESAR** (CUIT `20249560791`) en `public.proveedores` como **cliente puro** · alta de **Pino Torillo** en `productivo.intermediarios_venta` · el movimiento quedó con su `proveedor_cliente` y `cuit`. *"Via Pino Torillo"* **se deja en observaciones**: el movimiento manual no tiene campo de intermediario | → [A-DAT-07](#a-dat-07) `@productivo` |
+| **A-FEAT-41** | 🔴 | Feat | **La venta manual de hacienda NO da de alta al cliente** en `public.proveedores`, contra la regla de contrapartes (*upsert, nunca sólo UPDATE*). Se ve en [A-DAT-07](#a-dat-07): hubo que crear a Ballester a mano. Y el movimiento manual **no tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta* (`intermediario_id`), así que el intermediario termina como texto libre en observaciones | → [A-FEAT-41](#a-feat-41) `@productivo` |
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
@@ -9468,6 +9471,103 @@ podía emitir una tanda.
 parciales · meses enteros · un rango dentro de un mismo mes · cruce de año · un mes exacto · dos
 días a caballo de dos meses). En los 6: **cubre el rango exacto, sin huecos ni solapes**.
 `npm run type-check:diff`: **113 → 113**.
+
+---
+
+## <a id="a-feat-40"></a>A-FEAT-40 — Las cabezas sin caravana figuran igual (✅ HECHO 2026-08-21)
+
+**Corrección de criterio del usuario**, y era mío el error: en [A-FEAT-34](#a-feat-34) puse **la
+caravana** como condición para aparecer en el detalle del CUT. La condición correcta es **estar
+identificado**. Textual: *"el movimiento existe y es un renglón, o sea que sí está identificado
+aunque no tenga caravana: se sabe de dónde viene, se sabe el motivo. Debería figurar como un renglón
+en CUT con los detalles que yo imputé, pero sin la caravana."*
+
+**Cómo quedó** — la vaquillona del 08/08, que antes no salía:
+
+```
+B · ENTRARON EN EL PERÍODO (1)
+  (sin caravana) | 08/08/2026 | Vaquillona Preñada | - | Mal Parió Ternero de 40 Kg | Sigue en CUT
+```
+
+Y si el movimiento no tuviera ninguna observación, sale igual con los campos en blanco.
+
+**De dónde sale cada dato**: `fecha` y `motivo` del movimiento de ingreso; el `tipo` (categoría
+previa) del **movimiento espejo negativo del mismo día**.
+
+⚠️ **Se agrupa por FECHA, no por movimiento.** En un mismo día puede haber varios ingresos —el tacto
+de febrero fueron `+7` de Vaca y `+1` de Vaquillona Preñada— y no hay forma de saber qué caravana
+corresponde a cuál. Por fecha el cruce es exacto.
+⚠️ Y **`venta` y `mortandad` se excluyen**: se guardan **positivas**, así que sin excluirlas la venta
+de 4 del CUT se contaría como un ingreso de 4.
+
+### Los dos avisos, que ahora dicen cosas distintas
+
+| | Cuándo | Qué significa |
+|---|---|---|
+| 🔴 **ERROR** | el detalle **no cuadra** con la grilla | inconsistencia real — hay que investigar |
+| 🟠 **PENDIENTE** | cuadra, pero hay cabezas sin caravana | **falta un dato**, no está roto |
+| 🟢 **OK** | cuadra y todas tienen caravana | |
+
+🟨 La distinción importa: antes el rojo saltaba por un dato faltante, y un control que grita por algo
+que no está roto se ignora a los dos días.
+
+⚠️ **Limitación conocida**: a una cabeza **sin caravana que se vende** no se le puede seguir la
+salida — no hay individuo al que atarla. Ahí la página y la grilla se despegan y salta el rojo. O
+sea que **el caso que no se puede resolver es exactamente el que el control detecta**.
+
+**También**: sale la columna **Proveedor/Cliente** del reporte (el campo se sigue viendo y editando
+en la grilla de Movimientos). El detalle quedó en 5 columnas: `Fecha · Tipo · Categoría · Cantidad ·
+Observaciones`.
+
+**Verificado**: febrero, marzo y mayo cierran **OK sin ninguna fila `(sin caravana)`** —sus ingresos
+sí tenían las caravanas—, agosto cierra **9 = 9** con el aviso ámbar, y la **hoja Planilla quedó
+intacta** en las 7 mensuales. `type-check:diff`: **113 → 113**.
+
+---
+
+## <a id="a-dat-07"></a>A-DAT-07 — Cliente e intermediario de la venta del 30/03 (✅ HECHO 2026-08-21)
+
+La venta de 4 vacas CUT del 30/03 sólo decía *"Via Pino Torillo"* en observaciones. El usuario
+aportó los datos: el **cliente es BALLESTER PAULO CESAR, CUIT 20249560791**, y **Pino Torillo es el
+intermediario**.
+
+🛑 **Tres escrituras, con OK explícito del usuario**, una fila cada una:
+
+| Qué | Dónde | Resultado |
+|---|---|---|
+| Alta de **BALLESTER PAULO CESAR** (`20249560791`), `es_cliente = true`, `es_proveedor = false` | `public.proveedores` | `afb2fe60…` |
+| Alta de **Pino Torillo** | `productivo.intermediarios_venta` | `88d48cc0…` |
+| `proveedor_cliente` + `cuit` en el movimiento del 30/03 | `productivo.movimientos_hacienda` | `47f28467…` |
+
+**`es_proveedor = false`** a propósito: la regla dice `true` sólo si tiene factura de compra a su
+nombre. Ballester es cliente puro.
+
+⚠️ **`public.proveedores` es un maestro compartido** —de ahí salen CBU, mails y el pre-filtro por
+CUIT del motor de conciliación—. Fue un **INSERT**, aditivo: no pisa nada de nadie.
+
+📌 **Por qué NO se movió *"Via Pino Torillo"* a `proveedor_cliente`**, que era la idea original: el
+sistema **ya distingue** cliente, `destino_id` e `intermediario_id`, y **Pedro Genta está cargado
+como intermediario** aunque en el movimiento de agosto figure en el campo del cliente. Mover a Pino
+Torillo ahí habría repetido esa confusión. Se deja en observaciones porque **el movimiento manual no
+tiene campo de intermediario** — si se borraba, el dato se perdía del todo. → [A-FEAT-41](#a-feat-41).
+
+---
+
+## <a id="a-feat-41"></a>A-FEAT-41 — La venta manual de hacienda no registra al cliente ni al intermediario
+
+**Dos huecos del alta manual de movimientos**, destapados por [A-DAT-07](#a-dat-07):
+
+1. **No da de alta al cliente en `public.proveedores`.** Va contra `CLAUDE.md` § Contrapartes
+   (*"si entra un comprobante, su contraparte tiene que quedar en el maestro — upsert, nunca sólo
+   `UPDATE`"*). Hubo que crear a Ballester a mano. `proveedor_cliente` es **texto libre**, sin
+   vínculo al maestro.
+2. **No tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta*
+   (`intermediario_id` → `productivo.intermediarios_venta`). Por eso el intermediario termina como
+   texto libre en observaciones (*"Via Pino Torillo"*).
+
+🟨 El mismo problema explica que **Pedro Genta**, que está en `intermediarios_venta`, figure como
+`proveedor_cliente` en la venta de agosto: el campo *cliente* del modal es texto libre y no valida
+contra nada.
 
 ---
 

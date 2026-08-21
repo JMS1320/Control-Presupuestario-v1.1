@@ -1426,7 +1426,7 @@ function TabHacienda() {
     allCats.forEach(c => { catIdMap[c.nombre.toLowerCase()] = c.id; catNameMap[c.id] = c.nombre })
 
     const { data: todosMovs } = await supabase.schema('productivo').from('movimientos_hacienda')
-      .select('tipo, cantidad, categoria_id, fecha')
+      .select('tipo, cantidad, categoria_id, fecha, observaciones')
       .lte('fecha', hasta).order('fecha')
     if (!todosMovs) throw new Error('Error cargando movimientos')
 
@@ -1506,14 +1506,17 @@ function TabHacienda() {
     //   C · sin fecha de alta        (no se pueden ubicar en el tiempo, pero NO se omiten)
     //   cierre: venían + entraron − salieron = quedan
     //
-    // El control de verdad está en la última línea: la página 1 cuenta CABEZAS (de
-    // `movimientos_hacienda`, que es bulk) y ésta cuenta INDIVIDUOS (de `terneros`, nominal).
-    // Si no dan lo mismo, hay animales que entraron o salieron sin ponerles nombre (A-FEAT-34).
+    // ⚠️ La condición para aparecer es estar IDENTIFICADO, no tener caravana. Un animal que
+    // entró por un movimiento está identificado: se sabe de dónde viene, cuándo y por qué. Que
+    // le falte la caravana es un dato pendiente, no motivo para ocultarlo — ocultarlo sería
+    // exactamente el silencio que hay que evitar. Por eso las cabezas sin caravana salen igual,
+    // como renglón propio, con lo que el movimiento sí sabe (criterio del usuario, 2026-08-21).
     type FilaCUT = { caravana: string; fechaAlta: string; tipo: string; pelo: string; motivo: string; estado: string }
     const cutCatId = catIdMap['vaca cut/descarte']
     const cut = {
       bloqueA: [] as FilaCUT[], bloqueB: [] as FilaCUT[], bloqueC: [] as FilaCUT[],
       venian: 0, entraron: 0, salieron: 0, quedan: 0, cabezasGrilla: 0, descuadre: 0,
+      sinCaravana: 0,
     }
     if (cutCatId) {
       const { data: cutTerneros } = await supabase.schema('productivo').from('terneros')
@@ -1544,6 +1547,50 @@ function TabHacienda() {
           cut.bloqueA.push(aFila(d))
         } else {
           cut.bloqueB.push(aFila(d))
+        }
+      }
+
+      // ── Las cabezas que entraron SIN caravana ──────────────────────────────────────
+      // Se agrupa por FECHA y no por movimiento: en un mismo día puede haber varios ingresos
+      // (el tacto de febrero fueron +7 de Vaca y +1 de Vaquillona Preñada) y no hay forma de
+      // saber qué caravana corresponde a cuál. Por fecha el cruce es exacto.
+      // ⚠️ `venta` y `mortandad` se guardan POSITIVAS: si no se excluyen, la venta de 4 del CUT
+      // se contaría como un ingreso de 4.
+      const cabezasPorFecha = new Map<string, { cabezas: number; motivos: string[]; origenes: Set<string> }>()
+      for (const m of todosMovs as any[]) {
+        if (m.categoria_id !== cutCatId || m.cantidad <= 0) continue
+        if (m.tipo === 'venta' || m.tipo === 'mortandad') continue
+        if (!cabezasPorFecha.has(m.fecha)) cabezasPorFecha.set(m.fecha, { cabezas: 0, motivos: [], origenes: new Set() })
+        const e = cabezasPorFecha.get(m.fecha)!
+        e.cabezas += m.cantidad
+        if (m.observaciones) e.motivos.push(m.observaciones)
+      }
+      // De dónde venían: el movimiento espejo negativo del mismo día
+      for (const m of todosMovs as any[]) {
+        if (m.tipo !== 'cambio_categoria' || m.cantidad >= 0) continue
+        const e = cabezasPorFecha.get(m.fecha)
+        if (e) e.origenes.add(catNameMap[m.categoria_id] || '')
+      }
+      const caravanasPorFecha = new Map<string, number>()
+      for (const d of (cutTerneros || []) as any[]) {
+        if (d.fecha_alta) caravanasPorFecha.set(d.fecha_alta, (caravanasPorFecha.get(d.fecha_alta) || 0) + 1)
+      }
+
+      for (const [fecha, e] of [...cabezasPorFecha.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        if (fecha > hasta) continue
+        const faltan = e.cabezas - (caravanasPorFecha.get(fecha) || 0)
+        for (let i = 0; i < faltan; i++) {
+          const fila: FilaCUT = {
+            caravana: '(sin caravana)',
+            fechaAlta: fecha.split('-').reverse().join('/'),
+            tipo: [...e.origenes].filter(Boolean).join(' / ') || '-',
+            pelo: '-',
+            motivo: e.motivos.join(' · ') || '-',
+            // No se les puede seguir la salida: no hay individuo al que atarla.
+            estado: 'Sigue en CUT',
+          }
+          if (fecha < desde) cut.bloqueA.push(fila); else cut.bloqueB.push(fila)
+          cut.sinCaravana++
         }
       }
 
@@ -1690,11 +1737,12 @@ function TabHacienda() {
       detalleAoa.push(['DETALLE DE MOVIMIENTOS'])
       detalleAoa.push([`Período: ${periodoLabel}`])
       detalleAoa.push([])
-      // Sin kilos ni montos: esta planilla es de MOVIMIENTOS DE STOCK, no de ventas.
-      // Decisión del usuario (2026-08-20). La plata de una venta se mira donde corresponde;
-      // acá mezclaba un precio bruto con un monto neto y las columnas no multiplicaban
-      // (A-FEAT-35, y el 3% sin explicar de A-DAT-06).
-      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Proveedor/Cliente', 'Observaciones'])
+      // Sin kilos, sin montos y sin contraparte: esta planilla es de MOVIMIENTOS DE STOCK.
+      // Decisión del usuario (2026-08-20/21). La plata y el cliente de una venta se miran donde
+      // corresponde; acá las columnas de plata además mezclaban un precio bruto con un monto neto
+      // y no multiplicaban (A-FEAT-35, y el 3% sin explicar de A-DAT-06).
+      // El campo sigue existiendo y se ve/edita en la grilla de Movimientos: sólo sale del reporte.
+      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Observaciones'])
 
       const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
         .select('tipo, cantidad, categoria_id, fecha, proveedor_cliente, observaciones')
@@ -1710,7 +1758,6 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           m.cantidad,
-          m.proveedor_cliente || '',
           m.observaciones || '',
         ])
       }
@@ -1737,19 +1784,23 @@ function TabHacienda() {
         detalleAoa.push(['', 'Venían de antes', cut.venian])
         detalleAoa.push(['', 'Entraron en el período', cut.entraron])
         detalleAoa.push(['', 'Salieron', -cut.salieron])
-        detalleAoa.push(['', 'Quedan al cierre (individuos)', cut.quedan])
+        detalleAoa.push(['', 'Quedan al cierre', cut.quedan])
         detalleAoa.push(['', 'Existencia Final CUT (cabezas, página 1)', cut.cabezasGrilla])
-        detalleAoa.push(['', cut.descuadre === 0
-          ? 'OK - los individuos coinciden con las cabezas'
-          : `ATENCION: faltan ${Math.abs(cut.descuadre)} ${Math.abs(cut.descuadre) === 1 ? 'cabeza' : 'cabezas'} sin identificar con caravana`,
-          cut.descuadre === 0 ? '' : cut.descuadre])
+        if (cut.descuadre !== 0) {
+          detalleAoa.push(['', `ERROR: la pagina no cuadra con la grilla (${cut.descuadre > 0 ? 'faltan' : 'sobran'} ${Math.abs(cut.descuadre)})`, cut.descuadre])
+        } else if (cut.sinCaravana > 0) {
+          detalleAoa.push(['', `Cuadra. PENDIENTE: ${cut.sinCaravana} de ${cut.quedan} ${cut.sinCaravana === 1 ? 'cabeza esta' : 'cabezas estan'} sin caravana - falta identificarlas`, cut.sinCaravana])
+        } else {
+          detalleAoa.push(['', 'OK - cuadra con la grilla y todas tienen caravana', ''])
+        }
       }
 
       const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
-      // 6 columnas: Fecha · Tipo · Categoría · Cantidad · Contraparte · Observaciones
-      // (el bloque de CUT que va debajo usa las mismas 6)
+      // Anchos para las dos tablas que comparten la hoja:
+      //   movimientos → Fecha · Tipo · Categoría · Cantidad · Observaciones          (5)
+      //   CUT         → Caravana · Fecha Alta · Tipo · Pelo · Motivo · Estado        (6)
       ws2['!cols'] = [
-        { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 24 }, { wch: 42 },
+        { wch: 16 }, { wch: 22 }, { wch: 22 }, { wch: 12 }, { wch: 44 }, { wch: 30 },
       ]
       ws2['!merges'] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
@@ -1868,7 +1919,6 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           String(m.cantidad),
-          sanitizarPDF(m.proveedor_cliente || ''),
           sanitizarPDF(m.observaciones || ''),
         ]
       })
@@ -1885,7 +1935,7 @@ function TabHacienda() {
         doc.setDrawColor(...sepiaClaro)
         doc.line(15, 24, pageW - 15, 24)
 
-        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Proveedor/Cliente', 'Observaciones']
+        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Observaciones']
         autoTable(doc, {
           startY: 28,
           head: [detalleHeaders],
@@ -1895,7 +1945,7 @@ function TabHacienda() {
           headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7.5 },
           columnStyles: {
             3: { halign: 'right', cellWidth: 16 },
-            5: { cellWidth: 'auto' },
+            4: { cellWidth: 'auto' },
           },
         })
       }
@@ -1963,24 +2013,34 @@ function TabHacienda() {
         renglon('Venían de antes', cut.venian)
         renglon('+ Entraron en el período', cut.entraron)
         renglon('- Salieron', cut.salieron)
-        renglon('= Quedan al cierre (individuos)', cut.quedan)
+        renglon('= Quedan al cierre', cut.quedan)
         renglon('Existencia Final CUT (cabezas, pág. 1)', cut.cabezasGrilla)
 
         y += 7
-        if (cut.descuadre === 0) {
-          doc.setTextColor(60, 120, 60)
-          doc.setFontSize(9)
-          doc.text('OK - los individuos coinciden con las cabezas de la planilla', 15, y)
-        } else {
-          // Alerta grande: un control que no se ve no es un control
+        // Dos avisos distintos, y no hay que confundirlos:
+        //  · rojo   = la página NO cuadra con la grilla → hay una inconsistencia real
+        //  · ámbar  = cuadra, pero hay cabezas sin caravana → falta un dato, no está roto
+        if (cut.descuadre !== 0) {
           doc.setFillColor(250, 235, 235)
           doc.rect(15, y - 5, pageW - 30, 11, 'F')
           doc.setTextColor(160, 60, 60)
           doc.setFont('helvetica', 'bold')
           doc.setFontSize(10)
           const n = Math.abs(cut.descuadre)
-          doc.text(`ATENCION: faltan ${n} ${n === 1 ? 'cabeza' : 'cabezas'} sin identificar con caravana`, 18, y + 2)
+          doc.text(`ERROR: el detalle no cuadra con la planilla (${cut.descuadre > 0 ? 'faltan' : 'sobran'} ${n})`, 18, y + 2)
           doc.setFont('helvetica', 'normal')
+        } else if (cut.sinCaravana > 0) {
+          doc.setFillColor(253, 246, 227)
+          doc.rect(15, y - 5, pageW - 30, 11, 'F')
+          doc.setTextColor(150, 100, 20)
+          doc.setFont('helvetica', 'bold')
+          doc.setFontSize(9.5)
+          doc.text(`Cuadra con la planilla. PENDIENTE: ${cut.sinCaravana} de ${cut.quedan} ${cut.sinCaravana === 1 ? 'cabeza esta' : 'cabezas estan'} sin caravana - falta identificarlas`, 18, y + 2)
+          doc.setFont('helvetica', 'normal')
+        } else {
+          doc.setTextColor(60, 120, 60)
+          doc.setFontSize(9)
+          doc.text('OK - cuadra con la planilla y todas las cabezas tienen caravana', 15, y)
         }
       }
 
