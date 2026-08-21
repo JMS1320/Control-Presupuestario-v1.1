@@ -69,7 +69,7 @@ const fmtNum = (n: number) => n === 0 ? "-" : n.toLocaleString("es-AR", { minimu
 // Los movimientos del período, compartidos por la hoja Detalle y por el PDF
 async function traerDetalle(desde: string, hasta: string) {
   const { data } = await supabase.schema("productivo").from("movimientos_hacienda")
-    .select("tipo, cantidad, categoria_id, fecha, peso_total_kg, precio_por_kg, monto_total, proveedor_cliente, observaciones")
+    .select("tipo, cantidad, categoria_id, fecha, proveedor_cliente, observaciones")
     .gte("fecha", desde).lte("fecha", hasta)
     .order("fecha")
   return (data || []) as any[]
@@ -274,16 +274,15 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
   detalleAoa.push(["DETALLE DE MOVIMIENTOS"])
   detalleAoa.push([`Período: ${periodoLabel}`])
   detalleAoa.push([])
-  detalleAoa.push(["Fecha", "Tipo", "Categoría", "Cantidad", "Peso Total (kg)", "Precio/kg",
-    "Monto Total", "Proveedor/Cliente", "Observaciones"])
+  // Sin kilos ni montos: la planilla es de movimientos de STOCK, no de ventas (A-FEAT-35)
+  detalleAoa.push(["Fecha", "Tipo", "Categoría", "Cantidad", "Proveedor/Cliente", "Observaciones"])
 
   for (const m of movsDetalle) {
     const tipoLabel = m.tipo === "cambio_categoria" ? (m.cantidad > 0 ? "Reclas. +" : "Reclas. -") :
       m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste + (en Compras)" : "Ajuste - (en Mortandad)") :
       m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
     detalleAoa.push([ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "",
-      m.cantidad, m.peso_total_kg || "", m.precio_por_kg || "", m.monto_total || "",
-      m.proveedor_cliente || "", m.observaciones || ""])
+      m.cantidad, m.proveedor_cliente || "", m.observaciones || ""])
   }
 
   if (cutData.length > 0 || cut.cabezasGrilla > 0) {
@@ -409,9 +408,6 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
       m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
     return [
       ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "", String(m.cantidad),
-      m.peso_total_kg ? fmtNum(m.peso_total_kg) : "-",
-      m.precio_por_kg ? m.precio_por_kg.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "-",
-      m.monto_total ? m.monto_total.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "-",
       sanitizarPDF(m.proveedor_cliente || ""),
       sanitizarPDF(m.observaciones || ""),
     ]
@@ -431,12 +427,12 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
 
     autoTable(doc, {
       startY: 28,
-      head: [["Fecha", "Tipo", "Categoría", "Cant.", "Peso (kg)", "$/kg", "Monto $", "Proveedor/Cliente", "Observaciones"]],
+      head: [["Fecha", "Tipo", "Categoría", "Cant.", "Proveedor/Cliente", "Observaciones"]],
       body: detalleBody,
       theme: "grid",
-      styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
-      headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: "bold", halign: "center", fontSize: 7 },
-      columnStyles: { 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" }, 6: { halign: "right" } },
+      styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+      headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: "bold", halign: "center", fontSize: 7.5 },
+      columnStyles: { 3: { halign: "right", cellWidth: 16 }, 5: { cellWidth: "auto" } },
     })
   }
 

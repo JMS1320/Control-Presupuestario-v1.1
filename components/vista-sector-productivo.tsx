@@ -1688,10 +1688,14 @@ function TabHacienda() {
       detalleAoa.push(['DETALLE DE MOVIMIENTOS'])
       detalleAoa.push([`Período: ${periodoLabel}`])
       detalleAoa.push([])
-      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Peso Total (kg)', 'Precio/kg', 'Monto Total', 'Proveedor/Cliente', 'Observaciones'])
+      // Sin kilos ni montos: esta planilla es de MOVIMIENTOS DE STOCK, no de ventas.
+      // Decisión del usuario (2026-08-20). La plata de una venta se mira donde corresponde;
+      // acá mezclaba un precio bruto con un monto neto y las columnas no multiplicaban
+      // (A-FEAT-35, y el 3% sin explicar de A-DAT-06).
+      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Proveedor/Cliente', 'Observaciones'])
 
       const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
-        .select('tipo, cantidad, categoria_id, fecha, peso_total_kg, precio_por_kg, monto_total, proveedor_cliente, observaciones')
+        .select('tipo, cantidad, categoria_id, fecha, proveedor_cliente, observaciones')
         .gte('fecha', desde).lte('fecha', hasta)
         .order('fecha')
 
@@ -1704,9 +1708,6 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           m.cantidad,
-          m.peso_total_kg || '',
-          m.precio_por_kg || '',
-          m.monto_total || '',
           m.proveedor_cliente || '',
           m.observaciones || '',
         ])
@@ -1743,13 +1744,14 @@ function TabHacienda() {
       }
 
       const ws2 = XLSX.utils.aoa_to_sheet(detalleAoa)
+      // 6 columnas: Fecha · Tipo · Categoría · Cantidad · Contraparte · Observaciones
+      // (el bloque de CUT que va debajo usa las mismas 6)
       ws2['!cols'] = [
-        { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 10 },
-        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 24 }, { wch: 30 },
+        { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 24 }, { wch: 42 },
       ]
       ws2['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
       ]
 
       // ═══ GENERAR EXCEL ═══
@@ -1898,9 +1900,6 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           String(m.cantidad),
-          m.peso_total_kg ? fmtNum(m.peso_total_kg) : '-',
-          m.precio_por_kg ? m.precio_por_kg.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
-          m.monto_total ? m.monto_total.toLocaleString('es-AR', { minimumFractionDigits: 2 }) : '-',
           sanitizarPDF(m.proveedor_cliente || ''),
           sanitizarPDF(m.observaciones || ''),
         ]
@@ -1918,19 +1917,17 @@ function TabHacienda() {
         doc.setDrawColor(...sepiaClaro)
         doc.line(15, 24, pageW - 15, 24)
 
-        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Peso (kg)', '$/kg', 'Monto $', 'Proveedor/Cliente', 'Observaciones']
+        const detalleHeaders = ['Fecha', 'Tipo', 'Categoría', 'Cant.', 'Proveedor/Cliente', 'Observaciones']
         autoTable(doc, {
           startY: 28,
           head: [detalleHeaders],
           body: detalleBody,
           theme: 'grid',
-          styles: { fontSize: 7, cellPadding: 1.5, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
-          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+          styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
+          headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: 'bold', halign: 'center', fontSize: 7.5 },
           columnStyles: {
-            3: { halign: 'right' },
-            4: { halign: 'right' },
-            5: { halign: 'right' },
-            6: { halign: 'right' },
+            3: { halign: 'right', cellWidth: 16 },
+            5: { cellWidth: 'auto' },
           },
         })
       }

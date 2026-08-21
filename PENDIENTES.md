@@ -348,7 +348,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-50** | 🟡 | **Bug** | **Los movimientos de categorías que no están en las 12 columnas de la planilla se descartan en silencio** (`:1418` — `if (col === undefined) return`). Hoy inofensivo: las 3 que quedan afuera (`Novillito`, `Ternera`, `Ternero`) están inactivas y con 0 movimientos. Pero una categoría nueva desaparecería del reporte sin aviso | → [A-BUG-50](#a-bug-50) `@productivo` |
 | **A-BUG-51** | 🟡 | **Bug** | **Otros 3 caminos dan de alta caravanas sin `fecha_alta`** — el alta manual de la pantalla de Terneros (`tab-terneros.tsx:323`), el **importador de terneros** (`import-terneros/route.ts:174`) y el **importador de pesadas** cuando la caravana no existe (`import-pesadas/route.ts:322`, que inserta con **un solo campo**: `caravana_oficial`). Son los caminos por los que entra un individuo sin fecha ni categoría. No afectan a la Planilla de Hacienda (crean terneros, no CUT) — abordar al tocar la pantalla de Terneros. Hermano de [A-BUG-47](#a-bug-47) | → [A-BUG-51](#a-bug-51) `@productivo` |
 | **A-FEAT-34** | 🟡 | Feat | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Rediseñar la página CUT/Descarte + su control de cierre — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
-| **A-FEAT-35** | 🔴 | Feat | **Sacar kilos y montos del detalle de la Planilla de Hacienda.** Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
+| **A-FEAT-35** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · Sacar kilos y montos del detalle de la Planilla de Hacienda. Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
 | **A-FEAT-37** | 🟡 | Feat | **La mortandad tiene que mostrar motivo + observación + caravana encadenados**, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
@@ -9252,6 +9252,26 @@ venta, sólo movimientos de stock. Si eso ocurre en otro lugar lo podemos ver."*
 Hoy la hoja *Detalle* y la página de movimientos del PDF llevan **Peso Total (kg)**, **Precio/kg** y
 **Monto Total**. Además de no corresponder a una planilla de stock, **no multiplican** y nada lo
 explica → [A-DAT-06](#a-dat-06).
+
+### ✅ HECHO 2026-08-21
+
+Las 3 columnas de plata salieron de la hoja *Detalle* del Excel y de la página de movimientos del
+PDF. El detalle quedó en **6 columnas**: `Fecha · Tipo · Categoría · Cantidad · Proveedor/Cliente ·
+Observaciones`. La consulta tampoco las pide ya. Anchos y merges reajustados; el PDF ganó aire
+(fuente 7 → 7,5 y más espacio para observaciones, que antes salían apretadas).
+
+**Ejemplo — la venta de agosto, como queda ahora:**
+
+```
+04/08/2026 | Venta | Ternero Recria | 55 | Pedro Genta | Venta confirmada · 55 caravanas
+```
+
+❓ **Una decisión que tomé y conviene confirmar**: dejé la columna **Proveedor/Cliente**. No es un
+monto ni un kilo —es *con quién* se hizo el movimiento— y para una venta o una compra es parte del
+registro. Si la planilla tiene que ser stock puro, esa columna también sale. **Sin confirmar.**
+
+**Verificación**: la hoja **Planilla quedó idéntica** en las 8, sólo cambió la hoja *Detalle*.
+`npm run type-check:diff`: **113 → 113**.
 
 ---
 
