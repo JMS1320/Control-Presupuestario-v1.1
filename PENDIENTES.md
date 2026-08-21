@@ -355,6 +355,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
 | A-TEST-35 | ✅ | Test | **TESTEADO OK 2026-08-20 por el usuario en el preview.** Planilla de Hacienda con el `Stock Anterior` corregido ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
+| **A-FEAT-39** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-38](#a-test-38))** · **Exportar varias planillas de una** — con un rango, el modal pregunta si querés **una sola punta a punta** o **una por cada mes**. Antes había que repetir el export mes por mes. La carpeta se elige **una sola vez** para toda la tanda y va con progreso. Los meses de las puntas se **recortan al rango** y el título lo dice (*"15/02/2026 al 28/02/2026"*) en vez de fingir que es el mes entero | → [A-FEAT-39](#a-feat-39) `@productivo` |
+| A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -9432,6 +9434,58 @@ Cubre [A-BUG-44](#a-bug-44). Todo se prueba desde **Productivo → Hacienda**.
 📸 Para comparar están las dos tandas completas (Excel + PDF, 8 períodos cada una):
 `backup_planillas_hacienda_2026-08-20/` (antes) y `planillas_hacienda_2026-08-20_CORREGIDO/`
 (después). Ninguna de las dos está en git.
+
+---
+
+## <a id="a-feat-39"></a>A-FEAT-39 — Exportar varias planillas de una (✅ HECHO 2026-08-21)
+
+**Pedido del usuario**: *"quiero la posibilidad de exportar varios reportes juntos desde el export
+en la app. Puede ser poniendo período y que me pregunte si quiero una sola de punta a punta o una
+por mes"*. Hasta ahora eso sólo lo hacía el script de consola; en la app había que repetir el export
+mes por mes, eligiendo la carpeta cada vez.
+
+**Cómo quedó**: con **Rango Personalizado**, el modal pregunta *"¿Cómo querés el resultado?"* →
+**Una sola, punta a punta** (lo de siempre, es el default) o **Una por mes**. Al elegir *Una por
+mes* se anticipa cuántas van a salir y con qué títulos, antes de apretar nada.
+
+**Decisiones de diseño y por qué:**
+
+| Decisión | Motivo |
+|---|---|
+| Los meses de las **puntas se recortan al rango**, y el título lo dice (*"15/02/2026 al 28/02/2026"*) | Un rango que arranca el 15 no tiene un febrero entero. Rotularlo *"Febrero 2026"* sería mentir sobre lo que el archivo contiene |
+| El nombre del mes (*"Marzo 2026"*) sólo si el mes está **completo** | Mismo criterio: el título tiene que describir el contenido |
+| La carpeta se elige **una sola vez** para toda la tanda | Preguntarla 14 veces es inusable |
+| Con *Una por mes* **no hay preview**: se exporta directo | El preview muestra **una** planilla; ofrecerlo para una tanda de 7 confunde más de lo que ayuda |
+| Si el navegador **no** soporta elegir carpeta, avisa antes | Sin carpeta cada archivo cae como descarga suelta y el browser bloquea la descarga múltiple: la tanda quedaría a medias **sin avisar** |
+| Progreso *"Generando N de M…"* | Con 7 meses son 14 archivos y varias consultas: sin progreso parece colgado |
+
+**Refactor que lo hizo posible**: `exportarPlanillaHacienda()` se partió en dos —
+**`construirPlanilla(desde, hasta, label)`**, que arma el Excel y el PDF y **no guarda nada**, y el
+orquestador, que resuelve los períodos, pide la carpeta una vez y guarda. Sin esa separación no se
+podía emitir una tanda.
+
+**Verificado**: la partición del rango en meses probada sobre 6 casos (rango con las dos puntas
+parciales · meses enteros · un rango dentro de un mismo mes · cruce de año · un mes exacto · dos
+días a caballo de dos meses). En los 6: **cubre el rango exacto, sin huecos ni solapes**.
+`npm run type-check:diff`: **113 → 113**.
+
+---
+
+## <a id="a-test-38"></a>A-TEST-38 — Export de varias planillas juntas
+
+1. **Productivo → Hacienda → Planilla → Rango Personalizado**, del **15/02/2026** al **21/08/2026**,
+   opción **Una por mes**. Antes de exportar tiene que anunciar **7 planillas (14 archivos)** y
+   listar los títulos.
+2. Al exportar: pide la carpeta **una sola vez**, muestra *"Generando N de 7…"* y deja **14
+   archivos** adentro.
+3. **Los recortes**: el primero va del **15/02 al 28/02** (no "Febrero 2026" entero) y el último del
+   **01/08 al 21/08**. Los del medio sí llevan el nombre del mes.
+4. **Que no se rompió lo de antes**: con **Una sola, punta a punta** tiene que salir **1 planilla**
+   y con **Por Mes** también, igual que siempre — y el **preview** tiene que seguir funcionando en
+   los dos casos.
+5. Contra los archivos ya generados: los 7 meses tienen que coincidir con
+   `planillas_hacienda_ACTUAL/`, salvo febrero y agosto, que ahí son **meses enteros** y acá salen
+   **recortados** al rango.
 
 ---
 

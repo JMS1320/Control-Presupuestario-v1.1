@@ -1357,6 +1357,8 @@ function TabHacienda() {
   const [planillaAnio, setPlanillaAnio] = useState(String(hoy.getFullYear()))
   const [planillaDesde, setPlanillaDesde] = useState('')
   const [planillaHasta, setPlanillaHasta] = useState('')
+  // Con un rango: una sola planilla de punta a punta, o una por cada mes del rango
+  const [planillaSalida, setPlanillaSalida] = useState<'unica' | 'mensual'>('unica')
   const [exportandoPlanilla, setExportandoPlanilla] = useState(false)
   const [previewPlanilla, setPreviewPlanilla] = useState<{
     periodoLabel: string
@@ -1621,11 +1623,11 @@ function TabHacienda() {
     }
   }
 
-  const exportarPlanillaHacienda = async () => {
-    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
-    setExportandoPlanilla(true)
-    try {
-      const { desde, hasta, periodoLabel } = resolverRangoFechas()
+  // Construye UNA planilla (Excel + PDF) de un período. No guarda nada: devuelve los dos
+  // documentos para que el orquestador decida dónde van. Separarlo es lo que permite emitir
+  // una tanda de planillas mes a mes eligiendo la carpeta una sola vez (A-FEAT-39).
+  const construirPlanilla = async (desde: string, hasta: string, periodoLabel: string) => {
+    {
       const datos = await calcularDatosPlanilla(desde, hasta)
       const { headers, builtRows, cutData, cut, totalVientres, catNameMap,
         filas, stockAnterior, ingresos, egresos, existenciaFinal,
@@ -1758,40 +1760,6 @@ function TabHacienda() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Planilla')
       XLSX.utils.book_append_sheet(wb, ws2, 'Detalle')
-
-      const baseNombre = planillaModo === 'mes'
-        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}`
-        : `Planilla_Hacienda_${desde}_${hasta}`
-
-      // ═══ SELECCIÓN DE CARPETA ═══
-      let directorioDestino: any = null
-      let ubicacionFinal = 'carpeta Descargas'
-      if ('showDirectoryPicker' in window) {
-        try {
-          directorioDestino = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
-          ubicacionFinal = `carpeta "${directorioDestino.name}"`
-        } catch {
-          // Usuario canceló → descargar en Descargas por defecto
-        }
-      }
-
-      // Helper: guardar archivo en carpeta seleccionada o descarga normal
-      const guardarEnCarpeta = async (nombre: string, contenido: ArrayBuffer | Uint8Array) => {
-        if (directorioDestino) {
-          const h = await directorioDestino.getFileHandle(nombre, { create: true })
-          const w = await h.createWritable()
-          await w.write(contenido)
-          await w.close()
-        }
-      }
-
-      // ═══ GUARDAR EXCEL ═══
-      if (directorioDestino) {
-        const excelBuf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-        await guardarEnCarpeta(`${baseNombre}.xlsx`, excelBuf)
-      } else {
-        XLSX.writeFile(wb, `${baseNombre}.xlsx`)
-      }
 
       // ═══ GENERAR PDF ═══
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -2026,15 +1994,110 @@ function TabHacienda() {
         doc.text(`Pág. ${p}/${totalPages}`, pageW - 15, doc.internal.pageSize.getHeight() - 5, { align: 'right' })
       }
 
-      // ═══ GUARDAR PDF ═══
-      if (directorioDestino) {
-        const pdfBuf = doc.output('arraybuffer')
-        await guardarEnCarpeta(`${baseNombre}.pdf`, pdfBuf)
-      } else {
-        doc.save(`${baseNombre}.pdf`)
+      return { wb, doc }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Qué períodos hay que emitir. Con "una por mes" el rango se parte mes a mes;
+  // los meses de las puntas se recortan al rango pedido (si el rango arranca el 15,
+  // el primer archivo va del 15 al fin de mes) y el título lo dice, en vez de
+  // fingir que es el mes completo.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const resolverPeriodosExport = (): { desde: string; hasta: string; label: string; base: string }[] => {
+    const { desde, hasta, periodoLabel } = resolverRangoFechas()
+
+    const unSoloArchivo = () => [{
+      desde, hasta, label: periodoLabel,
+      base: planillaModo === 'mes'
+        ? `Planilla_Hacienda_${planillaAnio}-${String(parseInt(planillaMes) + 1).padStart(2, '0')}`
+        : `Planilla_Hacienda_${desde}_${hasta}`,
+    }]
+
+    if (planillaModo === 'mes' || planillaSalida === 'unica') return unSoloArchivo()
+
+    const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio',
+      'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    const periodos: { desde: string; hasta: string; label: string; base: string }[] = []
+    let a = parseInt(desde.slice(0, 4)), m = parseInt(desde.slice(5, 7)) - 1
+    const aFin = parseInt(hasta.slice(0, 4)), mFin = parseInt(hasta.slice(5, 7)) - 1
+
+    while (a < aFin || (a === aFin && m <= mFin)) {
+      const mm = String(m + 1).padStart(2, '0')
+      const primero = `${a}-${mm}-01`
+      const ultimo = `${a}-${mm}-${String(new Date(a, m + 1, 0).getDate()).padStart(2, '0')}`
+      // Recorte contra el rango pedido
+      const d = primero < desde ? desde : primero
+      const h = ultimo > hasta ? hasta : ultimo
+      const mesEntero = d === primero && h === ultimo
+      periodos.push({
+        desde: d, hasta: h,
+        label: mesEntero ? `${MESES[m]} ${a}` : `${d.split('-').reverse().join('/')} al ${h.split('-').reverse().join('/')}`,
+        base: mesEntero ? `Planilla_Hacienda_${a}-${mm}` : `Planilla_Hacienda_${d}_${h}`,
+      })
+      m++; if (m > 11) { m = 0; a++ }
+    }
+    return periodos
+  }
+
+  const exportarPlanillaHacienda = async () => {
+    if (planillaModo === 'rango' && (!planillaDesde || !planillaHasta)) { toast.error('Ingrese ambas fechas'); return }
+    if (planillaModo === 'rango' && planillaDesde > planillaHasta) { toast.error('La fecha "desde" es posterior a la "hasta"'); return }
+
+    const periodos = resolverPeriodosExport()
+    if (periodos.length === 0) { toast.error('El rango no cubre ningún período'); return }
+
+    // Sin selector de carpeta cada archivo cae como descarga suelta: con muchos meses
+    // el browser lo bloquea y la tanda queda a medias sin avisar. Mejor decirlo antes.
+    const hayPicker = 'showDirectoryPicker' in window
+    if (periodos.length > 1 && !hayPicker) {
+      const seguir = confirm(
+        `Vas a generar ${periodos.length * 2} archivos (${periodos.length} planillas en Excel y PDF).\n\n` +
+        `Este navegador no permite elegir carpeta, así que van a caer sueltos en Descargas y ` +
+        `puede que bloquee la descarga múltiple.\n\n¿Seguir igual?`
+      )
+      if (!seguir) return
+    }
+
+    setExportandoPlanilla(true)
+    try {
+      // La carpeta se elige UNA sola vez para toda la tanda
+      let directorioDestino: any = null
+      let ubicacionFinal = 'carpeta Descargas'
+      if (hayPicker) {
+        try {
+          directorioDestino = await (window as any).showDirectoryPicker({ startIn: 'downloads' })
+          ubicacionFinal = `carpeta "${directorioDestino.name}"`
+        } catch {
+          // Usuario canceló → descargar en Descargas por defecto
+        }
+      }
+      const guardarEnCarpeta = async (nombre: string, contenido: ArrayBuffer | Uint8Array) => {
+        const h = await directorioDestino.getFileHandle(nombre, { create: true })
+        const w = await h.createWritable()
+        await w.write(contenido)
+        await w.close()
       }
 
-      toast.success(`Planilla exportada (Excel + PDF) en ${ubicacionFinal}`)
+      const tId = periodos.length > 1 ? toast.loading(`Generando 0 de ${periodos.length}…`) : undefined
+      let n = 0
+      for (const p of periodos) {
+        const { wb, doc } = await construirPlanilla(p.desde, p.hasta, p.label)
+        if (directorioDestino) {
+          await guardarEnCarpeta(`${p.base}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+          await guardarEnCarpeta(`${p.base}.pdf`, doc.output('arraybuffer'))
+        } else {
+          XLSX.writeFile(wb, `${p.base}.xlsx`)
+          doc.save(`${p.base}.pdf`)
+        }
+        n++
+        if (tId) toast.loading(`Generando ${n} de ${periodos.length}…`, { id: tId })
+      }
+
+      const msg = periodos.length === 1
+        ? `Planilla exportada (Excel + PDF) en ${ubicacionFinal}`
+        : `${periodos.length} planillas exportadas (${periodos.length * 2} archivos) en ${ubicacionFinal}`
+      if (tId) toast.success(msg, { id: tId }); else toast.success(msg)
       setMostrarModalPlanilla(false)
     } catch (err: any) {
       toast.error('Error: ' + err.message)
@@ -2042,6 +2105,12 @@ function TabHacienda() {
       setExportandoPlanilla(false)
     }
   }
+
+  // Para mostrar en el modal cuántas planillas van a salir antes de apretar nada
+  const periodosAExportar = (planillaModo === 'rango' && planillaSalida === 'mensual'
+    && planillaDesde && planillaHasta && planillaDesde <= planillaHasta)
+    ? resolverPeriodosExport()
+    : []
 
   if (loading) {
     return (
@@ -2641,13 +2710,46 @@ function TabHacienda() {
                     </div>
                   </div>
                 )}
+
+                {/* Con un rango: ¿una sola planilla, o una por cada mes? */}
+                {planillaModo === 'rango' && (
+                  <div>
+                    <Label className="text-xs">¿Cómo querés el resultado?</Label>
+                    <div className="mt-1 flex gap-2">
+                      <Button variant={planillaSalida === 'unica' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setPlanillaSalida('unica')}>Una sola, punta a punta</Button>
+                      <Button variant={planillaSalida === 'mensual' ? 'default' : 'outline'} size="sm"
+                        onClick={() => setPlanillaSalida('mensual')}>Una por mes</Button>
+                    </div>
+                    {planillaSalida === 'mensual' && (
+                      <p className="mt-2 text-xs text-stone-600">
+                        {periodosAExportar.length > 0 ? (
+                          <>
+                            Se van a generar <strong>{periodosAExportar.length} planillas</strong>{' '}
+                            ({periodosAExportar.length * 2} archivos, Excel + PDF): {' '}
+                            {periodosAExportar.map(p => p.label).join(' · ')}.
+                            <br />La carpeta se elige <strong>una sola vez</strong> para toda la tanda.
+                          </>
+                        ) : 'Ingresá las dos fechas para ver cuántas planillas salen.'}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setMostrarModalPlanilla(false)}>Cancelar</Button>
-                <Button onClick={cargarPreviewPlanilla} disabled={cargandoPreview}>
-                  {cargandoPreview ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />}
-                  Ver Planilla
-                </Button>
+                {planillaModo === 'rango' && planillaSalida === 'mensual' ? (
+                  // Con varias planillas el preview no aplica: se exporta directo
+                  <Button onClick={exportarPlanillaHacienda} disabled={exportandoPlanilla || periodosAExportar.length === 0}>
+                    {exportandoPlanilla ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
+                    Exportar {periodosAExportar.length || ''} planillas
+                  </Button>
+                ) : (
+                  <Button onClick={cargarPreviewPlanilla} disabled={cargandoPreview}>
+                    {cargandoPreview ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />}
+                    Ver Planilla
+                  </Button>
+                )}
               </DialogFooter>
             </>
           ) : (

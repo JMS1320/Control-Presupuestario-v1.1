@@ -1074,6 +1074,79 @@ de declarar.
 
 ---
 
+## 🐄 Productivo → Hacienda → Planilla de Hacienda 🟡 *(reescrita 2026-08-21, sin testear)*
+
+Botón **Planilla** en el encabezado de *Stock de Hacienda*. Emite el reporte de existencias del
+período en el formato de la planilla de papel del establecimiento, en **Excel y PDF a la vez**.
+
+### Elegir el período
+- **Por Mes** — mes y año.
+- **Rango Personalizado** — dos fechas libres. Acá aparece la pregunta de abajo.
+
+### 🆕 Una sola planilla, o una por mes
+Con **Rango Personalizado** el modal pregunta *"¿Cómo querés el resultado?"*:
+
+| Opción | Qué hace |
+|---|---|
+| **Una sola, punta a punta** | una planilla de todo el rango (es el default) |
+| **Una por mes** | **una planilla por cada mes** del rango, en una sola pasada |
+
+Con *Una por mes* te dice **antes de exportar** cuántas van a salir y con qué títulos, y la
+**carpeta se elige una sola vez** para toda la tanda. Los meses de las puntas se **recortan al
+rango**: si pedís del 15/02 al 21/08, el primer archivo va del *15/02 al 28/02* y lo dice en el
+título, en vez de llamarse "Febrero 2026" y contener medio mes.
+
+> Con *Una por mes* **no hay preview** y el botón pasa a ser **Exportar N planillas**: el preview
+> muestra una sola planilla y no tendría sentido para una tanda.
+
+### Ver antes de bajar
+**Ver Planilla** abre el preview en pantalla, con la grilla y el detalle del CUT. Desde ahí,
+**Descargar Excel + PDF**.
+
+### Qué trae el archivo
+1. **Planilla** — categorías en columnas (CRÍA · RECRÍA/ENGORDE · Terneros al Pie, con subtotales) y
+   los conceptos en filas: *Stock Anterior · Compras · Nacimientos · Reclas. + · Ingresos · Ventas ·
+   Mortandad · Reclas. − · Egresos · Existencia Final*, más el **Total Vientres** al pie.
+2. **Detalle de movimientos** — uno por fila: fecha, tipo, categoría, cantidad, contraparte y
+   observaciones. **Sin kilos ni montos**: esta planilla es de movimientos de stock, no de ventas.
+3. **Detalle CUT / Descarte** — ver abajo.
+
+### La página del CUT / Descarte, y su control
+No es una lista: es la **conciliación** de la categoría.
+
+```
+A · VENÍAN DE ANTES            los que ya estaban al empezar el período
+B · ENTRARON EN EL PERÍODO     con su motivo de ingreso
+C · SIN FECHA DE ALTA          los que no se pueden ubicar en el tiempo (no se omiten)
+
+CIERRE   venían + entraron − salieron = quedan
+```
+
+Cada caravana lleva su **Estado al cierre**: *Sigue en CUT*, o *Salió DD/MM — motivo*. Los que
+salieron en períodos **anteriores** ya no aparecen.
+
+**El control**: la página 1 cuenta **cabezas** y ésta cuenta **individuos**. Si no coinciden, sale
+una **alerta roja** — *"faltan N cabezas sin identificar con caravana"*. Significa que hubo un
+movimiento al CUT sin decir **cuáles** animales. No es un error del reporte: es un dato que falta.
+
+### Cuando movés algo al CUT sin caravanas
+La app te **avisa pero no te frena** (al mover de categoría y al registrar un tacto). Podés seguir:
+el movimiento se registra igual y **la planilla marca el descuadre** hasta que cargues las
+caravanas. Es a propósito — si no las tenés a mano, es peor no registrar el movimiento.
+
+### 🧪 Cómo probarlo
+1. **Agosto 2026** → `Total General` de *Existencia Final* debe dar **356**, y coincidir con lo que
+   muestra la pestaña **Stock** y con la planilla en modo rango del 15/02 al 21/08.
+2. **Febrero 2026** → la fila **Mortandad** debe decir **1** (la ternera perdida), no 9.
+3. **Marzo 2026** → la página del CUT cierra `8 + 4 − 4 = 8` con **✓ OK**, y las 4 que entraron el
+   29/03 figuran *Salió 30/03/2026 — Vendido*.
+4. **Agosto 2026** → la página del CUT tiene que dar la **alerta roja de 1 cabeza**, y las 4
+   vendidas en marzo **no deben aparecer**.
+5. **Rango 15/02 → 21/08 con *Una por mes*** → anuncia **7 planillas / 14 archivos**, pide la
+   carpeta una vez, y el primero va del *15/02 al 28/02*.
+
+---
+
 ## 🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*
 
 En **Principal**, arriba de todo, aparece un aviso cuando hace **más de 30 días** que no se carga
