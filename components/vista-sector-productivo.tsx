@@ -1455,10 +1455,25 @@ function TabHacienda() {
       stockAnterior[col] += (m.tipo === 'venta' || m.tipo === 'mortandad') ? -m.cantidad : m.cantidad
     })
 
+    // ── Qué es una APERTURA de stock ───────────────────────────────────────────────
+    // Un `ajuste_stock` positivo sobre una categoría que **no tenía ningún movimiento antes**:
+    // no es una compra, es el recuento con el que arrancó el sistema. Va al Stock Anterior,
+    // que es donde corresponde — no es algo que entró en el mes, es lo que había.
+    // ⚠️ Tiene que ser un AJUSTE: si lo primero que aparece en una categoría es un
+    // `cambio_categoria`, eso es una reclasificación y se queda como tal (criterio del usuario).
+    const primeraFechaCat: Record<string, string> = {}
+    for (const m of todosMovs as any[]) {
+      const f = primeraFechaCat[m.categoria_id]
+      if (!f || m.fecha < f) primeraFechaCat[m.categoria_id] = m.fecha
+    }
+    const esApertura = (m: any) =>
+      m.tipo === 'ajuste_stock' && m.cantidad > 0 && m.fecha === primeraFechaCat[m.categoria_id]
+
     const filas: Record<string, number[]> = {
       compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),
       reclasPos: new Array(nCols).fill(0), ventas: new Array(nCols).fill(0),
       mortandad: new Array(nCols).fill(0), reclasNeg: new Array(nCols).fill(0),
+      ajustesPos: new Array(nCols).fill(0), ajustesNeg: new Array(nCols).fill(0),
     }
     movsPeriodo.forEach(m => {
       const col = catToCol[m.categoria_id]; if (col === undefined) return
@@ -1468,8 +1483,10 @@ function TabHacienda() {
         case 'venta': filas.ventas[col] += Math.abs(m.cantidad); break
         case 'mortandad': filas.mortandad[col] += Math.abs(m.cantidad); break
         case 'ajuste_stock':
-          if (m.cantidad > 0) filas.compras[col] += m.cantidad
-          else filas.mortandad[col] += Math.abs(m.cantidad)
+          // La apertura suma al arranque, no a los ingresos del mes
+          if (esApertura(m)) stockAnterior[col] += m.cantidad
+          else if (m.cantidad > 0) filas.ajustesPos[col] += m.cantidad
+          else filas.ajustesNeg[col] += Math.abs(m.cantidad)
           break
         case 'cambio_categoria':
           if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
@@ -1482,8 +1499,8 @@ function TabHacienda() {
     const egresos = new Array(nCols).fill(0)
     const existenciaFinal = new Array(nCols).fill(0)
     for (let i = 0; i < nCols; i++) {
-      ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
-      egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
+      ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i] + filas.ajustesPos[i]
+      egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i] + filas.ajustesNeg[i]
       existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
     }
 
@@ -1611,15 +1628,20 @@ function TabHacienda() {
     // Compatibilidad: el resto del código sigue viendo una lista plana
     const cutData = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
 
+    // Las filas de Ajustes sólo se dibujan si el período TIENE ajustes: son la excepción, no
+    // la regla, y una fila fija en cero todos los meses es ruido en una grilla de 15 columnas.
+    const hay = (a: number[]) => a.some(v => v !== 0)
     const rowDefs: { label: string; vals: number[]; highlight?: boolean }[] = [
       { label: 'Stock Anterior', vals: stockAnterior, highlight: true },
       { label: 'Compras', vals: filas.compras },
       { label: 'Nacimientos', vals: filas.nacimientos },
       { label: 'Reclas. +', vals: filas.reclasPos },
+      ...(hay(filas.ajustesPos) ? [{ label: 'Ajustes +', vals: filas.ajustesPos }] : []),
       { label: 'Ingresos', vals: ingresos, highlight: true },
       { label: 'Ventas', vals: filas.ventas },
       { label: 'Mortandad', vals: filas.mortandad },
       { label: 'Reclas. -', vals: filas.reclasNeg },
+      ...(hay(filas.ajustesNeg) ? [{ label: 'Ajustes -', vals: filas.ajustesNeg }] : []),
       { label: 'Egresos', vals: egresos, highlight: true },
       { label: 'Existencia Final', vals: existenciaFinal, highlight: true },
     ]
@@ -1637,7 +1659,7 @@ function TabHacienda() {
     const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
 
     return {
-      headers, builtRows, cutData, cut, totalVientres,
+      headers, builtRows, cutData, cut, totalVientres, esApertura,
       filas, stockAnterior, ingresos, egresos, existenciaFinal,
       catIdMap, catNameMap, catToCol, nAdultos, nTern, nCols, buildRow, sumar,
       rowDefs,
@@ -1676,7 +1698,7 @@ function TabHacienda() {
   const construirPlanilla = async (desde: string, hasta: string, periodoLabel: string) => {
     {
       const datos = await calcularDatosPlanilla(desde, hasta)
-      const { headers, builtRows, cutData, cut, totalVientres, catNameMap,
+      const { headers, builtRows, cutData, cut, totalVientres, catNameMap, esApertura,
         filas, stockAnterior, ingresos, egresos, existenciaFinal,
         nAdultos, nTern, buildRow, rowDefs } = datos
       const todasCats = [...CATS_PLANILLA, ...CATS_TERNEROS]
@@ -1799,14 +1821,22 @@ function TabHacienda() {
       const totalFila = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
       // Orden pedido por el usuario: primero lo que ENTRA y SALE del campo, y al final las
       // reclasificaciones, que son movimientos internos entre categorías.
+      // El recuento de apertura va primero y aparte: no es un movimiento del mes, es el arranque.
+      // Su total se contrasta contra lo que se sumó al Stock Anterior, no contra una fila.
+      const aperturaEnPeriodo = (movsDetalle || []).filter(esApertura)
       const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
-        { titulo: 'COMPRAS', grid: filas.compras, test: m => m.tipo === 'compra' || (m.tipo === 'ajuste_stock' && m.cantidad > 0) },
+        { titulo: 'EXISTENCIA INICIAL (recuento)', grid: [], test: m => esApertura(m) },
+        { titulo: 'COMPRAS', grid: filas.compras, test: m => m.tipo === 'compra' },
         { titulo: 'NACIMIENTOS', grid: filas.nacimientos, test: m => m.tipo === 'nacimiento' },
         { titulo: 'VENTAS', grid: filas.ventas, test: m => m.tipo === 'venta' },
-        { titulo: 'MORTANDAD', grid: filas.mortandad, test: m => m.tipo === 'mortandad' || (m.tipo === 'ajuste_stock' && m.cantidad < 0) },
+        { titulo: 'MORTANDAD', grid: filas.mortandad, test: m => m.tipo === 'mortandad' },
         { titulo: 'RECLASIFICACIONES +', grid: filas.reclasPos, test: m => m.tipo === 'cambio_categoria' && m.cantidad > 0 },
         { titulo: 'RECLASIFICACIONES -', grid: filas.reclasNeg, test: m => m.tipo === 'cambio_categoria' && m.cantidad < 0 },
+        { titulo: 'AJUSTES +', grid: filas.ajustesPos, test: m => m.tipo === 'ajuste_stock' && m.cantidad > 0 && !esApertura(m) },
+        { titulo: 'AJUSTES -', grid: filas.ajustesNeg, test: m => m.tipo === 'ajuste_stock' && m.cantidad < 0 },
       ]
+      // La apertura no tiene fila propia en la grilla: su control es contra el Stock Anterior
+      const totalApertura = aperturaEnPeriodo.reduce((s, m: any) => s + Math.abs(m.cantidad), 0)
 
       const filaDetalle = (m: any) => {
         const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
@@ -1826,7 +1856,8 @@ function TabHacienda() {
         const movs = (movsDetalle || []).filter(c.test)
         if (movs.length === 0) continue
         const suma = movs.reduce((s, m: any) => s + Math.abs(m.cantidad), 0)
-        const esperado = totalFila(c.grid)
+        // La apertura no tiene fila en la grilla: se contrasta contra el Stock Anterior
+        const esperado = c.grid.length === 0 ? totalApertura : totalFila(c.grid)
         detalleAoa.push([])
         detalleAoa.push([`${c.titulo} — ${suma} cab.${suma !== esperado ? `  (⚠ la grilla dice ${esperado})` : ''}`])
         detalleAoa.push(cabeceraDet)
@@ -1957,8 +1988,11 @@ function TabHacienda() {
           if (data.section === 'body' && data.column.index > 0) {
             data.cell.styles.halign = 'right'
           }
-          // Filas resaltadas (Stock Anterior, Ingresos, Egresos, Existencia Final)
-          const highlightRows = [0, 4, 8, 9]
+          // Filas resaltadas. ⚠️ Por LABEL, no por índice: las filas de Ajustes aparecen sólo
+          // cuando el período tiene ajustes, así que los índices se corren según el mes.
+          const highlightRows = builtRows
+            .map((r, i) => (['Stock Anterior', 'Ingresos', 'Egresos', 'Existencia Final'].includes(r.label) ? i : -1))
+            .filter(i => i >= 0)
           if (data.section === 'body' && highlightRows.includes(data.row.index)) {
             data.cell.styles.fillColor = fondoResaltado
             data.cell.styles.fontStyle = 'bold'
@@ -1989,7 +2023,7 @@ function TabHacienda() {
         const movs = (movsDetalle || []).filter(c.test)
         if (movs.length === 0) continue
         const suma = movs.reduce((s, m: any) => s + Math.abs(m.cantidad), 0)
-        const esperado = totalFila(c.grid)
+        const esperado = c.grid.length === 0 ? totalApertura : totalFila(c.grid)
         bloquesDet.add(detalleBody.length)
         detalleBody.push([`${c.titulo} - ${suma} cab.${suma !== esperado ? `  (la grilla dice ${esperado})` : ''}`, '', '', '', ''])
         for (const m of movs) detalleBody.push((filaDetalle(m) as any[]).map((v, i) => i === 4 ? sanitizarPDF(String(v)) : String(v)))

@@ -349,7 +349,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-51** | 🟡 | **Bug** | **Otros 3 caminos dan de alta caravanas sin `fecha_alta`** — el alta manual de la pantalla de Terneros (`tab-terneros.tsx:323`), el **importador de terneros** (`import-terneros/route.ts:174`) y el **importador de pesadas** cuando la caravana no existe (`import-pesadas/route.ts:322`, que inserta con **un solo campo**: `caravana_oficial`). Son los caminos por los que entra un individuo sin fecha ni categoría. No afectan a la Planilla de Hacienda (crean terneros, no CUT) — abordar al tocar la pantalla de Terneros. Hermano de [A-BUG-47](#a-bug-47) | → [A-BUG-51](#a-bug-51) `@productivo` |
 | **A-FEAT-34** | 🟡 | Feat | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Rediseñar la página CUT/Descarte + su control de cierre — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
 | **A-FEAT-35** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · Sacar kilos y montos del detalle de la Planilla de Hacienda. Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
-| **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
+| **A-FEAT-36** | 🟡 | Feat | **HECHO 2026-08-22 — falta testear ([A-TEST-37](#a-test-37))** · El **recuento de apertura va al Stock Anterior** (febrero arranca en **422**, antes en 0) y los ajustes tienen **fila propia, sólo en los meses que los tienen**. La **Mortandad de febrero pasó de 1 a 0**: la ternera perdida en Onetto es un `Ajuste −`, no una muerte. Antes `ajuste +` se rotulaba *Compras* y `ajuste −` *Mortandad*, y las dos mentían | → [A-FEAT-36](#a-feat-36) `@productivo` |
 | **A-FEAT-37** | 🟡 | Feat | **HECHO 2026-08-22 (las dos partes) — falta testear ([A-TEST-37](#a-test-37))** · La mortandad muestra motivo + observación + caravana encadenados, y el detalle va **segmentado por concepto** con el total de cada bloque contrastado contra la grilla, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
@@ -9388,6 +9388,40 @@ de Compras. Arregla los tres casos de una vez.
 
 📌 Dato para tener en cuenta: el recuento es **al 29/01** pero está cargado el **15/02**, así que no
 existe en la planilla de enero y entra como movimiento de febrero.
+
+### ✅ HECHO 2026-08-22
+
+**Cómo se identifica una apertura** — regla del usuario, y es más angosta de lo que yo había
+propuesto: es un **`ajuste_stock` positivo sobre una categoría que no tenía ningún movimiento
+antes**. ⚠️ **Tiene que ser un ajuste**: si lo primero que aparece en una categoría es un
+`cambio_categoria`, eso es una reclasificación y se queda como tal.
+
+**Dónde va**: al **Stock Anterior**, no a una fila propia. Textual del usuario: *"la existencia
+inicial se mostraría como stock anterior, exacto"*. 🟨 Y es lo correcto: una apertura no es algo que
+**entró** en el mes, es lo que **había**.
+
+**Las filas de Ajustes** (`+` y `−`) se dibujan **sólo en los meses que tienen ajustes** — también
+pedido del usuario. Una fila fija en cero todos los meses es ruido en una grilla de 15 columnas.
+
+**Febrero, antes y después:**
+
+| Fila | Antes | Ahora |
+|---|---:|---:|
+| **Stock Anterior** | 0 | **422** |
+| Compras | 422 | **0** |
+| **Mortandad** | 1 | **0** |
+| **Ajustes −** | *(no existía)* | **1** ← la ternera de Onetto |
+| **Existencia Final** | 421 | **421** ✓ |
+
+🎯 **El control**: **ninguna `Existencia Final` cambió** en ninguno de los 7 meses. Lo único que se
+movió es de qué fila sale cada número — que era exactamente el objetivo.
+
+⚠️ **Un detalle que casi rompe el PDF**: las filas resaltadas estaban por **índice fijo**
+(`[0, 4, 8, 9]`). Con filas que aparecen y desaparecen según el mes, los índices se corren y el
+resaltado hubiera caído en la fila equivocada. Ahora se resuelven **por label**.
+
+📌 En el detalle, la apertura tiene su propio bloque **EXISTENCIA INICIAL (recuento)**, y su control
+no es contra una fila de la grilla —no tiene— sino contra lo que se sumó al Stock Anterior.
 
 ---
 

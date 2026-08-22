@@ -143,10 +143,22 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
     stockAnterior[col] += (m.tipo === "venta" || m.tipo === "mortandad") ? -m.cantidad : m.cantidad
   })
 
+  // APERTURA: `ajuste_stock` positivo sobre una categoria SIN movimientos previos. No es una
+  // compra: es el recuento con el que arranco el sistema, y va al Stock Anterior. Tiene que ser
+  // un ajuste -- si lo primero de una categoria es un cambio_categoria, sigue siendo reclasificacion.
+  const primeraFechaCat: Record<string, string> = {}
+  for (const m of todosMovs as any[]) {
+    const f = primeraFechaCat[m.categoria_id]
+    if (!f || m.fecha < f) primeraFechaCat[m.categoria_id] = m.fecha
+  }
+  const esApertura = (m: any) =>
+    m.tipo === "ajuste_stock" && m.cantidad > 0 && m.fecha === primeraFechaCat[m.categoria_id]
+
   const filas: Record<string, number[]> = {
     compras: new Array(nCols).fill(0), nacimientos: new Array(nCols).fill(0),
     reclasPos: new Array(nCols).fill(0), ventas: new Array(nCols).fill(0),
     mortandad: new Array(nCols).fill(0), reclasNeg: new Array(nCols).fill(0),
+    ajustesPos: new Array(nCols).fill(0), ajustesNeg: new Array(nCols).fill(0),
   }
   // Los movimientos cuya categoría no está entre las 12 columnas se descartan en silencio (:1418)
   const descartados: Record<string, number> = {}
@@ -163,8 +175,9 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
       case "venta": filas.ventas[col] += Math.abs(m.cantidad); break
       case "mortandad": filas.mortandad[col] += Math.abs(m.cantidad); break
       case "ajuste_stock":
-        if (m.cantidad > 0) filas.compras[col] += m.cantidad
-        else filas.mortandad[col] += Math.abs(m.cantidad)
+        if (esApertura(m)) stockAnterior[col] += m.cantidad
+        else if (m.cantidad > 0) filas.ajustesPos[col] += m.cantidad
+        else filas.ajustesNeg[col] += Math.abs(m.cantidad)
         break
       case "cambio_categoria":
         if (m.cantidad > 0) filas.reclasPos[col] += m.cantidad
@@ -177,8 +190,8 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
   const egresos = new Array(nCols).fill(0)
   const existenciaFinal = new Array(nCols).fill(0)
   for (let i = 0; i < nCols; i++) {
-    ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i]
-    egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i]
+    ingresos[i] = filas.compras[i] + filas.nacimientos[i] + filas.reclasPos[i] + filas.ajustesPos[i]
+    egresos[i] = filas.ventas[i] + filas.mortandad[i] + filas.reclasNeg[i] + filas.ajustesNeg[i]
     existenciaFinal[i] = stockAnterior[i] + ingresos[i] - egresos[i]
   }
 
@@ -276,15 +289,19 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
   }
   const cutData = [...cut.bloqueA, ...cut.bloqueB, ...cut.bloqueC]
 
+  // Las filas de Ajustes solo se dibujan si el periodo TIENE ajustes
+  const hay = (a: number[]) => a.some(v => v !== 0)
   const rowDefs = [
     { label: "Stock Anterior", vals: stockAnterior },
     { label: "Compras", vals: filas.compras },
     { label: "Nacimientos", vals: filas.nacimientos },
     { label: "Reclas. +", vals: filas.reclasPos },
+    ...(hay(filas.ajustesPos) ? [{ label: "Ajustes +", vals: filas.ajustesPos }] : []),
     { label: "Ingresos", vals: ingresos },
     { label: "Ventas", vals: filas.ventas },
     { label: "Mortandad", vals: filas.mortandad },
     { label: "Reclas. -", vals: filas.reclasNeg },
+    ...(hay(filas.ajustesNeg) ? [{ label: "Ajustes -", vals: filas.ajustesNeg }] : []),
     { label: "Egresos", vals: egresos },
     { label: "Existencia Final", vals: existenciaFinal },
   ]
@@ -292,7 +309,7 @@ async function calcularDatosPlanilla(desde: string, hasta: string) {
   const builtRows = rowDefs.map(r => ({ label: r.label, vals: buildRow(r.label, r.vals) }))
   const totalVientres = existenciaFinal[0] + existenciaFinal[1]
 
-  return { builtRows, cutData, cut, totalVientres, catNameMap, filas,
+  return { builtRows, cutData, cut, totalVientres, catNameMap, filas, esApertura,
     stockAnterior, existenciaFinal, nAdultos, nTern, descartados, desde, hasta }
 }
 
@@ -351,13 +368,17 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
   const totalFila = (arr: number[]) => arr.reduce((s: number, v: number) => s + v, 0)
   // Orden: primero lo que ENTRA y SALE del campo, y al final las reclasificaciones (internas)
   const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
-    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
+    { titulo: "EXISTENCIA INICIAL (recuento)", grid: [], test: m => datos.esApertura(m) },
+    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" },
     { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
     { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
-    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" },
     { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
+    { titulo: "AJUSTES +", grid: datos.filas.ajustesPos, test: m => m.tipo === "ajuste_stock" && m.cantidad > 0 && !datos.esApertura(m) },
+    { titulo: "AJUSTES -", grid: datos.filas.ajustesNeg, test: m => m.tipo === "ajuste_stock" && m.cantidad < 0 },
   ]
+  const totalApertura = movsDetalle.filter((m: any) => datos.esApertura(m)).reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
   const filaDetalle = (m: any) => {
     const tipoLabel = m.tipo === "cambio_categoria" ? (m.cantidad > 0 ? "Reclas. +" : "Reclas. -") :
       m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste +" : "Ajuste -") :
@@ -369,7 +390,7 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
     const movs = movsDetalle.filter(c.test)
     if (movs.length === 0) continue
     const suma = movs.reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
-    const esperado = totalFila(c.grid)
+    const esperado = c.grid.length === 0 ? totalApertura : totalFila(c.grid)
     detalleAoa.push([])
     detalleAoa.push([`${c.titulo} — ${suma} cab.${suma !== esperado ? `  (⚠ la grilla dice ${esperado})` : ""}`])
     detalleAoa.push(cabeceraDet)
@@ -474,7 +495,10 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
     columnStyles: { 0: { fontStyle: "bold", halign: "left", cellWidth: 22 } },
     didParseCell: (data: any) => {
       if (data.section === "body" && data.column.index > 0) data.cell.styles.halign = "right"
-      const highlightRows = [0, 4, 8, 9]
+      // Por LABEL, no por indice: las filas de Ajustes aparecen solo en los meses que las tienen
+      const highlightRows = builtRows
+        .map((r: any, i: number) => (["Stock Anterior", "Ingresos", "Egresos", "Existencia Final"].includes(r.label) ? i : -1))
+        .filter((i: number) => i >= 0)
       if (data.section === "body" && highlightRows.includes(data.row.index)) {
         data.cell.styles.fillColor = fondoResaltado
         data.cell.styles.fontStyle = "bold"
@@ -496,20 +520,24 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
   const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, "-").replace(/[^\x00-\xFF]/g, "")
   // Mismos bloques que el Excel; los titulos van como fila del cuerpo para que autoTable los pagine
   const CONCEPTOS_PDF: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
-    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
+    { titulo: "EXISTENCIA INICIAL (recuento)", grid: [], test: m => datos.esApertura(m) },
+    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" },
     { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
     { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
-    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" },
     { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
+    { titulo: "AJUSTES +", grid: datos.filas.ajustesPos, test: m => m.tipo === "ajuste_stock" && m.cantidad > 0 && !datos.esApertura(m) },
+    { titulo: "AJUSTES -", grid: datos.filas.ajustesNeg, test: m => m.tipo === "ajuste_stock" && m.cantidad < 0 },
   ]
+  const totalApertura = movsDetalle.filter((m: any) => datos.esApertura(m)).reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
   const detalleBody: string[][] = []
   const bloquesDet = new Set<number>()
   for (const c of CONCEPTOS_PDF) {
     const movs = movsDetalle.filter(c.test)
     if (movs.length === 0) continue
     const suma = movs.reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
-    const esperado = (c.grid as number[]).reduce((s: number, v: number) => s + v, 0)
+    const esperado = c.grid.length === 0 ? totalApertura : (c.grid as number[]).reduce((s: number, v: number) => s + v, 0)
     bloquesDet.add(detalleBody.length)
     detalleBody.push([`${c.titulo} - ${suma} cab.${suma !== esperado ? `  (la grilla dice ${esperado})` : ""}`, "", "", "", ""])
     for (const m of movs) {
