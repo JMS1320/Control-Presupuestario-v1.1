@@ -4316,6 +4316,30 @@ corrimiento): **el sistema no lo saca de la lista**. Aparece como cualquier otro
 checkbox si entra en la tanda. *"Puede que yo genere todos menos ése, pero si quisiera debería poder
 generarlo."*
 
+### 🏢 Selector de empresa — agregado el mismo día
+
+Pedido del usuario apenas vio el volumen: *"sería ideal ver por empresa. Sino puede ser confuso o
+causa de problemas. Crear pero **mirando siempre por empresa**."*
+
+Solapas **MSA · PAM · MA · Compartidos · Todas**, con el conteo en cada una. `Compartidos` son los
+que tienen **más de un responsable** (`MSA/PAM`, `PAM/MA/Duhau`) — hoy 2. Reusa `parseEmpresas()` de
+`lib/empresas.ts`, que ya sabía partir esos valores.
+
+Reparto real: **MSA 98 · PAM 70 · MA 6 · compartidos 2**.
+
+⚠️ **Dos decisiones que importan más de lo que parecen:**
+
+1. **El filtro es un límite REAL, no visual.** `generar()` corre sobre las filas **visibles**, no
+   sobre todas. Sin esto habría sido un bug feo: los "previstos" vienen tildados solos
+   (`aplica_generacion = true`), así que estando en la solapa MSA se habrían generado **también los
+   de PAM y MA**, sin aparecer en pantalla.
+2. **El contador muestra las dos cifras**: *"12 pendientes en MSA · (en total, todas las empresas:
+   40)"*. Un contador que sólo muestra lo filtrado hace creer que la campaña está terminada cuando
+   falta el resto de las empresas.
+
+Los **compartidos tienen solapa propia** a propósito: si aparecieran también dentro de MSA y de PAM,
+al recorrer las empresas se generarían dos veces.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el

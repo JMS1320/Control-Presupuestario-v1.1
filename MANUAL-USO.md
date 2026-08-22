@@ -1461,7 +1461,14 @@ el final.
 1. Templates → botón **Renovar campaña**.
 2. Elegir **Periodicidad** (bianual jul–jun / anual calendario) y el **período a generar** (`26/27`
    o `2027`).
-3. Arriba aparece la barra: **"N pendientes de generar · M ya generados"**.
+2b. Elegir la **empresa**: `MSA` · `PAM` · `MA` · `Compartidos` · `Todas`. Arranca en **MSA**, y cada
+   solapa muestra cuántos tiene. **Se genera sólo lo de la empresa elegida** — el filtro no es
+   visual, es un límite real.
+   *`Compartidos` son los templates con más de un responsable (`MSA/PAM`, `PAM/MA/Duhau`). Tienen
+   solapa propia para que no se generen dos veces al recorrer las empresas.*
+3. Arriba aparece la barra: **"N pendientes de generar · M ya generados"**, y —si filtraste por
+   empresa— **también el total de todas**, para que no parezca terminada una campaña a la que le
+   falta el resto.
 4. Tildar los que quieras en esta tanda, ajustar montos y días en la matriz, y **Generar**.
 5. **El modal no se cierra**: recarga y los que acabás de hacer pasan al bloque *"Ya generados"*.
    Seguís con la tanda siguiente ahí mismo.

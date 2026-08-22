@@ -16,6 +16,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X, Info } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { parseEmpresas } from "@/lib/empresas"
 import { toast } from "sonner"
 
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -81,6 +82,12 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const [detalleItems, setDetalleItems] = useState<ItemCuota[]>([])
   /** Templates que YA tienen su versión de esta campaña — no se ofrecen para generar de nuevo. */
   const [yaGenerados, setYaGenerados] = useState<{ id: string; nombre: string; responsable: string; porVinculo: boolean }[]>([])
+  /**
+   * Se genera **mirando una empresa por vez** (pedido del usuario): 168 templates mezclados es
+   * confuso y es de donde salen los errores. `compartidos` son los que tienen más de un
+   * responsable (`MSA/PAM`, `PAM/MA/Duhau`) — no son de nadie en particular y conviene verlos juntos.
+   */
+  const [filtroEmpresa, setFiltroEmpresa] = useState<'MSA' | 'PAM' | 'MA' | 'compartidos' | 'todas'>('MSA')
 
   // Default del target según hoy
   useEffect(() => {
@@ -180,16 +187,36 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
 
   useEffect(() => { if (targetY1) cargar() /* eslint-disable-next-line */ }, [periodicidad])
 
+  /** ¿Esta lista de empresas cae dentro del filtro elegido? */
+  const pasaFiltroEmpresa = (responsable: string | null | undefined) => {
+    if (filtroEmpresa === 'todas') return true
+    const emp = parseEmpresas(responsable)
+    if (filtroEmpresa === 'compartidos') return emp.length > 1
+    // Una empresa concreta: sólo los que son SUYOS y de nadie más. Los compartidos tienen su
+    // propia solapa a propósito — si aparecieran acá, se generarían dos veces al recorrer empresas.
+    return emp.length === 1 && emp[0] === filtroEmpresa
+  }
+
+  /** Lo que se ve **y lo único que se genera**: el filtro de empresa manda. */
+  const filasVisibles = useMemo(
+    () => filas.filter(f => pasaFiltroEmpresa(f.template.responsable)),
+    [filas, filtroEmpresa],
+  )
+  const yaGeneradosVisibles = useMemo(
+    () => yaGenerados.filter(t => pasaFiltroEmpresa(t.responsable)),
+    [yaGenerados, filtroEmpresa],
+  )
+
   // Columnas = base 12 del target ∪ meses con cuota en filas incluidas
   const columnas = useMemo(() => {
     const set = new Set<string>()
     if (targetY1) for (const { y, m } of mesesBase(periodicidad, targetY1)) set.add(colKey(y, m))
-    for (const f of filas) if (f.incluir) for (const k of Object.keys(f.celdas)) set.add(k)
+    for (const f of filasVisibles) if (f.incluir) for (const k of Object.keys(f.celdas)) set.add(k)
     return Array.from(set).sort()
-  }, [filas, periodicidad, targetY1])
+  }, [filasVisibles, periodicidad, targetY1])
 
-  const previstas = filas.filter(f => f.template.aplica_generacion === true)
-  const noAplican = filas.filter(f => f.template.aplica_generacion !== true)
+  const previstas = filasVisibles.filter(f => f.template.aplica_generacion === true)
+  const noAplican = filasVisibles.filter(f => f.template.aplica_generacion !== true)
 
   // Inicio del período (para ADVERTIR — no bloquear — cuotas que caen antes; ej. datos viejos tipo UATRE)
   const inicioKey = useMemo(() => {
@@ -198,8 +225,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     return colKey(base[0].y, base[0].m)
   }, [periodicidad, targetY1])
   const hayCuotasAntes = useMemo(() =>
-    filas.some(f => f.incluir && Object.entries(f.celdas).some(([col, c]) => col < inicioKey && c.monto !== '' && c.monto != null))
-  , [filas, inicioKey])
+    filasVisibles.some(f => f.incluir && Object.entries(f.celdas).some(([col, c]) => col < inicioKey && c.monto !== '' && c.monto != null))
+  , [filasVisibles, inicioKey])
 
   const setMonto = (templateId: string, col: string, valor: string) => {
     const monto = valor.trim() === '' ? '' : (parseFloat(valor.replace(/\./g, '').replace(',', '.')) || 0)
@@ -288,7 +315,11 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const fmtCol = (col: string) => { const [y, m] = col.split('-'); return `${MESES_LARGO[parseInt(m, 10) - 1].slice(0, 3)} ${y.slice(2)}` }
 
   const generar = async () => {
-    const aGenerar = filas.filter(f => f.incluir)
+    // ⚠️ Sobre lo VISIBLE, no sobre todas las filas. Los "previstos" vienen tildados solos
+    // (`aplica_generacion=true`), así que si se generara sobre `filas` se crearían también los de
+    // las empresas que el usuario no está mirando — sin que aparezcan en pantalla. El filtro de
+    // empresa tiene que ser un límite real, no sólo visual.
+    const aGenerar = filasVisibles.filter(f => f.incluir)
     if (aGenerar.length === 0) { toast.error('No hay templates seleccionados'); return }
     // Punto 2: advertir al confirmar si se dejan afuera templates PREVISTOS (aplica=true) deseleccionados
     const desel = previstas.filter(f => !f.incluir)
@@ -473,6 +504,41 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
               <Checkbox checked={marcarEstimados} onCheckedChange={(ch) => setMarcarEstimados(ch === true)} />
               Marcar estimados (…123)
             </label>
+
+            {/* Empresa — se trabaja de a una para no mezclar 168 templates en una sola pantalla */}
+            <div className="w-full">
+              <Label className="text-sm font-medium">Empresa</Label>
+              <div className="mt-2 flex gap-1 flex-wrap">
+                {([
+                  { v: 'MSA', t: 'MSA' },
+                  { v: 'PAM', t: 'PAM' },
+                  { v: 'MA', t: 'MA' },
+                  { v: 'compartidos', t: 'Compartidos' },
+                  { v: 'todas', t: 'Todas' },
+                ] as const).map(op => {
+                  const n = filas.filter(f => {
+                    const emp = parseEmpresas(f.template.responsable)
+                    if (op.v === 'todas') return true
+                    if (op.v === 'compartidos') return emp.length > 1
+                    return emp.length === 1 && emp[0] === op.v
+                  }).length
+                  return (
+                    <button
+                      key={op.v}
+                      onClick={() => setFiltroEmpresa(op.v)}
+                      className={`px-3 py-1.5 rounded text-sm border transition ${
+                        filtroEmpresa === op.v
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                      }`}
+                      title={op.v === 'compartidos' ? 'Templates con más de un responsable (MSA/PAM, PAM/MA/Duhau)' : undefined}
+                    >
+                      {op.t} <span className={filtroEmpresa === op.v ? 'opacity-80' : 'text-gray-400'}>({n})</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
 
           {cargando ? (
@@ -480,29 +546,38 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           ) : (
             <>
               {/* Avance de la campaña — es lo que permite generar por tandas sin miedo a duplicar */}
-              <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                <span className="font-semibold">Campaña {targetLabel || '—'}</span>
+              <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 flex-wrap">
+                <span className="font-semibold">
+                  Campaña {targetLabel || '—'} · {filtroEmpresa === 'todas' ? 'todas las empresas' : filtroEmpresa === 'compartidos' ? 'compartidos' : filtroEmpresa}
+                </span>
                 <span>·</span>
-                <span><strong>{filas.length}</strong> pendiente{filas.length === 1 ? '' : 's'} de generar</span>
-                {yaGenerados.length > 0 && (
+                <span><strong>{filasVisibles.length}</strong> pendiente{filasVisibles.length === 1 ? '' : 's'} de generar</span>
+                {yaGeneradosVisibles.length > 0 && (
                   <>
                     <span>·</span>
-                    <span><strong>{yaGenerados.length}</strong> ya generado{yaGenerados.length === 1 ? '' : 's'}</span>
+                    <span><strong>{yaGeneradosVisibles.length}</strong> ya generado{yaGeneradosVisibles.length === 1 ? '' : 's'}</span>
                   </>
                 )}
+                {/* El total va SIEMPRE que haya filtro: un contador que sólo muestra lo filtrado
+                    hace creer que la campaña está terminada cuando falta el resto de las empresas. */}
+                {filtroEmpresa !== 'todas' && (
+                  <span className="text-blue-700">
+                    (en total, todas las empresas: <strong>{filas.length}</strong> pendiente{filas.length === 1 ? '' : 's'})
+                  </span>
+                )}
                 <span className="ml-auto text-xs text-blue-700">
-                  Podés generar de a tandas: lo hecho no vuelve a aparecer.
+                  Se genera sólo lo de la empresa elegida. Lo hecho no vuelve a aparecer.
                 </span>
               </div>
 
               {/* Los ya generados — se listan para que se vea qué se hizo, pero no se ofrecen otra vez */}
-              {yaGenerados.length > 0 && (
+              {yaGeneradosVisibles.length > 0 && (
                 <details className="rounded border border-gray-200 bg-gray-50">
                   <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700">
-                    Ya generados en {targetLabel} ({yaGenerados.length}) — no se ofrecen de nuevo
+                    Ya generados en {targetLabel} ({yaGeneradosVisibles.length}) — no se ofrecen de nuevo
                   </summary>
                   <ul className="px-4 pb-3 pt-1 text-sm text-gray-600 space-y-0.5">
-                    {yaGenerados.map(t => (
+                    {yaGeneradosVisibles.map(t => (
                       <li key={t.id} className="flex items-center gap-2">
                         <span>{t.nombre}{t.responsable ? ` · ${t.responsable}` : ''}</span>
                         {!t.porVinculo && (
