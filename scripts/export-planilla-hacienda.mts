@@ -89,7 +89,11 @@ async function traerDetalle(desde: string, hasta: string, catNameMap: Record<str
   for (const b of (bajas || []) as any[]) {
     const k = `${b.fecha_baja}|${b.categoria_id}`
     if (!porClave.has(k)) porClave.set(k, [])
-    porClave.get(k)!.push({ caravana: b.caravana_oficial || b.caravana_interna || "sin caravana", motivo: b.motivo_baja })
+    // Ultimos 4 digitos de la oficial: `032 010012326590` -> `6590`
+    porClave.get(k)!.push({
+      caravana: b.caravana_oficial ? b.caravana_oficial.replace(/\s/g, "").slice(-4) : (b.caravana_interna || "sin caravana"),
+      motivo: b.motivo_baja,
+    })
   }
 
   return ((data || []) as any[]).map(m => {
@@ -339,15 +343,36 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
   detalleAoa.push(["DETALLE DE MOVIMIENTOS"])
   detalleAoa.push([`Período: ${periodoLabel}`])
   detalleAoa.push([])
-  // Sin kilos, sin montos y sin contraparte: la planilla es de movimientos de STOCK (A-FEAT-35)
-  detalleAoa.push(["Fecha", "Tipo", "Categoría", "Cantidad", "Observaciones"])
-
-  for (const m of movsDetalle) {
+  // Sin kilos, sin montos y sin contraparte: la planilla es de movimientos de STOCK (A-FEAT-35).
+  // Y segmentado por concepto, en el mismo orden que las filas de la grilla (A-FEAT-37 b):
+  // se pasa de un numero de la pagina 1 a los movimientos que lo forman, y el total de cada
+  // bloque tiene que dar igual que su fila -- si no da, hay movimientos en categorias que la
+  // planilla no tiene como columna y la grilla descarta en silencio (A-BUG-50).
+  const totalFila = (arr: number[]) => arr.reduce((s: number, v: number) => s + v, 0)
+  const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
+    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
+    { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
+    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
+    { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
+    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
+  ]
+  const filaDetalle = (m: any) => {
     const tipoLabel = m.tipo === "cambio_categoria" ? (m.cantidad > 0 ? "Reclas. +" : "Reclas. -") :
-      m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste + (en Compras)" : "Ajuste - (en Mortandad)") :
+      m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste +" : "Ajuste -") :
       m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
-    detalleAoa.push([ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "",
-      m.cantidad, m.observaciones || ""])
+    return [ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "", Math.abs(m.cantidad), m.observaciones || ""]
+  }
+  const cabeceraDet = ["Fecha", "Tipo", "Categoría", "Cantidad", "Observaciones"]
+  for (const c of CONCEPTOS) {
+    const movs = movsDetalle.filter(c.test)
+    if (movs.length === 0) continue
+    const suma = movs.reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
+    const esperado = totalFila(c.grid)
+    detalleAoa.push([])
+    detalleAoa.push([`${c.titulo} — ${suma} cab.${suma !== esperado ? `  (⚠ la grilla dice ${esperado})` : ""}`])
+    detalleAoa.push(cabeceraDet)
+    for (const m of movs) detalleAoa.push(filaDetalle(m))
   }
 
   if (cutData.length > 0 || cut.cabezasGrilla > 0) {
@@ -468,15 +493,32 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
 
   // ── Página 2: detalle de movimientos (sólo si hay) ──
   const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, "-").replace(/[^\x00-\xFF]/g, "")
-  const detalleBody = movsDetalle.map(m => {
-    const tipoLabel = m.tipo === "cambio_categoria" ? (m.cantidad > 0 ? "Reclas. +" : "Reclas. -") :
-      m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste +" : "Ajuste -") :
-      m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
-    return [
-      ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "", String(m.cantidad),
-      sanitizarPDF(m.observaciones || ""),
-    ]
-  })
+  // Mismos bloques que el Excel; los titulos van como fila del cuerpo para que autoTable los pagine
+  const CONCEPTOS_PDF: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
+    { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
+    { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
+    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
+    { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
+    { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
+  ]
+  const detalleBody: string[][] = []
+  const bloquesDet = new Set<number>()
+  for (const c of CONCEPTOS_PDF) {
+    const movs = movsDetalle.filter(c.test)
+    if (movs.length === 0) continue
+    const suma = movs.reduce((s: number, m: any) => s + Math.abs(m.cantidad), 0)
+    const esperado = (c.grid as number[]).reduce((s: number, v: number) => s + v, 0)
+    bloquesDet.add(detalleBody.length)
+    detalleBody.push([`${c.titulo} - ${suma} cab.${suma !== esperado ? `  (la grilla dice ${esperado})` : ""}`, "", "", "", ""])
+    for (const m of movs) {
+      const tipoLabel = m.tipo === "cambio_categoria" ? (m.cantidad > 0 ? "Reclas. +" : "Reclas. -") :
+        m.tipo === "ajuste_stock" ? (m.cantidad > 0 ? "Ajuste +" : "Ajuste -") :
+        m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
+      detalleBody.push([ddmmyyyy(m.fecha), tipoLabel, catNameMap[m.categoria_id] || "",
+        String(Math.abs(m.cantidad)), sanitizarPDF(m.observaciones || "")])
+    }
+  }
 
   if (detalleBody.length > 0) {
     doc.addPage("a4", "landscape")
@@ -498,6 +540,13 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
       styles: { fontSize: 7.5, cellPadding: 2, textColor: [40, 30, 20], lineColor: [180, 160, 130], lineWidth: 0.2 },
       headStyles: { fillColor: fondoHeader, textColor: sepia, fontStyle: "bold", halign: "center", fontSize: 7.5 },
       columnStyles: { 3: { halign: "right", cellWidth: 16 }, 4: { cellWidth: "auto" } },
+      didParseCell: (data: any) => {
+        if (data.section === "body" && bloquesDet.has(data.row.index)) {
+          data.cell.styles.fillColor = fondoResaltado
+          data.cell.styles.fontStyle = "bold"
+          data.cell.styles.halign = "left"
+        }
+      },
     })
   }
 

@@ -1742,7 +1742,6 @@ function TabHacienda() {
       // corresponde; acá las columnas de plata además mezclaban un precio bruto con un monto neto
       // y no multiplicaban (A-FEAT-35, y el 3% sin explicar de A-DAT-06).
       // El campo sigue existiendo y se ve/edita en la grilla de Movimientos: sólo sale del reporte.
-      detalleAoa.push(['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Observaciones'])
 
       const { data: movsDetalle } = await supabase.schema('productivo').from('movimientos_hacienda')
         .select('tipo, cantidad, categoria_id, fecha, proveedor_cliente, observaciones')
@@ -1765,7 +1764,11 @@ function TabHacienda() {
         const clave = `${b.fecha_baja}|${b.categoria_id}`
         if (!bajasPorClave.has(clave)) bajasPorClave.set(clave, [])
         bajasPorClave.get(clave)!.push({
-          caravana: b.caravana_oficial || b.caravana_interna || 'sin caravana',
+          // Los últimos 4 dígitos de la oficial: `032 010012326590` → `6590`. La caravana completa
+          // ocupa media celda y los 4 finales son los que se usan para identificarla.
+          caravana: b.caravana_oficial
+            ? b.caravana_oficial.replace(/\s/g, '').slice(-4)
+            : (b.caravana_interna || 'sin caravana'),
           motivo: b.motivo_baja,
         })
       }
@@ -1788,17 +1791,44 @@ function TabHacienda() {
         return partes.join(' · ')
       }
 
-      for (const m of movsDetalle || []) {
+      // ── El detalle va SEGMENTADO por concepto, en el mismo orden que las filas de la grilla ──
+      // Así se pasa de un número de la página 1 a los movimientos que lo forman. Y de paso trae
+      // un control: el total de cada bloque tiene que dar igual que su fila en la grilla. Si no
+      // da, hay movimientos en categorías que la planilla no tiene como columna y que la grilla
+      // descarta en silencio (A-BUG-50) — acá se ven.
+      const totalFila = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
+      const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
+        { titulo: 'COMPRAS', grid: filas.compras, test: m => m.tipo === 'compra' || (m.tipo === 'ajuste_stock' && m.cantidad > 0) },
+        { titulo: 'NACIMIENTOS', grid: filas.nacimientos, test: m => m.tipo === 'nacimiento' },
+        { titulo: 'RECLASIFICACIONES +', grid: filas.reclasPos, test: m => m.tipo === 'cambio_categoria' && m.cantidad > 0 },
+        { titulo: 'VENTAS', grid: filas.ventas, test: m => m.tipo === 'venta' },
+        { titulo: 'MORTANDAD', grid: filas.mortandad, test: m => m.tipo === 'mortandad' || (m.tipo === 'ajuste_stock' && m.cantidad < 0) },
+        { titulo: 'RECLASIFICACIONES -', grid: filas.reclasNeg, test: m => m.tipo === 'cambio_categoria' && m.cantidad < 0 },
+      ]
+
+      const filaDetalle = (m: any) => {
         const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
-          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste + (en Compras)' : 'Ajuste - (en Mortandad)') :
+          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
           m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
-        detalleAoa.push([
+        return [
           m.fecha ? m.fecha.split('-').reverse().join('/') : '',
           tipoLabel,
           catNameMap[m.categoria_id] || '',
-          m.cantidad,
+          Math.abs(m.cantidad),
           m.tipo === 'mortandad' ? obsDeMortandad(m) : (m.observaciones || ''),
-        ])
+        ]
+      }
+
+      const cabeceraDet = ['Fecha', 'Tipo', 'Categoría', 'Cantidad', 'Observaciones']
+      for (const c of CONCEPTOS) {
+        const movs = (movsDetalle || []).filter(c.test)
+        if (movs.length === 0) continue
+        const suma = movs.reduce((s, m: any) => s + Math.abs(m.cantidad), 0)
+        const esperado = totalFila(c.grid)
+        detalleAoa.push([])
+        detalleAoa.push([`${c.titulo} — ${suma} cab.${suma !== esperado ? `  (⚠ la grilla dice ${esperado})` : ''}`])
+        detalleAoa.push(cabeceraDet)
+        for (const m of movs) detalleAoa.push(filaDetalle(m))
       }
 
       // Hoja 2 parte 2: Detalle CUT/Descarte — conciliación en bloques + cierre
@@ -1949,18 +1979,19 @@ function TabHacienda() {
       // ═══ PÁGINA 2: DETALLE MOVIMIENTOS (solo si hay) ═══
       // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
       const sanitizarPDF = (t: string) => t.replace(/[→←↑↓↔►◄▲▼•]/g, '-').replace(/[^\x00-\xFF]/g, '')
-      const detalleBody = (movsDetalle || []).map(m => {
-        const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
-          m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste +' : 'Ajuste -') :
-          m.tipo.charAt(0).toUpperCase() + m.tipo.slice(1)
-        return [
-          m.fecha ? m.fecha.split('-').reverse().join('/') : '',
-          tipoLabel,
-          catNameMap[m.categoria_id] || '',
-          String(m.cantidad),
-          sanitizarPDF(m.tipo === 'mortandad' ? obsDeMortandad(m) : (m.observaciones || '')),
-        ]
-      })
+      // Mismos bloques que el Excel: los títulos van como fila del cuerpo para que autoTable
+      // los pagine junto con sus movimientos.
+      const detalleBody: string[][] = []
+      const bloquesDet = new Set<number>()
+      for (const c of CONCEPTOS) {
+        const movs = (movsDetalle || []).filter(c.test)
+        if (movs.length === 0) continue
+        const suma = movs.reduce((s, m: any) => s + Math.abs(m.cantidad), 0)
+        const esperado = totalFila(c.grid)
+        bloquesDet.add(detalleBody.length)
+        detalleBody.push([`${c.titulo} - ${suma} cab.${suma !== esperado ? `  (la grilla dice ${esperado})` : ''}`, '', '', '', ''])
+        for (const m of movs) detalleBody.push((filaDetalle(m) as any[]).map((v, i) => i === 4 ? sanitizarPDF(String(v)) : String(v)))
+      }
 
       if (detalleBody.length > 0) {
         doc.addPage('a4', 'landscape')
@@ -1985,6 +2016,13 @@ function TabHacienda() {
           columnStyles: {
             3: { halign: 'right', cellWidth: 16 },
             4: { cellWidth: 'auto' },
+          },
+          didParseCell: (data: any) => {
+            if (data.section === 'body' && bloquesDet.has(data.row.index)) {
+              data.cell.styles.fillColor = fondoResaltado
+              data.cell.styles.fontStyle = 'bold'
+              data.cell.styles.halign = 'left'
+            }
           },
         })
       }

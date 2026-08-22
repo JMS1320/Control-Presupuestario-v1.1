@@ -350,7 +350,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-34** | 🟡 | Feat | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Rediseñar la página CUT/Descarte + su control de cierre — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
 | **A-FEAT-35** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · Sacar kilos y montos del detalle de la Planilla de Hacienda. Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
-| **A-FEAT-37** | 🟡 | Feat | **HECHO 2026-08-22 (el encadenado) — falta el detalle segmentado y testear ([A-TEST-37](#a-test-37))** · La mortandad ahora muestra motivo + observación + caravana encadenados, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
+| **A-FEAT-37** | 🟡 | Feat | **HECHO 2026-08-22 (las dos partes) — falta testear ([A-TEST-37](#a-test-37))** · La mortandad muestra motivo + observación + caravana encadenados, y el detalle va **segmentado por concepto** con el total de cada bloque contrastado contra la grilla, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
@@ -9354,8 +9354,36 @@ mitades juntas son la historia, y el reporte traía la que menos informa.
 
 **Verificado**: la hoja **Planilla quedó intacta** en las 7 mensuales. `type-check:diff`: **113 → 113**.
 
-❓ **Queda a tu criterio**: hoy se muestra la **caravana oficial** (`032 010012326590`). La interna
-(`299`) es más corta y quizá más útil de leer. Se puede cambiar o mostrar las dos.
+✅ **Decidido**: se muestran los **últimos 4 dígitos** de la caravana oficial —
+`032 010012326590` → **`6590`**. La caravana entera ocupaba media celda y los 4 finales son los que
+se usan para identificarla.
+
+### ✅ HECHO 2026-08-22 — el punto (b): el detalle segmentado
+
+**El criterio elegido**: se segmenta **por concepto, en el mismo orden que las filas de la grilla**
+(Compras · Nacimientos · Reclas. + · Ventas · Mortandad · Reclas. −). 🟨 Así se pasa de un número de
+la página 1 a los movimientos que lo forman, que es la pregunta que uno le hace al detalle. Los
+bloques vacíos no se dibujan.
+
+**🎯 Y trae un control gratis**: el total de cada bloque tiene que dar igual que su fila en la
+grilla. Si no da, hay movimientos en **categorías que la planilla no tiene como columna** — que la
+grilla descarta en silencio ([A-BUG-50](#a-bug-50)) y acá quedan a la vista. El aviso va en el
+título del bloque: *"(⚠ la grilla dice N)"*.
+
+**Febrero, como quedó** — y se lee de un tirón:
+
+```
+COMPRAS — 422 cab.              el recuento inicial del 15/02, categoría por categoría
+RECLASIFICACIONES + — 202 cab.  las 8 al CUT + el destete
+MORTANDAD — 1 cab.              la ternera de Onetto, la única baja real del mes
+RECLASIFICACIONES - — 202 cab.
+```
+
+**Verificado**: los 4 bloques de febrero cuadran contra la grilla **sin un solo aviso**, y la hoja
+**Planilla quedó intacta** en las 7 mensuales. `type-check:diff`: **113 → 113**.
+
+📌 Las cantidades se muestran en **valor absoluto** dentro de cada bloque: el signo lo dice el
+bloque, y un `-8` bajo el título *RECLASIFICACIONES −* era redundante.
 
 ---
 
