@@ -747,6 +747,27 @@ No se va a ofrecer en las próximas campañas hasta que lo vuelvas a subir.`)) o
                   {openNoAplican ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                   No aplican ({noAplican.length}) — tildá para incluir alguno
                 </button>
+                {/* El criterio, no la lista: una lista de nombres envejece y hay que mantenerla.
+                    Sin esto, al volver dentro de un año no se recuerda POR QUÉ estos quedaron
+                    afuera y se los sube "por las dudas", generando cuotas estimadas que el motor
+                    después duplica. Decisión ya tomada en PENDIENTES § B-FEAT-RENOVAR-CAMPAÑA. */}
+                {openNoAplican && (
+                  <div className="mb-2 rounded border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                    <p className="font-medium text-gray-700">Qué debería quedar acá</p>
+                    <p className="mt-0.5">
+                      Los templates <strong>que se cargan solos por conciliación</strong> (los{' '}
+                      <code className="text-[11px]">abierto</code>: comisiones y gastos bancarios,
+                      Caja, FCI, créditos…) <strong>no necesitan generar campaña</strong>: su cuota se
+                      crea al conciliar, con el monto real del banco. Y el selector de Pago Manual los
+                      encuentra sin mirar el año, así que <strong>persisten entre campañas solos</strong>.
+                    </p>
+                    <p className="mt-1">
+                      Generarles una campaña sería crear cuotas estimadas que después se duplican con
+                      las reales. Subí uno sólo si tiene <strong>cronograma propio</strong> — importes y
+                      fechas que vos definís por adelantado.
+                    </p>
+                  </div>
+                )}
                 {openNoAplican && (
                   <div className="space-y-1">
                     {noAplican.map(f => (

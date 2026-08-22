@@ -4485,6 +4485,52 @@ sus 10 cuotas). El problema era exclusivamente del botón *replicar*.
 26/27. Es el impuesto anual que se paga tras el cierre — mismo caso que el de *Acciones*. Es criterio
 contable del usuario, no del generador.
 
+### 📖 "No aplican" ahora explica el criterio — 2026-08-22
+
+> *"Tenemos que ver cómo hacer para recordar el funcionamiento, si no yo no recuerdo que no tengo
+> que cargar esos templates."*
+
+La decisión estaba tomada desde julio (§ B-FEAT-RENOVAR-CAMPAÑA: los `abierto` **no necesitan
+renovación**, porque su cuota se crea al conciliar y el selector de Pago Manual los encuentra **sin
+mirar el año** — verificado hoy en `vista-cash-flow.tsx:1611-1616`). El problema no era la decisión:
+era que **no estaba a la vista donde se toma**.
+
+Ahora la sección "No aplican" lleva el **criterio**, no la lista de nombres —una lista envejece y hay
+que mantenerla—: *"los que se cargan solos por conciliación no necesitan campaña; subí uno sólo si
+tiene cronograma propio"*.
+
+**El costo de no tenerlo**: al volver dentro de un año se sube uno "por las dudas" y se generan
+cuotas estimadas que después el motor duplica con las reales.
+
+### 🔗 Templates con contraparte Anual / Cuota — pedido del usuario, sin implementar
+
+> *"Los templates que tienen contraparte anual/cuotas: regenerar una debería regenerar la otra
+> aunque sea sin montos, que exista la estructura para que las funciones continúen."*
+
+**Contexto tomado 2026-08-22 — el mecanismo ya existe y la clave también:**
+
+- Las columnas `pago_anual` / `monto_anual` / `fecha_pago_anual` están **vacías en las 184 filas**.
+  No es por ahí.
+- El mecanismo real son **dos templates por concepto**: `X Anual` y `X Cuota`, vinculados por
+  **`grupo_impuesto_id`** — que no hay que inventar, ya está poblado.
+- **48 grupos**, y en **los 48 hay exactamente uno activo**. Invariante limpia.
+- No es sólo inmobiliario: también **ABL** y **Automotores**.
+- Ejemplo: `Inmobiliario Rojas` → `Inmobiliario Anual Rojas` [inactivo] + `Inmobiliario Cuota Rojas`
+  [ACTIVO]. Y al revés en `Lote Puerto`, donde la modalidad elegida fue la anual.
+
+**Por qué hace falta**: la modalidad —pagar todo junto o en cuotas— **se elige cada año**. Si en la
+campaña nueva sólo se generó la variante vigente, el día que se cambie de modalidad **no existe dónde
+cargarlo**.
+
+**Por qué hoy no pasa**: el generador carga sólo `activo = true`, así que la contraparte inactiva
+**ni siquiera aparece** en la lista.
+
+**A definir antes de implementar** (2 preguntas):
+1. La contraparte generada, ¿nace **inactiva** (espejo del estado actual, que es lo que evita
+   duplicar el gasto en el Cash Flow) o activa?
+2. ¿Nace **sin cuotas** o con la estructura de cuotas en **monto 0**? Sin cuotas es más limpio;
+   en 0 deja el esqueleto listo para completar.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el
