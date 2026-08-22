@@ -299,12 +299,24 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, celdas: {} } : f))
   }
 
-  // Replicar el primer monto cargado a los 12 meses base del target (preserva el día si la celda ya lo tenía)
+  /**
+   * Replica a los 12 meses del target el monto de la **primera columna con valor**, contando de
+   * izquierda a derecha — o sea, el mes más temprano.
+   *
+   * ⚠️ Antes tomaba `Object.values(f.celdas).find(...)`, que es el primer valor en **orden de
+   * inserción**: el orden en que volvieron las cuotas de la base. Ni es el orden que se ve en
+   * pantalla ni es donde el usuario escribió, así que replicaba **el monto precargado del origen**
+   * en vez del tipeado. Se notó en Seguro Flota (ponía `572.123`, que es el 572.972 del origen con
+   * la marca de estimado) y no en Cargas Sociales, donde la celda editada coincidía con la primera
+   * insertada. Un bug que depende del orden de una query es de los que aparecen "a veces".
+   */
   const replicarFila = (templateId: string) => {
     if (!targetY1) return
     setFilas(prev => prev.map(f => {
       if (f.template.id !== templateId) return f
-      const primera = Object.values(f.celdas).find(c => c.monto !== '' && c.monto != null)
+      const claveMasTemprana = Object.keys(f.celdas).sort()
+        .find(k => f.celdas[k]?.monto !== '' && f.celdas[k]?.monto != null)
+      const primera = claveMasTemprana ? f.celdas[claveMasTemprana] : undefined
       if (!primera) return f
       const nuevas = { ...f.celdas }
       for (const { y, m } of mesesBase(periodicidad, targetY1)) {
@@ -449,7 +461,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
                   {conIncluir && (
                     <Checkbox checked={f.incluir} onCheckedChange={(ch) => toggleIncluir(f.template.id, ch === true)} title="Incluir en esta generación" />
                   )}
-                  <button onClick={() => replicarFila(f.template.id)} title="Replicar el primer monto a los 12 meses" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => replicarFila(f.template.id)} title="Replicar a los 12 meses el monto de la PRIMERA columna con valor (la de más a la izquierda)" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
                   <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
                   <button onClick={() => abrirDetalle(f)} title="Detalle de cuotas (permite varias por mes)" className="text-gray-400 hover:text-purple-600"><List className="h-3.5 w-3.5" /></button>
                   {(f.template.observaciones_template || f.template.alertas) && (

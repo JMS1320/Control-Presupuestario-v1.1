@@ -4340,6 +4340,30 @@ Reparto real: **MSA 98 · PAM 70 · MA 6 · compartidos 2**.
 Los **compartidos tienen solapa propia** a propósito: si aparecieran también dentro de MSA y de PAM,
 al recorrer las empresas se generarían dos veces.
 
+### 🐛 Replicar copiaba el monto precargado en vez del tipeado — arreglado 2026-08-22
+
+Lo encontró el usuario al primer uso real: *"si pongo copiar para que toda la fila se cargue me pone
+572.123 en vez de copiarme lo que yo ponga. No me pasó así con Cargas Sociales, que sí respetó lo
+que puse."*
+
+```ts
+// ANTES
+const primera = Object.values(f.celdas).find(c => c.monto !== '' && c.monto != null)
+```
+
+`Object.values` devuelve las celdas en **orden de inserción** — el orden en que volvieron las cuotas
+de la consulta, que **no es** el orden de la pantalla ni el mes más temprano. Así que replicaba la
+celda que la base devolvió primero: el **monto precargado del origen**, no el tipeado.
+
+El número lo confirmó solo: `572.123` es `572.972` (Seguro Flota del 25/26) pasado por
+`marca123()` — o sea, el precargado con la marca de estimado.
+
+Y en Cargas Sociales **no se notó** porque ahí la celda editada coincidía con la primera insertada.
+Un bug que depende del orden de una query es de los que aparecen "a veces" y cuestan de reproducir.
+
+**Fix**: se ordenan las claves (`YYYY-MM`) y se toma la **primera columna con valor de izquierda a
+derecha**. Determinista y coincide con lo que se ve. El tooltip lo dice explícito.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el
