@@ -66,13 +66,42 @@ const ddmmyyyy = (f: string) => f ? f.split("-").reverse().join("/") : "-"
 // Formato argentino, igual que la app (:1381): el cero se muestra como guión
 const fmtNum = (n: number) => n === 0 ? "-" : n.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
-// Los movimientos del período, compartidos por la hoja Detalle y por el PDF
-async function traerDetalle(desde: string, hasta: string) {
+// Categorias que se llevan individuo por individuo (espejo de CATEGORIAS_TERNERO en la app)
+const CATS_NOMINALES = ["ternera al pie", "ternera recria", "ternero al pie", "ternero recria",
+  "torito", "toro", "novillo", "vaquillona de reposicion", "vaquillona engorde"]
+
+// Los movimientos del período, compartidos por la hoja Detalle y por el PDF.
+// La mortandad se enriquece con la caravana y el motivo (A-FEAT-37): la app guarda DOS textos
+// distintos para la misma muerte -- `observaciones` del movimiento (donde y como se detecto) y
+// `motivo_baja` de la caravana (de que murio y cual era) -- y ninguno solo es la historia.
+// No hay FK: se cruzan por fecha + categoria.
+async function traerDetalle(desde: string, hasta: string, catNameMap: Record<string, string>) {
   const { data } = await supabase.schema("productivo").from("movimientos_hacienda")
     .select("tipo, cantidad, categoria_id, fecha, observaciones")
     .gte("fecha", desde).lte("fecha", hasta)
     .order("fecha")
-  return (data || []) as any[]
+
+  const { data: bajas } = await supabase.schema("productivo").from("terneros")
+    .select("caravana_oficial, caravana_interna, categoria_id, fecha_baja, motivo_baja")
+    .gte("fecha_baja", desde).lte("fecha_baja", hasta)
+
+  const porClave = new Map<string, { caravana: string; motivo: string | null }[]>()
+  for (const b of (bajas || []) as any[]) {
+    const k = `${b.fecha_baja}|${b.categoria_id}`
+    if (!porClave.has(k)) porClave.set(k, [])
+    porClave.get(k)!.push({ caravana: b.caravana_oficial || b.caravana_interna || "sin caravana", motivo: b.motivo_baja })
+  }
+
+  return ((data || []) as any[]).map(m => {
+    if (m.tipo !== "mortandad") return m
+    const partes = [m.observaciones].filter(Boolean)
+    const bs = porClave.get(`${m.fecha}|${m.categoria_id}`) || []
+    if (bs.length > 0 && bs.length <= 4) partes.push(bs.map(b => b.motivo ? `${b.caravana} — ${b.motivo}` : b.caravana).join(" · "))
+    else if (bs.length > 4) partes.push(`${bs.length} caravanas`)
+    const nominal = CATS_NOMINALES.includes((catNameMap[m.categoria_id] || "").toLowerCase())
+    if (bs.length < Math.abs(m.cantidad) && nominal) partes.push(`⚠ ${Math.abs(m.cantidad) - bs.length} sin caravana asignada`)
+    return { ...m, observaciones: partes.join(" · ") }
+  })
 }
 
 // ── Espejo de calcularDatosPlanilla(desde, hasta) ───────────────────────────
@@ -580,7 +609,7 @@ async function main() {
   // Escribe el par Excel + PDF de un período y devuelve la línea de resumen
   const emitir = async (desde: string, hasta: string, periodoLabel: string, base: string) => {
     const datos = await calcularDatosPlanilla(desde, hasta)
-    const movsDetalle = await traerDetalle(desde, hasta)
+    const movsDetalle = await traerDetalle(desde, hasta, datos.catNameMap)
 
     XLSX.writeFile(await construirLibro(datos, periodoLabel, movsDetalle), join(destino, `${base}.xlsx`))
 

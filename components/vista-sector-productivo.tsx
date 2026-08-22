@@ -1749,6 +1749,45 @@ function TabHacienda() {
         .gte('fecha', desde).lte('fecha', hasta)
         .order('fecha')
 
+      // ── La mortandad: motivo + observación + caravana, encadenados (A-FEAT-37) ──
+      // La app guarda DOS textos distintos para la misma muerte y el reporte mostraba uno solo:
+      // `movimientos_hacienda.observaciones` cuenta dónde y cómo se detectó, y
+      // `terneros.motivo_baja` de qué murió y cuál era. Ninguno por separado es la historia.
+      // Ej. del 02/07: el movimiento dice "sin causa comprobable" y la caravana 184 "Muerte Súbita".
+      //
+      // No hay FK entre las dos tablas, así que se cruzan por **fecha + categoría**.
+      const { data: bajasPeriodo } = await supabase.schema('productivo').from('terneros')
+        .select('caravana_oficial, caravana_interna, categoria_id, fecha_baja, motivo_baja')
+        .gte('fecha_baja', desde).lte('fecha_baja', hasta)
+
+      const bajasPorClave = new Map<string, { caravana: string; motivo: string | null }[]>()
+      for (const b of (bajasPeriodo || []) as any[]) {
+        const clave = `${b.fecha_baja}|${b.categoria_id}`
+        if (!bajasPorClave.has(clave)) bajasPorClave.set(clave, [])
+        bajasPorClave.get(clave)!.push({
+          caravana: b.caravana_oficial || b.caravana_interna || 'sin caravana',
+          motivo: b.motivo_baja,
+        })
+      }
+
+      const obsDeMortandad = (m: any): string => {
+        const partes = [m.observaciones].filter(Boolean)
+        const bajas = bajasPorClave.get(`${m.fecha}|${m.categoria_id}`) || []
+        // Con muchas cabezas el detalle nominal no entra ni aporta: se resume.
+        if (bajas.length > 0 && bajas.length <= 4) {
+          partes.push(bajas.map(b => b.motivo ? `${b.caravana} — ${b.motivo}` : b.caravana).join(' · '))
+        } else if (bajas.length > 4) {
+          partes.push(`${bajas.length} caravanas`)
+        }
+        // Aviso sólo para las categorías que se llevan individuo por individuo: en las de adulto
+        // no hay registro nominal y la caravana va como texto libre — no es un dato faltante.
+        if (bajas.length < Math.abs(m.cantidad) && esCatTernero(m.categoria_id)) {
+          const faltan = Math.abs(m.cantidad) - bajas.length
+          partes.push(`⚠ ${faltan} sin caravana asignada`)
+        }
+        return partes.join(' · ')
+      }
+
       for (const m of movsDetalle || []) {
         const tipoLabel = m.tipo === 'cambio_categoria' ? (m.cantidad > 0 ? 'Reclas. +' : 'Reclas. -') :
           m.tipo === 'ajuste_stock' ? (m.cantidad > 0 ? 'Ajuste + (en Compras)' : 'Ajuste - (en Mortandad)') :
@@ -1758,7 +1797,7 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           m.cantidad,
-          m.observaciones || '',
+          m.tipo === 'mortandad' ? obsDeMortandad(m) : (m.observaciones || ''),
         ])
       }
 
@@ -1919,7 +1958,7 @@ function TabHacienda() {
           tipoLabel,
           catNameMap[m.categoria_id] || '',
           String(m.cantidad),
-          sanitizarPDF(m.observaciones || ''),
+          sanitizarPDF(m.tipo === 'mortandad' ? obsDeMortandad(m) : (m.observaciones || '')),
         ]
       })
 

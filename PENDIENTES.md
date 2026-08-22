@@ -350,7 +350,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-34** | 🟡 | Feat | **HECHO 2026-08-20 — falta testear ([A-TEST-37](#a-test-37))** · Rediseñar la página CUT/Descarte + su control de cierre — dos bloques (*venían de antes* / *entraron en el período*), columna **Estado al cierre** (`Sigue` · `Vendida DD/MM` · `Muerta DD/MM`) y línea de cierre que **tiene que coincidir con la Existencia Final de la grilla**. Ese descuadre **es** el control: cabezas (bulk) contra individuos (nominal). Hoy la lista no se limpia nunca — en agosto sigue mostrando 4 vendidas 5 meses antes | → [A-FEAT-34](#a-feat-34) `@productivo` |
 | **A-FEAT-35** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · Sacar kilos y montos del detalle de la Planilla de Hacienda. Decisión del usuario (2026-08-20): *"en esta planilla no debe figurar montos de venta ni kilos de venta, sólo movimientos de stock"*. Además hoy las 3 columnas de plata **no multiplican** y nada lo explica (ver [A-DAT-06](#a-dat-06)) | → [A-FEAT-35](#a-feat-35) `@productivo` |
 | **A-FEAT-36** | 🟡 | Feat | **Fila propia para los Ajustes y para la Existencia Inicial.** Hoy `ajuste +` se rotula *Compras* y `ajuste −` *Mortandad*, y las dos mienten: el **recuento inicial de 430 cabezas** figura como compra, y la ternera perdida en Onetto (*"no se señaló y no la reconocieron como nuestra"*) como muerte | → [A-FEAT-36](#a-feat-36) `@productivo` |
-| **A-FEAT-37** | 🟡 | Feat | **La mortandad tiene que mostrar motivo + observación + caravana encadenados**, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
+| **A-FEAT-37** | 🟡 | Feat | **HECHO 2026-08-22 (el encadenado) — falta el detalle segmentado y testear ([A-TEST-37](#a-test-37))** · La mortandad ahora muestra motivo + observación + caravana encadenados, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
 | **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
@@ -9326,6 +9326,36 @@ porque eso se concatena"*.
 
 **b · Segmentar el detalle de movimientos**, que hoy lista todo corrido. Por motivo o similar —
 **a definir con el usuario**.
+
+### ✅ HECHO 2026-08-22 — el punto (a). El (b) sigue abierto
+
+⚠️ **Lo detectó el usuario**: este ítem quedó registrado el 20/08 al auditar abril y **no se había
+implementado** — se hicieron los otros y éste no. Las dos mortandades de abril seguían saliendo con
+la observación vacía.
+
+**Cómo quedó** (las 4 mortandades del período, ya con el encadenado):
+
+| Fecha | Antes | Ahora |
+|---|---|---|
+| 15/04 | *(vacío)* | `032 010012326590 — Ternero aguachado debajo de 100 Kg, el más chiquito medio rengo` |
+| 25/04 | *(vacío)* | `032 010012326443 — Empaste (inspección Gregorio)` |
+| 26/06 | *"Se la detectó… Piquete Tapera Alfalfa"* | `…Piquete Tapera Alfalfa · 032 010012326587 — Empaste` |
+| 02/07 | *"…sin causa comprobable"* | `…sin causa comprobable · 032 010012326425 — Muerte Súbita` |
+
+El de julio muestra por qué importaba: *"sin causa comprobable"* + *"Muerte Súbita"* — las dos
+mitades juntas son la historia, y el reporte traía la que menos informa.
+
+**Detalles de implementación:**
+- Cruce por **fecha + categoría** (no hay FK entre `movimientos_hacienda` y `terneros`).
+- Con **más de 4 caravanas** se resume (*"N caravanas"*): el detalle nominal no entra ni aporta.
+- **El aviso `⚠ N sin caravana asignada` sale sólo en las categorías que se llevan individuo por
+  individuo.** En las de adulto no hay registro nominal y la caravana va como texto libre — las 2
+  mortandades de agosto (`C607`, `B708`) quedan como estaban, sin falsa alarma.
+
+**Verificado**: la hoja **Planilla quedó intacta** en las 7 mensuales. `type-check:diff`: **113 → 113**.
+
+❓ **Queda a tu criterio**: hoy se muestra la **caravana oficial** (`032 010012326590`). La interna
+(`299`) es más corta y quizá más útil de leer. Se puede cambiar o mostrar las dos.
 
 ---
 
