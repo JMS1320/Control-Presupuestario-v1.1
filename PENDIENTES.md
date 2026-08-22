@@ -4525,11 +4525,36 @@ cargarlo**.
 **Por qué hoy no pasa**: el generador carga sólo `activo = true`, así que la contraparte inactiva
 **ni siquiera aparece** en la lista.
 
-**A definir antes de implementar** (2 preguntas):
-1. La contraparte generada, ¿nace **inactiva** (espejo del estado actual, que es lo que evita
-   duplicar el gasto en el Cash Flow) o activa?
-2. ¿Nace **sin cuotas** o con la estructura de cuotas en **monto 0**? Sin cuotas es más limpio;
-   en 0 deja el esqueleto listo para completar.
+**✅ HECHO 2026-08-22**, con las 2 definiciones del usuario: la contraparte nace **inactiva** y **con
+la estructura de cuotas en monto 0** (su propio cronograma, no el de la otra modalidad). Se lleva
+también sus reglas contable/interno, y no se duplica si el grupo ya tiene su contraparte en la
+campaña destino.
+
+Para que esto fuera posible, `cargar()` pasó a traer **activos e inactivos** — antes filtraba
+`activo = true` y por eso la contraparte **ni siquiera existía** en memoria. Los inactivos no se
+ofrecen para generar: sólo se usan como contraparte.
+
+### 🔍 Control: ¿la generación toma TODOS los datos?
+
+> *"Hay que asegurarse que la generación de campañas tome todos los datos. Este tipo de cosas puede
+> llegar a saltarse, como contable e interno. En este caso el id por ejemplo."*
+
+Se midió comparando **cada clon contra su origen, columna por columna** (`jsonb_object_keys`), en vez
+de revisar a ojo:
+
+**Del template: de 41 columnas, difieren exactamente las 5 que DEBEN diferir** — `id`, `created_at`,
+`updated_at`, `año` y `template_origen_id`. `grupo_impuesto_id` incluido, así que **el par
+Anual/Cuota sobrevive** a la campaña nueva. El clon usa spread de todo menos 3 campos, por eso no se
+escapa nada.
+
+🐛 **Pero las cuotas NO se copian: se construyen campo por campo**, y ahí sí había un hueco. El
+generador **no seteaba `medio_pago` ni `tipo_movimiento`**: se apoyaba en el default de la columna
+(`banco` / `egreso`). Salió bien de casualidad —los 8 templates generados son de banco y egreso—
+pero **un template de caja habría generado cuotas como si fueran de banco**, y el Cash Flow también
+asume `banco` cuando falta, así que **nadie lo habría notado**. Ahora se heredan de las cuotas del
+origen.
+
+Es exactamente el tipo de cosa que el usuario anticipó: no falla, sale mal en silencio.
 
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,

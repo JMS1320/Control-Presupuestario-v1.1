@@ -34,6 +34,8 @@ interface Fila {
   detalle?: ItemCuota[]           // override manual (fase 2): si existe, GANA sobre celdas (permite varias/mes)
   esVencimiento: boolean          // las fechas de esta fila son de vencimiento (sino, estimadas)
   celdasIniciales: Record<string, Celda>   // copia del pre-cargado, para "regenerar" esta fila sola
+  medioPago: string                        // heredados de las cuotas del origen, no del default de la columna
+  tipoMovimiento: string
 }
 
 // año1 del período: "26/27" -> 2026 ; "2027" -> 2027
@@ -89,6 +91,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
    * responsable (`MSA/PAM`, `PAM/MA/Duhau`) — no son de nadie en particular y conviene verlos juntos.
    */
   const [filtroEmpresa, setFiltroEmpresa] = useState<'MSA' | 'PAM' | 'MA' | 'compartidos' | 'todas'>('MSA')
+  /** Todos los templates de la periodicidad (activos e inactivos) + sus cuotas — para contrapartes. */
+  const [universo, setUniverso] = useState<{ templates: any[]; cuotasPorTemplate: Record<string, any[]> }>({ templates: [], cuotasPorTemplate: {} })
 
   // Default del target según hoy
   useEffect(() => {
@@ -106,19 +110,27 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const cargar = async () => {
     if (!targetY1) { toast.error('Target inválido'); return }
     setCargando(true)
-    const { data: temps } = await supabase
+    // Se cargan ACTIVOS E INACTIVOS. Los inactivos no se ofrecen para generar, pero hacen falta
+    // para las **contrapartes Anual/Cuota**: un impuesto tiene dos templates —pagar todo junto o
+    // en cuotas— vinculados por `grupo_impuesto_id`, y **sólo uno está activo** (48 grupos, los 48
+    // con exactamente uno). La modalidad se elige cada año, así que la campaña nueva necesita las
+    // dos estructuras aunque una nazca vacía. Ver A-FEAT-42.
+    const { data: todosTemps } = await supabase
       .from('egresos_sin_factura')
       .select('*')
       .eq('periodicidad', periodicidad)
-      .eq('activo', true)
       .order('nombre_referencia')
-    const ids = (temps ?? []).map((t: any) => t.id)
+    const temps = (todosTemps ?? []).filter((t: any) => t.activo)
+    const ids = (todosTemps ?? []).map((t: any) => t.id)
     const { data: cuotas } = ids.length
       ? await supabase.from('cuotas_egresos_sin_factura').select('*').in('egreso_id', ids)
       : { data: [] as any[] }
 
     const porTemplate: Record<string, any[]> = {}
     for (const c of (cuotas ?? [])) (porTemplate[c.egreso_id] ??= []).push(c)
+
+    // Universo completo (activos + inactivos) y sus cuotas: lo usa la generación de contrapartes.
+    setUniverso({ templates: (todosTemps ?? []), cuotasPorTemplate: porTemplate })
 
     // ── Generar por TANDAS ────────────────────────────────────────────────────────────────────
     // Pedido del usuario: poder hacer 10 de 50 hoy y que mañana muestre los 40 que faltan.
@@ -187,6 +199,11 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         celdasIniciales: JSON.parse(JSON.stringify(celdas)),
         raw,
         esVencimiento: t.tipo_fecha === 'Vencimiento',
+        // Se toman de las cuotas del ORIGEN en vez de dejar que la columna aplique su default.
+        // El default es `banco` / `egreso`: un template de caja o una cuota de ingreso saldrían
+        // mal y **nadie lo notaría**, porque el Cash Flow también asume `banco` cuando falta.
+        medioPago: (porTemplate[t.id] ?? []).find((c: any) => c.medio_pago)?.medio_pago ?? 'banco',
+        tipoMovimiento: (porTemplate[t.id] ?? []).find((c: any) => c.tipo_movimiento)?.tipo_movimiento ?? 'egreso',
       }
     })
     setFilas(nuevasFilas)
@@ -398,7 +415,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       if (!ok) return
     }
     setGenerando(true)
-    let okTemplates = 0, okCuotas = 0, okReglas = 0
+    let okTemplates = 0, okCuotas = 0, okReglas = 0, okContrapartes = 0
     try {
       for (const f of aGenerar) {
         const t = f.template
@@ -482,6 +499,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             cuenta_contable: t.codigo_contable ?? null,
             centro_costo: t.centro_costo ?? null,
             categ: t.categ ?? null,
+            medio_pago: f.medioPago,
+            tipo_movimiento: f.tipoMovimiento,
           })
         }
         if (cuotasInsert.length) {
@@ -489,8 +508,86 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           if (eC) console.error('Error cuotas', t.nombre_referencia, eC)
           else okCuotas += cuotasInsert.length
         }
+
+        // 3. CONTRAPARTE Anual/Cuota.
+        //
+        // Un impuesto tiene dos templates —pagarlo todo junto o en cuotas— unidos por
+        // `grupo_impuesto_id`, y sólo uno activo. **La modalidad se elige cada año**, así que si la
+        // campaña nueva se genera con una sola, el día que se cambie de modalidad **no hay dónde
+        // cargarlo**. Se crea la otra con su propio cronograma pero en **monto 0**, e **inactiva**:
+        // así existe la estructura sin duplicar el gasto en el Cash Flow (decisión del usuario).
+        const grupo = t.grupo_impuesto_id
+        if (grupo) {
+          const contraparte = universo.templates.find(x =>
+            x.grupo_impuesto_id === grupo && x.id !== t.id && (x.año ?? '') === (t.año ?? '')
+          )
+          // Si el grupo ya tiene su contraparte en la campaña destino, no se duplica.
+          const yaExiste = contraparte && universo.templates.some(x =>
+            x.grupo_impuesto_id === grupo && (x.año ?? '') === targetLabel && x.template_origen_id === contraparte.id
+          )
+          if (contraparte && !yaExiste) {
+            const { id: _idC, created_at: _cC, updated_at: _uC, ...restoC } = contraparte
+            const { data: nuevaC, error: eC2 } = await supabase
+              .from('egresos_sin_factura')
+              .insert({ ...restoC, año: targetLabel, activo: false, template_origen_id: contraparte.id })
+              .select().single()
+            if (eC2 || !nuevaC) {
+              console.error('Error creando contraparte de', t.nombre_referencia, eC2)
+            } else {
+              okContrapartes++
+              // Sus cuotas: las propias corridas al target, con monto 0. La estructura queda lista
+              // (fechas y cantidad de cuotas de ESA modalidad) para completar sólo los importes.
+              const cuotasC = (universo.cuotasPorTemplate[contraparte.id] ?? [])
+                .filter((c: any) => c.fecha_estimada)
+                .sort((a: any, b: any) => String(a.fecha_estimada).localeCompare(String(b.fecha_estimada)))
+              const y1C = year1De(contraparte.año)
+              const shiftC = (y1C != null && targetY1 != null) ? (targetY1 - y1C) : 0
+              const insertC = cuotasC.map((c: any, i: number) => {
+                const [yy, mm, dd] = String(c.fecha_estimada).slice(0, 10).split('-')
+                const fecha = `${parseInt(yy, 10) + shiftC}-${mm}-${dd}`
+                const mesNumC = parseInt(mm, 10)
+                const nombreC = String(contraparte.nombre_referencia ?? '').trim()
+                const respC = String(contraparte.responsable ?? '').trim()
+                const yaTieneC = respC !== '' && nombreC.toUpperCase().includes(respC.toUpperCase())
+                return {
+                  egreso_id: nuevaC.id,
+                  numero_cuota: i + 1,
+                  mes: mesNumC,
+                  fecha_estimada: fecha,
+                  fecha_vencimiento: c.fecha_vencimiento ? fecha : null,
+                  monto: 0,
+                  estado: 'pendiente',
+                  descripcion: `${yaTieneC || respC === '' ? nombreC : `${nombreC} ${respC}`} - ${MESES_LARGO[mesNumC - 1]} ${parseInt(yy, 10) + shiftC}`.replace(/\s+/g, ' ').trim(),
+                  cuenta_contable: contraparte.codigo_contable ?? null,
+                  centro_costo: contraparte.centro_costo ?? null,
+                  categ: contraparte.categ ?? null,
+                  medio_pago: c.medio_pago ?? 'banco',
+                  tipo_movimiento: c.tipo_movimiento ?? 'egreso',
+                }
+              })
+              if (insertC.length) {
+                const { error: eCC } = await supabase.from('cuotas_egresos_sin_factura').insert(insertC)
+                if (eCC) console.error('Error cuotas de la contraparte', contraparte.nombre_referencia, eCC)
+              }
+              // La contraparte también se lleva sus reglas contable/interno.
+              const { data: reglasC } = await supabase
+                .from('reglas_contable_interno')
+                .select('cuenta_bancaria_id, tipo_regla, template_id, responsable, codigo_contable, codigo_interno, descripcion, empleado_id, orden, activo')
+                .eq('tipo_regla', 'especifica')
+                .eq('template_id', contraparte.id)
+              if (reglasC && reglasC.length > 0) {
+                await supabase.from('reglas_contable_interno')
+                  .insert(reglasC.map(r => ({ ...r, template_id: nuevaC.id })))
+              }
+            }
+          }
+        }
       }
-      toast.success(`Renovación ${targetLabel}: ${okTemplates} templates, ${okCuotas} cuotas${okReglas ? `, ${okReglas} reglas contable/interno copiadas` : ''}`)
+      toast.success(
+        `Renovación ${targetLabel}: ${okTemplates} templates, ${okCuotas} cuotas` +
+        (okReglas ? `, ${okReglas} reglas contable/interno` : '') +
+        (okContrapartes ? `, ${okContrapartes} contraparte(s) Anual/Cuota creadas vacías` : '')
+      )
       // Se RECARGA en vez de cerrar: es lo que hace usable la generación por tandas. Los que
       // acaban de generarse pasan al bloque "Ya generados" y quedan a la vista los que faltan,
       // sin tener que volver a abrir el modal ni recordar por dónde se iba.
