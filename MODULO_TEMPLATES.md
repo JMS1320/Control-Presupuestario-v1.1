@@ -241,3 +241,47 @@ Así el presupuesto queda **visible en Cash Flow para planificar** pero **fuera 
 **Cuotas presupuesto NO usadas** (la extracción real fue otro monto y se creó cuota nueva; la presupuesto nunca se concilió): **se BORRAN** (decisión del usuario, no desactivar). 2026-05-25: borradas las cuotas Caja del 25/02 y 25/04 ($900k c/u).
 
 > Pendiente (a futuro, lo maneja el usuario): crear los presupuestos mensuales directamente en `programado`; automatizar que al conciliar la extracción real del mes se marque el presupuesto como consumido.
+
+---
+
+## 13. Para qué se carga una cuota estimada — **el vencimiento, no el monto** (2026-08-22)
+
+*Intención de diseño enunciada por el usuario. Es la que decide hasta dónde conviene generar campañas.*
+
+> **La cuota estimada se carga para no olvidarse de que hay que pagarlo.** Palabras del usuario:
+> *"si se cargan estimados para ver el vencimiento aun cuando no se sepa el monto — sino se puede
+> olvidar que hay que pagarlo. Entonces veo que a esta fecha estimada suelo tener que pagar este
+> impuesto de este monto estimado."*
+
+El valor de la cuota `…123` **no está en el número**: está en que el Cash Flow muestre la fecha.
+El monto es una referencia de orden de magnitud; el vencimiento es el dato que evita el olvido.
+
+**De ahí sale el horizonte, y por qué son dos horizontes distintos:**
+
+| Horizonte | Quién lo cubre | Por qué |
+|---|---|---|
+| **Campaña en curso** (~1 año) | **cuotas generadas** | el Cash Flow **sólo muestra lo que tiene template**. Sin cuota no hay fila, y un impuesto sin fila es un impuesto que se pasa |
+| **Más allá de ~6 meses** | **el Presupuesto, solo** | ahí no hay nada que olvidarse de pagar: es planeamiento. `lib/presupuesto/templates.ts` proyecta sin escribir del otro lado |
+
+**Corolario — no generar campañas futuras "para alimentar el presupuesto".** El presupuesto
+**no las necesita**: proyecta solo los meses sin cuota. Y generarlas tiene un costo real, porque
+la jerarquía de `lib/presupuesto/templates.ts` dice **cuota cargada → manda siempre**: una cuota
+`…123` de un año lejano **pisa la proyección** con un estimado peor, y además el resto del sistema
+(Cash Flow, Pagos, conciliación) la lee como **compromiso firme** — el `…123` sólo lo entiende el
+Presupuesto. Decisión 2026-08-22: **se genera la campaña en curso; 2027 cuando llegue.**
+
+### `aplica_generacion` — sembrado completo (2026-08-22)
+
+Los anuales estaban en `NULL` a propósito (*"a decidir en el generador, caso por caso"*, ver
+`PENDIENTES.md` § B-FEAT-RENOVAR-CAMPAÑA), lo que los mostraba **todos** en "No aplican".
+Sembrados los 154 pendientes con el criterio que es **la definición misma del campo**:
+
+- **`tipo_template = 'abierto'` → `false`** (53): las cuotas se generan **en vivo contra la
+  conciliación** — Gastos/Impuestos Bancarios, Tarjetas, Créditos, Retiros. Se llenan solos: generar
+  campaña no aporta nada.
+- **`tipo_template = 'fijo'` → `true`** (101): tienen **boleta con vencimiento** — Impuestos
+  Automotores, Urbanos, Rurales, Buenos Aires. Son exactamente los del punto de arriba: hay que
+  verlos venir.
+
+Los 6 ya decididos no se tocaron. Quedan **0 en `NULL`**. Es un punto de partida, no una sentencia:
+el usuario corrige desde el generador con el opt-in ↑ y el opt-out ↓, y la corrección persiste.

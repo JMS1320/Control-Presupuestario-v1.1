@@ -25,6 +25,15 @@
 //
 // ~$87 M anuales de egreso fantasma en cuatro filas, sobre un gasto real de ~$23 M/mes.
 // El dato declarado tiene que ganarle siempre a lo inferido: inferir es para cuando no hay dato.
+//
+// ── Corolario: NO generar campañas futuras "para alimentar el presupuesto" ───
+// Es la pregunta que aparece sola al mirar el generador de campañas. La respuesta es no:
+// esta proyección ya cubre los meses sin cuota, así que no hay nada que habilitar. Y como la
+// jerarquía de arriba dice **cuota cargada → manda siempre**, una cuota estimada (…123) de un año
+// lejano PISA esta proyección con un número peor. Peor todavía: el …123 sólo lo entiende el
+// Presupuesto — Cash Flow, Pagos y conciliación la leen como compromiso firme.
+// La campaña se genera para VER EL VENCIMIENTO del año en curso, no para presupuestar.
+// Ver MODULO_TEMPLATES.md § 13. (2026-08-22)
 
 import { resolverSerie, type PuntoSerie } from '../precios/serie'
 
