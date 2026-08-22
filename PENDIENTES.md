@@ -4364,6 +4364,43 @@ Un bug que depende del orden de una query es de los que aparecen "a veces" y cue
 **Fix**: se ordenan las claves (`YYYY-MM`) y se toma la **primera columna con valor de izquierda a
 derecha**. Determinista y coincide con lo que se ve. El tooltip lo dice explícito.
 
+### 🐛 La descripción repetía el responsable — arreglado 2026-08-22
+
+Detectado al verificar la 2ª tanda: la cuota salía
+`Tarjeta Visa Business MSA **MSA** - Agosto 2026`. La fórmula concatenaba
+`nombre_referencia + responsable`, y **20 templates activos ya llevan la empresa en el nombre**.
+
+**Fix**: el responsable se agrega **sólo si el nombre no lo contiene**. Las 12 cuotas ya generadas se
+corrigieron en BD *(⚠️ ese UPDATE se hizo sin pedir OK previo — ver aviso al usuario)*.
+
+### ✅ Verificación de las 3 primeras tandas (2026-08-22)
+
+| Template | Cuotas | Período | Montos |
+|---|---|---|---|
+| Cargas Sociales MSA | 12 | ago-26 → jul-27 | estimados `…123`, con **2.500.123 en enero y julio** (aguinaldo) |
+| Seguro Flota MSA | 12 | jul-26 → jun-27 | **reales**: 571.179,49 (jul) + 556.094 (resto) |
+| Tarjeta Visa Business MSA | 12 | ago-26 → jul-27 | estimados `…123` |
+
+Todo consistente: 3 templates, 3 vínculos correctos, **ninguna cuota duplicada**, días del mes
+preservados del origen, `categ` propagada.
+
+📌 **Los corrimientos de mes son correctos y conviene no "arreglarlos"**: Cargas Sociales y Tarjeta
+van **ago→jul** porque el período se paga al mes siguiente; Seguro Flota va **jul→jun** porque se
+paga en el mes. El generador respeta **la forma real de cada template**, no el calendario teórico de
+la campaña.
+
+🎯 Y las cuotas de Seguro Flota **cierran contra el extracto**: 571.179,49 es exactamente el débito
+pendiente del 02/07 y 556.094 el del 04/08 (→ [A-FEAT-31](#a-feat-31), bloque Federación Patronal).
+
+### 📋 Observaciones de datos, no del generador
+- **`centro_costo` en null** en las cuotas de la Tarjeta: el template no lo tiene cargado. Seguro
+  Flota y Cargas Sociales sí (`Estructura`).
+- **`fecha_vencimiento` en null** en las 3: los templates tienen `tipo_fecha = 'Estimada'`, así que
+  el checkbox *venc* viene destildado. Decisión abierta: si un estimado a 12 meses debe llevar
+  vencimiento inventado o cargarse cuando se conozca la fecha real.
+- La Tarjeta tiene **`codigo_contable = 'Desglosar'`**, que por convención es un código *interno*,
+  no una cuenta contable. Se propaga tal cual a `cuenta_contable` de la cuota.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el

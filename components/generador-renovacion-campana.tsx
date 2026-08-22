@@ -399,7 +399,16 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             monto: it.monto,
             estado: 'pendiente',
             // Fórmula de descripción reproducida con el período nuevo (etiqueta del extracto al conciliar)
-            descripcion: `${t.nombre_referencia} ${t.responsable ?? ''} - ${MESES_LARGO[mesNum - 1]} ${anioNum}`.replace(/\s+/g, ' ').trim(),
+            // El responsable NO se agrega si el nombre ya lo tiene: "Tarjeta Visa Business MSA"
+            // salía como "Tarjeta Visa Business MSA **MSA** - Agosto 2026". Pasa en 20 de los
+            // templates activos, que llevan la empresa en el propio nombre.
+            descripcion: (() => {
+              const nombre = String(t.nombre_referencia ?? '').trim()
+              const resp = String(t.responsable ?? '').trim()
+              const yaLoTiene = resp !== '' && nombre.toUpperCase().includes(resp.toUpperCase())
+              const encabezado = yaLoTiene || resp === '' ? nombre : `${nombre} ${resp}`
+              return `${encabezado} - ${MESES_LARGO[mesNum - 1]} ${anioNum}`.replace(/\s+/g, ' ').trim()
+            })(),
             cuenta_contable: t.codigo_contable ?? null,
             centro_costo: t.centro_costo ?? null,
             categ: t.categ ?? null,
