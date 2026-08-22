@@ -4440,6 +4440,51 @@ toast informa cuántas copió.
 Visa Business) se crearon **antes** de este cambio, así que **no tienen su regla copiada**. Hay que
 cargárselas o regenerarlas. Es dato → con OK del usuario.
 
+### 🛠️ Tres mejoras del editor — 2026-08-22, pedidas usándolo
+
+Contexto que importa: **el usuario edita la matriz**, no genera con los valores por default. Las tres
+salieron de ahí.
+
+**1 · Replicar ahora va SÓLO HACIA ADELANTE.** Iteraba `mesesBase()` — los 12 meses fijos de la
+campaña (jul→jun) — ignorando el rango real del template. Dos síntomas juntos: **pisaba meses
+anteriores** al inicio del template y **cortaba en julio** aunque el template siguiera. Caso testigo:
+`Anticipo Ganancias MSA` va de **diciembre a septiembre** — le escribía jul-nov (que no le tocan) y
+le faltaba jul-sep del año siguiente.
+Ahora replica sobre las **columnas visibles desde la celda de origen en adelante**. Como `columnas`
+ya incluye los meses extra de cada template, cubre el rango real sin invadir lo de atrás.
+
+**2 · Bajar un template a "No aplican"** (botón ↓). Existía `optIn` para subir, pero no la inversa:
+una vez que subías uno para probar, no había forma de bajarlo.
+⚠️ Va como **botón con ícono y confirmación**, no como checkbox, a propósito: en esa fila el tilde de
+*incluir* significa **"esta vez no"** (temporal) y `aplica_generacion` significa **"nunca más"**
+(persiste en la BD). Dos checkboxes casi idénticos con consecuencias tan distintas se confunden.
+
+**3 · Regenerar una fila sola** (botón ↺). Devuelve esa fila a los valores con los que se cargó y
+descarta también el `detalle` manual. Antes sólo existía **Recargar**, que rehace todo y **se lleva
+puesto lo editado en las demás filas** — inservible cuando ya cargaste 20 a mano.
+
+### 📊 Verificación de la 4ª tanda (2026-08-22) — 8 templates
+
+| Template | Cuotas | Rango | Reglas |
+|---|---:|---|---|
+| Cargas Sociales | 12 | ago-26 → jul-27 | 0 |
+| Seguro Flota | 12 | jul-26 → jun-27 | ✅ 1 |
+| Tarjeta Visa Business | 12 | ago-26 → jul-27 | ✅ 1 |
+| Anticipo Ganancias MSA | **10** | **dic-26 → sep-27** | 0 |
+| Imp .Ganancias MSA | **1** | **nov-2027** | 0 |
+| SICORE 1er / 2da Quincena | 12 c/u | jul→jun / ago→jul | 0 |
+| UATRE | 12 | jul-26 → jun-27 | 0 |
+
+**Las reglas en 0 son correctas**: se verificó que en esos 6 casos **el origen tampoco tiene regla**,
+así que no hay nada que copiar. Donde el origen la tenía, se copió. El mecanismo funciona.
+
+📌 **La pre-carga sí respeta el rango real** de cada template (`Anticipo Ganancias` salió dic→sep con
+sus 10 cuotas). El problema era exclusivamente del botón *replicar*.
+
+⚠️ **A decidir**: `Imp .Ganancias MSA` quedó con **una sola cuota en nov-2027**, fuera de la campaña
+26/27. Es el impuesto anual que se paga tras el cierre — mismo caso que el de *Acciones*. Es criterio
+contable del usuario, no del generador.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el

@@ -1475,6 +1475,15 @@ el final.
 5. **El modal no se cierra**: recarga y los que acabás de hacer pasan al bloque *"Ya generados"*.
    Seguís con la tanda siguiente ahí mismo.
 
+### Los botones de cada fila
+| | Qué hace |
+|---|---|
+| 📄 **Copiar** | Replica el monto de la primera columna con valor **hacia adelante**. No toca los meses anteriores ni corta en julio: llega hasta donde el template realmente tenga meses. |
+| 🧽 **Vaciar** | Deja la fila sin cuotas. Útil cuando el pre-cargado trae datos viejos. |
+| 📋 **Detalle** | Editar las cuotas una por una (permite **varias en el mismo mes**). |
+| ↺ **Regenerar** | Devuelve **esa fila sola** a los valores por default y descarta lo que editaste ahí. No toca las demás filas — a diferencia de *Recargar*, que rehace todo. |
+| ↓ **Bajar** | Manda el template a *"No aplican"*. ⚠️ **Persiste**: no se ofrece en las próximas campañas hasta que lo vuelvas a subir. Distinto del tilde de incluir, que es sólo para esta corrida. |
+
 ### Qué mirar
 - **"Ya generados en 26/27 (M)"** — bloque colapsable con lo hecho. Si alguno dice **"(por nombre)"**
   es porque esa versión de la campaña **no la hizo este generador** (se cargó a mano) y se reconoció

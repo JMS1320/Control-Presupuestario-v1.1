@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X, Info } from "lucide-react"
+import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, List, Plus, X, Info, RotateCcw, ArrowDown } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { parseEmpresas } from "@/lib/empresas"
 import { toast } from "sonner"
@@ -33,6 +33,7 @@ interface Fila {
   raw: ItemCuota[]                // cuotas individuales del origen (corridas al target) — para el detalle
   detalle?: ItemCuota[]           // override manual (fase 2): si existe, GANA sobre celdas (permite varias/mes)
   esVencimiento: boolean          // las fechas de esta fila son de vencimiento (sino, estimadas)
+  celdasIniciales: Record<string, Celda>   // copia del pre-cargado, para "regenerar" esta fila sola
 }
 
 // año1 del período: "26/27" -> 2026 ; "2027" -> 2027
@@ -179,7 +180,14 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           celdas[k] = { monto, dia }
         }
       }
-      return { template: t, incluir: t.aplica_generacion === true, celdas, raw, esVencimiento: t.tipo_fecha === 'Vencimiento' }
+      return {
+        template: t,
+        incluir: t.aplica_generacion === true,
+        celdas,
+        celdasIniciales: JSON.parse(JSON.stringify(celdas)),
+        raw,
+        esVencimiento: t.tipo_fecha === 'Vencimiento',
+      }
     })
     setFilas(nuevasFilas)
     setCargando(false)
@@ -314,17 +322,54 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     if (!targetY1) return
     setFilas(prev => prev.map(f => {
       if (f.template.id !== templateId) return f
-      const claveMasTemprana = Object.keys(f.celdas).sort()
+      const claveOrigen = Object.keys(f.celdas).sort()
         .find(k => f.celdas[k]?.monto !== '' && f.celdas[k]?.monto != null)
-      const primera = claveMasTemprana ? f.celdas[claveMasTemprana] : undefined
-      if (!primera) return f
+      const primera = claveOrigen ? f.celdas[claveOrigen] : undefined
+      if (!primera || !claveOrigen) return f
       const nuevas = { ...f.celdas }
-      for (const { y, m } of mesesBase(periodicidad, targetY1)) {
-        const k = colKey(y, m)
-        nuevas[k] = { monto: primera.monto, dia: nuevas[k]?.dia }
+      // **Sólo hacia adelante**, y sobre las columnas que la grilla realmente muestra.
+      //
+      // Antes iteraba `mesesBase()` — los 12 meses fijos de la campaña (jul→jun) — con dos
+      // consecuencias que el usuario vio enseguida: pisaba meses ANTERIORES al inicio real del
+      // template, y cortaba en julio aunque el template siguiera después. `Anticipo Ganancias MSA`
+      // va de **diciembre a septiembre**: replicar le escribía jul-nov (que no le corresponden) y
+      // le faltaba jul-sep del año siguiente.
+      //
+      // `columnas` ya incluye los meses extra de cada template (el spillover), así que replicar
+      // desde la celda de origen en adelante cubre el rango real sin invadir lo de atrás.
+      for (const col of columnas) {
+        if (col < claveOrigen) continue
+        nuevas[col] = { monto: primera.monto, dia: nuevas[col]?.dia ?? primera.dia }
       }
       return { ...f, celdas: nuevas }
     }))
+  }
+
+  /**
+   * Vuelve la fila al estado con el que se cargó, descartando las ediciones (punto 4 del usuario:
+   * *"lo modifico pero luego quiero volver a ver datos por default"*). Sólo esa fila — a diferencia
+   * de **Recargar**, que rehace todo y se lleva puesto lo editado en las demás.
+   * También quita el `detalle` manual, que es otra forma de edición.
+   */
+  const regenerarFila = (templateId: string) => {
+    setFilas(prev => prev.map(f => f.template.id === templateId
+      ? { ...f, celdas: JSON.parse(JSON.stringify(f.celdasIniciales)), detalle: undefined }
+      : f))
+  }
+
+  /**
+   * Bajar un template de "Previstas" a "No aplican" — el inverso de `optIn`.
+   * ⚠️ Esto **persiste** (`aplica_generacion = false`): es *"no se renueva más"*, no *"esta vez no"*.
+   * Lo temporal es el checkbox de incluir. Por eso va como botón con ícono y no como otro tilde:
+   * dos checkboxes casi iguales con consecuencias distintas se confunden.
+   */
+  const optOut = async (templateId: string) => {
+    setFilas(prev => prev.map(f => f.template.id === templateId
+      ? { ...f, incluir: false, template: { ...f.template, aplica_generacion: false } }
+      : f))
+    const { error } = await supabase.from('egresos_sin_factura').update({ aplica_generacion: false }).eq('id', templateId)
+    if (error) toast.error('No se pudo bajar el template: ' + error.message)
+    else toast.success('Movido a "No aplican" — no se va a ofrecer en las próximas campañas')
   }
 
   // Opt-in desde "No aplican": incluye la fila + persiste aplica_generacion=true
@@ -498,6 +543,16 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
                   <button onClick={() => replicarFila(f.template.id)} title="Replicar a los 12 meses el monto de la PRIMERA columna con valor (la de más a la izquierda)" className="text-gray-400 hover:text-blue-600"><Copy className="h-3.5 w-3.5" /></button>
                   <button onClick={() => vaciarFila(f.template.id)} title="Vaciar toda la fila" className="text-gray-400 hover:text-red-600"><Eraser className="h-3.5 w-3.5" /></button>
                   <button onClick={() => abrirDetalle(f)} title="Detalle de cuotas (permite varias por mes)" className="text-gray-400 hover:text-purple-600"><List className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => regenerarFila(f.template.id)} title="Volver esta fila a los valores por default (descarta lo editado sólo acá)" className="text-gray-400 hover:text-green-600"><RotateCcw className="h-3.5 w-3.5" /></button>
+                  {conIncluir && (
+                    <button
+                      onClick={() => { if (window.confirm(`¿Bajar "${f.template.nombre_referencia}" a "No aplican"?
+
+No se va a ofrecer en las próximas campañas hasta que lo vuelvas a subir.`)) optOut(f.template.id) }}
+                      title='Bajar a "No aplican" — PERSISTE: no se ofrece en las próximas campañas'
+                      className="text-gray-400 hover:text-amber-600"
+                    ><ArrowDown className="h-3.5 w-3.5" /></button>
+                  )}
                   {(f.template.observaciones_template || f.template.alertas) && (
                     <span className="text-blue-500" title={`Nota: ${f.template.observaciones_template || f.template.alertas}`}><Info className="h-3.5 w-3.5" /></span>
                   )}
