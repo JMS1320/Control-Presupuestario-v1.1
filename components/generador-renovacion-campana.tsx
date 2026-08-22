@@ -249,6 +249,17 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, incluir: checked } : f))
   }
 
+  /**
+   * Todas / ninguna, **sólo sobre la lista que se está mostrando**.
+   * Se pasa la lista y no un flag global a propósito: con el filtro de empresa puesto, "todas" tiene
+   * que significar "todas las de esta empresa" y no tocar lo que no está a la vista.
+   * No escribe `aplica_generacion`: es una selección de esta corrida, como el tilde individual.
+   */
+  const marcarTodas = (lista: Fila[], checked: boolean) => {
+    const ids = new Set(lista.map(f => f.template.id))
+    setFilas(prev => prev.map(f => ids.has(f.template.id) ? { ...f, incluir: checked } : f))
+  }
+
   // Fechas de la fila = estimadas o de vencimiento
   const toggleVencimiento = (templateId: string, checked: boolean) => {
     setFilas(prev => prev.map(f => f.template.id === templateId ? { ...f, esVencimiento: checked } : f))
@@ -405,7 +416,23 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       <table className="text-sm min-w-max">
         <thead>
           <tr className="bg-gray-50">
-            <th className="sticky left-0 z-20 bg-gray-50 text-left px-3 py-2 border-r min-w-[240px]">Template</th>
+            <th className="sticky left-0 z-20 bg-gray-50 text-left px-3 py-2 border-r min-w-[240px]">
+              {conIncluir ? (
+                <div className="flex items-center gap-2">
+                  {/* Todas / ninguna. Sólo sobre las filas de ESTA lista, o sea las de la empresa
+                      elegida: "todas" nunca alcanza a lo que no estás viendo. */}
+                  <Checkbox
+                    checked={lista.length > 0 && lista.every(f => f.incluir)}
+                    onCheckedChange={(ch) => marcarTodas(lista, ch === true)}
+                    title={lista.every(f => f.incluir) ? 'Desmarcar todas' : 'Marcar todas'}
+                  />
+                  <span>Template</span>
+                  <span className="font-normal text-xs text-gray-500">
+                    ({lista.filter(f => f.incluir).length}/{lista.length})
+                  </span>
+                </div>
+              ) : 'Template'}
+            </th>
             {columnas.map(col => (
               <th key={col} className={`px-2 py-2 text-center whitespace-nowrap border-r ${col < inicioKey ? 'bg-amber-100 text-amber-700' : ''}`}
                   title={col < inicioKey ? 'Mes anterior al inicio del período — revisar' : undefined}>

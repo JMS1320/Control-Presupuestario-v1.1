@@ -1470,6 +1470,8 @@ el final.
    empresa— **también el total de todas**, para que no parezca terminada una campaña a la que le
    falta el resto.
 4. Tildar los que quieras en esta tanda, ajustar montos y días en la matriz, y **Generar**.
+   El checkbox del encabezado **"Template"** marca o desmarca **todas** — sólo las de la empresa que
+   estás mirando —, y al lado se ve el conteo `(seleccionadas/total)`.
 5. **El modal no se cierra**: recarga y los que acabás de hacer pasan al bloque *"Ya generados"*.
    Seguís con la tanda siguiente ahí mismo.
 
