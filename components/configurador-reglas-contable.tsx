@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,6 +33,8 @@ interface TemplateOpcion {
   id: string
   nombre_referencia: string
   responsable: string | null
+  /** Campaña del template ("25/26", "2026"). Un mismo template existe una vez por campaña. */
+  año: string | null
 }
 
 interface EmpleadoOpcion {
@@ -58,6 +60,8 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   const [error, setError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState<string | null>(null)
   const [modal, setModal] = useState<ModalState | null>(null)
+  /** Campaña a mostrar en Tipo A. Evita ver las reglas de todas las campañas mezcladas. */
+  const [filtroCampana, setFiltroCampana] = useState<string>('todas')
 
   // Formulario modal
   const [formTemplateId, setFormTemplateId] = useState('')
@@ -86,7 +90,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
           .order('orden'),
         supabase
           .from('egresos_sin_factura')
-          .select('id, nombre_referencia, responsable')
+          .select('id, nombre_referencia, responsable, año')
           .eq('activo', true)
           .order('nombre_referencia'),
         supabase
@@ -99,7 +103,9 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
       if (e2) throw e2
       if (e3) throw e3
       setReglas(reglasData || [])
-      setTemplates(tmplData || [])
+      // `as any`: el parser de tipos de supabase-js no acepta la `ñ` de `año` dentro del string del
+      // `select` y devuelve un `ParserError`. La consulta funciona; lo que falla es la inferencia.
+      setTemplates((tmplData || []) as any)
       setEmpleados(empData || [])
       // Códigos ya usados en CUALQUIER regla (no sólo las de esta cuenta): la convención de
       // nombres es transversal, y lo que se busca evitar es escribir `RET PAM` donde ya existe
@@ -121,7 +127,27 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
 
   useEffect(() => { cargarDatos() }, [cuentaId])
 
-  const tipoA = reglas.filter(r => r.tipo_regla === 'especifica' && r.activo)
+  /**
+   * Campañas presentes entre los templates que tienen regla, para el filtro.
+   * Desde que se renuevan campañas (A-FEAT-42), cada template existe una vez por año y sus reglas
+   * se copian — así que sin filtrar se ven todas las campañas mezcladas.
+   */
+  const campanasConRegla = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of reglas) {
+      if (r.tipo_regla !== 'especifica' || !r.template_id) continue
+      const t = templates.find(t => t.id === r.template_id)
+      if (t?.año) set.add(t.año)
+    }
+    return Array.from(set).sort().reverse()
+  }, [reglas, templates])
+
+  const campanaDeRegla = (r: ReglaContableInterno) =>
+    templates.find(t => t.id === r.template_id)?.año ?? null
+
+  const tipoA = reglas
+    .filter(r => r.tipo_regla === 'especifica' && r.activo)
+    .filter(r => filtroCampana === 'todas' || campanaDeRegla(r) === filtroCampana)
   const tipoB = reglas.filter(r => r.tipo_regla === 'responsable' && r.activo)
   const tipoC = reglas.filter(r => r.tipo_regla === 'empleado' && r.activo)
 
@@ -129,7 +155,9 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
   const nombreTemplate = (id: string | null) => {
     if (!id) return '—'
     const t = templates.find(t => t.id === id)
-    return t ? `${t.nombre_referencia}${t.responsable ? ` (${t.responsable})` : ''}` : id
+    // La campaña va SIEMPRE en el nombre: desde que se renuevan campañas, el mismo template existe
+    // una vez por año y sin el `año` dos reglas se ven idénticas (A-FEAT-42).
+    return t ? `${t.nombre_referencia}${t.responsable ? ` (${t.responsable})` : ''}${t.año ? ` · ${t.año}` : ''}` : id
   }
 
   // Nombre empleado para mostrar en Tipo C
@@ -346,6 +374,17 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
               <Building2 className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-semibold text-blue-800">Tipo A — Reglas Específicas</span>
               <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{tipoA.length}</span>
+              {campanasConRegla.length > 1 && (
+                <select
+                  value={filtroCampana}
+                  onChange={e => setFiltroCampana(e.target.value)}
+                  className="ml-2 h-7 rounded border border-blue-300 bg-white px-2 text-xs text-blue-800"
+                  title="Ver las reglas de una sola campaña. Cada campaña tiene su propia copia."
+                >
+                  <option value="todas">Todas las campañas</option>
+                  {campanasConRegla.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
             </div>
             <Button size="sm" variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-100"
               onClick={() => abrirCrear('especifica')}>
@@ -442,7 +481,7 @@ export function ConfiguradorReglasContable({ cuentaBancariaId }: { cuentaBancari
                   <option value="">— Seleccionar template —</option>
                   {templates.map(t => (
                     <option key={t.id} value={t.id}>
-                      {t.nombre_referencia}{t.responsable ? ` (${t.responsable})` : ''}
+                      {t.nombre_referencia}{t.responsable ? ` (${t.responsable})` : ''}{t.año ? ` · ${t.año}` : ''}
                     </option>
                   ))}
                 </select>

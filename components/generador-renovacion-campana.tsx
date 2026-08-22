@@ -353,7 +353,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       if (!ok) return
     }
     setGenerando(true)
-    let okTemplates = 0, okCuotas = 0
+    let okTemplates = 0, okCuotas = 0, okReglas = 0
     try {
       for (const f of aGenerar) {
         const t = f.template
@@ -373,6 +373,31 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           .select().single()
         if (eT || !nuevo) { console.error('Error clonando template', t.nombre_referencia, eT); continue }
         okTemplates++
+
+        // 1.b Copiar las reglas contable/interno del origen al clon.
+        //
+        // Los códigos `contable` / `interno` (Desglosar, No Lleva, RET 3 PAM…) son **del template y
+        // valen para todas sus cuotas**, pero al conciliar NO salen de la cuota ni del template:
+        // salen de `reglas_contable_interno`, que busca por **`template_id`**. El clon tiene otro
+        // id, así que sin esto la campaña nueva conciliaría con contable e interno **vacíos** —
+        // el mismo síntoma de A-DAT-04, pero con la regla existiendo y apuntando al template viejo.
+        //
+        // Se COPIA por campaña en vez de heredar del origen (decisión del usuario, 2026-08-22):
+        // así cada campaña conserva **la regla que regía cuando se generó**. Si el año que viene
+        // cambia el responsable, lo de 26/27 sigue diciendo lo que decía. Heredar del original sería
+        // menos mantenimiento pero perdería ese registro — y se vienen cambios de responsable.
+        const { data: reglasOrigen } = await supabase
+          .from('reglas_contable_interno')
+          .select('cuenta_bancaria_id, tipo_regla, template_id, responsable, codigo_contable, codigo_interno, descripcion, empleado_id, orden, activo')
+          .eq('tipo_regla', 'especifica')
+          .eq('template_id', t.id)
+        if (reglasOrigen && reglasOrigen.length > 0) {
+          const { error: eR } = await supabase
+            .from('reglas_contable_interno')
+            .insert(reglasOrigen.map(r => ({ ...r, template_id: nuevo.id })))
+          if (eR) console.error('Error copiando reglas contable/interno de', t.nombre_referencia, eR)
+          else okReglas += reglasOrigen.length
+        }
 
         // 2. Cuotas: si hay DETALLE manual (varias/mes) se usa; sino, las celdas de la matriz (1/mes)
         const items: ItemCuota[] = f.detalle
@@ -420,7 +445,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
           else okCuotas += cuotasInsert.length
         }
       }
-      toast.success(`Renovación ${targetLabel}: ${okTemplates} templates, ${okCuotas} cuotas generadas`)
+      toast.success(`Renovación ${targetLabel}: ${okTemplates} templates, ${okCuotas} cuotas${okReglas ? `, ${okReglas} reglas contable/interno copiadas` : ''}`)
       // Se RECARGA en vez de cerrar: es lo que hace usable la generación por tandas. Los que
       // acaban de generarse pasan al bloque "Ya generados" y quedan a la vista los que faltan,
       // sin tener que volver a abrir el modal ni recordar por dónde se iba.

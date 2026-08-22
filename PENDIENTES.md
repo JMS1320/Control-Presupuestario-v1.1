@@ -4401,6 +4401,45 @@ pendiente del 02/07 y 556.094 el del 04/08 (→ [A-FEAT-31](#a-feat-31), bloque 
 - La Tarjeta tiene **`codigo_contable = 'Desglosar'`**, que por convención es un código *interno*,
   no una cuenta contable. Se propaga tal cual a `cuenta_contable` de la cuota.
 
+### 🔑 Contable e interno en la campaña nueva — el hueco que casi pasa
+
+Verificado el 2026-08-22, tomando contexto antes de proponer. Al conciliar, los códigos
+`contable` / `interno` **no salen de la cuota ni del template**: salen de
+**`reglas_contable_interno`**, en cascada (`useMotorConciliacion.ts:128`):
+
+| | Busca por |
+|---|---|
+| **Tipo A** *(específica)* | cuenta bancaria + **`template_id`** |
+| Tipo B *(responsable)* | cuenta bancaria + responsable |
+| Tipo C *(empleado)* | para sueldos |
+
+🔴 **La Tipo A busca por `template_id`, y el clon de la campaña nueva es un template con OTRO id.**
+Hay **21 reglas específicas** activas, todas apuntando a templates **25/26**. Sin hacer nada, cada
+campaña que se genere conciliaría con contable e interno **vacíos** — mismo síntoma que
+[A-DAT-04](#a-bug-39), pero con la regla existiendo y apuntando al template viejo.
+
+**Decisión del usuario (2026-08-22): copiar la regla al clon** (opción A), no heredarla del origen.
+
+> *"Contable e interno son para todas sus cuotas. Yo pensaba que tener un template master era para
+> estas cosas… el único hueco es que si cambia el responsable no queda registro del pasado, y se
+> vienen cambios de responsable."*
+
+**Copiar por campaña resuelve solo ese hueco**: cada campaña conserva **la regla que regía cuando se
+generó**, así que un cambio de responsable no reescribe el pasado. Heredar del original (opción B,
+descartada) sería menos mantenimiento pero perdería el histórico.
+⏳ Lo que A **no** cubre: un cambio de responsable **en medio** de una campaña. Queda para después.
+
+**Implementado**: el generador copia las reglas `especifica` del origen apuntando al clon, y el
+toast informa cuántas copió.
+
+**Y para que no sea ruido en pantalla** (pedido del usuario), el configurador de contable/interno:
+- muestra **la campaña en el nombre** del template (`Seguro Flota (MSA) · 26/27`), y
+- tiene un **selector de campaña** en Tipo A, que aparece sólo cuando hay más de una.
+
+🔴 **Pendiente de datos**: las **3 campañas ya generadas** (Cargas Sociales, Seguro Flota, Tarjeta
+Visa Business) se crearon **antes** de este cambio, así que **no tienen su regla copiada**. Hay que
+cargárselas o regenerarlas. Es dato → con OK del usuario.
+
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
 leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el
