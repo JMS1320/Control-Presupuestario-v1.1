@@ -358,6 +358,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-39** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-38](#a-test-38))** · **Exportar varias planillas de una** — con un rango, el modal pregunta si querés **una sola punta a punta** o **una por cada mes**. Antes había que repetir el export mes por mes. La carpeta se elige **una sola vez** para toda la tanda y va con progreso. Los meses de las puntas se **recortan al rango** y el título lo dice (*"15/02/2026 al 28/02/2026"*) en vez de fingir que es el mes entero | → [A-FEAT-39](#a-feat-39) `@productivo` |
 | **A-FEAT-40** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · **Las cabezas sin caravana ya figuran en el detalle del CUT.** La condición para aparecer es estar **identificado**, no tener caravana: el movimiento dice de dónde viene, cuándo y por qué. Salen como `(sin caravana)` con esos datos. El aviso pasó de 🔴 *"falta identificar"* a 🟠 *"N de M sin caravana"*, y el rojo queda para el descuadre real contra la grilla. **Sale también el `Proveedor/Cliente`** del reporte | → [A-FEAT-40](#a-feat-40) `@productivo` |
 | **A-DAT-07** | 🟡 | Dato | **HECHO 2026-08-21 con OK del usuario** — la venta de 4 vacas CUT del 30/03 no tenía cliente. Alta de **BALLESTER PAULO CESAR** (CUIT `20249560791`) en `public.proveedores` como **cliente puro** · alta de **Pino Torillo** en `productivo.intermediarios_venta` · el movimiento quedó con su `proveedor_cliente` y `cuit`. *"Via Pino Torillo"* **se deja en observaciones**: el movimiento manual no tiene campo de intermediario | → [A-DAT-07](#a-dat-07) `@productivo` |
+| **A-FEAT-42** | 🟡 | Feat | **HECHO 2026-08-22** — el generador de campañas **genera por TANDAS**: el clon guarda `template_origen_id`, así que en la corrida siguiente el origen se reconoce como *ya generado* y no vuelve a ofrecerse. Antes la 2ª corrida traía los clones recién creados con sus cuotas precargadas y **duplicaba**. Con contador *"N pendientes · M ya generados"* y recarga en el lugar. Falta testear | → [A-FEAT-42](#a-feat-42) `@egresos` |
+| A-TEST-39 | 🔴 | Test | **Generar una campaña por tandas** (2026-08-22) — generar 2-3 templates, verificar que pasan a *"ya generados"* y que **no reaparecen** en la corrida siguiente, y que no se duplican cuotas. `MANUAL-USO.md` § Renovar campaña por tandas | → [A-FEAT-42](#a-feat-42) `@egresos` |
 | **A-FEAT-41** | 🔴 | Feat | **La venta manual de hacienda NO da de alta al cliente** en `public.proveedores`, contra la regla de contrapartes (*upsert, nunca sólo UPDATE*). Se ve en [A-DAT-07](#a-dat-07): hubo que crear a Ballester a mano. Y el movimiento manual **no tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta* (`intermediario_id`), así que el intermediario termina como texto libre en observaciones | → [A-FEAT-41](#a-feat-41) `@productivo` |
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
@@ -4255,6 +4257,71 @@ consecuencias, las dos que vio el usuario:
 ### El orden de las operaciones también estaba mal
 `capturarCorrida()` corría **antes** de `recargar()`, así que la recarga pisaba lo inyectado.
 `recargar()` ahora devuelve su promesa y la vista hace `await recargar()` y después captura.
+
+---
+
+## <a id="a-feat-42"></a>A-FEAT-42 — Generar la campaña de templates por TANDAS
+
+> **HECHO 2026-08-22, sin testear** (→ A-TEST-39). Pedido del usuario **antes de seguir
+> conciliando**: sin las cuotas de la campaña nueva no hay contra qué matchear.
+
+### El motivo, en sus palabras
+> *"Si son 50 templates y hago 10, cuando quiero generar el resto ya me muestre 40. Eso me quitará
+> miedo y me permitirá avanzar con lo que tengo seguro; lo que no lo tengo lo dejo para el final.
+> **Por casos como ése no hice todo el resto.**"*
+
+Una duda sobre **un** template le estaba bloqueando los otros 49. Las tandas no son comodidad: son
+lo que despega el 90 % del que está seguro.
+
+### 🔴 Por qué antes no se podía
+`cargar()` traía `.eq('periodicidad', X).eq('activo', true)` — **sin filtrar por año ni excluir lo
+ya hecho**. Después de generar 10 de 50, la corrida siguiente traía **60 filas**: los 40 que
+faltaban, los 10 originales, **y los 10 clones recién creados** — que también son `activo=true` y
+de la misma periodicidad.
+
+Y los clones eran la parte peligrosa: con `año = target`, su corrimiento da **cero**, así que
+aparecían **con las cuotas recién generadas ya precargadas**. Incluirlos sin darse cuenta
+**duplicaba** la campaña entera.
+
+### La identidad: por `id`, no por nombre
+**Decisión del usuario**: el template se identifica por su **`id`**. Como en Modelo A el clon es una
+fila nueva con otro id, el vínculo se guarda **en el clon**:
+
+```
+clon.template_origen_id = origen.id          ← al generar
+"ya generado" = existe fila del target cuyo template_origen_id es este id
+```
+
+`template_origen_id` **ya existía en la tabla y estaba vacía en las 176 filas** — no hizo falta
+migrar nada, y sobrevive a que se renombre un template.
+
+*(Se descartó `nombre_referencia + responsable` como identidad: hoy es única, pero se corta con un
+renombre. Queda sólo como **fallback** para filas del target cargadas a mano, sin vínculo.)*
+*(Se descartó `template_master_id`: está poblada en 154 filas **con el mismo valor**, o sea que es
+una constante y no una identidad. Tocarla es abrir otro frente.)*
+
+### Qué se hizo
+- El insert del clon escribe **`template_origen_id`**.
+- La carga separa: filas que **ya son** el target (no son candidatas a renovarse a sí mismas),
+  **ya generadas** (tienen su versión) y **pendientes** (las únicas que se ofrecen).
+- Barra de avance: **"N pendientes de generar · M ya generados"**.
+- Bloque colapsable con los ya generados, marcando cuáles se reconocieron *"por nombre"* — que
+  son los que **no** hizo este generador.
+- Al generar **ya no cierra el modal**: recarga en el lugar, así se ve el resultado y se sigue con
+  la tanda siguiente sin volver a abrir.
+
+### ⚠️ Nada queda excluido por el sistema
+Decisión explícita del usuario sobre el caso dudoso (*"Acciones"*, que salta a 2028 por el
+corrimiento): **el sistema no lo saca de la lista**. Aparece como cualquier otro y él decide con el
+checkbox si entra en la tanda. *"Puede que yo genere todos menos ése, pero si quisiera debería poder
+generarlo."*
+
+### ▶️ Lo que falta — edición masiva de lo ya generado
+Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
+leyendo las cuotas del clon y guardando con `UPDATE` en vez de `INSERT`; se reusa casi todo el
+editor.
+⚠️ **Con bloqueo por CUOTA, no por template** (aclaración del usuario): si un template tiene algunas
+cuotas conciliadas y otras no, **se bloquean sólo las conciliadas** y las demás se pueden editar.
 
 ---
 

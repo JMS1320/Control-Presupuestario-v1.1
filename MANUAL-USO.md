@@ -1449,6 +1449,42 @@ escribe las columnas del desglose — la cuenta contable, el detalle y el estado
 
 ---
 
+## 🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*
+
+> Detalle → `PENDIENTES.md` § A-FEAT-42. Test → § A-TEST-39.
+
+**Para qué**: generar los templates de la campaña nueva **de a poco**, sin miedo a duplicar. Lo que
+ya generaste no vuelve a aparecer, así que podés hacer 10 hoy, 20 mañana, y dejar los dudosos para
+el final.
+
+### Cómo se usa
+1. Templates → botón **Renovar campaña**.
+2. Elegir **Periodicidad** (bianual jul–jun / anual calendario) y el **período a generar** (`26/27`
+   o `2027`).
+3. Arriba aparece la barra: **"N pendientes de generar · M ya generados"**.
+4. Tildar los que quieras en esta tanda, ajustar montos y días en la matriz, y **Generar**.
+5. **El modal no se cierra**: recarga y los que acabás de hacer pasan al bloque *"Ya generados"*.
+   Seguís con la tanda siguiente ahí mismo.
+
+### Qué mirar
+- **"Ya generados en 26/27 (M)"** — bloque colapsable con lo hecho. Si alguno dice **"(por nombre)"**
+  es porque esa versión de la campaña **no la hizo este generador** (se cargó a mano) y se reconoció
+  por nombre + responsable.
+- **Nada queda excluido automáticamente.** Un template raro —por ejemplo uno cuyo período salta
+  varios años— aparece igual en la lista: vos decidís si entra en la tanda o lo dejás para después.
+- **Columnas en ámbar (⚠)**: cuotas que caen antes del inicio del período. Suele ser dato viejo mal
+  cargado. No bloquea; revisá o vaciá la celda.
+
+### Cómo se prueba que las tandas funcionan
+1. Generar **2 o 3** templates nada más.
+2. Verificar que el contador pasa a *"N−3 pendientes · 3 ya generados"*.
+3. **Volver a abrir** el generador con el mismo período: los 3 **no** tienen que aparecer entre los
+   pendientes.
+4. En Templates, verificar que existen las 3 filas nuevas con el año de la campaña y sus cuotas —
+   **una sola vez cada una**.
+
+---
+
 ## 🏦 Resultado de la corrida + filtro de contraparte ✅ *(testeado OK 2026-08-19)*
 
 > Detalle → `PENDIENTES.md` § A-FEAT-29 / A-FEAT-30. Test → § A-TEST-34.

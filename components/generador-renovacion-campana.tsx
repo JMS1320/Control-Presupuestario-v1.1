@@ -42,6 +42,14 @@ function year1De(anio: string | null): number | null {
 }
 const colKey = (y: number, m: number) => `${y}-${String(m).padStart(2, '0')}`
 
+/**
+ * Clave "natural" de un template, para reconocerlo entre campañas **cuando no hay
+ * `template_origen_id`** — o sea, filas del target creadas a mano y no por este generador.
+ * Es un fallback: la identidad buena es el id del origen (ver `yaGeneradoDe`).
+ */
+const claveNatural = (t: any) =>
+  `${(t.nombre_referencia ?? '').trim().toLowerCase()}|${(t.responsable ?? '').trim().toLowerCase()}`
+
 // meses base del target
 function mesesBase(periodicidad: Periodicidad, targetY1: number): { y: number; m: number }[] {
   if (periodicidad === 'anual') return Array.from({ length: 12 }, (_, i) => ({ y: targetY1, m: i + 1 }))
@@ -71,6 +79,8 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   // Detalle por fila (fase 2 punto 4): editar las cuotas individuales (permite varias por mes)
   const [detalleId, setDetalleId] = useState<string | null>(null)
   const [detalleItems, setDetalleItems] = useState<ItemCuota[]>([])
+  /** Templates que YA tienen su versión de esta campaña — no se ofrecen para generar de nuevo. */
+  const [yaGenerados, setYaGenerados] = useState<{ id: string; nombre: string; responsable: string; porVinculo: boolean }[]>([])
 
   // Default del target según hoy
   useEffect(() => {
@@ -102,7 +112,42 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
     const porTemplate: Record<string, any[]> = {}
     for (const c of (cuotas ?? [])) (porTemplate[c.egreso_id] ??= []).push(c)
 
-    const nuevasFilas: Fila[] = (temps ?? []).map((t: any) => {
+    // ── Generar por TANDAS ────────────────────────────────────────────────────────────────────
+    // Pedido del usuario: poder hacer 10 de 50 hoy y que mañana muestre los 40 que faltan.
+    // *"Por casos como ése no hice todo el resto"* — una duda sobre un template le bloqueaba los
+    // otros 49. Lo que sigue separa lo ya hecho de lo pendiente.
+    //
+    // Dos reglas, y ninguna necesita columnas nuevas:
+    //   1. Una fila que YA ES la campaña target no es candidata a renovarse a sí misma. Sin esto,
+    //      la segunda corrida traía los clones recién creados con sus cuotas precargadas y el
+    //      shift en cero — incluirlos sin querer **duplicaba** todo.
+    //   2. Un template está "ya generado" si existe una fila del target que salió de él. Se sabe
+    //      por `template_origen_id`, que el generador ahora escribe (ver `generar`).
+    const todos: any[] = temps ?? []
+    const delTarget = todos.filter(t => (t.año ?? '') === targetLabel)
+    const candidatos = todos.filter(t => (t.año ?? '') !== targetLabel)
+
+    const origenesYaGenerados = new Set(delTarget.map(t => t.template_origen_id).filter(Boolean))
+    // Fallback por clave natural: cubre las filas del target que NO las hizo este generador
+    // (cargadas a mano), donde `template_origen_id` viene vacío.
+    const clavesYaGeneradas = new Set(
+      delTarget.filter(t => !t.template_origen_id).map(claveNatural)
+    )
+    const yaGeneradoDe = (t: any) =>
+      origenesYaGenerados.has(t.id) || clavesYaGeneradas.has(claveNatural(t))
+
+    setYaGenerados(candidatos.filter(yaGeneradoDe).map(t => ({
+      id: t.id,
+      nombre: t.nombre_referencia,
+      responsable: t.responsable ?? '',
+      // Distingue lo que hizo el generador de lo que se cargó a mano: si el vínculo es por clave
+      // natural y no por id, conviene que se vea.
+      porVinculo: origenesYaGenerados.has(t.id),
+    })))
+
+    const pendientes = candidatos.filter(t => !yaGeneradoDe(t))
+
+    const nuevasFilas: Fila[] = pendientes.map((t: any) => {
       const srcY1 = year1De(t.año)
       const shift = srcY1 != null ? (targetY1 - srcY1) : 0    // corre el último período conocido al target
       const celdas: Record<string, Celda> = {}
@@ -262,7 +307,15 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         const { id, created_at, updated_at, ...resto } = t
         const { data: nuevo, error: eT } = await supabase
           .from('egresos_sin_factura')
-          .insert({ ...resto, año: targetLabel, activo: true })
+          .insert({
+            ...resto,
+            año: targetLabel,
+            activo: true,
+            // 🔑 De dónde salió este clon. Es lo que permite generar por TANDAS: en la próxima
+            // corrida, el origen se reconoce como "ya generado" y no vuelve a ofrecerse.
+            // Se usa el id y no el nombre a propósito — sobrevive a que se renombre el template.
+            template_origen_id: t.id,
+          })
           .select().single()
         if (eT || !nuevo) { console.error('Error clonando template', t.nombre_referencia, eT); continue }
         okTemplates++
@@ -305,7 +358,10 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
         }
       }
       toast.success(`Renovación ${targetLabel}: ${okTemplates} templates, ${okCuotas} cuotas generadas`)
-      onClose()
+      // Se RECARGA en vez de cerrar: es lo que hace usable la generación por tandas. Los que
+      // acaban de generarse pasan al bloque "Ya generados" y quedan a la vista los que faltan,
+      // sin tener que volver a abrir el modal ni recordar por dónde se iba.
+      await cargar()
     } catch (e: any) {
       toast.error('Error al generar: ' + (e?.message ?? 'desconocido'))
     } finally {
@@ -423,6 +479,49 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
           ) : (
             <>
+              {/* Avance de la campaña — es lo que permite generar por tandas sin miedo a duplicar */}
+              <div className="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                <span className="font-semibold">Campaña {targetLabel || '—'}</span>
+                <span>·</span>
+                <span><strong>{filas.length}</strong> pendiente{filas.length === 1 ? '' : 's'} de generar</span>
+                {yaGenerados.length > 0 && (
+                  <>
+                    <span>·</span>
+                    <span><strong>{yaGenerados.length}</strong> ya generado{yaGenerados.length === 1 ? '' : 's'}</span>
+                  </>
+                )}
+                <span className="ml-auto text-xs text-blue-700">
+                  Podés generar de a tandas: lo hecho no vuelve a aparecer.
+                </span>
+              </div>
+
+              {/* Los ya generados — se listan para que se vea qué se hizo, pero no se ofrecen otra vez */}
+              {yaGenerados.length > 0 && (
+                <details className="rounded border border-gray-200 bg-gray-50">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700">
+                    Ya generados en {targetLabel} ({yaGenerados.length}) — no se ofrecen de nuevo
+                  </summary>
+                  <ul className="px-4 pb-3 pt-1 text-sm text-gray-600 space-y-0.5">
+                    {yaGenerados.map(t => (
+                      <li key={t.id} className="flex items-center gap-2">
+                        <span>{t.nombre}{t.responsable ? ` · ${t.responsable}` : ''}</span>
+                        {!t.porVinculo && (
+                          <span
+                            className="text-[11px] text-amber-700"
+                            title="Se reconoció por nombre + responsable, no por vínculo: la versión de esta campaña se cargó a mano, no con este generador."
+                          >
+                            (por nombre)
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="px-4 pb-3 text-xs text-gray-500">
+                    Editar sus cuotas todavía no se hace desde acá — se editan en Templates.
+                  </p>
+                </details>
+              )}
+
               {hayCuotasAntes && (
                 <div className="bg-amber-50 border border-amber-300 rounded p-3 text-sm text-amber-800 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
