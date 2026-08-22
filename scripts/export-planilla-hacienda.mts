@@ -349,12 +349,13 @@ async function construirLibro(datos: any, periodoLabel: string, movsDetalle: any
   // bloque tiene que dar igual que su fila -- si no da, hay movimientos en categorias que la
   // planilla no tiene como columna y la grilla descarta en silencio (A-BUG-50).
   const totalFila = (arr: number[]) => arr.reduce((s: number, v: number) => s + v, 0)
+  // Orden: primero lo que ENTRA y SALE del campo, y al final las reclasificaciones (internas)
   const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
     { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
     { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
-    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
     { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
   ]
   const filaDetalle = (m: any) => {
@@ -497,9 +498,9 @@ function construirPDF(datos: any, periodoLabel: string, movsDetalle: any[]) {
   const CONCEPTOS_PDF: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
     { titulo: "COMPRAS", grid: datos.filas.compras, test: m => m.tipo === "compra" || (m.tipo === "ajuste_stock" && m.cantidad > 0) },
     { titulo: "NACIMIENTOS", grid: datos.filas.nacimientos, test: m => m.tipo === "nacimiento" },
-    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "VENTAS", grid: datos.filas.ventas, test: m => m.tipo === "venta" },
     { titulo: "MORTANDAD", grid: datos.filas.mortandad, test: m => m.tipo === "mortandad" || (m.tipo === "ajuste_stock" && m.cantidad < 0) },
+    { titulo: "RECLASIFICACIONES +", grid: datos.filas.reclasPos, test: m => m.tipo === "cambio_categoria" && m.cantidad > 0 },
     { titulo: "RECLASIFICACIONES -", grid: datos.filas.reclasNeg, test: m => m.tipo === "cambio_categoria" && m.cantidad < 0 },
   ]
   const detalleBody: string[][] = []

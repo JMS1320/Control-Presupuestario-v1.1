@@ -9427,10 +9427,19 @@ se usan para identificarla.
 
 ### ✅ HECHO 2026-08-22 — el punto (b): el detalle segmentado
 
-**El criterio elegido**: se segmenta **por concepto, en el mismo orden que las filas de la grilla**
-(Compras · Nacimientos · Reclas. + · Ventas · Mortandad · Reclas. −). 🟨 Así se pasa de un número de
-la página 1 a los movimientos que lo forman, que es la pregunta que uno le hace al detalle. Los
-bloques vacíos no se dibujan.
+**El criterio elegido**: se segmenta **por concepto**. 🟨 Así se pasa de un número de la página 1 a
+los movimientos que lo forman, que es la pregunta que uno le hace al detalle. Los bloques vacíos no
+se dibujan.
+
+**El orden lo fijó el usuario (2026-08-22)** y no es el de la grilla:
+
+```
+COMPRAS · NACIMIENTOS · VENTAS · MORTANDAD · RECLASIFICACIONES + · RECLASIFICACIONES -
+```
+
+🟨 Primero lo que **entra y sale del campo**, y al final las **reclasificaciones**, que son
+movimientos internos entre categorías y no cambian el total del rodeo. Las dos reclasificaciones
+quedan juntas, que es como se leen: una es el espejo de la otra.
 
 **🎯 Y trae un control gratis**: el total de cada bloque tiene que dar igual que su fila en la
 grilla. Si no da, hay movimientos en **categorías que la planilla no tiene como columna** — que la

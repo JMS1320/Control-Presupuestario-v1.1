@@ -1797,12 +1797,14 @@ function TabHacienda() {
       // da, hay movimientos en categorías que la planilla no tiene como columna y que la grilla
       // descarta en silencio (A-BUG-50) — acá se ven.
       const totalFila = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
+      // Orden pedido por el usuario: primero lo que ENTRA y SALE del campo, y al final las
+      // reclasificaciones, que son movimientos internos entre categorías.
       const CONCEPTOS: { titulo: string; test: (m: any) => boolean; grid: number[] }[] = [
         { titulo: 'COMPRAS', grid: filas.compras, test: m => m.tipo === 'compra' || (m.tipo === 'ajuste_stock' && m.cantidad > 0) },
         { titulo: 'NACIMIENTOS', grid: filas.nacimientos, test: m => m.tipo === 'nacimiento' },
-        { titulo: 'RECLASIFICACIONES +', grid: filas.reclasPos, test: m => m.tipo === 'cambio_categoria' && m.cantidad > 0 },
         { titulo: 'VENTAS', grid: filas.ventas, test: m => m.tipo === 'venta' },
         { titulo: 'MORTANDAD', grid: filas.mortandad, test: m => m.tipo === 'mortandad' || (m.tipo === 'ajuste_stock' && m.cantidad < 0) },
+        { titulo: 'RECLASIFICACIONES +', grid: filas.reclasPos, test: m => m.tipo === 'cambio_categoria' && m.cantidad > 0 },
         { titulo: 'RECLASIFICACIONES -', grid: filas.reclasNeg, test: m => m.tipo === 'cambio_categoria' && m.cantidad < 0 },
       ]
 
