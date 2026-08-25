@@ -1267,6 +1267,23 @@ quería. Ahora es un solo click. Sirve en las dos filas de chips, y el cartelito
 Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **10/08/2026**. Sirven
 `/`, `-` y `.`, y el año de dos dígitos (`5/3/26`). *Por ahora sólo en Cash Flow.*
 
+### 👷 Pagar un SUELDO desde acá 🟡 *(arreglado 2026-08-25, sin testear — [A-TEST-40](PENDIENTES.md#a-test-40))*
+Los pagos de sueldo se marcan como cualquier otra fila: seleccionar, estado **Pagado**, fecha, Aplicar.
+
+**Un pago de sueldo tiene UNA sola fecha.** El Cash Flow maneja tres (estimada, vencimiento, pago),
+pero abajo hay una sola columna: **la fecha que ponés es la fecha del pago**, y las tres apuntan ahí.
+No es un límite a arreglar, es cómo está pensado — un sueldo no tiene vencimiento propio.
+
+Por eso, la columna **Fecha de Pago** de un sueldo se llena **cuando el pago pasa a `pagado` o
+`conciliado`**. Antes de eso está vacía a propósito: la fecha existe, pero todavía es una previsión.
+En un **grupo de pago** aparece sólo si **todos** sus miembros están pagados — si uno quedó
+pendiente, mostrar la fecha diría que el pago está hecho y no lo está.
+
+> ⚠️ **Si algo no se guarda, ahora te lo dice con nombre y motivo** (un cartelito abajo), y **la
+> grilla se queda donde está**. Hasta el 2026-08-25 la pantalla entera se reemplazaba por *«Error al
+> cargar Cash Flow»* con un botón **Reintentar** que en realidad **sólo recargaba** — parecía que el
+> reintento arreglaba algo, pero lo guardado ya estaba guardado desde el primer click.
+
 ### 🧪 Cómo probarlo <a id="a-test-27"></a>
 1. Seleccioná 2 o 3 filas, estado **Pagar**, Aplicar. Tiene que aparecer **primero** la pregunta de
    la fecha, con la de hoy puesta.

@@ -779,6 +779,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const sueldosIndividuales = allSueldosPagos.filter(a => !a.grupo_pago_id)
       const sueldosAgrupados = allSueldosPagos.filter(a => a.grupo_pago_id)
 
+      // `sueldos.pagos` guarda **una sola fecha**. Mientras el pago está por hacerse esa fecha es
+      // una previsión (va a `fecha_estimada`); una vez pagado, esa misma fecha **es** la fecha de
+      // pago. Sin esto la columna "fecha de pago" quedaba vacía para todo sueldo ya pagado, y el
+      // usuario veía el pago sin fecha aunque la fecha estuviera guardada (A-BUG-52).
+      const yaSePago = (estado: string | null | undefined) =>
+        estado === 'pagado' || estado === 'conciliado'
+
       const filasAnticiposSueldosInd: CashFlowRow[] = sueldosIndividuales.map(a => ({
         id: a.id,
         origen: 'SUELDO' as const,
@@ -786,6 +793,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         empresas: parseEmpresas(a.empleado?.empresa),
         fecha_estimada: a.fecha,
         fecha_vencimiento: null,
+        fecha_pago: yaSePago(a.estado) ? a.fecha : null,
         categ: 'Sueldos',
         centro_costo: 'ESTRUCTURA',
         cuit_proveedor: a.empleado?.cuit_empleado ?? '',
@@ -828,6 +836,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           empresas: parseEmpresas(primero.empleado?.empresa),
           fecha_estimada: fechaMax,
           fecha_vencimiento: null,
+          // El grupo se da por pagado cuando TODOS sus miembros lo están: si uno sigue pendiente,
+          // mostrar fecha de pago en la fila-grupo diría que el pago está hecho y no lo está.
+          fecha_pago: pagos.every(a => yaSePago(a.estado)) ? fechaMax : null,
           categ: 'Sueldos',
           centro_costo: 'ESTRUCTURA',
           cuit_proveedor: primero.empleado?.cuit_empleado ?? '',
@@ -937,24 +948,37 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       }
 
       if (origen === 'SUELDO' && filaOrigen?.origen_tabla === 'sueldos.pagos') {
-        // Anticipo de sueldo: mapear campos a sueldos_pagos
-        let pagosUpdateData: any = {}
-        if (campo === 'estado') {
-          pagosUpdateData.estado = valor
-        } else if (campo === 'fecha_estimada') {
-          pagosUpdateData.fecha = valor
-        } else if (campo === 'debitos') {
-          pagosUpdateData.monto = valor
-        } else if (campo === 'detalle') {
-          pagosUpdateData.descripcion = valor
-        } else {
-          pagosUpdateData[campo] = valor
+        // Un pago de sueldo tiene **una sola fecha** (`sueldos.pagos.fecha`), que es la fecha en
+        // que se paga. El Cash Flow maneja tres (`fecha_estimada`, `fecha_vencimiento`,
+        // `fecha_pago`): las tres tienen que aterrizar en esa misma columna.
+        //
+        // 🐞 **A-BUG-52** — acá había un `else` que hacía `pagosUpdateData[campo] = valor`, o sea
+        // mandaba a ciegas el nombre de columna del Cash Flow. El botón PAGOS manda **siempre**
+        // `fecha_vencimiento`, que **no existe** en `sueldos.pagos`: PostgREST rechazaba el UPDATE
+        // entero y el pago quedaba a medio guardar (el estado sí, la fecha no). Ahora las columnas
+        // están declaradas y lo que no se sabe escribir **se dice**, en vez de probar y ver.
+        const COLUMNAS_PAGO = new Set([
+          'estado', 'fecha', 'monto', 'descripcion', 'medio_pago', 'tipo',
+          'cuenta_destino_id', 'grupo_pago_id', 'visible_contable',
+        ])
+        const ALIAS_CASHFLOW: Record<string, string> = {
+          fecha_estimada: 'fecha',
+          fecha_vencimiento: 'fecha',
+          fecha_pago: 'fecha',
+          debitos: 'monto',
+          detalle: 'descripcion',
+        }
+        const columna = ALIAS_CASHFLOW[campo] ?? campo
+        if (!COLUMNAS_PAGO.has(columna)) {
+          throw new Error(
+            `«${campo}» no se puede guardar en un pago de sueldo: sueldos.pagos no tiene esa columna`
+          )
         }
         // `count: 'exact'` — sin esto, un UPDATE que no encuentra la fila devuelve OK y la
         // pantalla lo da por guardado. Es lo que hacía A-BUG-19.
         const { error, count } = await supabase
           .from('sueldos_pagos')
-          .update(pagosUpdateData, { count: 'exact' })
+          .update({ [columna]: valor }, { count: 'exact' })
           .eq('id', id)
         if (error) throw error
         if (count === 0) throw new Error('No se encontró el pago de sueldo: el cambio NO se guardó')
@@ -1076,7 +1100,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         egresoId,
         detalle: JSON.stringify(error)
       })
-      setError(error instanceof Error ? error.message : `Error al actualizar campo ${campo}: ${JSON.stringify(error)}`)
+      // Igual que en `actualizarBatch`: esto es un fallo de **guardado**, no de carga. Antes hacía
+      // `setError` y la pantalla entera se reemplazaba por «Error al cargar Cash Flow» (A-BUG-53).
+      // El toast lleva el motivo real —el que sirve para arreglarlo— y la grilla queda visible.
+      toast.error(error instanceof Error ? error.message : `Error al actualizar ${campo}: ${JSON.stringify(error)}`)
       return false
     }
   }
@@ -1167,7 +1194,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const detalle = fallidas.slice(0, 3).map(f => f.motivo).join(' · ')
         const resto = fallidas.length > 3 ? ` y ${fallidas.length - 3} más` : ''
         toast.error(`${fallidas.length} registro(s) NO se guardaron — ${detalle}${resto}`)
-        setError(`${fallidas.length} registro(s) no se guardaron`)
+        // ⚠️ **NO** `setError` acá: `error` es el estado de **carga**, y el componente lo usa para
+        // reemplazar la pantalla entera por «Error al cargar Cash Flow» + «Reintentar» — cartel que
+        // habla de una carga que nunca falló, y cuyo botón sólo recarga (A-BUG-53). El toast de
+        // arriba ya dice qué falló, con nombre, y la grilla queda a la vista para arreglarlo.
         return false
       }
       return true
@@ -1179,7 +1209,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       for (const update of guardadas) {
         actualizarLocal(update.id, update.campo, update.valor)
       }
-      setError(error instanceof Error ? error.message : 'Error en actualización masiva')
+      // Mismo criterio que arriba: un fallo de guardado se avisa por toast, no tapando la pantalla.
       toast.error(error instanceof Error ? error.message : 'Error en actualización masiva')
       return false
     }

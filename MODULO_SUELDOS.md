@@ -390,6 +390,43 @@ WHERE categ = 'SUELD';
 
 ---
 
+## 📅 `sueldos.pagos` tiene UNA sola fecha — cómo se traduce al Cash Flow (2026-08-25)
+
+Un pago de sueldo **no tiene vencimiento propio**: se paga cuando se paga. Por eso `sueldos.pagos`
+guarda **una sola columna de fecha, `fecha`**, mientras que el Cash Flow maneja tres
+(`fecha_estimada`, `fecha_vencimiento`, `fecha_pago`). La traducción es la siguiente, y vive en
+`hooks/useMultiCashFlowData.ts`:
+
+**Al leer** (armado de la fila):
+
+| Campo del Cash Flow | Sale de |
+|---|---|
+| `fecha_estimada` | `fecha`, siempre |
+| `fecha_vencimiento` | **`null`** — el concepto no existe para un sueldo |
+| `fecha_pago` | `fecha`, **sólo si** el estado es `pagado` o `conciliado` |
+
+La condición del estado no es cosmética: mientras el pago está por hacerse, esa fecha es una
+**previsión**; recién cuando el pago ocurrió esa misma fecha **es** la fecha de pago. En una fila de
+**grupo**, `fecha_pago` aparece sólo si **todos** los miembros ya se pagaron — con uno pendiente, la
+fecha diría que el pago está hecho.
+
+**Al escribir** (`actualizarRegistro`): las tres fechas del Cash Flow son **alias de `fecha`**, y las
+columnas escribibles están **declaradas en una whitelist**. Lo que no está declarado **falla con un
+mensaje que nombra el campo**, en vez de mandarse a la BD a ver qué pasa.
+
+> 🐞 **De dónde salió esto — [A-BUG-52](PENDIENTES.md#a-bug-52).** Antes había un `else` que hacía
+> `pagosUpdateData[campo] = valor`: el nombre de columna del Cash Flow viajaba **a ciegas** a
+> `sueldos.pagos`. Como el botón PAGOS manda **siempre** `fecha_vencimiento` —columna inexistente—
+> PostgREST rechazaba el UPDATE y **no se podía pasar un sueldo a pagado**: se guardaban estado y
+> fecha, fallaba el tercer campo y salía *"2 registro(s) no se guardaron"*. Y como la fila tampoco
+> exponía `fecha_pago`, la columna se veía vacía aunque la fecha estuviera guardada — el usuario
+> veía un pago sin fecha y concluía, razonablemente, que sueldos no tenía dónde guardarla.
+>
+> **La lección es la de siempre acá: escribir a ciegas no falla donde uno mira.** El mapeo explícito
+> de 4 campos estaba bien; el `else` que "resolvía" el resto era el agujero.
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **Coria e Pucheta**: Completar parámetros A, B, francos desde ✏️ (bruto actual = $0)
