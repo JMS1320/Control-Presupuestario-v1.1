@@ -4440,9 +4440,12 @@ toast informa cuántas copió.
 - muestra **la campaña en el nombre** del template (`Seguro Flota (MSA) · 26/27`), y
 - tiene un **selector de campaña** en Tipo A, que aparece sólo cuando hay más de una.
 
-🔴 **Pendiente de datos**: las **3 campañas ya generadas** (Cargas Sociales, Seguro Flota, Tarjeta
-Visa Business) se crearon **antes** de este cambio, así que **no tienen su regla copiada**. Hay que
-cargárselas o regenerarlas. Es dato → con OK del usuario.
+~~🔴 **Pendiente de datos**: las **3 campañas ya generadas** (Cargas Sociales, Seguro Flota, Tarjeta
+Visa Business) se crearon **antes** de este cambio, así que **no tienen su regla copiada**.~~
+✅ **RESUELTO — verificado 2026-08-25.** Las 2 reglas se copiaron a mano con OK del usuario, y el
+control cruzando **cada clon contra las reglas de su origen** da **1:1 en los 8**: Seguro Flota 1↔1,
+Tarjeta Visa Business 1↔1, y los otros 6 en 0↔0 porque **el origen tampoco tiene regla**. O sea que
+los ceros no son un hueco: son el dato correcto.
 
 ### 🛠️ Tres mejoras del editor — 2026-08-22, pedidas usándolo
 
@@ -4559,6 +4562,33 @@ asume `banco` cuando falta, así que **nadie lo habría notado**. Ahora se hered
 origen.
 
 Es exactamente el tipo de cosa que el usuario anticipó: no falla, sale mal en silencio.
+
+### ❓ Las 3 preguntas del 2026-08-25 — respondidas, para que no vuelvan
+
+**1 · "Los anuales me salen todos en No aplican."** No era una falla: `aplica_generacion` estaba
+sembrado **sólo para los bianuales**, a propósito (§ B-FEAT-RENOVAR-CAMPAÑA: *"anuales = NULL, a
+decidir en el generador, caso por caso"*). **Sembrados los 154 el 2026-08-25** → `MODULO_TEMPLATES.md`
+§ 13. Quedan 0 en `NULL`.
+
+**2 · "¿Genero los de 2027 para que alimente el presupuesto?"** **No.** El presupuesto **proyecta
+solo** los meses sin cuota (`lib/presupuesto/templates.ts`), así que no habilita nada; y como su
+jerarquía dice **cuota cargada → manda siempre**, un `…123` lejano **pisa la proyección** con un
+número peor. Además el `…123` **sólo lo entiende el Presupuesto**: Cash Flow, Pagos y conciliación lo
+leen como compromiso firme. La campaña se genera **para ver el vencimiento del año en curso**, no
+para presupuestar → intención de diseño completa en `MODULO_TEMPLATES.md` § 13.
+
+**3 · "¿Cuáles eran las 3 opciones de monto?"** **No hay tres — hay dos**, y son el checkbox
+*"Marcar estimados (…123)"*: **encendido** → montos del año anterior con los últimos 3 dígitos en
+`123`; **apagado** → montos del año anterior **tal cual**. *(Las "3 opciones" eran las 3 hipótesis
+que planteó el propio usuario al preguntar; la respuesta fue que aplica la tercera.)*
+
+**4 · "¿Y un % de aumento junto con el 123?"** **Se re-preguntó y se volvió a descartar**
+(*"por el momento no haría falta hacer nada"*, 2026-08-25) — coincide con la decisión original
+*"sin % masivo"*. Queda anotado que **es viable**: el `%` se aplica primero y `marca123()` pisa los
+últimos 3 dígitos al final, así que la marca de estimado sobrevive (`572.972 → +30 % → 744.863 →
+744.123`). Si algún día se hace, va **por corrida y sólo sobre las filas tildadas**, para poder dar
+30 % a un grupo y 15 % a otro en dos tandas — un % parejo sobre 150 templates aplicaría aumentos
+donde no corresponden (un impuesto fijo, un seguro con póliza nueva) y quedaría escrito como criterio.
 
 ### ▶️ Lo que falta — edición masiva de lo ya generado
 Segunda mitad del pedido: poder **editar los ya hechos** desde el mismo bloque. Es la misma matriz,
