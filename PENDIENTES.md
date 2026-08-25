@@ -356,7 +356,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-37** | 🟡 | Feat | **HECHO 2026-08-22 (las dos partes) — falta testear ([A-TEST-37](#a-test-37))** · La mortandad muestra motivo + observación + caravana encadenados, y el detalle va **segmentado por concepto** con el total de cada bloque contrastado contra la grilla, y el detalle de movimientos **segmentado** en vez de corrido. La app guarda **dos textos distintos** y el reporte trae uno: el 02/07 el movimiento dice *"sin causa comprobable"* y la caravana **184** dice *"Muerte Súbita"*. El cruce es por **fecha + categoría** (no hay FK) y trae su propio control: si la cantidad no coincide con las caravanas encontradas, hay muertes sin atribuir | → [A-FEAT-37](#a-feat-37) `@productivo` |
 | **A-FEAT-38** | 🟡 | Feat | **Cuatro mejoras de formato de la planilla**: decir *"Sin movimientos en el período"* en vez de una tabla vacía · **orden estable** del detalle (hoy `.order('fecha')` sin criterio secundario, y los dos lados de una reclasificación pueden quedar separados) · **fecha de emisión** en el encabezado (hoy un movimiento retroactivo cambia una planilla ya emitida sin dejar rastro) · el cero se ve `-` en el PDF y `0` en el Excel | → [A-FEAT-38](#a-feat-38) `@productivo` |
 | **A-DAT-05** | 🟡 | Dato | **HECHO 2026-08-20 con OK explícito del usuario — falta testear ([A-TEST-36](#a-test-36))** · Los 4 movimientos del pase a CUT de febrero tenían el `tipo` equivocado (`ajuste_stock` en vez de `cambio_categoria`): son los que declaran muertas a 8 vacas vivas. Corregirlos es un `UPDATE` sobre datos reales → **requiere OK explícito del usuario** (`CLAUDE.md` § Datos). Depende de [A-BUG-45](#a-bug-45) | → [A-DAT-05](#a-dat-05) `@productivo` |
-| **A-DAT-06** | 🟡 | Dato | **La venta de hacienda del 04/08 no cierra**: `monto_total` es exactamente el **97,0000 %** de `peso × precio` (16.180 kg × $5.670 = **$91.740.600** contra **$88.988.382** declarados; faltan **$2.752.218**). El usuario confirma que **no hubo gastos de venta**, así que ese 3 % **no tiene explicación**. Sale de la planilla por [A-FEAT-35](#a-feat-35), pero el número sigue vivo donde se use — ventas y presupuesto | → [A-DAT-06](#a-dat-06) `@productivo` |
+| **A-DAT-06** | ✅ | Dato | **RESUELTO 2026-08-25 — era el DESBASTE, no un gasto.** El 3 % que parecía faltar en la venta del 04/08 es la **merma de peso** que descuenta el comprador: `peso_total_kg` son kg de **balanza (brutos)** y el monto sale de los **netos** → 16.180 × (1 − 3 %) × $5.670 = **$88.988.382 exacto**. **El usuario tenía razón: no hubo gastos de venta** (CZ y flete en cero). Verificado en `modal-confirmar-venta-hacienda.tsx:225-226`. 📌 Para el costeo: `peso_total_kg` es el **peso vivo**, sirve directo como punto de la curva | → [A-DAT-06](#a-dat-06) `@productivo` |
 | A-TEST-35 | ✅ | Test | **TESTEADO OK 2026-08-20 por el usuario en el preview.** Planilla de Hacienda con el `Stock Anterior` corregido ([A-BUG-44](#a-bug-44)) — 4 chequeos en la app: el total de **Agosto/2026** tiene que dar **356** (antes 372) e igualar a *Productivo → Hacienda → Stock* y a la planilla en **modo rango** 15/02→20/08 · el `Stock Anterior` de cada mes tiene que ser la `Existencia Final` del anterior en **los 6 eslabones** · **febrero y marzo no deben cambiar nada** · las filas Compras/Ventas/Mortandad/Reclas. **no se tocan** | → [A-TEST-35](#a-test-35) `@productivo` |
 | **A-FEAT-39** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-38](#a-test-38))** · **Exportar varias planillas de una** — con un rango, el modal pregunta si querés **una sola punta a punta** o **una por cada mes**. Antes había que repetir el export mes por mes. La carpeta se elige **una sola vez** para toda la tanda y va con progreso. Los meses de las puntas se **recortan al rango** y el título lo dice (*"15/02/2026 al 28/02/2026"*) en vez de fingir que es el mes entero | → [A-FEAT-39](#a-feat-39) `@productivo` |
 | **A-FEAT-40** | 🟡 | Feat | **HECHO 2026-08-21 — falta testear ([A-TEST-37](#a-test-37))** · **Las cabezas sin caravana ya figuran en el detalle del CUT.** La condición para aparecer es estar **identificado**, no tener caravana: el movimiento dice de dónde viene, cuándo y por qué. Salen como `(sin caravana)` con esos datos. El aviso pasó de 🔴 *"falta identificar"* a 🟠 *"N de M sin caravana"*, y el rojo queda para el descuadre real contra la grilla. **Sale también el `Proveedor/Cliente`** del reporte | → [A-FEAT-40](#a-feat-40) `@productivo` |
@@ -9839,7 +9839,32 @@ argumento para el orden estable, y apareció solo.
 
 ---
 
-## <a id="a-dat-06"></a>A-DAT-06 — La venta del 04/08 no cierra: falta el 3 %
+## <a id="a-dat-06"></a>A-DAT-06 — ✅ RESUELTO 2026-08-25: el 3 % era el DESBASTE
+
+> **No faltaba plata ni había un gasto sin explicar. El usuario tenía razón en que la venta no
+> tuvo gastos de venta** — la CZ y el flete están en cero. El 3 % es el **desbaste**, que no es un
+> gasto: es la **merma de peso** que descuenta el comprador.
+
+```
+peso_total_kg = 16.180 kg              ← kg de BALANZA (brutos), no netos
+kgNetos = 16.180 × (1 − 0,03)          = 15.694,6 kg
+15.694,6 × $5.670                      = $88.988.382   ← exacto
+```
+
+Verificado en `components/modal-confirmar-venta-hacienda.tsx:225-226`: *"los kg de balanza son brutos;
+el desbaste es la merma que descuenta el comprador"*. El lote tiene `pct_desbaste = 0,03`.
+
+🟨 **Por qué se veía como un descuadre**: la planilla mostraba `peso × precio` al lado de
+`monto_total` y no multiplicaban, porque **el peso es bruto y el monto sale del neto**. Las columnas
+de plata ya salieron del reporte ([A-FEAT-35](#a-feat-35)), así que el síntoma desapareció — pero
+ahora además está explicado.
+
+📌 **Dato para el costeo de recría**: `peso_total_kg` es el **peso vivo** (de balanza). Sirve
+directo como punto de la curva de peso; el neto es sólo para valorizar.
+
+---
+
+## <a id="a-dat-06-viejo"></a>A-DAT-06 (diagnóstico original) — La venta del 04/08 no cierra: falta el 3 %
 
 ```
 55 Ternero Recría · 16.180 kg · $5.670/kg · monto declarado $88.988.382 · Pedro Genta
