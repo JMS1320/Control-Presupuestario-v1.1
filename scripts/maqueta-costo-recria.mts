@@ -875,6 +875,13 @@ async function main() {
   // RESUMEN APARTE — una carilla. La maqueta grande es la herramienta de trabajo;
   // esto es lo que se mira y se discute. Todo lo que hay que creer, junto y a la vista.
   // ═══════════════════════════════════════════════════════════════════════════
+  // ⚠️ Los DESTETADOS son los que había el 23/02, antes de las mortandades — NO los que quedan
+  // hoy. Si se toma el número de hoy y se le restan las ventas, salen más ventas que ingresos.
+  const F_DESTETE = fechasPesada[0]
+  const cabDestete = delRodeo.filter((t: any) => vivoAl(t, F_DESTETE)).length
+  const cabMuertas = delRodeo.filter((t: any) =>
+    t.fecha_baja && t.fecha_baja > F_DESTETE && t.fecha_baja <= FECHA_STOCK && !idsVendidos.has(t.id)).length
+
   const ultPes = fechasPesada[fechasPesada.length - 1]
   const diasExtra = dias(ultPes, FECHA_STOCK)
   const gananciaExtra = (g: Grupo) => diasExtra ? (pesoEn(FECHA_STOCK, g) - pesoProm(ultPes, g)) / diasExtra : 0
@@ -885,10 +892,13 @@ async function main() {
     ["RECRÍA — cómo nos fue", "", "", "", "", "al " + FECHA_STOCK],
     ["Sólo alimentación. NO incluye sanidad, pasturas, verdeos ni estructura."],
     [],
-    ["EL RODEO"],
-    ["  Al destete (23/02)", GRUPOS.reduce((s, g) => s + cabG[g], 0) + " cabezas", "", "de " + pesoProm(fechasPesada[0], "todos").toFixed(0) + " kg promedio"],
-    ["  Vendidos el 04/08", CAB_VENDIDOS + " cabezas", "", "de " + pesoHoyG.vendidos.toFixed(0) + " kg (balanza del camión)"],
-    ["  Quedan", (cabG.machos + cabG.hembras) + " cabezas", "", cabG.machos + " machos y " + cabG.hembras + " hembras"],
+    ["EL RODEO — tiene que cerrar: lo que entró menos lo que salió"],
+    ["  Destetados (23/02)", cabDestete + " cabezas", "", "de " + pesoProm(fechasPesada[0], "todos").toFixed(0) + " kg promedio"],
+    ["  − mortandades", -cabMuertas + " cabezas", "", "1 el 15/04 · 1 el 25/04 · 1 el 26/06 · 1 el 02/07"],
+    ["  − vendidos el 04/08", -CAB_VENDIDOS + " cabezas", "", "de " + pesoHoyG.vendidos.toFixed(0) + " kg (balanza del camión)"],
+    ["  = QUEDAN", (cabG.machos + cabG.hembras) + " cabezas", "", cabG.machos + " machos (con los 7 toritos) y " + cabG.hembras + " hembras"],
+    ["", (cabDestete - cabMuertas - CAB_VENDIDOS === cabG.machos + cabG.hembras) ? "✓ cierra" : "NO CIERRA — revisar", "", ""],
+    ["  Los 8 toritos del recuento", "no cuentan", "", "pasaron a Toro el 26/04, diez días ANTES de que arrancara la ración"],
     [],
     ["LA COMIDA"],
     ["  Maíz comprado", +tonTotal.toFixed(2) + " ton", Math.round(costoTotalMaiz), "en 6 entregas, de 4 proveedores"],
@@ -928,6 +938,10 @@ async function main() {
   r.push(["", "Plata: comprado = imputado + stock", "$" + Math.round(costoTotalMaiz - costoMaizV - costoMaizR - valorStockFinal), "cada peso está en algún lado"])
   r.push(["", "Mezcla 90/10 predice el maíz", Math.round(consumoConc * 9) + " kg", "contra " + Math.round(tramos[tramos.length - 1].consumo) + " del tramo: cierra"])
   r.push(["", "Ración implícita", (consumoReg1v / diasReg1v / 187).toFixed(2) + " kg/cab/día", "contra los 3 kg que declaraste"])
+  r.push(["", "Rodeo: destete − muertes − ventas", (cabDestete - cabMuertas - CAB_VENDIDOS) + " cabezas",
+    (cabDestete - cabMuertas - CAB_VENDIDOS === cabG.machos + cabG.hembras) ? "= las que quedan. Cierra" : "NO CIERRA"])
+  r.push(["", "Nominal vs movimientos al 06/05", cabDestete - 2 + " vs " + cabezasAl(INICIO_RACION),
+    "los individuos con nombre y el conteo en bulk dan lo mismo"])
   r.push([])
   r.push(["El detalle de cómo sale cada número está en Maqueta_Costo_Recria.xlsx (11 hojas, 429 fórmulas)."])
   const ws2 = XLSX.utils.aoa_to_sheet(r)
