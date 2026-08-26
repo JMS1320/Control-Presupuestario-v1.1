@@ -369,7 +369,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-44** | 🔴 | Feat | **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
 | **A-FEAT-45** | 🔴 | Feat | **EL MAPA DEL CIRCUITO — leer esto antes de tocar recría, margen o costos de producción** (2026-08-26). Las 7 pantallas que intervienen, **qué pregunta contesta cada una**, qué alimenta y qué recibe. Nació de que el usuario no podía seguir el plan sin saber para qué sirve cada lugar. Vive en `MODULO_HACIENDA.md` § 15; acá está el ítem para poder referenciarlo. Incluye las 3 decisiones de diseño: **la plata vive en el Margen · la eficiencia en el Ciclo · el puente es el Tramo** | → [A-FEAT-45](#a-feat-45) `@productivo @presupuesto` |
 | **A-BUG-54** | 🔴 | Bug | **El tramo de un lote se guarda aunque le des CANCELAR** — `SeccionTramos` escribe en `lote_tramos` **al instante**: `+ tramo` hace `INSERT` en el click, y cada cambio de fecha/actividad/ha hace `UPDATE` en el `onChange`. El botón Cancelar del modal no revierte nada porque esos writes nunca pasaron por el formulario. Le pasó al usuario el 2026-08-26: canceló y el tramo quedó. **Y quedó con `fecha_hasta` = 04/08/2027 en vez de 2026** — un año de más que nadie validó, y que hizo que *Costos de producción* proyectara ~$3,5 a $5,1 M por mes indefinidamente. Fix: o el tramo se edita en memoria y se guarda con el modal, o la sección dice **explícitamente** que se guarda sola. Y validar que el tramo no exceda la fecha de venta del lote | → [A-BUG-54](#a-bug-54) `@productivo` |
-| **A-BUG-55** | 🔴 | Bug | **El costo de alimentación se cobra al LOTE DE VENTA, y el rodeo que comió es otro** — el tramo cuelga de `stock_lotes`, así que la ración se multiplica por las cabezas **del lote**. En recría 2026 eso le carga a **55 animales** la comida que se comieron **189**. No es un error de cuenta: es que **el consumo es del rodeo y el lote es una parte**. Es exactamente lo que resolvió la maqueta de [A-FEAT-43](#a-feat-43) con el reparto por kilo-día. ⚠️ Mientras esto siga así, **cualquier número de alimentación que muestre la app está mal repartido**, por preciso que sea | → [A-BUG-55](#a-bug-55) `@productivo @presupuesto` |
+| **A-BUG-55** | 🔴 | Bug | **El consumo se estima por lote de venta y NUNCA se concilia contra lo comprado** — el tramo cuelga de `stock_lotes`, y sólo existen lotes de **lo que se va a vender**. En recría 2026 el único lote con tramo es el de los **55**: la app estima lo que comieron esos 55 y **de los otros 134 del rodeo no sabe nada**. Además el precio sale de la receta (**$270/kg el maíz, $745 el concentrado**), no de las facturas. Resultado: un número que **no puede cerrar nunca** contra lo que se compró, y que **no avisa que le faltan dos tercios del rodeo**. El consumo es una propiedad del **rodeo** —lo que entró y lo que se midió—, no de un lote de venta | → [A-BUG-55](#a-bug-55) `@productivo @presupuesto` |
 | **A-BUG-56** | 🔴 | Bug | **Dos motores distintos calculan el mismo costo, y cada uno sabe la mitad** — `resolverCostoDirecto()` (`lib/presupuesto/margen.ts`, lo usa **Margen**) y `consumoMensual()` (`lib/productivo/actividades.ts`, lo usa **Costos de producción** de la grilla) leen las **mismas filas** de `actividad_insumos` y dan resultados distintos: el primero **no sabe resolver la ración** (`pct_racion`/`kg_cabeza_dia` devuelven *"sin calcular"*), el segundo **sí**, pero no sabe aplicar la cadena de ajustes/IPC ni amortizar. Verificado en pantalla el 2026-08-26: con el tramo cargado, la grilla mostró costos de Recría y el Margen siguió en cero. Es el patrón de `buscarPrecio()` vs `resolverPrecioHacienda()` — **si quedan los dos vivos, en tres meses dan distinto y no se sabe cuál creer** | → [A-BUG-56](#a-bug-56) `@productivo @presupuesto` |
 | **A-BUG-57** | 🟡 | Bug | **Los costos por hectárea de una actividad no llegan a la grilla mensual** — un costo `monto_ha` (pasturas y verdeos de recría, que van sobre las **60 ha** de la actividad) se resuelve en el **Margen** contra las hectáreas de la actividad, pero en *Costos de producción* se resuelve contra las **hectáreas del tramo**, que están vacías → **da cero**. Y si se llenaran, con dos lotes se contaría **dos veces**, porque las 60 ha son de la actividad, no de cada lote. Hermano de [A-BUG-56](#a-bug-56): el mismo insumo, dos motores, dos resultados | → [A-BUG-57](#a-bug-57) `@productivo @presupuesto` |
 | **A-BUG-58** | 🟡 | Bug | **El checkbox «Usar la ganancia diaria de arriba» no responde** — en el tramo de un lote, tildarlo no hace efecto visible (reportado por el usuario 2026-08-26). Escribe `stock_lotes.ganancia_override` pero el modal no refleja el cambio. Y en la misma sección: **la columna «Ha» es demasiado angosta** para leer lo que se escribe | → [A-BUG-58](#a-bug-58) `@productivo` |
@@ -10269,29 +10269,46 @@ que el año estaba mal, y el número que salió parecía plausible.*
 
 ---
 
-## <a id="a-bug-55"></a>A-BUG-55 — El costo de alimentación se le cobra al lote, y el rodeo que comió es otro
+## <a id="a-bug-55"></a>A-BUG-55 — El consumo se estima por lote y nunca se concilia contra lo comprado
 
 **El bug conceptual más caro de esta línea de trabajo.**
 
-El tramo cuelga de `stock_lotes`, entonces `consumoMensual()` multiplica la ración por las cabezas
-**del lote**. En la recría 2026 eso le carga a **55 animales** toda la comida que se comieron **189**.
+⚠️ **Corrección de una versión anterior de este ítem** (2026-08-26): llegué a escribir que la app le
+cobraba a los 55 la comida de los 189. **Es falso** y lo verifiqué en el código: `consumoMensual()`
+multiplica la ración **por las cabezas del propio lote**, así que estima lo que comieron *esos* 55.
+El problema es otro y es peor.
 
-```
-   Lo que hace la app          Lo que pasó de verdad
-   ─────────────────────       ──────────────────────────────
-   55 cabezas comen            189 cabezas comen
-   → 100 % del maíz            → los 55 se llevan SU PARTE
-```
+### Lo que realmente pasa
 
-No es un error de cuenta: es que **el consumo es del RODEO y el lote es una porción**. Es
-exactamente lo que resolvió la maqueta de [A-FEAT-43](#a-feat-43) con el reparto por kilo-día.
+Los tramos cuelgan de `stock_lotes`, y **sólo hay lotes de lo que se va a vender**. En la recría 2026
+el único lote con tramo es el de los 55.
 
-⚠️ **Mientras esto siga así, cualquier número de alimentación que muestre la app está mal repartido**
-— por preciso que sea el resto del cálculo. Es el primer arreglo del plan, antes que cualquier
-refinamiento.
+| | La app | La realidad |
+|---|---|---|
+| Cabezas que consumen | **55** | **189** |
+| Los otros 134 | **no existen para el costo** | comieron del mismo silo |
+| Precio del maíz | **$270/kg**, de la receta | ~$255 a $267/kg, de 5 facturas distintas |
+| Precio del concentrado | **$745/kg**, de la receta | el de la compra de 3.000 kg |
+| ¿Cierra contra lo comprado? | ❌ **nada lo compara** | — |
 
-**Hacia dónde va**: el consumo tiene que colgar del **grupo que comió junto** (el ciclo de recría),
-y de ahí repartirse a los lotes por kilo-día. Ver § 14 de `MODULO_HACIENDA.md`.
+### Por qué importa
+
+1. **Le faltan dos tercios del rodeo y no lo dice.** Los 134 que quedan no tienen lote —porque
+   todavía no se van a vender— así que su comida no está en ningún lado.
+2. **El precio es teórico.** Sale de la receta, no de las facturas. El usuario lo señaló primero:
+   *"hay que controlar lo adjudicado con lo consumido y con su precio real, si no todo se irá
+   dispersando"*.
+3. **No hay control posible.** Un número estimado que nunca se compara contra lo comprado no se puede
+   auditar: puede estar al doble o a la mitad y nadie se entera.
+
+### Hacia dónde va
+
+**El consumo es una propiedad del RODEO** —lo que entró al silo y lo que se midió al final—, no de un
+lote de venta. El lote es el destinatario del reparto, no la fuente del dato.
+
+Es exactamente lo que resolvió la maqueta de [A-FEAT-43](#a-feat-43): se mide el total del rodeo y se
+reparte por kilo-día entre los grupos, vendidos y no vendidos. La estimación por receta no se tira —
+**pasa a ser el presupuesto contra el que se compara lo real**.
 
 ---
 
