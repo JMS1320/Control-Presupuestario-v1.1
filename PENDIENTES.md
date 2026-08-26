@@ -378,6 +378,10 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-41 | 🔴 | Test | **El tramo de un lote respeta Guardar y Cancelar** ([A-BUG-54](#a-bug-54) + [A-BUG-58](#a-bug-58)) — abrir un lote en *Productivo → Evolución Rodeo → lotes*, agregar un tramo, cambiarle las fechas y darle **Cancelar**: al reabrir **no tiene que haber quedado nada**. Repetir y darle **Guardar**: tiene que quedar. Probar tambien **borrar** un tramo y cancelar (debe seguir estando) y el **checkbox de ganancia diaria**, que ahora tiene que tildarse y verse el cambio en la curva. Y con un lote **con fecha de venta**, agregar un tramo: el **Hasta** debe salir con la fecha de venta y no con +6 meses; si se lo pasa, tiene que aparecer el **aviso ámbar** | → [A-TEST-41](#a-test-41) `@productivo` |
 | **A-FEAT-47** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-42](#a-test-42))** · **Mediciones de stock de un insumo: el consumo deja de estimarse y se MIDE.** Tabla nueva `productivo.mediciones_insumo` (un **nivel**, no un movimiento — por eso no va en `movimientos_insumos`) + `lib/productivo/consumo.ts` + botón **Mediciones** en cada insumo de *Productivo → Insumos → Stock*. **Cada medición corta un tramo**, y de cada tramo sale `había + entró − quedó`, con **precio por tramo** (no un promedio del período) y **3 controles a la vista**. Es el primer paso de [A-FEAT-43](#a-feat-43): sin esto no se puede cargar nada. Verificado con `scripts/verificar-consumo.mts` contra los datos reales de la recría 2026 — los 3 controles cierran | → [A-FEAT-47](#a-feat-47) `@productivo` |
 | A-TEST-42 | 🔴 | Test | **Cargar las mediciones de maíz y ver que el consumo cierre** ([A-FEAT-47](#a-feat-47)) — en *Productivo → Insumos → Stock*, botón **Mediciones** del Maíz. Cargar las 4 tomas (16/03 = 0 · 24/06 = 0 · 24/07 = 0 · 24/08 = 5.800 kg) con las 6 entregas ya cargadas como compras: tienen que salir **3 tramos**, consumo total **61.860 kg**, remanente **5.800 kg** y los **3 controles en ✓**. Probar además: cargar **dos mediciones el mismo día** (tiene que avisar que se contradicen) · **borrar** una y ver que los tramos se recalculan · una entrega **sin precio** (el costo del tramo debe decir «—», nunca cero) | → [A-TEST-42](#a-test-42) `@productivo` |
+| **A-BUG-59** | 🔴 | Bug | **El desbaste y la CZ se calculan con un peso proyectado desde HOY, no desde la pesada** — en *Cargar stock inicial desde una pesada* (`panel-lotes-hacienda.tsx` § `ModalDesdePesada`), `pct_desbaste` y `pct_cz` salen de `peso + (fecha_venta − HOY) × ganancia`. Pero el `peso_base_kg` que se guarda es **el de la pesada**, y `fecha_peso` es **la fecha de la pesada**. O sea: el peso de partida es de una fecha y los días se cuentan desde otra. Caso real del usuario (2026-08-26): pesada 3/8 a 211,9 kg, venta 20/09 → el peso correcto a la venta es **259,9 kg** y la banda se busca con **236,9**: **23 kg de diferencia**, suficiente para caer en otra banda de precio. El resto de la app cuenta la ganancia desde `fecha_peso` — acá quedó desalineado | → [A-BUG-59](#a-bug-59) `@productivo` |
+| **A-BUG-60** | 🟡 | Bug | **Con fecha de venta cargada, la pantalla sigue mostrando el peso de HOY** — en el mismo modal, cada grupo muestra *«pesada 211,9 kg → hoy 235,9 kg»* y el placeholder del peso también es el de hoy. Si ya pusiste fecha de venta, **el número que importa es el peso A LA VENTA**, que es con el que se factura y con el que se elige la banda. Lo marcó el usuario: *«le pongo fecha de venta pero el kilaje me lo muestra a la fecha de hoy»*. Hermano de [A-BUG-59](#a-bug-59): uno muestra mal, el otro guarda mal | → [A-BUG-60](#a-bug-60) `@productivo` |
+| **A-BUG-61** | 🟡 | Bug | **«Los más pesados / los más livianos / promedio» sigue habilitado cuando te llevás TODO** — si la cantidad iguala a las cabezas del grupo, elegir cuáles no significa nada: son todos, y el promedio es el mismo. El bloque de vista previa ya se oculta en ese caso (`cant >= g.pesos.length`), pero el selector no. Lo marcó el usuario: *«si pongo vender todo lo posible no me debería dejar elegir… porque si es todo es todo»*. Confunde y además sugiere que el número podría cambiar | → [A-BUG-61](#a-bug-61) `@productivo` |
+| **A-FEAT-48** | 🔴 | Feat | **La venta interna RECRÍA → CRÍA (las vaquillonas de reposición)** — las hembras retenidas no se venden afuera: pasan a cría. Es **ingreso de recría y costo de entrada de cría**, la misma operación vista de los dos lados. Ya existe el espejo en el otro sentido (`ciclos_recria.precio_kg_entrada` cierra cría y abre recría) pero **no existe la vuelta**, así que hoy la reposición sale del circuito sin valuarse: recría regala animales y cría los recibe gratis. El usuario lo planteó así: *«las de reposición sí se venden a cría… es una venta para uno y un costo para otro, pero se debe poner la venta interna para que ejecute los márgenes»* | → [A-FEAT-48](#a-feat-48) `@productivo @presupuesto` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10497,6 +10501,105 @@ tiempo del rodeo de recría. Es el paso siguiente, y sigue en [A-FEAT-43](#a-fea
 📌 **Un aprendizaje de la verificación**: conviene poner **una medición el día que arranca la
 ración**. Si no, el primer tramo abarca días en que no se comió y el control del % del peso vivo sale
 diluido (dio 0,92 % en vez de ~1,4 %). El total no se mueve — pero el control pierde filo.
+
+---
+
+## <a id="a-bug-59"></a>A-BUG-59 — El desbaste y la CZ se proyectan desde HOY, no desde la pesada
+
+**Dónde**: `components/panel-lotes-hacienda.tsx` § `ModalDesdePesada`, en el `payload` de `aplicar()`.
+
+```
+pct_desbaste = pctDesbaste(categoria, peso + (fecha_venta − HOY) × ganancia)
+                                              ^^^^^^^^^^^^^^^^^
+                                              debería ser fecha_peso
+```
+
+Pero en el mismo `payload`:
+
+| Campo | Qué guarda |
+|---|---|
+| `peso_base_kg` | el promedio real **de la pesada** |
+| `fecha_peso` | **la fecha de la pesada** |
+
+**El peso de partida es de una fecha y los días se cuentan desde otra.**
+
+### El caso real (usuario, 2026-08-26)
+
+| | |
+|---|---|
+| Pesada | 03/08/2026, promedio 211,9 kg |
+| Hoy | 26/08/2026 |
+| Venta | 20/09/2026 |
+| Ganancia | 1 kg/día |
+| **Peso correcto a la venta** | 211,9 + 48 días = **259,9 kg** |
+| **Peso que usa para la banda** | 211,9 + 25 días = **236,9 kg** |
+| **Diferencia** | **23 kg** |
+
+23 kg alcanzan para caer en otra banda de peso, y de la banda salen el desbaste, la CZ y el precio.
+
+⚠️ **El resto de la app cuenta la ganancia desde `fecha_peso`** —así lo pide el comentario de
+`LoteVenta.fecha_peso` en `lib/presupuesto/margen.ts`, justamente para no sumar dos veces el engorde
+ya incluido en el peso cargado. Acá quedó desalineado.
+
+**Fix**: contar los días desde la fecha que corresponde al peso — `fecha_peso` si el peso sale de la
+pesada, `hoy` sólo si se puso a mano (que es lo que ya hace la línea de al lado).
+
+---
+
+## <a id="a-bug-60"></a>A-BUG-60 — Con fecha de venta, la pantalla sigue mostrando el peso de hoy
+
+Mismo modal. Cada grupo muestra:
+
+> *pesada 211,9 kg → **hoy 235,9 kg** (24 días)*
+
+y el placeholder del campo de peso también es el de hoy. **Si ya cargaste la fecha de venta, el
+número que importa es el peso A LA VENTA**: es con el que se factura, y es el que decide la banda.
+
+Lo marcó el usuario: *"le pongo fecha de venta pero el kilaje me lo muestra a la fecha de hoy"*.
+
+**Fix**: cuando hay fecha de venta, mostrar `pesada → a la venta (N días)`, y dejar el de hoy como
+dato secundario. Hermano de [A-BUG-59](#a-bug-59): **uno muestra mal, el otro guarda mal.**
+
+---
+
+## <a id="a-bug-61"></a>A-BUG-61 — El selector de «cuáles» sigue habilitado cuando te llevás todos
+
+Cuando la cantidad iguala a las cabezas del grupo, elegir *los más pesados* / *los más livianos* /
+*promedio* **no significa nada**: son todos, y el promedio es el mismo en los tres casos.
+
+El bloque de vista previa ya lo contempla (`if (cant <= 0 || cant >= g.pesos.length) return null`),
+pero el selector queda visible y habilitado. Confunde, y peor: **sugiere que el número podría
+cambiar**.
+
+Lo marcó el usuario: *"si pongo vender todo lo posible no me debería dejar elegir lo más pesado, lo
+más liviano o promedio… porque si es todo es todo"*.
+
+**Fix**: ocultarlo (o deshabilitarlo con la leyenda *«son todos»*) cuando `cant >= cabezas`.
+
+---
+
+## <a id="a-feat-48"></a>A-FEAT-48 — La venta interna RECRÍA → CRÍA (las de reposición)
+
+Las vaquillonas retenidas **no se venden afuera**: pasan a cría como reposición. Es **ingreso de
+recría y costo de entrada de cría** — la misma operación vista de los dos lados, exactamente igual
+que la transferencia cría → recría.
+
+**Y el espejo existe sólo en un sentido**: `ciclos_recria.precio_kg_entrada` cierra el resultado de
+cría y abre el de recría. **La vuelta no existe.** Hoy la reposición sale del circuito sin valuarse:
+
+```
+   cría ──── $7.000/kg ────► recría        ya existe
+   cría ◄──── ¿? ────────── recría         NO existe
+```
+
+Resultado: **recría regala animales y cría los recibe gratis.** Los dos márgenes quedan mal, y en
+direcciones opuestas.
+
+📌 El usuario lo planteó así: *"las de reposición sí se venden a cría. Es una venta para uno y un
+costo para otro, pero se debe poner la venta interna para que ejecute los márgenes"*.
+
+⚠️ **Un solo número para los dos lados**, como quedó fijado para cría → recría: si se cargan dos, en
+algún momento dejan de coincidir y ninguno de los dos márgenes cierra.
 
 ---
 
