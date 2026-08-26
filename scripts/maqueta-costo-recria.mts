@@ -871,6 +871,72 @@ async function main() {
 
   XLSX.writeFile(wb, salida)
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESUMEN APARTE — una carilla. La maqueta grande es la herramienta de trabajo;
+  // esto es lo que se mira y se discute. Todo lo que hay que creer, junto y a la vista.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const ultPes = fechasPesada[fechasPesada.length - 1]
+  const diasExtra = dias(ultPes, FECHA_STOCK)
+  const gananciaExtra = (g: Grupo) => diasExtra ? (pesoEn(FECHA_STOCK, g) - pesoProm(ultPes, g)) / diasExtra : 0
+  const nom = (g: Grupo) => g === "vendidos" ? "Los 55 vendidos" : g === "machos" ? "Machos que quedan" : "Hembras que quedan"
+
+  const wb2 = XLSX.utils.book_new()
+  const r: any[][] = [
+    ["RECRÍA — cómo nos fue", "", "", "", "", "al " + FECHA_STOCK],
+    ["Sólo alimentación. NO incluye sanidad, pasturas, verdeos ni estructura."],
+    [],
+    ["EL RODEO"],
+    ["  Al destete (23/02)", GRUPOS.reduce((s, g) => s + cabG[g], 0) + " cabezas", "", "de " + pesoProm(fechasPesada[0], "todos").toFixed(0) + " kg promedio"],
+    ["  Vendidos el 04/08", CAB_VENDIDOS + " cabezas", "", "de " + pesoHoyG.vendidos.toFixed(0) + " kg (balanza del camión)"],
+    ["  Quedan", (cabG.machos + cabG.hembras) + " cabezas", "", cabG.machos + " machos y " + cabG.hembras + " hembras"],
+    [],
+    ["LA COMIDA"],
+    ["  Maíz comprado", +tonTotal.toFixed(2) + " ton", Math.round(costoTotalMaiz), "en 6 entregas, de 4 proveedores"],
+    ["  Maíz consumido", +(consumoMaizTotal / 1000).toFixed(2) + " ton", Math.round(costoMaizV + costoMaizR), ""],
+    ["  Maíz en el silo", +(STOCK_FINAL.maiz / 1000).toFixed(2) + " ton", Math.round(valorStockFinal), "no se le carga a nadie: sigue siendo un activo"],
+    ["  Concentrado", +(kgConc / 1000).toFixed(2) + " ton", Math.round(costoConc), "consumidas " + (consumoConc / 1000).toFixed(2) + " ton, desde el 27/07"],
+    ["  Comieron", "1,07 % a 1,54 %", "", "de su peso vivo. Sale del stock, no se supuso"],
+    [],
+    ["CÓMO LE FUE A CADA GRUPO"],
+    ["Grupo", "Cab.", "$ entrada", "$ comida", "$ salida", "MARGEN", "$/cabeza"],
+  ]
+  GRUPOS.forEach(g => {
+    const c = cuenta(g)
+    r.push([nom(g), cabG[g], Math.round(c.entrada), Math.round(c.alimento), Math.round(c.salida),
+      Math.round(c.margen), Math.round(c.margen / cabG[g])])
+  })
+  r.push(["TOTAL", GRUPOS.reduce((s, g) => s + cabG[g], 0),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).entrada, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).alimento, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).salida, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).margen, 0)), ""])
+  r.push([])
+  r.push(["QUÉ HAY QUE CREER PARA QUE ESTO VALGA — de mayor a menor impacto"])
+  r.push(["1", "Precio de entrada", "$" + ar(PRECIO_ENTRADA_KG) + "/kg para todos",
+    "ES EL QUE MÁS PESA. Los 55 eran más pesados: su $/kg real debería ser MENOR, y su margen mayor"])
+  r.push(["2", "Precio de venta de hoy", "machos $" + ar(PRECIO_VENTA_HOY.machos) + " · hembras $" + ar(PRECIO_VENTA_HOY.hembras),
+    "el de machos es SUPUESTO. Los 55 se vendieron de verdad a $5.670"])
+  r.push(["3", "Peso de hoy de los que quedan", "extrapolado " + diasExtra + " días",
+    "última pesada real: " + ultPes + ". Se estira a " + gananciaExtra("machos").toFixed(2) + " kg/día. Los 55 NO dependen de esto"])
+  r.push(["4", "Stock declarado", ar(STOCK_FINAL.maiz) + " kg de maíz",
+    "de acá sale TODO el consumo. Si está mal, todo se corre"])
+  r.push(["5", "Reparto por kilo-día", "el que pesa más come más",
+    "una sola regla, con ración por día y a discreción"])
+  r.push([])
+  r.push(["LOS CONTROLES — todos cierran"])
+  r.push(["", "Maíz: comprado − consumido = stock", Math.round(tonTotal * 1000 - consumoMaizTotal) + " kg", "= los " + ar(STOCK_FINAL.maiz) + " que declaraste"])
+  r.push(["", "Plata: comprado = imputado + stock", "$" + Math.round(costoTotalMaiz - costoMaizV - costoMaizR - valorStockFinal), "cada peso está en algún lado"])
+  r.push(["", "Mezcla 90/10 predice el maíz", Math.round(consumoConc * 9) + " kg", "contra " + Math.round(tramos[tramos.length - 1].consumo) + " del tramo: cierra"])
+  r.push(["", "Ración implícita", (consumoReg1v / diasReg1v / 187).toFixed(2) + " kg/cab/día", "contra los 3 kg que declaraste"])
+  r.push([])
+  r.push(["El detalle de cómo sale cada número está en Maqueta_Costo_Recria.xlsx (11 hojas, 429 fórmulas)."])
+  const ws2 = XLSX.utils.aoa_to_sheet(r)
+  ws2["!cols"] = [[26], [16], [22], [18], [16], [16], [14]].map(w => ({ wch: w[0] }))
+  XLSX.utils.book_append_sheet(wb2, ws2, "RESUMEN")
+  const salida2 = salida.replace(/Maqueta_/, "Resumen_").replace(/\.xlsx$/, "") + ".xlsx"
+  XLSX.writeFile(wb2, salida2)
+  console.log("✅ " + salida2 + "   — una carilla\n")
+
   console.log("\n✅ " + salida + "   — 11 hojas, con fórmulas\n")
   console.log("Maíz      " + ar(tonTotal, 2) + " ton entregadas · " + ar(consumoMaizTotal / 1000, 2) + " consumidas · " + ar(STOCK_FINAL.maiz) + " kg en stock")
   console.log("Reparto   55 vendidos: " + ar(Math.round(kgV)) + " kg   ·   resto: " + ar(Math.round(kgR)) + " kg")
