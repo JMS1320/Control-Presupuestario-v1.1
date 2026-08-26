@@ -53,8 +53,14 @@ const ENTREGAS_MAIZ = [
   { fecha: "2026-05-06", prov: "Arroyo Tala", ton: 7.30, precioTon: 262000, nota: "FC del 11/05, RECIBIDA el 06/05 — acá arranca la ración" },
   { fecha: "2026-06-02", prov: "Arroyo Tala", ton: 7.56, precioTon: 254000, nota: "fecha de entrega ≈ factura (sin dato exacto)" },
   { fecha: "2026-06-17", prov: "Pereyra Miguel", ton: 5.96, precioTon: 238352.82, nota: "mal facturada → fue a otra cuenta contable" },
-  { fecha: "2026-06-24", prov: "Longo", ton: 20.10, precioTon: 267300, nota: "1er flete. FC 13/7 por 25 ton (error de facturación)" },
-  { fecha: "2026-07-24", prov: "Longo", ton: 25.00, precioTon: 267300, nota: "2do flete. FC 14/8 por 20,1 ton, compensa" },
+  // ⚠️ Longo: lo facturado y lo entregado NO coinciden evento por evento, pero el total sí (45,1 ton).
+  // Las 4,9 ton de diferencia son un ANTICIPO que viaja con su propio precio:
+  //   FC 13/07: 25,0 ton × $267.500 = $6.687.500  → se entregaron 20,1 el 24/06
+  //   FC 14/08: 20,1 ton × $267.050 = $5.367.705  → se entregaron 25,0 el 24/07
+  //   entrega 2 = 20,1 @ 267.050 (FC 14/08) + 4,9 @ 267.500 (anticipo) = $6.678.455
+  //   5.376.750 + 6.678.455 = 12.055.205 = el total facturado, exacto.
+  { fecha: "2026-06-24", prov: "Longo", ton: 20.10, precioTon: 267500, nota: "1er flete. Precio de la FC 13/07 (que facturó 25 ton)" },
+  { fecha: "2026-07-24", prov: "Longo", ton: 25.00, precioTon: (20.1 * 267050 + 4.9 * 267500) / 25, nota: "2do flete. 20,1 ton a precio de la FC 14/08 + 4,9 ton del anticipo de la FC 13/07" },
 ]
 
 /** Concentrado: una sola compra. */
@@ -80,6 +86,9 @@ const PRECIO_ENTRADA_KG = 7000
  * Es lo mismo que hace la venta: 16.180 kg brutos de balanza, 15.694,6 netos facturados.
  */
 const DESBASTE = 0.03
+
+/** Precio de prueba para valuar a los que TODAVÍA no se vendieron, como si se vendieran hoy. */
+const PRECIO_VENTA_HOY = 6000
 
 /** Categorías que comen la ración: todos los machos (con toritos) y todas las hembras. */
 const CATS_COMEN = ["ternero recria", "ternera recria", "torito", "vaquillona de reposicion",
@@ -110,6 +119,19 @@ async function main() {
     .select("id").eq("fecha_baja", "2026-08-04").eq("motivo_baja", "venta")
   const idsVendidos = new Set((vendidos || []).map((t: any) => t.id))
 
+  // Los TRES grupos. Machos y hembras siguen el mismo régimen, así que alcanza con partir
+  // "el resto" en dos: repartir 3 grupos a la vez da lo mismo que repartir 2 y subdividir.
+  const { data: ternerosAll } = await supabase.schema("productivo").from("terneros")
+    .select("id, sexo, fecha_baja, categoria_id")
+  const delRodeo = (ternerosAll || []).filter((t: any) => idsComen.has(t.categoria_id))
+  type Grupo = "vendidos" | "machos" | "hembras"
+  const grupoDe = (t: any): Grupo => idsVendidos.has(t.id) ? "vendidos" : (t.sexo === "Macho" ? "machos" : "hembras")
+  const gruposPorId: Record<string, Grupo> = {}
+  delRodeo.forEach((t: any) => { gruposPorId[t.id] = grupoDe(t) })
+  const vivoAl = (t: any, f: string) => !t.fecha_baja || t.fecha_baja > f
+  const cabezasGrupo = (g: Grupo, f: string) =>
+    delRodeo.filter((t: any) => grupoDe(t) === g && vivoAl(t, f)).length
+
   const { data: ventaMov } = await supabase.schema("productivo").from("movimientos_hacienda")
     .select("fecha, cantidad, peso_total_kg, precio_por_kg, monto_total")
     .eq("tipo", "venta").eq("fecha", "2026-08-04").single()
@@ -130,14 +152,18 @@ async function main() {
 
   // ── Peso: pesadas reales, promedio del grupo vendido y del resto ───────────
   const fechasPesada = [...new Set((pesadas || []).map((p: any) => p.fecha))].sort()
-  const pesoProm = (fecha: string, grupo: "vendidos" | "resto" | "todos") => {
-    const ps = (pesadas || []).filter((p: any) => p.fecha === fecha &&
-      (grupo === "todos" || (grupo === "vendidos" ? idsVendidos.has(p.ternero_id) : !idsVendidos.has(p.ternero_id))))
+  const pesoProm = (fecha: string, grupo: Grupo | "resto" | "todos") => {
+    const ps = (pesadas || []).filter((p: any) => {
+      if (p.fecha !== fecha) return false
+      if (grupo === "todos") return true
+      if (grupo === "resto") return !idsVendidos.has(p.ternero_id)
+      return gruposPorId[p.ternero_id] === grupo
+    })
     return ps.length ? ps.reduce((s: number, p: any) => s + Number(p.peso_kg), 0) / ps.length : 0
   }
 
   /** Peso interpolado entre pesadas. Fuera de rango, se extiende con la pendiente del extremo. */
-  const pesoEn = (fecha: string, grupo: "vendidos" | "resto") => {
+  const pesoEn = (fecha: string, grupo: Grupo | "resto") => {
     const pts = fechasPesada.map(f => ({ f, p: pesoProm(f, grupo) })).filter(x => x.p > 0)
     if (pts.length === 0) return 0
     if (fecha <= pts[0].f) return pts[0].p
@@ -179,25 +205,34 @@ async function main() {
   // Por cada día se calcula el peso de cada grupo. El régimen decide la clave:
   //   antes del autoconsumo → cabeza-día ; desde el autoconsumo → kilo-día.
   const CAB_VENDIDOS = 55
+  const GRUPOS: Grupo[] = ["vendidos", "machos", "hembras"]
   const repartoTramo = (t: typeof tramos[0]) => {
-    let claveV = 0, claveR = 0, cabDiaV = 0, cabDiaR = 0
+    const clave: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+    // Contraste: la misma cuenta hecha SIEMPRE por kilo-día, para medir cuánto cambia la
+    // simplificación de usar cabeza-día en el régimen 1 (el pesado come más y no lo cobramos).
+    const claveKD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
     for (let k = 0; k < t.d; k++) {
       const f = addDias(t.desde, k)
       if (f < INICIO_RACION) continue          // antes de la ración no se consume nada
-      const total = cabezasAl(f)
-      const vend = f < "2026-08-04" ? CAB_VENDIDOS : 0     // los 55 salen el 04/08
-      const resto = total - vend
-      if (resto < 0) continue
       const discrecion = f >= INICIO_CONC
-      const pv = pesoEn(f, "vendidos"), pr = pesoEn(f, "resto")
-      claveV += discrecion ? vend * pv : vend
-      claveR += discrecion ? resto * pr : resto
-      cabDiaV += vend; cabDiaR += resto
+      for (const g of GRUPOS) {
+        const cab = cabezasGrupo(g, f)
+        const p = pesoEn(f, g)
+        clave[g] += discrecion ? cab * p : cab
+        claveKD[g] += cab * p
+      }
     }
-    const tot = claveV + claveR
-    return { claveV, claveR, cabDiaV, cabDiaR,
-             kgV: tot ? t.consumo * claveV / tot : 0,
-             kgR: tot ? t.consumo * claveR / tot : 0,
+    const tot = GRUPOS.reduce((s, g) => s + clave[g], 0)
+    const totKD = GRUPOS.reduce((s, g) => s + claveKD[g], 0)
+    const kg: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+    const kgKD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+    GRUPOS.forEach(g => {
+      kg[g] = tot ? t.consumo * clave[g] / tot : 0
+      kgKD[g] = totKD ? t.consumo * claveKD[g] / totKD : 0
+    })
+    return { clave, kg, kgKD,
+             claveV: clave.vendidos, claveR: clave.machos + clave.hembras,
+             kgV: kg.vendidos, kgR: kg.machos + kg.hembras,
              regimen: t.desde >= INICIO_CONC ? "kilo-día" : (t.hasta > INICIO_CONC ? "mixto" : "cabeza-día") }
   }
   const repartos = tramos.map(repartoTramo)
@@ -261,6 +296,46 @@ async function main() {
   const consumoReg1v = consumoMaizTotal - consumoConc * 9
   const diasReg1v = dias(INICIO_RACION, INICIO_CONC)
 
+  // ── Por grupo: kg, costos, cabezas y peso de hoy ───────────────────────────
+  const kgG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  const kgGkd: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  const costoMaizG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  repartos.forEach((r, i) => GRUPOS.forEach(g => {
+    kgG[g] += r.kg[g]; kgGkd[g] += r.kgKD[g]; costoMaizG[g] += r.kg[g] * precioTramo[i]
+  }))
+  const pctConcG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  const totT3 = GRUPOS.reduce((s, g) => s + rT3.clave[g], 0)
+  GRUPOS.forEach(g => { pctConcG[g] = totT3 ? rT3.clave[g] / totT3 : 0 })
+  const costoConcG: Record<Grupo, number> = {
+    vendidos: consumoConc * pctConcG.vendidos * precioConcKg,
+    machos: consumoConc * pctConcG.machos * precioConcKg,
+    hembras: consumoConc * pctConcG.hembras * precioConcKg,
+  }
+  const cabG: Record<Grupo, number> = {
+    vendidos: CAB_VENDIDOS,
+    machos: cabezasGrupo("machos", FECHA_STOCK),
+    hembras: cabezasGrupo("hembras", FECHA_STOCK),
+  }
+  // Peso de entrada (pesada del 23/02) y de hoy, por grupo
+  const pesoIniG: Record<Grupo, number> = {
+    vendidos: pesoProm(fechasPesada[0], "vendidos"),
+    machos: pesoProm(fechasPesada[0], "machos"),
+    hembras: pesoProm(fechasPesada[0], "hembras"),
+  }
+  const pesoHoyG: Record<Grupo, number> = {
+    vendidos: Number(ventaMov?.peso_total_kg ?? 0) / CAB_VENDIDOS,   // balanza real de la venta
+    machos: pesoEn(FECHA_STOCK, "machos"),
+    hembras: pesoEn(FECHA_STOCK, "hembras"),
+  }
+  /** Entrada, salida y margen de un grupo. Los vendidos usan la venta real; el resto, el precio de prueba. */
+  const cuenta = (g: Grupo) => {
+    const entrada = pesoIniG[g] * (1 - DESBASTE) * PRECIO_ENTRADA_KG * cabG[g]
+    const alimento = costoMaizG[g] + costoConcG[g]
+    const salida = g === "vendidos" ? ingresoV
+      : pesoHoyG[g] * (1 - DESBASTE) * PRECIO_VENTA_HOY * cabG[g]
+    return { entrada, alimento, salida, margen: salida - entrada - alimento }
+  }
+
   // ═══ Serie DIARIA — el corazón auditable ═══════════════════════════════════
   // Una fila por día. De acá sale TODO el reparto, con fórmulas de Excel, para poder
   // auditarlo día por día en vez de creer en un número final.
@@ -287,6 +362,73 @@ async function main() {
     if (toques) toques(ws)
     XLSX.utils.book_append_sheet(wb, ws, nombre)
   }
+
+  // ── 0 · RESUMEN — la síntesis, adelante de todo ────────────────────────────
+  const aoaRes0: any[][] = [
+    ["RESUMEN — cómo nos fue con la recría"],
+    ["Los números del final. El detalle de cómo salen está en las otras hojas."],
+    [],
+    ["LA RACIÓN, TRAMO POR TRAMO"],
+    ["Desde", "Hasta", "Días", "Cabezas", "Régimen", "kg/cab/día", "Consumo total (kg)"],
+  ]
+  tramos.forEach((t, i) => aoaRes0.push([
+    t.desde < INICIO_RACION ? INICIO_RACION : t.desde, t.hasta,
+    Math.max(0, t.d - Math.max(0, dias(t.desde, INICIO_RACION))),
+    +cabPromTramo(t).toFixed(0),
+    i === tramos.length - 1 ? "a discreción" : "fija por cabeza",
+    +racionImplicita(i).toFixed(2), Math.round(t.consumo),
+  ]))
+  aoaRes0.push(["", "", "", "", "TOTAL", "", Math.round(consumoMaizTotal)])
+  aoaRes0.push([])
+  aoaRes0.push(["En criollo: desde el 06/05 hasta el 24/06 comieron " + racionImplicita(0).toFixed(1) + " kg/cab/día;"])
+  aoaRes0.push(["del 24/06 al 24/07, " + racionImplicita(1).toFixed(1) + " kg; y desde el 24/07, con autoconsumo, " + racionImplicita(2).toFixed(1) + " kg."])
+  aoaRes0.push([])
+  aoaRes0.push(["EL MAÍZ Y EL CONCENTRADO, A DÓNDE FUERON"])
+  aoaRes0.push(["Grupo", "Cabezas", "kg maíz", "kg/cab", "kg concentrado", "$ alimentación", "$/cab"])
+  GRUPOS.forEach(g => aoaRes0.push([
+    g === "vendidos" ? "Los 55 vendidos" : g === "machos" ? "Machos que quedan" : "Hembras que quedan",
+    cabG[g], Math.round(kgG[g]), +(kgG[g] / cabG[g]).toFixed(1),
+    Math.round(consumoConc * pctConcG[g]),
+    Math.round(costoMaizG[g] + costoConcG[g]),
+    Math.round((costoMaizG[g] + costoConcG[g]) / cabG[g]),
+  ]))
+  aoaRes0.push(["TOTAL", GRUPOS.reduce((s, g) => s + cabG[g], 0), Math.round(consumoMaizTotal), "",
+    Math.round(consumoConc), Math.round(GRUPOS.reduce((s, g) => s + costoMaizG[g] + costoConcG[g], 0)), ""])
+  aoaRes0.push([])
+  aoaRes0.push(["CÓMO LE FUE A CADA GRUPO"])
+  aoaRes0.push(["Los vendidos con la venta REAL del 04/08. Los que quedan, valuados como si se vendieran hoy a $" + ar(PRECIO_VENTA_HOY) + "/kg."])
+  aoaRes0.push(["Grupo", "Cab.", "Peso entrada", "Peso hoy", "$ entrada", "$ alimento", "$ salida", "MARGEN", "$/cab"])
+  GRUPOS.forEach(g => {
+    const c = cuenta(g)
+    aoaRes0.push([
+      g === "vendidos" ? "Los 55 vendidos" : g === "machos" ? "Machos que quedan" : "Hembras que quedan",
+      cabG[g], +pesoIniG[g].toFixed(1), +pesoHoyG[g].toFixed(1),
+      Math.round(c.entrada), Math.round(c.alimento), Math.round(c.salida),
+      Math.round(c.margen), Math.round(c.margen / cabG[g]),
+    ])
+  })
+  const totM = GRUPOS.reduce((s, g) => s + cuenta(g).margen, 0)
+  aoaRes0.push(["TOTAL", GRUPOS.reduce((s, g) => s + cabG[g], 0), "", "",
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).entrada, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).alimento, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).salida, 0)), Math.round(totM), ""])
+  aoaRes0.push([])
+  aoaRes0.push(["OJO CON ESTO"])
+  aoaRes0.push(["· El precio de entrada ($" + ar(PRECIO_ENTRADA_KG) + "/kg para todos) es el que más pesa. Los 55 eran más pesados,"])
+  aoaRes0.push(["  así que su $/kg real debería ser MENOR — y su margen, mayor que el que figura acá."])
+  aoaRes0.push(["· El precio de hoy ($" + ar(PRECIO_VENTA_HOY) + "/kg) es de prueba: cambialo en INPUTS."])
+  aoaRes0.push(["· NO incluye sanidad, pasturas, verdeos ni estructura. Sólo maíz y concentrado."])
+  aoaRes0.push([])
+  aoaRes0.push(["CUÁNTO CAMBIA LA SIMPLIFICACIÓN DEL RÉGIMEN 1"])
+  aoaRes0.push(["Con ración fija repartimos por CABEZA-día: el pesado y el liviano pagan igual, aunque el pesado coma más."])
+  aoaRes0.push(["Si se repartiera todo por KILO-día, cambiaría así:"])
+  aoaRes0.push(["Grupo", "kg con cabeza-día", "kg con kilo-día", "Diferencia", "%"])
+  GRUPOS.forEach(g => aoaRes0.push([
+    g === "vendidos" ? "Los 55 vendidos" : g === "machos" ? "Machos que quedan" : "Hembras que quedan",
+    Math.round(kgG[g]), Math.round(kgGkd[g]), Math.round(kgGkd[g] - kgG[g]),
+    +((kgGkd[g] - kgG[g]) / kgG[g] * 100).toFixed(1),
+  ]))
+  hoja("RESUMEN", aoaRes0, [26, 12, 14, 12, 16, 16, 14, 14, 12])
 
   // ── 1 · LEEME ──────────────────────────────────────────────────────────────
   hoja("LEEME", [
