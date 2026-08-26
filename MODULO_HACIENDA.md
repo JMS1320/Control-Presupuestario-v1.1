@@ -822,3 +822,96 @@ pasa intacto (junio).
 ⏸️ **Nada ejecutado.** Al pasar a la etapa de corrección, estos ítems tienen que bajar a
 `PENDIENTES.md` con su ID y su marca `@productivo`, porque son trabajo pendiente y esa es su
 dimensión. Este archivo queda como el **diseño y el diagnóstico**; la lista de trabajo vive allá.
+
+---
+
+## 14 · 🌽 Costeo de recría — el modelo acordado (2026-08-25/26)
+
+> **Estado: diseñado y validado con datos reales, NO implementado.** El trabajo con su ID vive en
+> `PENDIENTES.md` § [A-FEAT-43](PENDIENTES.md#a-feat-43) y § [A-FEAT-44](PENDIENTES.md#a-feat-44).
+> Acá va el **diseño**, que es lo que corresponde a esta dimensión.
+
+### 14.1 · El problema
+
+Los terneros de recría comen de una ración común. El 04/08/2026 se vendieron 55 y quedó el resto.
+¿Cuánto maíz y cuánto concentrado le corresponde a lo vendido? Tomar inventario en cada venta no es
+realista — y el usuario lo dijo así: *"sería raro lograr tomar stock a cada venta"*.
+
+### 14.2 · Las cuatro reglas
+
+1. **Comprar no es consumir.** La compra entra a un stock (activo). El costo es el **consumo**. Con
+   eso, el sobrante se queda en el stock y no se le carga a nadie — y desaparece la necesidad de
+   inventariar en cada venta.
+2. **El consumo del período no se estima, se mide**: `stock inicial + entregas − stock final`.
+3. **Un corte existe cuando hay una MEDICIÓN, no cuando llega un camión.** El sistema tiene que
+   soportar el modo grueso (sólo inicio y fin) y el fino (mediciones intermedias) con la misma
+   lógica — sólo cambia cuántos tramos hay.
+4. **La clave sólo reparte.** Como el total ya es real, las participaciones suman 1: cambiar el
+   criterio de reparto **no puede mover el total**.
+
+### 14.3 · La clave: kilo-día, siempre
+
+`kilo-día de un grupo = Σ (cabezas × peso × días presentes)`
+
+El peso sale de las **pesadas reales** (`fecha_peso` / la curva quebrada por tramos), nunca de una
+ganancia estimada. Motivo del usuario: *"cuando se da la ración diaria se sabe que los más pesados
+comen más que los livianos — no es invento mío"*.
+
+⚠️ **Una sola regla, tanto si la ración es por día como a discreción.** El usuario fue explícito:
+*"en la app yo no puedo variar formas de cálculo en vivo"*. Lo que cambia entre un modo y otro es el
+**dato que se carga**, no la fórmula.
+
+**Y el % de peso vivo deja de ser un supuesto**: sale de dividir el consumo medido por el kilo-día
+del rodeo. Con los datos reales dio 1,07 / 1,46 / 1,54 % — creciente y coherente. Si diera 0,4 %,
+falta una entrega: **el parámetro se vuelve un control**.
+
+### 14.4 · Pesos: cuál se usa para qué
+
+| Para | Qué peso | Por qué |
+|---|---|---|
+| El **consumo** (kilo-día) | **vivo / bruto** | el animal come según lo que pesa parado |
+| La **plata** (valor de entrada, venta) | **neto**, con el 3 % de desbaste | es lo que se cobra y se paga |
+
+El 3 % es el **desbaste** — quedó resuelto en `A-DAT-06`.
+
+### 14.5 · La mortandad
+
+Es un costo y se adjudica. **Los muertos se valúan a su propio peso al destete**, no al promedio del
+grupo: usar el promedio × la cantidad de sobrevivientes dejaba una diferencia de $802.396 que el
+control de rodeo destapó.
+
+⚠️ **Qué es exacto y qué es convención:** el **total** (entradas vs. salidas) es exacto. Los
+**parciales** llevan convención — a qué grupo se le carga el animal que murió antes de que la venta
+existiera. Pero **la convención mueve plata entre grupos y nunca cambia el total**, y por eso el
+total es el control de los parciales.
+
+### 14.6 · La cadena de compra, que hoy está cortada
+
+Son **tres** momentos, no dos, y cada uno trae conocimiento distinto:
+
+| Momento | Qué se sabe | Qué mueve |
+|---|---|---|
+| **Compra / pedido** | cantidad acordada | nada |
+| **Entrega** | cantidad recibida y **la fecha real** | **el stock** |
+| **Factura** | **el precio** | el costo y la contabilidad |
+
+⚠️ **No coinciden.** Longo facturó el 13/07 lo entregado el 24/06, y facturó 20,1 t de 25 entregadas.
+**Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal.** Hoy
+`movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al
+lote → `A-FEAT-44`.
+
+### 14.7 · Lo que el modelo dejó a la vista
+
+🔴 **La alimentación es el 5,5 % del valor del animal; el precio de entrada de cría a recría es el
+93 %.** Afinar el reparto del maíz mueve mucho menos que acertar ese precio. Hoy se usa $7.000/kg
+uniforme — pero `precios_hacienda` **ya tiene bandas de peso** y `resolverPrecioHacienda()` ya las
+resuelve: la misma función que valúa la venta puede valuar la entrada, y los 55 caen en una banda
+distinta a la del resto.
+
+### 14.8 · Los Excel tienen fecha de vencimiento
+
+`scripts/maqueta-costo-recria.mts` genera `Maqueta_Costo_Recria.xlsx` (11 hojas, 429 fórmulas de
+Excel — no valores, para que sea auditable) y `Resumen_Costo_Recria.xlsx` (una carilla + una solapa
+por rodeo). **Cuando la app calcule esto, los dos pasan a ser el CASO DE PRUEBA, no la herramienta.**
+Si sobreviven como herramienta, se convierten en una segunda fuente de verdad. Está escrito adentro
+de los propios archivos.
