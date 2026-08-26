@@ -2804,3 +2804,27 @@ mide al recibirla, antes de descargar.
 
 ### Cómo se prueba
 → los pasos están en `PENDIENTES.md` § [A-TEST-42](PENDIENTES.md#a-test-42).
+
+---
+
+## 🔁 Productivo → Recría → **Recría ➜ Cría (reposición)** 🟡 (sin testear)
+
+**Qué es**: las vaquillonas retenidas **no se venden afuera**, pasan a cría. Es la misma operación
+que la transferencia de arriba (Cría ➜ Recría) pero al revés.
+
+**Un solo número para los dos lados**: es **ingreso de recría** y **costo de entrada de cría**.
+
+### Cómo se opera
+1. `Productivo → Recría / Engorde`, bloque **celeste** debajo del verde.
+2. Cargar **cabezas**, **kg brutos por cabeza**, **$/kg** y **cuándo pasan**.
+3. El **neto lo calcula la app** con el desbaste del ciclo — no se carga.
+
+⚠️ **La fecha define a qué campaña contable cae** la transferencia (jul → jun), no la campaña que
+diga el ciclo.
+
+**Dónde se ve el efecto**: `Presupuesto → Margen por actividad`. **Recría** muestra
+*«Reposición: vaquillonas a cría»* como ingreso y **Cría** el mismo monto como costo. Si falta el
+precio, la fila queda *sin calcular* y sube a faltantes — **nunca se pone en cero**.
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-44](PENDIENTES.md#a-test-44).

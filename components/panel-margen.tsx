@@ -27,8 +27,10 @@ import { calcularLineaTiempo } from "@/lib/ganaderia/ciclo"
 import { EditorCostoActividad, type CostoEditable } from "@/components/editor-costo-actividad"
 import {
   calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto, claveMes,
+  campanaDeFecha,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
   type InsumoActividadMargen, type Ajuste, type MesPeriodo, type ContextoCosto,
+  type TransferenciaInterna,
 } from "@/lib/presupuesto/margen"
 import { calcularCuenta, type PuntoHistorico } from "@/lib/presupuesto/modos"
 import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
@@ -372,9 +374,67 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         }
       }
 
+      // ── Las transferencias internas del ciclo ganadero ────────────────────
+      //
+      // La misma operación, los dos lados, UN solo número. Sin esto los animales entran a
+      // costo cero: el que recibe muestra ganancia de más y el que entrega, de menos — que es
+      // justo lo que avisa el panel de ciclo de recría cuando falta el precio de entrada.
+      //
+      // La campaña sale de la FECHA del hecho, no de `ciclos_recria.campania`: ese campo dice
+      // "2026" y las campañas del margen son "25/26". Y además el hecho es el que manda: un
+      // destete de febrero cae en la campaña que estaba corriendo en febrero.
+      const { data: recrias } = await supabase.schema("productivo").from("ciclos_recria")
+        .select("*").eq("activo", true)
+      const transferencias: TransferenciaInterna[] = []
+      for (const c of ((recrias || []) as any[])) {
+        const desbaste = Number(c.pct_desbaste) || 0
+        const num = (x: any) => (x == null ? null : Number(x))
+
+        // ── Ida: cría → recría (el destete). Ya tenía lugar donde cargarse.
+        const cabM = num(c.cabezas_machos) ?? 0
+        const cabH = num(c.cabezas_hembras) ?? 0
+        const cabezas = cabM + cabH
+        // El NETO se calcula, no se carga: es la regla del panel de ciclo.
+        const kgNetos = cabM * (num(c.peso_neto_macho_kg) ?? 0) + cabH * (num(c.peso_neto_hembra_kg) ?? 0)
+        const precioEnt = num(c.precio_kg_entrada)
+        if (cabezas > 0 && c.fecha_inicio) {
+          const monto = precioEnt != null && kgNetos > 0 ? kgNetos * precioEnt : null
+          transferencias.push({
+            concepto: "Destete: entrada de cría",
+            actividadOrigen: "Cria", actividadDestino: "Recria",
+            cabezas, kgNetos, precioKg: precioEnt, monto,
+            campania: campanaDeFecha(String(c.fecha_inicio)),
+            detalle: monto == null
+              ? `${numAR(cabezas)} cab · ${numAR(kgNetos)} kg netos — falta el $/kg de entrada`
+              : `${numAR(cabezas)} cab × ${numAR(kgNetos / (cabezas || 1), 1)} kg netos × ${pesos(precioEnt!)}/kg`
+                + ` · ingreso de Cría y costo de entrada de Recría`,
+          })
+        }
+
+        // ── Vuelta: recría → cría (las de reposición). No se venden afuera.
+        const cabRep = num(c.cabezas_reposicion) ?? 0
+        const brutoRep = num(c.peso_bruto_reposicion_kg) ?? 0
+        const precioRep = num(c.precio_kg_reposicion)
+        if (cabRep > 0) {
+          const kgRep = cabRep * brutoRep * (1 - desbaste)
+          const monto = precioRep != null && kgRep > 0 ? kgRep * precioRep : null
+          transferencias.push({
+            concepto: "Reposición: vaquillonas a cría",
+            actividadOrigen: "Recria", actividadDestino: "Cria",
+            cabezas: cabRep, kgNetos: kgRep, precioKg: precioRep, monto,
+            campania: campanaDeFecha(String(c.fecha_reposicion || c.fecha_fin_estimada || c.fecha_inicio || "")),
+            detalle: monto == null
+              ? `${numAR(cabRep)} cab · ${numAR(kgRep)} kg netos — falta el $/kg de la reposición`
+              : `${numAR(cabRep)} cab × ${numAR(brutoRep * (1 - desbaste), 1)} kg netos × ${pesos(precioRep!)}/kg`
+                + ` · ingreso de Recría y costo de entrada de Cría`,
+          })
+        }
+      }
+
       setDatos({
         campana, hasPorActividad, lotes: lotesOut, costos,
         precios: preciosOut, pctGastoVenta: pctGastoVentaPorDefecto,
+        transferencias,
       })
     } finally { setCargando(false) }
   }, [campana, recargarToken])

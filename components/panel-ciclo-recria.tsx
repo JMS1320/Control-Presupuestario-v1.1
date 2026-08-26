@@ -39,6 +39,11 @@ interface CicloRecria {
   ganancia_diaria_kg: number | null
   pct_mortandad: number
   notas: string | null
+  // ── La vuelta del espejo: las de reposición que pasan a cría (A-FEAT-48) ──
+  cabezas_reposicion: number | null
+  peso_bruto_reposicion_kg: number | null
+  precio_kg_reposicion: number | null
+  fecha_reposicion: string | null
 }
 
 interface LoteDelCiclo {
@@ -78,6 +83,9 @@ export function PanelCicloRecria() {
         precio_kg_entrada: n(c.precio_kg_entrada),
         ganancia_diaria_kg: n(c.ganancia_diaria_kg),
         pct_mortandad: Number(c.pct_mortandad) || 0,
+        cabezas_reposicion: n(c.cabezas_reposicion),
+        peso_bruto_reposicion_kg: n(c.peso_bruto_reposicion_kg),
+        precio_kg_reposicion: n(c.precio_kg_reposicion),
       })))
       const porCiclo: Record<string, LoteDelCiclo[]> = {}
       for (const l of ((ls || []) as any[])) {
@@ -253,6 +261,83 @@ export function PanelCicloRecria() {
                   </p>
                 )}
               </div>
+
+              {/* ── La vuelta: recría → cría (las de reposición) ───────────────── */}
+              {(() => {
+                const cab = c.cabezas_reposicion ?? 0
+                const bruto = c.peso_bruto_reposicion_kg ?? 0
+                const kgNetos = cab * bruto * (1 - c.pct_desbaste)
+                const valor = c.precio_kg_reposicion != null && kgNetos > 0
+                  ? kgNetos * c.precio_kg_reposicion : null
+                return (
+                  <div className={`rounded border px-2 py-1.5 ${
+                    cab > 0 && valor == null ? "border-amber-300 bg-amber-50" : "border-sky-200 bg-sky-50/60"}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-gray-700">
+                        Recría <ArrowRight className="h-3 w-3" /> Cría
+                        <span className="font-normal text-gray-500">(reposición)</span>
+                      </span>
+                      <label className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500">cabezas</span>
+                        <input type="text" className="h-6 w-14 rounded border px-1 text-right text-[11px]"
+                          defaultValue={cab === 0 ? "" : fmtNumeroAR(cab, 0)}
+                          placeholder="0"
+                          onBlur={e => {
+                            const v = e.target.value.trim() ? parseNumeroAR(e.target.value) : null
+                            if (v !== c.cabezas_reposicion) guardar(c.id, { cabezas_reposicion: v })
+                          }} />
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500">kg brutos c/u</span>
+                        <input type="text" className="h-6 w-20 rounded border px-1 text-right text-[11px]"
+                          defaultValue={bruto === 0 ? "" : fmtNumeroAR(bruto)}
+                          placeholder="0,00"
+                          onBlur={e => {
+                            const v = e.target.value.trim() ? parseNumeroAR(e.target.value) : null
+                            if (v !== c.peso_bruto_reposicion_kg) guardar(c.id, { peso_bruto_reposicion_kg: v })
+                          }} />
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500">$/kg</span>
+                        <input type="text" className="h-6 w-24 rounded border px-1 text-right text-[11px]"
+                          defaultValue={c.precio_kg_reposicion == null ? "" : fmtNumeroAR(c.precio_kg_reposicion)}
+                          placeholder="0,00"
+                          onBlur={e => {
+                            const v = e.target.value.trim() ? parseNumeroAR(e.target.value) : null
+                            if (v !== c.precio_kg_reposicion) guardar(c.id, { precio_kg_reposicion: v })
+                          }} />
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <span className="text-[10px] text-gray-500">cuándo pasan</span>
+                        <input type="date" className="h-6 rounded border px-1 text-[11px]"
+                          defaultValue={c.fecha_reposicion ?? ""}
+                          onChange={e => guardar(c.id, { fecha_reposicion: e.target.value || null })} />
+                      </label>
+                      {valor != null && (
+                        <span className="text-[11px] text-gray-700">
+                          = <strong>{pesos(valor)}</strong>
+                          <span className="ml-1 text-[10px] text-gray-500">
+                            ({kg(kgNetos)} netos)
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                    {cab > 0 && valor == null ? (
+                      <p className="mt-1 text-[10px] text-amber-900">
+                        <AlertTriangle className="mr-0.5 inline h-3 w-3" />
+                        <strong>Sin precio, recría regala las vaquillonas y cría las recibe gratis:</strong>{" "}
+                        los dos márgenes quedan mal, y en direcciones opuestas.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[10px] text-gray-500">
+                        Las retenidas <strong>no se venden afuera</strong>: pasan a cría. Es la misma
+                        operación que la de arriba pero al revés — <strong>ingreso de recría y costo
+                        de entrada de cría</strong>. La fecha define a qué campaña contable cae.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* ── Parámetros del período ─────────────────────────────────────── */}
               <div className="flex flex-wrap items-center gap-3 text-[11px]">

@@ -1055,6 +1055,30 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     : 0
 
   /**
+   * Días de engorde entre el peso que se está usando y la fecha de venta.
+   *
+   * ⚠️ Se cuentan **desde la fecha del peso**, no desde hoy (A-BUG-59). El peso que se guarda es
+   * el de la PESADA, así que contar desde hoy le come los días que van de la pesada a hoy: con
+   * la pesada del 3/8 y venta el 20/9 daba 236,9 kg en vez de 259,9 — 23 kg, suficiente para
+   * caer en otra banda de peso, y de la banda salen el desbaste, la CZ y el precio.
+   *
+   * Es el mismo criterio que el resto de la app: la ganancia se cuenta desde `fecha_peso`.
+   * Sólo cuando el peso se escribe a mano la referencia es hoy, porque ese peso es de hoy.
+   */
+  const diasHastaVenta = (fechaDelPeso: string): number => {
+    if (!fechaVenta || !fechaDelPeso) return 0
+    const d = Math.round((new Date(fechaVenta + "T00:00:00").getTime()
+      - new Date(fechaDelPeso + "T00:00:00").getTime()) / 86400000)
+    return Math.max(0, d)
+  }
+
+  const hoyISO = new Date().toISOString().slice(0, 10)
+
+  /** El peso con el que se va a facturar: el de partida más el engorde hasta la venta. */
+  const pesoALaVenta = (g: GrupoPesada, base: number, manual: boolean) =>
+    base + diasHastaVenta(manual ? hoyISO : (g.fecha_pesada ?? fecha)) * parseNum(ganancia)
+
+  /**
    * IDEMPOTENTE por (pesada, categoría): si el lote ya existe lo ACTUALIZA en vez de
    * duplicar. Es lo que permite marcar más animales de reposición en Productivo y volver
    * a correr esto: la cantidad y el peso promedio se recalculan solos desde los animales
@@ -1073,6 +1097,8 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         const pesoManual = e && e.peso.trim() !== "" ? parseNum(e.peso) : null
         // El promedio de los que se llevan, no el del grupo entero
         const pr = promedios(g, cant, e?.cual ?? "pesados")
+        const pesoBase = pesoManual ?? pr.tomados
+        const pesoVenta = pesoALaVenta(g, pesoBase, pesoManual != null)
 
         const payload = {
           cantidad: cant,
@@ -1084,15 +1110,10 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           fecha_venta_estimada: fechaVenta || null,
           plazo_cobro: plazo || "0",
           precio_kg_override: precio.trim() === "" ? null : parseNum(precio),
-          // El desbaste y la CZ salen de la tabla segun el peso proyectado a la venta
-          pct_desbaste: pctDesbaste(g.categoria,
-            (pesoManual ?? pr.tomados) + (fechaVenta
-              ? Math.max(0, Math.round((new Date(fechaVenta + "T00:00:00").getTime()
-                  - Date.now()) / 86400000)) * parseNum(ganancia) : 0)) ,
-          pct_cz: pctCz(g.categoria,
-            (pesoManual ?? pr.tomados) + (fechaVenta
-              ? Math.max(0, Math.round((new Date(fechaVenta + "T00:00:00").getTime()
-                  - Date.now()) / 86400000)) * parseNum(ganancia) : 0)),
+          // El desbaste y la CZ salen de la tabla según el peso A LA VENTA, contando el engorde
+          // desde la fecha DEL PESO — no desde hoy. Ver `diasHastaVenta` (A-BUG-59).
+          pct_desbaste: pctDesbaste(g.categoria, pesoVenta),
+          pct_cz: pctCz(g.categoria, pesoVenta),
           notas: `Desde pesada ${fecha} — ${g.sexo}${g.marcado ? " marcado" : ""}, ${cant} de ${g.cabezas} cab`
             + (pesoManual ? `, peso puesto a mano` : `, promedio real`),
           updated_at: new Date().toISOString(),
@@ -1235,21 +1256,35 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           onClick={e => e.preventDefault()}
                           onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "" }), cant: e.target.value } }))} />
                         <span className="text-[10px] text-gray-500">de {g.cabezas} · peso</span>
+                        {/* El placeholder muestra lo que hace dejarlo vacío: el promedio DE LA
+                            PESADA. Antes mostraba el proyectado a hoy, que es otro número — y
+                            escribirlo a mano significa además "este peso es de hoy". */}
                         <Input className="h-7 w-20 text-right text-xs"
-                          placeholder={n1(g.peso_prom + diasDesdePesada * parseNum(ganancia))}
+                          placeholder={n1(g.peso_prom)}
                           value={edits[g.clave]?.peso ?? ""}
                           onClick={e => e.preventDefault()}
                           onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "" }), peso: e.target.value } }))} />
                         <span className="text-[10px] text-gray-400">kg — vacío usa el calculado</span>
-                        <select
-                          className="h-7 rounded border px-1 text-[10px]"
-                          value={edits[g.clave]?.cual ?? "pesados"}
-                          onClick={e => e.preventDefault()}
-                          onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "", cual: "pesados" }), cual: e.target.value as any } }))}>
-                          <option value="pesados">los más pesados</option>
-                          <option value="livianos">los más livianos</option>
-                          <option value="todos">indistinto (promedio)</option>
-                        </select>
+                        {/* Si te llevás TODOS, elegir cuáles no significa nada: son todos, y el
+                            promedio es el mismo en los tres casos. Mostrar el selector sugería
+                            que el número podía cambiar (A-BUG-61). */}
+                        {(() => {
+                          const cant = edits[g.clave] ? parseNum(edits[g.clave]!.cant) : g.cabezas
+                          if (cant >= g.cabezas) {
+                            return <span className="text-[10px] text-gray-400">— son todos</span>
+                          }
+                          return (
+                            <select
+                              className="h-7 rounded border px-1 text-[10px]"
+                              value={edits[g.clave]?.cual ?? "pesados"}
+                              onClick={e => e.preventDefault()}
+                              onChange={e => setEdits(p => ({ ...p, [g.clave]: { ...(p[g.clave] ?? { cant: "", peso: "", cual: "pesados" }), cual: e.target.value as any } }))}>
+                              <option value="pesados">los más pesados</option>
+                              <option value="livianos">los más livianos</option>
+                              <option value="todos">indistinto (promedio)</option>
+                            </select>
+                          )
+                        })()}
                       </div>
                       {(() => {
                         const e = edits[g.clave]
@@ -1267,15 +1302,22 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                       <div className="text-xs text-gray-600">
                         <strong>{g.cabezas}</strong> cabezas · pesada{" "}
                         <strong>{n1(g.peso_prom)} kg</strong>
-                        {/* El peso de la pesada es histórico; lo que importa hoy es el
-                            proyectado con la ganancia diaria. Antes no se veía y parecía
-                            que cambiar la ganancia no hacía nada. */}
-                        {diasDesdePesada > 0 && parseNum(ganancia) > 0 && (
+                        {/* El peso de la pesada es histórico. Lo que importa es el peso A LA
+                            VENTA —con el que se factura y con el que se elige la banda—, y sólo
+                            si no hay fecha de venta el de hoy (A-BUG-60). */}
+                        {parseNum(ganancia) > 0 && fechaVenta && diasHastaVenta(g.fecha_pesada ?? fecha) > 0 ? (
+                          <> → a la venta <strong className="text-emerald-700">
+                            {n1(g.peso_prom + diasHastaVenta(g.fecha_pesada ?? fecha) * parseNum(ganancia))} kg
+                          </strong>{" "}
+                          <span className="text-gray-400">
+                            ({diasHastaVenta(g.fecha_pesada ?? fecha)} días · hoy {n1(g.peso_prom + diasDesdePesada * parseNum(ganancia))} kg)
+                          </span></>
+                        ) : diasDesdePesada > 0 && parseNum(ganancia) > 0 ? (
                           <> → hoy <strong className="text-emerald-700">
                             {n1(g.peso_prom + diasDesdePesada * parseNum(ganancia))} kg
                           </strong>{" "}
                           <span className="text-gray-400">({diasDesdePesada} días)</span></>
-                        )}
+                        ) : null}
                         {lotes.some(l => l.origen === "stock_inicial"
                           && l.categoria === g.categoria && l.fecha_disponible === fecha) && (
                           <span className="ml-2 text-blue-600">· ya existe, se actualiza</span>

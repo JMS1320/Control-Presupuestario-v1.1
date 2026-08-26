@@ -66,6 +66,47 @@ export interface CostoDirecto {
   historicoModo?: string | null
 }
 
+/**
+ * Una transferencia interna entre dos actividades: la misma operación vista de los dos lados.
+ *
+ * El caso testigo es el ciclo ganadero, que tiene las dos puntas:
+ *   · **cría → recría** — el destete. Cierra el resultado de cría y abre el de recría.
+ *   · **recría → cría** — las vaquillonas de reposición, que no se venden afuera.
+ *
+ * ⚠️ **Un solo número para los dos lados.** No son dos hechos que hay que hacer coincidir: es
+ * uno solo, y por eso se guarda una vez. Si se cargaran dos, en algún momento dejan de coincidir
+ * y ninguno de los dos márgenes cierra.
+ *
+ * Sin esto los animales entran a costo cero: el que recibe muestra ganancia de más y el que
+ * entrega, de menos. Es el mismo aviso que ya da el panel de ciclo de recría.
+ */
+export interface TransferenciaInterna {
+  concepto: string
+  /** La actividad que ENTREGA: le entra como ingreso. */
+  actividadOrigen: string
+  /** La actividad que RECIBE: le sale como costo. */
+  actividadDestino: string
+  cabezas: number
+  /** Kg netos totales (ya con el desbaste aplicado). Es sobre lo que se paga. */
+  kgNetos: number
+  precioKg: number | null
+  /** `null` mientras falte el precio. Nunca cero. */
+  monto: number | null
+  /** A qué campaña cae, resuelto por la FECHA del hecho. */
+  campania: string | null
+  detalle: string
+}
+
+/** La campaña (jul → jun) a la que pertenece una fecha. `"2026-02-23"` → `"25/26"`. */
+export function campanaDeFecha(iso: string): string | null {
+  const m = iso?.match(/^(\d{4})-(\d{2})/)
+  if (!m) return null
+  const anio = parseInt(m[1]!, 10)
+  const mes = parseInt(m[2]!, 10)
+  const ini = (mes >= 7 ? anio : anio - 1) % 100
+  return `${String(ini).padStart(2, '0')}/${String((ini + 1) % 100).padStart(2, '0')}`
+}
+
 export interface DatosMargen {
   campana: string
   /** has netas por actividad. */
@@ -76,6 +117,8 @@ export interface DatosMargen {
   precios: PrecioHacienda[]
   /** % de gastos de venta por categoría (3 % liviano, 9 % vaca/toro en el Excel). */
   pctGastoVenta: (categoria: string) => number
+  /** Las transferencias entre actividades. Opcional: los datos viejos no las traen. */
+  transferencias?: TransferenciaInterna[]
 }
 
 export interface LineaMargen {
@@ -574,10 +617,15 @@ export function resolverCostoDirecto(
  * que uno que dice qué le falta — sobre todo si se le presenta a los socios.
  */
 export function calcularMargen(d: DatosMargen): MargenActividad[] {
+  // Sólo las de ESTA campaña: una transferencia cae donde la pone su fecha.
+  const transfer = (d.transferencias ?? []).filter(t => t.campania === d.campana)
+
   const actividades = new Set<string>([
     ...Object.keys(d.hasPorActividad),
     ...d.lotes.map(l => l.actividad).filter(Boolean) as string[],
     ...d.costos.map(c => c.actividad),
+    ...transfer.map(t => t.actividadOrigen),
+    ...transfer.map(t => t.actividadDestino),
   ])
 
   return Array.from(actividades).sort().map(act => {
@@ -641,6 +689,39 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       })
     }
 
+    // ── Las transferencias internas: la misma operación, los dos lados ──────────
+    //
+    // Se agregan DESPUÉS de las ventas y ANTES de los costos, así que el orden de las filas
+    // cuenta la historia: primero lo que se vendió afuera, después lo que se le pasó al vecino.
+    const cmp = claveActividad(act)
+    for (const t of transfer.filter(x => claveActividad(x.actividadOrigen) === cmp)) {
+      if (t.monto == null) faltantes.push(`${t.concepto}: falta el precio de la transferencia`)
+      ingresos.push({
+        concepto: t.concepto,
+        unidades: t.cabezas, etiquetaUnidad: 'cab',
+        total: t.monto ?? 0,
+        porHa: has && t.monto != null ? t.monto / has : null,
+        porCabeza: t.monto != null && t.cabezas > 0 ? t.monto / t.cabezas : null,
+        detalle: t.detalle,
+        confiable: t.monto != null,
+      })
+    }
+
+    const transferCosto: LineaMargen[] = transfer
+      .filter(x => claveActividad(x.actividadDestino) === cmp)
+      .map(t => {
+        if (t.monto == null) faltantes.push(`${t.concepto}: falta el precio de la transferencia`)
+        return {
+          concepto: t.concepto,
+          unidades: t.cabezas, etiquetaUnidad: 'cab',
+          total: t.monto ?? 0,
+          porHa: has && t.monto != null ? t.monto / has : null,
+          porCabeza: t.monto != null && t.cabezas > 0 ? t.monto / t.cabezas : null,
+          detalle: t.detalle,
+          confiable: t.monto != null,
+        }
+      })
+
     const costos: LineaMargen[] = misCostos.map(c => {
       const comun = {
         insumoId: c.insumoId, pasos: c.pasos, fundamento: c.fundamento,
@@ -663,6 +744,10 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
         ...comun,
       }
     })
+
+    // El costo de entrada va PRIMERO: es lo que el animal ya valía antes de que esta actividad
+    // le hiciera nada, y sin él la ganancia sale de más.
+    costos.unshift(...transferCosto)
 
     if (has == null) faltantes.push('no tiene hectáreas asignadas en esta campaña')
     if (misCostos.length === 0) faltantes.push('no tiene costos directos cargados')
