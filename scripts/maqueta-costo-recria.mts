@@ -947,6 +947,72 @@ async function main() {
   const ws2 = XLSX.utils.aoa_to_sheet(r)
   ws2["!cols"] = [[26], [16], [22], [18], [16], [16], [14]].map(w => ({ wch: w[0] }))
   XLSX.utils.book_append_sheet(wb2, ws2, "RESUMEN")
+
+  // ── Una solapa por rodeo: productivo + consumo + económico ─────────────────
+  const fechaSalida = (g: Grupo) => g === "vendidos" ? "2026-08-04" : FECHA_STOCK
+  const kgConcG = (g: Grupo) => consumoConc * pctConcG[g]
+
+  const solapa = (g: Grupo | "total") => {
+    const gs: Grupo[] = g === "total" ? GRUPOS : [g]
+    const cab = gs.reduce((s, x) => s + cabG[x], 0)
+    const pIni = gs.reduce((s, x) => s + pesoIniG[x] * cabG[x], 0) / cab
+    const pFin = gs.reduce((s, x) => s + pesoHoyG[x] * cabG[x], 0) / cab
+    const kgMaiz = gs.reduce((s, x) => s + kgG[x], 0)
+    const kgConcumido = gs.reduce((s, x) => s + kgConcG(x), 0)
+    const cEnt = gs.reduce((s, x) => s + cuenta(x).entrada, 0)
+    const cAli = gs.reduce((s, x) => s + cuenta(x).alimento, 0)
+    const cSal = gs.reduce((s, x) => s + cuenta(x).salida, 0)
+    const margen = cSal - cEnt - cAli
+    const fSal = g === "total" ? FECHA_STOCK : fechaSalida(g as Grupo)
+    const diasRecria = dias(F_DESTETE, fSal)
+    const diasRacion = dias(INICIO_RACION, fSal)
+    const kgGanados = pFin - pIni
+    const alimento = kgMaiz + kgConcumido
+    const titulo = g === "total" ? "TODA LA RECRÍA" :
+      g === "vendidos" ? "LOS 55 VENDIDOS" : g === "machos" ? "MACHOS QUE QUEDAN" : "HEMBRAS QUE QUEDAN"
+    const nota = g === "vendidos" ? "Datos reales: se vendieron el 04/08 y pesaron en la balanza del camión."
+      : g === "total" ? "Los 55 con datos reales; los que quedan, valuados como si se vendieran hoy."
+      : "Valuados como si se vendieran hoy. El peso de salida está ESTIMADO " + diasExtra + " días desde la pesada del " + ultPes + "."
+    return [
+      [titulo, "", "", "al " + fSal],
+      [nota],
+      [],
+      ["PRODUCTIVO", "Total", "Por cabeza", ""],
+      ["Cabezas", cab, "", ""],
+      ["Peso de entrada (23/02)", "", +pIni.toFixed(1), "kg — bruto de balanza"],
+      ["Peso de salida", "", +pFin.toFixed(1), g === "vendidos" ? "kg — balanza del camión" : "kg — estimado"],
+      ["Kg ganados", Math.round(kgGanados * cab), +kgGanados.toFixed(1), ""],
+      ["Días en recría", diasRecria, "", "desde el destete"],
+      ["Días con ración", diasRacion, "", "desde el 06/05"],
+      ["Ganancia diaria", "", +(kgGanados / diasRecria).toFixed(3), "kg/día — de pesadas reales"],
+      [],
+      ["CONSUMO DE RACIÓN", "Total (kg)", "Por cabeza (kg)", ""],
+      ["Maíz", Math.round(kgMaiz), +(kgMaiz / cab).toFixed(1), ""],
+      ["Concentrado", Math.round(kgConcumido), +(kgConcumido / cab).toFixed(1), "sólo desde el 27/07"],
+      ["TOTAL alimento", Math.round(alimento), +(alimento / cab).toFixed(1), ""],
+      ["Por día con ración", "", +(alimento / cab / diasRacion).toFixed(2), "kg/cab/día"],
+      ["Kg de suplemento por kg ganado", "", +(alimento / cab / kgGanados).toFixed(2),
+        "NO es conversión: además comieron pasto"],
+      [],
+      ["ECONÓMICO", "Total", "Por cabeza", ""],
+      ["Valor de entrada", Math.round(cEnt), Math.round(cEnt / cab), "peso neto × $" + ar(PRECIO_ENTRADA_KG) + "/kg"],
+      ["Costo de alimentación", Math.round(cAli), Math.round(cAli / cab), ""],
+      ["Valor de salida", Math.round(cSal), Math.round(cSal / cab), g === "vendidos" ? "venta real a $5.670/kg" : "a precio de hoy"],
+      ["MARGEN", Math.round(margen), Math.round(margen / cab), ""],
+      [],
+      ["Margen sobre el valor de entrada", "", +(margen / cEnt * 100).toFixed(1), "%"],
+      ["Costo del kg ganado", "", Math.round(cAli / cab / kgGanados), "$/kg — sólo alimentación"],
+      ["La alimentación sobre el valor de entrada", "", +(cAli / cEnt * 100).toFixed(1), "%"],
+      [],
+      ["NO incluye sanidad, pasturas, verdeos ni estructura."],
+    ]
+  }
+  for (const g of [...GRUPOS, "total"] as (Grupo | "total")[]) {
+    const nombreSolapa = g === "vendidos" ? "55 VENDIDOS" : g === "machos" ? "MACHOS" : g === "hembras" ? "HEMBRAS" : "TOTAL RECRÍA"
+    const wsg = XLSX.utils.aoa_to_sheet(solapa(g))
+    wsg["!cols"] = [{ wch: 36 }, { wch: 16 }, { wch: 16 }, { wch: 44 }]
+    XLSX.utils.book_append_sheet(wb2, wsg, nombreSolapa)
+  }
   const salida2 = salida.replace(/Maqueta_/, "Resumen_").replace(/\.xlsx$/, "") + ".xlsx"
   XLSX.writeFile(wb2, salida2)
   console.log("✅ " + salida2 + "   — una carilla\n")
