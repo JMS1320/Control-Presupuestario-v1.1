@@ -523,7 +523,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       )}
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar}
-        tramos={tramos} actividades={actividades} insumos={insumosAct} onCambio={cargar} />
+        tramos={tramos} actividades={actividades} insumos={insumosAct} />
       <ModalGenerar abierto={modalGenerar} filas={modalGenerar ? filasGenerar() : []}
         guardando={generando}
         onCerrar={() => setModalGenerar(false)} onAplicar={aplicarGenerar} />
@@ -537,21 +537,72 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
 // ── Modal de lote ─────────────────────────────────────────────────────────────
 
-function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, onCambio }: {
+function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos }: {
   datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
   tramos: TramoLote[]; actividades: Actividad[]; insumos: InsumoActividad[]
-  onCambio: () => Promise<void>
 }) {
   const [f, setF] = useState<any>({})
   /** Cual de los dos precios manda: el que se escribio ultimo. El otro se recalcula,
    *  tambien cuando cambia la CZ. */
   const [modoPrecio, setModoPrecio] = useState<"bruto" | "neto">("bruto")
   const [precioNetoManual, setPrecioNetoManual] = useState("")
+  /**
+   * Los tramos son un BORRADOR mientras el modal está abierto: se guardan con el botón Guardar
+   * y Cancelar los descarta, igual que el resto del formulario.
+   *
+   * Antes escribían en la base al instante —el `+ tramo` insertaba en el click y cada cambio de
+   * fecha hacía un UPDATE—, así que Cancelar no revertía nada. Le pasó al usuario (A-BUG-54):
+   * canceló y el tramo quedó, encima con la fecha de fin un año adelantada.
+   */
+  const [tramosDraft, setTramosDraft] = useState<TramoLote[]>([])
   useEffect(() => {
     if (!datos) return
     setF({ ...datos }); setModoPrecio("bruto"); setPrecioNetoManual("")
+    setTramosDraft(tramos.filter(t => t.lote_id === datos.id))
+    // `tramos` a propósito fuera de las dependencias: el borrador se toma UNA vez al abrir. Si
+    // se resincronizara con la lista de afuera, una recarga pisaría lo que estás editando.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos])
   if (!datos) return null
+
+  /**
+   * Baja el borrador de tramos a la base, comparándolo con lo que había al abrir el modal.
+   * Devuelve `false` si algo falló, para que el lote tampoco se guarde y no quede a medias.
+   */
+  const persistirTramos = async (loteId: string): Promise<boolean> => {
+    const originales = tramos.filter(t => t.lote_id === loteId)
+    const vivos = new Set(tramosDraft.map(t => t.id))
+    const p = supabase.schema("productivo")
+    const fallo = (e: { message: string } | null) => {
+      if (!e) return false
+      alert("No se pudieron guardar las actividades del lote: " + e.message)
+      return true
+    }
+
+    for (const o of originales) {
+      if (vivos.has(o.id)) continue
+      if (fallo((await p.from("lote_tramos").delete().eq("id", o.id)).error)) return false
+    }
+    for (const t of tramosDraft) {
+      const antes = originales.find(o => o.id === t.id)
+      const fila = {
+        actividad_id: t.actividad_id, orden: t.orden,
+        fecha_desde: t.fecha_desde, fecha_hasta: t.fecha_hasta,
+        hectareas: t.hectareas, notas: t.notas,
+      }
+      if (!antes) {
+        if (fallo((await p.from("lote_tramos").insert({ id: t.id, lote_id: loteId, ...fila })).error)) return false
+        continue
+      }
+      const igual = antes.actividad_id === t.actividad_id && antes.orden === t.orden
+        && antes.fecha_desde === t.fecha_desde && antes.fecha_hasta === t.fecha_hasta
+        && antes.hectareas === t.hectareas && antes.notas === t.notas
+      if (igual) continue
+      if (fallo((await p.from("lote_tramos")
+        .update({ ...fila, updated_at: new Date().toISOString() }).eq("id", t.id)).error)) return false
+    }
+    return true
+  }
 
   const campo = (k: string, label: string, ayuda?: string, tipo = "text") => (
     <div>
@@ -577,7 +628,8 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, o
     fecha_peso: f.fecha_peso ?? null,
     ganancia_override: Boolean(f.ganancia_override),
   }
-  const misTramos = tramos.filter(t => t.lote_id === f.id)
+  // La curva se dibuja con el BORRADOR: mover un tramo tiene que verse antes de guardar.
+  const misTramos = tramosDraft
   const curvaModal = curvaDeLote(loteCurva, misTramos, actividades)
   const hoyIso = new Date().toISOString().slice(0, 10)
   const pesoHoy = curvaModal(hoyIso)
@@ -656,7 +708,9 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, o
           </div>
 
           <SeccionTramos loteId={f.id ?? null} lote={{ ...loteCurva, fecha_venta_estimada: fv } as LoteCurva}
-            tramos={tramos} actividades={actividades} insumos={insumos} onCambio={onCambio} />
+            tramos={tramosDraft} actividades={actividades} insumos={insumos}
+            onCambiarTramos={setTramosDraft}
+            onGananciaOverride={v => setF({ ...f, ganancia_override: v })} />
 
           {/* Proyección de venta: sin fecha el lote es sólo inventario */}
           <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5">
@@ -801,13 +855,17 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, o
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
-            <Button onClick={() => onGuardar({
-              ...f,
-              // Si se escribio el NETO, lo que se persiste es el bruto equivalente
-              precio_kg_override: modoPrecio === "neto"
-                ? (precioNetoManual.trim() === "" ? "" : fmtAR(precioBruto))
-                : f.precio_kg_override,
-            })}>Guardar</Button>
+            <Button onClick={async () => {
+              // Los tramos primero: si fallan, el lote no se guarda y no queda medio hecho.
+              if (f.id && !(await persistirTramos(f.id))) return
+              await onGuardar({
+                ...f,
+                // Si se escribio el NETO, lo que se persiste es el bruto equivalente
+                precio_kg_override: modoPrecio === "neto"
+                  ? (precioNetoManual.trim() === "" ? "" : fmtAR(precioBruto))
+                  : f.precio_kg_override,
+              })
+            }}>Guardar</Button>
           </div>
         </div>
       </DialogContent>
@@ -1452,20 +1510,24 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
 // cosas a la vez: la CURVA DE PESO (que define el peso a la venta, y por lo tanto la banda de
 // precio y la factura) y el COSTO de alimentación. Antes la ganancia diaria se tipeaba suelta
 // en el lote y podía no tener nada que ver con lo que se le estaba dando de comer.
+//
+// ⚠️ Esta sección NO toca la base. Trabaja sobre el borrador del modal y se persiste con el
+// botón Guardar; Cancelar la descarta. Antes escribía al instante y Cancelar no revertía nada
+// (A-BUG-54): el usuario canceló, el tramo quedó, y con la fecha de fin un año adelantada.
 
 function SeccionTramos({
-  loteId, lote, tramos, actividades, insumos, onCambio,
+  loteId, lote, tramos, actividades, insumos, onCambiarTramos, onGananciaOverride,
 }: {
   loteId: string | null
   lote: LoteCurva
+  /** El borrador del modal — ya viene filtrado por lote. */
   tramos: TramoLote[]
   actividades: Actividad[]
   insumos: InsumoActividad[]
-  onCambio: () => Promise<void>
+  onCambiarTramos: (t: TramoLote[]) => void
+  onGananciaOverride: (v: boolean) => void
 }) {
-  const [guardando, setGuardando] = useState(false)
-
-  const mios = tramos.filter(t => t.lote_id === loteId)
+  const mios = [...tramos]
     .sort((a, b) => a.fecha_desde.localeCompare(b.fecha_desde) || a.orden - b.orden)
   const pisados = solapamientos(mios)
   const manual = gananciaEsManual(lote, mios)
@@ -1480,48 +1542,59 @@ function SeccionTramos({
   const costoTotal = costo.reduce((s, m) => s + m.costo_total, 0)
   const cab = Number(lote.cantidad) || 0
 
-  const agregar = async () => {
+  /**
+   * El fin por defecto es **la fecha de venta del lote** si está cargada, y sólo si no hay se
+   * usan 6 meses. Antes eran 6 meses siempre, y de ahí salió el tramo que terminaba en 2027
+   * para un lote vendido en agosto de 2026 (A-BUG-54).
+   */
+  const agregar = () => {
     if (!loteId) return
     const ultimo = mios[mios.length - 1]
     const desde = ultimo?.fecha_hasta || String(lote.fecha_peso || lote.fecha_disponible || "").slice(0, 10)
-    const d = new Date(desde + "T00:00:00")
-    d.setMonth(d.getMonth() + 6)
-    setGuardando(true)
-    const { error } = await supabase.schema("productivo").from("lote_tramos").insert({
+    const venta = String((lote as any).fecha_venta_estimada || "")
+    let hasta = venta && venta > desde ? venta : ""
+    if (!hasta) {
+      const d = new Date(desde + "T00:00:00")
+      d.setMonth(d.getMonth() + 6)
+      hasta = d.toISOString().slice(0, 10)
+    }
+    onCambiarTramos([...tramos, {
+      id: crypto.randomUUID(),
       lote_id: loteId,
-      actividad_id: actividades[0]?.id,
+      actividad_id: actividades[0]!.id,
       orden: mios.length + 1,
       fecha_desde: desde,
-      fecha_hasta: d.toISOString().slice(0, 10),
-    })
-    setGuardando(false)
-    if (error) { alert("Error: " + error.message); return }
-    await onCambio()
+      fecha_hasta: hasta,
+      hectareas: null,
+      notas: null,
+    }])
   }
 
-  const actualizar = async (id: string, campos: Record<string, unknown>) => {
-    setGuardando(true)
-    const { error } = await supabase.schema("productivo").from("lote_tramos")
-      .update({ ...campos, updated_at: new Date().toISOString() }).eq("id", id)
-    setGuardando(false)
-    if (error) { alert("Error: " + error.message); return }
-    await onCambio()
-  }
+  const actualizar = (id: string, campos: Partial<TramoLote>) =>
+    onCambiarTramos(tramos.map(t => (t.id === id ? { ...t, ...campos } : t)))
 
-  const borrar = async (id: string) => {
-    const { error } = await supabase.schema("productivo").from("lote_tramos").delete().eq("id", id)
-    if (error) { alert("Error: " + error.message); return }
-    await onCambio()
-  }
+  const borrar = (id: string) => onCambiarTramos(tramos.filter(t => t.id !== id))
+
+  /**
+   * El tramo no puede pasarse de la fecha de venta: el animal ya no está.
+   * No bloquea —puede haber una venta sin fecha todavía—, avisa.
+   */
+  const ventaLote = String((lote as any).fecha_venta_estimada || "")
+  const pasados = ventaLote ? mios.filter(t => t.fecha_hasta > ventaLote) : []
 
   return (
     <div className="rounded border border-violet-200 bg-violet-50/40 p-2.5">
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-medium text-violet-900">
-          Actividades del lote — de acá salen el peso a la venta y el costo de alimentación
-        </p>
+        <div>
+          <p className="text-[11px] font-medium text-violet-900">
+            Actividades del lote — de acá salen el peso a la venta y el costo de alimentación
+          </p>
+          <p className="text-[9px] text-violet-700/70">
+            se guardan con el botón <strong>Guardar</strong> del lote · Cancelar los descarta
+          </p>
+        </div>
         {loteId && actividades.length > 0 && (
-          <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={agregar} disabled={guardando}>
+          <Button size="sm" variant="ghost" className="h-6 text-[11px]" onClick={agregar}>
             <Plus className="mr-1 h-3 w-3" /> tramo
           </Button>
         )}
@@ -1548,7 +1621,6 @@ function SeccionTramos({
                   <th className="py-0.5 text-left font-medium">Actividad</th>
                   <th className="py-0.5 text-left font-medium">Desde</th>
                   <th className="py-0.5 text-left font-medium">Hasta</th>
-                  <th className="py-0.5 text-right font-medium">Ha</th>
                   <th className="py-0.5" />
                 </tr>
               </thead>
@@ -1574,11 +1646,6 @@ function SeccionTramos({
                       <Input type="date" className="h-7 text-[11px]" value={t.fecha_hasta}
                         onChange={e => actualizar(t.id, { fecha_hasta: e.target.value })} />
                     </td>
-                    <td className="py-1 pr-2">
-                      <Input className="h-7 w-16 text-right text-[11px]"
-                        value={t.hectareas == null ? "" : fmtNumeroAR(Number(t.hectareas), 0)}
-                        onChange={e => actualizar(t.id, { hectareas: parseNumeroAR(e.target.value) || null })} />
-                    </td>
                     <td className="py-1 text-right">
                       <button type="button" className="text-gray-300 hover:text-red-500"
                         onClick={() => borrar(t.id)}>
@@ -1589,6 +1656,14 @@ function SeccionTramos({
                 ))}
               </tbody>
             </table>
+          )}
+
+          {pasados.length > 0 && (
+            <p className="mt-1.5 rounded bg-amber-100 px-2 py-1 text-[10px] text-amber-800">
+              ⚠️ {pasados.length === 1 ? "Hay un tramo que termina" : `Hay ${pasados.length} tramos que terminan`}
+              {" "}<strong>después de la venta</strong> ({ventaLote.split("-").reverse().join("/")}).
+              Se está cobrando comida de animales que ya no están — revisá las fechas.
+            </p>
           )}
 
           {pisados.length > 0 && (
@@ -1631,13 +1706,11 @@ function SeccionTramos({
 
           {mios.length > 0 && (
             <label className="mt-2 flex items-center gap-1.5 text-[10px] text-gray-600">
+              {/* Va al formulario, no a la base: antes escribía directo en `stock_lotes` y el
+                  modal seguía mostrando el valor viejo, así que parecía que no respondía
+                  (A-BUG-58). Ahora lo persiste el Guardar, como todo lo demás. */}
               <input type="checkbox" checked={Boolean(lote.ganancia_override)}
-                onChange={async e => {
-                  if (!loteId) return
-                  await supabase.schema("productivo").from("stock_lotes")
-                    .update({ ganancia_override: e.target.checked }).eq("id", loteId)
-                  await onCambio()
-                }} />
+                onChange={e => onGananciaOverride(e.target.checked)} />
               Usar la ganancia diaria de arriba en vez de la de las actividades
               {manual && <span className="ml-1 font-medium text-amber-700">← activo</span>}
             </label>

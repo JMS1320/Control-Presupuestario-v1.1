@@ -2731,3 +2731,38 @@ que dice qué le falta — sobre todo si se le presenta a los socios.
 - Los **modos de ración** (`pct_racion`, `kg_cabeza_dia`) —los que usan recría y engorde— todavía
   **no se resuelven** acá: necesitan la curva de peso y los tramos. Se informan como pendientes, y
   su fila se despliega pero el modo no se puede cambiar desde el margen.
+
+---
+
+## 🐄 Productivo → Evolución Rodeo → Lotes → **Actividades del lote (tramos)** 🟡 (sin testear)
+
+**Qué es**: dentro de cada lote de venta, el bloque violeta donde se dice *"este lote hizo recría
+entre estas dos fechas"*. De ahí salen **dos** cosas a la vez: la **curva de peso** (y con ella el
+peso a la venta, la banda de precio y la factura) y el **costo de alimentación**.
+
+### Cómo se opera
+
+1. `Productivo → Evolución Rodeo`, bajar hasta los **lotes de venta**, abrir uno.
+2. En el bloque violeta, botón **`+ tramo`**.
+3. Elegir la **actividad** (Recría, Engorde…) y ajustar **Desde** y **Hasta**.
+   - El **Hasta** viene propuesto con la **fecha de venta del lote** si está cargada.
+4. **Guardar** el lote. ⚠️ **Los tramos se guardan con ese botón**: *Cancelar* los descarta.
+
+Mientras editás, abajo se ve **en vivo** la curva de peso resultante y el costo de alimentación
+total y por cabeza — antes de guardar nada.
+
+### Lo que la pantalla avisa
+
+| Aviso | Qué significa |
+|---|---|
+| *"termina después de la venta"* | el tramo se pasa de la fecha de venta: se está cobrando comida de animales que ya no están |
+| *"hay tramos que se pisan"* | dos tramos solapados — el peso sale igual pero el costo se cuenta dos veces |
+
+**El checkbox «Usar la ganancia diaria de arriba»** hace que el peso crezca con la ganancia escrita
+en el lote en vez de la de la actividad. Se guarda con el lote, como todo lo demás.
+
+**No hay campo de hectáreas.** Las hectáreas de una actividad se cargan en
+`Presupuesto → Campos` y son de la actividad, no de cada lote.
+
+### Cómo se prueba
+→ los 8 pasos están en `PENDIENTES.md` § [A-TEST-41](PENDIENTES.md#a-test-41).
