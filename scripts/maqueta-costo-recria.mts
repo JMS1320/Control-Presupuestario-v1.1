@@ -87,8 +87,16 @@ const PRECIO_ENTRADA_KG = 7000
  */
 const DESBASTE = 0.03
 
-/** Precio de prueba para valuar a los que TODAVÍA no se vendieron, como si se vendieran hoy. */
-const PRECIO_VENTA_HOY = 6000
+/**
+ * Precio de prueba para valuar a los que TODAVÍA no se vendieron, como si se vendieran hoy.
+ * Va POR GRUPO: el $/kg depende del peso, y los que quedan son más livianos que los 55 que se
+ * vendieron a $5.670 — o sea que valen MÁS por kilo.
+ * ⚠️ El de machos es supuesto mío; el de hembras lo dio el usuario.
+ */
+const PRECIO_VENTA_HOY: Record<string, number> = {
+  machos: 6000,    // ← SUPUESTO: el usuario dijo "más caro que 5.670" pero no dio el número
+  hembras: 5700,   // ← dato del usuario
+}
 
 /** Categorías que comen la ración: todos los machos (con toritos) y todas las hembras. */
 const CATS_COMEN = ["ternero recria", "ternera recria", "torito", "vaquillona de reposicion",
@@ -332,7 +340,7 @@ async function main() {
     const entrada = pesoIniG[g] * (1 - DESBASTE) * PRECIO_ENTRADA_KG * cabG[g]
     const alimento = costoMaizG[g] + costoConcG[g]
     const salida = g === "vendidos" ? ingresoV
-      : pesoHoyG[g] * (1 - DESBASTE) * PRECIO_VENTA_HOY * cabG[g]
+      : pesoHoyG[g] * (1 - DESBASTE) * PRECIO_VENTA_HOY[g] * cabG[g]
     return { entrada, alimento, salida, margen: salida - entrada - alimento }
   }
 
@@ -396,7 +404,8 @@ async function main() {
     Math.round(consumoConc), Math.round(GRUPOS.reduce((s, g) => s + costoMaizG[g] + costoConcG[g], 0)), ""])
   aoaRes0.push([])
   aoaRes0.push(["CÓMO LE FUE A CADA GRUPO"])
-  aoaRes0.push(["Los vendidos con la venta REAL del 04/08. Los que quedan, valuados como si se vendieran hoy a $" + ar(PRECIO_VENTA_HOY) + "/kg."])
+  aoaRes0.push(["Los vendidos con la venta REAL del 04/08 ($5.670/kg). Los que quedan, como si se vendieran hoy:"])
+  aoaRes0.push(["machos $" + ar(PRECIO_VENTA_HOY.machos) + "/kg (SUPUESTO) · hembras $" + ar(PRECIO_VENTA_HOY.hembras) + "/kg (dato del usuario). Son más livianos, así que valen más por kilo."])
   aoaRes0.push(["Grupo", "Cab.", "Peso entrada", "Peso hoy", "$ entrada", "$ alimento", "$ salida", "MARGEN", "$/cab"])
   GRUPOS.forEach(g => {
     const c = cuenta(g)
@@ -416,7 +425,7 @@ async function main() {
   aoaRes0.push(["OJO CON ESTO"])
   aoaRes0.push(["· El precio de entrada ($" + ar(PRECIO_ENTRADA_KG) + "/kg para todos) es el que más pesa. Los 55 eran más pesados,"])
   aoaRes0.push(["  así que su $/kg real debería ser MENOR — y su margen, mayor que el que figura acá."])
-  aoaRes0.push(["· El precio de hoy ($" + ar(PRECIO_VENTA_HOY) + "/kg) es de prueba: cambialo en INPUTS."])
+  aoaRes0.push(["· Los precios de hoy son de prueba: machos $" + ar(PRECIO_VENTA_HOY.machos) + " (supuesto mío), hembras $" + ar(PRECIO_VENTA_HOY.hembras) + ". Cambialos en INPUTS."])
   aoaRes0.push(["· NO incluye sanidad, pasturas, verdeos ni estructura. Sólo maíz y concentrado."])
   aoaRes0.push([])
   aoaRes0.push(["CUÁNTO CAMBIA LA SIMPLIFICACIÓN DEL RÉGIMEN 1"])
@@ -485,6 +494,8 @@ async function main() {
     ["Stock final de maíz (kg)", STOCK_FINAL.maiz, "4.000 sueltos + 1.800 (90 % de los 2.000 mezclados)"],
     ["Stock final de concentrado (kg)", STOCK_FINAL.conc, "950 sueltos + 200 (10 % de los 2.000 mezclados)"],
     ["Precio de entrada a recría ($/kg)", PRECIO_ENTRADA_KG, "venta teórica de cría. PENDIENTE de afinar por banda de peso"],
+    ["Precio de venta hoy — machos ($/kg)", PRECIO_VENTA_HOY.machos, "SUPUESTO MÍO. El usuario dijo 'más caro que los $5.670' pero no dio el número"],
+    ["Precio de venta hoy — hembras ($/kg)", PRECIO_VENTA_HOY.hembras, "dato del usuario"],
     ["Desbaste", DESBASTE, "merma que descuenta el comprador. La balanza da BRUTO"],
     ["Cabezas vendidas el 04/08", CAB_VENDIDOS, "del sistema"],
     ["Ingreso de la venta ($)", ingresoV, "del sistema — ya neto de desbaste"],
@@ -493,7 +504,8 @@ async function main() {
     ["Categorías que comen", CATS_COMEN.join(", "), "todos los machos (con toritos) y todas las hembras"],
   ], [34, 24, 80])
   const IN = (fila: number) => "INPUTS!$B$" + fila
-  const IN_STOCK_MAIZ = IN(7), IN_PRECIO_ENT = IN(9), IN_DESB = IN(10), IN_CAB = IN(11), IN_INGRESO = IN(12)
+  // ⚠️ Si se agregan filas a INPUTS hay que correr estos números, o las fórmulas apuntan mal.
+  const IN_STOCK_MAIZ = IN(7), IN_PRECIO_ENT = IN(9), IN_DESB = IN(12), IN_CAB = IN(13), IN_INGRESO = IN(14)
 
   // ── 3 · ENTREGAS ───────────────────────────────────────────────────────────
   const aoaEnt: any[][] = [
