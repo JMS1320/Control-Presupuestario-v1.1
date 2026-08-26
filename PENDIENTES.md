@@ -367,6 +367,14 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
 | **A-FEAT-43** | 🔴 | Feat | **Costeo de recría: la lógica está ACORDADA Y VALIDADA con datos reales — falta llevarla a la app** (2026-08-25/26). Maqueta en Excel con 11 hojas y 429 fórmulas + un resumen de una carilla con solapa por rodeo. Reparte el maíz y el concentrado entre lo vendido y lo que queda, con 6 controles que cierran. **El modelo, las 7 decisiones y lo que falta están en el dossier** | → [A-FEAT-43](#a-feat-43) `@productivo` |
 | **A-FEAT-44** | 🔴 | Feat | **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
+| **A-FEAT-45** | 🔴 | Feat | **EL MAPA DEL CIRCUITO — leer esto antes de tocar recría, margen o costos de producción** (2026-08-26). Las 7 pantallas que intervienen, **qué pregunta contesta cada una**, qué alimenta y qué recibe. Nació de que el usuario no podía seguir el plan sin saber para qué sirve cada lugar. Vive en `MODULO_HACIENDA.md` § 15; acá está el ítem para poder referenciarlo. Incluye las 3 decisiones de diseño: **la plata vive en el Margen · la eficiencia en el Ciclo · el puente es el Tramo** | → [A-FEAT-45](#a-feat-45) `@productivo @presupuesto` |
+| **A-BUG-54** | 🔴 | Bug | **El tramo de un lote se guarda aunque le des CANCELAR** — `SeccionTramos` escribe en `lote_tramos` **al instante**: `+ tramo` hace `INSERT` en el click, y cada cambio de fecha/actividad/ha hace `UPDATE` en el `onChange`. El botón Cancelar del modal no revierte nada porque esos writes nunca pasaron por el formulario. Le pasó al usuario el 2026-08-26: canceló y el tramo quedó. **Y quedó con `fecha_hasta` = 04/08/2027 en vez de 2026** — un año de más que nadie validó, y que hizo que *Costos de producción* proyectara ~$3,5 a $5,1 M por mes indefinidamente. Fix: o el tramo se edita en memoria y se guarda con el modal, o la sección dice **explícitamente** que se guarda sola. Y validar que el tramo no exceda la fecha de venta del lote | → [A-BUG-54](#a-bug-54) `@productivo` |
+| **A-BUG-55** | 🔴 | Bug | **El costo de alimentación se cobra al LOTE DE VENTA, y el rodeo que comió es otro** — el tramo cuelga de `stock_lotes`, así que la ración se multiplica por las cabezas **del lote**. En recría 2026 eso le carga a **55 animales** la comida que se comieron **189**. No es un error de cuenta: es que **el consumo es del rodeo y el lote es una parte**. Es exactamente lo que resolvió la maqueta de [A-FEAT-43](#a-feat-43) con el reparto por kilo-día. ⚠️ Mientras esto siga así, **cualquier número de alimentación que muestre la app está mal repartido**, por preciso que sea | → [A-BUG-55](#a-bug-55) `@productivo @presupuesto` |
+| **A-BUG-56** | 🔴 | Bug | **Dos motores distintos calculan el mismo costo, y cada uno sabe la mitad** — `resolverCostoDirecto()` (`lib/presupuesto/margen.ts`, lo usa **Margen**) y `consumoMensual()` (`lib/productivo/actividades.ts`, lo usa **Costos de producción** de la grilla) leen las **mismas filas** de `actividad_insumos` y dan resultados distintos: el primero **no sabe resolver la ración** (`pct_racion`/`kg_cabeza_dia` devuelven *"sin calcular"*), el segundo **sí**, pero no sabe aplicar la cadena de ajustes/IPC ni amortizar. Verificado en pantalla el 2026-08-26: con el tramo cargado, la grilla mostró costos de Recría y el Margen siguió en cero. Es el patrón de `buscarPrecio()` vs `resolverPrecioHacienda()` — **si quedan los dos vivos, en tres meses dan distinto y no se sabe cuál creer** | → [A-BUG-56](#a-bug-56) `@productivo @presupuesto` |
+| **A-BUG-57** | 🟡 | Bug | **Los costos por hectárea de una actividad no llegan a la grilla mensual** — un costo `monto_ha` (pasturas y verdeos de recría, que van sobre las **60 ha** de la actividad) se resuelve en el **Margen** contra las hectáreas de la actividad, pero en *Costos de producción* se resuelve contra las **hectáreas del tramo**, que están vacías → **da cero**. Y si se llenaran, con dos lotes se contaría **dos veces**, porque las 60 ha son de la actividad, no de cada lote. Hermano de [A-BUG-56](#a-bug-56): el mismo insumo, dos motores, dos resultados | → [A-BUG-57](#a-bug-57) `@productivo @presupuesto` |
+| **A-BUG-58** | 🟡 | Bug | **El checkbox «Usar la ganancia diaria de arriba» no responde** — en el tramo de un lote, tildarlo no hace efecto visible (reportado por el usuario 2026-08-26). Escribe `stock_lotes.ganancia_override` pero el modal no refleja el cambio. Y en la misma sección: **la columna «Ha» es demasiado angosta** para leer lo que se escribe | → [A-BUG-58](#a-bug-58) `@productivo` |
+| **A-FEAT-46** | 🔴 | Feat | **Alerta: hay una pesada nueva y el presupuesto sigue con el peso viejo** — decisión del usuario 2026-08-26: la ganancia diaria y el peso de partida de un lote **NO se actualizan solos** (eso ya estaba decidido), **pero tiene que avisar**. Si aparece una pesada posterior a la que usa el lote, el presupuesto y el margen deben marcarlo para que el usuario decida si actualiza. Es el mismo criterio que *«el silencio miente»*: no actualizar automático está bien; no avisar, no | → [A-FEAT-46](#a-feat-46) `@productivo @presupuesto` |
+| **A-DEC-04** | 🔴 | Decisión | **Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás** — regla del usuario 2026-08-26. Hoy `esProduccion()` excluye `42305*` (alimentación) y `421*` (agricultura) **en las dos direcciones**, con el motivo *"ya entra como ración en Actividades y costos"*. El usuario lo corrigió: **hacia adelante la única fuente de verdad es el plan productivo** (y ahí la exclusión está bien), **pero hacia atrás la cuenta debe llenarse con las facturas reales**. Hoy no se distingue, y por eso el maíz no está en ningún lado: excluido de un lado y sin calcular del otro | → [A-DEC-04](#a-dec-04) `@presupuesto @productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10207,6 +10215,193 @@ movimiento, muchos impactos."*
 
 📌 Pendiente de datos: la factura de **Biofarma (concentrado) no tiene cuenta contable asignada**, y
 hay una de **Pereyra** que fue a otra cuenta por un error de facturación del proveedor.
+
+---
+
+## <a id="a-feat-45"></a>A-FEAT-45 — EL MAPA DEL CIRCUITO
+
+**El contenido vive en `MODULO_HACIENDA.md` § 15** — es diseño, y ésa es su dimensión. Acá queda el
+ítem para poder referenciarlo desde los demás pendientes.
+
+Nació el 2026-08-26 de un pedido concreto del usuario: *"me estás queriendo mostrar los lugares de la
+app y para qué sirven"*. No se podía discutir el plan sin eso, porque **cada pantalla parecía hacer lo
+mismo que otra**.
+
+Las 3 decisiones de diseño que salieron, y que no se re-discuten:
+
+| Dónde | Qué vive ahí |
+|---|---|
+| **Margen por actividad** | **la plata** — ingresos, costos, resultado |
+| **Ciclo de recría** | **la eficiencia productiva** — kg, mortandad, conversión, kg/ha/año. **Nada de plata** |
+| **Tramo del lote** | **el puente** — es lo único que conecta el plan con el dinero |
+
+Y la consecuencia práctica: **la maqueta de [A-FEAT-43](#a-feat-43) no es una pantalla nueva**. Es un
+cálculo que se derrama en tres lugares que ya existen — la medición al stock de insumos, el reparto al
+motor, el resultado al Margen como despliegue.
+
+---
+
+## <a id="a-bug-54"></a>A-BUG-54 — El tramo se guarda aunque le des Cancelar
+
+`components/panel-lotes-hacienda.tsx` § `SeccionTramos`. Los tres writes son inmediatos:
+
+| Acción | Qué hace |
+|---|---|
+| Botón `+ tramo` | `INSERT` en `lote_tramos` **en el click**, con `fecha_hasta` = desde + 6 meses |
+| Cambiar actividad / fecha / ha | `UPDATE` en el `onChange` de cada campo |
+| Tacho | `DELETE` inmediato |
+
+El **Cancelar** del modal no revierte nada, porque esos writes nunca pasaron por el estado del
+formulario. Al usuario le pasó el 2026-08-26: canceló, y el tramo quedó.
+
+⚠️ **Y quedó mal**: `fecha_hasta` = **04/08/2027** en vez de 2026. Nada validó el año, y el efecto fue
+que *Costos de producción* proyectó ~$3,5 a $5,1 M **por mes, indefinidamente**, para un lote que ya
+se vendió.
+
+**Fix — dos caminos, hay que elegir uno:**
+1. El tramo se edita en memoria y se guarda con el modal (coherente con el resto del formulario).
+2. La sección **dice explícitamente** que se guarda sola, y el botón pasa a llamarse *Cerrar*.
+
+**Y en los dos casos**: validar que el tramo no se extienda más allá de la fecha de venta del lote.
+
+*Motivo: es el mismo modo de falla de siempre — el silencio miente. No avisó que guardaba, no avisó
+que el año estaba mal, y el número que salió parecía plausible.*
+
+---
+
+## <a id="a-bug-55"></a>A-BUG-55 — El costo de alimentación se le cobra al lote, y el rodeo que comió es otro
+
+**El bug conceptual más caro de esta línea de trabajo.**
+
+El tramo cuelga de `stock_lotes`, entonces `consumoMensual()` multiplica la ración por las cabezas
+**del lote**. En la recría 2026 eso le carga a **55 animales** toda la comida que se comieron **189**.
+
+```
+   Lo que hace la app          Lo que pasó de verdad
+   ─────────────────────       ──────────────────────────────
+   55 cabezas comen            189 cabezas comen
+   → 100 % del maíz            → los 55 se llevan SU PARTE
+```
+
+No es un error de cuenta: es que **el consumo es del RODEO y el lote es una porción**. Es
+exactamente lo que resolvió la maqueta de [A-FEAT-43](#a-feat-43) con el reparto por kilo-día.
+
+⚠️ **Mientras esto siga así, cualquier número de alimentación que muestre la app está mal repartido**
+— por preciso que sea el resto del cálculo. Es el primer arreglo del plan, antes que cualquier
+refinamiento.
+
+**Hacia dónde va**: el consumo tiene que colgar del **grupo que comió junto** (el ciclo de recría),
+y de ahí repartirse a los lotes por kilo-día. Ver § 14 de `MODULO_HACIENDA.md`.
+
+---
+
+## <a id="a-bug-56"></a>A-BUG-56 — Dos motores para el mismo costo, y cada uno sabe la mitad
+
+Las mismas filas de `productivo.actividad_insumos` las resuelven **dos funciones distintas**:
+
+| | `resolverCostoDirecto()` | `consumoMensual()` |
+|---|---|---|
+| Archivo | `lib/presupuesto/margen.ts` | `lib/productivo/actividades.ts` |
+| La usa | **Presupuesto → Margen por actividad** | **Presupuesto → grilla → Costos de producción** |
+| Trabaja sobre | la actividad y la campaña | **el lote y su tramo** |
+| Ración (`pct_racion`, `kg_cabeza_dia`) | ❌ *"necesita la curva de peso y los tramos"* | ✅ resuelta |
+| Cadena de ajustes · IPC · 3 ranuras · histórico | ✅ | ❌ |
+| Amortización (`amortiza_anios`) | ✅ (es del margen) | ❌ (a propósito: el presupuesto es caja) |
+| Costo por hectárea | contra las ha de la **actividad** | contra las ha del **tramo** → [A-BUG-57](#a-bug-57) |
+
+**Verificado en pantalla el 2026-08-26**: el usuario cargó un tramo, *Costos de producción* mostró
+Recría con números, y el **Margen siguió mostrando "sin calcular"**. Los dos leyendo la misma receta.
+
+Es el patrón de `buscarPrecio()` vs `resolverPrecioHacienda()` otra vez. **Si quedan los dos vivos, en
+tres meses dan distinto y no se sabe cuál creer** — y son las dos pantallas que el usuario mira para
+decidir.
+
+⚠️ **No es un merge trivial**: cada uno tiene capacidades que al otro le faltan, y la amortización
+tiene que seguir estando **sólo** en el margen. Hay que diseñarlo, no fusionarlo a ojo.
+
+---
+
+## <a id="a-bug-57"></a>A-BUG-57 — Los costos por hectárea no llegan a la grilla mensual
+
+La recría tiene **60 ha** cargadas en `campo_campana_actividad` (campaña 26/27), y ahí se siembran
+pasturas y verdeos que **cuestan y van sobre toda la recría, no sobre un lote**.
+
+Un costo `monto_ha` de esa actividad hoy:
+
+| Dónde | Contra qué hectáreas | Resultado |
+|---|---|---|
+| **Margen** | las de la actividad (60) | ✅ bien |
+| **Costos de producción** | las del **tramo**, que están vacías | ❌ **cero** |
+
+Y si se llenaran las del tramo, con **dos lotes** se contaría **dos veces**, porque las 60 ha son de
+la actividad y no de cada lote.
+
+📌 El usuario lo planteó así: *"la recría sí tiene has, ya está puesta que son 60… ahí se siembran
+pasturas y verdeos y tienen costo pero van sobre toda la recría y no sobre un lote"*. Y agregó que si
+alguna vez se quiere segmentar ese costo por lote, **se verá más adelante** — hoy no hace falta.
+
+Hermano de [A-BUG-56](#a-bug-56): el mismo insumo, dos motores, dos resultados.
+
+---
+
+## <a id="a-bug-58"></a>A-BUG-58 — El checkbox de ganancia diaria no responde, y la columna Ha es ilegible
+
+Reportado por el usuario el 2026-08-26, en el tramo de un lote
+(`panel-lotes-hacienda.tsx` § `SeccionTramos`):
+
+1. **«Usar la ganancia diaria de arriba en vez de la de las actividades»** — tildarlo no tiene efecto
+   visible. Escribe `stock_lotes.ganancia_override`, pero el modal abierto no refleja el cambio.
+   Sospecha: el prop `lote` del modal no se refresca con el `onCambio()`.
+2. **La columna «Ha» es demasiado angosta** (`w-16`) para leer lo que se escribe.
+
+---
+
+## <a id="a-feat-46"></a>A-FEAT-46 — Avisar cuando hay una pesada nueva y el presupuesto sigue con el peso viejo
+
+**Decisión del usuario, 2026-08-26.** Ya estaba decidido que la ganancia diaria y el peso de partida
+de un lote **no se actualizan solos** — el usuario los pone y su valor manda. Eso no cambia.
+
+**Lo que falta es el aviso.** Textual: *"eso habíamos dicho que no queríamos que sea automático, pero
+sí debería haber una alerta en ese caso. Si hay nueva pesada, presupuesto alertar de necesidad de
+actualizar."*
+
+- Detectar que existe una pesada **posterior** a la que el lote está usando (`fecha_peso`).
+- Marcarlo en el **Margen** y en el **Presupuesto**, con el dato nuevo a la vista para poder decidir.
+- **No pisar nada**: el usuario actualiza si quiere.
+
+*Motivo: es la regla del control visible. No actualizar automático está bien; no avisar, no —
+el número queda viejo y nada lo dice.*
+
+---
+
+## <a id="a-dec-04"></a>A-DEC-04 — Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás
+
+**Regla enunciada por el usuario el 2026-08-26**, corrigiendo el diseño actual:
+
+> *"No debe presupuestar hacia adelante sobre lo consumido, porque la única fuente de verdad hacia
+> adelante es el plan productivo. Pero para atrás sí debe llenar con datos."*
+
+**Hoy la app no distingue las dos direcciones.** `esProduccion()` en `lib/presupuesto/modos.ts`
+excluye por completo:
+
+| Cuentas | Motivo que muestra hoy |
+|---|---|
+| `421*` | *"Agricultura: ya se presupuesta en Actividades y costos"* |
+| `42305*` (incluye **4230501 MAÍZ** y **4230504 CONCENTRADO**) | *"Alimentación: ya entra como ración en Actividades y costos"* |
+| `42312 · 42315 · 42322 · 42323 · 42324` | *"Verdeo: ya entra por hectárea"* |
+
+🔴 **Y ahí está el agujero completo del maíz**: el presupuesto lo excluye **porque supone** que entra
+por la ración, y la ración da cero porque no había tramos. **Excluido de un lado y sin calcular del
+otro — el maíz no está en ningún lado.**
+
+**La regla correcta**: hacia adelante manda el plan productivo (la exclusión está bien); hacia atrás
+mandan las facturas y la cuenta tiene que mostrarlas.
+
+Y es también el mecanismo del **check de duplicación** que pidió el usuario para las facturas
+adjudicadas a una actividad: la forma buena ya existe en `tab-presupuesto.tsx` — *"la cuenta queda
+afuera **porque tiene variable**, no porque alguien la escribió en el código"*. Aplicado a esto:
+**la adjudicación más específica gana, y lo adjudicado se DESCUENTA del reparto general — no se
+excluye la cuenta entera**, así el total nunca se mueve.
 
 ---
 

@@ -915,3 +915,130 @@ Excel — no valores, para que sea auditable) y `Resumen_Costo_Recria.xlsx` (una
 por rodeo). **Cuando la app calcule esto, los dos pasan a ser el CASO DE PRUEBA, no la herramienta.**
 Si sobreviven como herramienta, se convierten en una segunda fuente de verdad. Está escrito adentro
 de los propios archivos.
+
+---
+
+## 15 · 🗺️ EL MAPA DEL CIRCUITO — qué pregunta contesta cada pantalla
+
+> **Leer esto antes de tocar recría, margen o costos de producción.** Nació el 2026-08-26 de un
+> pedido del usuario: no se podía discutir el plan sin saber para qué sirve cada lugar, porque
+> **varias pantallas parecían hacer lo mismo**. Ítem: [A-FEAT-45](PENDIENTES.md#a-feat-45).
+
+Siete pantallas intervienen. Agrupadas por **la pregunta que contesta cada una**, no por el orden en
+que se recorren.
+
+### 15.1 · Las tres decisiones de diseño
+
+| Dónde | Qué vive ahí | Qué NO vive ahí |
+|---|---|---|
+| **Presupuesto → Margen por actividad** | **la plata**: ingresos, costos, resultado | lo productivo |
+| **Productivo → Recría → el ciclo** | **la eficiencia**: kg, mortandad, conversión, kg/ha/año | ⚠️ **la plata** |
+| **El tramo del lote** | **el puente**: lo único que conecta el plan con el dinero | — |
+
+*El usuario lo fijó así: el cuadro del ciclo "siempre fue la síntesis del ciclo productivo… no está
+pensado tanto para costos o ganancia sino la eficiencia productiva; kg producidos por ha por año
+sería la última conclusión". Por eso el costeo de recría **no va ahí**: el cuadro no tiene que crecer.*
+
+### 15.2 · Grupo A — Lo que pienso hacer *(el plan)*
+
+**`Presupuesto → Actividades y costos`** · *¿qué actividad voy a hacer y qué necesita?*
+
+La **receta, en abstracto**: la recría engorda tanto por día, come tanto, y su comida es maíz y
+concentrado. No habla de animales concretos ni de fechas.
+
+⚠️ **La receta no produce ningún número por sí sola.** Es una definición esperando que alguien le
+diga a qué animales aplicarla. Son **índices productivos** que después se aplican a cantidades de
+stock según la campaña.
+
+### 15.3 · Grupo B — A quién y cuándo *(el puente)*
+
+**`Productivo → Evolución Rodeo →` los lotes, y adentro los tramos**
+
+El **LOTE** es un paquete de animales que se va a vender:
+
+| Campo | Qué significa | A dónde va |
+|---|---|---|
+| `fecha_disponible` | desde cuándo **se podría** vender | el presupuesto ubica el ingreso en el tiempo |
+| `fecha_venta_estimada` | cuándo se vende (o se vendió) | el mes en que entra la plata |
+| cantidad · peso · precio | el tamaño de la venta | el **ingreso** del Margen y del Presupuesto |
+
+El **TRAMO** —adentro del lote— es la pieza central:
+
+```
+     TRAMO = "este lote hizo esta actividad entre estas dos fechas"
+                          │
+            ┌─────────────┴─────────────┐
+            ▼                           ▼
+     CURVA DE PESO              COSTO DE ALIMENTACIÓN
+  (cuánto pesa al vender)      (cuánta comida consumió)
+            │                           │
+            ▼                           ▼
+     el INGRESO del margen        el COSTO del margen
+                                  y la fila mensual de la grilla
+```
+
+**Los lotes de cría con fecha 2027/2028 son PROYECCIONES y está bien que lo sean** — la realidad los
+corrige después. El lote de los 55 es distinto: esa venta ya ocurrió y sus números ya son reales.
+
+### 15.4 · Grupo C — Cuánto gané y cuándo entra la plata
+
+**`Presupuesto → Margen por actividad`** · *¿este negocio deja plata?*
+
+| | Hoy |
+|---|---|
+| ¿Muestra lo ocurrido o lo teórico? | 🔴 **sólo lo teórico** — no lee ni una factura |
+| ¿Qué campaña? | **contable** (jul → jun) |
+| Ingresos | de los lotes |
+| Costos | de las recetas |
+| Precios | de `precios_hacienda`, cargada a mano |
+
+Que sea 100 % teórico **no es un defecto de diseño**: la intención siempre fue *presupuestar hacia
+adelante y cerrar con datos reales*. **Lo que falta es la segunda mitad.**
+
+**`Presupuesto → la grilla → Costos de producción`** · *¿cuándo sale la plata?*
+
+⚠️ **NO es el mismo cálculo que el Margen.** Son **dos motores distintos** leyendo la misma receta, y
+cada uno sabe la mitad → [A-BUG-56](PENDIENTES.md#a-bug-56).
+
+### 15.5 · Grupo D — Qué pasó de verdad
+
+- **`Presupuesto → Cuentas → 42305`** · *¿cuánto gasté realmente?* — hoy excluida en las dos
+  direcciones; la regla correcta es **apagada hacia adelante, llena hacia atrás** →
+  [A-DEC-04](PENDIENTES.md#a-dec-04). Debajo cuelgan **4230501 MAÍZ** y **4230504 CONCENTRADO**.
+- **`Productivo → Insumos → Stock`** · *¿qué tengo en el campo?* — 🔴 el maíz y el concentrado **no
+  existen** como productos.
+
+### 15.6 · Grupo E — Qué tan bien lo hice
+
+**`Productivo → Recría / Engorde →` el ciclo** · *¿fui eficiente?*, **no** *¿gané plata?*
+
+Dos correcciones pedidas por el usuario el 2026-08-26:
+1. **Tiene que decir la cantidad con que ARRANCÓ, no la cantidad menos mortandad.** Hoy dice 185
+   (103 + 82), que es la foto de hoy; debe decir **189**.
+2. **El número tiene que salir de la salida de cría** —los destetados con sus kilos, con el promedio
+   para los que no se pesaron— **y no de la pesada**, que dejó 4 animales afuera.
+
+✅ Y quedó confirmado: **el precio de transición es UN solo número que vale para los dos lados** —
+venta de cría = entrada de recría. Es lo que hace que un resultado cierre y el otro abra.
+
+### 15.7 · Dónde va la maqueta del costeo de recría
+
+**No es una pantalla.** Es un cálculo que se derrama en tres lugares que ya existen:
+
+| Lo que hace | A dónde va | Por qué ahí |
+|---|---|---|
+| **Mide** el consumo real | Insumos → Stock | es un hecho físico |
+| **Reparte** entre grupos | el motor (§ 15.4) — no es pantalla | es cálculo, no información |
+| **Muestra** el resultado por grupo | Margen, desplegando Recría | ahí ya vive la plata |
+
+**Y al ciclo (§ 15.6) no va nada de plata.**
+
+### 15.8 · Campaña contable vs productiva — conviven sin pantalla nueva
+
+**El tramo no sabe qué es una campaña**: sabe entre qué fechas pasó.
+
+- **Sumado por meses** → el año contable (Margen, grilla).
+- **Entero** → la camada (ciclo productivo).
+
+Una carga, dos lecturas. Lo único nuevo es **una apertura adentro del Margen** para ver el resultado
+por grupo — y que la suma dé exacto **es el control**.
