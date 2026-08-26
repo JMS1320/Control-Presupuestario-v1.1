@@ -275,6 +275,13 @@ async function main() {
   const precioConcKg = costoConc / kgConc
   const consumoConc = kgConc - STOCK_FINAL.conc
 
+  /** Peso de un animal en la pesada del destete. Si no se pesó, el promedio del lote. */
+  const F_DESTETE = fechasPesada[0]
+  const pesoAlDestete = (id: string) => {
+    const p = (pesadas || []).find((x: any) => x.ternero_id === id && x.fecha === F_DESTETE)
+    return p ? Number(p.peso_kg) : pesoProm(F_DESTETE, "todos")
+  }
+
   // ── Totales derivados ──────────────────────────────────────────────────────
   const kgV = repartos.reduce((s, r) => s + r.kgV, 0)
   const kgR = repartos.reduce((s, r) => s + r.kgR, 0)
@@ -333,24 +340,60 @@ async function main() {
     machos: cabezasGrupo("machos", FECHA_STOCK),
     hembras: cabezasGrupo("hembras", FECHA_STOCK),
   }
-  // Peso de entrada (pesada del 23/02) y de hoy, por grupo
+  // Peso de entrada: se SUMA el de cada sobreviviente, no se usa el promedio del grupo.
+  // El promedio incluye a los que después murieron, y como los muertos van aparte, aplicarlo a
+  // los sobrevivientes descuadra el control (daba $802.396 de diferencia contra los 189).
+  const pesoIniSuma: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  delRodeo.forEach((t: any) => {
+    if (!vivoAl(t, F_DESTETE)) return
+    if (t.fecha_baja && !idsVendidos.has(t.id) && t.fecha_baja <= FECHA_STOCK) return  // muerto: va aparte
+    pesoIniSuma[grupoDe(t)] += pesoAlDestete(t.id)
+  })
   const pesoIniG: Record<Grupo, number> = {
-    vendidos: pesoProm(fechasPesada[0], "vendidos"),
-    machos: pesoProm(fechasPesada[0], "machos"),
-    hembras: pesoProm(fechasPesada[0], "hembras"),
+    vendidos: pesoIniSuma.vendidos / cabG.vendidos,
+    machos: pesoIniSuma.machos / cabG.machos,
+    hembras: pesoIniSuma.hembras / cabG.hembras,
   }
   const pesoHoyG: Record<Grupo, number> = {
     vendidos: Number(ventaMov?.peso_total_kg ?? 0) / CAB_VENDIDOS,   // balanza real de la venta
     machos: pesoEn(FECHA_STOCK, "machos"),
     hembras: pesoEn(FECHA_STOCK, "hembras"),
   }
+  // ── MORTANDAD: entraron 189 y salen 185. Los 4 muertos tenían valor de entrada ──────
+  // Si se hubieran vendido, se vendían vivos. Ese valor es una PÉRDIDA y hay que adjudicarla,
+  // o el margen queda inflado. La comida que comieron antes de morir ya está repartida (se los
+  // contó en la clave mientras vivieron); lo que faltaba era su valor de entrada.
+  //
+  // Se usa el peso REAL de cada muerto, no el promedio del grupo: los 3 machos pesaban 141 kg
+  // contra 199 del promedio (los que se mueren son los flojos). Con el promedio se exageraría.
+  const muertos = delRodeo.filter((t: any) =>
+    t.fecha_baja && !idsVendidos.has(t.id) && t.fecha_baja > F_DESTETE && t.fecha_baja <= FECHA_STOCK)
+  const valorMuerto = (t: any) => pesoAlDestete(t.id) * (1 - DESBASTE) * PRECIO_ENTRADA_KG
+  const muertosMacho = muertos.filter((t: any) => t.sexo === "Macho")
+  const muertosHembra = muertos.filter((t: any) => t.sexo !== "Macho")
+  const perdidaMachos = muertosMacho.reduce((s, t) => s + valorMuerto(t), 0)
+  const perdidaHembras = muertosHembra.reduce((s, t) => s + valorMuerto(t), 0)
+  // Los machos muertos se reparten entre los grupos de machos que sobrevivieron, por cabeza.
+  const cabMachosVivos = cabG.vendidos + cabG.machos
+  const perdidaG: Record<Grupo, number> = {
+    vendidos: perdidaMachos * cabG.vendidos / cabMachosVivos,
+    machos: perdidaMachos * cabG.machos / cabMachosVivos,
+    hembras: perdidaHembras,
+  }
+  const muertosG: Record<Grupo, number> = {
+    vendidos: muertosMacho.length * cabG.vendidos / cabMachosVivos,
+    machos: muertosMacho.length * cabG.machos / cabMachosVivos,
+    hembras: muertosHembra.length,
+  }
+
   /** Entrada, salida y margen de un grupo. Los vendidos usan la venta real; el resto, el precio de prueba. */
   const cuenta = (g: Grupo) => {
     const entrada = pesoIniG[g] * (1 - DESBASTE) * PRECIO_ENTRADA_KG * cabG[g]
+    const mortandad = perdidaG[g]
     const alimento = costoMaizG[g] + costoConcG[g]
     const salida = g === "vendidos" ? ingresoV
       : pesoHoyG[g] * (1 - DESBASTE) * PRECIO_VENTA_HOY[g] * cabG[g]
-    return { entrada, alimento, salida, margen: salida - entrada - alimento }
+    return { entrada, mortandad, alimento, salida, margen: salida - entrada - mortandad - alimento }
   }
 
   // ═══ Serie DIARIA — el corazón auditable ═══════════════════════════════════
@@ -877,7 +920,6 @@ async function main() {
   // ═══════════════════════════════════════════════════════════════════════════
   // ⚠️ Los DESTETADOS son los que había el 23/02, antes de las mortandades — NO los que quedan
   // hoy. Si se toma el número de hoy y se le restan las ventas, salen más ventas que ingresos.
-  const F_DESTETE = fechasPesada[0]
   const cabDestete = delRodeo.filter((t: any) => vivoAl(t, F_DESTETE)).length
   const cabMuertas = delRodeo.filter((t: any) =>
     t.fecha_baja && t.fecha_baja > F_DESTETE && t.fecha_baja <= FECHA_STOCK && !idsVendidos.has(t.id)).length
@@ -908,18 +950,24 @@ async function main() {
     ["  Comieron", "1,07 % a 1,54 %", "", "de su peso vivo. Sale del stock, no se supuso"],
     [],
     ["CÓMO LE FUE A CADA GRUPO"],
-    ["Grupo", "Cab.", "$ entrada", "$ comida", "$ salida", "MARGEN", "$/cabeza"],
+    ["Grupo", "Cab.", "$ entrada", "$ mortandad", "$ comida", "$ salida", "MARGEN", "$/cabeza"],
   ]
   GRUPOS.forEach(g => {
     const c = cuenta(g)
-    r.push([nom(g), cabG[g], Math.round(c.entrada), Math.round(c.alimento), Math.round(c.salida),
-      Math.round(c.margen), Math.round(c.margen / cabG[g])])
+    r.push([nom(g), cabG[g], Math.round(c.entrada), Math.round(c.mortandad), Math.round(c.alimento),
+      Math.round(c.salida), Math.round(c.margen), Math.round(c.margen / cabG[g])])
   })
   r.push(["TOTAL", GRUPOS.reduce((s, g) => s + cabG[g], 0),
     Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).entrada, 0)),
+    Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).mortandad, 0)),
     Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).alimento, 0)),
     Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).salida, 0)),
     Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).margen, 0)), ""])
+  r.push([])
+  r.push(["CONTROL: entrada de los 185 vivos + los 4 muertos = entrada de los 189 destetados"])
+  r.push(["", "185 vivos + mortandad", Math.round(GRUPOS.reduce((s, g) => s + cuenta(g).entrada + cuenta(g).mortandad, 0)), ""])
+  r.push(["", "189 destetados", Math.round(delRodeo.filter((t: any) => vivoAl(t, F_DESTETE))
+    .reduce((s: number, t: any) => s + pesoAlDestete(t.id), 0) * (1 - DESBASTE) * PRECIO_ENTRADA_KG), "tiene que dar lo mismo"])
   r.push([])
   r.push(["QUÉ HAY QUE CREER PARA QUE ESTO VALGA — de mayor a menor impacto"])
   r.push(["1", "Precio de entrada", "$" + ar(PRECIO_ENTRADA_KG) + "/kg para todos",
@@ -960,9 +1008,11 @@ async function main() {
     const kgMaiz = gs.reduce((s, x) => s + kgG[x], 0)
     const kgConcumido = gs.reduce((s, x) => s + kgConcG(x), 0)
     const cEnt = gs.reduce((s, x) => s + cuenta(x).entrada, 0)
+    const cMort = gs.reduce((s, x) => s + cuenta(x).mortandad, 0)
     const cAli = gs.reduce((s, x) => s + cuenta(x).alimento, 0)
     const cSal = gs.reduce((s, x) => s + cuenta(x).salida, 0)
-    const margen = cSal - cEnt - cAli
+    const cabMuertasG = gs.reduce((s, x) => s + muertosG[x], 0)
+    const margen = cSal - cEnt - cMort - cAli
     const fSal = g === "total" ? FECHA_STOCK : fechaSalida(g as Grupo)
     const diasRecria = dias(F_DESTETE, fSal)
     const diasRacion = dias(INICIO_RACION, fSal)
@@ -978,7 +1028,9 @@ async function main() {
       [nota],
       [],
       ["PRODUCTIVO", "Total", "Por cabeza", ""],
-      ["Cabezas", cab, "", ""],
+      ["Cabezas que salen", cab, "", ""],
+      ["Muertas adjudicadas", +cabMuertasG.toFixed(1), "", "el costo lo absorben las que sobreviven"],
+      ["Mortandad", +(cabMuertasG / (cab + cabMuertasG) * 100).toFixed(1), "", "%"],
       ["Peso de entrada (23/02)", "", +pIni.toFixed(1), "kg — bruto de balanza"],
       ["Peso de salida", "", +pFin.toFixed(1), g === "vendidos" ? "kg — balanza del camión" : "kg — estimado"],
       ["Kg ganados", Math.round(kgGanados * cab), +kgGanados.toFixed(1), ""],
@@ -996,6 +1048,8 @@ async function main() {
       [],
       ["ECONÓMICO", "Total", "Por cabeza", ""],
       ["Valor de entrada", Math.round(cEnt), Math.round(cEnt / cab), "peso neto × $" + ar(PRECIO_ENTRADA_KG) + "/kg"],
+      ["Pérdida por mortandad", Math.round(cMort), Math.round(cMort / cab),
+        (+cabMuertasG.toFixed(1)) + " cab. adjudicadas, a su peso real al destete"],
       ["Costo de alimentación", Math.round(cAli), Math.round(cAli / cab), ""],
       ["Valor de salida", Math.round(cSal), Math.round(cSal / cab), g === "vendidos" ? "venta real a $5.670/kg" : "a precio de hoy"],
       ["MARGEN", Math.round(margen), Math.round(margen / cab), ""],
