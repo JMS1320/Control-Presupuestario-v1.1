@@ -365,6 +365,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-39 | 🔴 | Test | **Generar una campaña por tandas** (2026-08-22) — generar 2-3 templates, verificar que pasan a *"ya generados"* y que **no reaparecen** en la corrida siguiente, y que no se duplican cuotas. `MANUAL-USO.md` § Renovar campaña por tandas | → [A-FEAT-42](#a-feat-42) `@egresos` |
 | **A-FEAT-41** | 🔴 | Feat | **La venta manual de hacienda NO da de alta al cliente** en `public.proveedores`, contra la regla de contrapartes (*upsert, nunca sólo UPDATE*). Se ve en [A-DAT-07](#a-dat-07): hubo que crear a Ballester a mano. Y el movimiento manual **no tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta* (`intermediario_id`), así que el intermediario termina como texto libre en observaciones | → [A-FEAT-41](#a-feat-41) `@productivo` |
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
+| **A-FEAT-43** | 🔴 | Feat | **Costeo de recría: la lógica está ACORDADA Y VALIDADA con datos reales — falta llevarla a la app** (2026-08-25/26). Maqueta en Excel con 11 hojas y 429 fórmulas + un resumen de una carilla con solapa por rodeo. Reparte el maíz y el concentrado entre lo vendido y lo que queda, con 6 controles que cierran. **El modelo, las 7 decisiones y lo que falta están en el dossier** | → [A-FEAT-43](#a-feat-43) `@productivo` |
+| **A-FEAT-44** | 🔴 | Feat | **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10053,6 +10055,158 @@ contra nada.
 5. Contra los archivos ya generados: los 7 meses tienen que coincidir con
    `planillas_hacienda_ACTUAL/`, salvo febrero y agosto, que ahí son **meses enteros** y acá salen
    **recortados** al rango.
+
+---
+
+## <a id="a-feat-43"></a>A-FEAT-43 — Costeo de recría: el modelo, acordado y validado
+
+> **Estado**: la **lógica está cerrada y probada contra datos reales**. Falta llevarla a la app.
+> **Maqueta**: `scripts/maqueta-costo-recria.mts` genera `Maqueta_Costo_Recria.xlsx` (11 hojas,
+> 429 fórmulas, auditable) y `Resumen_Costo_Recria.xlsx` (una carilla + una solapa por rodeo).
+> ⚠️ **Los Excel tienen fecha de vencimiento**: cuando la app calcule esto, pasan a ser el **caso
+> de prueba**, no la herramienta. No deben volverse una segunda fuente de verdad.
+
+### El problema
+
+Los terneros de recría comen desde el destete. Se vende una parte (55 el 04/08) y hay que saber
+**cuánto comieron esos 55** — sin tomar inventario en cada venta, que es inviable. Y el maíz que
+sobra en el silo no puede cargársele a nadie.
+
+### El modelo, en cuatro reglas
+
+**1 · Comprar no es consumir.** La compra entra a un stock (es un activo); el **costo** es el
+consumo. Así el sobrante **se queda en el silo y nunca toca el costo de nadie** — y desaparece la
+necesidad de inventariar en cada venta, que era el nudo original.
+
+**2 · El total es real; el reparto es teórico.**
+```
+consumo del tramo = stock inicial + entregas − stock final     ← medido, no estimado
+```
+⚠️ **Un corte existe cuando hay una MEDICIÓN, no cuando llega un camión.** Si no se declara stock,
+no hay corte. Si se declara cero, es cero. Si se declaran 10 ton, son 10 ton.
+
+**3 · La clave de reparto es el KILO-DÍA, siempre.** La comida se sirve al grupo y adentro del
+corral el que pesa más come más — con ración por día **y** a discreción. Textual del usuario:
+*"esto es así en la realidad, no es invento mío"*.
+🟨 Se probó con cabeza-día para el régimen fijo y se descartó: le cobraba lo mismo al de 150 kg que
+al de 300. La diferencia medida fue **+10,1 %** para los 55.
+📌 **El régimen (por día / a discreción) se declara igual**, pero sirve para **proyectar y
+controlar**, no para repartir.
+
+**4 · El `%PV` sale del dato, no se supone.**
+```
+% del peso vivo = consumo real ÷ (peso × días de todo el rodeo)
+lo que comió cada uno = ese % × su peso × sus días
+```
+Dio **1,07 % · 1,46 % · 1,54 %** por tramo — creciente, coherente con la ración que subió y después
+el autoconsumo. 🟨 Es el número que uno **mira y juzga**: si diera 0,4 %, falta una entrega.
+Las participaciones suman 1, así que **el reparto nunca se va del total real**.
+
+### Las 7 decisiones tomadas
+
+| # | Decisión | Motivo |
+|---|---|---|
+| 1 | **Kilo-día siempre**, una sola clave | el pesado come más en los dos regímenes; y en la app no se puede cambiar la fórmula en vivo |
+| 2 | **Precio por tramo**, no promedio del período | un promedio le carga a los 55 maíz comprado **después** de que se vendieran |
+| 3 | **Peso vivo para el consumo, peso neto para la plata** | la balanza da bruto; el desbaste es sólo para valuar |
+| 4 | **El peso sale de las pesadas**, nunca de una ganancia estimada | la ganancia es un supuesto, la pesada es un hecho |
+| 5 | **La mortandad es un costo** y se adjudica | si se hubieran vendido, se vendían vivos |
+| 6 | Los muertos se valúan a **su peso real**, no al promedio | los 3 machos pesaban 141 kg contra 199: los que se mueren son los flojos. Con el promedio se exagera 40 % |
+| 7 | El costo **se congela** al precio de la compra | comieron maíz que ya estaba comprado |
+
+### Los 6 controles, y todos cierran
+
+```
+Maíz: comprado − consumido = stock                     5.800 kg  = lo declarado
+Plata: comprado = imputado + valor del remanente             $0
+Mezcla 90/10 predice el maíz del último tramo           16.650 kg contra 19.200: cierra
+Ración implícita                                    2,95 kg/cab/día contra los 3 declarados
+Rodeo: destete − muertes − ventas = las que quedan     130 cabezas
+Entrada de los 185 vivos + los 4 muertos = la de los 189     253.249.089 = 253.249.089
+Nominal vs movimientos al 06/05                            187 = 187
+```
+
+### ⚠️ Qué es exacto y qué es convención
+
+- **El TOTAL es exacto**: entraron 189, salen 185; la pérdida aparece sola.
+- **Los PARCIALES llevan convenciones** y no pueden ser exactos: un animal que murió en abril no
+  "pertenecía" a la venta de agosto. Pero **la convención mueve plata entre grupos y nunca cambia
+  el total** — los 3 márgenes suman exactamente el total. Por eso **el total es el control de los
+  parciales**, igual que en la Planilla de Hacienda.
+
+### El resultado con los datos reales (al 24/08/2026)
+
+| Grupo | Cab. | $ entrada | $ mortandad | $ comida | Margen/cab |
+|---|---:|---:|---:|---:|---:|
+| Los 55 vendidos | 55 | 80.017.985 | 1.518.936 | 4.420.416 | **$55.110** |
+| Machos que quedan | 49 | 61.841.155 | 1.353.234 | 4.800.541 | $205.428 |
+| Hembras que quedan | 81 | 107.186.940 | 1.330.840 | 8.222.739 | $134.392 |
+
+🔴 **La alimentación es el 5,5 % del valor del animal; el precio de entrada es el 93 %.** Afinar el
+reparto del maíz mueve mucho menos que acertar el precio de transferencia de cría a recría.
+
+### Lo que falta
+
+1. 🔴 **El precio de entrada** — hoy $7.000/kg para todos. Los 55 eran más pesados: su $/kg real
+   debería ser **menor**. 🟨 **`precios_hacienda` ya tiene bandas de peso y `resolverPrecioHacienda()`
+   ya las resuelve** — la misma función que valúa la venta puede valuar la entrada, y les daría
+   precios distintos automáticamente porque caen en bandas distintas.
+2. **El precio de venta de los machos** que quedan (hoy $6.000, supuesto).
+3. **Pasturas y verdeos** — la pastura se amortiza en los años que dura, el verdeo se consume
+   entero en su ciclo. `actividad_insumos` ya tiene `has_aplicacion` y `amortiza_anios`.
+4. **Sanidad** — ya funciona por orden de aplicación (categoría + cabezas).
+5. **El puente compra → entrega → factura** → [A-FEAT-44](#a-feat-44).
+6. **Dar de alta maíz y concentrado** en `stock_insumos`: hoy la categoría *Alimento balanceado*
+   existe **sin un solo producto**.
+
+📌 **Dato del negocio, del usuario**: *"siempre está la posibilidad de tratar al negocio como uno
+solo y calcular de punta a punta una vez vendido todo. Pero hay decisiones diferentes adentro y es
+bueno saber cómo te fue con una cosa y con la otra."* → **la app tiene que dar los dos números**, el
+consolidado y el segmentado, y el consolidado es el control del segmentado.
+
+---
+
+## <a id="a-feat-44"></a>A-FEAT-44 — El puente COMPRA → ENTREGA → FACTURA para insumos
+
+Hoy la cadena está cortada y el costo productivo nunca llega al lote:
+
+```
+Factura ARCA de maíz  →  gasto del mes en el plan de cuentas
+                         (y ahí muere: no toca el stock ni el lote)
+```
+
+`productivo.movimientos_insumos` **no tiene `factura_id`** — sólo `proveedor` y `cuit` como texto.
+
+**Son TRES momentos, no dos**, y la app tiene que aceptar conocimiento parcial en cada uno
+(descripción del usuario):
+
+| # | Momento | Qué se sabe |
+|---|---|---|
+| 1 | **Compra** | *"compré tanto"* — cantidad, sin precio todavía (se pide contra pizarra) |
+| 2 | **Entrega** | *"recibí este día"* — **es la que mueve el stock** |
+| 3 | **Factura** | llega después y **trae el precio** |
+
+⚠️ **La entrega y la factura NO coinciden, y no es una excepción**: Longo facturó el 13/07 lo
+entregado el **24/06**, y el 14/08 lo entregado el **24/07**. Si el stock dependiera de la fecha de
+factura, el maíz habría "llegado" 20 días tarde y **los tramos de consumo salen mal**.
+
+**Y facturado ≠ entregado en cantidad**: la FC del 13/07 fue por 25 ton y se entregaron 20,1; la del
+14/08 por 20,1 y se entregaron 25. **El total sí coincide** (45,1 ton). Las 4,9 de diferencia son un
+**anticipo que viaja con su propio precio** — así costeado, cierra exacto contra los $12.055.205.
+
+**Mecanismo propuesto por el usuario**: al asignarle a una factura una cuenta contable que sea de
+insumo (`4230501 MAIZ`, `4230502 ALIMENTO BALANCEADO`, `4230504 CONCENTRADO` — **las tres ya
+existen**), la app pide producto, cantidad y unidad, y crea el movimiento con su precio. *"Un
+movimiento, muchos impactos."*
+
+**Tres cosas a resolver antes de diseñarlo:**
+1. **Una factura puede traer varios insumos** → es *una factura = N líneas*, no 1:1. Si se diseña
+   1:1 hay que rehacerlo.
+2. **El costo va NETO, sin IVA** — el IVA es crédito fiscal, no costo del animal.
+3. **El flete** suele venir en otra factura. Contablemente corresponde que encarezca el kilo.
+
+📌 Pendiente de datos: la factura de **Biofarma (concentrado) no tiene cuenta contable asignada**, y
+hay una de **Pereyra** que fue a otra cuenta por un error de facturación del proveedor.
 
 ---
 

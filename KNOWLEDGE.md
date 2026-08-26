@@ -1387,3 +1387,90 @@ planilla y las filas fantasma de terneros, que mostraba **158** animales donde h
 **Y el mismo dato decidió otra cosa**: se corrigió **el reporte** y no el signo guardado en la BD,
 justamente porque 2 de los 4 lugares ya dependían de la convención positiva. Contar quién depende de
 qué **antes** de elegir el lado a tocar es lo que evitó romper lo que andaba.
+
+---
+
+## Repartir un costo medido: el total es real, la clave es teórica `#costos #productivo #2026-08-26`
+
+Cómo costear algo que se consume en común y se vende por partes — la recría fue el caso, pero sirve
+para cualquier insumo compartido.
+
+**1 · Comprar no es consumir.** La compra entra a un stock (es un activo); el costo es el consumo.
+Con eso, **el sobrante se queda en el stock y no se le carga a nadie** — y desaparece la necesidad
+de inventariar en cada venta, que era el nudo del problema.
+
+**2 · El total no se estima, se mide**: `stock inicial + entregas − stock final`. Y el corte existe
+**cuando hay una medición**, no cuando llega un camión.
+
+**3 · La clave sólo reparte.** Como el total ya es real, la clave no puede inventar ni perder nada:
+las participaciones suman 1. Eso la vuelve barata de discutir — se puede cambiar el criterio y **el
+total no se mueve**.
+
+**4 · Y el parámetro que uno creía input, sale de dividir.** En vez de suponer *"comen el 1,5 % del
+peso vivo"*:
+```
+% real = consumo medido ÷ (peso × días del rodeo)
+lo de cada uno = ese % × su peso × sus días
+```
+El `%` deja de ser un supuesto que se carga y pasa a ser **un resultado que se mira y se juzga**. Dio
+1,07 / 1,46 / 1,54 % — creciente, coherente. Si diera 0,4 %, falta una entrega.
+
+⚠️ **Qué es exacto y qué es convención, y conviene decirlo:** el **total** es exacto; los
+**parciales** llevan convenciones (a qué grupo se le carga el animal que murió antes de que la venta
+existiera). Pero la convención **mueve plata entre grupos y nunca cambia el total** — por eso el
+total es el control de los parciales.
+
+**Y una regla que apareció en dos lugares distintos**: si el reparto es proporcional a una clave,
+**repartir N grupos a la vez da lo mismo que repartir 2 y subdividir**. Sirve para agregar aperturas
+sin rehacer el cálculo.
+
+---
+
+## Escribir el control encuentra errores que revisar el cálculo no `#control #2026-08-26`
+
+Tres errores reales aparecieron **al escribir el control**, no al revisar la cuenta. Ninguno lo
+habría encontrado releyendo el código:
+
+| Error | Lo destapó |
+|---|---|
+| El `Stock Anterior` sumaba ventas y muertes (**16 cabezas**) | encadenar las planillas: el saldo de un mes tenía que ser el inicio del siguiente |
+| Costear a un **precio promedio del período** le cargaba a lo vendido maíz comprado **después** | el control de plata punta a punta: comprado = imputado + remanente |
+| El valor de entrada usaba el **promedio del grupo** por la cantidad de sobrevivientes (**$802.396**) | el control de mortandad: entrada de los vivos + los muertos = entrada de los que entraron |
+
+El patrón: **un control que cruza dos caminos independientes hacia el mismo número**. No verifica
+que la cuenta esté "bien hecha" — verifica que **dos maneras de llegar den lo mismo**, y ahí es
+donde aparece lo que uno no estaba mirando.
+
+**Y a veces el control no encuentra un error de cálculo sino un dato mal contado.** Simulando el
+stock día a día apareció que **ninguna ración era posible** en marzo: 1.740 kg no alcanzaban para 197
+cabezas durante los 56 días hasta la entrega siguiente. Probando fechas de inicio, la única
+compatible con los 3 kg/día declarados era mayo. El usuario lo confirmó con el recibo.
+**No faltaban 25 toneladas: sobraban 56 días.**
+
+---
+
+## Una maqueta en Excel antes de codificar — con fecha de vencimiento `#metodo #2026-08-26`
+
+Antes de llevar un modelo de cálculo a la app, conviene **maquetarlo en Excel** — pero con dos
+condiciones que lo separan de un prototipo cualquiera:
+
+1. **Con los datos REALES del sistema, generados por script.** Un ejemplo inventado valida la
+   fórmula pero **esconde los agujeros de datos**, que suelen ser la mitad del problema. Con datos
+   reales la maqueta además ya contesta la pregunta del negocio.
+2. **Con fórmulas de Excel, no con valores.** Si trae resultados es un informe; si trae fórmulas es
+   auditable. Una hoja **día a día** donde se ve la decisión de cada jornada vale más que un total
+   correcto, porque permite discutir el criterio y no sólo el número.
+
+⚠️ **Y con fecha de vencimiento declarada adentro del propio archivo**: cuando la app lo calcule, el
+Excel **deja de ser la herramienta y pasa a ser el caso de prueba**. Si sobrevive como herramienta,
+se convierte en una segunda fuente de verdad — y este proyecto ya tiene esa cicatriz.
+
+**Lo que rindió**: iterar el criterio cuesta segundos en Excel y minutos en la app. En una sola
+sesión el usuario corrigió el modelo cinco veces —la fecha de inicio, la clave de reparto, el
+desbaste en la entrada, los destetados, la mortandad—. Cada corrección en código habría costado diez
+veces más.
+
+**Y un subproducto**: el resumen de una carilla, aparte del archivo grande. El usuario lo pidió con
+una frase que vale como criterio general — *"no tengo manera de auditar todo, sería larguísimo"*.
+La herramienta de trabajo y el informe **son dos documentos distintos**, y el informe tiene que
+llevar una sección de **"qué hay que creer para que esto valga"**, ordenada de mayor a menor impacto.
