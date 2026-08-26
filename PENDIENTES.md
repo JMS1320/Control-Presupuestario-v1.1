@@ -376,6 +376,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-46** | 🔴 | Feat | **Alerta: hay una pesada nueva y el presupuesto sigue con el peso viejo** — decisión del usuario 2026-08-26: la ganancia diaria y el peso de partida de un lote **NO se actualizan solos** (eso ya estaba decidido), **pero tiene que avisar**. Si aparece una pesada posterior a la que usa el lote, el presupuesto y el margen deben marcarlo para que el usuario decida si actualiza. Es el mismo criterio que *«el silencio miente»*: no actualizar automático está bien; no avisar, no | → [A-FEAT-46](#a-feat-46) `@productivo @presupuesto` |
 | **A-DEC-04** | 🔴 | Decisión | **Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás** — regla del usuario 2026-08-26. Hoy `esProduccion()` excluye `42305*` (alimentación) y `421*` (agricultura) **en las dos direcciones**, con el motivo *"ya entra como ración en Actividades y costos"*. El usuario lo corrigió: **hacia adelante la única fuente de verdad es el plan productivo** (y ahí la exclusión está bien), **pero hacia atrás la cuenta debe llenarse con las facturas reales**. Hoy no se distingue, y por eso el maíz no está en ningún lado: excluido de un lado y sin calcular del otro | → [A-DEC-04](#a-dec-04) `@presupuesto @productivo` |
 | A-TEST-41 | 🔴 | Test | **El tramo de un lote respeta Guardar y Cancelar** ([A-BUG-54](#a-bug-54) + [A-BUG-58](#a-bug-58)) — abrir un lote en *Productivo → Evolución Rodeo → lotes*, agregar un tramo, cambiarle las fechas y darle **Cancelar**: al reabrir **no tiene que haber quedado nada**. Repetir y darle **Guardar**: tiene que quedar. Probar tambien **borrar** un tramo y cancelar (debe seguir estando) y el **checkbox de ganancia diaria**, que ahora tiene que tildarse y verse el cambio en la curva. Y con un lote **con fecha de venta**, agregar un tramo: el **Hasta** debe salir con la fecha de venta y no con +6 meses; si se lo pasa, tiene que aparecer el **aviso ámbar** | → [A-TEST-41](#a-test-41) `@productivo` |
+| **A-FEAT-47** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-42](#a-test-42))** · **Mediciones de stock de un insumo: el consumo deja de estimarse y se MIDE.** Tabla nueva `productivo.mediciones_insumo` (un **nivel**, no un movimiento — por eso no va en `movimientos_insumos`) + `lib/productivo/consumo.ts` + botón **Mediciones** en cada insumo de *Productivo → Insumos → Stock*. **Cada medición corta un tramo**, y de cada tramo sale `había + entró − quedó`, con **precio por tramo** (no un promedio del período) y **3 controles a la vista**. Es el primer paso de [A-FEAT-43](#a-feat-43): sin esto no se puede cargar nada. Verificado con `scripts/verificar-consumo.mts` contra los datos reales de la recría 2026 — los 3 controles cierran | → [A-FEAT-47](#a-feat-47) `@productivo` |
+| A-TEST-42 | 🔴 | Test | **Cargar las mediciones de maíz y ver que el consumo cierre** ([A-FEAT-47](#a-feat-47)) — en *Productivo → Insumos → Stock*, botón **Mediciones** del Maíz. Cargar las 4 tomas (16/03 = 0 · 24/06 = 0 · 24/07 = 0 · 24/08 = 5.800 kg) con las 6 entregas ya cargadas como compras: tienen que salir **3 tramos**, consumo total **61.860 kg**, remanente **5.800 kg** y los **3 controles en ✓**. Probar además: cargar **dos mediciones el mismo día** (tiene que avisar que se contradicen) · **borrar** una y ver que los tramos se recalculan · una entrega **sin precio** (el costo del tramo debe decir «—», nunca cero) | → [A-TEST-42](#a-test-42) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10441,6 +10443,60 @@ excluye la cuenta entera**, así el total nunca se mueve.
 
 ⚠️ **La columna «Ha» ya no está.** Las hectáreas de una actividad viven en *Campos* y son de la
 actividad, no del lote — ponerlas acá las contaba una vez por lote. Ver [A-BUG-57](#a-bug-57).
+
+---
+
+## <a id="a-feat-47"></a>A-FEAT-47 — Mediciones de stock: el consumo se mide, no se estima
+
+**Hecho el 2026-08-26.** Es el primer paso ejecutable de [A-FEAT-43](#a-feat-43): sin un lugar donde
+anotar cuánto quedaba, no se puede cargar nada de lo demás.
+
+### Qué se agregó
+
+| Pieza | Qué hace |
+|---|---|
+| `productivo.mediciones_insumo` | tabla nueva: `insumo_stock_id · fecha · cantidad · notas`, única por insumo+fecha |
+| `lib/productivo/consumo.ts` | el cálculo, sin UI: tramos, consumo, precio por tramo, reparto y controles |
+| `components/panel-mediciones-insumo.tsx` | la pantalla, desde el botón **Mediciones** de cada insumo |
+| `scripts/verificar-consumo.mts` | corre el lib contra los datos reales de la recría 2026 |
+
+### ⚠️ Por qué una tabla aparte y no `movimientos_insumos`
+
+**Una medición es un NIVEL, no un flujo.** Meterla ahí obligaría a que la columna `cantidad`
+signifique a veces *"entró/salió tanto"* y a veces *"había tanto"*. Ese es exactamente el bug que
+costó 16 cabezas en la Planilla de Hacienda: el signo no alcanzaba y había que mirar el `tipo`.
+
+### Las reglas que implementa
+
+1. **Cada medición corta un tramo.** Con dos (apertura y cierre) hay uno; con cuatro, tres. Misma
+   regla — que era el requisito del usuario: *"debe funcionar si hay medición sólo de punta a punta,
+   pero puede haber intermedias"*.
+2. **Precio POR TRAMO**, ponderado por las entregas que entraron en él. Un promedio del período le
+   cargaría a lo vendido en agosto el maíz comprado en septiembre.
+3. ⚠️ **Una entrega que llega EL DÍA del corte pertenece al tramo SIGUIENTE** — el stock se mide al
+   recibirla, antes de descargar.
+4. **Nunca cero por "no sé"**: sin precio el costo del tramo es `—` y sube a faltantes.
+
+### Los 3 controles, verificados con datos reales
+
+| Control | Resultado |
+|---|---|
+| lo que había + lo que entró = lo consumido + lo que queda | ✅ 67.660 = 67.660 |
+| la suma de los grupos = el consumo total | ✅ 61.860 = 61.860 |
+| lo comprado está consumido o en el stock | ✅ 67.660 = 67.660 |
+
+Y de yapa: **el % del peso vivo sale de dividir**, así que el `racion_pct_pv` cargado en la actividad
+(1,5 %) pasa de supuesto a **control**.
+
+### Lo que NO hace todavía
+
+**El reparto entre grupos de animales no está conectado.** El lib ya lo sabe hacer —recibe los grupos
+con su kilo-día y devuelve la participación—, pero nadie le pasa los grupos: eso necesita la línea de
+tiempo del rodeo de recría. Es el paso siguiente, y sigue en [A-FEAT-43](#a-feat-43).
+
+📌 **Un aprendizaje de la verificación**: conviene poner **una medición el día que arranca la
+ración**. Si no, el primer tramo abarca días en que no se comió y el control del % del peso vivo sale
+diluido (dio 0,92 % en vez de ~1,4 %). El total no se mueve — pero el control pierde filo.
 
 ---
 

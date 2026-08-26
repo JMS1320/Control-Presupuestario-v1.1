@@ -2766,3 +2766,41 @@ en el lote en vez de la de la actividad. Se guarda con el lote, como todo lo dem
 
 ### Cómo se prueba
 → los 8 pasos están en `PENDIENTES.md` § [A-TEST-41](PENDIENTES.md#a-test-41).
+
+---
+
+## 🌽 Productivo → Insumos → Stock → **Mediciones** 🟡 (sin testear)
+
+**Qué es**: anotar **cuánto había** de un insumo el día que fuiste a mirarlo. No es un movimiento
+(no entró ni salió nada): es el **saldo**.
+
+**Para qué sirve**: es lo que convierte el costo de alimentación de **estimado** en **medido**.
+Cada medición corta un tramo, y de cada tramo sale el consumo real.
+
+### Cómo se opera
+
+1. `Productivo → Insumos → Stock & Movimientos`.
+2. En la fila del producto, botón **Mediciones**.
+3. En la última fila de la tabla: **fecha**, **cuánto había** y **cómo se midió**. `+` para agregar.
+4. Debajo aparecen solos los **tramos**, el **consumo de cada uno** y los **controles**.
+
+**No hace falta medir en cada venta.** Alcanza con medir cuando se puede: con dos mediciones
+(apertura y cierre) hay un tramo; con cuatro, tres. La cuenta es la misma.
+
+💡 **Conviene poner una medición el día que arranca la ración.** Si no, el primer tramo incluye
+días en que no se comió y el control del % del peso vivo sale diluido.
+
+### Lo que la pantalla te dice
+
+| | Qué significa |
+|---|---|
+| **Consumo** de un tramo | `lo que había + lo que entró − lo que quedó` |
+| **$/kg** de un tramo | el promedio de las entregas **de ese tramo**, no del período entero |
+| **`—`** en el costo | falta el precio de alguna entrega. **Nunca pone cero**: "no sé" no es "gratis" |
+| Los **3 controles** | se muestran cierren o no. En rojo con la diferencia si no cierran |
+
+⚠️ **Una entrega que llega el mismo día de una medición cuenta en el tramo siguiente** — el stock se
+mide al recibirla, antes de descargar.
+
+### Cómo se prueba
+→ los pasos están en `PENDIENTES.md` § [A-TEST-42](PENDIENTES.md#a-test-42).

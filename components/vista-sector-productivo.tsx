@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
+import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2 } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -3111,6 +3112,9 @@ function SubTabStockInsumos() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
+  /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
+  const [insumoMedir, setInsumoMedir] = useState<
+    { id: string; producto: string; unidad_medida: string | null } | null>(null)
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
@@ -3414,12 +3418,13 @@ function SubTabStockInsumos() {
               <TableHead className="text-right">Stock</TableHead>
               <TableHead className="text-right">Costo Unit.</TableHead>
               <TableHead>Observaciones</TableHead>
+              <TableHead className="w-28" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {stockFiltrado.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                   Sin registros de stock de insumos.
                 </TableCell>
               </TableRow>
@@ -3431,6 +3436,15 @@ function SubTabStockInsumos() {
                   <TableCell className="text-right">{formatoCantidad(s.cantidad, s.unidad_medida || 'ml')}</TableCell>
                   <TableCell className="text-right">{formatoMoneda(s.costo_unitario)}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{s.observaciones || '-'}</TableCell>
+                  <TableCell className="text-right">
+                    {/* Medir el saldo es lo que convierte el consumo de estimado en real. */}
+                    <Button variant="ghost" size="sm" className="h-6 text-[11px]"
+                      onClick={() => setInsumoMedir({
+                        id: s.id, producto: s.producto, unidad_medida: s.unidad_medida ?? null,
+                      })}>
+                      <Ruler className="mr-1 h-3 w-3" /> Mediciones
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -3674,6 +3688,11 @@ function SubTabStockInsumos() {
       </Dialog>
 
       {/* Modal Nuevo Insumo */}
+      {insumoMedir && (
+        <PanelMedicionesInsumo insumo={insumoMedir}
+          onCerrar={() => { setInsumoMedir(null); cargarDatos() }} />
+      )}
+
       <Dialog open={mostrarModalInsumo} onOpenChange={setMostrarModalInsumo}>
         <DialogContent className="max-w-md">
           <DialogHeader>
