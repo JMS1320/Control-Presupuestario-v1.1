@@ -216,29 +216,38 @@ async function main() {
   const GRUPOS: Grupo[] = ["vendidos", "machos", "hembras"]
   const repartoTramo = (t: typeof tramos[0]) => {
     const clave: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
-    // Contraste: la misma cuenta hecha SIEMPRE por kilo-día, para medir cuánto cambia la
-    // simplificación de usar cabeza-día en el régimen 1 (el pesado come más y no lo cobramos).
     const claveKD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+    // Contraste: la clave VIEJA (cabeza-día mientras la ración era fija), sólo para mostrar
+    // cuánto cambió al corregirla. No se usa para calcular nada.
+    const claveCD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
     for (let k = 0; k < t.d; k++) {
       const f = addDias(t.desde, k)
       if (f < INICIO_RACION) continue          // antes de la ración no se consume nada
-      const discrecion = f >= INICIO_CONC
       for (const g of GRUPOS) {
         const cab = cabezasGrupo(g, f)
         const p = pesoEn(f, g)
-        clave[g] += discrecion ? cab * p : cab
+        // KILO-DÍA SIEMPRE. La comida se sirve al grupo y adentro del corral el que pesa más
+        // come más — con ración por día y a discreción. Lo confirmó el usuario: "esto es así en
+        // la realidad, no es invento mío". El régimen sirve para PROYECTAR y CONTROLAR, no para
+        // repartir. Antes se usaba cabeza-día en el régimen fijo y le cobraba de menos al pesado.
+        clave[g] += cab * p
         claveKD[g] += cab * p
+        claveCD[g] += (f >= INICIO_CONC) ? cab * p : cab    // la vieja, sólo para comparar
       }
     }
     const tot = GRUPOS.reduce((s, g) => s + clave[g], 0)
     const totKD = GRUPOS.reduce((s, g) => s + claveKD[g], 0)
+    // El % del peso vivo que comieron NO se supone: sale de dividir el consumo real por los
+    // kilo-día del rodeo. Es el número que uno mira y juzga si es sensato (criterio del usuario).
+    const pctPV = totKD ? t.consumo / totKD : 0
+    const totCD = GRUPOS.reduce((s, g) => s + claveCD[g], 0)
     const kg: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
-    const kgKD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+    const kgCD: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
     GRUPOS.forEach(g => {
       kg[g] = tot ? t.consumo * clave[g] / tot : 0
-      kgKD[g] = totKD ? t.consumo * claveKD[g] / totKD : 0
+      kgCD[g] = totCD ? t.consumo * claveCD[g] / totCD : 0
     })
-    return { clave, kg, kgKD,
+    return { clave, kg, kgCD, pctPV, totKD,
              claveV: clave.vendidos, claveR: clave.machos + clave.hembras,
              kgV: kg.vendidos, kgR: kg.machos + kg.hembras,
              regimen: t.desde >= INICIO_CONC ? "kilo-día" : (t.hasta > INICIO_CONC ? "mixto" : "cabeza-día") }
@@ -306,10 +315,10 @@ async function main() {
 
   // ── Por grupo: kg, costos, cabezas y peso de hoy ───────────────────────────
   const kgG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
-  const kgGkd: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
+  const kgCabezaDia: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
   const costoMaizG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
   repartos.forEach((r, i) => GRUPOS.forEach(g => {
-    kgG[g] += r.kg[g]; kgGkd[g] += r.kgKD[g]; costoMaizG[g] += r.kg[g] * precioTramo[i]
+    kgG[g] += r.kg[g]; kgCabezaDia[g] += r.kgCD[g]; costoMaizG[g] += r.kg[g] * precioTramo[i]
   }))
   const pctConcG: Record<Grupo, number> = { vendidos: 0, machos: 0, hembras: 0 }
   const totT3 = GRUPOS.reduce((s, g) => s + rT3.clave[g], 0)
@@ -391,6 +400,22 @@ async function main() {
   aoaRes0.push(["En criollo: desde el 06/05 hasta el 24/06 comieron " + racionImplicita(0).toFixed(1) + " kg/cab/día;"])
   aoaRes0.push(["del 24/06 al 24/07, " + racionImplicita(1).toFixed(1) + " kg; y desde el 24/07, con autoconsumo, " + racionImplicita(2).toFixed(1) + " kg."])
   aoaRes0.push([])
+  aoaRes0.push(["EL % DEL PESO VIVO QUE COMIERON — sale del dato, no se supone"])
+  aoaRes0.push(["consumo real del tramo ÷ (peso × días de todo el rodeo). Es el número para juzgar si la cuenta es sensata."])
+  aoaRes0.push(["Tramo", "Consumo (kg)", "Kilo-día del rodeo", "% del peso vivo", "Lectura"])
+  tramos.forEach((t, i) => aoaRes0.push([
+    (t.desde < INICIO_RACION ? INICIO_RACION : t.desde) + " → " + t.hasta,
+    Math.round(t.consumo), Math.round(repartos[i].totKD),
+    +(repartos[i].pctPV * 100).toFixed(2),
+    repartos[i].pctPV < 0.006 ? "bajo: revisar si falta una entrega"
+      : repartos[i].pctPV > 0.02 ? "alto: revisar el stock declarado" : "razonable",
+  ]))
+  aoaRes0.push([])
+  aoaRes0.push(["Y de ahí sale lo que comió cada animal:"])
+  aoaRes0.push(["   lo que comió  =  ese %  ×  su peso  ×  sus días"])
+  aoaRes0.push(["El que pesa 50 % más come 50 % más. Las participaciones suman 1, así que el reparto"])
+  aoaRes0.push(["NUNCA se va del total real consumido — que es el dato sagrado."])
+  aoaRes0.push([])
   aoaRes0.push(["EL MAÍZ Y EL CONCENTRADO, A DÓNDE FUERON"])
   aoaRes0.push(["Grupo", "Cabezas", "kg maíz", "kg/cab", "kg concentrado", "$ alimentación", "$/cab"])
   GRUPOS.forEach(g => aoaRes0.push([
@@ -428,14 +453,20 @@ async function main() {
   aoaRes0.push(["· Los precios de hoy son de prueba: machos $" + ar(PRECIO_VENTA_HOY.machos) + " (supuesto mío), hembras $" + ar(PRECIO_VENTA_HOY.hembras) + ". Cambialos en INPUTS."])
   aoaRes0.push(["· NO incluye sanidad, pasturas, verdeos ni estructura. Sólo maíz y concentrado."])
   aoaRes0.push([])
-  aoaRes0.push(["CUÁNTO CAMBIA LA SIMPLIFICACIÓN DEL RÉGIMEN 1"])
-  aoaRes0.push(["Con ración fija repartimos por CABEZA-día: el pesado y el liviano pagan igual, aunque el pesado coma más."])
-  aoaRes0.push(["Si se repartiera todo por KILO-día, cambiaría así:"])
-  aoaRes0.push(["Grupo", "kg con cabeza-día", "kg con kilo-día", "Diferencia", "%"])
+  aoaRes0.push(["LA CLAVE DE REPARTO — una sola regla, para los dos regímenes"])
+  aoaRes0.push(["KILO-DÍA SIEMPRE: la comida se sirve al grupo y adentro del corral el que pesa más come más."])
+  aoaRes0.push(["Vale con ración por día y a discreción. El régimen sirve para PROYECTAR y CONTROLAR, no para repartir."])
+  aoaRes0.push([])
+  aoaRes0.push(["Ejemplo, para que se entienda: si el rodeo comió 100 kg y el promedio es 1 kg por cabeza,"])
+  aoaRes0.push(["el que pesa 50 % más comió 1,5 kg · el de peso promedio, 1 kg · el que pesa 50 % menos, 0,5 kg."])
+  aoaRes0.push([])
+  aoaRes0.push(["Antes se usaba CABEZA-día mientras la ración era fija. Se descartó porque le cobraba"])
+  aoaRes0.push(["lo mismo al de 150 kg que al de 300. Lo que cambió al corregirlo:"])
+  aoaRes0.push(["Grupo", "kg con cabeza-día", "kg con kilo-día (el que se usa)", "Diferencia", "%"])
   GRUPOS.forEach(g => aoaRes0.push([
     g === "vendidos" ? "Los 55 vendidos" : g === "machos" ? "Machos que quedan" : "Hembras que quedan",
-    Math.round(kgG[g]), Math.round(kgGkd[g]), Math.round(kgGkd[g] - kgG[g]),
-    +((kgGkd[g] - kgG[g]) / kgG[g] * 100).toFixed(1),
+    Math.round(kgCabezaDia[g]), Math.round(kgG[g]), Math.round(kgG[g] - kgCabezaDia[g]),
+    +((kgG[g] - kgCabezaDia[g]) / kgCabezaDia[g] * 100).toFixed(1),
   ]))
   hoja("RESUMEN", aoaRes0, [26, 12, 14, 12, 16, 16, 14, 14, 12])
 
