@@ -31,7 +31,29 @@ export type { Ajuste, Paso, CeldaPresupuesto }
 
 export interface ActividadRef { id: string; nombre: string }
 
+/**
+ * Una venta que YA OCURRIÓ (`productivo.stock_ventas`).
+ *
+ * ⚠️ **Manda sobre la proyección del lote.** Es la regla `default del dato real, siempre editable`
+ * de `CLAUDE.md`: el lote es el plan, esto es lo que pasó. El caso testigo: el lote de los 55
+ * decía 275 kg y $5.876/kg (proyección) y la venta real fue **294,18 kg a $5.670** — el margen
+ * facturaba la proyección teniendo el dato real cargado al lado.
+ */
+export interface VentaRealLote {
+  loteId: string
+  fecha: string
+  cabezas: number
+  /** Los kg que se facturaron (ya netos de desbaste). */
+  kgTotales: number
+  precioKg: number
+  /** Lo que entró, ya neto de la comisión. Si falta se recalcula. */
+  montoNeto: number | null
+  pctCz: number
+}
+
 export interface LoteVenta {
+  /** Para poder cruzarlo con sus ventas reales. */
+  id?: string
   categoria: string
   /** Cabezas. `cantidad_calculada` si está, si no `cantidad`. */
   cabezas: number
@@ -119,6 +141,8 @@ export interface DatosMargen {
   pctGastoVenta: (categoria: string) => number
   /** Las transferencias entre actividades. Opcional: los datos viejos no las traen. */
   transferencias?: TransferenciaInterna[]
+  /** Las ventas que ya ocurrieron. Mandan sobre la proyección del lote. */
+  ventasReales?: VentaRealLote[]
 }
 
 export interface LineaMargen {
@@ -638,6 +662,37 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     const faltaPrecio: { banda: string; categoria: string; peso: number }[] = []
     let cabezasTotal = 0
 
+    // ── Las ventas que YA OCURRIERON ────────────────────────────────────────────
+    //
+    // Van primero y mandan: son el hecho, no el plan. Después el lote proyecta SÓLO las cabezas
+    // que quedaron sin vender — si no, se contaría dos veces el mismo animal.
+    //
+    // Una venta real cae en la campaña de SU fecha, que puede no ser la del lote: un lote de la
+    // campaña que viene puede haberse vendido antes de lo previsto.
+    const ventasDelLote = (id?: string) =>
+      id ? (d.ventasReales ?? []).filter(v => v.loteId === id) : []
+
+    for (const l of misLotes) {
+      for (const v of ventasDelLote(l.id)) {
+        if (campanaDeFecha(v.fecha) !== d.campana) continue
+        // `montoNeto` ya viene neto de comisión; si falta, se rehace la cuenta.
+        const bruta = v.kgTotales * v.precioKg
+        const neto = v.montoNeto != null ? v.montoNeto : bruta * (1 - (v.pctCz || 0))
+        cabezasTotal += v.cabezas
+        ingresos.push({
+          concepto: `Venta ${l.categoria} — REAL`,
+          unidades: v.cabezas, etiquetaUnidad: 'cab',
+          total: neto,
+          porHa: has ? neto / has : null,
+          porCabeza: v.cabezas > 0 ? neto / v.cabezas : null,
+          detalle: `${v.fecha.split('-').reverse().join('/')} · ${num(v.cabezas)} cab`
+            + ` × ${num(v.kgTotales / (v.cabezas || 1))} kg × ${pesos(v.precioKg)}/kg`
+            + ` − ${pesos(bruta - neto)} de comisión · venta registrada`,
+          confiable: true,
+        })
+      }
+    }
+
     for (const l of misLotes) {
       // Peso a la fecha de venta (desde `fecha_peso`, no desde la disponibilidad) menos desbaste.
       const bruto = l.fecha_venta_estimada
@@ -649,6 +704,13 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       const peso = bruto * (1 - (l.pct_desbaste || 0))
 
       // La BANDA sale del peso; la banda + el mes dan el precio, con arrastre.
+      // Sólo las cabezas que quedaron SIN vender. Es la misma cuenta que ya hace
+      // `cantidadDisponible()` en el presupuesto — proyectar el lote entero teniendo la venta
+      // cargada contaría dos veces el mismo animal.
+      const vendidas = ventasDelLote(l.id).reduce((s, v) => s + v.cabezas, 0)
+      const porVender = Math.max(0, l.cabezas - vendidas)
+      if (vendidas > 0 && porVender === 0) continue
+
       const banda = categoriaPrecio(l.categoria, bruto)
       const f = l.fecha_venta_estimada ? new Date(l.fecha_venta_estimada + 'T00:00:00') : null
       const r = resolverPrecioHacienda(
@@ -659,32 +721,35 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       const precio = r.precio_pesos_kg > 0 ? r.precio_pesos_kg : null
       const segunPrecio = r.manual ? 'precio puesto en el lote'
         : r.arrastrado ? `${banda} (arrastrado)` : banda
-      cabezasTotal += l.cabezas
+      cabezasTotal += porVender
+      // Cuando parte del lote ya se vendió, se dice: si no, dos filas con la misma categoría
+      // y distinta cantidad parecen un error de carga.
+      const sufijo = vendidas > 0 ? ` (quedan ${num(porVender)} de ${num(l.cabezas)})` : ''
 
       if (precio == null) {
         faltantes.push(`falta el precio de ${banda}`)
         faltaPrecio.push({ banda, categoria: l.categoria, peso: bruto })
         ingresos.push({
-          concepto: `Venta ${l.categoria}`, unidades: l.cabezas, etiquetaUnidad: 'cab',
+          concepto: `Venta ${l.categoria}`, unidades: porVender, etiquetaUnidad: 'cab',
           total: 0, porHa: null, porCabeza: null,
-          detalle: `${num(l.cabezas)} cab × ${num(peso)} kg — sin precio`,
+          detalle: `${num(porVender)} cab × ${num(peso)} kg — sin precio${sufijo}`,
           confiable: false,
         })
         continue
       }
 
-      const ventaBruta = l.cabezas * peso * precio
+      const ventaBruta = porVender * peso * precio
       const gastoVenta = ventaBruta * d.pctGastoVenta(l.categoria)
       const neto = ventaBruta - gastoVenta
 
       ingresos.push({
         concepto: `Venta ${l.categoria}`,
-        unidades: l.cabezas, etiquetaUnidad: 'cab',
+        unidades: porVender, etiquetaUnidad: 'cab',
         total: neto,
         porHa: has ? neto / has : null,
-        porCabeza: l.cabezas > 0 ? neto / l.cabezas : null,
-        detalle: `${num(l.cabezas)} cab × ${num(peso)} kg × ${pesos(precio)}/kg`
-          + ` − ${pesos(gastoVenta)} de gastos de venta · ${segunPrecio}`,
+        porCabeza: porVender > 0 ? neto / porVender : null,
+        detalle: `${num(porVender)} cab × ${num(peso)} kg × ${pesos(precio)}/kg`
+          + ` − ${pesos(gastoVenta)} de gastos de venta · ${segunPrecio} · proyectado${sufijo}`,
         confiable: true,
       })
     }

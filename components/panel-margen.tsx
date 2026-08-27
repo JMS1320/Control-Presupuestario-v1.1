@@ -30,7 +30,7 @@ import {
   campanaDeFecha,
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
   type InsumoActividadMargen, type Ajuste, type MesPeriodo, type ContextoCosto,
-  type TransferenciaInterna,
+  type TransferenciaInterna, type VentaRealLote,
 } from "@/lib/presupuesto/margen"
 import { calcularCuenta, type PuntoHistorico } from "@/lib/presupuesto/modos"
 import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
@@ -101,7 +101,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
         supabase.schema("productivo").from("stock_ciclos").select("id, campania, vacas_apertura"),
         supabase.schema("productivo").from("stock_lotes")
-          .select("categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
+          .select("id, categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("id, nombre, activo"),
@@ -179,6 +179,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
       const campDeCiclo = new Map(((ciclos.data || []) as any[]).map(c => [c.id, String(c.campania)]))
 
       const lotesOut: LoteVenta[] = ((lotes.data || []) as any[]).map(l => ({
+        id: String(l.id),
         categoria: String(l.categoria),
         // `cantidad` MANDA: es el valor con el ajuste a mano. `cantidad_calculada` es lo que dio
         // la cuenta automática y sólo se usa si no hay ajuste.
@@ -431,10 +432,30 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         }
       }
 
+      // ── Las ventas que YA OCURRIERON ──────────────────────────────────────
+      //
+      // El margen leía sólo `stock_lotes` —el plan— teniendo la venta real cargada al lado
+      // (A-BUG-62). El lote de los 55 decía 275 kg y $5.876/kg; la venta fue 294,18 kg a
+      // $5.670. Es la regla `default del dato real, siempre editable`: si el hecho existe,
+      // manda el hecho, y el lote proyecta sólo lo que todavía no se vendió.
+      const { data: ventasRaw } = await supabase.schema("productivo").from("stock_ventas")
+        .select("lote_id, fecha_venta, cantidad, kg_totales, precio_kg, monto_neto, pct_cz")
+      const ventasReales: VentaRealLote[] = ((ventasRaw || []) as any[])
+        .filter(v => v.lote_id)
+        .map(v => ({
+          loteId: String(v.lote_id),
+          fecha: String(v.fecha_venta),
+          cabezas: Number(v.cantidad) || 0,
+          kgTotales: Number(v.kg_totales) || 0,
+          precioKg: Number(v.precio_kg) || 0,
+          montoNeto: v.monto_neto == null ? null : Number(v.monto_neto),
+          pctCz: Number(v.pct_cz) || 0,
+        }))
+
       setDatos({
         campana, hasPorActividad, lotes: lotesOut, costos,
         precios: preciosOut, pctGastoVenta: pctGastoVentaPorDefecto,
-        transferencias,
+        transferencias, ventasReales,
       })
     } finally { setCargando(false) }
   }, [campana, recargarToken])
