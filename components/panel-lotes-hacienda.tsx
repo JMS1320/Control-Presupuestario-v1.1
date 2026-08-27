@@ -1612,6 +1612,17 @@ function SeccionTramos({
   onCambiarTramos: (t: TramoLote[]) => void
   onGananciaOverride: (v: boolean) => void
 }) {
+  /**
+   * Lo que se está tipeando en cada campo de ganancia, sin formatear.
+   *
+   * ⚠️ Un input controlado que **reformatea en cada tecla** es imposible de editar: escribís `1`
+   * y se convierte en `1,000`, así que el cursor salta y ya no podés seguir escribiendo `1,05`;
+   * borrar es peor. El valor se muestra crudo mientras el campo tiene foco y se formatea recién
+   * al salir. Lo reportó el usuario (2026-08-27): *"no responden bien, borrar, escribir desde
+   * cero"*.
+   */
+  const [tipeando, setTipeando] = useState<Record<string, string>>({})
+
   const mios = [...tramos]
     .sort((a, b) => a.fecha_desde.localeCompare(b.fecha_desde) || a.orden - b.orden)
   const pisados = solapamientos(mios)
@@ -1740,11 +1751,21 @@ function SeccionTramos({
                       <Input className="h-7 w-20 text-right text-[11px]"
                         placeholder={n1(Number(
                           actividades.find(a => a.id === t.actividad_id)?.ganancia_diaria_kg ?? 0))}
-                        value={t.ganancia_diaria_kg == null ? "" : fmtNumeroAR(Number(t.ganancia_diaria_kg), 3)}
-                        onChange={e => actualizar(t.id, {
-                          ganancia_diaria_kg: e.target.value.trim() === ""
-                            ? null : parseNumeroAR(e.target.value),
-                        })} />
+                        value={tipeando[t.id] ?? (t.ganancia_diaria_kg == null
+                          ? "" : fmtNumeroAR(Number(t.ganancia_diaria_kg), 3))}
+                        onChange={e => setTipeando(p => ({ ...p, [t.id]: e.target.value }))}
+                        onFocus={e => setTipeando(p => ({
+                          ...p,
+                          [t.id]: t.ganancia_diaria_kg == null ? "" : String(Number(t.ganancia_diaria_kg)).replace(".", ","),
+                        }))}
+                        onBlur={e => {
+                          const txt = e.target.value.trim()
+                          setTipeando(p => { const q = { ...p }; delete q[t.id]; return q })
+                          const v = txt === "" ? null : parseNumeroAR(txt)
+                          if (v !== (t.ganancia_diaria_kg ?? null)) {
+                            actualizar(t.id, { ganancia_diaria_kg: v })
+                          }
+                        }} />
                     </td>
                     <td className="py-1 text-right">
                       <button type="button" className="text-gray-300 hover:text-red-500"
