@@ -391,6 +391,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DEC-05** | 🟢 | Decisión | **RESUELTA 2026-08-26** · **Cría también va a llevar maíz y concentrado** (usuario, 2026-08-26) — se le da a los **terneros al pie** y **a discreción**. Consecuencias: (1) la actividad `Cría` necesita sus dos filas de insumo, que hoy no tiene (sólo tiene sanidad, pasturas, verdeos, rollos y silo); (2) `actividades.racion_pct_pv` de Cría está en **0,00 %**, así que aunque haya tramos el consumo estimado daría cero; (3) **el maíz de cría y el de recría salen del mismo silo o no** — si es el mismo, el reparto medido tiene que incluir a la cría y no sólo a los tres grupos de recría. ⚠️ Esto **contradice** lo que se había asumido el 2026-08-26 más temprano (*«cría no usa maíz»*), que simplificaba el reparto. Hay que decidirlo antes de conectar el reparto de [A-FEAT-43](#a-feat-43) | → [A-DEC-05](#a-dec-05) `@productivo` |
 | **A-FEAT-50** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-47](#a-test-47))** · **Consumo DECLARADO por actividad: lo que el usuario aporta no se deduce** — tabla `productivo.consumo_declarado_insumo` + bloque celeste en el panel de Mediciones. *«Se cargaron 6 ton al comedero de cría»* se imputa **entero** a esa actividad y se **descuenta** del resto, que es lo único que se reparte por kilo-día. Es la **misma regla** que la adjudicación de facturas a una actividad: lo declarado gana y se descuenta del reparto general, así **el total nunca se mueve**. Resuelve [A-DEC-05](#a-dec-05) sin ninguna excepción en el código | → [A-FEAT-50](#a-feat-50) `@productivo` |
 | A-TEST-47 | 🔴 | Test | **Lo declarado se descuenta y el control sigue cerrando** ([A-FEAT-50](#a-feat-50)) — en *Insumos → Stock → Mediciones* de un insumo con tramos, cargar en el bloque celeste **una actividad + fecha + cantidad**. Verificar: la columna **Declarado** del tramo muestra esa cantidad, el **consumo total no cambia**, y los **3 controles siguen en ✓**. Probar declarar **más de lo consumido** en un tramo: tiene que avisar. Y borrar la declaración: todo vuelve atrás | → [A-TEST-47](#a-test-47) `@productivo` |
+| **A-FEAT-51** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-48](#a-test-48))** · **La línea de tiempo del rodeo: el reparto del consumo ya funciona punta a punta** — `lib/productivo/rodeo.ts` integra **día por día** cuántas cabezas y con qué peso hubo, y le da a `consumo.ts` los grupos con su kilo-día. Los grupos son **los lotes del ciclo**, con su curva de peso y su fecha de salida (**la venta real manda sobre la estimada**); las mortandades se descuentan. Y el **«Resto sin lote»** absorbe lo que no está cargado, para que su comida **no se la repartan los demás en silencio**. Verificado contra la BD real con `scripts/verificar-rodeo.mts`: 185 declaradas = 185 en grupos, 4 mortandades, participaciones = 1 | → [A-FEAT-51](#a-feat-51) `@productivo` |
+| A-TEST-48 | 🔴 | Test | **El reparto del consumo entre los lotes del rodeo** ([A-FEAT-51](#a-feat-51)) — en *Insumos → Stock → Mediciones* del Maíz, con las mediciones cargadas, tiene que aparecer el bloque **«Quién se lo comió»** con una fila por lote y por tramo, sumando **100 %** en cada tramo. Verificar que el lote **vendido el 04/08 deja de comer ese día** (su participación baja en el último tramo) y que **«Resto sin lote»** desaparece a medida que se cargan los lotes de machos y hembras. Probar el aviso de rodeo que no concilia: cargar un lote con **más cabezas de las que declara el ciclo** → tiene que salir la alerta ámbar. Y que las **mortandades** se descuenten: el kilo-día del tramo posterior a una muerte tiene que bajar | → [A-TEST-48](#a-test-48) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10819,6 +10821,77 @@ grupo** consumiendo, le toca el 100 %. Misma fórmula, un consumidor.
 `scripts/verificar-consumo.mts` corre con una declaración de 6.000 kg a cría en el último tramo:
 se descuentan, los 13.200 restantes se reparten entre los tres grupos de recría, las
 participaciones suman 1 y **los 3 controles siguen cerrando**.
+
+---
+
+## <a id="a-feat-51"></a>A-FEAT-51 — La línea de tiempo del rodeo
+
+**Hecho el 2026-08-26.** Era la última pieza para que el reparto del consumo funcione: el motor
+existía desde [A-FEAT-47](#a-feat-47) pero **nadie le pasaba los grupos**.
+
+### Qué hace
+
+`lib/productivo/rodeo.ts` responde una sola pregunta: **cuántas cabezas y con qué peso hubo cada
+día**. De ahí sale el kilo-día de cada grupo, que es la clave del reparto.
+
+| Decisión | Por qué |
+|---|---|
+| **Integra día por día**, no con promedios | los animales entran, mueren y se venden en fechas distintas, y el peso crece con la curva quebrada de los tramos. El promedio-de-promedios es donde se cuelan los errores que nadie encuentra. Son ~200 iteraciones: no hay nada que optimizar |
+| Los grupos son **los lotes del ciclo** | ya tienen cantidad, curva de peso y fecha. Y es coherente con [A-FEAT-49](#a-feat-49): el lote es la unidad |
+| La salida es **la venta real** si existe, si no la estimada | el dato real por default, otra vez |
+| **Peso VIVO (bruto)** | el animal come según lo que pesa parado. El desbaste es para la plata |
+
+### 🔑 El «Resto sin lote» — no es un relleno
+
+Es el grupo que absorbe la diferencia entre lo que declara el ciclo y lo que suman los lotes.
+
+> **Un animal que no está en ningún lote igual come.** Si no se lo declara, su consumo se reparte
+> entre los demás y les infla el costo — sin que nada avise.
+
+Con el grupo, el costo queda donde corresponde **y la fila se ve**, que es lo que hace que alguien
+vaya a cargar el lote que falta. En la pantalla sale marcado *«← sin lote cargado»*.
+
+### ⚠️ La convención de las mortandades
+
+Una baja que no dice de qué grupo es se descuenta **proporcionalmente** entre los grupos presentes
+ese día. Es una convención, no un hecho: el animal que murió en abril no sabía a qué venta iba a
+pertenecer.
+
+Como toda convención del modelo, **mueve cabezas entre grupos y nunca cambia el total** — por eso el
+total sigue siendo el control de los parciales. Si la baja sí dice de qué grupo es, no hay
+convención: se descuenta de ahí.
+
+### Verificado contra la base real
+
+`npx tsx --env-file=.env.local scripts/verificar-rodeo.mts`
+
+```
+=== GRUPOS ===
+  Ternero Recria (55 cab) — vendido      55 cab   23/02/2026 → 04/08/2026
+  Resto sin lote                        130 cab   23/02/2026 → sigue
+
+=== CONTROL DE CABEZAS ===
+  ✓ el ciclo declara 185 y los grupos suman 185 · 4 mortandades
+
+=== KILO-DÍA 23/02 → 27/08 ===
+  Resto sin lote                          6,22 M    71,9 %
+  Ternero Recria (55 cab) — vendido       2,43 M    28,1 %
+  TOTAL                                   8,65 M   100,0 %   ✓
+```
+
+**Los 130 del «resto» son exactamente los machos y hembras que el usuario está por cargar como
+lotes.** A medida que los cargue, esa fila se va achicando hasta desaparecer.
+
+### Fuente única
+
+El armado de los grupos vive en `armarGruposRodeo()` **dentro del lib**, no en la pantalla: lo usan
+el panel de mediciones y el script de verificación. Dos versiones de esto darían repartos distintos
+según desde dónde se mire — que es el modo de falla que ya nos costó caro con `buscarPrecio()`.
+
+### Lo que falta para cerrar A-FEAT-43
+
+**Llevar el costo repartido al Margen.** Hoy se ve en el panel de mediciones —que es donde se
+carga y se controla— pero todavía no baja a la fila de costo de la actividad.
 
 ---
 

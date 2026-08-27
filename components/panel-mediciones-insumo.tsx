@@ -19,14 +19,18 @@
 // El cálculo NO vive acá: está en `lib/productivo/consumo.ts`, y lo verifica
 // `scripts/verificar-consumo.mts` contra los datos reales de la recría 2026.
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
-import { calcularConsumo, type Medicion, type Entrega, type ConsumoDeclarado } from "@/lib/productivo/consumo"
+import { calcularConsumo, type Medicion, type Entrega, type ConsumoDeclarado,
+  type GrupoConsumidor } from "@/lib/productivo/consumo"
+import { armarGruposRodeo, gruposDelRodeo, type BajaRodeo } from "@/lib/productivo/rodeo"
+import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
+import type { Actividad } from "@/lib/productivo/actividades"
 
 interface MedicionFila extends Medicion { id: string }
 interface DeclaracionFila extends ConsumoDeclarado { id: string }
@@ -52,6 +56,10 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
   const [decAct, setDecAct] = useState("")
   const [decCant, setDecCant] = useState("")
   const [decNota, setDecNota] = useState("")
+  /** Los grupos del rodeo que come de este insumo, con su kilo-día por tramo. */
+  const [gruposDe, setGruposDe] = useState<(d: string, h: string) => GrupoConsumidor[]>(() => () => [])
+  const [conciliacion, setConciliacion] = useState<
+    { declarada: number; enGrupos: number; diferencia: number; cierra: boolean } | null>(null)
 
   const um = insumo?.unidad_medida || "kg"
 
@@ -90,6 +98,52 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
         precioUnitario: m.costo_unitario == null ? null : Number(m.costo_unitario),
         detalle: [m.proveedor, m.observaciones].filter(Boolean).join(" · ") || undefined,
       })))
+      // ── La línea de tiempo del rodeo, para poder repartir ────────────────
+      //
+      // Se arma con `armarGruposRodeo()`, el mismo que usa el script de verificación: dos
+      // versiones de esto darían repartos distintos según desde dónde se mire.
+      const [{ data: ciclos }, { data: lts }, { data: vtas }, { data: trs }, { data: actsProd }, { data: mvs }, { data: catsHac }] =
+        await Promise.all([
+          p.from("ciclos_recria").select("*").eq("activo", true),
+          p.from("stock_lotes").select("*"),
+          p.from("stock_ventas").select("lote_id, fecha_venta"),
+          p.from("lote_tramos").select("*").order("orden"),
+          p.from("actividades").select("*").eq("activo", true),
+          p.from("movimientos_hacienda").select("fecha, tipo, cantidad, categoria_id"),
+          p.from("categorias_hacienda").select("id, nombre"),
+        ])
+      const ciclo = ((ciclos || []) as any[])[0]
+      if (ciclo) {
+        const nombreCat = new Map(((catsHac || []) as any[]).map(c => [c.id, String(c.nombre)]))
+        const esRecria = (cat: string) => /recria/i.test(cat)
+        const listaTr = (trs || []) as TramoLote[]
+        const listaAc = (actsProd || []) as unknown as Actividad[]
+        const filasLote = ((lts || []) as any[])
+          .filter(l => esRecria(String(l.categoria)))
+          .map(l => {
+            const curva = curvaDeLote(l as unknown as LoteCurva,
+              listaTr.filter(t => t.lote_id === l.id), listaAc)
+            const real = ((vtas || []) as any[]).find(v => v.lote_id === l.id)
+            return {
+              id: String(l.id),
+              nombre: `${l.categoria} (${Number(l.cantidad)} cab)`
+                + (real ? " — vendido" : l.destino_actividad_id ? " — traspaso" : ""),
+              cabezas: Number(l.cantidad) || 0,
+              fechaSalidaReal: real ? String(real.fecha_venta) : null,
+              fechaSalidaEstimada: l.fecha_venta_estimada ? String(l.fecha_venta_estimada) : null,
+              peso: (f: string) => curva(f),
+            }
+          })
+        const desdeCiclo = String(ciclo.fecha_inicio ?? "")
+        const bajas: BajaRodeo[] = ((mvs || []) as any[])
+          .filter(m => m.tipo === "mortandad" && esRecria(nombreCat.get(m.categoria_id) ?? "")
+            && String(m.fecha) >= desdeCiclo)
+          .map(m => ({ fecha: String(m.fecha), cabezas: Number(m.cantidad) || 0 }))
+        const armado = armarGruposRodeo({ ciclo, lotes: filasLote, bajas })
+        const fn = gruposDelRodeo(armado.grupos, bajas)
+        setGruposDe(() => fn)
+        setConciliacion(armado.conciliacion)
+      }
     } finally { setCargando(false) }
   }, [insumo])
 
@@ -145,10 +199,8 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
     await cargar()
   }
 
-  // El reparto entre grupos todavía no está conectado (A-FEAT-43): acá se mide el consumo y se
-  // controla que cierre, que es lo que hace falta para poder cargar.
-  const r = calcularConsumo(mediciones, entregas, () => [], declaraciones)
-  const faltantesReales = r.faltantes.filter(f => !f.includes("ningún grupo declarado"))
+  const r = calcularConsumo(mediciones, entregas, gruposDe, declaraciones)
+  const faltantesReales = r.faltantes
 
   if (!insumo) return null
 
@@ -348,6 +400,59 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
               </div>
             )}
 
+            {/* ── El reparto entre los grupos que comieron ────────────────── */}
+            {r.tramos.some(t => t.reparto.length > 0) && (
+              <div className="overflow-x-auto rounded border">
+                <p className="border-b bg-gray-50 px-2 py-1 text-[9px] uppercase tracking-wide text-gray-500">
+                  Quién se lo comió — el resto del consumo, repartido por kilo-día
+                </p>
+                <table className="w-full text-[11px]">
+                  <tbody>
+                    {r.tramos.map((t, i) => (
+                      <Fragment key={i}>
+                        <tr className="border-b bg-slate-50/60">
+                          <td className="px-2 py-0.5 text-[10px] text-gray-500" colSpan={4}>
+                            {dmy(t.desde)} → {dmy(t.hasta)}
+                          </td>
+                        </tr>
+                        {t.reparto.map((g, j) => (
+                          <tr key={j} className="border-b last:border-0">
+                            <td className="px-2 py-1 pl-4 text-gray-700">
+                              {g.nombre}
+                              {g.grupoId === "__resto__" && (
+                                <span className="ml-1 text-[9px] text-amber-700">
+                                  ← sin lote cargado
+                                </span>
+                              )}
+                            </td>
+                            <td className="w-16 px-2 py-1 text-right text-gray-500">
+                              {(g.participacion * 100).toFixed(1)} %
+                            </td>
+                            <td className="w-24 px-2 py-1 text-right text-gray-800">
+                              {fmtNumeroAR(g.cantidad, 0)} {um}
+                            </td>
+                            <td className="w-28 px-2 py-1 text-right text-gray-800">
+                              {g.costo == null ? "—" : pesos(g.costo)}
+                            </td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {conciliacion && !conciliacion.cierra && (
+              <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-900">
+                <AlertTriangle className="mr-0.5 inline h-3 w-3" />
+                <strong>El rodeo no concilia</strong>: el ciclo declara{" "}
+                {fmtNumeroAR(conciliacion.declarada, 0)} cabezas y los grupos suman{" "}
+                {fmtNumeroAR(conciliacion.enGrupos, 0)}. La diferencia igual come —
+                <strong> si no está declarada, su comida la pagan los demás</strong>.
+              </p>
+            )}
+
             {/* ── Los controles: se ven cierren o no ─────────────────────── */}
             {r.controles.length > 0 && (
               <div className="rounded border bg-white">
@@ -384,9 +489,9 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
             )}
 
             <p className="text-[10px] text-gray-400">
-              El <strong>reparto entre grupos de animales</strong> —quién se comió cuánto— todavía
-              no está conectado. Acá se mide el consumo y se controla que cierre, que es el paso
-              previo. Ver <code>A-FEAT-43</code>.
+              El reparto usa <strong>kilo-día</strong>: cabezas × peso vivo × días presentes. Sale
+              de los <strong>lotes del ciclo</strong>, con su curva de peso y su fecha de salida —
+              el que se vendió deja de comer ese día. Las mortandades se descuentan.
             </p>
           </div>
         )}

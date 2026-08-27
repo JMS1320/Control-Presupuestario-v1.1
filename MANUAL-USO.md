@@ -2891,3 +2891,30 @@ distintos y cada uno tiene su propia medición.
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-47](PENDIENTES.md#a-test-47).
+
+---
+
+## 🐮 Mediciones → **Quién se lo comió** 🟡 (sin testear)
+
+Debajo de los tramos, en la pantalla de *Mediciones*, aparece el reparto del consumo entre los
+animales que comieron.
+
+**De dónde sale**: de los **lotes del ciclo**. Cada lote aporta sus cabezas, su curva de peso y su
+fecha de salida — **el que se vendió deja de comer ese día**. Las mortandades se descuentan.
+
+**Cómo reparte**: por **kilo-día** = cabezas × peso vivo × días presentes. El más pesado y el que
+estuvo más tiempo comen más, que es lo que pasa en el campo.
+
+### ⚠️ La fila «Resto sin lote»
+
+Es lo que el ciclo declara y **no está cargado en ningún lote**. Aparece marcada en ámbar.
+
+> **No la ignores**: esos animales igual comen. Si no están declarados como lote, su comida se la
+> reparten los demás y les infla el costo. **A medida que cargues los lotes que faltan, esa fila se
+> achica hasta desaparecer.**
+
+Y si los lotes suman **más** cabezas de las que declara el ciclo, sale una alerta: hay algo mal
+cargado en un lado o en el otro.
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-48](PENDIENTES.md#a-test-48).
