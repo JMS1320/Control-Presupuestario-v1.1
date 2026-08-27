@@ -400,6 +400,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-50 | 🔴 | Test | **La activación y la apertura por grupo** ([A-FEAT-53](#a-feat-53) + [A-FEAT-54](#a-feat-54)) — en *Presupuesto → Margen*, con el maíz y los lotes cargados: en la campaña **25/26** (la que pagó la comida y no vendió) tiene que aparecer **Existencia final** como ingreso, y el margen **NO** debe dar una pérdida del tamaño de todo el maíz. En **26/27** tiene que aparecer **Existencia inicial** como costo por un monto **parecido** al de la existencia final de 25/26. Desplegar **«Por grupo»**: una fila por grupo, los 55 marcados **vendido** y el resto **en stock**, y al pie el control **✓ la suma da el margen bruto**. Probar el caso incompleto: con un grupo sin precio, el pie debe decir *«no se puede controlar contra el total»* y **no** mostrar una diferencia falsa | → [A-TEST-50](#a-test-50) `@presupuesto @productivo` |
 | A-TEST-51 | 🔴 | Test | **El puente entrega ↔ factura, con el caso Longo** ([A-FEAT-44](#a-feat-44)) — en *Insumos → Stock*, botón **Facturas** del Maíz. Vincular la **FC del 13/07 (25 t)** a la entrega del **24/06** por 20,1 t y a la del **24/07** por 4,9 t, y la **FC del 14/08 (20,1 t)** a la del 24/07. Tiene que quedar: entrega del 24/06 a **$267,50/kg** *de las facturas*, entrega del 24/07 a **$267,14/kg** (ponderado de las dos), y los **2 controles en ✓**. Después abrir **Mediciones**: el precio de esos tramos tiene que ser el mismo, y **ya no el tipeado a mano**. Probar además vincular **más de lo entregado** (debe avisar) y dejar una entrega **sin factura** (debe decir cuánto falta) | → [A-TEST-51](#a-test-51) `@productivo @egresos` |
 | **A-FEAT-55** | 🟢 | Feat | **El PEDIDO: el momento que falta de la cadena de compra** — hoy la cadena arranca en la entrega. El pedido (*«pedí un camión, llega el sábado»*) no existe. ⚠️ **Diseño acordado con el usuario 2026-08-27, y la condición es la que lo hace viable**: se carga como una entrega con **estado `pendiente`** y fecha pactada, y **NO toca el stock ni corta tramos hasta confirmarse**. Al descargar se pasa a `confirmado` con los kilos reales. **NO hacerlo todavía**: el usuario lo evaluó y decidió que no le compra nada hoy. Se retoma si empieza a molestar no ver lo que está en camino — sobre todo para no comprar de más, que es donde *Necesidad de Compra* queda corto | → [A-FEAT-55](#a-feat-55) `@productivo` |
+| **A-DAT-08** | 🟢 | Dato | **HECHO 2026-08-27** · **La apertura del ciclo de recría 2026 pasó de 185 a 189 cabezas** — con OK explícito del usuario. Decía `103 machos + 82 hembras`, que es **la foto de hoy** ya sin las 4 mortandades; un ciclo abre con lo que entró y las bajas las descuenta sola la línea de tiempo, así que **se descontaban dos veces**. Quedó en `106 + 83`. Efecto: los kg netos de entrada pasan de **35.412,41** a **36.181,37** y el valor de entrada a $7.000/kg de **$247.886.876** a **$253.269.580** — que coincide con el control de rodeo de la maqueta ($253,2 M) con $20 mil de diferencia, que es el promedio de pesos contra los pesos individuales. Control después: `verificar-rodeo.mts` da **189 = 189 ✓**. **No se tocó ninguna otra columna ni ninguna otra tabla** | → [A-DAT-08](#a-dat-08) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11163,6 +11164,41 @@ De la misma conversación, y vale como referencia porque son las reglas que rige
 - ⚠️ **La trampa**: si se mide contando el camión recién descargado, esos kilos se cuentan dos
   veces. Recibir 25 t y anotar 26 hace que el sistema entienda *"había 26 y llegaron 25"* = 51.
   **Se mide antes de descargar.**
+
+---
+
+## <a id="a-dat-08"></a>A-DAT-08 — La apertura del ciclo de recría: 185 → 189
+
+**Hecho el 2026-08-27, con OK explícito del usuario** (*"dale, corregí vos la apertura a 106 y 83"*).
+
+### Qué estaba mal
+
+`productivo.ciclos_recria` declaraba `103 machos + 82 hembras = 185`. Ése es **el rodeo de hoy**,
+ya descontadas las 4 mortandades. Pero un ciclo **abre con lo que entró**, y las bajas las
+descuenta sola la línea de tiempo (`lib/productivo/rodeo.ts`).
+
+**Se descontaban dos veces** — y además el valor de entrada salía corto en 4 animales.
+
+| | Machos | Hembras | Total |
+|---|---|---|---|
+| Estaba | 103 | 82 | 185 |
+| Mortandades (15/04, 25/04, 02/07 ♂ · 26/06 ♀) | +3 | +1 | +4 |
+| **Quedó** | **106** | **83** | **189** |
+
+### Foto antes / diff después
+
+| | Antes | Ahora |
+|---|---|---|
+| Kg netos de entrada | 35.412,4108 | **36.181,3686** |
+| Valor de entrada a $7.000/kg | $247.886.875,60 | **$253.269.580,20** |
+| `verificar-rodeo.mts` | 185 = 185 | **189 = 189 ✓** |
+
+✅ **La señal de que está bien**: los $253,3 M coinciden con el control de rodeo de la maqueta
+(**$253.249.089**) con **$20 mil** de diferencia — que es exactamente lo que separa al promedio de
+pesos de los pesos individuales.
+
+⚠️ **Sólo se tocaron `cabezas_machos` y `cabezas_hembras`.** Los pesos netos son derivados
+(`bruto × (1 − desbaste)`) y no se tocaron. Ninguna otra tabla.
 
 ---
 
