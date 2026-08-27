@@ -304,6 +304,43 @@ ALTER TABLE msa.sicore_retenciones
 
 ---
 
+## 🔗 Los templates SICORE se resuelven por LINAJE, no por id fijo (2026-08-27)
+
+Al cerrar una quincena, el modal ofrece las cuotas de los templates SICORE para volcarles **lo
+efectivamente retenido**. Esos templates **no se pueden identificar por un `id` fijo.**
+
+**Por qué**: al renovar la campaña (Modelo A, `PENDIENTES.md` § A-FEAT-42) el clon es una **fila
+nueva con otro id**, y el original queda como historia. Un `id` hardcodeado apunta para siempre a la
+campaña en la que se escribió.
+
+**Cómo se resuelve** (`vista-facturas-arca.tsx`, `linajeTemplates()`):
+
+```
+RAIZ_SICORE_1RA / RAIZ_SICORE_2DA   ← la campaña 25/26: el ARRANQUE del linaje, no "el" template
+        ↓ template_origen_id
+   clon 26/27  →  clon 27/28  →  …   ← se recorre en anchura, generación por generación
+```
+
+Se consultan las cuotas de **todos** los templates del linaje, y cada opción del modal muestra **de
+qué campaña es** (`1er Quincena · 26/27 | 20/08/2026 — $0`). La preselección es la primera cuota que
+vence **después** del cierre de la quincena; si no hay ninguna, cae a la **más futura** disponible —
+nunca a la más vieja.
+
+> 🐞 **De dónde salió — [A-BUG-54](PENDIENTES.md#a-bug-54).** El usuario cerró una quincena el
+> 2026-08-27 y el modal le ofreció **sólo las 2 cuotas sobrantes de 25/26**, las dos ya vencidas,
+> mientras las **24 de 26/27 ya estaban generadas**. Tuvo que cargar la retención a mano.
+>
+> **Es el segundo lugar donde pega el mismo patrón** — el primero fueron las reglas
+> `contable`/`interno`, que también buscaban por `template_id` y quedaban vacías en la campaña nueva.
+> La lección: **cualquier código que apunte a un template por `id` tiene fecha de vencimiento — la
+> próxima campaña.** Si hay que apuntar a un template concreto, se apunta al **linaje**.
+>
+> ⚠️ Al barrer el repo (2026-08-27) no quedaban más UUID de template hardcodeados; el único UUID
+> fijo que sobrevive es el de la categoría CUT en productivo, ya registrado como
+> [A-BUG-48](PENDIENTES.md#a-bug-48).
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **PDF comprobante retención**: Formato AFIP oficial por proveedor

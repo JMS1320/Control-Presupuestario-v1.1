@@ -1255,6 +1255,23 @@ Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de 
 factura califica por monto pero no tiene fecha de pago, se guarda **sin retención** y te avisa
 cuántas fueron. No se inventa la fecha con la de vencimiento ni con la estimada.
 
+### 📥 Al cerrar la quincena: volcar lo retenido a la cuota del template 🟡 *(arreglado 2026-08-27, sin testear — [A-TEST-41](PENDIENTES.md#a-test-41))*
+Al cerrar una quincena SICORE se ofrece cargar **el total efectivamente retenido** en una cuota de
+los templates *SICORE 1er / 2da Quincena*. Cada opción dice **de qué campaña es**:
+
+```
+1er Quincena · 26/27 | 20/08/2026 — $0
+```
+
+Viene **preseleccionada la primera cuota que vence después del cierre** de esa quincena, que
+normalmente es la que corresponde. Podés elegir otra de la lista, o cerrar sin asignar y cargarla a
+mano.
+
+> ⚠️ **Hasta el 2026-08-27 la lista sólo traía las cuotas de la campaña 25/26** — o sea las 2 que
+> quedaban, ambas vencidas— aunque las 24 de la campaña nueva ya estuvieran generadas. Si cerraste
+> una quincena antes de esa fecha y la cargaste a mano, revisá que no te quede **duplicada** cuando
+> uses la cuota de la campaña nueva.
+
 ### 🎛️ Chips de Estado y Origen: ctrl+click aísla
 - **Click** en un chip: lo prende o lo apaga.
 - **Ctrl+click** (⌘+click en Mac): deja **sólo ése** prendido.

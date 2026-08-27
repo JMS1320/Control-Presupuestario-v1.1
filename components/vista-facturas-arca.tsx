@@ -4925,9 +4925,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return { nombreArchivo, grupos: gruposOrdenados.length }
   }
 
-  // IDs fijos de los templates SICORE en BD
-  const TEMPLATE_SICORE_1RA = '19b879c7-d8c1-4633-8910-55e567e7394d'
-  const TEMPLATE_SICORE_2DA = '2f0f8552-74ef-496a-9dbf-92ff97f6aca1'
+  // Raíces de los templates SICORE: la campaña **25/26**, que es la primera. NO son "los" templates
+  // SICORE — son el **arranque del linaje**.
+  //
+  // 🐞 **A-BUG-54** — hasta 2026-08-27 acá decía "IDs fijos de los templates SICORE" y se consultaba
+  // `.in('egreso_id', [1RA, 2DA])` a secas. Al renovar la campaña, el clon es una fila **con otro
+  // id** (Modelo A, § A-FEAT-42), así que al cerrar una quincena el modal ofrecía **sólo las cuotas
+  // de 25/26** — que eran 2 y ya vencidas — y las 24 de 26/27 **no existían para la pantalla**.
+  // Mismo patrón que tenían las reglas contable/interno: *un id hardcodeado no sobrevive a una
+  // campaña nueva*. Cada campaña que se genere vuelve a romperlo, así que se resuelve por linaje.
+  const RAIZ_SICORE_1RA = '19b879c7-d8c1-4633-8910-55e567e7394d'
+  const RAIZ_SICORE_2DA = '2f0f8552-74ef-496a-9dbf-92ff97f6aca1'
+
+  /**
+   * Todos los templates de un linaje: la raíz más todos sus clones, generación por generación
+   * (`template_origen_id` → hijo). Recorre en anchura porque el linaje crece **una campaña por año**:
+   * 25/26 → 26/27 → 27/28… Con esto, generar la campaña siguiente **no vuelve a romper esto**.
+   */
+  const linajeTemplates = async (raizId: string): Promise<string[]> => {
+    const ids = [raizId]
+    let frontera = [raizId]
+    // Cota de seguridad: si algún día un `template_origen_id` apunta en círculo, no cuelga la UI.
+    for (let vuelta = 0; vuelta < 20 && frontera.length > 0; vuelta++) {
+      const { data } = await supabase
+        .from('egresos_sin_factura')
+        .select('id')
+        .in('template_origen_id', frontera)
+      const hijos = (data ?? []).map((d: any) => d.id).filter((id: string) => !ids.includes(id))
+      if (hijos.length === 0) break
+      ids.push(...hijos)
+      frontera = hijos
+    }
+    return ids
+  }
 
   // Devuelve la fecha de corte para buscar la primera cuota venciente después de la quincena cerrada
   // 1ra quincena de MM → primer vencimiento posterior al 15/MM
@@ -4957,37 +4987,67 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   const abrirModalAsignarCuota = async (quincena: string, totalRet: number) => {
-    // Traer todas las cuotas pendientes de ambos templates SICORE, ordenadas por fecha
+    // Los dos linajes completos: la campaña vieja Y todas las renovadas (A-BUG-54).
+    const [linaje1ra, linaje2da] = await Promise.all([
+      linajeTemplates(RAIZ_SICORE_1RA),
+      linajeTemplates(RAIZ_SICORE_2DA),
+    ])
+    const esPrimeraQuincena = new Set(linaje1ra)
+    const todosLosIds = [...linaje1ra, ...linaje2da]
+
+    // De qué campaña es cada template. Sin esto, dos cuotas de campañas distintas se ven idénticas
+    // en la lista y elegir bien es cuestión de suerte.
+    // ⚠️ Va en consulta aparte y con `select('*')` **a propósito**: el parser de tipos de supabase-js
+    // no sabe leer la `ñ` de `año` dentro del string de un select (falla con `ParserError`), así que
+    // nombrar la columna —o embeberla— rompe el type-check. Con `*` no aparece en el string.
+    const { data: tmplsLinaje } = await supabase
+      .from('egresos_sin_factura')
+      .select('*')
+      .in('id', todosLosIds)
+    const campanaDe = new Map<string, string>(
+      (tmplsLinaje ?? []).map((t: any) => [t.id as string, (t.año ?? '') as string])
+    )
+
+    // Traer todas las cuotas pendientes de ambos linajes SICORE, ordenadas por fecha
     const { data: cuotas } = await supabase
       .from('cuotas_egresos_sin_factura')
       .select('id, fecha_estimada, monto, estado, egreso_id')
-      .in('egreso_id', [TEMPLATE_SICORE_1RA, TEMPLATE_SICORE_2DA])
+      .in('egreso_id', todosLosIds)
       .neq('estado', 'conciliado')
       .order('fecha_estimada', { ascending: true })
 
     const opciones = (cuotas ?? []).map((c: any) => {
-      const template = c.egreso_id === TEMPLATE_SICORE_1RA ? '1er Quincena' : '2da Quincena'
+      const template = esPrimeraQuincena.has(c.egreso_id) ? '1er Quincena' : '2da Quincena'
       const fecha = c.fecha_estimada
         ? new Date(c.fecha_estimada + 'T12:00:00').toLocaleDateString('es-AR')
         : 'sin fecha'
       const monto = Number(c.monto) !== 0
         ? ` — $${Number(c.monto).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
         : ' — $0'
-      return { id: c.id, label: `${template} | ${fecha}${monto}`, template }
+      const campana = campanaDe.get(c.egreso_id) ? ` · ${campanaDe.get(c.egreso_id)}` : ''
+      return { id: c.id, label: `${template}${campana} | ${fecha}${monto}`, template }
     })
 
-    // Cuota sugerida: primera cuota (cualquier template SICORE) con fecha_estimada posterior al cierre de la quincena
+    // Cuota sugerida: la **primera que vence después** del cierre de la quincena (cualquier template
+    // SICORE). Con los dos linajes cargados, esa cuota cae sola en la campaña vigente — que es lo
+    // que se espera al cerrar una quincena de hoy.
     const info = parsearCuotaSicore(quincena)
     const sugerida = info
       ? (cuotas ?? []).find((c: any) => c.fecha_estimada > info.cutoffDate)
       : null
 
+    // Si NINGUNA vence después del cierre (campaña sin renovar, o todas ya usadas), se cae a la
+    // **última** disponible, no a la primera: `opciones` viene ordenada por fecha ascendente, así
+    // que `[0]` es la más VIEJA — proponer una cuota vencida hace meses es la peor sugerencia posible.
+    const respaldo = opciones.at(-1)?.id ?? ''
+    const preseleccion = sugerida?.id ?? respaldo
+
     setModalAsignarCuotaSicore({
       quincena,
       totalRet,
       cuotas: opciones,
-      cuotaIdSugerida: sugerida?.id ?? opciones[0]?.id ?? '',
-      cuotaIdSeleccionada: sugerida?.id ?? opciones[0]?.id ?? '',
+      cuotaIdSugerida: preseleccion,
+      cuotaIdSeleccionada: preseleccion,
       estadoSeleccionado: 'pagar',
     })
   }
