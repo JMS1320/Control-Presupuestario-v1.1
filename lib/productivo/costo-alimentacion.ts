@@ -128,3 +128,66 @@ export function mismoInsumo(
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
   return norm(costo.producto || costo.concepto) === norm(producto)
 }
+
+// ── Por GRUPO, no por actividad ──────────────────────────────────────────────
+//
+// El corte por actividad contesta *"¿cuánto le costó la comida a recría?"*. Éste contesta
+// *"¿cuánto le costó a los 55 que vendimos?"* — que es la pregunta del margen por grupo y,
+// además, la que hace falta para **activar**: los costos de lo que todavía no se vendió no son
+// gasto del período, son mayor valor del animal.
+
+export interface CostoGrupoTramo {
+  grupoId: string
+  grupo: string
+  producto: string
+  desde: string
+  hasta: string
+  cantidad: number
+  costo: number | null
+}
+
+/**
+ * El costo de cada grupo, tramo por tramo, **sin filtrar por campaña**.
+ *
+ * Se devuelve crudo a propósito: el que llama lo agrega como necesita —por campaña para el
+ * gasto, acumulado hasta una fecha para la existencia—. Filtrar acá obligaría a llamar dos
+ * veces con criterios distintos, que es como se terminan teniendo dos números.
+ */
+export function costoPorGrupo(
+  insumos: InsumoConDatos[],
+  gruposDe: (desde: string, hasta: string) => GrupoConsumidor[],
+): CostoGrupoTramo[] {
+  const out: CostoGrupoTramo[] = []
+  for (const ins of insumos) {
+    const r = calcularConsumo(ins.mediciones, ins.entregas, gruposDe, ins.declaraciones)
+    for (const t of r.tramos) {
+      for (const g of t.reparto) {
+        if (g.cantidad <= 0) continue
+        out.push({
+          grupoId: g.grupoId, grupo: g.nombre, producto: ins.producto,
+          desde: t.desde, hasta: t.hasta, cantidad: g.cantidad, costo: g.costo,
+        })
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * Lo acumulado por un grupo **hasta** una fecha. Es el ladrillo de la activación.
+ *
+ * ⚠️ Un tramo cuenta entero si **empezó** antes del corte. Prorratear por días le daría al
+ * número una precisión que la medición no tiene: el consumo se midió sobre el tramo completo.
+ */
+export function acumuladoHasta(
+  filas: CostoGrupoTramo[], grupoId: string, hasta: string,
+): { costo: number | null; cantidad: number } {
+  let costo: number | null = 0
+  let cantidad = 0
+  for (const f of filas) {
+    if (f.grupoId !== grupoId || f.desde >= hasta) continue
+    cantidad += f.cantidad
+    costo = costo == null || f.costo == null ? null : costo + f.costo
+  }
+  return { costo, cantidad }
+}

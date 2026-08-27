@@ -2918,3 +2918,40 @@ cargado en un lado o en el otro.
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-48](PENDIENTES.md#a-test-48).
+
+---
+
+## ⚖️ Margen → **Existencias y apertura por grupo** 🟡 (sin testear)
+
+### Los dos renglones de existencias
+
+En cada actividad aparecen ahora:
+
+| Renglón | Dónde | Qué es |
+|---|---|---|
+| **Existencia inicial (a costo)** | en Costos | lo que los animales ya valían al abrir la campaña |
+| **Existencia final (a costo)** | en Ingresos | lo que valen los que quedan al cerrarla |
+
+**Para qué**: la recría abrió en febrero (campaña 25/26) y vendió en agosto (26/27). Sin esto,
+la campaña que pagó la comida daba **pérdida pura** y la siguiente ganancia inflada.
+
+**Se valúan a COSTO** — valor de entrada más lo que se les imputó — **no a precio de mercado**.
+Valuar a mercado sería reconocer una ganancia antes de venderla.
+
+💡 Los costos **no se reclasifican**: el maíz sigue mostrándose entero donde se pagó. Estos dos
+renglones son los que absorben la diferencia de timing.
+
+### La apertura por grupo
+
+Dentro de cada actividad hay un desplegable **«Por grupo»**: una fila por cada grupo del rodeo,
+con **ingreso · entrada · alimentación · margen**, y el estado *vendido* o *en stock*.
+
+⚠️ **Es el mismo número, abierto** — no otro. Al pie está el control:
+
+- **✓ la suma de los grupos da el margen bruto** → está bien.
+- **✗ difiere en $X** → hay algo mal.
+- *«no se puede controlar contra el total: N grupo(s) sin calcular»* → falta cargar algo, y por
+  eso no se muestra una diferencia que no significaría nada.
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-50](PENDIENTES.md#a-test-50).

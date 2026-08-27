@@ -31,10 +31,12 @@ import {
   type DatosMargen, type LoteVenta, type CostoDirecto, type MargenActividad,
   type InsumoActividadMargen, type Ajuste, type MesPeriodo, type ContextoCosto,
   type TransferenciaInterna, type VentaRealLote,
+  type ExistenciaActividad, type ResultadoGrupo,
 } from "@/lib/presupuesto/margen"
 import { calcularCuenta, type PuntoHistorico } from "@/lib/presupuesto/modos"
 import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
-import { costoAlimentacion, mismoInsumo, type InsumoConDatos } from "@/lib/productivo/costo-alimentacion"
+import { costoAlimentacion, costoPorGrupo, acumuladoHasta, mismoInsumo,
+  type InsumoConDatos, type CostoGrupoTramo } from "@/lib/productivo/costo-alimentacion"
 import { armarGruposRodeo, gruposDelRodeo, type BajaRodeo } from "@/lib/productivo/rodeo"
 import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
 import type { Actividad as ActividadProd } from "@/lib/productivo/actividades"
@@ -113,7 +115,7 @@ async function cargarCostoAlimentacion(
   }
   // Sin al menos dos mediciones no hay consumo que medir: no hay nada que hacer acá.
   const conMedicion = ((stock || []) as any[]).filter(s => (medPorIns.get(String(s.id))?.length ?? 0) >= 2)
-  if (conMedicion.length === 0 || !((ciclos || []) as any[])[0]) return []
+  if (conMedicion.length === 0 || !((ciclos || []) as any[])[0]) return null
 
   const ciclo = ((ciclos || []) as any[])[0]
   const nombreCat = new Map(((catsHac || []) as any[]).map(c => [c.id, String(c.nombre)]))
@@ -174,7 +176,20 @@ async function cargarCostoAlimentacion(
       })),
   }))
 
-  return costoAlimentacion(insumos, gruposDe, actDeGrupo, campanaDeFecha, campana)
+  return {
+    porActividad: costoAlimentacion(insumos, gruposDe, actDeGrupo, campanaDeFecha, campana),
+    porGrupo: costoPorGrupo(insumos, gruposDe),
+    grupos: armado.grupos,
+    actDeGrupo,
+    desdeCiclo,
+  }
+}
+
+/** Los límites de la campaña: `"25/26"` → 01/07/2025 y 01/07/2026. */
+function limitesCampana(campana: string): { inicio: string; fin: string } {
+  const m = campana.match(/^(\d{2})\/(\d{2})$/)
+  const a = m ? 2000 + parseInt(m[1]!, 10) : new Date().getFullYear()
+  return { inicio: `${a}-07-01`, fin: `${a + 1}-07-01` }
 }
 
 /**
@@ -423,7 +438,8 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
       //
       // Si no hay medición no se inventa nada: la fila sigue marcada, con el motivo cambiado
       // para que diga dónde se carga.
-      const medidos = await cargarCostoAlimentacion(campana, actPorId, actDeCategoria)
+      const alim = await cargarCostoAlimentacion(campana, actPorId, actDeCategoria)
+      const medidos = alim ? alim.porActividad : []
 
       const costos: CostoDirecto[] = []
       for (const n of nombresAct) {
@@ -607,10 +623,71 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           pctCz: Number(v.pct_cz) || 0,
         }))
 
+      // ── La ACTIVACIÓN y la APERTURA POR GRUPO ─────────────────────────────
+      //
+      // Las dos salen del mismo dato: el costo por grupo, sin filtrar por campaña. Una lo
+      // acumula hasta el borde de la campaña (existencia), la otra lo agrupa (apertura).
+      const existencias: ExistenciaActividad[] = []
+      const gruposResultado: ResultadoGrupo[] = []
+
+      if (alim) {
+        const lim = limitesCampana(campana)
+        const porGrupo: CostoGrupoTramo[] = alim.porGrupo
+        // El valor de entrada por cabeza: de la transferencia del destete.
+        const entrada = transferencias.find(t => t.concepto.startsWith("Destete"))
+        const entradaPorCab = entrada && entrada.monto != null && entrada.cabezas > 0
+          ? entrada.monto / entrada.cabezas : null
+
+        for (const g of alim.grupos) {
+          const act = alim.actDeGrupo(g.id)
+          if (!act) continue
+          // El grupo salió cuando salió; si sigue, está vivo al cierre.
+          const vivoAl = (f: string) => g.desde < f && (g.hasta == null || g.hasta >= f)
+          const acumIni = acumuladoHasta(porGrupo, g.id, lim.inicio)
+          const acumFin = acumuladoHasta(porGrupo, g.id, lim.fin)
+
+          for (const [momento, f, acum] of [
+            ["inicial", lim.inicio, acumIni], ["final", lim.fin, acumFin],
+          ] as const) {
+            if (!vivoAl(f)) continue
+            const base = entradaPorCab != null ? entradaPorCab * g.cabezas : null
+            const monto = base == null || acum.costo == null ? null : base + acum.costo
+            const prev = existencias.find(e => e.actividad === act && e.momento === momento)
+            if (prev) {
+              prev.cabezas += g.cabezas
+              prev.monto = prev.monto == null || monto == null ? null : prev.monto + monto
+            } else {
+              existencias.push({
+                actividad: act, momento, cabezas: g.cabezas, monto,
+                detalle: monto == null
+                  ? "falta el valor de entrada o el precio de alguna entrega"
+                  : `valor de entrada + lo imputado hasta ${f.split("-").reverse().join("/")}`,
+              })
+            }
+          }
+
+          // ── La apertura por grupo ───────────────────────────────────────
+          const vendido = g.hasta != null && g.hasta < lim.fin
+          const vr = ventasReales.find(v => v.loteId === g.id)
+          const ingreso = vr
+            ? (vr.montoNeto ?? vr.kgTotales * vr.precioKg * (1 - (vr.pctCz || 0)))
+            : null
+          const costoAlim = acumFin.costo
+          const valorEntrada = entradaPorCab != null ? entradaPorCab * g.cabezas : null
+          gruposResultado.push({
+            actividad: act, grupoId: g.id, nombre: g.nombre, cabezas: Math.round(g.cabezas),
+            ingreso, entrada: valorEntrada, alimentacion: costoAlim,
+            margen: ingreso == null || valorEntrada == null || costoAlim == null
+              ? null : ingreso - valorEntrada - costoAlim,
+            estado: vendido ? "vendido" : "en stock",
+          })
+        }
+      }
+
       setDatos({
         campana, hasPorActividad, lotes: lotesOut, costos,
         precios: preciosOut, pctGastoVenta: pctGastoVentaPorDefecto,
-        transferencias, ventasReales,
+        transferencias, ventasReales, existencias, gruposResultado,
       })
     } finally { setCargando(false) }
   }, [campana, recargarToken])
@@ -754,6 +831,11 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
                     onCargarPrecio={onCargarPrecio}
                     onGuardado={cargar} />
 
+                  {/* ── La apertura por grupo ─────────────────────────────
+                      Es una apertura del total, no otro número: la suma tiene que dar el
+                      margen bruto de abajo, y ése es el control. */}
+                  {m.grupos.length > 0 && <AperturaGrupos grupos={m.grupos} margen={m.margenBruto} />}
+
                   <table className="w-full rounded border bg-white text-[11px]">
                     <tbody>
                       <tr className="font-semibold text-gray-800">
@@ -889,6 +971,107 @@ function Bloque({
           </tr>
         </tfoot>
       </table>
+    </div>
+  )
+}
+
+/**
+ * El resultado abierto por grupo — los 55, los machos, las hembras.
+ *
+ * ⚠️ **No es otro número: es el mismo, abierto.** Como el reparto es proporcional a una clave,
+ * repartir N grupos a la vez da lo mismo que repartir 2 y subdividir — así que la suma tiene que
+ * dar el margen bruto. Por eso el control va abajo y a la vista, y por eso esto vive DENTRO de
+ * la actividad y no en otra pantalla: un segundo lugar sería un segundo número que discutir.
+ */
+function AperturaGrupos({ grupos, margen }: { grupos: ResultadoGrupo[]; margen: number }) {
+  const [abierto, setAbierto] = useState(false)
+  const completos = grupos.filter(g => g.margen != null)
+  const suma = completos.reduce((s, g) => s + (g.margen ?? 0), 0)
+  // Sólo se puede controlar contra el total si están TODOS: con uno incompleto la diferencia
+  // no dice nada y un cartel rojo espurio es peor que no ponerlo.
+  const controlable = completos.length === grupos.length && grupos.length > 0
+  const cierra = controlable && Math.abs(suma - margen) < 1
+
+  return (
+    <div className="rounded border bg-white">
+      <button type="button" onClick={() => setAbierto(!abierto)}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-gray-50">
+        {abierto ? <ChevronDown className="h-3 w-3 text-gray-400" />
+                 : <ChevronRight className="h-3 w-3 text-gray-300" />}
+        <span className="text-[11px] font-medium text-gray-700">
+          Por grupo ({grupos.length})
+        </span>
+        <span className="text-[10px] text-gray-400">
+          quién aportó qué — los vendidos y los que quedan
+        </span>
+      </button>
+
+      {abierto && (
+        <div className="overflow-x-auto border-t">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b bg-gray-50 text-[9px] uppercase text-gray-500">
+                <th className="px-2 py-1 text-left font-medium">Grupo</th>
+                <th className="w-14 px-2 py-1 text-right font-medium">Cab</th>
+                <th className="w-28 px-2 py-1 text-right font-medium">Ingreso</th>
+                <th className="w-28 px-2 py-1 text-right font-medium">Entrada</th>
+                <th className="w-28 px-2 py-1 text-right font-medium">Alimentación</th>
+                <th className="w-28 px-2 py-1 text-right font-medium">Margen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grupos.map(g => (
+                <tr key={g.grupoId} className={`border-b last:border-0 ${g.margen == null ? "opacity-60" : ""}`}>
+                  <td className="px-2 py-1 text-gray-700">
+                    {g.nombre}
+                    <span className={`ml-1 text-[9px] ${g.estado === "vendido" ? "text-emerald-700" : "text-gray-400"}`}>
+                      {g.estado}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1 text-right text-gray-500">{numAR(g.cabezas)}</td>
+                  <td className="px-2 py-1 text-right text-gray-700">
+                    {g.ingreso == null ? "—" : pesos(g.ingreso)}
+                  </td>
+                  <td className="px-2 py-1 text-right text-gray-500">
+                    {g.entrada == null ? "—" : pesos(-g.entrada)}
+                  </td>
+                  <td className="px-2 py-1 text-right text-gray-500">
+                    {g.alimentacion == null ? "—" : pesos(-g.alimentacion)}
+                  </td>
+                  <td className={`px-2 py-1 text-right font-medium ${
+                    g.margen == null ? "text-gray-400" : g.margen < 0 ? "text-red-700" : "text-gray-800"}`}>
+                    {g.margen == null ? "sin calcular" : pesos(g.margen)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t bg-gray-50">
+                <td className="px-2 py-1 text-[10px] text-gray-600" colSpan={5}>
+                  {controlable ? (
+                    <>
+                      {cierra ? "✓" : "✗"} la suma de los grupos{" "}
+                      {cierra ? "da el margen bruto" : (
+                        <span className="font-medium text-red-700">
+                          NO da el margen bruto — difiere en {pesos(suma - margen)}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-amber-700">
+                      no se puede controlar contra el total: {grupos.length - completos.length} grupo(s)
+                      {" "}sin calcular
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1 text-right font-semibold text-gray-800">
+                  {controlable ? pesos(suma) : "—"}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

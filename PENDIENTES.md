@@ -395,6 +395,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-48 | 🔴 | Test | **El reparto del consumo entre los lotes del rodeo** ([A-FEAT-51](#a-feat-51)) — en *Insumos → Stock → Mediciones* del Maíz, con las mediciones cargadas, tiene que aparecer el bloque **«Quién se lo comió»** con una fila por lote y por tramo, sumando **100 %** en cada tramo. Verificar que el lote **vendido el 04/08 deja de comer ese día** (su participación baja en el último tramo) y que **«Resto sin lote»** desaparece a medida que se cargan los lotes de machos y hembras. Probar el aviso de rodeo que no concilia: cargar un lote con **más cabezas de las que declara el ciclo** → tiene que salir la alerta ámbar. Y que las **mortandades** se descuenten: el kilo-día del tramo posterior a una muerte tiene que bajar | → [A-TEST-48](#a-test-48) `@productivo` |
 | **A-FEAT-52** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-49](#a-test-49))** · **El costo de alimentación MEDIDO llega al Margen** — `lib/productivo/costo-alimentacion.ts` junta las tres piezas ya verificadas (consumo medido + línea de tiempo del rodeo + reparto) y devuelve el costo por **actividad y campaña**. En *Presupuesto → Margen*, las filas de **Maíz** y **Concentrado** dejan de decir *«sin calcular»* y muestran el **consumo medido y repartido por kilo-día**, desplegable tramo por tramo. **Si no hay mediciones no se inventa nada**: la fila sigue marcada. Cierra la cadena de [A-FEAT-43](#a-feat-43) | → [A-FEAT-52](#a-feat-52) `@presupuesto @productivo` |
 | A-TEST-49 | 🔴 | Test | **La cadena completa del costeo de recría, punta a punta** ([A-FEAT-43](#a-feat-43) + [A-FEAT-52](#a-feat-52)) — con el maíz cargado (producto + 6 entregas + 4 mediciones) y los lotes de machos y hembras creados: en *Presupuesto → Margen → Recría*, la fila **Maíz** tiene que mostrar un **monto**, no *«sin calcular»*, y al desplegarla verse **un renglón por tramo y por grupo**. Contrastar el total contra `Maqueta_Costo_Recria.xlsx`: **tienen que dar lo mismo**, y si no, la diferencia dice qué falta cargar. Verificar que el número **cambia** al cargar un lote nuevo (baja el «Resto sin lote») y que **vuelve a «sin calcular»** si se borra una medición | → [A-TEST-49](#a-test-49) `@presupuesto @productivo` |
+| **A-FEAT-53** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-50](#a-test-50))** · **La ACTIVACIÓN: lo que no se vendió no es gasto, es mayor valor del animal** — dos renglones nuevos en el margen, **Existencia inicial** (costo) y **Existencia final** (ingreso), valuadas **a COSTO** (valor de entrada + lo imputado encima). Resuelve el desfase entre la campaña que paga la comida y la que vende: la recría abrió en feb-2026 (**25/26**) y vendió en ago-2026 (**26/27**), así que sin esto la primera daba **pérdida pura** y la segunda ganancia inflada. **No reclasifica ningún gasto**: los costos se siguen mostrando enteros y estos dos renglones absorben la diferencia de timing | → [A-FEAT-53](#a-feat-53) `@presupuesto @productivo` |
+| **A-FEAT-54** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-50](#a-test-50))** · **La apertura POR GRUPO dentro del margen** — desplegable dentro de cada actividad: una fila por grupo (los 55 vendidos, los machos, las hembras) con **ingreso · entrada · alimentación · margen**, y el estado *vendido* / *en stock*. Es la solapa por rodeo de la maqueta, adentro de la pantalla que ya existe. ⚠️ **Es una apertura del total, no otro número**: la suma tiene que dar el margen bruto, y **el control se muestra al pie** — si algún grupo está sin calcular, lo dice en vez de mostrar una diferencia que no significa nada | → [A-FEAT-54](#a-feat-54) `@presupuesto @productivo` |
+| A-TEST-50 | 🔴 | Test | **La activación y la apertura por grupo** ([A-FEAT-53](#a-feat-53) + [A-FEAT-54](#a-feat-54)) — en *Presupuesto → Margen*, con el maíz y los lotes cargados: en la campaña **25/26** (la que pagó la comida y no vendió) tiene que aparecer **Existencia final** como ingreso, y el margen **NO** debe dar una pérdida del tamaño de todo el maíz. En **26/27** tiene que aparecer **Existencia inicial** como costo por un monto **parecido** al de la existencia final de 25/26. Desplegar **«Por grupo»**: una fila por grupo, los 55 marcados **vendido** y el resto **en stock**, y al pie el control **✓ la suma da el margen bruto**. Probar el caso incompleto: con un grupo sin precio, el pie debe decir *«no se puede controlar contra el total»* y **no** mostrar una diferencia falsa | → [A-TEST-50](#a-test-50) `@presupuesto @productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10939,6 +10942,101 @@ texto y por eso **manda el campo explícito**. Conviene cargarlo.
 
 Contrastar el total contra `Maqueta_Costo_Recria.xlsx`. **Tienen que dar lo mismo** — y si no, la
 diferencia dice qué falta cargar. Es el camino inverso, que es siempre el mejor control.
+
+---
+
+## <a id="a-feat-53"></a>A-FEAT-53 — La activación: lo que no se vendió no es gasto
+
+**Hecho el 2026-08-26.** Acordado con el usuario el mismo día, cuando planteó el caso:
+
+> *"Si el margen es de campaña, la primera campaña es pérdida porque aún no vendió, pero se debe
+> valorizar el stock para de última dar cero y aplicar ese costo en la venta."*
+
+### El problema
+
+| | Campaña |
+|---|---|
+| La recría **abrió** | 23/02/2026 → **25/26** |
+| Empezó a **comer** | 06/05/2026 → **25/26** |
+| **Vendió** los 55 | 04/08/2026 → **26/27** |
+
+Sin activación, **25/26 da pérdida pura** (pagó toda la comida y no vendió nada) y **26/27 da
+ganancia inflada** (vendió sin costo de entrada).
+
+### La solución: dos renglones, ningún gasto reclasificado
+
+```
+   Ingresos:   + Existencia final     lo que queda vivo al cerrar
+   Costos:     − Existencia inicial   lo que ya valía al abrir
+```
+
+Es la variación de existencias de toda la vida. **El primer año da cero en vez de pérdida**, y el
+año que se vende la ganancia se mide contra lo que el animal ya valía — no contra cero.
+
+⚠️ **No se reclasifica ningún costo.** Los gastos siguen enteros y estos dos renglones absorben la
+diferencia de timing. Eso lo hace fácil de auditar: el maíz sigue estando donde se pagó.
+
+### La valuación: a COSTO, no a mercado
+
+**Valor de entrada + lo que se le imputó encima.** No a precio de hacienda — eso sería reconocer
+una ganancia antes de venderla.
+
+📌 Es una diferencia deliberada con la maqueta de Excel, que sí valuaba lo no vendido a precio de
+mercado. **Son dos preguntas distintas**: la maqueta contestaba *"¿cómo le está yendo al resto?"*
+y el margen contesta *"¿cuánto ganó la campaña?"*. La segunda no puede contar ganancias no
+realizadas.
+
+### El segundo año, que era la duda del usuario
+
+Él lo planteó así: *"a la campaña siguiente venderemos la campaña pasada dando la ganancia, pero
+tendremos la inversión de la campaña actual… 2 campañas productivas mezcladas en una campaña
+contable"*.
+
+**Con activación eso es lo que tiene que dar, y está bien:**
+
+```
+   + Venta de la camada 2026            ingreso
+   − Existencia inicial (camada 2026)   lo que ya valía
+   − Comida de la camada 2027           gasto del año
+   + Existencia final (camada 2027)     lo que queda
+   ─────────────────────────────────────────────────
+   = la ganancia real del año contable
+```
+
+Las dos camadas conviven y el número sale bien igual. **Desmezclarlas no hace falta para que
+cierre — hace falta para entenderlo**, y para eso está la apertura por grupo
+([A-FEAT-54](#a-feat-54)).
+
+---
+
+## <a id="a-feat-54"></a>A-FEAT-54 — La apertura por grupo dentro del margen
+
+**Hecho el 2026-08-26.** Es la solapa por rodeo de la maqueta, adentro de la pantalla que ya existe.
+
+Desplegable dentro de cada actividad, una fila por grupo:
+
+| Grupo | Cab | Ingreso | Entrada | Alimentación | Margen |
+|---|---|---|---|---|---|
+| Ternero Recria (55) · **vendido** | 55 | … | … | … | … |
+| Machos que quedan · *en stock* | … | — | … | … | … |
+
+### ⚠️ Por qué va ADENTRO y no en otra pantalla
+
+**Es una apertura del total, no otro número.** Como el reparto es proporcional a una clave,
+repartir N grupos a la vez da lo mismo que repartir 2 y subdividir — así que **la suma tiene que
+dar el margen bruto**, y eso se muestra al pie.
+
+Ponerlo en otra pantalla lo convertiría en un segundo número que discutir, que es exactamente el
+modo de falla que este proyecto ya conoce.
+
+### El control, y cuándo NO se muestra
+
+Al pie dice **✓ la suma de los grupos da el margen bruto**, o la diferencia en rojo.
+
+📌 **Pero sólo si están todos los grupos calculados.** Con uno incompleto la diferencia no
+significa nada, y un cartel rojo espurio es peor que no ponerlo: en ese caso dice *"no se puede
+controlar contra el total: N grupo(s) sin calcular"*. Un control que se dispara sin motivo deja de
+mirarse — y ahí se pierden los que sí importan.
 
 ---
 

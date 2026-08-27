@@ -137,6 +137,35 @@ export function campanaDeFecha(iso: string): string | null {
   return `${String(ini).padStart(2, '0')}/${String((ini + 1) % 100).padStart(2, '0')}`
 }
 
+/**
+ * La ACTIVACIÓN: lo que la actividad tiene encima al abrir y al cerrar la campaña.
+ *
+ * ── El problema que resuelve ─────────────────────────────────────────────────
+ * La recría abrió en febrero de 2026 (campaña 25/26) y vendió en agosto (26/27). Sin esto, la
+ * campaña que pagó la comida da **pérdida pura** y la siguiente, ganancia inflada.
+ *
+ * ── Cómo se resuelve ─────────────────────────────────────────────────────────
+ * No reclasificando gastos —los costos se siguen mostrando enteros— sino con **dos renglones**:
+ *
+ *     Ingresos:  + Existencia final     lo que queda vivo al cerrar
+ *     Costos:    − Existencia inicial   lo que ya valía al abrir
+ *
+ * Es la variación de existencias de toda la vida. El primer año da **cero** en vez de pérdida,
+ * y el año que se vende, la ganancia es contra lo que el animal ya valía — no contra cero.
+ *
+ * ⚠️ **Valuación a COSTO**: valor de entrada + lo que se le imputó encima. No a precio de
+ * mercado — eso sería reconocer una ganancia antes de venderla.
+ */
+export interface ExistenciaActividad {
+  actividad: string
+  /** `inicial` va a costos, `final` a ingresos. */
+  momento: 'inicial' | 'final'
+  cabezas: number
+  /** `null` mientras falte algún componente. Nunca cero. */
+  monto: number | null
+  detalle: string
+}
+
 export interface DatosMargen {
   campana: string
   /** has netas por actividad. */
@@ -151,6 +180,33 @@ export interface DatosMargen {
   transferencias?: TransferenciaInterna[]
   /** Las ventas que ya ocurrieron. Mandan sobre la proyección del lote. */
   ventasReales?: VentaRealLote[]
+  /** La activación: qué tenía encima la actividad al abrir y al cerrar. */
+  existencias?: ExistenciaActividad[]
+  /** El resultado abierto por grupo, para desplegar dentro de la actividad. */
+  gruposResultado?: ResultadoGrupo[]
+}
+
+/**
+ * El resultado de un grupo dentro de una actividad — los 55, los machos, las hembras.
+ *
+ * Es una **apertura del total, no otro número**: repartir N grupos a la vez da lo mismo que
+ * repartir 2 y subdividir, así que la suma de los grupos tiene que dar el total. Por eso el
+ * total es su control, y por eso va desplegable adentro y no en otra pantalla.
+ */
+export interface ResultadoGrupo {
+  actividad: string
+  grupoId: string
+  nombre: string
+  cabezas: number
+  /** Lo que se cobró (o se va a cobrar) por ellos. */
+  ingreso: number | null
+  /** Lo que valían al entrar a la actividad. */
+  entrada: number | null
+  /** Lo que se les imputó de alimentación. */
+  alimentacion: number | null
+  /** `null` si falta cualquiera de los tres. */
+  margen: number | null
+  estado: 'vendido' | 'en stock'
 }
 
 export interface LineaMargen {
@@ -191,6 +247,8 @@ export interface MargenActividad {
   faltantes: string[]
   /** Las bandas sin precio cargado, para poder ir a cargarlas desde acá. */
   faltaPrecio: { banda: string; categoria: string; peso: number }[]
+  /** La apertura por grupo. Su suma tiene que dar el margen bruto — ése es el control. */
+  grupos: ResultadoGrupo[]
 }
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString('es-AR')}`
@@ -857,6 +915,27 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     // le hiciera nada, y sin él la ganancia sale de más.
     costos.unshift(...transferCosto)
 
+    // ── La ACTIVACIÓN ───────────────────────────────────────────────────────────
+    //
+    // La existencia FINAL es un ingreso y la INICIAL un costo. No se reclasifica ningún gasto:
+    // los costos siguen enteros y estos dos renglones absorben la diferencia de timing entre la
+    // campaña que paga y la que vende.
+    const misExist = (d.existencias ?? []).filter(e => claveActividad(e.actividad) === cmp)
+    for (const e of misExist) {
+      if (e.monto == null) faltantes.push(`Existencia ${e.momento}: ${e.detalle}`)
+      const linea: LineaMargen = {
+        concepto: e.momento === 'final' ? 'Existencia final (a costo)' : 'Existencia inicial (a costo)',
+        unidades: e.cabezas, etiquetaUnidad: 'cab',
+        total: e.monto ?? 0,
+        porHa: has && e.monto != null ? e.monto / has : null,
+        porCabeza: e.monto != null && e.cabezas > 0 ? e.monto / e.cabezas : null,
+        detalle: e.detalle,
+        confiable: e.monto != null,
+      }
+      if (e.momento === 'final') ingresos.push(linea)
+      else costos.unshift(linea)
+    }
+
     if (has == null) faltantes.push('no tiene hectáreas asignadas en esta campaña')
     if (misCostos.length === 0) faltantes.push('no tiene costos directos cargados')
 
@@ -871,6 +950,7 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       totalIngresos, totalCostos, margenBruto,
       margenPorHa: has ? margenBruto / has : null,
       faltantes, faltaPrecio,
+      grupos: (d.gruposResultado ?? []).filter(g => claveActividad(g.actividad) === cmp),
     }
   })
 }
