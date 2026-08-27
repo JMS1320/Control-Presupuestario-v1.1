@@ -524,11 +524,21 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
             return { monto: total, motivo: `${celdas[0]?.explicacion ?? "histórico"} · ${etiqueta}`, celdas }
           },
         }
+        // ⚠️ Los medidos que ninguna receta reclame se agregan igual, al final. Antes se
+        // PERDÍAN: si el producto se llamaba `Concentrado Novillo 35 10` y la receta decía
+        // `Concentrado` a secas, el costo medido no aparecía en ningún lado y nada avisaba.
+        //
+        // El orden correcto es ése: **el consumo medido es un hecho y no necesita el permiso de
+        // ninguna receta para entrar al margen.** La receta sirve para proyectar hacia adelante;
+        // el vínculo entre las dos es una comodidad de presentación, no un requisito.
+        const medidosUsados = new Set<string>()
+
         for (const i of mios) {
           // El dato REAL primero: si hay consumo medido para este insumo y esta actividad,
           // manda sobre cualquier estimación. Es la misma regla de siempre.
           const med = medidos.find(m =>
             claveActividad(m.actividad) === claveActividad(n) && mismoInsumo(i, m.producto))
+          if (med) medidosUsados.add(med.producto)
           if (med) {
             costos.push({
               actividad: n, concepto: i.concepto, monto: med.monto,
@@ -557,6 +567,29 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
             actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo,
             insumoId: i.id, pasos: r.pasos, fundamento: i.fundamento,
             celdas: r.celdas, historicoModo: i.historico_modo ?? null,
+          })
+        }
+
+        // Lo medido que ninguna receta reclamó. Entra por su cuenta, con el nombre del producto.
+        for (const med of medidos) {
+          if (claveActividad(med.actividad) !== claveActividad(n)) continue
+          if (medidosUsados.has(med.producto)) continue
+          costos.push({
+            actividad: n, concepto: med.producto, monto: med.monto,
+            motivo: med.monto == null
+              ? `medido ${numAR(med.cantidad)} ${med.unidad ?? ""} — falta el precio de alguna entrega`
+              : `${numAR(med.cantidad)} ${med.unidad ?? ""} · consumo MEDIDO y repartido por kilo-día`
+                + ` · sin fila de receta que lo proyecte`,
+            pasos: (() => {
+              let acum = 0
+              return med.detalle.map((d, k) => {
+                acum += d.monto ?? 0
+                return { etiqueta: k === 0 ? "Consumo medido" : "", detalle: d.texto, acumulado: acum }
+              })
+            })(),
+          })
+          for (const f of med.faltantes) costos.push({
+            actividad: n, concepto: `⚠️ ${f}`, monto: null, motivo: f,
           })
         }
       }
