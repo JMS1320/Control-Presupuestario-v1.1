@@ -399,6 +399,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-54** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-50](#a-test-50))** · **La apertura POR GRUPO dentro del margen** — desplegable dentro de cada actividad: una fila por grupo (los 55 vendidos, los machos, las hembras) con **ingreso · entrada · alimentación · margen**, y el estado *vendido* / *en stock*. Es la solapa por rodeo de la maqueta, adentro de la pantalla que ya existe. ⚠️ **Es una apertura del total, no otro número**: la suma tiene que dar el margen bruto, y **el control se muestra al pie** — si algún grupo está sin calcular, lo dice en vez de mostrar una diferencia que no significa nada | → [A-FEAT-54](#a-feat-54) `@presupuesto @productivo` |
 | A-TEST-50 | 🔴 | Test | **La activación y la apertura por grupo** ([A-FEAT-53](#a-feat-53) + [A-FEAT-54](#a-feat-54)) — en *Presupuesto → Margen*, con el maíz y los lotes cargados: en la campaña **25/26** (la que pagó la comida y no vendió) tiene que aparecer **Existencia final** como ingreso, y el margen **NO** debe dar una pérdida del tamaño de todo el maíz. En **26/27** tiene que aparecer **Existencia inicial** como costo por un monto **parecido** al de la existencia final de 25/26. Desplegar **«Por grupo»**: una fila por grupo, los 55 marcados **vendido** y el resto **en stock**, y al pie el control **✓ la suma da el margen bruto**. Probar el caso incompleto: con un grupo sin precio, el pie debe decir *«no se puede controlar contra el total»* y **no** mostrar una diferencia falsa | → [A-TEST-50](#a-test-50) `@presupuesto @productivo` |
 | A-TEST-51 | 🔴 | Test | **El puente entrega ↔ factura, con el caso Longo** ([A-FEAT-44](#a-feat-44)) — en *Insumos → Stock*, botón **Facturas** del Maíz. Vincular la **FC del 13/07 (25 t)** a la entrega del **24/06** por 20,1 t y a la del **24/07** por 4,9 t, y la **FC del 14/08 (20,1 t)** a la del 24/07. Tiene que quedar: entrega del 24/06 a **$267,50/kg** *de las facturas*, entrega del 24/07 a **$267,14/kg** (ponderado de las dos), y los **2 controles en ✓**. Después abrir **Mediciones**: el precio de esos tramos tiene que ser el mismo, y **ya no el tipeado a mano**. Probar además vincular **más de lo entregado** (debe avisar) y dejar una entrega **sin factura** (debe decir cuánto falta) | → [A-TEST-51](#a-test-51) `@productivo @egresos` |
+| **A-FEAT-55** | 🟢 | Feat | **El PEDIDO: el momento que falta de la cadena de compra** — hoy la cadena arranca en la entrega. El pedido (*«pedí un camión, llega el sábado»*) no existe. ⚠️ **Diseño acordado con el usuario 2026-08-27, y la condición es la que lo hace viable**: se carga como una entrega con **estado `pendiente`** y fecha pactada, y **NO toca el stock ni corta tramos hasta confirmarse**. Al descargar se pasa a `confirmado` con los kilos reales. **NO hacerlo todavía**: el usuario lo evaluó y decidió que no le compra nada hoy. Se retoma si empieza a molestar no ver lo que está en camino — sobre todo para no comprar de más, que es donde *Necesidad de Compra* queda corto | → [A-FEAT-55](#a-feat-55) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11096,6 +11097,72 @@ Al pie dice **✓ la suma de los grupos da el margen bruto**, o la diferencia en
 significa nada, y un cartel rojo espurio es peor que no ponerlo: en ese caso dice *"no se puede
 controlar contra el total: N grupo(s) sin calcular"*. Un control que se dispara sin motivo deja de
 mirarse — y ahí se pierden los que sí importan.
+
+---
+
+## <a id="a-feat-55"></a>A-FEAT-55 — El PEDIDO, el momento que falta
+
+**Diseño acordado el 2026-08-27. NO implementado, y a propósito.**
+
+### Dónde está el hueco
+
+```
+   "compré tanto"   →   "recibí este día"   →   llegó la factura
+      EL PEDIDO           MUEVE EL STOCK        TRAE EL PRECIO
+      ❌ no existe          ✅ A-FEAT-47          ✅ A-FEAT-44
+```
+
+### Por qué no se hizo ahora
+
+El usuario lo evaluó con un caso real —pidió un camión de maíz un jueves para el sábado— y la
+conclusión fue que **no le compra casi nada**: el pedido no mueve stock, no trae precio, y el
+cálculo del consumo no lo mira.
+
+Sirve para dos cosas, ninguna urgente:
+1. **Cash Flow** — que la plata que se va a deber aparezca antes que la factura.
+2. **No comprar de más** — `Insumos → Necesidad de Compra` ya calcula *stock actual · necesario ·
+   a comprar*, pero **le falta el otro lado: lo que ya se pidió y está en camino**.
+
+### ⚠️ Por qué NO alcanza con cargar la entrega con fecha futura
+
+El usuario propuso justamente eso —cargar el recibo con la fecha pactada y ajustarlo después— y
+es la idea correcta, pero **el sistema no la soporta hoy**:
+
+| Problema | Qué se ve |
+|---|---|
+| El stock se recalcula sumando las compras | `Insumos → Stock` muestra kilos **que todavía no están** |
+| El control *«lo comprado está explicado»* | se pone en **✗**: esos kilos no están ni consumidos ni contados en ninguna medición |
+| Si el camión se pospone y no se cambia la fecha | los tramos quedan mal **y nada avisa** |
+
+🔑 El segundo es el que decide. **Un control que se pone rojo por algo que no es un error es la
+forma más rápida de que se deje de mirar** — y después se pierden los que sí importan.
+
+### El diseño, para cuando se haga
+
+**Un estado en el movimiento**, no una tabla nueva. Lo propuso así el usuario: *"puede quedar
+pendiente vs. confirmado cuando está hecha la descarga"*.
+
+| Estado | Fecha | Cantidad | Toca el stock | Corta tramos | Entra al Cash Flow |
+|---|---|---|---|---|---|
+| `pendiente` | la **pactada** | la acordada | ❌ **no** | ❌ **no** | ✅ sí, como egreso esperado |
+| `confirmado` | la **real de descarga** | la que bajó | ✅ sí | ✅ sí | ✅ sí |
+
+**La condición que lo hace viable es que `pendiente` sea invisible para el stock y los tramos.**
+Sin eso reaparecen los tres problemas de arriba.
+
+Y de yapa: `Necesidad de Compra` pasa a poder descontar lo pendiente, que es lo que hoy le falta.
+
+### 📌 Lo que quedó confirmado sobre entregas y mediciones
+
+De la misma conversación, y vale como referencia porque son las reglas que rigen hoy:
+
+- **Lo que corta un tramo es la MEDICIÓN, no el recibo.** Son independientes: se puede recibir sin
+  medir, medir sin recibir, y medir cualquier día.
+- **El orden de carga no importa.** La medición del día D siempre se interpreta como *lo que había
+  ANTES de descargar el camión de ese día*.
+- ⚠️ **La trampa**: si se mide contando el camión recién descargado, esos kilos se cuentan dos
+  veces. Recibir 25 t y anotar 26 hace que el sistema entienda *"había 26 y llegaron 25"* = 51.
+  **Se mide antes de descargar.**
 
 ---
 

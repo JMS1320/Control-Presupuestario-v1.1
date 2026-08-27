@@ -2790,6 +2790,24 @@ Cada medición corta un tramo, y de cada tramo sale el consumo real.
 💡 **Conviene poner una medición el día que arranca la ración.** Si no, el primer tramo incluye
 días en que no se comió y el control del % del peso vivo sale diluido.
 
+### ⚠️ Medir el día que llega un camión — la regla que hay que tener presente
+
+**Es la medición más barata que hay**: cuando llega un camión mirás cuánto quedaba, y eso ya es un
+corte de tramo. Pero tiene una condición:
+
+> **Se mide ANTES de descargar, y se anota lo que había SIN contar el camión.**
+
+El sistema siempre interpreta la medición de un día como *"lo que había antes de descargar lo de
+ese día"*, y **el orden en que cargues las dos cosas no importa**.
+
+| Lo que hacés | Lo que entiende el sistema |
+|---|---|
+| Recibís 25 t · anotás **1 t** | había 1, llegaron 25 → **26** ✅ |
+| Recibís 25 t · anotás **26 t** *(contando el camión)* | había 26, llegaron 25 → **51** ❌ |
+
+Y son independientes: podés **recibir sin medir**, **medir sin recibir**, y **medir cualquier día**.
+Lo que corta un tramo es **la medición**, nunca el recibo.
+
 ### Lo que la pantalla te dice
 
 | | Qué significa |
