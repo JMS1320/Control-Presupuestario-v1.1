@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
+import { PanelEntregasFacturas } from "./panel-entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
@@ -3115,6 +3116,9 @@ function SubTabStockInsumos() {
   /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
   const [insumoMedir, setInsumoMedir] = useState<
     { id: string; producto: string; unidad_medida: string | null } | null>(null)
+  /** El insumo cuyas entregas se están vinculando con sus facturas. */
+  const [insumoFacturas, setInsumoFacturas] = useState<
+    { id: string; producto: string; unidad_medida: string | null } | null>(null)
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
@@ -3418,7 +3422,7 @@ function SubTabStockInsumos() {
               <TableHead className="text-right">Stock</TableHead>
               <TableHead className="text-right">Costo Unit.</TableHead>
               <TableHead>Observaciones</TableHead>
-              <TableHead className="w-28" />
+              <TableHead className="w-52" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -3443,6 +3447,14 @@ function SubTabStockInsumos() {
                         id: s.id, producto: s.producto, unidad_medida: s.unidad_medida ?? null,
                       })}>
                       <Ruler className="mr-1 h-3 w-3" /> Mediciones
+                    </Button>
+                    {/* El precio del consumo sale de acá: la entrega mueve el stock, la
+                        factura trae el precio. */}
+                    <Button variant="ghost" size="sm" className="h-6 text-[11px]"
+                      onClick={() => setInsumoFacturas({
+                        id: s.id, producto: s.producto, unidad_medida: s.unidad_medida ?? null,
+                      })}>
+                      <Link2 className="mr-1 h-3 w-3" /> Facturas
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -3691,6 +3703,11 @@ function SubTabStockInsumos() {
       {insumoMedir && (
         <PanelMedicionesInsumo insumo={insumoMedir}
           onCerrar={() => { setInsumoMedir(null); cargarDatos() }} />
+      )}
+
+      {insumoFacturas && (
+        <PanelEntregasFacturas insumo={insumoFacturas}
+          onCerrar={() => { setInsumoFacturas(null); cargarDatos() }} />
       )}
 
       <Dialog open={mostrarModalInsumo} onOpenChange={setMostrarModalInsumo}>

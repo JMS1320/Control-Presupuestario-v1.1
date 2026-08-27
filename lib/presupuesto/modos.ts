@@ -171,8 +171,21 @@ export function ultimoMesCerrado(hoy = new Date()): number {
 // ── Sugerencia automática ─────────────────────────────────────────────────────
 
 /**
- * Cuentas que NO se presupuestan acá porque ya entran por Actividades y costos, y sumarlas
- * dos veces infla el presupuesto.
+ * Cuentas que NO se PROYECTAN acá porque ya entran por Actividades y costos, y sumarlas dos
+ * veces infla el presupuesto.
+ *
+ * ⚠️ **Apagadas hacia adelante, LLENAS hacia atrás** (regla del usuario, 2026-08-26):
+ *
+ * > *"No debe presupuestar hacia adelante sobre lo consumido, porque la única fuente de verdad
+ * > hacia adelante es el plan productivo. Pero para atrás sí debe llenar con datos."*
+ *
+ * La exclusión es de la PROYECCIÓN, no de la historia. Lo ya gastado se sigue mostrando: son
+ * facturas reales y esconderlas es peor que duplicarlas — de un lado se ve el error, del otro
+ * no. Ver `esProduccionHaciaAtras()` y A-DEC-04.
+ *
+ * 🔴 Y el agujero que esto destapó: el maíz estaba **excluido de un lado y sin calcular del
+ * otro**, así que no estaba en ningún lado. Recién se resolvió cuando la ración empezó a
+ * medirse (A-FEAT-47 → A-FEAT-52).
  *
  *   421*     agricultura entera (insumos, labores, cosecha, seguro de cultivo)
  *   42305*   alimentación: maíz, rollos, sales → son la ración de las actividades
@@ -189,6 +202,18 @@ export function esProduccion(nro: string): string | null {
     return 'Verdeo: ya entra por hectárea en Actividades y costos'
   }
   return null
+}
+
+/**
+ * ¿La historia de esta cuenta se sigue mostrando aunque esté excluida de la proyección?
+ *
+ * **Sí, siempre.** Existe como función y no como `true` suelto para que el llamador tenga que
+ * decir explícitamente qué está preguntando: *"¿la proyecto?"* es `esProduccion()`, *"¿la
+ * muestro?"* es esto. Confundir las dos preguntas fue lo que dejó al maíz sin aparecer en
+ * ningún lado.
+ */
+export function esProduccionHaciaAtras(_nro: string): boolean {
+  return true
 }
 
 /** Cuentas cuyo gasto sigue al tamaño del rodeo. */

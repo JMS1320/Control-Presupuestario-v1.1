@@ -366,7 +366,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-41** | 🔴 | Feat | **La venta manual de hacienda NO da de alta al cliente** en `public.proveedores`, contra la regla de contrapartes (*upsert, nunca sólo UPDATE*). Se ve en [A-DAT-07](#a-dat-07): hubo que crear a Ballester a mano. Y el movimiento manual **no tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta* (`intermediario_id`), así que el intermediario termina como texto libre en observaciones | → [A-FEAT-41](#a-feat-41) `@productivo` |
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
 | **A-FEAT-43** | 🟡 | Feat | **LA CADENA ESTÁ COMPLETA 2026-08-26 — falta testear ([A-TEST-49](#a-test-49))** · **Costeo de recría: la lógica está ACORDADA Y VALIDADA con datos reales — falta llevarla a la app** (2026-08-25/26). Maqueta en Excel con 11 hojas y 429 fórmulas + un resumen de una carilla con solapa por rodeo. Reparte el maíz y el concentrado entre lo vendido y lo que queda, con 6 controles que cierran. **El modelo, las 7 decisiones y lo que falta están en el dossier** | → [A-FEAT-43](#a-feat-43) `@productivo` |
-| **A-FEAT-44** | 🔴 | Feat | **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
+| **A-FEAT-44** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-51](#a-test-51))** · **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
 | **A-FEAT-45** | 🔴 | Feat | **EL MAPA DEL CIRCUITO — leer esto antes de tocar recría, margen o costos de producción** (2026-08-26). Las 7 pantallas que intervienen, **qué pregunta contesta cada una**, qué alimenta y qué recibe. Nació de que el usuario no podía seguir el plan sin saber para qué sirve cada lugar. Vive en `MODULO_HACIENDA.md` § 15; acá está el ítem para poder referenciarlo. Incluye las 3 decisiones de diseño: **la plata vive en el Margen · la eficiencia en el Ciclo · el puente es el Tramo** | → [A-FEAT-45](#a-feat-45) `@productivo @presupuesto` |
 | **A-BUG-54** | 🟡 | Bug | **HECHO 2026-08-26 — falta testear ([A-TEST-41](#a-test-41))** · **El tramo de un lote se guardaba aunque le dieras CANCELAR** — `SeccionTramos` escribe en `lote_tramos` **al instante**: `+ tramo` hace `INSERT` en el click, y cada cambio de fecha/actividad/ha hace `UPDATE` en el `onChange`. El botón Cancelar del modal no revierte nada porque esos writes nunca pasaron por el formulario. Le pasó al usuario el 2026-08-26: canceló y el tramo quedó. **Y quedó con `fecha_hasta` = 04/08/2027 en vez de 2026** — un año de más que nadie validó, y que hizo que *Costos de producción* proyectara ~$3,5 a $5,1 M por mes indefinidamente. Fix: o el tramo se edita en memoria y se guarda con el modal, o la sección dice **explícitamente** que se guarda sola. Y validar que el tramo no exceda la fecha de venta del lote | → [A-BUG-54](#a-bug-54) `@productivo` |
 | **A-BUG-55** | 🔴 | Bug | **El consumo se estima por lote de venta y NUNCA se concilia contra lo comprado** — el tramo cuelga de `stock_lotes`, y sólo existen lotes de **lo que se va a vender**. En recría 2026 el único lote con tramo es el de los **55**: la app estima lo que comieron esos 55 y **de los otros 134 del rodeo no sabe nada**. Además el precio sale de la receta (**$270/kg el maíz, $745 el concentrado**), no de las facturas. Resultado: un número que **no puede cerrar nunca** contra lo que se compró, y que **no avisa que le faltan dos tercios del rodeo**. El consumo es una propiedad del **rodeo** —lo que entró y lo que se midió—, no de un lote de venta | → [A-BUG-55](#a-bug-55) `@productivo @presupuesto` |
@@ -374,7 +374,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-57** | 🟡 | Bug | **Los costos por hectárea de una actividad no llegan a la grilla mensual** — un costo `monto_ha` (pasturas y verdeos de recría, que van sobre las **60 ha** de la actividad) se resuelve en el **Margen** contra las hectáreas de la actividad, pero en *Costos de producción* se resuelve contra las **hectáreas del tramo**, que están vacías → **da cero**. Y si se llenaran, con dos lotes se contaría **dos veces**, porque las 60 ha son de la actividad, no de cada lote. Hermano de [A-BUG-56](#a-bug-56): el mismo insumo, dos motores, dos resultados | → [A-BUG-57](#a-bug-57) `@productivo @presupuesto` |
 | **A-BUG-58** | 🟡 | Bug | **HECHO 2026-08-26 — falta testear ([A-TEST-41](#a-test-41))** · **El checkbox «Usar la ganancia diaria de arriba» no respondía** — en el tramo de un lote, tildarlo no hace efecto visible (reportado por el usuario 2026-08-26). Escribe `stock_lotes.ganancia_override` pero el modal no refleja el cambio. Y en la misma sección: **la columna «Ha» es demasiado angosta** para leer lo que se escribe | → [A-BUG-58](#a-bug-58) `@productivo` |
 | **A-FEAT-46** | 🔴 | Feat | **Alerta: hay una pesada nueva y el presupuesto sigue con el peso viejo** — decisión del usuario 2026-08-26: la ganancia diaria y el peso de partida de un lote **NO se actualizan solos** (eso ya estaba decidido), **pero tiene que avisar**. Si aparece una pesada posterior a la que usa el lote, el presupuesto y el margen deben marcarlo para que el usuario decida si actualiza. Es el mismo criterio que *«el silencio miente»*: no actualizar automático está bien; no avisar, no | → [A-FEAT-46](#a-feat-46) `@productivo @presupuesto` |
-| **A-DEC-04** | 🔴 | Decisión | **Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás** — regla del usuario 2026-08-26. Hoy `esProduccion()` excluye `42305*` (alimentación) y `421*` (agricultura) **en las dos direcciones**, con el motivo *"ya entra como ración en Actividades y costos"*. El usuario lo corrigió: **hacia adelante la única fuente de verdad es el plan productivo** (y ahí la exclusión está bien), **pero hacia atrás la cuenta debe llenarse con las facturas reales**. Hoy no se distingue, y por eso el maíz no está en ningún lado: excluido de un lado y sin calcular del otro | → [A-DEC-04](#a-dec-04) `@presupuesto @productivo` |
+| **A-DEC-04** | 🟢 | Decisión | **RESUELTA 2026-08-26** · **Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás** — regla del usuario 2026-08-26. Hoy `esProduccion()` excluye `42305*` (alimentación) y `421*` (agricultura) **en las dos direcciones**, con el motivo *"ya entra como ración en Actividades y costos"*. El usuario lo corrigió: **hacia adelante la única fuente de verdad es el plan productivo** (y ahí la exclusión está bien), **pero hacia atrás la cuenta debe llenarse con las facturas reales**. Hoy no se distingue, y por eso el maíz no está en ningún lado: excluido de un lado y sin calcular del otro | → [A-DEC-04](#a-dec-04) `@presupuesto @productivo` |
 | A-TEST-41 | 🔴 | Test | **El tramo de un lote respeta Guardar y Cancelar** ([A-BUG-54](#a-bug-54) + [A-BUG-58](#a-bug-58)) — abrir un lote en *Productivo → Evolución Rodeo → lotes*, agregar un tramo, cambiarle las fechas y darle **Cancelar**: al reabrir **no tiene que haber quedado nada**. Repetir y darle **Guardar**: tiene que quedar. Probar tambien **borrar** un tramo y cancelar (debe seguir estando) y el **checkbox de ganancia diaria**, que ahora tiene que tildarse y verse el cambio en la curva. Y con un lote **con fecha de venta**, agregar un tramo: el **Hasta** debe salir con la fecha de venta y no con +6 meses; si se lo pasa, tiene que aparecer el **aviso ámbar** | → [A-TEST-41](#a-test-41) `@productivo` |
 | **A-FEAT-47** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-42](#a-test-42))** · **Mediciones de stock de un insumo: el consumo deja de estimarse y se MIDE.** Tabla nueva `productivo.mediciones_insumo` (un **nivel**, no un movimiento — por eso no va en `movimientos_insumos`) + `lib/productivo/consumo.ts` + botón **Mediciones** en cada insumo de *Productivo → Insumos → Stock*. **Cada medición corta un tramo**, y de cada tramo sale `había + entró − quedó`, con **precio por tramo** (no un promedio del período) y **3 controles a la vista**. Es el primer paso de [A-FEAT-43](#a-feat-43): sin esto no se puede cargar nada. Verificado con `scripts/verificar-consumo.mts` contra los datos reales de la recría 2026 — los 3 controles cierran | → [A-FEAT-47](#a-feat-47) `@productivo` |
 | A-TEST-42 | 🔴 | Test | **Cargar las mediciones de maíz y ver que el consumo cierre** ([A-FEAT-47](#a-feat-47)) — en *Productivo → Insumos → Stock*, botón **Mediciones** del Maíz. Cargar las 4 tomas (16/03 = 0 · 24/06 = 0 · 24/07 = 0 · 24/08 = 5.800 kg) con las 6 entregas ya cargadas como compras: tienen que salir **3 tramos**, consumo total **61.860 kg**, remanente **5.800 kg** y los **3 controles en ✓**. Probar además: cargar **dos mediciones el mismo día** (tiene que avisar que se contradicen) · **borrar** una y ver que los tramos se recalculan · una entrega **sin precio** (el costo del tramo debe decir «—», nunca cero) | → [A-TEST-42](#a-test-42) `@productivo` |
@@ -398,6 +398,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-53** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-50](#a-test-50))** · **La ACTIVACIÓN: lo que no se vendió no es gasto, es mayor valor del animal** — dos renglones nuevos en el margen, **Existencia inicial** (costo) y **Existencia final** (ingreso), valuadas **a COSTO** (valor de entrada + lo imputado encima). Resuelve el desfase entre la campaña que paga la comida y la que vende: la recría abrió en feb-2026 (**25/26**) y vendió en ago-2026 (**26/27**), así que sin esto la primera daba **pérdida pura** y la segunda ganancia inflada. **No reclasifica ningún gasto**: los costos se siguen mostrando enteros y estos dos renglones absorben la diferencia de timing | → [A-FEAT-53](#a-feat-53) `@presupuesto @productivo` |
 | **A-FEAT-54** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-50](#a-test-50))** · **La apertura POR GRUPO dentro del margen** — desplegable dentro de cada actividad: una fila por grupo (los 55 vendidos, los machos, las hembras) con **ingreso · entrada · alimentación · margen**, y el estado *vendido* / *en stock*. Es la solapa por rodeo de la maqueta, adentro de la pantalla que ya existe. ⚠️ **Es una apertura del total, no otro número**: la suma tiene que dar el margen bruto, y **el control se muestra al pie** — si algún grupo está sin calcular, lo dice en vez de mostrar una diferencia que no significa nada | → [A-FEAT-54](#a-feat-54) `@presupuesto @productivo` |
 | A-TEST-50 | 🔴 | Test | **La activación y la apertura por grupo** ([A-FEAT-53](#a-feat-53) + [A-FEAT-54](#a-feat-54)) — en *Presupuesto → Margen*, con el maíz y los lotes cargados: en la campaña **25/26** (la que pagó la comida y no vendió) tiene que aparecer **Existencia final** como ingreso, y el margen **NO** debe dar una pérdida del tamaño de todo el maíz. En **26/27** tiene que aparecer **Existencia inicial** como costo por un monto **parecido** al de la existencia final de 25/26. Desplegar **«Por grupo»**: una fila por grupo, los 55 marcados **vendido** y el resto **en stock**, y al pie el control **✓ la suma da el margen bruto**. Probar el caso incompleto: con un grupo sin precio, el pie debe decir *«no se puede controlar contra el total»* y **no** mostrar una diferencia falsa | → [A-TEST-50](#a-test-50) `@presupuesto @productivo` |
+| A-TEST-51 | 🔴 | Test | **El puente entrega ↔ factura, con el caso Longo** ([A-FEAT-44](#a-feat-44)) — en *Insumos → Stock*, botón **Facturas** del Maíz. Vincular la **FC del 13/07 (25 t)** a la entrega del **24/06** por 20,1 t y a la del **24/07** por 4,9 t, y la **FC del 14/08 (20,1 t)** a la del 24/07. Tiene que quedar: entrega del 24/06 a **$267,50/kg** *de las facturas*, entrega del 24/07 a **$267,14/kg** (ponderado de las dos), y los **2 controles en ✓**. Después abrir **Mediciones**: el precio de esos tramos tiene que ser el mismo, y **ya no el tipeado a mano**. Probar además vincular **más de lo entregado** (debe avisar) y dejar una entrega **sin factura** (debe decir cuánto falta) | → [A-TEST-51](#a-test-51) `@productivo @egresos` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10239,6 +10240,44 @@ movimiento, muchos impactos."*
 📌 Pendiente de datos: la factura de **Biofarma (concentrado) no tiene cuenta contable asignada**, y
 hay una de **Pereyra** que fue a otra cuenta por un error de facturación del proveedor.
 
+
+### ✅ Hecho el 2026-08-26
+
+**Tabla nueva `productivo.entrega_factura`** — el vínculo es **muchos a muchos**, y tiene que serlo.
+
+| | |
+|---|---|
+| FC 13/07 por **25,0 t** | se habían entregado **20,1 t** el 24/06 |
+| FC 14/08 por **20,1 t** | se entregaron **25,0 t** el 24/07 |
+
+Una factura cubre parte de dos entregas y una entrega la cubren dos facturas. Las **4,9 t** de
+diferencia son un anticipo que viaja con su propio precio. **Un `factura_id` en el movimiento
+obligaría a inventar una correspondencia que no existe.**
+
+**Lo que aporta**: el precio de la entrega deja de ser un número tipeado y pasa a ser el
+**promedio ponderado de las facturas que la cubren** — rastreable hasta el comprobante. El manual
+queda de respaldo (dato real por default, otra vez).
+
+**Los dos controles**, visibles cierren o no:
+
+| Control | Qué destapa |
+|---|---|
+| *Lo entregado tiene factura* | mercadería recibida y todavía sin facturar |
+| *Lo facturado está aplicado* | **anticipos**: pagado y no recibido |
+
+Las dos situaciones son normales — **lo que no es normal es no verlas**.
+
+**Verificado** con `scripts/verificar-entregas-facturas.mts` sobre el caso Longo: las dos facturas
+quedan aplicadas enteras, las 45,1 t cubiertas, y los precios derivados coinciden con los de la
+maqueta.
+
+**Sin FK a la factura, a propósito**: `comprobantes_arca` existe en `msa`, `pam` y `ma`; una FK
+obligaría a elegir una empresa en la estructura. Se guarda la empresa al lado, igual que
+`stock_ventas.comprobante_id`, que tampoco tiene FK.
+
+⏸️ **Lo que sigue sin existir es el PRIMER momento**: *"compré tanto"* (el pedido). Hoy la cadena
+arranca en la entrega. No bloquea nada — el pedido no mueve stock ni trae precio.
+
 ---
 
 ## <a id="a-feat-45"></a>A-FEAT-45 — EL MAPA DEL CIRCUITO
@@ -10442,6 +10481,26 @@ adjudicadas a una actividad: la forma buena ya existe en `tab-presupuesto.tsx` �
 afuera **porque tiene variable**, no porque alguien la escribió en el código"*. Aplicado a esto:
 **la adjudicación más específica gana, y lo adjudicado se DESCUENTA del reparto general — no se
 excluye la cuenta entera**, así el total nunca se mueve.
+
+
+### ✅ RESUELTA — 2026-08-26
+
+**La exclusión es de la PROYECCIÓN, no de la historia.**
+
+`esProduccion()` sigue apagando la proyección de `421*`, `42305*` y las del verdeo — eso estaba
+bien. Lo que faltaba era decir en voz alta que **lo ya gastado se sigue mostrando**: son facturas
+reales, y esconderlas es peor que duplicarlas — **de un lado se ve el error, del otro no**.
+
+| Qué se pregunta | Con qué |
+|---|---|
+| *"¿la proyecto hacia adelante?"* | `esProduccion(nro)` — no, la aporta el plan productivo |
+| *"¿muestro lo ya gastado?"* | `esProduccionHaciaAtras(nro)` — **siempre sí** |
+
+Existen como dos funciones y no como una para que el que llama tenga que decir **qué está
+preguntando**. Confundir las dos es exactamente lo que dejó al maíz sin aparecer en ningún lado.
+
+Y en la pantalla de cuentas, la fila excluida ahora lo dice: *«Excluida sólo hacia adelante: la
+proyección la aporta el plan productivo. Lo ya gastado se sigue viendo — son facturas reales.»*
 
 ---
 

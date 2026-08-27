@@ -593,10 +593,18 @@ function FilaCuenta({
                 )}
                 {cfg.modo === "excluida" && (
                   <div className="flex-1">
-                    <label className="text-[10px] text-gray-500">Por qué no se presupuesta</label>
+                    <label className="text-[10px] text-gray-500">Por qué no se proyecta</label>
                     <Input className="h-7 text-xs"
                       defaultValue={cfg.motivo_exclusion ?? ""}
                       onBlur={e => onGuardar({ motivo_exclusion: e.target.value })} />
+                    {/* La distinción que faltaba (A-DEC-04): excluida es de la PROYECCIÓN.
+                        La historia son facturas reales y se sigue viendo — esconderlas es peor
+                        que duplicarlas, porque de un lado se ve el error y del otro no. */}
+                    <p className="mt-1 text-[10px] text-gray-500">
+                      Excluida <strong>sólo hacia adelante</strong>: la proyección la aporta el
+                      plan productivo. <strong>Lo ya gastado se sigue viendo</strong> — son
+                      facturas reales.
+                    </p>
                   </div>
                 )}
 

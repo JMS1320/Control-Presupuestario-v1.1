@@ -39,6 +39,7 @@ import { costoAlimentacion, costoPorGrupo, acumuladoHasta, mismoInsumo,
   type InsumoConDatos, type CostoGrupoTramo } from "@/lib/productivo/costo-alimentacion"
 import { armarGruposRodeo, gruposDelRodeo, type BajaRodeo } from "@/lib/productivo/rodeo"
 import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
+import { conciliarEntregasFacturas, entregasParaConsumo } from "@/lib/productivo/entregas-facturas"
 import type { Actividad as ActividadProd } from "@/lib/productivo/actividades"
 
 /**
@@ -96,7 +97,7 @@ async function cargarCostoAlimentacion(
          { data: actsProd }, { data: mvHac }, { data: catsHac }] = await Promise.all([
     p.from("stock_insumos").select("id, producto, unidad_medida"),
     p.from("mediciones_insumo").select("*").order("fecha"),
-    p.from("movimientos_insumos").select("insumo_stock_id, fecha, cantidad, costo_unitario, tipo"),
+    p.from("movimientos_insumos").select("id, insumo_stock_id, fecha, cantidad, costo_unitario, proveedor, tipo"),
     p.from("consumo_declarado_insumo").select("*"),
     p.from("ciclos_recria").select("*").eq("activo", true),
     p.from("stock_lotes").select("*"),
@@ -116,6 +117,19 @@ async function cargarCostoAlimentacion(
   // Sin al menos dos mediciones no hay consumo que medir: no hay nada que hacer acá.
   const conMedicion = ((stock || []) as any[]).filter(s => (medPorIns.get(String(s.id))?.length ?? 0) >= 2)
   if (conMedicion.length === 0 || !((ciclos || []) as any[])[0]) return null
+
+  const [{ data: vincs }, { data: fcsRaw }] = await Promise.all([
+    p.from("entrega_factura").select("*"),
+    supabase.schema("msa").from("comprobantes_arca")
+      .select("id, fecha, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total")
+      .order("fecha", { ascending: false }).limit(400),
+  ])
+  const facturasCompra = ((fcsRaw || []) as any[]).map(f => ({
+    id: String(f.id), fecha: String(f.fecha),
+    proveedor: String(f.denominacion_emisor ?? ""),
+    numero: `${f.punto_venta ?? 0}-${f.numero_desde ?? 0}`,
+    neto: Number(f.imp_neto_gravado) || 0, total: Number(f.imp_total) || 0,
+  }))
 
   const ciclo = ((ciclos || []) as any[])[0]
   const nombreCat = new Map(((catsHac || []) as any[]).map(c => [c.id, String(c.nombre)]))
@@ -161,12 +175,22 @@ async function cargarCostoAlimentacion(
     mediciones: (medPorIns.get(String(s.id)) ?? []).map(m => ({
       fecha: String(m.fecha), cantidad: Number(m.cantidad) || 0, notas: m.notas,
     })),
-    entregas: ((movs || []) as any[])
-      .filter(m => String(m.insumo_stock_id) === String(s.id) && m.tipo === "compra")
-      .map(m => ({
-        fecha: String(m.fecha), cantidad: Number(m.cantidad) || 0,
-        precioUnitario: m.costo_unitario == null ? null : Number(m.costo_unitario),
+    // El precio sale de la FACTURA vinculada; el tipeado a mano queda de respaldo.
+    entregas: entregasParaConsumo(conciliarEntregasFacturas(
+      ((movs || []) as any[])
+        .filter(m => String(m.insumo_stock_id) === String(s.id) && m.tipo === "compra")
+        .map(m => ({
+          id: String(m.id), fecha: String(m.fecha), cantidad: Number(m.cantidad) || 0,
+          proveedor: m.proveedor,
+          costoUnitarioManual: m.costo_unitario == null ? null : Number(m.costo_unitario),
+        })),
+      facturasCompra,
+      ((vincs || []) as any[]).map(v => ({
+        id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
+        cantidad: Number(v.cantidad) || 0,
+        precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
       })),
+    )),
     declaraciones: ((decs || []) as any[])
       .filter(d => String(d.insumo_stock_id) === String(s.id))
       .map(d => ({

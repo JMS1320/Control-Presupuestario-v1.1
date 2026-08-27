@@ -2955,3 +2955,41 @@ con **ingreso · entrada · alimentación · margen**, y el estado *vendido* o *
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-50](PENDIENTES.md#a-test-50).
+
+---
+
+## 🔗 Productivo → Insumos → Stock → **Facturas** 🟡 (sin testear)
+
+**Qué une**: la **entrega** (que movió el stock) con la **factura** (que trae el precio).
+
+```
+"compré tanto"  →  "recibí este día"  →  llegó la factura
+                    MUEVE EL STOCK        TRAE EL PRECIO
+```
+
+### Cómo se opera
+1. `Productivo → Insumos → Stock`, botón **Facturas** del producto.
+2. En la entrega que quieras, **vincular**.
+3. Buscar la factura por proveedor o número, poner **cuánto de esa entrega cubre** y el **$/kg**.
+
+⚠️ **Una factura puede cubrir varias entregas y viceversa** — no es un error, es lo normal.
+Longo facturó el 13/07 las 25 t de las que había entregado 20,1 el 24/06, y el 14/08 facturó
+20,1 de las 25 entregadas el 24/07.
+
+### Lo que cambia
+
+El **precio de la entrega** pasa a ser el promedio ponderado de las facturas que la cubren, y la
+pantalla dice de dónde salió: **de las facturas** (verde) o **a mano** (ámbar). Ese precio es el
+que después usa el costo del consumo — así el número es rastreable hasta el comprobante.
+
+### Los dos controles
+
+| Control | Qué te dice |
+|---|---|
+| **Lo entregado tiene factura** | cuánto recibiste y todavía no te facturaron |
+| **Lo facturado está aplicado** | **anticipos**: lo que pagaste y todavía no recibiste |
+
+Las dos situaciones son normales. **Lo que no es normal es no verlas.**
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-51](PENDIENTES.md#a-test-51).

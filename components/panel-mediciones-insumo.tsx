@@ -31,6 +31,7 @@ import { calcularConsumo, type Medicion, type Entrega, type ConsumoDeclarado,
 import { armarGruposRodeo, gruposDelRodeo, type BajaRodeo } from "@/lib/productivo/rodeo"
 import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
 import type { Actividad } from "@/lib/productivo/actividades"
+import { conciliarEntregasFacturas, entregasParaConsumo } from "@/lib/productivo/entregas-facturas"
 
 interface MedicionFila extends Medicion { id: string }
 interface DeclaracionFila extends ConsumoDeclarado { id: string }
@@ -73,7 +74,7 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
         // Las ENTREGAS son las compras. La fecha del movimiento es la de recepción, que es la
         // que mueve el stock — no la de la factura. Ver A-FEAT-44.
         p.from("movimientos_insumos")
-          .select("fecha, cantidad, costo_unitario, proveedor, observaciones")
+          .select("id, fecha, cantidad, costo_unitario, proveedor, observaciones")
           .eq("insumo_stock_id", insumo.id).eq("tipo", "compra").order("fecha"),
         p.from("consumo_declarado_insumo").select("*").eq("insumo_stock_id", insumo.id).order("fecha"),
         supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad").eq("activo", true),
@@ -91,13 +92,37 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
         id: String(m.id), fecha: String(m.fecha),
         cantidad: Number(m.cantidad) || 0, notas: m.notas,
       })))
-      setEntregas(((movs || []) as any[]).map(m => ({
-        fecha: String(m.fecha),
+      // ── El precio sale de LA FACTURA cuando está vinculada ────────────────
+      //
+      // El `costo_unitario` tipeado a mano queda como respaldo. Es la regla de siempre: el dato
+      // real por default. Y así el precio del tramo es rastreable hasta el comprobante.
+      const { data: vincs } = await p.from("entrega_factura").select("*")
+      const { data: fcs } = await supabase.schema("msa").from("comprobantes_arca")
+        .select("id, fecha, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total")
+        .order("fecha", { ascending: false }).limit(400)
+      const entregasBase = ((movs || []) as any[]).map(m => ({
+        id: String(m.id), fecha: String(m.fecha),
         cantidad: Number(m.cantidad) || 0,
+        proveedor: m.proveedor,
         // Sin costo cargado el precio es `null`, no cero: "no sé" y "gratis" no son lo mismo.
-        precioUnitario: m.costo_unitario == null ? null : Number(m.costo_unitario),
-        detalle: [m.proveedor, m.observaciones].filter(Boolean).join(" · ") || undefined,
-      })))
+        costoUnitarioManual: m.costo_unitario == null ? null : Number(m.costo_unitario),
+      }))
+      const idsMov = new Set(entregasBase.map(e => e.id))
+      const conc = conciliarEntregasFacturas(
+        entregasBase,
+        ((fcs || []) as any[]).map(f => ({
+          id: String(f.id), fecha: String(f.fecha),
+          proveedor: String(f.denominacion_emisor ?? ""),
+          numero: `${f.punto_venta ?? 0}-${f.numero_desde ?? 0}`,
+          neto: Number(f.imp_neto_gravado) || 0, total: Number(f.imp_total) || 0,
+        })),
+        ((vincs || []) as any[]).filter(v => idsMov.has(String(v.movimiento_id))).map(v => ({
+          id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
+          cantidad: Number(v.cantidad) || 0,
+          precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
+        })),
+      )
+      setEntregas(entregasParaConsumo(conc))
       // ── La línea de tiempo del rodeo, para poder repartir ────────────────
       //
       // Se arma con `armarGruposRodeo()`, el mismo que usa el script de verificación: dos
