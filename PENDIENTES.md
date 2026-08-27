@@ -376,7 +376,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-56** | 🔴 | Bug | **Dos motores distintos calculan el mismo costo, y cada uno sabe la mitad** — `resolverCostoDirecto()` (`lib/presupuesto/margen.ts`, lo usa **Margen**) y `consumoMensual()` (`lib/productivo/actividades.ts`, lo usa **Costos de producción** de la grilla) leen las **mismas filas** de `actividad_insumos` y dan resultados distintos: el primero **no sabe resolver la ración** (`pct_racion`/`kg_cabeza_dia` devuelven *"sin calcular"*), el segundo **sí**, pero no sabe aplicar la cadena de ajustes/IPC ni amortizar. Verificado en pantalla el 2026-08-26: con el tramo cargado, la grilla mostró costos de Recría y el Margen siguió en cero. Es el patrón de `buscarPrecio()` vs `resolverPrecioHacienda()` — **si quedan los dos vivos, en tres meses dan distinto y no se sabe cuál creer** | → [A-BUG-56](#a-bug-56) `@productivo @presupuesto` |
 | **A-BUG-57** | 🟡 | Bug | **Los costos por hectárea de una actividad no llegan a la grilla mensual** — un costo `monto_ha` (pasturas y verdeos de recría, que van sobre las **60 ha** de la actividad) se resuelve en el **Margen** contra las hectáreas de la actividad, pero en *Costos de producción* se resuelve contra las **hectáreas del tramo**, que están vacías → **da cero**. Y si se llenaran, con dos lotes se contaría **dos veces**, porque las 60 ha son de la actividad, no de cada lote. Hermano de [A-BUG-56](#a-bug-56): el mismo insumo, dos motores, dos resultados | → [A-BUG-57](#a-bug-57) `@productivo @presupuesto` |
 | **A-BUG-58** | 🟡 | Bug | **HECHO 2026-08-26 — falta testear ([A-TEST-41](#a-test-41))** · **El checkbox «Usar la ganancia diaria de arriba» no respondía** — en el tramo de un lote, tildarlo no hace efecto visible (reportado por el usuario 2026-08-26). Escribe `stock_lotes.ganancia_override` pero el modal no refleja el cambio. Y en la misma sección: **la columna «Ha» es demasiado angosta** para leer lo que se escribe | → [A-BUG-58](#a-bug-58) `@productivo` |
-| **A-FEAT-46** | 🔴 | Feat | **Alerta: hay una pesada nueva y el presupuesto sigue con el peso viejo** — decisión del usuario 2026-08-26: la ganancia diaria y el peso de partida de un lote **NO se actualizan solos** (eso ya estaba decidido), **pero tiene que avisar**. Si aparece una pesada posterior a la que usa el lote, el presupuesto y el margen deben marcarlo para que el usuario decida si actualiza. Es el mismo criterio que *«el silencio miente»*: no actualizar automático está bien; no avisar, no | → [A-FEAT-46](#a-feat-46) `@productivo @presupuesto` |
+| **A-FEAT-46** | 🔴 | Feat | **⚠️ Es una INSTANCIA de [A-DEC-08](#a-dec-08) — no resolverla sola** · **Alerta: hay una pesada nueva y el presupuesto sigue con el peso viejo** — decisión del usuario 2026-08-26: la ganancia diaria y el peso de partida de un lote **NO se actualizan solos** (eso ya estaba decidido), **pero tiene que avisar**. Si aparece una pesada posterior a la que usa el lote, el presupuesto y el margen deben marcarlo para que el usuario decida si actualiza. Es el mismo criterio que *«el silencio miente»*: no actualizar automático está bien; no avisar, no | → [A-FEAT-46](#a-feat-46) `@productivo @presupuesto` |
 | **A-DEC-04** | 🟢 | Decisión | **RESUELTA 2026-08-26** · **Las cuentas de producción: apagadas hacia adelante, llenas hacia atrás** — regla del usuario 2026-08-26. Hoy `esProduccion()` excluye `42305*` (alimentación) y `421*` (agricultura) **en las dos direcciones**, con el motivo *"ya entra como ración en Actividades y costos"*. El usuario lo corrigió: **hacia adelante la única fuente de verdad es el plan productivo** (y ahí la exclusión está bien), **pero hacia atrás la cuenta debe llenarse con las facturas reales**. Hoy no se distingue, y por eso el maíz no está en ningún lado: excluido de un lado y sin calcular del otro | → [A-DEC-04](#a-dec-04) `@presupuesto @productivo` |
 | A-TEST-41 | 🔴 | Test | **El tramo de un lote respeta Guardar y Cancelar** ([A-BUG-54](#a-bug-54) + [A-BUG-58](#a-bug-58)) — abrir un lote en *Productivo → Evolución Rodeo → lotes*, agregar un tramo, cambiarle las fechas y darle **Cancelar**: al reabrir **no tiene que haber quedado nada**. Repetir y darle **Guardar**: tiene que quedar. Probar tambien **borrar** un tramo y cancelar (debe seguir estando) y el **checkbox de ganancia diaria**, que ahora tiene que tildarse y verse el cambio en la curva. Y con un lote **con fecha de venta**, agregar un tramo: el **Hasta** debe salir con la fecha de venta y no con +6 meses; si se lo pasa, tiene que aparecer el **aviso ámbar** | → [A-TEST-41](#a-test-41) `@productivo` |
 | **A-FEAT-47** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-42](#a-test-42))** · **Mediciones de stock de un insumo: el consumo deja de estimarse y se MIDE.** Tabla nueva `productivo.mediciones_insumo` (un **nivel**, no un movimiento — por eso no va en `movimientos_insumos`) + `lib/productivo/consumo.ts` + botón **Mediciones** en cada insumo de *Productivo → Insumos → Stock*. **Cada medición corta un tramo**, y de cada tramo sale `había + entró − quedó`, con **precio por tramo** (no un promedio del período) y **3 controles a la vista**. Es el primer paso de [A-FEAT-43](#a-feat-43): sin esto no se puede cargar nada. Verificado con `scripts/verificar-consumo.mts` contra los datos reales de la recría 2026 — los 3 controles cierran | → [A-FEAT-47](#a-feat-47) `@productivo` |
@@ -414,6 +414,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-56** | 🟡 | Feat | **La lista de lotes tiene que agruparse por CAMPAÑA y separar cría de recría** — pedido del usuario 2026-08-27: *«la pantalla siempre debe mostrarse por campañas y separado cría de recría para poder entrar y entender rápidamente»*. Hoy es una lista plana y con 5 lotes ya cuesta; con dos campañas y las dos actividades se vuelve ilegible. Ver también [A-BUG-66](#a-bug-66): hoy **la campaña de un lote ni siquiera está bien determinada**, así que este agrupamiento lo necesita resuelto antes | → [A-FEAT-56](#a-feat-56) `@productivo` |
 | **A-DEC-07** | 🔴 | Decisión | **Qué queda de «Generar lotes desde los períodos»** — hay dos generadores y el usuario pide entender para qué es cada uno: *desde períodos* proyecta desde la línea de tiempo del rodeo de cría (% preñez y destete) y genera lotes de **destete y descarte futuros**, para presupuestar años que todavía no pasaron; *desde una pesada* sale de los **animales reales pesados**, con su sexo y su peso. El usuario sospecha —y coincido— que **el desarrollo está en el segundo** y el primero quedó atrás. Hay que decidir si se pule, se limita a las campañas futuras, o se retira | → [A-DEC-07](#a-dec-07) `@productivo` |
 | A-TEST-54 | 🔴 | Test | **La ganancia por tramo y la campaña por fecha** ([A-BUG-65](#a-bug-65) + [A-BUG-66](#a-bug-66)) — en el lote de **40**, poner **1,000** en el tramo de Recría y dejar Engorde vacío: el peso a la venta tiene que pasar de **358,50** a **371,40 kg**, y la curva de abajo mostrar los dos tramos con **1,000** y **1,200**. Vaciar el campo debe volver a la ganancia de la actividad (el placeholder la muestra). Verificar que el **costo de alimentación estimado también cambia** — la curva y el consumo tienen que describir el mismo animal. Y en *Margen*: el lote de 40 (venta 16/11) tiene que aparecer **sólo en 26/27**, no en 25/26; un lote **sin fecha de venta** no debe aparecer en ninguna | → [A-TEST-54](#a-test-54) `@productivo @presupuesto` |
+| **A-DEC-08** | 🔴 | Decisión | **CÓMO SE REACTUALIZA EL PRESUPUESTO — el patrón, no el caso** (usuario, 2026-08-27: *«habrá muchas cosas que requerirán actualizar»*). Cada vez que mejora un dato de origen —una pesada, un precio, el IPC, el TC, una factura que llega, una medición, una venta que no salió como se preveía— hay **N lugares que ya lo consumieron con el valor viejo**. Hoy no hay ninguna regla: **cada caso se resolvió distinto y varios no se resolvieron**. Hay que decidir **una sola vez** cuándo se actualiza solo, cuándo se propone con un diff y cuándo no se toca nunca. ⚠️ **Se define al terminar la carga**, no antes: el usuario quiere ver primero cuántos casos aparecen de verdad. [A-FEAT-46](#a-feat-46) es una instancia, no el tema | → [A-DEC-08](#a-dec-08) `@presupuesto @productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11417,6 +11418,86 @@ atrás. Coincido.
 **Los dos tienen razón de ser** —uno proyecta y el otro registra—, pero el primero arrastra el
 diseño viejo. Hay que decidir: **pulirlo**, **limitarlo explícitamente a campañas futuras**, o
 **retirarlo** y que las campañas futuras se carguen a mano.
+
+---
+
+## <a id="a-dec-08"></a>A-DEC-08 — Cómo se reactualiza el presupuesto
+
+**Planteado por el usuario el 2026-08-27**, mientras cargaba:
+
+> *"Quiero que dejemos asentado ese tema de desarrollar la forma en que se actualiza el
+> presupuesto, como cosa para cuando terminemos. **Habrá muchas cosas que requerirán actualizar.**"*
+
+⚠️ **Es un tema, no un ítem.** [A-FEAT-46](#a-feat-46) —avisar cuando hay una pesada nueva— es
+**una instancia**, y resolverla sola sería resolver el caso y no el patrón.
+
+### El problema, en una línea
+
+> **Un dato de origen mejora, y hay N lugares que ya lo consumieron con el valor viejo.**
+
+### Los orígenes que van a disparar esto
+
+Salieron de esta sesión; la lista no está cerrada.
+
+| Cuando mejora… | Se mueve… |
+|---|---|
+| Una **pesada** nueva | peso a la venta · **banda de precio** · desbaste y CZ · ingreso · el reparto del consumo · **y la ganancia diaria REAL, que hoy se estima** |
+| El **precio de hacienda** | el ingreso proyectado de todo lo no vendido |
+| El **IPC** o el **TC** | los costos con cadena de ajustes y los cargados en USD |
+| Llega una **factura** | el precio de una entrega ya cargada → el costo de su tramo |
+| Una **medición** de stock | los tramos, el consumo y todo el reparto |
+| La **venta real** difiere de la proyectada | el margen, la campaña, las cabezas que quedan |
+| Una **mortandad** nueva | cabezas y kilo-día → el reparto |
+| Se agrega un **tramo** (el pase a engorde) | la curva de peso y el costo |
+
+### La taxonomía que propongo — tres casos y no uno
+
+**Y la mitad ya está decidida**: `CLAUDE.md` § *Default del dato real, siempre editable* dice que
+*"lo que no pisaste tiene que mejorar solo cuando mejora el origen"*. Eso resuelve el caso 1.
+
+| # | Situación | Qué debería pasar | ¿Está resuelto? |
+|---|---|---|---|
+| **1** | **Derivado y no pisado** — el margen lee el precio de la tabla | **se actualiza solo**, sin preguntar ni avisar | ✅ es la regla vigente |
+| **2** | **Pisado a mano** — un `precio_kg_override`, una ganancia de tramo | **propuesta con diff**, nunca automático: pisar el override sería borrar una decisión | ❌ no existe |
+| **3** | **Congelado a propósito** — una venta que ya ocurrió, el precio de una factura | **no se toca jamás** · pero **sí se avisa** si el origen cambió | ❌ ni se toca ni se avisa |
+
+### 🔑 Lo que hace que valga la pena hacerlo bien
+
+El usuario ya dio la forma en su pregunta: *"¿automática pero con confirmación mostrando cambios?"*.
+Eso es **una propuesta, no un aviso** — y la diferencia es grande:
+
+```
+⚠️ Hay una pesada del 15/09 posterior a la que usa este lote (03/08)
+
+   Peso                254,0 → 281,5 kg      (+27,5)
+   Ganancia real                  1,08 kg/día    (tenías 1,000)
+   Peso a la venta     371,4 → 385,2 kg
+   Desbaste                 5 % → 8 %        ⚠️ cambia de banda
+   Ingreso             $74,8 M → $75,1 M
+
+   [ Aplicar ]   [ Dejar como está ]
+```
+
+Un aviso obliga a ir a buscar qué cambió. **Una propuesta muestra el diff y deja decidir.** Y
+"dejar como está" **no lo hace desaparecer**: el aviso sigue mientras el dato siga siendo viejo.
+
+### ⚠️ La distinción que no es obvia — medido vs. proyectado
+
+Vale para todo el modelo y conviene tenerla escrita antes de diseñar:
+
+| | Al cambiar el peso |
+|---|---|
+| Consumo **proyectado** (`% del peso vivo × peso`) | **el total cambia** |
+| Consumo **MEDIDO** (`había + entró − quedó`) | ⚠️ **el total NO se mueve** — está medido. Cambia **el reparto** |
+
+Si el animal pesaba más, **no comió más de lo que se midió**: comió **una porción mayor de lo
+mismo**. El peso mueve *quién paga*, no *cuánto se consumió*.
+
+### Cuándo
+
+**Al terminar la carga**, por decisión del usuario — quiere ver primero cuántos casos aparecen de
+verdad al cargar el ciclo entero, en vez de diseñar contra una lista imaginada. Es el mismo
+criterio con el que se ordenó todo el trabajo de estos días.
 
 ---
 

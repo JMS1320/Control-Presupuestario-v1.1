@@ -1474,3 +1474,55 @@ veces más.
 una frase que vale como criterio general — *"no tengo manera de auditar todo, sería larguísimo"*.
 La herramienta de trabajo y el informe **son dos documentos distintos**, y el informe tiene que
 llevar una sección de **"qué hay que creer para que esto valga"**, ordenada de mayor a menor impacto.
+
+---
+
+## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
+
+Cuando mejora un dato de origen —una pesada, un precio— hay que saber qué se mueve. Y **medido y
+proyectado se comportan al revés de como uno espera**:
+
+| Al cambiar el peso de los animales | Qué pasa |
+|---|---|
+| Consumo **proyectado** (`% del peso vivo × peso × días`) | **el total cambia** |
+| Consumo **MEDIDO** (`había + entró − quedó`) | ⚠️ **el total NO se mueve** · cambia **el reparto** |
+
+> Si el animal pesaba más, **no comió más de lo que se midió**: comió **una porción mayor de lo
+> mismo**. El peso mueve *quién paga*, no *cuánto se consumió*.
+
+Es la consecuencia directa de que **la clave sólo reparte**. Y tiene un efecto práctico útil:
+corregir un peso hacia atrás **no puede romper el control de plata**, porque el total sigue siendo
+el medido. Sólo se mueve la columna de participaciones.
+
+---
+
+## Un número derivado no tiene dónde ponerse hasta que existe el campo `#diseño #2026-08-27`
+
+Dos pesadas del mismo grupo no sólo actualizan el peso: **miden la ganancia diaria real**
+(`peso nuevo − peso viejo ÷ días`). Ese dato existía desde siempre y **no se usaba** — porque la
+ganancia salía de la actividad y no había dónde escribir la de un lote concreto.
+
+El día que se agregó `lote_tramos.ganancia_diaria_kg`, el dato derivado **encontró destino**: la
+pesada mide, el tramo lo guarda, la curva lo usa.
+
+**La lección es sobre el orden**: el campo parecía un detalle de edición y era la condición para
+que un cálculo entero sirviera. Cuando un dato observable no se aprovecha, conviene preguntarse si
+lo que falta no es el cálculo sino **el lugar donde guardarlo** — y eso es una instancia de la
+regla *dejar el campo previsto desde el día 1 aunque arranque vacío*.
+
+---
+
+## La campaña la decide la fecha del hecho, no de dónde cuelga el registro `#presupuesto #2026-08-27`
+
+Un lote de venta se atribuía a una campaña por su `ciclo_id`. Los lotes de recría cuelgan de
+`ciclo_recria_id` —otra columna—, así que tenían `ciclo_id` nulo, y el filtro
+`campania == null || campania === campana` los dejaba pasar **en todas las campañas a la vez**.
+
+**El fix no fue rellenar `ciclo_id`: fue dejar de preguntarle.** La campaña sale de la fecha del
+hecho — `fecha_venta_estimada` para lo proyectado, `fecha_venta` para lo real— igual que ya salía
+para las transferencias internas.
+
+📌 **Y el usuario lo generalizó mejor de lo que estaba planteado**: *"desarrollar sin relacionar a
+la campaña siempre parece que dará estos errores"*. No era un problema de ese filtro: **es que
+cualquier cosa que no diga a qué período pertenece va a terminar contada de más o de menos**. Un
+registro cuya fecha no manda es un registro que aparece donde no debe.
