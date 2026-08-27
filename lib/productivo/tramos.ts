@@ -30,6 +30,14 @@ export interface TramoLote {
   fecha_hasta: string
   hectareas: number | null
   notas: string | null
+  /**
+   * La ganancia de ESTE tramo. `null` = la de la actividad.
+   *
+   * Existe porque un lote concreto puede no rendir como la norma de su actividad, y el único
+   * escape que había —el checkbox del lote— vuelve la curva a una recta y **borra el quiebre**:
+   * o usabas las normas, o perdías los tramos.
+   */
+  ganancia_diaria_kg?: number | null
 }
 
 /** Lo mínimo que hace falta del lote para armar la curva. */
@@ -113,7 +121,11 @@ export function segmentosCurva(
     cursor = minF(maxF(cursor, ini), hasta)
     if (fin > cursor) {
       const act = actPorId.get(t.actividad_id)
-      empujar(cursor, fin, Number(act?.ganancia_diaria_kg ?? gLote), act?.nombre ?? null)
+      // El tramo manda sobre la actividad, y la actividad sobre el lote. Default del dato real.
+      const g = t.ganancia_diaria_kg != null
+        ? Number(t.ganancia_diaria_kg)
+        : Number(act?.ganancia_diaria_kg ?? gLote)
+      empujar(cursor, fin, g, act?.nombre ?? null)
       cursor = fin
     }
   }
@@ -177,7 +189,11 @@ export function tramosParaCosto(
     const act = actPorId.get(t.actividad_id)
     if (!act) continue
     salida.push({
-      actividad: act,
+      // ⚠️ Con ganancia propia del tramo se pasa una COPIA de la actividad con ese número: si
+      // no, el peso de la curva y el que usa el consumo describirían dos animales distintos.
+      actividad: t.ganancia_diaria_kg != null
+        ? { ...act, ganancia_diaria_kg: Number(t.ganancia_diaria_kg) }
+        : act,
       insumos: insumos.filter(i => i.actividad_id === act.id),
       cabezas: cab,
       desde: t.fecha_desde,

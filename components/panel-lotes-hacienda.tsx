@@ -597,6 +597,7 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
         actividad_id: t.actividad_id, orden: t.orden,
         fecha_desde: t.fecha_desde, fecha_hasta: t.fecha_hasta,
         hectareas: t.hectareas, notas: t.notas,
+        ganancia_diaria_kg: t.ganancia_diaria_kg ?? null,
       }
       if (!antes) {
         if (fallo((await p.from("lote_tramos").insert({ id: t.id, lote_id: loteId, ...fila })).error)) return false
@@ -605,6 +606,7 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
       const igual = antes.actividad_id === t.actividad_id && antes.orden === t.orden
         && antes.fecha_desde === t.fecha_desde && antes.fecha_hasta === t.fecha_hasta
         && antes.hectareas === t.hectareas && antes.notas === t.notas
+        && (antes.ganancia_diaria_kg ?? null) === (t.ganancia_diaria_kg ?? null)
       if (igual) continue
       if (fallo((await p.from("lote_tramos")
         .update({ ...fila, updated_at: new Date().toISOString() }).eq("id", t.id)).error)) return false
@@ -1650,6 +1652,7 @@ function SeccionTramos({
       fecha_hasta: hasta,
       hectareas: null,
       notas: null,
+      ganancia_diaria_kg: null,
     }])
   }
 
@@ -1704,6 +1707,7 @@ function SeccionTramos({
                   <th className="py-0.5 text-left font-medium">Actividad</th>
                   <th className="py-0.5 text-left font-medium">Desde</th>
                   <th className="py-0.5 text-left font-medium">Hasta</th>
+                  <th className="py-0.5 text-right font-medium">kg/día</th>
                   <th className="py-0.5" />
                 </tr>
               </thead>
@@ -1728,6 +1732,19 @@ function SeccionTramos({
                     <td className="py-1 pr-2">
                       <Input type="date" className="h-7 text-[11px]" value={t.fecha_hasta}
                         onChange={e => actualizar(t.id, { fecha_hasta: e.target.value })} />
+                    </td>
+                    <td className="py-1 pr-2">
+                      {/* Vacío = la de la actividad, y el placeholder la muestra. Con valor,
+                          manda el tramo — sin perder el quiebre, que es lo que hacía el
+                          checkbox de abajo (A-BUG-65). */}
+                      <Input className="h-7 w-20 text-right text-[11px]"
+                        placeholder={n1(Number(
+                          actividades.find(a => a.id === t.actividad_id)?.ganancia_diaria_kg ?? 0))}
+                        value={t.ganancia_diaria_kg == null ? "" : fmtNumeroAR(Number(t.ganancia_diaria_kg), 3)}
+                        onChange={e => actualizar(t.id, {
+                          ganancia_diaria_kg: e.target.value.trim() === ""
+                            ? null : parseNumeroAR(e.target.value),
+                        })} />
                     </td>
                     <td className="py-1 text-right">
                       <button type="button" className="text-gray-300 hover:text-red-500"
@@ -1794,7 +1811,7 @@ function SeccionTramos({
                   (A-BUG-58). Ahora lo persiste el Guardar, como todo lo demás. */}
               <input type="checkbox" checked={Boolean(lote.ganancia_override)}
                 onChange={e => onGananciaOverride(e.target.checked)} />
-              Usar la ganancia diaria de arriba en vez de la de las actividades
+              Usar la ganancia de arriba para TODO el lote — pierde el quiebre entre tramos
               {manual && <span className="ml-1 font-medium text-amber-700">← activo</span>}
             </label>
           )}

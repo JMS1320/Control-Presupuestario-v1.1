@@ -752,10 +752,23 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
 
   return Array.from(actividades).sort().map(act => {
     const has = d.hasPorActividad[act] ?? null
+    // ── A qué campaña pertenece un lote ─────────────────────────────────────────
+    //
+    // **La fecha del hecho manda**, igual que en las ventas reales y en las transferencias.
+    // Antes salía de `ciclo_id` → `stock_ciclos.campania`, y un lote sin ciclo quedaba en
+    // `null` — que el filtro dejaba pasar **en todas las campañas** (A-BUG-66). Los lotes de
+    // recría cuelgan de `ciclo_recria_id`, que es otra columna, así que estaban todos así.
+    //
+    // Sin fecha de venta el lote **no es ingreso de ninguna campaña**: es stock. Es lo que ya
+    // dice la propia pantalla de carga — *"sin fecha, el lote no entra al presupuesto como
+    // ingreso"*— y hasta ahora el margen la contradecía.
+    const campanaDelLote = (l: LoteVenta): string | null =>
+      l.fecha_venta_estimada ? campanaDeFecha(l.fecha_venta_estimada) : null
+
     // Los internos ya salieron como transferencia: acá quedan sólo las ventas de mercado.
     const misLotes = d.lotes.filter(l =>
       l.actividad === act && !l.destinoActividad
-      && (l.campania == null || l.campania === d.campana))
+      && campanaDelLote(l) === d.campana)
     const misCostos = d.costos.filter(c => c.actividad === act)
     const faltantes: string[] = []
 
@@ -773,7 +786,12 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
     const ventasDelLote = (id?: string) =>
       id ? (d.ventasReales ?? []).filter(v => v.loteId === id) : []
 
-    for (const l of misLotes) {
+    // ⚠️ Las ventas REALES se buscan sobre todos los lotes de la actividad, no sólo sobre los
+    // que la fecha ESTIMADA pone en esta campaña: una venta puede haber ocurrido antes o después
+    // de lo previsto, y es el hecho el que decide dónde cae.
+    const lotesActividad = d.lotes.filter(l => l.actividad === act && !l.destinoActividad)
+
+    for (const l of lotesActividad) {
       for (const v of ventasDelLote(l.id)) {
         if (campanaDeFecha(v.fecha) !== d.campana) continue
         // `montoNeto` ya viene neto de comisión; si falta, se rehace la cuenta.
