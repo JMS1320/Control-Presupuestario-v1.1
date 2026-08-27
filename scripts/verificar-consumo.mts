@@ -10,7 +10,7 @@
 
 import {
   calcularConsumo, pctPesoVivoReal, kiloDia,
-  type Medicion, type Entrega, type GrupoConsumidor,
+  type Medicion, type Entrega, type GrupoConsumidor, type ConsumoDeclarado,
 } from "../lib/productivo/consumo"
 
 const n = (x: number) => x.toLocaleString("es-AR", { maximumFractionDigits: 2 })
@@ -54,12 +54,24 @@ const gruposDe = (desde: string, hasta: string): GrupoConsumidor[] => {
 
 // ── Corrida ───────────────────────────────────────────────────────────────────
 
-const r = calcularConsumo(MEDICIONES, ENTREGAS, gruposDe)
+/**
+ * Lo DECLARADO para cría: no se deduce, lo aporta el usuario. Acá va un caso de prueba para
+ * verificar que se descuenta del reparto y que el control sigue cerrando.
+ */
+const DECLARADO: ConsumoDeclarado[] = [
+  { fecha: "2026-08-01", grupoId: "cria", nombre: "Cría (terneros al pie)", cantidad: 6000,
+    notas: "se cargaron 6 ton al comedero de autoconsumo" },
+]
+
+const r = calcularConsumo(MEDICIONES, ENTREGAS, gruposDe, DECLARADO)
 
 console.log("\n=== TRAMOS ===")
 for (const t of r.tramos) {
   console.log(`\n${t.desde} → ${t.hasta}  (${t.dias} días)`)
   console.log(`  había ${n(t.saldoInicial)} + entró ${n(t.cantidadEntregada)} − quedó ${n(t.saldoFinal)} = ${n(t.consumo)} kg`)
+  if (t.declarado.length > 0) {
+    console.log(`  declarado ${n(t.consumo - t.aRepartir)} kg → a repartir ${n(t.aRepartir)} kg`)
+  }
   console.log(`  precio del tramo: ${t.precioUnitario == null ? "—" : pesos(t.precioUnitario) + "/kg"}`
     + `   costo: ${t.costo == null ? "—" : pesos(t.costo)}`)
   for (const g of t.reparto) {

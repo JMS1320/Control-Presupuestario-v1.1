@@ -2868,3 +2868,26 @@ en otro lado — así su ración se cuenta.
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-46](PENDIENTES.md#a-test-46).
+
+---
+
+## 🥣 Mediciones → **Lo que se le dio a cada actividad** 🟡 (sin testear)
+
+**Dónde**: dentro de *Mediciones* de un insumo, el bloque **celeste** debajo de las mediciones.
+
+**Para qué**: cuando del mismo silo comen dos actividades. La medición te da el consumo **total**;
+acá decís cuánto fue a cada una.
+
+### Cómo se opera
+1. Elegir la **actividad**, la **fecha**, la **cantidad** y una nota (*"se cargó el comedero"*).
+2. `+` para agregar.
+
+**Lo que declarás manda y no se reparte**: se le imputa entero a esa actividad, y el resto del
+consumo del tramo es lo único que se reparte entre los demás. **El total no se mueve** — declarar
+cambia *a quién* se le carga, no *cuánto* se consumió.
+
+💡 **Si son dos silos separados**, no hace falta declarar nada: se cargan como **dos productos**
+distintos y cada uno tiene su propia medición.
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-47](PENDIENTES.md#a-test-47).

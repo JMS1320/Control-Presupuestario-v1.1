@@ -26,9 +26,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
-import { calcularConsumo, type Medicion, type Entrega } from "@/lib/productivo/consumo"
+import { calcularConsumo, type Medicion, type Entrega, type ConsumoDeclarado } from "@/lib/productivo/consumo"
 
 interface MedicionFila extends Medicion { id: string }
+interface DeclaracionFila extends ConsumoDeclarado { id: string }
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const dmy = (f: string) => f.split("-").reverse().join("/")
@@ -44,6 +45,13 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
   const [nuevaFecha, setNuevaFecha] = useState("")
   const [nuevaCant, setNuevaCant] = useState("")
   const [nuevaNota, setNuevaNota] = useState("")
+  /** Lo declarado por actividad: "se cargaron 6 ton al comedero de cría". */
+  const [declaraciones, setDeclaraciones] = useState<DeclaracionFila[]>([])
+  const [actividades, setActividades] = useState<{ id: string; nombre: string }[]>([])
+  const [decFecha, setDecFecha] = useState("")
+  const [decAct, setDecAct] = useState("")
+  const [decCant, setDecCant] = useState("")
+  const [decNota, setDecNota] = useState("")
 
   const um = insumo?.unidad_medida || "kg"
 
@@ -52,14 +60,25 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
     setCargando(true)
     try {
       const p = supabase.schema("productivo")
-      const [{ data: meds }, { data: movs }] = await Promise.all([
+      const [{ data: meds }, { data: movs }, { data: decs }, { data: accs }] = await Promise.all([
         p.from("mediciones_insumo").select("*").eq("insumo_stock_id", insumo.id).order("fecha"),
         // Las ENTREGAS son las compras. La fecha del movimiento es la de recepción, que es la
         // que mueve el stock — no la de la factura. Ver A-FEAT-44.
         p.from("movimientos_insumos")
           .select("fecha, cantidad, costo_unitario, proveedor, observaciones")
           .eq("insumo_stock_id", insumo.id).eq("tipo", "compra").order("fecha"),
+        p.from("consumo_declarado_insumo").select("*").eq("insumo_stock_id", insumo.id).order("fecha"),
+        supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad").eq("activo", true),
       ])
+      const acts = ((accs || []) as any[]).map(a => ({ id: String(a.id), nombre: String(a.nombre) }))
+      setActividades(acts)
+      const nombreDe = new Map(acts.map(a => [a.id, a.nombre]))
+      setDeclaraciones(((decs || []) as any[]).map(x => ({
+        id: String(x.id), fecha: String(x.fecha),
+        grupoId: String(x.centro_costo_id),
+        nombre: nombreDe.get(String(x.centro_costo_id)) ?? "(actividad borrada)",
+        cantidad: Number(x.cantidad) || 0, notas: x.notas,
+      })))
       setMediciones(((meds || []) as any[]).map(m => ({
         id: String(m.id), fecha: String(m.fecha),
         cantidad: Number(m.cantidad) || 0, notas: m.notas,
@@ -103,9 +122,32 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
     await cargar()
   }
 
+  const agregarDec = async () => {
+    if (!insumo || !decFecha || !decAct || decCant.trim() === "") return
+    setGuardando(true)
+    const { error } = await supabase.schema("productivo").from("consumo_declarado_insumo").insert({
+      insumo_stock_id: insumo.id,
+      centro_costo_id: decAct,
+      fecha: decFecha,
+      cantidad: parseNumeroAR(decCant),
+      notas: decNota.trim() || null,
+    })
+    setGuardando(false)
+    if (error) { alert("Error: " + error.message); return }
+    setDecFecha(""); setDecCant(""); setDecNota("")
+    await cargar()
+  }
+
+  const borrarDec = async (id: string) => {
+    const { error } = await supabase.schema("productivo")
+      .from("consumo_declarado_insumo").delete().eq("id", id)
+    if (error) { alert("Error: " + error.message); return }
+    await cargar()
+  }
+
   // El reparto entre grupos todavía no está conectado (A-FEAT-43): acá se mide el consumo y se
   // controla que cierre, que es lo que hace falta para poder cargar.
-  const r = calcularConsumo(mediciones, entregas, () => [])
+  const r = calcularConsumo(mediciones, entregas, () => [], declaraciones)
   const faltantesReales = r.faltantes.filter(f => !f.includes("ningún grupo declarado"))
 
   if (!insumo) return null
@@ -183,6 +225,71 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
               </table>
             </div>
 
+            {/* ── Lo declarado por actividad ─────────────────────────────── */}
+            <div className="overflow-x-auto rounded border border-sky-200">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="border-b bg-sky-50 text-[9px] uppercase text-sky-800">
+                    <th className="px-2 py-1 text-left font-medium">Se le dio a…</th>
+                    <th className="px-2 py-1 text-left font-medium">Fecha</th>
+                    <th className="px-2 py-1 text-right font-medium">Cantidad ({um})</th>
+                    <th className="px-2 py-1 text-left font-medium">Nota</th>
+                    <th className="w-8 px-2 py-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {declaraciones.map(x => (
+                    <tr key={x.id} className="border-b last:border-0">
+                      <td className="px-2 py-1 font-medium text-gray-700">{x.nombre}</td>
+                      <td className="px-2 py-1 text-gray-600">{dmy(x.fecha)}</td>
+                      <td className="px-2 py-1 text-right text-gray-800">{fmtNumeroAR(x.cantidad, 0)}</td>
+                      <td className="px-2 py-1 text-gray-500">{x.notas || "—"}</td>
+                      <td className="px-2 py-1 text-right">
+                        <button type="button" className="text-gray-300 hover:text-red-500"
+                          onClick={() => borrarDec(x.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-sky-50/50">
+                    <td className="px-2 py-1">
+                      <select className="h-7 w-full rounded border px-1 text-[11px]"
+                        value={decAct} onChange={e => setDecAct(e.target.value)}>
+                        <option value="">elegir actividad…</option>
+                        {actividades.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1">
+                      <Input type="date" className="h-7 text-[11px]" value={decFecha}
+                        onChange={e => setDecFecha(e.target.value)} />
+                    </td>
+                    <td className="px-2 py-1">
+                      <Input type="text" placeholder="0" className="h-7 text-right text-[11px]"
+                        value={decCant} onChange={e => setDecCant(e.target.value)} />
+                    </td>
+                    <td className="px-2 py-1">
+                      <Input type="text" placeholder="ej: se cargó el comedero" className="h-7 text-[11px]"
+                        value={decNota} onChange={e => setDecNota(e.target.value)} />
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      <Button size="sm" variant="ghost" className="h-6 px-1"
+                        disabled={guardando || !decFecha || !decAct || decCant.trim() === ""}
+                        onClick={agregarDec}>
+                        {guardando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                      </Button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="-mt-2 text-[10px] text-gray-500">
+              <strong>Lo que declarás manda y no se reparte</strong>: se le imputa entero a esa
+              actividad y se descuenta del resto. Es para cuando del mismo silo comen dos
+              actividades — <em>“se cargaron 6 ton al comedero de cría”</em>. El sistema no lo
+              deduce: <strong>lo aportás vos</strong>.
+            </p>
+
             {/* ── Lo que se deduce ───────────────────────────────────────── */}
             {r.tramos.length > 0 && (
               <div className="overflow-x-auto rounded border">
@@ -195,6 +302,7 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                       <th className="px-2 py-1 text-right font-medium">Entró</th>
                       <th className="px-2 py-1 text-right font-medium">Quedó</th>
                       <th className="px-2 py-1 text-right font-medium">Consumo</th>
+                      <th className="px-2 py-1 text-right font-medium">Declarado</th>
                       <th className="px-2 py-1 text-right font-medium">$/{um}</th>
                       <th className="px-2 py-1 text-right font-medium">Costo</th>
                     </tr>
@@ -208,6 +316,9 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                         <td className="px-2 py-1 text-right text-gray-500">{fmtNumeroAR(t.cantidadEntregada, 0)}</td>
                         <td className="px-2 py-1 text-right text-gray-500">{fmtNumeroAR(t.saldoFinal, 0)}</td>
                         <td className="px-2 py-1 text-right font-medium text-gray-800">{fmtNumeroAR(t.consumo, 0)}</td>
+                        <td className="px-2 py-1 text-right text-sky-700">
+                          {t.declarado.length === 0 ? "—" : fmtNumeroAR(t.consumo - t.aRepartir, 0)}
+                        </td>
                         <td className="px-2 py-1 text-right text-gray-600">
                           {t.precioUnitario == null ? "—" : pesos(t.precioUnitario)}
                         </td>
@@ -224,6 +335,9 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                         {" "}· <span className="text-emerald-700">queda {fmtNumeroAR(r.remanente, 0)} {um}</span>
                       </td>
                       <td className="px-2 py-1 text-right text-gray-800">{fmtNumeroAR(r.consumoTotal, 0)}</td>
+                      <td className="px-2 py-1 text-right text-sky-700">
+                        {fmtNumeroAR(r.tramos.reduce((s2, t) => s2 + (t.consumo - t.aRepartir), 0), 0)}
+                      </td>
                       <td />
                       <td className="px-2 py-1 text-right text-gray-800">
                         {r.costoTotal == null ? "—" : pesos(r.costoTotal)}

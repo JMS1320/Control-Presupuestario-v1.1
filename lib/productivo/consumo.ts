@@ -47,6 +47,25 @@ export interface Entrega {
   detalle?: string
 }
 
+/**
+ * Consumo DECLARADO por el usuario para una actividad: *"se cargaron 6 ton al comedero de cría"*.
+ *
+ * No se deduce de nada: es un dato que el usuario aporta. Y manda — se descuenta del total del
+ * tramo antes de repartir el resto, que es la misma regla que rige la adjudicación de facturas
+ * a una actividad: **lo declarado gana, y lo declarado se descuenta del reparto general**.
+ *
+ * ⚠️ Es lo que hace que **cría no necesite reparto por cabeza**. Ahí el lote entero llega al
+ * destete y no hay ventas parciales que obliguen a saber la porción de cada uno.
+ */
+export interface ConsumoDeclarado {
+  fecha: string
+  /** A qué actividad se le imputa entero. */
+  grupoId: string
+  nombre: string
+  cantidad: number
+  notas?: string | null
+}
+
 /** Un grupo de animales que comió del mismo silo durante parte del tramo. */
 export interface GrupoConsumidor {
   id: string
@@ -81,6 +100,10 @@ export interface TramoConsumo {
   desde: string
   hasta: string
   dias: number
+  /** Lo que el usuario declaró para actividades concretas. Se imputa entero, no se reparte. */
+  declarado: ConsumoDeclarado[]
+  /** `consumo − declarado`. Es lo único que se reparte por kilo-día. */
+  aRepartir: number
   /** Lo que había al abrir el tramo. */
   saldoInicial: number
   entregas: Entrega[]
@@ -151,6 +174,7 @@ export function calcularConsumo(
   mediciones: Medicion[],
   entregas: Entrega[],
   grupoDe: (desde: string, hasta: string) => GrupoConsumidor[],
+  declaraciones: ConsumoDeclarado[] = [],
 ): ResultadoConsumo {
   const ms = [...mediciones].sort((a, b) => a.fecha.localeCompare(b.fecha))
   const faltantes: string[] = []
@@ -201,22 +225,49 @@ export function calcularConsumo(
 
     const costo = precioUnitario == null ? null : r3(consumo * precioUnitario)
 
-    // ── El reparto. La clave sólo distribuye: las participaciones suman 1.
+    // ── Lo DECLARADO sale primero y no se reparte ──────────────────────────
+    //
+    // "Se cargaron 6 ton al comedero de cría" es un dato, no una deducción. Se le imputa
+    // entero a esa actividad y se descuenta del resto — misma regla que la adjudicación de
+    // facturas: lo declarado gana y se descuenta del reparto general.
+    const declarado = declaraciones.filter(x => x.fecha >= ini.fecha && x.fecha < fin.fecha)
+    const totalDeclarado = declarado.reduce((s, x) => s + x.cantidad, 0)
+    const aRepartir = r3(consumo - totalDeclarado)
+    if (totalDeclarado > consumo + 0.5) {
+      falta.push(`se declaró más de lo consumido (${r3(totalDeclarado)} de ${consumo})`)
+    }
+
+    // ── El reparto del RESTO. La clave sólo distribuye: las participaciones suman 1.
     const grupos = grupoDe(ini.fecha, fin.fecha)
     const totalKD = grupos.reduce((s, g) => s + g.kiloDia, 0)
-    if (grupos.length === 0) {
-      falta.push('no hay ningún grupo declarado comiendo en este tramo')
-    } else if (totalKD <= 0) {
+    if (grupos.length === 0 && aRepartir > 0.5) {
+      falta.push('queda consumo sin declarar y no hay ningún grupo que se lo pueda repartir')
+    } else if (grupos.length > 0 && totalKD <= 0) {
       falta.push('los grupos suman kilo-día cero: falta el peso o los días')
     }
-    const reparto: RepartoGrupo[] = grupos.map(g => {
-      const participacion = totalKD > 0 ? g.kiloDia / totalKD : 0
-      return {
-        grupoId: g.id, nombre: g.nombre, kiloDia: g.kiloDia, participacion,
-        cantidad: r3(consumo * participacion),
-        costo: costo == null ? null : r3(costo * participacion),
-      }
-    })
+
+    const precioUnit = precioUnitario
+    const reparto: RepartoGrupo[] = [
+      // Las declaraciones entran como filas del reparto, con participación derivada. Así el
+      // control "el reparto suma el consumo" sigue cerrando sin ninguna excepción.
+      ...declarado.map(x => ({
+        grupoId: x.grupoId, nombre: `${x.nombre} (declarado)`, kiloDia: 0,
+        participacion: consumo > 0 ? x.cantidad / consumo : 0,
+        cantidad: r3(x.cantidad),
+        costo: precioUnit == null ? null : r3(x.cantidad * precioUnit),
+      })),
+      ...grupos.map(g => {
+        const participacion = totalKD > 0 ? g.kiloDia / totalKD : 0
+        return {
+          grupoId: g.id, nombre: g.nombre, kiloDia: g.kiloDia,
+          // La participación se informa sobre el CONSUMO del tramo, no sobre el resto: así
+          // todas las filas hablan de lo mismo y la columna suma 100 %.
+          participacion: consumo > 0 ? (aRepartir * participacion) / consumo : 0,
+          cantidad: r3(aRepartir * participacion),
+          costo: precioUnit == null ? null : r3(aRepartir * participacion * precioUnit),
+        }
+      }),
+    ]
 
     tramos.push({
       desde: ini.fecha, hasta: fin.fecha, dias: dias(ini.fecha, fin.fecha),
@@ -224,6 +275,7 @@ export function calcularConsumo(
       entregas: propias, cantidadEntregada: r3(cantidadEntregada),
       saldoFinal: fin.cantidad,
       consumo, precioUnitario, costo, reparto,
+      declarado, aRepartir,
       faltantes: falta,
     })
   }

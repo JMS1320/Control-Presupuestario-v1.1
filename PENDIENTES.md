@@ -388,7 +388,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-45 | 🔴 | Test | **El margen usa la venta real y no la duplica** ([A-BUG-62](#a-bug-62)) — en *Presupuesto → Margen*, campaña **26/27**, abrir **Recría**: tiene que salir **una sola** fila de venta, *«Venta Ternero Recria — REAL»*, con **55 cab**, **294,18 kg** y **$5.670/kg** (no 275 kg ni $5.876). **No debe aparecer además la fila proyectada** del mismo lote. Probar el caso mixto: registrar una venta **parcial** de un lote y verificar que salgan **dos filas** —la real por lo vendido y la proyectada por el resto, diciendo *«quedan N de M»*— y que las cabezas **no se cuenten dos veces**. Y una venta cuya fecha caiga en **otra campaña** que la del lote: tiene que aparecer en la campaña de **su** fecha | → [A-TEST-45](#a-test-45) `@presupuesto @productivo` |
 | **A-FEAT-49** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-46](#a-test-46))** · **Un lote puede PASAR A OTRA ACTIVIDAD en vez de venderse** — `stock_lotes.destino_actividad_id`. Unifica en un solo mecanismo lo que estaba en dos: el **destete** (cría → recría) y la **reposición** (recría → cría). Motivo del usuario: *«las de reposición comieron»* — si no son un lote no tienen tramo, y sin tramo su ración no está en ningún lado. Con el lote conservan curva de peso, tramos, fecha y timing. **Ingreso para el que entrega y costo de entrada para el que recibe, con UN solo número**, sin IVA ni comisión, y **fuera del Cash Flow** porque no mueve plata. Reemplaza a [A-FEAT-48](#a-feat-48), que queda como el camino viejo | → [A-FEAT-49](#a-feat-49) `@productivo @presupuesto` |
 | A-TEST-46 | 🔴 | Test | **El traspaso interno entre actividades** ([A-FEAT-49](#a-feat-49)) — en *Evolución Rodeo → lotes*, abrir un lote de **Ternera Recria** y en el selector de arriba elegir **«pasa a Cria — no se vende»**. Poner fecha y $/kg, guardar. Verificar: en *Presupuesto → Margen*, campaña de esa fecha, **Recría** muestra el traspaso como **ingreso** y **Cría** el **mismo monto** como costo. En la **grilla del presupuesto NO tiene que aparecer** (no genera caja). Sin $/kg, la fila queda *sin calcular* con su faltante, **nunca en cero**. Y probar que el lote **deja de contarse como venta de mercado**: no debe salir además la fila de venta externa | → [A-TEST-46](#a-test-46) `@productivo @presupuesto` |
-| **A-DEC-05** | 🔴 | Decisión | **Cría también va a llevar maíz y concentrado** (usuario, 2026-08-26) — se le da a los **terneros al pie** y **a discreción**. Consecuencias: (1) la actividad `Cría` necesita sus dos filas de insumo, que hoy no tiene (sólo tiene sanidad, pasturas, verdeos, rollos y silo); (2) `actividades.racion_pct_pv` de Cría está en **0,00 %**, así que aunque haya tramos el consumo estimado daría cero; (3) **el maíz de cría y el de recría salen del mismo silo o no** — si es el mismo, el reparto medido tiene que incluir a la cría y no sólo a los tres grupos de recría. ⚠️ Esto **contradice** lo que se había asumido el 2026-08-26 más temprano (*«cría no usa maíz»*), que simplificaba el reparto. Hay que decidirlo antes de conectar el reparto de [A-FEAT-43](#a-feat-43) | → [A-DEC-05](#a-dec-05) `@productivo` |
+| **A-DEC-05** | 🟢 | Decisión | **RESUELTA 2026-08-26** · **Cría también va a llevar maíz y concentrado** (usuario, 2026-08-26) — se le da a los **terneros al pie** y **a discreción**. Consecuencias: (1) la actividad `Cría` necesita sus dos filas de insumo, que hoy no tiene (sólo tiene sanidad, pasturas, verdeos, rollos y silo); (2) `actividades.racion_pct_pv` de Cría está en **0,00 %**, así que aunque haya tramos el consumo estimado daría cero; (3) **el maíz de cría y el de recría salen del mismo silo o no** — si es el mismo, el reparto medido tiene que incluir a la cría y no sólo a los tres grupos de recría. ⚠️ Esto **contradice** lo que se había asumido el 2026-08-26 más temprano (*«cría no usa maíz»*), que simplificaba el reparto. Hay que decidirlo antes de conectar el reparto de [A-FEAT-43](#a-feat-43) | → [A-DEC-05](#a-dec-05) `@productivo` |
+| **A-FEAT-50** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-47](#a-test-47))** · **Consumo DECLARADO por actividad: lo que el usuario aporta no se deduce** — tabla `productivo.consumo_declarado_insumo` + bloque celeste en el panel de Mediciones. *«Se cargaron 6 ton al comedero de cría»* se imputa **entero** a esa actividad y se **descuenta** del resto, que es lo único que se reparte por kilo-día. Es la **misma regla** que la adjudicación de facturas a una actividad: lo declarado gana y se descuenta del reparto general, así **el total nunca se mueve**. Resuelve [A-DEC-05](#a-dec-05) sin ninguna excepción en el código | → [A-FEAT-50](#a-feat-50) `@productivo` |
+| A-TEST-47 | 🔴 | Test | **Lo declarado se descuenta y el control sigue cerrando** ([A-FEAT-50](#a-feat-50)) — en *Insumos → Stock → Mediciones* de un insumo con tramos, cargar en el bloque celeste **una actividad + fecha + cantidad**. Verificar: la columna **Declarado** del tramo muestra esa cantidad, el **consumo total no cambia**, y los **3 controles siguen en ✓**. Probar declarar **más de lo consumido** en un tramo: tiene que avisar. Y borrar la declaración: todo vuelve atrás | → [A-TEST-47](#a-test-47) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10740,6 +10742,83 @@ simplificaba el reparto del consumo medido. Hay que resolverlo **antes** de cone
 
 *Y "a discreción" no complica nada: la clave sigue siendo kilo-día, que es la regla única
 justamente para no tener que distinguir el régimen.*
+
+
+### ✅ RESUELTA — 2026-08-26
+
+**El usuario declara, el sistema no deduce.** Ver [A-FEAT-50](#a-feat-50).
+
+| La pregunta | La respuesta |
+|---|---|
+| ¿Mismo silo o no? | **Puede ser cualquiera de las dos, y no importa**: si es el mismo, se declara cuánto fue a cría; si son dos, son dos productos con su propia medición |
+| ¿Cómo se sabe cuánto comió cría? | **No se calcula: se declara.** *"Se cargaron 6 ton al comedero"* |
+| ¿Cría necesita reparto por lote? | **No.** El lote entero llega al destete y no hay ventas parciales |
+| ¿Hace falta una fórmula distinta? | **No.** Un solo grupo consumiendo se lleva el 100 % con la misma regla |
+
+**Lo que sigue haciendo falta cargar** (puntos 1 y 2 del cuadro de arriba): las filas de Maíz y
+Concentrado en la actividad Cría, y su `racion_pct_pv`, que hoy está en 0,00 %. Eso es para
+**presupuestar hacia adelante** — el usuario lo pidió explícito: *"lo que sí es bueno tener lo que
+comen por día en promedio para saber cuánto presupuestar"*. Después el consumo declarado y medido
+lo corrige. Lo de siempre: primero el teórico, después el real.
+
+---
+
+## <a id="a-feat-50"></a>A-FEAT-50 — El consumo declarado por actividad
+
+**Hecho el 2026-08-26.** Resuelve [A-DEC-05](#a-dec-05).
+
+### La corrección de enfoque
+
+Estaba por hacer que el sistema **dedujera** cuánto comió cría y cuánto recría a partir de los
+pesos. El usuario lo frenó, y tenía razón:
+
+> *"Tener que hacer el cálculo sin algún reporte de mi parte sería un análisis que no deberíamos
+> tener que hacer… Yo daré datos, por ejemplo: se cargaron 6 ton de alimento para cría."*
+
+**Deducir un dato que el usuario puede declarar es inventarlo.**
+
+### El modelo
+
+```
+   1. La MEDICIÓN da el consumo total del tramo.          (real, medido)
+   2. El usuario DECLARA lo que fue a cría.               (real, declarado)
+   3. El RESTO se reparte por kilo-día entre los grupos.  (calculado)
+```
+
+Y es **la misma regla** que ya se había acordado para las facturas adjudicadas a una actividad:
+**lo declarado gana, y lo declarado se descuenta del reparto general.** Por eso el total nunca se
+mueve — declarar cambia a QUIÉN se le carga, no CUÁNTO se consumió.
+
+### Los dos casos del usuario, sin código distinto
+
+| Lo que diga | Cómo entra |
+|---|---|
+| *"se cargaron 6 ton para cría"* | una declaración de consumo |
+| *"almacenamos 10 ton para cría en este silo"* | dos productos de stock, cada uno con su medición |
+
+### 🔑 Y cría no necesita reparto — sin ninguna excepción en el código
+
+El usuario lo dejó claro: *"para cría no se usará un cálculo por cabeza como en recría; es todo el
+lote el que llega de promedio a un kilaje al destete"*.
+
+**No hizo falta programar un caso especial.** La regla del kilo-día ya lo resuelve: con **un solo
+grupo** consumiendo, le toca el 100 %. Misma fórmula, un consumidor.
+
+> Por eso no rompe la condición del usuario — *"en la app yo no puedo variar formas de cálculo en
+> vivo"*: no es otra forma de cálculo, es la misma con un grupo.
+
+**La diferencia real entre cría y recría no está en la fórmula, está en para qué sirve el número:**
+
+| | Recría | Cría |
+|---|---|---|
+| Por qué hace falta repartir | **hay ventas parciales** — los 55 se fueron y hay que saber su parte | no hay: el lote entero llega al destete |
+| Resultado | costo por grupo | costo de la actividad, y listo |
+
+### Verificado
+
+`scripts/verificar-consumo.mts` corre con una declaración de 6.000 kg a cría en el último tramo:
+se descuentan, los 13.200 restantes se reparten entre los tres grupos de recría, las
+participaciones suman 1 y **los 3 controles siguen cerrando**.
 
 ---
 
