@@ -994,6 +994,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const iibbPorMes: Record<string, number> = {}
 
     for (const l of listaLotes) {
+      // ⚠️ Un lote con destino interno NO entra al presupuesto: pasa a otra actividad y no
+      // genera caja. Aparece en el Margen como traspaso —ingreso de una, costo de la otra—,
+      // pero acá sería plata que nunca llega.
+      if ((l as any).destino_actividad_id) continue
       const v = valuarLoteConPrecios(l, ventasDe(l.id), listaPrecios, curvaDe(l))
       if (!v.proyectado || v.cuotas.length === 0) continue
       const f = fila(l.categoria)

@@ -69,6 +69,14 @@ export interface LoteVenta {
   campania: string | null
   /** A qué actividad pertenece, resuelto desde la categoría. */
   actividad: string | null
+  /**
+   * A qué actividad PASA, cuando no se vende afuera (reposición, destete que va a recría).
+   *
+   * `null` = venta externa. Con valor, el lote deja de ser una venta y pasa a ser una
+   * **transferencia interna**: ingreso para `actividad` y costo de entrada para ésta, con el
+   * mismo número. Y sin comisión ni IVA, porque no hay mercado en el medio.
+   */
+  destinoActividad?: string | null
 }
 
 export interface CostoDirecto {
@@ -641,8 +649,40 @@ export function resolverCostoDirecto(
  * que uno que dice qué le falta — sobre todo si se le presenta a los socios.
  */
 export function calcularMargen(d: DatosMargen): MargenActividad[] {
+  // ── Los lotes que NO se venden afuera son transferencias, no ventas ──────────
+  //
+  // Un lote con destino a otra actividad deja de ser un ingreso de mercado y pasa a ser el
+  // mismo hecho visto de los dos lados. Se arma acá —y no en el que llama— para que valga
+  // igual venga de donde venga el lote.
+  //
+  // ⚠️ Sin IVA y sin comisión: no hay mercado en el medio. Lo que se traspasa es el animal.
+  const lotesInternos = d.lotes.filter(l => l.destinoActividad && l.actividad)
+  const transferDeLotes: TransferenciaInterna[] = lotesInternos.map(l => {
+    const fecha = l.fecha_venta_estimada ?? l.fecha_disponible ?? ''
+    const bruto = fecha
+      ? pesoEstimado({
+          fecha_disponible: l.fecha_disponible ?? '', fecha_peso: l.fecha_peso,
+          peso_base_kg: l.peso_base_kg, ganancia_diaria_kg: l.ganancia_diaria_kg,
+        } as any, fecha)
+      : l.peso_base_kg
+    const kgNetos = l.cabezas * bruto * (1 - (l.pct_desbaste || 0))
+    const precio = l.precio_kg_override
+    const monto = precio != null && kgNetos > 0 ? kgNetos * precio : null
+    return {
+      concepto: `${l.categoria} → ${l.destinoActividad}`,
+      actividadOrigen: l.actividad!, actividadDestino: l.destinoActividad!,
+      cabezas: l.cabezas, kgNetos, precioKg: precio, monto,
+      campania: fecha ? campanaDeFecha(fecha) : l.campania,
+      detalle: monto == null
+        ? `${num(l.cabezas)} cab · ${num(kgNetos)} kg netos — falta el $/kg del traspaso`
+        : `${num(l.cabezas)} cab × ${num(bruto * (1 - (l.pct_desbaste || 0)))} kg netos`
+          + ` × ${pesos(precio!)}/kg · traspaso interno, sin comisión`,
+    }
+  })
+
   // Sólo las de ESTA campaña: una transferencia cae donde la pone su fecha.
-  const transfer = (d.transferencias ?? []).filter(t => t.campania === d.campana)
+  const transfer = [...(d.transferencias ?? []), ...transferDeLotes]
+    .filter(t => t.campania === d.campana)
 
   const actividades = new Set<string>([
     ...Object.keys(d.hasPorActividad),
@@ -654,7 +694,10 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
 
   return Array.from(actividades).sort().map(act => {
     const has = d.hasPorActividad[act] ?? null
-    const misLotes = d.lotes.filter(l => l.actividad === act && (l.campania == null || l.campania === d.campana))
+    // Los internos ya salieron como transferencia: acá quedan sólo las ventas de mercado.
+    const misLotes = d.lotes.filter(l =>
+      l.actividad === act && !l.destinoActividad
+      && (l.campania == null || l.campania === d.campana))
     const misCostos = d.costos.filter(c => c.actividad === act)
     const faltantes: string[] = []
 

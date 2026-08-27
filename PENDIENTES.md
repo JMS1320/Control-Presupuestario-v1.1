@@ -386,6 +386,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-43 | 🔴 | Test | **El peso a la venta en el modal de pesada** ([A-BUG-59](#a-bug-59) + [A-BUG-60](#a-bug-60) + [A-BUG-61](#a-bug-61)) — en *Evolución Rodeo → Cargar stock inicial desde una pesada*, con una pesada vieja y una fecha de venta futura: la fila tiene que decir **«→ a la venta N kg (X días · hoy Y kg)»**, contando los días **desde la pesada** y no desde hoy. Con la pesada del 3/8 a 211,9 kg, ganancia 1 y venta el 20/09 tiene que dar **259,9 kg**, no 236,9. Verificar además que el **% de desbaste y CZ** del lote creado correspondan a esa banda. Y que al poner una cantidad **igual a las cabezas** del grupo, el selector *más pesados / más livianos* **desaparezca** y diga «son todos» | → [A-TEST-43](#a-test-43) `@productivo` |
 | A-TEST-44 | 🔴 | Test | **La venta interna recría → cría aparece en los dos márgenes** ([A-FEAT-48](#a-feat-48)) — en *Productivo → Recría*, cargar en el bloque celeste **Recría → Cría** las cabezas de reposición, los kg brutos, el $/kg y la fecha. Después, en *Presupuesto → Margen*, en la campaña que corresponda a esa fecha: **Recría** tiene que mostrar *«Reposición: vaquillonas a cría»* como **ingreso** y **Cría** el **mismo monto** como costo. Probar también sin precio: tiene que quedar la fila *sin calcular* y el faltante, **nunca en cero**. Y verificar la ida: con `precio_kg_entrada` cargado, *«Destete: entrada de cría»* sale como **ingreso de Cría** y **costo de Recría** en la campaña de la fecha de inicio del ciclo (23/02/2026 → **25/26**) | → [A-TEST-44](#a-test-44) `@productivo @presupuesto` |
 | A-TEST-45 | 🔴 | Test | **El margen usa la venta real y no la duplica** ([A-BUG-62](#a-bug-62)) — en *Presupuesto → Margen*, campaña **26/27**, abrir **Recría**: tiene que salir **una sola** fila de venta, *«Venta Ternero Recria — REAL»*, con **55 cab**, **294,18 kg** y **$5.670/kg** (no 275 kg ni $5.876). **No debe aparecer además la fila proyectada** del mismo lote. Probar el caso mixto: registrar una venta **parcial** de un lote y verificar que salgan **dos filas** —la real por lo vendido y la proyectada por el resto, diciendo *«quedan N de M»*— y que las cabezas **no se cuenten dos veces**. Y una venta cuya fecha caiga en **otra campaña** que la del lote: tiene que aparecer en la campaña de **su** fecha | → [A-TEST-45](#a-test-45) `@presupuesto @productivo` |
+| **A-FEAT-49** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-46](#a-test-46))** · **Un lote puede PASAR A OTRA ACTIVIDAD en vez de venderse** — `stock_lotes.destino_actividad_id`. Unifica en un solo mecanismo lo que estaba en dos: el **destete** (cría → recría) y la **reposición** (recría → cría). Motivo del usuario: *«las de reposición comieron»* — si no son un lote no tienen tramo, y sin tramo su ración no está en ningún lado. Con el lote conservan curva de peso, tramos, fecha y timing. **Ingreso para el que entrega y costo de entrada para el que recibe, con UN solo número**, sin IVA ni comisión, y **fuera del Cash Flow** porque no mueve plata. Reemplaza a [A-FEAT-48](#a-feat-48), que queda como el camino viejo | → [A-FEAT-49](#a-feat-49) `@productivo @presupuesto` |
+| A-TEST-46 | 🔴 | Test | **El traspaso interno entre actividades** ([A-FEAT-49](#a-feat-49)) — en *Evolución Rodeo → lotes*, abrir un lote de **Ternera Recria** y en el selector de arriba elegir **«pasa a Cria — no se vende»**. Poner fecha y $/kg, guardar. Verificar: en *Presupuesto → Margen*, campaña de esa fecha, **Recría** muestra el traspaso como **ingreso** y **Cría** el **mismo monto** como costo. En la **grilla del presupuesto NO tiene que aparecer** (no genera caja). Sin $/kg, la fila queda *sin calcular* con su faltante, **nunca en cero**. Y probar que el lote **deja de contarse como venta de mercado**: no debe salir además la fila de venta externa | → [A-TEST-46](#a-test-46) `@productivo @presupuesto` |
+| **A-DEC-05** | 🔴 | Decisión | **Cría también va a llevar maíz y concentrado** (usuario, 2026-08-26) — se le da a los **terneros al pie** y **a discreción**. Consecuencias: (1) la actividad `Cría` necesita sus dos filas de insumo, que hoy no tiene (sólo tiene sanidad, pasturas, verdeos, rollos y silo); (2) `actividades.racion_pct_pv` de Cría está en **0,00 %**, así que aunque haya tramos el consumo estimado daría cero; (3) **el maíz de cría y el de recría salen del mismo silo o no** — si es el mismo, el reparto medido tiene que incluir a la cría y no sólo a los tres grupos de recría. ⚠️ Esto **contradice** lo que se había asumido el 2026-08-26 más temprano (*«cría no usa maíz»*), que simplificaba el reparto. Hay que decidirlo antes de conectar el reparto de [A-FEAT-43](#a-feat-43) | → [A-DEC-05](#a-dec-05) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10657,6 +10660,86 @@ con su comprobante. **El margen no hacía ni lo uno ni lo otro**: proyectaba el 
 (3 % / 9 % hardcodeado) para las filas **proyectadas**, en vez del `pct_cz` que el lote ya trae. Las
 filas reales sí usan la comisión de la venta.
 
+
+---
+
+## <a id="a-feat-49"></a>A-FEAT-49 — Un lote puede pasar a otra actividad en vez de venderse
+
+**Hecho el 2026-08-26.** Unifica en **un solo mecanismo** lo que estaba quedando en dos.
+
+### Por qué acá y no en el ciclo
+
+Lo propuso el usuario, y el motivo es el que decide:
+
+> **Las vaquillonas de reposición comieron.** Si no son un lote, no tienen tramo. Si no tienen
+> tramo, su ración no está en ningún lado — que es exactamente el problema que estamos resolviendo.
+
+Cargarlas como lote da todo lo demás gratis: la curva de peso, los tramos de alimentación, la
+fecha y el timing del presupuesto. El bloque del ciclo no daba nada de eso.
+
+### Cómo funciona
+
+`productivo.stock_lotes.destino_actividad_id` → `public.centros_costo`.
+
+| Valor | Qué significa |
+|---|---|
+| `NULL` | venta externa: mercado, con IVA, comisión y plazo de cobro. Como siempre |
+| una actividad | **traspaso interno**: ingreso para la actividad del lote, costo de entrada para la otra |
+
+**Un solo número para los dos lados** — el `$/kg` del lote es el precio del traspaso, y la fecha
+define a qué campaña contable cae.
+
+⚠️ **No genera caja**: sin IVA, sin comisión, y **excluido del Cash Flow** (`tab-presupuesto.tsx`).
+Sería plata que nunca llega.
+
+### La fuente única, resuelta sin romper lo cargado
+
+El destete y la reposición estaban también en `ciclos_recria` (`precio_kg_entrada` y las 4 columnas
+de [A-FEAT-48](#a-feat-48)). Tener el mismo hecho en dos lados es justo lo que dijimos que no hay
+que hacer.
+
+**Criterio implementado**: el lote GANA. Si existe un lote con destino a Recría, el
+`precio_kg_entrada` del ciclo **no se usa**; ídem con la reposición. El bloque del ciclo queda
+como el camino viejo y sigue funcionando mientras no haya lote — así lo ya cargado no se pierde.
+
+### Los cuatro caminos, ahora en el mismo lugar
+
+```
+   destete ─┬─► venta externa          lote sin destino
+            └─► recría                 lote con destino = Recria
+   recría  ─┬─► venta externa          lote sin destino
+            └─► cría (reposición)      lote con destino = Cria
+```
+
+---
+
+## <a id="a-dec-05"></a>A-DEC-05 — Cría también va a llevar maíz y concentrado
+
+**Lo dijo el usuario el 2026-08-26**: *"cría sí tendrá maíz y concentrado finalmente, pero se le da
+a los terneros al pie y a discreción"*.
+
+⚠️ **Contradice lo que se había asumido esa misma mañana** (*"cría no usa maíz"*), que era lo que
+simplificaba el reparto del consumo medido. Hay que resolverlo **antes** de conectar el reparto de
+[A-FEAT-43](#a-feat-43).
+
+### Lo que hace falta
+
+| # | Qué | Estado |
+|---|---|---|
+| 1 | La actividad **Cría** necesita sus filas de **Maíz** y **Concentrado** | 🔴 hoy sólo tiene sanidad, pasturas, verdeos, rollos y silo |
+| 2 | `actividades.racion_pct_pv` de Cría está en **0,00 %** | 🔴 con tramos y sin ese %, el consumo estimado da **cero** |
+| 3 | Los **tramos** en los lotes de *Ternero/Ternera al Pie* | 🟩 **no hay nada que desarrollar**: los tramos cuelgan de cualquier lote y esos lotes ya existen |
+
+### 🔑 La pregunta que decide el diseño
+
+**¿El maíz de cría y el de recría salen del mismo silo?**
+
+- **Mismo silo** → la medición es una sola y el reparto tiene que incluir a los terneros al pie
+  junto con los tres grupos de recría. El kilo-día se calcula sobre **todos** los que comen.
+- **Silos separados** → cada uno se mide aparte y el reparto de recría no cambia.
+
+*Y "a discreción" no complica nada: la clave sigue siendo kilo-día, que es la regla única
+justamente para no tener que distinguir el régimen.*
 
 ---
 

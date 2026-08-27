@@ -2828,3 +2828,43 @@ precio, la fila queda *sin calcular* y sube a faltantes — **nunca se pone en c
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-44](PENDIENTES.md#a-test-44).
+
+---
+
+## 🔀 Un lote que NO se vende: pasa a otra actividad 🟡 (sin testear)
+
+**Dónde**: `Productivo → Evolución Rodeo →` los lotes → abrir uno → el selector de arriba de todo.
+
+```
+Este lote  [ se vende afuera (mercado)  ▼ ]
+           [ pasa a Cria — no se vende    ]
+           [ pasa a Recria — no se vende  ]
+```
+
+**Para qué**: al destete una parte va a **venta** y otra a **reposición**, y la reposición vuelve a
+cría. Los cuatro caminos se cargan igual, cambiando sólo el destino:
+
+```
+destete ─┬─► venta externa           destino vacío
+         └─► recría                  destino = Recria
+recría  ─┬─► venta externa           destino vacío
+         └─► cría (reposición)       destino = Cria
+```
+
+### Qué cambia cuando ponés un destino
+
+| | Venta externa | Traspaso interno |
+|---|---|---|
+| Margen de la actividad que entrega | ingreso | ingreso |
+| Margen de la que recibe | — | **costo de entrada, el mismo número** |
+| IVA y comisión | sí | **no** |
+| Cash Flow | entra con su plazo de cobro | **no aparece — no mueve plata** |
+
+El **$/kg** del lote es el precio del traspaso, y la **fecha** define a qué campaña contable cae.
+Sin $/kg la fila queda *sin calcular* — **nunca en cero**.
+
+💡 **Y los tramos siguen funcionando igual**: por eso conviene cargar la reposición como lote y no
+en otro lado — así su ración se cuenta.
+
+### Cómo se prueba
+→ `PENDIENTES.md` § [A-TEST-46](PENDIENTES.md#a-test-46).

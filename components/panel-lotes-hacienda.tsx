@@ -77,6 +77,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const [precios, setPrecios] = useState<PrecioHacienda[]>([])
   // Actividades y tramos: definen la curva de peso del lote y su costo de alimentacion
   const [tramos, setTramos] = useState<TramoLote[]>([])
+  /** Las actividades a las que un lote puede PASAR en vez de venderse afuera. */
+  const [centrosCosto, setCentrosCosto] = useState<{ id: string; nombre: string }[]>([])
   const [actividades, setActividades] = useState<Actividad[]>([])
   const [insumosAct, setInsumosAct] = useState<InsumoActividad[]>([])
 
@@ -95,12 +97,15 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       setLotes((ls || []) as LoteStock[])
       setVentas((vs || []) as VentaStock[])
 
-      const [{ data: tr }, { data: acts }, { data: insAct }] = await Promise.all([
+      const [{ data: tr }, { data: ccs }, { data: acts }, { data: insAct }] = await Promise.all([
         supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
+        // Para poder decir "este lote no se vende: pasa a Cría".
+        supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad").eq("activo", true),
         supabase.schema("productivo").from("actividades").select("*").eq("activo", true).order("nombre"),
         supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
       ])
       setTramos((tr || []) as TramoLote[])
+      setCentrosCosto(((ccs || []) as any[]).map(c => ({ id: String(c.id), nombre: String(c.nombre) })))
       setActividades((acts || []) as Actividad[])
       setInsumosAct((insAct || []) as InsumoActividad[])
 
@@ -158,6 +163,8 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
       ganancia_override: Boolean(f.ganancia_override),
       fecha_venta_estimada: f.fecha_venta_estimada || null,
+      // Vacío = venta externa. Con actividad, el lote es un traspaso interno y no genera caja.
+      destino_actividad_id: f.destino_actividad_id || null,
       precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
         ? null : parseNum(String(f.precio_kg_override)),
       plazo_cobro: String(f.plazo_cobro ?? "0").trim() || "0",
@@ -523,7 +530,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       )}
 
       <ModalLote datos={modal} onCerrar={() => setModal(null)} onGuardar={guardar}
-        tramos={tramos} actividades={actividades} insumos={insumosAct} />
+        tramos={tramos} actividades={actividades} insumos={insumosAct} centrosCosto={centrosCosto} />
       <ModalGenerar abierto={modalGenerar} filas={modalGenerar ? filasGenerar() : []}
         guardando={generando}
         onCerrar={() => setModalGenerar(false)} onAplicar={aplicarGenerar} />
@@ -537,9 +544,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 
 // ── Modal de lote ─────────────────────────────────────────────────────────────
 
-function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos }: {
+function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, centrosCosto }: {
   datos: any; onCerrar: () => void; onGuardar: (f: any) => Promise<void>
   tramos: TramoLote[]; actividades: Actividad[]; insumos: InsumoActividad[]
+  centrosCosto: { id: string; nombre: string }[]
 }) {
   const [f, setF] = useState<any>({})
   /** Cual de los dos precios manda: el que se escribio ultimo. El otro se recalcula,
@@ -712,10 +720,43 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos }:
             onCambiarTramos={setTramosDraft}
             onGananciaOverride={v => setF({ ...f, ganancia_override: v })} />
 
+          {/* ── A dónde va el lote ────────────────────────────────────────────
+              No todo lote se vende afuera: al destete una parte va a venta y otra a
+              reposición, y la reposición vuelve a cría. Es la misma operación vista de los dos
+              lados — ingreso para el que entrega, costo de entrada para el que recibe. */}
+          <div className={`rounded border p-2.5 ${
+            f.destino_actividad_id ? "border-sky-200 bg-sky-50/60" : "border-gray-200 bg-gray-50/60"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-medium text-gray-700">Este lote</span>
+              <select className="h-7 rounded border px-1 text-[11px]"
+                value={f.destino_actividad_id ?? ""}
+                onChange={e => setF({ ...f, destino_actividad_id: e.target.value || null })}>
+                <option value="">se vende afuera (mercado)</option>
+                {centrosCosto.map(cc => (
+                  <option key={cc.id} value={cc.id}>pasa a {cc.nombre} — no se vende</option>
+                ))}
+              </select>
+            </div>
+            <p className="mt-1 text-[10px] text-gray-500">
+              {f.destino_actividad_id ? (
+                <>
+                  <strong>Traspaso interno</strong>: es <strong>ingreso de esta actividad y costo
+                  de entrada de la otra</strong>, con el mismo número. <strong>No genera caja</strong>{" "}
+                  — no lleva IVA ni comisión y no entra al Cash Flow. El <strong>$/kg</strong> de
+                  abajo es el precio del traspaso, y la <strong>fecha</strong> define a qué campaña cae.
+                </>
+              ) : (
+                <>Venta de mercado: entra al Cash Flow con su IVA, su comisión y su plazo de cobro.</>
+              )}
+            </p>
+          </div>
+
           {/* Proyección de venta: sin fecha el lote es sólo inventario */}
           <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2.5">
             <p className="mb-2 text-[11px] font-medium text-emerald-900">
-              Venta presupuestada — sin fecha, el lote no entra al presupuesto como ingreso
+              {f.destino_actividad_id
+                ? "Datos del traspaso — sin fecha, el lote queda como stock"
+                : "Venta presupuestada — sin fecha, el lote no entra al presupuesto como ingreso"}
             </p>
 
             <div className="grid grid-cols-3 gap-3">

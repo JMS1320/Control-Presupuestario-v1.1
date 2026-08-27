@@ -101,7 +101,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
         supabase.schema("productivo").from("stock_ciclos").select("id, campania, vacas_apertura"),
         supabase.schema("productivo").from("stock_lotes")
-          .select("id, categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id"),
+          .select("id, categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id, destino_actividad_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("id, nombre, activo"),
@@ -195,6 +195,9 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         pct_desbaste: Number(l.pct_desbaste) || 0,
         campania: campDeCiclo.get(l.ciclo_id) ?? null,
         actividad: actDeCategoria.get(String(l.categoria)) ?? null,
+        // Con destino cargado el lote no es una venta: es un traspaso a otra actividad.
+        destinoActividad: l.destino_actividad_id
+          ? (actPorId.get(l.destino_actividad_id) ?? null) : null,
       }))
 
       // Los precios van CRUDOS: la búsqueda es por tipo y rango de peso, no por nombre.
@@ -398,7 +401,12 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         // El NETO se calcula, no se carga: es la regla del panel de ciclo.
         const kgNetos = cabM * (num(c.peso_neto_macho_kg) ?? 0) + cabH * (num(c.peso_neto_hembra_kg) ?? 0)
         const precioEnt = num(c.precio_kg_entrada)
-        if (cabezas > 0 && c.fecha_inicio) {
+        // ⚠️ FUENTE ÚNICA: si ya hay un lote con destino a Recría, el hecho vive ahí y el
+        // precio del ciclo NO se usa. Tener el mismo destete en dos lados terminaría en dos
+        // números que dejan de coincidir — que es justo lo que la unificación viene a evitar.
+        const yaHayLoteADestino = lotesOut.some(l =>
+          l.destinoActividad && claveActividad(l.destinoActividad) === claveActividad("Recria"))
+        if (cabezas > 0 && c.fecha_inicio && !yaHayLoteADestino) {
           const monto = precioEnt != null && kgNetos > 0 ? kgNetos * precioEnt : null
           transferencias.push({
             concepto: "Destete: entrada de cría",
@@ -416,7 +424,11 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         const cabRep = num(c.cabezas_reposicion) ?? 0
         const brutoRep = num(c.peso_bruto_reposicion_kg) ?? 0
         const precioRep = num(c.precio_kg_reposicion)
-        if (cabRep > 0) {
+        // Mismo criterio: si la reposición ya está cargada como lote con destino a Cría,
+        // manda el lote. El bloque del ciclo queda como el camino viejo.
+        const yaHayLoteACria = lotesOut.some(l =>
+          l.destinoActividad && claveActividad(l.destinoActividad) === claveActividad("Cria"))
+        if (cabRep > 0 && !yaHayLoteACria) {
           const kgRep = cabRep * brutoRep * (1 - desbaste)
           const monto = precioRep != null && kgRep > 0 ? kgRep * precioRep : null
           transferencias.push({
