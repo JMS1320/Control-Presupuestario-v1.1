@@ -187,7 +187,7 @@ repo: reglas permanentes en un archivo descartable es exactamente lo que no hay 
 > operativo — mismo estatus que `memory/`). Ahí va **sólo el estado vivo**: quién tiene qué, qué va a
 > necesitar y qué quedó a medias. **Las reglas son éstas y no se duplican allá.**
 
-**Las 10 reglas.** Cada una con su motivo, porque el motivo es lo que hace que se respete a las 3 de
+**Las 12 reglas.** Cada una con su motivo, porque el motivo es lo que hace que se respete a las 3 de
 la tarde del tercer día.
 
 **1 · Tomar antes de escribir.** Antes de editar un archivo, anotarlo en el tablero. Si ya está
@@ -259,7 +259,7 @@ leé `CLAUDE.md` § Trabajo en paralelo y `.claude/SESION-PARALELA.md`"*. Y desp
 2. **Leer** lo que declaró la otra.
 3. **Empezar.**
 
-⚠️ **No se re-discuten las 11 reglas.** Ya están acordadas y con sus motivos: discutirlas de nuevo
+⚠️ **No se re-discuten las 12 reglas.** Ya están acordadas y con sus motivos: discutirlas de nuevo
 cuesta media hora y termina en lo mismo. Lo único que se conversa es **lo específico de esta
 sesión** — qué toma cada una y dónde se cruzan. Si aparece un hueco real del protocolo, se propone
 al final, no al principio.
@@ -277,6 +277,30 @@ al final, no al principio.
 reglas nacieron en el tablero y casi se pierden: hubo que mudarlas. Si el aprendizaje de cada sesión
 se queda en `.claude/`, la próxima empieza de cero y se vuelve a negociar todo. **Que la próxima sea
 corta depende de que ésta suba lo que aprendió.***
+
+**12 · El espacio de IDs de `PENDIENTES.md` es un recurso compartido: se mira ANTES, no después.**
+*(Regla nacida de un choque real, 2026-08-27.)* Antes de escribir un ID nuevo se busca el máximo **en
+el archivo**, que es la única fuente:
+
+```bash
+for f in P A-FEAT A-BUG A-TEST A-DAT A-DEC; do
+  echo -n "$f → último: "
+  grep -oE "\b$f-[0-9]+\b" PENDIENTES.md | grep -oE "[0-9]+$" | sort -n | tail -1
+done
+```
+
+⚠️ **`sort -n` sobre el número pelado, no `sort` a secas.** Ordenado como texto, `A-BUG-51` "gana" a
+`A-BUG-62` y devuelve un máximo falso — pasó, y por eso el choque llegó a estar en 4 archivos y un
+commit pusheado antes de saltar.
+
+**Y si el choque igual ocurre: renumera el que llegó ÚLTIMO**, nunca el que ya estaba. Se cambian
+también sus referencias cruzadas (el dossier, el manual, los comentarios del código), y se deja
+intacto todo lo del otro.
+
+*Motivo: es el único recurso compartido que **no es un archivo** — dos terminales pueden inventar el
+mismo ID sin tocar la misma línea, así que ninguna de las 11 reglas anteriores lo cubre. El control
+`verificar-parser-pendientes.mts` lo detecta, pero **detecta después**: para cuando avisa, el ID ya se
+propagó. La red existe; esta regla es para no necesitarla.*
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
@@ -499,7 +523,7 @@ maestro no debe tener nombres de tabla de este proyecto.
 - **💰 Inputs monetarios** → principio: *montos como texto en el formato local, nunca `type="number"`*.
 - **🔧 Git** → principio: *nunca commitear a producción; el merge lo autoriza el usuario después
   del testing*.
-- **🔀 Trabajo en paralelo con 2 terminales** (2026-08-18) — la **§ de arriba va tal cual**: las 10
+- **🔀 Trabajo en paralelo con 2 terminales** (2026-08-18) — la **§ de arriba va tal cual**: las 12
   reglas con sus motivos son portables y no tienen un solo nombre propio de este proyecto (el único
   anclaje es la ruta del tablero, y va en el `📍 Acá:`). Principio: *con 2 terminales sobre el mismo
   working tree no hay aislamiento y git no protege nada — la única protección es un tablero declarado
