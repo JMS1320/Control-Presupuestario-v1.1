@@ -3011,3 +3011,47 @@ Las dos situaciones son normales. **Lo que no es normal es no verlas.**
 
 ### Cómo se prueba
 → `PENDIENTES.md` § [A-TEST-51](PENDIENTES.md#a-test-51).
+
+---
+
+## 🌽 PUESTA A PUNTO de un ciclo de recría — el orden de carga 🟡 (sin testear)
+
+**Cada paso depende del anterior**: los tramos necesitan los lotes, el reparto necesita los
+tramos, y el control final necesita todo. Saltear uno hace que el número salga mal **sin avisar**.
+
+| # | Qué | Dónde |
+|---|---|---|
+| **1** | **La apertura del ciclo**: cabezas y pesos **con los que ABRIÓ**, no la foto de hoy | Productivo → Recría → el panel de arriba |
+| **2** | **El precio de entrada** de cría a recría | ídem |
+| **3** | **Los lotes** de todo el rodeo: lo vendido, lo que queda, y lo de reposición con destino `Cria` | Productivo → Evolución Rodeo → lotes |
+| **4** | **Los tramos** de cada lote (qué actividad, entre qué fechas) | adentro de cada lote |
+| **5** | **Los insumos** como producto (categoría *Alimento balanceado*, en kg) | Insumos → Stock → Nuevo Insumo |
+| **6** | **Las entregas**, con la fecha de **RECEPCIÓN** | Insumos → Stock → movimiento de compra |
+| **7** | **Las facturas**, vinculadas a las entregas | Insumos → Stock → botón *Facturas* |
+| **8** | **Las mediciones** de stock | Insumos → Stock → botón *Mediciones* |
+| **9** | **Lo declarado** para otra actividad, si comparten silo | Mediciones → el bloque celeste |
+
+### ⚠️ Los cuatro errores que arruinan la carga
+
+1. **Cargar la apertura del ciclo con la foto de hoy.** Un ciclo abre con lo que entró; las
+   mortandades se descuentan solas después. Con la foto de hoy **se descuentan dos veces**, y
+   además el valor de entrada sale corto.
+2. **Poner la fecha de la factura en la entrega.** La fecha de la entrega es **el día que el
+   insumo entró al silo** — es la que corta los tramos, y de los tramos sale el costo.
+3. **Medir contando el camión recién descargado.** La medición del día es *lo que había antes de
+   descargar*. Ver la sección de Mediciones.
+4. **Dejar animales sin lote.** Igual comen, y su comida se la reparten los demás. La fila
+   *«Resto sin lote»* es el aviso — **si está, falta cargar algo**.
+
+### Los cuatro controles al terminar
+
+| | Dónde | Qué tiene que dar |
+|---|---|---|
+| 1 | Mediciones del insumo | los **3 controles en ✓** |
+| 2 | Mediciones → *Quién se lo comió* | **ninguna fila** *Resto sin lote* |
+| 3 | Presupuesto → Margen → la actividad | la fila del insumo con **un monto**, no *«sin calcular»*; y al desplegar *Por grupo*, **la suma da el margen bruto** |
+| 4 | contra el Excel de la maqueta, si existe | **el mismo número** — y si no, la diferencia dice qué falta |
+
+📌 **El orden de los controles no es casual**: el 1 dice si el consumo está bien medido, el 2 si
+está bien repartido, el 3 si llegó al resultado, y el 4 si todo junto da lo que ya sabíamos que
+tenía que dar. Si falla uno, los de abajo no significan nada.
