@@ -66,6 +66,15 @@ export interface LoteVenta {
   fecha_venta_estimada: string | null
   precio_kg_override: number | null
   pct_desbaste: number
+  /**
+   * Comisión de comercialización del lote (CZ = comisión + flete + otros).
+   *
+   * ⚠️ **Manda sobre `pctGastoVenta()`**, que es la regla general del Excel (3 % liviano, 9 %
+   * vaca/toro). El usuario la ajusta a mano cuando conoce el destino real de la venta — y
+   * hasta 2026-08-27 el margen la ignoraba y usaba la general, así que un lote con CZ del 6 %
+   * se presentaba con 3 % y el ingreso salía inflado.
+   */
+  pct_cz?: number | null
   campania: string | null
   /** A qué actividad pertenece, resuelto desde la categoría. */
   actividad: string | null
@@ -858,7 +867,9 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       }
 
       const ventaBruta = porVender * peso * precio
-      const gastoVenta = ventaBruta * d.pctGastoVenta(l.categoria)
+      // El CZ del lote manda; la regla general es sólo el default cuando no está cargado.
+      const pctGasto = l.pct_cz != null ? l.pct_cz : d.pctGastoVenta(l.categoria)
+      const gastoVenta = ventaBruta * pctGasto
       const neto = ventaBruta - gastoVenta
 
       ingresos.push({
@@ -868,7 +879,8 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
         porHa: has ? neto / has : null,
         porCabeza: porVender > 0 ? neto / porVender : null,
         detalle: `${num(porVender)} cab × ${num(peso)} kg × ${pesos(precio)}/kg`
-          + ` − ${pesos(gastoVenta)} de gastos de venta · ${segunPrecio} · proyectado${sufijo}`,
+          + ` − ${pesos(gastoVenta)} de comercialización (${num(pctGasto * 100)} %`
+          + `${l.pct_cz != null ? ", del lote" : ", regla general"}) · ${segunPrecio} · proyectado${sufijo}`,
         confiable: true,
       })
     }

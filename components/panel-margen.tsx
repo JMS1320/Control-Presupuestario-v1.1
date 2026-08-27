@@ -246,7 +246,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
         supabase.schema("productivo").from("stock_ciclos").select("id, campania, vacas_apertura"),
         supabase.schema("productivo").from("stock_lotes")
-          .select("id, categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, ciclo_id, destino_actividad_id"),
+          .select("id, categoria, cantidad, cantidad_calculada, peso_base_kg, ganancia_diaria_kg, fecha_disponible, fecha_peso, fecha_venta_estimada, precio_kg_override, pct_desbaste, pct_cz, ciclo_id, destino_actividad_id"),
         supabase.schema("productivo").from("categorias_hacienda").select("nombre, centro_costo_id"),
         supabase.from("precios_hacienda").select("categoria, precio_pesos_kg, peso_desde, peso_hasta, anio, mes"),
         supabase.schema("productivo").from("actividades").select("id, nombre, activo"),
@@ -338,6 +338,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         fecha_venta_estimada: l.fecha_venta_estimada,
         precio_kg_override: l.precio_kg_override == null ? null : Number(l.precio_kg_override),
         pct_desbaste: Number(l.pct_desbaste) || 0,
+        pct_cz: l.pct_cz == null ? null : Number(l.pct_cz),
         campania: campDeCiclo.get(l.ciclo_id) ?? null,
         actividad: actDeCategoria.get(String(l.categoria)) ?? null,
         // Con destino cargado el lote no es una venta: es un traspaso a otra actividad.
