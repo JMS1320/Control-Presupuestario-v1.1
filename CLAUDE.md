@@ -293,6 +293,22 @@ done
 `A-BUG-62` y devuelve un máximo falso — pasó, y por eso el choque llegó a estar en 4 archivos y un
 commit pusheado antes de saltar.
 
+⚠️⚠️ **Pero mirar antes NO alcanza — hay que RECLAMAR el ID escribiéndolo.**
+*(Corrección aportada por T3 el mismo día, después de que el choque se repitiera **en el otro
+sentido** con las dos terminales mirando bien.)*
+
+> **Pedir el número → escribir la fila y commitear → recién entonces hacer el trabajo.**
+
+Lo que falla no es la calidad de la consulta: es **la distancia entre tener el número y publicarlo**.
+Las dos terminales consultaron correctamente y chocaron igual, porque las dos pidieron el número,
+trabajaron una hora, y escribieron la fila cuando el número ya era de otra. Un comando que devuelva
+el próximo libre **tampoco cierra la ventana**: dos terminales que lo corren con diez segundos de
+diferencia reciben el mismo número, porque ninguna escribió todavía.
+
+Es la **regla 4 aplicada al espacio de IDs** —*el que edita commitea enseguida*—, y cuesta verlo
+porque un ID no parece un archivo compartido. Mismo mecanismo: **lo que no está publicado, no está
+tomado.**
+
 **Y si el choque igual ocurre: renumera el que llegó ÚLTIMO**, nunca el que ya estaba. Se cambian
 también sus referencias cruzadas (el dossier, el manual, los comentarios del código), y se deja
 intacto todo lo del otro.
@@ -300,7 +316,8 @@ intacto todo lo del otro.
 *Motivo: es el único recurso compartido que **no es un archivo** — dos terminales pueden inventar el
 mismo ID sin tocar la misma línea, así que ninguna de las 11 reglas anteriores lo cubre. El control
 `verificar-parser-pendientes.mts` lo detecta, pero **detecta después**: para cuando avisa, el ID ya se
-propagó. La red existe; esta regla es para no necesitarla.*
+propagó. Pasó **dos veces en un día, en los dos sentidos**, y la segunda con las dos terminales
+haciendo bien la consulta — por eso la regla no puede terminar en "fijate antes".*
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
