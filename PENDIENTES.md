@@ -408,6 +408,11 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DAT-09** | 🟢 | Dato | **HECHO 2026-08-27** · **Alta de los tres productos de alimentación**, con OK del usuario: `Maíz Granel`, `Concentrado Novillo 35 10` (novillos de 230 kg o más, en recría **o** engorde, 10 % de inclusión) y `Concentrado Terneros Recria` (desde 100 kg, 15 % de inclusión). Categoría *Alimento balanceado*, en kg, stock en cero. 🔑 **Se nombran por FORMULACIÓN COMERCIAL, no por actividad** — ver [A-DEC-06](#a-dec-06) | → [A-DAT-09](#a-dat-09) `@productivo` |
 | **A-DEC-06** | 🟢 | Decisión | **RESUELTA 2026-08-27** · **Los insumos se nombran por su FORMULACIÓN, no por la actividad que los come** — el caso que lo decidió es real: usaron `Concentrado Novillo` para los terneros **de recría** todo el ciclo. Con nombres por actividad ese hecho **no tiene dónde escribirse**. El stock es físico: una bolsa es la misma la coma quien la coma, y **quién comió ya lo resuelven el reparto por kilo-día y la declaración**, que no miran el nombre. ⚠️ Consecuencia pendiente: si un producto lo comen dos actividades a la vez, hoy el reparto le da todo a recría —engorde no tiene ciclo ni lotes— y hay que **declarar** la parte de engorde | → [A-DEC-06](#a-dec-06) `@productivo` |
 | A-TEST-53 | 🔴 | Test | **El costo medido aparece aunque no haya receta** ([A-BUG-64](#a-bug-64)) — con mediciones cargadas de `Concentrado Novillo 35 10`, en *Presupuesto → Margen → Recría* tiene que aparecer una fila **con ese nombre** y su monto, diciendo *«sin fila de receta que lo proyecte»*. Verificar que **no desaparece** al no haber ningún `actividad_insumos` que se llame igual, y que **no se duplica** con la fila de receta cuando sí matchean (caso `Maíz Granel` con el `producto` cargado) | → [A-TEST-53](#a-test-53) `@presupuesto @productivo` |
+| **A-BUG-65** | 🔴 | Bug | **La ganancia diaria es de la ACTIVIDAD y no se puede ajustar por tramo** — un lote con dos tramos toma la ganancia de cada actividad (`Recría 0,700` · `Engorde 1,200`) y **no hay dónde decir que ESTE lote hace recría a 1,0**. El `ganancia_diaria_kg` del lote existe pero se ignora cuando hay tramos, y el checkbox de override **aplasta los dos tramos por igual** — vuelve la curva a una recta y se pierde el quiebre. Caso real del usuario (2026-08-27, lote de 40): quería 1,0 en recría y 1,2 en engorde; la app calculó con 0,7 y 1,2 → **358,50 kg en vez de 371,40**, ~**$2,5 M** de ingreso. Fix: `lote_tramos.ganancia_diaria_kg` **nullable**, vacío = la de la actividad. Es la regla *default del dato real, siempre editable* | → [A-BUG-65](#a-bug-65) `@productivo` |
+| **A-BUG-66** | 🔴 | Bug | **Un lote sin `ciclo_id` aparece como ingreso en TODAS las campañas** — el margen deduce la campaña del lote desde `stock_ciclos` vía `ciclo_id`; si está vacío queda `campania: null` y el filtro `campania == null \|\| campania === campana` lo **deja pasar siempre**. Los dos lotes de recría cargados (55 y 40) tienen `ciclo_id` en NULL, así que su venta proyectada se cuenta en **25/26 y en 26/27**. Fix: la venta proyectada cae en la campaña de su **`fecha_venta_estimada`**, igual que la real cae en la de `fecha_venta` — `campanaDeFecha()` ya existe | → [A-BUG-66](#a-bug-66) `@presupuesto @productivo` |
+| **A-BUG-67** | 🟡 | Bug | **El lote se imputa entero a la actividad de su CATEGORÍA, aunque haya pasado por dos** — el lote de 40 es `Ternero Recria`, así que **el ingreso y todo el costo de alimentación van a Recría**, cuando 62 de sus 105 días son de Engorde. ⚠️ Y las dos vías no coinciden: el costo **estimado** (`consumoMensual`, vía tramos) sí usa la actividad de cada tramo, pero el **medido** (`costoAlimentacion`, vía `categorias_hacienda`) manda todo a una sola. Hermano de [A-BUG-56](#a-bug-56): el mismo lote, dos caminos, dos actividades | → [A-BUG-67](#a-bug-67) `@presupuesto @productivo` |
+| **A-FEAT-56** | 🟡 | Feat | **La lista de lotes tiene que agruparse por CAMPAÑA y separar cría de recría** — pedido del usuario 2026-08-27: *«la pantalla siempre debe mostrarse por campañas y separado cría de recría para poder entrar y entender rápidamente»*. Hoy es una lista plana y con 5 lotes ya cuesta; con dos campañas y las dos actividades se vuelve ilegible. Ver también [A-BUG-66](#a-bug-66): hoy **la campaña de un lote ni siquiera está bien determinada**, así que este agrupamiento lo necesita resuelto antes | → [A-FEAT-56](#a-feat-56) `@productivo` |
+| **A-DEC-07** | 🔴 | Decisión | **Qué queda de «Generar lotes desde los períodos»** — hay dos generadores y el usuario pide entender para qué es cada uno: *desde períodos* proyecta desde la línea de tiempo del rodeo de cría (% preñez y destete) y genera lotes de **destete y descarte futuros**, para presupuestar años que todavía no pasaron; *desde una pesada* sale de los **animales reales pesados**, con su sexo y su peso. El usuario sospecha —y coincido— que **el desarrollo está en el segundo** y el primero quedó atrás. Hay que decidir si se pule, se limita a las campañas futuras, o se retira | → [A-DEC-07](#a-dec-07) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11277,6 +11282,140 @@ proyecte»*. La receta sirve para **proyectar hacia adelante**; el vínculo entr
 
 Con eso el campo `actividad_insumos.producto` pasa a ser **opcional**: sólo sirve para que la fila
 proyectada y la medida se muestren juntas en vez de separadas.
+
+---
+
+## <a id="a-bug-65"></a>A-BUG-65 — La ganancia diaria no se puede ajustar por tramo
+
+**Encontrado el 2026-08-27 cargando el lote de 40**, y es el hallazgo más caro de esa carga.
+
+### Cómo funciona hoy
+
+`lote_tramos` **no tiene ganancia propia**: `segmentosCurva()` toma la de la **actividad**
+(`Recría 0,700` · `Engorde 1,200`). El `ganancia_diaria_kg` del propio lote existe, pero se usa
+sólo para los huecos sin tramo — o para todo, si se tilda el override.
+
+Y ahí está el segundo problema: **el checkbox aplasta los dos tramos por igual.**
+
+```
+if (lote.ganancia_override) {
+  // la curva vuelve a ser una RECTA, como antes de los tramos
+}
+```
+
+O sea: o usás las ganancias de las actividades, o **perdés el quiebre**. No hay punto medio, que
+es justo lo que el usuario necesita.
+
+### El caso real, con números
+
+Lote de 40, peso 254 kg al 03/08, venta 16/11. Recría hasta el 15/09, engorde después.
+
+| | Recría (43 d) | Engorde (62 d) | Peso a la venta |
+|---|---|---|---|
+| **Lo que quería** | 1,000 kg/día | 1,200 kg/día | **371,40 kg** |
+| **Lo que calculó** | **0,700** (la de la actividad) | 1,200 | **358,50 kg** |
+| Diferencia | | | **12,90 kg/cab** |
+
+Sobre 40 cabezas a $5.300/kg, netos de desbaste y gastos: ≈ **$2,5 M** de ingreso.
+
+📌 **Y el usuario lo cazó a ojo**, no lo cazó ningún control: *"le puse el tramo engorde pero no me
+tomó los datos de engorde para la venta"*.
+
+### El fix
+
+`lote_tramos.ganancia_diaria_kg` **nullable**. Vacío = la de la actividad; con valor, manda el
+tramo. Es exactamente la regla **default del dato real, siempre editable** — y deja el checkbox
+para lo que sirve: un lote sin tramos.
+
+⚠️ Al hacerlo, revisar también **la ración**: `consumoMensual()` toma `racion_pct_pv` de la
+actividad con el mismo criterio. Si la ganancia se puede ajustar por tramo, probablemente la
+ración también deba poder.
+
+---
+
+## <a id="a-bug-66"></a>A-BUG-66 — Un lote sin ciclo aparece en todas las campañas
+
+`panel-margen.tsx` deduce la campaña de un lote desde `stock_ciclos` vía `ciclo_id`:
+
+```
+campania: campDeCiclo.get(l.ciclo_id) ?? null
+...
+const misLotes = d.lotes.filter(l => ... && (l.campania == null || l.campania === d.campana))
+```
+
+**Con `ciclo_id` en NULL queda `campania: null` y el filtro lo deja pasar siempre.**
+
+Los dos lotes de recría cargados —55 y 40— tienen `ciclo_id` vacío: cuelgan de
+`ciclo_recria_id`, que es otra columna. Así que **su venta proyectada se cuenta en 25/26 y también
+en 26/27**.
+
+### El fix, que además unifica
+
+La venta **proyectada** debe caer en la campaña de su **`fecha_venta_estimada`**, igual que la
+**real** cae en la de `fecha_venta` ([A-BUG-62](#a-bug-62)). `campanaDeFecha()` ya existe y ya se
+usa para las ventas reales y las transferencias.
+
+Con eso `ciclo_id` deja de decidir nada sobre la campaña — **la fecha del hecho manda**, que es el
+criterio que ya rige en todo lo demás.
+
+---
+
+## <a id="a-bug-67"></a>A-BUG-67 — El lote se imputa entero a la actividad de su categoría
+
+El lote de 40 es `Ternero Recria`, y `categorias_hacienda` mapea esa categoría a **Recría**. Por
+eso **el ingreso y todo el costo de alimentación se le cargan a Recría** — aunque **62 de sus 105
+días** sean de Engorde.
+
+### ⚠️ Y las dos vías no coinciden
+
+| Vía | Cómo decide la actividad |
+|---|---|
+| Costo **estimado** (`consumoMensual`, por tramo) | la actividad **de cada tramo** ✅ |
+| Costo **medido** (`costoAlimentacion`, por grupo) | la categoría del lote → **una sola** ❌ |
+| **Ingreso** (`calcularMargen`) | la categoría del lote → **una sola** ❌ |
+
+Hermano de [A-BUG-56](#a-bug-56): el mismo lote, dos caminos, dos actividades.
+
+**Hacia dónde**: el grupo del rodeo debería poder partirse por tramo, de modo que el kilo-día de
+los días de engorde se impute a Engorde. El ingreso es más discutible —la venta ocurre una vez— y
+probablemente corresponda a la actividad del **último** tramo, que es la que lo terminó.
+
+📌 Decisión del usuario pendiente. Mientras tanto **no está mal del todo**: él mismo dijo que
+prefiere *"manejar recría y engorde como dentro de recría y no complejizar tanto"*, y que segmentar
+se vería más adelante ([A-FEAT-49](#a-feat-49)).
+
+---
+
+## <a id="a-feat-56"></a>A-FEAT-56 — Los lotes, agrupados por campaña y por actividad
+
+Pedido del usuario, 2026-08-27:
+
+> *"La pantalla siempre debe mostrarse por campañas y separado cría de recría para poder entrar y
+> entender rápidamente."*
+
+Hoy `panel-lotes-hacienda.tsx` muestra **una lista plana**. Con 5 lotes ya cuesta; con dos
+campañas y las dos actividades se vuelve ilegible — y es la pantalla donde se carga todo.
+
+⚠️ **Necesita [A-BUG-66](#a-bug-66) resuelto primero**: hoy la campaña de un lote **ni siquiera
+está bien determinada**, así que agrupar por campaña agruparía mal.
+
+---
+
+## <a id="a-dec-07"></a>A-DEC-07 — Qué queda de «Generar lotes desde los períodos»
+
+El usuario pidió entender para qué es cada uno de los dos generadores, y sospecha que uno quedó
+atrás. Coincido.
+
+| | Generar desde los **períodos** | Cargar desde una **pesada** |
+|---|---|---|
+| De dónde sale | la **línea de tiempo del rodeo de cría** (`calcularLineaTiempo`): % de preñez, de destete, de reposición | los **animales pesados de verdad** (`pesadas_terneros`), con su sexo y su marca |
+| Qué genera | lotes de **destete y descarte futuros** | el stock de **hoy**, con pesos promedio reales por grupo |
+| Para qué sirve | **presupuestar campañas que todavía no pasaron** | cargar lo que existe |
+| Estado | 🟨 quedó atrás — no conoce tramos, ni destino interno, ni la corrección del peso a la venta | 🟩 es donde está el desarrollo |
+
+**Los dos tienen razón de ser** —uno proyecta y el otro registra—, pero el primero arrastra el
+diseño viejo. Hay que decidir: **pulirlo**, **limitarlo explícitamente a campañas futuras**, o
+**retirarlo** y que las campañas futuras se carguen a mano.
 
 ---
 
