@@ -34,6 +34,10 @@ import {
 } from "@/lib/presupuesto/margen"
 import { calcularCuenta, type PuntoHistorico } from "@/lib/presupuesto/modos"
 import { resolverPrecioHacienda } from "@/lib/ganaderia/calculo"
+import { costoAlimentacion, mismoInsumo, type InsumoConDatos } from "@/lib/productivo/costo-alimentacion"
+import { armarGruposRodeo, gruposDelRodeo, type BajaRodeo } from "@/lib/productivo/rodeo"
+import { curvaDeLote, type TramoLote, type LoteCurva } from "@/lib/productivo/tramos"
+import type { Actividad as ActividadProd } from "@/lib/productivo/actividades"
 
 /**
  * Los 12 meses de la campaña: jul → jun. `"26/27"` → jul-2026 … jun-2027.
@@ -70,6 +74,108 @@ function mesesDeCampana(campana: string): MesPeriodo[] {
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const numAR = (n: number, dec = 0) =>
   n.toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec })
+
+
+/**
+ * El costo de alimentación medido, por actividad, para una campaña.
+ *
+ * Junta las tres piezas que ya están verificadas por separado: las mediciones de stock
+ * (`consumo.ts`), la línea de tiempo del rodeo (`rodeo.ts`) y el reparto por actividad
+ * (`costo-alimentacion.ts`). Devuelve vacío cuando no hay mediciones — sin inventar nada.
+ */
+async function cargarCostoAlimentacion(
+  campana: string,
+  actPorId: Map<any, string>,
+  actDeCategoria: Map<string, string | null>,
+) {
+  const p = supabase.schema("productivo")
+  const [{ data: stock }, { data: meds }, { data: movs }, { data: decs },
+         { data: ciclos }, { data: lts }, { data: vtas }, { data: trs },
+         { data: actsProd }, { data: mvHac }, { data: catsHac }] = await Promise.all([
+    p.from("stock_insumos").select("id, producto, unidad_medida"),
+    p.from("mediciones_insumo").select("*").order("fecha"),
+    p.from("movimientos_insumos").select("insumo_stock_id, fecha, cantidad, costo_unitario, tipo"),
+    p.from("consumo_declarado_insumo").select("*"),
+    p.from("ciclos_recria").select("*").eq("activo", true),
+    p.from("stock_lotes").select("*"),
+    p.from("stock_ventas").select("lote_id, fecha_venta"),
+    p.from("lote_tramos").select("*").order("orden"),
+    p.from("actividades").select("*").eq("activo", true),
+    p.from("movimientos_hacienda").select("fecha, tipo, cantidad, categoria_id"),
+    p.from("categorias_hacienda").select("id, nombre"),
+  ])
+
+  const medPorIns = new Map<string, any[]>()
+  for (const m of ((meds || []) as any[])) {
+    const k = String(m.insumo_stock_id)
+    if (!medPorIns.has(k)) medPorIns.set(k, [])
+    medPorIns.get(k)!.push(m)
+  }
+  // Sin al menos dos mediciones no hay consumo que medir: no hay nada que hacer acá.
+  const conMedicion = ((stock || []) as any[]).filter(s => (medPorIns.get(String(s.id))?.length ?? 0) >= 2)
+  if (conMedicion.length === 0 || !((ciclos || []) as any[])[0]) return []
+
+  const ciclo = ((ciclos || []) as any[])[0]
+  const nombreCat = new Map(((catsHac || []) as any[]).map(c => [c.id, String(c.nombre)]))
+  const esRecria = (cat: string) => /recria/i.test(cat)
+  const listaTr = (trs || []) as TramoLote[]
+  const listaAc = (actsProd || []) as unknown as ActividadProd[]
+
+  const filasLote = ((lts || []) as any[])
+    .filter(l => esRecria(String(l.categoria)))
+    .map(l => {
+      const curva = curvaDeLote(l as unknown as LoteCurva, listaTr.filter(t => t.lote_id === l.id), listaAc)
+      const real = ((vtas || []) as any[]).find(v => v.lote_id === l.id)
+      return {
+        id: String(l.id), nombre: `${l.categoria} (${Number(l.cantidad)} cab)`,
+        cabezas: Number(l.cantidad) || 0,
+        fechaSalidaReal: real ? String(real.fecha_venta) : null,
+        fechaSalidaEstimada: l.fecha_venta_estimada ? String(l.fecha_venta_estimada) : null,
+        peso: (f: string) => curva(f),
+        categoria: String(l.categoria),
+      }
+    })
+  const desdeCiclo = String(ciclo.fecha_inicio ?? "")
+  const bajas: BajaRodeo[] = ((mvHac || []) as any[])
+    .filter(m => m.tipo === "mortandad" && esRecria(nombreCat.get(m.categoria_id) ?? "")
+      && String(m.fecha) >= desdeCiclo)
+    .map(m => ({ fecha: String(m.fecha), cabezas: Number(m.cantidad) || 0 }))
+
+  const armado = armarGruposRodeo({ ciclo, lotes: filasLote, bajas })
+  const gruposDe = gruposDelRodeo(armado.grupos, bajas)
+
+  // A qué actividad pertenece cada grupo. Los lotes, por su categoría; el "resto" y las
+  // declaraciones, por lo que ya traen puesto.
+  const actDeLote = new Map(filasLote.map(l => [l.id, actDeCategoria.get(l.categoria) ?? null]))
+  const actDeGrupo = (id: string): string | null => {
+    if (actDeLote.has(id)) return actDeLote.get(id) ?? null
+    if (id === "__resto__") return actDeCategoria.get("Ternero Recria") ?? null
+    // Las declaraciones traen el centro de costo como id de grupo.
+    return actPorId.get(id) ?? null
+  }
+
+  const insumos: InsumoConDatos[] = conMedicion.map(s => ({
+    id: String(s.id), producto: String(s.producto), unidad: s.unidad_medida ?? null,
+    mediciones: (medPorIns.get(String(s.id)) ?? []).map(m => ({
+      fecha: String(m.fecha), cantidad: Number(m.cantidad) || 0, notas: m.notas,
+    })),
+    entregas: ((movs || []) as any[])
+      .filter(m => String(m.insumo_stock_id) === String(s.id) && m.tipo === "compra")
+      .map(m => ({
+        fecha: String(m.fecha), cantidad: Number(m.cantidad) || 0,
+        precioUnitario: m.costo_unitario == null ? null : Number(m.costo_unitario),
+      })),
+    declaraciones: ((decs || []) as any[])
+      .filter(d => String(d.insumo_stock_id) === String(s.id))
+      .map(d => ({
+        fecha: String(d.fecha), grupoId: String(d.centro_costo_id),
+        nombre: actPorId.get(d.centro_costo_id) ?? "actividad",
+        cantidad: Number(d.cantidad) || 0, notas: d.notas,
+      })),
+  }))
+
+  return costoAlimentacion(insumos, gruposDe, actDeGrupo, campanaDeFecha, campana)
+}
 
 /**
  * `recargarToken` — cualquier cambio de este número vuelve a leer todo.
@@ -309,6 +415,16 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
       }
       setEditables(editablesOut)
 
+      // ── El costo de alimentación MEDIDO ───────────────────────────────────
+      //
+      // Hasta acá las filas de ración decían "sin calcular" — `resolverCostoDirecto()` no sabe
+      // resolver `pct_racion` porque no tiene ni curva de peso ni tramos (A-BUG-56). Ahora,
+      // cuando hay mediciones de stock, el número no se estima: **se mide y se reparte**.
+      //
+      // Si no hay medición no se inventa nada: la fila sigue marcada, con el motivo cambiado
+      // para que diga dónde se carga.
+      const medidos = await cargarCostoAlimentacion(campana, actPorId, actDeCategoria)
+
       const costos: CostoDirecto[] = []
       for (const n of nombresAct) {
         const mios = insumosPorActividad.get(claveActividad(n)) ?? []
@@ -369,6 +485,33 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           },
         }
         for (const i of mios) {
+          // El dato REAL primero: si hay consumo medido para este insumo y esta actividad,
+          // manda sobre cualquier estimación. Es la misma regla de siempre.
+          const med = medidos.find(m =>
+            claveActividad(m.actividad) === claveActividad(n) && mismoInsumo(i, m.producto))
+          if (med) {
+            costos.push({
+              actividad: n, concepto: i.concepto, monto: med.monto,
+              motivo: med.monto == null
+                ? `${med.producto}: medido ${med.cantidad.toLocaleString("es-AR", { maximumFractionDigits: 0 })} ${med.unidad ?? ""} — falta el precio de alguna entrega`
+                : `${med.cantidad.toLocaleString("es-AR", { maximumFractionDigits: 0 })} ${med.unidad ?? ""} · consumo MEDIDO y repartido por kilo-día`,
+              insumoId: i.id,
+              // Los pasos son los tramos, acumulando: así al desplegar la fila se ve cómo se
+              // llegó al total y no sólo el resultado.
+              pasos: (() => {
+                let acum = 0
+                return med.detalle.map((d, k) => {
+                  acum += d.monto ?? 0
+                  return { etiqueta: k === 0 ? "Consumo medido" : "", detalle: d.texto, acumulado: acum }
+                })
+              })(),
+              fundamento: i.fundamento,
+            })
+            for (const f of med.faltantes) costos.push({
+              actividad: n, concepto: `⚠️ ${f}`, monto: null, motivo: f,
+            })
+            continue
+          }
           const r = resolverCostoDirecto(i, ctxCosto)
           costos.push({
             actividad: n, concepto: i.concepto, monto: r.monto, motivo: r.motivo,

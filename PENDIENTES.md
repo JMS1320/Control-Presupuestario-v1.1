@@ -365,7 +365,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-39 | 🔴 | Test | **Generar una campaña por tandas** (2026-08-22) — generar 2-3 templates, verificar que pasan a *"ya generados"* y que **no reaparecen** en la corrida siguiente, y que no se duplican cuotas. `MANUAL-USO.md` § Renovar campaña por tandas | → [A-FEAT-42](#a-feat-42) `@egresos` |
 | **A-FEAT-41** | 🔴 | Feat | **La venta manual de hacienda NO da de alta al cliente** en `public.proveedores`, contra la regla de contrapartes (*upsert, nunca sólo UPDATE*). Se ve en [A-DAT-07](#a-dat-07): hubo que crear a Ballester a mano. Y el movimiento manual **no tiene campo de intermediario**, que sí existe en el circuito de *confirmar venta* (`intermediario_id`), así que el intermediario termina como texto libre en observaciones | → [A-FEAT-41](#a-feat-41) `@productivo` |
 | A-TEST-38 | 🔴 | Test | **Export de varias planillas juntas** ([A-FEAT-39](#a-feat-39)) — rango 15/02/2026 → 21/08/2026 con *Una por mes* tiene que anunciar **7 planillas / 14 archivos**, pedir la carpeta **una sola vez** y dejar los 14 adentro. El 1er archivo va del **15/02 al 28/02** (recortado) y el último del **01/08 al 21/08**. Con *Una sola punta a punta* tiene que seguir saliendo **1 planilla**, como antes | → [A-TEST-38](#a-test-38) `@productivo` |
-| **A-FEAT-43** | 🔴 | Feat | **Costeo de recría: la lógica está ACORDADA Y VALIDADA con datos reales — falta llevarla a la app** (2026-08-25/26). Maqueta en Excel con 11 hojas y 429 fórmulas + un resumen de una carilla con solapa por rodeo. Reparte el maíz y el concentrado entre lo vendido y lo que queda, con 6 controles que cierran. **El modelo, las 7 decisiones y lo que falta están en el dossier** | → [A-FEAT-43](#a-feat-43) `@productivo` |
+| **A-FEAT-43** | 🟡 | Feat | **LA CADENA ESTÁ COMPLETA 2026-08-26 — falta testear ([A-TEST-49](#a-test-49))** · **Costeo de recría: la lógica está ACORDADA Y VALIDADA con datos reales — falta llevarla a la app** (2026-08-25/26). Maqueta en Excel con 11 hojas y 429 fórmulas + un resumen de una carilla con solapa por rodeo. Reparte el maíz y el concentrado entre lo vendido y lo que queda, con 6 controles que cierran. **El modelo, las 7 decisiones y lo que falta están en el dossier** | → [A-FEAT-43](#a-feat-43) `@productivo` |
 | **A-FEAT-44** | 🔴 | Feat | **El puente COMPRA → ENTREGA → FACTURA para insumos** — hoy la cadena está cortada: `movimientos_insumos` no tiene `factura_id` y el maíz cae como gasto del mes sin llegar nunca al lote. Son **tres momentos** con conocimiento parcial cada uno: *"compré tanto"* → *"recibí este día"* (mueve el stock) → llega la factura (trae el precio). ⚠️ **La entrega y la factura NO coinciden**: Longo facturó el 13/07 lo entregado el 24/06. Si el stock dependiera de la fecha de factura, los tramos de consumo salen mal | → [A-FEAT-44](#a-feat-44) `@productivo @egresos` |
 | **A-FEAT-45** | 🔴 | Feat | **EL MAPA DEL CIRCUITO — leer esto antes de tocar recría, margen o costos de producción** (2026-08-26). Las 7 pantallas que intervienen, **qué pregunta contesta cada una**, qué alimenta y qué recibe. Nació de que el usuario no podía seguir el plan sin saber para qué sirve cada lugar. Vive en `MODULO_HACIENDA.md` § 15; acá está el ítem para poder referenciarlo. Incluye las 3 decisiones de diseño: **la plata vive en el Margen · la eficiencia en el Ciclo · el puente es el Tramo** | → [A-FEAT-45](#a-feat-45) `@productivo @presupuesto` |
 | **A-BUG-54** | 🟡 | Bug | **HECHO 2026-08-26 — falta testear ([A-TEST-41](#a-test-41))** · **El tramo de un lote se guardaba aunque le dieras CANCELAR** — `SeccionTramos` escribe en `lote_tramos` **al instante**: `+ tramo` hace `INSERT` en el click, y cada cambio de fecha/actividad/ha hace `UPDATE` en el `onChange`. El botón Cancelar del modal no revierte nada porque esos writes nunca pasaron por el formulario. Le pasó al usuario el 2026-08-26: canceló y el tramo quedó. **Y quedó con `fecha_hasta` = 04/08/2027 en vez de 2026** — un año de más que nadie validó, y que hizo que *Costos de producción* proyectara ~$3,5 a $5,1 M por mes indefinidamente. Fix: o el tramo se edita en memoria y se guarda con el modal, o la sección dice **explícitamente** que se guarda sola. Y validar que el tramo no exceda la fecha de venta del lote | → [A-BUG-54](#a-bug-54) `@productivo` |
@@ -393,6 +393,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-47 | 🔴 | Test | **Lo declarado se descuenta y el control sigue cerrando** ([A-FEAT-50](#a-feat-50)) — en *Insumos → Stock → Mediciones* de un insumo con tramos, cargar en el bloque celeste **una actividad + fecha + cantidad**. Verificar: la columna **Declarado** del tramo muestra esa cantidad, el **consumo total no cambia**, y los **3 controles siguen en ✓**. Probar declarar **más de lo consumido** en un tramo: tiene que avisar. Y borrar la declaración: todo vuelve atrás | → [A-TEST-47](#a-test-47) `@productivo` |
 | **A-FEAT-51** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-48](#a-test-48))** · **La línea de tiempo del rodeo: el reparto del consumo ya funciona punta a punta** — `lib/productivo/rodeo.ts` integra **día por día** cuántas cabezas y con qué peso hubo, y le da a `consumo.ts` los grupos con su kilo-día. Los grupos son **los lotes del ciclo**, con su curva de peso y su fecha de salida (**la venta real manda sobre la estimada**); las mortandades se descuentan. Y el **«Resto sin lote»** absorbe lo que no está cargado, para que su comida **no se la repartan los demás en silencio**. Verificado contra la BD real con `scripts/verificar-rodeo.mts`: 185 declaradas = 185 en grupos, 4 mortandades, participaciones = 1 | → [A-FEAT-51](#a-feat-51) `@productivo` |
 | A-TEST-48 | 🔴 | Test | **El reparto del consumo entre los lotes del rodeo** ([A-FEAT-51](#a-feat-51)) — en *Insumos → Stock → Mediciones* del Maíz, con las mediciones cargadas, tiene que aparecer el bloque **«Quién se lo comió»** con una fila por lote y por tramo, sumando **100 %** en cada tramo. Verificar que el lote **vendido el 04/08 deja de comer ese día** (su participación baja en el último tramo) y que **«Resto sin lote»** desaparece a medida que se cargan los lotes de machos y hembras. Probar el aviso de rodeo que no concilia: cargar un lote con **más cabezas de las que declara el ciclo** → tiene que salir la alerta ámbar. Y que las **mortandades** se descuenten: el kilo-día del tramo posterior a una muerte tiene que bajar | → [A-TEST-48](#a-test-48) `@productivo` |
+| **A-FEAT-52** | 🟡 | Feat | **HECHO 2026-08-26 — falta testear ([A-TEST-49](#a-test-49))** · **El costo de alimentación MEDIDO llega al Margen** — `lib/productivo/costo-alimentacion.ts` junta las tres piezas ya verificadas (consumo medido + línea de tiempo del rodeo + reparto) y devuelve el costo por **actividad y campaña**. En *Presupuesto → Margen*, las filas de **Maíz** y **Concentrado** dejan de decir *«sin calcular»* y muestran el **consumo medido y repartido por kilo-día**, desplegable tramo por tramo. **Si no hay mediciones no se inventa nada**: la fila sigue marcada. Cierra la cadena de [A-FEAT-43](#a-feat-43) | → [A-FEAT-52](#a-feat-52) `@presupuesto @productivo` |
+| A-TEST-49 | 🔴 | Test | **La cadena completa del costeo de recría, punta a punta** ([A-FEAT-43](#a-feat-43) + [A-FEAT-52](#a-feat-52)) — con el maíz cargado (producto + 6 entregas + 4 mediciones) y los lotes de machos y hembras creados: en *Presupuesto → Margen → Recría*, la fila **Maíz** tiene que mostrar un **monto**, no *«sin calcular»*, y al desplegarla verse **un renglón por tramo y por grupo**. Contrastar el total contra `Maqueta_Costo_Recria.xlsx`: **tienen que dar lo mismo**, y si no, la diferencia dice qué falta cargar. Verificar que el número **cambia** al cargar un lote nuevo (baja el «Resto sin lote») y que **vuelve a «sin calcular»** si se borra una medición | → [A-TEST-49](#a-test-49) `@presupuesto @productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -10892,6 +10894,51 @@ según desde dónde se mire — que es el modo de falla que ya nos costó caro c
 
 **Llevar el costo repartido al Margen.** Hoy se ve en el panel de mediciones —que es donde se
 carga y se controla— pero todavía no baja a la fila de costo de la actividad.
+
+---
+
+## <a id="a-feat-52"></a>A-FEAT-52 — El costo de alimentación medido llega al Margen
+
+**Hecho el 2026-08-26.** Es el último eslabón: cierra la cadena de [A-FEAT-43](#a-feat-43).
+
+### La cadena, completa
+
+```
+  mediciones + entregas  →  consumo.ts             cuánto se consumió y a qué precio, por tramo
+  lotes + mortandades    →  rodeo.ts               cuánto animal-kilo hubo cada día
+  declaraciones          →  consumo.ts             lo que el usuario imputó a mano
+                             ↓
+                        costo-alimentacion.ts      quién paga cuánto, por actividad y campaña
+                             ↓
+                        panel-margen.tsx           la fila de Maíz muestra un número
+```
+
+Cada eslabón estaba verificado por separado. Este los junta.
+
+### Qué cambia en la pantalla
+
+La fila **Maíz** de Recría decía *«el modo pct_racion necesita la curva de peso y los tramos —
+todavía no se resuelve acá»*. Ahora dice el consumo **medido** y se despliega tramo por tramo, con
+un renglón por grupo.
+
+⚠️ **Y no reemplaza a la estimación por las malas**: el medido gana **sólo si existe**. Sin
+mediciones cargadas la fila sigue marcada como antes. Es la regla de siempre — el dato real por
+default, y nada inventado cuando falta.
+
+### Dos decisiones que quedan escritas
+
+**1 · Un tramo cae entero en la campaña de su fecha de inicio.** Partirlo por mes sería más fino,
+pero el consumo se midió sobre el tramo completo: repartirlo por días inventaría una precisión que
+la medición no tiene.
+
+**2 · El vínculo insumo ↔ costo va por `actividad_insumos.producto`**, que existe justamente para
+eso. Si está vacío se cae al nombre del concepto —"Maíz" con "Maíz"—, pero eso es un match por
+texto y por eso **manda el campo explícito**. Conviene cargarlo.
+
+### El control que queda pendiente y vale la pena
+
+Contrastar el total contra `Maqueta_Costo_Recria.xlsx`. **Tienen que dar lo mismo** — y si no, la
+diferencia dice qué falta cargar. Es el camino inverso, que es siempre el mejor control.
 
 ---
 
