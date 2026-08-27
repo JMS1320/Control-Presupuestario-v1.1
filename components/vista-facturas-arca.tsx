@@ -4928,7 +4928,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Raíces de los templates SICORE: la campaña **25/26**, que es la primera. NO son "los" templates
   // SICORE — son el **arranque del linaje**.
   //
-  // 🐞 **A-BUG-54** — hasta 2026-08-27 acá decía "IDs fijos de los templates SICORE" y se consultaba
+  // 🐞 **A-BUG-63** — hasta 2026-08-27 acá decía "IDs fijos de los templates SICORE" y se consultaba
   // `.in('egreso_id', [1RA, 2DA])` a secas. Al renovar la campaña, el clon es una fila **con otro
   // id** (Modelo A, § A-FEAT-42), así que al cerrar una quincena el modal ofrecía **sólo las cuotas
   // de 25/26** — que eran 2 y ya vencidas — y las 24 de 26/27 **no existían para la pantalla**.
@@ -4987,7 +4987,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   const abrirModalAsignarCuota = async (quincena: string, totalRet: number) => {
-    // Los dos linajes completos: la campaña vieja Y todas las renovadas (A-BUG-54).
+    // Los dos linajes completos: la campaña vieja Y todas las renovadas (A-BUG-63).
     const [linaje1ra, linaje2da] = await Promise.all([
       linajeTemplates(RAIZ_SICORE_1RA),
       linajeTemplates(RAIZ_SICORE_2DA),

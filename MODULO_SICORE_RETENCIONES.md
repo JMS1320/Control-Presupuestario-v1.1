@@ -326,7 +326,7 @@ qué campaña es** (`1er Quincena · 26/27 | 20/08/2026 — $0`). La preselecci�
 vence **después** del cierre de la quincena; si no hay ninguna, cae a la **más futura** disponible —
 nunca a la más vieja.
 
-> 🐞 **De dónde salió — [A-BUG-54](PENDIENTES.md#a-bug-54).** El usuario cerró una quincena el
+> 🐞 **De dónde salió — [A-BUG-63](PENDIENTES.md#a-bug-63).** El usuario cerró una quincena el
 > 2026-08-27 y el modal le ofreció **sólo las 2 cuotas sobrantes de 25/26**, las dos ya vencidas,
 > mientras las **24 de 26/27 ya estaban generadas**. Tuvo que cargar la retención a mano.
 >

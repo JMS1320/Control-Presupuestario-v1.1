@@ -1255,7 +1255,7 @@ Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de 
 factura califica por monto pero no tiene fecha de pago, se guarda **sin retención** y te avisa
 cuántas fueron. No se inventa la fecha con la de vencimiento ni con la estimada.
 
-### 📥 Al cerrar la quincena: volcar lo retenido a la cuota del template 🟡 *(arreglado 2026-08-27, sin testear — [A-TEST-41](PENDIENTES.md#a-test-41))*
+### 📥 Al cerrar la quincena: volcar lo retenido a la cuota del template 🟡 *(arreglado 2026-08-27, sin testear — [A-TEST-52](PENDIENTES.md#a-test-52))*
 Al cerrar una quincena SICORE se ofrece cargar **el total efectivamente retenido** en una cuota de
 los templates *SICORE 1er / 2da Quincena*. Cada opción dice **de qué campaña es**:
 
