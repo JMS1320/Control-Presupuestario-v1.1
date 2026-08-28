@@ -54,3 +54,6 @@ Thumbs.db
 # ARCA — POC standalone y experimentación local (ya migrado a lib/arca/)
 arca-integration/
 arca-poc/
+
+# Credenciales — NUNCA al repo (A-SEC-02). El archivo tiene un token a revocar.
+CREDENCIALES_SUPABASE_NUEVO.md
