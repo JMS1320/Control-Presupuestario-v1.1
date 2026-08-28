@@ -106,6 +106,16 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
     await cargar()
   }
 
+  /** Lo que se está tipeando en cada campo del vínculo, sin formatear. */
+  const [edit, setEdit] = useState<Record<string, string>>({})
+
+  const actualizarVinculo = async (id: string, campos: Record<string, unknown>) => {
+    const { error } = await supabase.schema("productivo").from("entrega_factura")
+      .update({ ...campos, updated_at: new Date().toISOString() }).eq("id", id)
+    if (error) { alert("Error: " + error.message); return }
+    await cargar()
+  }
+
   const desvincular = async (id: string) => {
     const { error } = await supabase.schema("productivo").from("entrega_factura").delete().eq("id", id)
     if (error) { alert("Error: " + error.message); return }
@@ -229,10 +239,40 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                         {v.origen === "template" ? "Template" : "FC"}{" "}
                         {v.factura?.numero ?? "?"} · {v.factura ? dmy(v.factura.fecha) : "—"}
                       </span>
-                      <span className="text-[10px] text-gray-500">{v.factura?.proveedor}</span>
-                      <span className="ml-auto text-[11px] text-gray-700">
-                        {fmtNumeroAR(v.cantidad, 0)} {um}
-                        {v.precioUnitario != null && ` × ${pesos(v.precioUnitario)}`}
+                      <span className="text-[10px] text-gray-500">
+                        {v.factura?.proveedor?.slice(0, 22)}
+                      </span>
+                      {/* Editable en el lugar: rehacer un vínculo para corregir un precio era
+                          borrar y volver a buscar la factura. Y con el borrador por campo, para
+                          que no reformatee en cada tecla (el problema de A-BUG-68). */}
+                      <label className="ml-auto flex items-center gap-1">
+                        <Input className="h-6 w-24 text-right text-[11px]"
+                          value={edit[`c${v.id}`] ?? fmtNumeroAR(v.cantidad, 0)}
+                          onFocus={() => setEdit(p => ({ ...p, [`c${v.id}`]: String(v.cantidad) }))}
+                          onChange={ev => setEdit(p => ({ ...p, [`c${v.id}`]: ev.target.value }))}
+                          onBlur={ev => {
+                            const val = parseNumeroAR(ev.target.value)
+                            setEdit(p => { const q = { ...p }; delete q[`c${v.id}`]; return q })
+                            if (val > 0 && val !== v.cantidad) actualizarVinculo(v.id, { cantidad: val })
+                          }} />
+                        <span className="text-[10px] text-gray-400">{um} ×</span>
+                        <Input className="h-6 w-24 text-right text-[11px]" placeholder="sin precio"
+                          value={edit[`p${v.id}`] ?? (v.precioUnitario == null ? "" : fmtNumeroAR(v.precioUnitario))}
+                          onFocus={() => setEdit(p => ({
+                            ...p, [`p${v.id}`]: v.precioUnitario == null ? "" : String(v.precioUnitario).replace(".", ","),
+                          }))}
+                          onChange={ev => setEdit(p => ({ ...p, [`p${v.id}`]: ev.target.value }))}
+                          onBlur={ev => {
+                            const txt = ev.target.value.trim()
+                            setEdit(p => { const q = { ...p }; delete q[`p${v.id}`]; return q })
+                            const val = txt === "" ? null : parseNumeroAR(txt)
+                            if (val !== (v.precioUnitario ?? null)) {
+                              actualizarVinculo(v.id, { precio_unitario: val })
+                            }
+                          }} />
+                      </label>
+                      <span className="w-24 text-right text-[10px] text-gray-500">
+                        {v.precioUnitario == null ? "—" : pesos(v.cantidad * v.precioUnitario)}
                       </span>
                       <button type="button" className="text-gray-300 hover:text-red-500"
                         onClick={() => desvincular(v.id)}>
