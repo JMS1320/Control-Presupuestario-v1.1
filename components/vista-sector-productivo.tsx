@@ -18,6 +18,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { traerRespaldos } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
@@ -3128,6 +3129,8 @@ interface FacturaParaVincular {
   proveedor: string
   numero: string
   neto: number
+  /** `arca` = comprobante · `template` = cuota de egreso sin factura. */
+  origen: 'arca' | 'template'
 }
 
 function SubTabStockInsumos() {
@@ -3245,15 +3248,12 @@ function SubTabStockInsumos() {
     agregarLineaMov()
     setMostrarModalMov(true)
     if (tipo !== 'compra') return
-    // Las facturas se traen al abrir y no en cada tecla: son 400 filas y el buscador filtra local.
-    const { data } = await supabase.schema('msa').from('comprobantes_arca')
-      .select('id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado')
-      .order('fecha_emision', { ascending: false }).limit(400)
-    setFacturas(((data || []) as any[]).map(f => ({
-      id: String(f.id), fecha: String(f.fecha_emision ?? ''),
-      proveedor: String(f.denominacion_emisor ?? ''),
-      numero: `${String(f.punto_venta ?? 0).padStart(4, '0')}-${String(f.numero_desde ?? 0).padStart(8, '0')}`,
-      neto: Number(f.imp_neto_gravado) || 0,
+    // Se traen al abrir y no en cada tecla: el buscador filtra local. Y vienen los DOS
+    // orígenes —comprobantes de ARCA y cuotas de template—, porque no todo gasto es una
+    // factura: el maíz del 16/03 entró por template (A-FEAT-61).
+    setFacturas((await traerRespaldos(supabase as never)).map(f => ({
+      id: f.id, fecha: f.fecha, proveedor: f.proveedor, numero: f.numero, neto: f.neto,
+      origen: f.origen ?? 'arca',
     })))
   }
 
@@ -3334,6 +3334,7 @@ function SubTabStockInsumos() {
           factura_id: x.l.factura_id,
           cantidad: parseNumeroAR(x.l.cantidad),
           precio_unitario: x.l.costo_unitario ? parseNumeroAR(x.l.costo_unitario) : null,
+          origen: facturas.find(f => f.id === x.l.factura_id)?.origen ?? 'arca',
         }))
       if (vinculos.length > 0) {
         const { error: eV } = await supabase.schema('productivo')
@@ -3788,7 +3789,10 @@ function SubTabStockInsumos() {
                                           String(Math.round((f.neto / cant) * 10000) / 10000).replace('.', ','))
                                       }
                                     }}>
-                                    <span className="font-medium">{f.numero}</span>{' '}
+                                    <span className={f.origen === 'template'
+                                      ? 'font-medium text-sky-700' : 'font-medium'}>
+                                      {f.origen === 'template' ? 'TEMPLATE · ' : ''}{f.numero}
+                                    </span>{' '}
                                     <span className="text-muted-foreground">
                                       {f.fecha} · {f.proveedor.slice(0, 28)}
                                     </span>

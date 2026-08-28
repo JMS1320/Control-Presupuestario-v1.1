@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X, Link2 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  conciliarEntregasFacturas,
+  conciliarEntregasFacturas, traerRespaldos,
   type EntregaInsumo, type FacturaCompra, type Vinculo,
 } from "@/lib/productivo/entregas-facturas"
 
@@ -72,20 +72,12 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
         id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
         cantidad: Number(v.cantidad) || 0,
         precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
+        origen: v.origen ?? 'arca',
       })))
 
-      // Las facturas de compra. Se traen las del año en curso para no cargar 400 filas: el
-      // buscador de abajo filtra sobre eso.
-      const { data: fcs } = await supabase.schema("msa").from("comprobantes_arca")
-        .select("id, fecha, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total")
-        .order("fecha", { ascending: false }).limit(400)
-      setFacturas(((fcs || []) as any[]).map(f => ({
-        id: String(f.id), fecha: String(f.fecha),
-        proveedor: String(f.denominacion_emisor ?? ""),
-        numero: `${String(f.punto_venta ?? 0).padStart(4, "0")}-${String(f.numero_desde ?? 0).padStart(8, "0")}`,
-        neto: Number(f.imp_neto_gravado) || 0,
-        total: Number(f.imp_total) || 0,
-      })))
+      // Los respaldos: comprobantes de ARCA **y** cuotas de template. No todo gasto es una
+      // factura — el maíz del 16/03 entró por template (A-FEAT-61).
+      setFacturas(await traerRespaldos(supabase as never))
     } finally { setCargando(false) }
   }, [insumo])
 
@@ -99,6 +91,7 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
       factura_id: facElegida,
       cantidad: parseNumeroAR(cant),
       precio_unitario: precio.trim() === "" ? null : parseNumeroAR(precio),
+      origen: facturas.find(f => f.id === facElegida)?.origen ?? "arca",
     })
     setGuardando(false)
     if (error) {
@@ -136,6 +129,8 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
           La <strong>entrega mueve el stock</strong>; la <strong>factura trae el precio</strong>. No
           coinciden ni en fecha ni en cantidad, así que una factura puede cubrir parte de dos
           entregas y una entrega la pueden cubrir dos facturas.
+          {" "}<strong>El respaldo también puede ser un template</strong> — no todo gasto entra
+          por una factura de ARCA.
         </p>
 
         {cargando ? (
@@ -180,8 +175,10 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                     <p className="py-1 text-[10px] text-gray-400">Sin facturas vinculadas.</p>
                   ) : e.vinculos.map(v => (
                     <div key={v.id} className="flex flex-wrap items-center gap-2 border-b py-1 last:border-0">
-                      <span className="text-[10px] text-gray-600">
-                        FC {v.factura?.numero ?? "?"} · {v.factura ? dmy(v.factura.fecha) : "—"}
+                      <span className={`text-[10px] ${
+                        v.origen === "template" ? "text-sky-700" : "text-gray-600"}`}>
+                        {v.origen === "template" ? "Template" : "FC"}{" "}
+                        {v.factura?.numero ?? "?"} · {v.factura ? dmy(v.factura.fecha) : "—"}
                       </span>
                       <span className="text-[10px] text-gray-500">{v.factura?.proveedor}</span>
                       <span className="ml-auto text-[11px] text-gray-700">
@@ -213,7 +210,10 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                             onClick={() => { setFacElegida(f.id); setBusca(`${f.proveedor} · ${f.numero}`) }}
                             className={`flex w-full items-center gap-2 px-2 py-1 text-left text-[10px] hover:bg-gray-50
                               ${facElegida === f.id ? "bg-blue-50" : ""}`}>
-                            <span className="text-gray-700">{f.proveedor}</span>
+                            <span className={f.origen === "template"
+                              ? "font-medium text-sky-700" : "text-gray-700"}>
+                              {f.origen === "template" ? "TEMPLATE" : f.proveedor}
+                            </span>
                             <span className="text-gray-400">{f.numero}</span>
                             <span className="ml-auto text-gray-600">{dmy(f.fecha)} · {pesos(f.neto)}</span>
                           </button>

@@ -25,15 +25,23 @@ export interface EntregaInsumo {
   costoUnitarioManual: number | null
 }
 
+/**
+ * El respaldo de una entrega. **No siempre es una factura de ARCA**: también puede ser la cuota
+ * de un template de egresos sin factura — el maíz del 16/03 entró así.
+ *
+ * Se llama `FacturaCompra` por historia; lo que representa es *el papel que respalda el gasto*.
+ */
 export interface FacturaCompra {
   id: string
   fecha: string
   proveedor: string
-  /** Nº visible: `0003-00001234`. */
+  /** Nº visible: `0003-00001234`, o la descripción de la cuota si es un template. */
   numero: string
   /** Neto gravado: es sobre lo que se calcula el costo, sin IVA. */
   neto: number
   total: number
+  /** De qué tabla salió. Un template no tiene IVA discriminado: su neto ES el monto. */
+  origen?: 'arca' | 'template'
 }
 
 /** Un pedazo de una entrega cubierto por una factura. */
@@ -43,6 +51,7 @@ export interface Vinculo {
   facturaId: string
   cantidad: number
   precioUnitario: number | null
+  origen?: 'arca' | 'template'
 }
 
 export interface EntregaConciliada {
@@ -126,7 +135,7 @@ export function conciliarEntregasFacturas(
     if (cantidadFacturada > e.cantidad + 0.001) {
       faltantes.push(`las facturas cubren ${num(cantidadFacturada)} y sólo se entregaron ${num(e.cantidad)}`)
     } else if (sinFacturar > 0.001) {
-      faltantes.push(`${num(sinFacturar)} sin factura todavía`)
+      faltantes.push(`${num(sinFacturar)} sin factura ni template todavía`)
     }
 
     return { entrega: e, vinculos: mios, cantidadFacturada, sinFacturar, precioUnitario, origenPrecio, faltantes }
@@ -156,11 +165,11 @@ export function conciliarEntregasFacturas(
     totalEntregado, totalFacturado, totalSinFacturar,
     controles: [
       {
-        nombre: 'Lo entregado tiene factura',
+        nombre: 'Lo entregado tiene respaldo',
         cierra: totalSinFacturar < 0.001,
         detalle: totalSinFacturar < 0.001
-          ? `las ${num(totalEntregado)} entregadas están facturadas`
-          : `${num(totalSinFacturar)} de ${num(totalEntregado)} sin factura`,
+          ? `las ${num(totalEntregado)} entregadas tienen su factura o su template`
+          : `${num(totalSinFacturar)} de ${num(totalEntregado)} sin respaldo`,
       },
       {
         nombre: 'Lo facturado está aplicado',
@@ -188,4 +197,64 @@ export function entregasParaConsumo(c: ControlEntregasFacturas) {
     detalle: [e.entrega.proveedor, e.origenPrecio === 'manual' ? 'precio a mano' : null]
       .filter(Boolean).join(' · ') || undefined,
   }))
+}
+
+// ── De dónde salen los respaldos ─────────────────────────────────────────────
+
+/**
+ * Trae los dos orígenes posibles del respaldo de una entrega, en una sola lista.
+ *
+ * Vive acá y no en cada pantalla porque **lo usan tres**: el panel de Facturas, el modal de
+ * compra de insumos y el margen. Tres consultas distintas al mismo concepto es como terminan
+ * mostrando cosas distintas.
+ *
+ * `sb` se pasa como parámetro para no importar el cliente acá — este archivo es lógica pura y
+ * se testea sin base.
+ */
+export async function traerRespaldos(
+  sb: {
+    schema: (s: string) => {
+      from: (t: string) => {
+        select: (c: string) => {
+          order: (c: string, o?: { ascending?: boolean }) => {
+            limit: (n: number) => PromiseLike<{ data: unknown[] | null }>
+          }
+        }
+      }
+    }
+  },
+  limite = 400,
+): Promise<FacturaCompra[]> {
+  const [arca, cuotas] = await Promise.all([
+    sb.schema('msa').from('comprobantes_arca')
+      .select('id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total')
+      .order('fecha_emision', { ascending: false }).limit(limite),
+    // La CUOTA, no el template: es la que tiene fecha y monto concretos.
+    sb.schema('public').from('cuotas_egresos_sin_factura')
+      .select('id, fecha_pago, fecha_estimada, monto, descripcion, categ, egreso_id')
+      .order('fecha_estimada', { ascending: false }).limit(limite),
+  ])
+
+  const deArca: FacturaCompra[] = (((arca.data ?? []) as Record<string, unknown>[])).map(f => ({
+    id: String(f.id),
+    fecha: String(f.fecha_emision ?? ''),
+    proveedor: String(f.denominacion_emisor ?? ''),
+    numero: `${String(f.punto_venta ?? 0).padStart(4, '0')}-${String(f.numero_desde ?? 0).padStart(8, '0')}`,
+    neto: Number(f.imp_neto_gravado) || 0,
+    total: Number(f.imp_total) || 0,
+    origen: 'arca',
+  }))
+
+  // ⚠️ En un template el **monto ES el neto**: no hay IVA discriminado que descontar.
+  const deTemplate: FacturaCompra[] = (((cuotas.data ?? []) as Record<string, unknown>[])).map(c => ({
+    id: String(c.id),
+    fecha: String(c.fecha_pago ?? c.fecha_estimada ?? ''),
+    proveedor: String(c.categ ?? 'template'),
+    numero: String(c.descripcion ?? '').slice(0, 60) || 'cuota sin descripción',
+    neto: Number(c.monto) || 0,
+    total: Number(c.monto) || 0,
+    origen: 'template',
+  }))
+
+  return [...deArca, ...deTemplate].sort((a, b) => b.fecha.localeCompare(a.fecha))
 }
