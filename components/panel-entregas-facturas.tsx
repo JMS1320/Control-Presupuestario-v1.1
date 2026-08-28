@@ -396,8 +396,13 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                         {pesos(f.montoAplicado)} de {pesos(f.factura.neto)}
                       </span>
                       {!cierra && (
-                        <span className="text-[10px] font-medium text-amber-800">
-                          quedan {pesos(resto)}
+                        <span className={`text-[10px] font-medium ${
+                          resto < 0 ? "text-red-700" : "text-amber-800"}`}>
+                          {/* Imputar de MÁS no es lo mismo que faltar: significa que a esta
+                              factura se le cargó mercadería que respalda OTRA. */}
+                          {resto < 0
+                            ? `imputado de MÁS por ${pesos(-resto)}`
+                            : `quedan ${pesos(resto)}`}
                         </span>
                       )}
                     </div>

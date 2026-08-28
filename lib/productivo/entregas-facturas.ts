@@ -163,8 +163,13 @@ export function conciliarEntregasFacturas(
   const usados = facs.filter(f => f.cantidadAplicada > 0)
   const netoFacturas = usados.reduce((s, f) => s + f.factura.neto, 0)
   const aplicado = usados.reduce((s, f) => s + f.montoAplicado, 0)
+  // ⚠️ **El total no alcanza como control.** Dos errores opuestos se compensan: con una factura
+  // imputada de menos por $1.310.750 y otra de más por $1.310.795, la diferencia global da $45 y
+  // el control diría que todo cierra. Por eso además se mira **respaldo por respaldo**.
   const cercaPlata = usados.length === 0
-    || Math.abs(netoFacturas - aplicado) < Math.max(1, netoFacturas * 0.001)
+    || (Math.abs(netoFacturas - aplicado) < Math.max(1, netoFacturas * 0.001)
+        && usados.every(f => Math.abs(f.factura.neto - f.montoAplicado)
+          < Math.max(1, f.factura.neto * 0.001)))
 
   return {
     entregas: conc, facturas: facs,
@@ -184,9 +189,14 @@ export function conciliarEntregasFacturas(
           ? 'todavía no hay ningún respaldo vinculado'
           : cercaPlata
             ? `los ${usados.length} respaldos vinculados están imputados enteros`
-            : `facturado $${num(netoFacturas)} · aplicado $${num(aplicado)}`
-              + ` · **quedan $${num(netoFacturas - aplicado)}** sin imputar a ninguna entrega`
-              + ' (anticipo, o una entrega que falta cargar)',
+              + ', uno por uno'
+            : (() => {
+                const mal = usados.filter(f => Math.abs(f.factura.neto - f.montoAplicado)
+                  >= Math.max(1, f.factura.neto * 0.001))
+                return `${mal.length} de ${usados.length} respaldos no cierran contra lo imputado`
+                  + ` · diferencia global $${num(netoFacturas - aplicado)}`
+                  + ' — mirá el detalle de abajo, el total puede cerrar con dos errores que se compensan'
+              })(),
       },
     ],
   }
