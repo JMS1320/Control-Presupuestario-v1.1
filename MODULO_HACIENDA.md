@@ -1042,3 +1042,78 @@ venta de cría = entrada de recría. Es lo que hace que un resultado cierre y el
 
 Una carga, dos lecturas. Lo único nuevo es **una apertura adentro del Margen** para ver el resultado
 por grupo — y que la suma dé exacto **es el control**.
+
+---
+
+## 16 · 📥 El circuito del INSUMO — dónde está cada cosa
+
+> Se cerró el 2026-08-28 cargando la recría 2026 punta a punta. Complementa el § 15 (el mapa de
+> pantallas) del lado de los insumos. Trabajo y bugs: `PENDIENTES.md` § A-FEAT-44 y A-FEAT-47.
+
+### 16.1 · Las cuatro piezas, y qué aporta cada una
+
+```
+   COMPRA          ENTREGA            RESPALDO            MEDICIÓN
+   (no existe)  →  mueve stock    →   trae el precio  →   dice el consumo
+                   movimientos_       entrega_factura      mediciones_
+                   insumos                                 insumo
+```
+
+| Pieza | Tabla | Sin ella |
+|---|---|---|
+| **Entrega** | `movimientos_insumos` (tipo `compra`) | no hay stock ni tramos |
+| **Respaldo** | `productivo.entrega_factura` | el precio se tipea y no se puede auditar |
+| **Medición** | `productivo.mediciones_insumo` | el consumo se estima, no se mide |
+| **Pedido** | — | 🔴 no existe → [A-FEAT-55](PENDIENTES.md#a-feat-55) |
+
+### 16.2 · El respaldo es MUCHOS A MUCHOS, y tiene que serlo
+
+Lo facturado y lo entregado **no coinciden ni en fecha ni en cantidad**. El caso testigo, real:
+
+| | |
+|---|---|
+| FC 13/07 facturó **25 t** | se entregaron **20,1 t** el 24/06 |
+| FC 14/08 facturó **20,1 t** | se entregaron **25 t** el 24/07 |
+
+Las 4,9 t de diferencia son un **anticipo** que viaja con su propio precio. Un `factura_id` en el
+movimiento obligaría a inventar una correspondencia que no existe.
+
+⚠️ **El stock lo mueve la ENTREGA.** Si dependiera de la fecha de factura, los tramos de consumo
+saldrían mal — y de los tramos sale el costo de cada grupo.
+
+### 16.3 · El respaldo no siempre es una factura de ARCA
+
+`entrega_factura.origen` distingue:
+
+| origen | apunta a | el neto es |
+|---|---|---|
+| `arca` | `comprobantes_arca` | `imp_neto_gravado` |
+| `template` | **la cuota** de `cuotas_egresos_sin_factura` | ⚠️ **el `monto`** — no hay IVA discriminado |
+
+Se vincula **la cuota, no el template**: la cuota tiene fecha y monto concretos. El caso real es el
+maíz del 16/03, que entró como *Otros Gastos · MAIZ*.
+
+📌 `factura_id` **nunca tuvo FK**, y eso es lo que permitió sumar el segundo origen sin migrar nada.
+
+### 16.4 · La foto del maíz 2026, como quedó
+
+| Entrega | Kg | Respaldo | Precio |
+|---|---|---|---|
+| 16/03 | 1.740 | **template** maíz Castillo | $192,99 |
+| 06/05 | 7.300 | FC 0001-00000024 | $262,00 |
+| 02/06 | 7.560 | FC 0001-00000025 | $254,00 |
+| 17/06 | 4.960 | FC 0003-00000017 | $238,35 |
+| 24/06 | 20.100 | FC 0002-00000516 | $267,50 |
+| 24/07 | 25.000 | FC 0002-00000516 (4.900) + FC 0002-00000525 (20.100) | $267,14 *calculado* |
+| **Total** | **66.660** | **los 7 respaldos cierran** ✅ | |
+
+Concentrado: 22/07 · 3.000 kg de **Novillo 35 10** · $729 · cierra contra Biofarma.
+
+⚠️ **El 16/03 no está en ARCA** y el **06/05** tiene la factura fechada el **11/05**: dos casos
+donde la fecha del papel no es la del camión.
+
+### 16.5 · Lo que todavía no sabe el sistema
+
+**Cuántos kilos declara una factura.** Sin ese dato no se puede distinguir *«el precio está raro»*
+de *«esta factura cubre más de lo que llegó»* — y por eso hace falta mostrar la división y comparar
+contra la mediana de las otras entregas. Ver `KNOWLEDGE.md` § *Derivar un precio dividiendo*.
