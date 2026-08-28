@@ -1039,10 +1039,18 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           kg_total: g.kg,
           pesos: [...g.pesos].sort((a, b) => b - a),   // desc: los más pesados primero
           fecha_pesada: g.fmax || null,
-          // Lo que ya se cargó de este grupo, para no volver a ofrecerlo
+          /**
+           * Lo que ya se cargó de este grupo, para no volver a ofrecerlo.
+           *
+           * ⚠️ **Sólo los lotes SIN venta registrada.** El grupo son los animales **activos**:
+           * los vendidos ya salieron de ahí. Sumar también sus lotes comparaba peras con
+           * manzanas — con 48 machos activos y 95 cabezas en lotes (55 vendidos + 40), la
+           * cuenta daba 0 y la pantalla mostraba "de 48" como si faltara cargar todo.
+           */
           yaCargadas: lotes
             .filter(l => l.origen === "stock_inicial" && l.categoria === (esMacho(g.sexo)
               ? (g.marcado ? "Torito" : "Ternero Recria") : "Ternera Recria"))
+            .filter(l => ventasDe(l.id).length === 0)
             .reduce((n, l) => n + Number(l.cantidad || 0), 0),
           categoria: esMacho(g.sexo)
             ? (g.marcado ? "Torito" : "Ternero Recria")
@@ -1162,21 +1170,22 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           updated_at: new Date().toISOString(),
         }
 
-        if (existente) {
-          // No pisar un lote que ya tiene ventas: ahí manda lo que se decidió
-          if (ventasDe(existente.id).length > 0) continue
-          const { error } = await supabase.schema("productivo").from("stock_lotes")
-            .update(payload).eq("id", existente.id)
-          if (error) { alert("Error: " + error.message); return }
-        } else {
-          const { error } = await supabase.schema("productivo").from("stock_lotes").insert({
-            empresa: "MSA", ciclo_id: null,
-            categoria: g.categoria, origen: "stock_inicial",
-            fecha_disponible: fecha,
-            ...payload,
-          })
-          if (error) { alert("Error: " + error.message); return }
-        }
+        // ⚠️ Desde acá SÓLO se crean lotes; **nunca se actualiza uno existente**.
+        //
+        // Lo pidió el usuario (2026-08-27): *"actualizar de ahí no es conveniente, para editar
+        // ya lo puedo hacer desde el lote cargado"*. Y tenía razón: esta pantalla recalcula
+        // cantidad y peso promedio desde la pesada, así que pisaría cualquier ajuste hecho a
+        // mano —tramos, ganancia, desbaste— sin decir que lo estaba pisando.
+        //
+        // Lo que se trae es **lo que falta**, y va a un lote nuevo.
+        void existente
+        const { error } = await supabase.schema("productivo").from("stock_lotes").insert({
+          empresa: "MSA", ciclo_id: null,
+          categoria: g.categoria, origen: "stock_inicial",
+          fecha_disponible: fecha,
+          ...payload,
+        })
+        if (error) { alert("Error: " + error.message); return }
       }
       onCerrar()
       await onListo()
@@ -1292,7 +1301,8 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
                         )}
                       </div>
-                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${
+                        g.cabezas - g.yaCargadas <= 0 ? "hidden" : ""}`}>
                         <span className="text-[10px] text-gray-500">Traer</span>
                         <Input className="h-7 w-16 text-right text-xs"
                           value={edits[g.clave]?.cant ?? ""}
@@ -1343,7 +1353,17 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                         )
                       })()}
                       <div className="text-xs text-gray-600">
-                        <strong>{g.cabezas}</strong> cabezas · pesada{" "}
+                        <strong>{g.cabezas}</strong> con pesada
+                        {g.yaCargadas > 0 && (
+                          <span className="text-gray-500"> · {n0(g.yaCargadas)} ya en lotes</span>
+                        )}
+                        {" · "}
+                        {g.cabezas - g.yaCargadas > 0 ? (
+                          <strong className="text-blue-700">quedan {n0(g.cabezas - g.yaCargadas)}</strong>
+                        ) : (
+                          <strong className="text-emerald-700">ya está todo cargado</strong>
+                        )}
+                        {" · pesada "}
                         <strong>{n1(g.peso_prom)} kg</strong>
                         {/* El peso de la pesada es histórico. Lo que importa es el peso A LA
                             VENTA —con el que se factura y con el que se elige la banda—, y sólo
@@ -1361,9 +1381,10 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                           </strong>{" "}
                           <span className="text-gray-400">({diasDesdePesada} días)</span></>
                         ) : null}
-                        {lotes.some(l => l.origen === "stock_inicial"
-                          && l.categoria === g.categoria && l.fecha_disponible === fecha) && (
-                          <span className="ml-2 text-blue-600">· ya existe, se actualiza</span>
+                        {g.cabezas - g.yaCargadas <= 0 && (
+                          <span className="ml-2 text-gray-500">
+                            · se edita desde el lote, no desde acá
+                          </span>
                         )}
                       </div>
                     </div>
