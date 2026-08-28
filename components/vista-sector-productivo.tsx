@@ -15,6 +15,9 @@ import { PanelEntregasFacturas } from "./panel-entregas-facturas"
 // Parser único del proyecto: coma decimal y punto de miles, como manda
 // CLAUDE.md § Convención Inputs Monetarios (es-AR).
 import { parseNumeroAR } from "@/lib/format/numero"
+// El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
+// Escribir otro habría sido la cuarta copia.
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
@@ -3669,15 +3672,13 @@ function SubTabStockInsumos() {
               <Input type="date" value={movCabecera.fecha}
                 onChange={e => setMovCabecera(p => ({ ...p, fecha: e.target.value }))} />
             </div>
-            <div>
-              <Label>Proveedor</Label>
-              <Input value={movCabecera.proveedor} placeholder="Nombre proveedor"
-                onChange={e => setMovCabecera(p => ({ ...p, proveedor: e.target.value }))} />
-            </div>
-            <div>
-              <Label>CUIT</Label>
-              <Input value={movCabecera.cuit} placeholder="Ej: 30123456789"
-                onChange={e => setMovCabecera(p => ({ ...p, cuit: e.target.value }))} />
+            {/* Un solo control para proveedor y CUIT: el combobox del proyecto los trae
+                juntos del maestro, así que tipear el CUIT aparte era pedirle dos veces lo
+                mismo — y con el riesgo de que no coincidan. */}
+            <div className="col-span-2">
+              <ProveedorCombobox
+                value={{ cuit: movCabecera.cuit, nombre: movCabecera.proveedor }}
+                onChange={sel => setMovCabecera(p => ({ ...p, proveedor: sel.nombre, cuit: sel.cuit }))} />
             </div>
             <div>
               <Label>Observaciones</Label>
@@ -3752,13 +3753,28 @@ function SubTabStockInsumos() {
                           <Input className="h-8 text-xs" placeholder="buscar factura…"
                             value={buscaFc[linea.key] ?? ''}
                             onChange={e => setBuscaFc(p => ({ ...p, [linea.key]: e.target.value }))} />
-                          {(buscaFc[linea.key] ?? '').trim().length >= 2 && (
+                          {((buscaFc[linea.key] ?? '').trim().length >= 1
+                            || movCabecera.proveedor.trim() !== '') && (
                             <div className="max-h-28 overflow-y-auto rounded border bg-background">
-                              {facturas
-                                .filter(f => `${f.proveedor} ${f.numero}`.toLowerCase()
-                                  .includes((buscaFc[linea.key] ?? '').trim().toLowerCase()))
-                                .slice(0, 8)
-                                .map(f => (
+                              {(() => {
+                                const q = (buscaFc[linea.key] ?? '').trim().toLowerCase()
+                                // Con proveedor elegido en la cabecera, la lista ya sale
+                                // filtrada por él: no hay que escribir nada para verla.
+                                const prov = movCabecera.proveedor.trim().toLowerCase()
+                                const cand = facturas.filter(f => {
+                                  const txt = `${f.proveedor} ${f.numero}`.toLowerCase()
+                                  if (prov && !f.proveedor.toLowerCase().includes(prov.slice(0, 12))) return false
+                                  return q === '' || txt.includes(q)
+                                })
+                                if (cand.length === 0) {
+                                  return (
+                                    <p className="px-1.5 py-1 text-[10px] text-muted-foreground">
+                                      Sin facturas que coincidan
+                                      {prov ? ' con ese proveedor' : ''}. Probá por número.
+                                    </p>
+                                  )
+                                }
+                                return cand.slice(0, 8).map(f => (
                                   <button key={f.id} type="button"
                                     className="block w-full px-1.5 py-1 text-left text-[10px] hover:bg-muted"
                                     onClick={() => {
@@ -3777,7 +3793,8 @@ function SubTabStockInsumos() {
                                       {f.fecha} · {f.proveedor.slice(0, 28)}
                                     </span>
                                   </button>
-                                ))}
+                                ))
+                              })()}
                             </div>
                           )}
                         </div>

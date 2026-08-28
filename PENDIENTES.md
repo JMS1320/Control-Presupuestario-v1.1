@@ -446,6 +446,10 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-FEAT-60** | 🟡 | Feat | **HECHO 2026-08-28 — falta testear ([A-TEST-64](#a-test-64))** · **La compra de un insumo puede vincular su factura en el mismo acto** — lo pidió el usuario: *«¿no sería bueno hacer en conjunto los 2 pasos, crear la compra y ya vincular la factura?»*. En *Nueva Compra de Insumos* cada línea tiene ahora un **buscador de factura**; al elegirla, si el costo está vacío **se deriva del neto** (`neto ÷ cantidad`), y al guardar se crea el vínculo. ⚠️ **Sólo el caso simple** —una factura que cubre la entrega entera—, que es la mayoría; el **parcial** (una factura repartida entre dos entregas, o al revés, como los fletes de Longo) se arma en el panel de *Facturas*, que es el único que sabe expresarlo. **Acá no se finge que se puede** | → [A-FEAT-60](#a-feat-60) `@productivo` |
 | A-TEST-64 | 🔴 | Test | **Cargar una compra con su factura de una vez** ([A-FEAT-60](#a-feat-60)) — en *Insumos → + Compra*, cargar la entrega del **02/06 · Maíz Granel · 7.560 kg** y en la columna **Factura** buscar `Arroyo`: al elegir la **0001-00000025** el costo tiene que **completarse solo en 254** (1.920.240 ÷ 7.560). Guardar y verificar en el panel **Facturas** del Maíz que la entrega aparece **con su factura vinculada** y el precio *«de las facturas»*. Probar también dejar la factura **vacía**: la entrega se guarda igual y queda *«sin factura todavía»*. Y forzar un fallo del vínculo: la **entrega no se debe perder** | → [A-TEST-64](#a-test-64) `@productivo` |
 | **A-DAT-12** | 🔴 | Dato | **La entrega de Pereyra son 4.960 kg, no 5.960 — lo destapó la factura** — el dato venía de la maqueta como *5,96 t a $238.352,82/t*, o sea **$1.420.583**; el neto de la **FC 0003-00000017** es **$1.182.230**. La diferencia son **$238.353 = exactamente una tonelada**, y `4,96 × 238.352,82 = 1.182.230,00` **al peso**. Fue un 5 donde iba un 4. **El total comprado pasa de 67.660 a 66.660 kg** y el consumo medido de 61.860 a 60.860. 📌 Cuatro de las seis facturas dan exacto contra la entrega; ésta no daba — **el control contra el comprobante lo encontró solo**, que es justo para lo que existe [A-FEAT-44](#a-feat-44) | → [A-DAT-12](#a-dat-12) `@productivo` |
+| **A-BUG-80** | 🟡 | Bug | **HECHO 2026-08-28 — falta testear ([A-TEST-65](#a-test-65))** · **En la compra de insumos el proveedor era texto libre y el buscador de facturas no abría** — dos cosas encadenadas. El campo *Proveedor* era un `Input` suelto (y el CUIT otro al lado, pidiendo dos veces el mismo dato con riesgo de que no coincidan), y el buscador de facturas exigía **2 letras tipeadas** sin decirlo. Fix: se usa el **`ProveedorCombobox` que ya existe** —con CUIT, alta y normalización de acentos— y el buscador de facturas **sale filtrado por el proveedor de la cabecera**, sin escribir nada. Si no hay coincidencias, lo dice. Lo reportó el usuario: *«no me abre buscador de facturas… no me abrió para seleccionar proveedor y debería»* | → [A-BUG-80](#a-bug-80) `@productivo` |
+| A-TEST-65 | 🔴 | Test | **El proveedor y el buscador de facturas** ([A-BUG-80](#a-bug-80)) — en *Insumos → + Compra*, el campo **Proveedor** tiene que ser un **buscador** (escribir `arroyo` y que aparezca ARROYO TALA con su CUIT). Al elegirlo, la columna **Factura** de la línea tiene que mostrar **sus facturas sin escribir nada**. Verificar que elegir una **completa el costo** desde el neto. Y sin proveedor en la cabecera: escribir **una** letra en el buscador ya tiene que listar | → [A-TEST-65](#a-test-65) `@productivo` |
+| **A-FEAT-61** | 🔴 | Feat | **Vincular una entrega con un TEMPLATE, no sólo con una factura de ARCA** — pedido del usuario 2026-08-28: *«habría que poder también vincular con template, sin esos vínculos en el futuro habrá errores»*. **Tiene razón, y el error es el doble conteo**: un gasto que entró por template es plata real; si la entrega que respalda no queda vinculada, o el costo se cuenta **dos veces** (por el template y por el consumo), o la entrega queda sin respaldo y su precio hay que tipearlo. Caso concreto: la entrega de **maíz del 16/03 (1,74 t)** entró como *template otros gastos* y **no está en `comprobantes_arca`** — hoy queda como *«sin factura todavía»* para siempre. Es la **misma regla** que ya rige para las cuentas: [A-DEC-04](#a-dec-04) — *lo adjudicado se descuenta del reparto general* | → [A-FEAT-61](#a-feat-61) `@productivo @egresos` |
+| **A-FEAT-62** | 🟡 | Feat | **Todos los campos de proveedor deberían tener buscador** — pedido del usuario 2026-08-28, al encontrar uno de texto libre en la compra de insumos ([A-BUG-80](#a-bug-80)). **El componente ya existe** —`components/ui/proveedor-combobox.tsx`, con CUIT, alta desde el propio buscador y normalización de acentos— y **hoy lo usan sólo 3 pantallas**: comprobante de venta MSA, liquidación MSA y reglas de import. Hay que **buscar todos los lugares que piden un proveedor** y pasarlos al combobox. ⚠️ No es cosmético: un proveedor tipeado a mano **no queda vinculado al maestro**, y de ahí salen el CUIT, el CBU y el pre-filtro del motor de conciliación (§ *Contrapartes* de `CLAUDE.md`) | → [A-FEAT-62](#a-feat-62) `@general` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11574,6 +11578,42 @@ selectivo al que el ternero entra y come **una cantidad por día**, no un porcen
 
 *Y el teórico que el usuario busca es exactamente eso: los kg por cabeza y por día. Después el
 consumo medido lo corrige, como en recría.*
+
+---
+
+## <a id="a-feat-61"></a>A-FEAT-61 — Vincular una entrega con un template
+
+**Pedido del usuario, 2026-08-28:**
+
+> *"Habría que poder también vincular con template. Sin esos vínculos, en el futuro habrá errores."*
+
+### Por qué tiene razón
+
+El vínculo entrega ↔ factura ([A-FEAT-44](#a-feat-44)) sólo mira `comprobantes_arca`. Pero **no
+todo gasto entra por una factura de ARCA**: hay egresos sin factura y templates, y ésos también
+pagan mercadería que después se consume.
+
+**El error que evita es el doble conteo**, el mismo de siempre:
+
+| Sin el vínculo | Qué pasa |
+|---|---|
+| El template ya cargó el gasto | y el consumo lo carga **otra vez** → duplicado |
+| O la entrega queda sin respaldo | y su precio hay que **tipearlo a mano**, sin poder auditarlo |
+
+**Caso concreto ya presente**: la entrega de **maíz del 16/03 (1,74 t a $193.000/t)** entró como
+*template otros gastos · sub Maíz*. No está en `comprobantes_arca`, así que hoy queda marcada
+**«sin factura todavía» para siempre** — y el aviso, que debería servir, se vuelve ruido.
+
+### La forma, que ya está decidida
+
+Es la **misma regla** de [A-DEC-04](#a-dec-04): **lo adjudicado se descuenta del reparto general.**
+Una entrega vinculada a un template hace que ese pedazo del template **no se vuelva a contar**
+como gasto por su cuenta.
+
+`entrega_factura` ya es muchos a muchos y no tiene FK a `comprobantes_arca` — justamente para no
+atarse a una tabla. Sumarle un `origen` (`arca` / `template` / `egreso_sin_factura`) es el cambio
+chico; lo que hay que diseñar es **de dónde sale la cantidad** en un template, que no tiene
+kilos: probablemente se declare al vincular, como ya se hace con las facturas.
 
 ---
 
