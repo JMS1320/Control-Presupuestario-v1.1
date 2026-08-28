@@ -406,6 +406,19 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   const pesoHoy = pesoEstimado(l, hoy, curva)
                   const des = desactualizado(l)
                   const val = valuarLoteConPrecios(l, vs, precios, curva)
+                  /**
+                   * Un TRASPASO INTERNO no lleva IVA: no hay factura. Sí se le descuenta la
+                   * comercialización — regla del usuario (2026-08-27): *"si recría vende, ésta
+                   * se resta; entonces cría no debe pagar por ello"*.
+                   *
+                   * `valuarLote()` no sabe qué es un traspaso y le sumaba el IVA: el lote de 69
+                   * de reposición valía $109,3 M y la columna mostraba $117,0 M (A-BUG-72).
+                   */
+                  const esTraspaso = Boolean(
+                    (l as { destino_actividad_id?: string | null }).destino_actividad_id)
+                  const montoMostrado = esTraspaso
+                    ? val.venta_neta - val.cz
+                    : val.monto
                   return (
                     <tr key={l.id} className={`border-b hover:bg-gray-50 ${des ? "bg-amber-50/40" : ""}`}>
                       <td className="px-3 py-2">{l.categoria}</td>
@@ -486,7 +499,14 @@ export function PanelLotesHacienda({ linea, onCambio }: {
 `
                             + `IIBB ${fmtPesos(val.iibb)} en ${val.mes_iibb}`
                           : undefined}>
-                        {val.proyectado && val.monto > 0 ? fmtPesos(val.monto) : "—"}
+                        {val.proyectado && montoMostrado > 0 ? (
+                          <>
+                            {fmtPesos(montoMostrado)}
+                            {esTraspaso && (
+                              <span className="ml-1 text-[9px] text-sky-700">traspaso</span>
+                            )}
+                          </>
+                        ) : "—"}
                         {val.proyectado && val.estimado && <span className="text-amber-500">*</span>}
                       </td>
                       <td className="px-3 py-2 text-gray-600">
@@ -541,7 +561,12 @@ export function PanelLotesHacienda({ linea, onCambio }: {
           <span className="font-semibold text-emerald-800">
             Total presupuestado:{" "}
             {fmtPesos(lotes.reduce((s, l) =>
-              s + valuarLoteConPrecios(l, ventasDe(l.id), precios, curvaDe(l)).monto, 0))}
+              s + (() => {
+                const v = valuarLoteConPrecios(l, ventasDe(l.id), precios, curvaDe(l))
+                // Los traspasos suman su valor sin IVA — ver el comentario de la fila.
+                return (l as { destino_actividad_id?: string | null }).destino_actividad_id
+                  ? v.venta_neta - v.cz : v.monto
+              })(), 0))}
           </span>
         </div>
       )}
@@ -955,6 +980,8 @@ interface GrupoPesada {
   fecha_pesada: string | null
   categoria: string
   esRetencion: boolean
+  /** true si son los que NUNCA se pesaron: van al promedio del grupo. */
+  sinPesada?: boolean
   /** Cabezas de este grupo que ya se cargaron como lote. */
   yaCargadas: number
 }
@@ -1019,6 +1046,23 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         const { data, error } = modo === "fecha" ? await q.eq("fecha", fecha) : await q
         if (error) { console.error(error); return }
 
+        // ── Los que NUNCA se pesaron ──────────────────────────────────────────
+        //
+        // No son "los que faltaron en la última": el modo *última pesada de cada animal* ya
+        // rescata a los que se pesaron alguna vez. Éstos no tienen ninguna — hoy eran 8 machos
+        // y 8 hembras. Sin esto quedaban afuera del stock y nadie los reclamaba.
+        //
+        // Se ofrecen aparte y **al promedio de su grupo**, que es lo único que se sabe de ellos.
+        const { data: todos } = await supabase.schema("productivo").from("terneros")
+          .select("id, sexo, es_torito, activo")
+        const conPesada = new Set(((data || []) as any[]).map(r => String(r.ternero_id)))
+        const sinPesadaPorGrupo = new Map<string, number>()
+        for (const t of ((todos || []) as any[])) {
+          if (t.activo === false || conPesada.has(String(t.id))) continue
+          const k = `${String(t.sexo ?? "")}|${!!t.es_torito}`
+          sinPesadaPorGrupo.set(k, (sinPesadaPorGrupo.get(k) ?? 0) + 1)
+        }
+
         // ⚠️ Fuera los dados de baja. Sus pesadas siguen existiendo, así que sin este filtro un
         // animal ya vendido se volvía a ofrecer para presupuestar su venta.
         let filas = ((data || []) as any[]).filter(r => r.ternero?.activo !== false)
@@ -1080,6 +1124,38 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           // Hembra marcada = retenida para reposicion: NO se vende
           esRetencion: !esMacho(g.sexo) && g.marcado,
         })).sort((a, b) => a.sexo.localeCompare(b.sexo) || Number(a.marcado) - Number(b.marcado))
+
+        // Una fila propia por grupo para los que nunca se pesaron. Va aparte y no mezclada,
+        // porque sin pesos individuales el selector de "los más pesados" no significa nada.
+        const extra: GrupoPesada[] = []
+        for (const [k, n] of sinPesadaPorGrupo) {
+          if (n <= 0) continue
+          const [sexo, marcadoTxt] = k.split("|")
+          const marcado = marcadoTxt === "true"
+          const hermano = out.find(g => g.sexo === sexo && g.marcado === marcado)
+          const categoria = esMacho(sexo ?? "")
+            ? (marcado ? "Torito" : "Ternero Recria") : "Ternera Recria"
+          const esRet = !esMacho(sexo ?? "") && marcado
+          // Lo ya cargado de este grupo cubre PRIMERO a los pesados; el excedente, a éstos.
+          const cargadasGrupo = lotes
+            .filter(l => l.origen === "stock_inicial" && l.categoria === categoria)
+            .filter(l => ventasDe(l.id).length === 0)
+            .filter(l => esRet === Boolean(
+              (l as { destino_actividad_id?: string | null }).destino_actividad_id))
+            .reduce((acc2, l) => acc2 + Number(l.cantidad || 0), 0)
+          extra.push({
+            clave: `${k}|sinpesada`, sexo: sexo ?? "", marcado,
+            cabezas: n,
+            peso_prom: hermano?.peso_prom ?? 0,
+            kg_total: (hermano?.peso_prom ?? 0) * n,
+            pesos: [],                       // sin pesos: el promedio del grupo es todo lo que hay
+            fecha_pesada: hermano?.fecha_pesada ?? null,
+            categoria, esRetencion: esRet,
+            yaCargadas: Math.max(0, cargadasGrupo - (hermano?.cabezas ?? 0)),
+            sinPesada: true,
+          })
+        }
+        out.push(...extra)
 
         setGrupos(out)
         // Por defecto se traen los vendibles; la retencion queda destildada
@@ -1322,6 +1398,11 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                         {g.esRetencion && (
                           <Badge variant="outline" className="text-[10px]">retención — no se vende</Badge>
                         )}
+                        {g.sinPesada && (
+                          <Badge variant="outline" className="text-[10px] text-amber-700">
+                            nunca pesados — van al promedio del grupo
+                          </Badge>
+                        )}
                       </div>
                       <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${
                         g.cabezas - g.yaCargadas <= 0 ? "hidden" : ""}`}>
@@ -1375,7 +1456,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                         )
                       })()}
                       <div className="text-xs text-gray-600">
-                        <strong>{g.cabezas}</strong> con pesada
+                        <strong>{g.cabezas}</strong>{g.sinPesada ? " sin pesada" : " con pesada"}
                         {g.yaCargadas > 0 && (
                           <span className="text-gray-500"> · {n0(g.yaCargadas)} ya en lotes</span>
                         )}

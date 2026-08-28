@@ -624,7 +624,9 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
         const yaHayLoteADestino = lotesOut.some(l =>
           l.destinoActividad && claveActividad(l.destinoActividad) === claveActividad("Recria"))
         if (cabezas > 0 && c.fecha_inicio && !yaHayLoteADestino) {
-          const monto = precioEnt != null && kgNetos > 0 ? kgNetos * precioEnt : null
+          // Misma regla que el traspaso por lote: se descuenta la comercialización, no el IVA.
+          const czEnt = pctGastoVentaPorDefecto("Ternero")
+          const monto = precioEnt != null && kgNetos > 0 ? kgNetos * precioEnt * (1 - czEnt) : null
           transferencias.push({
             concepto: "Destete: entrada de cría",
             actividadOrigen: "Cria", actividadDestino: "Recria",
@@ -647,7 +649,8 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
           l.destinoActividad && claveActividad(l.destinoActividad) === claveActividad("Cria"))
         if (cabRep > 0 && !yaHayLoteACria) {
           const kgRep = cabRep * brutoRep * (1 - desbaste)
-          const monto = precioRep != null && kgRep > 0 ? kgRep * precioRep : null
+          const czRep = pctGastoVentaPorDefecto("Ternera")
+          const monto = precioRep != null && kgRep > 0 ? kgRep * precioRep * (1 - czRep) : null
           transferencias.push({
             concepto: "Reposición: vaquillonas a cría",
             actividadOrigen: "Recria", actividadDestino: "Cria",

@@ -734,7 +734,20 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       : l.peso_base_kg
     const kgNetos = l.cabezas * bruto * (1 - (l.pct_desbaste || 0))
     const precio = l.precio_kg_override
-    const monto = precio != null && kgNetos > 0 ? kgNetos * precio : null
+    const bruta = precio != null && kgNetos > 0 ? kgNetos * precio : null
+    /**
+     * ⚠️ La COMERCIALIZACIÓN se descuenta; el IVA **no**.
+     *
+     * Lo fijó el usuario (2026-08-27): *"sí se debe descontar la comercialización, ya que si
+     * recría vende ésta se resta — entonces cría no debe pagar por ello"*. O sea: el precio del
+     * traspaso es **de mercado**, y para que la operación sea neutra para el que entrega hay que
+     * netearlo de lo que el mercado se habría llevado.
+     *
+     * El **IVA no va**: en un traspaso no hay factura, y pasárselo al que recibe sería cargarle
+     * un impuesto que nadie pagó.
+     */
+    const pctCz = l.pct_cz != null ? l.pct_cz : d.pctGastoVenta(l.categoria)
+    const monto = bruta == null ? null : bruta * (1 - pctCz)
     return {
       concepto: `${l.categoria} → ${l.destinoActividad}`,
       actividadOrigen: l.actividad!, actividadDestino: l.destinoActividad!,
@@ -743,7 +756,8 @@ export function calcularMargen(d: DatosMargen): MargenActividad[] {
       detalle: monto == null
         ? `${num(l.cabezas)} cab · ${num(kgNetos)} kg netos — falta el $/kg del traspaso`
         : `${num(l.cabezas)} cab × ${num(bruto * (1 - (l.pct_desbaste || 0)))} kg netos`
-          + ` × ${pesos(precio!)}/kg · traspaso interno, sin comisión`,
+          + ` × ${pesos(precio!)}/kg − ${num(pctCz * 100)} % de comercialización`
+          + ` · traspaso interno, sin IVA`,
     }
   })
 
