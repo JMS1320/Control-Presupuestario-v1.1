@@ -434,6 +434,11 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-BUG-75** | 🟡 | Bug | **HECHO 2026-08-27 — falta testear ([A-TEST-61](#a-test-61))** · **Los TORITOS quedaban fuera del rodeo de recría y su comida se la repartían los demás** — el filtro era `/recria/i`, y `Torito` no matchea. El lote de 9 toritos existía y aun así caía en *«Resto sin lote»*. El usuario lo había dicho desde el principio: *«comen todos los machos incluidos los 9 toritos y todas las hembras incluidas las de reposición»*. Fix: `/recria\|torito/i` en los tres lugares que arman el rodeo — el margen, el panel de mediciones y el script de verificación | → [A-BUG-75](#a-bug-75) `@productivo` |
 | A-TEST-61 | 🔴 | Test | **La pesada no deja duplicar, y los toritos comen** ([A-BUG-74](#a-bug-74) + [A-BUG-75](#a-bug-75)) — en *Cargar desde una pesada*, un grupo que dice *«ya está todo cargado»* tiene que tener el **checkbox deshabilitado** y la fila en gris. Y en *Mediciones → Quién se lo comió* (o `scripts/verificar-rodeo.mts`) tiene que aparecer la fila **Torito (9 cab)** con su kilo-día — hoy da **4,9 %** — y el *«Resto sin lote»* bajar de **7,0 % a 2,2 %** | → [A-TEST-61](#a-test-61) `@productivo` |
 | **A-DAT-11** | 🟡 | Dato | **Los lotes de CRÍA no tienen tramos ni precio** — los 4 de *Ternero/Ternera al Pie* (26,5 · 78,5 · 93,5 · 110,5 cab) están **sin tramos** —así que no tienen curva de peso ni costo de alimentación— y **sin precio**, así que salen de la banda. Es coherente con que cría todavía no se cargó, pero conviene saberlo: **su peso a la venta hoy es el peso base sin engordar** (197,3 kg en 2027 y 2028), y con [A-DEC-05](#a-dec-05) cría va a llevar maíz y concentrado, que necesitan tramos para imputarse | → [A-DAT-11](#a-dat-11) `@productivo` |
+| **A-BUG-76** | 🟡 | Bug | **HECHO 2026-08-27 — falta testear ([A-TEST-62](#a-test-62))** · **El grupo de TORITOS se seguía ofreciendo aunque su lote ya estuviera** — el desempate por *destino interno* que separa a las hembras de reposición de las de venta ([A-BUG-71](#a-bug-71)) se estaba aplicando **también a los machos**. Los toritos tienen categoría propia, así que no se confunden con nadie, pero **su lote sí tiene destino interno** (van a cría como futuros toros): el filtro lo descartaba de *«ya cargadas»* y la pantalla los volvía a ofrecer. Fix: el destino **sólo desempata entre hembras**. Lo reportó el usuario: *«no me permite el check salvo por los 9 toritos, que sí me lo permite»* | → [A-BUG-76](#a-bug-76) `@productivo` |
+| A-TEST-62 | 🔴 | Test | **Los toritos ya no se re-ofrecen** ([A-BUG-76](#a-bug-76)) — en *Cargar desde una pesada*, con el lote de **9 toritos** ya creado (destino `Cria`), el grupo *Torito* tiene que decir **«ya está todo cargado»** y tener el **checkbox deshabilitado**, igual que los demás. Verificar que las hembras **no se rompieron**: *Ternera Recria* sin marcar sigue en **«12 · ya está todo cargado»** y la marcada en **«69 · ya está todo cargado»** | → [A-TEST-62](#a-test-62) `@productivo` |
+| **A-DEC-10** | 🔴 | Decisión | **El precio de un insumo NO debería cargarse en la receta de la actividad** — `actividad_insumos.precio_unitario` guarda el $/kg del maíz y del concentrado, y el usuario lo marcó al cargar el creep feeding de cría: *«me pedía precio de maíz y concentrado y me pareció que ya no es más ése el lugar, los precios siempre se deben tomar de tablas maestras»*. **Tiene razón, y ya hay dos fuentes mejores**: el **precio real** sale de las facturas vinculadas a las entregas ([A-FEAT-44](#a-feat-44)) y el **proyectado** debería salir de una tabla de precios de insumos, como `precios_hacienda` para la hacienda. Hoy el número de la receta es una **tercera copia** que nadie actualiza. ⚠️ **Mientras tanto hay que cargarlo igual**: es lo único que hace que la proyección dé algo | → [A-DEC-10](#a-dec-10) `@productivo @presupuesto` |
+| **A-FEAT-58** | 🟡 | Feat | **El creep feeding necesita el modo `kg_cabeza_dia`, no `pct_racion`** — el usuario cargó el maíz y el concentrado de cría como **% de la ración** y preguntó dónde pondría *«un teórico de cuánto deberían comer»*. `pct_racion` calcula sobre `racion_pct_pv × peso vivo`, que para un ternero al pie **no aplica**: el creep feeding se sirve en **kg por cabeza y por día**, no como fracción del peso del animal. El modo **ya existe** (`kg_cabeza_dia`) y `consumoMensual()` lo resuelve — falta usarlo y que la pantalla explique cuándo va cada uno. 📌 Y la actividad **Cría tiene `racion_pct_pv` en 0,00 %**, así que hoy `pct_racion` da **cero** | → [A-FEAT-58](#a-feat-58) `@productivo` |
+| **A-FEAT-59** | 🔴 | Feat | **Las hembras que se retienen también comen al pie, y no aparecen como lote** — al destete sólo se generan los lotes de **venta**; las que se van a guardar para reposición no salen, y **comen igual** (al pie de la madre y después). Lo marcó el usuario 2026-08-27. Con [A-FEAT-49](#a-feat-49) ya hay cómo expresarlas —un lote con **destino interno**— pero *«Generar lotes desde los períodos»*, que es el generador de cría, **no las crea**. Sin ellas el rodeo de cría no concilia y su ración se la reparten las de venta. Va junto con [A-DEC-07](#a-dec-07) | → [A-FEAT-59](#a-feat-59) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11517,6 +11522,51 @@ mismo**. El peso mueve *quién paga*, no *cuánto se consumió*.
 **Al terminar la carga**, por decisión del usuario — quiere ver primero cuántos casos aparecen de
 verdad al cargar el ciclo entero, en vez de diseñar contra una lista imaginada. Es el mismo
 criterio con el que se ordenó todo el trabajo de estos días.
+
+---
+
+## <a id="a-dec-10"></a>A-DEC-10 — El precio del insumo no va en la receta
+
+**Planteado por el usuario el 2026-08-27**, cargando el creep feeding de cría:
+
+> *"Me pedía precio de maíz y concentrado y me pareció que ya no es más ése el lugar donde
+> ponerlo, ya que los precios siempre se deben tomar de tablas maestras de precios."*
+
+**Tiene razón.** Hoy el $/kg vive en `actividad_insumos.precio_unitario`, y a esta altura ya es
+una **tercera copia**:
+
+| Para qué | De dónde debería salir | ¿Existe? |
+|---|---|---|
+| El costo **real** | de la **factura** vinculada a la entrega | ✅ [A-FEAT-44](#a-feat-44) |
+| La **proyección** | de una tabla maestra de precios de insumos | ❌ no existe |
+| Lo que hay hoy | un número tipeado en la receta **que nadie actualiza** | ⚠️ |
+
+Es el mismo patrón que `precios_hacienda` resolvió para la hacienda: un maestro con fecha, y el
+cálculo lo consulta. Sin eso, cada receta congela el precio del día que se cargó.
+
+⚠️ **Mientras tanto hay que cargarlo igual** — es lo único que hace que la proyección dé algo
+distinto de cero. El usuario ya lo asumió: *"si hoy hay que ponerlo ahí lo pongo, pero quedaría
+como pendiente verlo"*.
+
+---
+
+## <a id="a-feat-58"></a>A-FEAT-58 — El creep feeding va por kg/cabeza/día, no por % de la ración
+
+El usuario cargó el maíz y el concentrado de cría como **`pct_racion`** y preguntó dónde pondría
+*"un teórico de cuánto deberían comer"*. La pregunta señala el problema:
+
+`pct_racion` calcula sobre **`racion_pct_pv × peso vivo`** — la ración diaria como fracción del
+peso del animal. **Para un ternero al pie eso no aplica**: el creep feeding es un comedero
+selectivo al que el ternero entra y come **una cantidad por día**, no un porcentaje de lo que pesa.
+
+**El modo correcto ya existe**: `kg_cabeza_dia`, y `consumoMensual()` lo resuelve
+(`ins.valor × días × cabezas`). Falta usarlo y que la pantalla diga cuándo va cada uno.
+
+📌 **Y hay un segundo motivo, más terminante**: la actividad **Cría tiene `racion_pct_pv` en
+0,00 %**, así que `pct_racion` hoy da **cero** — la receta está cargada y no produce nada.
+
+*Y el teórico que el usuario busca es exactamente eso: los kg por cabeza y por día. Después el
+consumo medido lo corrige, como en recría.*
 
 ---
 

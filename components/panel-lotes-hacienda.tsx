@@ -1137,11 +1137,16 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
             .filter(l => l.origen === "stock_inicial" && l.categoria === (esMacho(g.sexo)
               ? (g.marcado ? "Torito" : "Ternero Recria") : "Ternera Recria"))
             .filter(l => ventasDe(l.id).length === 0)
-            // ⚠️ Las hembras retenidas y las de venta comparten categoría: lo que las separa
-            // del lado del lote es el **destino interno**. Sin esto, cargar las 69 de
-            // reposición hacía desaparecer a las 12 que sí se venden.
-            .filter(l => (!esMacho(g.sexo) && g.marcado)
-              === Boolean((l as { destino_actividad_id?: string | null }).destino_actividad_id))
+            // ⚠️ Las hembras retenidas y las de venta comparten la categoría `Ternera Recria`:
+            // lo que las separa del lado del lote es el **destino interno**. Sin esto, cargar
+            // las 69 de reposición hacía desaparecer a las 12 que sí se venden.
+            //
+            // ⚠️⚠️ **Sólo aplica a las HEMBRAS.** Los toritos tienen su propia categoría, así
+            // que no se confunden con nadie — y pueden tener destino interno igual (van a cría
+            // como futuros toros). Usar el destino para ellos hacía que su lote no contara como
+            // cargado y la pantalla los volviera a ofrecer (A-BUG-76).
+            .filter(l => esMacho(g.sexo) || g.marcado === Boolean(
+              (l as { destino_actividad_id?: string | null }).destino_actividad_id))
             .reduce((n, l) => n + Number(l.cantidad || 0), 0),
           categoria: esMacho(g.sexo)
             ? (g.marcado ? "Torito" : "Ternero Recria")
@@ -1165,7 +1170,8 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           const cargadasGrupo = lotes
             .filter(l => l.origen === "stock_inicial" && l.categoria === categoria)
             .filter(l => ventasDe(l.id).length === 0)
-            .filter(l => esRet === Boolean(
+            // Mismo criterio que arriba: el destino sólo desempata entre hembras.
+            .filter(l => esMacho(sexo ?? "") || marcado === Boolean(
               (l as { destino_actividad_id?: string | null }).destino_actividad_id))
             .reduce((acc2, l) => acc2 + Number(l.cantidad || 0), 0)
           extra.push({
