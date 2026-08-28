@@ -160,6 +160,38 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
           </p>
         ) : (
           <div className="space-y-3">
+            {/* Control cruzado: si una entrega quedó a un precio muy distinto del resto del
+                mismo insumo, casi siempre es que la factura cubría más de lo entregado y el
+                neto se dividió por la cantidad equivocada. */}
+            {(() => {
+              const precios = c.entregas.map(e => e.precioUnitario).filter((x): x is number => x != null && x > 0)
+              if (precios.length < 3) return null
+              const orden = [...precios].sort((a, b) => a - b)
+              const mediana = orden[Math.floor(orden.length / 2)]!
+              const raros = c.entregas.filter(e =>
+                e.precioUnitario != null && e.precioUnitario > 0
+                && Math.abs(e.precioUnitario - mediana) / mediana > 0.2)
+              if (raros.length === 0) return null
+              return (
+                <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
+                  <p className="text-[11px] font-medium text-amber-900">
+                    <AlertTriangle className="mr-1 inline h-3 w-3" />
+                    {raros.length === 1 ? "Una entrega quedó" : `${raros.length} entregas quedaron`}
+                    {" "}a un precio muy distinto del resto (mediana {pesos(mediana)}/{um})
+                  </p>
+                  <ul className="mt-0.5 space-y-0.5 text-[10px] text-amber-800">
+                    {raros.map(e => (
+                      <li key={e.entrega.id}>
+                        · {dmy(e.entrega.fecha)} a <strong>{pesos(e.precioUnitario!)}</strong> —
+                        {" "}suele pasar cuando la factura cubre <strong>más</strong> de lo
+                        entregado y el neto se dividió por la cantidad equivocada.
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            })()}
+
             {c.entregas.map(e => (
               <div key={e.entrega.id} className="rounded border">
                 <div className="flex flex-wrap items-center gap-2 border-b bg-gray-50 px-2 py-1.5">

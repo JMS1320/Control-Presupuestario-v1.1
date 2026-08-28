@@ -3851,8 +3851,30 @@ function SubTabStockInsumos() {
                     </TableCell>
                     <TableCell>
                       <Input type="text" inputMode="decimal" className="h-8 text-xs text-right"
-                        value={linea.costo_unitario} placeholder="0,00"
+                        value={linea.costo_unitario} placeholder="sale del respaldo"
                         onChange={e => actualizarLineaMov(linea.key, 'costo_unitario', e.target.value)} />
+                      {/* La cuenta, a la vista. Dividir el neto por lo entregado **sólo da el
+                          precio real si la factura cubre exactamente esa entrega**. Con la FC
+                          de Longo —25 t facturadas, 20,1 entregadas— da $332,71 en vez de
+                          $267,50, y sin mostrar la división nadie lo nota (A-BUG-86). */}
+                      {(() => {
+                        if (!linea.factura_id) return null
+                        const r = [...facturas, ...Object.values(halladosFc).flat()]
+                          .find(f => f.id === linea.factura_id)
+                        const cantL = parseNumeroAR(linea.cantidad)
+                        if (!r || r.neto <= 0 || cantL <= 0) return null
+                        return (
+                          <p className="mt-0.5 text-[9px] leading-tight text-muted-foreground">
+                            ${Math.round(r.neto).toLocaleString('es-AR')} ÷{' '}
+                            {cantL.toLocaleString('es-AR')} ={' '}
+                            <strong>{(r.neto / cantL).toLocaleString('es-AR', { maximumFractionDigits: 2 })}</strong>
+                            <br />
+                            <span className="text-amber-700">
+                              ¿la factura cubre sólo esta entrega?
+                            </span>
+                          </p>
+                        )
+                      })()}
                     </TableCell>
                     <TableCell>
                       {movCabecera.tipo !== 'compra' ? (
