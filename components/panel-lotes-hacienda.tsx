@@ -1263,11 +1263,16 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     setGuardando(true)
     try {
       for (const g of elegidos) {
+        // Cinturón además del tildado: nunca crear un lote de un grupo ya completo.
+        if (g.cabezas - g.yaCargadas <= 0) continue
         const existente = lotes.find(l =>
           l.origen === "stock_inicial" && l.categoria === g.categoria && l.fecha_disponible === fecha)
 
         const e = edits[g.clave]
-        const cant = e && e.cant.trim() !== "" ? parseNum(e.cant) : g.cabezas
+        const falta = g.cabezas - g.yaCargadas
+        const pedido = e && e.cant.trim() !== "" ? parseNum(e.cant) : falta
+        // No se puede traer más de lo que falta: el resto ya está en otro lote.
+        const cant = Math.min(pedido, falta)
         const pesoManual = e && e.peso.trim() !== "" ? parseNum(e.peso) : null
         // El promedio de los que se llevan, no el del grupo entero
         const pr = promedios(g, cant, e?.cual ?? "pesados")
@@ -1403,8 +1408,16 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
               <div className="space-y-2">
                 {grupos.map(g => (
                   <label key={g.clave}
-                    className="flex cursor-pointer items-center gap-3 rounded border p-2.5 hover:bg-gray-50">
-                    <input type="checkbox" checked={sel[g.clave] ?? false}
+                    className={`flex items-center gap-3 rounded border p-2.5 ${
+                      g.cabezas - g.yaCargadas <= 0
+                        ? "cursor-not-allowed bg-gray-50 opacity-60"
+                        : "cursor-pointer hover:bg-gray-50"}`}>
+                    {/* Sin cabezas por traer no se puede tildar: antes se dejaba marcar un grupo
+                        ya completo y, como desde acá ahora sólo se INSERTA, aceptar habría
+                        creado un lote duplicado. Lo vio venir el usuario y no apretó (A-BUG-74). */}
+                    <input type="checkbox"
+                      checked={(sel[g.clave] ?? false) && g.cabezas - g.yaCargadas > 0}
+                      disabled={g.cabezas - g.yaCargadas <= 0}
                       onChange={e => setSel(s => ({ ...s, [g.clave]: e.target.checked }))} />
                     <div className="flex-1 text-sm">
                       <div className="flex items-center gap-2">

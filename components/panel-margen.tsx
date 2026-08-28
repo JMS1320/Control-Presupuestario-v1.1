@@ -133,7 +133,10 @@ async function cargarCostoAlimentacion(
 
   const ciclo = ((ciclos || []) as any[])[0]
   const nombreCat = new Map(((catsHac || []) as any[]).map(c => [c.id, String(c.nombre)]))
-  const esRecria = (cat: string) => /recria/i.test(cat)
+  // ⚠️ Los TORITOS también comen del mismo silo. El usuario lo dijo desde el principio:
+  // *"comen todos los machos incluidos los 9 toritos y todas las hembras incluidas las de
+  // reposición"*. Sin ellos acá, su ración se la reparten los demás y les infla el costo.
+  const esRecria = (cat: string) => /recria|torito/i.test(cat)
   const listaTr = (trs || []) as TramoLote[]
   const listaAc = (actsProd || []) as unknown as ActividadProd[]
 
