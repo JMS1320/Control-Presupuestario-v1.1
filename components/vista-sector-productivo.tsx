@@ -3156,6 +3156,13 @@ function SubTabStockInsumos() {
   const [buscaFc, setBuscaFc] = useState<Record<number, string>>({})
   /** Lo que se está buscando en el campo de insumo, por `key` de línea. */
   const [buscaIns, setBuscaIns] = useState<Record<number, string>>({})
+  /**
+   * Qué desplegable está abierto: `"ins-12"` o `"fc-12"`.
+   *
+   * Uno solo a la vez y **flotante**: en la primera versión la lista se dibujaba en el flujo y
+   * empujaba toda la fila hacia abajo apenas se abría el modal. Lo marcó el usuario.
+   */
+  const [abiertoBuscador, setAbiertoBuscador] = useState<string | null>(null)
   /** Lo que devolvió la búsqueda en el servidor, por `key` de línea. */
   const [halladosFc, setHalladosFc] = useState<Record<number, FacturaParaVincular[]>>({})
   /** Los vínculos que ya existen, para no volver a ofrecer un respaldo ya aplicado entero. */
@@ -3350,7 +3357,17 @@ function SubTabStockInsumos() {
           insumo_stock_id: l.insumo_stock_id,
           cantidad: parseNumeroAR(l.cantidad),
         }
-        if (l.costo_unitario) datos.costo_unitario = parseNumeroAR(l.costo_unitario)
+        // El precio sale del respaldo si no se tipeó uno. Antes esto sólo pasaba al hacer
+        // click en la factura, así que elegirla **antes** de escribir la cantidad dejaba el
+        // precio vacío — y sin precio el control no puede saber si la factura ya está aplicada
+        // entera, así que la seguía ofreciendo (A-BUG-84).
+        const cantL = parseNumeroAR(l.cantidad)
+        const resp = [...facturas, ...Object.values(halladosFc).flat()]
+          .find(f => f.id === l.factura_id)
+        const costo = l.costo_unitario
+          ? parseNumeroAR(l.costo_unitario)
+          : (resp && resp.neto > 0 && cantL > 0 ? resp.neto / cantL : null)
+        if (costo != null) datos.costo_unitario = costo
         if (movCabecera.proveedor) datos.proveedor = movCabecera.proveedor
         if (movCabecera.cuit) datos.cuit = movCabecera.cuit
         const obs = [movCabecera.observaciones, l.observaciones].filter(Boolean).join(' - ')
@@ -3375,8 +3392,18 @@ function SubTabStockInsumos() {
           movimiento_id: x.id,
           factura_id: x.l.factura_id,
           cantidad: parseNumeroAR(x.l.cantidad),
-          precio_unitario: x.l.costo_unitario ? parseNumeroAR(x.l.costo_unitario) : null,
-          origen: facturas.find(f => f.id === x.l.factura_id)?.origen ?? 'arca',
+          precio_unitario: (() => {
+            if (x.l.costo_unitario) return parseNumeroAR(x.l.costo_unitario)
+            const cantV = parseNumeroAR(x.l.cantidad)
+            const r = [...facturas, ...Object.values(halladosFc).flat()]
+              .find(f => f.id === x.l.factura_id)
+            return r && r.neto > 0 && cantV > 0 ? r.neto / cantV : null
+          })(),
+          // ⚠️ El respaldo puede venir de la lista precargada **o** de la búsqueda en el
+          // servidor. Buscarlo sólo en la primera hacía que un template elegido por búsqueda
+          // se guardara como `arca`, y después el vínculo no resolvía contra ninguna tabla.
+          origen: [...facturas, ...Object.values(halladosFc).flat()]
+            .find(f => f.id === x.l.factura_id)?.origen ?? 'arca',
         }))
       if (vinculos.length > 0) {
         const { error: eV } = await supabase.schema('productivo')
@@ -3764,11 +3791,20 @@ function SubTabStockInsumos() {
                           </Button>
                         </div>
                       ) : (
-                        <div className="space-y-1">
-                          <Input className="h-8 text-xs" placeholder="escribí para buscar…"
+                        <div className="relative">
+                          <Input className="h-8 text-xs" placeholder="escribí o clickeá…"
                             value={buscaIns[linea.key] ?? ''}
-                            onChange={e => setBuscaIns(p => ({ ...p, [linea.key]: e.target.value }))} />
-                          <div className="max-h-32 overflow-y-auto rounded border bg-background">
+                            onFocus={() => setAbiertoBuscador(`ins-${linea.key}`)}
+                            // El cierre espera un instante: sin eso el `blur` mata la lista
+                            // antes de que el click sobre la opción llegue a registrarse.
+                            onBlur={() => setTimeout(() => setAbiertoBuscador(a =>
+                              a === `ins-${linea.key}` ? null : a), 150)}
+                            onChange={e => {
+                              setBuscaIns(p => ({ ...p, [linea.key]: e.target.value }))
+                              setAbiertoBuscador(`ins-${linea.key}`)
+                            }} />
+                          {abiertoBuscador === `ins-${linea.key}` && (
+                          <div className="absolute left-0 right-0 top-full z-50 mt-0.5 max-h-40 overflow-y-auto rounded border bg-background shadow-md">
                             {(() => {
                               const q = normalizarBusqueda(buscaIns[linea.key] ?? '')
                               const cand = stockFiltrado.filter(x =>
@@ -3787,6 +3823,7 @@ function SubTabStockInsumos() {
                                   onClick={() => {
                                     actualizarLineaMov(linea.key, 'insumo_stock_id', x.id)
                                     setBuscaIns(p => ({ ...p, [linea.key]: '' }))
+                                    setAbiertoBuscador(null)
                                   }}>
                                   {x.producto}{' '}
                                   <span className="text-muted-foreground">
@@ -3796,6 +3833,7 @@ function SubTabStockInsumos() {
                               ))
                             })()}
                           </div>
+                          )}
                         </div>
                       )}
                     </TableCell>
@@ -3833,13 +3871,18 @@ function SubTabStockInsumos() {
                           </Button>
                         </div>
                       ) : (
-                        <div className="space-y-1">
-                          <Input className="h-8 text-xs" placeholder="buscar factura…"
+                        <div className="relative">
+                          <Input className="h-8 text-xs" placeholder="buscar factura o template…"
                             value={buscaFc[linea.key] ?? ''}
-                            onChange={e => setBuscaFc(p => ({ ...p, [linea.key]: e.target.value }))} />
-                          {((buscaFc[linea.key] ?? '').trim().length >= 1
-                            || movCabecera.proveedor.trim() !== '') && (
-                            <div className="max-h-28 overflow-y-auto rounded border bg-background">
+                            onFocus={() => setAbiertoBuscador(`fc-${linea.key}`)}
+                            onBlur={() => setTimeout(() => setAbiertoBuscador(a =>
+                              a === `fc-${linea.key}` ? null : a), 150)}
+                            onChange={e => {
+                              setBuscaFc(p => ({ ...p, [linea.key]: e.target.value }))
+                              setAbiertoBuscador(`fc-${linea.key}`)
+                            }} />
+                          {abiertoBuscador === `fc-${linea.key}` && (
+                            <div className="absolute left-0 right-0 top-full z-50 mt-0.5 max-h-40 overflow-y-auto rounded border bg-background shadow-md">
                               {(() => {
                                 // Con texto tipeado manda la búsqueda del SERVIDOR; sin texto,
                                 // las recientes del proveedor de la cabecera. Y en los dos casos
@@ -3868,6 +3911,7 @@ function SubTabStockInsumos() {
                                     onClick={() => {
                                       actualizarLineaMov(linea.key, 'factura_id', f.id)
                                       setBuscaFc(p => ({ ...p, [linea.key]: '' }))
+                                      setAbiertoBuscador(null)
                                       // El precio sale del respaldo si no se tipeó uno: es el
                                       // dato real, y ahorra la cuenta a mano.
                                       const cantL = parseNumeroAR(linea.cantidad)

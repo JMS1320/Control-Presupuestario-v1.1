@@ -309,10 +309,29 @@ export async function buscarRespaldos(
  * ningún lado: lo único que se sabe es su neto.
  */
 export function estaAplicadaEntera(f: FacturaCompra, vinculos: Vinculo[]): boolean {
-  if (f.neto <= 0) return false
-  const aplicado = vinculos
-    .filter(v => v.facturaId === f.id)
-    .reduce((s, v) => s + v.cantidad * (v.precioUnitario ?? 0), 0)
+  return usoDeRespaldo(f, vinculos).estado === 'entera'
+}
+
+/**
+ * Cuánto de un respaldo ya está usado, y en qué estado quedó.
+ *
+ * ⚠️ **`sin precio` no es lo mismo que `libre`.** Un vínculo sin `precioUnitario` no permite
+ * calcular cuánto se aplicó — y tratarlo como cero hacía que una factura ya usada se siguiera
+ * ofreciendo como si estuviera libre. Se distingue para poder **decirlo** en pantalla en vez de
+ * mostrarla igual que una sin usar.
+ */
+export function usoDeRespaldo(
+  f: FacturaCompra, vinculos: Vinculo[],
+): { estado: 'libre' | 'parcial' | 'entera' | 'sin precio'; aplicado: number; resto: number } {
+  const mios = vinculos.filter(v => v.facturaId === f.id)
+  if (mios.length === 0) return { estado: 'libre', aplicado: 0, resto: f.neto }
+  if (mios.some(v => v.precioUnitario == null)) {
+    return { estado: 'sin precio', aplicado: 0, resto: f.neto }
+  }
+  const aplicado = mios.reduce((s, v) => s + v.cantidad * (v.precioUnitario ?? 0), 0)
   // Tolerancia del 0,5 %: los precios se cargan redondeados y no tienen por qué dar al peso.
-  return aplicado >= f.neto * 0.995
+  if (f.neto > 0 && aplicado >= f.neto * 0.995) {
+    return { estado: 'entera', aplicado, resto: 0 }
+  }
+  return { estado: 'parcial', aplicado, resto: Math.max(0, f.neto - aplicado) }
 }

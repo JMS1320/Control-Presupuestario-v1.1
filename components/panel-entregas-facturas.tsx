@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X, Link2 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  conciliarEntregasFacturas, traerRespaldos, buscarRespaldos, estaAplicadaEntera,
+  conciliarEntregasFacturas, traerRespaldos, buscarRespaldos, estaAplicadaEntera, usoDeRespaldo,
   type EntregaInsumo, type FacturaCompra, type Vinculo,
 } from "@/lib/productivo/entregas-facturas"
 
@@ -240,6 +240,17 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                             </span>
                             <span className="text-gray-400">{f.numero}</span>
                             <span className="ml-auto text-gray-600">{dmy(f.fecha)} · {pesos(f.neto)}</span>
+                            {(() => {
+                              const u = usoDeRespaldo(f, vinculos)
+                              if (u.estado === "libre") return null
+                              return (
+                                <span className="text-[9px] text-amber-700">
+                                  {u.estado === "parcial"
+                                    ? `ya usada · queda ${pesos(u.resto)}`
+                                    : "ya vinculada, sin precio"}
+                                </span>
+                              )
+                            })()}
                           </button>
                         ))}
                       </div>
