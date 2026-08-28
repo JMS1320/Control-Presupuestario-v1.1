@@ -285,6 +285,23 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   })
 
   /**
+   * A qué grupo de la pesada corresponde un lote.
+   *
+   * ⚠️ **Las hembras de reposición y las de venta comparten la categoría `Ternera Recria`.** Lo
+   * que las separa en la pesada es el flag `es_torito` (que en las hembras marca las retenidas)
+   * y, del lado del lote, el **destino interno**: una tanda que pasa a Cría es reposición.
+   *
+   * Sin esta distinción el lote de las 69 retenidas se comparaba contra las 12 que sí se
+   * venden — y el panel mostraba «69 → 12» invitando a "corregirlo". Lo reportó el usuario
+   * (2026-08-27).
+   */
+  const claveDeFoto = (l: LoteStock & { destino_actividad_id?: string | null }) => {
+    const esHembra = /ternera|vaquillona/i.test(String(l.categoria))
+    const cat = esHembra && l.destino_actividad_id ? "__reposicion__" : String(l.categoria)
+    return `${l.fecha_disponible}|${cat}`
+  }
+
+  /**
    * Un lote de stock inicial está desactualizado si la pesada hoy dice otra cosa.
    *
    * ⚠️ **Un lote ya VENDIDO no se compara.** Con saldo 0 la comparación no significa nada: los
@@ -296,7 +313,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const desactualizado = (l: LoteStock) => {
     if (l.origen !== "stock_inicial") return null
     if (cantidadDisponible(l, ventasDe(l.id)) <= 0.01) return null
-    const f = fotoPesada[`${l.fecha_disponible}|${l.categoria}`]
+    const f = fotoPesada[claveDeFoto(l)]
     if (!f) return null
     const difCab = Math.abs(f.cabezas - Number(l.cantidad)) > 0.01
     const difPeso = Math.abs(f.peso - Number(l.peso_base_kg)) > 0.5
@@ -1051,6 +1068,11 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
             .filter(l => l.origen === "stock_inicial" && l.categoria === (esMacho(g.sexo)
               ? (g.marcado ? "Torito" : "Ternero Recria") : "Ternera Recria"))
             .filter(l => ventasDe(l.id).length === 0)
+            // ⚠️ Las hembras retenidas y las de venta comparten categoría: lo que las separa
+            // del lado del lote es el **destino interno**. Sin esto, cargar las 69 de
+            // reposición hacía desaparecer a las 12 que sí se venden.
+            .filter(l => (!esMacho(g.sexo) && g.marcado)
+              === Boolean((l as { destino_actividad_id?: string | null }).destino_actividad_id))
             .reduce((n, l) => n + Number(l.cantidad || 0), 0),
           categoria: esMacho(g.sexo)
             ? (g.marcado ? "Torito" : "Ternero Recria")
