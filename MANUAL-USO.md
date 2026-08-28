@@ -3072,3 +3072,99 @@ tramos, y el control final necesita todo. Saltear uno hace que el número salga 
 📌 **El orden de los controles no es casual**: el 1 dice si el consumo está bien medido, el 2 si
 está bien repartido, el 3 si llegó al resultado, y el 4 si todo junto da lo que ya sabíamos que
 tenía que dar. Si falla uno, los de abajo no significan nada.
+
+---
+
+## 📥 Productivo → Insumos → **Cargar una compra con su respaldo** 🟡 (sin testear)
+
+**Dónde**: `Productivo → Insumos → Stock & Movimientos` → filtro en **Ganadero** → botón **`+ Compra`**.
+
+### La pantalla
+
+```
+Fecha *          Proveedor (buscador)              Observaciones
+────────────────────────────────────────────────────────────────────
+Insumo *  │ Cantidad │ Costo Unit. │ Factura      │ Observaciones
+(buscador)│          │ (se deriva) │ (buscador)   │
+```
+
+**Una compra = una fecha y un proveedor.** Si las entregas son de días distintos, va **una compra
+por entrega** — aunque sea el mismo proveedor.
+
+### Los cuatro campos, en orden
+
+| Campo | Qué poner |
+|---|---|
+| **Fecha** | ⚠️ **la de RECEPCIÓN**, no la de la factura. Es la que corta los tramos de consumo |
+| **Proveedor** | se busca por nombre o CUIT; trae el CUIT solo |
+| **Insumo** | se escribe para buscar. Si no aparece, revisá el filtro **Ganadero/Agrícola** |
+| **Cantidad** | coma decimal y punto de miles: `5.960` · `1,74` |
+| **Factura** | opcional — busca en **comprobantes de ARCA y en cuotas de template** |
+| **Costo** | **dejalo vacío si vinculás el respaldo**: se deriva del neto |
+
+### ⚠️ Cuando el costo se deriva, mirá la división
+
+Debajo del costo aparece la cuenta:
+
+> `$6.687.500 ÷ 20.100 = 332,71` — **¿la factura cubre sólo esta entrega?**
+
+**Si la factura facturó más de lo que llegó ese día, la división da mal.** En ese caso el precio se
+escribe a mano —el de la factura— y el reparto se arma en el panel de *Facturas*.
+
+### Lo que NO se puede hacer desde acá
+
+Un **respaldo parcial**: una factura que cubre parte de dos entregas, o una entrega cubierta por
+dos facturas. Eso va por el panel de *Facturas*, que es el único que sabe expresarlo. Dejá el campo
+**vacío** y vinculalo después.
+
+---
+
+## 🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)
+
+**Cuándo hace falta**: cuando lo facturado y lo entregado **no coinciden**, que es lo normal.
+
+### 🔑 Un respaldo parcial NO es una compra nueva
+
+Es la confusión natural y equivocarse **inventa stock sin que nada avise**:
+
+| | Efecto |
+|---|---|
+| Cargar una **compra** de 4.900 kg | el stock sube 4.900 kg **que nunca llegaron** |
+| Cargar un **vínculo** de 4.900 kg | el stock **no se mueve** — sólo se declara quién respalda esa parte |
+
+> **Como pagar una compra con dos cheques: dos comprobantes, una sola compra.**
+
+### El caso completo, que es el que conviene tener a mano
+
+Longo facturó 25 t el 13/07 pero ese día bajaron 20,1. Las otras 4,9 llegaron el 24/07:
+
+| Entrega | Respaldada por | Kg | Precio |
+|---|---|---|---|
+| 24/06 · 20.100 kg | FC 13/07 | 20.100 | $267,50 |
+| **24/07 · 25.000 kg** | FC 13/07 *(el anticipo)* | **4.900** | $267,50 |
+| | FC 14/08 | **20.100** | $267,05 |
+
+**El precio es siempre el de su factura. Lo que se reparte es la cantidad.** Nunca se inventa un
+precio promedio: el ponderado de la entrega ($267,14) sale **calculado** de los dos pedazos.
+
+### Editar sin rehacer
+
+Cantidad y precio de cada vínculo se editan **en el lugar**. A la derecha está el **subtotal**, que
+es lo que deja ver si los pedazos suman el neto de la factura.
+
+### Los controles, y qué significa cada uno
+
+| Control | Qué mira |
+|---|---|
+| **Lo entregado tiene respaldo** | kilos recibidos sin factura ni template |
+| **Lo facturado está aplicado** | ⚠️ exige que **cada respaldo cierre uno por uno**, no sólo la suma |
+| **Respaldos vinculados** (la lista) | por factura: *«$5.376.750 de $6.687.500 · quedan $1.310.750»* |
+| **Precio fuera de la mediana** | avisa si una entrega quedó a un precio muy distinto de las otras |
+
+📌 **Por qué el control mira uno por uno**: dos errores opuestos se compensan. Con una factura
+imputada de menos por $1.310.750 y otra de más por $1.310.795, la diferencia global da **$45** y
+un control agregado diría que todo cierra.
+
+**«Quedan $X» y «imputado de MÁS por $X» son problemas opuestos** y la pantalla los distingue: el
+primero es un anticipo o una entrega que falta cargar; el segundo, mercadería cargada a una factura
+que no la respalda.
