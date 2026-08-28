@@ -3107,6 +3107,24 @@ interface LineaMovInsumo {
   cantidad: string
   costo_unitario: string
   observaciones: string
+  /**
+   * La factura que respalda ESTA entrega, si es una sola y la cubre entera.
+   *
+   * ⚠️ Es el caso simple, que es la mayoría. Cuando una factura cubre parte de dos entregas
+   * —o una entrega la cubren dos facturas, como los fletes de Longo— **eso se arma en el panel
+   * de Facturas**, que es el único que sabe expresar un vínculo parcial. Acá no se finge que se
+   * puede: si se deja vacío, la entrega queda "sin factura todavía" y el control lo dice.
+   */
+  factura_id: string
+}
+
+/** Una factura de compra, para el buscador de la línea. */
+interface FacturaParaVincular {
+  id: string
+  fecha: string
+  proveedor: string
+  numero: string
+  neto: number
 }
 
 function SubTabStockInsumos() {
@@ -3125,6 +3143,10 @@ function SubTabStockInsumos() {
   const [verMovimientos, setVerMovimientos] = useState(false)
   const [guardandoMov, setGuardandoMov] = useState(false)
   const [filtroTipo, setFiltroTipo] = useState<'ganadero' | 'agricola'>('ganadero')
+  /** Facturas de compra, para poder vincularlas en el mismo acto que se carga la entrega. */
+  const [facturas, setFacturas] = useState<FacturaParaVincular[]>([])
+  /** Lo que se está buscando en cada línea, por `key`. */
+  const [buscaFc, setBuscaFc] = useState<Record<number, string>>({})
   // Filtros del listado de movimientos
   const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
   const [busquedaMov, setBusquedaMov] = useState('')
@@ -3200,7 +3222,8 @@ function SubTabStockInsumos() {
       insumo_stock_id: '',
       cantidad: '',
       costo_unitario: '',
-      observaciones: ''
+      observaciones: '',
+      factura_id: ''
     }])
   }
 
@@ -3212,11 +3235,23 @@ function SubTabStockInsumos() {
     setMovLineas(prev => prev.filter(l => l.key !== key))
   }
 
-  const abrirModalMov = (tipo: string) => {
+  const abrirModalMov = async (tipo: string) => {
     setMovCabecera(p => ({ ...p, tipo, fecha: new Date().toISOString().split('T')[0], proveedor: '', cuit: '', observaciones: '' }))
     setMovLineas([])
+    setBuscaFc({})
     agregarLineaMov()
     setMostrarModalMov(true)
+    if (tipo !== 'compra') return
+    // Las facturas se traen al abrir y no en cada tecla: son 400 filas y el buscador filtra local.
+    const { data } = await supabase.schema('msa').from('comprobantes_arca')
+      .select('id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado')
+      .order('fecha_emision', { ascending: false }).limit(400)
+    setFacturas(((data || []) as any[]).map(f => ({
+      id: String(f.id), fecha: String(f.fecha_emision ?? ''),
+      proveedor: String(f.denominacion_emisor ?? ''),
+      numero: `${String(f.punto_venta ?? 0).padStart(4, '0')}-${String(f.numero_desde ?? 0).padStart(8, '0')}`,
+      neto: Number(f.imp_neto_gravado) || 0,
+    })))
   }
 
   const cerrarModalMov = () => {
@@ -3278,8 +3313,32 @@ function SubTabStockInsumos() {
         return datos
       })
 
-      const { error } = await supabase.schema('productivo').from('movimientos_insumos').insert(inserts)
+      // `.select()` para recuperar los ids: hacen falta para vincular las facturas.
+      const { data: creados, error } = await supabase.schema('productivo')
+        .from('movimientos_insumos').insert(inserts).select('id')
       if (error) throw new Error(error.message)
+
+      // ── El vínculo con la factura, en el mismo acto ────────────────────────
+      //
+      // Cubre el caso simple —una factura que respalda la entrega entera—, que es la mayoría.
+      // El parcial (una factura repartida entre dos entregas, o al revés) se arma en el panel
+      // de Facturas, que es el único que sabe expresarlo. Acá no se finge que se puede.
+      const vinculos = movLineas
+        .map((l, i) => ({ l, id: ((creados || []) as any[])[i]?.id }))
+        .filter(x => x.l.factura_id && x.id)
+        .map(x => ({
+          movimiento_id: x.id,
+          factura_id: x.l.factura_id,
+          cantidad: parseNumeroAR(x.l.cantidad),
+          precio_unitario: x.l.costo_unitario ? parseNumeroAR(x.l.costo_unitario) : null,
+        }))
+      if (vinculos.length > 0) {
+        const { error: eV } = await supabase.schema('productivo')
+          .from('entrega_factura').insert(vinculos)
+        // La entrega ya quedó bien; si el vínculo falla se avisa y se sigue, en vez de perder
+        // la carga entera. Se puede rehacer desde el panel de Facturas.
+        if (eV) toast.error('La entrega se guardó, pero la factura no se pudo vincular: ' + eV.message)
+      }
 
       // Actualizar stock: compra/ajuste suman
       const stockUpdates: Record<string, number> = {}
@@ -3635,6 +3694,7 @@ function SubTabStockInsumos() {
                   <TableHead className="w-[200px]">Insumo *</TableHead>
                   <TableHead className="w-[100px] text-right">Cantidad *</TableHead>
                   <TableHead className="w-[120px] text-right">Costo Unit.</TableHead>
+                  <TableHead className="w-[220px]">Factura</TableHead>
                   <TableHead className="w-[180px]">Observaciones</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -3670,6 +3730,58 @@ function SubTabStockInsumos() {
                       <Input type="text" inputMode="decimal" className="h-8 text-xs text-right"
                         value={linea.costo_unitario} placeholder="0,00"
                         onChange={e => actualizarLineaMov(linea.key, 'costo_unitario', e.target.value)} />
+                    </TableCell>
+                    <TableCell>
+                      {movCabecera.tipo !== 'compra' ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : linea.factura_id ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">
+                            {facturas.find(f => f.id === linea.factura_id)?.numero ?? '—'}
+                          </span>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+                            onClick={() => {
+                              actualizarLineaMov(linea.key, 'factura_id', '')
+                              setBuscaFc(p => ({ ...p, [linea.key]: '' }))
+                            }}>
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <Input className="h-8 text-xs" placeholder="buscar factura…"
+                            value={buscaFc[linea.key] ?? ''}
+                            onChange={e => setBuscaFc(p => ({ ...p, [linea.key]: e.target.value }))} />
+                          {(buscaFc[linea.key] ?? '').trim().length >= 2 && (
+                            <div className="max-h-28 overflow-y-auto rounded border bg-background">
+                              {facturas
+                                .filter(f => `${f.proveedor} ${f.numero}`.toLowerCase()
+                                  .includes((buscaFc[linea.key] ?? '').trim().toLowerCase()))
+                                .slice(0, 8)
+                                .map(f => (
+                                  <button key={f.id} type="button"
+                                    className="block w-full px-1.5 py-1 text-left text-[10px] hover:bg-muted"
+                                    onClick={() => {
+                                      actualizarLineaMov(linea.key, 'factura_id', f.id)
+                                      setBuscaFc(p => ({ ...p, [linea.key]: '' }))
+                                      // El precio sale de la factura si no se tipeó uno: es el
+                                      // dato real, y ahorra la cuenta a mano.
+                                      const cant = parseNumeroAR(linea.cantidad)
+                                      if (!linea.costo_unitario && cant > 0 && f.neto > 0) {
+                                        actualizarLineaMov(linea.key, 'costo_unitario',
+                                          String(Math.round((f.neto / cant) * 10000) / 10000).replace('.', ','))
+                                      }
+                                    }}>
+                                    <span className="font-medium">{f.numero}</span>{' '}
+                                    <span className="text-muted-foreground">
+                                      {f.fecha} · {f.proveedor.slice(0, 28)}
+                                    </span>
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Input className="h-8 text-xs" value={linea.observaciones} placeholder="Obs. línea"
