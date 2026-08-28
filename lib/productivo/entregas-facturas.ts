@@ -156,9 +156,15 @@ export function conciliarEntregasFacturas(
   const totalFacturado = vinculos.reduce((s, v) => s + v.cantidad, 0)
   const totalSinFacturar = conc.reduce((s, c) => s + c.sinFacturar, 0)
 
-  const netoFacturas = facturas.reduce((s, f) => s + f.neto, 0)
-  const aplicado = facs.reduce((s, f) => s + f.montoAplicado, 0)
-  const cercaPlata = Math.abs(netoFacturas - aplicado) < Math.max(1, netoFacturas * 0.001)
+  // ⚠️ **Sólo los respaldos VINCULADOS.** Sumar todos los que se le pasaron era comparar el
+  // neto de cientos de facturas del sistema contra lo imputado a un insumo: el control daba
+  // una diferencia enorme y constante, o sea que no decía nada. Lo notó el usuario —
+  // *"no sé dónde se ve eso"*— y tenía razón: no se veía porque no significaba nada.
+  const usados = facs.filter(f => f.cantidadAplicada > 0)
+  const netoFacturas = usados.reduce((s, f) => s + f.factura.neto, 0)
+  const aplicado = usados.reduce((s, f) => s + f.montoAplicado, 0)
+  const cercaPlata = usados.length === 0
+    || Math.abs(netoFacturas - aplicado) < Math.max(1, netoFacturas * 0.001)
 
   return {
     entregas: conc, facturas: facs,
@@ -174,10 +180,13 @@ export function conciliarEntregasFacturas(
       {
         nombre: 'Lo facturado está aplicado',
         cierra: cercaPlata,
-        detalle: cercaPlata
-          ? 'el neto de las facturas coincide con lo imputado a las entregas'
-          : `facturado $${num(netoFacturas)} · aplicado $${num(aplicado)}`
-            + ` · diferencia $${num(netoFacturas - aplicado)} (anticipos o entregas por venir)`,
+        detalle: usados.length === 0
+          ? 'todavía no hay ningún respaldo vinculado'
+          : cercaPlata
+            ? `los ${usados.length} respaldos vinculados están imputados enteros`
+            : `facturado $${num(netoFacturas)} · aplicado $${num(aplicado)}`
+              + ` · **quedan $${num(netoFacturas - aplicado)}** sin imputar a ninguna entrega`
+              + ' (anticipo, o una entrega que falta cargar)',
       },
     ],
   }

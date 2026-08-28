@@ -371,6 +371,41 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
               ))}
             </div>
 
+            {/* El detalle por respaldo: es lo que convierte "falta plata" en "falta ESTA".
+                El total solo avisa; la lista es la que deja arreglarlo. */}
+            {c.facturas.filter(f => f.cantidadAplicada > 0).length > 0 && (
+              <div className="rounded border bg-white">
+                <p className="border-b px-2 py-1 text-[9px] uppercase tracking-wide text-gray-500">
+                  Respaldos vinculados
+                </p>
+                {c.facturas.filter(f => f.cantidadAplicada > 0).map(f => {
+                  const resto = f.factura.neto - f.montoAplicado
+                  const cierra = Math.abs(resto) < Math.max(1, f.factura.neto * 0.001)
+                  return (
+                    <div key={f.factura.id}
+                      className={`flex flex-wrap items-baseline gap-2 border-b px-2 py-1 last:border-0
+                        ${cierra ? "" : "bg-amber-50"}`}>
+                      <span className={`text-[10px] ${
+                        f.factura.origen === "template" ? "text-sky-700" : "text-gray-600"}`}>
+                        {f.factura.origen === "template" ? "Template" : "FC"} {f.factura.numero}
+                      </span>
+                      <span className="text-[10px] text-gray-500">
+                        {fmtNumeroAR(f.cantidadAplicada, 0)} {um} imputados
+                      </span>
+                      <span className="ml-auto text-[11px] text-gray-700">
+                        {pesos(f.montoAplicado)} de {pesos(f.factura.neto)}
+                      </span>
+                      {!cierra && (
+                        <span className="text-[10px] font-medium text-amber-800">
+                          quedan {pesos(resto)}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
             <p className="text-[10px] text-gray-400">
               Lo que una factura tiene <strong>de más</strong> sobre lo entregado es un{" "}
               <strong>anticipo</strong>: mercadería pagada y todavía no recibida. Lo que una entrega

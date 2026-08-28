@@ -18,7 +18,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
-import { traerRespaldos, buscarRespaldos, estaAplicadaEntera,
+import { traerRespaldos, buscarRespaldos, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -3949,6 +3949,19 @@ function SubTabStockInsumos() {
                                     <span className="text-muted-foreground">
                                       {f.fecha} · {f.proveedor.slice(0, 28)}
                                     </span>
+                                    {(() => {
+                                      // Una factura usada a medias se sigue ofreciendo —puede
+                                      // cubrir otra entrega— pero se dice cuánto le queda.
+                                      const u = usoDeRespaldo(f as never, vinculosExistentes)
+                                      if (u.estado === 'libre') return null
+                                      return (
+                                        <span className="ml-1 text-amber-700">
+                                          {u.estado === 'parcial'
+                                            ? `· ya usada, queda $${Math.round(u.resto).toLocaleString('es-AR')}`
+                                            : '· ya vinculada, sin precio'}
+                                        </span>
+                                      )
+                                    })()}
                                   </button>
                                 ))
                               })()}
