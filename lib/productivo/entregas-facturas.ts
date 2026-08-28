@@ -200,42 +200,38 @@ export function entregasParaConsumo(c: ControlEntregasFacturas) {
 }
 
 // ── De dónde salen los respaldos ─────────────────────────────────────────────
+//
+// ⚠️ **Se busca en el servidor, no filtrando una lista precargada.** Precargar "las últimas N"
+// y filtrar en el navegador parecía más simple y estaba mal: hay **1.019 cuotas** y la del maíz
+// del 16/03 tenía **591 más nuevas encima**, así que con un tope de 400 no se cargaba nunca.
+// El usuario la buscó por "maiz", por "otros gastos" y por proveedor, y no aparecía por ningún
+// lado — no porque el filtro fallara, sino porque la fila no estaba.
+//
+// La lección es la de siempre: un tope silencioso no da error, **da menos resultados**.
 
-/**
- * Trae los dos orígenes posibles del respaldo de una entrega, en una sola lista.
- *
- * Vive acá y no en cada pantalla porque **lo usan tres**: el panel de Facturas, el modal de
- * compra de insumos y el margen. Tres consultas distintas al mismo concepto es como terminan
- * mostrando cosas distintas.
- *
- * `sb` se pasa como parámetro para no importar el cliente acá — este archivo es lógica pura y
- * se testea sin base.
- */
-export async function traerRespaldos(
-  sb: {
-    schema: (s: string) => {
-      from: (t: string) => {
-        select: (c: string) => {
+interface ClienteSb {
+  schema: (s: string) => {
+    from: (t: string) => {
+      select: (c: string) => {
+        or: (f: string) => {
           order: (c: string, o?: { ascending?: boolean }) => {
             limit: (n: number) => PromiseLike<{ data: unknown[] | null }>
           }
         }
+        order: (c: string, o?: { ascending?: boolean }) => {
+          limit: (n: number) => PromiseLike<{ data: unknown[] | null }>
+        }
       }
     }
-  },
-  limite = 400,
-): Promise<FacturaCompra[]> {
-  const [arca, cuotas] = await Promise.all([
-    sb.schema('msa').from('comprobantes_arca')
-      .select('id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total')
-      .order('fecha_emision', { ascending: false }).limit(limite),
-    // La CUOTA, no el template: es la que tiene fecha y monto concretos.
-    sb.schema('public').from('cuotas_egresos_sin_factura')
-      .select('id, fecha_pago, fecha_estimada, monto, descripcion, categ, egreso_id')
-      .order('fecha_estimada', { ascending: false }).limit(limite),
-  ])
+  }
+}
 
-  const deArca: FacturaCompra[] = (((arca.data ?? []) as Record<string, unknown>[])).map(f => ({
+const COLS_ARCA =
+  'id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total'
+const COLS_CUOTA = 'id, fecha_pago, fecha_estimada, monto, descripcion, categ'
+
+const deArca = (rows: unknown[] | null): FacturaCompra[] =>
+  ((rows ?? []) as Record<string, unknown>[]).map(f => ({
     id: String(f.id),
     fecha: String(f.fecha_emision ?? ''),
     proveedor: String(f.denominacion_emisor ?? ''),
@@ -245,16 +241,78 @@ export async function traerRespaldos(
     origen: 'arca',
   }))
 
-  // ⚠️ En un template el **monto ES el neto**: no hay IVA discriminado que descontar.
-  const deTemplate: FacturaCompra[] = (((cuotas.data ?? []) as Record<string, unknown>[])).map(c => ({
+/** ⚠️ En un template el **monto ES el neto**: no hay IVA discriminado que descontar. */
+const deTemplate = (rows: unknown[] | null): FacturaCompra[] =>
+  ((rows ?? []) as Record<string, unknown>[]).map(c => ({
     id: String(c.id),
     fecha: String(c.fecha_pago ?? c.fecha_estimada ?? ''),
     proveedor: String(c.categ ?? 'template'),
-    numero: String(c.descripcion ?? '').slice(0, 60) || 'cuota sin descripción',
+    numero: String(c.descripcion ?? '').slice(0, 70) || 'cuota sin descripción',
     neto: Number(c.monto) || 0,
     total: Number(c.monto) || 0,
     origen: 'template',
   }))
 
-  return [...deArca, ...deTemplate].sort((a, b) => b.fecha.localeCompare(a.fecha))
+/** Los respaldos más recientes de los dos orígenes. Para mostrar algo sin que se escriba nada. */
+export async function traerRespaldos(sb: ClienteSb, limite = 300): Promise<FacturaCompra[]> {
+  const [arca, cuotas] = await Promise.all([
+    sb.schema('msa').from('comprobantes_arca').select(COLS_ARCA)
+      .order('fecha_emision', { ascending: false }).limit(limite),
+    sb.schema('public').from('cuotas_egresos_sin_factura').select(COLS_CUOTA)
+      .order('fecha_estimada', { ascending: false }).limit(limite),
+  ])
+  return [...deArca(arca.data), ...deTemplate(cuotas.data)]
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+}
+
+/**
+ * Busca respaldos **en el servidor**, en los dos orígenes.
+ *
+ * Es lo que hace falta para encontrar algo viejo: la del maíz del 16/03 tiene 591 cuotas más
+ * nuevas encima y ninguna lista precargada razonable la alcanza.
+ */
+export async function buscarRespaldos(
+  sb: ClienteSb, q: string, limite = 25,
+): Promise<FacturaCompra[]> {
+  const t = q.trim()
+  if (t.length < 2) return []
+  // PostgREST no acepta comas ni paréntesis sueltos dentro de un `or`.
+  const safe = t.replace(/[(),]/g, ' ').trim()
+  if (!safe) return []
+  const soloNum = safe.replace(/\D/g, '')
+
+  const filtroArca = [
+    `denominacion_emisor.ilike.*${safe}*`,
+    ...(soloNum.length >= 3 ? [`numero_desde.eq.${soloNum}`] : []),
+  ].join(',')
+
+  const [arca, cuotas] = await Promise.all([
+    sb.schema('msa').from('comprobantes_arca').select(COLS_ARCA).or(filtroArca)
+      .order('fecha_emision', { ascending: false }).limit(limite),
+    sb.schema('public').from('cuotas_egresos_sin_factura').select(COLS_CUOTA)
+      .or(`descripcion.ilike.*${safe}*,categ.ilike.*${safe}*`)
+      .order('fecha_estimada', { ascending: false }).limit(limite),
+  ])
+  return [...deArca(arca.data), ...deTemplate(cuotas.data)]
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+}
+
+/**
+ * ¿Este respaldo ya está aplicado entero?
+ *
+ * Sirve para **sacarlo del buscador**: si la factura de Arroyo Tala del 11/05 ya cubre su
+ * entrega, ofrecerla otra vez sólo invita a vincularla dos veces. Lo pidió el usuario
+ * (2026-08-28): *"al ir a cargar la segunda me vuelve a mostrar las 2 FC, debería mostrarme
+ * sólo 1"*.
+ *
+ * Se compara **por monto** y no por cantidad, porque la cantidad del comprobante no está en
+ * ningún lado: lo único que se sabe es su neto.
+ */
+export function estaAplicadaEntera(f: FacturaCompra, vinculos: Vinculo[]): boolean {
+  if (f.neto <= 0) return false
+  const aplicado = vinculos
+    .filter(v => v.facturaId === f.id)
+    .reduce((s, v) => s + v.cantidad * (v.precioUnitario ?? 0), 0)
+  // Tolerancia del 0,5 %: los precios se cargan redondeados y no tienen por qué dar al peso.
+  return aplicado >= f.neto * 0.995
 }

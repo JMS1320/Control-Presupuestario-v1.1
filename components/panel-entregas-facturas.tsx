@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X, Link2 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  conciliarEntregasFacturas, traerRespaldos,
+  conciliarEntregasFacturas, traerRespaldos, buscarRespaldos, estaAplicadaEntera,
   type EntregaInsumo, type FacturaCompra, type Vinculo,
 } from "@/lib/productivo/entregas-facturas"
 
@@ -46,6 +46,8 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
   const [cant, setCant] = useState("")
   const [precio, setPrecio] = useState("")
   const [facElegida, setFacElegida] = useState("")
+  /** Lo que devolvió la búsqueda en el servidor. */
+  const [hallados, setHallados] = useState<FacturaCompra[]>([])
 
   const um = insumo?.unidad_medida || "kg"
 
@@ -110,9 +112,24 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
     await cargar()
   }
 
-  const c = conciliarEntregasFacturas(entregas, facturas, vinculos)
-  const candidatas = busca.trim() === "" ? [] : facturas.filter(f =>
-    `${f.proveedor} ${f.numero}`.toLowerCase().includes(busca.trim().toLowerCase())).slice(0, 12)
+  // La búsqueda va al SERVIDOR: filtrar una lista precargada no alcanza — hay 1.019 cuotas y
+  // la del maíz del 16/03 tiene 591 más nuevas encima. Ver `buscarRespaldos`.
+  useEffect(() => {
+    const t = busca.trim()
+    if (t.length < 2) { setHallados([]); return }
+    let vivo = true
+    const id = setTimeout(async () => {
+      const r = await buscarRespaldos(supabase as never, t)
+      if (vivo) setHallados(r)
+    }, 250)
+    return () => { vivo = false; clearTimeout(id) }
+  }, [busca])
+
+  const c = conciliarEntregasFacturas(entregas, [...facturas, ...hallados], vinculos)
+  // Las que ya están aplicadas enteras no se ofrecen: vincularlas de nuevo sería contarlas dos
+  // veces, y es justo lo que el usuario vio venir.
+  const candidatas = hallados.filter(f => !estaAplicadaEntera(f, vinculos)).slice(0, 12)
+  const yaAplicadas = hallados.length - candidatas.length
 
   if (!insumo) return null
 
@@ -203,6 +220,13 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
                   <div className="space-y-1.5 border-t bg-slate-50 px-2 py-2">
                     <Input className="h-7 text-[11px]" placeholder="buscar factura por proveedor o número…"
                       value={busca} onChange={ev => setBusca(ev.target.value)} />
+                    {busca.trim().length >= 2 && candidatas.length === 0 && (
+                      <p className="rounded border bg-white px-2 py-1 text-[10px] text-gray-500">
+                        {yaAplicadas > 0
+                          ? `${yaAplicadas} respaldo(s) coinciden pero ya están aplicados enteros.`
+                          : "Sin resultados. Se busca por proveedor, número de factura o descripción del template."}
+                      </p>
+                    )}
                     {candidatas.length > 0 && (
                       <div className="max-h-32 overflow-y-auto rounded border bg-white">
                         {candidatas.map(f => (

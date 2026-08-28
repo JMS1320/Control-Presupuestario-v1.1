@@ -18,7 +18,8 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
-import { traerRespaldos } from "@/lib/productivo/entregas-facturas"
+import { traerRespaldos, buscarRespaldos, estaAplicadaEntera,
+  type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
@@ -3153,6 +3154,12 @@ function SubTabStockInsumos() {
   const [facturas, setFacturas] = useState<FacturaParaVincular[]>([])
   /** Lo que se está buscando en cada línea, por `key`. */
   const [buscaFc, setBuscaFc] = useState<Record<number, string>>({})
+  /** Lo que se está buscando en el campo de insumo, por `key` de línea. */
+  const [buscaIns, setBuscaIns] = useState<Record<number, string>>({})
+  /** Lo que devolvió la búsqueda en el servidor, por `key` de línea. */
+  const [halladosFc, setHalladosFc] = useState<Record<number, FacturaParaVincular[]>>({})
+  /** Los vínculos que ya existen, para no volver a ofrecer un respaldo ya aplicado entero. */
+  const [vinculosExistentes, setVinculosExistentes] = useState<Vinculo[]>([])
   // Filtros del listado de movimientos
   const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
   const [busquedaMov, setBusquedaMov] = useState('')
@@ -3251,16 +3258,51 @@ function SubTabStockInsumos() {
     // Se traen al abrir y no en cada tecla: el buscador filtra local. Y vienen los DOS
     // orígenes —comprobantes de ARCA y cuotas de template—, porque no todo gasto es una
     // factura: el maíz del 16/03 entró por template (A-FEAT-61).
-    setFacturas((await traerRespaldos(supabase as never)).map(f => ({
+    const [recientes, { data: vs }] = await Promise.all([
+      traerRespaldos(supabase as never),
+      supabase.schema('productivo').from('entrega_factura').select('*'),
+    ])
+    setFacturas(recientes.map(f => ({
       id: f.id, fecha: f.fecha, proveedor: f.proveedor, numero: f.numero, neto: f.neto,
       origen: f.origen ?? 'arca',
+    })))
+    setVinculosExistentes(((vs || []) as any[]).map(v => ({
+      id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
+      cantidad: Number(v.cantidad) || 0,
+      precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
+      origen: v.origen ?? 'arca',
     })))
   }
 
   const cerrarModalMov = () => {
     setMostrarModalMov(false)
     setMovLineas([])
+    setHalladosFc({})
   }
+
+  // La búsqueda de respaldos va al SERVIDOR, con un respiro de 250 ms. Filtrar una lista
+  // precargada no alcanza: hay 1.019 cuotas y la del maíz del 16/03 tiene 591 más nuevas
+  // encima, así que ningún tope razonable la alcanzaba.
+  useEffect(() => {
+    const pendientes = Object.entries(buscaFc)
+      .filter(([, q]) => (q ?? '').trim().length >= 2)
+    if (pendientes.length === 0) return
+    let vivo = true
+    const id = setTimeout(async () => {
+      for (const [k, q] of pendientes) {
+        const r = await buscarRespaldos(supabase as never, q)
+        if (!vivo) return
+        setHalladosFc(prev => ({
+          ...prev,
+          [Number(k)]: r.map(f => ({
+            id: f.id, fecha: f.fecha, proveedor: f.proveedor, numero: f.numero,
+            neto: f.neto, origen: (f.origen ?? 'arca') as 'arca' | 'template',
+          })),
+        }))
+      }
+    }, 250)
+    return () => { vivo = false; clearTimeout(id) }
+  }, [buscaFc])
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -3705,16 +3747,57 @@ function SubTabStockInsumos() {
                 {movLineas.map((linea, idx) => (
                   <TableRow key={linea.key}>
                     <TableCell>
-                      <Select value={linea.insumo_stock_id} onValueChange={v => actualizarLineaMov(linea.key, 'insumo_stock_id', v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                        <SelectContent position="popper" className="z-[9999]">
-                          {stockFiltrado.map(s => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.producto} ({s.unidad_medida || 'ml'})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {/* Se escribe para buscar, como el de proveedores. Un `Select` cerrado te
+                          obliga a recorrer 30 productos con el mouse — y el usuario lo marcó:
+                          *"cuando hago click me abre selector y no me deja escribir"*. */}
+                      {linea.insumo_stock_id ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">
+                            {stockFiltrado.find(x => x.id === linea.insumo_stock_id)?.producto ?? '—'}
+                          </span>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0"
+                            onClick={() => {
+                              actualizarLineaMov(linea.key, 'insumo_stock_id', '')
+                              setBuscaIns(p => ({ ...p, [linea.key]: '' }))
+                            }}>
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <Input className="h-8 text-xs" placeholder="escribí para buscar…"
+                            value={buscaIns[linea.key] ?? ''}
+                            onChange={e => setBuscaIns(p => ({ ...p, [linea.key]: e.target.value }))} />
+                          <div className="max-h-32 overflow-y-auto rounded border bg-background">
+                            {(() => {
+                              const q = normalizarBusqueda(buscaIns[linea.key] ?? '')
+                              const cand = stockFiltrado.filter(x =>
+                                q === '' || normalizarBusqueda(String(x.producto)).includes(q))
+                              if (cand.length === 0) {
+                                return (
+                                  <p className="px-1.5 py-1 text-[10px] text-muted-foreground">
+                                    Sin insumos que coincidan. ¿El filtro de arriba está en el
+                                    ámbito correcto?
+                                  </p>
+                                )
+                              }
+                              return cand.slice(0, 12).map(x => (
+                                <button key={x.id} type="button"
+                                  className="block w-full px-1.5 py-1 text-left text-[11px] hover:bg-muted"
+                                  onClick={() => {
+                                    actualizarLineaMov(linea.key, 'insumo_stock_id', x.id)
+                                    setBuscaIns(p => ({ ...p, [linea.key]: '' }))
+                                  }}>
+                                  {x.producto}{' '}
+                                  <span className="text-muted-foreground">
+                                    ({x.unidad_medida || 'ml'})
+                                  </span>
+                                </button>
+                              ))
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -3758,20 +3841,24 @@ function SubTabStockInsumos() {
                             || movCabecera.proveedor.trim() !== '') && (
                             <div className="max-h-28 overflow-y-auto rounded border bg-background">
                               {(() => {
+                                // Con texto tipeado manda la búsqueda del SERVIDOR; sin texto,
+                                // las recientes del proveedor de la cabecera. Y en los dos casos
+                                // se sacan los respaldos ya aplicados enteros: ofrecerlos otra
+                                // vez sólo invita a contarlos dos veces.
                                 const q = (buscaFc[linea.key] ?? '').trim().toLowerCase()
-                                // Con proveedor elegido en la cabecera, la lista ya sale
-                                // filtrada por él: no hay que escribir nada para verla.
                                 const prov = movCabecera.proveedor.trim().toLowerCase()
-                                const cand = facturas.filter(f => {
-                                  const txt = `${f.proveedor} ${f.numero}`.toLowerCase()
-                                  if (prov && !f.proveedor.toLowerCase().includes(prov.slice(0, 12))) return false
-                                  return q === '' || txt.includes(q)
-                                })
+                                const base = q.length >= 2
+                                  ? (halladosFc[linea.key] ?? [])
+                                  : facturas.filter(f => prov
+                                      && f.proveedor.toLowerCase().includes(prov.slice(0, 12)))
+                                const cand = base.filter(f =>
+                                  !estaAplicadaEntera(f as never, vinculosExistentes))
                                 if (cand.length === 0) {
                                   return (
                                     <p className="px-1.5 py-1 text-[10px] text-muted-foreground">
-                                      Sin facturas que coincidan
-                                      {prov ? ' con ese proveedor' : ''}. Probá por número.
+                                      {q.length >= 2
+                                        ? 'Sin resultados, o ya están aplicados enteros.'
+                                        : 'Escribí para buscar, o elegí el proveedor arriba.'}
                                     </p>
                                   )
                                 }
@@ -3781,12 +3868,12 @@ function SubTabStockInsumos() {
                                     onClick={() => {
                                       actualizarLineaMov(linea.key, 'factura_id', f.id)
                                       setBuscaFc(p => ({ ...p, [linea.key]: '' }))
-                                      // El precio sale de la factura si no se tipeó uno: es el
+                                      // El precio sale del respaldo si no se tipeó uno: es el
                                       // dato real, y ahorra la cuenta a mano.
-                                      const cant = parseNumeroAR(linea.cantidad)
-                                      if (!linea.costo_unitario && cant > 0 && f.neto > 0) {
+                                      const cantL = parseNumeroAR(linea.cantidad)
+                                      if (!linea.costo_unitario && cantL > 0 && f.neto > 0) {
                                         actualizarLineaMov(linea.key, 'costo_unitario',
-                                          String(Math.round((f.neto / cant) * 10000) / 10000).replace('.', ','))
+                                          String(Math.round((f.neto / cantL) * 10000) / 10000).replace('.', ','))
                                       }
                                     }}>
                                     <span className={f.origen === 'template'
