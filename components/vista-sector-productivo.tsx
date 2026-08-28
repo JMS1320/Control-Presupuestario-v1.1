@@ -12,6 +12,9 @@ import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
 import { PanelEntregasFacturas } from "./panel-entregas-facturas"
+// Parser único del proyecto: coma decimal y punto de miles, como manda
+// CLAUDE.md § Convención Inputs Monetarios (es-AR).
+import { parseNumeroAR } from "@/lib/format/numero"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
@@ -3252,7 +3255,7 @@ function SubTabStockInsumos() {
         toast.error('Seleccione un insumo en cada linea')
         return
       }
-      if (!l.cantidad || parseFloat(l.cantidad) <= 0) {
+      if (!l.cantidad || parseNumeroAR(l.cantidad) <= 0) {
         toast.error('Cada linea debe tener cantidad')
         return
       }
@@ -3265,9 +3268,9 @@ function SubTabStockInsumos() {
           fecha: movCabecera.fecha,
           tipo: movCabecera.tipo,
           insumo_stock_id: l.insumo_stock_id,
-          cantidad: parseFloat(l.cantidad),
+          cantidad: parseNumeroAR(l.cantidad),
         }
-        if (l.costo_unitario) datos.costo_unitario = parseFloat(l.costo_unitario)
+        if (l.costo_unitario) datos.costo_unitario = parseNumeroAR(l.costo_unitario)
         if (movCabecera.proveedor) datos.proveedor = movCabecera.proveedor
         if (movCabecera.cuit) datos.cuit = movCabecera.cuit
         const obs = [movCabecera.observaciones, l.observaciones].filter(Boolean).join(' - ')
@@ -3281,7 +3284,7 @@ function SubTabStockInsumos() {
       // Actualizar stock: compra/ajuste suman
       const stockUpdates: Record<string, number> = {}
       for (const l of movLineas) {
-        const cant = parseFloat(l.cantidad)
+        const cant = parseNumeroAR(l.cantidad)
         stockUpdates[l.insumo_stock_id] = (stockUpdates[l.insumo_stock_id] || 0) + cant
       }
       for (const [insumoId, delta] of Object.entries(stockUpdates)) {
@@ -3653,7 +3656,9 @@ function SubTabStockInsumos() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Input type="number" step="0.01" className="h-8 text-xs text-right"
+                        {/* type="text", no "number": la convención del proyecto es coma
+                            decimal y punto de miles. Ver CLAUDE.md § Inputs Monetarios. */}
+                        <Input type="text" inputMode="decimal" className="h-8 text-xs text-right"
                           value={linea.cantidad} placeholder="0"
                           onChange={e => actualizarLineaMov(linea.key, 'cantidad', e.target.value)} />
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -3662,8 +3667,8 @@ function SubTabStockInsumos() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.01" className="h-8 text-xs text-right"
-                        value={linea.costo_unitario} placeholder="$0"
+                      <Input type="text" inputMode="decimal" className="h-8 text-xs text-right"
+                        value={linea.costo_unitario} placeholder="0,00"
                         onChange={e => actualizarLineaMov(linea.key, 'costo_unitario', e.target.value)} />
                     </TableCell>
                     <TableCell>
