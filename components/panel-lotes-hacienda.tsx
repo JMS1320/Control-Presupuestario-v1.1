@@ -1003,6 +1003,11 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
    */
   const [modo, setModo] = useState<"ultima" | "fecha">("ultima")
   const [grupos, setGrupos] = useState<GrupoPesada[]>([])
+  /**
+   * Activos sin pesada que **no son de recría** — toros, vacas CUT. Se cuentan aparte y se
+   * MUESTRAN en vez de esconderlos: que estén en `terneros` es un dato en sí mismo.
+   */
+  const [ajenosSinPesada, setAjenosSinPesada] = useState<Record<string, number>>({})
   const [sel, setSel] = useState<Record<string, boolean>>({})
   /** Cantidad y peso por grupo: se puede traer sólo una parte, y el peso se puede pisar. */
   const [edits, setEdits] = useState<Record<string, { cant: string; peso: string; cual: "pesados" | "livianos" | "todos" }>>({})
@@ -1053,15 +1058,35 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
         // y 8 hembras. Sin esto quedaban afuera del stock y nadie los reclamaba.
         //
         // Se ofrecen aparte y **al promedio de su grupo**, que es lo único que se sabe de ellos.
-        const { data: todos } = await supabase.schema("productivo").from("terneros")
-          .select("id, sexo, es_torito, activo")
+        // ⚠️ **Se filtra por `categoria_id`, no por sexo.** `productivo.terneros` no es sólo
+        // terneros: también hay **toros** y **vacas CUT** —los del tacto—, y agrupados por
+        // `sexo`+`es_torito` se disfrazan de recría. Sin este filtro, los 8 toros nacidos en
+        // 2024 entraban como *Ternero Recria* y las 8 vacas CUT como *Ternera Recria*.
+        // Lo destapó el usuario preguntando de dónde salían esos 16 (2026-08-27).
+        const [{ data: todos }, { data: catsHac }] = await Promise.all([
+          supabase.schema("productivo").from("terneros")
+            .select("id, sexo, es_torito, activo, categoria_id"),
+          supabase.schema("productivo").from("categorias_hacienda").select("id, nombre"),
+        ])
+        const nombreCat = new Map(((catsHac || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
+        const esDeRecria = (catId: string | null) => {
+          if (!catId) return true            // sin categoría: se asume del ciclo, como antes
+          return /recria|torito/i.test(nombreCat.get(String(catId)) ?? "")
+        }
         const conPesada = new Set(((data || []) as any[]).map(r => String(r.ternero_id)))
         const sinPesadaPorGrupo = new Map<string, number>()
+        const ajenos: Record<string, number> = {}
         for (const t of ((todos || []) as any[])) {
           if (t.activo === false || conPesada.has(String(t.id))) continue
+          if (!esDeRecria(t.categoria_id)) {
+            const n = nombreCat.get(String(t.categoria_id)) ?? "sin categoría"
+            ajenos[n] = (ajenos[n] ?? 0) + 1
+            continue
+          }
           const k = `${String(t.sexo ?? "")}|${!!t.es_torito}`
           sinPesadaPorGrupo.set(k, (sinPesadaPorGrupo.get(k) ?? 0) + 1)
         }
+        setAjenosSinPesada(ajenos)
 
         // ⚠️ Fuera los dados de baja. Sus pesadas siguen existiendo, así que sin este filtro un
         // animal ya vendido se volvía a ofrecer para presupuestar su venta.
@@ -1494,6 +1519,15 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
                   </label>
                 ))}
               </div>
+              {Object.keys(ajenosSinPesada).length > 0 && (
+                <p className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-900">
+                  <strong>No se ofrecen acá, porque no son de recría</strong>:{" "}
+                  {Object.entries(ajenosSinPesada).map(([n, c]) => `${c} ${n}`).join(" · ")}.
+                  {" "}Están en la tabla de terneros y <strong>sin ninguna pesada</strong>. Si
+                  tienen que estar en un lote, se carga a mano desde <em>Nuevo lote</em>.
+                </p>
+              )}
+
               <p className="rounded bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                 El flag <code>es_torito</code> está sobrecargado: en los <strong>machos</strong>{" "}
                 marca los toritos, y en las <strong>hembras</strong> marca las retenidas para
