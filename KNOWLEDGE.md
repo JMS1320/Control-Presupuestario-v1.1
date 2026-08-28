@@ -1526,3 +1526,81 @@ para las transferencias internas.
 la campaña siempre parece que dará estos errores"*. No era un problema de ese filtro: **es que
 cualquier cosa que no diga a qué período pertenece va a terminar contada de más o de menos**. Un
 registro cuya fecha no manda es un registro que aparece donde no debe.
+
+---
+
+## Un total que cierra no prueba que las partes estén bien `#control #2026-08-28`
+
+Al terminar de cargar el maíz, el control de plata daba **$45 de diferencia** sobre $17,4 M. Cerraba.
+Y adentro había dos errores de **$1,3 M cada uno**:
+
+```
+FC 13/07   imputada de MENOS por  $1.310.750
+FC 14/08   imputada de MÁS por    $1.310.795
+                                  ───────────
+         diferencia global:            $45
+```
+
+Los dos errores eran **el mismo hecho visto al revés** —un anticipo mal imputado— así que se
+compensaban por construcción. **Ningún total los podía ver.**
+
+**La regla que sale de ahí:** un control agregado tiene que exigir que **cada parte cierre por
+separado**, no sólo la suma. Si las partes son N, el control son N+1 comparaciones y no una.
+
+📌 Y es la segunda vez que este proyecto se lo come: la primera fue el reparto del consumo, donde
+la clave sumaba 1 y aun así había grupos mal. **Cuando dos errores nacen del mismo hecho, tienden a
+tener signos opuestos** — y esa es exactamente la condición que anula un total.
+
+---
+
+## Un tope silencioso no da error: da menos resultados `#control #2026-08-28`
+
+El buscador de facturas precargaba *las últimas 400* de cada origen y filtraba en el navegador. El
+usuario buscó una cuota por tres caminos distintos y no aparecía por ninguno.
+
+No fallaba el filtro: **había 591 cuotas más nuevas y la fila nunca se cargaba.**
+
+> **`limit(N)` no distingue "no hay" de "no traje".** Y para el que mira la pantalla, las dos se
+> ven igual: una lista vacía.
+
+**Cuándo se puede precargar y cuándo no**: precargar sirve para *mostrar algo sin escribir* —las
+recientes, las del proveedor elegido—. Para **buscar** hay que ir al servidor, porque lo que se
+busca suele ser justamente lo viejo. Tener las dos cosas es correcto; tener sólo la primera y
+llamarla búsqueda, no.
+
+---
+
+## Un input que reformatea en cada tecla es imposible de editar `#ux #2026-08-28`
+
+Un campo controlado que guarda y vuelve a formatear en cada `onChange`:
+
+```
+escribís "1"   →  se guarda 1  →  se redibuja "1,000"  →  el cursor salta
+escribís "1,0" →  imposible: ya hay "1,000" adelante
+```
+
+Y borrar es peor. El usuario lo describió como *"no responden bien, borrar, escribir desde cero"* —
+sin poder explicar la causa, que es lo típico: **el síntoma se siente, el mecanismo no se ve**.
+
+**El patrón que lo resuelve** —usado ya en tres campos de este proyecto— es un **borrador por
+campo**: se muestra el texto crudo mientras tiene foco y se formatea y guarda en el `onBlur`.
+
+---
+
+## Derivar un precio dividiendo sólo vale si el papel cubre exactamente eso `#costos #2026-08-28`
+
+`precio = neto ÷ cantidad entregada` parece obvio y es una trampa: **sólo da bien si la factura
+cubre exactamente esa entrega**. Con la de Longo —25 t facturadas, 20,1 entregadas— dio **$332,71**
+en vez de **$267,50**.
+
+Y lo peor: **el control quedaba conforme**, porque `20.100 × 332,71` da justo el neto. El error
+se había comido el anticipo metiéndolo dentro del precio, y el número cerraba con el error adentro.
+
+**Dos cosas ayudan y ninguna es un cálculo mejor:**
+1. **Mostrar la división** — `$6.687.500 ÷ 20.100 = 332,71` — con la pregunta *"¿la factura cubre
+   sólo esta entrega?"*. A la vista, se caza al cargarlo.
+2. **Comparar contra los pares**: si una entrega del mismo insumo queda a un precio muy distinto
+   de la mediana de las otras, avisar. Es el control que no depende de que alguien mire la cuenta.
+
+⚠️ El dato que resolvería esto de raíz —**cuántos kilos declara la factura**— no está en ningún
+lado, y sin él ninguna fórmula puede distinguir un precio raro de una factura parcial.
