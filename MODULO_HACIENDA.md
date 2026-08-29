@@ -1176,9 +1176,9 @@ Las tres cosas siguientes **no se ven leyendo el código**. Aparecieron al mirar
    templates. → [A-BUG-90](PENDIENTES.md#a-bug-90). La distinción que quedó: `traerRespaldos()`
    **ofrece** (con tope), `respaldosPorId()` **resuelve** (sin tope posible).
 
-2. ❓ **Los 9 toritos le cargan $944.710 a Cría, no a Recría.** Es la imputación que trae la
-   categoría, no un error de cálculo — pero el usuario dijo que comen del mismo silo. Decisión
-   abierta: → [A-DEC-11](PENDIENTES.md#a-dec-11). **El total no cambia**; cambia de qué margen sale.
+2. ✅ **Los 9 toritos le cargaban $944.710 a Cría, no a Recría.** Resuelto el mismo día
+   → [A-DEC-11](PENDIENTES.md#a-dec-11) · dato pendiente: [A-DAT-16](PENDIENTES.md#a-dat-16).
+   Ver § 17.5, que es donde quedó el modelo.
 
 3. ⏱️ **Un tramo cruza el cierre del ejercicio y se carga entero al año que empieza.** El tramo
    24/06→24/07 tiene 30 días de los cuales **sólo 7 son del ejercicio 25/26**, y sus $5,38 M van
@@ -1192,3 +1192,48 @@ El total de maíz consumido da **60.860 kg** y la maqueta Excel decía **61.860*
 se había cargado como 5.960 kg cuando el neto de la factura prueba **4.960**
 ([A-DAT-12](PENDIENTES.md#a-dat-12)). **La app tiene razón y la maqueta no** — que es la primera
 vez que pasa en ese sentido, y es la señal de que la maqueta ya cumplió su función.
+
+### 17.5 · Dónde ESTÁ el animal vs a dónde VA — dos campos que no se pisan
+
+> Enunciado por el usuario 2026-08-29 al resolver [A-DEC-11](PENDIENTES.md#a-dec-11), y vale para
+> **todo animal que cambia de actividad**, no sólo para los toritos.
+
+Un animal en tránsito entre dos actividades tiene **dos respuestas distintas**, y el error fue usar
+un solo campo para las dos:
+
+| Pregunta | Campo | En el torito |
+|---|---|---|
+| ¿Dónde **está** hoy? ¿Quién le paga la comida? | `categorias_hacienda.centro_costo_id` | **Recría** |
+| ¿A dónde **va** cuando salga? ¿Quién se lo compra? | `stock_lotes.destino_actividad_id` | **Cría** |
+
+**El modelo completo, en palabras del usuario:**
+
+> *«Los toritos están en recría hasta que se pasen a cría. Comen del mismo silo, es un costo de
+> recría. Esos toritos se vendieron de cría a recría en el destete, así que todo lo que les pase le
+> pasa a recría. Luego cuando se venden de recría a cría se le pone precio. La ganancia sobre venta
+> menos costo es una ganancia de recría. Lo que pasa a cría es la venta de kg por precio.»*
+
+Traducido a los tres asientos que produce:
+
+```
+1 · DESTETE          Cría  ──[ kg netos × $/kg − CZ ]──▶  Recría
+    (ya construido)  ingreso de Cría          costo de entrada de Recría
+
+2 · MIENTRAS ESTÁ    todo el costo (comida, sanidad, mortandad) es de RECRÍA
+                     porque el animal ES de recría durante ese tramo
+
+3 · TRASPASO         Recría ──[ kg × $/kg − CZ ]──▶  Cría
+    A CRÍA           ingreso de Recría        costo de entrada de Cría
+                     margen de Recría = ingreso − costo de entrada − costos del tramo
+```
+
+⚠️ **La comercialización se descuenta; el IVA no** — no hay factura, es un movimiento interno.
+
+**Por qué es fácil equivocarse**: la categoría se llama `Torito` y el torito *termina* siendo de
+cría, así que apuntarla a Cría "parece" bien. Pero eso le regala a Cría un costo que nunca tuvo y
+le saca a Recría el resultado de haberlo criado. **La categoría no dice qué va a ser el animal —
+dice quién lo está manteniendo hoy.**
+
+📌 **Es el mismo mecanismo de las 69 terneras de reposición**, que ya estaba bien: categoría
+`Ternera Recria` → Recría, `destino_actividad_id` → Cría. El torito era la excepción por error, no
+por diseño.
