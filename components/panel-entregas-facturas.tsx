@@ -24,7 +24,8 @@ import { Input } from "@/components/ui/input"
 import { Loader2, Plus, Trash2, AlertTriangle, Check, X, Link2 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  conciliarEntregasFacturas, traerRespaldos, buscarRespaldos, estaAplicadaEntera, usoDeRespaldo,
+  conciliarEntregasFacturas, traerRespaldos, buscarRespaldos, respaldosPorId,
+  estaAplicadaEntera, usoDeRespaldo,
   type EntregaInsumo, type FacturaCompra, type Vinculo,
 } from "@/lib/productivo/entregas-facturas"
 
@@ -70,16 +71,29 @@ export function PanelEntregasFacturas({ insumo, onCerrar }: {
       }))
       setEntregas(es)
       const ids = new Set(es.map(e => e.id))
-      setVinculos(((vs || []) as any[]).filter(v => ids.has(String(v.movimiento_id))).map(v => ({
-        id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
-        cantidad: Number(v.cantidad) || 0,
-        precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
-        origen: v.origen ?? 'arca',
-      })))
+      const vs2: Vinculo[] = ((vs || []) as any[]).filter(v => ids.has(String(v.movimiento_id)))
+        .map(v => ({
+          id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
+          cantidad: Number(v.cantidad) || 0,
+          precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
+          origen: v.origen ?? 'arca',
+        }))
+      setVinculos(vs2)
 
       // Los respaldos: comprobantes de ARCA **y** cuotas de template. No todo gasto es una
       // factura — el maíz del 16/03 entró por template (A-FEAT-61).
-      setFacturas(await traerRespaldos(supabase as never))
+      //
+      // ⚠️ **Dos traídas, porque son dos usos distintos.** `traerRespaldos()` da los recientes
+      // para OFRECER; pero esta misma lista es la que dibuja lo YA vinculado, y ahí un tope no
+      // vale: el respaldo del 16/03 tiene 591 cuotas más nuevas encima. Sin `respaldosPorId()`
+      // el vínculo aparecía **sin precio ni número**, como si no existiera.
+      const [recientes, usados] = await Promise.all([
+        traerRespaldos(supabase as never),
+        respaldosPorId(supabase as never, vs2),
+      ])
+      const porId = new Map(recientes.map(f => [f.id, f]))
+      for (const f of usados) porId.set(f.id, f)
+      setFacturas([...porId.values()].sort((a, b) => b.fecha.localeCompare(a.fecha)))
     } finally { setCargando(false) }
   }, [insumo])
 

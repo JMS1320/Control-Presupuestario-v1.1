@@ -18,7 +18,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
-import { traerRespaldos, buscarRespaldos, estaAplicadaEntera, usoDeRespaldo,
+import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -3269,16 +3269,24 @@ function SubTabStockInsumos() {
       traerRespaldos(supabase as never),
       supabase.schema('productivo').from('entrega_factura').select('*'),
     ])
-    setFacturas(recientes.map(f => ({
-      id: f.id, fecha: f.fecha, proveedor: f.proveedor, numero: f.numero, neto: f.neto,
-      origen: f.origen ?? 'arca',
-    })))
-    setVinculosExistentes(((vs || []) as any[]).map(v => ({
+    const vinculos = ((vs || []) as any[]).map(v => ({
       id: String(v.id), movimientoId: String(v.movimiento_id), facturaId: String(v.factura_id),
       cantidad: Number(v.cantidad) || 0,
       precioUnitario: v.precio_unitario == null ? null : Number(v.precio_unitario),
-      origen: v.origen ?? 'arca',
-    })))
+      origen: (v.origen ?? 'arca') as 'arca' | 'template',
+    }))
+    setVinculosExistentes(vinculos)
+    // Se suman los respaldos YA usados aunque sean viejos: uno consumido a medias todavía tiene
+    // resto para vincular, y con sólo los recientes quedaba invisible — no ofrecido y sin aviso.
+    const usados = await respaldosPorId(supabase as never, vinculos)
+    const porId = new Map(recientes.map(f => [f.id, f]))
+    for (const f of usados) porId.set(f.id, f)
+    setFacturas([...porId.values()]
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      .map(f => ({
+        id: f.id, fecha: f.fecha, proveedor: f.proveedor, numero: f.numero, neto: f.neto,
+        origen: f.origen ?? 'arca',
+      })))
   }
 
   const cerrarModalMov = () => {

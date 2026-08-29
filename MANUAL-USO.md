@@ -3201,3 +3201,75 @@ un control agregado diría que todo cierra.
 **«Quedan $X» y «imputado de MÁS por $X» son problemas opuestos** y la pantalla los distingue: el
 primero es un anticipo o una entrega que falta cargar; el segundo, mercadería cargada a una factura
 que no la respalda.
+
+---
+
+## 💰 Presupuesto → Margen → **El costo de alimentación medido** 🟡 (sin testear)
+
+> Es el **final de la cadena**: el punto donde las mediciones de silo se convierten en plata dentro
+> del margen de cada actividad. Si algo de lo anterior está mal cargado, se nota acá.
+> Diseño: `MODULO_HACIENDA.md` § 17. Bug que lo destrabó: `PENDIENTES.md` § A-BUG-90.
+
+### Cómo se llega
+
+**Presupuesto → Margen** → elegir la **campaña** arriba → buscar la actividad **Recría** →
+desplegar la fila del costo (la flechita a la izquierda del concepto).
+
+### Qué tiene que decir
+
+En campaña **25/26**:
+
+| Actividad | Concepto | Cantidad | Monto |
+|---|---|---|---|
+| Recría | Maíz Granel | 39.660 kg | **$10.211.404** |
+| Cría | Maíz Granel | 2.000 kg | $516.215 |
+
+En campaña **26/27**:
+
+| Actividad | Concepto | Cantidad | Monto |
+|---|---|---|---|
+| Recría | Maíz Granel | 17.926 kg | **$4.788.721** |
+| Recría | Concentrado Novillo 35 10 | 1.729 kg | $1.260.487 |
+| Cría | Maíz Granel | 1.274 kg | $340.332 |
+| Cría | Concentrado Novillo 35 10 | 121 kg | $88.163 |
+
+Las cuatro filas de las dos campañas suman **$17.205.323**.
+
+La fila dice al costado *«consumo MEDIDO y repartido por kilo-día»*. **Eso es lo que hay que ver**:
+si en cambio dice *«sin calcular»* o muestra un número redondo estimado, el costo se está
+proyectando en vez de medirse — y hay que volver a Mediciones.
+
+### Cómo se lee el despliegue
+
+Al abrir la fila aparece **un renglón por grupo y por tramo**, acumulando. En Recría 25/26 son
+**10 renglones** (5 grupos × 2 tramos), arrancando por:
+
+```
+Consumo medido   16/03/2026→24/06/2026 · Ternero Recria (55 cab): 6.521 kg = $1.618.356
+                 16/03/2026→24/06/2026 · Ternero Recria (40 cab): 4.380 kg = $1.087.107
+                 ...
+```
+
+⚠️ **El renglón del 16/03 es el que hay que mirar primero.** Ese tramo se respalda con una *cuota de
+template*, no con una factura de ARCA, y hasta el 2026-08-29 **no aparecía**: el costo salía un 31 %
+más barato sin que nada lo dijera. Si esa línea falta, el problema volvió.
+
+### Los tres avisos posibles
+
+| Lo que dice | Qué significa | Dónde se arregla |
+|---|---|---|
+| *«falta el precio de alguna entrega»* | una entrega del tramo no tiene respaldo vinculado | Insumos → Stock → **Facturas** |
+| *«sin fila de receta que lo proyecte»* | el consumo entró igual, pero ninguna receta lo va a proyectar hacia adelante | Productivo → Actividades → insumos |
+| *«sin calcular»* | no hay dos mediciones para ese insumo | Insumos → Stock → **Mediciones** |
+
+El segundo **no es un error**: el consumo medido entra al margen aunque ninguna receta lo reclame.
+Se avisa porque la proyección a futuro sí va a necesitar la receta.
+
+### El control, y qué hacer si no cierra
+
+El total del margen tiene que dar **exactamente** lo mismo que la suma de los tramos en
+*Mediciones → Quién se lo comió*: **$15.856.673** de maíz + **$1.348.650** de concentrado.
+
+Si no coincide, **el problema no está en el margen** — está aguas arriba, y el orden para buscarlo
+es: ¿los cinco controles de Facturas están en ✓? → ¿las mediciones son las seis? → ¿el rodeo
+concilia 189 = 189?

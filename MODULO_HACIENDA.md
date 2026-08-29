@@ -1117,3 +1117,78 @@ donde la fecha del papel no es la del camión.
 **Cuántos kilos declara una factura.** Sin ese dato no se puede distinguir *«el precio está raro»*
 de *«esta factura cubre más de lo que llegó»* — y por eso hace falta mostrar la división y comparar
 contra la mediana de las otras entregas. Ver `KNOWLEDGE.md` § *Derivar un precio dividiendo*.
+
+---
+
+## 17 · ✅ El primer número: la cadena cerrada punta a punta (2026-08-29)
+
+> Se cargaron las **6 mediciones** y por primera vez la cadena entera dio un resultado.
+> Testing pendiente: [A-TEST-75](PENDIENTES.md#a-test-75).
+
+### 17.1 · Lo que da hoy
+
+El **consumo medido**, tramo por tramo. Cada medición corta un tramo y el precio es el de las
+entregas de *ese* tramo — no un promedio del período:
+
+| Insumo | Tramo | había | + entró | − quedó | = consumo | precio | costo |
+|---|---|---|---|---|---|---|---|
+| Maíz | 16/03 → 24/06 | 0 | 21.560 | 0 | **21.560** kg | $248,18 | $5.350.859 |
+| Maíz | 24/06 → 24/07 | 0 | 20.100 | 0 | **20.100** kg | $267,50 | $5.376.750 |
+| Maíz | 24/07 → 24/08 | 0 | 25.000 | 5.800 | **19.200** kg | $267,14 | $5.129.053 |
+| Concentrado | 22/07 → 24/08 | 0 | 3.000 | 1.150 | **1.850** kg | $729,00 | $1.348.650 |
+
+Y el reparto por **kilo-día**, ya imputado a la actividad de cada grupo:
+
+| Campaña | Actividad | Producto | Cantidad | Costo |
+|---|---|---|---|---|
+| 25/26 | Recría | Maíz Granel | 39.660 kg | **$10.211.404** |
+| 25/26 | Cría | Maíz Granel | 2.000 kg | $516.215 |
+| 26/27 | Recría | Maíz Granel | 17.926 kg | **$4.788.721** |
+| 26/27 | Recría | Concentrado Novillo 35 10 | 1.729 kg | $1.260.487 |
+| 26/27 | Cría | Maíz Granel | 1.274 kg | $340.332 |
+| 26/27 | Cría | Concentrado Novillo 35 10 | 121 kg | $88.163 |
+| | | **TOTAL** | | **$17.205.323** |
+
+### 17.2 · Los cinco controles, y por qué son cinco
+
+Ninguno es decorativo: cada uno agarra una cosa que los otros no ven.
+
+| Control | Qué agarra |
+|---|---|
+| **Cantidad punta a punta** — comprado = consumido + remanente | una entrega cargada dos veces |
+| **El reparto suma el consumo** — Σ participaciones = 1 | un grupo que quedó fuera del rodeo |
+| **Lo comprado está explicado** | una entrega sin tramo que la contenga |
+| **Lo entregado tiene respaldo** | kilos sin factura → precio inventado |
+| **Lo facturado está aplicado, uno por uno** | 🔑 **dos errores que se compensan** |
+
+El último se escribió así **después de que el global cerrara con $45 de diferencia teniendo dos
+errores de $1,3 M adentro**. Sumar y comparar no alcanza: hay que mirar **respaldo por respaldo**.
+Ver `KNOWLEDGE.md` § *Un total que cierra no prueba que las partes estén bien*.
+
+### 17.3 · Lo que apareció al ver el número, y no antes
+
+Las tres cosas siguientes **no se ven leyendo el código**. Aparecieron al mirar el resultado:
+
+1. 🐛 **Faltaba un tramo entero, en silencio** — 21.560 kg, el **35 % de los kilos** consumidos, y
+   **$5,35 M** (el 31 % del costo). El primer tramo del maíz se respalda con una
+   **cuota de template**, y las tres pantallas que leen el vínculo usaban la lista de *«los últimos
+   N»* — donde esa cuota tiene 591 más nuevas encima. El margen ni siquiera consultaba los
+   templates. → [A-BUG-90](PENDIENTES.md#a-bug-90). La distinción que quedó: `traerRespaldos()`
+   **ofrece** (con tope), `respaldosPorId()` **resuelve** (sin tope posible).
+
+2. ❓ **Los 9 toritos le cargan $944.710 a Cría, no a Recría.** Es la imputación que trae la
+   categoría, no un error de cálculo — pero el usuario dijo que comen del mismo silo. Decisión
+   abierta: → [A-DEC-11](PENDIENTES.md#a-dec-11). **El total no cambia**; cambia de qué margen sale.
+
+3. ⏱️ **Un tramo cruza el cierre del ejercicio y se carga entero al año que empieza.** El tramo
+   24/06→24/07 tiene 30 días de los cuales **sólo 7 son del ejercicio 25/26**, y sus $5,38 M van
+   todos a 25/26 — unos **$4,1 M de más** en el balance que está por cerrarse.
+   → [A-FEAT-66](PENDIENTES.md#a-feat-66). **La salida no es prorratear: es medir el 30/06.**
+
+### 17.4 · Contra la maqueta
+
+El total de maíz consumido da **60.860 kg** y la maqueta Excel decía **61.860**. La diferencia es
+**exactamente 1.000 kg** y **no es un error nuevo**: es la corrección de la entrega de Pereyra, que
+se había cargado como 5.960 kg cuando el neto de la factura prueba **4.960**
+([A-DAT-12](PENDIENTES.md#a-dat-12)). **La app tiene razón y la maqueta no** — que es la primera
+vez que pasa en ese sentido, y es la señal de que la maqueta ya cumplió su función.

@@ -240,6 +240,7 @@ interface ClienteSb {
         order: (c: string, o?: { ascending?: boolean }) => {
           limit: (n: number) => PromiseLike<{ data: unknown[] | null }>
         }
+        in: (c: string, v: string[]) => PromiseLike<{ data: unknown[] | null }>
       }
     }
   }
@@ -271,6 +272,38 @@ const deTemplate = (rows: unknown[] | null): FacturaCompra[] =>
     total: Number(c.monto) || 0,
     origen: 'template',
   }))
+
+/**
+ * Los respaldos **que están vinculados**, traídos por su id — los dos orígenes.
+ *
+ * ⚠️ **Ésta es la que hay que usar para LEER un vínculo ya hecho** (el margen, el ciclo, los
+ * scripts de control). `traerRespaldos()` es sólo para *ofrecerle una lista al usuario*: trae los
+ * más recientes y por lo tanto **no alcanza a los viejos**. El maíz del 16/03 se respalda con una
+ * cuota de template que tiene 591 más nuevas encima: leerlo con `traerRespaldos()` no lo encuentra,
+ * el vínculo queda **sin precio**, y el tramo entero — 21.560 kg — sale del costo **sin decir nada**.
+ *
+ * Es el mismo tope silencioso de A-BUG-81, del lado de la lectura: no da error, da de menos.
+ * Acá no hay tope posible porque se pide exactamente lo que se necesita.
+ */
+export async function respaldosPorId(
+  sb: ClienteSb, vinculos: Vinculo[],
+): Promise<FacturaCompra[]> {
+  const ids = (o: 'arca' | 'template') =>
+    [...new Set(vinculos.filter(v => (v.origen ?? 'arca') === o).map(v => v.facturaId))]
+  const idsArca = ids('arca')
+  const idsTpl = ids('template')
+
+  const [arca, cuotas] = await Promise.all([
+    idsArca.length
+      ? sb.schema('msa').from('comprobantes_arca').select(COLS_ARCA).in('id', idsArca)
+      : Promise.resolve({ data: [] as unknown[] }),
+    idsTpl.length
+      ? sb.schema('public').from('cuotas_egresos_sin_factura').select(COLS_CUOTA).in('id', idsTpl)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
+  return [...deArca(arca.data), ...deTemplate(cuotas.data)]
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+}
 
 /** Los respaldos más recientes de los dos orígenes. Para mostrar algo sin que se escriba nada. */
 export async function traerRespaldos(sb: ClienteSb, limite = 300): Promise<FacturaCompra[]> {

@@ -1568,6 +1568,20 @@ recientes, las del proveedor elegido—. Para **buscar** hay que ir al servidor,
 busca suele ser justamente lo viejo. Tener las dos cosas es correcto; tener sólo la primera y
 llamarla búsqueda, no.
 
+**Y falta un tercer uso, que es el que volvió a morder al día siguiente** (2026-08-29, A-BUG-90):
+**leer un vínculo que ya existe**. Ahí el tope no es "menos cómodo", es **incorrecto**. El costo de
+alimentación no mostraba el primer tramo —21.560 kg, el 35 % del total— porque el respaldo estaba
+fuera de las últimas N y el vínculo quedaba sin precio. Tres pantallas distintas cometían el mismo
+error, y una de ellas ni siquiera consultaba el segundo origen.
+
+> **Ofrecer una lista y resolver una referencia son dos operaciones distintas.** Ofrecer admite
+> tope: el usuario ve lo que hay y puede escribir para buscar más. **Resolver no lo admite nunca**,
+> porque no hay nadie a quien pedirle que escriba: la fila ya eligió su factura hace tres semanas.
+
+**La forma de no repetirlo** es que se note en el nombre. Quedaron dos funciones separadas —
+`traerRespaldos()` (con tope, para ofrecer) y `respaldosPorId()` (sin tope posible, para resolver)—
+en vez de una con un parámetro. Un parámetro se olvida; dos nombres obligan a elegir.
+
 ---
 
 ## Un input que reformatea en cada tecla es imposible de editar `#ux #2026-08-28`
