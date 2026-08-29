@@ -178,7 +178,14 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async () => {
-    if (!insumo || !nuevaFecha || nuevaCant.trim() === "") return
+    if (!insumo) return
+    // Se dice qué falta en vez de no hacer nada: un click que no produce ni un cambio ni un
+    // mensaje es indistinguible de un botón roto.
+    if (!nuevaFecha) { alert("Falta la fecha de la medición."); return }
+    if (nuevaCant.trim() === "") {
+      alert("Falta cuánto había. Si el silo estaba vacío, escribí 0 — el campo está en blanco.")
+      return
+    }
     setGuardando(true)
     const { error } = await supabase.schema("productivo").from("mediciones_insumo").insert({
       insumo_stock_id: insumo.id,
@@ -286,7 +293,11 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                         onChange={e => setNuevaFecha(e.target.value)} />
                     </td>
                     <td className="px-2 py-1">
-                      <Input type="text" placeholder="0" className="h-7 text-right text-[11px]"
+                      {/* ⚠️ El placeholder NO puede ser "0": en una medición **cero es el valor
+                          más común**, y un placeholder idéntico al dato hace creer que ya está
+                          cargado. El usuario apretó + tres veces sin que pasara nada. */}
+                      <Input type="text" placeholder={`kg de ${um}`}
+                        className="h-7 text-right text-[11px]"
                         value={nuevaCant} onChange={e => setNuevaCant(e.target.value)} />
                     </td>
                     <td className="px-2 py-1">
@@ -294,8 +305,14 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                         value={nuevaNota} onChange={e => setNuevaNota(e.target.value)} />
                     </td>
                     <td className="px-2 py-1 text-right">
-                      <Button size="sm" variant="ghost" className="h-6 px-1"
-                        disabled={guardando || !nuevaFecha || nuevaCant.trim() === ""}
+                      {/* Un botón deshabilitado sin decir por qué no se distingue de uno roto. */}
+                      <Button size="sm" variant="ghost"
+                        className={`h-6 px-1 ${
+                          !nuevaFecha || nuevaCant.trim() === "" ? "opacity-40" : "text-emerald-700"}`}
+                        disabled={guardando}
+                        title={!nuevaFecha ? "Falta la fecha"
+                          : nuevaCant.trim() === "" ? "Falta cuánto había — poné 0 si estaba vacío"
+                          : "Agregar la medición"}
                         onClick={agregar}>
                         {guardando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                       </Button>
@@ -345,7 +362,8 @@ export function PanelMedicionesInsumo({ insumo, onCerrar }: {
                         onChange={e => setDecFecha(e.target.value)} />
                     </td>
                     <td className="px-2 py-1">
-                      <Input type="text" placeholder="0" className="h-7 text-right text-[11px]"
+                      <Input type="text" placeholder={`kg de ${um}`}
+                        className="h-7 text-right text-[11px]"
                         value={decCant} onChange={e => setDecCant(e.target.value)} />
                     </td>
                     <td className="px-2 py-1">

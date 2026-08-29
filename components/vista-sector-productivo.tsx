@@ -3842,7 +3842,7 @@ function SubTabStockInsumos() {
                         {/* type="text", no "number": la convención del proyecto es coma
                             decimal y punto de miles. Ver CLAUDE.md § Inputs Monetarios. */}
                         <Input type="text" inputMode="decimal" className="h-8 text-xs text-right"
-                          value={linea.cantidad} placeholder="0"
+                          value={linea.cantidad} placeholder="cantidad"
                           onChange={e => actualizarLineaMov(linea.key, 'cantidad', e.target.value)} />
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {stockFiltrado.find(s => s.id === linea.insumo_stock_id)?.unidad_medida || ''}
