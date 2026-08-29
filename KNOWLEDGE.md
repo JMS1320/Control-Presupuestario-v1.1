@@ -1618,3 +1618,34 @@ se había comido el anticipo metiéndolo dentro del precio, y el número cerraba
 
 ⚠️ El dato que resolvería esto de raíz —**cuántos kilos declara la factura**— no está en ningún
 lado, y sin él ninguna fórmula puede distinguir un precio raro de una factura parcial.
+
+---
+
+## Un parámetro fijo para algo estacional erra siempre, en los dos sentidos `#presupuesto #productivo #2026-08-29`
+
+Primera comparación entre el consumo **medido** y el **proyectado**, posible recién cuando hubo
+mediciones de silo. La receta de recría dice `racion_pct_pv = 1,5 %`. Lo medido:
+
+| Tramo | días | % del peso vivo |
+|---|---|---|
+| 16/03 → 24/06 | 100 | **0,43 %** |
+| 24/06 → 24/07 | 30 | **1,35 %** |
+| 24/07 → 24/08 | 31 | **1,51 %** |
+
+**La receta no está mal: describe otra cosa.** El 1,5 % es la suplementación **de invierno**, y pega
+casi exacto con el último tramo. En otoño hay pasto y el suplemento es un cuarto de eso.
+
+> **El error no es el valor, es la forma del parámetro.** Un escalar no puede representar algo que
+> depende de la estación, y **ningún valor lo arregla**: 1,5 % sobreestima el año entero (2,2×,
+> ~$19,7 M), y el promedio 0,69 % subestimaría el invierno — que es justo cuando el gasto duele.
+
+**La trampa de "ajustarlo al promedio"** es que parece el arreglo obvio y produce un número que
+cierra contra el pasado y falla contra el futuro mes a mes. Si el parámetro tiene que variar en el
+tiempo, hay que **darle esa dimensión**, no elegirle mejor el punto.
+
+**Cómo se detecta en cualquier otro lado**: cuando la comparación medido-vs-proyectado da un error
+que **cambia de signo o de tamaño según el período** —en vez de un sesgo parejo—, el parámetro no
+está mal calibrado: le falta un eje. Un sesgo parejo sí se arregla con un valor nuevo.
+
+📌 Aplica igual a la mezcla de la dieta (85/15 en la receta, ~91/9 en el último mes) y a cualquier
+coeficiente productivo con estacionalidad. Ver `PENDIENTES.md` § A-FEAT-68 y A-FEAT-69.

@@ -1262,3 +1262,38 @@ detalle por grupo y el circuito de venta. Ver `PENDIENTES.md` § [A-DEC-08](PEND
 ⚠️ **El error a no repetir**: al ver *«descarte»* es tentador pensar «cambia de categoría → cambia
 de actividad → hay que recalcular el pasado». **No.** La categoría cambió; la actividad no. Y es la
 actividad la que manda para el costo, la existencia y el balance.
+
+### 17.6 · El primer control medido vs proyectado (2026-08-29)
+
+> Es el **control por el camino inverso** que pide `CLAUDE.md` § *Todo desarrollo termina con su
+> control*: no verificar el cálculo, sino recalcular al revés y comparar. Recién se pudo hacer
+> cuando hubo mediciones.
+
+**La pregunta**: si el sistema ya sabe cuánto se consumió de verdad, ¿coincide con lo que la receta
+proyecta hacia adelante?
+
+**No, y la forma en que no coincide es lo informativo:**
+
+| Tramo | días | consumo | kilo-día | % del peso vivo |
+|---|---|---|---|---|
+| 16/03 → 24/06 | 100 | 21.560 kg | 4.966.473 | **0,43 %** |
+| 24/06 → 24/07 | 30 | 20.100 kg | 1.486.299 | **1,35 %** |
+| 24/07 → 24/08 | 31 | 19.200 kg | 1.270.282 | **1,51 %** |
+| Concentrado 22/07 → 24/08 | 33 | 1.850 kg | 1.369.440 | 0,14 % |
+| **Todo el ciclo** | | **62.710 kg** | **9.092.495** | **0,69 %** |
+
+La receta dice **1,50 %**. El promedio real es **0,69 %** — pero el **último tramo es 1,51 %**.
+
+> 🔑 **El consumo sube con el invierno, y la receta describe el invierno.** No hay un error de
+> calibración: falta un eje. Ver `KNOWLEDGE.md` § *Un parámetro fijo para algo estacional*.
+
+**Qué pasa si no se toca**: proyectar 1,5 % sobre los mismos kilo-día da **136.387 kg** contra
+**62.710** reales — **73.677 kg y ~$19,7 M de sobreestimación**, que en un presupuesto a 2 años se
+repite. → [A-FEAT-68](PENDIENTES.md#a-feat-68).
+
+**Y la mezcla**: la receta reparte 85 % maíz / 15 % concentrado; lo medido en el ciclo da 97/3, y en
+el último mes ~91/9 (el concentrado arrancó el 22/07, así que el promedio del ciclo lo diluye).
+→ [A-FEAT-69](PENDIENTES.md#a-feat-69).
+
+⚠️ **Este control hay que volver a correrlo cada vez que se cargue una medición nueva** — es el que
+convierte el sistema en algo que aprende del dato real en vez de repetir la estimación inicial.
