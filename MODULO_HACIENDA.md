@@ -1237,3 +1237,28 @@ dice quién lo está manteniendo hoy.**
 📌 **Es el mismo mecanismo de las 69 terneras de reposición**, que ya estaba bien: categoría
 `Ternera Recria` → Recría, `destino_actividad_id` → Cría. El torito era la excepción por error, no
 por diseño.
+
+#### El corolario: qué pasa cuando un animal se DESCARTA
+
+*(Precisado por el usuario el 2026-08-29, después de que la primera versión de esto lo dijera mal.)*
+
+> *«Los 9 toritos siempre están en recría hoy por hoy. Si los cambio a que no son toritos, nunca se
+> van de recría. La única manera de que se vayan de recría es pasarlos de torito a toro.»*
+
+**Un descarte no es una salida.** El torito descartado deja de ser candidato a toro y pasa a
+venderse afuera con el resto — pero **sigue en recría hasta que se venda**. Cambia la respuesta a
+*«¿a dónde va?»*, no a *«¿dónde está?»*.
+
+| Transición | ¿Sale de recría? | Circuito |
+|---|---|---|
+| **Torito → Toro** | **Sí** — es *la única* forma de irse | traspaso interno: CZ sí, IVA no |
+| **Torito → Ternero Recría** (descarte) | **No** | venta afuera, **con IVA** |
+
+**Consecuencia práctica, y es tranquilizadora**: como las dos categorías apuntan a **Recría**, un
+descarte **no mueve ni un peso** del costo ni de la existencia **por actividad**. Sólo cambia el
+detalle por grupo y el circuito de venta. Ver `PENDIENTES.md` § [A-DEC-08](PENDIENTES.md#a-dec-08),
+*el cuarto caso*.
+
+⚠️ **El error a no repetir**: al ver *«descarte»* es tentador pensar «cambia de categoría → cambia
+de actividad → hay que recalcular el pasado». **No.** La categoría cambió; la actividad no. Y es la
+actividad la que manda para el costo, la existencia y el balance.

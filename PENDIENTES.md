@@ -11543,7 +11543,7 @@ Salieron de esta sesión; la lista no está cerrada.
 | La **venta real** difiere de la proyectada | el margen, la campaña, las cabezas que quedan |
 | Una **mortandad** nueva | cabezas y kilo-día → el reparto |
 | Se agrega un **tramo** (el pase a engorde) | la curva de peso y el costo |
-| 🆕 Un animal **se RECLASIFICA** (un torito descartado, una de reposición que se vende afuera) | cambia de **grupo**, de **actividad** y de **destino** → el reparto, la existencia y **el pasado ya imputado** |
+| 🆕 Un animal **se RECLASIFICA** (un torito descartado, una de reposición que deja de retenerse) | **no cambia de actividad** — cambia de **destino** (traspaso interno ⇄ venta afuera) y de **grupo** → el circuito de salida, el IVA y el reparto por grupo |
 
 ### La taxonomía que propongo — tres casos y no uno
 
@@ -11595,52 +11595,59 @@ mismo**. El peso mueve *quién paga*, no *cuánto se consumió*.
 > las de reposición."*
 
 **No entra en los tres casos de arriba, y por eso es el cuarto.** Los tres primeros son *un dato que
-mejora*; éste es **el sujeto que cambia de lugar**. No mejoró ninguna medición: cambió de qué grupo
-es el animal, y con eso cambia quién paga lo que ya se imputó.
+mejora*; éste es **el sujeto que cambia de estado**.
 
-**Los dos casos reales, que van a pasar:**
+#### ⚠️ Corrección de la primera versión de este ítem (mismo día, 2026-08-29)
 
-| Hoy | Después | Qué se mueve |
-|---|---|---|
-| **Torito** (9 cab, destino Cría) | se descarta → **Ternero Recría**, se vende afuera | grupo, curva de peso, **destino** (traspaso interno → venta con IVA) |
-| **Ternera Recría** de reposición (69, destino Cría) | alguna se vende afuera | ídem — y el CZ cambia |
+La primera redacción decía que un torito descartado *"cambia de grupo, de actividad y de destino"*.
+**Está mal, y lo corrigió el usuario:**
 
-#### Lo que ya está resuelto, y es lo que vuelve manejable todo esto
+> *"Los 9 toritos siempre están en recría hoy por hoy. Si los cambio a que no son toritos, nunca se
+> van de recría. La única manera de que se vayan de recría es pasarlos de torito a toro."*
 
-🔑 **Ninguna reclasificación puede alterar el total.** El consumo medido —60.860 kg, $17,2 M— sale
-de `había + entró − quedó`: es un **hecho de las mediciones**, y el kilo-día **sólo reparte**. Mover
-un animal de grupo **mueve plata entre grupos y nada más**. Ningún control de cuadratura se puede
-romper por una reclasificación. Es la misma propiedad que ya está escrita para el cambio de peso.
+**El descarte NO saca al animal de recría.** Deja de ser candidato a toro y pasa a venderse afuera
+con el resto, pero **sigue en recría hasta que se venda**, igual que antes. Lo que cambia es **a
+dónde va**, no **dónde está** — que es exactamente la distinción de `MODULO_HACIENDA.md` § 17.5,
+rota al día siguiente de escribirla.
 
-🔑 **El motor ya integra día por día.** `gruposDelRodeo()` recorre fecha por fecha y `cabezasAlDia()`
-ya sabe descontar N cabezas de **un grupo puntual en una fecha** (`BajaRodeo.grupoId`). O sea: una
-reclasificación **con fecha** no necesita motor nuevo — necesita representarse bien.
+#### Las dos transiciones, que son distintas
 
-#### Lo que NO está, y es concreto
+| | Qué pasa | ¿Sale de recría? | Circuito de salida |
+|---|---|---|---|
+| **Torito → Toro** | cría se lo compra | **Sí** — es *la* forma de irse | traspaso interno: CZ sí, **IVA no** |
+| **Torito → Ternero Recría** (descarte) | deja de ser candidato | **No** — se queda hasta venderse | **venta afuera, con IVA** |
+
+Idéntico con las **69 de reposición**: si alguna deja de retenerse no se va de recría — cambia de
+destino y se vende afuera. Y con las **12 terneras**, al revés: si se decide retenerlas, ganan
+destino Cría sin moverse de lado.
+
+#### Por qué esto es MUCHO más simple de lo que planteé
+
+🔑 **La actividad no cambia, así que el costo por actividad no cambia ni un peso.** Una vez hecho
+[A-DAT-16](#a-dat-16), `Torito` y `Ternero Recria` apuntan **las dos a Recría**. El animal siempre
+comió en recría y siempre lo va a haber hecho. **No hay pasado que reescribir a nivel actividad** —
+que era el riesgo grande que había levantado en la primera versión, y **no aplica**.
+
+🔑 **Ninguna reclasificación puede alterar el total.** El consumo sale de `había + entró − quedó`:
+es un hecho de las mediciones, y el kilo-día **sólo reparte**. Ningún control de cuadratura se
+puede romper por esto.
+
+#### Lo que sí queda por resolver, y es acotado
 
 | | Estado |
 |---|---|
-| **Sacar** 1 cabeza de un grupo en una fecha | ✅ existe — es una `BajaRodeo` con `grupoId` |
-| **Meterla** en otro grupo en esa fecha | ❌ **no existe**: `GrupoRodeo.cabezas` es fijo *al entrar* y no hay alta parcial |
-| Que el animal **no salte de peso** al cambiar de grupo | ❌ el grupo nuevo tomaría la curva del lote destino, y el animal **pesa lo que pesa** |
-| Que el **pasado no se reescriba** | ❌ nada lo impide hoy |
+| **Partir un lote** (9 toritos → 7 + 2) | ⚠️ se puede **a mano**: bajar la cantidad y crear el otro lote. No hay una acción *"partir"* que lo haga bien |
+| Que el lote nuevo herede **peso, fecha de entrada y costo acumulado** | ❌ hoy arrancaría como un lote nuevo cualquiera, y el animal saltaría de peso |
+| El **margen por grupo** ya calculado | ⚠️ sí se mueve — la comida se reparte entre grupos distintos. No afecta ni el total ni la actividad |
+| **Torito → Toro**: que ocurra con **fecha y precio** | ⚠️ el destino está modelado (`destino_actividad_id`); **el hecho de que se lo lleven, no** |
 
-**La mitad del mecanismo existe (la salida) y la otra mitad no (la entrada).**
+#### ❓ Lo que hay que preguntarle al usuario cuando se retome
 
-#### ⚠️ El riesgo que hay que resolver antes de construir nada
-
-> **Un torito descartado el 01/09 fue torito hasta el 01/09.** Comió como torito, y esa comida ya
-> está imputada a la actividad y al ejercicio que correspondían.
-
-Si el sistema recalcula con la clasificación **actual**, **reescribe el pasado**: los números de un
-período ya cerrado cambian solos, y el balance presentado al contador deja de coincidir con lo que
-muestra la app. Eso es exactamente el caso 3 de la taxonomía —*congelado a propósito*— pero llegando
-por una puerta distinta, y hoy **ni se respeta ni se avisa**.
-
-La forma correcta es la que el motor ya insinúa: **una reclasificación es un hecho con fecha**, no
-una corrección de la ficha del animal. Sale de un grupo el día X y entra en otro el día X; lo de
-antes de X queda como está. Guardar sólo *"ahora es ternero"* pierde la fecha — y con ella, la
-única información que permite no reescribir el pasado.
+1. Un torito descartado, ¿**pasa al lote de terneros recría** o **se queda en el lote de toritos**
+   marcado como que se vende afuera? Decide si hace falta mover cabezas entre lotes o alcanza con
+   partir el lote y cambiarle el destino.
+2. El pase **Torito → Toro**, ¿tiene **fecha propia** (el día que cría se los lleva) o coincide
+   siempre con el cierre del ciclo de recría?
 
 ### Cuándo
 
@@ -11701,11 +11708,15 @@ real — no el de sumarlos.
 Tolerable mientras la existencia se mire por actividad; **deja de serlo cuando cada grupo tenga su
 margen**, que es justo hacia donde va la apertura por grupo.
 
-**5 · Una reclasificación mueve el activo sin que ningún dato "empeore".** *(2026-08-29)*
-Si un torito se descarta y pasa a ternero recría, el costo acumulado que llevaba encima se muda de
-grupo — y con él, la parte de la existencia que representaba. Ninguna medición cambió. Es el mismo
-riesgo de reescribir el pasado que se registró en [A-DEC-08](#a-dec-08) § *el cuarto caso*, pero
-llegando al balance en vez de al presupuesto.
+**5 · Un descarte NO toca la existencia por actividad — pero sí el detalle por grupo.** *(2026-08-29,
+corregido el mismo día por el usuario)*
+Primero lo anoté como *"la reclasificación muda el activo"*. **No es así**: un torito descartado
+**no se va de recría** —sólo deja de estar destinado a cría—, y como `Torito` y `Ternero Recria`
+apuntan las dos a Recría, **la existencia de la actividad no se mueve ni un peso**.
+> 🔑 **Lo que hay que mirar al valuar no es la categoría del animal, es la ACTIVIDAD en la que
+> está.** La categoría puede cambiar sin que el activo se mueva. Lo único que mueve la existencia
+> entre actividades es un **traspaso real** (torito → toro, la reposición cuando cría se la lleva),
+> y ése ya tiene su mecanismo. Detalle en [A-DEC-08](#a-dec-08) § *el cuarto caso*.
 
 ---
 
