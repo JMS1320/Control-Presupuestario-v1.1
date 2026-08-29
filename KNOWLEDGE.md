@@ -1649,3 +1649,32 @@ está mal calibrado: le falta un eje. Un sesgo parejo sí se arregla con un valo
 
 📌 Aplica igual a la mezcla de la dieta (85/15 en la receta, ~91/9 en el último mes) y a cualquier
 coeficiente productivo con estacionalidad. Ver `PENDIENTES.md` § A-FEAT-68 y A-FEAT-69.
+
+---
+
+## El ruido también miente: un control que no puede estar en verde `#control #2026-08-29`
+
+Contrapartida de *el silencio miente*, y menos obvia.
+
+El control *«lo comprado está explicado»* comparaba **todo lo comprado** contra la identidad
+`consumo + cierre − apertura`. Se puso en rojo con todo perfectamente cargado, porque había una
+entrega **posterior a la última medición** — mercadería real, en el silo, que ninguna medición
+confirmó todavía.
+
+**El problema no fue el falso positivo: fue que iba a pasar siempre.** Cada vez que llega un camión
+entre dos mediciones, o sea la mayor parte del tiempo.
+
+> **Un control que está en rojo la mayor parte del tiempo entrena a ignorarlo.** El día que
+> descuadre algo de verdad va a estar rojo igual que ayer, y nadie lo va a mirar.
+
+**La regla que queda:** antes de dar por bueno un control, preguntarse *¿existe un estado normal de
+operación en el que este control esté en rojo?* Si la respuesta es sí, **el control está mal
+formulado**, aunque la identidad que verifica sea cierta.
+
+**Cómo se arregla, casi siempre**: el control estaba mezclando dos preguntas distintas. Separarlas
+da un control que sí puede cerrar (*«lo comprado dentro del período medido»*) y un dato informativo
+al lado (*«24.920 entregados después de la última medición: los va a imputar la próxima»*). Lo
+segundo sigue **visible** —no se descarta en silencio—, pero no grita.
+
+📌 Contraparte necesaria: no usar esto como excusa para bajar el umbral de un control que sí debe
+gritar. La pregunta no es *"¿molesta?"* sino *"¿puede estar en verde cuando todo está bien?"*.

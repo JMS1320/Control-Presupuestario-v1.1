@@ -1297,3 +1297,67 @@ el último mes ~91/9 (el concentrado arrancó el 22/07, así que el promedio del
 
 ⚠️ **Este control hay que volver a correrlo cada vez que se cargue una medición nueva** — es el que
 convierte el sistema en algo que aprende del dato real en vez de repetir la estimación inicial.
+
+### 17.7 · La segunda carga: qué se movió y qué no (2026-08-29, noche)
+
+> Entraron **2 mediciones** (maíz 1.440 kg y concentrado 635 kg al 29/08) y **una entrega de
+> 24.920 kg** de maíz. Auditoría completa a pedido del usuario.
+
+#### 🔑 Lo más importante: el pasado NO se movió
+
+Los cuatro tramos anteriores dieron **exactamente los mismos números**, hasta el peso:
+
+| Tramo | antes | después |
+|---|---|---|
+| Maíz 16/03→24/06 | 21.560 kg · $5.350.870 | **idéntico** |
+| Maíz 24/06→24/07 | 20.100 kg · $5.376.750 | **idéntico** |
+| Maíz 24/07→24/08 | 19.200 kg · $5.129.053 | **idéntico** |
+| Concentrado 22/07→24/08 | 1.850 kg · $1.348.650 | **idéntico** |
+
+Y el reparto por lote de cada uno también, participación por participación. **Cargar datos nuevos
+no reescribe los viejos** — que es exactamente lo que había que verificar, y lo que hace que el
+número sirva para un balance.
+
+#### Los dos tramos nuevos
+
+| | consumo | precio | costo | % PV |
+|---|---|---|---|---|
+| Maíz 24/08 → 29/08 (5 d) | 5.800 + 0 − 1.440 = **4.360 kg** | $267 | $1.164.723 | **2,31 %** |
+| Concentrado 24/08 → 29/08 (5 d) | 1.150 + 0 − 635 = **515 kg** | $729 | $375.435 | 0,27 % |
+
+⚠️ **La entrega del 29/08 no entra en este tramo** y está bien: el stock se mide **antes** de
+descargar, así que un camión que llega el día de una medición pertenece al tramo **siguiente**.
+
+**Total de alimentación: $18.745.481** (era $17.205.323).
+
+#### Acumulado por lote — el corte que pidió el usuario
+
+| Lote | kg | costo |
+|---|---|---|
+| Ternera Recria (69) | 28.040 | $7.855.479 |
+| Ternero Recria (40) | 15.059 | $4.219.483 |
+| Ternero Recria (55) | 15.260 | $4.075.072 |
+| Ternera Recria (12) | 3.782 | $1.060.009 |
+| Torito (9) | 3.760 | $1.060.001 |
+| Resto sin lote (4) | 1.685 | $475.436 |
+| **Total** | **67.585** | **$18.745.481** |
+
+**Verificaciones que pasó el reparto:**
+- Los **55 vendidos el 04/08** aparecen en el tramo 24/07→24/08 con **12,8 %** —estuvieron 11 de
+  31 días— y **desaparecen** del tramo siguiente. ✅
+- El **«Resto sin lote»** crece de 2,0 % a 3,4 % a medida que salen los lotes: son 4 cabezas fijas
+  sobre un rodeo que se achica. ✅ Es el comportamiento correcto, no una fuga.
+- Las cabezas cierran: **189 al inicio**, 186 al 30/06 (3 bajas), 131,2 al 24/08 (menos los 55). ✅
+- El tramo sin entregas **arrastra el precio del stock que quedó** ($267), que es el mismo maíz. ✅
+
+#### 🐛 Lo que destapó esta carga
+
+**Un control en rojo permanente** → [A-BUG-91](PENDIENTES.md#a-bug-91), arreglado el mismo día.
+*«Lo comprado está explicado»* se ponía en rojo porque comparaba contra **todo** lo comprado,
+incluida una entrega posterior a la última medición — algo que iba a pasar **siempre**.
+> 🔑 **Es la gemela de *el silencio miente*: el ruido también miente.** Un control que no puede
+> estar en verde no es un control, es un adorno.
+
+**Un tramo de 5 días amplifica el error** → [A-FEAT-70](PENDIENTES.md#a-feat-70). El 2,31 % rompe
+la serie (0,43 → 1,35 → 1,51) y puede ser real o puede ser que la medición contara sólo la ración
+armada. Un error de 500 kg mueve un tramo de 5 días un 11 % y uno de 100 días un 2 %.

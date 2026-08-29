@@ -338,13 +338,42 @@ function controlesDe(
   })
 
   // 3 · Lo comprado se explica entero: o se consumió, o está en el stock. Nada se evapora.
+  //
+  // ⚠️ Se compara contra lo comprado DENTRO del período medido, no contra todo lo comprado.
+  //
+  // Una entrega posterior a la última medición **no es un descuadre**: es mercadería que llegó y
+  // que ninguna medición confirmó todavía. Pasa siempre que llega un camión entre dos mediciones,
+  // o sea la mayor parte del tiempo. Comparando contra `compradoTotal` este control quedaba en
+  // rojo permanente — y un rojo que está prendido siempre deja de ser una señal: la próxima vez
+  // que descuadre algo de verdad, nadie lo va a mirar.
+  //
+  // Caso real que lo destapó (2026-08-29): llegaron 24.920 kg el mismo día de la última medición
+  // y los dos controles de cantidad se pusieron en rojo con todo perfectamente cargado.
+  const finMedido = ms[ms.length - 1]!.fecha
+  const compradoEnPeriodo = r3(
+    entregas.filter(e => e.fecha < finMedido).reduce((s, e) => s + e.cantidad, 0))
   const explicado = r3(consumoTotal + cierre - apertura)
   out.push({
     nombre: 'Lo comprado está explicado',
-    izquierda: compradoTotal, derecha: explicado,
-    diferencia: r3(compradoTotal - explicado), cierra: cerca(compradoTotal, explicado),
+    izquierda: compradoEnPeriodo, derecha: explicado,
+    diferencia: r3(compradoEnPeriodo - explicado), cierra: cerca(compradoEnPeriodo, explicado),
     detalle: 'todo lo que entró está consumido o en el stock — nada se pierde por el camino',
   })
+
+  // 3b · Lo que llegó DESPUÉS de la última medición. No es un error: es lo que falta medir.
+  //
+  // Se muestra igual —§ *nada se descarta en silencio*—, pero como dato y no como alarma: son
+  // kilos que están en el silo y que todavía no tienen una medición que los cierre.
+  const despues = r3(compradoTotal - compradoEnPeriodo)
+  if (despues > 0.5) {
+    out.push({
+      nombre: 'Entregado después de la última medición',
+      izquierda: despues, derecha: despues, diferencia: 0, cierra: true,
+      detalle: `${despues.toLocaleString('es-AR', { maximumFractionDigits: 0 })} entregados el `
+        + `${finMedido.split('-').reverse().join('/')} o después: están en el stock y los va a `
+        + `imputar la próxima medición. No es un descuadre`,
+    })
+  }
 
   return out
 }
