@@ -480,8 +480,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-DEC-11** | 🟢 | Dec | **DECIDIDO 2026-08-29: el maíz de los 9 toritos es costo de RECRÍA** — falta el dato ([A-DAT-16](#a-dat-16)) · Se detectó que los toritos imputaban **$944.710 a «Cria»**: la categoría `Torito` apuntaba a ese centro de costo en `productivo.categorias_hacienda`. **No era un bug de cálculo, era la imputación.** Decisión del usuario, con el modelo completo: *«los toritos están en recría hasta que se pasen a cría, comen del mismo silo, es un costo de recría. Esos toritos se vendieron de cría a recría en el destete, así que todo lo que les pase le pasa a recría. Luego cuando se venden de recría a cría se le pone precio; la ganancia sobre venta menos costo es una ganancia de recría, y lo que pasa a cría es la venta de kg por precio»*. 🔑 **La distinción que quedó escrita**: la **categoría** dice **dónde está** el animal (Recría, donde come) y `destino_actividad_id` dice **a dónde va** (Cría, cuando se lo compren). Son dos campos y **no se pisan** — el error fue usar el primero para responder la pregunta del segundo. 📌 **Ya estaba escrito en el sistema**: el lote de toritos tiene `destino_actividad_id = Cria` desde que se cargó, y la nota del ciclo dice *«se recrían en las hectáreas de recría y lo que cría retiene se le compra a recría»*. Faltaba **una sola fila** de coherencia. 📌 **El total no cambia**: el kilo-día sólo reparte | → [A-DEC-11](#a-dec-11) `@productivo` |
 | **A-DAT-16** | 🔴 | Dato | **La categoría `Torito` tiene que apuntar a Recría, no a Cría** ([A-DEC-11](#a-dec-11)) · **Lo hace el usuario desde la app** — *Presupuesto → Ingresos por actividad*, donde está el selector de actividad por categoría de hacienda. Cambiar **Torito: Cria → Recria**. 📌 **Qué se mueve**: $944.710 de alimentación pasan del margen de Cría al de Recría (Cría queda **sin filas de alimentación**, que es lo correcto: hoy no tiene ningún animal propio comiendo del silo de recría), y **las ventas del lote de toritos** pasan a contarse como ingreso de Recría — que es justamente lo que pide la decisión. 📌 **Qué NO se mueve**: el total, el consumo medido, y el `destino_actividad_id = Cria` del lote, que **queda como está**. ⚠️ Verificar después que el margen de Cría **no quede en cero por error**: si Cría empieza a tener animales al pie comiendo, van a necesitar su propia medición ([A-FEAT-58](#a-feat-58), creep feeding) | → [A-DAT-16](#a-dat-16) `@productivo` |
 | **A-FEAT-66** | 🟡 | Feat | **Un tramo de consumo que cruza el cierre del ejercicio se carga entero al ejercicio de su fecha de inicio — y ahora eso son ~$4,1 M** · `costo-alimentacion.ts` lo tiene decidido y comentado: *«un tramo cae entero en la campaña de su fecha de INICIO; partirlo por días inventaría una precisión que la medición no tiene»*. La decisión es **buena y no se discute**. Lo que faltaba es **ver el impacto**: el tramo **24/06→24/07** son **20.100 kg / $5,38 M**, y de sus 30 días **sólo 7 son del ejercicio 25/26** — los otros 23 son 26/27. Cargarlo entero a 25/26 le suma ~**$4,1 M** al ejercicio que está por cerrar (corte **30/06/2026**, al contador **01/10/2026**). ⚠️ **CORRECCIÓN 2026-08-29 — el impacto NO es donde lo puse primero.** El usuario preguntó por la activación y al medirla cambia el diagnóstico: como **ninguno de los 5 grupos estaba vendido al 30/06** (la única venta real es el 04/08), **todos se activan**, y el mismo maíz que entra como costo sale como existencia final. **En el RESULTADO se neutraliza: no sobran $4,1 M de gasto.** Lo que queda mal es el **ACTIVO**: `acumuladoHasta()` filtra por `desde < corte`, así que la existencia final al 30/06 se lleva el tramo **entero** y activa **$4.122.175 de comida que el animal se comió en julio**. Sigue siendo un número del balance —el que va al contador— pero es un problema de **valuación del stock**, no de resultado. 📌 **La salida NO es partir el tramo por días** — es **medir el 30/06**. Una medición en la fecha de cierre corta el tramo donde corresponde y arregla las dos puntas a la vez, sin inventar nada: es la misma regla de siempre, *un corte existe cuando hay una MEDICIÓN*. **Propuesta**: que la pantalla **avise cuando un tramo cruza el cierre del ejercicio** y ofrezca cargar la medición de esa fecha. ❓ **Falta el dato**: cuánto había en el silo al 30/06/2026 | → [A-FEAT-66](#a-feat-66) `@productivo` |
-| **A-FEAT-67** | 🔴 | Feat | **La activación valúa el animal SÓLO con la alimentación — y el balance necesita todo el costo** · Preguntado por el usuario 2026-08-29: *«dijimos que sea una valuación de costo que se activa, pero no sé si eso aún lo hemos puesto a punto»*. **Lo que sí está**: `panel-margen.tsx` arma la existencia **inicial y final** por actividad, a **costo y no a mercado**, como *valor de entrada del destete + lo imputado hasta la fecha*, y la apertura por grupo con su margen. **Lo que falta**: eso «imputado» es **únicamente lo que tiene medición de silo** (`costoPorGrupo()` sale de `InsumoConDatos`, o sea maíz y concentrado). **Sanidad, personal, la parte de las hectáreas de recría y todo el resto NO entran al valor del animal** — se van enteros a resultado del período. 🔑 **Por qué importa ahora y no después**: el objetivo del balance 25/26 es que **los papeles de trabajo sean un export del sistema** ([A-FEAT-09](#a-feat-09)). Una existencia final que activa la comida pero no la sanidad **no es una valuación a costo**: es una valuación parcial, y el contador la va a rehacer a mano — que es exactamente lo que se quiere evitar. ❓ **Decisión previa**: [A-DEC-12](#a-dec-12) define qué costos activan. ⚠️ **Y hay una segunda cosa**: el valor de entrada por cabeza es **un promedio único** (`monto ÷ 189`), así que un torito de 193 kg y una ternera de 189 kg entran valuados igual. Tolerable hoy, no cuando cada grupo tenga su margen | → [A-FEAT-67](#a-feat-67) `@productivo` |
-| **A-DEC-12** | 🔴 | Dec | **¿Qué costos ACTIVAN en el valor del animal al cierre, y cuáles son gasto del período?** · Es la decisión que destraba [A-FEAT-67](#a-feat-67) y hay que tomarla **antes del balance 25/26** (al contador el **01/10/2026**). Hoy activa **sólo la alimentación medida**, por omisión y no por decisión. Las opciones no son libres —hay criterio contable— pero **sí hay margen**, y el usuario es quien lo fija: **(a)** sólo alimentación (lo de hoy); **(b)** alimentación + sanidad, que son los dos costos directos e identificables por animal; **(c)** todo el costo directo de recría incluyendo la mano de obra afectada; **(d)** (c) + prorrateo de las hectáreas de recría. 📌 **Cuanto más se activa, mejor se ve el resultado del ejercicio en curso** y más valor tiene el stock — por eso no es una decisión técnica. 📌 **Lo que sí es técnico**: cualquiera de las cuatro necesita que el costo se pueda **imputar por grupo y por fecha**, que es justo lo que hoy sólo sabe hacer la alimentación (por kilo-día). Elegir (b), (c) o (d) implica **darle a esos costos la misma clave de reparto** | → [A-DEC-12](#a-dec-12) `@productivo` |
+| **A-FEAT-67** | 🟡 | Feat | **⏸️ DIFERIDO por el usuario 2026-08-29** (*«todo tema de activación de stock será tratado en otro momento; de momento anotá ahí los insights que vas teniendo»*) — **es el apartado donde se acumulan los hallazgos sobre activación hasta que se retome.** No abrir el desarrollo; sí seguir escribiendo acá lo que aparezca · **La activación valúa el animal SÓLO con la alimentación — y el balance necesita todo el costo** · Preguntado por el usuario 2026-08-29: *«dijimos que sea una valuación de costo que se activa, pero no sé si eso aún lo hemos puesto a punto»*. **Lo que sí está**: `panel-margen.tsx` arma la existencia **inicial y final** por actividad, a **costo y no a mercado**, como *valor de entrada del destete + lo imputado hasta la fecha*, y la apertura por grupo con su margen. **Lo que falta**: eso «imputado» es **únicamente lo que tiene medición de silo** (`costoPorGrupo()` sale de `InsumoConDatos`, o sea maíz y concentrado). **Sanidad, personal, la parte de las hectáreas de recría y todo el resto NO entran al valor del animal** — se van enteros a resultado del período. 🔑 **Por qué importa ahora y no después**: el objetivo del balance 25/26 es que **los papeles de trabajo sean un export del sistema** ([A-FEAT-09](#a-feat-09)). Una existencia final que activa la comida pero no la sanidad **no es una valuación a costo**: es una valuación parcial, y el contador la va a rehacer a mano — que es exactamente lo que se quiere evitar. ❓ **Decisión previa**: [A-DEC-12](#a-dec-12) define qué costos activan. ⚠️ **Y hay una segunda cosa**: el valor de entrada por cabeza es **un promedio único** (`monto ÷ 189`), así que un torito de 193 kg y una ternera de 189 kg entran valuados igual. Tolerable hoy, no cuando cada grupo tenga su margen | → [A-FEAT-67](#a-feat-67) `@productivo` |
+| **A-DEC-12** | 🟡 | Dec | **⏸️ DIFERIDA junto con [A-FEAT-67](#a-feat-67)** (usuario, 2026-08-29) — queda planteada para cuando se retome la activación. ⏱️ **Pero tiene fecha propia igual**: si los papeles de trabajo del balance 25/26 van a salir del sistema ([A-FEAT-09](#a-feat-09), al contador el **01/10/2026**), esto hay que decidirlo antes — o ese export sale con una valuación parcial · **¿Qué costos ACTIVAN en el valor del animal al cierre, y cuáles son gasto del período?** Hoy activa **sólo la alimentación medida**, por omisión y no por decisión. Las opciones no son libres —hay criterio contable— pero **sí hay margen**, y el usuario es quien lo fija: **(a)** sólo alimentación (lo de hoy); **(b)** alimentación + sanidad, que son los dos costos directos e identificables por animal; **(c)** todo el costo directo de recría incluyendo la mano de obra afectada; **(d)** (c) + prorrateo de las hectáreas de recría. 📌 **Cuanto más se activa, mejor se ve el resultado del ejercicio en curso** y más valor tiene el stock — por eso no es una decisión técnica. 📌 **Lo que sí es técnico**: cualquiera de las cuatro necesita que el costo se pueda **imputar por grupo y por fecha**, que es justo lo que hoy sólo sabe hacer la alimentación (por kilo-día). Elegir (b), (c) o (d) implica **darle a esos costos la misma clave de reparto** | → [A-DEC-12](#a-dec-12) `@productivo` |
 | A-TEST-37 | 🔴 | Test | **La página CUT como conciliación, con su control** ([A-FEAT-34](#a-feat-34) + [A-BUG-46](#a-bug-46) + [A-BUG-47](#a-bug-47)) — en **Marzo/2026** tiene que salir *A · Venían de antes (8)* + *B · Entraron en el período (4)* con las 4 marcadas **`Salió 30/03/2026 — Vendido`**, y el cierre `8 + 4 − 4 = 8` con **✓ OK**. En **Agosto/2026** las 4 vendidas en marzo **ya no deben aparecer** y tiene que salir la **alerta roja: "falta 1 cabeza sin identificar"** (9 cabezas vs 8 individuos). ⚠️ La hoja **Planilla no debe cambiar ni un número**. Probar además el aviso al mover a CUT sin caravanas (avisa, **no bloquea**) | → [A-TEST-37](#a-test-37) `@productivo` |
 | A-TEST-36 | 🔴 | Test | **El pase a CUT sale como reclasificación, no como muerte** ([A-BUG-45](#a-bug-45) + [A-DAT-05](#a-dat-05)) — en la planilla de **Febrero/2026** la **Mortandad total tiene que decir 1** (antes 9) y las Compras de CUT **0** (antes 8), con *Reclas. −* Vaca **7** y *Reclas. +* CUT **8**. ⚠️ `Ingresos`, `Egresos`, `Stock Anterior` y `Existencia Final` **no tienen que cambiar**, y **marzo a agosto tampoco**. Falta además probar **un tacto nuevo**: es lo único que verifica el fix del código | → [A-TEST-36](#a-test-36) `@productivo` |
 | **A-DEC-03** | 🟡 | Decisión | **Seis preguntas abiertas del módulo hacienda**: ¿`Novillito` está fuera de uso o le falta columna? · los nacimientos, que **todavía no se cargaron nunca**, ¿entran como movimiento o desde el ciclo de cría? · ¿las 3 columnas siempre vacías se dejan por fidelidad al formulario de papel? · ¿los adultos van a tener registro nominal o se acepta la caravana como texto libre? · ¿la razón social sale de `lib/empresas.ts`? · `productivo.stock_hacienda` está **vacía y no la lee nadie**: ¿se materializa o se borra? | → [A-DEC-03](#a-dec-03) `@productivo` |
@@ -11543,6 +11543,7 @@ Salieron de esta sesión; la lista no está cerrada.
 | La **venta real** difiere de la proyectada | el margen, la campaña, las cabezas que quedan |
 | Una **mortandad** nueva | cabezas y kilo-día → el reparto |
 | Se agrega un **tramo** (el pase a engorde) | la curva de peso y el costo |
+| 🆕 Un animal **se RECLASIFICA** (un torito descartado, una de reposición que se vende afuera) | cambia de **grupo**, de **actividad** y de **destino** → el reparto, la existencia y **el pasado ya imputado** |
 
 ### La taxonomía que propongo — tres casos y no uno
 
@@ -11587,11 +11588,124 @@ Vale para todo el modelo y conviene tenerla escrita antes de diseñar:
 Si el animal pesaba más, **no comió más de lo que se midió**: comió **una porción mayor de lo
 mismo**. El peso mueve *quién paga*, no *cuánto se consumió*.
 
+### 🆕 El cuarto caso: la RECLASIFICACIÓN (planteado por el usuario, 2026-08-29)
+
+> *"Es muy probable que se descarten toritos. Eso hará pasar un torito a ser parte del remanente de
+> terneros recría y alterará estas cuentas. Habrá que ver cómo el sistema se actualiza. Lo mismo con
+> las de reposición."*
+
+**No entra en los tres casos de arriba, y por eso es el cuarto.** Los tres primeros son *un dato que
+mejora*; éste es **el sujeto que cambia de lugar**. No mejoró ninguna medición: cambió de qué grupo
+es el animal, y con eso cambia quién paga lo que ya se imputó.
+
+**Los dos casos reales, que van a pasar:**
+
+| Hoy | Después | Qué se mueve |
+|---|---|---|
+| **Torito** (9 cab, destino Cría) | se descarta → **Ternero Recría**, se vende afuera | grupo, curva de peso, **destino** (traspaso interno → venta con IVA) |
+| **Ternera Recría** de reposición (69, destino Cría) | alguna se vende afuera | ídem — y el CZ cambia |
+
+#### Lo que ya está resuelto, y es lo que vuelve manejable todo esto
+
+🔑 **Ninguna reclasificación puede alterar el total.** El consumo medido —60.860 kg, $17,2 M— sale
+de `había + entró − quedó`: es un **hecho de las mediciones**, y el kilo-día **sólo reparte**. Mover
+un animal de grupo **mueve plata entre grupos y nada más**. Ningún control de cuadratura se puede
+romper por una reclasificación. Es la misma propiedad que ya está escrita para el cambio de peso.
+
+🔑 **El motor ya integra día por día.** `gruposDelRodeo()` recorre fecha por fecha y `cabezasAlDia()`
+ya sabe descontar N cabezas de **un grupo puntual en una fecha** (`BajaRodeo.grupoId`). O sea: una
+reclasificación **con fecha** no necesita motor nuevo — necesita representarse bien.
+
+#### Lo que NO está, y es concreto
+
+| | Estado |
+|---|---|
+| **Sacar** 1 cabeza de un grupo en una fecha | ✅ existe — es una `BajaRodeo` con `grupoId` |
+| **Meterla** en otro grupo en esa fecha | ❌ **no existe**: `GrupoRodeo.cabezas` es fijo *al entrar* y no hay alta parcial |
+| Que el animal **no salte de peso** al cambiar de grupo | ❌ el grupo nuevo tomaría la curva del lote destino, y el animal **pesa lo que pesa** |
+| Que el **pasado no se reescriba** | ❌ nada lo impide hoy |
+
+**La mitad del mecanismo existe (la salida) y la otra mitad no (la entrada).**
+
+#### ⚠️ El riesgo que hay que resolver antes de construir nada
+
+> **Un torito descartado el 01/09 fue torito hasta el 01/09.** Comió como torito, y esa comida ya
+> está imputada a la actividad y al ejercicio que correspondían.
+
+Si el sistema recalcula con la clasificación **actual**, **reescribe el pasado**: los números de un
+período ya cerrado cambian solos, y el balance presentado al contador deja de coincidir con lo que
+muestra la app. Eso es exactamente el caso 3 de la taxonomía —*congelado a propósito*— pero llegando
+por una puerta distinta, y hoy **ni se respeta ni se avisa**.
+
+La forma correcta es la que el motor ya insinúa: **una reclasificación es un hecho con fecha**, no
+una corrección de la ficha del animal. Sale de un grupo el día X y entra en otro el día X; lo de
+antes de X queda como está. Guardar sólo *"ahora es ternero"* pierde la fecha — y con ella, la
+única información que permite no reescribir el pasado.
+
 ### Cuándo
 
 **Al terminar la carga**, por decisión del usuario — quiere ver primero cuántos casos aparecen de
 verdad al cargar el ciclo entero, en vez de diseñar contra una lista imaginada. Es el mismo
 criterio con el que se ordenó todo el trabajo de estos días.
+
+---
+
+## <a id="a-feat-67"></a>A-FEAT-67 — Activación de stock: ⏸️ diferido, y el cuaderno de insights
+
+> **Estado: DIFERIDO por el usuario el 2026-08-29.**
+> *"Creo que todo tema de activación de stock será tratado en otro momento. De momento podés anotar
+> en ese apartado los insights que vas teniendo. Eso me parece bueno."*
+>
+> ⚠️ **No se abre el desarrollo.** Este dossier es el **lugar donde se acumula lo que se va
+> descubriendo**, para que cuando se retome no haya que redescubrirlo. Decisión previa que lo
+> destraba: [A-DEC-12](#a-dec-12).
+
+### Qué hay construido hoy (medido, no supuesto — 2026-08-29)
+
+`panel-margen.tsx` arma la existencia **inicial y final** por actividad y la apertura por grupo:
+
+```
+existencia = valor de entrada del destete (por cabeza × cabezas)
+           + acumuladoHasta(costo por grupo, fecha de corte)
+```
+
+Valuada **a costo y no a mercado** — decisión ya tomada y que no se re-discute: valuar a mercado
+reconocería una ganancia no realizada.
+
+### 📓 Cuaderno de insights
+
+**1 · La activación neutraliza el RESULTADO, no el ACTIVO.** *(2026-08-29, medido)*
+Al mirar si el tramo que cruza el cierre distorsionaba el ejercicio, resultó que **no**: ningún
+grupo estaba vendido al 30/06 (la única venta real es del 04/08), así que todos se activan y el
+maíz que entra como costo sale como existencia final. **El resultado queda neutro.** Lo que queda
+mal es el activo: `acumuladoHasta()` corta por la fecha de *inicio* del tramo, así que la existencia
+al 30/06 se lleva el tramo entero y activa **$4.122.175 de comida de julio**.
+> 🔑 **La activación es un colchón que absorbe errores de corte en el resultado y los deposita en el
+> activo.** No los hace desaparecer: los muda a un número que se mira menos. Ver [A-FEAT-66](#a-feat-66).
+
+**2 · Activar sólo una parte del costo no es "activar de menos": es otra cosa.** *(2026-08-29)*
+Hoy activa únicamente lo que tiene medición de silo (`costoPorGrupo()` sale de `InsumoConDatos`).
+Sanidad, personal y hectáreas se van enteros a resultado. Eso **no es una valuación a costo
+conservadora** — es una valuación con criterio mixto, que ningún contador va a poder usar sin
+rehacerla. La decisión de *cuánto* activar ([A-DEC-12](#a-dec-12)) es previa a mejorar el cálculo.
+
+**3 · Lo que se puede activar está limitado por lo que se puede REPARTIR.** *(2026-08-29)*
+La alimentación se puede activar porque el kilo-día la imputa por grupo y por fecha. Un costo que
+sólo existe como total mensual **no se puede activar aunque se decida que debería**: no hay forma de
+decir cuánto le toca al grupo que sigue vivo al cierre. Elegir (b), (c) o (d) en
+[A-DEC-12](#a-dec-12) **implica darles a esos costos una clave de reparto**, y ése es el trabajo
+real — no el de sumarlos.
+
+**4 · El valor de entrada es un promedio único y eso todavía no molesta.** *(2026-08-29)*
+`entradaPorCab = monto ÷ 189`: un torito de 193 kg y una ternera de 189 kg entran valuados igual.
+Tolerable mientras la existencia se mire por actividad; **deja de serlo cuando cada grupo tenga su
+margen**, que es justo hacia donde va la apertura por grupo.
+
+**5 · Una reclasificación mueve el activo sin que ningún dato "empeore".** *(2026-08-29)*
+Si un torito se descarta y pasa a ternero recría, el costo acumulado que llevaba encima se muda de
+grupo — y con él, la parte de la existencia que representaba. Ninguna medición cambió. Es el mismo
+riesgo de reescribir el pasado que se registró en [A-DEC-08](#a-dec-08) § *el cuarto caso*, pero
+llegando al balance en vez de al presupuesto.
 
 ---
 
