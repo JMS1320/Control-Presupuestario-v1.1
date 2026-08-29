@@ -65,6 +65,10 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
       : 'bg-gray-200 text-gray-600'
     return (
       <span
+        // Fuera del contexto que capturan las notas: vive DENTRO del TabsTrigger, así que sin esto
+        // el `textContent` de la solapa es «Sueldos11» en vez de «Sueldos» — y la pantalla deja de
+        // servir para agrupar, porque cambia de nombre cada vez que cambia el contador.
+        data-nota-ignorar
         title={`${c.total} pendiente(s)${c.urgentes ? ` · ${c.urgentes} urgente(s)` : ''} — se ven en Principal → Pendientes`}
         className={`ml-1 rounded-full px-1.5 text-[10px] leading-4 ${color}`}
       >

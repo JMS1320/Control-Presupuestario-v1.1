@@ -302,7 +302,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-30 | 🔴 | Test | **Alerta de facturas de venta: segundo camino por importe** (2026-08-18) — si el CUIT no matchea pero el importe cierra exacto, la factura se ofrece igual, en ámbar y con los dos CUIT + su verificador. Nuevo `lib/cuit.ts` | → [A-BUG-25](#a-bug-25) `@principal` |
 | **A-BUG-26** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Margen ignoraba el ajuste manual de cabezas de un lote (`cantidad_calculada ?? cantidad`, al revés). Corregías 200→195 y el margen facturaba 200: ~$3 M de ingreso inventado. Latente: hoy ningún lote tiene ajuste manual. Falta testear | → [A-FEAT-25](#a-feat-25) `@presupuesto` |
 | **A-BUG-27** | 🟡 | **Bug** | **HECHO 2026-08-18** — el Cash Flow contaba la misma plata 2 veces: el anticipo de cobro y la factura entera. `mapearVentas` restaba retenciones pero **no los anticipos vinculados** (ventas no tiene `monto_a_abonar` que se reduzca, como sí compras). Detectado por una **nota del usuario desde la app**. Falta testear | → [A-BUG-27](#a-bug-27) `@cashflow` |
-| **P-44** | 🔴 | **Bug** | **Las capturas de las notas llegan vacías** (`notas_capturas.imagen` = 0 bytes en las 3 existentes). Texto y contexto sí se guardan. Y con un **modal abierto la herramienta no se puede usar** — justo cuando aparece el error que se quiere reportar | → [P-44](#p-44) `@general` |
+| A-TEST-74 | 🔴 | Test | **Notas desde la app — lo del 2026-08-29** (P-44): `Alt+N` con un modal abierto (y que el contexto guarde **el modal**, no la nota) · aviso al Finalizar sin imagen · `pantalla` limpia (`«Sueldos»`, no `«Sueldos11»`). 4 pasos en `MANUAL-USO.md` § Notas para Claude | → [P-44](#p-44) `@general` |
+| **P-44** | ✅ | **Bug** | **Notas: los 3 huecos del instrumento — RESUELTOS 2026-08-29, sin testear ([A-TEST-74](#p-44)).** `Alt+N` para poder dejar notas **con un modal abierto** · aviso al Finalizar si una captura quedó **sin imagen** · el contexto guardaba `«Sueldos11»` por el contador dentro de la solapa. ⚠️ El "capturas vacías" estaba **mal diagnosticado**: no es un bug, la app nunca saca foto (se pega a mano, y funciona) | → [P-44](#p-44) `@general` |
 | P-45 | 🔴 | Bug | **Pasar una factura a "pagado" pregunta si cambiar la fecha aunque `fecha_pago` ya sea hoy.** Nota del usuario "Fecha de pago" (caso Longo, 18/08) | → [P-44](#p-44) `@cashflow` |
 | A-TEST-32 | 🟡 | Test | **Anticipos de COBRO vinculables a facturas de venta** (2026-08-18) — **1er cobro TESTEADO OK** por el usuario. Falta el 2º que cierra la factura y el caso A. 🔴 Destraba **$134,1 M** en 5 cobros que nunca se pudieron imputar | → [A-TEST-32](#a-test-32) `@cashflow @principal` |
 | A-FEAT-26 | 🔴 | Feat | **Imputar los 5 cobros viejos** ($134,1 M: 4 de Pedro Genta + BALLESTER). Los de Genta son ganadería y **el contrato no tiene CUIT**, así que no matchean por CUIT hasta cargarlo | → [A-TEST-32](#a-test-32) `@cashflow` |
@@ -8750,19 +8751,46 @@ una referencia colgada). Lo agarró `type-check:diff`. Es el motivo por el que e
 
 ---
 
-## <a id="p-44"></a>P-44 / P-45 — Notas desde la app: las capturas llegan vacías (2026-08-18)
+## <a id="p-44"></a>P-44 / P-45 — Notas desde la app: los tres huecos de la herramienta (2026-08-18, reescrito 2026-08-29)
 
-Primer uso real de las notas (P-34) para reportar, y salieron **dos fallas de la herramienta misma**
-más un hallazgo:
+Primer uso real de las notas (P-34) para reportar, y salieron fallas **de la herramienta misma**
+más un hallazgo.
 
-**P-44a — las capturas están vacías.** Las 3 filas de `notas_capturas` tienen `length(imagen) = 0`.
-El texto, la pantalla y la ruta sí se guardan. Sin la imagen, Claude contesta a ciegas: en la nota de
-Sanpa el usuario mencionó **4 filas** y sólo se pudieron deducir 3 leyendo el código — la cuarta
-(la fijación del arrendamiento) apareció recién cuando él avisó que faltaba una.
+**P-44a — ✅ RESUELTO 2026-08-29, y estaba MAL DIAGNOSTICADO.** Decía *"las capturas llegan vacías
+(`length(imagen) = 0` en las 3 existentes)"*, registrado como bug. **No era un bug: nada generaba la
+imagen nunca.** La app no saca ninguna foto — la única vía es pegar desde el portapapeles
+(`Win+Shift+S` → `Ctrl+V`). Estaban vacías porque no se había pegado nada.
 
-**P-44b — con un modal abierto la herramienta no se puede usar.** Textual del usuario:
-*"lo único, si salen modales esto no lo puedo usar"*. Es el peor momento para perderla: los modales
-son justamente donde aparecen los errores que se quieren reportar.
+Medido el 2026-08-29 sobre 15 capturas: **11 sin imagen, 4 con imagen** — y las 4 con imagen son
+todas del 28/08, de 28 a 38 KB. O sea que **el camino de pegar funciona perfecto**; lo que faltaba
+era que algo lo recordara.
+
+> **Decisión (usuario, 2026-08-29): la app NO va a sacar la captura sola.** Se evaluó redibujar el
+> DOM a imagen (tipo `html2canvas`): no pide permiso y es instantáneo, pero **no es una foto, es una
+> re-pintada** — usa los mismos textos y números, pero puede descolocar una columna o dejar un
+> gráfico en blanco. El usuario lo puso exacto: *"que salga fea no es problema, lo que no debe pasar
+> es que sea tergiversada"*. Y `getDisplayMedia` (foto real) obliga a elegir la ventana **cada vez**:
+> más fricción que el `Win+Shift+S` que ya hace.
+> **Lo implementado en su lugar:** al Finalizar, si alguna captura quedó sin imagen, **avisa**.
+> La foto la saca él —siempre fiel, y elige el zoom—, y la app sólo evita el olvido.
+
+**P-44b — ✅ RESUELTO 2026-08-29 con un atajo de teclado (`Alt+N`).** Textual del usuario:
+*"lo único, si salen modales esto no lo puedo usar"*, confirmado en vivo el 29/08. Causa: el botón
+flotante es `fixed z-50`, pero el overlay de un `Dialog` se monta en un portal **por encima** — con
+un modal abierto el botón no se puede clickear. Es el peor momento para perder la herramienta: los
+modales son justamente donde aparecen los errores que se quieren reportar.
+Un atajo no pelea con el z-index de nadie. (`Alt+N` y no `Ctrl+Shift+N`: ese abre incógnito en Chrome.)
+
+**P-44c — ✅ RESUELTO 2026-08-29 · el contexto capturado venía sucio.** Las 5 notas del 28/08
+guardaron `pantalla = "Sueldos11"` en vez de `"Sueldos"`. Causa: el **contador de pendientes que se
+agregó el 19/08 vive DENTRO del `TabsTrigger`**, y el contexto lee el `textContent` de la solapa.
+No rompía nada, pero **arruinaba `pantalla` como clave**: la misma pantalla se llama distinto cada
+vez que cambia el contador, así que las notas no se pueden agrupar por pantalla.
+Arreglado con `data-nota-ignorar` en el badge + `textoLimpio()` en el contexto — resuelto **del lado
+de las notas**, para que cualquier adorno futuro en una solapa se excluya marcándolo.
+
+*Los tres son de la misma familia y por eso están juntos: **fallas del instrumento con el que se
+levanta todo lo demás**. Se priorizaron sobre trabajo de módulo por eso mismo.*
 
 **P-45 — hallazgo de la nota "Fecha de pago"**: al pasar una factura de Longo de *pagar* a *pagado*,
 pregunta si se quiere cambiar la fecha **aunque `fecha_pago` ya sea la de hoy**. Confirmación

@@ -1179,11 +1179,20 @@ Un botón **📝 fijo abajo a la derecha**, en toda la app, para dejar un bug o 
 y el lugar donde pasa** — en vez de acordarte tres días después.
 
 ### Cómo se usa
-1. Tocá **📝**. Se abre una ventanita: escribís qué pasó y **pegás la captura**.
+1. Tocá **📝** — o apretá **`Alt + N`**, que hace lo mismo. Se abre una ventanita: escribís qué pasó
+   y **pegás la captura**.
 2. Para la captura: **Win + Shift + S** (recorte de Windows) y después **Ctrl + V** ahí adentro.
 3. Tocás **Empezar nota**. Aparece abajo una barra: *«Grabando · 1 captura»*.
 4. **Seguí usando la app normalmente.** Cuando quieras sumar otro paso, **Capturar** de nuevo.
 5. Cuando terminaste, **Finalizar** y le ponés un título.
+
+> ⌨️ **Con un modal abierto, usá `Alt + N`.** El botón 📝 queda **tapado** por el modal y no se
+> puede clickear — y el modal es justo donde suele aparecer lo que querés reportar. El atajo anda
+> igual, y el contexto guarda **cuál** era el modal.
+
+**Una nota son N capturas, no N notas.** El botón abre el formulario de la captura 1; cada
+**Capturar** agrega un paso más a *la misma* nota. Al **Finalizar** se guarda **una sola nota** con
+todas sus capturas adentro. Por eso sirve para *«hago esto → pasa esto → acá se ve el número mal»*.
 
 **La nota sigue grabando aunque cambies de pestaña.** Eso es a propósito: si un proceso sale mal,
 podés resetearlo, empezar de nuevo y capturar cada paso — así queda un caso reproducible en vez de
@@ -1196,6 +1205,16 @@ la idea.
 ### Por qué se pega la captura en vez de sacarla sola
 Porque los carteles que más interrumpen son los del **navegador**, y ninguna captura automática
 puede fotografiarlos. Pegando del portapapeles queda **exactamente lo que viste**.
+
+Se evaluó que la sacara sola y **se descartó** (2026-08-29): lo único que el navegador puede hacer
+sin pedirte permiso cada vez no es una foto, es **volver a dibujar la pantalla** — mismos textos y
+mismos números, pero puede correr una columna de lugar o dejar un gráfico en blanco. *«Que salga fea
+no es problema; lo que no debe pasar es que sea tergiversada.»* La tuya siempre es fiel y elegís el
+zoom.
+
+**Lo que sí hace la app:** si al **Finalizar** alguna captura quedó **sin imagen**, te avisa antes de
+guardar. De las primeras 15 capturas, 11 quedaron sin foto — no porque cueste sacarla, sino porque
+nada lo recordaba en el momento.
 
 ### Ver las notas
 **Click derecho** sobre el botón 📝. Muestra las notas con su estado: *sin leer* o *leída*, y si ya
@@ -1213,6 +1232,20 @@ se convirtió en pendiente, con qué ID quedó.
 3. Sacá un recorte con Win+Shift+S y pegalo con Ctrl+V: tiene que verse la miniatura.
 4. **Capturar** una segunda vez desde otra pantalla y **Finalizar**.
 5. **Click derecho** en 📝: la nota tiene que estar, como *sin leer* y con **2 capturas**.
+
+### 🧪 Cómo probar lo nuevo del 2026-08-29 <a id="a-test-74"></a>
+1. **El atajo con un modal abierto** — es lo que más importa. Abrí cualquier modal de la app (por
+   ejemplo *vincular anticipo*) y apretá **`Alt + N`**. Tiene que abrirse la ventanita de la nota
+   **encima** del modal.
+   → Y en el renglón gris *«Se guarda solo:»* tiene que decir **el nombre del modal que tenías
+   abierto**, no el de la nota. Si dice el de la nota, el contexto se perdió y hay que avisar.
+2. **El atajo suelto**: `Alt + N` sin ningún modal abierto tiene que abrir la nota igual.
+3. **El aviso de la foto faltante**: hacé una nota escribiendo texto **sin pegar imagen** y tocá
+   **Finalizar**. Tiene que preguntarte *«Ninguna de las 1 captura(s) tiene imagen. ¿Guardar igual?»*.
+   Cancelá, pegá una captura y finalizá: **ya no tiene que preguntar nada**.
+4. **La pantalla limpia** — el que motivó todo. Parado en la solapa **Sueldos** (que muestra el
+   contador de pendientes al lado del nombre), dejá una nota. En *«Se guarda solo:»* tiene que decir
+   **`pantalla «Sueldos»`**, no `«Sueldos11»`.
 6. ⚠️ Abrí un modal cualquiera y capturá desde ahí: en el recuadro gris tiene que decir el nombre
    **de ese** modal, no *«Nueva nota para Claude»*. Si dice eso último, el contexto se está
    capturando tarde.

@@ -50,6 +50,24 @@ interface Captura {
 }
 
 /**
+ * El texto visible de un nodo, salteando lo marcado con `data-nota-ignorar`.
+ *
+ * Existe por un caso real: el contador de pendientes vive DENTRO del `TabsTrigger`, así que el
+ * `textContent` de la solapa pasó a ser «Sueldos11» en vez de «Sueldos» (las 5 notas del 2026-08-28
+ * quedaron así). No rompe nada, pero **arruina `pantalla` como clave**: la misma pantalla se llama
+ * distinto cada vez que cambia el contador, y deja de poder agruparse.
+ *
+ * Se resuelve acá y no en cada pantalla a propósito: cualquier adorno futuro que se meta en una
+ * solapa se excluye marcándolo, sin volver a tocar esto.
+ */
+function textoLimpio(nodo: Element | null): string {
+  if (!nodo) return ""
+  const copia = nodo.cloneNode(true) as Element
+  copia.querySelectorAll("[data-nota-ignorar]").forEach(n => n.remove())
+  return (copia.textContent ?? "").trim()
+}
+
+/**
  * Lo que la app sabe de dónde está parado el usuario, sin que escriba nada.
  * Se lee del DOM porque es lo único que funciona igual en todas las pantallas sin tener que
  * instrumentar cada una — y si alguna cambia, esto degrada a vacío en vez de romper.
@@ -67,8 +85,8 @@ function contextoActual() {
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
   return {
     ruta: typeof window !== "undefined" ? window.location.pathname + window.location.search : "",
-    pantalla: (tab?.textContent ?? "").trim().slice(0, 120),
-    modal: (dialogo?.textContent ?? "").trim().slice(0, 160),
+    pantalla: textoLimpio(tab).slice(0, 120),
+    modal: textoLimpio(dialogo).slice(0, 160),
     titulo_doc: document.title.slice(0, 160),
     user_agent: navigator.userAgent.slice(0, 200),
   }
@@ -129,6 +147,30 @@ export function NotasParaClaude() {
     setModalCaptura(true)
   }
 
+  /**
+   * Atajo **Alt + N** — es la única vía cuando hay un modal abierto.
+   *
+   * El botón flotante es `fixed z-50`, pero el overlay de un `Dialog` se monta en un portal por
+   * encima: con un modal abierto **el botón no se puede clickear**. Y el modal es justo donde
+   * aparece lo que se quiere reportar — el usuario lo dijo textual: *"no puedo capturar con el
+   * modal abierto"*. Un atajo no pelea con el z-index de nadie.
+   *
+   * `Alt+N` y no `Ctrl+Shift+N`: ese último abre una ventana de incógnito en Chrome.
+   * El contexto se congela igual dentro de `abrirCaptura()`, así que el modal de la app queda
+   * registrado en la captura (que es todo el punto).
+   */
+  useEffect(() => {
+    const atajo = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      if ((e.key || "").toLowerCase() !== "n") return
+      if (modalCaptura || modalFinalizar) return // ya hay una nota abierta
+      e.preventDefault()
+      abrirCaptura()
+    }
+    document.addEventListener("keydown", atajo)
+    return () => document.removeEventListener("keydown", atajo)
+  }, [modalCaptura, modalFinalizar])
+
   const agregarCaptura = () => {
     if (!texto.trim() && !imagen) { toast.error("Escribí algo o pegá una captura"); return }
     setCapturas(cs => [...cs, { orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current }])
@@ -139,6 +181,19 @@ export function NotasParaClaude() {
 
   const finalizar = async () => {
     if (capturas.length === 0) { toast.error("No hay ninguna captura"); return }
+
+    // Aviso, no bloqueo: de las primeras 15 capturas, **11 quedaron sin imagen** — y no porque
+    // sacarla cueste (el usuario pega sin problema), sino porque nada se lo recordaba en el
+    // momento. Se decidió NO generar la captura automáticamente: un redibujo del DOM da una
+    // imagen peor y puede descolocar una columna, y el riesgo de una captura que miente es peor
+    // que el de una que falta. Entonces la foto la saca él y esto sólo avisa si se olvidó.
+    const sinFoto = capturas.filter(c => !c.imagen).length
+    if (sinFoto > 0 && !window.confirm(
+      sinFoto === capturas.length
+        ? `Ninguna de las ${capturas.length} captura(s) tiene imagen.\n\n¿Guardar igual?`
+        : `${sinFoto} de ${capturas.length} capturas no tienen imagen.\n\n¿Guardar igual?`
+    )) return
+
     setGuardando(true)
     try {
       const { data: nota, error } = await supabase
@@ -188,7 +243,7 @@ export function NotasParaClaude() {
         <button
           onClick={abrirCaptura}
           onContextMenu={(e) => { e.preventDefault(); setVerLista(true); cargarNotas() }}
-          title="Dejar una nota para Claude (click derecho: ver las notas)"
+          title="Dejar una nota para Claude · atajo Alt+N (anda también con un modal abierto) · click derecho: ver las notas"
           className="fixed bottom-4 right-4 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-violet-300 bg-white text-violet-700 shadow-lg transition hover:bg-violet-50"
         >
           <NotebookPen className="h-5 w-5" />
