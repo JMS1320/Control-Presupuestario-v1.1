@@ -1508,3 +1508,78 @@ Y dentro de los machos, el movimiento dice `Ternero 100 + Torito 7` cuando deber
 se movió. **Lo que queda mal es `ciclos_recria`**, que dice **106 M + 83 H**. El total (189) está
 bien, así que **el consumo no cambia** —el kilo-día sale de los lotes— pero **el valor de entrada
 sí**, porque macho y hembra pesan distinto. → [A-DAT-18](PENDIENTES.md#a-dat-18).
+
+### 17.11 · A y B explicados con los 55 y los 40 (2026-08-29)
+
+> A pedido del usuario: ver la mecánica de cada escenario y cómo queda el consumo **en todo el tiro**
+> —en kg/cab/día y en % de peso vivo— para el lote vendido y para el que sigue.
+
+#### La mecánica
+
+**A · como está hoy.** Se abre el rodeo con las **189** del ciclo, se suman los lotes (**185**), y la
+diferencia de **4** se mete como un grupo **«Resto sin lote» con `hasta: null`** — nunca sale, come
+los 166 días. Aparte, las 4 mortandades entran como **bajas prorrateadas**: se descuentan de *todos*
+los grupos en proporción a su tamaño.
+
+```
+189 declaradas
+ ├── 5 lotes reales (185) ── y se les descuenta una fracción de cada muerte ajena
+ └── «Resto sin lote» (4) ── vive los 166 días completos
+```
+
+**B · propuesto.** Los 5 lotes con **sus cabezas exactas**, y **cada mortandad es su propio grupo**:
+1 cabeza, desde el inicio, `hasta` = **el día que murió**. **No hacen falta bajas prorrateadas** —
+cada muerte ya está representada por su grupo saliendo del rodeo.
+
+```
+189 declaradas
+ ├── 5 lotes reales (185) ── con 55, 40, 69, 9 y 12 cabezas, enteras
+ └── 4 grupos de 1 cabeza ── cada uno hasta su fecha de muerte
+```
+
+> 🔑 **La diferencia se ve en las cabezas-día.** En A el lote de 55 acumula **7.672** cabezas-día en
+> 141 días = **54,4 cabezas promedio**: le descontaron fracciones de muertes que no son suyas. En B
+> acumula **7.755** = **55,0 exactas**. Igual el de 40: **39,5** en A, **40,0** en B.
+
+#### Los dos lotes, en todo el tiro
+
+| Ternero Recria (55 cab) — del 16/03 al 04/08, 141 días | A (hoy) | B (propuesto) |
+|---|---|---|
+| kg imputados | 15.283 | **15.515** (+1,52 %) |
+| cabezas-día | 7.672 (54,4 cab) | **7.755** (55,0 cab) |
+| **kg / cab / día** | 1,992 | **2,001** (+0,44 %) |
+| **% del peso vivo** | 0,664 % | **0,666 %** |
+
+| Ternero Recria (40 cab) — del 16/03 al 29/08, 166 días | A (hoy) | B (propuesto) |
+|---|---|---|
+| kg imputados | 15.095 | **15.385** (+1,92 %) |
+| cabezas-día | 6.559 (39,5 cab) | **6.640** (40,0 cab) |
+| **kg / cab / día** | 2,302 | **2,317** (+0,67 %) |
+| **% del peso vivo** | 0,730 % | **0,733 %** |
+
+#### 🔑 Lo que esto enseña, y corrige lo que yo había dicho
+
+> **El escenario A le sacaba kg al lote *y* le sacaba cabezas — así que el RATIO salía casi bien por
+> compensación.** Lo que estaba mal era el **total imputado**, no el ratio.
+
+Yo había presentado el bug como *«$349.050 mal imputados»* y es cierto **en la plata**. Pero el
+usuario preguntó por lo que le importa —el ratio— y ahí la diferencia es de **0,44 % y 0,67 %**:
+despreciable. **Las dos cosas son verdad y hay que decir las dos.**
+
+**Los muertos, en B**, quedan con su propio número y se explican solos:
+
+| | días vivo | kg | kg/cab/día | % PV |
+|---|---|---|---|---|
+| † Ternero 15/04 | 30 | 33 | 1,090 | 0,43 % |
+| † Ternero 25/04 | 40 | 44 | 1,090 | 0,43 % |
+| † Ternera 26/06 | 102 | 117 | 1,145 | 0,45 % |
+| † Ternero 02/07 | 108 | 138 | 1,277 | 0,50 % |
+
+Comieron **la mitad por cabeza** que los vivos (2,0-2,5 kg/día) porque **sólo vivieron durante el
+período de bajo consumo**, cuando había pasto. No es un error: es exactamente lo que pasó.
+
+#### 📌 Un dato productivo que aparece de yapa
+
+**Los 55 comieron 2,00 kg/cab/día y los 40 comieron 2,32.** No es que hayan comido distinto: **los
+55 se fueron el 04/08 y se perdieron el mes de mayor consumo.** El que se queda más tiempo entra en
+los meses caros — y eso es lo que hay que poder ver al decidir cuándo vender.
