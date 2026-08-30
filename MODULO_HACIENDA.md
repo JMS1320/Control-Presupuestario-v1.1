@@ -1432,3 +1432,79 @@ inventarle la causa**. Un modelo con estaciones no confirmadas es peor que uno q
 concentrado en 1.600 de ración = 10 % exacto). El 85/15 de la receta es el % de inclusión del
 **Concentrado Terneros Recria**, pero el que se usa es el **Novillo 35 10**, que declara 10 % en su
 propia observación. → [A-DAT-19](PENDIENTES.md#a-dat-19).
+
+### 17.10 · La mortandad: la propuesta, con el número que la decide (2026-08-29)
+
+> El usuario fijó la jerarquía: **claridad primero**; el ideal es la pérdida identificada por animal
+> (`kg de compra × precio + alimentación perdida a fecha de muerte`); y si eso resulta complejo,
+> repartir a la tropa **aceptando que el ratio de consumo queda tergiversado — que es lo que más
+> duele**, porque se toman ratios incorrectos.
+
+#### El número que libera la decisión
+
+Se midieron los tres escenarios sobre los datos reales:
+
+| | ratio medido | imputación a los que no están en un lote |
+|---|---|---|
+| **A** · como está hoy (grupo inmortal) | 0,715 % PV | $431.884 |
+| **B** · cada muerto come hasta su fecha | 0,716 % PV | $82.834, con nombre y fecha |
+| **C** · el muerto no come nada | 0,721 % PV | $0 |
+
+> 🔑 **Entre el peor y el mejor escenario, el ratio se mueve 0,8 %.** El *«están comiendo 3 pero
+> estaban comiendo 2,5»* que se temía sería un 20 %. Acá son **4 muertos sobre 189**, y murieron
+> temprano: su kilo-día es marginal.
+
+**Eso cambia la conversación.** El miedo era tener que elegir entre claridad y un ratio correcto.
+**No hay que elegir**: cualquiera de las tres da prácticamente el mismo ratio, así que se puede
+decidir por el objetivo nº 1 —la claridad— sin pagar nada.
+
+#### La propuesta: (B) + el valor de entrada
+
+**(B) no es la opción compleja: ya está calculada y verificada.** Cada mortandad es un grupo del
+rodeo con `desde` = el inicio del ciclo y `hasta` = **la fecha de la muerte**. El motor no necesita
+nada nuevo — `gruposDelRodeo()` ya integra día por día y ya sabe manejar grupos que salen.
+
+Sumándole el valor de entrada se obtiene lo que el usuario pidió:
+
+| Muerte | entrada (peso neto × $7.000 − 3 % CZ) | alimentación perdida | **pérdida** |
+|---|---|---|---|
+| 15/04 Ternero | $1.312.518 | $8.118 | **$1.320.636** |
+| 25/04 Ternero | $1.312.518 | $10.824 | **$1.323.342** |
+| 26/06 Ternera | $1.283.670 | $29.128 | **$1.312.798** |
+| 02/07 Ternero | $1.312.518 | $34.764 | **$1.347.282** |
+| **Total** | **$5.221.223** | **$82.835** | **$5.304.059** |
+
+#### 🔑 Lo que el desglose enseña, y ordena el trabajo futuro
+
+> **La alimentación es el 1,6 % de la pérdida. El animal es el 98,4 %.**
+
+Encaja con lo que ya estaba escrito (*el precio de entrada es el 93 % del resultado; la alimentación
+el 5,5 %*), y tiene una consecuencia práctica: **para medir la mortandad, la precisión de la comida
+casi no importa**. Lo que hay que tener bien es el **valor de entrada**. Ahí va el esfuerzo.
+
+**Y el desglose por fecha se explica solo**: $8.118 el que murió el 15/04 y $34.764 el que murió el
+02/07. **El que muere tarde cuesta más.** Eso es la verdad y es exactamente lo que un
+*«Resto sin lote»* de $431.884 no dejaba ver.
+
+→ [A-DEC-13](PENDIENTES.md#a-dec-13) (la decisión) · [A-FEAT-71](PENDIENTES.md#a-feat-71) (la
+pérdida como número propio) · [A-BUG-92](PENDIENTES.md#a-bug-92) (el fantasma).
+
+#### Los toritos: resuelto por el usuario
+
+*«Ojo con los 8 toritos que van a toros, son de la campaña anterior y se van antes del consumo. El
+error real es de 7 vs 9. La app toma ok 9.»*
+
+Con eso **la composición cierra sola**:
+
+```
+lotes vivos   104 M + 81 H
++ muertos       3 M +  1 H
+              ─────────────
+              107 M + 82 H  =  189   ← igual que los movimientos de destete
+```
+
+Y dentro de los machos, el movimiento dice `Ternero 100 + Torito 7` cuando debería ser
+**`Ternero 98 + Torito 9`**: dos terneros que en realidad eran toritos, y por eso el total nunca
+se movió. **Lo que queda mal es `ciclos_recria`**, que dice **106 M + 83 H**. El total (189) está
+bien, así que **el consumo no cambia** —el kilo-día sale de los lotes— pero **el valor de entrada
+sí**, porque macho y hembra pesan distinto. → [A-DAT-18](PENDIENTES.md#a-dat-18).
