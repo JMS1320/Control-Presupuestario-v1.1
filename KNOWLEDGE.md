@@ -1678,3 +1678,32 @@ segundo sigue **visible** —no se descarta en silencio—, pero no grita.
 
 📌 Contraparte necesaria: no usar esto como excusa para bajar el umbral de un control que sí debe
 gritar. La pregunta no es *"¿molesta?"* sino *"¿puede estar en verde cuando todo está bien?"*.
+
+---
+
+## Un error que no descuadra nada: cuando el total es correcto y el reparto no `#control #2026-08-29`
+
+Tercera variante de la familia, y la más difícil de agarrar.
+
+- *El silencio miente*: el sistema calla algo. → se arregla **mostrándolo**.
+- *El ruido también miente*: el sistema grita siempre. → se arregla **separando las preguntas**.
+- **Ésta**: el sistema no calla ni grita — **cierra perfecto y está mal igual.**
+
+El caso: un grupo fantasma en el reparto del consumo comía todo el ciclo sin morirse nunca, y se
+llevaba **$349.050** que correspondían a los lotes reales. Los cinco controles daban ✓, porque
+verifican **identidades de suma** (lo comprado = lo consumido + lo que queda; el reparto suma el
+consumo) y **el total no cambia**: mover plata entre grupos no rompe ninguna suma.
+
+> **Toda clave de reparto tiene esta propiedad: sólo distribuye.** Eso es lo que la hace segura
+> —ningún error de reparto puede alterar el total— y a la vez es lo que la deja **sin control**.
+
+**La regla que queda**: un control de sumas **no verifica un reparto**. Si hay una clave que
+distribuye, hace falta un control aparte que la compare **contra la realidad física** que dice
+representar — acá, que las cabezas de cada grupo y cada día coincidan con el rodeo real.
+
+**Y el remate**: la función de conciliación **ya recibía el dato que lo detectaba** (las bajas), lo
+sumaba en una variable… y no lo usaba en la comparación. El control existía a medias.
+
+📌 Cómo buscarlo en otro lado: donde haya un prorrateo (kilo-día, hectáreas, cabezas, metros
+cuadrados, horas), preguntarse *"¿qué control fallaría si la clave estuviera mal?"*. Si la respuesta
+es *"ninguno, porque el total igual cierra"*, falta un control.

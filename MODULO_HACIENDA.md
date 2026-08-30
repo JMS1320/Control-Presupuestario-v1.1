@@ -1361,3 +1361,74 @@ incluida una entrega posterior a la última medición — algo que iba a pasar *
 **Un tramo de 5 días amplifica el error** → [A-FEAT-70](PENDIENTES.md#a-feat-70). El 2,31 % rompe
 la serie (0,43 → 1,35 → 1,51) y puede ser real o puede ser que la medición contara sólo la ración
 armada. Un error de 500 kg mueve un tramo de 5 días un 11 % y uno de 100 días un 2 %.
+
+### 17.8 · 🐛 El «Resto sin lote» es inmortal (2026-08-29)
+
+> Lo detectó el usuario mirando el reparto: *«volvemos al resto sin lote. ¿No debería estar o son
+> las mortandades? Ojo de cómo lo tratamos porque puede generar errores»*. **Tenía razón en las dos
+> cosas.** → [A-BUG-92](PENDIENTES.md#a-bug-92) · decisión previa [A-DEC-13](PENDIENTES.md#a-dec-13).
+
+**Son las mortandades**, y la cuenta cierra exacto:
+
+```
+189 declaradas en el ciclo  −  185 en lotes  −  4 mortandades  =  0
+```
+
+**El bug**: `grupoResto()` las mete como un grupo con **`hasta: null`** — vive para siempre y come
+todo el ciclo. Y encima las bajas se **prorratean sobre todos los grupos**, así que los lotes reales
+pierden cabezas que sí tienen.
+
+| | Hoy (grupo inmortal) | Correcto (cada muerto hasta su fecha) |
+|---|---|---|
+| Ternera Recria (69) | $7.875.743 | **$8.032.812** |
+| Ternero Recria (40) | $4.230.378 | **$4.314.794** |
+| Ternero Recria (55) | $4.081.838 | **$4.146.278** |
+| Torito (9) | $1.062.885 | **$1.084.768** |
+| Ternera Recria (12) | $1.062.753 | **$1.083.992** |
+| Los que no están en un lote | **$431.884** «Resto sin lote» | **$82.834** en 4 muertos con nombre y fecha |
+| **Total** | **$18.745.481** | **$18.745.481** |
+
+**$349.050 mal imputados.** Y el desglose correcto tiene sentido productivo por sí solo: $8.118 el
+que murió el 15/04 y $34.764 el que murió el 02/07 — **el que muere tarde cuesta más**, que es la
+verdad y es justo lo que se quiere poder ver.
+
+#### 🔑 Por qué ningún control lo agarró
+
+> **El total no cambia.** El kilo-día sólo reparte: las cinco identidades que se verifican cierran
+> igual con el grupo fantasma que sin él.
+
+Es una clase de error distinta a las anteriores. No es que el sistema **calle** algo (*el silencio
+miente*) ni que **grite de más** (*el ruido también miente*): es que **el error vive dentro de la
+tolerancia de todos los controles existentes**, porque ninguno mira el reparto contra la realidad
+física del rodeo.
+
+**Lo que faltaba, y estaba a mano**: `conciliarCabezas()` **recibe las bajas**, las suma en
+`totalBajas`… y **no las usa** para calcular la diferencia. Con `declarada − enGrupos − bajas` el
+control habría dado 0 y el grupo fantasma no se habría creado nunca.
+
+⚠️ **No se arregló todavía**, a pedido del usuario y porque antes hay que resolver
+[A-DAT-18](PENDIENTES.md#a-dat-18): las 4 «sin lote» son **2 machos + 2 hembras** y los muertos son
+**3 machos + 1 hembra**. El total cierra, la composición no.
+
+### 17.9 · La ración es a discreción — corrección al § 17.6
+
+*(Usuario, 2026-08-29.)*
+
+> *«El consumo es a discreción. Si comen más es porque están comiendo más. La estacionalidad no
+> sabemos cómo afecta. Pero bueno, si el dato es que comieron más, ok.»*
+
+**Cambia el enunciado de lo que escribí en § 17.6.** Yo interpreté la serie 0,43 → 1,35 → 1,51 →
+2,31 como una **curva estacional**. Eso era una hipótesis mía, no un dato.
+
+> 🔑 **`racion_pct_pv` no es un parámetro de manejo: es un RESULTADO observado.** Nadie fija la
+> ración — se les da a discreción y el porcentaje es lo que salió de dividir.
+
+**Lo que sigue en pie**: un escalar único no sirve, porque el valor real se mueve entre 0,43 % y
+2,31 %. **Lo que cambia**: para proyectar hay que usar **lo último medido** o una tendencia, **sin
+inventarle la causa**. Un modelo con estaciones no confirmadas es peor que uno que dice *«los
+últimos 30 días comieron a este ritmo»*. → [A-FEAT-68](PENDIENTES.md#a-feat-68).
+
+**Y la mezcla quedó resuelta**: es **90/10**, confirmado por el usuario y por la medición (160 kg de
+concentrado en 1.600 de ración = 10 % exacto). El 85/15 de la receta es el % de inclusión del
+**Concentrado Terneros Recria**, pero el que se usa es el **Novillo 35 10**, que declara 10 % en su
+propia observación. → [A-DAT-19](PENDIENTES.md#a-dat-19).
