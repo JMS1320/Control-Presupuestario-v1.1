@@ -927,10 +927,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA',
     egresoId?: string
   ): Promise<boolean> => {
-    // Períodos de sueldo son de solo lectura (se gestionan en Tab Sueldos)
-    // Anticipos de sueldo (sueldos.pagos) sí son editables
     const filaOrigen = data.find(f => f.id === id)
-    if (origen === 'SUELDO' && filaOrigen?.origen_tabla !== 'sueldos.pagos') return false
+
+    // Qué filas de sueldo se pueden escribir desde acá:
+    //   ✅ `sueldos.pagos`    — un pago individual
+    //   ✅ `msa.grupos_pago`  — un GRUPO, que no es otra cosa que N filas de `sueldos.pagos`
+    //   ⛔ el resto (períodos) — de sólo lectura: se gestionan en Tab Sueldos
+    //
+    // 🐞 **A-BUG-94** — este guard decía `!== 'sueldos.pagos'`, así que **un grupo se rechazaba
+    // entero, en cualquier campo**: no se podía pasar a pagado desde el Cash Flow y el aviso decía
+    // *"el sueldo del mes se gestiona desde Sueldos"*, que para un grupo es falso. Confundía dos
+    // cosas distintas: un PERÍODO sí es de sólo lectura, un GRUPO es editable como cualquier pago.
+    // Es el hueco que dejó A-BUG-52: aquel fix arregló la fila individual y no miró la agrupada.
+    const esPagoDeSueldo = filaOrigen?.origen_tabla === 'sueldos.pagos'
+      || filaOrigen?.origen_tabla === 'msa.grupos_pago'
+    if (origen === 'SUELDO' && !esPagoDeSueldo) return false
     try {
       // Preparar objeto de actualización
       let updateData: any = { [campo]: valor }
@@ -947,7 +958,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         console.log(`🔄 Auto-actualización: fecha_pago = ${valor} → fecha_estimada = ${valor}`)
       }
 
-      if (origen === 'SUELDO' && filaOrigen?.origen_tabla === 'sueldos.pagos') {
+      if (origen === 'SUELDO' && esPagoDeSueldo) {
         // Un pago de sueldo tiene **una sola fecha** (`sueldos.pagos.fecha`), que es la fecha en
         // que se paga. El Cash Flow maneja tres (`fecha_estimada`, `fecha_vencimiento`,
         // `fecha_pago`): las tres tienen que aterrizar en esa misma columna.
@@ -974,12 +985,18 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
             `«${campo}» no se puede guardar en un pago de sueldo: sueldos.pagos no tiene esa columna`
           )
         }
+        // ⚠️ En una fila-GRUPO, `id` es el `grupo_pago_id` y **no existe** como `sueldos_pagos.id`:
+        // hay que escribir sobre sus miembros. Mismo patrón que ya usan ARCA y TEMPLATE con
+        // `ids_grupo`. Sin esto el UPDATE matchea 0 filas — que es justo lo que pasaba (A-BUG-94).
+        const idsPagos = (filaOrigen?.ids_grupo && filaOrigen.ids_grupo.length > 0)
+          ? filaOrigen.ids_grupo
+          : [id]
         // `count: 'exact'` — sin esto, un UPDATE que no encuentra la fila devuelve OK y la
         // pantalla lo da por guardado. Es lo que hacía A-BUG-19.
         const { error, count } = await supabase
           .from('sueldos_pagos')
           .update({ [columna]: valor }, { count: 'exact' })
-          .eq('id', id)
+          .in('id', idsPagos)
         if (error) throw error
         if (count === 0) throw new Error('No se encontró el pago de sueldo: el cambio NO se guardó')
       } else if (origen === 'ARCA') {
@@ -1178,7 +1195,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           const fila = data.find(f => f.id === update.id)
           fallidas.push({
             id: update.id,
-            motivo: fila?.origen === 'SUELDO' && fila?.origen_tabla !== 'sueldos.pagos'
+            // El aviso sólo vale para los PERÍODOS. Un grupo de pagos sí es editable — decirle al
+            // usuario "andá a Sueldos" cuando el problema era otro lo manda al lugar equivocado.
+            motivo: fila?.origen === 'SUELDO'
+              && fila?.origen_tabla !== 'sueldos.pagos'
+              && fila?.origen_tabla !== 'msa.grupos_pago'
               ? `${fila?.detalle ?? update.id}: el sueldo del mes se gestiona desde Sueldos`
               : `${fila?.detalle ?? update.id}: no se pudo guardar`,
           })

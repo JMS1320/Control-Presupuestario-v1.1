@@ -1347,6 +1347,15 @@ Por eso, la columna **Fecha de Pago** de un sueldo se llena **cuando el pago pas
 En un **grupo de pago** aparece sólo si **todos** sus miembros están pagados — si uno quedó
 pendiente, mostrar la fecha diría que el pago está hecho y no lo está.
 
+**Los grupos se pagan igual que un pago suelto** 🟡 *(arreglado 2026-08-31, sin testear —
+[A-TEST-79](PENDIENTES.md#a-test-79))*. Seleccionás la fila del grupo y le ponés estado y fecha: se
+escribe sobre **todos sus miembros** de una. Hasta el 31/08 esto **no funcionaba** —el grupo se
+rechazaba entero y el aviso te mandaba a *Sueldos*, donde no había nada que hacer—, y no se notaba
+porque los grupos viejos llegaban a `conciliado` por el motor de conciliación, no por este botón.
+
+> ⛔ **Lo que sí sigue sin poder tocarse acá es el PERÍODO de sueldo** (el sueldo del mes). Ése se
+> gestiona en la solapa **Sueldos**, y el aviso ahora aparece sólo en ese caso, que es cuando es cierto.
+
 > ⚠️ **Si algo no se guarda, ahora te lo dice con nombre y motivo** (un cartelito abajo), y **la
 > grilla se queda donde está**. Hasta el 2026-08-25 la pantalla entera se reemplazaba por *«Error al
 > cargar Cash Flow»* con un botón **Reintentar** que en realidad **sólo recargaba** — parecía que el
