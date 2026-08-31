@@ -465,6 +465,8 @@ saldo impago inexistente.
 - Cuerpo: "Adjuntamos el detalle del pago de: FC…" + desglose (Importe facturas / Retención / Descuento / **Total transferido** / **Fecha de pago**) + aviso de que llegará el comprobante de transferencia del banco.
 - **Fecha de pago:** sale de la retención SICORE; si no hay, de la fecha estimada; si no hay ninguna, quedan puntos `..............` para completar a mano.
 - **Adjuntos por default:** certificado = SIEMPRE que haya retención; detalle PDF = solo si hubo descuento (editable con los checkboxes del panel).
+- **Los ANTICIPOS también llevan su retención** ✅ *(arreglado y testeado 2026-08-31 — [A-TEST-80](PENDIENTES.md#a-test-80))*. El certificado de un anticipo se vincula por `anticipo_id`, no por factura: hasta esa fecha **no se buscaba**, así que el mail no mencionaba la retención ni la adjuntaba, aunque estuviera bien registrada. Si pagás **facturas y un anticipo juntos** al mismo proveedor, los certificados de los dos orígenes salen en el mismo PDF. El rótulo del bruto dice *"Importe"* en un anticipo y *"Importe facturas"* sólo cuando hay facturas.
+  ⚠️ **Un mail ya encolado no se corrige solo**: si venía mal, hay que **volver a encolarlo**.
 - Email destino = `proveedores.email_pagos`. Si el proveedor no tiene, se encola igual "SIN email" y lo completás en el panel.
 
 ### Setup del GAS (una vez)
@@ -1347,7 +1349,7 @@ Por eso, la columna **Fecha de Pago** de un sueldo se llena **cuando el pago pas
 En un **grupo de pago** aparece sólo si **todos** sus miembros están pagados — si uno quedó
 pendiente, mostrar la fecha diría que el pago está hecho y no lo está.
 
-**Los grupos se pagan igual que un pago suelto** 🟡 *(arreglado 2026-08-31, sin testear —
+**Los grupos se pagan igual que un pago suelto** ✅ *(arreglado y testeado 2026-08-31 —
 [A-TEST-79](PENDIENTES.md#a-test-79))*. Seleccionás la fila del grupo y le ponés estado y fecha: se
 escribe sobre **todos sus miembros** de una. Hasta el 31/08 esto **no funcionaba** —el grupo se
 rechazaba entero y el aviso te mandaba a *Sueldos*, donde no había nada que hacer—, y no se notaba

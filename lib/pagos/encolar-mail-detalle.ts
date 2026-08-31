@@ -99,17 +99,20 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
     const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
     const fcs = items.map(i => i.comprobante).join(', ')
+    // El rótulo del bruto: un ANTICIPO no tiene facturas, así que decir "Importe facturas" en un
+    // mail que va al proveedor queda mal y confunde. Detectado al testear A-BUG-95 con Genoil.
+    const rotuloBruto = tipo === 'arca' ? 'Importe facturas' : 'Importe'
     let cuenta: string
     if (mediosPago.length > 0) {
       // Desglose por medio real (transferencia + echeq + ...) + retención/descuento = total factura
-      cuenta = `\nImporte facturas: ${m(totalBruto)}`
+      cuenta = `\n${rotuloBruto}: ${m(totalBruto)}`
       for (const md of mediosPago) cuenta += `\n${md.detalle || md.tipo}: ${m(md.monto)}`
       if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
       if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
     } else {
       cuenta = `\nTotal transferido: ${m(totalPagado)}`
       if (totalRet > 0 || totalDesc > 0) {
-        cuenta = `\nImporte facturas: ${m(totalBruto)}`
+        cuenta = `\n${rotuloBruto}: ${m(totalBruto)}`
         if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
         if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
         cuenta += `\nTotal transferido: ${m(totalPagado)}`
