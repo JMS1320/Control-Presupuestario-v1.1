@@ -252,6 +252,7 @@ mejoras — es el norte en términos administrativos"**. El criterio y las 5 pie
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
+| A-AUTO-02 | 🔴 | Media | **Checklist de obligaciones administrativas — alerta ANTES, control DESPUÉS.** Pedido del usuario 2026-08-31: las obligaciones con plazo (vencimientos, presentaciones, cierres) tienen que estar en **un checklist priorizado** —las que son *sí o sí* separadas de las deseables— con **alerta al responsable antes** y **control de que se hizo después**. Hoy cada plazo vive en la cabeza de alguien. Es la pieza 3 del norte administrativo, generalizada | → [A-AUTO-02](#a-auto-02) `@general` |
 | A-AUTO-01 | 🔴 | Media | **🥇 CASO MODELO — el circuito de la tarjeta, punta a punta**: el resumen lo carga **Ulises** (falta habilitarlo), el PDF da el **próximo cierre y vencimiento** (hoy se parsean y se tiran), eso dispara la **alerta** de que viene el próximo resumen, y el **mail del banco** llena o contrasta los montos. Registrado como modelo de cómo se anota una automatización | → [A-AUTO-01](#a-auto-01) `@egresos` |
 
 ### Datos (los carga el usuario)
@@ -2115,6 +2116,43 @@ sobrevive. Eso necesita criterio del usuario y no se puede hacer al pasar.
 
 ---
 
+## <a id="a-auto-02"></a>A-AUTO-02 — Checklist de obligaciones: alerta antes, control después
+
+> **Pedido del usuario 2026-08-31.** Es la pieza 3 del norte administrativo (`CLAUDE.md` § 🔔),
+> generalizada: no una alerta de un circuito, sino **el registro de todo lo que vence**.
+
+**Textual:**
+> *"Si el sistema administrativo tiene una serie de **requisitos mínimos que deben lograrse sí o sí a
+> tal plazo**, otros menos importantes pero también, es casi obligatorio tenerlos en un **checklist**,
+> con las **alertas a quien corresponda antes** y con **controles después**."*
+
+### Las tres partes, y por qué no alcanza con una
+
+| Parte | Qué es | Qué pasa si falta |
+|---|---|---|
+| **El checklist** | la lista de obligaciones con su plazo y su **prioridad** (*sí o sí* vs. deseables) | el plazo vive en la cabeza de alguien, y se cae cuando esa persona no está |
+| **La alerta, antes** | aviso **al responsable** (no "al sistema"), con margen real | ⚠️ **una alerta el día del vencimiento no es una alerta, es un acta** |
+| **El control, después** | verificar que efectivamente se hizo | *"avisamos"* pasa a valer por *"se hizo"*, que no es lo mismo |
+
+⚠️ **La prioridad no es decorativa**: un checklist donde todo figura como urgente no ordena nada, y
+a la tercera semana se ignora entero. La separación *sí o sí* / deseable es lo que lo mantiene vivo.
+
+### Lo que ya existe y sirve de base
+- **Fechas de vencimiento** en templates y cuotas (`fecha_vencimiento`), que ya alimentan el Cash Flow.
+- El **evento en curso** del norte (balance 25/26: contador 01/10, ARCA 01/11) es exactamente una
+  obligación con plazo — hoy vive en `CLAUDE.md`, no en un checklist accionable.
+- **SICORE** ya tiene ciclo de quincenas con estados (`abierta`/`cerrada`/declarada), que es la forma
+  más parecida a esto que hay en el sistema: sirve de modelo.
+- El circuito de mail de `gas-buscar-pdf` ya sabe mandar mails de resumen a un destinatario.
+
+### A definir con el usuario
+- **Qué obligaciones entran** y con qué prioridad. Es criterio suyo, no del sistema.
+- **Los responsables**: hoy hay 2 personas (JMS y Ulises) y el permiso de Ulises está limitado
+  (cruza con [A-SEC-03](#a-sec-03) y con [A-AUTO-01](#a-auto-01) paso 1).
+- **El canal** de la alerta: mail, pantalla al abrir la app, o las dos.
+
+---
+
 ## <a id="a-auto-01"></a>A-AUTO-01 — El circuito de la tarjeta, punta a punta 🥇 *(caso modelo)*
 
 > **Registrado 2026-08-31.** El usuario lo eligió **como ejemplo de cómo se anota una
@@ -2183,9 +2221,9 @@ mail, debería ser muy fácil")* — y es cierto, verificado:
   que ya existen.
 
 ### 📌 Detalles a confirmar al implementar
-- **La fecha de llegada del mail.** El usuario la recuerda como **30/10**, pero el vencimiento que
-  cita es **07/09/2026** — probablemente sea 30/08. Importa porque **la distancia entre que llega el
-  mail y el vencimiento es la ventana de la alerta**: conviene mirar un mail real antes de fijarla.
+- ✅ **La fecha de llegada del mail: 30/08** (confirmada por el usuario 2026-08-31; el "30/10" del
+  primer registro era un lapsus). Con vencimiento **07/09**, la ventana entre que llega el mail y que
+  vence es de **8 días** — ése es el margen real que tiene la alerta para servir de algo.
 - **Multiempresa**: hoy la tabla es `msa.tarjeta_visa_business`. Si PAM/MA suman tarjeta, el circuito
   se replica — no hardcodear el remitente ni la tabla.
 

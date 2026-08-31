@@ -53,21 +53,69 @@ Si el norte contable es que **el presupuesto se autoalimente**, el norte adminis
 llega solo se aproveche, y que el sistema **avise** en vez de esperar que alguien se acuerde.
 
 **Es una dinámica, no una lista de features.** Cada automatización se registra con ID propio en
-`PENDIENTES.md` (familia **`A-AUTO-NN`**), del mismo modo que se registran las mejoras. Al tocar
-cualquier circuito administrativo, preguntarse: *¿qué parte de esto la puede hacer el sistema?*
+`PENDIENTES.md` (familia **`A-AUTO-NN`**), como se registran las mejoras.
 
-**Las 4 piezas que se repiten** (del caso modelo → [A-AUTO-01](PENDIENTES.md#a-auto-01)):
+#### 🔍 La auditoría permanente — se hace AL PASAR, no en un proyecto aparte
+*Ampliación del usuario 2026-08-31: es la parte que convierte esto en dinámica y no en una lista.*
 
-| Pieza | Pregunta |
+> **Cada vez que se toca un tema administrativo, se aprovecha para mirarlo entero.** En palabras del
+> usuario: *"vamos a ver qué tenemos acá — ¿cómo se hizo esto? ¿bajo el estándar? ¿se puede mejorar?
+> ¿abreviar? ¿automatizar?"*
+
+No es una revisión que se agenda: es **la pregunta que se hace al pasar por cualquier circuito**. Y
+las 4 preguntas de abajo son el cuestionario de esa revisión — **hay que responderlas en cada caso**,
+aunque la respuesta sea "nada que hacer acá".
+
+**Las 4 piezas** (del caso modelo → [A-AUTO-01](PENDIENTES.md#a-auto-01)):
+
+| Pieza | La pregunta |
 |---|---|
-| **Disparador** | ¿qué llega solo? (un mail, un vencimiento, un cierre) |
-| **Dato ya disponible** | ¿qué estamos tirando que ya tenemos parseado? |
-| **Alerta con destinatario** | ¿a quién hay que avisarle, y cuándo? |
-| **Control** | ¿hay dos fuentes del mismo número que tengan que coincidir? |
+| **1 · Disparador** | **¿qué llega solo?** Un mail, un vencimiento, un cierre. Es el mejor punto de partida: algo que ya ocurre sin que nadie lo pida |
+| **2 · Dato ya disponible** | **¿qué estamos tirando?** Datos que el sistema ya parsea y descarta. Es lo más barato que existe: no hay que conseguirlos, sólo dejar de descartarlos |
+| **3 · Alerta con destinatario** | **¿a quién hay que avisarle, y cuándo?** Ver abajo — es la pieza que el usuario pide siempre |
+| **4 · Control** | **¿el mismo número llega por dos caminos?** Ver abajo |
 
-⚠️ **Y una quinta que se olvida: el permiso.** Una tarea automatizada que **sólo el dueño puede
-ejecutar** no está delegada. Si la idea es que la haga el administrativo, hay que **habilitarlo**
-— si no, la automatización le ahorra trabajo a quien no era el cuello de botella.
+#### 🔔 Alertas ANTES, controles DESPUÉS — el checklist de obligaciones
+*El usuario lo pide en todo desarrollo. Textual (2026-08-31):*
+
+> *"Si el sistema administrativo tiene una serie de **requisitos mínimos que deben lograrse sí o sí a
+> tal plazo**, otros menos importantes pero también, es casi obligatorio tenerlos en un **checklist**,
+> con las **alertas a quien corresponda ANTES** y con **controles DESPUÉS**."*
+
+Toda obligación con plazo (vencimientos, presentaciones, cierres) lleva **las dos mitades**:
+- **Antes → alerta**, con destinatario explícito y con margen real. Una alerta que llega el día del
+  vencimiento no es una alerta, es un acta.
+- **Después → control** que verifique que efectivamente se hizo. Sin esto, "avisamos" reemplaza a
+  "se hizo", que no es lo mismo.
+
+Y las obligaciones se **priorizan** (las que son sí o sí vs. las deseables), porque un checklist
+donde todo es urgente no ordena nada. → [A-AUTO-02](PENDIENTES.md#a-auto-02).
+
+#### 🔁 Qué es "el mismo número por dos caminos" (pieza 4)
+Cuando **un mismo dato llega al sistema por dos vías independientes**, ahí hay un control **gratis**:
+no hay que inventar nada, sólo compararlos. En el caso de la tarjeta, el total del resumen llega
+**dos veces** — en el **PDF** que se importa y en el **mail del banco** — y las dos veces dice
+`2.699.666,49`. Si no coincidieran, algo está mal: un parseo malo, el resumen de otro mes, un valor
+editado. **Se muestra la diferencia; no se elige uno en silencio** (§ 🧮 Todo desarrollo termina con
+su control).
+
+Al revisar un circuito, buscar esos pares: son los controles más baratos y los más confiables,
+porque **las dos fuentes son independientes**.
+
+#### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
+Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
+persona**. Y eso lo bloquea algo que no se ve en el diseño: **quién tiene acceso**.
+
+Caso testigo, el mismo [A-AUTO-01](PENDIENTES.md#a-auto-01): el objetivo es que **Ulises** cargue el
+resumen de la tarjeta. Hoy su rol (`contable`) sólo ve **Egresos: ARCA + Templates**, así que **no
+puede**. Si se construyen las fechas, la alerta y el mail pero no se le habilita el acceso, el
+circuito queda más prolijo **y la carga la sigue haciendo JMS**.
+
+> ⚠️ **La automatización le habría ahorrado trabajo a quien no era el cuello de botella.** El cuello
+> de botella es el tiempo del dueño; si la tarea no se puede delegar, ese tiempo no se libera.
+
+Por eso el permiso se revisa **al diseñar**, no al final: es la pieza que decide si la automatización
+descarga a alguien o sólo se ve mejor.
 
 > 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-31 (norte
 > administrativo) · 2026-08-02 (resultado final + cómo se avanza) → [A-DOC-07](PENDIENTES.md#a-doc-07).
