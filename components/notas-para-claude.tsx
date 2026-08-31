@@ -249,13 +249,21 @@ export function NotasParaClaude() {
     }
   }
 
+  /**
+   * La lista sale por `/api/notas`, no de Supabase directo — A-SEC-04.
+   * `anon` ya **no puede leer** estas tablas (sólo insertar), así que la lectura pasa por el
+   * servidor, donde la `SERVICE_ROLE_KEY` no se expone. Ver el comentario del endpoint.
+   */
   const cargarNotas = async () => {
-    const { data } = await supabase
-      .from("notas_para_claude")
-      .select("id, titulo, estado, resultado, created_at, notas_capturas(count)")
-      .order("created_at", { ascending: false })
-      .limit(30)
-    setNotas(data ?? [])
+    try {
+      const r = await fetch("/api/notas")
+      const j = await r.json()
+      setNotas(j.notas ?? [])
+      if (j.error) toast.error("No se pudieron cargar las notas: " + j.error)
+    } catch (e) {
+      setNotas([])
+      toast.error("No se pudieron cargar las notas")
+    }
   }
 
   const descartar = () => {

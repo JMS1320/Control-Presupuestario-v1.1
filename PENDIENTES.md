@@ -242,7 +242,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
-| **A-SEC-04** | 🔴 | **Alta** | 🔴 **Las notas guardan la ruta-password en claro, y sus 2 tablas NO tienen RLS.** `notas_para_claude` y `notas_capturas`: `relrowsecurity = false`, **0 políticas**. Y guardan `ruta = "/adminjms1320"` + `usuario = "adminjms1320"`, que **es** la contraseña de admin. Medido 2026-08-31: **ya está en la BD**, no es hipotético | → [A-SEC-04](#a-sec-04) `@general` |
+| **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-75](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
+| A-TEST-75 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
 | A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
 | A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
@@ -8921,12 +8922,21 @@ esto agrega que **entre esos datos está la llave**. Aunque mañana se cerraran 
 seguiría entregándola.
 
 **Qué hay que hacer:**
-1. **RLS en las dos tablas** — hoy es lo único que separa las notas de cualquiera. Las hermanas
-   (`pendientes_comentarios`, `pendientes_propuestos`) sí la tienen: quedaron sin cubrir por olvido.
-2. **Dejar de guardar la ruta entera.** La nota necesita saber *dónde* estabas, no *con qué llave
-   entraste*: guardar la ruta **sin el primer segmento** (`/adminjms1320/x/y` → `/x/y`). El campo
-   `usuario` puede quedar, pero como rol (`admin` / `contable`), no como la ruta literal.
-3. **Limpiar lo ya guardado** — hay filas con el valor viejo. ⚠️ Son datos: se pregunta antes.
+1. ✅ **RLS en las dos tablas — HECHO 2026-08-31** (migración `notas_rls_anon_solo_insert`).
+   `anon` puede **INSERT** (dejar una nota tiene que seguir siendo instantáneo) y **nada más**:
+   sin `SELECT`, `UPDATE` ni `DELETE`. Las hermanas (`pendientes_comentarios`,
+   `pendientes_propuestos`) ya la tenían: éstas quedaron sin cubrir por olvido.
+   → Como leer dejó de ser posible desde el navegador, **la lista pasó a `/api/notas`**, del lado del
+   servidor con la `SERVICE_ROLE_KEY` (que saltea RLS y nunca sale de ahí).
+2. ✅ **Dejar de guardar la ruta entera — HECHO 2026-08-31.** `rutaSinLlave()`:
+   `/adminjms1320/x/y` → `/x/y`, y `usuario` pasa a ser el **rol** (`getRoleFromRoute`), no la ruta.
+3. 🔴 **Limpiar lo ya guardado — PENDIENTE.** Quedan **15 filas** en `notas_capturas` con
+   `ruta LIKE '/adminjms1320%'` (más su `usuario`). ⚠️ **Son datos: se pregunta antes de tocarlos**
+   (§ CLAUDE.md · Datos). El `UPDATE` está listo y sale en una corrida.
+
+> ⚠️ **Nada de esto reemplaza a [A-SEC-03](#a-sec-03).** Mientras todos entren como `anon`, ni la
+> RLS ni el endpoint saben **quién** pregunta. Lo que se logró es que la puerta abierta **deje de dar
+> a la tabla entera** — que era lo puntualmente grave, porque ahí adentro estaba la llave.
 
 **Motivo del motivo:** el usuario lo dijo exacto — *"cuando te lo menciono de nuevo es para
 asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
