@@ -242,6 +242,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
+| **A-SEC-04** | 🔴 | **Alta** | 🔴 **Las notas guardan la ruta-password en claro, y sus 2 tablas NO tienen RLS.** `notas_para_claude` y `notas_capturas`: `relrowsecurity = false`, **0 políticas**. Y guardan `ruta = "/adminjms1320"` + `usuario = "adminjms1320"`, que **es** la contraseña de admin. Medido 2026-08-31: **ya está en la BD**, no es hipotético | → [A-SEC-04](#a-sec-04) `@general` |
+| A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
 | A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
@@ -8895,6 +8897,82 @@ vincule el anticipo, que es exactamente la 2ª transferencia.
 
 ⚠️ **`npm run build` dijo "Compiled successfully" con 2 errores de tipos adentro** (el rename dejó
 una referencia colgada). Lo agarró `type-check:diff`. Es el motivo por el que ese script existe.
+
+---
+
+## <a id="a-sec-04"></a>A-SEC-04 — Las notas guardan la ruta-password, y sus tablas no tienen RLS (2026-08-31)
+
+**Medido, no supuesto.** Apareció al preguntarse el usuario si sumar logs a las notas no agrandaría
+el problema de seguridad. La respuesta fue peor: **ya está agrandado, desde antes y sin logs.**
+
+```
+notas_para_claude   rls_activo = false   políticas = 0
+notas_capturas      rls_activo = false   políticas = 0
+SELECT DISTINCT ruta, usuario → "/adminjms1320" · "adminjms1320"
+```
+
+En esta app **la ruta ES la contraseña** (`config/access-routes.ts`). Y cada captura guarda
+`window.location.pathname`, así que **todas las notas tienen la ruta de admin escrita en claro**, en
+dos tablas que `anon` puede leer enteras ([A-SEC-01](#a-sec-01)). Quien alcance la API se lleva el
+acceso de admin sin adivinar nada.
+
+⚠️ **Es una vía nueva, no la misma de A-SEC-01.** A-SEC-01 dice que `anon` puede leer y borrar todo;
+esto agrega que **entre esos datos está la llave**. Aunque mañana se cerraran las otras tablas, ésta
+seguiría entregándola.
+
+**Qué hay que hacer:**
+1. **RLS en las dos tablas** — hoy es lo único que separa las notas de cualquiera. Las hermanas
+   (`pendientes_comentarios`, `pendientes_propuestos`) sí la tienen: quedaron sin cubrir por olvido.
+2. **Dejar de guardar la ruta entera.** La nota necesita saber *dónde* estabas, no *con qué llave
+   entraste*: guardar la ruta **sin el primer segmento** (`/adminjms1320/x/y` → `/x/y`). El campo
+   `usuario` puede quedar, pero como rol (`admin` / `contable`), no como la ruta literal.
+3. **Limpiar lo ya guardado** — hay filas con el valor viejo. ⚠️ Son datos: se pregunta antes.
+
+**Motivo del motivo:** el usuario lo dijo exacto — *"cuando te lo menciono de nuevo es para
+asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
+app**: nadie audita el botón de notas, y terminó siendo el que copia la credencial a una tabla
+abierta. Vale para todo lo que se construya "sólo para nosotros".
+
+---
+
+## <a id="a-feat-72"></a>A-FEAT-72 — Cinta de diagnóstico en las notas (2026-08-31)
+
+**El problema.** Una captura de un cartel dice *"Error al guardar"*. El texto que resuelve el bug no
+se ve: `23503 · violates foreign key constraint "anticipos_proveedores_factura_id_fkey"` — qué tabla,
+qué operación, qué restricción. Ese renglón **es** el diagnóstico, y hoy se pierde.
+
+**La idea.** La app mantiene en memoria los **últimos ~50 eventos** (una cinta que se pisa sola, no
+se manda a ningún lado). Al dejar una nota, esa cinta viaja con ella. El usuario no prepara nada:
+usa la app, se rompe, `Alt+N`.
+⚠️ **Y no hay que refrescar**: el refresh borra la cinta — justo lo que se quiere leer.
+
+**Alcance honesto — qué clase de bug resuelve:**
+- ✅ Los que **tiran error** (con o sin cartel). Muchos fallan callados y hoy llegan como *"no anda"*.
+- ❌ Los que **dan mal el número sin fallar** — el Cash Flow de $181 M no tiró nada. Ésos salen de
+  los datos, no de los logs.
+- ❌ Las **mejoras** (*"quiero decimales"*). De las 8 notas al 2026-08-29, **ninguna** habría usado
+  esto: todas son mejoras. La clase que sirve es la que el usuario describió, no la que ya cargó.
+
+### 🔒 Cómo se construye — LISTA BLANCA, y esto no es negociable
+
+**No se captura todo para después borrar lo sensible.** Esa es la forma que falla: alcanza con que
+aparezca un dato nuevo que el filtro no conoce para que se filtre, **y nadie se entera**. Se hace al
+revés: **se nombra una por una la información que sí se guarda, y todo lo demás no existe.**
+
+| ✅ Se guarda | ❌ NO se toca nunca |
+|---|---|
+| Mensaje del error + `archivo:línea` | Encabezados de las llamadas (ahí viajan las llaves) |
+| Método + **camino** de la llamada (`POST /anticipos_proveedores`) | El **cuerpo** de la llamada (ahí van los datos del formulario) |
+| Código y mensaje de error de la base | La respuesta de la base |
+| Texto de `console.error` / `console.warn` | `console.log` sueltos (es donde se imprime cualquier cosa) |
+| | **Nada tipeado en un campo** — ahí es donde estaría una clave de ARCA |
+
+**Ejemplo del riesgo, en palabras del usuario:** *"clave de ARCA si yo justo la imputé"*. Con lista
+negra, esa clave se guarda salvo que alguien haya previsto ese campo. Con lista blanca **no se
+guarda nunca**, porque el contenido de los campos no está en la lista.
+
+**Depende de [A-SEC-04](#a-sec-04):** guardar diagnóstico en una tabla que `anon` lee entera es
+sumarle valor al robo. **Primero RLS, después la cinta.**
 
 ---
 
