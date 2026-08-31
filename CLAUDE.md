@@ -45,8 +45,32 @@ presentaciones). Cuando se acerca un evento, lo que ese evento necesita **pasa a
 > **01/11/2026**. Objetivo: que los **papeles de trabajo sean un export del sistema**.
 > → [A-FEAT-09](PENDIENTES.md#a-feat-09)
 
-> 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-02 (resultado
-> final + cómo se avanza) → [A-DOC-07](PENDIENTES.md#a-doc-07).
+#### 🤖 El norte ADMINISTRATIVO — automatizar
+*Enunciado por el usuario 2026-08-31: **"es el norte en términos administrativos"**.*
+
+Si el norte contable es que **el presupuesto se autoalimente**, el norte administrativo es que
+**el trabajo administrativo se autoalimente igual**: que el dato entre una sola vez, que lo que ya
+llega solo se aproveche, y que el sistema **avise** en vez de esperar que alguien se acuerde.
+
+**Es una dinámica, no una lista de features.** Cada automatización se registra con ID propio en
+`PENDIENTES.md` (familia **`A-AUTO-NN`**), del mismo modo que se registran las mejoras. Al tocar
+cualquier circuito administrativo, preguntarse: *¿qué parte de esto la puede hacer el sistema?*
+
+**Las 4 piezas que se repiten** (del caso modelo → [A-AUTO-01](PENDIENTES.md#a-auto-01)):
+
+| Pieza | Pregunta |
+|---|---|
+| **Disparador** | ¿qué llega solo? (un mail, un vencimiento, un cierre) |
+| **Dato ya disponible** | ¿qué estamos tirando que ya tenemos parseado? |
+| **Alerta con destinatario** | ¿a quién hay que avisarle, y cuándo? |
+| **Control** | ¿hay dos fuentes del mismo número que tengan que coincidir? |
+
+⚠️ **Y una quinta que se olvida: el permiso.** Una tarea automatizada que **sólo el dueño puede
+ejecutar** no está delegada. Si la idea es que la haga el administrativo, hay que **habilitarlo**
+— si no, la automatización le ahorra trabajo a quien no era el cuello de botella.
+
+> 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-31 (norte
+> administrativo) · 2026-08-02 (resultado final + cómo se avanza) → [A-DOC-07](PENDIENTES.md#a-doc-07).
 > El **foco en curso** (el gran objetivo del momento, que rota) NO va acá: va a `PENDIENTES.md`.
 
 ---

@@ -245,6 +245,15 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
+### 🤖 Automatizaciones (`A-AUTO-NN`) — el norte administrativo
+*Familia abierta 2026-08-31 a pedido del usuario: **"registrar automatizaciones como la dinámica de
+mejoras — es el norte en términos administrativos"**. El criterio y las 5 piezas están en
+`CLAUDE.md` § 🤖 El norte ADMINISTRATIVO. Acá van los casos concretos.*
+
+| ID | Estado | Prio | Ítem | Detalle |
+|----|--------|------|------|---------|
+| A-AUTO-01 | 🔴 | Media | **🥇 CASO MODELO — el circuito de la tarjeta, punta a punta**: el resumen lo carga **Ulises** (falta habilitarlo), el PDF da el **próximo cierre y vencimiento** (hoy se parsean y se tiran), eso dispara la **alerta** de que viene el próximo resumen, y el **mail del banco** llena o contrasta los montos. Registrado como modelo de cómo se anota una automatización | → [A-AUTO-01](#a-auto-01) `@egresos` |
+
 ### Datos (los carga el usuario)
 | ID | Estado | Ítem |
 |----|--------|------|
@@ -2103,6 +2112,88 @@ Más la historia cruda del intento de automatizar SIRE, que se movió a
 sobrevive. Eso necesita criterio del usuario y no se puede hacer al pasar.
 
 **Cuándo abordarlo:** la próxima vez que se toque el módulo SICORE. Antes no vale la pena.
+
+---
+
+## <a id="a-auto-01"></a>A-AUTO-01 — El circuito de la tarjeta, punta a punta 🥇 *(caso modelo)*
+
+> **Registrado 2026-08-31.** El usuario lo eligió **como ejemplo de cómo se anota una
+> automatización**, no sólo como pendiente: *"casi de ejemplo modelo a registrar"*.
+> El criterio general está en `CLAUDE.md` § 🤖 El norte ADMINISTRATIVO.
+
+### El circuito hoy, y dónde se corta
+
+```
+resumen de tarjeta (PDF)  →  lo carga JMS         ⛔ debería poder cargarlo Ulises
+        ↓
+importador parsea 6 fechas del ciclo               ⛔ guarda 2, TIRA las 2 que importan
+        ↓
+próx. vencimiento → propone actualizar el template ⛔ hoy la fecha se edita a mano
+próx. cierre      → cuándo avisar que viene el     ⛔ no existe la alerta
+                    resumen siguiente (a Ulises y JMS)
+        ↓
+mail de e-resumen@bancogalicia.com.ar               ⛔ nadie lo lee: se transcribe a ojo
+"Resumen de Tarjeta Visa" → Vencimiento · $ · US$
+```
+
+### Los 5 pasos, con lo que YA está hecho
+
+**1 · Habilitar a Ulises para cargar el resumen.** Hoy es rol `contable`
+(`config/access-routes.ts:52`) y sólo ve **Egresos: ARCA + Templates**. ⚠️ **Sin esto la
+automatización le ahorra trabajo a quien no era el cuello de botella** — el punto del pedido es que
+la carga deje de depender de JMS. Cruza con [A-SEC-03](#a-sec-03) (módulo Usuarios, RLS).
+
+**2 · Guardar el próximo cierre y el próximo vencimiento — es lo más barato que hay.**
+`app/api/import-pdf-tarjeta/route.ts:192-198` ya arma el array de las **6 fechas del ciclo** y el
+comentario las nombra: `cierre_anterior, venc_anterior, cierre_actual, venc_actual, prox_cierre,
+prox_venc`. Guarda los índices **2 y 3** y **descarta el 4 y el 5**, que son justo los que hacen
+falta. Son **2 líneas** + 2 columnas nuevas en `msa.tarjeta_visa_business` (hoy tiene `fecha_cierre`
+y `fecha_vencimiento`, ambas del resumen **actual**).
+
+**3 · Proponer la fecha de vencimiento del template.** Con `prox_venc` guardado, la app propone
+actualizar el template de la tarjeta. ⚠️ **Proponer, no pisar** — es la regla del *default del dato
+real, siempre editable*: el valor viene del resumen y el usuario lo confirma o lo edita.
+
+**4 · La alerta.** `prox_cierre` da la fecha desde la cual **el próximo resumen ya debería estar
+listo**. Avisa **a Ulises y a JMS**. Es el paso que convierte el circuito en automático: sin alerta,
+alguien se tiene que acordar.
+
+**5 · Leer el mail del banco.** Llega solo de `e-resumen@bancogalicia.com.ar`, asunto
+**"Resumen de Tarjeta Visa"**, y trae los 3 datos que importan:
+
+```
+• Vencimiento: 07/09/2026
+• Total en pesos: 2.699.666,49
+• Total en dólares: 169,90
+```
+
+Sirve para **dos cosas distintas**, y conviene no mezclarlas:
+- **Llenar** el template cuando los montos todavía no se cargaron (el resumen PDF aún no entró).
+- **Contrastar** cuando ya se cargaron: dos fuentes del mismo número que **tienen que coincidir**.
+  Es un control en el sentido de `CLAUDE.md` § 🧮 — si difieren, se muestra; no se elige una en
+  silencio.
+
+**El precedente que lo hace barato** *(el usuario: "ya tenemos algunas cosas hechas de automatización
+mail, debería ser muy fácil")* — y es cierto, verificado:
+- **`gas-buscar-pdf/Main.gs`** está en **v0.9.16** y ya hace `GmailApp.search()`, etiquetado,
+  marcar leído, auto-archivado, OCR y mail de resumen. Buscar un remitente + asunto fijos es
+  **mucho más simple** que lo que ese script ya resuelve (match difuso de facturas por CUIT+nº+monto).
+- El importador **ya extrae `total_a_pagar_pesos` y `total_a_pagar_usd`** (`:188-189`) — o sea, los
+  dos números del mail ya tienen su contraparte parseada del PDF. El contraste es comparar dos campos
+  que ya existen.
+
+### 📌 Detalles a confirmar al implementar
+- **La fecha de llegada del mail.** El usuario la recuerda como **30/10**, pero el vencimiento que
+  cita es **07/09/2026** — probablemente sea 30/08. Importa porque **la distancia entre que llega el
+  mail y el vencimiento es la ventana de la alerta**: conviene mirar un mail real antes de fijarla.
+- **Multiempresa**: hoy la tabla es `msa.tarjeta_visa_business`. Si PAM/MA suman tarjeta, el circuito
+  se replica — no hardcodear el remitente ni la tabla.
+
+### Por qué éste es el modelo
+Tiene las **5 piezas** completas y separables, que son las que se repiten en toda automatización
+administrativa: un **disparador** que llega solo (el mail), un **dato ya parseado que se estaba
+tirando** (las 2 fechas), una **alerta con destinatario** (Ulises + JMS), un **control** (dos fuentes
+del mismo monto) y un **permiso** sin el cual nada de lo anterior delega trabajo.
 
 ---
 
