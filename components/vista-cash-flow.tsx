@@ -38,6 +38,7 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
+import { normalizarCuit } from "@/lib/proveedores/alta"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -2362,6 +2363,43 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         .select('id')
 
       if (error) throw error
+
+      // ── La contraparte va al maestro (A-BUG-93) ────────────────────────────
+      // `CLAUDE.md` § Contrapartes: si entra un comprobante, su contraparte tiene que quedar en
+      // `public.proveedores`. Antes el botón "Cargar nuevo proveedor" era **sólo UI** — escribía el
+      // CUIT y el nombre en el formulario y no creaba nada. Sin fila en el maestro no hay dónde
+      // poner CBU ni mail, así que el proveedor no entraba al export de lotes ni al mail de detalle.
+      //
+      // Sólo si hay CUIT (decisión del usuario): es la identidad de la contraparte, y una fila sin
+      // CUIT no la encuentra nadie. El alta es **find-or-create**: si ya existe no pisa nada.
+      // Y va DESPUÉS del insert del anticipo y sin `throw`: que falle el alta no puede perder el
+      // anticipo, que es el dato que el usuario vino a cargar.
+      const cuitParaMaestro = normalizarCuit(nuevoAnticipo.cuit)
+      if (cuitParaMaestro.length >= 11) {
+        try {
+          const r = await fetch('/api/gas/config-proveedor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cuit: cuitParaMaestro,
+              razon_social: nuevoAnticipo.nombre,
+              // Un anticipo de PAGO es a un proveedor; uno de COBRO, a un cliente.
+              como: nuevoAnticipo.tipo === 'cobro' ? 'cliente' : 'proveedor',
+            }),
+          })
+          const alta = await r.json()
+          // Se avisa sólo cuando ALGO cambió: si ya existía, el usuario no necesita enterarse.
+          if (alta.ok && alta.accion === 'creado') {
+            toast.success(`Se dio de alta «${alta.razon_social}» en proveedores — cargale CBU y mail desde Principal → Proveedores`)
+          } else if (!alta.ok) {
+            toast.warning(`El anticipo se guardó, pero la contraparte NO se dio de alta: ${alta.error}`)
+          }
+        } catch (e: any) {
+          toast.warning(`El anticipo se guardó, pero falló el alta de la contraparte: ${e.message}`)
+        }
+      } else {
+        toast.warning('Anticipo guardado SIN dar de alta la contraparte: falta el CUIT. Cargala desde Principal → Proveedores.')
+      }
 
       // Capturar datos del anticipo recién creado (antes de resetear el form)
       const esPago = nuevoAnticipo.tipo === 'pago'

@@ -131,6 +131,16 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
   const [edits, setEdits] = useState<Record<string, any>>({})
   const [guardando, setGuardando] = useState(false)
 
+  // Alta de un proveedor nuevo (A-BUG-93). Hasta 2026-08-31 **no había ninguna forma de crear uno
+  // a mano**: sólo nacían al importar una factura de ARCA, así que un proveedor sin factura todavía
+  // —el caso típico de un anticipo— no existía, y sin fila en el maestro no hay dónde cargarle CBU
+  // ni mail (o sea que queda fuera del export de lotes y del mail de detalle).
+  const [modoAlta, setModoAlta] = useState(false)
+  const [altaCuit, setAltaCuit] = useState('')
+  const [altaRazon, setAltaRazon] = useState('')
+  const [altaComo, setAltaComo] = useState<'proveedor' | 'cliente'>('proveedor')
+  const [creando, setCreando] = useState(false)
+
   // Al abrir: la lista siempre (el buscador se usa también para saltar de uno a otro)
   useEffect(() => {
     if (!open) return
@@ -204,6 +214,48 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
     }
   }
 
+  /** Abre el formulario de alta, aprovechando lo que el usuario ya tipeó en el buscador. */
+  function abrirAlta() {
+    const tipeado = busqueda.trim()
+    const digitos = tipeado.replace(/\D/g, '')
+    // Si buscó por CUIT, ese CUIT ya es el que quiere dar de alta; si buscó por nombre, es el nombre.
+    setAltaCuit(digitos.length >= 11 ? digitos : '')
+    setAltaRazon(digitos.length >= 11 ? '' : tipeado)
+    setAltaComo('proveedor')
+    setModoAlta(true)
+  }
+
+  async function crearProveedor() {
+    setCreando(true)
+    try {
+      const r = await fetch('/api/gas/config-proveedor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cuit: altaCuit, razon_social: altaRazon, como: altaComo }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error(d.error); return }
+
+      // El alta es find-or-create: puede que ya existiera. Decir cuál de las tres cosas pasó, en vez
+      // de un "listo" genérico que no distingue crear de no hacer nada.
+      if (d.accion === 'creado') toast.success(`«${d.razon_social}» dado de alta`)
+      else if (d.accion === 'flag_agregado') toast.success(`«${d.razon_social}» ya existía — se le marcó ${altaComo === 'cliente' ? 'cliente' : 'proveedor'}`)
+      else toast.info(`«${d.razon_social}» ya estaba cargado`)
+
+      // Refrescar la lista y abrir la ficha recién creada, que es lo que se quiere hacer después:
+      // cargarle CBU y mail.
+      const lr = await fetch('/api/proveedores/ficha').then(x => x.json())
+      if (lr.ok) setLista(lr.proveedores)
+      setModoAlta(false)
+      setBusqueda('')
+      setCuit(d.cuit)
+    } catch (e) {
+      toast.error('Error de red: ' + (e as Error).message)
+    } finally {
+      setCreando(false)
+    }
+  }
+
   const p = ficha?.proveedor
 
   return (
@@ -221,18 +273,71 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* ─────────────── BUSCADOR ─────────────── */}
-        {!cuit && (
-          <>
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        {/* ─────────────── ALTA DE UN PROVEEDOR NUEVO ─────────────── */}
+        {!cuit && modoAlta && (
+          <div className="space-y-3 rounded-md border border-blue-200 bg-blue-50/50 p-3">
+            <div className="text-sm font-medium text-blue-900">Nuevo proveedor</div>
+            <div className="grid grid-cols-[1fr_2fr] gap-2">
               <Input
                 autoFocus
-                className="pl-8"
-                placeholder="Buscar por nombre o CUIT…"
-                value={busqueda}
-                onChange={e => setBusqueda(e.target.value)}
+                placeholder="CUIT (11 dígitos)"
+                value={altaCuit}
+                onChange={e => setAltaCuit(e.target.value)}
               />
+              <Input
+                placeholder="Razón social"
+                value={altaRazon}
+                onChange={e => setAltaRazon(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <span className="text-gray-600">Es:</span>
+              {(['proveedor', 'cliente'] as const).map(op => (
+                <label key={op} className="flex cursor-pointer items-center gap-1">
+                  <input
+                    type="radio"
+                    checked={altaComo === op}
+                    onChange={() => setAltaComo(op)}
+                  />
+                  {op === 'proveedor' ? 'Proveedor' : 'Cliente'}
+                </label>
+              ))}
+              <span className="text-xs text-gray-400">(se puede cambiar después en la ficha)</span>
+            </div>
+            {/* El CUIT es la identidad: sin él la fila no la encuentra el motor ni la ficha. */}
+            <p className="text-xs text-gray-500">
+              El <strong>CUIT es obligatorio</strong>: es por donde la encuentran la conciliación y la
+              ficha. Si ya existe, no se pisa nada — sólo se le marca el tipo que falte.
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={crearProveedor} disabled={creando || !altaCuit || !altaRazon}>
+                {creando ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                Dar de alta
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setModoAlta(false)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ─────────────── BUSCADOR ─────────────── */}
+        {!cuit && !modoAlta && (
+          <>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <Input
+                  autoFocus
+                  className="pl-8"
+                  placeholder="Buscar por nombre o CUIT…"
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={abrirAlta} className="shrink-0">
+                + Nuevo
+              </Button>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
@@ -241,9 +346,14 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                   <Loader2 className="h-4 w-4 animate-spin" /> Cargando proveedores…
                 </div>
               ) : filtrados.length === 0 ? (
-                <p className="py-10 text-center text-sm text-gray-400">
-                  Ningún proveedor coincide con «{busqueda}».
-                </p>
+                // El momento exacto en que hace falta el alta: buscaste y no está. Ofrecerla acá
+                // evita el callejón sin salida que tenía la pantalla hasta 2026-08-31.
+                <div className="space-y-3 py-10 text-center">
+                  <p className="text-sm text-gray-400">Ningún proveedor coincide con «{busqueda}».</p>
+                  <Button size="sm" variant="outline" onClick={abrirAlta}>
+                    + Dar de alta «{busqueda.trim()}»
+                  </Button>
+                </div>
               ) : (
                 <ul className="divide-y">
                   {filtrados.map(pr => (

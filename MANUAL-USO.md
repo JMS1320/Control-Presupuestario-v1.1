@@ -1821,6 +1821,32 @@ Hoy hay **15 anticipos así** (los que nunca se vincularon).
 Es la pantalla para **mirar** un proveedor: quién es, cómo se le paga, qué facturó y qué se le pagó.
 Es un modal a propósito — la consulta suele ser en medio de otra cosa y te devuelve donde estabas.
 
+### ➕ Dar de alta un proveedor 🟡 *(nuevo 2026-08-31, sin testear — [A-TEST-78](PENDIENTES.md#a-test-78))*
+
+Dos caminos, y el segundo es el que vas a usar sin pensarlo:
+- Botón **“+ Nuevo”**, al lado del buscador.
+- Buscás y no aparece → sale **“+ Dar de alta «lo que tipeaste»”**, con el dato ya cargado.
+
+Pedís **CUIT y razón social**, elegís si es *proveedor* o *cliente*, y al confirmar **se abre su
+ficha** — que es donde vas a cargarle el **CBU y el mail**, que es para lo que lo estabas creando.
+
+> **El CUIT es obligatorio.** Es por donde lo encuentran la conciliación, el pre-filtro del motor y
+> la ficha: una fila sin CUIT no la encuentra nadie y hay que borrarla después. *(Hay 2 anticipos
+> viejos con el CUIT trucho `11111111111` que no sirven para ningún match — de ahí la regla.)*
+
+> **Si el CUIT ya existe, no se pisa nada.** Sólo se le marca el tipo que le faltara (alguien puede
+> ser cliente y proveedor a la vez). El nombre que tipeaste **no reemplaza** la razón social que vino
+> de ARCA.
+
+**Y desde el alta de un anticipo se da de alta solo.** Si cargás un anticipo con un CUIT que no está
+en el maestro, el proveedor **se crea automáticamente** y te avisa. Si el anticipo no tiene CUIT, se
+guarda igual pero **te avisa que la contraparte quedó sin dar de alta** — ahí la cargás desde acá.
+
+⚠️ **Hasta el 2026-08-31 esto no existía**: un proveedor sólo nacía al importar una factura de ARCA.
+El botón *"Cargar nuevo proveedor"* de los formularios escribía el nombre en el formulario **y nada
+más**. Por eso puede haber proveedores viejos con anticipos y sin ficha — si te encontrás uno sin CBU
+ni mail, es esto.
+
 ### Los dos accesos
 1. **Principal → botón "Proveedores"**, al lado del de IPC. Abre el buscador con los 154. Es el
    acceso general, el que vas a usar casi siempre.

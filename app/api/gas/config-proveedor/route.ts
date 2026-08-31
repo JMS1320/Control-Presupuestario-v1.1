@@ -1,15 +1,23 @@
 /**
- * GET  /api/gas/config-proveedor?cuit=... — devuelve proveedor + estadísticas FC
- * GET  /api/gas/config-proveedor — devuelve lista de todos los proveedores con sus FCs
+ * GET   /api/gas/config-proveedor?cuit=... — devuelve proveedor + estadísticas FC
+ * GET   /api/gas/config-proveedor — devuelve lista de todos los proveedores con sus FCs
  * PATCH /api/gas/config-proveedor — actualiza un proveedor
+ * POST  /api/gas/config-proveedor — **da de alta** un proveedor (find-or-create)
  *
- * El nombre quedó de cuando sólo servía a la búsqueda de PDFs, pero el PATCH es
+ * El nombre quedó de cuando sólo servía a la búsqueda de PDFs, pero esta ruta es
  * hoy la única vía de escritura del maestro `proveedores` (ver CAMPOS_PERMITIDOS).
  * La ficha de proveedor lee por GET /api/proveedores/ficha y escribe por acá.
+ *
+ * El POST se agregó el 2026-08-31 (A-BUG-93): hasta entonces **no existía ninguna
+ * forma de dar de alta un proveedor a mano** — el único INSERT del repo era el
+ * importador de ARCA, así que un proveedor sólo nacía si llegaba una factura suya.
+ * Se agregó ACÁ y no en una ruta nueva justamente por lo que dice el comentario de
+ * abajo: una sola vía de escritura, para que no haya dos verdades.
  */
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { altaContraparte } from '@/lib/proveedores/alta'
 
 export const runtime = 'nodejs'
 
@@ -73,6 +81,27 @@ export async function GET(request: Request) {
 
   } catch (err) {
     return NextResponse.json({ ok: false, error: (err as Error).message }, { status: 500 })
+  }
+}
+
+/**
+ * Alta de un proveedor. La lógica vive en `lib/proveedores/alta.ts` para que la compartan
+ * todas las vías (ficha, anticipos, y las que falten: ventas y venta de hacienda).
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const resultado = await altaContraparte(supabaseAdmin, {
+      cuit: body.cuit,
+      razon_social: body.razon_social,
+      como: body.como === 'cliente' ? 'cliente' : 'proveedor',
+    })
+    if (!resultado.ok) {
+      return NextResponse.json({ ok: false, error: resultado.error }, { status: 400 })
+    }
+    return NextResponse.json(resultado)
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
   }
 }
 
