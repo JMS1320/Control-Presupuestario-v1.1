@@ -223,20 +223,32 @@ export function NotasParaClaude() {
 
     setGuardando(true)
     try {
-      const { data: nota, error } = await supabase
-        .from("notas_para_claude")
-        .insert({
-          titulo: titulo.trim() || capturas[0].texto.slice(0, 80) || "Sin título",
-          estado: "finalizada",
-          finalizada_at: new Date().toISOString(),
-          usuario: rolActual(), // el ROL, no la ruta — A-SEC-04
-        })
-        .select("id")
-        .single()
+      /**
+       * El id se genera ACÁ y no se pide de vuelta — A-SEC-04.
+       *
+       * Antes esto era `.insert(...).select("id").single()`. Con la RLS puesta eso **rompe el
+       * guardado**: `anon` tiene permiso de INSERT y nada más, y un `INSERT ... RETURNING`
+       * necesita **además** permiso de lectura para devolver la fila. Verificado contra la base:
+       * el INSERT solo pasa, el INSERT con RETURNING da
+       * `42501: new row violates row-level security policy`.
+       *
+       * Generar el uuid del lado del cliente evita el viaje de vuelta y deja a `anon` con el
+       * mínimo permiso posible. (`crypto.randomUUID` existe en todo contexto seguro: HTTPS y
+       * localhost.)
+       */
+      const notaId = crypto.randomUUID()
+
+      const { error } = await supabase.from("notas_para_claude").insert({
+        id: notaId,
+        titulo: titulo.trim() || capturas[0].texto.slice(0, 80) || "Sin título",
+        estado: "finalizada",
+        finalizada_at: new Date().toISOString(),
+        usuario: rolActual(), // el ROL, no la ruta — A-SEC-04
+      })
       if (error) throw error
 
       const { error: e2 } = await supabase.from("notas_capturas").insert(
-        capturas.map(c => ({ ...c, nota_id: nota.id }))
+        capturas.map(c => ({ ...c, nota_id: notaId }))
       )
       if (e2) throw e2
 

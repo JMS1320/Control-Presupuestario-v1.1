@@ -8930,9 +8930,30 @@ seguiría entregándola.
    servidor con la `SERVICE_ROLE_KEY` (que saltea RLS y nunca sale de ahí).
 2. ✅ **Dejar de guardar la ruta entera — HECHO 2026-08-31.** `rutaSinLlave()`:
    `/adminjms1320/x/y` → `/x/y`, y `usuario` pasa a ser el **rol** (`getRoleFromRoute`), no la ruta.
-3. 🔴 **Limpiar lo ya guardado — PENDIENTE.** Quedan **15 filas** en `notas_capturas` con
-   `ruta LIKE '/adminjms1320%'` (más su `usuario`). ⚠️ **Son datos: se pregunta antes de tocarlos**
-   (§ CLAUDE.md · Datos). El `UPDATE` está listo y sale en una corrida.
+3. ✅ **Limpiar lo ya guardado — HECHO 2026-08-31, autorizado por el usuario.** 15 capturas y
+   10 notas. Verificado después: **0 filas** con `adminjms1320`; las rutas quedaron en `/` y el
+   usuario en `admin`.
+
+### 🧨 La RLS rompió el guardado, y `type-check` estaba en verde
+
+**Lo agarré probando contra la base, no compilando.** Al poner RLS con `anon` sólo-INSERT,
+`finalizar()` dejó de funcionar — hacía `.insert(...).select("id").single()`, y un
+**`INSERT ... RETURNING` necesita ADEMÁS permiso de lectura** para devolver la fila. Medido:
+
+```
+INSERT sin RETURNING  → OK
+INSERT con RETURNING  → 42501: new row violates row-level security policy
+```
+
+**Fix:** el `id` se genera del lado del cliente (`crypto.randomUUID()`) y se inserta explícito, sin
+pedir nada de vuelta. `anon` se queda con el permiso mínimo y el guardado anda.
+
+**Verificado como `anon`, en transacciones revertidas (no quedó ningún dato):**
+nota + 2 capturas **entran** · `SELECT` sobre las notas devuelve **0 filas**.
+
+> 📌 **La lección, otra vez la misma:** un cambio de permisos **no lo ve el compilador**. Si el fix
+> hubiera salido sin probar, el próximo bug que el usuario quisiera reportar habría muerto al
+> tocar *Finalizar* — **la herramienta de reportar bugs, rota, y sin forma de reportarlo.**
 
 > ⚠️ **Nada de esto reemplaza a [A-SEC-03](#a-sec-03).** Mientras todos entren como `anon`, ni la
 > RLS ni el endpoint saben **quién** pregunta. Lo que se logró es que la puerta abierta **deje de dar
