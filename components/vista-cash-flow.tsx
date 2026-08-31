@@ -1281,8 +1281,25 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
   const agruparSeleccionados = async () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && (f.facturas_agrupadas ?? 0) <= 1)
-    if (filas.length < 2) { toast.error('Seleccioná al menos 2 filas individuales del mismo proveedor'); return }
+    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    // Las filas que YA son un grupo no se pueden meter dentro de otro grupo: se descartan acá.
+    const yaAgrupadas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) > 1)
+    const filas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) <= 1)
+    if (filas.length < 2) {
+      // 🐞 **A-BUG-96** — antes este error decía siempre *"Seleccioná al menos 2 filas individuales
+      // del mismo proveedor"*, que **acusa a la causa equivocada**: el motivo real casi siempre es
+      // que una de las filas ya es un grupo, y el proveedor no tiene nada que ver. El usuario se
+      // puso a mirar los CUITs cuando lo que había que hacer era desagrupar.
+      if (yaAgrupadas.length > 0) {
+        toast.error(
+          `${yaAgrupadas.length} de las filas seleccionadas YA ${yaAgrupadas.length === 1 ? 'es un grupo' : 'son grupos'} ` +
+          `y un grupo no puede entrar dentro de otro. Desagrupalo primero y volvé a seleccionar los pagos individuales.`
+        )
+      } else {
+        toast.error('Seleccioná al menos 2 filas para agrupar')
+      }
+      return
+    }
     const origenes = new Set(filas.map(f => f.origen))
     if (origenes.size > 1) { toast.error('Agrupá filas del mismo origen (todas FC o todas templates)'); return }
     const origen = filas[0].origen
