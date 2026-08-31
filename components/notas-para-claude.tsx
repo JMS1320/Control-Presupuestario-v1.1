@@ -33,6 +33,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Loader2, NotebookPen, Camera, Check, X, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
+import { getRoleFromRoute } from "@/config/access-routes"
 
 /** Ancho máximo de la captura guardada. Suficiente para leer un cartel, liviano para la fila. */
 const ANCHO_MAX = 1400
@@ -47,6 +48,32 @@ interface Captura {
   titulo_doc: string
   imagen: string
   user_agent: string
+}
+
+/**
+ * 🔐 La ruta **sin el primer segmento** — A-SEC-04.
+ *
+ * En esta app el primer segmento **ES la contraseña** (`config/access-routes.ts`: `/adminjms1320`
+ * da admin). Guardar `location.pathname` entero metía esa llave, en claro, en `notas_capturas` —
+ * una tabla que `anon` lee entera ([A-SEC-01](PENDIENTES.md#a-sec-01)). Cualquiera que llegara a la
+ * API se llevaba el acceso de admin sin adivinar nada.
+ *
+ * La nota necesita saber **dónde** estabas, no **con qué llave entraste**: `/adminjms1320/x/y` se
+ * guarda como `/x/y`, y el usuario se guarda como **rol** (`admin` / `contable`), no como la ruta.
+ *
+ * ⚠️ Quedan filas viejas con el valor completo — se limpian aparte (son datos: se pregunta antes).
+ */
+function rutaSinLlave(): string {
+  if (typeof window === "undefined") return ""
+  const resto = window.location.pathname.split("/").filter(Boolean).slice(1)
+  return "/" + resto.join("/") + window.location.search
+}
+
+/** El ROL de quien deja la nota, nunca su ruta de acceso. Ver `rutaSinLlave()`. */
+function rolActual(): string | null {
+  if (typeof window === "undefined") return null
+  const primero = window.location.pathname.split("/").filter(Boolean)[0] ?? ""
+  return getRoleFromRoute(primero)
 }
 
 /**
@@ -84,7 +111,7 @@ function contextoActual() {
   const tab = document.querySelector('[role="tab"][data-state="active"]')
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
   return {
-    ruta: typeof window !== "undefined" ? window.location.pathname + window.location.search : "",
+    ruta: rutaSinLlave(),
     pantalla: textoLimpio(tab).slice(0, 120),
     modal: textoLimpio(dialogo).slice(0, 160),
     titulo_doc: document.title.slice(0, 160),
@@ -202,7 +229,7 @@ export function NotasParaClaude() {
           titulo: titulo.trim() || capturas[0].texto.slice(0, 80) || "Sin título",
           estado: "finalizada",
           finalizada_at: new Date().toISOString(),
-          usuario: window.location.pathname.split("/")[1] || null,
+          usuario: rolActual(), // el ROL, no la ruta — A-SEC-04
         })
         .select("id")
         .single()
@@ -238,7 +265,14 @@ export function NotasParaClaude() {
 
   return (
     <>
-      {/* Botón fijo — está en toda la app a propósito: la idea aparece donde aparece */}
+      {/* Botón fijo — está en toda la app a propósito: la idea aparece donde aparece.
+          El cartelito `Alt+N` va al lado y no sólo en el `title`: el atajo es la ÚNICA vía cuando
+          hay un modal abierto, así que si no se recuerda, no sirve de nada (pedido del usuario). */}
+      {!grabando && (
+        <span className="fixed bottom-[3.9rem] right-4 z-50 select-none rounded bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 shadow ring-1 ring-violet-200">
+          Alt+N
+        </span>
+      )}
       {!grabando && (
         <button
           onClick={abrirCaptura}
