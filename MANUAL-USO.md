@@ -1233,6 +1233,24 @@ se convirtió en pendiente, con qué ID quedó.
 4. **Capturar** una segunda vez desde otra pantalla y **Finalizar**.
 5. **Click derecho** en 📝: la nota tiene que estar, como *sin leer* y con **2 capturas**.
 
+### 🧪 PRIMERO — que siga guardando <a id="a-test-77"></a> 🟡 *(A-SEC-04, 2026-08-31)*
+
+> ⚠️ **Empezar por acá.** El 31/08 se cerró la seguridad de las notas y eso **tocó cómo se guardan**.
+> Si esto falla, lo de abajo no importa: se arregla esto primero.
+
+1. **Dejá una nota cualquiera** (texto + una captura) y tocá **Finalizar**.
+   → Tiene que decir *«Nota guardada con 1 captura(s)»*. **Si dice "No se pudo guardar", pará y
+   avisá**: el permiso quedó mal.
+2. **Click derecho** en 📝 → la lista tiene que aparecer, **con la nota recién hecha arriba**.
+   Esa lista ahora viene por otro camino (`/api/notas`, del lado del servidor), así que es lo que
+   más chance tiene de haberse roto.
+3. Si la lista sale vacía o con un cartel de error, **la nota igual se guardó** — el problema sería
+   sólo de lectura. Avisá qué dice el cartel.
+
+*Por qué este test existe: al poner los permisos, el guardado se rompió y `type-check` no lo vio —
+el código era idéntico, lo que cambió estaba en la base. Se detectó y arregló probando contra la
+base, pero **el camino del navegador no se probó corriendo la app**.*
+
 ### 🧪 Cómo probar lo nuevo del 2026-08-29 <a id="a-test-74"></a>
 1. **El atajo con un modal abierto** — es lo que más importa. Abrí cualquier modal de la app (por
    ejemplo *vincular anticipo*) y apretá **`Alt + N`**. Tiene que abrirse la ventanita de la nota
