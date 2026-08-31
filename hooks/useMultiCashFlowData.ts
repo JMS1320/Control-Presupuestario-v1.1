@@ -478,6 +478,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: a.estado_pago || 'pendiente',
         comprobante_display: `${tipoLabel} ${a.descripcion || ''}`.trim() || null,
+        // 🐞 **A-BUG-95** — estos tres faltaban, y por eso el mail de "Detalle de pago" de un
+        // anticipo con retención **no la mencionaba**: el cuerpo arma el desglose leyendo
+        // `monto_sicore` de la fila, acá venía `undefined` → `totalRet = 0` → sin renglón.
+        // `debitos` sigue siendo el NETO (es lo que sale de la cuenta, y es lo correcto para el
+        // Cash Flow); el bruto viaja aparte en `imp_total` para poder mostrar la resta completa.
+        imp_total: a.monto || 0,
+        monto_sicore: a.monto_sicore ?? null,
+        descuento_aplicado: a.descuento_aplicado ?? null,
+        monto_a_abonar: monto,
       }
     })
   }

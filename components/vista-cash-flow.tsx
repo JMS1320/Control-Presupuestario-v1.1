@@ -1242,7 +1242,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         if (f.ids_grupo && f.ids_grupo.length) facturaIds.push(...f.ids_grupo)
         else facturaIds.push(f.id)
       }
-      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds })
+      // Un ANTICIPO también puede tener retención, y su certificado se busca por `anticipo_id`
+      // (en esas filas de `sicore_retenciones` el `factura_id` es NULL). Sin esto el certificado
+      // no se adjuntaba nunca y el mail no mencionaba la retención — A-BUG-95.
+      const anticipoIds = fs.filter(f => f.origen === 'ANTICIPO').map(f => f.id)
+      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds, anticipoIds })
       if (!r.ok) err++
       else if (!r.email) sinMail++
       else ok++

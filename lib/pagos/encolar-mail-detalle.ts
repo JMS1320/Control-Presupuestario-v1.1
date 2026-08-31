@@ -25,6 +25,8 @@ export interface EncolarMailParams {
   schemaName: string
   anticipo?: Parameters<typeof generarPDFDetallePago>[4]
   facturaIds?: string[]
+  /** Ids de `anticipos_proveedores` del pago: por acá se busca su certificado de retención (A-BUG-95). */
+  anticipoIds?: string[]
   /** Fallback opcional: registros SICORE ya cargados en pantalla (tab SICORE del modal). */
   registrosFallback?: Array<{ anulado?: boolean; cuit_emisor?: string }>
 }
@@ -37,7 +39,7 @@ export interface EncolarMailResult {
 }
 
 export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarMailResult> {
-  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, registrosFallback } = p
+  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, anticipoIds, registrosFallback } = p
   try {
     // Medios de pago (transferencia + echeq + ...) para el desglose multimedio en el PDF del mail
     const ids = (facturaIds || []).filter(Boolean)
@@ -52,16 +54,32 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
 
     // Certificado SICORE: match por factura_id (comprobantes_arca.fecha_pago suele estar NULL → no sirve
     // fecha_pago). sicore_retenciones.factura_id vincula la retención a la FC del pago.
+    //
+    // 🐞 **A-BUG-95** — todo este bloque estaba detrás de un `if (tipo === 'arca')`, así que
+    // **un ANTICIPO con retención no adjuntaba nunca el certificado**: `tipo` cae en `'template'`
+    // cuando no hay ninguna FC en el grupo, y `sicore_retenciones` se consultaba sólo por
+    // `factura_id` —que en una retención de anticipo es `NULL`—. El registro existía completo
+    // (`origen='anticipo'`, `anticipo_id`, con su `nro_certificado`); simplemente nadie lo buscaba.
+    // Caso testigo: Genoil Co SA, $154.752,79, certificado 00002026000056.
     let retB64: string | null = null
     let fechaPagoReal = ''
-    if (tipo === 'arca') {
+    {
       let regs: Array<Record<string, unknown>> = []
-      const ids = (facturaIds || []).filter(Boolean)
-      if (ids.length) {
+      const COLS = 'cuit_emisor, denominacion_emisor, fecha_pago, total_pagado, retencion, tipo_sicore, nro_comprobante, nro_certificado'
+      const idsFC = (facturaIds || []).filter(Boolean)
+      const idsAnt = (anticipoIds || []).filter(Boolean)
+
+      if (idsFC.length) {
         const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
-          .select('cuit_emisor, denominacion_emisor, fecha_pago, total_pagado, retencion, tipo_sicore, nro_comprobante, nro_certificado')
-          .in('factura_id', ids).eq('anulado', false)
+          .select(COLS).in('factura_id', idsFC).eq('anulado', false)
         regs = (data || []) as Array<Record<string, unknown>>
+      }
+      // Las retenciones de anticipo se vinculan por `anticipo_id`. Se SUMAN a las de factura en vez
+      // de reemplazarlas: un mismo pago puede llevar facturas y anticipos juntos.
+      if (idsAnt.length) {
+        const { data } = await supabase.schema(schemaName).from('sicore_retenciones')
+          .select(COLS).in('anticipo_id', idsAnt).eq('anulado', false)
+        regs = [...regs, ...((data || []) as Array<Record<string, unknown>>)]
       }
       if (!regs.length && cuitClean && registrosFallback) { // fallback: registros cargados en pantalla
         regs = registrosFallback.filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>

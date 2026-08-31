@@ -123,9 +123,18 @@ export function schemaDeEmpresa(empresa: Empresa): string {
  * viejas. Sin esto, el UPDATE de una FC de PAM iba a la tabla de MSA, donde matchea 0 filas y
  * **no falla** — el bug silencioso que motivó A-FEAT-13.
  */
+/** Los schemas que existen de verdad. Cualquier otra cosa NO es un schema. */
+const SCHEMAS_REALES = new Set(['msa', 'pam', 'ma', 'productivo', 'sueldos'])
+
 export function schemaDeFila(fila?: { origen_tabla?: string } | null): string {
   const prefijo = fila?.origen_tabla?.split('.')[0]
-  return prefijo && prefijo !== 'public' ? prefijo : 'msa'
+  // ⚠️ **Sólo se acepta un prefijo que sea un schema real.** No todas las filas traen
+  // `schema.tabla`: las de `public` vienen con el nombre pelado (`anticipos_proveedores`), y sin
+  // este filtro `split('.')[0]` devolvía **`'anticipos_proveedores'` como si fuera un schema** —
+  // la consulta apuntaba a un schema inexistente. Encontrado al arreglar A-BUG-95, donde habría
+  // hecho que el certificado de retención de un anticipo no apareciera **sin ningún error**.
+  // Es el mismo modo de falla que motivó A-FEAT-13: apuntar mal y que nada se queje.
+  return prefijo && SCHEMAS_REALES.has(prefijo) ? prefijo : 'msa'
 }
 
 /** ¿La fila es de MSA? Lo que es exclusivo de MSA (SICORE, echeq, agrupar) se pregunta con esto. */
