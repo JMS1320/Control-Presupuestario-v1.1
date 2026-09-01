@@ -208,6 +208,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-DOC-01 | ✅ | **Alta** | **Lista de dimensiones cerrada** — DECIDIDO 2026-08-02: 8 dimensiones + regla de cierre + **Claude no crea dimensiones sin autorización**. Aplicado a `CLAUDE.md` | → [A-DOC-01](#a-doc-01) |
+| A-DOC-02b | 🔴 | Baja | **Consolidar la documentación de SICORE** — 2 archivos vivos del mismo módulo (51 KB + 12 KB, abr-2026), posiblemente contradictorios. Tenía dossier desde el 02/08 **pero nunca fila de índice**: era trabajo invisible (no salía en el panel ni al preguntar "qué falta"). Detectado 2026-08-29 | → [A-DOC-02b](#a-doc-02b) `@general` |
 | A-DOC-02 | ✅ | Media | 13 docs de módulo con 4 convenciones → **renombrados a `MODULO_*` 2026-08-02** (`git mv`, historial intacto) + `MODULO_ARCA.md` creado | → [A-DOC-02](#a-doc-02) |
 | A-DOC-02b | 🔴 | Baja | **Consolidar SICORE** — quedan `MODULO_SICORE.md` (51 KB) + `MODULO_SICORE_RETENCIONES.md` (12 KB) + la historia cruda en `arca-api/`. Abordar al tocar el módulo | → [A-DOC-02b](#a-doc-02b) |
 | A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) `@general` |
@@ -1939,6 +1940,78 @@ cuentas, jerarquía de cuentas, `Libro Diario 24-25.xlsx`.
 
 **Relación con el norte:** es el primer evento concreto donde el sistema tiene que **reemplazar
 trabajo manual**, no sólo informar.
+
+---
+
+## 🔎 Relevamiento 2026-08-31 — qué tenemos, qué falta
+
+*Primer trabajo real sobre A-FEAT-09. Contexto tomado de `PENDIENTES`, de la BD y de fuentes
+externas sobre qué pide un cierre de ejercicio en Argentina.*
+
+### 🔴 El hallazgo que ordena todo lo demás
+
+**La app no lleva partida doble.** Es un registro de comprobantes y movimientos clasificados por
+cuenta: no hay Diario, no hay Mayor, no hay asientos. Y el plan de cuentas lo confirma:
+
+| Grupo | Qué es | Cuentas |
+|---|---|---:|
+| 1 | Activo | **3** |
+| 2 | Pasivo | **0** |
+| 3 | Patrimonio Neto | **0** |
+| 4 | Resultados | **119** |
+
+Es un **plan de cuentas de resultados, sin patrimoniales**. Con eso se llega a material de Estado de
+Resultados; **un Estado de Situación Patrimonial no sale**, porque las cuentas no existen.
+
+### 💡 Y por eso el alcance hay que leerlo bien — ⏸️ ESPERA CONFIRMACIÓN DEL USUARIO
+
+A-FEAT-09 no dice *"que la app haga el balance"*: dice **"que los papeles de trabajo sean un export
+del sistema"**. Los papeles son **los respaldos que se le dan al contador**, y el balance lo arma él.
+**No hace falta convertir esto en un sistema de partida doble antes del 01/10.**
+
+> ❓ **Pregunta abierta al usuario:** *¿el contador pide papeles de trabajo, o espera el balance
+> armado?* De eso depende si el montón 🔴 hay que tocarlo este ejercicio.
+
+### Los cuatro montones
+
+**✅ Ya está:** Libro IVA Compras y Ventas (PDF + Excel en un click, con control de cuadratura) ·
+subdiarios de las 3 empresas · extracto conciliado (**695 movimientos** del ejercicio) · Reporte
+Detallado por cuenta con export · pagos y cobros con retenciones y SICORE · sueldos · stock de
+hacienda e insumos.
+
+**🟡 Relativamente fácil — el dato está, falta el papel:** sumas y saldos de resultados (el Reporte
+Detallado ya es casi eso) · composición de proveedores al 30/06 (facturas impagas) · composición de
+deudores (el saldo ya se recalcula) · conciliación bancaria al cierre.
+
+> ⚠️ **Bloqueante transversal, y es chico: NO EXISTE EL EJERCICIO COMO FILTRO.**
+> Todo filtra por **año + semestre calendario**, y el ejercicio va del **1/7 al 30/6**.
+> Se revisó `año_contable` esperando que sirviera y **no sirve**: su "2026" arranca en 09/2025 y
+> termina en 08/2026, **cruzando el corte**. Ningún reporte puede recortarse al ejercicio hoy.
+> **Es lo primero y lo más barato**, y todo lo demás cuelga de ahí.
+
+**🟠 Más difícil — es trabajo de datos, no de código.** La clasificación del ejercicio 25/26 está
+incompleta y despareja (medido 2026-08-31):
+
+| Fuente | Filas | Con `categ` (texto) | Con `nro_cuenta` |
+|---|---:|---:|---:|
+| Extracto Galicia | 695 | **695 (100 %)** | 106 (15 %) |
+| Compras ARCA | 341 | 294 (86 %) | 236 (69 %) |
+| **Tarjeta Visa** | **204** | **7 (3 %)** | 5 (2 %) |
+
+El banco está clasificado por texto pero casi sin número → eso es [C-24](#c-24).
+**La tarjeta es el agujero real: 204 movimientos, 7 clasificados.** Son decisiones de imputación del
+usuario, no código. Acá también: **existencias valorizadas al 30/06** (hay cabezas y kilos, falta la
+valuación) y **bienes de uso con amortizaciones** (existe `presupuesto_inversiones`, pero no un
+registro de altas/bajas/amortización acumulada).
+
+**🔴 A desarrollar por completo:** cuentas patrimoniales (activo/pasivo/PN) · Libro Diario y Mayor /
+partida doble · ajuste por inflación · provisiones y devengamientos al cierre (cargas sociales,
+aguinaldo, impuestos).
+
+### Qué se hace primero
+**El filtro por ejercicio (1/7–30/6).** Chico, no toca a ninguna otra terminal, y sin eso ningún
+papel se recorta bien. Después, los papeles de a uno **a medida que el usuario arma el balance** —
+que es como ya estaba decidido más arriba.
 
 ---
 
