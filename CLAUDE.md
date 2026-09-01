@@ -385,6 +385,13 @@ tomado.**
 también sus referencias cruzadas (el dossier, el manual, los comentarios del código), y se deja
 intacto todo lo del otro.
 
+↻ **Confirmada por tercera vez el 2026-08-31, y en su versión más extrema: una reserva de DOS
+DÍAS.** T2 consultó el 29/08 (`A-TEST-74/75/76` libres), usó el 75 el 31/08 sin volver a mirar, y en
+el medio otra terminal había ocupado el 75 y el 76. **Un chequeo de ID tiene fecha de vencimiento:
+vale para el momento en que se hizo, no para cuando se usa.** Si entre consultar y escribir hubo
+cualquier pausa —una hora o dos días—, **se vuelve a consultar**. Lo agarró el control y se renumeró
+el recién llegado (`A-TEST-77`).
+
 *Motivo: es el único recurso compartido que **no es un archivo** — dos terminales pueden inventar el
 mismo ID sin tocar la misma línea, así que ninguna de las 11 reglas anteriores lo cubre. El control
 `verificar-parser-pendientes.mts` lo detecta, pero **detecta después**: para cuando avisa, el ID ya se

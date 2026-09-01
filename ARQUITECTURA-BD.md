@@ -361,6 +361,25 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 - Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`. No hay constraint porque cruzan schemas.
 - **`pendientes_comentarios.pendiente_id` → un ID de `PENDIENTES.md`** (`'A-BUG-27'`). Es el único link que **no apunta a la BD sino a un archivo**: los pendientes viven en un `.md` versionado, no en una tabla. Ver § 6c.
 
+### 6b-bis. RLS de las notas — el único caso de `anon` sólo-INSERT (2026-08-31)
+
+`notas_para_claude` y `notas_capturas` tienen **RLS activa con una sola política cada una**:
+`FOR INSERT TO anon WITH CHECK (true)`. **`anon` no puede leer, ni actualizar, ni borrar.**
+
+| | |
+|---|---|
+| **Por qué INSERT sí** | dejar una nota tiene que ser instantáneo desde el navegador; si alguien inserta basura es molesto, **no es una fuga** |
+| **Por qué SELECT no** | guardaban `ruta = "/adminjms1320"`, y en esta app **la ruta es la contraseña**. La tabla entera era legible con la clave `anon`, que viaja en el bundle → A-SEC-04 |
+| **Cómo se lee entonces** | por **`GET /api/notas`**, del lado del servidor, con `lib/supabase-admin.ts` (`SERVICE_ROLE_KEY`, que saltea RLS y nunca sale del servidor) |
+
+⚠️ **Consecuencia no obvia, y rompió el guardado:** con `anon` sólo-INSERT, un
+**`INSERT ... RETURNING` falla** — devolver la fila requiere permiso de `SELECT`. Todo
+`.insert(...).select(...)` de supabase-js contra estas tablas **da `42501`**. Por eso el `id` de la
+nota se genera en el cliente (`crypto.randomUUID()`) y se inserta explícito.
+
+> Esto **no** reemplaza a `A-SEC-03`: mientras todos entren como `anon`, ni la RLS ni el endpoint
+> saben **quién** pregunta. Lo que cambia es que la puerta abierta **deja de dar a la tabla entera**.
+
 ### 6c. Las 3 bandejas de entrada del usuario (2026-08-19)
 
 Tres tablas donde el usuario le escribe a Claude desde la app. **Ninguna es fuente de verdad**: son

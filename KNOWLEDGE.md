@@ -68,6 +68,33 @@ otra pantalla — no está más atrasada, **abarca más**.
 
 **TARJETAS no tiene vista propia**: vive dentro de `components/vista-extracto-bancario.tsx`.
 
+## ⚠️ Poner RLS rompe todo `.insert().select()` — y el compilador no lo ve `#rls #supabase #seguridad #2026-08-31`
+
+**El caso, real:** se le puso RLS a las tablas de notas con una sola política, `INSERT` para `anon`.
+El guardado dejó de funcionar. Medido:
+
+```
+INSERT sin RETURNING  → OK
+INSERT con RETURNING  → 42501: new row violates row-level security policy
+```
+
+**La regla de Postgres:** un `INSERT ... RETURNING` **necesita además permiso de `SELECT`**, porque
+devolver la fila es leerla. Y en supabase-js **todo `.insert(...).select(...)` genera un
+`RETURNING`** — que es el patrón por defecto cuando se necesita el `id` de lo recién creado.
+
+**Las dos salidas:**
+- generar el `id` en el cliente (`crypto.randomUUID()`) e insertarlo explícito, **sin pedir nada de
+  vuelta** ← lo que se hizo, deja a `anon` con el permiso mínimo;
+- o mover la escritura al servidor con `lib/supabase-admin.ts`, si además hay que validar algo.
+
+⚠️ **Vale para cualquier tabla a la que se le active RLS de acá en adelante.** Antes de poner una
+política, buscar los `.insert(` de esa tabla y ver si alguno pide la fila de vuelta.
+
+> **Lo importante no es el error, es cómo se encontró.** `type-check` estaba en verde y siguió en
+> verde: **el código no cambió, cambió la base**. Se detectó probando contra Postgres con
+> `SET LOCAL ROLE anon` dentro de una transacción con `ROLLBACK` — que verifica de verdad y **no
+> deja ningún dato**. Es la forma barata de probar un permiso antes de que lo descubra el usuario.
+
 ## ⚠️ `npm run build` NO valida tipos — usar `type-check:diff` `#build #tipos #2026-08-18`
 
 **Verificado el 2026-08-18**: el build imprimió `✓ Compiled successfully` con **2 errores de tipos
