@@ -259,7 +259,7 @@ repo: reglas permanentes en un archivo descartable es exactamente lo que no hay 
 > operativo — mismo estatus que `memory/`). Ahí va **sólo el estado vivo**: quién tiene qué, qué va a
 > necesitar y qué quedó a medias. **Las reglas son éstas y no se duplican allá.**
 
-**Las 12 reglas.** Cada una con su motivo, porque el motivo es lo que hace que se respete a las 3 de
+**Las 13 reglas.** Cada una con su motivo, porque el motivo es lo que hace que se respete a las 3 de
 la tarde del tercer día.
 
 **1 · Tomar antes de escribir.** Antes de editar un archivo, anotarlo en el tablero. Si ya está
@@ -331,7 +331,7 @@ leé `CLAUDE.md` § Trabajo en paralelo y `.claude/SESION-PARALELA.md`"*. Y desp
 2. **Leer** lo que declaró la otra.
 3. **Empezar.**
 
-⚠️ **No se re-discuten las 12 reglas.** Ya están acordadas y con sus motivos: discutirlas de nuevo
+⚠️ **No se re-discuten las 13 reglas.** Ya están acordadas y con sus motivos: discutirlas de nuevo
 cuesta media hora y termina en lo mismo. Lo único que se conversa es **lo específico de esta
 sesión** — qué toma cada una y dónde se cruzan. Si aparece un hueco real del protocolo, se propone
 al final, no al principio.
@@ -397,6 +397,23 @@ mismo ID sin tocar la misma línea, así que ninguna de las 11 reglas anteriores
 `verificar-parser-pendientes.mts` lo detecta, pero **detecta después**: para cuando avisa, el ID ya se
 propagó. Pasó **dos veces en un día, en los dos sentidos**, y la segunda con las dos terminales
 haciendo bien la consulta — por eso la regla no puede terminar en "fijate antes".*
+
+**13 · `memory/` también es compartido — y ahí NO hay red.** Las reglas 1-12 protegen el repo. Pero
+`memory/` (y `.claude/`) están **fuera de git**: si dos terminales escriben el mismo archivo, la
+segunda pisa a la primera **sin conflicto, sin aviso y sin historial para recuperarlo**. Es el único
+lugar donde la pérdida es **definitiva**.
+
+- **Los archivos con nombre predecible llevan la terminal**: `project_cierre_**t1**_YYYY_MM_DD.md`.
+  Un cierre por fecha es el caso obvio — las dos terminales cierran el mismo día y eligen el mismo
+  nombre sin pensarlo.
+- **Antes de `Write` sobre `memory/`, mirar si el archivo ya existe.** Si existe y no es tuyo, **no
+  se pisa**: se escribe al lado y se indexa en `MEMORY.md`.
+- Si encontrás una memoria ajena sin línea en `MEMORY.md`, **agregala** en vez de dejarla huérfana:
+  una memoria fuera del índice no la lee nadie, que es casi lo mismo que haberla perdido.
+
+*Motivo: pasó el 2026-09-01. Las dos terminales escribimos `project_cierre_2026_08_31.md` y la
+segunda se llevó puesto el cierre de la primera. En el repo eso lo hubiera atajado git; acá no hay
+nada. **Es la pérdida silenciosa de la regla 1, en el único sitio sin marcha atrás.***
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
@@ -619,7 +636,7 @@ maestro no debe tener nombres de tabla de este proyecto.
 - **💰 Inputs monetarios** → principio: *montos como texto en el formato local, nunca `type="number"`*.
 - **🔧 Git** → principio: *nunca commitear a producción; el merge lo autoriza el usuario después
   del testing*.
-- **🔀 Trabajo en paralelo con 2 terminales** (2026-08-18) — la **§ de arriba va tal cual**: las 12
+- **🔀 Trabajo en paralelo con 2 terminales** (2026-08-18) — la **§ de arriba va tal cual**: las 13
   reglas con sus motivos son portables y no tienen un solo nombre propio de este proyecto (el único
   anclaje es la ruta del tablero, y va en el `📍 Acá:`). Principio: *con 2 terminales sobre el mismo
   working tree no hay aislamiento y git no protege nada — la única protección es un tablero declarado
