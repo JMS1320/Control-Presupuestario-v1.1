@@ -1583,3 +1583,26 @@ período de bajo consumo**, cuando había pasto. No es un error: es exactamente 
 **Los 55 comieron 2,00 kg/cab/día y los 40 comieron 2,32.** No es que hayan comido distinto: **los
 55 se fueron el 04/08 y se perdieron el mes de mayor consumo.** El que se queda más tiempo entra en
 los meses caros — y eso es lo que hay que poder ver al decidir cuándo vender.
+
+### 17.12 · La factura que llega después: el sistema sabía cuál era (2026-08-31)
+
+El usuario importó de ARCA la FC del maíz y preguntó: *«¿debería la app proponer vincularla contra
+la compra de maíz que espera factura?»*. **Sí — y el caso muestra por qué.**
+
+Lo que el sistema ya sabía, sin que nadie se lo dijera:
+
+| Señal | |
+|---|---|
+| Hay **una** entrega sin respaldo | 24.920 kg del 29/08, LONGO |
+| Entra una FC del **mismo proveedor** | LONGO, 0002-00000531 del 30/08 |
+| El precio que resultaría es **redondo y coherente** | $6.740.860 ÷ 24.920 = **$270,50**, contra $267,50 y $267,05 de las anteriores |
+
+Tres señales independientes apuntando al mismo lugar, y el usuario igual tuvo que buscarla a mano.
+
+🎯 **Pero se propone, no se aplica.** Un vínculo mal hecho **inventa stock o inventa precio**, y eso
+no se detecta después — es la lección de A-DOC-11 (*un respaldo parcial no es una compra nueva*).
+El norte administrativo dice automatizar la **búsqueda**, no la **decisión**.
+
+**La señal más valiosa es la tercera**, y es la que un buscador por proveedor no tiene: que el precio
+derivado caiga cerca de la mediana de las otras entregas del mismo insumo. Ese cálculo **ya existe**.
+→ [A-FEAT-73](PENDIENTES.md#a-feat-73).
