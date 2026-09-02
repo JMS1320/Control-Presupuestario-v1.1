@@ -8,6 +8,11 @@ node_modules/
 out/
 build/
 
+# Caché de compilación de TypeScript — se regenera en cada build (326 KB que cambian
+# siempre). Estuvo trackeado hasta 2026-09-02: con 2 desarrolladores daba un conflicto
+# por merge en un archivo que nadie puede leer ni resolver.
+tsconfig.tsbuildinfo
+
 # Environment variables
 .env
 .env.local
