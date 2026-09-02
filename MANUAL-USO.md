@@ -1270,6 +1270,47 @@ base, pero **el camino del navegador no se probó corriendo la app**.*
    **de ese** modal, no *«Nueva nota para Claude»*. Si dice eso último, el contexto se está
    capturando tarde.
 
+### 🔎 La cinta de diagnóstico 🟡 *(nuevo 2026-09-02, sin testear — A-TEST-81)*
+
+> Diseño y motivos → `PENDIENTES.md` § A-FEAT-72.
+
+**Qué hace.** Cuando algo falla, el renglón que **resuelve** el bug no se ve en la captura: es algo
+como `23503 · violates foreign key constraint "anticipos_proveedores_factura_id_fkey"`. Ahora la app
+se acuerda de los **últimos 50 eventos técnicos** y los adjunta a la nota sola.
+
+**Cómo se usa: no se usa.** No hay que prender nada ni acordarse de nada. Se usa la app, algo se
+rompe, `Alt + N`. Si hubo eventos, la ventanita de la nota muestra un renglón amarillo:
+
+> 🔎 **Se adjuntan 3 evento(s) técnico(s) — tocá para verlos**
+
+Tocalo y vas a ver exactamente qué se manda. Está a la vista a propósito: es la única forma de que
+puedas controlar que no viaja nada que no querés.
+
+⚠️ **No refresques la página antes de dejar la nota.** El refresh borra la cinta — que es justo lo
+que querés que Claude lea. Si ya refrescaste, la nota sirve igual, pero sin los eventos.
+
+**Qué NO va a resolver** (para que no te frustre): sirve para lo que **tira error**. Un número mal
+calculado que no falla —como el Cash Flow que proyectaba $181 M— no deja rastro en la cinta; ése sale
+de los datos. Y para las mejoras (*"quiero decimales acá"*) no aporta nada.
+
+#### 🧪 Cómo probarlo <a id="a-test-81"></a>
+1. **Que capture algo.** Provocá un error cualquiera de la app — vale el más fácil: **apagá el wifi**
+   y tocá cualquier cosa que traiga datos. Después `Alt + N`.
+   → Tiene que aparecer el renglón amarillo con al menos 1 evento. Si no aparece, la cinta no se
+   enganchó y hay que avisar.
+2. **Que se entienda.** Desplegalo. Cada renglón tiene **hora**, **tipo** (`ERROR` / `WARN` / `RED` /
+   `DB`), a veces un **código** (`23503`, `409`) y **dónde** (`app/egresos/page.js:120` o
+   `POST /anticipos_proveedores`).
+3. 🔒 **El control que más importa — que NO se filtre nada.** Escribí algo reconocible en cualquier
+   campo de la app (por ejemplo `PRUEBA-SECRETA-123` en un buscador o en un monto), provocá el error,
+   y mirá la lista de eventos.
+   → **Esa palabra no puede aparecer por ningún lado.** Si aparece, pará y avisá: se rompió la lista
+   blanca, que es lo único que hace que esto sea seguro.
+4. **Que llegue.** Finalizá la nota. Después avisame y verifico en la base que
+   `notas_capturas.diagnostico` tenga los eventos.
+5. **Que no se repita.** Con una nota grabando, hacé **2 capturas** con un error en el medio.
+   → El error tiene que aparecer en **una sola** de las dos, no en las dos.
+
 ---
 
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*

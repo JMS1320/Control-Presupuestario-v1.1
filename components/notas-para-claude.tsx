@@ -34,6 +34,9 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, NotebookPen, Camera, Check, X, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
 import { getRoleFromRoute } from "@/config/access-routes"
+import {
+  instalarCinta, mirarCinta, confirmarCorte, reiniciarCorte, type EventoDiagnostico,
+} from "@/lib/cinta-diagnostico"
 
 /** Ancho máximo de la captura guardada. Suficiente para leer un cartel, liviano para la fila. */
 const ANCHO_MAX = 1400
@@ -48,6 +51,8 @@ interface Captura {
   titulo_doc: string
   imagen: string
   user_agent: string
+  /** Los eventos técnicos previos a ESTA captura — A-FEAT-72. Ver `lib/cinta-diagnostico.ts`. */
+  diagnostico: EventoDiagnostico[]
 }
 
 /**
@@ -144,6 +149,16 @@ export function NotasParaClaude() {
   const [notas, setNotas] = useState<any[]>([])
   const ctxRef = useRef(contextoActual())
 
+  /** La cinta de diagnóstico congelada al abrir la captura, igual que `ctxRef` — A-FEAT-72. */
+  const diagRef = useRef<EventoDiagnostico[]>([])
+
+  /**
+   * La cinta se engancha acá porque este componente vive en el layout: está montado en toda la app,
+   * que es exactamente el alcance que necesita. `instalarCinta()` es idempotente, así que el doble
+   * montaje de StrictMode en desarrollo no la duplica.
+   */
+  useEffect(() => { instalarCinta() }, [])
+
   /** Pegar desde el portapapeles: es la vía principal para traer la captura. */
   const pegar = useCallback(async (e: ClipboardEvent) => {
     const item = Array.from(e.clipboardData?.items ?? []).find(i => i.type.startsWith("image/"))
@@ -169,6 +184,10 @@ export function NotasParaClaude() {
     // El contexto se congela ANTES de abrir el modal: si no, el modal se capturaría a sí mismo
     // como "el modal abierto" y perderíamos dónde estaba realmente el usuario.
     ctxRef.current = contextoActual()
+    // Y la cinta se mira en el mismo instante y por el mismo motivo: lo que interesa es lo que pasó
+    // ANTES de abrir la nota. El corte se confirma recién al agregar la captura, así cancelar no
+    // borra los eventos (ver `mirarCinta`).
+    diagRef.current = mirarCinta()
     setTexto("")
     setImagen("")
     setModalCaptura(true)
@@ -200,7 +219,11 @@ export function NotasParaClaude() {
 
   const agregarCaptura = () => {
     if (!texto.trim() && !imagen) { toast.error("Escribí algo o pegá una captura"); return }
-    setCapturas(cs => [...cs, { orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current }])
+    setCapturas(cs => [...cs, {
+      orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current,
+      diagnostico: diagRef.current,
+    }])
+    confirmarCorte(diagRef.current.length) // ya viajan en esta captura: la próxima arranca después
     setModalCaptura(false)
     if (!grabando) setGrabando(true)
     toast.success(`Captura ${capturas.length + 1} agregada`)
@@ -281,6 +304,7 @@ export function NotasParaClaude() {
   const descartar = () => {
     if (capturas.length > 0 && !window.confirm(`¿Descartar la nota y sus ${capturas.length} captura(s)?`)) return
     setCapturas([]); setGrabando(false)
+    reiniciarCorte() // que la próxima nota no arrastre los eventos de ésta
   }
 
   return (
@@ -376,6 +400,38 @@ export function NotasParaClaude() {
               ctxRef.current.modal && `modal «${ctxRef.current.modal}»`,
               ctxRef.current.ruta].filter(Boolean).join(" · ")}
           </div>
+
+          {/*
+            🔎 La cinta de diagnóstico — A-FEAT-72.
+
+            Se muestra y no se adjunta en silencio, por dos motivos. Uno: es el control de que la
+            cinta ANDA — sin esto no hay forma de saber si capturó algo hasta abrir la base
+            (§ CLAUDE.md «todo desarrollo termina con su control, y el control se ve»). Dos: el
+            usuario tiene que poder VER qué se manda, que es la única manera de creerle a la lista
+            blanca.
+          */}
+          {diagRef.current.length > 0 && (
+            <details className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4">
+              <summary className="cursor-pointer font-medium text-amber-800">
+                🔎 Se adjuntan {diagRef.current.length} evento(s) técnico(s) — tocá para verlos
+              </summary>
+              <ul className="mt-1.5 space-y-1 font-mono text-[10px] text-amber-900">
+                {diagRef.current.map((ev, i) => (
+                  <li key={i} className="border-t border-amber-200/70 pt-1">
+                    <span className="text-amber-600">{ev.hora}</span>{" "}
+                    <span className="font-semibold uppercase">{ev.tipo}</span>
+                    {ev.codigo && <span className="ml-1 rounded bg-amber-200 px-1">{ev.codigo}</span>}
+                    {ev.donde && <div className="text-amber-700">{ev.donde}</div>}
+                    <div className="whitespace-pre-wrap break-words">{ev.msg}</div>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 border-t border-amber-200 pt-1 text-[10px] text-amber-700">
+                Nunca viaja lo que escribiste en un campo, ni el contenido de las llamadas: sólo
+                mensajes de error, el archivo y línea, y el camino de la llamada que falló.
+              </p>
+            </details>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setModalCaptura(false)}>Cancelar</Button>

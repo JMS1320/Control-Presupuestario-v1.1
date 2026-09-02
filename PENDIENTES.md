@@ -252,7 +252,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-SEC-01 | 🔴 | Alta | 👤 Javier · Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
 | **A-SEC-04** | 🟡 | **Alta** | 👤 Javier · **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
-| A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
+| **A-FEAT-72** | 🟡 | Feat | **Cinta de diagnóstico en las notas.** ✅ **HECHO 2026-09-02, sin testear ([A-TEST-81](#a-feat-72))**: `lib/cinta-diagnostico.ts` (anillo de 50 eventos, lista blanca) + columna `notas_capturas.diagnostico` + los eventos se ven en el modal antes de guardar. La cinta viaja **por captura**, no por nota | → [A-FEAT-72](#a-feat-72) `@general` |
+| A-TEST-81 | 🔴 | Test | **Cinta de diagnóstico** (A-FEAT-72) — provocar un error, dejar la nota con `Alt+N` y ver que los eventos aparecen en el modal y llegan a `notas_capturas.diagnostico`. Y el control que importa: que **nada tipeado en un campo** aparezca en la cinta. 5 pasos en `MANUAL-USO.md` § Notas para Claude | → [A-FEAT-72](#a-feat-72) `@general` |
 | A-SEC-03 | 🔴 | **Alta** | 👤 Javier · **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
@@ -9092,6 +9093,41 @@ guarda nunca**, porque el contenido de los campos no está en la lista.
 
 **Depende de [A-SEC-04](#a-sec-04):** guardar diagnóstico en una tabla que `anon` lee entera es
 sumarle valor al robo. **Primero RLS, después la cinta.**
+
+### ✅ IMPLEMENTADO 2026-09-02 — sin testear ([A-TEST-81](#a-feat-72))
+*La dependencia estaba cumplida: A-SEC-04 puso la RLS el 31/08 (`anon` sólo INSERT).*
+
+**Qué se construyó:**
+- **`lib/cinta-diagnostico.ts`** — anillo de 50 eventos en memoria, que se pisa solo y no sale del
+  navegador hasta que se deja una nota. Se engancha desde `NotasParaClaude` (vive en el layout, así
+  que cubre toda la app) y es idempotente, para que StrictMode no lo duplique.
+- **Columna `public.notas_capturas.diagnostico jsonb NOT NULL DEFAULT '[]'`** — aditiva, no toca
+  datos ni RLS. Aplicada con el MCP el 2026-09-02.
+- **Se ve antes de guardar**: el modal de captura muestra los eventos que se van a adjuntar, con su
+  detalle desplegable. Es el control (§ CLAUDE.md *«el control se ve»*) **y** la única forma de que
+  el usuario le crea a la lista blanca: puede leer exactamente qué se manda.
+
+**Las 4 fuentes, y lo que cada una deja afuera:**
+
+| Fuente | Se guarda | NO se toca |
+|---|---|---|
+| `window.onerror` | mensaje + `archivo:línea` | los errores sin mensaje (un recurso que no cargó) |
+| `unhandledrejection` | mensaje + origen del stack + `code` | el stack entero |
+| `console.error` / `.warn` | strings y el `.message` de un `Error` | **objetos**: se reducen a `[object]`, nunca se serializan · `console.log` no se toca |
+| `fetch` que **falla** | método + **camino** + status + `{code, message, details, hint}` de PostgREST | el **query string** (ahí van los filtros), los headers, el body, y las llamadas que salen bien |
+
+⚠️ **Dos decisiones que sostienen la lista blanca y conviene no revertir sin pensarlas:**
+1. **Los objetos de `console` no se serializan.** Un `JSON.stringify` sería cómodo y es exactamente
+   lo que filtraría el formulario entero el día que alguien loguee un payload.
+2. **El query string se corta.** El dossier dice *"método + camino"*; en PostgREST el query lleva los
+   valores de los filtros, que son datos.
+
+**Detalle fino:** la cinta se **mira** al abrir la captura y el corte se **confirma** al agregarla.
+Si se corriera al abrir, cancelar la captura **borraría** los eventos — y quien abre la nota, se
+arrepiente y la vuelve a abrir perdería justo el error que venía a reportar.
+
+**Verificado:** `build` OK y `type-check:diff` 113 → 113. **Nada probado en el navegador** — eso es
+[A-TEST-81](#a-feat-72).
 
 ---
 
