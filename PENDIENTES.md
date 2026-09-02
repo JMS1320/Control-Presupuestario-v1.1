@@ -240,13 +240,20 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-06 | 🟡 | Refactor fechas FASE TEMPLATES (`fecha_pago` separado de venc) — testear en preview ANTES de fase ARCA | → [A-TEST-06](#a-test-06) `@egresos @cashflow` |
 
 ### Seguridad
+*👤 **Dueño desde 2026-09-02: Javier**, segundo desarrollador, en su propio clon y su propia rama
+(ver `CLAUDE.md` § 👥 Segundo desarrollador). Su alcance es **seguridad y logueo**: `A-SEC-01`,
+`A-SEC-03` y `A-SEC-04`. `A-SEC-03` es el fix de fondo y tiene el plan de 9 pasos ya escrito en
+`MODULO_USUARIOS.md` desde abr-2026.*
+⚠️ **La BD es una sola para todas las ramas**: cualquier RLS, rol o permiso que se aplique acá rompe
+la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de aplicar.
+
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
-| **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
+| A-SEC-01 | 🔴 | Alta | 👤 Javier · Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
+| **A-SEC-04** | 🟡 | **Alta** | 👤 Javier · **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
 | A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
-| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
+| A-SEC-03 | 🔴 | **Alta** | 👤 Javier · **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
 ### 🤖 Automatizaciones (`A-AUTO-NN`) — el norte administrativo

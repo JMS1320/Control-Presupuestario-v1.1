@@ -237,11 +237,56 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 ### 🔧 Git
 > **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
 > merge lo autoriza el usuario **después** de confirmar el testing.
-> **📍 Acá:** la rama de trabajo es **`desarrollo`** y la de producción **`main`**, con auto-deploy
-> de Vercel (por eso mergear = publicar).
+> **📍 Acá:** la rama de trabajo de JMS es **`jms/dia-a-dia`**, la de integración **`desarrollo`** y
+> la de producción **`main`**, con auto-deploy de Vercel (por eso mergear a `main` = publicar).
 
-- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
-- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
+⚠️ **Cambio de rumbo 2026-09-02** — hasta esa fecha la regla decía *"pushear siempre a `desarrollo`"*.
+**Ya no.** Desde que hay un segundo desarrollador (Javier, en seguridad y logueo), cada uno tiene su
+rama y `desarrollo` pasó a ser **rama de integración**: se mergea a ella, no se escribe en ella.
+
+```
+jms/dia-a-dia ─┐
+               ├─→ desarrollo ─→ main  (auto-deploy Vercel = producción)
+javier/…      ─┘   (integración)
+```
+
+- **Pushear SIEMPRE a `jms/dia-a-dia`.** Nunca commitear directo a `desarrollo` ni a `main`.
+  Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **`jms/dia-a-dia`**.
+- Los **dos** merges los autoriza el usuario: `jms/dia-a-dia → desarrollo` y `desarrollo → main`
+  (este último sólo con el testing confirmado, como siempre).
+- La rama de Javier la crea y la nombra **él**. Al 2026-09-02 todavía no existe en el remoto.
+  No adivinar el nombre: `git for-each-ref refs/remotes/origin` lo dice, pero **sólo después de que
+  él la pushee** — una rama local en su máquina es invisible acá.
+
+### 👥 Segundo desarrollador en OTRO clon — qué protege git y qué no (REGLA)
+*Agregada 2026-09-02, al sumarse Javier (seguridad y logueo) con su propio clon y su propia rama.*
+
+> ⚠️ **No confundir con la § siguiente.** Son dos situaciones opuestas y la confusión es cara:
+> **2 terminales sobre el MISMO working tree → git no protege nada** (mismo árbol, mismo índice; la
+> última escritura gana en silencio). **2 clones distintos → git sí protege el código**: cada uno
+> tiene su árbol, su índice y su rama, y lo que se pisa aparece como conflicto de merge, a la vista.
+> Las 13 reglas de la § siguiente **no aplican** a Javier. Aplican entre terminales de esta máquina.
+
+**Pero quedan dos recursos compartidos que git no cubre**, y son los que hay que vigilar:
+
+**1 · La BD de Supabase es UNA SOLA.** Local, previews de Vercel y producción apuntan al mismo
+proyecto. **Las ramas separan el código, no el dato.** Y esto pega fuerte justo acá, porque el
+trabajo de Javier es RLS, roles y logueo: si él pone RLS a una tabla, la app del otro se rompe al
+instante aunque su rama no tenga un solo cambio suyo — y el `type-check` sigue en verde, porque no
+es un problema de tipos.
+*Motivo: ya pasó el 2026-08-31, con una sola persona. Poner RLS a las notas rompió el guardado
+(`INSERT…RETURNING` necesita `SELECT`) sin que nada lo señalara → [A-SEC-04](PENDIENTES.md#a-sec-04).*
+→ **Todo cambio de estructura, RLS, rol o permiso se avisa al otro ANTES de aplicarlo**, aunque sea
+en la propia rama. Y sigue rigiendo la § 🛑 Datos: los **datos** se preguntan sí o sí.
+
+**2 · El espacio de IDs de `PENDIENTES.md`.** Es la **regla 12** de la § siguiente, y es la única de
+las 13 que **sí** cruza clones: dos personas pueden inventar `A-BUG-95` sin tocar la misma línea, y
+git no ve nada raro hasta el merge. Vale igual: **pedir el número → escribir la fila y commitear →
+recién entonces trabajar**, y un chequeo de ID **vence** si entre consultar y escribir hubo una pausa.
+
+**3 · Acceso al repo.** Javier necesita permiso de escritura en `JMS1320/Control-Presupuestario-v1.1`.
+Sin eso su push falla y termina en un **fork** — otro repositorio, invisible desde acá, que nadie
+mira hasta que es tarde.
 
 ### 🔀 Trabajo en paralelo — 2 terminales sobre el mismo directorio (REGLA)
 *Agregada 2026-08-18, al abrir una segunda terminal (conciliación + panel de pendientes a la vez).
