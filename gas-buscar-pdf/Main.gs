@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.17'  // 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.18'  // 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -697,16 +697,60 @@ function enviarResumenMail(body) {
   if (resultados.length === 0) {
     html += '<p>No se descargó ni quedó a revisar ninguna factura en esta corrida.</p>'
   } else {
+    // v0.9.18 — TRES pilas, no dos.
+    // Antes todo lo que no era 'ok' caía en "a revisar", mezclando dos cosas que se resuelven
+    // distinto: una factura que LLEGÓ pero no validó (hay que mirarla) y una que NO LLEGÓ (hay que
+    // reclamarla). Con las dos en la misma lista, el mail decía qué pasó pero no qué hacer.
     const porEmpresa = {}
     resultados.forEach(function (r) {
       const emp = r.empresa || '—'
-      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [] }
-      ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
+      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [], faltan: [] }
+      const pila = r.status === 'ok' ? 'descargadas' : (r.status === 'revisar' ? 'revisar' : 'faltan')
+      porEmpresa[emp][pila].push(r)
     })
     Object.keys(porEmpresa).sort().forEach(function (emp) {
       const g = porEmpresa[emp]
-      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
-      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar']].forEach(function (par) {
+      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), '
+        + g.revisar.length + ' a revisar, ' + g.faltan.length + ' no encontrada(s)</h3>'
+
+      // ❌ No encontradas, AGRUPADAS POR MOTIVO: el motivo es lo que decide qué hacer con cada una.
+      if (g.faltan.length) {
+        const porMotivo = {}
+        g.faltan.forEach(function (r) {
+          const k = (r.observaciones || 'Sin motivo registrado').slice(0, 120)
+          if (!porMotivo[k]) porMotivo[k] = []
+          porMotivo[k].push(r)
+        })
+        html += '<p><b>❌ No encontradas (' + g.faltan.length + '):</b></p>'
+        Object.keys(porMotivo).forEach(function (motivo) {
+          html += '<p style="margin:6px 0 2px"><small><b>' + esc(motivo) + '</b> — ' + porMotivo[motivo].length + '</small></p><ul style="margin-top:0">'
+          porMotivo[motivo].forEach(function (r) {
+            html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '') + '</li>'
+          })
+          html += '</ul>'
+        })
+
+        // 🔧 "Para que no se repita": un proveedor que falla VARIAS veces en una sola corrida no es
+        // mala suerte, es un dato mal cargado (mail que falta, patrón de asunto que cambió). Es el
+        // renglón más valioso del reporte: no dice qué hacer HOY, dice qué arreglar UNA VEZ.
+        const porProv = {}
+        g.faltan.forEach(function (r) {
+          const pv = r.proveedor || '—'
+          porProv[pv] = (porProv[pv] || 0) + 1
+        })
+        const repetidos = Object.keys(porProv).filter(function (k) { return porProv[k] > 1 })
+        if (repetidos.length) {
+          html += '<p style="background:#fff8e1;border-left:3px solid #f0ad4e;padding:6px 10px;margin:8px 0">'
+            + '<b>🔧 Para que no se repita</b> — estos proveedores fallaron más de una vez en esta corrida. '
+            + 'Suele ser el mail sin cargar en su ficha, o el asunto que cambió:<br>'
+          repetidos.sort().forEach(function (k) {
+            html += '• ' + esc(k) + ' <small style="color:#888">(' + porProv[k] + ' facturas)</small><br>'
+          })
+          html += '</p>'
+        }
+      }
+
+      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar (llegaron, no validaron)']].forEach(function (par) {
         const lista = g[par[0]]
         if (lista.length === 0) return
         html += '<p><b>' + par[1] + ':</b></p><ul>'

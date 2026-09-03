@@ -380,6 +380,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
   const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+  /**
+   * Qué huérfano está mostrando su vista previa (clave = url del PDF) — 2026-09-03.
+   *
+   * Pedido del usuario: *"ya que tenemos posibilidad de ver imágenes, que cuando están las
+   * proposiciones se pueda ver la foto del pdf propuesto"*. Antes había que abrir el archivo en otra
+   * pestaña, mirarlo, volver y recién ahí elegir — con 20 archivos eso son 40 cambios de pestaña.
+   * Se ve acá mismo, al lado del desplegable donde elegís la factura.
+   */
+  const [previewHuerfano, setPreviewHuerfano] = useState<string | null>(null)
   // Debug de conciliación: cada archivo de la carpeta + su file_id + a qué factura está vinculado.
   const [detalleConciliacion, setDetalleConciliacion] = useState<{ archivo: string; file_id: string; factura: string | null }[]>([])
   // Renombrar huérfano: url del PDF en edición + valor del nombre nuevo + flag guardando.
@@ -415,7 +424,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
     const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     const arch = norm(nombreArchivo)
-    const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+    // Candidatas = TODA factura sin PDF, incluidas las de Portal (2026-09-03).
+    // Las `fc=No` ya entraban (`categoriaArchivo` sólo aparta las de Portal), y las de Portal se
+    // sumaron porque nada impide que alguien haya bajado esa factura del sitio y la haya dejado en
+    // la carpeta: excluirlas hacía que el archivo correcto no apareciera nunca como sugerencia.
+    const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
     const conScore = faltantes.map(f => {
       const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
       const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
@@ -6395,7 +6408,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
               {huerfanosSupervision.map((h, i) => {
                 const candidatos = sugerirFacturasHuerfano(h.archivo)
-                const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+                const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
                 const sugeridosIds = new Set(candidatos.map(c => c.id))
                 const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id ?? ''
                 const sel = faltantes.find(f => f.id === selId)
@@ -6426,6 +6439,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           onClick={() => { setEditNombreUrl(h.url); setEditNombreVal(h.archivo) }}>
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
+                        <button
+                          type="button"
+                          title="Ver el archivo acá mismo, sin cambiar de pestaña"
+                          className={`text-xs rounded border px-1.5 py-0.5 ${previewHuerfano === h.url ? 'bg-blue-50 border-blue-300 text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                          onClick={() => setPreviewHuerfano(previewHuerfano === h.url ? null : h.url)}
+                        >
+                          {previewHuerfano === h.url ? '👁 ocultar' : '👁 ver'}
+                        </button>
                       </>
                     )}
                     {typeof h.chars === 'number' && (
@@ -6455,6 +6476,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         </Button>
                       </>
                     )}
+                    {/*
+                      Vista previa del archivo, acá mismo. Se usa el visor de Drive por file_id
+                      (`/preview`), que muestra igual un PDF que una foto — que es justo lo que hace
+                      falta, porque los huérfanos suelen ser fotos. Sólo se monta el iframe del que
+                      está abierto: montar 20 visores de Drive a la vez haría inusable la pantalla.
+                    */}
+                    {previewHuerfano === h.url && (() => {
+                      const fid = extraerFileIdDrive(h.url)
+                      return (
+                        <div className="w-full mt-1.5">
+                          {fid ? (
+                            <>
+                              <iframe
+                                src={`https://drive.google.com/file/d/${fid}/preview`}
+                                className="w-full h-[420px] rounded border bg-gray-50"
+                                title={`Vista previa de ${h.archivo}`}
+                                loading="lazy"
+                              />
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                Compará el <b>CUIT</b>, el <b>número</b> y el <b>monto</b> con la factura elegida
+                                arriba — son los tres datos que la vinculación automática exige.
+                                {sel && <> Elegida: <b>{sel.denominacion_emisor} · {sel.punto_venta}-{sel.numero_desde} · ${(Number(sel.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></>}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-amber-700">
+                              No se pudo sacar el identificador del archivo de su link.{' '}
+                              <a href={h.url} target="_blank" rel="noreferrer" className="underline">Abrirlo en Drive</a>
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </li>
                 )
               })}

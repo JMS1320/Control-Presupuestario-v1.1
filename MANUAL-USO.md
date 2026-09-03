@@ -543,6 +543,15 @@ vincular **a mano**. Nunca para vincular solo.
 Aparece cuando quedan archivos sin asociar. Cada fila trae el archivo, una **⭐ sugerencia** (por
 nombre y fecha) y el botón **Vincular**. También podés ✏️ renombrar el archivo si está mal nombrado.
 
+**👁 Ver — mirá el archivo sin salir de la pantalla.** Al lado de cada nombre hay un botón **👁 ver**
+que abre el archivo ahí mismo, debajo de la fila. Sirve igual para un PDF que para una foto. Al lado
+te recuerda qué comparar: **CUIT, número y monto** contra la factura que elegiste en el desplegable —
+que son los tres datos que la vinculación automática exige.
+
+**La ⭐ propone entre TODAS las facturas sin PDF del período**, incluidas las marcadas `fc=No` y las
+de `Portal`. El criterio es el nombre y la fecha del archivo, así que **confirmalo mirando**: es una
+pista, no una certeza.
+
 ⚠️ **Fijate de dónde salió la lista**, porque el mismo panel significa dos cosas opuestas:
 - si venís de **«Contar»** → esos archivos **todavía no se intentaron vincular** (te lo avisa en ámbar);
 - si venís de **«Vincular PDFs»** → se leyeron y **no matchearon**: falló el CUIT, el número o el monto.
