@@ -2089,10 +2089,41 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         const f = facturasPeriodo.find(x => x.id === m.factura_id)
         return { ...m, numero: f ? `${f.punto_venta}-${f.numero_desde}` : '', proveedor: f?.denominacion_emisor || '', monto: f?.imp_total ?? null }
       })
+      /**
+       * Enriquecer las DOS listas que quedan abiertas, para que el mail sirva para ACTUAR y no sólo
+       * para informar (pedido del usuario, 2026-09-03: *"que nombre las que hay en pdf pero no se
+       * vincularon, y las que quedaron sin vincular. puede ser con sugerencias. así sería un buen
+       * audit"*).
+       *
+       * - A cada **huérfano** se le pega su candidata ⭐, con la MISMA función que usa el panel
+       *   (`sugerirFacturasHuerfano`) — no una segunda lógica que después se desincronice.
+       * - A cada **factura sin PDF** se le pega el MOTIVO, que es lo que decide qué hacer con ella:
+       *   una de Portal se baja del sitio, una de mail se busca, y una marcada «No» no se toca.
+       *   Sin el motivo, la lista de 17 parecía 17 pendientes cuando en realidad eran 8.
+       */
+      const huerfanosMail = huerfanosAcc.map((h: any) => {
+        const cand = sugerirFacturasHuerfano(h.archivo || '')
+        const c = cand[0]
+        return {
+          ...h,
+          sugerencia: c
+            ? `${c.denominacion_emisor} · ${c.punto_venta}-${c.numero_desde} · ${formatearFecha(c.fecha_emision)}`
+            : null,
+          sugerencias_n: cand.length,
+        }
+      })
+      const motivoDe = (fc?: string | null) => {
+        const v = String(fc || '').trim().toLowerCase()
+        if (v === 'portal') return 'Se baja del portal del proveedor — no llega por mail'
+        if (v === 'no') return 'Marcada para NO buscar — revisar si sigue valiendo'
+        return 'Debería llegar por mail — correr el buscador de PDFs'
+      }
+      const sinPdfMail = (sinPdf || []).map((f: any) => ({ ...f, motivo: motivoDe(f.fc) }))
+
       // Cierre: log + mail con el acumulado
       await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosMail, sin_pdf: sinPdfMail } }),
       })
       await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
       setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))

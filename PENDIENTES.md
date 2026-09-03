@@ -249,6 +249,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
+| A-TEST-82 | 🔴 | Test | **Archivo digital, tanda 2026-09-03** — 4 cosas: (1) los 3 botones renombrados se entienden sin explicación · (2) el panel «PDFs sin vincular» avisa en ámbar cuando venís de «Contar» · (3) si una tanda falla, **se ve el motivo escrito** y reintenta con 1 archivo · (4) **el mail de supervisión** trae faltantes agrupadas por motivo y huérfanos con su ⭐. ⚠️ (4) requiere **re-desplegar el Apps Script (v0.9.17)** | → [A-FEAT-74](#a-feat-74) `@egresos` |
+| **A-FEAT-74** | 🟡 | Feat | **El mail de supervisión sirve para ACTUAR, no sólo para informar** — faltantes agrupadas por **motivo** (Portal / no se busca / debería llegar por mail) y huérfanos con su **candidata ⭐**. ✅ HECHO 2026-09-03, sin testear ([A-TEST-82](#a-feat-74)) | → [A-FEAT-74](#a-feat-74) `@egresos` |
 | A-SEC-01 | 🔴 | Alta | 👤 Javier · Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
 | **A-SEC-04** | 🟡 | **Alta** | 👤 Javier · **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
@@ -9052,6 +9054,39 @@ nota + 2 capturas **entran** · `SELECT` sobre las notas devuelve **0 filas**.
 asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
 app**: nadie audita el botón de notas, y terminó siendo el que copia la credencial a una tabla
 abierta. Vale para todo lo que se construya "sólo para nosotros".
+
+---
+
+## <a id="a-feat-74"></a>A-FEAT-74 — El reporte de supervisión tiene que dejar actuar (2026-09-03)
+
+**De dónde salió.** El usuario corrió la supervisión de MSA 07/2026, recibió el mail y dijo:
+*"creo que el reporte debería nombrar las que hay en pdf pero no se vincularon, y las que quedaron
+sin vincular en la app. puede ser también con sugerencias. así sería un buen audit."*
+
+**El problema, con el caso a la vista.** El mail listaba **17 facturas sin PDF**, una debajo de otra.
+Parecían 17 pendientes. En realidad eran tres cosas distintas:
+
+| | Cuántas | Qué hay que hacer |
+|---|---|---|
+| `fc=Portal` | 7 | bajarlas del sitio del proveedor — **nunca** llegan por mail |
+| `fc=No` | 2 | alguien decidió no buscarlas; revisar si sigue valiendo |
+| `fc=Sí` | 8 | **el único trabajo real**: correr el buscador por mail |
+
+Un reporte que no distingue eso **informa pero no deja actuar**: hay que abrir la app igual para
+saber qué hacer con cada renglón. Lo mismo del otro lado: los huérfanos se listaban por nombre de
+archivo, sin decir contra qué factura podrían ir.
+
+**Qué se hizo (2026-09-03).**
+- **App** — al cerrar la corrida, cada faltante viaja con su **motivo** y cada huérfano con su
+  **candidata ⭐**, calculada con `sugerirFacturasHuerfano()`, **la misma función que usa el panel**:
+  no una segunda lógica que después se desincronice.
+- **GAS v0.9.17** — el mail agrupa las faltantes **por motivo** (con su conteo) y muestra la
+  candidata de cada huérfano, marcada como *"por nombre y fecha, confirmar en la app"* para que no se
+  confunda con un match real.
+
+⚠️ **La mitad del GAS no está desplegada.** El archivo del repo está en v0.9.17; el Apps Script
+publicado sigue en 0.9.16 hasta que el usuario lo actualice a mano. Hasta entonces el mail sale como
+antes, aunque la app ya mande los datos nuevos (los ignora sin romperse).
 
 ---
 

@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.16'  // 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.9.17'  // 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -886,16 +886,41 @@ function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
       html += '</ul>'
     }
     if (sin_pdf.length) {
-      html += '<h3>⚠️ Facturas sin PDF en la carpeta</h3><ul>'
-      sin_pdf.forEach(function (s) { html += '<li>' + esc(s.numero) + ' — ' + esc(s.denominacion || '') + ' (fc=' + esc(s.fc || '') + ')</li>' })
-      html += '</ul>'
+      // Agrupadas por MOTIVO (v0.9.17): una lista plana de N faltantes parece N pendientes, cuando
+      // en realidad las de Portal se bajan del sitio y las marcadas "No" no se tocan. En el caso
+      // real de MSA 07/2026, de 17 faltantes sólo 8 eran trabajo pendiente de verdad.
+      html += '<h3>⚠️ Facturas sin PDF en la carpeta (' + sin_pdf.length + ')</h3>'
+      const porMotivo = {}
+      sin_pdf.forEach(function (s) {
+        const k = s.motivo || ('fc=' + (s.fc || '?'))
+        if (!porMotivo[k]) porMotivo[k] = []
+        porMotivo[k].push(s)
+      })
+      Object.keys(porMotivo).forEach(function (motivo) {
+        html += '<p style="margin:8px 0 2px"><b>' + esc(motivo) + '</b> — ' + porMotivo[motivo].length + '</p><ul style="margin-top:0">'
+        porMotivo[motivo].forEach(function (s) {
+          html += '<li>' + esc(s.numero) + ' — ' + esc(s.denominacion || '') + '</li>'
+        })
+        html += '</ul>'
+      })
     }
     if (huerfanos.length) {
       html += '<h3>❓ PDFs sin factura (huérfanos)</h3>'
       html += '<p style="font-size:11px;color:#888">OCR: caracteres leídos por archivo. <b>0 = no se pudo extraer texto</b> (PDF imagen o servicio Drive mal configurado).</p><ul>'
       huerfanos.forEach(function (h) {
         const diag = (typeof h.chars === 'number') ? ' <small style="color:#888">(OCR: ' + h.chars + ' chars' + (h.ocr_error ? ', error: ' + esc(h.ocr_error) : '') + ')</small>' : ''
-        html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a>' + diag + '</li>'
+        // Candidata sugerida (v0.9.17): sin esto el mail dice QUÉ quedó suelto pero no contra qué
+        // podría ir, y hay que abrir la app igual para poder hacer algo. La sugerencia sale del
+        // NOMBRE y la fecha del archivo — no del contenido —, por eso se marca como "a confirmar".
+        let sug = ''
+        if (h.sugerencia) {
+          sug = '<br><small>⭐ posible: <b>' + esc(h.sugerencia) + '</b>'
+            + (h.sugerencias_n > 1 ? ' <span style="color:#888">(y ' + (h.sugerencias_n - 1) + ' más)</span>' : '')
+            + ' <span style="color:#888">— por nombre y fecha, confirmar en la app</span></small>'
+        } else {
+          sug = '<br><small style="color:#888">sin candidata por nombre — vincular a mano</small>'
+        }
+        html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a>' + diag + sug + '</li>'
       })
       html += '</ul>'
     }

@@ -488,6 +488,87 @@ saldo impago inexistente.
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 🗂️ Archivo digital — vincular cada factura con su PDF ✅ *(reescrito 2026-09-03)*
+
+**Dónde:** Egresos → Facturas → **Subdiarios** → *Consultar período* → elegís el período. Arriba, a la
+derecha del título **📋 Facturas del Período**, están los tres botones.
+
+**Para qué sirve.** Que cada factura del subdiario tenga **su PDF colgado**, para no buscarlo nunca
+más en el mail. Los archivos viven en Drive, ordenados por empresa, campaña y mes; la app guarda el
+link en la factura.
+
+#### Los tres botones — y cuál usar
+
+| Botón | Qué hace | Cuándo lo usás |
+|---|---|---|
+| **📊 Contar (no vincula)** | Cuenta nomás. Lista los archivos de la carpeta y los cruza contra los links que ya existen. **No abre ningún archivo y no vincula nada.** Es instantáneo | Para ver rápido cómo viene el mes |
+| **🔗 Vincular PDFs (lee el contenido)** | **El que hace el trabajo.** Abre cada archivo, le lee adentro el CUIT, el número y el monto, y lo vincula a su factura cuando los tres coinciden | Cuando querés que se vinculen. Es el normal |
+| **🔗 Vincular sólo los que faltan** | Lo mismo, pero saltea los que ya están vinculados | Para re-correr sin repetir trabajo |
+
+> ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
+> vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
+> se reportó como un bug del sistema que no existía.
+
+**Mientras corre** vas a ver un cartel *«Vinculando… (tanda N, X archivos revisados)»*. Trabaja de a
+**4 archivos por vuelta** y sigue aunque cambies de pantalla. Si una tanda falla, **reintenta sola con
+1 archivo** y te avisa; si tampoco anda, te muestra el motivo escrito.
+
+#### 🔑 Cómo decide que un PDF es de una factura — leelo una vez
+
+Esto es lo que más se malinterpreta, así que va sin vueltas:
+
+> **La vinculación automática NO mira el nombre del archivo. Mira lo que dice adentro.**
+
+Para vincular exige **las tres cosas, todas**:
+
+| | Qué busca dentro del archivo |
+|---|---|
+| **1 · CUIT** | los dígitos del CUIT del emisor |
+| **2 · Número** | el número de comprobante (acepta 5 formatos: `00002-00002021`, `2-2021`, etc.) |
+| **3 · Monto** | el importe total, con tolerancia de **$1** (en valor absoluto, porque las NC vienen en negativo) |
+
+Si falla **una sola**, no vincula y el archivo queda como huérfano. Es estricto a propósito: un
+vínculo equivocado es peor que uno que falta. El chequeo del monto se agregó justamente porque sin él
+un archivo de nota de crédito se enganchaba a una factura por compartir el CUIT.
+
+**Sí funciona con fotos.** El archivo se transcribe con reconocimiento de texto antes de compararlo,
+así que una foto de una factura se lee igual que un PDF. *(Verificado el 2026-09-03 en MSA 07/2026:
+vinculó **20 de 20**, incluidas dos fotos `.jpeg`.)*
+
+**El nombre del archivo sirve para otra cosa:** para la sugerencia ⭐ del panel de abajo, que es para
+vincular **a mano**. Nunca para vincular solo.
+
+#### El panel «🖼️ PDFs sin vincular» — acá vinculás a mano
+
+Aparece cuando quedan archivos sin asociar. Cada fila trae el archivo, una **⭐ sugerencia** (por
+nombre y fecha) y el botón **Vincular**. También podés ✏️ renombrar el archivo si está mal nombrado.
+
+⚠️ **Fijate de dónde salió la lista**, porque el mismo panel significa dos cosas opuestas:
+- si venís de **«Contar»** → esos archivos **todavía no se intentaron vincular** (te lo avisa en ámbar);
+- si venís de **«Vincular PDFs»** → se leyeron y **no matchearon**: falló el CUIT, el número o el monto.
+
+#### Cuando una factura no tiene PDF
+
+Eso **no** se arregla con estos botones: no hay archivo en la carpeta para vincular. Mirá la columna
+**FC** de la factura, que dice de dónde tiene que salir:
+
+| FC dice | Qué significa | Qué hacés |
+|---|---|---|
+| **Portal** | La factura se baja del sitio del proveedor. Nunca llega por mail | Entrás al portal y la bajás a mano |
+| **Sí** | Debería llegar por mail | Corrés el **buscador de PDFs** (otro circuito), o la pedís |
+| **No** | Se decidió que ésta no se busca | Revisás si esa decisión sigue valiendo |
+
+*Ejemplo real, MSA 07/2026: de 37 facturas quedaron 20 vinculadas y 17 sin PDF — pero de esas 17,
+**7 eran de Portal** (Autopistas, Corredores Viales, DIRECTV) y **2 estaban marcadas para no
+buscar**. O sea que las que realmente faltaban por mail eran **8**, no 17.*
+
+#### El mail de supervisión
+
+Al terminar llega un mail con el resumen: vinculadas, sin PDF y huérfanos. Sirve como constancia de
+que la corrida se hizo y de cómo quedó el mes.
+
+---
+
 ### 📋 Pendientes de desarrollo — verlos desde la app 🟡 (2026-08-19, sin testear)
 
 **Dónde:** **Principal → botón "Pendientes"**. Sólo admin. Es **lectura**: para cambiar un pendiente
