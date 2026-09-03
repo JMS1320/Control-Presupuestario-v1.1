@@ -211,6 +211,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-DOC-02b | 🔴 | Baja | **Consolidar la documentación de SICORE** — 2 archivos vivos del mismo módulo (51 KB + 12 KB, abr-2026), posiblemente contradictorios. Tenía dossier desde el 02/08 **pero nunca fila de índice**: era trabajo invisible (no salía en el panel ni al preguntar "qué falta"). Detectado 2026-08-29 | → [A-DOC-02b](#a-doc-02b) `@general` |
 | A-DOC-02 | ✅ | Media | 13 docs de módulo con 4 convenciones → **renombrados a `MODULO_*` 2026-08-02** (`git mv`, historial intacto) + `MODULO_ARCA.md` creado | → [A-DOC-02](#a-doc-02) |
 | A-DOC-02b | 🔴 | Baja | **Consolidar SICORE** — quedan `MODULO_SICORE.md` (51 KB) + `MODULO_SICORE_RETENCIONES.md` (12 KB) + la historia cruda en `arca-api/`. Abordar al tocar el módulo | → [A-DOC-02b](#a-doc-02b) |
+| **A-DOC-12** | 🔴 | **Media** | **El MANUAL tiene que ser un manual de USUARIO** — hoy son 3.499 líneas con **26 bloques de testing y 69 marcas 🟡** mezclados entre las instrucciones. Mudar los tests a `PENDIENTES`, reescribir en lenguaje de usuario y ponerle **3 índices** (por pantalla · por tarea · por rol). ⚠️ **La regla ya se corrigió** (`CLAUDE.md` § 🧪, 2026-09-03): lo nuevo nace bien; esto es limpiar lo viejo. Rama propia | → [A-DOC-12](#a-doc-12) `@general` |
 | A-DOC-09 | 🔴 | Media | **`MODULO_ARCA.md` está a medias** — documenta `arca-api/` (la puerta de entrada) pero NO el lado de la app: `app/api/arca`, `lib/arca`, importador, vistas, reglas por CUIT, relación con GAS | → [A-DOC-09](#a-doc-09) `@general` |
 | A-DOC-03 | ⏸️ | Baja | 3 archivos de reconstrucción (553 KB) del mismo tema; sólo 1 declarado | → [A-DOC-03](#a-doc-03) `@general` |
 | A-DOC-04 | ⏸️ | Baja | `README.md` (ago-2025) desactualizado y fuera de toda dimensión | → [A-DOC-04](#a-doc-04) `@general` |
@@ -9054,6 +9055,35 @@ nota + 2 capturas **entran** · `SELECT` sobre las notas devuelve **0 filas**.
 asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
 app**: nadie audita el botón de notas, y terminó siendo el que copia la credencial a una tabla
 abierta. Vale para todo lo que se construya "sólo para nosotros".
+
+---
+
+## <a id="a-doc-12"></a>A-DOC-12 — El manual tiene que ser un manual de usuario (2026-09-03)
+
+**Lo que pidió el usuario, textual:** *"al finalizar la app la misma debe contar con un manual de
+usuario. eso básicamente es la app ordenada de dos o 3 maneras (dos o 3 índices) diciéndote qué es lo
+que podés hacer y cómo hacerlo."*
+
+**Por qué no lo es hoy — y la causa no fue un descuido.** `CLAUDE.md` § 🧪 decía que el manual llevara
+*"cómo se usa **y cómo se prueba**"*, con el título marcado 🟡. Se cumplió al pie de la letra durante
+un mes. Resultado: **3.499 líneas, 49 secciones, 26 bloques de testing y 69 marcas 🟡** repartidos
+entre las instrucciones. La regla ya se corrigió el 2026-09-03 (§ 🧪), así que **lo nuevo nace bien**;
+esto es la limpieza de lo viejo.
+
+**El trabajo:**
+1. **Mudar los 26 bloques 🧪 a `PENDIENTES`**, cada uno bajo su `A-TEST-NN`. No se crea archivo nuevo:
+   el testing tiene su dimensión y es ésta. Las 8 dimensiones quedan intactas.
+2. **Reemplazar las 69 marcas 🟡** por un puntero de una línea al pie de la sección
+   (`⚠️ Sin probar todavía → A-TEST-NN`). El 🟡 en el título envejece; el puntero no.
+3. **Reescribir en lenguaje de usuario**: nombres de botones y pantallas, no de archivos ni tablas.
+4. **Los 3 índices**, que responden preguntas distintas:
+   - **por pantalla** — *estoy parado acá, ¿qué puedo hacer?*
+   - **por tarea** — *quiero cobrar una factura, ¿a dónde voy?*
+   - **por rol** — *¿qué le toca a Ulises y qué a JMS?* — el que además hace evidente **qué se puede
+     delegar**, que es la quinta pieza del norte administrativo.
+
+**Tamaño y forma de encararlo:** es una tarde, no una hora. Cumple las tres condiciones para ir en
+**rama propia** (incierto, largo, toca mucho).
 
 ---
 

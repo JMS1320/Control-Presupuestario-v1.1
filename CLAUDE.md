@@ -642,18 +642,64 @@ como sin test; segundo, como test está en manual de uso".*
 
 Al terminar de implementar algo, **antes de decir que está hecho**:
 
-1. **`PENDIENTES.md`** → fila `TEST` con su ID y estado **sin testear**. Es el *qué falta probar*.
-2. **`MANUAL-USO.md`** → sección con **cómo se usa y cómo se prueba**, con el título marcado
-   **🟡 (sin testear)**. Es el *cómo se prueba*.
+1. **`PENDIENTES.md`** → fila `TEST` con su ID, estado **sin testear**, **y los pasos para
+   probarlo**. Es el *qué falta probar* **y el cómo probarlo**.
+2. **`MANUAL-USO.md`** → sección con **cómo se usa**, y nada más. Al pie, un puntero de una línea:
+   `⚠️ Sin probar todavía → A-TEST-NN`.
 
-Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se saca el 🟡 del manual.
+Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se borra el puntero del manual.
 
-**Motivo:** hasta ahora la lista de test vivía en el chat. Un ítem que dice *"probar la muestra del
-cálculo"* no sirve tres días después, porque el usuario ya no se acuerda de dónde estaba ni qué
-tenía que ver. El manual convierte el pendiente en algo ejecutable **sin volver a preguntar**.
+#### ⚠️ Corrección 2026-09-03 — el testing SALE del manual
+*Hasta hoy esta regla decía que el manual llevara **"cómo se usa y cómo se prueba"**, con el título
+marcado 🟡. Se cumplió al pie de la letra durante un mes y el resultado fue un manual de 3.499
+líneas con **26 bloques de testing y 69 marcas 🟡** entre las instrucciones. El usuario lo detectó
+al pedir un manual de usuario de verdad: **"la app ordenada en dos o tres índices, diciéndote qué
+podés hacer y cómo hacerlo"**.*
 
-Y tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se usa lo que se acaba de
-hacer**, que es cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
+> **Manual y test NO son lo mismo, y mezclarlos arruina el manual.**
+
+| | Manual — *cómo se usa* | Test — *cómo se prueba* |
+|---|---|---|
+| Recorre | el camino normal | el camino **adversario** |
+| Se ordena por | lo que el usuario quiere lograr | lo que puede fallar |
+| Dice | qué va a pasar | qué **no tiene que** pasar |
+| Lo lee | cualquiera, siempre | el usuario, una vez |
+
+El caso que lo dejó claro: el manual de la cinta de diagnóstico decía *"escribí `PRUEBA-SECRETA-123`
+en cualquier campo, provocá un error y verificá que no aparezca"*. **Eso no es usar la app** — ningún
+usuario lo va a hacer nunca. Lo mismo *"apagá el wifi"* o *"abrí las herramientas del navegador"*: son
+maniobras para romperla a propósito, que es lo contrario de un manual.
+
+**Lo único que se superpone es cómo llegar** (*"andá a Egresos → Subdiarios"*), y eso ya está en el
+manual: **el test lo apunta en vez de repetirlo**, y agrega sólo los pasos adversarios. Así no se
+duplica en ninguna de las dos direcciones.
+
+**Y el estado va como PUNTERO, no como copia.** El 🟡 en el título envejece: se prueba algo, nadie
+saca la marca, y el manual miente. Una línea `→ A-TEST-NN` deja la verdad en `PENDIENTES`, que es su
+dimensión, y el manual sólo la señala.
+
+#### 📖 Qué es el MANUAL, entonces
+*Definido por el usuario 2026-09-03:*
+
+> **Al terminar la app, tiene que existir un manual de usuario: la app ordenada en dos o tres
+> índices, que te diga qué podés hacer y cómo hacerlo.**
+
+- Se escribe **en lenguaje de usuario**: nombres de botones y pantallas como se ven, no nombres de
+  archivos, funciones ni tablas. Si hace falta explicar por dentro, va a `MODULO_<X>.md`.
+- Los índices previstos son tres, porque responden preguntas distintas: **por pantalla** (*estoy acá,
+  qué puedo hacer*), **por tarea** (*quiero cobrar una factura, a dónde voy*) y **por rol** (*qué le
+  toca a cada persona* — que además muestra qué se puede delegar).
+- ⏳ **El manual viejo todavía está mezclado**: mudar los 26 bloques de testing y poner los índices
+  es trabajo pendiente. Esta regla rige para todo lo que se escriba **de ahora en adelante**, para no
+  seguir acumulando.
+
+**Motivo (sigue vigente, con el destino corregido):** la lista de test vivía en el chat. Un ítem que
+dice *"probar la muestra del cálculo"* no sirve tres días después, porque el usuario ya no se acuerda
+de dónde estaba ni qué tenía que ver. Escribir los pasos lo vuelve **ejecutable sin volver a
+preguntar** — eso no cambió; lo que cambió es que esos pasos van a `PENDIENTES`, no al manual.
+
+Y la regla tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se usa lo que se
+acaba de hacer**, cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
 pantalla no esté clara.
 
 ---
