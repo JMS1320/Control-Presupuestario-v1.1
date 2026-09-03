@@ -2041,12 +2041,42 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       for (let guard = 0; guard < 500; guard++) {
         tanda++
         toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
-        const r = await fetch('/api/gas/auditar-periodo', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 4 }),
-        })
-        const data = await r.json()
-        if (!data.ok) { toast.error('Supervisión: ' + (data.error || 'error'), { id: tId }); return }
+        /**
+         * Una tanda, con reintento en tanda chica.
+         *
+         * Se mantiene en 4 archivos porque **así venía funcionando**; no se baja a 1 "por las
+         * dudas", que cuadruplicaría las vueltas para todos. Pero si una tanda falla, se reintenta
+         * UNA vez con 1 solo archivo: si con 1 pasa, el problema era el volumen de la tanda; si con
+         * 1 también falla, el problema es otro y el mensaje lo va a decir.
+         */
+        const pedirTanda = async (cuantos: number) => {
+          const r = await fetch('/api/gas/auditar-periodo', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: cuantos }),
+          })
+          // El cuerpo se lee como texto: ante un error de plataforma no viene JSON, y un
+          // `Unexpected token <` taparía el motivo real.
+          const txt = await r.text()
+          try {
+            return JSON.parse(txt)
+          } catch {
+            return { ok: false, error: `HTTP ${r.status} — la respuesta no es JSON: ${txt.slice(0, 160)}` }
+          }
+        }
+
+        let data = await pedirTanda(4)
+        if (!data.ok) {
+          toast.loading('La tanda falló; reintento con 1 archivo…', { id: tId })
+          const reintento = await pedirTanda(1)
+          if (reintento.ok) {
+            toast.loading('Con 1 archivo por vuelta sí anda — sigo así (más lento)', { id: tId })
+            data = reintento
+          } else {
+            toast.error(`Supervisión: ${reintento.error || 'error'}`, { id: tId, duration: 30000 })
+            console.error('[supervisión OCR] tanda de 4:', data.error, '| tanda de 1:', reintento.error)
+            return
+          }
+        }
         if (data.existe === false) { toast.warning(data.observaciones || 'La carpeta del período no existe', { id: tId }); return }
         links += data.links_agregados || 0
         for (const m of (data.matched || [])) { matchedAcc.push(m); if (m.file_id) skip.add(m.file_id) }

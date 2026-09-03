@@ -131,10 +131,20 @@ function caminoDe(input: RequestInfo | URL): string {
 }
 
 /**
- * Los 4 campos de error de PostgREST, **nombrados uno por uno**.
+ * Los campos de error de una respuesta fallida, **nombrados uno por uno**.
  *
- * Se lee de un `clone()` para no consumir el stream que la app va a leer después. Y sólo en
- * respuestas de error: ahí el cuerpo es `{code, message, details, hint}`, nunca filas de datos.
+ * Dos formas conviven en esta app y hay que conocer las dos:
+ *  - **PostgREST / Supabase** → `{code, message, details, hint}`
+ *  - **las rutas propias** (`/api/...`) → `{ok:false, error:"..."}`
+ *
+ * ⚠️ `error` se agregó el 2026-09-03 y no es un detalle: la cinta capturó un `502` de
+ * `/api/gas/auditar-periodo` **sin el motivo**, porque la ruta lo mandaba en `error` y la lista
+ * blanca sólo conocía la forma de la base. El usuario vio el mensaje en el cartel rojo y la cinta
+ * —que existe justamente para no depender de eso— lo tiró. Sigue siendo lista blanca: se nombran
+ * los campos que entran, y nada más.
+ *
+ * Se lee de un `clone()` para no consumir el stream que la app va a leer después, y sólo en
+ * respuestas de error, donde el cuerpo es el diagnóstico y nunca filas de datos.
  */
 async function errorDeLaBase(res: Response): Promise<{ codigo?: string; msg: string } | null> {
   try {
@@ -142,7 +152,7 @@ async function errorDeLaBase(res: Response): Promise<{ codigo?: string; msg: str
     if (!txt) return null
     const j = JSON.parse(txt)
     if (!j || typeof j !== "object") return null
-    const partes = [j.message, j.details, j.hint].filter(p => typeof p === "string")
+    const partes = [j.error, j.message, j.details, j.hint].filter(p => typeof p === "string")
     if (partes.length === 0 && typeof j.code !== "string") return null
     return { codigo: typeof j.code === "string" ? j.code : undefined, msg: partes.join(" · ") }
   } catch {

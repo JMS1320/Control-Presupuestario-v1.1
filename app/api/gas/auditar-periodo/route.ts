@@ -14,6 +14,57 @@ import type { Empresa } from '@/lib/gas-pdf/types'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+/**
+ * Tope propio para la llamada al GAS, POR DEBAJO de `maxDuration`.
+ *
+ * Sin esto la ruta espera al GAS indefinidamente y, si se pasa de los 60s, **la plataforma la mata
+ * desde afuera**: el `catch` de abajo nunca corre y el navegador recibe un error pelado, sin motivo.
+ * Cortando a los 45s la ruta alcanza a devolver un error *explicado*, que es la diferencia entre
+ * "falló" y "falló porque el OCR de N archivos no entró en el tiempo disponible".
+ */
+const TOPE_GAS_MS = 45_000
+
+/**
+ * Habla con el GAS y devuelve su JSON, o tira un error que se entiende solo.
+ *
+ * Las tres formas de fallar que se veían todas igual —tiempo agotado, HTTP no-200, y respuesta que
+ * no es JSON (el GAS devuelve HTML cuando hay problema de permisos o redirección)— ahora dicen cuál
+ * fue. El cuerpo se lee como texto primero justamente para poder mostrar el HTML recortado en vez
+ * de un `Unexpected token < in JSON`, que no le sirve a nadie.
+ */
+async function pedirAlGas(url: string, payload: unknown, etiqueta: string): Promise<any> {
+  let r: Response
+  try {
+    r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(TOPE_GAS_MS),
+    })
+  } catch (e) {
+    const err = e as Error
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      throw new Error(
+        `El GAS no respondió en ${TOPE_GAS_MS / 1000}s (${etiqueta}). ` +
+        `Suele ser el OCR: probá con menos archivos por tanda.`
+      )
+    }
+    throw new Error(`No se pudo contactar al GAS (${etiqueta}): ${err.message}`)
+  }
+
+  const txt = await r.text()
+  if (!r.ok) {
+    throw new Error(`El GAS respondió HTTP ${r.status} (${etiqueta}): ${txt.slice(0, 200)}`)
+  }
+  try {
+    return JSON.parse(txt)
+  } catch {
+    throw new Error(
+      `El GAS no devolvió JSON (${etiqueta}). Suele ser permisos o una redirección del despliegue. ` +
+      `Empieza con: ${txt.slice(0, 160)}`
+    )
+  }
+}
+
 function schemaDe(e: Empresa): string {
   return e === 'PAM' ? 'pam' : e === 'MA' ? 'ma' : 'msa'
 }
@@ -61,11 +112,10 @@ export async function POST(request: Request) {
 
     // Cierre: deja el log + manda el mail con el resumen acumulado por el cliente.
     if (body.finalizar) {
-      const r = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ _token: token, accion: 'auditar', empresa, periodo, carpeta_drive_id: carpeta, subcarpetas, finalizar: true, resumen: body.resumen }),
-      })
-      const g = (await r.json()) as { status?: string }
+      const g = (await pedirAlGas(url, {
+        _token: token, accion: 'auditar', empresa, periodo, carpeta_drive_id: carpeta,
+        subcarpetas, finalizar: true, resumen: body.resumen,
+      }, 'cierre')) as { status?: string }
       return NextResponse.json({ ok: g.status === 'ok', finalizado: true })
     }
 
@@ -87,15 +137,12 @@ export async function POST(request: Request) {
     }))
 
     // Una tanda
-    const r = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        _token: token, accion: 'auditar', empresa, periodo,
-        carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
-        skip_file_ids: body.skip_file_ids || [], max_files: body.max_files || 10,
-      }),
-    })
-    const audit = (await r.json()) as {
+    const cuantos = body.max_files || 10
+    const audit = (await pedirAlGas(url, {
+      _token: token, accion: 'auditar', empresa, periodo,
+      carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
+      skip_file_ids: body.skip_file_ids || [], max_files: cuantos,
+    }, `tanda de ${cuantos} archivo(s)`)) as {
       status?: string; existe?: boolean; observaciones?: string
       matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]
       procesados?: number; restantes?: number; completo?: boolean
