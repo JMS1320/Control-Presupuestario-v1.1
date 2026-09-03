@@ -9147,6 +9147,21 @@ ambigüedad, y el texto quedaba vacío — **haciendo pasar por buenos los contr
 aparece", que sobre una cadena vacía siempre dan bien**. Un control que se verifica sobre la nada
 miente igual que uno mal escrito. Se corrigió leyendo el texto completo del modal.
 
+### 🔧 Hueco cerrado 2026-09-03 — el error posterior a la última captura se perdía
+Lo encontró el usuario preguntando cómo se guardaba la cinta, antes de probarla. El corte ocurría
+**al abrir una captura**, no al Finalizar. Entonces:
+
+```
+CAPTURA 2 → ... error D ... → Finalizar     ← el error D no se guardaba en ningún lado
+```
+
+Y es **el caso más natural de todos**: hacés los pasos, algo explota, vas derecho a Finalizar. Se
+perdía justo el error que motivaba la nota. Ahora los eventos posteriores a la última captura se
+enganchan **a esa captura**, y el modal de Finalizar avisa cuántos se suman.
+
+Verificado en el navegador: captura 1 sin errores → error después → Finalizar directo → el error
+aparece en `notas_capturas.diagnostico` de la captura 1.
+
 **Verificado además:** `build` OK y `type-check:diff` 113 → 113.
 
 ---

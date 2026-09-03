@@ -1289,6 +1289,38 @@ puedas controlar que no viaja nada que no querés.
 ⚠️ **No refresques la página antes de dejar la nota.** El refresh borra la cinta — que es justo lo
 que querés que Claude lea. Si ya refrescaste, la nota sirve igual, pero sin los eventos.
 
+#### ¿Hay que "guardar" la cinta? No: es automática
+
+**La cinta graba sola desde que abrís la página**, hayas empezado una nota o no. No se prende, no se
+apaga y no se guarda a mano. Por eso funciona el caso real: algo se rompe *antes* de que se te ocurra
+reportarlo, y cuando apretás `Alt + N` el error ya estaba anotado. Guarda los **últimos 50 eventos**;
+del 51 en adelante tira el más viejo.
+
+Lo que es "por captura" no es la grabación sino **el reparto**: cada captura se lleva los eventos que
+pasaron *desde la captura anterior*. No se repiten ni se pierden entre una y otra.
+
+```
+abrís la página
+   │  ← la cinta arranca sola
+   ├── error A
+   ├── error B
+   ├─ Alt+N → CAPTURA 1 ......... se lleva A y B
+   ├── error C
+   ├─ Capturar → CAPTURA 2 ...... se lleva sólo C
+   ├── error D
+   └─ Finalizar ................. D se engancha a la CAPTURA 2
+```
+
+**Las dos formas de trabajar sirven y no perdés nada:**
+- **Capturando en cada paso** → cada error queda pegado *al paso donde ocurrió*. Es lo que convierte
+  *«no anda»* en *«en el paso 3 saltó esto»*. Para un bug con varios pasos, es lo que conviene.
+- **Sólo al principio y al final** → los eventos igual se guardan, todos juntos en la última captura.
+  Los tenés, pero mezclados: no se sabe cuál pasó en qué momento.
+
+*(El error D del diagrama antes se perdía: el reparto ocurría al abrir una captura, no al Finalizar,
+así que lo que explotaba justo antes de finalizar quedaba afuera — el caso más natural de todos.
+Corregido el 2026-09-03; el modal de Finalizar ahora avisa cuántos eventos sueltos se suman.)*
+
 **Qué NO va a resolver** (para que no te frustre): sirve para lo que **tira error**. Un número mal
 calculado que no falla —como el Cash Flow que proyectaba $181 M— no deja rastro en la cinta; ése sale
 de los datos. Y para las mejoras (*"quiero decimales acá"*) no aporta nada.

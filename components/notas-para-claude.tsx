@@ -153,6 +153,21 @@ export function NotasParaClaude() {
   const diagRef = useRef<EventoDiagnostico[]>([])
 
   /**
+   * Los eventos posteriores a la ÚLTIMA captura — A-FEAT-72.
+   *
+   * Sin esto se perdían, y justo en el caso más natural: hacés los pasos, algo explota, y vas
+   * derecho a Finalizar. El error que motivó la nota quedaba afuera porque el corte sólo ocurría
+   * al abrir una captura. Ahora se enganchan a la última captura, que es donde el usuario los
+   * hubiera puesto si se hubiera acordado de capturar una vez más.
+   */
+  const sueltosRef = useRef<EventoDiagnostico[]>([])
+
+  const abrirFinalizar = () => {
+    sueltosRef.current = mirarCinta()
+    setModalFinalizar(true)
+  }
+
+  /**
    * La cinta se engancha acá porque este componente vive en el layout: está montado en toda la app,
    * que es exactamente el alcance que necesita. `instalarCinta()` es idempotente, así que el doble
    * montaje de StrictMode en desarrollo no la duplica.
@@ -270,12 +285,22 @@ export function NotasParaClaude() {
       })
       if (error) throw error
 
+      // Los eventos posteriores a la última captura se enganchan a ella (ver `sueltosRef`).
+      const ultima = capturas.length - 1
       const { error: e2 } = await supabase.from("notas_capturas").insert(
-        capturas.map(c => ({ ...c, nota_id: notaId }))
+        capturas.map((c, i) => ({
+          ...c,
+          nota_id: notaId,
+          diagnostico: i === ultima && sueltosRef.current.length > 0
+            ? [...c.diagnostico, ...sueltosRef.current]
+            : c.diagnostico,
+        }))
       )
       if (e2) throw e2
 
       toast.success(`Nota guardada con ${capturas.length} captura(s). Claude la va a ver al abrir sesión.`)
+      reiniciarCorte() // lo de esta nota ya viajó: la próxima arranca limpia
+      sueltosRef.current = []
       setCapturas([]); setGrabando(false); setModalFinalizar(false); setTitulo("")
     } catch (e) {
       toast.error("No se pudo guardar: " + (e as Error).message)
@@ -341,7 +366,7 @@ export function NotasParaClaude() {
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={abrirCaptura}>
             <Camera className="mr-1 h-3 w-3" /> Capturar
           </Button>
-          <Button size="sm" className="h-7 text-xs" onClick={() => setModalFinalizar(true)}>
+          <Button size="sm" className="h-7 text-xs" onClick={abrirFinalizar}>
             <Check className="mr-1 h-3 w-3" /> Finalizar
           </Button>
           <button onClick={descartar} title="Descartar" className="text-gray-400 hover:text-red-600">
@@ -453,6 +478,12 @@ export function NotasParaClaude() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Finalizar la nota</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">{capturas.length} captura(s) grabada(s).</p>
+          {sueltosRef.current.length > 0 && (
+            <p className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800">
+              🔎 Se suman <strong>{sueltosRef.current.length} evento(s) técnico(s)</strong> posteriores
+              a la última captura — se guardan junto con ella.
+            </p>
+          )}
           <div>
             <Label className="text-xs">Título (opcional)</Label>
             <Input className="mt-1" value={titulo} onChange={e => setTitulo(e.target.value)}
