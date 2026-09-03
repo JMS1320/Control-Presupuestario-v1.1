@@ -50,7 +50,13 @@ ehthumbs.db
 Thumbs.db
 
 # Database backups
+# Los dumps (pg_dump, backups) NO van a git: son enormes y llevan datos reales.
 *.sql
+# PERO las MIGRACIONES sí: son el historial de cómo llegó la BD a ser lo que es, y perderlas
+# es perder trabajo irrecuperable. La regla de arriba se las llevaba puestas — pasó con
+# scripts/57 (RLS + cierre de anon) y scripts/58, que quedaron sólo en la máquina del usuario.
+# Corregido 2026-09-03. Los backups van a backups/ o fuera del repo, nunca a scripts/.
+!scripts/*.sql
 
 # MCP local config
 .claude/
