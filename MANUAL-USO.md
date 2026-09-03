@@ -1270,7 +1270,7 @@ base, pero **el camino del navegador no se probó corriendo la app**.*
    **de ese** modal, no *«Nueva nota para Claude»*. Si dice eso último, el contexto se está
    capturando tarde.
 
-### 🔎 La cinta de diagnóstico 🟡 *(nuevo 2026-09-02, sin testear — A-TEST-81)*
+### 🔎 La cinta de diagnóstico ✅ *(nuevo 2026-09-02, testeado en navegador)*
 
 > Diseño y motivos → `PENDIENTES.md` § A-FEAT-72.
 
@@ -1294,8 +1294,14 @@ calculado que no falla —como el Cash Flow que proyectaba $181 M— no deja ras
 de los datos. Y para las mejoras (*"quiero decimales acá"*) no aporta nada.
 
 #### 🧪 Cómo probarlo <a id="a-test-81"></a>
-1. **Que capture algo.** Provocá un error cualquiera de la app — vale el más fácil: **apagá el wifi**
-   y tocá cualquier cosa que traiga datos. Después `Alt + N`.
+> ✅ **Ya se probó automáticamente el 2026-09-02**, manejando un navegador real contra la app: la
+> cinta engancha, el renglón aparece, los eventos llegan a la base y el secreto no se filtra por
+> ninguna de las tres vías (query, header, cuerpo). Estos pasos quedan por si querés verlo con tus
+> propios ojos, o para volver a probarlo si algo cambia.
+
+1. **Que capture algo.** Provocá un error de la app sin cortarte internet: **F12** → solapa
+   **Network** → cambiá `No throttling` por **`Offline`**, tocá cualquier cosa que traiga datos, y
+   volvelo a `No throttling`. Después `Alt + N`. (Sólo esa pestaña queda aislada.)
    → Tiene que aparecer el renglón amarillo con al menos 1 evento. Si no aparece, la cinta no se
    enganchó y hay que avisar.
 2. **Que se entienda.** Desplegalo. Cada renglón tiene **hora**, **tipo** (`ERROR` / `WARN` / `RED` /

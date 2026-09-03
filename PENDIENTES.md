@@ -252,8 +252,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-SEC-01 | 🔴 | Alta | 👤 Javier · Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
 | **A-SEC-04** | 🟡 | **Alta** | 👤 Javier · **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
-| **A-FEAT-72** | 🟡 | Feat | **Cinta de diagnóstico en las notas.** ✅ **HECHO 2026-09-02, sin testear ([A-TEST-81](#a-feat-72))**: `lib/cinta-diagnostico.ts` (anillo de 50 eventos, lista blanca) + columna `notas_capturas.diagnostico` + los eventos se ven en el modal antes de guardar. La cinta viaja **por captura**, no por nota | → [A-FEAT-72](#a-feat-72) `@general` |
-| A-TEST-81 | 🔴 | Test | **Cinta de diagnóstico** (A-FEAT-72) — provocar un error, dejar la nota con `Alt+N` y ver que los eventos aparecen en el modal y llegan a `notas_capturas.diagnostico`. Y el control que importa: que **nada tipeado en un campo** aparezca en la cinta. 5 pasos en `MANUAL-USO.md` § Notas para Claude | → [A-FEAT-72](#a-feat-72) `@general` |
+| **A-FEAT-72** | ✅ | Feat | **Cinta de diagnóstico en las notas.** ✅ **HECHO y TESTEADO 2026-09-02**: `lib/cinta-diagnostico.ts` (anillo de 50 eventos, lista blanca) + columna `notas_capturas.diagnostico` + los eventos se ven en el modal antes de guardar. La cinta viaja **por captura**, no por nota | → [A-FEAT-72](#a-feat-72) `@general` |
+| A-TEST-81 | ✅ | Test | **Cinta de diagnóstico** (A-FEAT-72) — **TESTEADO 2026-09-02 en un navegador real** (Chromium manejado por Playwright, más 17 controles sobre el módulo): la cinta engancha, el renglón amarillo aparece, los eventos llegan a `notas_capturas.diagnostico`, y **nada tipeado en un campo, ni el header, ni el query string aparecen**. La nota de prueba se borró | → [A-FEAT-72](#a-feat-72) `@general` |
 | A-SEC-03 | 🔴 | **Alta** | 👤 Javier · **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
@@ -9126,8 +9126,28 @@ sumarle valor al robo. **Primero RLS, después la cinta.**
 Si se corriera al abrir, cancelar la captura **borraría** los eventos — y quien abre la nota, se
 arrepiente y la vuelve a abrir perdería justo el error que venía a reportar.
 
-**Verificado:** `build` OK y `type-check:diff` 113 → 113. **Nada probado en el navegador** — eso es
-[A-TEST-81](#a-feat-72).
+### ✅ TESTEADO 2026-09-02 — en un navegador de verdad
+Se hizo en **dos niveles**, y el segundo fue el que valió:
+
+1. **17 controles sobre el módulo**, simulando el navegador desde Node.
+2. **Chromium manejado por Playwright contra la app corriendo**: abre, provoca un error, aprieta
+   `Alt+N`, lee el renglón amarillo, guarda la nota, y se verifica la fila en la base. 9 controles.
+
+Lo que quedó probado punta a punta: la cinta **se engancha** (`window.fetch` y `console.error` en la
+página son los envueltos, no los nativos), el renglón amarillo **aparece y se despliega**, y los
+eventos **llegan a `notas_capturas.diagnostico`** — o sea que la columna nueva no rompió el guardado,
+que era el riesgo real después de la RLS del 31/08.
+
+Y el control que importa, contra la app real: se mandó una llamada con el secreto **en el query, en
+el header y en el cuerpo**. Ninguna de las tres formas quedó en la cinta.
+
+⚠️ **Dos falsos negativos del arnés de test, que valen como advertencia:** un `getByText` con
+expresión regular matcheaba el `<details>` y su `<summary>` a la vez, Playwright fallaba por
+ambigüedad, y el texto quedaba vacío — **haciendo pasar por buenos los controles de "el secreto no
+aparece", que sobre una cadena vacía siempre dan bien**. Un control que se verifica sobre la nada
+miente igual que uno mal escrito. Se corrigió leyendo el texto completo del modal.
+
+**Verificado además:** `build` OK y `type-check:diff` 113 → 113.
 
 ---
 
