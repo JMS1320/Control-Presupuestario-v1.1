@@ -670,8 +670,17 @@ npm test                             # tests
 ---
 
 ## 🔐 Accesos y roles
-- Rutas-como-password (`config/access-routes.ts`): **`adminjms1320`** (admin, ve todo) · **`ulises`** (contable, solo Egresos: ARCA + Templates).
-- Sin login real: es UX + validación de URL. **No protege la API** (ver A-SEC-01 en PENDIENTES — `anon` puede borrar todo).
+- **Login real** con Supabase Auth (`/login`), cuentas **individuales**, **2FA TOTP obligatorio
+  para `admin`**. El rol vive en **`app_metadata.role`** del JWT — **nunca** en `user_metadata`,
+  que lo puede editar el propio usuario. Roles: **`admin`** (ve todo) · **`contable`** (sólo
+  Egresos: ARCA + Templates).
+- Para autorizar se usa **`auth.getUser()`**, nunca `getSession()` (el segundo le cree a la cookie
+  sin validarla).
+- ⚠️ **Las rutas-como-password (`/adminjms1320`, `/ulises`) ya NO dan acceso** — redirigen al
+  login. `config/access-routes.ts` quedó sin consumidores.
+- 🚧 **Estado 2026-09-03: código hecho, sin testear, BD sin tocar.** Hasta correr `scripts/57`
+  (RLS + revoke a `anon`) **la API sigue sin protección**: `anon` puede borrar todo (A-SEC-01).
+  Diseño → `MODULO_USUARIOS.md` § 0 · pendientes → `PENDIENTES.md` [A-SEC-03](PENDIENTES.md#a-sec-03).
 
 ---
 

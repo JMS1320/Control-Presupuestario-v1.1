@@ -7,6 +7,72 @@
 
 ---
 
+## 🔐 Módulo: Entrar al sistema (login) 🟡
+
+> **Estado 2026-09-03: implementado pero TODAVÍA NO ACTIVO** — faltan crear las cuentas y correr
+> los scripts de BD. Hasta entonces esto describe cómo va a ser, no cómo es hoy.
+> Diseño y motivos → `MODULO_USUARIOS.md` § 0 · pendientes → `PENDIENTES.md` [A-SEC-03](PENDIENTES.md#a-sec-03).
+
+### Cómo se entra
+1. Ir a la app (la raíz, **sin ninguna ruta rara al final**).
+2. Cae en **`/login`**: email y contraseña propios de cada persona.
+   - El campo de contraseña tiene un **ojo** para verla o taparla (útil con claves largas).
+   - **"Recordarme en este navegador"**: si lo tildás, la sesión **sobrevive al cierre del
+     navegador**. Si NO lo tildás, al cerrar el navegador se cierra la sesión y hay que volver a
+     entrar. **No tildarlo en una máquina compartida.** Viene destildado por default a propósito.
+   - Al **Salir** se olvida también esa preferencia: el próximo login vuelve a preguntar.
+3. **Si sos admin**, pide además el **código de 6 dígitos** de la app de autenticación (Google
+   Authenticator o la que uses). Sin eso no entra a ninguna pantalla.
+4. Ya adentro, la app se ve igual que siempre; **el rol decide qué se ve**: admin todo, contable
+   sólo la solapa Egresos (ARCA + Templates).
+
+### La primera vez (admin) — alta del segundo factor
+Al entrar por primera vez, la app manda a una pantalla con un **QR**. Escanearlo con la app de
+autenticación y escribir el número que muestra. Si no se puede escanear, hay un código de texto
+para cargar a mano. **Desde ahí, cada login pide el código.**
+
+### Qué cambió respecto de antes
+- ❌ **Las URLs `/adminjms1320` y `/ulises` ya NO dan acceso.** Redirigen al login (no dan 404, así
+  que los favoritos viejos siguen andando, sólo que ahora piden usuario).
+- ✅ Cada persona tiene **su** usuario: se sabe quién hizo cada cosa y se le puede sacar el acceso
+  a uno solo sin tocar a los demás.
+- ✅ Cambiar de contraseña ya no es cambiar la URL de todo el mundo.
+
+### Cosas que van a pasar y no son errores
+- **"Email o contraseña incorrectos"** aparece igual si el mail no existe o si la clave está mal.
+  Es a propósito: si dijera cuál de las dos falló, alguien podría averiguar qué mails son válidos.
+- **"Demasiados intentos"**: hay límite de reintentos. Esperar unos minutos.
+- **"Tu cuenta todavía no tiene un rol asignado"**: la cuenta existe pero nadie la habilitó. Lo
+  resuelve el admin (`scripts/58`).
+- Si el código de 6 dígitos falla siempre, revisar que **la hora del teléfono esté en automático**:
+  el TOTP depende del reloj.
+
+### Crear cuentas (sólo admin)
+Arriba a la derecha, link **Usuarios** → pantalla `/usuarios`.
+
+1. **Crear cuenta**: email + rol (*contable* o *admin*) → **Crear e invitar**.
+2. La app devuelve un **link de invitación**. **Copiarlo y pasárselo a la persona** por un canal
+   privado. Es de **un solo uso** y vence; si se pierde, se crea la invitación otra vez.
+3. La persona abre el link, **pone la contraseña que quiera** y ya entra. Vos nunca ves su clave.
+4. Si la hiciste **admin**, la primera vez le va a pedir configurar el segundo factor con el QR.
+
+En la lista de cuentas se ve el rol (cambiable ahí mismo), si tiene 2FA, el último ingreso y el
+estado. **Revocar** bloquea el acceso — **no borra la cuenta**, para no perder el rastro de lo que
+hizo, y se puede reactivar.
+
+Dos cosas que la pantalla no te deja hacer, a propósito: **cambiarte el rol a vos mismo** y
+**revocarte a vos mismo**. Si el único admin se bajara a contable, nadie podría volver a entrar
+acá nunca más.
+
+⚠️ **La primera cuenta admin no se crea acá** (esta pantalla ya exige ser admin): esa se hace una
+sola vez desde el dashboard de Supabase. Ver `MODULO_USUARIOS.md` § 0.
+
+### Cerrar sesión
+Desde el botón de salir. (No se cierra sola por abrir un link: el logout es sólo por POST, a
+propósito, para que nadie pueda desloguearte con una imagen escondida en una página.)
+
+---
+
 ## 💸 Módulo: Pagos / Egresos
 
 ### Base de operación del usuario (cómo trabaja hoy) 🟡

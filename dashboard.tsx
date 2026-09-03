@@ -37,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
 import { NotasParaClaude } from "@/components/notas-para-claude"
+import { BarraSesion } from "@/components/barra-sesion"
 import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
@@ -127,6 +128,9 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
       <NotasParaClaude />
       <div className="mx-auto max-w-7xl space-y-6">
+        {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
+            había sesión que cerrar: se entraba por URL. */}
+        <BarraSesion userRole={userRole} />
         {/* pestañas principales */}
         <Tabs defaultValue={getDefaultTab()} className="w-full">
           <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-12'}`}>

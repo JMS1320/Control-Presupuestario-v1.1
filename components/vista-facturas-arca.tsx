@@ -786,6 +786,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.visible])
     )
     // Mergear sobre defaults para que columnas nuevas (ej. fecha_pago) aparezcan aunque haya config guardada.
+    // Guarda de SSR: el inicializador de useState corre también en el servidor, donde no hay
+    // localStorage. Sin esto la pantalla tira 500 al renderizarse (rompía la ruta del contable).
+    if (typeof window === 'undefined') return defaults
     const saved = localStorage.getItem('facturas-arca-columnas-visibles')
     if (saved) {
       try {
@@ -799,7 +802,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Estado para anchos de columnas personalizables con persistencia
   const [anchosColumnas, setAnchosColumnas] = useState<Record<string, string>>(() => {
-    // Intentar cargar desde localStorage
+    // Guarda de SSR: mismo caso que columnasVisibles (arriba) — sin esto, 500 al renderizar.
+    if (typeof window === 'undefined') return {}
     const saved = localStorage.getItem('facturas-arca-anchos-columnas')
     if (saved) {
       try {
@@ -2995,10 +2999,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       return
     }
 
-    // Obtener rol real del usuario desde la URL
-    const pathArray = window.location.pathname.split('/')
-    const accessRoute = pathArray[1] // Primera parte después del dominio
-    const rolUsuario = accessRoute === 'adminjms1320' ? 'admin' : 'contable'
+    // El rol sale de la SESIÓN (prop userRole), no de la URL: desde el login real la URL ya no
+    // dice quién sos. Ver MODULO_USUARIOS.md § Cambio de rumbo (2026-09-03).
+    const rolUsuario = userRole
     
     // Validar permisos según rol y cambios de estado
     const facturasArray = Array.from(facturasSeleccionadasGestion)
@@ -6056,12 +6059,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       <TableHead className="w-12">
                         <Checkbox
                           checked={(() => {
-                            const esAdminGestion = typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320'
+                            const esAdminGestion = userRole === 'admin'
                             const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
                             return seleccionables.length > 0 && facturasSeleccionadasGestion.size === seleccionables.length
                           })()}
                           onCheckedChange={(checked) => {
-                            const esAdminGestion = typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320'
+                            const esAdminGestion = userRole === 'admin'
                             if (checked) {
                               const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
                               setFacturasSeleccionadasGestion(new Set(seleccionables.map(f => f.id)))
@@ -6123,7 +6126,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${factura.ddjj_iva === 'DDJJ OK' && mostrarGestionMasiva ? 'opacity-50' : ''}`}>
                       {mostrarGestionMasiva && (
                         <TableCell>
-                          {factura.ddjj_iva === 'DDJJ OK' && !(typeof window !== 'undefined' && window.location.pathname.split('/')[1] === 'adminjms1320') ? (
+                          {factura.ddjj_iva === 'DDJJ OK' && !(userRole === 'admin') ? (
                             <span title="DDJJ confirmada — solo admin puede modificar" className="text-xs">🔒</span>
                           ) : (
                             <Checkbox
@@ -8856,10 +8859,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
           {/* Selector de Fecha de Pago */}
           {(() => {
-            // Determinar rol para mostrar/habilitar selector fecha
-            const pathArray = typeof window !== 'undefined' ? window.location.pathname.split('/') : []
-            const accessRoute = pathArray[1] || ''
-            const esAdminFecha = accessRoute === 'adminjms1320'
+            // Determinar rol para mostrar/habilitar selector fecha (desde la sesión, no la URL)
+            const esAdminFecha = userRole === 'admin'
             // Ulises solo puede cambiar fecha cuando hay facturas en 'pendiente' (no en pagar/preparado)
             const hayFacturasEnProceso = facturasPagos.some(f => f.estado === 'pagar' || f.estado === 'preparado')
             const puedeEditarFecha = esAdminFecha || !hayFacturasEnProceso
@@ -9065,10 +9066,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               <span className="ml-2">Cargando facturas...</span>
             </div>
           ) : (() => {
-            // Determinar rol del usuario
-            const pathArray = typeof window !== 'undefined' ? window.location.pathname.split('/') : []
-            const accessRoute = pathArray[1] || ''
-            const esAdmin = accessRoute === 'adminjms1320'
+            // Determinar rol del usuario (desde la sesión, no la URL)
+            const esAdmin = userRole === 'admin'
 
             // Función para ordenar por fecha (próximas a vencer primero)
             const ordenarPorFecha = (facturas: FacturaArca[]) => {

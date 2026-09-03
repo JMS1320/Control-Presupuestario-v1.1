@@ -184,6 +184,8 @@ export function VistaTemplatesEgresos() {
     )
     // Cargar desde localStorage, mergeando sobre los defaults para que las columnas
     // nuevas (agregadas después de guardar la config) aparezcan con su default.
+    // Guarda de SSR: el inicializador corre también en el servidor, donde no hay localStorage.
+    if (typeof window === 'undefined') return defaults
     const saved = localStorage.getItem('templates-egresos-columnas-visibles')
     if (saved) {
       try {
@@ -200,6 +202,8 @@ export function VistaTemplatesEgresos() {
     const defaults = Object.fromEntries(
       Object.entries(COLUMNAS_CONFIG).map(([key, config]) => [key, config.width])
     )
+    // Guarda de SSR: ídem columnasVisibles.
+    if (typeof window === 'undefined') return defaults
     const saved = localStorage.getItem('templates-egresos-anchos-columnas')
     if (saved) {
       try {

@@ -5,7 +5,129 @@
 
 ---
 
-## 1. ESTADO ACTUAL DEL SISTEMA
+## 0. ⚠️ CAMBIO DE RUMBO — 2026-09-03: login real en vez de sign-in silencioso
+
+> **Leer esto ANTES que el resto del archivo.** Lo de abajo (secciones 1 a 6) es el análisis de
+> abril-2026 y sigue siendo válido como comparativa, pero **la Opción A se implementó con una
+> variante**, y en dos puntos dice lo contrario de lo que hoy hace el código.
+
+**Decidido con el usuario el 2026-09-03.** Pidió *"una página de login que cumpla con OWASP y
+estrictas medidas de seguridad para que no puedan hackear cuentas"*.
+
+### Qué cambió respecto de la Opción A original
+
+| | Opción A (abr-2026) | **Lo decidido (2026-09-03)** |
+|---|---|---|
+| Cómo entra el admin | **sign-in silencioso** al abrir `/adminjms1320`, con `ADMIN_EMAIL`/`ADMIN_PASSWORD` en variables de entorno | **página de login** con email y contraseña propios |
+| Cuentas | **una compartida** por rol | **individuales por persona** |
+| Rutas-como-password | conviven (siguen dando el rol) | **reemplazo total** — la URL ya no da acceso |
+| Segundo factor | no contemplado | **TOTP obligatorio para `admin`**, opcional para `contable` |
+| Permisos de `anon` | **lectura libre**, escritura sólo `authenticated` | **`anon` sin nada** |
+
+### Por qué se cambió (los motivos, para poder priorizar después)
+
+1. **Cuentas individuales** son la única forma de tener **audit log por usuario**
+   ([A-SEC-01](PENDIENTES.md#a-sec-01) P2·11) y de **revocarle el acceso a una sola persona**. Con
+   una credencial compartida no se sabe nunca quién hizo cada cambio.
+2. Habilita la **quinta pieza del norte administrativo — el PERMISO** (`CLAUDE.md`): que Ulises
+   pueda cargar el resumen de la tarjeta ([A-AUTO-01](PENDIENTES.md#a-auto-01)) sin que la tarea
+   vuelva a JMS. Delegar exige poder dar acceso fino a una persona concreta.
+3. **`anon` sin permisos** (y no "lectura libre") porque, si **todos** se loguean, `anon` ya no
+   tiene ningún uso legítimo. El propio dossier A-SEC-01 dice que *cerrar `anon` es lo que mueve la
+   aguja*: la `anon_key` viaja en el bundle JS por diseño, así que mientras tenga SELECT cualquiera
+   se lleva **los montos y CUITs de toda la operación** con un `curl`. Dejarle lectura era mitigar;
+   revocarle todo es cerrar.
+4. **Sign-in silencioso con la clave en una env var** significa que quien vea el entorno (o un
+   dump de build) entra como admin, y que la clave es la misma para siempre. Un login real la deja
+   en manos de cada persona y permite rotarla.
+
+### Decisiones técnicas que valen como regla
+
+- **El rol vive en `app_metadata.role` del JWT, NUNCA en `user_metadata`.** `user_metadata` lo
+  puede escribir el propio usuario con su sesión (`auth.updateUser`): guardar el rol ahí es
+  regalar un escalado de privilegios. `app_metadata` sólo se escribe con `service_role`.
+- **Para autorizar se usa `auth.getUser()`, nunca `getSession()`.** `getSession()` devuelve lo que
+  dice la cookie sin validarla contra el servidor de Auth.
+- **`lib/supabase.ts` pasó a `createBrowserClient`** (`@supabase/ssr`): la sesión viaja en
+  **cookies** y no en localStorage. Es lo que hace que las ~103 pantallas que importan ese cliente
+  queden autenticadas **sin tocarles una línea** — con el cliente viejo mandarían `anon` y la RLS
+  las frenaría a todas.
+
+### Estado real al 2026-09-03 — código hecho, nada testeado, BD sin tocar
+
+**✅ Hecho (rama `feature/login`, sin commitear, build OK):**
+- `middleware.ts` — refresco de sesión, corte de acceso y cabeceras de seguridad (CSP,
+  `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS).
+- `/login` + `app/login/actions.ts` — mensaje **único** ante credenciales inválidas (no permite
+  enumerar usuarios) y validación del `volver_a` (no permite redirección abierta).
+- `/login/2fa` (desafío) y `/login/2fa/alta` (alta del TOTP con QR). El middleware **no deja
+  entrar al admin sin `aal2`**.
+- `/auth/signout` — sólo **POST**, para que un `<img src>` no pueda desloguear (CSRF de logout).
+- `app/page.tsx` — la app vive en la raíz y el rol sale de la sesión. Sin rol → `/no-access`.
+- `app/[accessRoute]/page.tsx` — las rutas viejas **redirigen a `/`**; ya no dan acceso. No se
+  borró la ruta para que los favoritos no den 404.
+- **6 lecturas del rol desde `window.location`** en `vista-facturas-arca.tsx` pasadas al prop de
+  sesión. ⚠️ Sin esto el admin habría perdido sus permisos **en silencio** al desaparecer la
+  ruta-password. `grep adminjms1320` sobre ese archivo da **cero**.
+- `notas-para-claude.tsx` — el rol sale de la sesión y la ruta se guarda entera (ya no hay llave
+  que recortar). Ver [A-SEC-04](PENDIENTES.md#a-sec-04).
+
+### 👥 Alta de cuentas desde la app (2026-09-03)
+
+Pedido del usuario: *"quiero poder crear cuentas desde el usuario con rol de administrador"* — sin
+depender del dashboard de Supabase.
+
+**`/usuarios`** (sólo admin): lista de cuentas con rol, estado de 2FA, último ingreso; alta de
+cuentas; cambio de rol; y revocación.
+
+**Decisiones y por qué:**
+- **No se define contraseña en el alta.** Se usa `admin.generateLink({type:'invite'})`, que crea la
+  cuenta y devuelve un **link de un solo uso**; la persona elige su clave. Motivo: ningún admin
+  conoce la clave de otro, y no hay una contraseña viajando por la UI ni por los logs. Además
+  **no depende de que haya SMTP configurado** — el link se copia y se pasa por donde se quiera.
+  Si algún día se configura SMTP, se cambia a envío automático sin tocar nada más.
+- **Revocar NO borra: bloquea** (`ban_duration`). Borrar la cuenta rompería la trazabilidad de
+  quién hizo qué, y `CLAUDE.md` prohíbe lo destructivo por default. Es reversible.
+- **Candado anti-encierro:** no se puede cambiar el rol ni revocarse **a uno mismo**. Sin esto, el
+  último admin podía bajarse a `contable` y dejar el sistema sin nadie que pueda volver a entrar a
+  esta pantalla — irrecuperable desde la app.
+- **La API se defiende sola** (`lib/auth/guard-admin.ts`): exige sesión + rol `admin` + **`aal2`**.
+  Lo de `aal2` importa: sin eso, robar una cookie de sesión alcanzaría para **crear cuentas
+  nuevas**, que es la escalada más grave posible. No se confía sólo en el middleware — es
+  [A-SEC-06](PENDIENTES.md#a-sec-06) aplicado a los endpoints más peligrosos.
+- **El middleware ahora devuelve `401` JSON en `/api/*`** en vez de redirigir al login.
+
+**🥚 Huevo y gallina — la PRIMERA cuenta:** el panel exige ser admin con 2FA, así que el primer
+admin **no puede crearse desde ahí**. Se crea en el dashboard de Supabase y se le pone el rol con
+`scripts/58`. De ahí en más, todas las demás salen del panel.
+
+**🚪 Salir:** se agregó `BarraSesion` arriba de las pestañas (email + rol + link a Usuarios si sos
+admin + botón Salir). Antes no había cómo cerrar sesión porque no había sesión.
+
+**🔴 Falta (todo lo que toca la BD o depende de cuentas):**
+1. Crear las cuentas en Supabase (Authentication → Users). **Las contraseñas las pone cada
+   persona**; Claude no crea cuentas ni tipea credenciales.
+2. Habilitar en Supabase Auth: **MFA TOTP**, **protección de contraseñas filtradas (HIBP)** y
+   largo mínimo de contraseña.
+3. Correr `scripts/57-rls-login-cerrar-anon.sql` — revoca todo a `anon` y pone RLS real.
+   **Paso a paso**, con la foto previa y el revert listo, como pide el protocolo de A-SEC-01.
+4. Correr `scripts/58-asignar-roles-usuarios.sql` — asigna el rol. **Toca datos**: se pregunta.
+5. **Testear todo** → [A-TEST-81](PENDIENTES.md#a-sec-03).
+
+**⚠️ Lo que este cambio NO resuelve:**
+- El **CSP lleva `unsafe-inline`/`unsafe-eval`** porque Next inyecta su bootstrap inline →
+  [A-SEC-05](PENDIENTES.md#a-sec-05).
+- Las **29 API routes usan `service_role`**, o sea que **saltean RLS por diseño**. Hoy su única
+  defensa es el middleware → [A-SEC-06](PENDIENTES.md#a-sec-06).
+
+### 🐞 Corregido de paso: el bug que este archivo daba por abierto
+La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
+(la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol
+desde la URL, que es lo que se corrigió ahora.
+
+---
+
+## 1. ESTADO ACTUAL DEL SISTEMA (abril-2026 — ver § 0)
 
 ### Roles existentes
 
@@ -263,9 +385,11 @@ El cliente pasa de `createClient` simple a uno que lee/escribe la cookie de sesi
 
 ## 5. DECISIÓN Y PRÓXIMOS PASOS
 
-**Opción seleccionada**: A (RLS Minimalista) — pendiente de implementación
+**Opción seleccionada**: A (RLS Minimalista).
 
-**Estado**: Documentado, no implementado aún
+**Estado (2026-09-03)**: implementada **con la variante del § 0** (login real en vez de sign-in
+silencioso, cuentas individuales, `anon` sin permisos). Los 9 pasos de abajo quedan como
+referencia; el estado real y lo que falta están en el **§ 0**.
 
 ### Pasos para implementar cuando se decida avanzar
 

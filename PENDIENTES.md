@@ -242,11 +242,14 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 ### Seguridad
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
-| **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
+| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2. **2026-09-03:** los P2 (9) *RLS real* y (10) *auth Supabase real* quedaron **escritos y listos para correr** en `scripts/57-rls-login-cerrar-anon.sql` (revoca TODO a `anon`, no sólo la escritura) — **la BD todavía no se tocó**. Ver [A-SEC-03](#a-sec-03) | → [A-SEC-01](#a-sec-01) `@general` |
+| **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). **2026-09-03:** con el login real la URL dejó de tener llave, así que el rol pasó a salir de la **sesión** y la ruta se guarda **entera** (recortar el primer segmento pasó a ser un bug). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
 | A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
-| A-SEC-03 | 🔴 | **Alta** | **Terminar el módulo Usuarios y ponerlo activo** — el plan completo (RLS Opción A, 9 pasos) está escrito en `MODULO_USUARIOS.md` desde abr-2026 y **nunca se implementó**. Es el fix de fondo de A-SEC-01. Incluye un bug: `VistaEgresos` no recibe el prop `userRole` | → [A-SEC-03](#a-sec-03) `@general` |
+| **A-SEC-03** | 🟡 | **Alta** | **Login real + módulo Usuarios activo.** 🔄 **CAMBIO DE RUMBO 2026-09-03**: en vez del *sign-in silencioso* con cuenta compartida que decía el plan de abril, se hizo **página de login, cuentas individuales, 2FA obligatorio para admin y `anon` sin permisos** — motivos en `MODULO_USUARIOS.md` § 0. ✅ **Código hecho** (rama `feature/login`, build OK, **sin commitear**): middleware, `/login`, 2FA, signout, la app en la raíz, las rutas viejas ya no dan acceso, 6 lecturas del rol desde la URL migradas a la sesión, **pantalla `/usuarios`** (alta con link de invitación, cambio de rol, revocación) y **barra de sesión con botón Salir**. 🔴 **Falta**: crear cuentas · settings de Auth (MFA/HIBP) · correr `scripts/57` (RLS) y `scripts/58` (roles) · **testear todo** ([A-TEST-81](#a-sec-03)). El bug de `VistaEgresos` que este ítem daba por abierto **ya estaba arreglado** | → [A-SEC-03](#a-sec-03) `@general` |
+| **A-TEST-81** | 🔴 | Test | **El login, de punta a punta** — entrar como admin (con 2FA) y como contable · que el contable siga viendo sólo Egresos · que el admin **no** haya perdido permisos al desaparecer la ruta-password (DDJJ IVA, quincena SICORE, botón Revertir, secciones de Vista de Pagos) · que las ~103 pantallas escriban con RLS puesta · logout · `volver_a` · cuenta sin rol → `/no-access` · **y la pantalla `/usuarios`**: crear cuenta + usar el link de invitación · cambiar rol · revocar · que el contable **no** pueda entrar a `/usuarios` ni a `/api/admin/*` · que **no** te dejes cambiar tu propio rol | → [A-SEC-03](#a-sec-03) `@general` |
+| **A-SEC-05** | 🔴 | Media | **CSP con `unsafe-inline` y `unsafe-eval`** — el `Content-Security-Policy` del `middleware.ts` los necesita porque Next inyecta su bootstrap inline. Con eso puesto, el CSP **no frena un XSS**, que es justo para lo que sirve. Fix: CSP por **nonce** (generar el nonce en el middleware y pasarlo a Next). Se difirió para no mezclarlo con el login | → [A-SEC-05](#a-sec-05) `@general` |
+| **A-SEC-06** | 🔴 | **Alta** | **Las 29 API routes usan `service_role` → saltean RLS por diseño.** Su única defensa es el middleware: si un día cambia el `matcher`, quedan abiertas de par en par, y con `service_role` no hay red abajo. Además hoy una llamada sin sesión devuelve **307 al login** en vez de **401**, que rompe cualquier cliente. ✅ **Parcial 2026-09-03**: `/api/*` ya devuelve **401 JSON** en vez de 307, y las routes nuevas de `/api/admin/*` validan sesión + rol + `aal2` por su cuenta (`lib/auth/guard-admin.ts`). 🔴 **Faltan las otras 29.** Fix: que **cada route valide la sesión** | → [A-SEC-06](#a-sec-06) `@general` |
 | A-SEC-02 | 🔴 | **Urgente** | **Token Supabase filtrado en el repo** — había un PAT (`sbp_dc35…`, admin de toda la cuenta) hardcodeado en `KNOWLEDGE.md`. GitHub Secret Scanning bloqueó el push (2026-07-09). **Redactado** del archivo, PERO **sigue en el historial de git**. **Hallazgo (2026-07-09):** en ESTA PC el token filtrado NO está en ningún config activo (solo en artefactos de Claude Code: file-history + transcript de la sesión). El `.mcp.json` activo usa OTRO token ("claude-mcp-control-presupuestario", 30 min). **ORIGEN DEL "14 días" IDENTIFICADO (2026-07-09):** el token filtrado está en `.mcp.json`/KNOWLEDGE.md de **carpetas de BACKUP viejas del proyecto** (`Control-Presupuestario-v1.1 - 250817...` y `..._BACKUP_...20250815...`) → trabajar en una copia vieja lo usó. También en **`CREDENCIALES_SUPABASE_NUEVO.md`** (carpeta activa, sin commitear) + artefactos Claude Code. **Acción:** revocar el filtrado en Supabase (el proyecto activo usa otro token → NO rompe nada actual; solo las copias viejas, que si las usás les ponés el nuevo). Limpiar el token de `CREDENCIALES_SUPABASE_NUEVO.md` y backups. **+ 2026-08-02 (auditoría A-DOC):** `CREDENCIALES_SUPABASE_NUEVO.md` sigue en la raíz (untracked). Además de limpiar el token, sacarlo del repo y `.gitignore`-arlo — un `git add -A` distraído lo commitea. `@general` |
 
 ### 🤖 Automatizaciones (`A-AUTO-NN`) — el norte administrativo
@@ -2229,11 +2232,58 @@ a la tercera semana se ignora entero. La separación *sí o sí* / deseable es l
   más parecida a esto que hay en el sistema: sirve de modelo.
 - El circuito de mail de `gas-buscar-pdf` ya sabe mandar mails de resumen a un destinatario.
 
+### 📌 Precisiones del usuario — 2026-09-03
+
+**Son avisos de NEGOCIO, no de sistema.** Preguntado si "avisar a los usuarios sobre updates"
+significaba *cambios del sistema* (salió una función nueva) o *cosas del negocio* (vence algo,
+llegó un resumen, hay algo para revisar), el usuario respondió: **cosas de negocio**. Se descarta
+mezclar las dos cosas — son sistemas distintos y juntarlos convierte el aviso en ruido, que es
+como muere un checklist (ver el ⚠️ de la prioridad, arriba).
+
+**El destinatario explícito ya es posible.** Hasta el 2026-09-03 no había usuarios, había URLs:
+"avisar al responsable" era literalmente irrealizable. Con [A-SEC-03](#a-sec-03) hay cuentas
+individuales con email y rol, o sea que la pieza 3 del norte **recién ahora tiene de dónde
+agarrarse**. Es la dependencia dura de este ítem.
+
+### Tres definiciones de diseño (2026-09-03, discutidas con el usuario)
+
+1. **El mail es un canal, no el sistema.** El corazón es una **tabla de notificaciones + la
+   campanita en la app** (el placeholder de `C-10` ya existe). El mail es para cuando la persona
+   no está adentro. Motivo: si se arranca por el mail, quedan avisos que **nadie puede marcar
+   como leídos ni auditar** — y sin eso no hay "control después", que es la mitad del pedido.
+2. **El mail NO lleva los montos.** [A-SEC-01](#a-sec-01) identifica como sensible *"los montos,
+   CUITs y números de toda la operación"*. El aviso dice *"hay 3 vencimientos esta semana, entrá
+   a verlos"* + link: cumple igual sin repartir datos por casillas ajenas. Mismo criterio que ya
+   se aplicó al sacar los montos de los logs del GAS.
+3. **El margen es parte del diseño**, no un detalle de implementación — *una alerta el día del
+   vencimiento es un acta*.
+
+### 📧 Envío de mail — decidido: SMTP de Gmail, NO servidor propio
+
+El usuario preguntó si convenía **montar un SMTP propio opensource** (Postal, Stalwart, Maddy).
+**Se descartó**, y conviene dejar el motivo escrito para no volver a discutirlo:
+
+- **El volumen no lo justifica**: 3 usuarios × 1 aviso diario ≈ **3 mails/día**. Gmail SMTP admite
+  **500/día** — es el 0,6 % del límite.
+- **La entregabilidad empeora, no mejora**: una IP nueva de VPS arranca con reputación cero y cae
+  en spam aunque estén bien SPF/DKIM/DMARC/rDNS. Y esto incluye el mail de **invitación y de
+  recuperar contraseña**: si cae en spam, **la persona no puede entrar**. Es poner el canal más
+  frágil en la puerta de acceso.
+- **Suma una máquina que mantener**, fuera de Vercel, en el camino crítico del acceso.
+- **Si algún día crece** → transaccional (Resend / Brevo / SES), no servidor propio.
+- Alternativa registrada por si se quiere control total sin SMTP: el **Send Email Hook** de
+  Supabase (beta) permite que los mails de auth los mande código propio — se podría reusar el GAS
+  que ya envía desde `sanmanuel.sp@gmail.com`. Suma una pieza beta al camino del acceso.
+
+**Pendiente concreto:** configurar Gmail SMTP en *Authentication → Emails → SMTP Settings* y, una
+vez puesto, cambiar `generateLink` por `inviteUserByEmail` en `app/api/admin/usuarios/route.ts`
+(hoy el link de invitación se copia y se pasa a mano — ver `MODULO_USUARIOS.md` § 0).
+
 ### A definir con el usuario
 - **Qué obligaciones entran** y con qué prioridad. Es criterio suyo, no del sistema.
 - **Los responsables**: hoy hay 2 personas (JMS y Ulises) y el permiso de Ulises está limitado
   (cruza con [A-SEC-03](#a-sec-03) y con [A-AUTO-01](#a-auto-01) paso 1).
-- **El canal** de la alerta: mail, pantalla al abrir la app, o las dos.
+- ~~**El canal** de la alerta~~ → definido arriba: **app (fuente de verdad) + mail (aviso)**.
 
 ---
 
@@ -2513,7 +2563,34 @@ de Vista de Pagos).
 2. **No tener que acordarse** de agregar la restricción en cada feature.
 3. Dar acceso **de a poco (opt-in)**, no bloquear de a poco (opt-out).
 
-### El plan ya está decidido — falta ejecutarlo
+### 🔄 CAMBIO DE RUMBO 2026-09-03 — se hizo, con variante
+
+El usuario pidió *"una página de login que cumpla con OWASP"*. Eso **contradice** el plan de abril
+en dos puntos (era **sign-in silencioso** con **una cuenta compartida**), así que se avisó antes de
+tocar nada y se decidió el cambio. **Los motivos completos están en `MODULO_USUARIOS.md` § 0** —
+resumidos: cuentas individuales son lo único que da **audit log por usuario** y permite **revocar a
+una persona**; habilitan la **quinta pieza del norte administrativo (el PERMISO)**, o sea delegarle
+la tarjeta a Ulises ([A-AUTO-01](#a-auto-01)); y como **todos** se loguean, `anon` ya no tiene uso
+legítimo → se le revoca **todo**, no sólo la escritura, que es lo que este dossier y A-SEC-01
+identifican como *lo que mueve la aguja*.
+
+**Estado: código hecho y compilando, NADA testeado, BD sin tocar.** Detalle fino en
+`MODULO_USUARIOS.md` § 0. Lo que falta, en orden:
+
+1. Crear las cuentas en Supabase (Authentication → Users) — **las contraseñas las pone cada
+   persona**.
+2. Habilitar en Auth: **MFA TOTP**, **contraseñas filtradas (HIBP)**, largo mínimo.
+3. `scripts/57-rls-login-cerrar-anon.sql` — **paso a paso**, con foto previa y revert listo
+   (protocolo de [A-SEC-01](#a-sec-01)).
+4. `scripts/58-asignar-roles-usuarios.sql` — **toca datos** (`auth.users`): se pregunta antes.
+5. **[A-TEST-81](#a-sec-03)** — testear de punta a punta.
+
+⚠️ **El riesgo silencioso de esta tanda**: al desaparecer la ruta-password, los 6 lugares que
+leían `window.location` para saber si eras admin habrían devuelto `false` y **el admin habría
+perdido permisos sin un solo error en pantalla**. Ya están migrados al prop de sesión, pero es
+exactamente lo que A-TEST-81 tiene que verificar.
+
+### El plan original de abril (referencia)
 `MODULO_USUARIOS.md` compara 4 opciones (wrapper del cliente, guard por función, hook
 `useSupabase()`, RLS minimalista) y **selecciona la Opción A — RLS Minimalista con Supabase Auth**.
 Los 9 pasos están escritos ahí: instalar `@supabase/ssr` · crear usuario admin en Supabase Auth ·
@@ -2529,6 +2606,45 @@ abril.
 
 **Nota:** las restricciones finas de Ulises son de **visibilidad/UX** y sobreviven igual a RLS —
 son independientes.
+
+---
+
+## <a id="a-sec-05"></a>A-SEC-05 — CSP por nonce (hoy con `unsafe-inline`)
+
+**Abierto 2026-09-03**, al implementar el login ([A-SEC-03](#a-sec-03)).
+
+El `middleware.ts` manda `Content-Security-Policy`, pero `script-src` incluye `'unsafe-inline'` y
+`'unsafe-eval'` porque Next inyecta su bootstrap inline y sin eso la app no arranca.
+
+**Dónde duele:** el CSP existe para que, si alguien logra inyectar un `<script>` (XSS), el browser
+se niegue a ejecutarlo. Con `unsafe-inline` puesto **el browser lo ejecuta igual**: la cabecera
+está pero no protege de lo único que tenía que proteger. El resto del CSP (`frame-ancestors`,
+`form-action`, `object-src`, `connect-src` acotado a Supabase) **sí** sirve.
+
+**Fix de fondo:** generar un nonce por request en el middleware, pasarlo a Next y reemplazar
+`'unsafe-inline'` por `'nonce-<valor>'`. **Mitigación:** ninguna — o hay nonce o no hay CSP de
+scripts. Se difirió a propósito para no mezclarlo con el login.
+
+---
+
+## <a id="a-sec-06"></a>A-SEC-06 — Las API routes saltean la RLS
+
+**Abierto 2026-09-03**, al implementar el login ([A-SEC-03](#a-sec-03)).
+
+**29 de las 35 routes** de `app/api/` usan `service_role` (`lib/supabase-admin.ts` o
+`SUPABASE_SERVICE_ROLE_KEY` directo). `service_role` **ignora RLS por diseño**: la protección que
+[A-SEC-01](#a-sec-01) y A-SEC-03 ponen en la base **no las alcanza**.
+
+**Dónde duele:** hoy lo único que las cubre es el `matcher` del `middleware.ts`. Es una sola línea
+de config, y el día que alguien agregue una exclusión para servir un asset, la route queda expuesta
+**con permisos de superusuario de la base**. Es la definición de punto único de falla.
+
+**Segundo problema, más chico pero rompe cosas:** una llamada sin sesión hoy recibe un **307 al
+login** en vez de un **401**. Un cliente que espera JSON recibe HTML.
+
+**Fix de fondo:** que cada route valide la sesión por su cuenta (`getUser()`) antes de usar
+`service_role`, y devuelva 401. Defensa en profundidad: el middleware queda como primera barrera,
+no como la única.
 
 ---
 
