@@ -366,6 +366,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+
+  /**
+   * De qué botón salió el listado de "PDFs sin vincular".
+   *
+   * Importa porque el mismo panel significa dos cosas MUY distintas: si salió de «Contar», los
+   * archivos están sin vincular porque **nadie los miró todavía**; si salió de «Vincular PDFs»,
+   * están sin vincular porque **el contenido no matcheó**. El texto decía siempre lo segundo, y
+   * eso hizo que un inventario normal se leyera como una falla del sistema (2026-09-03).
+   */
+  const [origenListado, setOrigenListado] = useState<'contar' | 'ocr' | null>(null)
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
@@ -430,14 +440,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Desvincula el PDF de una factura (para re-asignar uno mal puesto). NO borra el archivo de Drive,
   // solo limpia el link → el archivo vuelve a quedar disponible como huérfano en la próxima conciliación.
   const desvincularPdf = async (factura: FacturaArca) => {
-    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar (corré "Conciliar saldos").`)) return
+    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar: corré «Vincular sólo los que faltan».`)) return
     try {
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
         .update({ pdf_drive_url: null, pdf_estado: null, pdf_observaciones: 'Desvinculado manualmente para re-asignar' })
         .eq('id', factura.id)
       if (error) { toast.error('No se pudo desvincular: ' + error.message); return }
       await cargarFacturasPeriodo(periodoConsulta)
-      toast.success('PDF desvinculado. Corré "Conciliar saldos" para re-asignarlo.')
+      toast.success('PDF desvinculado. Corré «Vincular sólo los que faltan» para re-asignarlo.')
     } catch (e) {
       toast.error('Error al desvincular: ' + (e as Error).message)
     }
@@ -2017,6 +2027,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
+    setOrigenListado('ocr')
     setHuerfanosSupervision([])
     const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
     const skip = new Set<string>()
@@ -2071,6 +2082,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
+    setOrigenListado('contar')
     setHuerfanosSupervision([])
     setDetalleConciliacion([])
     const tId = toast.loading('Conciliando saldos del archivo…')
@@ -5970,33 +5982,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   size="sm"
                   onClick={conciliarSaldos}
                   disabled={supervisandoArchivo}
-                  title="Rápido, sin OCR: lista la carpeta y muestra el balance (archivos sin vincular vs facturas sin PDF)"
+                  title="SOLO CUENTA, no vincula nada: lista los archivos de la carpeta y los cruza contra los PDF ya vinculados. No abre ningún archivo, así que es instantáneo. Para vincular usá «Vincular PDFs»."
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  📊 Conciliar saldos
+                  📊 Contar (no vincula)
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(false)}
                   disabled={supervisandoArchivo}
-                  title="Releva TODA la carpeta del período con OCR: vincula los PDF que matcheen por contenido (corre en 2do plano)"
+                  title="ABRE cada PDF de la carpeta, le lee CUIT, número y monto, y lo VINCULA a su factura cuando los tres coinciden. Es el que hace el trabajo. Va de a 4 archivos por vuelta y corre en 2do plano; al terminar manda un mail con lo vinculado y lo que faltó."
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {supervisandoArchivo ? 'Procesando…' : '🗂️ Supervisar (OCR)'}
+                  {supervisandoArchivo ? 'Vinculando…' : '🔗 Vincular PDFs (lee el contenido)'}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(true)}
                   disabled={supervisandoArchivo}
-                  title="Re-supervisa SOLO los PDF que aún no están vinculados (salta los ya vinculados → más rápido)"
+                  title="Lo mismo que «Vincular PDFs», pero saltea los que ya están vinculados. Sirve para re-correr sin repetir trabajo; con 0 vinculados hace exactamente lo mismo."
                   className="flex items-center gap-2"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Solo sin adjudicar
+                  🔗 Vincular sólo los que faltan
                 </Button>
                 <Button
                   variant="outline"
@@ -6304,10 +6316,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         <Card>
           <CardHeader>
             <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Archivos en la carpeta del período que la supervisión no pudo asociar a una factura
-              (típicamente fotos: el OCR no leyó el contenido). El nombre suele tener el proveedor.
-            </p>
+            {origenListado === 'contar' ? (
+              <p className="text-sm text-amber-700">
+                ⚠️ Estos archivos <strong>todavía no se intentaron vincular</strong>: «Contar» no abre
+                ningún PDF. Para vincularlos corré <strong>«🔗 Vincular PDFs»</strong>.
+                La sugerencia ⭐ sale del <em>nombre y la fecha</em> del archivo, no de su contenido.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Archivos que se leyeron pero <strong>no matchearon</strong> ninguna factura — hace falta
+                que coincidan CUIT, número y monto (típicamente fotos: el OCR no leyó el contenido).
+                El nombre suele tener el proveedor.
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
