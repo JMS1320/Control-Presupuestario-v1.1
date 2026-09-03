@@ -47,6 +47,8 @@ interface Captura {
   texto: string
   ruta: string
   pantalla: string
+  /** El camino de solapas por debajo de `pantalla`: «Hacienda → Movimientos». */
+  subpantalla: string
   modal: string
   titulo_doc: string
   imagen: string
@@ -111,13 +113,27 @@ function contextoActual() {
   // El contexto real igual se relee al capturar (`ctxRef.current = contextoActual()`), así que
   // devolver vacío acá no pierde nada.
   if (typeof document === "undefined") {
-    return { ruta: "", pantalla: "", modal: "", titulo_doc: "", user_agent: "" }
+    return { ruta: "", pantalla: "", subpantalla: "", modal: "", titulo_doc: "", user_agent: "" }
   }
-  const tab = document.querySelector('[role="tab"][data-state="active"]')
+  /**
+   * TODAS las solapas activas, no sólo la primera — mejora 2026-09-03.
+   *
+   * La app anida solapas: `Productivo → Hacienda → Movimientos`. Guardando sólo la de nivel 1
+   * quedaba «Productivo», y el usuario terminaba **escribiendo el resto a mano** en el texto de la
+   * nota (*"hacienda / movimientos"*) — justo el trabajo que esto viene a ahorrar.
+   *
+   * `pantalla` sigue siendo **sólo el nivel 1**, a propósito: es la clave por la que se agrupan las
+   * notas, y meterle el camino entero la volvería distinta en cada sub-solapa. El resto va aparte,
+   * en `subpantalla`.
+   */
+  const activas = Array.from(document.querySelectorAll('[role="tab"][data-state="active"]'))
+    .map(t => textoLimpio(t))
+    .filter(Boolean)
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
   return {
     ruta: rutaSinLlave(),
-    pantalla: textoLimpio(tab).slice(0, 120),
+    pantalla: (activas[0] ?? "").slice(0, 120),
+    subpantalla: activas.slice(1).join(" → ").slice(0, 200),
     modal: textoLimpio(dialogo).slice(0, 160),
     titulo_doc: document.title.slice(0, 160),
     user_agent: navigator.userAgent.slice(0, 200),
@@ -421,9 +437,9 @@ export function NotasParaClaude() {
 
           <div className="rounded border bg-gray-50 px-2.5 py-2 text-[11px] leading-4 text-gray-500">
             <span className="font-medium text-gray-600">Se guarda solo:</span>{" "}
-            {[ctxRef.current.pantalla && `pantalla «${ctxRef.current.pantalla}»`,
-              ctxRef.current.modal && `modal «${ctxRef.current.modal}»`,
-              ctxRef.current.ruta].filter(Boolean).join(" · ")}
+            {[ctxRef.current.pantalla && `pantalla «${ctxRef.current.pantalla}${
+                ctxRef.current.subpantalla ? " → " + ctxRef.current.subpantalla : ""}»`,
+              ctxRef.current.modal && `modal «${ctxRef.current.modal}»`].filter(Boolean).join(" · ")}
           </div>
 
           {/*
