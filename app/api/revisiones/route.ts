@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     let q = supabaseAdmin
       .from('revisiones')
-      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, resolucion, resuelto_por, resuelto_at, created_at')
+      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at')
       .order('created_at', { ascending: false })
       .limit(200)
     if (!todas) q = q.eq('estado', 'abierta')
@@ -45,9 +45,36 @@ export async function PATCH(request: Request) {
   try {
     const body = (await request.json()) as {
       id?: string; estado?: string; resolucion?: string; resuelto_por?: string
+      seguimiento?: string; autor?: string
     }
     if (!body.id) {
       return NextResponse.json({ ok: false, error: 'Falta el id de la marca' }, { status: 400 })
+    }
+
+    /**
+     * Agregar al seguimiento — la marca crece mientras se entiende el problema.
+     *
+     * Se **agrega**, nunca se pisa: `motivo` queda como la sospecha inicial, que a veces resulta
+     * equivocada, y saber que uno se equivocó al mirar también sirve. Se lee y se reescribe el
+     * array completo porque son unas pocas entradas por marca; una marca con 500 seguimientos es
+     * un problema distinto y peor.
+     */
+    if (typeof body.seguimiento === 'string') {
+      const texto = body.seguimiento.trim()
+      if (!texto) {
+        return NextResponse.json({ ok: false, error: 'Escribí algo antes de agregarlo' }, { status: 400 })
+      }
+      const { data: actual, error: eLeer } = await supabaseAdmin
+        .from('revisiones').select('seguimiento').eq('id', body.id).single()
+      if (eLeer) throw eLeer
+
+      const previo = Array.isArray(actual?.seguimiento) ? actual.seguimiento : []
+      const { error } = await supabaseAdmin
+        .from('revisiones')
+        .update({ seguimiento: [...previo, { fecha: new Date().toISOString(), texto, autor: body.autor || null }] })
+        .eq('id', body.id)
+      if (error) throw error
+      return NextResponse.json({ ok: true })
     }
     const estado = body.estado === 'descartada' ? 'descartada' : 'resuelta'
     const resolucion = (body.resolucion || '').trim()
