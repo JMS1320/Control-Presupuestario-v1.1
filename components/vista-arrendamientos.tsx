@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -365,15 +366,14 @@ function ModalContrato({ datos, onCerrar, onGuardar }: {
             <label className="text-xs text-gray-500">Campo (centro de costo)</label>
             <CentroCostoCombobox value={f.centro_costo || ""} onValueChange={v => setF({ ...f, centro_costo: v })} />
           </div>
-          <div>
-            <label className="text-xs text-gray-500">Cliente</label>
-            <Input className="h-8" placeholder="Sanpa / Provinvest" value={f.cliente_nombre || ""}
-              onChange={e => setF({ ...f, cliente_nombre: e.target.value })} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">CUIT (opcional)</label>
-            <Input className="h-8" value={f.cliente_cuit || ""}
-              onChange={e => setF({ ...f, cliente_cuit: e.target.value })} />
+          {/* El cliente sale del maestro (2026-09-04): escrito a mano el CUIT quedaba vacío o mal
+              tipeado, y es la clave con la que después se busca la factura. */}
+          <div className="col-span-2">
+            <ProveedorCombobox
+              label="Cliente"
+              value={{ cuit: f.cliente_cuit || "", nombre: f.cliente_nombre || "" }}
+              onChange={sel => setF({ ...f, cliente_nombre: sel.nombre, cliente_cuit: sel.cuit })}
+            />
           </div>
           <div>
             <label className="text-xs text-gray-500">Hectáreas</label>

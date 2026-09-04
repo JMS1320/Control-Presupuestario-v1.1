@@ -2799,16 +2799,17 @@ function TabHacienda() {
                     <Input value={nuevoMov.campo_destino} onChange={e => setNuevoMov(p => ({ ...p, campo_destino: e.target.value }))} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Proveedor/Cliente</Label>
-                    <Input value={nuevoMov.proveedor_cliente} onChange={e => setNuevoMov(p => ({ ...p, proveedor_cliente: e.target.value }))} />
-                  </div>
-                  <div>
-                    <Label>CUIT</Label>
-                    <Input value={nuevoMov.cuit} onChange={e => setNuevoMov(p => ({ ...p, cuit: e.target.value }))} />
-                  </div>
-                </div>
+                {/*
+                  La contraparte sale del MAESTRO, no de dos campos de texto — 2026-09-04.
+                  Escribiéndola a mano el CUIT quedaba vacío o mal tipeado, y es la clave con la que
+                  después se busca la factura: el circuito se cortaba acá. Lo pide además la
+                  § Contrapartes de CLAUDE.md. El combobox deja crearla si no existe.
+                */}
+                <ProveedorCombobox
+                  label={nuevoMov.tipo === 'venta' ? 'Cliente' : 'Proveedor/Cliente'}
+                  value={{ cuit: nuevoMov.cuit, nombre: nuevoMov.proveedor_cliente }}
+                  onChange={sel => setNuevoMov(p => ({ ...p, proveedor_cliente: sel.nombre, cuit: sel.cuit }))}
+                />
                 <div>
                   <Label>Observaciones</Label>
                   <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />

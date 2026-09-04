@@ -270,6 +270,11 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-FEAT-84 | 🔴 | Feat | **Filtros y buscador en Hacienda → Movimientos**, y **un motivo por caravana en el cambio de categoría** — hoy *"debo hacer los movimientos de cambio de categoría de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"* | Notas 03/09 `@productivo` |
 | **A-FEAT-85** | ✅ | Feat | **El warning ya no depende de que exista la bandera en esa fila** — botón flotante 🚩 + **`Alt+R`** en TODA la app, con **captura de pantalla** y contexto automático. Más el **seguimiento**: la marca se abre desde Principal y se le va agregando lo que se averigua, sin pisar la sospecha original. ✅ HECHO 2026-09-04, probado con navegador (10 controles), **sin testear por el usuario** ([A-TEST-84](#a-feat-85)) | → [A-FEAT-85](#a-feat-85) `@general` |
 | A-TEST-84 | ✅ | Test | **TESTEADO 2026-09-04 por el usuario** — levantó una marca global con captura y le agregó seguimiento; en la base quedó con `registro_id` NULL, imagen y 1 entrada. **El warning global** (A-FEAT-85) — parado en cualquier pantalla **sin banderas**, `Alt+R` → el recuadro tiene que decir **esa** pantalla (no «Principal») · pegar una captura con `Ctrl+V` · que aparezca en Principal · **Abrir** y agregar algo → que se vea al toque y que **el motivo original siga ahí** · cerrar exige decir qué se hizo | → [A-FEAT-85](#a-feat-85) `@general` |
+| **A-DEC-14** | ✅ | Dec | **El vínculo venta↔factura vive SOLO en `ventas_facturas`** — se borró `productivo.stock_ventas.comprobante_id`, que era una segunda puerta al mismo hecho (nadie la escribía, 0 filas con valor). **No volver a agregar un campo de factura dentro de la venta.** Decidido y hecho 2026-09-04 | → [A-DEC-14](#a-dec-14) `@productivo @ingresos` |
+| **A-FEAT-86** | 🟡 | Feat | **La contraparte sale del MAESTRO en los 3 lugares donde se escribía a mano** — venta de hacienda, movimientos de hacienda y contratos de arrendamiento. Sin CUIT no hay match con la factura: el circuito se cortaba ahí. ✅ HECHO 2026-09-04, sin testear ([A-TEST-85](#a-feat-86)) | → [A-FEAT-86](#a-feat-86) `@productivo @ingresos` |
+| A-TEST-85 | 🔴 | Test | **El selector de cliente en los 3 lugares** (A-FEAT-86) — en cada uno: elegir un cliente existente, **crear uno nuevo desde el mismo combo**, y verificar que queda **el CUIT**, no sólo el nombre | → [A-FEAT-86](#a-feat-86) `@productivo @ingresos` |
+| A-FEAT-87 | 🔴 | **Alta** | **Una entrada a media agua es peor que ninguna** — hoy *Productivo → Movimientos* da de baja los animales **sin crear la venta**: quedan fuera de facturación, cobro y presupuesto. Y es la puerta que al usuario le resulta más natural. **Todo punto de entrada a la venta tiene que ofrecer TODOS los campos** o dejar la venta creada para seguir cargándola. Incluye el caso *"vendí estas 7 vacas descarte"* con **peso por animal** | → [A-FEAT-87](#a-feat-87) `@productivo` |
+| A-FEAT-88 | 🔴 | **Alta** | **Recorrer el circuito ganadero de punta a punta, auditando** — lote → venta → factura → liquidación → cobro → conciliación. ⚠️ **Tarda un mes calendario**: hay que empezarlo con la próxima venta y seguirlo, no esperar a tenerlo todo listo. Es lo único que va a decir si el 7/10 del audit era en realidad un 5 | → [A-FEAT-88](#a-feat-88) `@productivo @ingresos @extracto` |
 | A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
 | A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
 | A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
@@ -9077,6 +9082,54 @@ nota + 2 capturas **entran** · `SELECT` sobre las notas devuelve **0 filas**.
 asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
 app**: nadie audita el botón de notas, y terminó siendo el que copia la credencial a una tabla
 abierta. Vale para todo lo que se construya "sólo para nosotros".
+
+---
+
+## <a id="a-dec-14"></a>A-DEC-14 / <a id="a-feat-86"></a>A-FEAT-86 / <a id="a-feat-87"></a>A-FEAT-87 / <a id="a-feat-88"></a>A-FEAT-88 — Audit del circuito ganadero ↔ contable (2026-09-04)
+
+**Qué se pidió:** *"un audit de, en el módulo productivo vinculado a lo contable, cómo estamos del 1
+al 10 con la idea de que el dato vive en un solo lado"*. Hacia adelante llega hasta el cobro y la
+conciliación; hacia atrás hasta el lote, alterando el saldo sin vender.
+
+### Resultado: **7 de 10**
+
+**Lo que YA estaba bien** — mejor de lo que el usuario recordaba:
+- La regla está **escrita en el código**: *"el movimiento de stock se **genera** desde la venta: si se
+  cargara a mano habría dos fuentes de verdad sobre la misma salida de animales"*.
+- Existe **`ventas_unificadas`**, una vista que normaliza la venta de hacienda y la de arrendamiento
+  a una sola forma. No duplica: lee de cada origen.
+- **Lo facturado se calcula, no se guarda** — el saldo no puede quedar viejo.
+- El saldo del lote **no se descuenta**: se deriva de las ventas.
+- Hacia adelante el cobro cuelga de la factura por dos vías ya probadas (la transferencia del
+  extracto y las retenciones recibidas).
+
+**Los 3 puntos que lo bajaban de 10:**
+
+| | Hallazgo | Estado |
+|---|---|---|
+| 1 | **Dos puertas al mismo vínculo**: `stock_ventas.comprobante_id` además de `ventas_facturas` | ✅ **A-DEC-14** — columna borrada |
+| 2 | **El cliente era texto libre** → `cliente_cuit` vacío → **sin CUIT no hay match con la factura** | ✅ **A-FEAT-86** — los 3 lugares al maestro |
+| 3 | **El circuito nunca se recorrió**: 1 venta, 0 con factura, 0 con cliente, 0 con cuenta contable | 🔴 **A-FEAT-88** |
+
+### El punto de arranque — y el riesgo que se descubrió
+Hay **dos puertas de entrada y no dan lo mismo**:
+- **Ingresos → Ganadería** — circuito completo: presupuestada → confirmada → fijada. Crea la venta
+  *y* el movimiento de stock.
+- **Productivo → Movimientos** — *"Nuevo Movimiento Hacienda"*: **da de baja los animales sin crear
+  la venta**. Media verdad: no hay qué facturar, ni cobrar, ni presupuestar.
+
+Y es **la puerta que al usuario le resulta más natural**: *"muchas veces lo más lógico es ir a stock
+y decir vendí estas 7 vacas descarte"*. De ahí sale **A-FEAT-87**, y su regla general:
+
+> **Cuando hay dos puntos de entrada a la misma tabla, el segundo no sirve si ofrece la mitad de los
+> datos.** O da todos los campos, o deja la venta creada para seguir cargándola.
+
+Caso que hoy no está resuelto: **peso por animal** (las 7 vacas descarte no pesan lo mismo).
+
+### Lo que la estructura YA permite y no hay que rediseñar
+`stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
+rinde) y del final (fecha de cobro, cuenta contable). **Un solo registro que se completa de a poco
+ya es posible: no hay que rediseñar, hay que llenar.**
 
 ---
 
