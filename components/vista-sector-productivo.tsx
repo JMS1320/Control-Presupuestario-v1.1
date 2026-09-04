@@ -18,6 +18,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { ModalCompletarVentaHacienda, type MovimientoVenta } from "@/components/modal-completar-venta-hacienda"
 import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -1003,6 +1004,8 @@ function TabHacienda() {
   const [stock, setStock] = useState<StockHacienda[]>([])
   const [categorias, setCategorias] = useState<CategoriaHacienda[]>([])
   const [movimientos, setMovimientos] = useState<MovimientoHacienda[]>([])
+  /** El movimiento de venta que se está completando — A-FEAT-87. */
+  const [ventaAEditar, setVentaAEditar] = useState<MovimientoVenta | null>(null)
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
@@ -2489,6 +2492,7 @@ function TabHacienda() {
               <TableHead className="text-right">Monto Total</TableHead>
               <TableHead>Proveedor/Cliente</TableHead>
               <TableHead>Obs.</TableHead>
+              <TableHead className="text-right">Venta</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2582,6 +2586,41 @@ function TabHacienda() {
                   <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
                   <TableCell>{celdaEditable('proveedor_cliente', m.proveedor_cliente || '-')}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
+                  {/*
+                    💰 La venta comercial de este movimiento — A-FEAT-87.
+                    Una venta SIN venta comercial es media verdad: los animales salieron del stock
+                    pero no entran a facturación, cobro ni presupuesto. Se avisa en ámbar en la fila
+                    misma, no sólo en un panel: el que mira esta grilla tiene que enterarse acá.
+                  */}
+                  <TableCell className="text-right">
+                    {m.tipo === 'venta' && (
+                      <button
+                        type="button"
+                        onClick={() => setVentaAEditar({
+                          id: m.id, fecha: m.fecha, cantidad: m.cantidad,
+                          categoria_id: (m as any).categoria_id ?? null,
+                          categoria_nombre: m.categorias_hacienda?.nombre,
+                          peso_total_kg: m.peso_total_kg ?? null,
+                          precio_por_kg: (m as any).precio_por_kg ?? null,
+                          monto_total: m.monto_total ?? null,
+                          proveedor_cliente: m.proveedor_cliente ?? null,
+                          cuit: (m as any).cuit ?? null,
+                          stock_venta_id: (m as any).stock_venta_id ?? null,
+                          observaciones: m.observaciones ?? null,
+                        })}
+                        className={`rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
+                          (m as any).stock_venta_id
+                            ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                            : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                        }`}
+                        title={(m as any).stock_venta_id
+                          ? 'Ver y editar la venta comercial'
+                          : 'Este movimiento NO tiene venta: no entra a facturación ni al presupuesto'}
+                      >
+                        {(m as any).stock_venta_id ? '💰 venta' : '⚠ sin venta'}
+                      </button>
+                    )}
+                  </TableCell>
                 </TableRow>
                 )
               })
@@ -2589,6 +2628,13 @@ function TabHacienda() {
           </TableBody>
         </Table>
       )}
+
+      <ModalCompletarVentaHacienda
+        movimiento={ventaAEditar}
+        abierto={!!ventaAEditar}
+        onCerrar={() => setVentaAEditar(null)}
+        onGuardado={cargarDatos}
+      />
 
       {/* Modal Nuevo Movimiento Hacienda */}
       <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>

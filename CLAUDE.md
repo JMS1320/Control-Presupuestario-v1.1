@@ -554,6 +554,13 @@ controle que no quedó nada desparramado).
   antes de borrar. En GAS/Drive están **prohibidos** `setTrashed`, `removeFolder`, `emptyTrash`
   y todo patrón "replace/overwrite" de carpeta. Motivo: un "sobrescribir carpeta" ya le borró un
   backup entero al usuario (2026-06-26).
+- **Un test automatizado que escribe en la BD escribe en la BD REAL.** No hay entorno de prueba: la
+  app local, la preview y producción usan el mismo Supabase. Entonces un test que crea o edita filas
+  tiene que (1) **apuntar a un registro elegido por id**, nunca a *"el primero que aparezca"*, y
+  (2) **restaurar exactamente ese registro** al terminar, con una foto tomada antes.
+  *Motivo (2026-09-04): un test de la venta de hacienda clickeaba la primera fila marcada y la
+  limpieza revertía otra — quedó una venta inventada de $5.443.200 sobre el movimiento real de 3
+  toros del usuario. Se detectó revisando la tabla, no por un error: **el test dijo OK**.*
 - Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
 
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
