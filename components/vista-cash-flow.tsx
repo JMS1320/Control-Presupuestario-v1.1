@@ -646,6 +646,37 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         return
       }
 
+      // ── HOOK ECHEQ (ANTICIPOS) — A-BUG-103 ──────────────────────────────────
+      // El hook de arriba está atado a `origen === 'ARCA'`, pero el menú de ESTA MISMA ventana
+      // ofrece 📝 ECHEQ también para los anticipos (usa `ESTADOS_ANTICIPO`, que lo incluye).
+      // Sin esta rama la opción caía al `actualizarRegistro` genérico del final: escribía
+      // `estado_pago='echeq'` y NADA MÁS — no pedía banco, número ni fecha de débito, no tocaba
+      // `metodo_pago` y no creaba la fila en `msa.cheques`. **El echeq no existía como echeq.**
+      //
+      // Caso testigo (04/09/2026): IGLESIAS NORBERTO HUGO, $2.454.000. Quedó con
+      // `estado_pago='echeq'` contra `metodo_pago='transferencia'`, sin cheque, y el mail de
+      // Detalle de pago se lo anunció al proveedor como *"Transferencia"* prometiéndole el aviso
+      // de Galicia. Lo detectó el usuario por el síntoma exacto: *"no me pide nro de echeq, no me
+      // pide fecha de débito"*.
+      //
+      // La maquinaria correcta ya existía: `cambiarEstadoPagoAnticipo` intercepta 'echeq', abre el
+      // modal y cierra en `guardarChequeAnticipo`. Faltaba solamente enrutar hasta ella.
+      if (filaParaCambioEstado.origen === 'ANTICIPO' && nuevoEstado === 'echeq' && filaParaCambioEstado.estado !== 'echeq') {
+        // Mismo blindaje que ARCA: `cheques` existe sólo en MSA (A-FEAT-13 paso 5).
+        if (!esFilaMsa(filaParaCambioEstado)) {
+          const empresa = (filaParaCambioEstado.empresas || []).join('/') || 'esta empresa'
+          setFilaParaCambioEstado(null)
+          setGuardandoCambio(false)
+          toast.error(`ECHEQ está disponible sólo para MSA (este anticipo es de ${empresa}).`)
+          return
+        }
+        const idAnticipo = filaParaCambioEstado.id
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        await cambiarEstadoPagoAnticipo(idAnticipo, 'echeq')
+        return
+      }
+
       // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
       if (
         filaParaCambioEstado.origen === 'ARCA' &&
@@ -2548,12 +2579,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string, esEcheq = false) => {
-    // Obtener el anticipo completo para saber si tiene SICORE
-    const anticipo = anticiposExistentes.find(a => a.id === anticipoId)
+    // Obtener el anticipo completo para saber si tiene SICORE.
+    // Fallback a la BD (A-BUG-103): esta función también se llama desde el menú de la FILA del
+    // Cash Flow, y esa fila puede existir sin que el anticipo esté cargado en `anticiposExistentes`
+    // (se llenan por caminos distintos). Antes, en ese caso, se hacía `return` a secas: el usuario
+    // elegía ECHEQ, no pasaba absolutamente nada y no había ni un aviso. El silencio miente.
+    let anticipo = anticiposExistentes.find(a => a.id === anticipoId)
+    if (!anticipo) {
+      const { data } = await supabase.from('anticipos_proveedores')
+        .select('*').eq('id', anticipoId).maybeSingle()
+      if (data) anticipo = data as typeof anticipo
+    }
 
-    // Intercept ECHEQ desde la UI → abrir modal (banco/número/fechas); el resto lo hace confirmarEcheqCF.
+    // Intercept ECHEQ desde la UI → abrir modal (banco/números/fechas); el resto lo hace confirmarEcheqCF.
     if (nuevoEstado === 'echeq' && !esEcheq) {
-      if (!anticipo) return
+      if (!anticipo) { toast.error('No se encontró el anticipo: no se puede registrar el echeq'); return }
       echeqAnticipoCF.current = anticipo
       echeqFilaCF.current = null
       setEcheqOrigenCF('anticipo')
