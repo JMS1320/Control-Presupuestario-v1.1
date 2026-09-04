@@ -476,6 +476,42 @@ saldo impago inexistente.
 
 ---
 
+## 🚩 Marcar algo para revisar — desde cualquier pantalla
+
+**Para qué sirve.** Estás haciendo otra cosa y ves algo que no cierra: una imputación rara, un monto
+que no cuadra. No hace falta que lo arregles en el momento ni que te lo anotes aparte: **lo marcás y
+seguís**. Después aparece todo junto en Principal.
+
+### Cómo se usa
+1. En la fila que te llamó la atención, **al final de todo, en el margen derecho**, hay una
+   **🚩 gris**. Tocala.
+2. Se abre una ventanita que **ya sabe de qué fila hablás** — te muestra el proveedor, el número y el
+   monto sin que escribas nada. Vos sólo escribís **qué viste**.
+3. **Marcar**. Listo, diez segundos. La banderita de esa fila queda **ámbar**, así el que entre
+   después se entera ahí mismo.
+
+### Dónde se ven
+**Principal → 🚩 Para revisar.** Están todas las abiertas, con tu comentario, de qué fila eran y
+cuándo las marcaste.
+
+### Cómo se cierra
+Tocás **Cerrar** y **escribís qué se hizo**. Es obligatorio: sin eso, *«resuelta»* termina
+significando *«la miré y me pareció que estaba bien»*, que no es lo mismo que *«la corregí»*.
+
+Si al mirarla resulta que no era un problema, está el botón **No era un problema** — que también pide
+que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda dentro de tres meses.
+
+> 📍 **Hoy está en las facturas del subdiario.** Se va a ir poniendo en otras pantallas a medida que
+> haga falta: ponerla en una grilla nueva es un trabajo de minutos.
+
+> 👥 **Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
+> a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
+> aparezca a él.
+
+⚠️ *Sin probar todavía → `A-TEST-83`*
+
+---
+
 ## 📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)
 
 **Dónde:** Egresos → Facturas → botón **Subdiarios** → "Consultar período" → elegís período → sale el **resumen en 2 bloques** (+ el detalle de cada factura debajo).
@@ -573,8 +609,23 @@ buscar**. O sea que las que realmente faltaban por mail eran **8**, no 17.*
 
 #### El mail de supervisión
 
-Al terminar llega un mail con el resumen: vinculadas, sin PDF y huérfanos. Sirve como constancia de
-que la corrida se hizo y de cómo quedó el mes.
+**Lo manda «Vincular PDFs» al terminar. «Contar» no manda nada** — es un vistazo en pantalla, y un
+mail por cada conteo sería ruido. Si contaste y no te llegó mail, está bien.
+
+Trae tres cosas: **✅ vinculadas** (con proveedor, número, monto y link), **⚠️ sin PDF agrupadas por
+motivo** — así ves cuáles son trabajo de verdad — y **❓ huérfanos con su candidata ⭐**.
+
+#### 📧 Enviar estado actualizado
+
+**El mail automático queda viejo apenas vinculás algo a mano.** Por eso hay un cuarto botón:
+**📧 Enviar estado actualizado**. Vuelve a leer la carpeta y manda el reporte con el estado de
+**ahora**, incluido lo que vinculaste vos.
+
+Tocalo **cuando terminaste** de acomodar el mes. Puede ser al toque, mañana, o después de cerrar y
+volver a abrir la pantalla: no depende de que la app adivine cuándo terminaste.
+
+*(Por eso son dos mails y no uno: el automático es la constancia de que la corrida se hizo — sale
+siempre, aunque después no toques nada — y éste es la foto final.)*
 
 ---
 

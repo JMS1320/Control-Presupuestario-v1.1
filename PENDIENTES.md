@@ -250,8 +250,28 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-TEST-82 | 🔴 | Test | **Archivo digital, tanda 2026-09-03** — 4 cosas: (1) los 3 botones renombrados se entienden sin explicación · (2) el panel «PDFs sin vincular» avisa en ámbar cuando venís de «Contar» · (3) si una tanda falla, **se ve el motivo escrito** y reintenta con 1 archivo · (4) **el mail de supervisión** trae faltantes agrupadas por motivo y huérfanos con su ⭐. ⚠️ (4) requiere **re-desplegar el Apps Script (v0.9.17)** | → [A-FEAT-74](#a-feat-74) `@egresos` |
-| **A-FEAT-74** | 🟡 | Feat | **El mail de supervisión sirve para ACTUAR, no sólo para informar** — faltantes agrupadas por **motivo** (Portal / no se busca / debería llegar por mail) y huérfanos con su **candidata ⭐**. ✅ HECHO 2026-09-03, sin testear ([A-TEST-82](#a-feat-74)) | → [A-FEAT-74](#a-feat-74) `@egresos` |
+| A-TEST-82 | ✅ | Test | **TESTEADO 2026-09-04 por el usuario** (botones y conteo OK). ⚠️ Sin ejercitar: el **mensaje de error** de la supervisión — no volvió a fallar. **Archivo digital, tanda 2026-09-03** — 4 cosas: (1) los 3 botones renombrados se entienden sin explicación · (2) el panel «PDFs sin vincular» avisa en ámbar cuando venís de «Contar» · (3) si una tanda falla, **se ve el motivo escrito** y reintenta con 1 archivo · (4) **el mail de supervisión** trae faltantes agrupadas por motivo y huérfanos con su ⭐. ⚠️ (4) requiere **re-desplegar el Apps Script (v0.9.17)** | → [A-FEAT-74](#a-feat-74) `@egresos` |
+| **A-FEAT-74** | ✅ | Feat | **El mail de supervisión sirve para ACTUAR, no sólo para informar** — faltantes agrupadas por **motivo** (Portal / no se busca / debería llegar por mail) y huérfanos con su **candidata ⭐**. ✅ HECHO 2026-09-03, sin testear ([A-TEST-82](#a-feat-74)) | → [A-FEAT-74](#a-feat-74) `@egresos` |
+| **A-FEAT-75** | ✅ | Feat | **🚩 Marcar cualquier fila «para revisar»** — el banderín se cuelga del **registro**, no de una lista de tareas, así el hallazgo no se pierde donde sea que aparezca. Se ve en **Principal → Para revisar** y en la fila misma. Cerrar **exige decir qué se hizo**. ✅ HECHO 2026-09-04, sin testear ([A-TEST-83](#a-feat-75)) | → [A-FEAT-75](#a-feat-75) `@general @egresos` |
+| A-TEST-83 | ✅ | Test | **TESTEADO 2026-09-04 por el usuario** — el banderín anda. **El banderín 🚩** (A-FEAT-75) — 5 pasos, ver el dossier. El que importa: **marcar una factura y que aparezca en Principal**, porque es el camino que se rompió con las notas el 31/08 (RLS). ⚠️ **La grilla del subdiario NO se pudo probar automáticamente**: la navegación hasta «Consultar período» no se puede simular | → [A-FEAT-75](#a-feat-75) `@general @egresos` |
+| | | | **⬇️ De las notas del usuario (bandeja vaciada 2026-09-04)** — 17 notas leídas: 13 con ID, 4 cerradas sin ID (ya resueltas) | |
+| A-BUG-97 | 🔴 | Bug | **Al editar un pago de sueldo se cambia solo a «banco» aunque esté en «caja»** — *"por default. no debe cambiar nada por default. ya me ha traído problemas"*. Un default que pisa un dato ya cargado no es un default, es una pérdida silenciosa | Nota 28/08 `@sueldos` |
+| A-BUG-98 | 🔴 | Bug | **Vincular un anticipo a un GRUPO de facturas no ofrece el grupo** — *"quiero vincular anticipo de pago a grupo de 2 facturas. me muestra las facturas pero no el grupo"* | Nota 18/08 `@principal @cashflow` |
+| A-BUG-99 | 🔴 | Bug | **4 débitos de sueldos AMS no concilian** — *"para el ejemplo del 30/4 yo lo tengo como pagado en sueldos. debería encontrarlo"*. Cruza con [A-BUG-33](#a-bug-33) (sueldos conciliados sin movimiento) | Nota 18/08 `@extracto @sueldos` |
+| A-BUG-100 | 🔴 | Bug | **No se puede editar una fijación de arrendamiento que tiene TC puesto** y no está cerrada — *"esta venta sin querer le puse TC (…) y no puedo editar la fijación"*. Falta la edición | Nota 03/09 `@ingresos` |
+| A-BUG-101 | 🔴 | **Alta** | **Crear un contrato de arrendamiento nuevo está incompleto y da error** — 3 síntomas de la misma nota: (1) **no deja elegir ni crear el proveedor**, (2) **no pide las cuotas** ni el resto de los datos *"para que quede igual que los hechos por vos a MSA"*, (3) **desde edición muestra el mismo modal incompleto** | Nota 03/09 `@ingresos` |
+| A-FEAT-77 | 🔴 | Feat | **Los pagos de sueldos, agrupados y colapsados POR EMPLEADO** — *"sino es difícil encontrar un dato específico. poder ver sólo del empleado que quiero"*. Pedido dos veces, el 18/08 y el 28/08 | Notas 18+28/08 `@sueldos` |
+| A-FEAT-78 | 🔴 | Feat | **El detalle de sueldos pagados tiene que mostrar decimales** | Nota 28/08 `@sueldos` |
+| A-FEAT-79 | 🔴 | Media | **En el pago de haberes, mostrar DE QUIÉN es cada CBU** — hoy sólo se ven los números: *"yo antes seleccionaba la palabra lucrecia (…) sino no sé cuál es cuál. lo mismo con las otras 2, una es de Santander y otra de Galicia"*. Elegir a ciegas entre CBUs es una transferencia al destinatario equivocado esperando | Nota 28/08 `@sueldos` |
+| A-FEAT-80 | 🔴 | **Alta** | **Cuota alimentaria como parte del sueldo + pagos por concepto** — que la cuota sea un campo propio (`sueldo total = cat 1 + cuota alim + cat 2`), con su cuenta destino fija, y que se pueda decir **"pagar cuota alimentaria"**, **"pagar saldo cat A"** (partible entre Santander y Galicia) y **"pagar cat B"** como funciones. Caso testigo: Sigot | Nota 28/08 `@sueldos @cashflow` |
+| A-FEAT-81 | 🔴 | Feat | **Editar el sueldo partiendo del BRUTO** — *"que la edición pueda partir del sueldo bruto (a + b), poder llenar cat A y que se calcule sola cat B"* | Nota 28/08 `@sueldos` |
+| A-FEAT-82 | 🔴 | **Alta** | **La venta de hacienda tiene que poder arrancar desde Productivo** — *"es lo más lógico que empiece desde acá"*. Y desde ahí **vincular con la venta del lote presupuestado, o crearla si no existe**. ⚠️ Es la punta del tema grande que el usuario planteó el 03/09: **un solo registro que se completa de a poco** (hoy digo "vendí 7 vacas", mañana el peso y el desbaste, después el precio y el rinde, después la FC y la actividad). Ver también: el modal **no trae los clientes de la base** y no deja crear uno | Nota 03/09 `@productivo @ingresos` |
+| A-FEAT-83 | 🔴 | Feat | **Notas sobre un animal identificado** — *"que se puedan poner notas a los individuos identificados por caravana u otro dato identificatorio"*. Cruza con [A-FEAT-75](#a-feat-75): el banderín ya marca cualquier fila, pero esto es una nota permanente del animal, no una marca para revisar | Nota 03/09 `@productivo` |
+| A-FEAT-84 | 🔴 | Feat | **Filtros y buscador en Hacienda → Movimientos**, y **un motivo por caravana en el cambio de categoría** — hoy *"debo hacer los movimientos de cambio de categoría de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"* | Notas 03/09 `@productivo` |
+| A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
+| A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
+| A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
+| A-FEAT-76 | 🔴 | Baja | **Que los reportes digan QUÉ CAMBIÓ desde la corrida anterior** — *"3 nuevas descargadas, 1 que antes fallaba ahora entró, 2 que siguen faltando desde hace 3 corridas"*. Un reporte que sólo da la foto de hoy no deja ver si el circuito mejora o empeora, y ese renglón final es el que hace que alguien levante el teléfono. Aplica a los **dos** mails (supervisión y buscador). Requiere guardar el resultado de cada corrida | — `@egresos` |
 | A-SEC-01 | 🔴 | Alta | 👤 Javier · Hardening — anon puede borrar todo + plan P0/P1/P2 | → [A-SEC-01](#a-sec-01) `@general` |
 | **A-SEC-04** | 🟡 | **Alta** | 👤 Javier · **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
@@ -9055,6 +9075,69 @@ nota + 2 capturas **entran** · `SELECT` sobre las notas devuelve **0 filas**.
 asegurarnos que no lo agrandemos"*. La lección es que **una herramienta interna filtró más que la
 app**: nadie audita el botón de notas, y terminó siendo el que copia la credencial a una tabla
 abierta. Vale para todo lo que se construya "sólo para nosotros".
+
+---
+
+## <a id="a-feat-75"></a>A-FEAT-75 — Marcar cualquier fila «para revisar» (2026-09-04)
+
+**De dónde salió.** Auditando el archivo digital apareció una imputación dudosa. El usuario:
+*"debería poder asignarle un warning a una factura para dejar un comentario y que sea revisado (…)
+yo lo estoy viendo por la vinculación de las facturas pero podría haberlo visto en cualquier lado"*.
+
+**La decisión de diseño es suya y ordena todo lo demás:**
+
+> **"Deberíamos partir del vínculo y no de la tarea."**
+
+La marca vive **pegada al registro**, no en una lista aparte. Por eso la tabla es **polimórfica**
+(`schema_ref` + `tabla_ref` + `registro_id`) y el botón es **un componente que se enchufa en
+cualquier grilla** — como `SelectorCuentaContable`.
+
+**Por qué NO son las notas de `Alt+N`:** distinto sujeto y distinto final. Una nota habla de la
+**app** y muere cuando se vuelve pendiente; la lee Claude. Una marca habla de un **dato** y muere
+cuando **alguien corrige el dato**. Mezclarlas llenaría una bandeja con el trabajo de la otra.
+
+**Es del norte, no una comodidad:** una imputación mal hecha **alimenta el presupuesto con basura**.
+
+### Decisiones que no se re-discuten
+1. **`descripcion_ref` es una LÁPIDA.** Entre esquemas distintos no se puede poner una FK: si la fila
+   se borra o se reimporta, la marca queda apuntando al vacío. El texto legible congelado
+   (*"VUELTA AMADO · 4-247 · $1.234"*) hace que siga diciendo de qué hablaba.
+2. **Cerrar exige `resolucion`.** Lo valida la API, no la pantalla. Sin eso *"resuelta"* termina
+   significando *"la miré"*, que no es *"la corregí"*.
+3. **`asignado_a` existe desde el día 1, sin pantalla.** El módulo de usuarios lo hace Javier
+   ([A-SEC-03](#a-sec-03)); agregarla después, con marcas ya cargadas, cuesta el doble.
+4. **Las marcas se leen UNA vez por pantalla**, no por fila: 40 facturas serían 40 consultas para
+   pintar 40 banderitas apagadas.
+5. **RLS igual que las notas** ([A-SEC-04](#a-sec-04)): `anon` sólo INSERT; leer y cerrar por
+   `/api/revisiones` con la clave de servicio.
+6. **La columna va al margen DERECHO** (pedido del usuario): no carga la parte izquierda, que es la
+   que se lee, y total lo marcado se mira en Principal.
+
+### Alcance de hoy vs. de mañana
+| Hoy | Cuando Javier termine los usuarios |
+|---|---|
+| Guarda el **rol** de quien marcó | Guarda **quién**, con nombre |
+| Un solo tipo (`revisar`), columna `tipo` ya creada | Puede aparecer *"no sé / me falta un dato"*, que resuelve otra persona |
+| **Es una lista tuya** — sirve para no olvidarte, pero no delega nada | Se asigna, y cada uno ve lo suyo en *su* Principal |
+| Sin mails | Avisar al asignado tiene sentido recién ahí |
+
+### Estado
+**Probado el camino completo con la RLS puesta** (10 controles): `anon` inserta, `anon` **no** puede
+leer, la API lista, cerrar sin resolución **se rechaza**, cerrar bien deja estado + qué se hizo +
+cuándo. Y la tarjeta de Principal renderiza con su estado vacío.
+
+⚠️ **Sin probar: el banderín dentro de la grilla del subdiario.** La navegación hasta «Consultar
+período» no se pudo automatizar. Es lo primero de [A-TEST-83](#a-feat-75).
+
+### Cómo probarlo — A-TEST-83
+1. **Egresos → Facturas → Subdiarios → Consultar período.** Al final de cada fila, en el margen
+   derecho, tiene que haber una **🚩 gris**.
+2. Tocala en una factura cualquiera. La ventanita tiene que decir **de qué factura se trata sin que
+   vos lo escribas** (proveedor, número, fecha, monto). Escribí un motivo y **Marcar**.
+3. La 🚩 de esa fila tiene que quedar **ámbar y rellena**.
+4. **Principal → Para revisar**: la marca tiene que estar, con su motivo y la descripción de la fila.
+5. **Cerrar**: tocá *Cerrar*, dejá el campo vacío y guardá → **tiene que rechazarlo**. Escribí qué
+   hiciste y cerrá → desaparece de la lista.
 
 ---
 
