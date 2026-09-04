@@ -1331,8 +1331,57 @@ function TabHacienda() {
     if (nuevoMov.cuit) datos.cuit = nuevoMov.cuit
     if (nuevoMov.observaciones) datos.observaciones = nuevoMov.observaciones
 
+    /**
+     * 🔑 Si es una VENTA, se crea también la venta comercial — A-FEAT-87.
+     *
+     * Antes esta puerta daba de baja los animales **sin crear la venta**: quedaban fuera de
+     * facturación, de cobro y del presupuesto. Media verdad. Y es la puerta que al usuario le
+     * resulta más natural: *"muchas veces lo más lógico es ir a stock y decir vendí estas 7 vacas
+     * descarte"*.
+     *
+     * La regla que salió de ahí, y vale para toda la app: **cuando hay dos puntos de entrada a la
+     * misma tabla, el segundo no sirve si ofrece la mitad de los datos.** Acá se resuelve por la
+     * segunda vía de esa regla: **la venta queda creada** con lo que hay, para poder terminar de
+     * cargarla después en Ingresos → Ganadería. No se inventa nada que el usuario no puso.
+     *
+     * La venta se crea PRIMERO: si fallara, no queremos el movimiento huérfano que es justo el
+     * problema que esto viene a arreglar.
+     */
+    let ventaCreadaId: string | null = null
+    if (nuevoMov.tipo === 'venta') {
+      const { data: sv, error: eVenta } = await supabase.schema('productivo').from('stock_ventas')
+        .insert({
+          lote_id: null,                     // venta directa desde el stock, no desde un lote
+          categoria_id: nuevoMov.categoria_id,
+          fecha_venta: nuevoMov.fecha,
+          cantidad: N,
+          kg_totales: datos.peso_total_kg ?? null,
+          peso_kg: datos.peso_total_kg && N > 0 ? datos.peso_total_kg / N : null,
+          precio_kg: datos.precio_por_kg ?? null,
+          monto_neto: datos.monto_total ?? null,
+          cliente_nombre: nuevoMov.proveedor_cliente || null,
+          cliente_cuit: nuevoMov.cuit || null,
+          notas: ['Creada desde Productivo → Movimientos de hacienda.', nuevoMov.observaciones]
+            .filter(Boolean).join(' — '),
+        })
+        .select('id').single()
+      if (eVenta || !sv) {
+        toast.error('No se pudo registrar la venta: ' + (eVenta?.message ?? ''))
+        return
+      }
+      ventaCreadaId = sv.id
+      datos.stock_venta_id = sv.id          // el movimiento queda colgado de SU venta
+    }
+
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
-    if (error) { toast.error('Error al guardar movimiento'); return }
+    if (error) {
+      // La venta ya se creo: se deshace para no dejar una venta sin su movimiento de stock.
+      if (ventaCreadaId) {
+        await supabase.schema('productivo').from('stock_ventas').delete().eq('id', ventaCreadaId)
+      }
+      toast.error('Error al guardar movimiento')
+      return
+    }
 
     // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja en terneros
     if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
@@ -1353,7 +1402,21 @@ function TabHacienda() {
         .in('id', ids)
     }
 
-    toast.success('Movimiento registrado')
+    if (ventaCreadaId) {
+      // Se dice QUÉ falta y DÓNDE, porque la venta nace incompleta a propósito.
+      const faltan = [
+        !datos.precio_por_kg && 'precio',
+        !datos.peso_total_kg && 'kilos',
+        !nuevoMov.cuit && 'CUIT del cliente',
+      ].filter(Boolean)
+      toast.success(
+        `Movimiento y venta registrados.${faltan.length ? ` Falta cargarle: ${faltan.join(', ')}.` : ''}` +
+        ' Se termina de completar en Ingresos → Ganadería.',
+        { duration: 9000 },
+      )
+    } else {
+      toast.success('Movimiento registrado')
+    }
     setMostrarModalMov(false)
     resetNuevoMov()
     cargarDatos()
@@ -2799,6 +2862,17 @@ function TabHacienda() {
                     <Input value={nuevoMov.campo_destino} onChange={e => setNuevoMov(p => ({ ...p, campo_destino: e.target.value }))} />
                   </div>
                 </div>
+                {/* Se avisa ANTES de guardar qué va a pasar: esta pantalla ya no sólo da de baja
+                    animales, también crea la venta comercial. */}
+                {nuevoMov.tipo === 'venta' && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-4 text-emerald-800">
+                    💰 <b>Esto crea también la venta</b>, no sólo la baja de stock — así entra a
+                    facturación, cobro y presupuesto. Cargá lo que tengas ahora (kilos, precio,
+                    cliente); lo que falte se completa en <b>Ingresos → Ganadería</b> sobre la misma
+                    venta, sin volver a cargarla.
+                  </div>
+                )}
+
                 {/*
                   La contraparte sale del MAESTRO, no de dos campos de texto — 2026-09-04.
                   Escribiéndola a mano el CUIT quedaba vacío o mal tipeado, y es la clave con la que

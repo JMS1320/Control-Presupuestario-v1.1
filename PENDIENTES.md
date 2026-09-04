@@ -273,8 +273,11 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | **A-DEC-14** | ✅ | Dec | **El vínculo venta↔factura vive SOLO en `ventas_facturas`** — se borró `productivo.stock_ventas.comprobante_id`, que era una segunda puerta al mismo hecho (nadie la escribía, 0 filas con valor). **No volver a agregar un campo de factura dentro de la venta.** Decidido y hecho 2026-09-04 | → [A-DEC-14](#a-dec-14) `@productivo @ingresos` |
 | **A-FEAT-86** | 🟡 | Feat | **La contraparte sale del MAESTRO en los 3 lugares donde se escribía a mano** — venta de hacienda, movimientos de hacienda y contratos de arrendamiento. Sin CUIT no hay match con la factura: el circuito se cortaba ahí. ✅ HECHO 2026-09-04, sin testear ([A-TEST-85](#a-feat-86)) | → [A-FEAT-86](#a-feat-86) `@productivo @ingresos` |
 | A-TEST-85 | 🔴 | Test | **El selector de cliente en los 3 lugares** (A-FEAT-86) — en cada uno: elegir un cliente existente, **crear uno nuevo desde el mismo combo**, y verificar que queda **el CUIT**, no sólo el nombre | → [A-FEAT-86](#a-feat-86) `@productivo @ingresos` |
-| A-FEAT-87 | 🔴 | **Alta** | **Una entrada a media agua es peor que ninguna** — hoy *Productivo → Movimientos* da de baja los animales **sin crear la venta**: quedan fuera de facturación, cobro y presupuesto. Y es la puerta que al usuario le resulta más natural. **Todo punto de entrada a la venta tiene que ofrecer TODOS los campos** o dejar la venta creada para seguir cargándola. Incluye el caso *"vendí estas 7 vacas descarte"* con **peso por animal** | → [A-FEAT-87](#a-feat-87) `@productivo` |
+| **A-FEAT-87** | 🟡 | **Alta** | ✅ **HECHO 2026-09-04** (sin testear en pantalla, [A-TEST-86](#a-feat-87)): *Productivo → Movimientos* con tipo **venta** ahora **crea la venta comercial** y le cuelga el movimiento. `stock_ventas.lote_id` pasó a **opcional** + `categoria_id` nuevo, y `ventas_unificadas` a LEFT JOIN, para que la venta **sin lote** no quede fuera del circuito. Falta la otra mitad: **peso por animal** ([A-FEAT-89](#a-feat-87)). **Una entrada a media agua es peor que ninguna** — hoy *Productivo → Movimientos* da de baja los animales **sin crear la venta**: quedan fuera de facturación, cobro y presupuesto. Y es la puerta que al usuario le resulta más natural. **Todo punto de entrada a la venta tiene que ofrecer TODOS los campos** o dejar la venta creada para seguir cargándola. Incluye el caso *"vendí estas 7 vacas descarte"* con **peso por animal** | → [A-FEAT-87](#a-feat-87) `@productivo` |
 | A-FEAT-88 | 🔴 | **Alta** | **Recorrer el circuito ganadero de punta a punta, auditando** — lote → venta → factura → liquidación → cobro → conciliación. ⚠️ **Tarda un mes calendario**: hay que empezarlo con la próxima venta y seguirlo, no esperar a tenerlo todo listo. Es lo único que va a decir si el 7/10 del audit era en realidad un 5 | → [A-FEAT-88](#a-feat-88) `@productivo @ingresos @extracto` |
+| A-TEST-86 | 🔴 | Test | **La venta desde Movimientos** (A-FEAT-87) — en *Productivo → Movimientos*, tipo **venta**: tiene que aparecer el aviso verde, y al guardar decir **qué falta** y dónde completarlo. Después, que esa venta se vea en **Ingresos → Ganadería** y en el Cash Flow **sin volver a cargarla** | → [A-FEAT-87](#a-feat-87) `@productivo @ingresos` |
+| A-FEAT-89 | 🔴 | Media | **Peso por animal en una venta** — *"hay casos como este que debo ponerle un peso a cada animal"* (7 vacas descarte, que no pesan lo mismo). Hoy la venta guarda **kilos totales** y deriva el promedio. Para hacienda con caravana el dato individual existe (`pesadas_terneros`); para adultos no hay dónde ponerlo | → [A-FEAT-87](#a-feat-87) `@productivo` |
+| A-DAT-20 | 🔴 | Dato | **2 categorías de hacienda sin centro de costo**: «Ternera» y «Ternero». Una venta de esas categorías **no sabe a qué actividad va** — sale con centro de costo vacío y queda sin ubicación en el presupuesto. Lo encontró el test del circuito. Las otras 13 lo tienen | — `@productivo` |
 | A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
 | A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
 | A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
@@ -9125,6 +9128,23 @@ y decir vendí estas 7 vacas descarte"*. De ahí sale **A-FEAT-87**, y su regla 
 > datos.** O da todos los campos, o deja la venta creada para seguir cargándola.
 
 Caso que hoy no está resuelto: **peso por animal** (las 7 vacas descarte no pesan lo mismo).
+
+### ✅ El circuito, recorrido de punta a punta (2026-09-04)
+Se reprodujo contra la base lo que hace la app, con el caso del usuario — *"vendí 7 vacas
+descarte"*, categoría **Vaca CUT/Descarte**, sin lote. **8 de 8:**
+
+1. La venta **sin lote** se crea.
+2. El movimiento de stock queda **colgado de su venta** — no hay dos verdades sobre la misma salida.
+3. Aparece en `ventas_unificadas` → entra a facturación y presupuesto.
+4. **Sabe a qué centro de costo va sin tener lote** («Cria»), por la categoría.
+5. Nace con 0 facturado — el saldo se **calcula**.
+6. Lleva el **CUIT** del cliente, que es la llave para buscar la factura.
+7. Se vincula a una factura de venta por `ventas_facturas`.
+8. El facturado **se recalcula solo** ($5.670.000).
+
+Hacia adelante ya hay recorrido real: **1 transferencia del extracto** vinculada a una factura de
+venta y **3 retenciones recibidas**. O sea que el tramo factura → cobro ya funciona; lo que faltaba
+era llegar hasta él desde el lado productivo.
 
 ### Lo que la estructura YA permite y no hay que rediseñar
 `stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
