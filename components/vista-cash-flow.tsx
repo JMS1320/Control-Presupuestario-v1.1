@@ -661,15 +661,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       //
       // La maquinaria correcta ya existía: `cambiarEstadoPagoAnticipo` intercepta 'echeq', abre el
       // modal y cierra en `guardarChequeAnticipo`. Faltaba solamente enrutar hasta ella.
-      if (filaParaCambioEstado.origen === 'ANTICIPO' && nuevoEstado === 'echeq' && filaParaCambioEstado.estado !== 'echeq') {
-        // Mismo blindaje que ARCA: `cheques` existe sólo en MSA (A-FEAT-13 paso 5).
-        if (!esFilaMsa(filaParaCambioEstado)) {
-          const empresa = (filaParaCambioEstado.empresas || []).join('/') || 'esta empresa'
-          setFilaParaCambioEstado(null)
-          setGuardandoCambio(false)
-          toast.error(`ECHEQ está disponible sólo para MSA (este anticipo es de ${empresa}).`)
-          return
-        }
+      //
+      // ⚠️ **A propósito NO se pide `estado !== 'echeq'`** (la rama de ARCA sí lo hace). Un anticipo
+      // puede estar en `estado_pago='echeq'` y **no tener el cheque**: es exactamente el estado en
+      // que este bug dejó a los que ya se cargaron. Si se exigiera que no estuviera en echeq, el
+      // usuario no tendría **ninguna** forma de arreglarlos desde la app — la opción no volvería a
+      // abrir el modal nunca. Volver a elegir ECHEQ es seguro: `guardarChequeAnticipo` deduplica
+      // por `anticipo_id` y no inserta dos veces.
+      //
+      // (Sin blindaje por empresa: los anticipos viven en `public`, así que `schemaDeFila` los
+      // resuelve siempre como `msa` y el chequeo no podría fallar nunca. Un guard que no puede
+      // dispararse aparenta una protección que no existe.)
+      if (filaParaCambioEstado.origen === 'ANTICIPO' && nuevoEstado === 'echeq') {
         const idAnticipo = filaParaCambioEstado.id
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
