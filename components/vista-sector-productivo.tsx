@@ -1006,6 +1006,19 @@ function TabHacienda() {
   const [movimientos, setMovimientos] = useState<MovimientoHacienda[]>([])
   /** El movimiento de venta que se está completando — A-FEAT-87. */
   const [ventaAEditar, setVentaAEditar] = useState<MovimientoVenta | null>(null)
+
+  /**
+   * Los animales que se identifican al hacer un cambio de categoría — A-FEAT-84.
+   *
+   * Antes esto era **un cuadro de texto** donde había que escribir `caravana - pelo - motivo` por
+   * línea, separado con guiones. El usuario no lo usó, y se entiende: *"debo hacer los movimientos
+   * de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"*.
+   *
+   * Ahora es **una fila por animal**. La razón va por fila a propósito: una vaca se descarta por
+   * machorra y la de al lado por diarrea, y meterlas bajo una observación común pierde justo el
+   * dato por el que se lleva la planilla del CUT.
+   */
+  const [filasAnimales, setFilasAnimales] = useState<{ caravana: string; pelo: string; razon: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
@@ -1186,6 +1199,7 @@ function TabHacienda() {
       peso_total_kg: '', precio_por_kg: '', monto_total: '', campo_origen: '',
       campo_destino: '', proveedor_cliente: '', cuit: '', caravanas: '', observaciones: ''
     })
+    setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
     setTernerosParaBaja([])
@@ -1235,7 +1249,8 @@ function TabHacienda() {
       // El descuadre queda visible en la planilla (§ cierre del CUT) hasta que se complete.
       const vaAlCUT = !!(catDestino?.nombre.toLowerCase().includes('cut')
         || catDestino?.nombre.toLowerCase().includes('descarte'))
-      const sinCaravanas = vaAlCUT && !nuevoMov.caravanas.trim() && ternerosSeleccionadosCambio.size === 0
+      const identificados = filasAnimales.filter(f => f.caravana.trim() || f.razon.trim() || f.pelo.trim())
+      const sinCaravanas = vaAlCUT && identificados.length === 0 && ternerosSeleccionadosCambio.size === 0
       if (sinCaravanas) {
         const seguir = confirm(
           `Vas a mover ${N} ${N === 1 ? 'cabeza' : 'cabezas'} a ${catDestino?.nombre} sin identificar cuáles.\n\n` +
@@ -1273,19 +1288,25 @@ function TabHacienda() {
         }
       }
 
-      // Caravanas (solo si destino es CUT/Descarte) → registrar en terneros
-      if (vaAlCUT && nuevoMov.caravanas.trim()) {
-        const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
-        if (lineas.length > 0) {
-          await supabase.schema('productivo').from('terneros').insert(
-            lineas.map(texto => {
-              // Parsear formato "caravana - pelo - motivo" o solo "caravana"
-              const partes = texto.split(/\s*-\s*/)
+      /**
+       * Los animales identificados se crean como individuos — A-FEAT-84.
+       *
+       * Viene **una fila por animal**, así que la razón es de cada uno y no una observación común:
+       * es el dato por el que se lleva la planilla del CUT.
+       *
+       * 🐛 Y se corrige de paso un bug: el sexo estaba fijo en `'Hembra'`. Para vacas acertaba de
+       * casualidad; un cambio de categoría a Toro o Novillo creaba machos marcados como hembras.
+       */
+      if (identificados.length > 0) {
+        const esMacho = /toro|torito|novillo/.test((catDestino?.nombre || '').toLowerCase())
+        {
+          const { error: eIns } = await supabase.schema('productivo').from('terneros').insert(
+            identificados.map(f => {
               return {
-                caravana_oficial: partes[0]?.trim() || texto,
-                pelo: partes[1]?.trim() || null,
-                observaciones: partes.slice(2).join(' - ').trim() || null,
-                sexo: 'Hembra',
+                caravana_oficial: f.caravana.trim() || null,
+                pelo: f.pelo.trim() || null,
+                observaciones: f.razon.trim() || nuevoMov.observaciones || null,
+                sexo: esMacho ? 'Macho' : 'Hembra',
                 categoria_id: catDestino!.id,
                 categoria_previa: catOrigen?.nombre || '',
                 // La fecha REAL de ingreso a la categoría, que es la del movimiento — nunca
@@ -1297,10 +1318,13 @@ function TabHacienda() {
               }
             })
           )
+          // Si los individuos no se pudieron crear hay que decirlo: el movimiento igual se guardó,
+          // así que el descuadre entre cabezas e individuos existe y hay que saber por qué.
+          if (eIns) toast.error('El movimiento se guardó, pero no se pudieron crear los individuos: ' + eIns.message)
         }
       }
 
-      toast.success(`Cambio de categoría registrado${ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
+      toast.success(`Cambio de categoría registrado${identificados.length > 0 ? ` (${identificados.length} identificados)` : ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
       if (sinCaravanas) {
         toast.warning(
           `${N} ${N === 1 ? 'cabeza entró' : 'cabezas entraron'} a ${catDestino?.nombre} sin caravana. ` +
@@ -2741,13 +2765,56 @@ function TabHacienda() {
                       <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
                     </div>
                     <div>
-                      <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
-                      <textarea
-                        className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
-                        placeholder={"032 010012326425\n032 010012326426\n..."}
-                        value={nuevoMov.caravanas}
-                        onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label>
+                          Animales que se mueven{' '}
+                          <span className="text-muted-foreground text-xs">
+                            ({filasAnimales.length} de {parseInt(nuevoMov.cantidad || '0') || 0})
+                          </span>
+                        </Label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-600 hover:underline"
+                          onClick={() => {
+                            // Abre tantas filas como cabezas se muevan: el caso normal es cargarlas
+                            // todas de una, y hacerlo de a una era justo la queja del usuario.
+                            const n = parseInt(nuevoMov.cantidad || '0') || 0
+                            const faltan = Math.max(0, n - filasAnimales.length)
+                            setFilasAnimales(prev => [
+                              ...prev,
+                              ...Array.from({ length: faltan || 1 }, () => ({ caravana: '', pelo: '', razon: '' })),
+                            ])
+                          }}
+                        >
+                          + {filasAnimales.length === 0 ? 'identificarlos uno por uno' : 'una fila más'}
+                        </button>
+                      </div>
+
+                      {filasAnimales.length > 0 && (
+                        <div className="mt-1 rounded border">
+                          <div className="grid grid-cols-[1fr_90px_1.4fr_28px] gap-1 border-b bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-600">
+                            <span>Caravana</span><span>Pelo</span><span>Razón</span><span />
+                          </div>
+                          <div className="max-h-52 overflow-auto">
+                            {filasAnimales.map((f, i) => (
+                              <div key={i} className="grid grid-cols-[1fr_90px_1.4fr_28px] items-center gap-1 border-b px-2 py-1 last:border-b-0">
+                                <Input className="h-7 text-xs" placeholder="B079" value={f.caravana}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, caravana: e.target.value } : x))} />
+                                <Input className="h-7 text-xs" placeholder="Negra" value={f.pelo}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, pelo: e.target.value } : x))} />
+                                <Input className="h-7 text-xs" placeholder="Machorra / Diarrea / Vacía tacto" value={f.razon}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, razon: e.target.value } : x))} />
+                                <button type="button" className="text-gray-400 hover:text-red-600"
+                                  onClick={() => setFilasAnimales(prev => prev.filter((_, j) => j !== i))}>✕</button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="px-2 py-1 text-[10px] leading-3 text-muted-foreground">
+                            La <b>razón</b> va por animal a propósito: una se descarta por machorra y la de
+                            al lado por diarrea. Sin caravana igual se guarda — queda identificado por su razón.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
