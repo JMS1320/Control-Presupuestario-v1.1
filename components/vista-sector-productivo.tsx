@@ -19,6 +19,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { ModalCompletarVentaHacienda, type MovimientoVenta } from "@/components/modal-completar-venta-hacienda"
+import { ModalIdentificarAnimales, type MovimientoAIdentificar } from "@/components/modal-identificar-animales"
 import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -1019,6 +1020,9 @@ function TabHacienda() {
    * dato por el que se lleva la planilla del CUT.
    */
   const [filasAnimales, setFilasAnimales] = useState<{ caravana: string; pelo: string; razon: string }[]>([])
+
+  /** El cambio de categoría al que se le están identificando los animales después — A-FEAT-84. */
+  const [movAIdentificar, setMovAIdentificar] = useState<MovimientoAIdentificar | null>(null)
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
@@ -1313,6 +1317,7 @@ function TabHacienda() {
                 // `created_at`, que es cuándo se cargó. La planilla filtra el detalle del CUT
                 // por este campo, y sin él el animal no aparecía en el reporte (A-BUG-47).
                 fecha_alta: nuevoMov.fecha,
+                movimiento_alta_id: movDestino?.id ?? null,
                 activo: true,
                 es_torito: false,
               }
@@ -2644,6 +2649,26 @@ function TabHacienda() {
                         {(m as any).stock_venta_id ? '💰 venta' : '⚠ sin venta'}
                       </button>
                     )}
+                    {/*
+                      🐄 Identificar los animales de un cambio de categoría YA guardado.
+                      Sólo en el renglón de ENTRADA (cantidad > 0): el de salida es la contracara del
+                      mismo movimiento y ofrecer el botón en los dos invitaría a cargarlos dos veces.
+                    */}
+                    {m.tipo === 'cambio_categoria' && m.cantidad > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setMovAIdentificar({
+                          id: m.id, fecha: m.fecha, cantidad: m.cantidad,
+                          categoria_id: (m as any).categoria_id ?? null,
+                          categoria_nombre: m.categorias_hacienda?.nombre,
+                          observaciones: m.observaciones ?? null,
+                        })}
+                        className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] whitespace-nowrap text-gray-500 hover:bg-gray-50"
+                        title="Identificar los animales de este movimiento (caravana, pelo y razón de cada uno)"
+                      >
+                        🐄 identificar
+                      </button>
+                    )}
                   </TableCell>
                 </TableRow>
                 )
@@ -2657,6 +2682,13 @@ function TabHacienda() {
         movimiento={ventaAEditar}
         abierto={!!ventaAEditar}
         onCerrar={() => setVentaAEditar(null)}
+        onGuardado={cargarDatos}
+      />
+
+      <ModalIdentificarAnimales
+        movimiento={movAIdentificar}
+        abierto={!!movAIdentificar}
+        onCerrar={() => setMovAIdentificar(null)}
         onGuardado={cargarDatos}
       />
 
