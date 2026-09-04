@@ -68,6 +68,13 @@ export interface MovimientoVenta {
 }
 
 interface Destino { id: string; nombre: string; compra_en: string }
+interface Animal {
+  id: string
+  caravana: string
+  /** La última pesada registrada, si tiene. Precarga el kilo, no lo impone. */
+  ultimoPeso: number | null
+  fechaPeso: string | null
+}
 
 export function ModalCompletarVentaHacienda({
   movimiento, abierto, onCerrar, onGuardado,
@@ -88,6 +95,24 @@ export function ModalCompletarVentaHacienda({
   const [notas, setNotas] = useState("")
   const [guardando, setGuardando] = useState(false)
 
+  /**
+   * Las caravanas de la venta — pedido del usuario (2026-09-04).
+   *
+   * Se ofrecen **sólo las de la categoría del movimiento**: una venta de Vaca CUT/Descarte no
+   * puede mostrar animales de recría. *"Esto va a su lugar. No puede ir a recría algo que es de
+   * cría."*
+   *
+   * El kilo de cada animal se **precarga con su última pesada y se puede pisar** — a veces se pesa
+   * en el campo el día de la carga y no queda registrado como pesada formal. *"Indistinto a mano o
+   * por pesada."*
+   */
+  const [animales, setAnimales] = useState<Animal[]>([])
+  const [elegidos, setElegidos] = useState<Record<string, { sel: boolean; kg: string }>>({})
+  /** Animales sin caravana, identificados por una observación. No se les inventa una caravana. */
+  const [sueltos, setSueltos] = useState<{ descripcion: string; kg: string }[]>([])
+  const [brutoCamion, setBrutoCamion] = useState("")
+  const [taraCamion, setTaraCamion] = useState("")
+
   useEffect(() => {
     if (!abierto || !movimiento) return
     supabase.schema("productivo").from("destinos_venta").select("id, nombre, compra_en")
@@ -96,11 +121,55 @@ export function ModalCompletarVentaHacienda({
     setKgCarga(movimiento.peso_total_kg != null ? String(movimiento.peso_total_kg).replace(".", ",") : "")
     setPrecio(movimiento.precio_por_kg != null ? String(movimiento.precio_por_kg).replace(".", ",") : "")
     setDesbaste(""); setCz(""); setKgCarne(""); setDestinoId(""); setNotas("")
+    setElegidos({}); setSueltos([]); setBrutoCamion(""); setTaraCamion("")
+
+    /**
+     * Los animales que se pueden adjudicar: **sólo los de la categoría de este movimiento**, y
+     * sólo los activos o los que ya son de esta venta. Sin ese filtro una venta de vacas de descarte
+     * ofrecería terneros de recría, que es justo lo que el usuario pidió que no pase.
+     */
+    if (movimiento.categoria_id) {
+      const prod = supabase.schema("productivo")
+      prod.from("terneros")
+        .select("id, caravana_interna, caravana_oficial, activo, stock_venta_id")
+        .eq("categoria_id", movimiento.categoria_id)
+        .then(async ({ data: ts }) => {
+          const propios = (ts ?? []).filter(t =>
+            t.activo || (movimiento.stock_venta_id && t.stock_venta_id === movimiento.stock_venta_id))
+          if (propios.length === 0) { setAnimales([]); return }
+          const { data: ps } = await prod.from("pesadas_terneros")
+            .select("ternero_id, fecha, peso_kg")
+            .in("ternero_id", propios.map(t => t.id))
+            .order("fecha", { ascending: false })
+          const ultima = new Map<string, { peso: number; fecha: string }>()
+          for (const x of ps ?? []) {
+            if (!ultima.has(x.ternero_id)) ultima.set(x.ternero_id, { peso: Number(x.peso_kg), fecha: x.fecha })
+          }
+          setAnimales(propios.map(t => {
+            const u = ultima.get(t.id)
+            return {
+              id: t.id,
+              caravana: t.caravana_interna || t.caravana_oficial || "(sin número)",
+              ultimoPeso: u?.peso ?? null,
+              fechaPeso: u?.fecha ?? null,
+            }
+          }))
+          // Los que ya estaban en esta venta arrancan tildados.
+          const yaEran: Record<string, { sel: boolean; kg: string }> = {}
+          for (const t of propios) {
+            if (movimiento.stock_venta_id && t.stock_venta_id === movimiento.stock_venta_id) {
+              const u = ultima.get(t.id)
+              yaEran[t.id] = { sel: true, kg: u ? String(u.peso).replace(".", ",") : "" }
+            }
+          }
+          setElegidos(yaEran)
+        })
+    }
 
     // Si la venta ya existe, se traen SUS valores: la ventana edita la venta, no la duplica.
     if (movimiento.stock_venta_id) {
       supabase.schema("productivo").from("stock_ventas")
-        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas")
+        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, peso_bruto_camion, peso_tara_camion, animales_sueltos")
         .eq("id", movimiento.stock_venta_id).single()
         .then(({ data: v }) => {
           if (!v) return
@@ -114,9 +183,45 @@ export function ModalCompletarVentaHacienda({
             setCliente({ cuit: v.cliente_cuit ?? "", nombre: v.cliente_nombre ?? "" })
           }
           setNotas(v.notas ?? "")
+          if (v.peso_bruto_camion != null) setBrutoCamion(String(v.peso_bruto_camion).replace(".", ","))
+          if (v.peso_tara_camion != null) setTaraCamion(String(v.peso_tara_camion).replace(".", ","))
+          setSueltos((v.animales_sueltos ?? []).map((x: any) => ({
+            descripcion: x.descripcion ?? "", kg: x.kg != null ? String(x.kg).replace(".", ",") : "",
+          })))
         })
     }
   }, [abierto, movimiento])
+
+  /**
+   * 🔑 De dónde salen los kilos — y por qué se muestran los TRES.
+   *
+   * Hay tres formas de saber cuánto pesó la carga y **no tienen por qué coincidir**:
+   *  1. la suma de los animales (caravanas + sueltos),
+   *  2. el pesaje del camión (bruto − tara),
+   *  3. lo que el usuario escribe.
+   *
+   * El campo de kilos se **precarga** con (2) y si no con (1), y **se puede pisar** — regla del
+   * dato real siempre editable. Pero la diferencia entre los tres **se muestra**: es el control
+   * gratis del "mismo número por dos caminos". Taparla sería perder justo el aviso de que algo no
+   * cierra.
+   */
+  const elegidosArr = Object.entries(elegidos).filter(([, v]) => v.sel)
+  const kgAnimales = elegidosArr.reduce((t, [, v]) => t + (num(v.kg) ?? 0), 0)
+    + sueltos.reduce((t, x) => t + (num(x.kg) ?? 0), 0)
+  const cabezas = elegidosArr.length + sueltos.length
+  const netoCamion = num(brutoCamion) != null && num(taraCamion) != null
+    ? num(brutoCamion)! - num(taraCamion)! : null
+
+  /**
+   * Precarga de los kilos: camión primero, si no la suma de los animales. **Sin pisar lo escrito.**
+   * El camión manda sobre la suma porque es la balanza contra la que se factura; la suma de los
+   * animales es el detalle de quién pesó qué.
+   */
+  useEffect(() => {
+    if (kgCarga.trim()) return
+    const sugerido = netoCamion ?? (kgAnimales > 0 ? kgAnimales : null)
+    if (sugerido != null) setKgCarga(String(sugerido).replace(".", ","))
+  }, [netoCamion, kgAnimales]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const destino = destinos.find(d => d.id === destinoId)
   const alaRes = destino?.compra_en === "res"
@@ -165,6 +270,11 @@ export function ModalCompletarVentaHacienda({
         cliente_nombre: cliente.nombre || null,
         cliente_cuit: cliente.cuit || null,
         notas: notas || null,
+        peso_bruto_camion: num(brutoCamion),
+        peso_tara_camion: num(taraCamion),
+        animales_sueltos: sueltos
+          .filter(x => x.descripcion.trim() || x.kg.trim())
+          .map(x => ({ descripcion: x.descripcion.trim(), kg: num(x.kg) })),
       }
 
       let ventaId = movimiento.stock_venta_id
@@ -188,6 +298,40 @@ export function ModalCompletarVentaHacienda({
         cuit: cliente.cuit || null,
       }).eq("id", movimiento.id)
       if (eMov) throw eMov
+
+      /**
+       * Adjudicar las caravanas: quedan colgadas de la venta y dadas de baja del rodeo.
+       * Se hace en dos pasos — primero se sueltan las que ya no están tildadas — para que
+       * **desmarcar** funcione igual que marcar. Si no, una caravana mal adjudicada no se podía
+       * sacar nunca.
+       */
+      const idsElegidos = elegidosArr.map(([id]) => id)
+      const idsSoltar = animales.map(a => a.id).filter(id => !idsElegidos.includes(id))
+      if (idsSoltar.length) {
+        await prod.from("terneros")
+          .update({ activo: true, fecha_baja: null, motivo_baja: null, stock_venta_id: null })
+          .in("id", idsSoltar).eq("stock_venta_id", ventaId)
+      }
+      if (idsElegidos.length) {
+        await prod.from("terneros").update({
+          activo: false, fecha_baja: movimiento.fecha, motivo_baja: "Vendido",
+          stock_venta_id: ventaId,
+        }).in("id", idsElegidos)
+
+        /**
+         * El kilo cargado a mano se guarda como PESADA del día de la venta, si difiere de la
+         * última que tenía. Así el peso individual vive en su lugar de siempre
+         * (`pesadas_terneros`) y no en un rincón nuevo de la venta — el dato en un solo lado.
+         */
+        const nuevas = elegidosArr
+          .map(([id, v]) => ({ id, kg: num(v.kg), animal: animales.find(a => a.id === id) }))
+          .filter(x => x.kg != null && x.kg !== x.animal?.ultimoPeso)
+          .map(x => ({
+            ternero_id: x.id, fecha: movimiento.fecha, peso_kg: x.kg,
+            observaciones: "Peso de carga — venta",
+          }))
+        if (nuevas.length) await prod.from("pesadas_terneros").insert(nuevas)
+      }
 
       toast.success(
         movimiento.stock_venta_id
@@ -281,6 +425,121 @@ export function ModalCompletarVentaHacienda({
               onChange={e => setKgCarne(e.target.value)} />
           </div>
         </div>
+
+        {/* ── Caravanas ───────────────────────────────────────────────────── */}
+        {(animales.length > 0 || sueltos.length > 0) && (
+          <div className="rounded border">
+            <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-1.5">
+              <span className="text-xs font-medium">
+                🐮 Animales — {cabezas} de {movimiento.cantidad}
+                {cabezas !== movimiento.cantidad && (
+                  <span className="ml-2 text-amber-700">
+                    ⚠ el movimiento dice {movimiento.cantidad}
+                  </span>
+                )}
+              </span>
+              <span className="text-xs tabular-nums text-gray-600">{fmt(kgAnimales || null)} kg</span>
+            </div>
+
+            {animales.length > 0 && (
+              <ul className="max-h-44 divide-y overflow-auto">
+                {animales.map(a => {
+                  const e = elegidos[a.id]
+                  return (
+                    <li key={a.id} className="flex items-center gap-2 px-3 py-1 text-xs">
+                      <input
+                        type="checkbox" checked={!!e?.sel}
+                        onChange={ev => setElegidos(prev => ({
+                          ...prev,
+                          [a.id]: {
+                            sel: ev.target.checked,
+                            // El kilo se precarga con la última pesada; se puede pisar.
+                            kg: prev[a.id]?.kg ?? (a.ultimoPeso != null ? String(a.ultimoPeso).replace(".", ",") : ""),
+                          },
+                        }))}
+                      />
+                      <span className="flex-1 font-mono">{a.caravana}</span>
+                      <span className="text-[10px] text-gray-400">
+                        {a.ultimoPeso != null ? `última: ${fmt(a.ultimoPeso)} kg` : "sin pesada"}
+                      </span>
+                      <Input
+                        className="h-6 w-24 text-xs" type="text" placeholder="kg"
+                        value={e?.kg ?? ""}
+                        disabled={!e?.sel}
+                        onChange={ev => setElegidos(prev => ({
+                          ...prev, [a.id]: { sel: prev[a.id]?.sel ?? false, kg: ev.target.value },
+                        }))}
+                      />
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            {/* Animales sin caravana: se identifican con una observación, no se les inventa un número. */}
+            {sueltos.map((x, i) => (
+              <div key={i} className="flex items-center gap-2 border-t px-3 py-1 text-xs">
+                <Input
+                  className="h-6 flex-1 text-xs" placeholder="ej: vaca overa sin caravana"
+                  value={x.descripcion}
+                  onChange={ev => setSueltos(prev => prev.map((y, j) => j === i ? { ...y, descripcion: ev.target.value } : y))}
+                />
+                <Input
+                  className="h-6 w-24 text-xs" placeholder="kg" value={x.kg}
+                  onChange={ev => setSueltos(prev => prev.map((y, j) => j === i ? { ...y, kg: ev.target.value } : y))}
+                />
+                <button type="button" className="text-gray-400 hover:text-red-600"
+                  onClick={() => setSueltos(prev => prev.filter((_, j) => j !== i))}>✕</button>
+              </div>
+            ))}
+            <div className="border-t px-3 py-1">
+              <button type="button" className="text-[11px] text-blue-600 hover:underline"
+                onClick={() => setSueltos(prev => [...prev, { descripcion: "", kg: "" }])}>
+                + agregar un animal sin caravana
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Pesaje del camión ───────────────────────────────────────────── */}
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <Label className="text-xs">Camión bruto</Label>
+            <Input className="mt-1" type="text" placeholder="0,00" value={brutoCamion}
+              onChange={e => setBrutoCamion(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Tara</Label>
+            <Input className="mt-1" type="text" placeholder="0,00" value={taraCamion}
+              onChange={e => setTaraCamion(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Neto del camión</Label>
+            <div className="mt-1 flex h-9 items-center justify-between rounded border bg-gray-50 px-2 text-sm tabular-nums">
+              <span>{fmt(netoCamion)}</span>
+              {netoCamion != null && (
+                <button type="button" className="text-[10px] text-blue-600 hover:underline"
+                  onClick={() => setKgCarga(String(netoCamion).replace(".", ","))}>usar</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* El mismo número por dos caminos: si no coinciden, se muestra la diferencia. */}
+        {kg != null && (kgAnimales > 0 || netoCamion != null) && (() => {
+          const difAnim = kgAnimales > 0 ? kg - kgAnimales : null
+          const difCam = netoCamion != null ? kg - netoCamion : null
+          const hayDif = (difAnim != null && Math.abs(difAnim) > 0.5) || (difCam != null && Math.abs(difCam) > 0.5)
+          return (
+            <div className={`rounded border px-3 py-1.5 text-[11px] ${hayDif ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+              {hayDif ? "⚠️ " : "✓ "}
+              Kilos de carga <b>{fmt(kg)}</b>
+              {difAnim != null && <> · animales {fmt(kgAnimales)} <b>({difAnim >= 0 ? "+" : ""}{fmt(difAnim)})</b></>}
+              {difCam != null && <> · camión {fmt(netoCamion)} <b>({difCam >= 0 ? "+" : ""}{fmt(difCam)})</b></>}
+              {!hayDif && " — cierran"}
+            </div>
+          )
+        })()}
 
         {/* El control a la vista: los números que salen de lo cargado. */}
         <div className="rounded border bg-gray-50 px-3 py-2 text-xs">
