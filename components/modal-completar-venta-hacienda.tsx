@@ -221,16 +221,17 @@ export function ModalCompletarVentaHacienda({
   const netoCamion = num(brutoCamion) != null && num(taraCamion) != null
     ? num(brutoCamion)! - num(taraCamion)! : null
 
-  /**
-   * Precarga de los kilos: camión primero, si no la suma de los animales. **Sin pisar lo escrito.**
-   * El camión manda sobre la suma porque es la balanza contra la que se factura; la suma de los
-   * animales es el detalle de quién pesó qué.
+  /*
+   * ⚠️ NO se precargan los kilos solos.
+   *
+   * Había un efecto que los rellenaba con el neto del camión o con la suma de los animales cada vez
+   * que alguno cambiaba. Resultado: el usuario borraba el campo y **el número volvía solo**, con
+   * valores que no había puesto. *"Me carga kilos de carga de manera errática por default."*
+   *
+   * Un default que se re-aplica después de que lo borraste no es un default: es una pelea. Los dos
+   * orígenes siguen a la vista con su botón **«usar»**, así el número lo pone el usuario cuando
+   * quiere y no la pantalla cuando se le ocurre.
    */
-  useEffect(() => {
-    if (kgCarga.trim()) return
-    const sugerido = netoCamion ?? (kgAnimales > 0 ? kgAnimales : null)
-    if (sugerido != null) setKgCarga(String(sugerido).replace(".", ","))
-  }, [netoCamion, kgAnimales]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const destino = destinos.find(d => d.id === destinoId)
   const alaRes = destino?.compra_en === "res"
@@ -264,6 +265,30 @@ export function ModalCompletarVentaHacienda({
     setGuardando(true)
     try {
       const prod = supabase.schema("productivo")
+
+      /**
+       * 👥 La contraparte va al MAESTRO — § Contrapartes de CLAUDE.md.
+       *
+       * El botón «Cargar nuevo» del selector sólo escribe los dos campos en pantalla: **no da de
+       * alta a nadie**. Por eso «Arrebeef» se podía tipear una vez y a la siguiente no aparecía en
+       * la lista — nunca había llegado a `proveedores`. Lo reportó el usuario el 2026-09-04.
+       *
+       * Se hace **upsert, nunca sólo UPDATE**: si la contraparte no existe, un UPDATE matchea 0
+       * filas, **no falla**, y el hueco queda invisible. Y si ya existe **no se le pisa la razón
+       * social** — sólo se le enciende el flag que falte.
+       */
+      if (cliente.cuit.trim()) {
+        const cuit = cliente.cuit.replace(/\D/g, "")
+        const { data: yaEsta } = await supabase
+          .from("proveedores").select("cuit, es_cliente").eq("cuit", cuit).maybeSingle()
+        if (!yaEsta) {
+          await supabase.from("proveedores").insert({
+            cuit, razon_social: cliente.nombre || cuit, es_cliente: true, es_proveedor: false,
+          })
+        } else if (!yaEsta.es_cliente) {
+          await supabase.from("proveedores").update({ es_cliente: true }).eq("cuit", cuit)
+        }
+      }
       const datosVenta = {
         categoria_id: movimiento.categoria_id,
         fecha_venta: movimiento.fecha,
@@ -382,6 +407,17 @@ export function ModalCompletarVentaHacienda({
               value={cliente}
               onChange={setCliente}
             />
+            {/*
+              Un nombre sin CUIT parece elegido y no lo está: viene como texto del movimiento viejo.
+              Y sin CUIT no hay match posible con la factura, que es el paso siguiente del circuito.
+            */}
+            {cliente.nombre && !cliente.cuit.trim() && (
+              <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-4 text-amber-800">
+                ⚠️ «{cliente.nombre}» viene como <b>texto</b>, no del maestro: le falta el CUIT.
+                Buscalo arriba, o tocá <b>«No aparece — cargar nuevo cliente»</b> y poné el CUIT.
+                Sin CUIT esta venta no se va a poder cruzar con su factura.
+              </p>
+            )}
           </div>
 
           <div>
@@ -441,6 +477,12 @@ export function ModalCompletarVentaHacienda({
             <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-1.5">
               <span className="text-xs font-medium">
                 🐮 Animales — {cabezas} de {movimiento.cantidad}
+                {kgAnimales > 0 && (
+                  <button type="button" className="ml-2 text-[10px] font-normal text-blue-600 hover:underline"
+                    onClick={() => setKgCarga(String(kgAnimales).replace(".", ","))}>
+                    usar sus kilos
+                  </button>
+                )}
                 {cabezas !== movimiento.cantidad && (
                   <span className="ml-2 text-amber-700">
                     ⚠ el movimiento dice {movimiento.cantidad}
