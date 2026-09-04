@@ -1023,6 +1023,10 @@ function TabHacienda() {
 
   /** El cambio de categoría al que se le están identificando los animales después — A-FEAT-84. */
   const [movAIdentificar, setMovAIdentificar] = useState<MovimientoAIdentificar | null>(null)
+  /** Cuántos individuos tiene ya cada movimiento, para que el botón diga si falta o no. */
+  const [individuosPorMov, setIndividuosPorMov] = useState<{
+    porMov: Record<string, number>; porCatFecha: Record<string, number>
+  }>({ porMov: {}, porCatFecha: {} })
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
@@ -1159,11 +1163,34 @@ function TabHacienda() {
     setLoading(true)
     setDetalleCUT(null) // Resetear cache detalle CUT al recargar
     try {
-      const [catRes, movRes] = await Promise.all([
+      const [catRes, movRes, indRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_hacienda').select('*').eq('activo', true).order('nombre'),
-        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false })
+        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false }),
+        // Los individuos, UNA vez por pantalla: sirve para que cada fila sepa si ya está
+        // identificada sin disparar una consulta por fila.
+        supabase.schema('productivo').from('terneros').select('id, movimiento_alta_id, categoria_id, fecha_alta'),
       ])
       if (catRes.data) setCategorias(catRes.data)
+
+      /**
+       * Cuántos individuos tiene cada movimiento — A-FEAT-84.
+       *
+       * Dos caminos porque hay dos épocas: los creados desde el 2026-09-04 traen
+       * `movimiento_alta_id`; los anteriores no, y para ésos el vínculo se infiere por
+       * categoría + fecha de alta, que es como se guardaron. **Nunca se cuentan dos veces**: el
+       * segundo mapa sólo mira los que NO tienen el vínculo nuevo.
+       */
+      const porMov: Record<string, number> = {}
+      const porCatFecha: Record<string, number> = {}
+      for (const t of indRes.data ?? []) {
+        if (t.movimiento_alta_id) {
+          porMov[t.movimiento_alta_id] = (porMov[t.movimiento_alta_id] ?? 0) + 1
+        } else if (t.categoria_id && t.fecha_alta) {
+          const k = `${t.categoria_id}|${t.fecha_alta}`
+          porCatFecha[k] = (porCatFecha[k] ?? 0) + 1
+        }
+      }
+      setIndividuosPorMov({ porMov, porCatFecha })
       if (movRes.data) {
         setMovimientos(movRes.data)
         // Calcular stock desde movimientos
@@ -2654,21 +2681,32 @@ function TabHacienda() {
                       Sólo en el renglón de ENTRADA (cantidad > 0): el de salida es la contracara del
                       mismo movimiento y ofrecer el botón en los dos invitaría a cargarlos dos veces.
                     */}
-                    {m.tipo === 'cambio_categoria' && m.cantidad > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setMovAIdentificar({
-                          id: m.id, fecha: m.fecha, cantidad: m.cantidad,
-                          categoria_id: (m as any).categoria_id ?? null,
-                          categoria_nombre: m.categorias_hacienda?.nombre,
-                          observaciones: m.observaciones ?? null,
-                        })}
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] whitespace-nowrap text-gray-500 hover:bg-gray-50"
-                        title="Identificar los animales de este movimiento (caravana, pelo y razón de cada uno)"
-                      >
-                        🐄 identificar
-                      </button>
-                    )}
+                    {m.tipo === 'cambio_categoria' && m.cantidad > 0 && (() => {
+                      const ya = (individuosPorMov.porMov[m.id] ?? 0)
+                        + (individuosPorMov.porCatFecha[`${(m as any).categoria_id}|${m.fecha}`] ?? 0)
+                      const faltan = m.cantidad - ya
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setMovAIdentificar({
+                            id: m.id, fecha: m.fecha, cantidad: m.cantidad,
+                            categoria_id: (m as any).categoria_id ?? null,
+                            categoria_nombre: m.categorias_hacienda?.nombre,
+                            observaciones: m.observaciones ?? null,
+                          })}
+                          className={`rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
+                            faltan > 0
+                              ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                          }`}
+                          title={faltan > 0
+                            ? `Faltan identificar ${faltan} de ${m.cantidad}: no figuran en la planilla ni se pueden adjudicar a una venta`
+                            : `Los ${ya} animales de este movimiento ya están identificados`}
+                        >
+                          {faltan > 0 ? `⚠ falta identificar ${faltan}` : `🐄 ${ya} identificad${ya === 1 ? 'o' : 'os'}`}
+                        </button>
+                      )
+                    })()}
                   </TableCell>
                 </TableRow>
                 )
