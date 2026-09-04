@@ -533,7 +533,7 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 > a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
 > aparezca a él.
 
-⚠️ *El banderín de fila está probado. Lo global (`Alt+R`, captura y seguimiento) sin probar por vos → `A-TEST-84`*
+✅ *Probado el 2026-09-04: el banderín de fila, el warning global con `Alt+R`, la captura y el seguimiento.*
 
 ---
 
