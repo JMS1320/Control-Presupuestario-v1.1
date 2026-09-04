@@ -302,6 +302,7 @@ mejoras — es el norte en términos administrativos"**. El criterio y las 5 pie
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
+| A-AUTO-03 | 🔴 | Media | **El mail de ARBA — el dato primero, el PDF después.** El aviso de vencimiento trae **CUIT, objeto, impuesto, cuota, importe y fecha** en el texto, y hoy **se tira entero**. Parsearlo da el vencimiento en Cash Flow + la alerta, sin que nadie cargue nada. ⚠️ **El PDF NO se puede bajar con GAS**: el botón dice *"Ingresar"*, o sea portal con login, y Apps Script no tiene navegador. Para el papel hay que usar la vía de `arca-api/` | → [A-AUTO-03](#a-auto-03) `@cashflow @egresos` |
 | A-AUTO-02 | 🔴 | Media | **Checklist de obligaciones administrativas — alerta ANTES, control DESPUÉS.** Pedido del usuario 2026-08-31: las obligaciones con plazo (vencimientos, presentaciones, cierres) tienen que estar en **un checklist priorizado** —las que son *sí o sí* separadas de las deseables— con **alerta al responsable antes** y **control de que se hizo después**. Hoy cada plazo vive en la cabeza de alguien. Es la pieza 3 del norte administrativo, generalizada | → [A-AUTO-02](#a-auto-02) `@general` |
 | A-AUTO-01 | 🔴 | Media | **🥇 CASO MODELO — el circuito de la tarjeta, punta a punta**: el resumen lo carga **Ulises** (falta habilitarlo), el PDF da el **próximo cierre y vencimiento** (hoy se parsean y se tiran), eso dispara la **alerta** de que viene el próximo resumen, y el **mail del banco** llena o contrasta los montos. Registrado como modelo de cómo se anota una automatización | → [A-AUTO-01](#a-auto-01) `@egresos` |
 
@@ -9155,6 +9156,62 @@ era llegar hasta él desde el lado productivo.
 `stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
 rinde) y del final (fecha de cobro, cuenta contable). **Un solo registro que se completa de a poco
 ya es posible: no hay que rediseñar, hay que llenar.**
+
+---
+
+## <a id="a-auto-03"></a>A-AUTO-03 — El mail de ARBA: el dato primero, el PDF después (2026-09-04)
+
+**La pregunta del usuario:** *"¿qué tan fácil es descargar un PDF de Gmail automáticamente con GAS?
+Es de los que dan link a descarga pero no está adjunto el archivo."*
+
+### La respuesta corta: depende de qué hay detrás del link
+
+| Caso | Qué es | Con GAS |
+|---|---|---|
+| 1 | link directo al PDF, sin login | **trivial** |
+| 2 | link con token en la URL que devuelve el PDF | **fácil** |
+| 3 | link a un **portal con login** | **imposible** |
+
+**ARBA es el 3.** El botón dice *"Ingresar"*, no *"Descargar"*: lleva al portal, que pide CIT y clave.
+Apps Script **no tiene navegador** — no ejecuta JavaScript, no mantiene sesión, no pasa un login. No
+es difícil: no puede. Para el papel hay que usar un navegador manejado por programa, que **ya existe
+en este proyecto**: `arca-api/modules/afip-login.js` + `download-comprobantes-complete.js`.
+
+### 🔑 Pero el dato ya está en el mail, y se tira entero
+Del aviso del 2026-09 (PAM):
+
+```
+CUIT ....... 20-04439022-2      Impuesto ... Inmobiliario Complementario, cuota 3
+Objeto ..... 20-04439022-2 Rural  Importe .... $963.879,90
+Vence ...... 8 de septiembre     Beneficio .. 10 % si está al día
+```
+
+Es exactamente la **pieza 2** del norte administrativo (`CLAUDE.md` § 🤖): *"¿qué estamos tirando?
+Datos que el sistema ya parsea y descarta — lo más barato que existe."*
+
+Y alcanza para **las dos mitades** de la regla de alertas:
+- **ANTES** → el vencimiento entra solo al Cash Flow, con monto y fecha, y dispara la alerta.
+- **DESPUÉS** → el importe permite el control de que efectivamente se pagó, contra el extracto.
+
+> **El PDF es el comprobante; el dato es lo que mueve el presupuesto.** Y el dato cuesta diez veces
+> menos.
+
+### Las 4 piezas
+| Pieza | Acá |
+|---|---|
+| **1 · Disparador** | el mail de ARBA, que llega solo |
+| **2 · Dato ya disponible** | CUIT, objeto, cuota, importe y vencimiento — hoy se descartan |
+| **3 · Alerta con destinatario** | antes del 8, con margen real — no el mismo día |
+| **4 · Control** | el importe del mail contra el pago en el extracto |
+
+### 🔑 La quinta pieza: el permiso
+Si el objetivo es que **Ulises** se ocupe de estos vencimientos, hay que **habilitarle el acceso**.
+Sin eso el circuito queda más prolijo y la carga la sigue haciendo JMS — que es el cuello de
+botella. Cruza con [A-SEC-03](#a-sec-03).
+
+### Orden recomendado
+1. **El dato** (GAS puro, fácil): parsear el mail → vencimiento + alerta.
+2. **El PDF** (vía navegador, más caro): sólo da el papel.
 
 ---
 
