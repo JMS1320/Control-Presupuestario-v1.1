@@ -278,6 +278,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-TEST-86 | 🔴 | Test | **La venta desde Movimientos** (A-FEAT-87) — en *Productivo → Movimientos*, tipo **venta**: tiene que aparecer el aviso verde, y al guardar decir **qué falta** y dónde completarlo. Después, que esa venta se vea en **Ingresos → Ganadería** y en el Cash Flow **sin volver a cargarla** | → [A-FEAT-87](#a-feat-87) `@productivo @ingresos` |
 | **A-FEAT-89** | 🟡 | Media | ✅ **HECHO 2026-09-04, sin testear** ([A-TEST-86](#a-feat-87)): en el modal de la venta se **adjudican las caravanas** de esa categoría (nunca de otra), con el kilo de cada una precargado de su última pesada y **editable**; los animales **sin caravana** se identifican con una observación; y el **pesaje del camión** (bruto − tara) da el neto. **Los tres orígenes del kilaje se muestran juntos con su diferencia** — el control gratis del mismo número por dos caminos. **Peso por animal en una venta** — *"hay casos como este que debo ponerle un peso a cada animal"* (7 vacas descarte, que no pesan lo mismo). Hoy la venta guarda **kilos totales** y deriva el promedio. Para hacienda con caravana el dato individual existe (`pesadas_terneros`); para adultos no hay dónde ponerlo | → [A-FEAT-87](#a-feat-87) `@productivo` |
 | A-DAT-20 | 🔴 | Dato | **2 categorías de hacienda sin centro de costo**: «Ternera» y «Ternero». Una venta de esas categorías **no sabe a qué actividad va** — sale con centro de costo vacío y queda sin ubicación en el presupuesto. Lo encontró el test del circuito. Las otras 13 lo tienen | — `@productivo` |
+| **A-DEC-15** | ✅ | Dec | **La clasificación comercial NO es nuestra categoría, y llega DESPUÉS** — nosotros decimos *Vaca CUT/Descarte*; el frigorífico dice **Gorda / Conserva / Manufactura**, con subprecios, y lo decide **al ver la res**. Por eso una venta **no se carga: se completa**. Decidido con el usuario 2026-09-04 | → [A-FEAT-90](#a-feat-90) `@productivo` |
+| A-FEAT-90 | 🔴 | **Alta** | **Grupos de precio dentro de la venta** (opción B, elegida por el usuario) + **la CARGA como cosa propia** (un camión, una fecha, un cliente, **una liquidación**, varias categorías). Se ataca **el día del romaneo** | → [A-FEAT-90](#a-feat-90) `@productivo @ingresos` |
 | A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
 | A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
 | A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
@@ -9150,6 +9152,72 @@ era llegar hasta él desde el lado productivo.
 `stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
 rinde) y del final (fecha de cobro, cuenta contable). **Un solo registro que se completa de a poco
 ya es posible: no hay que rediseñar, hay que llenar.**
+
+---
+
+## <a id="a-dec-15"></a>A-DEC-15 / <a id="a-feat-90"></a>A-FEAT-90 — La venta no se carga, se completa (2026-09-04)
+
+**De dónde salió.** Cargando la venta real de 7 vacas + 3 toros a Arrebeef. El diseño hasta ese
+momento asumía **un precio y un rinde por venta**. El usuario lo corrigió:
+
+> *"Las vacas también habrá distintos precios porque hay distintas categorías: **Gorda, Conserva,
+> Manufactura**. Y hasta subprecios entre categorías."*
+
+### 🔑 La decisión de fondo (A-DEC-15)
+**Nuestra categoría NO es la categoría comercial, y la comercial llega después.** Nosotros decimos
+*Vaca CUT/Descarte*; ellos dicen Gorda / Conserva / Manufactura, y **lo deciden al ver la res
+colgada** — no al cargar el camión. La que fija la plata es **la de ellos**.
+
+Cuándo se sabe cada cosa, que es lo que ordena todo el diseño:
+
+| Pieza | Cuándo se sabe | Quién la define |
+|---|---|---|
+| Qué animales van | al cargar | el usuario |
+| Cuánto pesan vivos | al cargar | el usuario (balanza o campo) |
+| **Kilos de res y clasificación** | **con el romaneo, días después** | **el frigorífico** |
+| **Precio** | **con el romaneo** | **el frigorífico**, por clasificación |
+
+> **La venta no se carga: se completa.** Pedir todo junto al momento de la venta es pedir un dato
+> que todavía no existe — y lo que se completa con un dato inventado no se corrige nunca.
+
+### La forma elegida: **grupos de precio** (opción B)
+Se evaluaron tres y el usuario eligió la B:
+
+| | Qué es | Por qué no |
+|---|---|---|
+| **A** · precio por animal | lo que el romaneo entrega literal | mucha carga cuando son 100 novillos parejos |
+| **B** · **grupos de precio dentro de la venta** | *"3 vacas que comparten precio"*, cada grupo con sus kilos y su precio | **elegida** |
+| **C** · una venta por clasificación | simple con lo que ya hay | parte una carga que fue una sola y pesa el camión tres veces |
+
+**B incluye a A**: un animal solo es un grupo de uno. Cuando el detalle importa se agrupa de a uno;
+cuando no, de a diez.
+
+### Y arriba: la CARGA
+Lo que junta a los toros con las vacas **no es la venta: es el viaje**. Un camión, una fecha, un
+cliente, **una liquidación**. Adentro, los grupos de precio de la categoría que sea.
+
+Así el caso real deja de ser un problema: 7 vacas y 3 toros en una carga, que después el romaneo
+parte en — digamos — 3 Conserva, 4 Manufactura y los 3 toros aparte. **Cuatro grupos, un viaje, una
+factura.** El peso del camión vive en la carga y deja de estar duplicado en cada venta.
+
+⚠️ El vínculo venta↔factura ya soporta N:M, así que **dos ventas contra una liquidación ya
+funciona hoy**. Lo que falta es la agrupación física.
+
+### El matcheo del romaneo, y su trampa
+El usuario dará los **kg de media res × 2** por animal. De ahí se puede estimar el peso vivo
+(dividiendo por el rinde y sumando el desbaste) y asignar cada línea al animal más parecido.
+
+**Es una estimación, no un dato** — acordado con el usuario: *"salvo que nos den por caravana,
+siempre será nuestra mejor estimación"*. Dos vacas de 420 y 430 kg se cruzan sin que nadie lo note:
+en el total no cambia nada, en el **margen por animal** sí.
+
+Por eso va con **dos condiciones que no se negocian**: mostrar siempre **la diferencia de cada
+asignación**, y **poder corregirla a mano**. Nunca asignar en silencio.
+
+### Cuándo
+**El día del romaneo**, por decisión del usuario: *"lo dejaremos para hacerlo el día del trabajo de
+carga de eso"*. Hasta entonces la venta se completa con lo que hay — kilos de carga, desbaste, CZ —
+y el importe queda vacío si el destino compra a la res, que es lo correcto.
 
 ---
 
