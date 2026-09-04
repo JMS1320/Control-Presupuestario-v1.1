@@ -476,6 +476,42 @@ saldo impago inexistente.
 
 ---
 
+## 🚩 Marcar algo para revisar — desde cualquier pantalla
+
+**Para qué sirve.** Estás haciendo otra cosa y ves algo que no cierra: una imputación rara, un monto
+que no cuadra. No hace falta que lo arregles en el momento ni que te lo anotes aparte: **lo marcás y
+seguís**. Después aparece todo junto en Principal.
+
+### Cómo se usa
+1. En la fila que te llamó la atención, **al final de todo, en el margen derecho**, hay una
+   **🚩 gris**. Tocala.
+2. Se abre una ventanita que **ya sabe de qué fila hablás** — te muestra el proveedor, el número y el
+   monto sin que escribas nada. Vos sólo escribís **qué viste**.
+3. **Marcar**. Listo, diez segundos. La banderita de esa fila queda **ámbar**, así el que entre
+   después se entera ahí mismo.
+
+### Dónde se ven
+**Principal → 🚩 Para revisar.** Están todas las abiertas, con tu comentario, de qué fila eran y
+cuándo las marcaste.
+
+### Cómo se cierra
+Tocás **Cerrar** y **escribís qué se hizo**. Es obligatorio: sin eso, *«resuelta»* termina
+significando *«la miré y me pareció que estaba bien»*, que no es lo mismo que *«la corregí»*.
+
+Si al mirarla resulta que no era un problema, está el botón **No era un problema** — que también pide
+que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda dentro de tres meses.
+
+> 📍 **Hoy está en las facturas del subdiario.** Se va a ir poniendo en otras pantallas a medida que
+> haga falta: ponerla en una grilla nueva es un trabajo de minutos.
+
+> 👥 **Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
+> a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
+> aparezca a él.
+
+⚠️ *Sin probar todavía → `A-TEST-83`*
+
+---
+
 ## 📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)
 
 **Dónde:** Egresos → Facturas → botón **Subdiarios** → "Consultar período" → elegís período → sale el **resumen en 2 bloques** (+ el detalle de cada factura debajo).

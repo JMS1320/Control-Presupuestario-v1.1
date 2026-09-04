@@ -12,6 +12,7 @@ import { ModalPendientes } from "./modal-pendientes"
 import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertasFcVenta } from "./alertas-fc-venta"
+import { PanelRevisiones } from "./panel-revisiones"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
 import { toast } from "sonner"
@@ -234,6 +235,10 @@ export function VistaPrincipal() {
 
       {/* Llegó FC de una venta: ¿es de esta venta? */}
       <AlertasFcVenta />
+
+      {/* 🚩 Lo marcado a mano desde cualquier pantalla. Va con las otras alertas porque es lo
+          mismo: cosas que alguien tiene que mirar antes de que ensucien un número. */}
+      <PanelRevisiones />
 
       {/* Alertas SICORE — anticipos sin vincular */}
       <Card>

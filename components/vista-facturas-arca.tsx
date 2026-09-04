@@ -43,6 +43,7 @@ import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
+import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -376,6 +377,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * eso hizo que un inventario normal se leyera como una falla del sistema (2026-09-03).
    */
   const [origenListado, setOrigenListado] = useState<'contar' | 'ocr' | null>(null)
+
+  /**
+   * 🚩 Marcas «para revisar» de las facturas de este período.
+   *
+   * Se cargan UNA vez por pantalla y no por fila: una grilla de 40 facturas dispararía 40 consultas
+   * para pintar 40 banderitas que casi siempre están apagadas.
+   */
+  const { porRegistro: revisionesFactura, recargar: recargarRevisiones } = useRevisionesDe(schemaName, 'comprobantes_arca')
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
@@ -6196,6 +6205,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <TableHead>Total IVA</TableHead>
                     <TableHead>Imp. Total</TableHead>
                     <TableHead>Estado DDJJ</TableHead>
+                    {/* 🚩 Al final a propósito: el margen derecho suele quedar fuera de la vista, así
+                        no le carga peso a la parte izquierda, que es la que se lee. Pedido del
+                        usuario (2026-09-04) — total, lo marcado se mira en Principal. */}
+                    <TableHead className="w-10 text-center" title="Marcar para revisar">🚩</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -6308,6 +6321,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         }>
                           {factura.ddjj_iva}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <BotonRevision
+                          schema={schemaName}
+                          tabla="comprobantes_arca"
+                          registroId={factura.id}
+                          descripcion={`${factura.denominacion_emisor || 's/proveedor'} · ${factura.punto_venta}-${factura.numero_desde} · ${formatearFecha(factura.fecha_emision)} · $${(Number(factura.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                          abierta={revisionesFactura[String(factura.id)]}
+                          onCambio={recargarRevisiones}
+                        />
                       </TableCell>
                     </TableRow>
                   )
