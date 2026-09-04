@@ -1606,3 +1606,116 @@ El norte administrativo dice automatizar la **búsqueda**, no la **decisión**.
 **La señal más valiosa es la tercera**, y es la que un buscador por proveedor no tiene: que el precio
 derivado caiga cerca de la mediana de las otras entregas del mismo insumo. Ese cálculo **ya existe**.
 → [A-FEAT-73](PENDIENTES.md#a-feat-73).
+
+---
+
+## 18 · 💰 El movimiento de venta se conecta al circuito comercial (2026-09-03/04)
+
+Estructura → `RECONSTRUCCION_SUPABASE_2026-01-07.md` § 2026-09-03/04. Cómo se opera →
+`MANUAL-USO.md`. Acá van **las decisiones y por qué**.
+
+### 18.1 · El agujero: vender no era vender
+
+🔴 **Un movimiento de tipo `venta` daba de baja los animales y ahí terminaba.** No creaba venta
+comercial. Los animales salían del stock productivo y **no entraban a facturación, cobro ni
+presupuesto**: desaparecían.
+
+Contra el norte (§ 🧭 de `CLAUDE.md`), es el caso puro del **vínculo que debería existir y no
+existía** — y no era un hueco teórico: había 2 movimientos de venta cargados así.
+
+Ahora el movimiento **crea la venta**, y la grilla muestra cuáles quedaron sin ella (⚠ ámbar). El
+estado es **visible**, no un dato interno: si no se ve, nadie lo arregla.
+
+### 18.2 · Por qué la venta se despega del lote
+
+`stock_ventas.lote_id` era `NOT NULL`. Pero **las vacas de descarte no están en ningún lote**: se
+descartan de a una, por su propia razón. Exigir el lote obligaba a inventar uno.
+
+🎯 Lo que reemplaza al lote como respuesta a *"¿qué se vendió?"* es **`categoria_id`**. El lote sigue
+existiendo cuando la venta sale de uno — pero dejó de ser la única manera de vender.
+
+### 18.3 · 🔑 El destino decide si el precio es a la RES o al VIVO
+
+No es una preferencia de captura: **son dos negocios distintos**. Arrebeef compra a la res, Cañuelas
+al vivo, y el mismo animal vale distinto en cada uno.
+
+| | Arrebeef (**a la res**) | Cañuelas (**al vivo**) |
+|---|---|---|
+| Base | kg de **carne** (romaneo) | kg **netos** de desbaste |
+| Cuándo se sabe | **días después**, con la liquidación | el día de la carga |
+
+```ts
+const bruto = p == null ? null
+  : alaRes ? (carne != null ? carne * p : null)
+  : (neto  != null ? neto  * p : null)
+```
+
+🔴 **Y si falta el romaneo, el importe queda VACÍO, con el motivo escrito.** No se estima con un
+rinde supuesto:
+
+```ts
+const porQueNoHayImporte = p == null ? "falta el precio"
+  : alaRes && carne == null ? `${destino?.nombre} compra a la res: falta el kilaje de carne del romaneo`
+  : kg == null ? "faltan los kilos de carga" : null
+```
+
+*Motivo: un importe estimado entra al Cash Flow como si fuera real, y cuando llega la liquidación
+nadie se acuerda de que ese número era un supuesto. Un vacío que dice por qué está vacío se completa;
+un número inventado no se corrige nunca.* Es la § 🧮 aplicada — **nada se descarta en silencio**.
+
+### 18.4 · Tres formas de que un animal esté en una venta
+
+| | Cuándo | Dónde vive |
+|---|---|---|
+| **Con caravana** | el animal existe y tiene número | `terneros`, adjudicado |
+| **Sin caravana, con razón** | existe como individuo, identificado por su descarte | `terneros`, `observaciones` |
+| **Suelto** | no existe como individuo y no vale la pena crearlo | `stock_ventas.animales_sueltos` (jsonb) |
+
+🔑 **La razón de descarte *es* la identificación.** *"Vaca Dura que malparió. Robocop"* identifica ese
+animal mejor que un número que nunca se le puso. Exigir caravana para poder vender habría dejado
+afuera justo a las vacas que se venden por descarte — que son casi todas.
+
+⚠️ **Y ahí estaba el bug que originó `ModalIdentificarAnimales`**: esa razón se guardaba en el
+**movimiento**, no en un animal. El texto existía y no servía para nada — no figuraba en la planilla
+ni se podía adjudicar. El descuadre del CUT (17 entradas vs 12 individuos, 11 salidas vs 4 bajas)
+era exactamente eso.
+
+**Corolario de diseño:** *si un dato descriptivo se guarda en la operación en vez de en la cosa
+descrita, existe pero no participa de nada.*
+
+### 18.5 · La CARGA: el camión se pesa una vez, la venta son varias
+
+El pesaje del camión **no es un atributo de la venta**: un camión llevó 7 vacas y 3 toros —dos ventas
+distintas, dos precios distintos— y **un solo bruto y una sola tara**. Con las columnas en la venta,
+ese pesaje había que cargarlo dos veces y las dos copias podían discrepar.
+
+Por eso `productivo.cargas` es una entidad propia y la venta la referencia. La consecuencia importante
+es que **el control tiene que ser a nivel carga, no a nivel venta**.
+
+#### 🧮 El control: tres orígenes del mismo kilaje
+
+```
+Kilos de carga 3.640 · animales 3.640 (0) · otras ventas de la carga 2.661 · camión 6.500 (+199)
+```
+
+Es la **pieza 4 del norte administrativo** en estado puro (*el mismo número por dos caminos*), acá por
+tres: lo declarado, la suma de los animales pesados en el campo, y el camión.
+
+🔑 **La diferencia contra el camión NO es un error a corregir: es un DATO a registrar.** Son dos
+balanzas nuestras — la del camión es la más precisa, pero **no pisa** a la del campo. El caso real
+dio **6.301 contra 6.500 = +199 kg (3,16 %)**, y ese desvío repetido a lo largo de varias cargas es
+lo que después dice cuál balanza está descalibrada.
+
+*Palabras del usuario: «las 2 balanzas son nuestras pero la de camión manda por ser más precisa…
+pero sin pisar».* Un control que corrige en silencio destruye la única evidencia que tenía.
+
+⚠️ **Falta separar el desbaste del error de balanza**: hoy el +199 mezcla las dos cosas. Se resuelve
+cuando llegue el romaneo → `A-FEAT-91`.
+
+### 18.6 · Lo que queda abierto
+
+| | |
+|---|---|
+| `A-FEAT-90` | **grupos de precio** dentro de una venta (Gorda / Conserva / Manufactura a precios distintos) |
+| `A-FEAT-91` | las **tres balanzas** comparables + rinde real contra el romaneo |
+| `A-TEST-86/87` | nada de esto está testeado |

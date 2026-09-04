@@ -12503,3 +12503,97 @@ CREATE TRIGGER trg_fecha_modificacion BEFORE UPDATE ON msa.comprobantes_arca
 ⚠️ **Las 383 filas viejas siguen con la fecha de creación**: el trigger sólo actúa de ahora en más.
 No se tocaron retroactivamente porque no hay dato real que poner — inventar una fecha sería peor
 que no tenerla.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-03/04 · Venta de hacienda desde Movimientos
+
+✅ **APLICADO.** Estructura **leída de la base** el 2026-09-04, no reconstruida de memoria.
+
+**El problema de fondo**: un movimiento de tipo `venta` daba de baja los animales y **ahí terminaba**.
+No creaba venta comercial, así que esos animales no entraban a facturación, cobro ni presupuesto.
+Diseño y motivos → `MODULO_HACIENDA.md` § 18.
+
+### 1 · La venta se despega del lote
+
+```sql
+ALTER TABLE productivo.stock_ventas ALTER COLUMN lote_id DROP NOT NULL;
+ALTER TABLE productivo.stock_ventas ADD COLUMN categoria_id uuid;      -- qué se vendió, sin lote
+ALTER TABLE productivo.stock_ventas ADD COLUMN kg_carne numeric;       -- romaneo (venta a la res)
+ALTER TABLE productivo.stock_ventas ADD COLUMN animales_sueltos jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE productivo.stock_ventas DROP COLUMN comprobante_id;        -- nunca se usó
+```
+
+⚠️ **`lote_id` nullable es el cambio de fondo**: antes vender exigía un lote, y las vacas de descarte
+no están en ninguno. `categoria_id` es lo que lo reemplaza como respuesta a *"¿qué se vendió?"*.
+
+`animales_sueltos` guarda los que **no existen como individuo** (`[{ razon, kg }]`) — ver § 18.4.
+
+### 2 · La CARGA — un pesaje de camión, varias ventas
+
+```sql
+CREATE TABLE productivo.cargas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha date NOT NULL,
+  cliente_cuit text, cliente_nombre text, destino_id uuid,
+  peso_bruto numeric, peso_tara numeric,
+  flete numeric, notas text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE productivo.stock_ventas ADD COLUMN carga_id uuid;
+-- y se fueron las columnas que ponían el pesaje en la venta:
+ALTER TABLE productivo.stock_ventas DROP COLUMN peso_bruto_camion, DROP COLUMN peso_tara_camion;
+```
+
+🔴 **Una tabla nueva NO hereda los GRANTs del schema.** Se perdió una carga entera con
+`permission denied for table cargas` y `type-check` en verde:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON productivo.cargas TO anon, authenticated, service_role;
+```
+
+*Chequear esto en toda tabla nueva de un schema no-`public`: el error no aparece hasta que el usuario
+aprieta Guardar.*
+
+### 3 · El animal sabe de qué movimiento salió
+
+```sql
+ALTER TABLE productivo.terneros ADD COLUMN movimiento_alta_id uuid;
+```
+
+Sin esto no había forma de saber cuántas cabezas de un `cambio_categoria` ya estaban identificadas.
+El código cuenta por acá **y** por `categoria_id + fecha_alta` para los cargados antes de la columna.
+
+### 4 · `ventas_unificadas` — LEFT JOIN, no INNER
+
+La vista unía contra `lotes`, así que **una venta sin lote desaparecía de la vista** en vez de dar
+error: se cargaba bien y no aparecía en ningún lado. Recreada con `LEFT JOIN`.
+
+⚠️ Es el modo de falla que más caro sale: **el silencio miente** (`CLAUDE.md` § 🧮).
+
+### 5 · Notas y revisiones (A-FEAT-72 / 🚩)
+
+```sql
+ALTER TABLE public.notas_capturas ADD COLUMN diagnostico jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE public.notas_capturas ADD COLUMN subpantalla text;
+
+CREATE TABLE public.revisiones (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  schema_ref text, tabla_ref text, registro_id text,     -- ancla OPCIONAL (§ 18.5)
+  descripcion_ref text NOT NULL,                          -- lápida: texto congelado
+  motivo text NOT NULL,
+  tipo text NOT NULL DEFAULT 'revisar',
+  pantalla text, subpantalla text, ruta text, imagen text,
+  estado text NOT NULL DEFAULT 'abierta',
+  seguimiento jsonb NOT NULL DEFAULT '[]',                -- se APPENDEA, nunca se pisa
+  creado_por text, asignado_a text,
+  resolucion text, resuelto_por text, resuelto_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+🔑 **`registro_id` es nullable a propósito.** Pedido textual del usuario: *"no puedo quedar anclado a
+que exista el lugar en la fila… debo poder subir warnings de cosas que la app no puede registrar"*.
+
+🔐 **RLS: `anon` sólo INSERT.** Y `INSERT … RETURNING` necesita **también** `SELECT` — sin eso el
+guardado rompe con `type-check` en verde (mismo golpe que en A-SEC-04).
