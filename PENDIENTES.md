@@ -281,6 +281,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | **A-DEC-15** | ✅ | Dec | **La clasificación comercial NO es nuestra categoría, y llega DESPUÉS** — nosotros decimos *Vaca CUT/Descarte*; el frigorífico dice **Gorda / Conserva / Manufactura**, con subprecios, y lo decide **al ver la res**. Por eso una venta **no se carga: se completa**. Decidido con el usuario 2026-09-04 | → [A-FEAT-90](#a-feat-90) `@productivo` |
 | A-FEAT-90 | 🟡 | **Alta** | ✅ **La CARGA hecha 2026-09-04, sin testear** ([A-TEST-87](#a-feat-90)): tabla `productivo.cargas`, las ventas cuelgan de ella y el pesaje del camión **vive ahí y sólo ahí** — se borraron `peso_bruto_camion`/`peso_tara_camion` de la venta. El control compara el neto del camión contra **la suma de todas las ventas de la carga**. 🔴 **Faltan los grupos de precio**, para el día del romaneo. **Grupos de precio dentro de la venta** (opción B, elegida por el usuario) + **la CARGA como cosa propia** (un camión, una fecha, un cliente, **una liquidación**, varias categorías). Se ataca **el día del romaneo** | → [A-FEAT-90](#a-feat-90) `@productivo @ingresos` |
 | A-TEST-87 | 🔴 | Test | **La carga del camión** (A-FEAT-90) — en las **dos** ventas del 03/09 elegir **la misma carga**, poner bruto y tara en una: la otra tiene que **traerlos sola**. Y el control tiene que comparar el neto contra **la suma de las dos** (≈6.301 kg), no contra una. Además: los kilos se **autocompletan** con la suma de los animales, y si los borrás **quedan borrados** | → [A-FEAT-90](#a-feat-90) `@productivo` |
+| **A-DEC-16** | ✅ | Dec | **El rinde depende de contra qué se divide, y el desbaste lo infla.** El rinde **objetivo** es `kg de res ÷ peso vivo lleno`; el que se habla en el mercado va sobre el peso ya desbastado, y como el desbaste **se negocia**, ese número no compara entre ventas. Y el desbaste sólo tiene sentido económico **vendiendo al vivo**: a la res es una convención. Definido con el usuario 2026-09-04 | → [A-FEAT-91](#a-feat-91) `@productivo` |
+| A-FEAT-91 | 🔴 | Media | **Las tres balanzas y el rinde comparable** — guardar peso de balanza propia, peso de camión y kg de res; **el camión manda** (más preciso) y ajusta los individuales **proporcionalmente, sin pisar los medidos**; y el rinde se calcula **de las dos formas**, con la categoría comercial y el régimen de alimentación al lado para que se pueda comparar. Se ataca **el día del romaneo**, junto con [A-FEAT-90](#a-feat-90) | → [A-FEAT-91](#a-feat-91) `@productivo` |
 | A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
 | A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
 | A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
@@ -9153,6 +9155,60 @@ era llegar hasta él desde el lado productivo.
 `stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
 rinde) y del final (fecha de cobro, cuenta contable). **Un solo registro que se completa de a poco
 ya es posible: no hay que rediseñar, hay que llenar.**
+
+---
+
+## <a id="a-dec-16"></a>A-DEC-16 / <a id="a-feat-91"></a>A-FEAT-91 — Las tres balanzas y el rinde comparable (2026-09-04)
+
+**El caso que lo disparó.** Primera carga con el modelo nuevo: 10 animales pesados en la balanza
+propia suman **6.301 kg**; el camión dio **6.500** (22.320 bruto − 15.820 tara). Diferencia **+199 kg,
+3,16 %**. Las 10 pesadas son del **mismo día** que la carga, así que el desvío **no lo explica el
+tiempo**: es la balanza o la tara. Queda como una medición limpia.
+
+### 1 · Las balanzas: el camión manda, pero no se pisa lo medido
+Las dos son del usuario; **la del camión es más precisa y manda cuando existe**. Como hay cálculos
+por cabeza, los pesos individuales se ajustan **proporcionalmente** al total del camión.
+
+⚠️ **Sin pisar los medidos** (acordado explícitamente). El peso de campo es una medición y el del
+camión es otra: adaptar uno al otro borra justo lo que interesa — **el desvío**. Se guardan los dos
+y se registra el factor. Con varias cargas encima, ese desvío repetido **es la calibración**: si
+siempre ronda +3 % es la balanza; si salta sin patrón son los días y el manejo.
+
+### 2 🔑 · El desbaste no significa lo mismo en los dos canales
+- **Vendiendo AL VIVO**: el desbaste es **económico y real**. El comprador dice cuánto desbaste
+  aplica y paga $/kg vivo sobre eso. Él estima qué rinde va a sacar; si sale más o menos, **lo gana
+  o lo pierde él**.
+- **Vendiendo A LA RES**: el desbaste es **una convención**. Lo que se paga son los kilos de carne
+  reales; el desbaste no cambia la plata.
+
+### 3 🔑 · Por eso hay DOS rindes, y sólo uno sirve para comparar
+
+| | Cómo se calcula | Para qué sirve |
+|---|---|---|
+| **Rinde objetivo** | `kg de res ÷ peso vivo lleno` (el del camión, sin tocar) | **Comparar entre ventas, categorías y años** |
+| **Rinde comercial** | `kg de res ÷ peso ya desbastado` | Hablar con el comprador — es el que se usa en el mercado |
+
+> **El comercial está inflado por un número que se negocia.** En palabras del usuario: *"si uno le
+> pone mucho desbaste, el rinde sobre desbastado es un montón"*. Dos ventas con desbastes distintos
+> **no son comparables** por ese número, aunque los animales hayan rendido igual.
+
+Se guardan **los dos**, y el que manda para analizar es el objetivo.
+
+### 4 · Sin contexto, un rinde no dice nada
+El dato útil no es *"rindió el 56 %"*, es:
+
+> *"**vaca gorda** saliendo de **pasturas** rindió tanto"*
+
+Hacen falta al lado: la **categoría comercial** (Gorda / Conserva / Manufactura — rinden distinto) y
+el **régimen de alimentación** (pastura, encierre, raón), que también lo mueve. Con eso anotado,
+cada venta suma a una serie que en un año vale más que cualquier tabla teórica.
+
+### Lo que hay que guardar, en una línea
+`peso balanza propia` · `peso camión` · `factor de ajuste` · `desbaste` (comercial) · `kg de res` ·
+`categoría comercial` · `régimen de alimentación`.
+
+**Cuándo:** el día del romaneo, con [A-FEAT-90](#a-feat-90). Antes no hay kg de res, y sin ellos no
+hay rinde de ningún tipo.
 
 ---
 
