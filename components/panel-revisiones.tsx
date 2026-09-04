@@ -36,6 +36,16 @@ function cuando(iso: string): string {
 export function PanelRevisiones() {
   const [revisiones, setRevisiones] = useState<RevisionAbierta[]>([])
   const [cargando, setCargando] = useState(true)
+  /**
+   * La marca abierta en detalle — pedido del usuario (2026-09-04):
+   * *"recién encontré cuál es el problema, debería poder abrir para actualizar"*.
+   *
+   * Una marca **no nace con el diagnóstico, nace con la sospecha**. Si lo único que se puede hacer
+   * es cerrarla, lo que se aprende en el medio se pierde o termina escrito en otro lado.
+   */
+  const [detalle, setDetalle] = useState<RevisionAbierta | null>(null)
+  const [nuevoSeguimiento, setNuevoSeguimiento] = useState("")
+  const [agregando, setAgregando] = useState(false)
   const [cerrando, setCerrando] = useState<RevisionAbierta | null>(null)
   const [resolucion, setResolucion] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -54,6 +64,31 @@ export function PanelRevisiones() {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+
+  const agregarSeguimiento = async () => {
+    if (!detalle || !nuevoSeguimiento.trim()) { toast.error("Escribí algo"); return }
+    setAgregando(true)
+    try {
+      const r = await fetch("/api/revisiones", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: detalle.id, seguimiento: nuevoSeguimiento.trim(), autor: rolActual() }),
+      })
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || "no se pudo agregar")
+      setNuevoSeguimiento("")
+      // Refrescar y dejar el detalle abierto con lo recién agregado a la vista.
+      const lista = await (await fetch("/api/revisiones")).json()
+      const frescas: RevisionAbierta[] = lista.revisiones ?? []
+      setRevisiones(frescas)
+      setDetalle(frescas.find(v => v.id === detalle.id) ?? null)
+      toast.success("Agregado")
+    } catch (e) {
+      toast.error("No se pudo agregar: " + (e as Error).message)
+    } finally {
+      setAgregando(false)
+    }
+  }
 
   const cerrar = async (estado: "resuelta" | "descartada") => {
     if (!cerrando) return
@@ -112,21 +147,37 @@ export function PanelRevisiones() {
               {revisiones.map(v => (
                 <li key={v.id} className="rounded border border-amber-200 bg-amber-50/50 px-3 py-2">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => { setDetalle(v); setNuevoSeguimiento("") }}
+                      title="Abrir para ver y agregar lo que vayas averiguando"
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <p className="text-sm font-medium text-gray-900">{v.motivo}</p>
                       {/* La lápida: dice de qué fila hablaba, aunque la fila ya no exista. */}
                       <p className="mt-0.5 text-xs text-gray-600">{v.descripcion_ref}</p>
                       <p className="mt-0.5 text-[11px] text-gray-400">
                         {v.pantalla ? `${v.pantalla} · ` : ""}{cuando(v.created_at)}
                         {v.creado_por ? ` · ${v.creado_por}` : ""}
+                        {(v.seguimiento?.length ?? 0) > 0 && (
+                          <span className="ml-1 text-amber-700">· 📝 {v.seguimiento!.length} agregado(s)</span>
+                        )}
                       </p>
+                    </button>
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => { setDetalle(v); setNuevoSeguimiento("") }}
+                      >
+                        Abrir
+                      </Button>
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={() => { setCerrando(v); setResolucion("") }}
+                      >
+                        Cerrar
+                      </Button>
                     </div>
-                    <Button
-                      size="sm" variant="outline" className="h-7 shrink-0 text-xs"
-                      onClick={() => { setCerrando(v); setResolucion("") }}
-                    >
-                      Cerrar
-                    </Button>
                   </div>
                 </li>
               ))}
@@ -134,6 +185,72 @@ export function PanelRevisiones() {
           )}
         </CardContent>
       </Card>
+
+      {/* Detalle: lo que se sabe hasta ahora, y donde se agrega lo que se va averiguando. */}
+      <Dialog open={!!detalle} onOpenChange={o => { if (!o) setDetalle(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>🚩 {detalle?.motivo}</DialogTitle></DialogHeader>
+          {detalle && (
+            <>
+              <div className="rounded border bg-gray-50 px-2.5 py-2 text-[11px] leading-4 text-gray-600">
+                <b>{detalle.descripcion_ref}</b><br />
+                {detalle.pantalla ? `${detalle.pantalla}${detalle.subpantalla ? " → " + detalle.subpantalla : ""} · ` : ""}
+                {cuando(detalle.created_at)}{detalle.creado_por ? ` · ${detalle.creado_por}` : ""}
+              </div>
+
+              {detalle.imagen && (
+                <img src={detalle.imagen} alt="captura" className="max-h-56 w-full rounded border bg-gray-50 object-contain" />
+              )}
+
+              <div>
+                <Label className="text-xs">Lo que se fue averiguando</Label>
+                {(detalle.seguimiento?.length ?? 0) === 0 ? (
+                  <p className="mt-1 text-xs italic text-gray-400">
+                    Todavía nada. La marca guarda la sospecha inicial; acá va lo que descubras después.
+                  </p>
+                ) : (
+                  <ul className="mt-1 max-h-52 space-y-1.5 overflow-auto">
+                    {detalle.seguimiento!.map((e, i) => (
+                      <li key={i} className="rounded border-l-2 border-amber-300 bg-amber-50/50 px-2.5 py-1.5">
+                        <p className="whitespace-pre-wrap text-sm">{e.texto}</p>
+                        <p className="mt-0.5 text-[10px] text-gray-400">
+                          {cuando(e.fecha)}{e.autor ? ` · ${e.autor}` : ""}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <Label className="text-xs">Agregar</Label>
+                <Textarea
+                  className="mt-1" rows={3} value={nuevoSeguimiento}
+                  placeholder="Ej: encontré el problema — la regla del proveedor imputaba a la cuenta vieja"
+                  onChange={e => setNuevoSeguimiento(e.target.value)}
+                />
+                <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                  Se <b>agrega</b>, no reemplaza lo anterior. La observación original queda como estaba
+                  — a veces resulta equivocada, y eso también sirve saberlo.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setDetalle(null)}>Cerrar ventana</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => { const d = detalle; setDetalle(null); setCerrando(d); setResolucion("") }}
+                >
+                  Resolver la marca
+                </Button>
+                <Button onClick={agregarSeguimiento} disabled={agregando}>
+                  {agregando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />} Agregar
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!cerrando} onOpenChange={o => { if (!o) setCerrando(null) }}>
         <DialogContent className="max-w-md">

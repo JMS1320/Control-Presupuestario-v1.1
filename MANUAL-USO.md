@@ -482,6 +482,19 @@ saldo impago inexistente.
 que no cuadra. No hace falta que lo arregles en el momento ni que te lo anotes aparte: **lo marcás y
 seguís**. Después aparece todo junto en Principal.
 
+### Dos formas de levantar una marca
+
+**1 · Desde cualquier lado — `Alt + R` o el botón 🚩 flotante.** Está en **toda la app**, siempre.
+Sirve para lo que **no es de una fila**: *"la declaración de marzo no cuadra"*, *"falta cargar algo
+de este período"*. Guarda solo dónde estabas — pantalla y solapa — y podés **pegar una captura**
+con `Win+Shift+S` y `Ctrl+V`.
+
+**2 · Desde una fila**, cuando esa pantalla tiene la banderita al costado. Ahí la marca queda pegada
+a **ese** registro, y la fila se ve marcada para el que entre después.
+
+> Las dos terminan en el mismo lugar. La de fila es más precisa; la global **anda siempre**, aunque
+> esa pantalla todavía no tenga banderita.
+
 ### Cómo se usa
 1. En la fila que te llamó la atención, **al final de todo, en el margen derecho**, hay una
    **🚩 gris**. Tocala.
@@ -493,6 +506,18 @@ seguís**. Después aparece todo junto en Principal.
 ### Dónde se ven
 **Principal → 🚩 Para revisar.** Están todas las abiertas, con tu comentario, de qué fila eran y
 cuándo las marcaste.
+
+### Ir siguiendo la tarea
+
+Una marca **no nace con el diagnóstico, nace con la sospecha**. Por eso se puede abrir y agregarle lo
+que vayas averiguando:
+
+1. En **Principal → Para revisar**, tocá la marca (o el botón **Abrir**).
+2. Veés el motivo original, la captura si hay, y todo lo que se fue agregando con su fecha.
+3. Escribís en **Agregar** y listo.
+
+**Se agrega, no reemplaza.** La observación original queda como estaba — a veces resulta equivocada,
+y eso también sirve saberlo.
 
 ### Cómo se cierra
 Tocás **Cerrar** y **escribís qué se hizo**. Es obligatorio: sin eso, *«resuelta»* termina
@@ -508,7 +533,7 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 > a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
 > aparezca a él.
 
-⚠️ *Sin probar todavía → `A-TEST-83`*
+✅ *Probado el 2026-09-04: el banderín de fila, el warning global con `Alt+R`, la captura y el seguimiento.*
 
 ---
 
