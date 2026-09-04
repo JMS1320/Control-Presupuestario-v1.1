@@ -71,6 +71,14 @@ interface Destino { id: string; nombre: string; compra_en: string }
 interface Animal {
   id: string
   caravana: string
+  /**
+   * La observación del animal — y para muchos **es su única identificación**.
+   *
+   * Las vacas de descarte entran por un cambio de categoría con su razón (*"Vaca Dura que
+   * malparió. Robocop"*) y sin caravana. Sin mostrarla, la lista era una fila de «(sin número)»
+   * indistinguibles y no se podía elegir cuál se vendió. Lo reportó el usuario el 2026-09-04.
+   */
+  observaciones: string | null
   /** La última pesada registrada, si tiene. Precarga el kilo, no lo impone. */
   ultimoPeso: number | null
   fechaPeso: string | null
@@ -131,7 +139,7 @@ export function ModalCompletarVentaHacienda({
     if (movimiento.categoria_id) {
       const prod = supabase.schema("productivo")
       prod.from("terneros")
-        .select("id, caravana_interna, caravana_oficial, activo, stock_venta_id")
+        .select("id, caravana_interna, caravana_oficial, observaciones, activo, stock_venta_id")
         .eq("categoria_id", movimiento.categoria_id)
         .then(async ({ data: ts }) => {
           const propios = (ts ?? []).filter(t =>
@@ -149,7 +157,8 @@ export function ModalCompletarVentaHacienda({
             const u = ultima.get(t.id)
             return {
               id: t.id,
-              caravana: t.caravana_interna || t.caravana_oficial || "(sin número)",
+              caravana: t.caravana_interna || t.caravana_oficial || "",
+              observaciones: t.observaciones ?? null,
               ultimoPeso: u?.peso ?? null,
               fechaPeso: u?.fecha ?? null,
             }
@@ -458,8 +467,24 @@ export function ModalCompletarVentaHacienda({
                           },
                         }))}
                       />
-                      <span className="flex-1 font-mono">{a.caravana}</span>
-                      <span className="text-[10px] text-gray-400">
+                      {/*
+                        La caravana si la tiene; si no, la observación — que para las vacas de
+                        descarte ES su identificación. Sin esto la lista eran varios «(sin número)»
+                        indistinguibles y no se podía elegir cuál se vendió.
+                      */}
+                      <span className="min-w-0 flex-1">
+                        {a.caravana
+                          ? <>
+                              <span className="font-mono">{a.caravana}</span>
+                              {a.observaciones && (
+                                <span className="ml-2 text-[10px] text-gray-500">{a.observaciones}</span>
+                              )}
+                            </>
+                          : <span className="text-gray-700">
+                              {a.observaciones || <span className="italic text-gray-400">sin identificar</span>}
+                            </span>}
+                      </span>
+                      <span className="whitespace-nowrap text-[10px] text-gray-400">
                         {a.ultimoPeso != null ? `última: ${fmt(a.ultimoPeso)} kg` : "sin pesada"}
                       </span>
                       <Input
