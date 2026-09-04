@@ -2123,35 +2123,110 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
        *   una de Portal se baja del sitio, una de mail se busca, y una marcada «No» no se toca.
        *   Sin el motivo, la lista de 17 parecía 17 pendientes cuando en realidad eran 8.
        */
-      const huerfanosMail = huerfanosAcc.map((h: any) => {
-        const cand = sugerirFacturasHuerfano(h.archivo || '')
-        const c = cand[0]
-        return {
-          ...h,
-          sugerencia: c
-            ? `${c.denominacion_emisor} · ${c.punto_venta}-${c.numero_desde} · ${formatearFecha(c.fecha_emision)}`
-            : null,
-          sugerencias_n: cand.length,
-        }
-      })
-      const motivoDe = (fc?: string | null) => {
-        const v = String(fc || '').trim().toLowerCase()
-        if (v === 'portal') return 'Se baja del portal del proveedor — no llega por mail'
-        if (v === 'no') return 'Marcada para NO buscar — revisar si sigue valiendo'
-        return 'Debería llegar por mail — correr el buscador de PDFs'
-      }
-      const sinPdfMail = (sinPdf || []).map((f: any) => ({ ...f, motivo: motivoDe(f.fc) }))
+      // El resumen lo arma `armarResumenMail`, el mismo que usa el botón "Enviar estado
+      // actualizado": dos armadores distintos se desincronizan y el mail termina dependiendo de
+      // cuál botón tocaste.
+      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
+      await cargarFacturasPeriodo(periodoConsulta)
 
       // Cierre: log + mail con el acumulado
       await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosMail, sin_pdf: sinPdfMail } }),
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: armarResumenMail(huerfanosAcc) }),
       })
       await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
-      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
       toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
     } catch (e) {
       toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
+    }
+  }
+
+  /**
+   * El motivo por el que una factura no tiene PDF. Es lo que decide QUE HACER con ella, y por eso
+   * el mail las agrupa asi: de 17 faltantes, 7 se bajan del portal y 2 no se buscan -- el trabajo
+   * real eran 8. Sin el motivo, una lista de 17 parece 17 pendientes.
+   */
+  const motivoSinPdf = (fc?: string | null) => {
+    const v = String(fc || '').trim().toLowerCase()
+    if (v === 'portal') return 'Se baja del portal del proveedor — no llega por mail'
+    if (v === 'no') return 'Marcada para NO buscar — revisar si sigue valiendo'
+    return 'Debería llegar por mail — correr el buscador de PDFs'
+  }
+
+  /**
+   * Arma el resumen que viaja al mail, SIEMPRE desde el estado actual de la pantalla.
+   *
+   * Esta factorizado para que la corrida automatica y el boton "Enviar estado actualizado" manden
+   * exactamente lo mismo: dos armadores distintos se desincronizan y el mail empieza a depender de
+   * cual boton tocaste.
+   */
+  const armarResumenMail = (huerfanos: { archivo: string; url: string; chars?: number }[]) => {
+    const conPdf = facturasPeriodo.filter(f => f.pdf_drive_url)
+    const sinPdf = facturasPeriodo.filter(f => !f.pdf_drive_url)
+    return {
+      matched: conPdf.map(f => ({
+        archivo: '', drive_url: f.pdf_drive_url,
+        numero: `${f.punto_venta}-${f.numero_desde}`,
+        proveedor: f.denominacion_emisor || '', monto: f.imp_total ?? null,
+      })),
+      sin_pdf: sinPdf.map(f => ({
+        factura_id: f.id, denominacion: f.denominacion_emisor,
+        numero: `${f.punto_venta}-${f.numero_desde}`, fc: f.fc, motivo: motivoSinPdf(f.fc),
+      })),
+      huerfanos: huerfanos.map(h => {
+        const cand = sugerirFacturasHuerfano(h.archivo || '')
+        const c = cand[0]
+        return {
+          ...h,
+          sugerencia: c ? `${c.denominacion_emisor} · ${c.punto_venta}-${c.numero_desde} · ${formatearFecha(c.fecha_emision)}` : null,
+          sugerencias_n: cand.length,
+        }
+      }),
+    }
+  }
+
+  /**
+   * Reenviar el reporte con el estado de AHORA — pedido del usuario (2026-09-04).
+   *
+   * El mail automatico sale al terminar la corrida, y apenas vinculas una factura a mano **queda
+   * viejo**, igual que el registro archivado en la carpeta. La alternativa obvia —esperar a que el
+   * usuario termine de vincular— la descarto el propio usuario: si no vincula nada, o cierra la
+   * pantalla, el mail no saldria nunca y se perderia hasta la constancia de que la corrida se hizo.
+   *
+   * Entonces son las dos cosas: el automatico queda como constancia, y este boton manda el estado
+   * al dia cuando vos decis que terminaste. Relee la carpeta (rapido, sin OCR) para que los
+   * huerfanos sean los de verdad y no los que quedaron en pantalla.
+   */
+  const enviarEstadoActualizado = async () => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/')
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    const tId = toast.loading('Recalculando el estado y enviando el reporte…')
+    try {
+      await cargarFacturasPeriodo(periodoConsulta)  // los links de lo vinculado a mano
+      const r = await fetch('/api/gas/conciliar-archivo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo releer la carpeta: ' + (d.error || 'error'), { id: tId }); return }
+      const huerfanos = (d.huerfanos || []).map((h: any) => ({ archivo: h.archivo, url: h.url }))
+      setHuerfanosSupervision(huerfanos)
+      setOrigenListado('contar')
+
+      const env = await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: armarResumenMail(huerfanos) }),
+      })
+      const je = await env.json()
+      if (!je.ok) { toast.error('El reporte no se envió: ' + (je.error || 'error'), { id: tId }); return }
+      toast.success('Reporte actualizado enviado, con el estado de ahora.', { id: tId })
+    } catch (e) {
+      toast.error('Error: ' + (e as Error).message, { id: tId })
     } finally {
       setSupervisandoArchivo(false)
     }
@@ -6093,6 +6168,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   <RefreshCw className="h-4 w-4" />
                   🔗 Vincular sólo los que faltan
                 </Button>
+                {/* El mail automático sale al terminar la corrida y queda viejo apenas se vincula
+                    algo a mano. Esto lo manda con el estado de AHORA, cuando el usuario dice que
+                    terminó — sin tener que adivinar cuándo es eso. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={enviarEstadoActualizado}
+                  disabled={supervisandoArchivo}
+                  title="Vuelve a leer la carpeta y manda el reporte por mail con el estado de ahora, incluido lo que vinculaste a mano. Tocalo cuando terminaste."
+                  className="flex items-center gap-2"
+                >
+                  📧 Enviar estado actualizado
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -6205,10 +6293,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <TableHead>Total IVA</TableHead>
                     <TableHead>Imp. Total</TableHead>
                     <TableHead>Estado DDJJ</TableHead>
-                    {/* 🚩 Al final a propósito: el margen derecho suele quedar fuera de la vista, así
-                        no le carga peso a la parte izquierda, que es la que se lee. Pedido del
-                        usuario (2026-09-04) — total, lo marcado se mira en Principal. */}
-                    <TableHead className="w-10 text-center" title="Marcar para revisar">🚩</TableHead>
+                    {/* 🚩 Al final y PEGADA al borde derecho.
+                        Va a la derecha porque el usuario pidió no cargar la parte izquierda, que es
+                        la que se lee. Pero va **fija** (`sticky`) porque esta tabla scrollea
+                        horizontal: sin eso la bandera queda más allá del borde y hay que ir a
+                        buscarla scrolleando, que es lo contrario de "marco y sigo". */}
+                    <TableHead
+                      className="w-10 sticky right-0 z-20 bg-white text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]"
+                      title="Marcar para revisar"
+                    >🚩</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -6322,7 +6415,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           {factura.ddjj_iva}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className={`sticky right-0 z-10 text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)] ${esUSD ? 'bg-amber-50' : 'bg-white'}`}>
                         <BotonRevision
                           schema={schemaName}
                           tabla="comprobantes_arca"

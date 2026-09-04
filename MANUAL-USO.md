@@ -609,8 +609,23 @@ buscar**. O sea que las que realmente faltaban por mail eran **8**, no 17.*
 
 #### El mail de supervisión
 
-Al terminar llega un mail con el resumen: vinculadas, sin PDF y huérfanos. Sirve como constancia de
-que la corrida se hizo y de cómo quedó el mes.
+**Lo manda «Vincular PDFs» al terminar. «Contar» no manda nada** — es un vistazo en pantalla, y un
+mail por cada conteo sería ruido. Si contaste y no te llegó mail, está bien.
+
+Trae tres cosas: **✅ vinculadas** (con proveedor, número, monto y link), **⚠️ sin PDF agrupadas por
+motivo** — así ves cuáles son trabajo de verdad — y **❓ huérfanos con su candidata ⭐**.
+
+#### 📧 Enviar estado actualizado
+
+**El mail automático queda viejo apenas vinculás algo a mano.** Por eso hay un cuarto botón:
+**📧 Enviar estado actualizado**. Vuelve a leer la carpeta y manda el reporte con el estado de
+**ahora**, incluido lo que vinculaste vos.
+
+Tocalo **cuando terminaste** de acomodar el mes. Puede ser al toque, mañana, o después de cerrar y
+volver a abrir la pantalla: no depende de que la app adivine cuándo terminaste.
+
+*(Por eso son dos mails y no uno: el automático es la constancia de que la corrida se hizo — sale
+siempre, aunque después no toques nada — y éste es la foto final.)*
 
 ---
 
