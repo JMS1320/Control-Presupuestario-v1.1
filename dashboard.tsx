@@ -35,165 +35,21 @@ import { PanelControlProveedores } from "./components/panel-control-proveedores"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuBadge,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  useSidebar,
-} from "@/components/ui/sidebar"
-import { Toaster } from "@/components/ui/sonner"
+import { LayoutApp, SOLAPAS } from "@/components/layout-app"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
-/**
- * Las 12 secciones, en un solo lugar.
- *
- * Antes estaban repetidas a mano en 12 bloques de `TabsTrigger` casi idénticos; ahora el menú
- * lateral las recorre. El `id` es el mismo `value` de la solapa y la misma clave con la que
- * `usePendientesPorPantalla` cuenta los pendientes — no inventar nombres nuevos acá.
- */
-const SOLAPAS = [
-  { id: "principal",   label: "Principal",          Icono: Home },
-  { id: "dashboard",   label: "Dashboard",          Icono: BarChart3 },
-  { id: "distribucion",label: "Distribución Socios",Icono: Users },
-  { id: "reporte",     label: "Reporte Detallado",  Icono: FileText },
-  { id: "egresos",     label: "Egresos",            Icono: Receipt },
-  { id: "ingresos",    label: "Ingresos",           Icono: ArrowUpRight },
-  { id: "cashflow",    label: "Cash Flow",          Icono: TrendingUp },
-  { id: "extracto",    label: "Extracto Bancario",  Icono: Banknote },
-  { id: "productivo",  label: "Productivo",         Icono: Tractor },
-  { id: "sueldos",     label: "Sueldos",            Icono: Landmark },
-  { id: "presupuesto", label: "Presupuesto",        Icono: PieChart },
-  { id: "importar",    label: "Importar Excel",     Icono: Upload },
-] as const
-
-/**
- * El menú lateral. Reemplaza a la barra de 12 solapas, que **se pisaban entre sí**: `grid-cols-12`
- * repartía 106 px por celda y "Extracto Bancario" necesitaba 130 — 7 de las 12 desbordaban y los
- * contadores quedaban encima de la etiqueta vecina (`E18xtracto`, `P2roductivo`).
- *
- * Es `offcanvas` —se abre encima del contenido y se cierra al elegir—, decidido por el usuario el
- * 2026-09-05 con los dos costos sobre la mesa: **cada navegación pasa a ser 2 clicks** y los
- * contadores de pendientes **dejan de verse de un vistazo**. La alternativa evaluada era colapsar
- * a una columna de íconos (1 click, contadores visibles); se eligió ésta por el ancho completo
- * para las tablas, que son muy anchas.
- *
- * Va en su propio componente porque `useSidebar()` sólo funciona DENTRO del `SidebarProvider`.
- */
-/**
- * El botón que abre el menú.
- *
- * No se usa `SidebarTrigger` de shadcn porque trae `<PanelLeft/>` hardcodeado adentro y los
- * children en JSX no se pueden pisar desde props. Las tres líneas son el ícono que la gente
- * reconoce como "menú"; el de panel sugiere otra cosa.
- *
- * Componente aparte porque `useSidebar()` sólo funciona dentro del `SidebarProvider`.
- */
-function BotonMenu() {
-  const { toggleSidebar } = useSidebar()
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-9 w-9 shrink-0"
-      onClick={toggleSidebar}
-    >
-      <Menu />
-      <span className="sr-only">Abrir el menú</span>
-    </Button>
-  )
-}
-
-/**
- * El mismo botón, pero en el chrome del contenido: sólo aparece cuando el menú está **cerrado**.
- *
- * Abierto, el ☰ quedaba flotando en el contenido, al lado de un menú con el que no tenía ninguna
- * relación visual. Un control se pone al lado de lo que afecta: cuando el menú está abierto, el
- * botón vive adentro del menú (ver `SidebarHeader`).
- *
- * ⚠️ El estado se lee distinto según el dispositivo: en mobile el menú es un panel aparte y su
- * apertura vive en `openMobile`, no en `open`.
- */
-function BotonMenuChrome() {
-  const { open, openMobile, isMobile } = useSidebar()
-  const menuVisible = isMobile ? openMobile : open
-  if (menuVisible) return null
-  return <BotonMenu />
-}
-
-function MenuLateral({
-  solapas,
-  activa,
-  onElegir,
-  pendientes,
-}: {
-  solapas: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
-  activa: string
-  onElegir: (id: string) => void
-  pendientes: Record<string, { total: number; urgentes: number } | undefined>
-}) {
-  const { setOpen, setOpenMobile, isMobile } = useSidebar()
-
-  const elegir = (id: string) => {
-    onElegir(id)
-    // Se cierra al elegir: un menú que tapa el contenido y queda abierto estorba.
-    if (isMobile) setOpenMobile(false)
-    else setOpen(false)
-  }
-
-  return (
-    <Sidebar collapsible="offcanvas">
-      {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
-          ayuda a elegir una sección — las 12 de abajo se explican solas. */}
-      <SidebarHeader className="px-2 py-3">
-        <BotonMenu />
-      </SidebarHeader>
-      <SidebarContent>
-        <SidebarMenu>
-          {solapas.map(({ id, label, Icono }) => {
-            const c = pendientes[id]
-            // Mismos tramos de color que tenían las solapas: proporcional a los urgentes, no
-            // binario, para que el rojo señale dónde está el bulto y no se encienda en todos lados.
-            const color = !c || c.total === 0 ? null
-              : c.urgentes >= 5 ? "bg-red-100 text-red-700"
-              : c.urgentes > 0 ? "bg-amber-100 text-amber-700"
-              : "bg-gray-200 text-gray-600"
-            return (
-              <SidebarMenuItem key={id}>
-                <SidebarMenuButton isActive={activa === id} onClick={() => elegir(id)}>
-                  <Icono className="h-4 w-4" />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-                {color && c && (
-                  <SidebarMenuBadge
-                    data-nota-ignorar
-                    title={`${c.total} pendiente(s)${c.urgentes ? ` · ${c.urgentes} urgente(s)` : ""} — se ven en Principal → Pendientes`}
-                    className={`rounded-full ${color}`}
-                  >
-                    {c.total}
-                  </SidebarMenuBadge>
-                )}
-              </SidebarMenuItem>
-            )
-          })}
-        </SidebarMenu>
-      </SidebarContent>
-    </Sidebar>
-  )
-}
+/** Para validar el `?seccion=` de la URL sin recorrer el array en cada render. */
+const SOLAPAS_IDS = new Set<string>(SOLAPAS.map((s) => s.id))
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
+  /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
+  seccionInicial?: string
 }
 
-export default function ControlPresupuestario({ userRole = 'admin' }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -269,39 +125,17 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
 
   /** Qué sección se está viendo. Pasó a ser estado controlado porque ahora la navegación la maneja
    *  el menú lateral, que vive fuera del `<Tabs>` y no puede usar `defaultValue`. */
-  const [tab, setTab] = useState<string>(getDefaultTab())
+  const [tab, setTab] = useState<string>(
+    // Se valida contra las solapas reales: un `?seccion=` inventado no puede dejar la app en blanco.
+    seccionInicial && SOLAPAS_IDS.has(seccionInicial) ? seccionInicial : getDefaultTab()
+  )
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <MenuLateral
-        solapas={SOLAPAS.filter((s) => shouldShowTab(s.id))}
-        activa={tab}
-        onElegir={setTab}
-        pendientes={pendientesPorPantalla}
-      />
-      <SidebarInset className="bg-gray-50">
-        {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
-            así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
-        <Toaster richColors closeButton position="top-right" />
-        {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
-            aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
-            entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
-        <NotasParaClaude />
-        {/* Chrome fijo y translúcido: el menú y el botón Salir tienen que seguir a mano después de
-            scrollear media pantalla de tabla. El contenido pasa por debajo (ver `.chrome-superior`
-            en globals.css, con sus variantes sin transparencia y de alto contraste). */}
-        <div className="chrome-superior">
-          <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
-            {/* El botón que abre el menú. Va arriba a la izquierda, que es donde se lo busca. */}
-            <BotonMenuChrome />
-            {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
-                había sesión que cerrar: se entraba por URL. */}
-            <div className="min-w-0 flex-1">
-              <BarraSesion userRole={userRole} />
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 pt-6">
+    <LayoutApp userRole={userRole} seccionActiva={tab} onElegirSeccion={setTab}>
+      {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
+          aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
+          entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
+      <NotasParaClaude />
         <Tabs value={tab} onValueChange={setTab} className="w-full">
           {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
               pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
@@ -655,8 +489,6 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             </div>
           </CardContent>
           </Card>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    </LayoutApp>
   )
 }

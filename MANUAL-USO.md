@@ -3567,3 +3567,49 @@ botón **Salir**. Ahora hay **un avatar redondo**; todo lo demás está adentro,
 
 No hay **Perfil** ni **Configuración**: esas pantallas no existen todavía y no se ponen links que
 no llevan a ningún lado. Cuando se creen, entran acá.
+
+---
+
+## 🪪 **Tu perfil** — y el menú en todas las pantallas 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-78](PENDIENTES.md) · test → [A-TEST-86](PENDIENTES.md)*
+
+### Qué cambió
+
+1. **Hay una pantalla `/perfil`**: avatar → **Tu perfil**.
+2. **`/usuarios` ya no es una isla.** Antes no tenía menú ni avatar y sólo se salía con un link
+   «← Volver al sistema». Ahora tiene el mismo marco que el resto.
+3. **El menú lateral funciona desde cualquier pantalla.** Si lo usás estando en `/usuarios` o
+   `/perfil`, te lleva a la sección elegida.
+4. **Se puede linkear una sección directo**: `…/?seccion=extracto` abre Extracto Bancario. Sirve
+   para mandarle a alguien el link de una sección puntual.
+
+### Cómo se usa `/perfil`
+
+1. Click en tu **avatar** → **Tu perfil**.
+2. **Nombre**: si lo cargás, las iniciales del avatar salen de ahí en vez de tu mail.
+3. **Foto de perfil (URL)**: se pega la dirección de una imagen. ⚠️ **No se puede subir un archivo
+   todavía** — eso necesita un bucket de storage que no está creado.
+4. **Guardar cambios** recarga la pantalla para que el avatar de arriba tome los datos nuevos.
+5. A la derecha ves tu **mail** y tu **rol** (de sólo lectura: el rol lo asigna un administrador,
+   nadie puede cambiarse el suyo) y el estado de tu **segundo factor**, con botón para activarlo si
+   te falta.
+
+### Cómo se prueba
+
+1. ⚠️ **Lo primero y más importante: que `/usuarios` siga funcionando entera** — crear cuenta,
+   reenviar mail, copiar link, cambiar rol, revocar. No se tocó su lógica, pero **sí el layout de
+   alrededor**, y eso es lo que hay que descartar.
+2. **Guardá un nombre y una foto** en `/perfil` y verificá que el avatar de arriba cambie.
+3. **Desde `/usuarios`, abrí el menú y elegí una sección**: tiene que llevarte ahí.
+4. **Probá un link roto a propósito**: `…/?seccion=cualquiera`. Tiene que abrir Principal, no una
+   pantalla en blanco.
+5. **Con una cuenta `contable`**: tiene que poder entrar a `/perfil` y **no** a `/usuarios`.
+6. **Las notas**: dejá una en la pantalla principal y verificá que siga guardando el nombre de la
+   pantalla. Es lo que este refactor podría haber roto.
+
+### Un detalle deliberado
+
+El botón de **notas para Claude** sigue apareciendo **sólo en la pantalla principal**, no en
+`/perfil` ni en `/usuarios`. Es a propósito: detecta en qué pantalla estás leyendo la solapa activa,
+que ahí no existe, así que la nota se guardaría sin pantalla — peor que no tenerlo.

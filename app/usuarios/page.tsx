@@ -1,8 +1,8 @@
-import Link from "next/link"
 import { redirect } from "next/navigation"
 import { createClientServer } from "@/lib/supabase-server"
 import { esAdmin } from "@/lib/auth/roles"
 import { PanelUsuarios } from "@/components/panel-usuarios"
+import { LayoutApp } from "@/components/layout-app"
 
 export const metadata = { title: "Usuarios — Control Presupuestario" }
 
@@ -15,21 +15,16 @@ export default async function UsuariosPage() {
   if (!esAdmin(user)) redirect("/")
 
   return (
-    <main className="min-h-screen bg-gray-50 p-4">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Usuarios</h1>
-            <p className="text-sm text-muted-foreground">
-              Cuentas del sistema, sus roles y su acceso.
-            </p>
-          </div>
-          <Link href="/" className="text-sm underline underline-offset-4">
-            ← Volver al sistema
-          </Link>
-        </div>
-        <PanelUsuarios miId={user!.id} />
+    // Dentro del marco de la app: antes esta pantalla era una isla sin menú ni sesión, de la que
+    // sólo se salía con un link «← Volver al sistema». El menú lateral la saca de acá.
+    <LayoutApp userRole="admin">
+      <div>
+        <h1 className="titulo-pantalla">Usuarios</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Cuentas del sistema, sus roles y su acceso.
+        </p>
       </div>
-    </main>
+      <PanelUsuarios miId={user!.id} />
+    </LayoutApp>
   )
 }

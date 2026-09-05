@@ -10,7 +10,14 @@ import { getRole } from "@/lib/auth/roles"
  * real (2026-09-03) esto se invirtió: el middleware ya garantizó que hay sesión válida cuando se
  * llega hasta acá; lo único que falta es traducirla a rol.
  */
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ seccion?: string }>
+}) {
+  // El menú lateral navega acá con `?seccion=` cuando se lo usa desde otra ruta (/usuarios,
+  // /perfil). Se lee en el servidor y se pasa como prop para no necesitar Suspense.
+  const { seccion } = await searchParams
   const supabase = await createClientServer()
   const {
     data: { user },
@@ -22,5 +29,5 @@ export default async function Page() {
   // Es el opt-in que pedía MODULO_USUARIOS.md (dar acceso de a poco, no bloquear de a poco).
   if (!rol) redirect("/no-access")
 
-  return <ControlPresupuestario userRole={rol} />
+  return <ControlPresupuestario userRole={rol} seccionInicial={seccion} />
 }

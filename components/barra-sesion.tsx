@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Users } from "lucide-react"
+import { LogOut, User, Users } from "lucide-react"
 
 /**
  * Iniciales para el avatar cuando no hay foto.
@@ -94,16 +94,21 @@ export function BarraSesion({ userRole }: { userRole: "admin" | "contable" }) {
             </div>
           </DropdownMenuLabel>
 
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/perfil" className="cursor-pointer">
+              <User className="mr-2 h-4 w-4" />
+              Tu perfil
+            </Link>
+          </DropdownMenuItem>
+
           {userRole === "admin" && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link href="/usuarios" className="cursor-pointer">
-                  <Users className="mr-2 h-4 w-4" />
-                  Usuarios
-                </Link>
-              </DropdownMenuItem>
-            </>
+            <DropdownMenuItem asChild>
+              <Link href="/usuarios" className="cursor-pointer">
+                <Users className="mr-2 h-4 w-4" />
+                Usuarios
+              </Link>
+            </DropdownMenuItem>
           )}
 
           <DropdownMenuSeparator />
