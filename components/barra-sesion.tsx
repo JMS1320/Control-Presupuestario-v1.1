@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, User, Users } from "lucide-react"
+import { LogOut, Settings, User } from "lucide-react"
 
 /**
  * Iniciales para el avatar cuando no hay foto.
@@ -103,10 +103,14 @@ export function BarraSesion({ userRole }: { userRole: "admin" | "contable" }) {
           </DropdownMenuItem>
 
           {userRole === "admin" && (
+            /* Antes era «Usuarios» a secas. Ahora Usuarios es una sección adentro de
+               Configuración, junto con Roles y los datos de la aplicación: si cada cosa
+               administrable entrara acá, este menú sería una lista larga de cosas que se tocan
+               una vez cada tanto. */
             <DropdownMenuItem asChild>
-              <Link href="/usuarios" className="cursor-pointer">
-                <Users className="mr-2 h-4 w-4" />
-                Usuarios
+              <Link href="/configuracion" className="cursor-pointer">
+                <Settings className="mr-2 h-4 w-4" />
+                Configuración
               </Link>
             </DropdownMenuItem>
           )}

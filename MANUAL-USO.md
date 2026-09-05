@@ -3544,7 +3544,7 @@ botón **Salir**. Ahora hay **un avatar redondo**; todo lo demás está adentro,
 ### Cómo se usa
 
 1. **Click en el avatar** (arriba a la derecha). Se despliega el menú con tu mail, tu rol,
-   **Usuarios** (sólo si sos admin) y **Salir**.
+   **Tu perfil**, **Configuración** (sólo si sos admin) y **Salir**.
 2. **Las iniciales** salen de tu nombre si está cargado y, si no, de las dos primeras letras de tu
    mail (`javiergc89@…` → **JA**).
 3. **Para que aparezca tu foto** en vez de las iniciales hay que cargar `avatar_url` en el
@@ -3563,10 +3563,10 @@ botón **Salir**. Ahora hay **un avatar redondo**; todo lo demás está adentro,
 5. **Decidí si extrañás ver el mail sin abrir el menú.** Con una sola cuenta no hace falta; si
    alternás entre cuentas, capaz sí.
 
-### Lo que NO tiene el menú
+### Dónde quedó «Usuarios»
 
-No hay **Perfil** ni **Configuración**: esas pantallas no existen todavía y no se ponen links que
-no llevan a ningún lado. Cuando se creen, entran acá.
+Ya no está suelto en este menú: es una sección **adentro de Configuración**, junto con Roles y los
+datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige solo.
 
 ---
 
@@ -3619,3 +3619,40 @@ no llevan a ningún lado. Cuando se creen, entran acá.
 El botón de **notas para Claude** sigue apareciendo **sólo en la pantalla principal**, no en
 `/perfil` ni en `/usuarios`. Es a propósito: detecta en qué pantalla estás leyendo la solapa activa,
 que ahí no existe, así que la nota se guardaría sin pantalla — peor que no tenerlo.
+
+
+---
+
+## ⚙️ **Configuración** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-80](PENDIENTES.md) · test → [A-TEST-88](PENDIENTES.md)*
+
+Avatar → **Configuración** (sólo admin). Tiene su propio menú al costado con tres secciones:
+
+| Sección | Qué es | ¿Se puede editar? |
+|---|---|---|
+| **Usuarios** | El panel de siempre: crear cuentas, cambiar rol, reenviar la invitación, revocar | **Sí** |
+| **Roles** | Qué secciones ve cada rol y si le exige segundo factor | No, de sólo lectura |
+| **Aplicación** | Las 3 empresas con su razón social y CUIT | No, de sólo lectura |
+
+**Roles no es una lista escrita a mano**: sale de la misma función que aplica el permiso de verdad,
+así que si mañana cambia lo que ve un `contable`, esta pantalla cambia sola. Sirve para contestar
+*"¿qué ve Ulises?"* sin abrir el código. Los roles **no se crean ni se editan** — son dos y están
+fijos; lo que se cambia es qué rol tiene cada cuenta, y eso se hace en Usuarios.
+
+**Aplicación** muestra los CUIT de donde salen los encabezados de todos los reportes. Está para
+poder verificarlos de un vistazo: el Libro IVA de PAM y de MA ya salió una vez con la razón social
+y el CUIT de MSA impresos.
+
+### Cómo se prueba
+
+1. ⚠️ **Lo primero: que Usuarios siga funcionando entera** — crear cuenta, reenviar mail, copiar
+   link, cambiar rol, revocar. Es la segunda vez en el día que se le cambia el contenedor.
+2. **Entrá a `/usuarios` a mano** (el link viejo): tiene que llevarte a Configuración → Usuarios,
+   no dar 404.
+3. **Abrí las tres secciones.**
+4. **Contrastá Roles con la realidad**: entrá con una cuenta `contable` y verificá que ve
+   exactamente lo que la pantalla de Roles dice que ve. Si no coincide, la pantalla miente.
+5. **Verificá los CUIT** de Aplicación contra los reales.
+6. **Con una cuenta `contable`**: no tiene que ver la opción Configuración en su menú, ni poder
+   entrar escribiendo `/configuracion` a mano.
