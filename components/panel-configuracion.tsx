@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
+import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
@@ -52,7 +53,7 @@ export function PanelConfiguracion({ miId, panelInicial }: { miId: string; panel
               <Icono className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
                 {label}
-                <span className="hidden text-xs font-normal text-muted-foreground lg:block">{ayuda}</span>
+                <span data-ayuda className="hidden text-xs font-normal text-muted-foreground lg:block">{ayuda}</span>
               </span>
             </button>
           )
@@ -284,7 +285,9 @@ function PanelRoles() {
         )
       })}
 
-      <Card className="entrada-suave border-slate-300 bg-slate-50">
+      {/* La card entera va marcada, no sus párrafos: apagando sólo el texto quedaría una caja
+          gris vacía, que es peor que la explicación que se quería sacar. */}
+      <Card data-ayuda className="entrada-suave border-slate-300 bg-slate-50">
         <CardContent className="space-y-2 p-4 text-sm text-muted-foreground">
           <p>
             <strong className="text-foreground">Los cambios se aplican al recargar la pantalla.</strong>{" "}
@@ -378,10 +381,10 @@ function PanelPermisos() {
               </tbody>
             </table>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">
+          <Ayuda className="mt-4">
             Esta tabla no está escrita a mano: sale de la misma función que decide el acceso de
             verdad. Si mañana cambia lo que ve un rol, cambia sola.
-          </p>
+          </Ayuda>
         </CardContent>
       </Card>
 
@@ -418,11 +421,11 @@ function PanelPermisos() {
               </tbody>
             </table>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">
+          <Ayuda className="mt-4">
             ⚠️ Estas filas <strong>sí están escritas a mano</strong>: los permisos de administración
             viven repartidos en guardas de páginas y de endpoints. Por eso cada una dice dónde se
             aplica, para poder verificarla. Si se agrega una guarda nueva, hay que sumarla acá.
-          </p>
+          </Ayuda>
         </CardContent>
       </Card>
     </div>
@@ -464,15 +467,15 @@ function PanelAplicacion() {
               </tbody>
             </table>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">
+          <Ayuda className="mt-4">
             Es de sólo lectura: estos datos viven en <code>lib/empresas.ts</code> y de ahí los toman
             los encabezados de todos los reportes. Se muestran para poder verificarlos sin abrir el
             código.
-          </p>
+          </Ayuda>
         </CardContent>
       </Card>
 
-      <Card className="entrada-suave border-slate-300 bg-slate-50">
+      <Card data-ayuda className="entrada-suave border-slate-300 bg-slate-50">
         <CardContent className="p-4 text-sm text-muted-foreground">
           <p>
             <strong className="text-foreground">Todavía no hay nada configurable acá.</strong> Cuando

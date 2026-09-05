@@ -213,7 +213,13 @@ export function LayoutApp({
   const prefs = preferencias ?? PREFERENCIAS_DEFAULT
 
   return (
-    <SidebarProvider defaultOpen={prefs.menuAbierto}>
+    /* La preferencia de explicaciones se aplica acá, en el marco, y no en cada componente: es una
+       clase que enciende una sola regla de CSS sobre `[data-ayuda]` (ver `globals.css`). Todas las
+       pantallas de la app pasan por este layout, así que alcanza con ponerla una vez. */
+    <SidebarProvider
+      defaultOpen={prefs.menuAbierto}
+      className={prefs.explicaciones ? undefined : "sin-explicaciones"}
+    >
       <MenuLateral
         userRole={userRole}
         secciones={visibles}

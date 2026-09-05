@@ -68,6 +68,40 @@ otra pantalla — no está más atrasada, **abarca más**.
 
 **TARJETAS no tiene vista propia**: vive dentro de `components/vista-extracto-bancario.tsx`.
 
+## 🗣️ `data-ayuda` — qué es una EXPLICACIÓN y qué es un CONTROL `#ui #ayuda #convencion #2026-09-05`
+
+Desde A-FEAT-84 cada usuario puede **apagar las explicaciones** de las pantallas desde su perfil.
+El mecanismo es de una línea: se le pone **`data-ayuda`** al elemento, y `LayoutApp` enciende la
+clase `.sin-explicaciones` que lo esconde con una regla de `globals.css`. El componente
+`components/ayuda.tsx` envuelve la forma más común (la letra chica gris).
+
+**Lo transversal —y lo único que hay que recordar— es el criterio de qué se marca**, porque vale
+para cualquier pantalla que se toque de acá en adelante:
+
+> **La prueba, en dos segundos: ¿el texto diría lo mismo con la base vacía?**
+> Sí → es explicación, va marcada. No → es un dato, y no se toca.
+
+⚠️ **El error es peligroso en una sola dirección.** Marcar de menos deja una explicación que no se
+puede apagar: molesta, y **se ve**. Marcar de más **esconde un control**, y eso **no se ve nunca**
+— justo el modo de falla contra el que existe la § 🧮 de `CLAUDE.md` (*un control que nadie ve no es
+un control*, *nada se descarta en silencio*). **Ante la duda, no marcar.**
+
+Tres cosas más, que salieron de marcar las primeras cuatro pantallas:
+- **Si al apagar el texto queda una caja de color vacía, marcá la caja y no el texto.**
+- **`DialogDescription` / `CardDescription` no se marcan**: son lo que apunta `aria-describedby`, y
+  un lector de pantalla ignora lo que está en `display:none`.
+- **Un aviso condicionado por los datos no es explicación aunque su texto sea fijo** — «sin ninguna
+  sección, quien tenga este rol no ve nada» aparece según lo que estés editando: es un control.
+
+📌 **Lo que se descubrió al medir, y sirve para calibrar expectativas**: la impresión de que «el
+sistema explica en todos lados» es cierta, pero las explicaciones están **concentradas en las
+pantallas nuevas** (Perfil, Configuración). En las operativas grandes la letra chica es casi toda
+**labels y datos**: de las 158 cajas `bg-blue-50` del sistema, prácticamente ninguna es didáctica, y
+de las 56 apariciones de `text-muted-foreground` en Sector Productivo sólo **4** eran explicación.
+Por eso el resto se marca **al pasar** por cada pantalla y no en una barrida masiva.
+
+---
+
 ## ⚠️ Poner RLS rompe todo `.insert().select()` — y el compilador no lo ve `#rls #supabase #seguridad #2026-08-31`
 
 **El caso, real:** se le puso RLS a las tablas de notas con una sola política, `INSERT` para `anon`.

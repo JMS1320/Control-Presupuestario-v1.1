@@ -123,7 +123,15 @@ admin + botón Salir). Antes no había cómo cerrar sesión porque no había ses
 ### ⚙️ Preferencias personales — dónde viven y qué NO puede entrar ahí (2026-09-05, A-FEAT-83)
 
 Cada usuario configura cosas de su propia cuenta desde `/perfil`: en qué sección lo abre la app, si
-el menú arranca abierto, si quiere los contadores de pendientes, si le pregunta antes de salir.
+el menú arranca abierto, si quiere los contadores de pendientes, si le pregunta antes de salir, y
+si quiere ver las explicaciones de las pantallas (A-FEAT-84 — el criterio de qué se puede apagar
+está en `KNOWLEDGE.md` § `data-ayuda`, porque es transversal a todo el sistema).
+
+**Por qué las explicaciones son preferencia de usuario y no configuración de la app**: es el caso
+Ulises, o sea la § quinta pieza (el PERMISO) aplicada a otra cosa. Él es nuevo y necesita la letra
+chica; JMS hizo el sistema y le sobra. Un interruptor global significaría que el que sabe se la
+apaga **también al que está aprendiendo** — y el que está aprendiendo es justamente el que hace que
+la tarea se pueda delegar.
 
 **Dónde**: `user_metadata.preferencias`, un objeto, junto al nombre y la foto. Lo lee
 `lib/auth/preferencias.ts` y lo escribe el propio usuario con `auth.updateUser()`.

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { toast } from "sonner"
+import { Ayuda } from "@/components/ayuda"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -195,13 +196,19 @@ export function SelectorImagenPerfil({
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            {trabajando === "bajando"
-              ? "Descargando la imagen del link…"
-              : trabajando === "subiendo"
-                ? "Subiendo la imagen…"
-                : "Con el cursor en el campo también podés pegarla con Ctrl+V. JPG, PNG, WEBP o GIF, hasta 2 MB."}
-          </p>
+          {/* Dos cosas distintas en el mismo renglón, y por eso se parten: «subiendo…» es ESTADO
+              (pasa o no pasa según lo que estés haciendo) y no se apaga nunca; el resto es
+              explicación y se va con el interruptor del perfil. */}
+          {ocupado ? (
+            <p className="text-xs text-muted-foreground">
+              {trabajando === "bajando" ? "Descargando la imagen del link…" : "Subiendo la imagen…"}
+            </p>
+          ) : (
+            <Ayuda>
+              Con el cursor en el campo también podés pegarla con Ctrl+V. JPG, PNG, WEBP o GIF,
+              hasta 2 MB.
+            </Ayuda>
+          )}
         </div>
 
         {valor.trim() && (

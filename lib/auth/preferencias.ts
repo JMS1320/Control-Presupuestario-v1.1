@@ -22,6 +22,13 @@ export type Preferencias = {
   contadoresPendientes: boolean
   /** Confirmar antes de cerrar sesión. */
   confirmarSalida: boolean
+  /**
+   * Mostrar los textos que explican cada pantalla (A-FEAT-84).
+   *
+   * ⚠️ Apaga **sólo lo didáctico**. Los controles y las alertas de datos no llevan la marca y no
+   * se apagan nunca — `CLAUDE.md` § 🧮. El detalle de qué se marca, en `components/ayuda.tsx`.
+   */
+  explicaciones: boolean
 }
 
 /**
@@ -35,6 +42,9 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   menuAbierto: false,
   contadoresPendientes: true,
   confirmarSalida: false,
+  // Encendidas: el que no sabe que esto existe tiene que seguir viendo las explicaciones. Apagarlas
+  // por default le sacaría la ayuda justamente al que todavía no aprendió a encenderla.
+  explicaciones: true,
 }
 
 /**
@@ -58,5 +68,6 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     menuAbierto: bool("menuAbierto", PREFERENCIAS_DEFAULT.menuAbierto),
     contadoresPendientes: bool("contadoresPendientes", PREFERENCIAS_DEFAULT.contadoresPendientes),
     confirmarSalida: bool("confirmarSalida", PREFERENCIAS_DEFAULT.confirmarSalida),
+    explicaciones: bool("explicaciones", PREFERENCIAS_DEFAULT.explicaciones),
   }
 }

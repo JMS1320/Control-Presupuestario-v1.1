@@ -3575,6 +3575,8 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 *Implementado 2026-09-05 · [A-FEAT-78](PENDIENTES.md) · test → [A-TEST-86](PENDIENTES.md)*
 *Ampliado 2026-09-05: la foto en un solo campo + preferencias personales ·
 [A-FEAT-83](PENDIENTES.md) · test → [A-TEST-91](PENDIENTES.md)*
+*Ampliado 2026-09-05: las explicaciones se pueden apagar ·
+[A-FEAT-84](PENDIENTES.md) · test → [A-TEST-92](PENDIENTES.md)*
 
 ### Qué cambió
 
@@ -3622,6 +3624,14 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
      sección. Apagados, ni siquiera se piden.
    - **Preguntar antes de salir**: «Salir» comparte menú con «Tu perfil», y un click distraído te
      hace volver a entrar con clave y código.
+   - 🆕 **Mostrar las explicaciones** (A-FEAT-84): la letra chica que cuenta para qué sirve cada
+     cosa. Encendida por default. Cuando ya te sabés una pantalla, apagala y queda más limpia.
+     ⚠️ **Apaga sólo lo didáctico.** Los avisos y los controles —lo que depende de tus datos: un
+     total que no cierra, una factura sobre el mínimo de SICORE, «esta acción no se puede
+     deshacer»— **no se apagan nunca**. Si alguna vez apagás las explicaciones y desaparece algo
+     que te estaba avisando de un problema, eso es un error y hay que reportarlo.
+     Por ahora está marcada la letra chica de **Perfil, Configuración, Facturas ARCA y Sector
+     Productivo**; el resto de las pantallas se va marcando a medida que se las toca.
 4. **Guardar cambios** recarga la pantalla para que el avatar de arriba tome los datos nuevos.
 5. A la derecha ves tu **mail** y tu **rol** (de sólo lectura: el rol lo asigna un administrador,
    nadie puede cambiarse el suyo) y el estado de tu **segundo factor**, con botón para activarlo si
@@ -3648,6 +3658,16 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
    - **El control de la sección huérfana**: elegí una sección, sacásela al rol desde
      Configuración → Permisos, y volvé al perfil. Tiene que **avisar en ámbar**, no quedarse en
      blanco.
+2quater. 🆕 **Las explicaciones apagables** (A-TEST-92): apagá **Mostrar las explicaciones** y
+   recorré Perfil, Configuración, Facturas ARCA y Sector Productivo — tiene que quedar todo más
+   limpio.
+   - ⚠️ **La prueba que de verdad importa es la contraria: buscá lo que NO tiene que desaparecer.**
+     Con las explicaciones apagadas tienen que **seguir viéndose**: el aviso de la foto que no
+     carga, el de la sección huérfana, el «Falta crear la tabla de roles», el «sin ninguna sección
+     no ve nada», el estado del segundo factor, «esta acción no se puede deshacer» y los avisos de
+     SICORE. Si alguno se fue, está mal marcado — avisame cuál.
+   - Que **el interruptor no se apague a sí mismo** (su propia explicación tiene que quedar) y que
+     **no quede ninguna caja de color vacía** donde antes había un recuadro con texto.
 3. **Desde `/usuarios`, abrí el menú y elegí una sección**: tiene que llevarte ahí.
 4. **Probá un link roto a propósito**: `…/?seccion=cualquiera`. Tiene que abrir Principal, no una
    pantalla en blanco.

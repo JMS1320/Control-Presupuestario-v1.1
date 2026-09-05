@@ -5764,7 +5764,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <Card>
         <CardHeader>
           <CardTitle>📊 Subdiarios DDJJ IVA</CardTitle>
-          <p className="text-sm text-muted-foreground">
+          <p data-ayuda className="text-sm text-muted-foreground">
             Consulta períodos y gestión de imputaciones contables
           </p>
         </CardHeader>
@@ -6307,7 +6307,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         <Card>
           <CardHeader>
             <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
-            <p className="text-sm text-muted-foreground">
+            <p data-ayuda className="text-sm text-muted-foreground">
               Archivos en la carpeta del período que la supervisión no pudo asociar a una factura
               (típicamente fotos: el OCR no leyó el contenido). El nombre suele tener el proveedor.
             </p>
@@ -6399,7 +6399,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 <Copy className="h-3.5 w-3.5 mr-1" /> Copiar
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">Cada archivo con su file_id y la factura a la que está vinculado (o "sin vincular"). Pegámelo para diagnosticar.</p>
+            <p data-ayuda className="text-xs text-muted-foreground">Cada archivo con su file_id y la factura a la que está vinculado (o "sin vincular"). Pegámelo para diagnosticar.</p>
           </CardHeader>
           <CardContent>
             <ul className="space-y-0.5 text-[11px] font-mono max-h-80 overflow-auto">
@@ -6420,7 +6420,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       {/* Encabezado */}
       <div className="space-y-1">
         <h2 className="text-2xl font-bold tracking-tight">Facturas ARCA - MSA</h2>
-        <p className="text-muted-foreground">
+        <p data-ayuda className="text-muted-foreground">
           Gestión de comprobantes recibidos importados desde ARCA
         </p>
       </div>
@@ -6722,7 +6722,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <div className="space-y-4">
               <div className="space-y-2">
                 <h4 className="font-medium leading-none">Seleccionar columnas</h4>
-                <p className="text-sm text-muted-foreground">
+                <p data-ayuda className="text-sm text-muted-foreground">
                   Elige qué columnas mostrar en la tabla
                 </p>
               </div>
@@ -11820,7 +11820,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   />
                 </div>
               </div>
-              <div className="bg-gray-50 rounded p-2 text-xs text-gray-500">
+              <div data-ayuda className="bg-gray-50 rounded p-2 text-xs text-gray-500">
                 El SICORE se calcula sobre el <strong>Neto Gravado</strong>
               </div>
               <div className="flex gap-2 pt-1">

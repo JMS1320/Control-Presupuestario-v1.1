@@ -217,3 +217,19 @@ body {
   letter-spacing: -0.021em;
   font-weight: 600;
 }
+
+/**
+ * Explicaciones apagables (A-FEAT-84).
+ *
+ * La clase la pone `LayoutApp` en su elemento raíz, según la preferencia de cada usuario. Se apaga
+ * con **una regla de CSS y no con un `if` en cada componente** a propósito: hay que marcar decenas
+ * de textos en pantallas enormes, y pasarles un flag a todos significaría enhebrar un contexto por
+ * medio sistema y volver a renderizar todo al tocar el interruptor. Acá el marcado es una etiqueta
+ * suelta (`data-ayuda`), que no obliga a nada al componente que la lleva.
+ *
+ * ⚠️ Sólo va sobre texto **didáctico**: lo que dice siempre lo mismo, con la base llena o vacía.
+ * Los controles y las alertas de datos no llevan la marca y no se apagan — ver `components/ayuda.tsx`.
+ */
+.sin-explicaciones [data-ayuda] {
+  display: none;
+}

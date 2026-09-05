@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { Ayuda } from "@/components/ayuda"
 import { seccionesPorIds } from "@/components/layout-app"
 import { SelectorImagenPerfil } from "@/components/selector-imagen-perfil"
 import { Button } from "@/components/ui/button"
@@ -161,10 +162,10 @@ export function PanelPerfil({
                   iniciales={iniciales(nombre, email)}
                   onCambio={cambiarFoto}
                 />
-                <p className="text-xs text-muted-foreground">
+                <Ayuda>
                   Así te ven. Sin foto se muestran tus iniciales. La foto se guarda sola, apenas la
                   elegís.
-                </p>
+                </Ayuda>
               </div>
 
               <div className="space-y-2">
@@ -175,9 +176,7 @@ export function PanelPerfil({
                   onChange={(e) => setNombre(e.target.value)}
                   placeholder="Tu nombre y apellido"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Si lo cargás, las iniciales salen de acá en vez de tu mail.
-                </p>
+                <Ayuda>Si lo cargás, las iniciales salen de acá en vez de tu mail.</Ayuda>
               </div>
 
               <Button type="submit" disabled={guardando}>
@@ -192,10 +191,10 @@ export function PanelPerfil({
             <CardTitle className="text-base">Cómo querés que te abra la app</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            <p className="text-sm text-muted-foreground">
+            <Ayuda className="text-sm">
               Son tuyas: valen para tu cuenta y en cualquier computadora donde entres. No cambian lo
               que ves, sólo cómo te lo acomoda.
-            </p>
+            </Ayuda>
 
             <div className="space-y-2">
               <Label htmlFor="seccion-inicio">Sección al entrar</Label>
@@ -222,12 +221,23 @@ export function PanelPerfil({
                   </span>
                 </p>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <Ayuda>
                   Dónde caés al abrir la app. Sólo se ofrecen las secciones que ves; si más adelante
                   te sacan la que elegiste, vuelve sola al automático y te lo avisa acá.
-                </p>
+                </Ayuda>
               )}
             </div>
+
+            {/* Va primero porque manda sobre el resto de la pantalla: apagarlo hace desaparecer
+                la letra chica de acá abajo, así que el efecto se ve en el mismo lugar donde se
+                toca el interruptor y no hay que ir a buscarlo a otra sección. */}
+            <InterruptorPref
+              id="explicaciones"
+              titulo="Mostrar las explicaciones"
+              detalle="La letra chica que cuenta para qué sirve cada cosa. Cuando ya te la sabés, es ruido. Los avisos y los controles no se apagan nunca: esos dependen de tus datos."
+              valor={prefs.explicaciones}
+              onCambio={(v) => cambiarPref("explicaciones", v)}
+            />
 
             <InterruptorPref
               id="menu-abierto"
@@ -265,16 +275,12 @@ export function PanelPerfil({
             <div>
               <div className="text-xs text-muted-foreground">Mail</div>
               <div className="break-all font-medium">{email}</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                No se cambia desde acá: es con lo que entrás.
-              </p>
+              <Ayuda className="mt-1">No se cambia desde acá: es con lo que entrás.</Ayuda>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Rol</div>
               <div className="font-medium">{userRole}</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Lo asigna un administrador. Nadie puede cambiarse el suyo.
-              </p>
+              <Ayuda className="mt-1">Lo asigna un administrador. Nadie puede cambiarse el suyo.</Ayuda>
             </div>
           </CardContent>
         </Card>
@@ -328,7 +334,11 @@ function InterruptorPref({
     <div className="flex items-start justify-between gap-4">
       <div className="space-y-1">
         <Label htmlFor={id} className="cursor-pointer">{titulo}</Label>
-        <p className="text-xs text-muted-foreground">{detalle}</p>
+        {/* ⚠️ El detalle del propio interruptor de explicaciones NO se marca: si se apagara junto
+            con los demás, quedaría un interruptor apagado sin nada que diga qué prende. */}
+        <p data-ayuda={id === "explicaciones" ? undefined : ""} className="text-xs text-muted-foreground">
+          {detalle}
+        </p>
       </div>
       <Switch id={id} checked={valor} onCheckedChange={onCambio} className="mt-1 shrink-0" />
     </div>
