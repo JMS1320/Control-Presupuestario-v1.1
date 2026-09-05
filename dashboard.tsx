@@ -104,7 +104,6 @@ function BotonMenu() {
       size="icon"
       className="h-9 w-9 shrink-0"
       onClick={toggleSidebar}
-      title="Abrir el menú (⌘B)"
     >
       <Menu />
       <span className="sr-only">Abrir el menú</span>
@@ -151,11 +150,10 @@ function MenuLateral({
 
   return (
     <Sidebar collapsible="offcanvas">
+      {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
+          ayuda a elegir una sección — las 12 de abajo se explican solas. */}
       <SidebarHeader className="px-2 py-3">
-        <div className="flex items-center gap-2">
-          <BotonMenu />
-          <span className="truncate text-sm font-semibold">Control Presupuestario</span>
-        </div>
+        <BotonMenu />
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>

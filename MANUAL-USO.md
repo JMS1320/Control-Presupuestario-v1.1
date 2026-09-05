@@ -3463,8 +3463,8 @@ encima de la etiqueta de al lado** — se leía `E18xtracto Bancario`, `P2roduct
 1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Cmd+B`** (`Ctrl+B` en Windows).
 2. **Navegar**: click en la sección. **El menú se cierra solo** al elegir.
 3. **Cerrar sin elegir**: el mismo botón ☰ —que **con el menú abierto está adentro del menú**,
-   arriba a la izquierda, al lado del título— o `Cmd+B` otra vez. El botón acompaña al menú en
-   vez de quedar flotando en el contenido: un control va al lado de lo que controla.
+   arriba de todo— o `Cmd+B` otra vez. El botón acompaña al menú en vez de quedar flotando en el
+   contenido: un control va al lado de lo que controla.
 4. Los **contadores de pendientes** siguen ahí, a la derecha de cada sección, con los mismos colores
    de antes (gris → ámbar → rojo según cuántos urgentes).
 5. En **pantalla chica** el menú se comporta como un panel que entra desde el costado.
