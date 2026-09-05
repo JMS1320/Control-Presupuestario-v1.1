@@ -2364,7 +2364,42 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   // Cerrar y limpiar modal SICORE anticipo
+  // «No, continuar sin retención» — A-BUG-106.
+  //
+  // Antes este botón llamaba a `cerrarModalSicoreAnticipo`, que sólo cierra y limpia el estado del
+  // modal. Es decir: decir "sin retención" **abandonaba la operación entera en silencio** — el
+  // echeq no se creaba, el anticipo no cambiaba de estado, y no había ningún aviso de que lo que
+  // pediste no se hizo. Acá se continúa de verdad, sin retención.
+  const continuarSinRetencionAnticipo = async () => {
+    const ant = echeqAnticipoCF.current
+    const datosEcheq = echeqPendienteCF.current
+    const idAnt = anticipoSicoreId
+    try {
+      if (ant && datosEcheq) {
+        // Sin retención el echeq se libra por el monto completo: no hay nada que descontar.
+        await finalizarEcheqAnticipo(ant, (ant.monto as number) || 0, null)
+        toast.success('Anticipo → echeq (sin retención)')
+      } else if (idAnt) {
+        // Camino sin echeq: el usuario venía de «pagar». También quedaba sin efecto.
+        const { error } = await supabase.from('anticipos_proveedores')
+          .update({ estado_pago: 'pagar' }).eq('id', idAnt)
+        if (error) { toast.error('Error: ' + error.message); return }
+        toast.success('Anticipo → pagar (sin retención)')
+      }
+    } finally {
+      cerrarModalSicoreAnticipo()
+    }
+    await cargarAnticiposExistentes()
+    await cargarDatos()
+  }
+
   const cerrarModalSicoreAnticipo = () => {
+    // Cancelar (cruz o «Cancelar») **suelta el echeq pendiente**: si no se limpian estos refs, un
+    // echeq abandonado queda colgado y se aplica a la SIGUIENTE operación de anticipo, con el banco
+    // y las fechas del anterior. El usuario pidió expresamente que cancelar aborte todo desde el
+    // origen — verificado que ya no deja cheque ni retención, esto cierra el último hilo suelto.
+    echeqPendienteCF.current = null
+    echeqAnticipoCF.current = null
     setMostrarModalSicoreAnticipo(false)
     setAnticipoSicoreId(null)
     setAnticipoSicoreCuit('')
@@ -2624,7 +2659,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setAnticipoSicoreId(anticipo.id)
         setAnticipoSicoreCuit(anticipo.cuit_proveedor)
         setAnticipoSicoreFecha(esEcheq && echeqPendienteCF.current ? echeqPendienteCF.current.fechaEmision : anticipo.fecha_pago)
-        setPasoSicoreAnticipo('tipo')
+        // Arranca en 'pregunta', no en 'tipo' (A-BUG-106). Abriendo en 'tipo' el usuario caía en la
+        // lista de categorías, cuyas únicas salidas son «← Volver» y la cruz: **no había forma de
+        // decir que este pago NO lleva retención**, aunque el paso 'pregunta' tiene ese botón desde
+        // siempre. Reportado por el usuario al cargar el echeq de IGLESIAS, donde la retención ya
+        // estaba calculada y registrada contra la factura.
+        setPasoSicoreAnticipo('pregunta')
         setMostrarModalSicoreAnticipo(true)
         return  // no recargar todavía
       }
@@ -4542,7 +4582,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => setPasoSicoreAnticipo('tipo')}>
                   ✅ Sí, aplicar retención
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={cerrarModalSicoreAnticipo}>
+                <Button variant="outline" className="flex-1" onClick={continuarSinRetencionAnticipo}>
                   No, continuar sin retención
                 </Button>
               </div>
