@@ -4,8 +4,22 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * `active:scale-[0.97]` — feedback de pulsado, agregado 2026-09-05.
+ *
+ * Hasta acá ningún botón de la app confirmaba que el click se había registrado: la base sólo
+ * tenía `transition-colors`. Duele en los botones que disparan operaciones lentas (importadores,
+ * paneles del presupuesto, conciliación), donde entre el click y el primer cambio en pantalla no
+ * pasaba nada y se termina clickeando dos veces.
+ *
+ * El 0,97 es a propósito casi imperceptible: un botón se aprieta decenas de veces por día y una
+ * escala más marcada cansa. `scale()` arrastra al label y al ícono, que es lo que hace que se lea
+ * como una tecla física.
+ *
+ * Con `prefers-reduced-motion` el movimiento se cambia por opacidad: menos movimiento, no cero.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-[color,background-color,border-color,opacity,transform] duration-150 ease-out active:scale-[0.97] motion-reduce:active:scale-100 motion-reduce:active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {

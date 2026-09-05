@@ -39,6 +39,11 @@ body {
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+
+    /* Curvas de animación. Las built-in de CSS (`ease-out`) son demasiado débiles para UI.
+       Fuente única: si algo anima, sale de acá y no inventa su propia curva. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -90,5 +95,49 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/**
+ * Entrada de contenido que aparece después de un fetch o de un toggle.
+ *
+ * Se usa en las alertas de la pantalla Principal y en los paneles desplegables del Presupuesto:
+ * todos son `{condicion && <Panel/>}`, así que hoy aparecen de golpe y empujan la página.
+ *
+ * Por qué `@starting-style` y NO `animate-in` de tailwindcss-animate: `animate-in` son keyframes,
+ * y un keyframe reinicia desde cero cada vez que se dispara. Los paneles se togglean rápido y
+ * repetido, y una transición retargetea desde donde quedó en vez de saltar al principio.
+ *
+ * La SALIDA es instantánea a propósito: con `{cond && <X/>}` el componente se desmonta y no hay
+ * nada que animar. Es asimétrico, y está bien — salir rápido de un panel que ya no querés ver no
+ * molesta; entrar de golpe sí.
+ *
+ * Va fuera de `@layer`: `@layer utilities` es la directiva de Tailwind, no la de CSS, y mete el
+ * contenido en su propia capa. Un `@starting-style` ahí adentro es pedir problemas.
+ */
+.entrada-suave {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .entrada-suave {
+    opacity: 0;
+    /* Entra desde arriba: como empuja el contenido hacia abajo, bajar hasta su lugar es
+       coherente con lo que le hace al resto de la página. */
+    transform: translateY(-8px);
+  }
+}
+
+/* Menos movimiento, no cero: se conserva el fade —que es lo que comunica «llegó algo nuevo»—
+   y se saca el desplazamiento. */
+@media (prefers-reduced-motion: reduce) {
+  .entrada-suave {
+    transition: opacity 200ms var(--ease-out);
+  }
+
+  @starting-style {
+    .entrada-suave {
+      transform: none;
+    }
   }
 }

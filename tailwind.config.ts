@@ -90,6 +90,14 @@ const config: Config = {
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
   			'accordion-up': 'accordion-up 0.2s ease-out'
+  		},
+  		/* `ease-out` apunta al token de `globals.css` en vez de a la curva built-in de CSS, que es
+  		   demasiado débil para UI. Se pisa el nombre existente a propósito: así hay UN solo nombre
+  		   para la curva de entrada en todo el proyecto. Es seguro — hoy no había ni un `ease-out`
+  		   en el código (sí un `ease-in-out` en ui/sheet.tsx, que queda como estaba).
+  		   `ease-[var(--ease-out)]` como valor arbitrario NO funciona: Tailwind lo descarta sin avisar. */
+  		transitionTimingFunction: {
+  			out: 'var(--ease-out)'
   		}
   	}
   },

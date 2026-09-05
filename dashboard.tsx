@@ -255,7 +255,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <TablaResumenFinanciero resumen={resumen} mostrarDecimales={mostrarDecimales} />
             )}
 
-            {showCategorias && <CorrectorCategorias />}
+            {showCategorias && <div className="entrada-suave"><CorrectorCategorias /></div>}
           </TabsContent>
 
           {/* DISTRIBUCIÓN */}
@@ -292,7 +292,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               />
             )}
 
-            {showInterno && <CorrectorInterno />}
+            {showInterno && <div className="entrada-suave"><CorrectorInterno /></div>}
           </TabsContent>
 
           {/* REPORTE DETALLADO */}
@@ -384,19 +384,25 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               </Button>
             </div>
 
-            {showPreciosTC && <ConfiguradorPreciosTC onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showActividades && <ConfiguradorActividades />}
-            {showCampos && <ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showVariables && <ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showInversiones && <ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showSueldosPre && <ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showIngresosAct && <ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {/* Los `<div className="entrada-suave">` son sólo para la animación de entrada: estos
+                paneles aparecen y desaparecen de golpe y reacomodan la página entera. La clase está
+                en `app/globals.css` (transición + `@starting-style`). El wrapper existe porque los
+                paneles no reenvían `className`; si alguno empieza a hacerlo, se le pasa directo. */}
+            {showPreciosTC && <div className="entrada-suave"><ConfiguradorPreciosTC onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showActividades && <div className="entrada-suave"><ConfiguradorActividades /></div>}
+            {showCampos && <div className="entrada-suave"><ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showVariables && <div className="entrada-suave"><ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showInversiones && <div className="entrada-suave"><ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showSueldosPre && <div className="entrada-suave"><ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showIngresosAct && <div className="entrada-suave"><ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
             {showMargen && (
-              <PanelMargen recargarToken={tokenPresupuesto}
-                onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
+              <div className="entrada-suave">
+                <PanelMargen recargarToken={tokenPresupuesto}
+                  onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
+              </div>
             )}
-            {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showProveedores && <PanelControlProveedores />}
+            {showCuentas && <div className="entrada-suave"><PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showProveedores && <div className="entrada-suave"><PanelControlProveedores /></div>}
 
             <TabPresupuesto recargarToken={tokenPresupuesto} />
           </TabsContent>

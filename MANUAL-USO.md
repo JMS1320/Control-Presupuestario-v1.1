@@ -3394,3 +3394,51 @@ El total del margen tiene que dar **exactamente** lo mismo que la suma de los tr
 Si no coincide, **el problema no está en el margen** — está aguas arriba, y el orden para buscarlo
 es: ¿los cinco controles de Facturas están en ✓? → ¿las mediciones son las seis? → ¿el rodeo
 concilia 189 = 189?
+
+---
+
+## ✨ Toda la app → **Movimiento de la interfaz** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-74](PENDIENTES.md) · test → [A-TEST-82](PENDIENTES.md)*
+
+No es una pantalla: son tres cambios de comportamiento que se ven en toda la app. Se documentan acá
+porque **hay que probarlos a mano** — ninguno se puede verificar con un test automático, y lo que
+define si están bien es cómo se sienten después de un día de uso, no cómo se ven una vez.
+
+### Qué cambió
+
+| Dónde | Antes | Ahora |
+|---|---|---|
+| **Cualquier botón** | Nada confirmaba que el click se registró | Se hunde apenas al apretarlo (3 %, 150 ms) y vuelve al soltar |
+| **Alertas de Principal** (extractos sin cargar, parseo pendiente, FC de venta) | Aparecían de golpe al terminar de cargar y empujaban la página | Entran con un fundido corto desde arriba (200 ms) |
+| **Paneles del Presupuesto** (Cuentas contables, Actividades, Campos, Variables, Inversiones, Sueldos, Ingresos, Margen, Precios y TC, Proveedores) y los correctores de Dashboard y Distribución | Aparecían y desaparecían de golpe | Entran igual que las alertas. **Al cerrarlos desaparecen al instante, a propósito** |
+
+### Cómo se prueba
+
+1. **El pulsado.** Entrá a cualquier pantalla y apretá botones un rato — los de la barra del
+   Presupuesto son los mejores porque hay 10 juntos. Lo que hay que juzgar **no es si se ve**, sino
+   si **molesta**: tiene que sentirse casi imperceptible. Si lo notás como "animación", está mal y
+   hay que bajarlo. Probá también un botón que dispare algo lento (un importador).
+2. **Las alertas de Principal.** Recargá la pantalla Principal (F5) y mirá las tres tarjetas de
+   alerta. Tienen que entrar suave, sin saltos. ⚠️ Cargan de tres consultas independientes, así que
+   **van a entrar en momentos distintos** — eso es correcto, no es un error.
+3. **Los paneles del Presupuesto.** Andá a Presupuesto y abrí/cerrá un panel **rápido y repetido**
+   (click, click, click). Tiene que entrar suave cada vez y no trabarse ni parpadear.
+4. **El caso dudoso — el que más importa mirar.** Abrí un panel del Presupuesto, cambiá a otra
+   pestaña y volvé. El panel **vuelve a animar la entrada**, porque las pestañas desmontan su
+   contenido. Decidir si molesta: si molesta, se saca la clase `entrada-suave` de esos paneles y se
+   deja sólo en las alertas.
+5. **Reducir movimiento.** En macOS: Configuración → Accesibilidad → Pantalla → *Reducir
+   movimiento*. Con eso activado tiene que **quedar el fundido y desaparecer el desplazamiento**, y
+   los botones cambian de opacidad en vez de hundirse. No tiene que quedar todo quieto.
+
+### Qué NO se animó, y por qué
+
+- **El cambio de pestaña.** Es la navegación central: se usa decenas de veces por día y cualquier
+  animación ahí hace que toda la app se sienta lenta.
+- **El paso de "Cargando…" a la tabla** del Dashboard y de Distribución Socios. Se evaluó y se
+  descartó: las pestañas desmontan su contenido, así que el fundido **también dispararía cada vez
+  que volvés a la solapa** — es decir, se convertiría en una animación de cambio de pestaña por la
+  puerta de atrás.
+- **El valor del IPC y los contadores de las solapas.** Son datos que se leen; animarlos retrasa la
+  lectura.
