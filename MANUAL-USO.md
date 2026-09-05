@@ -3529,3 +3529,41 @@ Las **3 tarjetas de alerta** de Principal siguen con el mismo peso visual entre 
 igual de urgentes (una cuenta con 162 días sin cargar el extracto pesa distinto que 21 movimientos
 sin desglosar). Diferenciarlas es una decisión de **producto** —cuál es más grave— y no se toma
 desde el diseño. Si querés, se hace: queda anotado como candidato a `A-FEAT-77`.
+
+---
+
+## 👤 Toda la app → **Avatar de sesión** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-77](PENDIENTES.md) · test → [A-TEST-85](PENDIENTES.md)*
+
+### Qué cambió
+
+Arriba a la derecha había cuatro cosas sueltas: tu mail entero, tu rol, un link **Usuarios** y un
+botón **Salir**. Ahora hay **un avatar redondo**; todo lo demás está adentro, al hacerle click.
+
+### Cómo se usa
+
+1. **Click en el avatar** (arriba a la derecha). Se despliega el menú con tu mail, tu rol,
+   **Usuarios** (sólo si sos admin) y **Salir**.
+2. **Las iniciales** salen de tu nombre si está cargado y, si no, de las dos primeras letras de tu
+   mail (`javiergc89@…` → **JA**).
+3. **Para que aparezca tu foto** en vez de las iniciales hay que cargar `avatar_url` en el
+   `user_metadata` de tu usuario. ⚠️ **Hoy eso sólo se hace desde el panel de Supabase** —
+   Authentication → Users → tu usuario → User Metadata. No hay pantalla en la app para subirla.
+
+### Cómo se prueba
+
+1. **Que las iniciales sean las tuyas.**
+2. ⚠️ **El control que más importa: que «Salir» siga cerrando sesión.** Dejó de ser un botón suelto
+   y pasó a ser un ítem de menú que dispara el envío del formulario por código. Probalo de verdad:
+   tenés que terminar en `/login`.
+3. **Con una cuenta `contable`**: el menú **no** tiene que ofrecer *Usuarios*.
+4. **La foto**: cargá un `avatar_url` a mano en Supabase y verificá que aparezca el círculo con la
+   imagen en lugar de las iniciales.
+5. **Decidí si extrañás ver el mail sin abrir el menú.** Con una sola cuenta no hace falta; si
+   alternás entre cuentas, capaz sí.
+
+### Lo que NO tiene el menú
+
+No hay **Perfil** ni **Configuración**: esas pantallas no existen todavía y no se ponen links que
+no llevan a ningún lado. Cuando se creen, entran acá.
