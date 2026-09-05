@@ -59,10 +59,15 @@ export function seccionesDe(userRole: "admin" | "contable") {
  *
  * Componente aparte porque `useSidebar()` sólo funciona dentro del `SidebarProvider`.
  */
-function BotonMenu() {
+function BotonMenu({ className }: { className?: string }) {
   const { toggleSidebar } = useSidebar()
   return (
-    <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={toggleSidebar}>
+    <Button
+      variant="ghost"
+      size="icon"
+      className={`h-9 w-9 shrink-0 ${className ?? ""}`}
+      onClick={toggleSidebar}
+    >
       <Menu />
       <span className="sr-only">Abrir el menú</span>
     </Button>
@@ -107,11 +112,16 @@ function MenuLateral({
     <Sidebar collapsible="offcanvas">
       {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
           ayuda a elegir una sección — las de abajo se explican solas. */}
+      {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
+          ayuda a elegir una sección — las de abajo se explican solas.
+          El `justify-start pl-2` NO es cosmético: sin eso el ícono queda centrado en un botón de
+          36 px y cae a 18 px del borde, mientras los ítems caen a 8 — 10 px de desalineación que
+          se ve. Con esto los dos quedan a 16. */}
       <SidebarHeader className="px-2 py-3">
-        <BotonMenu />
+        <BotonMenu className="justify-start pl-2" />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarMenu>
+        <SidebarMenu className="px-2">
           {seccionesDe(userRole).map(({ id, label, Icono }) => {
             const c = pendientes[id]
             // Color proporcional a los urgentes, no binario, para que el rojo señale dónde está el
