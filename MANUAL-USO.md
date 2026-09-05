@@ -3588,8 +3588,13 @@ no llevan a ningún lado. Cuando se creen, entran acá.
 
 1. Click en tu **avatar** → **Tu perfil**.
 2. **Nombre**: si lo cargás, las iniciales del avatar salen de ahí en vez de tu mail.
-3. **Foto de perfil (URL)**: se pega la dirección de una imagen. ⚠️ **No se puede subir un archivo
-   todavía** — eso necesita un bucket de storage que no está creado.
+3. **La foto**, por dos caminos:
+   - **Subir una imagen** (botón al lado del avatar): elegís un archivo de la computadora.
+     JPG, PNG, WEBP o GIF, hasta 2 MB. **Se guarda solo** — no hay que apretar nada más.
+   - **…o pegar la dirección de una imagen**, si ya está publicada en algún lado. Ese camino sí
+     necesita **Guardar cambios**.
+   ⚠️ **Requiere haber corrido `scripts/59-storage-avatares.sql`.** Si no, al subir aparece el
+   aviso *«Falta crear el bucket de fotos en la base»*.
 4. **Guardar cambios** recarga la pantalla para que el avatar de arriba tome los datos nuevos.
 5. A la derecha ves tu **mail** y tu **rol** (de sólo lectura: el rol lo asigna un administrador,
    nadie puede cambiarse el suyo) y el estado de tu **segundo factor**, con botón para activarlo si

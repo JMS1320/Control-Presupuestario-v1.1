@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ShieldCheck, ShieldAlert } from "lucide-react"
+import { ShieldCheck, ShieldAlert, Upload } from "lucide-react"
 
 function iniciales(nombre: string, email: string): string {
   const limpio = nombre.trim()
@@ -38,6 +38,8 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
   const [foto, setFoto] = useState("")
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
+  const [subiendo, setSubiendo] = useState(false)
+  const inputArchivo = useRef<HTMLInputElement>(null)
   const [tiene2FA, setTiene2FA] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -56,6 +58,39 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
     })()
     return () => { cancelado = true }
   }, [])
+
+  /**
+   * Subir una imagen de la computadora.
+   *
+   * El archivo va a `/api/perfil/avatar`, que lo valida y lo guarda en Storage. La URL que
+   * devuelve se guarda al toque en tu perfil: subir una foto y que no se vea hasta apretar otro
+   * botón es una trampa — el resultado esperado de elegir la foto es tener la foto.
+   */
+  async function subirArchivo(archivo: File) {
+    setSubiendo(true)
+    const cuerpo = new FormData()
+    cuerpo.append("archivo", archivo)
+
+    const res = await fetch("/api/perfil/avatar", { method: "POST", body: cuerpo })
+    const json = await res.json().catch(() => ({}))
+
+    if (!res.ok) {
+      setSubiendo(false)
+      // El mensaje viene del endpoint: dice el motivo real (tipo, tamaño, o que falta el bucket).
+      toast.error(json.error ?? "No se pudo subir la imagen.")
+      return
+    }
+
+    const { error } = await supabase.auth.updateUser({ data: { avatar_url: json.url } })
+    setSubiendo(false)
+    if (error) {
+      toast.error("Se subió la imagen pero no se pudo guardar en tu perfil.")
+      return
+    }
+    setFoto(json.url)
+    toast.success("Foto actualizada.")
+    setTimeout(() => window.location.reload(), 600)
+  }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault()
@@ -90,9 +125,50 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
                   {iniciales(nombre, email)}
                 </AvatarFallback>
               </Avatar>
-              <p className="text-sm text-muted-foreground">
-                Así te ven. Sin foto se muestran tus iniciales.
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Así te ven. Sin foto se muestran tus iniciales.
+                </p>
+                <div className="flex items-center gap-2">
+                  {/* El input real va oculto: el de archivos que trae el navegador no se puede
+                      estilar y queda fuera de lugar al lado de los demás controles. */}
+                  <input
+                    ref={inputArchivo}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      // Se limpia el input para que elegir DOS VECES el mismo archivo vuelva a
+                      // disparar el `change` — si no, el segundo intento no hace nada.
+                      e.target.value = ""
+                      if (f) void subirArchivo(f)
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={subiendo}
+                    onClick={() => inputArchivo.current?.click()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    {subiendo ? "Subiendo…" : "Subir una imagen"}
+                  </Button>
+                  {foto.trim() && !subiendo && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={() => setFoto("")}
+                    >
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">JPG, PNG, WEBP o GIF · hasta 2 MB.</p>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -109,7 +185,7 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="foto">Foto de perfil (URL)</Label>
+              <Label htmlFor="foto">…o pegar la dirección de una imagen</Label>
               <Input
                 id="foto"
                 value={foto}
@@ -117,8 +193,9 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
                 placeholder="https://…"
               />
               <p className="text-xs text-muted-foreground">
-                Se pega la dirección de una imagen. ⚠️ Todavía <strong>no se puede subir un archivo</strong>
-                {" "}desde acá: eso necesita un bucket de storage que no está creado.
+                Alternativa a subir el archivo: si la foto ya está publicada en algún lado, se pega
+                acá y se aprieta <strong>Guardar cambios</strong>. Subir un archivo, en cambio, se
+                guarda solo.
               </p>
             </div>
 
