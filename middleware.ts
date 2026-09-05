@@ -47,7 +47,12 @@ function cabecerasDeSeguridad(res: NextResponse, urlSupabase: string): NextRespo
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob:",
+      // ⚠️ El dominio de Supabase va acá además de en `connect-src`: las fotos de perfil viven
+      // en Storage y se muestran con un <img>, que la CSP filtra por `img-src`, no por
+      // `connect-src`. Sin esto el navegador bloquea la imagen **en silencio**: la subida anda,
+      // la URL devuelve 200, y el avatar igual muestra las iniciales de fallback como si nada.
+      // `data:` es para el QR del segundo factor, que viene embebido.
+      `img-src 'self' data: blob: ${urlSupabase}`,
       "font-src 'self' data:",
       `connect-src 'self' ${urlSupabase} ${urlSupabase.replace("https://", "wss://")}`,
       "frame-ancestors 'none'",

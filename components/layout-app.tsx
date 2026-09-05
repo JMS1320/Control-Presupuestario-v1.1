@@ -185,9 +185,6 @@ export function LayoutApp({
     <SidebarProvider defaultOpen={false}>
       <MenuLateral userRole={userRole} activa={seccionActiva} onElegir={elegir} />
       <SidebarInset className="bg-gray-50">
-        {/* A nivel marco: los toasts sobreviven el cambio de sección y existen en todas las
-            rutas, no sólo en la principal. */}
-        <Toaster richColors closeButton position="top-right" />
         {/* Chrome fijo y translúcido: el menú y la sesión tienen que seguir a mano después de
             scrollear media pantalla de tabla. El contenido pasa por debajo. */}
         <div className="chrome-superior">
@@ -199,6 +196,11 @@ export function LayoutApp({
           </div>
         </div>
         <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 pt-6">{children}</div>
+        {/* A nivel marco: los toasts sobreviven el cambio de sección y existen en todas las rutas.
+            Va último por prolijidad (es `position: fixed`, el orden en el DOM no lo afecta).
+            📌 Se probó moverlo y sacarlo del todo buscando el aviso de hidratación del menú del
+            avatar: NO es el causante — ver A-BUG-97, para no repetir la prueba. */}
+        <Toaster richColors closeButton position="top-right" />
       </SidebarInset>
     </SidebarProvider>
   )
