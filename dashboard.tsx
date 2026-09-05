@@ -45,13 +45,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
+import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 /**
  * Las 12 secciones, en un solo lugar.
@@ -88,6 +87,31 @@ const SOLAPAS = [
  *
  * Va en su propio componente porque `useSidebar()` sólo funciona DENTRO del `SidebarProvider`.
  */
+/**
+ * El botón que abre el menú.
+ *
+ * No se usa `SidebarTrigger` de shadcn porque trae `<PanelLeft/>` hardcodeado adentro y los
+ * children en JSX no se pueden pisar desde props. Las tres líneas son el ícono que la gente
+ * reconoce como "menú"; el de panel sugiere otra cosa.
+ *
+ * Componente aparte porque `useSidebar()` sólo funciona dentro del `SidebarProvider`.
+ */
+function BotonMenu() {
+  const { toggleSidebar } = useSidebar()
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 shrink-0"
+      onClick={toggleSidebar}
+      title="Abrir el menú (⌘B)"
+    >
+      <Menu />
+      <span className="sr-only">Abrir el menú</span>
+    </Button>
+  )
+}
+
 function MenuLateral({
   solapas,
   activa,
@@ -251,7 +275,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
         <div className="chrome-superior">
           <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
             {/* El botón que abre el menú. Va arriba a la izquierda, que es donde se lo busca. */}
-            <SidebarTrigger className="h-9 w-9 shrink-0" title="Abrir el menú (⌘B)" />
+            <BotonMenu />
             {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
                 había sesión que cerrar: se entraba por URL. */}
             <div className="min-w-0 flex-1">
