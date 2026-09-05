@@ -35,10 +35,117 @@ import { PanelControlProveedores } from "./components/panel-control-proveedores"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
+
+/**
+ * Las 12 secciones, en un solo lugar.
+ *
+ * Antes estaban repetidas a mano en 12 bloques de `TabsTrigger` casi idénticos; ahora el menú
+ * lateral las recorre. El `id` es el mismo `value` de la solapa y la misma clave con la que
+ * `usePendientesPorPantalla` cuenta los pendientes — no inventar nombres nuevos acá.
+ */
+const SOLAPAS = [
+  { id: "principal",   label: "Principal",          Icono: Home },
+  { id: "dashboard",   label: "Dashboard",          Icono: BarChart3 },
+  { id: "distribucion",label: "Distribución Socios",Icono: Users },
+  { id: "reporte",     label: "Reporte Detallado",  Icono: FileText },
+  { id: "egresos",     label: "Egresos",            Icono: Receipt },
+  { id: "ingresos",    label: "Ingresos",           Icono: ArrowUpRight },
+  { id: "cashflow",    label: "Cash Flow",          Icono: TrendingUp },
+  { id: "extracto",    label: "Extracto Bancario",  Icono: Banknote },
+  { id: "productivo",  label: "Productivo",         Icono: Tractor },
+  { id: "sueldos",     label: "Sueldos",            Icono: Landmark },
+  { id: "presupuesto", label: "Presupuesto",        Icono: PieChart },
+  { id: "importar",    label: "Importar Excel",     Icono: Upload },
+] as const
+
+/**
+ * El menú lateral. Reemplaza a la barra de 12 solapas, que **se pisaban entre sí**: `grid-cols-12`
+ * repartía 106 px por celda y "Extracto Bancario" necesitaba 130 — 7 de las 12 desbordaban y los
+ * contadores quedaban encima de la etiqueta vecina (`E18xtracto`, `P2roductivo`).
+ *
+ * Es `offcanvas` —se abre encima del contenido y se cierra al elegir—, decidido por el usuario el
+ * 2026-09-05 con los dos costos sobre la mesa: **cada navegación pasa a ser 2 clicks** y los
+ * contadores de pendientes **dejan de verse de un vistazo**. La alternativa evaluada era colapsar
+ * a una columna de íconos (1 click, contadores visibles); se eligió ésta por el ancho completo
+ * para las tablas, que son muy anchas.
+ *
+ * Va en su propio componente porque `useSidebar()` sólo funciona DENTRO del `SidebarProvider`.
+ */
+function MenuLateral({
+  solapas,
+  activa,
+  onElegir,
+  pendientes,
+}: {
+  solapas: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
+  activa: string
+  onElegir: (id: string) => void
+  pendientes: Record<string, { total: number; urgentes: number } | undefined>
+}) {
+  const { setOpen, setOpenMobile, isMobile } = useSidebar()
+
+  const elegir = (id: string) => {
+    onElegir(id)
+    // Se cierra al elegir: un menú que tapa el contenido y queda abierto estorba.
+    if (isMobile) setOpenMobile(false)
+    else setOpen(false)
+  }
+
+  return (
+    <Sidebar collapsible="offcanvas">
+      <SidebarHeader className="px-4 py-3">
+        <span className="text-sm font-semibold">Control Presupuestario</span>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarMenu>
+          {solapas.map(({ id, label, Icono }) => {
+            const c = pendientes[id]
+            // Mismos tramos de color que tenían las solapas: proporcional a los urgentes, no
+            // binario, para que el rojo señale dónde está el bulto y no se encienda en todos lados.
+            const color = !c || c.total === 0 ? null
+              : c.urgentes >= 5 ? "bg-red-100 text-red-700"
+              : c.urgentes > 0 ? "bg-amber-100 text-amber-700"
+              : "bg-gray-200 text-gray-600"
+            return (
+              <SidebarMenuItem key={id}>
+                <SidebarMenuButton isActive={activa === id} onClick={() => elegir(id)}>
+                  <Icono className="h-4 w-4" />
+                  <span>{label}</span>
+                </SidebarMenuButton>
+                {color && c && (
+                  <SidebarMenuBadge
+                    data-nota-ignorar
+                    title={`${c.total} pendiente(s)${c.urgentes ? ` · ${c.urgentes} urgente(s)` : ""} — se ven en Principal → Pendientes`}
+                    className={`rounded-full ${color}`}
+                  >
+                    {c.total}
+                  </SidebarMenuBadge>
+                )}
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
+      </SidebarContent>
+    </Sidebar>
+  )
+}
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
@@ -118,22 +225,43 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
     return 'principal'
   }
 
+  /** Qué sección se está viendo. Pasó a ser estado controlado porque ahora la navegación la maneja
+   *  el menú lateral, que vive fuera del `<Tabs>` y no puede usar `defaultValue`. */
+  const [tab, setTab] = useState<string>(getDefaultTab())
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
-          así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
-      <Toaster richColors closeButton position="top-right" />
-      {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
-          aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
-          entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
-      <NotasParaClaude />
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
-            había sesión que cerrar: se entraba por URL. */}
-        <BarraSesion userRole={userRole} />
-        {/* pestañas principales */}
-        <Tabs defaultValue={getDefaultTab()} className="w-full">
-          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-12'}`}>
+    <SidebarProvider defaultOpen={false}>
+      <MenuLateral
+        solapas={SOLAPAS.filter((s) => shouldShowTab(s.id))}
+        activa={tab}
+        onElegir={setTab}
+        pendientes={pendientesPorPantalla}
+      />
+      <SidebarInset className="bg-gray-50">
+        {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
+            así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
+        <Toaster richColors closeButton position="top-right" />
+        {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
+            aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
+            entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
+        <NotasParaClaude />
+        <div className="mx-auto w-full max-w-7xl space-y-6 p-4">
+          <div className="flex items-center gap-3">
+            {/* El botón que abre el menú. Va arriba a la izquierda, que es donde se lo busca. */}
+            <SidebarTrigger className="h-9 w-9 shrink-0" title="Abrir el menú (⌘B)" />
+            {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
+                había sesión que cerrar: se entraba por URL. */}
+            <div className="min-w-0 flex-1">
+              <BarraSesion userRole={userRole} />
+            </div>
+          </div>
+        <Tabs value={tab} onValueChange={setTab} className="w-full">
+          {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
+              pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
+              se saca, cada nota se guarda con `pantalla: ""` y P-34 deja de agrupar. La navegación
+              visible es el menú lateral; esto queda como fuente de ese dato y para lectores de
+              pantalla. */}
+          <TabsList className="sr-only">
             {shouldShowTab('principal') && (
               <TabsTrigger value="principal" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
@@ -449,8 +577,8 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           </TabsContent>
         </Tabs>
 
-        {/* Información general del sistema */}
-        <Card>
+          {/* Información general del sistema */}
+          <Card>
           <CardHeader>
             <CardTitle>Información del Sistema</CardTitle>
           </CardHeader>
@@ -479,8 +607,9 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               </div>
             </div>
           </CardContent>
-        </Card>
-      </div>
-    </div>
+          </Card>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

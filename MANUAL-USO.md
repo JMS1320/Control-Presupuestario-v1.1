@@ -3442,3 +3442,46 @@ define si están bien es cómo se sienten después de un día de uso, no cómo s
   puerta de atrás.
 - **El valor del IPC y los contadores de las solapas.** Son datos que se leen; animarlos retrasa la
   lectura.
+
+---
+
+## 🧭 Toda la app → **Menú lateral** (reemplaza la barra de solapas) 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-75](PENDIENTES.md) · test → [A-TEST-83](PENDIENTES.md)*
+
+### Qué cambió
+
+La barra horizontal de 12 solapas **ya no está**. En su lugar hay un **botón ☰ arriba a la
+izquierda** que abre un menú lateral con las mismas 12 secciones.
+
+Se cambió porque la barra estaba rota, no por gusto: las 12 solapas se repartían 106 px cada una y
+7 de ellas necesitaban más, así que el texto se salía y **los contadores de pendientes quedaban
+encima de la etiqueta de al lado** — se leía `E18xtracto Bancario`, `P2roductivo`, `91Importar Excel`.
+
+### Cómo se usa
+
+1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Cmd+B`** (`Ctrl+B` en Windows).
+2. **Navegar**: click en la sección. **El menú se cierra solo** al elegir.
+3. **Cerrar sin elegir**: el mismo botón ☰, o `Cmd+B` otra vez.
+4. Los **contadores de pendientes** siguen ahí, a la derecha de cada sección, con los mismos colores
+   de antes (gris → ámbar → rojo según cuántos urgentes).
+5. En **pantalla chica** el menú se comporta como un panel que entra desde el costado.
+
+⚠️ **Lo que se perdió a cambio, y se aceptó a sabiendas**: cada navegación son ahora **2 clicks**
+(abrir + elegir) en vez de 1, y **los contadores no se ven sin abrir el menú**. Se evaluó la
+alternativa de que el menú se encogiera a una columna de íconos —que mantenía 1 click y los
+contadores a la vista— y se eligió ésta para tener el ancho completo de pantalla para las tablas.
+
+### Cómo se prueba
+
+1. **Las 12 secciones.** Abrí el menú y entrá a cada una. Todas tienen que cargar como antes.
+2. **Que se cierre al elegir.** Elegí una sección: el menú tiene que irse solo.
+3. **Los contadores.** Tienen que mostrar los mismos números que mostraba la barra de solapas.
+4. **El rol `contable`.** Entrando con una cuenta `contable`, el menú tiene que mostrar **sólo
+   Egresos**. ⚠️ **Esto no está probado** — no hay cuenta contable disponible todavía.
+5. ⚠️ **El control importante — las notas.** Dejá una nota (botón flotante) en **2 o 3 pantallas
+   distintas** y verificá que cada una quedó guardada con el nombre de su pantalla y no en blanco.
+   Es lo que se rompía si la barra de solapas se borraba del todo: el detector de pantalla la lee
+   del DOM. Por eso quedó montada pero invisible.
+6. **`Cmd+B`.** Tiene que abrir y cerrar el menú.
+7. **Achicá la ventana.** El menú tiene que pasar a comportarse como panel lateral.
