@@ -15,6 +15,23 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { MedioPago } from './medios-pago'
 
+/**
+ * Lo que ve el PROVEEDOR de cada renglón: **sólo la identificación del comprobante**.
+ *
+ * El `detalle` del Cash Flow viene armado como «FC 816 - PROVEEDOR · nota interna», y esa nota es
+ * de uso interno —*"Mano de obra 1.1MM - 2 semiejes 980K - placa crapodina…"*, *"(parcial - pend.
+ * conciliar)"*—. **No tiene por qué salir de la empresa**, ni en el cuerpo del mail ni en el PDF
+ * adjunto, que son las dos cosas que le llegan.
+ *
+ * Reportado por el usuario 2026-09-05: *"en el cuerpo del mail trae el detalle y no debería
+ * traerlo, la info de detalle es interna"*.
+ */
+export const etiquetaComprobante = (i: { comprobante?: string | null; origen?: string }): string => {
+  if (i.origen === 'ANTICIPO') return 'Anticipo'
+  const txt = (i.comprobante || '').trim()
+  return txt.split(' · ')[0].trim() || '-'
+}
+
 export const generarPDFDetallePago = async (
   tipo: 'arca' | 'template',
   proveedor: string,
@@ -107,7 +124,7 @@ export const generarPDFDetallePago = async (
       const totalCancelado = montoTransferido + (anticipo.monto_sicore || 0) + (anticipo.descuento_aplicado || 0)
       const cols = (extra: string[]) => hayMedios ? extra : [...extra, fmt(montoTransferido), fmt(totalCancelado)]
       body = items.map(i => [
-        i.comprobante,
+        etiquetaComprobante(i),
         i.fecha,
         fmt(i.imp_total),
         ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
@@ -127,7 +144,7 @@ export const generarPDFDetallePago = async (
         const montoTransferido = i.monto_a_abonar
         const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0) + (i.descuento_aplicado || 0)
         return [
-          i.comprobante,
+          etiquetaComprobante(i),
           i.fecha,
           fmt(i.imp_total),
           ...(hayRetencion ? [i.monto_sicore ? fmt(i.monto_sicore) : '-'] : []),

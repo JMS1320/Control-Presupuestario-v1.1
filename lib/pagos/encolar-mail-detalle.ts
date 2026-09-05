@@ -6,7 +6,7 @@
 // desglose (importe/retención/descuento/total) + Fecha de pago + línea del comprobante bancario.
 
 import { supabase } from '@/lib/supabase'
-import { generarPDFDetallePago } from './pdf-detalle-pago'
+import { generarPDFDetallePago, etiquetaComprobante } from './pdf-detalle-pago'
 import { generarCertificadoRetencion } from './certificado-retencion'
 import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } from './medios-pago'
 
@@ -112,7 +112,9 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     if (mediosPago.length === 0 && (anticipoIds || []).length > 0) {
       mediosPago = await obtenerMediosPagoAnticipo(schemaName, (anticipoIds || []).filter(Boolean))
     }
-    const fcs = items.map(i => i.comprobante).join(', ')
+    // Sólo la identificación del comprobante — la nota interna no sale de la empresa.
+    // `Set` para no repetir «Anticipo, Anticipo» cuando el pago lleva varios.
+    const fcs = [...new Set(items.map(i => etiquetaComprobante(i)))].join(', ')
     // El rótulo del bruto: un ANTICIPO no tiene facturas, así que decir "Importe facturas" en un
     // mail que va al proveedor queda mal y confunde. Detectado al testear A-BUG-95 con Genoil.
     const rotuloBruto = tipo === 'arca' ? 'Importe facturas' : 'Importe'

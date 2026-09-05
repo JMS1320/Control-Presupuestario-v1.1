@@ -16,9 +16,18 @@ export interface MedioPago {
   detalle?: string   // banco/nro (echeq), o descripción (transferencia)
 }
 
+// Las fechas que ve el proveedor van en es-AR: el `fecha_cobro` crudo sale `2026-09-20`, que en un
+// mail a un tercero se lee como un dato de sistema y no como una fecha.
+const fechaAR = (f?: string | null) => {
+  if (!f) return ''
+  const d = new Date(String(f) + 'T12:00:00')
+  return isNaN(d.getTime()) ? String(f)
+    : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
 const rotuloEcheq = (c: Record<string, unknown>) => {
   const nro = c.numero ? ` ${c.numero as string}` : ''
-  const cobro = c.fecha_cobro ? ` (cobro ${c.fecha_cobro as string})` : ''
+  const cobro = c.fecha_cobro ? ` (cobro ${fechaAR(c.fecha_cobro as string)})` : ''
   return `ECHEQ ${(c.banco as string) || ''}${nro}${cobro}`.replace(/\s+/g, ' ').trim()
 }
 
