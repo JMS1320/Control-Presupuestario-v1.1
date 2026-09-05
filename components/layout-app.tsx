@@ -85,7 +85,10 @@ function BotonMenu({ className }: { className?: string }) {
  */
 function BotonMenuChrome() {
   const { open, openMobile, isMobile } = useSidebar()
-  return (isMobile ? openMobile : open) ? null : <BotonMenu />
+  // `justify-start pl-0` por el mismo motivo que en el header del menú: centrado en su botón de
+  // 36 px, el ícono cae 10 px a la derecha del borde donde arranca el contenido (el título, las
+  // tarjetas). Lo que se alinea a ojo es el ícono, no la caja invisible que lo contiene.
+  return (isMobile ? openMobile : open) ? null : <BotonMenu className="justify-start pl-0" />
 }
 
 function MenuLateral({
