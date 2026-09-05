@@ -415,6 +415,19 @@ lugar donde la pérdida es **definitiva**.
 segunda se llevó puesto el cierre de la primera. En el repo eso lo hubiera atajado git; acá no hay
 nada. **Es la pérdida silenciosa de la regla 1, en el único sitio sin marcha atrás.***
 
+**14 · La RAMA también se declara — y se verifica antes de cada commit.** Cada terminal anota en el
+tablero sobre qué rama trabaja, y corre `git branch --show-current` **antes de commitear**. Si el
+árbol no está en la rama declarada: **no se commitea, se avisa.** Y **no se resuelve con
+`git checkout`**, que la regla 2 prohíbe — se acuerda entre las dos.
+
+*Motivo: pasó el 2026-09-05. T2 creó una rama nueva y dejó el árbol ahí; T1 siguió commiteando
+durante toda su tanda **creyendo que estaba en la suya**, y su commit terminó en la rama de T2. Nadie
+lo vio hasta que un `push` a la rama equivocada devolvió «Everything up-to-date» y no cerraba con
+tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a la rama**, y la única
+variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
+está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
+dónde caen los commits**.*
+
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
 enganchar algo nuevo con algo hecho hace meses. **Cuanto menos contexto haya, más se aplica.**
