@@ -3,6 +3,7 @@ import ControlPresupuestario from "@/dashboard"
 import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
 import { seccionesDelRol } from "@/lib/auth/permisos"
+import { leerPreferencias } from "@/lib/auth/preferencias"
 
 /**
  * La app vive acá, en la raíz, y el rol sale de la SESIÓN.
@@ -32,6 +33,18 @@ export default async function Page({
 
   // Qué ve este usuario sale de `public.roles`, no del código (A-FEAT-82).
   const secciones = await seccionesDelRol(rol)
+  const preferencias = leerPreferencias(user)
 
-  return <ControlPresupuestario userRole={rol} seccionInicial={seccion} secciones={secciones} />
+  // El `?seccion=` manda sobre la preferencia: si alguien navegó a una sección concreta, es a esa
+  // sección adonde quiere ir **ahora**; la preferencia es sobre cómo arranca, no sobre a dónde va.
+  const inicial = seccion ?? preferencias.seccionInicio ?? undefined
+
+  return (
+    <ControlPresupuestario
+      userRole={rol}
+      seccionInicial={inicial}
+      secciones={secciones}
+      preferencias={preferencias}
+    />
+  )
 }

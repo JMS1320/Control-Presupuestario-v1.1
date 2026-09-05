@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { createClientServer } from "@/lib/supabase-server"
 import { esAdmin } from "@/lib/auth/roles"
 import { seccionesDelRol } from "@/lib/auth/permisos"
+import { leerPreferencias } from "@/lib/auth/preferencias"
 import { LayoutApp } from "@/components/layout-app"
 import { PanelConfiguracion } from "@/components/panel-configuracion"
 
@@ -22,9 +23,10 @@ export default async function ConfiguracionPage({
   const { panel } = await searchParams
 
   const secciones = await seccionesDelRol("admin")
+  const preferencias = leerPreferencias(user)
 
   return (
-    <LayoutApp userRole="admin" secciones={secciones}>
+    <LayoutApp userRole="admin" secciones={secciones} preferencias={preferencias}>
       <div>
         <h1 className="titulo-pantalla">Configuración</h1>
         <p className="mt-1 text-sm text-muted-foreground">

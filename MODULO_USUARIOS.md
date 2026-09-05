@@ -120,6 +120,57 @@ admin + botón Salir). Antes no había cómo cerrar sesión porque no había ses
 - Las **29 API routes usan `service_role`**, o sea que **saltean RLS por diseño**. Hoy su única
   defensa es el middleware → [A-SEC-06](PENDIENTES.md#a-sec-06).
 
+### ⚙️ Preferencias personales — dónde viven y qué NO puede entrar ahí (2026-09-05, A-FEAT-83)
+
+Cada usuario configura cosas de su propia cuenta desde `/perfil`: en qué sección lo abre la app, si
+el menú arranca abierto, si quiere los contadores de pendientes, si le pregunta antes de salir.
+
+**Dónde**: `user_metadata.preferencias`, un objeto, junto al nombre y la foto. Lo lee
+`lib/auth/preferencias.ts` y lo escribe el propio usuario con `auth.updateUser()`.
+
+**Por qué ahí y no en una tabla.** Son datos **de una persona, sobre su propia pantalla**: no los
+consulta nadie más, no entran en ningún reporte y no hay que cruzarlos con nada. Una tabla nueva
+pediría RLS, endpoint y migración para guardar cuatro banderitas que ya viajan en el JWT que la
+sesión trae igual.
+
+⚠️ **Y acá está la contracara, que es la parte que hay que respetar:** `user_metadata` **lo edita
+el propio dueño de la cuenta** — es el mismo motivo por el que el rol vive en `app_metadata` (§
+Decisiones técnicas). Entonces:
+
+> **Ninguna preferencia puede decidir un permiso.** Lo que se elige acá **no agranda lo que se ve,
+> sólo lo acomoda.**
+
+El caso concreto es la *sección de inicio*: se guarda un id de sección en un lugar que el usuario
+escribe a mano. Si esa preferencia decidiera qué se muestra, un `contable` se pondría
+`seccionInicio: "sueldos"` con un `updateUser` y entraría a Sueldos. **No decide**: se valida
+igual contra las secciones permitidas del rol (`dashboard.tsx`), y una que no corresponde cae al
+default. Es la misma puerta que ya cerró A-FEAT-82 para el `?seccion=` de la URL — la preferencia
+entra por la misma validación, no por un atajo.
+
+**Lectura tolerante, a propósito**: `leerPreferencias()` valida campo por campo y el que no cierra
+cae a su default, en vez de romper la pantalla. Es un JSON libre que el usuario puede escribir con
+cualquier contenido, y además una preferencia vieja puede haber quedado con otro tipo después de un
+cambio del código.
+
+### 🖼️ La foto de perfil: el link se descarga, no se guarda como link (2026-09-05, A-FEAT-83)
+
+`/api/perfil/avatar` acepta **un archivo o una URL**, y las dos terminan igual: la imagen guardada
+en nuestro Storage, en `<user.id>/avatar`.
+
+**Un link ajeno no se puede guardar como link**, aunque parezca lo más simple: el CSP de
+`middleware.ts` sólo permite imágenes de `'self'` y de Supabase, así que el navegador lo bloquea
+**en silencio** — la URL responde 200, el perfil se guarda bien, y el avatar muestra las iniciales
+como si nunca hubieras cargado nada. Es el mismo modo de falla que ya había costado una sesión con
+las fotos de Storage. Descargarla, además, la vuelve nuestra: no se rompe el día que el otro sitio
+la borra y no le cuenta a ese sitio quién mira la app.
+
+⚠️ **Descargar una URL que elige el usuario es una puerta al SSRF**: el que la pega elige a qué
+dirección se conecta **el servidor**, no su navegador. `lib/red/traer-imagen-remota.ts` la cierra —
+sólo http/https, **resuelve el nombre antes de conectarse** y rechaza IPs internas (loopback,
+privadas, CGNAT y sobre todo `169.254.169.254`, el metadata service del hosting), sigue las
+redirecciones **de a una revalidando cada salto**, y corta por timeout y por tamaño (el
+`content-length` declarado *y* los bytes que llegan de verdad).
+
 ### 🐞 Corregido de paso: el bug que este archivo daba por abierto
 La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
 (la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol

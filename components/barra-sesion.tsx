@@ -5,6 +5,16 @@ import { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -46,10 +56,18 @@ function iniciales(nombre: string | null, email: string | null): string {
  * cualquier `<img src="/auth/signout">` incrustada en una página te desloguearía (CSRF de logout).
  * Por eso el ítem del menú dispara el submit del form en vez de navegar.
  */
-export function BarraSesion({ userRole }: { userRole: "admin" | "contable" }) {
+export function BarraSesion({
+  userRole,
+  confirmarSalida = false,
+}: {
+  userRole: "admin" | "contable"
+  /** Preferencia personal: preguntar antes de cerrar la sesión (A-FEAT-83). */
+  confirmarSalida?: boolean
+}) {
   const [email, setEmail] = useState<string | null>(null)
   const [nombre, setNombre] = useState<string | null>(null)
   const [foto, setFoto] = useState<string | null>(null)
+  const [preguntando, setPreguntando] = useState(false)
   const formSalir = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
@@ -117,7 +135,9 @@ export function BarraSesion({ userRole }: { userRole: "admin" | "contable" }) {
 
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() => formSalir.current?.requestSubmit()}
+            onSelect={() =>
+              confirmarSalida ? setPreguntando(true) : formSalir.current?.requestSubmit()
+            }
             className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
           >
             <LogOut className="mr-2 h-4 w-4" />
@@ -125,6 +145,30 @@ export function BarraSesion({ userRole }: { userRole: "admin" | "contable" }) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Sólo si el usuario lo pidió en su perfil. «Salir» comparte menú con «Tu perfil» y con
+          «Configuración», así que en un click distraído se cierra la sesión y hay que volver a
+          entrar con clave y código de 6 dígitos — que es todo el costo del error. */}
+      <AlertDialog open={preguntando} onOpenChange={setPreguntando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cerrar la sesión?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a tener que volver a entrar con tu mail y tu contraseña
+              {userRole === "admin" && ", y con el código de 6 dígitos"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Quedarme</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => formSalir.current?.requestSubmit()}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

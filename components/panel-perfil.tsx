@@ -1,15 +1,22 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { seccionesPorIds } from "@/components/layout-app"
+import { SelectorImagenPerfil } from "@/components/selector-imagen-perfil"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ShieldCheck, ShieldAlert, Upload } from "lucide-react"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { PREFERENCIAS_DEFAULT, leerPreferencias, type Preferencias } from "@/lib/auth/preferencias"
+import { AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react"
 
 function iniciales(nombre: string, email: string): string {
   const limpio = nombre.trim()
@@ -22,6 +29,9 @@ function iniciales(nombre: string, email: string): string {
   return local ? local.slice(0, 2).toUpperCase() : "?"
 }
 
+/** El valor del `<Select>` cuando no se eligió sección: no puede ser `""` (Radix lo prohíbe). */
+const AUTOMATICA = "__auto__"
+
 /**
  * Tu perfil: lo que se puede cambiar de tu propia cuenta.
  *
@@ -29,17 +39,26 @@ function iniciales(nombre: string, email: string): string {
  * no hace falta ningún endpoint de admin.
  *
  * ⚠️ Por eso mismo `user_metadata` **no sirve para permisos**: si el propio usuario lo puede
- * editar, el rol tiene que vivir en `app_metadata` (ver `MODULO_USUARIOS.md`). Acá sólo van
- * nombre y foto, que son cosméticos, y el rol se muestra como dato de sólo lectura.
+ * editar, el rol tiene que vivir en `app_metadata` (ver `MODULO_USUARIOS.md`). Acá van nombre,
+ * foto y preferencias, que son cosméticos, y el rol se muestra como dato de sólo lectura. La
+ * sección de inicio elegida se valida igual contra las permitidas — elegirla no da acceso a nada
+ * (ver `lib/auth/preferencias.ts`).
  */
-export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
+export function PanelPerfil({
+  userRole,
+  secciones,
+}: {
+  userRole: "admin" | "contable"
+  /** Ids de las secciones que ve este usuario: las opciones de «sección de inicio». */
+  secciones: string[]
+}) {
+  const router = useRouter()
   const [email, setEmail] = useState("")
   const [nombre, setNombre] = useState("")
   const [foto, setFoto] = useState("")
+  const [prefs, setPrefs] = useState<Preferencias>(PREFERENCIAS_DEFAULT)
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
-  const [subiendo, setSubiendo] = useState(false)
-  const inputArchivo = useRef<HTMLInputElement>(null)
   const [tiene2FA, setTiene2FA] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -51,6 +70,8 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
       setEmail(u?.email ?? "")
       setNombre((u?.user_metadata?.full_name as string) ?? "")
       setFoto((u?.user_metadata?.avatar_url as string) ?? "")
+      // La misma lectura tolerante que usa el servidor: una sola definición de qué es un default.
+      setPrefs(leerPreferencias(u))
       setCargando(false)
 
       const { data: factores } = await supabase.auth.mfa.listFactors()
@@ -60,50 +81,57 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
   }, [])
 
   /**
-   * Subir una imagen de la computadora.
+   * Guarda la foto apenas se elige.
    *
-   * El archivo va a `/api/perfil/avatar`, que lo valida y lo guarda en Storage. La URL que
-   * devuelve se guarda al toque en tu perfil: subir una foto y que no se vea hasta apretar otro
-   * botón es una trampa — el resultado esperado de elegir la foto es tener la foto.
+   * No espera al botón de abajo a propósito: la imagen ya se subió al Storage, a una ruta fija que
+   * se sobrescribe, así que **la foto ya cambió** aunque no se apriete nada. Dejar el perfil
+   * apuntando a la anterior sería guardar una mentira. El detalle largo, en `SelectorImagenPerfil`.
    */
-  async function subirArchivo(archivo: File) {
-    setSubiendo(true)
-    const cuerpo = new FormData()
-    cuerpo.append("archivo", archivo)
-
-    const res = await fetch("/api/perfil/avatar", { method: "POST", body: cuerpo })
-    const json = await res.json().catch(() => ({}))
-
-    if (!res.ok) {
-      setSubiendo(false)
-      // El mensaje viene del endpoint: dice el motivo real (tipo, tamaño, o que falta el bucket).
-      toast.error(json.error ?? "No se pudo subir la imagen.")
-      return
-    }
-
-    const { error } = await supabase.auth.updateUser({ data: { avatar_url: json.url } })
-    setSubiendo(false)
+  async function cambiarFoto(url: string) {
+    const { error } = await supabase.auth.updateUser({ data: { avatar_url: url || null } })
     if (error) {
-      toast.error("Se subió la imagen pero no se pudo guardar en tu perfil.")
+      toast.error("Se cargó la imagen pero no se pudo guardar en tu perfil.")
       return
     }
-    setFoto(json.url)
-    toast.success("Foto actualizada.")
+    setFoto(url)
+    toast.success(url ? "Foto actualizada." : "Foto quitada.")
+    // La barra de arriba lee los datos al montarse: sin esto sigue mostrando la foto vieja.
     setTimeout(() => window.location.reload(), 600)
+  }
+
+  /**
+   * Guarda una preferencia sola, en el momento.
+   *
+   * Sin botón «Guardar»: son interruptores, y un interruptor que hay que confirmar aparte se queda
+   * sin confirmar. Se manda el objeto entero porque `updateUser` **reemplaza** la clave, no la
+   * mergea — mandar sólo el campo tocado borraría los otros tres.
+   */
+  async function cambiarPref<K extends keyof Preferencias>(clave: K, valor: Preferencias[K]) {
+    const anterior = prefs
+    const nuevas = { ...prefs, [clave]: valor }
+    setPrefs(nuevas) // optimista: el interruptor tiene que moverse cuando se lo toca
+    const { error } = await supabase.auth.updateUser({ data: { preferencias: nuevas } })
+    if (error) {
+      setPrefs(anterior)
+      toast.error("No se pudo guardar la preferencia.")
+      return
+    }
+    // Las preferencias las lee el servidor en cada carga: sin refresh, el menú y la sección de
+    // inicio siguen con los valores con los que se renderizó esta página.
+    router.refresh()
   }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault()
     setGuardando(true)
     const { error } = await supabase.auth.updateUser({
-      data: { full_name: nombre.trim() || null, avatar_url: foto.trim() || null },
+      data: { full_name: nombre.trim() || null },
     })
     setGuardando(false)
     if (error) {
       toast.error("No se pudo guardar.")
       return
     }
-    // Recarga para que el avatar de la barra tome los datos nuevos: los lee al montarse.
     toast.success("Perfil guardado.")
     setTimeout(() => window.location.reload(), 600)
   }
@@ -112,99 +140,123 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
     return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Cargando tu perfil…</CardContent></Card>
   }
 
+  const opciones = seccionesPorIds(secciones)
+  // El control de la preferencia: una sección elegida hace meses puede haber dejado de verse si
+  // le cambiaron los permisos al rol. El `<Select>` se quedaría en blanco sin decir nada, y la app
+  // abriría en otra sección sin que se entienda por qué. Se avisa y se muestra el valor real.
+  const seccionHuerfana =
+    prefs.seccionInicio !== null && !secciones.includes(prefs.seccionInicio)
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <Card className="entrada-suave">
-        <CardHeader><CardTitle className="text-base">Tus datos</CardTitle></CardHeader>
-        <CardContent>
-          <form onSubmit={guardar} className="space-y-5">
-            <div className="flex items-center gap-4">
-              <Avatar className="h-16 w-16">
-                {foto.trim() && <AvatarImage src={foto.trim()} alt="" />}
-                <AvatarFallback className="bg-slate-200 text-lg font-semibold text-slate-700">
-                  {iniciales(nombre, email)}
-                </AvatarFallback>
-              </Avatar>
+      <div className="space-y-6">
+        <Card className="entrada-suave">
+          <CardHeader><CardTitle className="text-base">Tus datos</CardTitle></CardHeader>
+          <CardContent>
+            <form onSubmit={guardar} className="space-y-5">
               <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Así te ven. Sin foto se muestran tus iniciales.
+                <Label>Tu foto</Label>
+                <SelectorImagenPerfil
+                  valor={foto}
+                  iniciales={iniciales(nombre, email)}
+                  onCambio={cambiarFoto}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Así te ven. Sin foto se muestran tus iniciales. La foto se guarda sola, apenas la
+                  elegís.
                 </p>
-                <div className="flex items-center gap-2">
-                  {/* El input real va oculto: el de archivos que trae el navegador no se puede
-                      estilar y queda fuera de lugar al lado de los demás controles. */}
-                  <input
-                    ref={inputArchivo}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      // Se limpia el input para que elegir DOS VECES el mismo archivo vuelva a
-                      // disparar el `change` — si no, el segundo intento no hace nada.
-                      e.target.value = ""
-                      if (f) void subirArchivo(f)
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={subiendo}
-                    onClick={() => inputArchivo.current?.click()}
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    {subiendo ? "Subiendo…" : "Subir una imagen"}
-                  </Button>
-                  {foto.trim() && !subiendo && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground"
-                      onClick={() => setFoto("")}
-                    >
-                      Quitar
-                    </Button>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">JPG, PNG, WEBP o GIF · hasta 2 MB.</p>
               </div>
-            </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nombre">Nombre</Label>
+                <Input
+                  id="nombre"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  placeholder="Tu nombre y apellido"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Si lo cargás, las iniciales salen de acá en vez de tu mail.
+                </p>
+              </div>
+
+              <Button type="submit" disabled={guardando}>
+                {guardando ? "Guardando…" : "Guardar cambios"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card className="entrada-suave">
+          <CardHeader>
+            <CardTitle className="text-base">Cómo querés que te abra la app</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <p className="text-sm text-muted-foreground">
+              Son tuyas: valen para tu cuenta y en cualquier computadora donde entres. No cambian lo
+              que ves, sólo cómo te lo acomoda.
+            </p>
 
             <div className="space-y-2">
-              <Label htmlFor="nombre">Nombre</Label>
-              <Input
-                id="nombre"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Tu nombre y apellido"
-              />
-              <p className="text-xs text-muted-foreground">
-                Si lo cargás, las iniciales salen de acá en vez de tu mail.
-              </p>
+              <Label htmlFor="seccion-inicio">Sección al entrar</Label>
+              <Select
+                value={seccionHuerfana ? AUTOMATICA : prefs.seccionInicio ?? AUTOMATICA}
+                onValueChange={(v) => cambiarPref("seccionInicio", v === AUTOMATICA ? null : v)}
+              >
+                <SelectTrigger id="seccion-inicio" className="max-w-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTOMATICA}>La primera que tengo (automático)</SelectItem>
+                  {opciones.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {seccionHuerfana ? (
+                <p className="flex items-start gap-2 text-xs text-amber-700">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Tenías elegida «{prefs.seccionInicio}», que ya no está entre las secciones que
+                    ves. Mientras tanto la app te abre en la primera que tenés.
+                  </span>
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Dónde caés al abrir la app. Sólo se ofrecen las secciones que ves; si más adelante
+                  te sacan la que elegiste, vuelve sola al automático y te lo avisa acá.
+                </p>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="foto">…o pegar la dirección de una imagen</Label>
-              <Input
-                id="foto"
-                value={foto}
-                onChange={(e) => setFoto(e.target.value)}
-                placeholder="https://…"
-              />
-              <p className="text-xs text-muted-foreground">
-                Alternativa a subir el archivo: si la foto ya está publicada en algún lado, se pega
-                acá y se aprieta <strong>Guardar cambios</strong>. Subir un archivo, en cambio, se
-                guarda solo.
-              </p>
-            </div>
+            <InterruptorPref
+              id="menu-abierto"
+              titulo="Arrancar con el menú abierto"
+              detalle="El menú lateral viene cerrado y se abre con el ☰. Si trabajás saltando entre secciones, conviene dejarlo abierto."
+              valor={prefs.menuAbierto}
+              onCambio={(v) => cambiarPref("menuAbierto", v)}
+            />
 
-            <Button type="submit" disabled={guardando}>
-              {guardando ? "Guardando…" : "Guardar cambios"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+            {userRole === "admin" && (
+              <InterruptorPref
+                id="contadores"
+                titulo="Contadores de pendientes en el menú"
+                detalle="Los globitos con la cantidad de pendientes de cada sección. Apagalos si preferís el menú limpio."
+                valor={prefs.contadoresPendientes}
+                onCambio={(v) => cambiarPref("contadoresPendientes", v)}
+              />
+            )}
+
+            <InterruptorPref
+              id="confirmar-salida"
+              titulo="Preguntar antes de salir"
+              detalle="«Salir» está en el mismo menú que «Tu perfil». Con esto pide confirmación antes de cerrar la sesión."
+              valor={prefs.confirmarSalida}
+              onCambio={(v) => cambiarPref("confirmarSalida", v)}
+            />
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="space-y-6">
         <Card className="entrada-suave">
@@ -254,6 +306,31 @@ export function PanelPerfil({ userRole }: { userRole: "admin" | "contable" }) {
           </CardContent>
         </Card>
       </div>
+    </div>
+  )
+}
+
+/** Una preferencia de sí/no, con su explicación. Todas se ven igual y se guardan solas. */
+function InterruptorPref({
+  id,
+  titulo,
+  detalle,
+  valor,
+  onCambio,
+}: {
+  id: string
+  titulo: string
+  detalle: string
+  valor: boolean
+  onCambio: (v: boolean) => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="space-y-1">
+        <Label htmlFor={id} className="cursor-pointer">{titulo}</Label>
+        <p className="text-xs text-muted-foreground">{detalle}</p>
+      </div>
+      <Switch id={id} checked={valor} onCheckedChange={onCambio} className="mt-1 shrink-0" />
     </div>
   )
 }

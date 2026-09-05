@@ -3573,6 +3573,8 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 ## 🪪 **Tu perfil** — y el menú en todas las pantallas 🟡 (sin testear)
 
 *Implementado 2026-09-05 · [A-FEAT-78](PENDIENTES.md) · test → [A-TEST-86](PENDIENTES.md)*
+*Ampliado 2026-09-05: la foto en un solo campo + preferencias personales ·
+[A-FEAT-83](PENDIENTES.md) · test → [A-TEST-91](PENDIENTES.md)*
 
 ### Qué cambió
 
@@ -3588,14 +3590,38 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 
 1. Click en tu **avatar** → **Tu perfil**.
 2. **Nombre**: si lo cargás, las iniciales del avatar salen de ahí en vez de tu mail.
-3. **La foto**, por dos caminos:
-   - **Subir una imagen** (botón al lado del avatar): elegís un archivo de la computadora.
-     JPG, PNG, WEBP o GIF, hasta 2 MB. **Se guarda solo** — no hay que apretar nada más.
-   - **…o pegar la dirección de una imagen**, si ya está publicada en algún lado. Ese camino sí
-     necesita **Guardar cambios**.
+3. **La foto** — 🆕 **un solo campo, cuatro maneras** (2026-09-05, A-FEAT-83). El recuadro
+   punteado al lado del avatar acepta:
+   - **Pegar el link** de una imagen y apretar **Usar** (o Enter).
+   - **Elegir** un archivo de la computadora, con el botón de la derecha.
+   - **Arrastrar** la imagen adentro del recuadro — sirve desde el escritorio **y desde otra
+     pestaña del navegador**.
+   - **Ctrl+V** sobre el recuadro: si copiaste una captura de pantalla, la sube; si copiaste un
+     link, lo escribe en el campo.
+
+   Las cuatro **se guardan solas**, apenas la elegís: no hay que apretar **Guardar cambios**.
+   JPG, PNG, WEBP o GIF, hasta 2 MB. El tachito de la derecha la quita y vuelven las iniciales.
+
+   ⚠️ **El link no se guarda como link**: el sistema **descarga** la imagen y la guarda como
+   propia. Si guardara el link, el navegador la bloquearía (la app sólo acepta imágenes de sus
+   propios dominios) y verías tus iniciales sin ningún mensaje de error. Por eso también un link
+   de una **página** no sirve: hay que copiar la dirección **de la imagen** (botón derecho →
+   *Copiar dirección de la imagen*).
+
    El bucket ya está creado (2026-09-05). Si alguna vez aparece *«Falta crear el bucket de fotos
    en la base»*, se recrea con `npx tsx scripts/59-crear-bucket-avatares.mts` (o el `.sql` del
    mismo número); es idempotente y no toca los archivos existentes.
+
+3bis. 🆕 **Cómo querés que te abra la app** — preferencias tuyas, de tu cuenta, valen en cualquier
+   computadora donde entres. **No cambian lo que ves, sólo cómo te lo acomoda**, y se guardan
+   solas al tocarlas:
+   - **Sección al entrar**: dónde caés al abrir la app. Por defecto, la primera que tenés. Sólo se
+     ofrecen las secciones que ves.
+   - **Arrancar con el menú abierto**: por defecto viene cerrado y se abre con el ☰.
+   - **Contadores de pendientes en el menú** (sólo admin): los globitos con la cantidad de cada
+     sección. Apagados, ni siquiera se piden.
+   - **Preguntar antes de salir**: «Salir» comparte menú con «Tu perfil», y un click distraído te
+     hace volver a entrar con clave y código.
 4. **Guardar cambios** recarga la pantalla para que el avatar de arriba tome los datos nuevos.
 5. A la derecha ves tu **mail** y tu **rol** (de sólo lectura: el rol lo asigna un administrador,
    nadie puede cambiarse el suyo) y el estado de tu **segundo factor**, con botón para activarlo si
@@ -3607,6 +3633,21 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
    reenviar mail, copiar link, cambiar rol, revocar. No se tocó su lógica, pero **sí el layout de
    alrededor**, y eso es lo que hay que descartar.
 2. **Guardá un nombre y una foto** en `/perfil` y verificá que el avatar de arriba cambie.
+2bis. 🆕 **La foto, por las cuatro vías** (A-TEST-91) — probalas todas, porque son cuatro caminos
+   distintos hasta el mismo lugar: elegir archivo · arrastrar del escritorio · arrastrar desde otra
+   pestaña (eso trae un **link**, no un archivo) · Ctrl+V de una captura · Ctrl+V de un link ·
+   pegar el link a mano.
+   - **El control que importa**: después de guardar un link, la foto **tiene que verse**. Si ves
+     tus iniciales, algo quedó apuntando afuera — y ahora la pantalla te lo dice en ámbar en vez
+     de quedarse callada.
+   - **Los que tienen que fallar bien**: un link de una **página** (tiene que decir «es de una
+     página, no de una imagen»), uno de **más de 2 MB**, y uno **inventado**.
+2ter. 🆕 **Las preferencias** (A-TEST-91): elegí una **sección al entrar**, salí, volvé a entrar y
+   fijate que caigas ahí — pero que `…/?seccion=otra` **le gane** cuando lo escribís. Probá el
+   **menú abierto**, **apagá los contadores** y **preguntar antes de salir**.
+   - **El control de la sección huérfana**: elegí una sección, sacásela al rol desde
+     Configuración → Permisos, y volvé al perfil. Tiene que **avisar en ámbar**, no quedarse en
+     blanco.
 3. **Desde `/usuarios`, abrí el menú y elegí una sección**: tiene que llevarte ahí.
 4. **Probá un link roto a propósito**: `…/?seccion=cualquiera`. Tiene que abrir Principal, no una
    pantalla en blanco.

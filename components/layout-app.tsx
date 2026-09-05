@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Toaster } from "@/components/ui/sonner"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
+import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import {
   Menu, Home, BarChart3, Users, FileText, Receipt, ArrowUpRight,
   TrendingUp, Banknote, Tractor, Landmark, PieChart, Upload,
@@ -107,16 +108,20 @@ function MenuLateral({
   userRole,
   secciones,
   activa,
+  contadores,
   onElegir,
 }: {
   userRole: "admin" | "contable"
   secciones: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
   activa?: string
+  /** Preferencia personal: mostrar los globitos de pendientes. */
+  contadores: boolean
   onElegir: (id: string) => void
 }) {
   const { setOpen, setOpenMobile, isMobile } = useSidebar()
   // Sólo admin: el endpoint lo exige y el contable no trabaja los pendientes de desarrollo.
-  const pendientes = usePendientesPorPantalla(userRole === "admin")
+  // Y sólo si el usuario los quiere: apagados no se pide nada, no se pide y se esconde.
+  const pendientes = usePendientesPorPantalla(userRole === "admin" && contadores)
 
   const elegir = (id: string) => {
     onElegir(id)
@@ -188,6 +193,7 @@ export function LayoutApp({
   userRole,
   secciones,
   seccionActiva,
+  preferencias,
   onElegirSeccion,
   children,
 }: {
@@ -196,16 +202,25 @@ export function LayoutApp({
    *  del código — el paracaídas de cuando la tabla todavía no se creó. */
   secciones?: string[]
   seccionActiva?: string
+  /** Preferencias personales del usuario (A-FEAT-83). Sin ellas, el comportamiento de siempre. */
+  preferencias?: Preferencias
   onElegirSeccion?: (id: string) => void
   children: React.ReactNode
 }) {
   const router = useRouter()
   const visibles = secciones ? seccionesPorIds(secciones) : seccionesDe(userRole)
   const elegir = onElegirSeccion ?? ((id: string) => router.push(`/?seccion=${id}`))
+  const prefs = preferencias ?? PREFERENCIAS_DEFAULT
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <MenuLateral userRole={userRole} secciones={visibles} activa={seccionActiva} onElegir={elegir} />
+    <SidebarProvider defaultOpen={prefs.menuAbierto}>
+      <MenuLateral
+        userRole={userRole}
+        secciones={visibles}
+        activa={seccionActiva}
+        contadores={prefs.contadoresPendientes}
+        onElegir={elegir}
+      />
       <SidebarInset className="bg-gray-50">
         {/* Chrome fijo y translúcido: el menú y la sesión tienen que seguir a mano después de
             scrollear media pantalla de tabla. El contenido pasa por debajo. */}
@@ -213,7 +228,7 @@ export function LayoutApp({
           <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
             <BotonMenuChrome />
             <div className="min-w-0 flex-1">
-              <BarraSesion userRole={userRole} />
+              <BarraSesion userRole={userRole} confirmarSalida={prefs.confirmarSalida} />
             </div>
           </div>
         </div>

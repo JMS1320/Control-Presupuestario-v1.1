@@ -36,6 +36,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { LayoutApp, SOLAPAS } from "@/components/layout-app"
+import type { Preferencias } from "@/lib/auth/preferencias"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
@@ -44,11 +45,13 @@ interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
   /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
   seccionInicial?: string
+  /** Preferencias personales del usuario (A-FEAT-83): menú abierto, contadores, salida. */
+  preferencias?: Preferencias
   /** Ids de las secciones que ve este usuario, de `public.roles`. */
   secciones?: string[]
 }
 
-export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -133,7 +136,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const irA = (id: string) => { if (permitidas.has(id)) setTab(id) }
 
   return (
-    <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} onElegirSeccion={irA}>
+    <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}

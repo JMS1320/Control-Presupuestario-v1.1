@@ -2,13 +2,24 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
+import { traerImagenRemota } from "@/lib/red/traer-imagen-remota"
 
 const BUCKET = "avatares"
 const MAX_BYTES = 2 * 1024 * 1024 // 2 MB
 const TIPOS_OK = ["image/jpeg", "image/png", "image/webp", "image/gif"]
 
+/** El mismo mensaje para las dos vías: el límite es del sistema, no de por dónde entró la foto. */
+const MSG_TIPO = "Tiene que ser una imagen JPG, PNG, WEBP o GIF."
+
 /**
  * POST — subir tu foto de perfil.
+ *
+ * **Una sola entrada para las dos formas de dar una foto** (A-FEAT-83): en el `FormData` puede
+ * venir `archivo` (lo que se eligió, se arrastró o se pegó) **o** `url` (un link pegado). Las dos
+ * terminan en el mismo lugar y con las mismas validaciones — el link **no se guarda como link**:
+ * se descarga y la imagen queda en nuestro Storage. Motivo largo en `traerImagenRemota()`; el
+ * corto es que la CSP bloquea las imágenes de dominios ajenos **en silencio**, así que guardar el
+ * link daría un avatar que no se ve y ningún error que lo explique.
  *
  * No es un endpoint de admin: **cualquier usuario con rol sube la suya**. Por eso no usa
  * `exigirAdmin()`, pero sí repite el chequeo de sesión por su cuenta — este handler usa
@@ -36,29 +47,53 @@ export async function POST(request: Request) {
 
   const form = await request.formData().catch(() => null)
   const archivo = form?.get("archivo")
+  const link = form?.get("url")
 
-  if (!(archivo instanceof File)) {
-    return NextResponse.json({ error: "No llegó ningún archivo." }, { status: 400 })
-  }
-  if (!TIPOS_OK.includes(archivo.type)) {
-    return NextResponse.json(
-      { error: "Tiene que ser una imagen JPG, PNG, WEBP o GIF." },
-      { status: 415 }
-    )
-  }
-  if (archivo.size > MAX_BYTES) {
-    const mb = (archivo.size / 1024 / 1024).toFixed(1)
-    return NextResponse.json(
-      { error: `La imagen pesa ${mb} MB y el máximo son 2 MB.` },
-      { status: 413 }
-    )
+  /** Lo que se va a guardar, venga de donde venga. */
+  let contenido: File | ArrayBuffer
+  let tipo: string
+
+  if (archivo instanceof File) {
+    if (!TIPOS_OK.includes(archivo.type)) {
+      return NextResponse.json({ error: MSG_TIPO }, { status: 415 })
+    }
+    if (archivo.size > MAX_BYTES) {
+      const mb = (archivo.size / 1024 / 1024).toFixed(1)
+      return NextResponse.json(
+        { error: `La imagen pesa ${mb} MB y el máximo son 2 MB.` },
+        { status: 413 }
+      )
+    }
+    contenido = archivo
+    tipo = archivo.type
+  } else if (typeof link === "string" && link.trim()) {
+    const traida = await traerImagenRemota(link, MAX_BYTES)
+    if (!traida.ok) {
+      return NextResponse.json({ error: traida.error }, { status: traida.status })
+    }
+    if (!TIPOS_OK.includes(traida.tipo)) {
+      // Pasa seguido: se pega el link de la *página* donde está la foto y no el de la foto. El
+      // mensaje lo dice, porque «tipo no soportado» no le explica a nadie qué hacer distinto.
+      return NextResponse.json(
+        {
+          error: traida.tipo.startsWith("text/")
+            ? "Ese link es de una página, no de una imagen. Probá con «Copiar dirección de la imagen»."
+            : MSG_TIPO,
+        },
+        { status: 415 }
+      )
+    }
+    contenido = traida.bytes
+    tipo = traida.tipo
+  } else {
+    return NextResponse.json({ error: "No llegó ningún archivo ni ningún link." }, { status: 400 })
   }
 
   const ruta = `${user.id}/avatar`
 
   const { error: errSubida } = await supabaseAdmin.storage
     .from(BUCKET)
-    .upload(ruta, archivo, { contentType: archivo.type, upsert: true })
+    .upload(ruta, contenido, { contentType: tipo, upsert: true })
 
   if (errSubida) {
     // El caso más probable en la primera vez: el bucket no existe todavía (falta scripts/59).
