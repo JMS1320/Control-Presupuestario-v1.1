@@ -27,6 +27,9 @@ export const generarPDFDetallePago = async (
     monto_sicore?: number | null
     descuento_aplicado?: number | null
     monto_a_abonar: number
+    /** 'ARCA' | 'ANTICIPO' | 'TEMPLATE'. Un ANTICIPO **no es una factura**: no suma al bruto
+     *  (A-BUG-105), es un MEDIO de pago de la factura a la que está aplicado. */
+    origen?: string
   }>,
   anticipo?: {
     monto: number

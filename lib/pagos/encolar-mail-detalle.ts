@@ -8,7 +8,7 @@
 import { supabase } from '@/lib/supabase'
 import { generarPDFDetallePago } from './pdf-detalle-pago'
 import { generarCertificadoRetencion } from './certificado-retencion'
-import { obtenerMediosPagoFactura, type MedioPago } from './medios-pago'
+import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } from './medios-pago'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf)
@@ -94,14 +94,54 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
 
     const m = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
     const fmtF = (f: string) => { if (!f) return '..............'; const d = new Date(f + 'T12:00:00'); return isNaN(d.getTime()) ? f : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
-    const totalBruto = items.reduce((s, i) => s + (i.imp_total || 0), 0)
-    const totalRet = items.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
-    const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
+    // 🐞 **A-BUG-105** — un ANTICIPO aplicado a una factura **no es otra factura**: es un MEDIO de
+    // pago de ella. Sumarlo al bruto lo contaba dos veces. Caso IGLESIAS: el mail con los dos
+    // decía *"Importe facturas: $6.008.000"* = anticipo 2.454.000 + factura 3.554.000, cuando el
+    // anticipo ya estaba aplicado a esa misma factura (`factura_id` cargado).
+    const esAnticipo = (i: typeof items[number]) => (i as { origen?: string }).origen === 'ANTICIPO'
+    const hayFactura = items.some(i => !esAnticipo(i))
+    const itemsBruto = hayFactura ? items.filter(i => !esAnticipo(i)) : items
+
+    const totalBruto = itemsBruto.reduce((s, i) => s + (i.imp_total || 0), 0)
+    const totalRet = itemsBruto.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
+    const totalDesc = itemsBruto.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
     const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
+
+    // Sin factura, el mail va sólo por el/los anticipo(s): también necesitan su desglose, porque un
+    // anticipo librado en echeq no se puede anunciar como transferencia (A-BUG-102).
+    if (mediosPago.length === 0 && (anticipoIds || []).length > 0) {
+      mediosPago = await obtenerMediosPagoAnticipo(schemaName, (anticipoIds || []).filter(Boolean))
+    }
     const fcs = items.map(i => i.comprobante).join(', ')
     // El rótulo del bruto: un ANTICIPO no tiene facturas, así que decir "Importe facturas" en un
     // mail que va al proveedor queda mal y confunde. Detectado al testear A-BUG-95 con Genoil.
     const rotuloBruto = tipo === 'arca' ? 'Importe facturas' : 'Importe'
+    // ── 🧮 CONTROL — A-BUG-104 ────────────────────────────────────────────────────────────────
+    // La identidad que tiene que cerrar: **suma(medios) + retención + descuento = importe**.
+    // Si no cierra, el mail NO se encola y se devuelve la diferencia para que se vea qué falta.
+    //
+    // Motivo: el 04/09 salieron tres mails a IGLESIAS con importes que no sumaban —faltaba el
+    // echeq, que existía— y **nada avisó**. El usuario sólo pudo enterarse preguntando. Un control
+    // que no está deja que el error llegue al proveedor. § 🧮 de `CLAUDE.md`, mismo caso que
+    // A-TEST-32: *"la resta no cierra porque faltaba un renglón"*.
+    if (mediosPago.length > 0) {
+      const sumaMedios = mediosPago.reduce((s, md) => s + (md.monto || 0), 0)
+      const dif = totalBruto - (sumaMedios + totalRet + totalDesc)
+      if (Math.abs(dif) > 1) {   // tolerancia $1: los emisores redondean
+        const detalle = mediosPago.map(md => `${md.detalle || md.tipo} ${m(md.monto)}`).join(' + ')
+        return {
+          ok: false, email: '', conCertificado: false,
+          error: `La cuenta no cierra por ${m(Math.abs(dif))} — no se encoló nada.\n\n`
+            + `${rotuloBruto}: ${m(totalBruto)}\nMedios: ${detalle}`
+            + `${totalRet > 0 ? `\nRetención: ${m(totalRet)}` : ''}`
+            + `${totalDesc > 0 ? `\nDescuento: ${m(totalDesc)}` : ''}\n\n`
+            + (dif > 0
+              ? 'Falta registrar un medio de pago (¿un echeq sin cargar, una transferencia sin vincular?).'
+              : 'Hay un medio de más: algo está contado dos veces.'),
+        }
+      }
+    }
+
     let cuenta: string
     if (mediosPago.length > 0) {
       // Desglose por medio real (transferencia + echeq + ...) + retención/descuento = total factura
@@ -120,7 +160,17 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     }
     cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
     const asunto = `Detalle de pago — ${proveedor}`
-    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
+    // El aviso del banco es de TRANSFERENCIAS. Prometérselo a alguien a quien se le libró un echeq
+    // lo deja esperando una acreditación que no va a llegar (A-BUG-102). Si hubo las dos cosas, el
+    // aviso corresponde igual, pero sólo por la parte transferida.
+    const hayTransfer = mediosPago.length === 0
+      || mediosPago.some(md => md.tipo === 'transferencia' || md.tipo === 'anticipo')
+    const hayEcheq = mediosPago.some(md => md.tipo === 'echeq')
+    const cierre = hayTransfer
+      ? '\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".'
+      : (hayEcheq ? '\n\nEl echeq queda a disposición en su cuenta según la fecha de cobro indicada.' : '')
+
+    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
 
     const { error } = await supabase.from('mails_pago').insert({
       proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,

@@ -1267,6 +1267,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
           monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          origen: f.origen,   // para que el mail no sume un ANTICIPO como si fuera factura (A-BUG-105)
         }
       })
       // factura_id para el certificado SICORE: si es grupo, las FC individuales; si no, el id de la fila.
