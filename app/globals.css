@@ -141,3 +141,79 @@ body {
     }
   }
 }
+
+/**
+ * ── Materiales y tipografía (criterio Apple, 2026-09-05) ────────────────────────────────────
+ */
+
+/**
+ * Barra superior translúcida y fija.
+ *
+ * No es decoración: esta app tiene pantallas larguísimas (la Principal scrollea mucho, las tablas
+ * más). Con la barra estática, al bajar **desaparecen el botón del menú y el botón Salir** — o sea
+ * las dos respuestas a "¿a dónde puedo ir?" y "¿cómo salgo?". Fijarla las mantiene siempre a mano.
+ *
+ * Es una capa translúcida con el contenido pasando por debajo, no una franja opaca que se come
+ * alto de pantalla: en una app de tablas el alto es caro.
+ */
+.chrome-superior {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgb(249 250 251 / 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/**
+ * Borde de scroll en vez de una línea de 1px: donde el contenido se mete abajo de la barra, se
+ * desvanece con un degradado corto. Una línea dura marca un límite que en realidad no existe.
+ */
+.chrome-superior::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  height: 12px;
+  background: linear-gradient(to bottom, rgb(249 250 251 / 0.9), rgb(249 250 251 / 0));
+  pointer-events: none;
+}
+
+/* Sin transparencia: se vuelve sólida y se apaga el blur — no se deja un vidrio a medias. */
+@media (prefers-reduced-transparency: reduce) {
+  .chrome-superior {
+    background: rgb(249 250 251);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Más contraste: fondo sólido y un borde definido, que es lo que este modo pide. */
+@media (prefers-contrast: more) {
+  .chrome-superior {
+    background: rgb(249 250 251);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid rgb(75 85 99);
+  }
+  .chrome-superior::after {
+    display: none;
+  }
+}
+
+/**
+ * Título de pantalla.
+ *
+ * El tracking es **específico del tamaño**: un texto grande con el tracking del cuerpo se lee
+ * despegado, por eso va en negativo al crecer. El leading va al revés que el tamaño: ajustado
+ * arriba, holgado en el cuerpo. Y la jerarquía se hace con **peso**, no sólo con tamaño — pesa
+ * más sin ocupar más lugar, que en una pantalla densa importa.
+ *
+ * En `rem` y no en px para que respete el tamaño de letra que el usuario tenga configurado.
+ */
+.titulo-pantalla {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.021em;
+  font-weight: 600;
+}

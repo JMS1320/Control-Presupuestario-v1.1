@@ -3485,3 +3485,45 @@ contadores a la vista— y se eligió ésta para tener el ancho completo de pant
    del DOM. Por eso quedó montada pero invisible.
 6. **`Cmd+B`.** Tiene que abrir y cerrar el menú.
 7. **Achicá la ventana.** El menú tiene que pasar a comportarse como panel lateral.
+
+---
+
+## 🍎 Toda la app → **Barra superior fija y títulos de pantalla** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-76](PENDIENTES.md) · test → [A-TEST-84](PENDIENTES.md)*
+
+### Qué cambió
+
+1. **La barra de arriba ya no se va al scrollear.** El botón del menú (☰) y el botón **Salir**
+   quedan siempre visibles. La barra es translúcida: el contenido se ve pasar por debajo, borroso.
+2. **El título de la pantalla Principal** dice ahora **«Principal»**. Antes decía «Control
+   Presupuestario» con el subtítulo «Panel principal del sistema».
+
+**Por qué**: las pantallas de esta app son muy largas. Con la barra estática, al bajar media tabla
+desaparecían el menú y el botón de salir — o sea, cómo ir a otro lado y cómo cerrar sesión. Y el
+encabezado viejo repetía el nombre de la app (que ya está en el menú) y agregaba un subtítulo que
+no decía nada, ocupando ~90 px arriba de todo, que es el lugar más caro de la pantalla.
+
+### Cómo se prueba
+
+1. **Entrá a Principal y scrolleá hasta abajo.** El ☰ y **Salir** tienen que quedar arriba.
+2. ⚠️ **Lo que más puede fallar: la legibilidad.** Scrolleá hasta que pase por debajo de la barra
+   una **tabla clara o una tarjeta de color** (Egresos o Extracto Bancario son buenas). El texto de
+   la barra tiene que seguir leyéndose sin esfuerzo. Si en algún fondo se pierde, hay que subir la
+   opacidad del vidrio.
+3. **El borde de abajo** de la barra es un degradado corto, no una línea. No tiene que verse como
+   una franja gris marcada.
+4. **Reducir transparencia** (macOS: Accesibilidad → Pantalla → *Reducir transparencia*): la barra
+   tiene que volverse **sólida**, sin desenfoque.
+5. **Aumentar contraste** (misma sección): tiene que aparecer un **borde definido** abajo de la
+   barra y desaparecer el degradado.
+6. **Tamaño de letra grande** (Accesibilidad → tamaño de texto): el título «Principal» tiene que
+   crecer sin romper el layout.
+7. **Decidí si extrañás el subtítulo.** Si te resultaba útil, se repone en un minuto.
+
+### Lo que NO se tocó
+
+Las **3 tarjetas de alerta** de Principal siguen con el mismo peso visual entre sí, aunque no son
+igual de urgentes (una cuenta con 162 días sin cargar el extracto pesa distinto que 21 movimientos
+sin desglosar). Diferenciarlas es una decisión de **producto** —cuál es más grave— y no se toma
+desde el diseño. Si querés, se hace: queda anotado como candidato a `A-FEAT-77`.

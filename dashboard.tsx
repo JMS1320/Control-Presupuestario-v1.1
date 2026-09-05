@@ -245,8 +245,11 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
             entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
         <NotasParaClaude />
-        <div className="mx-auto w-full max-w-7xl space-y-6 p-4">
-          <div className="flex items-center gap-3">
+        {/* Chrome fijo y translúcido: el menú y el botón Salir tienen que seguir a mano después de
+            scrollear media pantalla de tabla. El contenido pasa por debajo (ver `.chrome-superior`
+            en globals.css, con sus variantes sin transparencia y de alto contraste). */}
+        <div className="chrome-superior">
+          <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
             {/* El botón que abre el menú. Va arriba a la izquierda, que es donde se lo busca. */}
             <SidebarTrigger className="h-9 w-9 shrink-0" title="Abrir el menú (⌘B)" />
             {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
@@ -255,6 +258,8 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <BarraSesion userRole={userRole} />
             </div>
           </div>
+        </div>
+        <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 pt-6">
         <Tabs value={tab} onValueChange={setTab} className="w-full">
           {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
               pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
