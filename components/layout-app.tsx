@@ -45,9 +45,21 @@ export const SOLAPAS = [
 
 export type IdSeccion = (typeof SOLAPAS)[number]["id"]
 
-/** Qué secciones ve cada rol. El `contable` sólo trabaja Egresos. */
+/**
+ * Qué secciones ve cada rol — **el reparto de respaldo, escrito en el código**.
+ *
+ * Desde A-FEAT-82 esto sale de la tabla `public.roles` y se pasa por prop. Esta función queda
+ * como paracaídas para cuando la tabla todavía no existe, y como fuente del listado completo
+ * (`seccionesDe("admin")` son las 12 con su label e ícono).
+ */
 export function seccionesDe(userRole: "admin" | "contable") {
   return SOLAPAS.filter((s) => userRole === "admin" || s.id === "egresos")
+}
+
+/** Las solapas correspondientes a una lista de ids, en el orden del menú. */
+export function seccionesPorIds(ids: string[]) {
+  const set = new Set(ids)
+  return SOLAPAS.filter((s) => set.has(s.id))
 }
 
 /**
@@ -93,10 +105,12 @@ function BotonMenuChrome() {
 
 function MenuLateral({
   userRole,
+  secciones,
   activa,
   onElegir,
 }: {
   userRole: "admin" | "contable"
+  secciones: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
   activa?: string
   onElegir: (id: string) => void
 }) {
@@ -125,7 +139,7 @@ function MenuLateral({
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu className="px-2">
-          {seccionesDe(userRole).map(({ id, label, Icono }) => {
+          {secciones.map(({ id, label, Icono }) => {
             const c = pendientes[id]
             // Color proporcional a los urgentes, no binario, para que el rojo señale dónde está el
             // bulto de verdad y no se encienda en todas las secciones a la vez.
@@ -172,21 +186,26 @@ function MenuLateral({
  */
 export function LayoutApp({
   userRole,
+  secciones,
   seccionActiva,
   onElegirSeccion,
   children,
 }: {
   userRole: "admin" | "contable"
+  /** Ids de las secciones que ve este usuario, leídos de `public.roles`. Sin esto, el reparto
+   *  del código — el paracaídas de cuando la tabla todavía no se creó. */
+  secciones?: string[]
   seccionActiva?: string
   onElegirSeccion?: (id: string) => void
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const visibles = secciones ? seccionesPorIds(secciones) : seccionesDe(userRole)
   const elegir = onElegirSeccion ?? ((id: string) => router.push(`/?seccion=${id}`))
 
   return (
     <SidebarProvider defaultOpen={false}>
-      <MenuLateral userRole={userRole} activa={seccionActiva} onElegir={elegir} />
+      <MenuLateral userRole={userRole} secciones={visibles} activa={seccionActiva} onElegir={elegir} />
       <SidebarInset className="bg-gray-50">
         {/* Chrome fijo y translúcido: el menú y la sesión tienen que seguir a mano después de
             scrollear media pantalla de tabla. El contenido pasa por debajo. */}

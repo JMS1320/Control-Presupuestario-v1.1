@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import ControlPresupuestario from "@/dashboard"
 import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
+import { seccionesDelRol } from "@/lib/auth/permisos"
 
 /**
  * La app vive acá, en la raíz, y el rol sale de la SESIÓN.
@@ -29,5 +30,8 @@ export default async function Page({
   // Es el opt-in que pedía MODULO_USUARIOS.md (dar acceso de a poco, no bloquear de a poco).
   if (!rol) redirect("/no-access")
 
-  return <ControlPresupuestario userRole={rol} seccionInicial={seccion} />
+  // Qué ve este usuario sale de `public.roles`, no del código (A-FEAT-82).
+  const secciones = await seccionesDelRol(rol)
+
+  return <ControlPresupuestario userRole={rol} seccionInicial={seccion} secciones={secciones} />
 }

@@ -40,16 +40,15 @@ import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
-/** Para validar el `?seccion=` de la URL sin recorrer el array en cada render. */
-const SOLAPAS_IDS = new Set<string>(SOLAPAS.map((s) => s.id))
-
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
   /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
   seccionInicial?: string
+  /** Ids de las secciones que ve este usuario, de `public.roles`. */
+  secciones?: string[]
 }
 
-export default function ControlPresupuestario({ userRole = 'admin', seccionInicial }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -109,34 +108,37 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const { resumen, loading } = useFinancialData(año, semestre)
   const { resumenPorSeccion, estadisticas, loading: loadingDistribucion } = useDistribucionSociosData(año, semestre)
 
-  // Función para determinar si mostrar una pestaña según el rol
-  const shouldShowTab = (tabName: string): boolean => {
-    if (userRole === 'admin') return true
-    if (userRole === 'contable') return tabName === 'egresos'
-    return false
-  }
+  /**
+   * ¿Este usuario ve esta sección? Sale de `public.roles` (prop `secciones`); si la tabla todavía
+   * no existe, del reparto de siempre.
+   */
+  const permitidas = new Set<string>(
+    secciones ?? SOLAPAS.filter((s) => userRole === 'admin' || s.id === 'egresos').map((s) => s.id)
+  )
+  const shouldShowTab = (tabName: string): boolean => permitidas.has(tabName)
 
-  // Determinar valor por defecto del tab según rol
-  const getDefaultTab = (): string => {
-    if (userRole === 'admin') return 'principal'
-    if (userRole === 'contable') return 'egresos'
-    return 'principal'
-  }
+  /** La primera sección que ve este usuario. Si no ve ninguna, no hay a dónde ir. */
+  const getDefaultTab = (): string =>
+    SOLAPAS.find((s) => permitidas.has(s.id))?.id ?? 'principal' 
 
   /** Qué sección se está viendo. Pasó a ser estado controlado porque ahora la navegación la maneja
    *  el menú lateral, que vive fuera del `<Tabs>` y no puede usar `defaultValue`. */
   const [tab, setTab] = useState<string>(
-    // Se valida contra las solapas reales: un `?seccion=` inventado no puede dejar la app en blanco.
-    seccionInicial && SOLAPAS_IDS.has(seccionInicial) ? seccionInicial : getDefaultTab()
+    // ⚠️ Se valida contra las secciones PERMITIDAS, no sólo contra las que existen: si no,
+    // un `contable` entraba a `/?seccion=sueldos` escribiéndolo a mano y veía Sueldos.
+    seccionInicial && permitidas.has(seccionInicial) ? seccionInicial : getDefaultTab()
   )
 
+  /** Cambiar de sección tampoco puede saltarse el permiso. */
+  const irA = (id: string) => { if (permitidas.has(id)) setTab(id) }
+
   return (
-    <LayoutApp userRole={userRole} seccionActiva={tab} onElegirSeccion={setTab}>
+    <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} onElegirSeccion={irA}>
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
       <NotasParaClaude />
-        <Tabs value={tab} onValueChange={setTab} className="w-full">
+        <Tabs value={tab} onValueChange={irA} className="w-full">
           {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
               pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
               se saca, cada nota se guarda con `pantalla: ""` y P-34 deja de agrupar. La navegación

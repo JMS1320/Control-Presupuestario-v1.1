@@ -4,6 +4,8 @@ import { useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { toast } from "sonner"
 import { DATOS_FISCALES, EMPRESAS, cuitFormateado } from "@/lib/empresas"
 import { Users, ShieldCheck, Building2, KeyRound, Check, Minus } from "lucide-react"
 import { useEffect } from "react"
@@ -67,63 +69,118 @@ export function PanelConfiguracion({ miId, panelInicial }: { miId: string; panel
   )
 }
 
-/** Los dos roles del sistema, con lo que hoy define a cada uno (`lib/auth/roles.ts`). */
-const ROLES = [
-  {
-    id: "admin" as const,
-    descripcion: "Ve y edita todo el sistema. Es el rol del dueño de la información.",
-    exige2FA: true,
-  },
-  {
-    id: "contable" as const,
-    descripcion: "Acceso acotado, para delegar la carga sin abrir el resto del sistema.",
-    exige2FA: false,
-  },
-]
+type RolDB = {
+  id: string
+  descripcion: string
+  secciones: string[]
+  exige_2fa: boolean
+  es_sistema: boolean
+}
 
-/** Cuántas cuentas tiene cada rol. Sin esto «admin» y «contable» son etiquetas sin peso. */
-function useCuentasPorRol() {
-  const [porRol, setPorRol] = useState<Record<string, number> | null>(null)
+/** Los roles y sus permisos, leídos de la base. */
+function useRoles() {
+  const [roles, setRoles] = useState<RolDB[] | null>(null)
+  const [desdeLaBase, setDesdeLaBase] = useState(true)
+  const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
+
+  const recargar = () =>
+    fetch("/api/admin/roles")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j) return
+        setRoles(j.roles)
+        setDesdeLaBase(j.desdeLaBase)
+      })
+      .catch(() => {})
+
   useEffect(() => {
-    let cancelado = false
+    void recargar()
     fetch("/api/admin/usuarios")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (cancelado || !j?.usuarios) return
+        if (!j?.usuarios) return
         const conteo: Record<string, number> = {}
         for (const u of j.usuarios) if (u.rol) conteo[u.rol] = (conteo[u.rol] ?? 0) + 1
-        setPorRol(conteo)
+        setCuentas(conteo)
       })
       .catch(() => {})
-    return () => { cancelado = true }
   }, [])
-  return porRol
+
+  return { roles, desdeLaBase, cuentas, recargar }
 }
 
 /**
- * Los roles.
+ * Los roles, con sus permisos editables.
  *
- * Lo que muestra sale de las mismas funciones que aplican el permiso de verdad (`seccionesDe`),
- * así que no puede quedar desactualizado respecto de lo que realmente pasa. Una pantalla de
- * permisos escrita aparte del código que los aplica miente en cuanto alguien toca algo.
+ * Un rol de **sistema** (`admin`) se muestra pero no se edita: si se le pudieran sacar secciones,
+ * alguien deja el sistema sin nadie que pueda administrarlo. No alcanza con esconder los
+ * checkboxes — el endpoint y un trigger de la base lo rechazan igual.
  */
 function PanelRoles() {
-  const cuentas = useCuentasPorRol()
+  const { roles, desdeLaBase, cuentas, recargar } = useRoles()
+  const todas = seccionesDe("admin")   // las 12, con su label e ícono
+
+  const [editando, setEditando] = useState<string | null>(null)
+  const [borrador, setBorrador] = useState<Set<string>>(new Set())
+  const [guardando, setGuardando] = useState(false)
+
+  function empezar(r: RolDB) {
+    setEditando(r.id)
+    setBorrador(new Set(r.secciones))
+  }
+
+  async function guardar(id: string) {
+    setGuardando(true)
+    const res = await fetch("/api/admin/roles", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, secciones: [...borrador] }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setGuardando(false)
+    if (!res.ok) {
+      toast.error(json.error ?? "No se pudo guardar.")
+      return
+    }
+    toast.success("Permisos guardados. Se aplican al recargar la pantalla.")
+    setEditando(null)
+    void recargar()
+  }
+
+  if (roles === null) {
+    return <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">Cargando roles…</CardContent></Card>
+  }
 
   return (
     <div className="space-y-4">
-      {ROLES.map((r) => {
-        const secciones = seccionesDe(r.id)
+      {!desdeLaBase && (
+        <Card className="entrada-suave border-amber-300 bg-amber-50">
+          <CardContent className="space-y-1 p-4 text-sm">
+            <p className="font-medium text-amber-900">Falta crear la tabla de roles en la base.</p>
+            <p className="text-amber-900/80">
+              Se está mostrando el reparto que estaba escrito en el código, así que la app funciona
+              igual que siempre — pero <strong>editar todavía no va a guardar nada</strong>. Se
+              habilita corriendo <code>scripts/60-roles-permisos.sql</code>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {roles.map((r) => {
         const n = cuentas === null ? undefined : (cuentas[r.id] ?? 0)
-        const esAdmin = r.id === "admin"
+        const enEdicion = editando === r.id
+        const secciones = enEdicion ? borrador : new Set(r.secciones)
         return (
           <Card key={r.id} className="entrada-suave overflow-hidden">
-            {/* Cabecera con el nombre del rol y cuánta gente lo tiene: es el dato que convierte
-                una etiqueta en algo concreto. */}
-            <div className={`flex items-center justify-between gap-3 border-b px-5 py-3 ${esAdmin ? "bg-slate-100" : "bg-slate-50"}`}>
+            <div className={`flex items-center justify-between gap-3 border-b px-5 py-3 ${r.es_sistema ? "bg-slate-100" : "bg-slate-50"}`}>
               <div className="flex items-center gap-2.5">
-                <ShieldCheck className={`h-5 w-5 ${esAdmin ? "text-slate-700" : "text-slate-400"}`} />
+                <ShieldCheck className={`h-5 w-5 ${r.es_sistema ? "text-slate-700" : "text-slate-400"}`} />
                 <span className="font-semibold">{r.id}</span>
+                {r.es_sistema && (
+                  <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600">
+                    sistema
+                  </span>
+                )}
               </div>
               <span className="text-xs text-muted-foreground">
                 {n === undefined ? "…" : n === 1 ? "1 cuenta" : n === 0 ? "sin cuentas" : `${n} cuentas`}
@@ -133,59 +190,110 @@ function PanelRoles() {
             <CardContent className="space-y-4 pt-4 text-sm">
               <p className="text-muted-foreground">{r.descripcion}</p>
 
-              {/* Los dos números que definen al rol, juntos y grandes: cuánto ve y qué le exige
-                  para entrar. Antes estaban perdidos en dos bloques de texto separados. */}
               <div className="flex flex-wrap gap-2">
                 <div className="rounded-md border bg-white px-3 py-2">
-                  <div className="text-lg font-semibold leading-none">{secciones.length}</div>
+                  <div className="text-lg font-semibold leading-none">{secciones.size}</div>
                   <div className="mt-1 text-xs text-muted-foreground">
-                    {secciones.length === 1 ? "sección" : "secciones"} de 12
+                    {secciones.size === 1 ? "sección" : "secciones"} de {todas.length}
                   </div>
                 </div>
                 <div className="rounded-md border bg-white px-3 py-2">
-                  <div className={`text-lg font-semibold leading-none ${r.exige2FA ? "text-emerald-700" : "text-slate-500"}`}>
-                    {r.exige2FA ? "Sí" : "No"}
+                  <div className={`text-lg font-semibold leading-none ${r.exige_2fa ? "text-emerald-700" : "text-slate-500"}`}>
+                    {r.exige_2fa ? "Sí" : "No"}
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">exige 2FA</div>
                 </div>
               </div>
 
-              {/* Con los mismos íconos del menú lateral: se reconoce cada sección de un vistazo,
-                  sin leer. */}
-              <div className="flex flex-wrap gap-1.5">
-                {secciones.map(({ id, label, Icono }) => (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1.5 rounded-md border bg-white px-2 py-1 text-xs"
-                  >
-                    <Icono className="h-3.5 w-3.5 text-slate-500" />
-                    {label}
-                  </span>
-                ))}
-              </div>
+              {enEdicion ? (
+                <div className="space-y-3">
+                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                    {todas.map(({ id, label, Icono }) => {
+                      const puesta = borrador.has(id)
+                      return (
+                        <label
+                          key={id}
+                          className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors duration-150 ease-out ${
+                            puesta ? "border-emerald-300 bg-emerald-50" : "bg-white hover:bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={puesta}
+                            onChange={(e) => {
+                              const s = new Set(borrador)
+                              if (e.target.checked) s.add(id)
+                              else s.delete(id)
+                              setBorrador(s)
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                          <Icono className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                          {label}
+                        </label>
+                      )
+                    })}
+                  </div>
 
-              {!r.exige2FA && (
-                <p className="text-xs text-muted-foreground">
-                  El segundo factor quedó opcional para no trabar la delegación: exigirlo convierte
-                  el alta de una persona en un trámite.
-                </p>
+                  {borrador.size === 0 && (
+                    <p className="text-xs text-amber-700">
+                      Sin ninguna sección, quien tenga este rol entra y no ve nada. Se puede guardar
+                      igual —sirve para dejar una cuenta suspendida sin borrarla— pero conviene saberlo.
+                    </p>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => guardar(r.id)} disabled={guardando}>
+                      {guardando ? "Guardando…" : "Guardar permisos"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditando(null)} disabled={guardando}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {todas
+                      .filter((s) => secciones.has(s.id))
+                      .map(({ id, label, Icono }) => (
+                        <span key={id} className="inline-flex items-center gap-1.5 rounded-md border bg-white px-2 py-1 text-xs">
+                          <Icono className="h-3.5 w-3.5 text-slate-500" />
+                          {label}
+                        </span>
+                      ))}
+                    {secciones.size === 0 && (
+                      <span className="text-xs text-muted-foreground">Ninguna sección.</span>
+                    )}
+                  </div>
+
+                  {r.es_sistema ? (
+                    <p className="text-xs text-muted-foreground">
+                      🔒 Es un rol de sistema: sus permisos no se editan. Si se le pudieran sacar
+                      secciones, se podría dejar el sistema sin nadie que pueda administrarlo.
+                    </p>
+                  ) : (
+                    <Button size="sm" variant="secondary" onClick={() => empezar(r)}>
+                      Editar permisos
+                    </Button>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
         )
       })}
 
-      <Card className="entrada-suave border-amber-300 bg-amber-50">
-        <CardContent className="space-y-2 p-4 text-sm">
-          <p className="font-medium text-amber-900">Todavía no se pueden crear ni editar roles.</p>
-          <p className="text-amber-900/80">
-            Son dos y están escritos en el código, junto con las secciones que ve cada uno. Lo que sí
-            se cambia hoy es <strong>qué rol tiene cada cuenta</strong>, y eso se hace en{" "}
-            <strong>Usuarios</strong>.
+      <Card className="entrada-suave border-slate-300 bg-slate-50">
+        <CardContent className="space-y-2 p-4 text-sm text-muted-foreground">
+          <p>
+            <strong className="text-foreground">Los cambios se aplican al recargar la pantalla.</strong>{" "}
+            Quien ya esté adentro sigue viendo lo de antes hasta que recargue.
           </p>
-          <p className="text-amber-900/80">
-            Para que se puedan crear hay que mover los roles y sus permisos a la base de datos. Está
-            pedido y pendiente de definir.
+          <p>
+            Todavía <strong className="text-foreground">no se pueden crear roles nuevos</strong>: el
+            nombre del rol está en el tipo de 12 componentes y agregarlo obliga a tocarlos. Los
+            permisos de los que existen sí se editan acá.
           </p>
         </CardContent>
       </Card>
@@ -202,20 +310,25 @@ function PanelRoles() {
  * dónde sale, para poder verificarla.
  */
 function PanelPermisos() {
-  const roles = ROLES.map((r) => r.id)
+  const { roles: rolesDB } = useRoles()
+  const roles = (rolesDB ?? []).map((r) => r.id)
   const seccionesPorRol = Object.fromEntries(
-    roles.map((r) => [r, new Set(seccionesDe(r).map((s) => s.id))])
+    (rolesDB ?? []).map((r) => [r.id, new Set(r.secciones)])
   ) as Record<string, Set<string>>
 
   const todasLasSecciones = seccionesDe("admin")
 
+  // ⚠️ Estas SÍ están escritas a mano: dependen de `esAdmin()`, que sigue siendo el rol `admin`
+  // literal en el código. Por eso cada fila dice en qué archivo se aplica.
+  const soloAdmin = (rol: string) => rol === "admin"
   const administracion = [
-    { label: "Entrar a Configuración", puede: { admin: true, contable: false }, donde: "app/configuracion/page.tsx" },
-    { label: "Crear y revocar cuentas", puede: { admin: true, contable: false }, donde: "lib/auth/guard-admin.ts" },
-    { label: "Cambiarle el rol a otro", puede: { admin: true, contable: false }, donde: "lib/auth/guard-admin.ts" },
-    { label: "Ver el panel de pendientes", puede: { admin: true, contable: false }, donde: "dashboard.tsx" },
-    { label: "Ver y editar su propio perfil", puede: { admin: true, contable: true }, donde: "app/perfil/page.tsx" },
-    { label: "Subir su foto", puede: { admin: true, contable: true }, donde: "app/api/perfil/avatar/route.ts" },
+    { label: "Entrar a Configuración", puede: soloAdmin, donde: "app/configuracion/page.tsx" },
+    { label: "Editar los permisos de un rol", puede: soloAdmin, donde: "app/api/admin/roles/route.ts" },
+    { label: "Crear y revocar cuentas", puede: soloAdmin, donde: "lib/auth/guard-admin.ts" },
+    { label: "Cambiarle el rol a otro", puede: soloAdmin, donde: "lib/auth/guard-admin.ts" },
+    { label: "Ver el panel de pendientes", puede: soloAdmin, donde: "dashboard.tsx" },
+    { label: "Ver y editar su propio perfil", puede: () => true, donde: "app/perfil/page.tsx" },
+    { label: "Subir su foto", puede: () => true, donde: "app/api/perfil/avatar/route.ts" },
   ]
 
   const Celda = ({ si }: { si: boolean }) =>
@@ -257,7 +370,7 @@ function PanelPermisos() {
                     </td>
                     {roles.map((r) => (
                       <td key={r} className="px-3 py-2 text-center">
-                        <Celda si={seccionesPorRol[r]!.has(id)} />
+                        <Celda si={Boolean(seccionesPorRol[r]?.has(id))} />
                       </td>
                     ))}
                   </tr>
@@ -294,7 +407,7 @@ function PanelPermisos() {
                     <td className="py-2 pr-4">{f.label}</td>
                     {roles.map((r) => (
                       <td key={r} className="px-3 py-2 text-center">
-                        <Celda si={f.puede[r as keyof typeof f.puede]} />
+                        <Celda si={f.puede(r)} />
                       </td>
                     ))}
                     <td className="hidden py-2 pl-4 lg:table-cell">

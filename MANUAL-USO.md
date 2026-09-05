@@ -3632,7 +3632,7 @@ Avatar → **Configuración** (sólo admin). Tiene su propio menú al costado co
 | Sección | Qué es | ¿Se puede editar? |
 |---|---|---|
 | **Usuarios** | El panel de siempre: crear cuentas, cambiar rol, reenviar la invitación, revocar | **Sí** |
-| **Roles** | Cada rol con cuántas cuentas lo tienen, cuántas secciones ve y si le exige 2FA | No, todavía |
+| **Roles** | Cada rol con cuántas cuentas lo tienen, cuántas secciones ve y si le exige 2FA | **Sí** (menos `admin`) |
 | **Permisos** | La matriz completa: qué puede hacer cada rol, sección por sección | No, todavía |
 | **Aplicación** | Las 3 empresas con su razón social y CUIT | No, de sólo lectura |
 
@@ -3664,3 +3664,47 @@ y el CUIT de MSA impresos.
 5. **Verificá los CUIT** de Aplicación contra los reales.
 6. **Con una cuenta `contable`**: no tiene que ver la opción Configuración en su menú, ni poder
    entrar escribiendo `/configuracion` a mano.
+
+
+---
+
+## 🔑 Configuración → **Editar los permisos de un rol** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-82](PENDIENTES.md) · test → [A-TEST-90](PENDIENTES.md)*
+
+⚠️ **Requiere haber corrido `scripts/60-roles-permisos.sql`** en el editor SQL de Supabase. Hasta
+entonces la pantalla muestra un aviso ámbar y **no guarda**: sigue funcionando con el reparto que
+estaba escrito en el código, así que la app anda igual que siempre.
+
+### Cómo se usa
+
+1. Avatar → **Configuración** → **Roles**.
+2. En el rol que quieras cambiar, **Editar permisos**.
+3. Se tildan y destildan las secciones. El contador de arriba se actualiza mientras elegís.
+4. **Guardar permisos**.
+5. ⚠️ **El cambio se aplica al recargar.** Quien ya esté adentro sigue viendo lo de antes hasta que
+   recargue la pantalla.
+
+### `admin` no se puede editar, y es a propósito
+
+Está marcado como **rol de sistema**. Si se le pudieran sacar secciones, alguien deja el sistema
+**sin nadie que pueda administrarlo** — un candado sin llave. Está protegido en tres lugares
+distintos: la pantalla no lo ofrece, el endpoint lo rechaza, y un trigger de la base lo rechaza
+también (porque el endpoint usa `service_role`, que se saltea la seguridad de filas).
+
+### Cómo se prueba
+
+1. **Corré `scripts/60`.** El aviso ámbar tiene que desaparecer.
+2. **Editá `contable`**: agregale Cash Flow, guardá. Entrá con esa cuenta y verificá que lo ve.
+3. **Sacale Egresos** y verificá que deja de verlo.
+4. ⚠️ **Los tres candados de `admin`**: (a) la pantalla no ofrece editarlo; (b) un `PATCH` a mano a
+   `/api/admin/roles` con `id: "admin"` tiene que dar **403**; (c) un `UPDATE` directo en la base
+   tiene que fallar por el trigger. **Son tres puertas distintas: probá las tres.**
+5. **El atajo por URL**: con una cuenta sin Sueldos, entrá a `/?seccion=sueldos` escribiéndolo a
+   mano. No tiene que dejarte.
+6. **Dejá un rol sin ninguna sección** y mirá qué pasa al entrar con esa cuenta.
+
+### Lo que todavía no se puede
+
+**Crear roles nuevos.** El nombre del rol está metido en el tipo de 12 componentes, así que agregar
+uno obliga a tocarlos todos. Los permisos de los que existen sí se editan.
