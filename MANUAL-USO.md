@@ -3632,8 +3632,16 @@ Avatar → **Configuración** (sólo admin). Tiene su propio menú al costado co
 | Sección | Qué es | ¿Se puede editar? |
 |---|---|---|
 | **Usuarios** | El panel de siempre: crear cuentas, cambiar rol, reenviar la invitación, revocar | **Sí** |
-| **Roles** | Qué secciones ve cada rol y si le exige segundo factor | No, de sólo lectura |
+| **Roles** | Cada rol con cuántas cuentas lo tienen, cuántas secciones ve y si le exige 2FA | No, todavía |
+| **Permisos** | La matriz completa: qué puede hacer cada rol, sección por sección | No, todavía |
 | **Aplicación** | Las 3 empresas con su razón social y CUIT | No, de sólo lectura |
+
+⚠️ **Las dos tablas de Permisos no valen lo mismo, y la pantalla lo aclara:**
+- **Secciones de la app** sale de la misma función que decide el acceso de verdad → no se puede
+  desincronizar.
+- **Administración** está **escrita a mano**, porque esos permisos viven repartidos en guardas de
+  páginas y de endpoints. Por eso cada fila muestra **en qué archivo se aplica**: para poder
+  verificarla. Si se agrega una guarda nueva, hay que sumarla ahí a mano.
 
 **Roles no es una lista escrita a mano**: sale de la misma función que aplica el permiso de verdad,
 así que si mañana cambia lo que ve un `contable`, esta pantalla cambia sola. Sirve para contestar
