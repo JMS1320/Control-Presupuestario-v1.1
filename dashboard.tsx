@@ -112,6 +112,23 @@ function BotonMenu() {
   )
 }
 
+/**
+ * El mismo botón, pero en el chrome del contenido: sólo aparece cuando el menú está **cerrado**.
+ *
+ * Abierto, el ☰ quedaba flotando en el contenido, al lado de un menú con el que no tenía ninguna
+ * relación visual. Un control se pone al lado de lo que afecta: cuando el menú está abierto, el
+ * botón vive adentro del menú (ver `SidebarHeader`).
+ *
+ * ⚠️ El estado se lee distinto según el dispositivo: en mobile el menú es un panel aparte y su
+ * apertura vive en `openMobile`, no en `open`.
+ */
+function BotonMenuChrome() {
+  const { open, openMobile, isMobile } = useSidebar()
+  const menuVisible = isMobile ? openMobile : open
+  if (menuVisible) return null
+  return <BotonMenu />
+}
+
 function MenuLateral({
   solapas,
   activa,
@@ -134,8 +151,11 @@ function MenuLateral({
 
   return (
     <Sidebar collapsible="offcanvas">
-      <SidebarHeader className="px-4 py-3">
-        <span className="text-sm font-semibold">Control Presupuestario</span>
+      <SidebarHeader className="px-2 py-3">
+        <div className="flex items-center gap-2">
+          <BotonMenu />
+          <span className="truncate text-sm font-semibold">Control Presupuestario</span>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu>
@@ -275,7 +295,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
         <div className="chrome-superior">
           <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
             {/* El botón que abre el menú. Va arriba a la izquierda, que es donde se lo busca. */}
-            <BotonMenu />
+            <BotonMenuChrome />
             {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
                 había sesión que cerrar: se entraba por URL. */}
             <div className="min-w-0 flex-1">
