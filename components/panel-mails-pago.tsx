@@ -102,6 +102,31 @@ export function PanelMailsPago() {
     setMails(ms => ms.filter(x => x.id !== m.id)); toast.success("Borrado")
   }
 
+  // 🗑 Vaciar la cola — pedido del usuario 2026-09-05, después de que quedaran 6 mails mal armados.
+  //
+  // Borra **sólo los `pendiente`**: son los que el GAS todavía no tomó. Un `borrador` ya tiene su
+  // borrador creado en Gmail, y borrar la fila de acá **no lo borra allá** — daría una sensación de
+  // limpieza falsa. Ésos se borran desde Gmail.
+  //
+  // Y borra **por los ids que están a la vista**, no con un `.eq('estado','pendiente')` a ciegas:
+  // si entre que se cargó la lista y se aprieta el botón se encoló otro mail, un borrado por
+  // condición se lo llevaría puesto sin que nadie lo haya visto nunca. (§ 🛑 Datos de `CLAUDE.md`:
+  // apuntar a registros elegidos por id, nunca a "todos los que cumplan".)
+  const vaciarPendientes = async () => {
+    const pend = mails.filter(m => m.estado === "pendiente")
+    if (pend.length === 0) return
+    const quienes = [...new Set(pend.map(m => m.proveedor || "?"))].join(", ")
+    if (!confirm(
+      `¿Borrar ${pend.length} mail(es) encolado(s)?\n\n${quienes}\n\n` +
+      `No se puede deshacer. Los que ya son borrador en Gmail no se tocan: ésos se borran desde Gmail.`
+    )) return
+    const ids = pend.map(m => m.id)
+    const { error } = await supabase.from("mails_pago").delete().in("id", ids)
+    if (error) { toast.error("Error: " + error.message); return }
+    setMails(ms => ms.filter(x => !ids.includes(x.id)))
+    toast.success(`${pend.length} mail(es) borrado(s) de la cola`)
+  }
+
   const pendientes = mails.filter(m => m.estado === "pendiente").length
 
   return (
@@ -121,6 +146,11 @@ export function PanelMailsPago() {
             ))}
             <Button size="sm" variant="outline" onClick={cargar} disabled={loading}>{loading ? "…" : "↻ Refrescar"}</Button>
             <Button size="sm" onClick={enviarTodos} disabled={pendientes === 0} className="bg-blue-600 hover:bg-blue-700 text-white">✉ Enviar todos los pendientes</Button>
+            <Button size="sm" variant="outline" onClick={vaciarPendientes} disabled={pendientes === 0}
+              className="border-red-300 text-red-700 hover:bg-red-50"
+              title="Borra los mails que todavía no se convirtieron en borrador de Gmail">
+              🗑 Vaciar la cola{pendientes > 0 ? ` (${pendientes})` : ""}
+            </Button>
             <span className="text-xs text-gray-400 ml-2">Crea borradores en Gmail (los revisás y enviás vos). {pendientes > 0 && <b className="text-amber-700">{pendientes} pendiente(s)</b>}</span>
           </div>
 
