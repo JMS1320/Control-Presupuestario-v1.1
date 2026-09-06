@@ -29,6 +29,8 @@ export interface EncolarMailParams {
   anticipoIds?: string[]
   /** Fallback opcional: registros SICORE ya cargados en pantalla (tab SICORE del modal). */
   registrosFallback?: Array<{ anulado?: boolean; cuit_emisor?: string }>
+  /** El usuario ya vio el desvío y lo confirmó: encolar igual (pago parcial o a cuenta a propósito). */
+  forzarDesvio?: boolean
 }
 
 export interface EncolarMailResult {
@@ -36,10 +38,13 @@ export interface EncolarMailResult {
   email: string
   conCertificado: boolean
   error?: string
+  /** No es una falla: la cuenta no cierra y hace falta que el usuario decida. Reintentar con
+   *  `forzarDesvio: true` si el desvío es a propósito. */
+  requiereConfirmacion?: boolean
 }
 
 export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarMailResult> {
-  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, anticipoIds, registrosFallback } = p
+  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, anticipoIds, registrosFallback, forzarDesvio } = p
   try {
     // Medios de pago (transferencia + echeq + ...) para el desglose multimedio en el PDF del mail
     const ids = (facturaIds || []).filter(Boolean)
@@ -112,9 +117,11 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     if (mediosPago.length === 0 && (anticipoIds || []).length > 0) {
       mediosPago = await obtenerMediosPagoAnticipo(schemaName, (anticipoIds || []).filter(Boolean))
     }
-    // Sólo la identificación del comprobante — la nota interna no sale de la empresa.
-    // `Set` para no repetir «Anticipo, Anticipo» cuando el pago lleva varios.
-    const fcs = [...new Set(items.map(i => etiquetaComprobante(i)))].join(', ')
+    // Qué se está pagando. Sólo la identificación del comprobante — la nota interna no sale de la
+    // empresa— y **sin los anticipos cuando hay factura**: un anticipo aplicado no es otra cosa que
+    // se pague, es un MEDIO de esa factura, y ya aparece como tal en el desglose de abajo. Decir
+    // «FC 816 - IGLESIAS NORBERTO HUGO, Anticipo» lo nombraba dos veces (usuario, 2026-09-05).
+    const fcs = [...new Set(itemsBruto.map(i => etiquetaComprobante(i)))].join(', ')
     // El rótulo del bruto: un ANTICIPO no tiene facturas, así que decir "Importe facturas" en un
     // mail que va al proveedor queda mal y confunde. Detectado al testear A-BUG-95 con Genoil.
     const rotuloBruto = tipo === 'arca' ? 'Importe facturas' : 'Importe'
@@ -126,21 +133,28 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     // echeq, que existía— y **nada avisó**. El usuario sólo pudo enterarse preguntando. Un control
     // que no está deja que el error llegue al proveedor. § 🧮 de `CLAUDE.md`, mismo caso que
     // A-TEST-32: *"la resta no cierra porque faltaba un renglón"*.
-    if (mediosPago.length > 0) {
-      const sumaMedios = mediosPago.reduce((s, md) => s + (md.monto || 0), 0)
-      const dif = totalBruto - (sumaMedios + totalRet + totalDesc)
-      if (Math.abs(dif) > 1) {   // tolerancia $1: los emisores redondean
-        const detalle = mediosPago.map(md => `${md.detalle || md.tipo} ${m(md.monto)}`).join(' + ')
-        return {
-          ok: false, email: '', conCertificado: false,
-          error: `La cuenta no cierra por ${m(Math.abs(dif))} — no se encoló nada.\n\n`
-            + `${rotuloBruto}: ${m(totalBruto)}\nMedios: ${detalle}`
-            + `${totalRet > 0 ? `\nRetención: ${m(totalRet)}` : ''}`
-            + `${totalDesc > 0 ? `\nDescuento: ${m(totalDesc)}` : ''}\n\n`
-            + (dif > 0
-              ? 'Falta registrar un medio de pago (¿un echeq sin cargar, una transferencia sin vincular?).'
-              : 'Hay un medio de más: algo está contado dos veces.'),
-        }
+    const sumaMedios = mediosPago.reduce((s, md) => s + (md.monto || 0), 0)
+    // **Total cancelado = lo que efectivamente salda la factura.** Ojo el signo: la retención se le
+    // MUESTRA al proveedor en negativo porque no la cobra él, pero **cancela deuda igual** (va a
+    // AFIP a su nombre), así que acá suma. Lo mismo el descuento.
+    const totalCancelado = sumaMedios + totalRet + totalDesc
+    const dif = totalBruto - totalCancelado   // >0 quedó saldo · <0 se pagó de más
+
+    // ⚠️ **Avisa, no bloquea** (corrección del usuario, 2026-09-05): *"puede ser que se haya pagado
+    // de más o de menos a propósito"*. Un bloqueo duro convertiría una decisión suya en un error del
+    // sistema. Pero tampoco sale en silencio: se pide confirmación una vez, con el número a la vista.
+    if (mediosPago.length > 0 && Math.abs(dif) > 1 && !forzarDesvio) {   // tolerancia $1 por redondeo
+      const detalle = mediosPago.map(md => `${md.detalle || md.tipo} ${m(md.monto)}`).join(' + ')
+      return {
+        ok: false, email: '', conCertificado: false, requiereConfirmacion: true,
+        error: `${proveedor}: la cuenta no cierra por ${m(Math.abs(dif))}.\n\n`
+          + `${rotuloBruto}: ${m(totalBruto)}\nMedios: ${detalle}`
+          + `${totalRet > 0 ? `\nRetención: ${m(totalRet)}` : ''}`
+          + `${totalDesc > 0 ? `\nDescuento: ${m(totalDesc)}` : ''}`
+          + `\nTotal cancelado: ${m(totalCancelado)}\n\n`
+          + (dif > 0
+            ? `Queda un saldo de ${m(dif)}. Puede ser a propósito (pago parcial) o puede faltar registrar un medio: un echeq sin cargar, una transferencia sin vincular.`
+            : `Se pagó ${m(-dif)} de más. Puede ser a propósito (pago a cuenta) o algo está contado dos veces.`),
       }
     }
 
@@ -151,6 +165,11 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
       for (const md of mediosPago) cuenta += `\n${md.detalle || md.tipo}: ${m(md.monto)}`
       if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
       if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
+      // El renglón de cierre: qué quedó cancelado de la factura, y si no coincide, cuánto y para
+      // qué lado. Que el proveedor lo vea es mejor que se entere al conciliar su cuenta corriente.
+      cuenta += `\nTotal cancelado: ${m(totalCancelado)}`
+      if (dif > 1) cuenta += `\nSaldo pendiente: ${m(dif)}`
+      else if (dif < -1) cuenta += `\nPagado a cuenta: ${m(-dif)}`
     } else {
       cuenta = `\nTotal transferido: ${m(totalPagado)}`
       if (totalRet > 0 || totalDesc > 0) {

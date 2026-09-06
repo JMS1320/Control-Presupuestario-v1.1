@@ -1281,7 +1281,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // (en esas filas de `sicore_retenciones` el `factura_id` es NULL). Sin esto el certificado
       // no se adjuntaba nunca y el mail no mencionaba la retención — A-BUG-95.
       const anticipoIds = fs.filter(f => f.origen === 'ANTICIPO').map(f => f.id)
-      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds, anticipoIds })
+      const args = { tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds, anticipoIds }
+      let r = await encolarMailDetalle(args)
+      // La cuenta no cierra: NO es un error automático. Puede ser un pago parcial o a cuenta hecho
+      // a propósito, así que decide el usuario — con el número delante. Lo que no puede pasar es
+      // que salga en silencio (A-BUG-104).
+      if (r.requiereConfirmacion) {
+        if (window.confirm(`${r.error}\n\n¿Encolar el mail igual?`)) {
+          r = await encolarMailDetalle({ ...args, forzarDesvio: true })
+        } else { continue }
+      }
       if (!r.ok) err++
       else if (!r.email) sinMail++
       else ok++
