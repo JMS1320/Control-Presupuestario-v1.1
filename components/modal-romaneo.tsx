@@ -79,6 +79,11 @@ export function ModalRomaneo({
   const [netoCamion, setNetoCamion] = useState<number | null>(null)
   /** Corrección a mano del kilo de res de un garrón — hace falta cuando el PDF perdió una media. */
   const [ganchoFix, setGanchoFix] = useState<Record<string, string>>({})
+  /** Las dos puntas del desbaste: cuándo pesamos nosotros y cuándo pesó el vivo el frigorífico. */
+  const [horaCampo, setHoraCampo] = useState("")
+  const [horaDestino, setHoraDestino] = useState("")
+  const [kgDestino, setKgDestino] = useState("")
+  const [pesoCampo, setPesoCampo] = useState<number | null>(null)
 
   const limpiar = () => { setRom(null); setArchivo(null); setMapa({}); setCab({}); setVerDetalle(false) }
 
@@ -124,9 +129,13 @@ export function ModalRomaneo({
         // La OTRA punta de la adjudicación: nuestras cabezas pesadas el día de la carga.
         // Sin esto el rinde por grupo no existe — sólo hay reparto proporcional, que es circular.
         const { data: cg } = await supabase.schema("productivo").from("cargas")
-          .select("fecha, peso_bruto, peso_tara").eq("id", cargaId).maybeSingle()
-        const c = (cg ?? {}) as { fecha?: string; peso_bruto?: number; peso_tara?: number }
+          .select("fecha, peso_bruto, peso_tara, pesada_campo_at, pesada_destino_at, kg_vivo_destino").eq("id", cargaId).maybeSingle()
+        const c = (cg ?? {}) as { fecha?: string; peso_bruto?: number; peso_tara?: number; pesada_campo_at?: string; pesada_destino_at?: string; kg_vivo_destino?: number }
         setNetoCamion(c.peso_bruto != null && c.peso_tara != null ? c.peso_bruto - c.peso_tara : null)
+        const iso = (v?: string) => (v ? new Date(v).toISOString().slice(0, 16) : "")
+        setHoraCampo(iso(c.pesada_campo_at))
+        setHoraDestino(iso(c.pesada_destino_at))
+        setKgDestino(c.kg_vivo_destino != null ? String(c.kg_vivo_destino) : "")
 
         const porVenta: Record<string, CabezaNuestra[]> = {}
         for (const v of vs) {
@@ -140,6 +149,7 @@ export function ModalRomaneo({
               caravana: x.terneros?.caravana_oficial ?? null, razon: x.terneros?.observaciones ?? null }))
         }
         setAnimales(porVenta)
+        setPesoCampo(Object.values(porVenta).flat().reduce((a, x) => a + x.peso_kg, 0) || null)
       }
 
       // Propuesta de imputación: se casa cada tipo del romaneo con la venta que tenga la MISMA
@@ -278,6 +288,14 @@ export function ModalRomaneo({
         tocadas++
       }
 
+      // Las horas y el kilaje del destino viven en la CARGA: son del viaje, no del romaneo.
+      if (cargaId && (horaCampo || horaDestino || kgDestino)) {
+        await prod.from("cargas").update({
+          pesada_campo_at: horaCampo ? new Date(horaCampo).toISOString() : null,
+          pesada_destino_at: horaDestino ? new Date(horaDestino).toISOString() : null,
+          kg_vivo_destino: kgDestino ? parseFloat(kgDestino.replace(/\./g, "").replace(",", ".")) : rom.kilos_vivos,
+        }).eq("id", cargaId)
+      }
       toast.success(`Romaneo guardado${tocadas ? ` · ${tocadas} venta(s) completada(s)` : ""}`)
       onGuardado?.()
       limpiar()
@@ -432,6 +450,68 @@ export function ModalRomaneo({
                   ⚠️ Esta carga no tiene ventas asociadas: el romaneo se guarda igual, pero no hay a qué imputarlo.
                 </p>
               )}
+            </div>
+
+            {/* DESBASTE — las horas */}
+            <div className="rounded border">
+              <div className="border-b bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-900">
+                Desbaste
+                <span className="ml-2 font-normal text-sky-700">
+                  el % solo no sirve: lo comparable es el % por hora
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 p-2">
+                <div>
+                  <Label className="text-[10px] text-gray-500">Pesamos en el campo</Label>
+                  <Input type="datetime-local" className="h-7 text-xs" value={horaCampo}
+                    onChange={e => setHoraCampo(e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-gray-500" title="No viene en el romaneo: hay que pedirla al frigorífico">
+                    El frigorífico pesó el vivo
+                  </Label>
+                  <Input type="datetime-local" className="h-7 text-xs" value={horaDestino}
+                    onChange={e => setHoraDestino(e.target.value)} />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-gray-500">Kilos vivos que recibió</Label>
+                  <Input type="text" className="h-7 text-xs" placeholder={String(rom.kilos_vivos)}
+                    value={kgDestino} onChange={e => setKgDestino(e.target.value)} />
+                </div>
+              </div>
+              {(() => {
+                const recibido = parseFloat((kgDestino || "").replace(/\./g, "").replace(",", ".")) || rom.kilos_vivos
+                const h = horaCampo && horaDestino
+                  ? (new Date(horaDestino).getTime() - new Date(horaCampo).getTime()) / 3600000 : null
+                const fila = (et: string, base: number | null) => {
+                  if (!base || !recibido) return null
+                  const dif = base - recibido
+                  const pct = (dif / base) * 100
+                  return (
+                    <div key={et} className="flex items-center justify-between px-3 py-0.5">
+                      <span>{et} <b className="tabular-nums">{base.toLocaleString("es-AR")}</b> kg</span>
+                      <span className="tabular-nums">
+                        {dif >= 0 ? "−" : "+"}{Math.abs(dif).toLocaleString("es-AR")} kg ·{" "}
+                        <b>{Math.abs(pct).toFixed(2).replace(".", ",")} %</b>
+                        {h != null && h > 0 && <> · <b>{(pct / h).toFixed(3).replace(".", ",")} %/h</b></>}
+                      </span>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="border-t bg-gray-50 py-1 text-[11px] text-gray-700">
+                    {h != null && <div className="px-3 py-0.5 text-[10px] text-gray-500">{h.toFixed(1).replace(".", ",")} horas entre las dos pesadas</div>}
+                    {fila("Campo", pesoCampo)}
+                    {fila("Camión", netoCamion)}
+                    <div className="mt-1 border-t px-3 py-1 text-[10px] leading-4 text-gray-600">
+                      El desbaste normal de hacienda ronda <b>0,15–0,20 %/h</b> en el primer día. Una balanza que
+                      dé muy por debajo de eso probablemente <b>esté leyendo de menos</b>, no es que el animal no
+                      haya desbastado. <b>Hace falta la serie de varias cargas</b> para separar una cosa de la otra:
+                      un solo viaje no alcanza.
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
 
             {/* ADJUDICACION CABEZA POR CABEZA */}
