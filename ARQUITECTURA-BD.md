@@ -468,6 +468,58 @@ Para que el nombre no confunda:
 ⚠️ **En cuenta corriente esta columna sigue significando otra cosa** (el `"Imputado"` del banco).
 El CBU es convención **sólo de las cuentas de Caja de Ahorro**.
 
+## 6d. Venta de hacienda: la CARGA y el ROMANEO (2026-09-03/06)
+
+Estructura completa y sus ALTERs → `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+Diseño y motivos → `MODULO_HACIENDA.md` §§ 18-19. Acá va **dónde vive cada dato**.
+
+### El eje: la CARGA
+🔑 **Un camión es una carga, y de ella cuelga todo lo del viaje** — no de la venta. Una carga
+puede llevar **varias ventas** (el 03/09 llevó 7 vacas y 3 toros, que son dos ventas distintas).
+
+```
+productivo.cargas ─┬─ 1:N ─ stock_ventas   (carga_id)
+                   ├─ 1:1 ─ romaneos       (carga_id)
+                   └─ 1:1 ─ anticipos_proveedores  (flete_anticipo_id) → el flete en el Cash Flow
+```
+
+| Dato | Vive en | Por qué ahí |
+|---|---|---|
+| Pesaje del camión (`peso_bruto`, `peso_tara`) | `cargas` | el camión se pesa **una vez**, aunque lleve N ventas |
+| Flete + su seteo (`flete_km`, `flete_km_arranque`, `flete_precio_km`, `flete_camino`) | `cargas` | un camión, un flete |
+| Horas de las dos pesadas (`pesada_campo_at`, `pesada_destino_at`) | `cargas` | son del **viaje** |
+| Kilos que recibió el destino (`kg_vivo_destino`) | `cargas` | tercera balanza |
+| Plazo de cobro (`plazo_cobro_dias`) | `cargas` | es del negocio con ese comprador |
+
+### Las tres tablas del romaneo
+
+| Tabla | Grano | Ojo |
+|---|---|---|
+| `romaneos` | 1 por carga | `controles jsonb` guarda **qué cerró y qué no al importar**, aunque después se corrija a mano |
+| `romaneo_medias` | 1 por **MEDIA RES** | ⚠️ el garrón se repite **2 veces por animal**: contar filas da el doble de cabezas |
+| `romaneo_lineas` | 1 por **grupo de precio** | es lo que factura el frigorífico; `stock_venta_id` dice a qué venta se imputó |
+
+### 🔴 Las dos columnas de kilo vivo que NO son lo mismo
+
+```
+romaneo_lineas.kg_vivo        ← lo que ASIGNA el frigorífico
+romaneo_lineas.kg_vivo_real   ← el nuestro, de las cabezas adjudicadas
+```
+
+**`kg_vivo` no es una pesada.** El frigorífico reparte el total entre los grupos **usando el rinde
+global**, así que todo rinde calculado con esa columna devuelve el rinde global — para cualquier
+grupo. Verificado: los 9 grupos del romaneo del 04/09 dan `53,58 %` los nueve.
+
+`kg_vivo_real` sale de nuestras pesadas, y `kg_vivo_real_origen` dice de dónde
+(`animales` | `manual` | `proporcional`). **Se guardan las dos y ninguna pisa a la otra**: son
+mediciones distintas y cuál es cuál importa.
+
+### Lo que se completa al cargar el romaneo
+`stock_ventas.kg_carne`, `monto_neto` y `precio_kg`. Es lo que cierra el caso «el destino compra a
+la res»: sin romaneo el importe queda **vacío a propósito** (`MODULO_HACIENDA` § 18.3).
+
+---
+
 ## 7. Referencias
 
 - **Columnas completas** → `ESTRUCTURA_BD_COLUMNAS.md` (apéndice auto-generado).

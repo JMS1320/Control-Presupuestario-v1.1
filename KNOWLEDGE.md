@@ -1734,3 +1734,65 @@ sumaba en una variable… y no lo usaba en la comparación. El control existía 
 📌 Cómo buscarlo en otro lado: donde haya un prorrateo (kilo-día, hectáreas, cabezas, metros
 cuadrados, horas), preguntarse *"¿qué control fallaría si la clave estuviera mal?"*. Si la respuesta
 es *"ninguno, porque el total igual cierra"*, falta un control.
+
+
+## Leer un PDF: la posición es dato, el texto plano no alcanza `#parseo #2026-09-06`
+
+Al importar el romaneo de un frigorífico, extraer los literales de texto del PDF y aplicarles un
+regex **no funciona**: el subseteo de fuentes **parte los números**. `511` sale como `5`, `1`, `1`,
+y no hay forma de distinguir eso de tres valores distintos.
+
+**La solución es reconstruir con las coordenadas** del operador de texto (`Tm`/`Td`), agrupar en
+filas por Y y ordenar celdas por X. Ahí los números se vuelven a pegar solos, porque lo que estaba
+partido está pegado *en la página*.
+
+Tres cosas que se aprendieron haciéndolo, y que valen para cualquier PDF:
+
+- **Agrupar por (PÁGINA, Y), nunca sólo por Y.** Dos hojas repiten las mismas coordenadas y las
+  filas de una se mezclan con las de la otra. *(Lo señaló el usuario antes de que ocurriera.)*
+- **Agrupar por cercanía, no por redondeo.** Con `round(y/2)` dos piezas de la misma línea visual
+  caen en bins distintos si están a una unidad del borde, y la fila se parte en silencio.
+- **Buscar el valor de un campo por cercanía a su etiqueta**, no con un regex sobre el texto
+  aplanado. Etiqueta y valor suelen estar en líneas distintas y varias etiquetas comparten línea:
+  `Etiqueta:\s*(\d+)` agarra el número **de la etiqueta de al lado**.
+
+---
+
+## El subtotal que se cuela y duplica el total `#parseo #control #2026-09-06`
+
+Dos veces el mismo día, en dos fuentes distintas:
+
+- En el romaneo, las filas de **SUBTOTAL** vienen con la categoría vacía y separadores `-------`.
+- En la tabla del Mercado Agroganadero, la fila **`Totales`** del pie es el mercado entero otra vez:
+  sin filtrarla, las cabezas daban **35.210 en vez de 17.605**.
+
+**Una tabla impresa mezcla renglones de datos con renglones de resumen, y los dos tienen columnas
+numéricas.** El parser no los distingue por la forma: hay que reconocerlos —nombre, celdas vacías,
+guiones— y saltearlos.
+
+🔑 **Y el síntoma es traicionero: el total queda exactamente al doble.** Un número redondo y
+plausible que no dispara ninguna alarma.
+
+---
+
+## Un reparto proporcional nunca produce un ratio diferencial `#control #2026-09-06`
+
+Al buscar el rinde por grupo de precio, el kilo vivo se precargó como *proporcional al kilo de carne
+sobre el total*. El resultado daba el mismo rinde para todos los grupos, y no es un bug: es
+aritmética.
+
+```
+rinde = kg_carne / (total × kg_carne/total_grupo) = total_grupo / total
+```
+
+El `kg_carne` **se simplifica** y queda una constante.
+
+Es el mismo defecto que tenía la fuente que estábamos criticando: el frigorífico reparte su columna
+de kilo vivo usando el rinde global, y por eso sus 9 grupos daban `53,58 %` los nueve.
+
+> 🔑 **Si el numerador está adentro del denominador, el cociente no puede diferenciar nada.** Antes
+> de calcular un ratio por grupo, mirar de dónde salió el denominador: si se derivó del numerador,
+> el resultado ya está decidido.
+
+⚠️ **Lo detectó el usuario, no el código ni un test** — *"en algún lugar estás mal pero no sé
+exactamente dónde"*. Ningún control lo habría agarrado: los números cerraban perfecto.
