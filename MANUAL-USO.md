@@ -430,6 +430,58 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
 
 ---
 
+## 📄 Cargar el ROMANEO del frigorífico *(nuevo 2026-09-06)*
+
+**Productivo → Hacienda → 📄 Romaneo**
+
+1. Elegí **de qué carga** es. Un camión = un romaneo, aunque haya llevado varias ventas.
+2. Subí el PDF.
+3. Mirá **los controles** de arriba: comparan lo que suma el papel contra lo que suman sus propias
+   filas. Verde cierra; rojo muestra **los dos números**.
+4. Corregí la **cabecera** si hace falta — viene precargada.
+5. En **«Cómo queda contra lo que ya está cargado»** confirmá a qué venta va cada grupo. Viene
+   propuesto por cantidad de cabezas. Debajo de cada uno vas a ver el valor viejo y el nuevo:
+   `kg carne: vacío → 1.748 kg`.
+6. **Confirmar y completar las ventas.**
+
+> **Si algún control no cierra, se puede guardar igual.** No es un bloqueo: es un aviso. Corregís
+> los valores a mano y seguís.
+
+### Rinde por grupo de precio
+Un **grupo es un precio dentro de un tipo**: vaca y toro al mismo precio son grupos distintos, y
+dentro de vaca puede haber dos o tres precios = dos o tres grupos. El precio lo determina la
+clasificación del frigorífico (clase + dientes), que abre **una categoría nuestra en varias**.
+
+⚠️ **El kilo vivo que trae el romaneo no sirve para calcular rinde por grupo.** El frigorífico lo
+reparte usando el rinde global, así que todos los grupos darían el mismo número. Por eso la columna
+**«kg vivo (nuestro)»** viene precargada con el kilaje de la venta —la balanza del campo— repartido
+por kilo de carne, **y se puede pisar**: poné lo que pesaste de verdad y el rinde se recalcula.
+
+---
+
+## 🚚 Cargar el FLETE de una carga *(nuevo 2026-09-06)*
+
+**Productivo → Hacienda → 🚚 Flete**
+
+El flete es **de la carga**, no de cada venta: un camión, un flete.
+
+1. Elegí la carga.
+2. Cargá el seteo: **camino elegido, km del recorrido, arranque y $/km**.
+   - El **arranque** son los **km mínimos que se cobran igual** aunque el viaje sea más corto. Si
+     ponés menos km que el arranque, el total usa el arranque y te lo dice.
+3. Si lo acordaste **a monto cerrado**, escribilo en «Total» y ese manda.
+4. Poné el **transportista** y la **fecha estimada de pago**.
+5. **Guardar y comprometer el pago.**
+
+Eso crea el compromiso en el **Cash Flow** como anticipo — que es la vía cuando no llega factura — y
+da de alta al transportista en el maestro de proveedores.
+
+> Si volvés a guardar, el compromiso **se actualiza**: no queda un segundo pago por el mismo viaje.
+
+⚠️ *Sin probar todavía → `A-TEST-90` (romaneo), `A-TEST-91` (flete)*
+
+---
+
 ## 💳 Pagar un anticipo con ECHEQ, y qué verifica el mail *(nuevo 2026-09-05)*
 
 ### Cargar el echeq de un anticipo
