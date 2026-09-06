@@ -670,6 +670,31 @@ Al terminar de implementar algo, **antes de decir que está hecho**:
 
 Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se borra el puntero del manual.
 
+#### ✅ «Terminé» significa que YA lo probé (REGLA, 2026-09-06)
+
+*Pregunta del usuario que dejó el hueco a la vista: **«los test siempre pudiste haberlos hecho vos
+pero no fueron parte del desarrollo?»**. Sí podía. Y mayormente no los hice.*
+
+> **Antes de decirle al usuario que algo está listo para probar, correr `npm run probar`.** Si lo
+> que se tocó no tiene caso, **escribirlo primero**.
+
+`type-check` y `build` **sólo prueban que compila**. Los cuatro bugs del 2026-09-06 —el factor de
+balanza que daba 6.501 kg, las 9 cabezas en vez de 10, el denominador mezclado, el match por
+dientes— **pasaron los dos** y los encontró el usuario mirando la base.
+
+- Los casos viven en **`lib/pruebas/casos.ts`**, con los **datos fijos en el archivo**: un caso que
+  lee de la BD cambia de resultado porque alguien editó un registro, y ahí empieza a mentir.
+- **Cero escritura** mientras no esté resuelto [A-DEC-18](PENDIENTES.md#a-dec-18). Un test que no
+  escribe no puede dejar basura, y eso es más fuerte que cualquier limpieza posterior.
+- Un caso nuevo tiene que **fallar con el código viejo**. Si pasa igual antes y después del arreglo
+  **aparenta cobertura**, que es peor que no tenerla — pasó el mismo día que se escribieron.
+
+📌 **El botón 🧪 Probar de la app usa el MISMO archivo.** No es otra suite: es la misma, disparada
+por el usuario. Si divergieran, uno de los dos empezaría a mentir.
+
+*Motivo, en una línea: el usuario no necesita un botón para probar lo que yo pude haber probado
+antes. Necesita que «terminé» quiera decir algo.*
+
 #### ⚠️ Corrección 2026-09-03 — el testing SALE del manual
 *Hasta hoy esta regla decía que el manual llevara **"cómo se usa y cómo se prueba"**, con el título
 marcado 🟡. Se cumplió al pie de la letra durante un mes y el resultado fue un manual de 3.499
@@ -794,8 +819,9 @@ maestro no debe tener nombres de tabla de este proyecto.
 ## ⚡ Comandos de desarrollo
 ```bash
 npm run dev                          # desarrollo
-npm run build && npm run type-check  # build + tipos
-npm test                             # tests
+npm run type-check:diff              # ¿rompió algo? (baseline de errores preexistentes)
+npm run probar                       # ⚠️ los CASOS — correr antes de decir "terminé, probá"
+npm run build                        # build
 ```
 
 ---
