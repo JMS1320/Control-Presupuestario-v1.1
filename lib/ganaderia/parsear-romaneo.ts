@@ -462,7 +462,11 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
 
   return {
     cabecera, medias, lineas, controles,
-    cabezas: medias.length ? medias.length / 2 : cabezas,
+    // 🐞 Manda la LIQUIDACIÓN, no las medias reses (A-BUG-115). Las medias son 2 por animal,
+    // pero si el PDF pierde alguna —como pasa con 2 de las 20 de este romaneo— dividir por 2 da
+    // **9 cabezas en vez de 10**, y ese número se guarda y después se lee como si fuera cierto.
+    // La liquidación trae las cabezas explícitas y coincide con el total impreso.
+    cabezas: cabezas || (medias.length ? medias.length / 2 : 0),
     kilos_gancho, kilos_vivos, total, rinde, paginas: pag, crudo, avisos,
   }
 }

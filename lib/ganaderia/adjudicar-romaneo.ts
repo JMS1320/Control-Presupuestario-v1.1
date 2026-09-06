@@ -62,20 +62,21 @@ export interface Adjudicacion {
 /**
  * Aparea por rango de peso. **Las dos listas se ordenan de mayor a menor y se casan por posición.**
  *
- * @param nuestras  las cabezas pesadas por nosotros
+ * @param nuestras  las cabezas pesadas por nosotros, de ESTE tipo
  * @param delRomaneo las cabezas del romaneo (un garrón = una cabeza = 2 medias reses)
- * @param netoCamion neto del camión (bruto − tara) para escalar; `null` = no ajustar
+ * @param factor    el escalado, **calculado una sola vez para toda la carga** (ver `factorDeCarga`)
+ *
+ * 🐞 **El factor se recibe, no se calcula acá** (2026-09-06). Antes esta función lo derivaba de
+ * `neto del camión ÷ suma de las cabezas que recibía`, y como se la llama **una vez por tipo**, cada
+ * grupo terminaba escalado al camión ENTERO: los 3 toros pesaban `2.661 × (6500/2661) = 6.500`, y
+ * las 7 vacas otro tanto. La carga entraba dos veces. El camión pesa **el conjunto**, así que el
+ * factor es del conjunto.
  */
 export function adjudicarPorPeso(
   nuestras: CabezaNuestra[],
   delRomaneo: CabezaRomaneo[],
-  netoCamion: number | null,
+  factor: number,
 ): { pares: Adjudicacion[]; factor: number; sinPareja: number } {
-  const sumaNuestra = nuestras.reduce((s, c) => s + (c.peso_kg || 0), 0)
-  // El factor lleva NUESTRO total al del camión. Sin camión, o sin peso, no se ajusta nada:
-  // inventar un factor sería peor que no tenerlo.
-  const factor = netoCamion && sumaNuestra > 0 ? netoCamion / sumaNuestra : 1
-
   const a = [...nuestras].sort((x, y) => y.peso_kg - x.peso_kg)
   const b = [...delRomaneo].sort((x, y) => y.kg_gancho - x.kg_gancho)
   const n = Math.max(a.length, b.length)
@@ -91,6 +92,17 @@ export function adjudicarPorPeso(
     })
   }
   return { pares, factor, sinPareja: Math.abs(a.length - b.length) }
+}
+
+/**
+ * El escalado de la carga: lleva **el total de nuestras pesadas** al neto del camión.
+ *
+ * Se calcula UNA VEZ con todos los animales del viaje, porque el camión pesó el conjunto. Sin
+ * camión no se ajusta nada (`1`): inventar un factor sería peor que no tenerlo.
+ */
+export function factorDeCarga(todasNuestras: CabezaNuestra[], netoCamion: number | null): number {
+  const suma = todasNuestras.reduce((s, c) => s + (c.peso_kg || 0), 0)
+  return netoCamion && suma > 0 ? netoCamion / suma : 1
 }
 
 /**

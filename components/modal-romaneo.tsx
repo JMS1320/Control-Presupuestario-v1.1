@@ -27,7 +27,7 @@
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearRomaneo, type RomaneoParseado } from "@/lib/ganaderia/parsear-romaneo"
-import { adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, type CabezaNuestra } from "@/lib/ganaderia/adjudicar-romaneo"
+import { adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga, type CabezaNuestra } from "@/lib/ganaderia/adjudicar-romaneo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -207,7 +207,11 @@ export function ModalRomaneo({
     const ventaId = mapa[tipo]
     const nuestras = ventaId ? (animales[ventaId] ?? []) : []
     const delRom = cabezasRomaneo().filter(c => c.tipo === tipo)
-    return adjudicarPorPeso(nuestras, delRom, netoCamion)
+    // 🔑 El factor sale de TODOS los animales del viaje, no sólo de los de este tipo: el camión
+    // pesó el conjunto. Calculado por tipo, cada grupo se escalaba al camión entero y la carga
+    // entraba dos veces — los 3 toros daban 6.501 kg vivos (A-BUG-114).
+    const factor = factorDeCarga(Object.values(animales).flat(), netoCamion)
+    return adjudicarPorPeso(nuestras, delRom, factor)
   }
 
   const todasLasAdjudicaciones = () => tiposDe(rom!).flatMap(t => adjudicacionesDe(t).pares)
