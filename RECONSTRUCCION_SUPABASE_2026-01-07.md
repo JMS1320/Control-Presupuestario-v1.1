@@ -12503,3 +12503,43 @@ CREATE TRIGGER trg_fecha_modificacion BEFORE UPDATE ON msa.comprobantes_arca
 ⚠️ **Las 383 filas viejas siguen con la fecha de creación**: el trigger sólo actúa de ahora en más.
 No se tocaron retroactivamente porque no hay dato real que poner — inventar una fecha sería peor
 que no tenerla.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-05 · ROMANEO (A-FEAT-94)
+
+✅ **APLICADO** (migración `romaneos_estructura`). Diseño y motivos → `MODULO_HACIENDA.md` § 19.
+
+**Tres tablas en `productivo`**: `romaneos` (cabecera + el PDF archivado), `romaneo_medias` (una
+fila **por media res**) y `romaneo_lineas` (la liquidación agrupada, que es lo que se factura).
+
+```sql
+CREATE TABLE productivo.romaneos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  carga_id uuid REFERENCES productivo.cargas(id) ON DELETE SET NULL,
+  frigorifico text, matricula text, cuit_frigorifico text,
+  vendedor text, consignatario text, origen_estab text,
+  tropa text, fecha_faena date, guia text, dta text,
+  cabezas_faenadas integer, muertos_corral integer DEFAULT 0, muertos_vagon integer DEFAULT 0,
+  kilos_vivos numeric, kilos_gancho numeric, rinde numeric, total_liquidado numeric,
+  archivo_file_id text, archivo_url text, archivo_nombre text,
+  origen text NOT NULL DEFAULT 'pdf',
+  controles jsonb NOT NULL DEFAULT '[]'::jsonb,
+  observaciones text, created_at timestamptz NOT NULL DEFAULT now()
+);
+-- + romaneo_medias (romaneo_id, garron, tipo, clase, dientes, contenido, peso_kg, precio_kg, ternero_id)
+-- + romaneo_lineas (romaneo_id, cabezas, tipo, clase, dientes, contenido, kg_faena, kg_vivo,
+--                   precio_kg, motivo, ajuste, importe, stock_venta_id)
+```
+
+🔑 **`carga_id`, no `venta_id`.** Un camión → un romaneo → **N ventas adentro** (el del 04/09 trae
+las 7 vacas y los 3 toros juntos). La carga ya existía y era justo la pieza que faltaba.
+
+🔑 **`controles jsonb` se guarda SIEMPRE**, incluso cuando el import no cerró. Si el usuario corrigió
+a mano, después hay que poder distinguir **qué venía mal del papel** de **qué puso él**.
+
+🔑 **`contenido` es texto sin interpretar** (`MCV/MCV`, `ES/ES`) hasta saber qué significan
+(`A-DAT-21`). Normalizarlo antes de entenderlo contamina la grilla de precios.
+
+⚠️ **GRANTs incluidos en la migración** — tercera vez que se aplica la lección: una tabla nueva no
+los hereda del schema, y el error no aparece hasta que el usuario aprieta Guardar.
