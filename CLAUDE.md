@@ -699,6 +699,25 @@ duplica en ninguna de las dos direcciones.
 saca la marca, y el manual miente. Una línea `→ A-TEST-NN` deja la verdad en `PENDIENTES`, que es su
 dimensión, y el manual sólo la señala.
 
+#### 📋 Después de una tanda sin supervisión: la GUÍA DE PRUEBAS (REGLA)
+*Pedido del usuario 2026-09-06: **«siempre después de desarrollar mucho sin mi supervisión, dejame
+los manuales para el test — deben guiarme, apretá acá, etc. Si hubo modificaciones,
+actualizármelo»**.*
+
+Cuando se desarrolla varias cosas seguidas sin que el usuario vaya probando, **no alcanza con dejar
+los `A-TEST-NN` en `PENDIENTES`**: hay que dejarle **una guía operable de todas juntas**.
+
+- **Escrita para ejecutar, no para entender**: dónde apretar, en qué orden, y **qué número exacto
+  tiene que salir**. Un paso que dice *"verificar que funcione"* no sirve.
+- **Con los adversarios de cada una** — lo que tiene que fallar bien.
+- **Marcando lo que hay que hacer ANTES de mirar el resto.** Si un dato mal cargado invalida todo lo
+  que sigue, va en rojo y arriba.
+- **Y se ACTUALIZA** cuando el desarrollo cambia. Una guía que quedó vieja es peor que ninguna:
+  manda a probar algo que ya no existe.
+
+📌 La guía **no reemplaza a `PENDIENTES`**: los pasos siguen viviendo en cada `A-TEST-NN`, que es su
+dimensión. La guía es la vista operable de todos juntos, para una tanda.
+
 #### 📖 Qué es el MANUAL, entonces
 *Definido por el usuario 2026-09-03:*
 
