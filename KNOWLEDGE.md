@@ -1855,3 +1855,69 @@ las fuentes coincidan y falla en silencio cuando dejan de coincidir.
 
 *Sirve para cualquier PDF generado por sistema —no sólo ARBA— y es distinto del caso del romaneo,
 que sí traía literales pero partidos por kerning.*
+
+
+## Probar contra la base real: qué se evaluó y qué se descartó `#testing #bd #2026-09-06`
+
+**El problema.** No hay entorno de prueba: la app local, la preview y producción usan el **mismo**
+Supabase. Un test que escribe, escribe en los datos del usuario. Ya pasó una vez —un test automatizado
+inventó $5.443.200 sobre un movimiento real **y reportó OK**— y de ahí sale la regla de `CLAUDE.md`.
+
+El usuario lo planteó con el estándar correcto: *«no tiene que entender; tiene que revertir con 100 %
+de seguridad»*. Es el criterio justo, y descarta más opciones de las que parece.
+
+### ❌ Liquibase — no ataca este problema
+
+Liquibase versiona **estructura** y sabe revertir **los changesets que él mismo aplicó**. Cuando un
+test aprieta un botón y **la app** escribe una fila por PostgREST, Liquibase **no se entera de que
+eso pasó**: no está en su changelog, no hay nada que revertir. Y aun en sus propios changesets, el
+rollback de un `UPDATE` **lo escribe uno a mano** guardando el valor viejo.
+
+> 🔑 Daría exactamente la falsa seguridad que se quería evitar: una herramienta que parece garantizar
+> el revert, sobre cambios que no ve.
+
+**Y para lo que sí hace, ya está cubierto:** Supabase registra cada migración en
+`supabase_migrations.schema_migrations`, ordenada y con su SQL. Sumar Liquibase sería una **segunda
+fuente de verdad** para lo mismo.
+
+### ❌ Contar filas antes y después — mitigación, no garantía
+
+Se evaluó que el test cuente las filas de las tablas que toca y falle si no coinciden. Sirve para
+**detectar**, pero **si el test se muere antes de llegar al control, la basura queda**. No cumple el
+estándar de «100 % de seguridad» que puso el usuario, y decir que sí sería mentirle.
+
+### ✅ Una base descartable (branch de Supabase) — la respuesta correcta, con su costo
+
+Es lo que el usuario estaba describiendo: se prueba en una copia y se tira. Reversión total sin
+entender nada.
+
+⚠️ **Pero la branch se crea desde las migraciones: trae la estructura y NO los datos.** Un test sobre
+una base vacía no prueba lo mismo — hay que sembrar la carga, las pesadas, los templates. Ése es el
+trabajo real, no crear la branch.
+
+### ✅ Lo elegido para empezar: que el test NO escriba
+
+No es conformarse con menos. **Los cuatro bugs del 2026-09-06 eran de lógica pura** —el factor por
+tipo, las 9 cabezas, el denominador mezclado, el match por dientes— y **ninguno necesitaba escribir
+una fila**. Un test que no escribe no puede dejar basura, y eso es más fuerte que cualquier limpieza.
+
+📌 **La branch queda como la decisión pendiente para cuando haya que probar el camino de escritura**
+(confirmar una venta, aplicar una boleta) → `A-DEC-18`.
+
+---
+
+## Un test que corre donde NO corre el usuario prueba otra cosa `#testing #2026-09-06`
+
+El parser del romaneo se verificó en Node contra el PDF real: 9 líneas, $18.750.900, perfecto. En el
+navegador del usuario devolvió **cero**, sin un solo error.
+
+> 🔑 **Playwright y Puppeteer corren en la máquina del desarrollador.** Habrían pasado ese bug por
+> alto exactamente como lo pasé yo. Un test que corre **dentro del navegador del usuario, con su
+> sesión** es el único que ve las diferencias de entorno.
+
+Y `elemento.click()` dispara el mismo evento que un dedo: para manejar la UI **no hace falta un
+emulador**. El emulador sirve para otra cosa —un humo antes de pushear— no para reproducir lo que le
+pasa al usuario.
+
+⚠️ Lo que un test automatizado **no** hace, corra donde corra: verificar que un número **tenga
+sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
