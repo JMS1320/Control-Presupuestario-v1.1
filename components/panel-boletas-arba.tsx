@@ -37,16 +37,42 @@ interface Comparacion {
   aplicar: boolean
   aplicada: boolean
   problema: string | null
+  /** Cuando hay más de un template posible (el complementario de MSA y el de PAM). */
+  opciones?: { id: string; nombre_referencia: string }[]
 }
 
 const m = (n: number | null | undefined) =>
   n == null ? "—" : `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * Casa la boleta con la CUOTA que le corresponde del template, y propone si aplicarla.
+ *
+ * 🔑 Se propone sólo cuando el monto **difiere** y la cuota **no está conciliada**: una cuota
+ * conciliada ya se pagó por ese importe, y cambiarla reescribiría un hecho, no una proyección.
+ */
+async function casarCuota(fila: Comparacion, egresoId: string, boleta: BoletaArba) {
+  const nro = boleta.cuota && /^\d$/.test(boleta.cuota) ? parseInt(boleta.cuota) : null
+  if (nro == null) { fila.problema = "boleta anual: no corresponde a una cuota puntual"; return }
+  const { data: cs } = await supabase.from("cuotas_egresos_sin_factura")
+    .select("id, monto, estado, numero_cuota")
+    .eq("egreso_id", egresoId).eq("numero_cuota", nro)
+  const c = (cs ?? [])[0] as { id: string; monto: number; estado: string } | undefined
+  if (!c) { fila.problema = `el template no tiene cuota ${nro}`; return }
+  fila.cuotaId = c.id
+  fila.montoTemplate = Number(c.monto)
+  fila.estadoCuota = c.estado
+  const diff = Math.abs(Number(c.monto) - (boleta.importe ?? 0)) > 1
+  fila.aplicar = diff && c.estado !== "conciliado" && boleta.importe != null
+  if (c.estado === "conciliado" && diff) fila.problema = "ya conciliada con otro importe — revisá antes de tocarla"
+}
 
 export function PanelBoletasArba() {
   const [abierto, setAbierto] = useState(false)
   const [leyendo, setLeyendo] = useState(false)
   const [aplicando, setAplicando] = useState(false)
   const [filas, setFilas] = useState<Comparacion[]>([])
+  const [bajando, setBajando] = useState(false)
+  const [delMail, setDelMail] = useState<{ resumen: string; bajadas: { archivo: string; url?: string }[]; ya_estaban: { archivo: string }[] } | null>(null)
 
   const subir = async (archivos: FileList) => {
     setLeyendo(true)
@@ -59,8 +85,26 @@ export function PanelBoletasArba() {
           montoTemplate: null, estadoCuota: null, aplicar: false, aplicada: false, problema: null,
         }
 
-        if (!boleta.partida) {
-          fila.problema = "sin partida — no se puede casar con ningún template"
+        if (boleta.impuesto === "complementario") {
+          // 🔑 El COMPLEMENTARIO no tiene partida y no es un error: grava **todas las partidas del
+          // CUIT** a la vez, no una parcela. Por eso casa con los templates «Inmobiliario
+          // Complementario» de la empresa, no con un lote. (Aclarado por el usuario 2026-09-06.)
+          const { data: egs } = await supabase.from("egresos_sin_factura")
+            .select("id, nombre_referencia, activo")
+            .ilike("nombre_referencia", "%Complementario%").eq("activo", true)
+          const cands = (egs ?? []) as { id: string; nombre_referencia: string }[]
+          if (cands.length === 1) {
+            fila.lote = cands[0].nombre_referencia
+            fila.egresoId = cands[0].id
+            await casarCuota(fila, cands[0].id, boleta)
+          } else if (cands.length > 1) {
+            fila.problema = `complementario: hay ${cands.length} templates activos (MSA y PAM) — elegí cuál`
+            fila.opciones = cands
+          } else {
+            fila.problema = "complementario: no hay template activo"
+          }
+        } else if (!boleta.partida) {
+          fila.problema = "no se encontró la partida en el PDF"
         } else {
           // El template ACTIVO de esa partida. Los «Anual» están desactivados y no proyectan:
           // buscar sin filtrar por `activo` haría comparar contra algo apagado (A-BUG-110).
@@ -73,28 +117,7 @@ export function PanelBoletasArba() {
           } else {
             fila.lote = eg.nombre_referencia
             fila.egresoId = eg.id
-            const nro = boleta.cuota && /^\d$/.test(boleta.cuota) ? parseInt(boleta.cuota) : null
-            if (nro == null) {
-              fila.problema = "boleta anual: no corresponde a una cuota puntual"
-            } else {
-              const { data: cs } = await supabase.from("cuotas_egresos_sin_factura")
-                .select("id, monto, estado, numero_cuota")
-                .eq("egreso_id", eg.id).eq("numero_cuota", nro)
-              const c = (cs ?? [])[0] as { id: string; monto: number; estado: string } | undefined
-              if (!c) fila.problema = `el template no tiene cuota ${nro}`
-              else {
-                fila.cuotaId = c.id
-                fila.montoTemplate = Number(c.monto)
-                fila.estadoCuota = c.estado
-                // Propuesta: se tilda sola si el monto DIFIERE y la cuota todavía no se pagó.
-                // Una cuota conciliada ya se pagó por ese importe: cambiarla reescribiría el pasado.
-                const diff = Math.abs(Number(c.monto) - (boleta.importe ?? 0)) > 1
-                fila.aplicar = diff && c.estado !== "conciliado" && boleta.importe != null
-                if (c.estado === "conciliado" && diff) {
-                  fila.problema = "ya conciliada con otro importe — revisá antes de tocarla"
-                }
-              }
-            }
+            await casarCuota(fila, eg.id, boleta)
           }
         }
         nuevas.push(fila)
@@ -104,6 +127,27 @@ export function PanelBoletasArba() {
     } catch (e) {
       toast.error("Error leyendo: " + (e as Error).message)
     } finally { setLeyendo(false) }
+  }
+
+  /**
+   * Le pide al GAS que baje las boletas del mail. Es **el camino principal**: subir los PDFs a mano
+   * es el respaldo para cuando el mail no llegó o hay que reprocesar algo viejo.
+   */
+  const bajarDelMail = async (soloContar: boolean) => {
+    setBajando(true)
+    setDelMail(null)
+    try {
+      const r = await fetch("/api/gas/boletas-arba", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ solo_contar: soloContar }),
+      })
+      const j = await r.json()
+      if (!j.ok) { toast.error(j.error || "No se pudo hablar con el GAS"); return }
+      setDelMail({ resumen: j.resumen ?? "", bajadas: j.bajadas ?? [], ya_estaban: j.ya_estaban ?? [] })
+      toast.success(soloContar ? `Encontradas: ${(j.bajadas ?? []).length}` : j.resumen ?? "Listo")
+    } catch (e) {
+      toast.error("Error: " + (e as Error).message)
+    } finally { setBajando(false) }
   }
 
   const aplicar = async () => {
@@ -163,11 +207,51 @@ export function PanelBoletasArba() {
             vos decidís cuál aplicar. <b>Nada se cambia hasta que lo confirmes.</b>
           </div>
 
+          <div className="rounded border p-2">
+            <div className="mb-2 text-xs font-medium">1 · Traer las boletas del mail</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" disabled={bajando}
+                onClick={() => bajarDelMail(true)}>
+                {bajando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                👁 Ver qué hay (no baja nada)
+              </Button>
+              <Button size="sm" disabled={bajando} onClick={() => bajarDelMail(false)}>
+                ⬇ Bajar y archivar
+              </Button>
+              <span className="text-[10px] text-gray-500">
+                Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
+              </span>
+            </div>
+            {delMail && (
+              <div className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-[11px]">
+                <div className="font-medium">{delMail.resumen}</div>
+                {delMail.bajadas.map((b, i) => (
+                  <div key={i} className="text-[10px] text-gray-600">
+                    · {b.archivo}{b.url && <> — <a href={b.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">ver</a></>}
+                  </div>
+                ))}
+                {delMail.ya_estaban.length > 0 && (
+                  <div className="mt-1 text-[10px] text-gray-500">
+                    {delMail.ya_estaban.length} ya estaban archivadas (no se duplicaron).
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded border p-2">
+            <div className="mb-1 text-xs font-medium">
+              2 · Leer los PDFs para comparar
+              <span className="ml-2 font-normal text-gray-400">
+                subilos de Drive o de donde los tengas
+              </span>
+            </div>
           <div className="flex items-center gap-2">
             <Input type="file" accept="application/pdf" multiple disabled={leyendo}
               onChange={e => { if (e.target.files?.length) subir(e.target.files) }} />
             {leyendo && <Loader2 className="h-4 w-4 animate-spin text-gray-500" />}
             {filas.length > 0 && <Button variant="ghost" size="sm" onClick={() => setFilas([])}>Limpiar</Button>}
+          </div>
           </div>
 
           {filas.length > 0 && (
