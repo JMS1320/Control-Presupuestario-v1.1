@@ -7,6 +7,7 @@ import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
+import { PanelBoletasArba } from "@/components/panel-boletas-arba"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
@@ -3365,6 +3366,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       ✉ Encolar mail detalle
                     </Button>
                     <PanelMailsPago />
+                    {/* 🏛️ Boletas de ARBA: comparar contra el template y decidir cuál aplicar (A-FEAT-95).
+                        Vive acá porque lo que cambia es una CUOTA del Cash Flow, que es lo que se ve
+                        en esta pantalla. */}
+                    <PanelBoletasArba />
                     <Button
                       size="sm"
                       onClick={exportarLoteSeleccionados}
