@@ -38,6 +38,7 @@ import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
 import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
+import { ModalRomaneo } from "@/components/modal-romaneo"
 
 // ============================================================
 // TIPOS
@@ -1427,6 +1428,9 @@ function TabHacienda() {
 
   // ─── Planilla de Hacienda ─────────────────────────────────────────────
   const [mostrarModalPlanilla, setMostrarModalPlanilla] = useState(false)
+  // 📄 Romaneo del frigorífico (A-FEAT-94). Elige la carga adentro, así no depende
+  // de que la venta esté abierta: un romaneo es de la CARGA, no de una venta.
+  const [mostrarModalRomaneo, setMostrarModalRomaneo] = useState(false)
   const [planillaModo, setPlanillaModo] = useState<'mes' | 'rango'>('mes')
   const hoy = new Date()
   const [planillaMes, setPlanillaMes] = useState(String(hoy.getMonth())) // 0-11
@@ -2378,6 +2382,10 @@ function TabHacienda() {
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setMostrarModalRomaneo(true)}
+            title="Subir el PDF del romaneo del frigorífico y completar las ventas de esa carga">
+            📄 Romaneo
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
             <Download className="mr-1 h-4 w-4" />
             Planilla
@@ -2967,6 +2975,12 @@ function TabHacienda() {
       </Dialog>
 
       {/* Modal Planilla de Hacienda */}
+      <ModalRomaneo
+        abierto={mostrarModalRomaneo}
+        onCerrar={() => setMostrarModalRomaneo(false)}
+        onGuardado={() => { cargarDatos() }}
+      />
+
       <Dialog open={mostrarModalPlanilla} onOpenChange={(open) => { setMostrarModalPlanilla(open); if (!open) setPreviewPlanilla(null) }}>
         <DialogContent className={previewPlanilla ? 'sm:max-w-[95vw] max-h-[90vh] overflow-y-auto' : 'sm:max-w-md'}>
           <DialogHeader>
