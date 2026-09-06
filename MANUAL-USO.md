@@ -430,6 +430,59 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
 
 ---
 
+## 💳 Pagar un anticipo con ECHEQ, y qué verifica el mail *(nuevo 2026-09-05)*
+
+### Cargar el echeq de un anticipo
+1. En **Cash Flow**, sobre la fila del anticipo: **Shift+Click** en la columna de débitos.
+2. Elegí **📝 ECHEQ**.
+3. Se abre el modal pidiendo **banco, número, fecha de emisión y fecha de cobro**.
+   ⚠️ **La fecha de cobro es la que importa**: de ahí sale cuándo el Cash Flow descuenta esa plata.
+   Sin ella, el pago queda proyectado en el día equivocado.
+4. Después pregunta por la retención:
+   - **«Sí, aplicar retención»** si SICORE va contra este anticipo;
+   - **«No, continuar sin retención»** si ya está calculada contra la factura, o si no corresponde.
+
+> Si el modal del paso 3 **no aparece**, no sigas cargando: el echeq no va a quedar registrado como
+> tal, y sin él ni el Cash Flow ni el mail al proveedor pueden nombrarlo.
+
+Volver a elegir ECHEQ sobre un anticipo que ya lo tiene **no duplica nada** — sirve justamente para
+completar uno que quedó a medias.
+
+### Lo que verifica el mail antes de encolarse
+El cuerpo termina en **Total cancelado**:
+
+```
+Importe facturas: $3.554.000,00
+ECHEQ Banco Galicia 31841751 (cobro 20/09/2026): $2.454.000,00
+Transferencia: $1.042.599,60
+Retención Ganancias: -$57.400,40
+Total cancelado: $3.554.000,00
+```
+
+**La retención se muestra en negativo pero SUMA al total cancelado**: el proveedor no la cobra, pero
+le cancela deuda igual, porque va a AFIP a su nombre.
+
+🧮 **Si la cuenta no cierra, pregunta antes de encolar** y dice cuánto y para qué lado:
+
+| Aviso | Puede ser |
+|---|---|
+| *«Queda un saldo de $X»* | un pago parcial a propósito · **o** falta registrar un medio (un echeq sin cargar, una transferencia sin vincular) |
+| *«Se pagó $X de más»* | un pago a cuenta · **o** algo contado dos veces |
+
+Vos decidís si va igual. Lo que no puede pasar es que salga sin que lo veas.
+
+> 📌 **Al proveedor no le llega ninguna nota interna.** El mail y el PDF muestran sólo la
+> identificación del comprobante (*"FC 816 - IGLESIAS NORBERTO HUGO"*), nunca el detalle del trabajo
+> ni los estados internos.
+
+### Borrar mails encolados
+En **✉ Mails de detalle**, botón **🗑 Vaciar la cola**. Borra sólo los que están en **pendiente**;
+los que ya son **borrador** viven en Gmail y se borran desde ahí.
+
+⚠️ *Sin probar todavía → `A-TEST-88`, `A-TEST-89`*
+
+---
+
 ## ✉ Módulo: Mail de "Detalle de pago" al proveedor ✅ (funcionando)
 
 Manda al proveedor un mail con el **Detalle de pago** en PDF adjunto (+ **certificado de retención** si hubo SICORE). **Un mail por PAGO** (una FC o un grupo de N facturas → un solo mail). Es un template autollenado y **editable**. NO se mezcla con el aviso de transferencia del banco (ese llega aparte desde `go@bancogalicia.com.ar` con asunto "Aviso de transferencia").
