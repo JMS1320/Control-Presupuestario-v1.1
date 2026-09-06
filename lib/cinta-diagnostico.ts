@@ -31,17 +31,33 @@
  *
  * ## Alcance honesto — qué clase de bug resuelve
  * - ✅ Los que **tiran error** (con o sin cartel). Muchos fallan callados y llegan como *"no anda"*.
- * - ❌ Los que **dan mal el número sin fallar** — el Cash Flow de $181 M no tiró nada. Ésos salen de
- *   los datos, no de los logs.
+ * - ✅ *(desde 2026-09-06)* Los que **terminan bien y devuelven vacío**, si la app lo **declara**
+ *   con `anotarResultado()`. Ver abajo.
+ * - ❌ Los que **dan mal el número sin fallar** y nadie declara — el Cash Flow de $181 M no tiró
+ *   nada. Ésos salen de los datos, no de los logs.
  * - ❌ Las **mejoras**. De las 8 notas al 2026-08-29, ninguna habría usado esto.
+ *
+ * ## 📣 Lo que la app DECLARA — el agregado de 2026-09-06
+ * El parser del romaneo devolvió cero sin tirar un solo error: la función terminó bien y no había
+ * nada que capturar. Tres capturas de esa nota trajeron **sólo un warning de accesibilidad**.
+ *
+ * > 🔑 **Un fallo silencioso es invisible para cualquier capturador.** No se arregla ampliando lo
+ * > que se escucha —eso sólo suma ruido—, sino haciendo que **el código diga cómo terminó**.
+ *
+ * Por eso `anotarResultado("romaneo", "0 líneas · 14 streams · 13 inflados")`: una línea en los
+ * puntos donde un resultado vacío es un síntoma. Sigue valiendo la lista blanca — se declara un
+ * **recuento**, nunca el contenido de lo procesado.
  */
 
 /** Un evento de la cinta. Los campos son los de la lista blanca y **no** se agregan otros. */
 export interface EventoDiagnostico {
   /** Hora local `HH:MM:SS`, para poder ordenar los pasos de una nota. */
   hora: string
-  /** `error` = excepción · `warn` = aviso · `red` = llamada que falló · `db` = error de la base. */
-  tipo: "error" | "warn" | "red" | "db"
+  /**
+   * `error` = excepción · `warn` = aviso · `red` = llamada que falló · `db` = error de la base ·
+   * `res` = **resultado declarado por la app** · `env` = entorno del navegador.
+   */
+  tipo: "error" | "warn" | "red" | "db" | "res" | "env"
   /** El mensaje. Nunca el contenido de un campo ni el cuerpo de una llamada. */
   msg: string
   /** `archivo:línea` para las excepciones · `MÉTODO /camino` para las llamadas. */
@@ -56,6 +72,15 @@ const MAX_EVENTOS = 50
 /** Recorte por campo: un stack entero o un mensaje kilométrico no aportan y pesan en cada captura. */
 const MAX_MSG = 300
 const MAX_DONDE = 160
+
+/**
+ * Avisos conocidos que no aportan y llenan la cinta. Se filtran **por firma exacta**: apagar una
+ * categoría entera perdería los avisos que sí importan.
+ */
+const RUIDO: RegExp[] = [
+  // Radix lo emite en cada Dialog sin `aria-describedby`. Es de accesibilidad, no de la app.
+  /Missing `Description` or `aria-describedby=/i,
+]
 
 const cinta: EventoDiagnostico[] = []
 
@@ -165,6 +190,54 @@ async function errorDeLaBase(res: Response): Promise<{ codigo?: string; msg: str
  * romper la app — una herramienta de diagnóstico que rompe la pantalla que venís a diagnosticar
  * es peor que no tenerla.
  */
+/**
+ * 📣 La app declara cómo terminó algo. Para lo que **no falla pero sale mal**.
+ *
+ * Se usa en los puntos donde un resultado vacío o raro es un síntoma: un parser que no reconoció
+ * nada, un import que no trajo filas, un cálculo que dio cero. Sin esto, esos casos llegan como
+ * *"no anda"* y hay que pedirle al usuario que lo repita mirando otra cosa.
+ *
+ * ⚠️ **Un recuento, no el contenido.** `"0 líneas · 14 streams"` sí; el texto leído del PDF no.
+ * La lista blanca no se toca: lo que se declara acá lo escribe el programador, no el usuario.
+ *
+ * @param etiqueta qué terminó (`romaneo`, `boletas-arba`, `importador`)
+ * @param detalle  el recuento, en una línea
+ */
+export function anotarResultado(etiqueta: string, detalle: string): void {
+  try {
+    anotar({
+      hora: hora(),
+      tipo: "res",
+      msg: recortar(detalle, MAX_MSG),
+      donde: recortar(etiqueta, MAX_DONDE),
+    })
+  } catch {}
+}
+
+/**
+ * El entorno, **una sola vez por sesión**. Es el dato que faltó para diagnosticar a distancia por
+ * qué el mismo código leía un PDF en Node y devolvía vacío en el navegador.
+ *
+ * Sólo capacidades y el navegador: nada que identifique al equipo ni a la persona.
+ */
+function anotarEntorno(): void {
+  try {
+    const cap: string[] = []
+    if (typeof DecompressionStream === "undefined") cap.push("SIN DecompressionStream")
+    if (typeof structuredClone === "undefined") cap.push("SIN structuredClone")
+    // `userAgentData` da marca y versión sin la cadena entera del user-agent.
+    const uad = (navigator as unknown as { userAgentData?: { brands?: { brand: string; version: string }[] } }).userAgentData
+    const nav = uad?.brands?.filter(b => !/Not.?A.?Brand/i.test(b.brand)).map(b => `${b.brand} ${b.version}`).join(", ")
+      || (navigator.userAgent.match(/(Chrome|Firefox|Safari|Edg)\/[\d.]+/) || ["navegador desconocido"])[0]
+    anotar({
+      hora: hora(),
+      tipo: "env",
+      msg: recortar(`${nav}${cap.length ? " · ⚠️ " + cap.join(" · ") : ""}`, MAX_MSG),
+      donde: "entorno",
+    })
+  } catch {}
+}
+
 export function instalarCinta(): void {
   if (instalada || typeof window === "undefined") return
   instalada = true
@@ -203,10 +276,15 @@ export function instalarCinta(): void {
     const original = console[nivel].bind(console)
     console[nivel] = (...args: unknown[]) => {
       try {
+        const texto = args.map(argSeguro).join(" ")
+        // 🔇 Ruido conocido que no ayuda nunca y tapa lo que sí. Las 4 capturas de la nota
+        // «Romaneo Error» traían SÓLO esto (A-BUG-113). Se filtra por firma exacta, no por
+        // categoría: silenciar "todos los warnings" perdería los que sí importan.
+        if (RUIDO.some(re => re.test(texto))) { original(...args); return }
         anotar({
           hora: hora(),
           tipo: nivel === "error" ? "error" : "warn",
-          msg: recortar(args.map(argSeguro).join(" "), MAX_MSG),
+          msg: recortar(texto, MAX_MSG),
         })
       } catch {}
       original(...args) // la consola sigue funcionando igual que siempre

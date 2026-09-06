@@ -19,6 +19,7 @@
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
+import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -122,6 +123,13 @@ export function PanelBoletasArba() {
         }
         nuevas.push(fila)
       }
+      // 📣 Mismo motivo que en el romaneo: un parser que no reconoce nada NO falla, y sin
+      // declararlo la nota del usuario llega sin una sola pista.
+      const conPartida = nuevas.filter(x => x.boleta.partida).length
+      const casadas = nuevas.filter(x => x.cuotaId).length
+      anotarResultado("boletas-arba",
+        `${nuevas.length} PDF · ${conPartida} con partida · ${casadas} casada(s) con su cuota`)
+
       setFilas(f => [...f, ...nuevas])
       toast.success(`${nuevas.length} boleta(s) leída(s)`)
     } catch (e) {

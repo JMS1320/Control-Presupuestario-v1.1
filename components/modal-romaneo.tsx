@@ -27,6 +27,7 @@
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearRomaneo, type RomaneoParseado } from "@/lib/ganaderia/parsear-romaneo"
+import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga, type CabezaNuestra } from "@/lib/ganaderia/adjudicar-romaneo"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -169,6 +170,13 @@ export function ModalRomaneo({
         if (cand.length === 1) prop[t] = cand[0].id
       }
       setMapa(prop)
+      // 📣 Que la cinta sepa cómo terminó, aunque no haya fallado nada. Este parser devolvió
+      // cero sin tirar un error y la nota llegó sin una sola pista útil (A-BUG-111/113).
+      anotarResultado("romaneo",
+        `${r.lineas.length} línea(s) · ${r.medias.length} media(s) · ${r.paginas} pág · `
+        + `${r.kilos_gancho} kg gancho · total ${r.total}`
+        + (r.avisos.length ? ` · avisos: ${r.avisos.join(" | ")}` : ""))
+
       if (r.avisos.length) toast.warning(`Leído con ${r.avisos.length} aviso(s) — revisá antes de confirmar`)
       else toast.success("Romaneo leído")
     } catch (e) {
@@ -308,6 +316,9 @@ export function ModalRomaneo({
           kg_vivo_destino: kgDestino ? parseFloat(kgDestino.replace(/\./g, "").replace(",", ".")) : rom.kilos_vivos,
         }).eq("id", cargaId)
       }
+      anotarResultado("romaneo-guardar",
+        `${rom.cabezas} cab · ${rom.medias.length} medias · ${rom.lineas.length} líneas · `
+        + `${tocadas} venta(s) completada(s)`)
       toast.success(`Romaneo guardado${tocadas ? ` · ${tocadas} venta(s) completada(s)` : ""}`)
       onGuardado?.()
       limpiar()
