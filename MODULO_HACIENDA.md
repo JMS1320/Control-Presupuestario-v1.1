@@ -1704,3 +1704,90 @@ importe quedaba vacío *"falta el kilaje de carne del romaneo"*. **Ese kilaje ll
 | | **10** | **3.354** | **$18.750.900** |
 
 `stock_ventas.kg_carne` ya existe (§ 18.1): el romaneo lo completa y el importe se calcula solo.
+
+
+### 19.5 · 🚨 El rinde por grupo: por qué el papel no puede darlo (2026-09-06)
+
+*«El dato más importante para nosotros es cuánto desbastó cada precio y cuánto rindió cada precio»*
+(usuario). Al ir a calcularlo apareció que **el romaneo no lo puede dar solo**:
+
+```
+146 ÷ 272 = 53,68     261 ÷ 487 = 53,59     486 ÷ 907 = 53,58
+248 ÷ 463 = 53,56     234 ÷ 437 = 53,55     373 ÷ 696 = 53,59
+545 ÷ 1017 = 53,59    437 ÷ 816 = 53,55     624 ÷ 1165 = 53,56
+```
+
+Los nueve grupos dan **53,58 %**. No es casualidad: la columna *Vivo* **no es una pesada** — el
+frigorífico reparte el total entre los grupos **usando el rinde global**. Calcular el rinde por grupo
+con ese número es **circular**.
+
+> ⚠️ **Y yo repetí el mismo error.** Denuncié la circularidad y acto seguido precargué el vivo del
+> grupo como *proporcional al kilo de carne sobre el total de la venta*, que se simplifica igual:
+> `kg_carne / (total × kg_carne/total_tipo) = total_tipo / total`. Constante para todos los grupos.
+> **Lo detectó el usuario**, no el código: *"en algún lugar estás mal pero no sé exactamente dónde"*.
+> Un reparto proporcional **nunca** puede producir un rinde diferencial: es aritmética, no un bug.
+
+### 19.6 · La adjudicación cabeza por cabeza — el método del usuario
+
+El romaneo no trae caravana: identifica por **garrón**. Lo único común entre las dos listas es **el
+orden por peso**. Entonces se ordenan las dos y se aparean por posición — *al más pesado nuestro, la
+res más pesada*. Y nuestros pesos se escalan antes por `neto del camión ÷ suma nuestra`, que es
+*«el peso real que tomamos»*.
+
+📌 **El orden no cambia con el ajuste** (es un factor constante): el ajuste importa para el **rinde**,
+no para el apareo.
+
+**Resultado sobre la carga del 03/09** (los 10 pesos individuales estaban guardados y suman exacto):
+
+| | Rindes |
+|---|---|
+| **Vacas** | 45,02 · 45,19 · 46,06 · 46,14 · 46,44 · 47,20 · 52,42 % |
+| **Toros** | 56,03 · 58,44 · 60,73 % |
+
+| Grupo | Cab | Rinde real |
+|---|---:|---:|
+| TO $5.200 | 3 | **58,51 %** |
+| VA $4.800 | 1 | 52,42 % |
+| VA $6.600 | 2 | 46,41 % |
+| VA $5.800 | 3 | 46,20 % |
+| VA $5.500 | 1 | **45,02 %** |
+
+**Los toros rinden ~58,5 % y las vacas 45-47 %.** Es real y esperable, y el `53,58 %` plano del
+papel lo escondía entero.
+
+### 19.7 · 🔴 El desbaste por hora INVIERTE la conclusión de las tres balanzas
+
+Con las horas que aportó el usuario (12:00 en el campo, 09:00 del día siguiente en Arrebeef =
+**21 horas**), el desbaste deja de ser un porcentaje suelto:
+
+| Contra | Desbaste | Por hora |
+|---|---:|---:|
+| Balanza del **campo** (6.301) | 0,65 % | **0,031 %/h** |
+| Balanza del **camión** (6.500) | 3,69 % | **0,176 %/h** |
+
+El desbaste normal de hacienda ronda **0,15-0,20 %/h** el primer día. El del camión cae justo ahí;
+el del campo es **seis veces más bajo de lo físicamente posible**.
+
+> 🔴 **Entonces no es que el camión lea de más: es que nuestra balanza del campo lee de MENOS**,
+> alrededor de un 3 %. Es **lo contrario** de lo que se había leído en § 18.5 con sólo dos balanzas.
+> Y no queda en esta venta: si se confirma, **afecta todo lo que pese esa balanza** — rindes,
+> aumentos diarios, el costeo de recría entero.
+
+📌 **Esto es exactamente por lo que la regla era «guardar las tres, sin pisar ninguna».** Si se
+hubiera corregido una balanza contra otra, esta evidencia **no existiría**. Y sigue haciendo falta
+**la serie**: una sola carga no separa desbaste de descalibración.
+
+### 19.8 · Qué diferencia de verdad a un canal de otro
+
+Al diseñar la comparación contra Cañuelas y el matarife zonal (`A-FEAT-99`) se propusieron tres ejes
+extra. El usuario **descartó dos con razón**:
+
+| Eje | Veredicto |
+|---|---|
+| **Plazo de cobro** | ✅ **Sí diferencia.** Arrebeef **21 días** · matarife **contra camión** · Cañuelas **21 días de remate**. Editables |
+| Decomisos / muertos | ❌ No diferencia: *«si se murió en un destino también se morirá en otro»*. Raras excepciones |
+| Riesgo de tipificación | ❌ No diferencia: *«la tipificación es estándar de los frigoríficos, la ponen ellos»* |
+
+🔑 **Y el rinde es sólo de Arrebeef**: *«el resto siempre es a kg vivo»*. Las otras opciones no llevan
+rinde ni romaneo — se comparan sobre el kilo vivo, con su flete, su comisión/CZ, el desbaste acordado
+y el precio que pagarían.

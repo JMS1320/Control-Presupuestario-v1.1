@@ -478,6 +478,16 @@ da de alta al transportista en el maestro de proveedores.
 
 > Si volvés a guardar, el compromiso **se actualiza**: no queda un segundo pago por el mismo viaje.
 
+### Desbaste y rinde
+Al cargar el romaneo se piden **dos horas**: cuándo pesaste en el campo y cuándo pesó el vivo el
+frigorífico (esa **no viene en el romaneo**: hay que pedírsela). Con las dos, el desbaste sale como
+**% por hora**, que es lo único comparable entre canales — con el matarife zonal el desbaste **se
+acuerda de antemano**, y para acordarlo bien hay que conocer el real.
+
+En **Cabeza por cabeza** cada res se aparea con un animal tuyo **por orden de peso**: al más pesado
+tuyo, la res más pesada. Si un garrón aparece con **una sola media res** (recuadro ámbar), el PDF
+perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apareo queda corrido.
+
 ⚠️ *Sin probar todavía → `A-TEST-90` (romaneo), `A-TEST-91` (flete)*
 
 ---
