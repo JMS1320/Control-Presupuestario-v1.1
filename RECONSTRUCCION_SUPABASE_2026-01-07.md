@@ -12568,3 +12568,26 @@ que el rinde por grupo signifique algo.
 
 **Se conservan las dos**, no se pisa la del papel: son dos mediciones distintas y cuál es cuál
 importa. Misma regla que las tres balanzas de § 18.5.
+
+### Ampliación 2026-09-06 · el FLETE de la carga y su compromiso (A-FEAT-98)
+
+```sql
+ALTER TABLE productivo.cargas
+  ADD COLUMN flete_km numeric, ADD COLUMN flete_km_arranque numeric,
+  ADD COLUMN flete_precio_km numeric, ADD COLUMN flete_camino text,
+  ADD COLUMN flete_transportista_cuit text, ADD COLUMN flete_transportista_nombre text,
+  ADD COLUMN flete_fecha_pago date, ADD COLUMN flete_notas text,
+  ADD COLUMN flete_anticipo_id uuid;
+```
+
+🔑 **El flete es de la CARGA, no de la venta** — un camión, un flete, aunque lleve varias ventas.
+Misma razón que el romaneo (§ 19.4): repartirlo por venta antes de tiempo obliga a inventar un
+criterio de reparto que nadie pidió.
+
+🔑 **`flete_anticipo_id`** apunta a la fila de `anticipos_proveedores` que representa el compromiso
+de pago en el Cash Flow. Textual del usuario: *"como no llega factura ésa es nuestra vía"*. La fila
+vive allá, pero **se crea y se edita desde la carga**, que es la que tiene los campos del CZ. Guardar
+dos veces **actualiza** esa fila; no deja dos compromisos por el mismo viaje.
+
+🔑 **`flete_km_arranque` son km MÍNIMOS, no un extra.** Si el viaje es más corto se cobran igual.
+Sin ese campo, todo flete corto se subestima — y el error es sistemático, siempre para el mismo lado.
