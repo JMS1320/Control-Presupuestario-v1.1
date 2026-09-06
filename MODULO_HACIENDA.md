@@ -1606,3 +1606,101 @@ El norte administrativo dice automatizar la **búsqueda**, no la **decisión**.
 **La señal más valiosa es la tercera**, y es la que un buscador por proveedor no tiene: que el precio
 derivado caiga cerca de la mediana de las otras entregas del mismo insumo. Ese cálculo **ya existe**.
 → [A-FEAT-73](PENDIENTES.md#a-feat-73).
+
+
+---
+
+## 19 · 📄 El ROMANEO — leído del real (2026-09-05)
+
+Fuente: el romaneo de **ARRE BEEF** por la venta del 04/09/2026 (7 vacas + 3 toros). Todo lo de
+esta § está **verificado contra el papel**, no supuesto. Propuesta de implementación →
+`PENDIENTES.md` § A-FEAT-90/91/94.
+
+### 19.1 · Qué trae, y las tres identidades que cierran
+
+**Cabecera:** frigorífico (ARRE BEEF, mat. 2082, CUIT 30-66627755-0) · vendedor · consignatario ·
+**tropa 182152** · faena 04/09/2026 · **guía 9465418** · **DTA 0325145749** · cabezas faenadas 10 ·
+muertos (corral/vagón) 0 · **kilos vivos 6.260** · **kilos gancho 3.354** · **rinde 53,58 %**.
+
+**Dos cuerpos, y ahí está el control gratis** (pieza 4 del norte administrativo):
+
+| Cuerpo | Qué es | Filas |
+|---|---|---|
+| **Detalle** | una fila por **media res**: garrón, clase, tipo, dientes, contenido, **peso**, precio | 20 = 10 animales × 2 |
+| **Liquidación** | agrupado por *tipo + clase + dientes + contenido*, con su precio e importe | 9 |
+
+🧮 **Verificado**: las 20 medias suman **3.354 kg**, las 9 líneas suman **3.354 kg**, los vivos
+asignados suman **6.260**, y `3.354 ÷ 6.260 = 53,58 %`. Cada línea cumple `importe = kg × precio`, y
+los 9 importes suman **$18.750.900,00** exacto.
+
+⚠️ **El garrón aparece dos veces y no es un duplicado**: son las dos medias reses del mismo animal
+(garrón 507 → 123 + 125 = 248 kg). Contar filas para saber cuántos animales hay **da el doble**.
+
+### 19.2 · 🔑 El precio NO es uno solo — es una grilla
+
+Lo que el usuario anticipó (*"habrá distintos precios porque hay distintas categorías: Gorda,
+Conserva, Manufactura"*) está en el papel, y la clave es más fina de lo previsto:
+
+| Tipo | Clase | Dientes | Cont. | $/kg | Motivo |
+|---|---|---|---|---:|---|
+| VA | E | 0 | MCV/MCV | 4.800 | `E0` |
+| VA | D | 0 | MCV/MCV | 5.500 | `D0` |
+| VA | C | 0 | ES/ES | 5.800 | `C0` |
+| VA | D | **1** | MCV/MCV | 5.800 | `D1` |
+| VA | B | **2** | ES/ES | 6.600 | |
+| VA | C | **2** | ES/ES | 6.600 | |
+| TO | A/B | 0/1 | MCV/MCV | **5.200** | `TORO` |
+
+🔑 **Los dientes mueven el precio tanto como la clase**: una **D con 1 diente vale más (5.800) que
+una C con 0 (5.800 igual) y que una D con 0 (5.500)**. Y **los toros van a precio único** sin
+importar clase ni dientes.
+
+> ⚠️ **`MCV/MCV` y `ES/ES` todavía no sabemos qué son** — probablemente la categoría comercial /
+> sanitaria. **Preguntar antes de modelarlos**: adivinar acá contamina la grilla de precios.
+> El campo `Motivo` parece ser la **regla de precio aplicada** (`clase`+`dientes`), y es el dato que
+> permite auditar por qué salió ese precio. → `A-DAT-21`.
+
+### 19.3 · 🚨 LAS TRES BALANZAS, con el número real
+
+Es la continuación directa de § 18.5, y ahora hay tres pesadas del mismo camión:
+
+| Origen | Kilos | vs frigorífico |
+|---|---:|---:|
+| **Campo** (suma de los animales) | 6.301 | +41 kg · **+0,65 %** |
+| **Camión** (bruto − tara) | 6.500 | +240 kg · **+3,83 %** |
+| **Frigorífico** (romaneo) | **6.260** | — |
+
+🔴 **Y acá el dato deja de ser obvio.** El desbaste de transporte normal ronda el 2–4 %:
+
+- Si se lo mide **contra el camión**, da **3,83 %** → un desbaste perfectamente normal.
+- Si se lo mide **contra el campo**, da **0,65 %** → un desbaste implausiblemente bajo.
+
+**Entonces no es cierto que "el camión lee de más"**, que fue la lectura inicial cuando sólo había
+dos balanzas: es igual de consistente que **la del campo lea de menos**. Con una sola carga **no se
+puede saber**, y por eso lo que hay que registrar es **la serie**, no el veredicto.
+
+📌 **Sigue valiendo la regla de § 18.5: se guardan las tres y no se pisa ninguna.** Esta carga es la
+prueba de por qué — el promedio de varias cargas es lo único que va a separar *desbaste* de
+*descalibración*, y pisar cualquiera de las tres destruye la evidencia antes de tenerla.
+
+### 19.4 · Cómo engancha con lo que ya existe
+
+El romaneo **es de la CARGA, no de una venta**: un solo camión, un solo romaneo, y adentro las dos
+ventas (vacas y toros). Esa entidad **ya existe** (`productivo.cargas`, § 18.5) y era justo la pieza
+que faltaba para poder recibirlo.
+
+```
+carga  ──1:1──  romaneo  ──1:N──  medias reses (20)
+                    └────1:N──  líneas de liquidación (9)  ──agrupa por tipo──▶  stock_ventas
+```
+
+Y cierra el hueco que § 18.3 dejó abierto a propósito: cuando el destino compra **a la res**, el
+importe quedaba vacío *"falta el kilaje de carne del romaneo"*. **Ese kilaje llega acá**:
+
+| Venta | Cabezas | `kg_carne` | Importe |
+|---|---:|---:|---:|
+| Vacas | 7 | **1.748** | $10.399.700 |
+| Toros | 3 | **1.606** | $8.351.200 |
+| | **10** | **3.354** | **$18.750.900** |
+
+`stock_ventas.kg_carne` ya existe (§ 18.1): el romaneo lo completa y el importe se calcula solo.
