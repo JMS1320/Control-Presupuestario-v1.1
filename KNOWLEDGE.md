@@ -1796,3 +1796,62 @@ de kilo vivo usando el rinde global, y por eso sus 9 grupos daban `53,58 %` los 
 
 ⚠️ **Lo detectó el usuario, no el código ni un test** — *"en algún lugar estás mal pero no sé
 exactamente dónde"*. Ningún control lo habría agarrado: los números cerraban perfecto.
+
+
+## Las PARTIDAS del inmobiliario (extraídas de las boletas 2026) `#arba #referencia #2026-09-06`
+
+Salieron de los PDFs que dejó el usuario, no de tipearlas. Formato ARBA: `partido-partida-dv`.
+
+| Lote | Partida | Anual 2026 |
+|---|---|---:|
+| Anexo | `099-008368-1` | 251.072,90 |
+| Casco | `099-006595-0` | 4.489.797,90 |
+| Cholo 1 | `099-010611-8` | 73.818,50 |
+| Cholo 2 | `099-012766-2` | 73.358,50 |
+| El Relincho | `099-025089-8` | 576.624,40 |
+| Entre Rios | `099-025551-2` | 104.985,30 |
+| Lima | `038-040142-8` | *(cuotas)* |
+| Ombu | `099-016666-8` | 1.737.255,00 |
+| Porteria Nuevo | `099-015877-0` | 209.174,30 |
+| Porteria Viejo | `099-015879-7` | 209.175,40 |
+| Quinta Rosello 1 | `099-001854-5` | *(cuotas)* |
+| Quinta Rosello 2 | `099-001846-4` | *(cuotas)* |
+| Rojas | `090-016369-0` | 7.856.195,20 |
+| Sanchez | `099-015880-0` | 215.065,20 |
+| Tango Leboso | `099-015881-9` | 134.928,60 |
+| Tango Parra 1 | `099-015883-5` | 134.928,60 |
+| Tango Parra 2 | `099-015885-1` | 246.700,10 |
+| Tapera 1 | `099-015882-7` | 133.665,70 |
+| Tapera 2 | `099-015884-3` | 129.293,70 |
+| Tapera 3 | `099-015886-0` | 128.050,30 |
+
+⚠️ **Rojas es el único de partido `090`** — los demás son `099`. No es un error de lectura: está en
+la boleta. Y **Lima es `038`**.
+
+⏳ Sin partida: **Lote Puerto** (su PDF es un comprobante de pago) y los dos **Complementarios** (el
+complementario grava al contribuyente, no a una parcela: no tiene partida).
+
+---
+
+## Leer un PDF de ARBA: el texto son glyph IDs, no letras `#parseo #arba #2026-09-06`
+
+Las boletas de ARBA traen el contenido como **hexadecimales de glifo** dentro de una fuente
+subseteada:
+
+```
+BT /F4 16 Tf 1 0 0 -1 78 64 Tm <002D> Tj 4 0 Td <0051> Tj
+```
+
+Un extractor que busca literales entre paréntesis devuelve **cero**: no hay ninguno. Hay que:
+
+1. buscar en cada objeto Font su `/ToUnicode N 0 R`,
+2. descomprimir ese stream y parsear su CMap (`beginbfchar` / `beginbfrange`),
+3. seguir los `Tf` del contenido para saber **qué fuente está activa** en cada momento,
+4. y recién ahí traducir los `<hhhh>`.
+
+🔑 **El paso 3 es el que se olvida.** Un documento usa varias fuentes y **el mismo glyph ID significa
+cosas distintas en cada una**. Un mapa global «que funciona» es una bomba de tiempo: acierta mientras
+las fuentes coincidan y falla en silencio cuando dejan de coincidir.
+
+*Sirve para cualquier PDF generado por sistema —no sólo ARBA— y es distinto del caso del romaneo,
+que sí traía literales pero partidos por kerning.*

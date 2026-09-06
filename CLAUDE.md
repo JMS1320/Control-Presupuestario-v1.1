@@ -460,6 +460,20 @@ lugar donde la pérdida es **definitiva**.
 segunda se llevó puesto el cierre de la primera. En el repo eso lo hubiera atajado git; acá no hay
 nada. **Es la pérdida silenciosa de la regla 1, en el único sitio sin marcha atrás.***
 
+### 📁 La carpeta de comunicación — se mira sin que lo pidan (REGLA)
+*Pedido del usuario 2026-09-06: **«recordá usarla siempre y ya no hace falta que yo te diga que ahí
+lo dejé»**.*
+
+> **`- Comunicacion JMS Claude - Archivos/` es el canal por default para pasar archivos.** El usuario
+> deja ahí lo que hace falta — PDFs, planillas, capturas — y **no avisa**.
+
+- Al arrancar un tema que necesite un archivo, **mirar la carpeta primero**. Preguntar por algo que
+  ya está ahí es el mismo error que preguntar algo que está en el repo (§ 🧭 Regla de contexto).
+- Está **fuera de git** (empieza con `- `, y esos archivos están ignorados): es un buzón, no
+  documentación. Lo que salga de ahí y valga la pena **se absorbe a su dimensión**.
+- Motivo: el 2026-09-06 el usuario dejó ahí las 63 boletas del inmobiliario **después de que yo le
+  pidiera que tipeara las 21 partidas a mano**. Estaban todas adentro de los PDFs.
+
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
 enganchar algo nuevo con algo hecho hace meses. **Cuanto menos contexto haya, más se aplica.**
