@@ -97,12 +97,35 @@ export interface RomaneoParseado {
 }
 
 // ── Descompresión de los streams del PDF ─────────────────────────────────────────────────────
+//
+// 🐞 **Por qué esto lleva contador.** El 2026-09-06 el parser devolvió CERO en el navegador —sin
+// error, sin aviso— mientras en Node leía el mismo PDF perfecto. Con un `catch { return null }`
+// mudo no había forma de saber si el problema era que no encontró streams, que no descomprimió, o
+// que descomprimió y no había texto. **Un fallo silencioso no se puede diagnosticar a distancia.**
+const diag = { streams: 0, inflados: 0, conTexto: 0, ultimoError: "" }
+
 async function inflar(bytes: Uint8Array): Promise<string | null> {
   try {
-    const ds = new DecompressionStream('deflate')
+    // `deflate` = zlib con cabecera (RFC 1950), que es lo que usa `/FlateDecode`.
+    const ds = new DecompressionStream("deflate")
     const buf = await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(ds)).arrayBuffer()
-    return new TextDecoder('latin1').decode(buf)
-  } catch { return null }
+    diag.inflados++
+    return new TextDecoder("latin1").decode(buf)
+  } catch (e) {
+    // Algunos PDFs dejan bytes de relleno después del stream y eso hace fallar a
+    // `DecompressionStream` (zlib los tolera). Se reintenta recortando la cola.
+    for (const recorte of [1, 2, 3]) {
+      try {
+        const ds = new DecompressionStream("deflate")
+        const b2 = bytes.slice(0, bytes.length - recorte)
+        const buf = await new Response(new Blob([b2 as BlobPart]).stream().pipeThrough(ds)).arrayBuffer()
+        diag.inflados++
+        return new TextDecoder("latin1").decode(buf)
+      } catch { /* sigue probando */ }
+    }
+    if (!diag.ultimoError) diag.ultimoError = (e as Error).message || String(e)
+    return null
+  }
 }
 
 function indiceDe(buf: Uint8Array, pat: string, desde: number): number {
@@ -235,6 +258,7 @@ function dientesEntre(celdas: string[], desde: number, hasta: number): number | 
  */
 export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParseado> {
   const buf = new Uint8Array(datos)
+  diag.streams = 0; diag.inflados = 0; diag.conTexto = 0; diag.ultimoError = ""
   const piezas: Pieza[] = []
   let pag = 0
   let i = 0
@@ -246,8 +270,10 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
     if (buf[st] === 10) st++
     const e = indiceDe(buf, 'endstream', st)
     if (e < 0) break
+    diag.streams++
     const texto = await inflar(buf.slice(st, e))
     if (texto && /BT/.test(texto) && /Tj|TJ/.test(texto)) {
+      diag.conTexto++
       pag++
       piezas.push(...piezasDe(texto, pag))
     }
@@ -407,6 +433,22 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
   // ── Avisos: nunca frenan, sólo se muestran ─────────────────────────────────────────────────
   if (!lineas.length) avisos.push('No se reconoció ninguna línea de liquidación. Cargá los datos a mano.')
   if (!medias.length) avisos.push('No se reconoció el detalle por media res. La liquidación puede seguir sirviendo.')
+
+  // 🔬 Cuando NO salió nada, el aviso tiene que decir DÓNDE se cortó. Sin esto el usuario ve
+  // «no reconoció nada» y no hay manera de saber si el PDF no traía streams, si no se pudieron
+  // descomprimir, o si se descomprimieron y adentro no había texto. Cada caso se arregla distinto.
+  if (!lineas.length && !medias.length) {
+    const hayDS = typeof DecompressionStream !== 'undefined'
+    avisos.push(
+      `Diagnóstico: ${diag.streams} stream(s) en el PDF · ${diag.inflados} descomprimido(s) · ` +
+      `${diag.conTexto} con texto · ${filas.length} fila(s) reconstruida(s)` +
+      (hayDS ? '' : ' · ⚠️ este navegador NO tiene DecompressionStream') +
+      (diag.ultimoError ? ` · primer error: ${diag.ultimoError}` : '')
+    )
+    if (diag.streams === 0) avisos.push('El archivo no parece un PDF con streams. ¿Se subió el archivo correcto?')
+    else if (diag.inflados === 0) avisos.push('Ningún stream se pudo descomprimir. Puede ser un PDF con otro filtro (no FlateDecode) o cifrado.')
+    else if (diag.conTexto === 0) avisos.push('Los streams se descomprimieron pero ninguno tiene texto: el PDF puede ser un ESCANEO (imagen).')
+  }
   if (medias.length && medias.length % 2 !== 0) {
     avisos.push(`Hay ${medias.length} medias reses, un número impar. Deberían ser 2 por animal — puede faltar una fila.`)
   }

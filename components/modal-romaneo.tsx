@@ -132,7 +132,15 @@ export function ModalRomaneo({
           .select("fecha, peso_bruto, peso_tara, pesada_campo_at, pesada_destino_at, kg_vivo_destino").eq("id", cargaId).maybeSingle()
         const c = (cg ?? {}) as { fecha?: string; peso_bruto?: number; peso_tara?: number; pesada_campo_at?: string; pesada_destino_at?: string; kg_vivo_destino?: number }
         setNetoCamion(c.peso_bruto != null && c.peso_tara != null ? c.peso_bruto - c.peso_tara : null)
-        const iso = (v?: string) => (v ? new Date(v).toISOString().slice(0, 16) : "")
+        // 🐞 `toISOString()` devuelve UTC y un `datetime-local` lo muestra tal cual: las 12:00
+        // del campo aparecían como 15:00. La hora es el insumo del desbaste por hora, así que
+        // mostrarla corrida invita a "corregirla" y a romper el dato bueno.
+        const iso = (v?: string) => {
+          if (!v) return ""
+          const d = new Date(v)
+          const p2 = (n: number) => String(n).padStart(2, "0")
+          return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`
+        }
         setHoraCampo(iso(c.pesada_campo_at))
         setHoraDestino(iso(c.pesada_destino_at))
         setKgDestino(c.kg_vivo_destino != null ? String(c.kg_vivo_destino) : "")
