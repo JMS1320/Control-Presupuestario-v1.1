@@ -72,6 +72,8 @@ export function ModalRomaneo({
   const [mapa, setMapa] = useState<Record<string, string>>({})
   const [cab, setCab] = useState<Record<string, string>>({})
   const [verDetalle, setVerDetalle] = useState(false)
+  /** Vivo NUESTRO por grupo de precio. Vacío = usar el propuesto; escrito = «acá mando yo». */
+  const [vivoReal, setVivoReal] = useState<Record<string, string>>({})
 
   const limpiar = () => { setRom(null); setArchivo(null); setMapa({}); setCab({}); setVerDetalle(false) }
 
@@ -134,6 +136,53 @@ export function ModalRomaneo({
 
   const tiposDe = (r: RomaneoParseado) => [...new Set(r.lineas.map(l => l.tipo))]
 
+  /**
+   * 🔑 **Los GRUPOS DE PRECIO** — A-FEAT-96, *«el dato más importante para nosotros»*.
+   *
+   * Un grupo es **un precio dentro de un tipo**. Textual del usuario: *«si vaca y toro tienen mismo
+   * precio igual son 2 grupos diferentes; dentro de vaca habrá 2 o 3 precios distintos = 2 o 3
+   * grupos distintos»*. Por eso la clave es `tipo|precio` y no la categoría: el precio lo pone la
+   * clasificación del frigorífico (clase + dientes), que abre **una categoría nuestra en varias**.
+   */
+  const gruposPrecio = () => {
+    const g = new Map<string, { tipo: string; precio: number; cabezas: number; kg_carne: number; importe: number; clases: string[] }>()
+    for (const l of rom!.lineas) {
+      const precio = l.precio_kg ?? 0
+      const k = `${l.tipo}|${precio}`
+      const a = g.get(k) ?? { tipo: l.tipo, precio, cabezas: 0, kg_carne: 0, importe: 0, clases: [] }
+      a.cabezas += l.cabezas
+      a.kg_carne += l.kg_faena
+      a.importe += l.importe
+      const et = `${l.clase}${l.dientes ?? ""}`
+      if (!a.clases.includes(et)) a.clases.push(et)
+      g.set(k, a)
+    }
+    return [...g.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => a.tipo.localeCompare(b.tipo) || b.precio - a.precio)
+  }
+
+  /**
+   * El vivo NUESTRO de cada grupo, precargado en proporción al kilo de carne sobre **el total de
+   * la venta imputada** — o sea, sobre la balanza del campo, no sobre la del papel.
+   *
+   * ⚠️ La columna *Vivo* del romaneo **no sirve para esto**: el frigorífico la reparte usando el
+   * rinde global, y por eso los 9 grupos del romaneo del 04/09 dan **53,58 % todos**. Un rinde
+   * calculado con ese número es circular — devuelve siempre el mismo, para cualquier grupo.
+   */
+  const vivoPropuesto = (g: { tipo: string; kg_carne: number }): number | null => {
+    const venta = ventas.find(v => v.id === mapa[g.tipo])
+    const totalTipo = rom!.lineas.filter(l => l.tipo === g.tipo).reduce((s, l) => s + l.kg_faena, 0)
+    if (!venta?.kg_totales || !totalTipo) return null
+    return Math.round(Number(venta.kg_totales) * (g.kg_carne / totalTipo))
+  }
+  const vivoDe = (g: { k: string; tipo: string; kg_carne: number }): number | null => {
+    const escrito = vivoReal[g.k]
+    if (escrito != null && escrito.trim() !== "") {
+      const n = parseFloat(escrito.replace(/\./g, "").replace(",", "."))
+      return isNaN(n) ? null : n
+    }
+    return vivoPropuesto(g)
+  }
+
   const resumenPorTipo = (t: string) => {
     const ls = rom!.lineas.filter(l => l.tipo === t)
     return {
@@ -178,12 +227,25 @@ export function ModalRomaneo({
         if (error) throw error
       }
       if (rom.lineas.length) {
-        const { error } = await prod.from("romaneo_lineas").insert(rom.lineas.map(x => ({
-          romaneo_id: romaneoId, cabezas: x.cabezas, tipo: x.tipo, clase: x.clase,
-          dientes: x.dientes, contenido: x.contenido, kg_faena: x.kg_faena, kg_vivo: x.kg_vivo,
-          precio_kg: x.precio_kg, motivo: x.motivo, importe: x.importe,
-          stock_venta_id: mapa[x.tipo] || null, orden: x.orden,
-        })))
+        // El vivo NUESTRO se decide por grupo de precio (A-FEAT-96) y se reparte entre las líneas
+        // de ese grupo en proporción al kilo de carne, que es el único reparto que no inventa nada.
+        const grupos = gruposPrecio()
+        const { error } = await prod.from("romaneo_lineas").insert(rom.lineas.map(x => {
+          const g = grupos.find(y => y.tipo === x.tipo && y.precio === (x.precio_kg ?? 0))
+          const vivoG = g ? vivoDe(g) : null
+          const parte = g && g.kg_carne > 0 && vivoG != null
+            ? Math.round(vivoG * (x.kg_faena / g.kg_carne)) : null
+          return {
+            romaneo_id: romaneoId, cabezas: x.cabezas, tipo: x.tipo, clase: x.clase,
+            dientes: x.dientes, contenido: x.contenido, kg_faena: x.kg_faena,
+            // Se conservan LOS DOS: el que asigna el frigorífico (no es una pesada) y el nuestro.
+            kg_vivo: x.kg_vivo,
+            kg_vivo_real: parte,
+            kg_vivo_real_origen: g && (vivoReal[g.k] ?? "").trim() !== "" ? "manual" : "proporcional",
+            precio_kg: x.precio_kg, motivo: x.motivo, importe: x.importe,
+            stock_venta_id: mapa[x.tipo] || null, orden: x.orden,
+          }
+        }))
         if (error) throw error
       }
 
@@ -357,6 +419,62 @@ export function ModalRomaneo({
                   ⚠️ Esta carga no tiene ventas asociadas: el romaneo se guarda igual, pero no hay a qué imputarlo.
                 </p>
               )}
+            </div>
+
+            {/* ── GRUPOS DE PRECIO — el rinde real ──────────────────────────────────── */}
+            <div className="rounded border">
+              <div className="border-b bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-900">
+                Rinde por grupo de precio
+                <span className="ml-2 font-normal text-emerald-700">un grupo = un precio dentro de un tipo</span>
+              </div>
+              <table className="w-full text-[11px]">
+                <thead className="bg-gray-50 text-[10px] text-gray-600">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Grupo</th>
+                    <th className="px-2 py-1 text-left">Clases</th>
+                    <th className="px-2 py-1 text-right">Cab</th>
+                    <th className="px-2 py-1 text-right">kg carne</th>
+                    <th className="px-2 py-1 text-right">$/kg</th>
+                    <th className="px-2 py-1 text-right">Importe</th>
+                    <th className="px-2 py-1 text-right">kg vivo <span className="font-normal">(nuestro)</span></th>
+                    <th className="px-2 py-1 text-right">Rinde real</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gruposPrecio().map(g => {
+                    const vivo = vivoDe(g)
+                    const rinde = vivo && vivo > 0 ? (g.kg_carne / vivo) * 100 : null
+                    const propio = (vivoReal[g.k] ?? "").trim() !== ""
+                    return (
+                      <tr key={g.k} className="border-t">
+                        <td className="px-2 py-1 font-medium">{g.tipo} · {m(g.precio)}</td>
+                        <td className="px-2 py-1 text-gray-500">{g.clases.join(", ")}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{g.cabezas}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{g.kg_carne.toLocaleString("es-AR")}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{m(g.precio)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{m(g.importe)}</td>
+                        <td className="px-2 py-1 text-right">
+                          <Input type="text" className={`h-6 w-24 text-right text-[11px] ${propio ? "font-medium" : "text-gray-500"}`}
+                            placeholder={vivoPropuesto(g)?.toLocaleString("es-AR") ?? "—"}
+                            value={vivoReal[g.k] ?? ""}
+                            onChange={e => setVivoReal(p => ({ ...p, [g.k]: e.target.value }))} />
+                        </td>
+                        <td className={`px-2 py-1 text-right tabular-nums ${rinde == null ? "text-gray-400" : "font-medium"}`}>
+                          {rinde == null ? "—" : `${rinde.toFixed(2).replace(".", ",")} %`}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div className="border-t bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
+                ⚠️ <b>El vivo del romaneo no sirve para esto.</b> El frigorífico lo reparte entre los grupos
+                usando el <b>rinde global</b>, así que calculado con ese número los {rom.lineas.length} grupos dan
+                todos <b>{rom.rinde}&nbsp;%</b> — el rinde por grupo saldría siempre igual, para cualquier grupo.
+                Por eso acá el vivo se precarga con <b>el kilaje de la venta</b> (la balanza del campo), repartido
+                en proporción al kilo de carne. <b>Es una propuesta:</b> pisalo con lo que hayas pesado de verdad
+                y el rinde se recalcula.
+              </div>
             </div>
 
             {/* ── DETALLE (plegado) ─────────────────────────────────────────────────── */}

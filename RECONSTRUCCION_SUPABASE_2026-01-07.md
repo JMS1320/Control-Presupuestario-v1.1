@@ -12543,3 +12543,28 @@ a mano, después hay que poder distinguir **qué venía mal del papel** de **qu�
 
 ⚠️ **GRANTs incluidos en la migración** — tercera vez que se aplica la lección: una tabla nueva no
 los hereda del schema, y el error no aparece hasta que el usuario aprieta Guardar.
+
+### Ampliación 2026-09-06 · el rinde REAL por grupo de precio (A-FEAT-96)
+
+```sql
+ALTER TABLE productivo.romaneo_lineas
+  ADD COLUMN kg_vivo_real numeric,
+  ADD COLUMN kg_vivo_real_origen text;   -- 'proporcional' | 'manual' | 'animales'
+```
+
+🔴 **Por qué hace falta una columna nueva en vez de usar la que ya venía.** La columna `kg_vivo`
+del romaneo **no es una pesada**: el frigorífico reparte el total entre los grupos **usando el rinde
+global**. Verificado sobre el romaneo del 04/09 — los 9 grupos dan `53,58 %` **todos**:
+
+```
+146 ÷ 272 = 53,68     261 ÷ 487 = 53,59     486 ÷ 907 = 53,58
+248 ÷ 463 = 53,56     234 ÷ 437 = 53,55     373 ÷ 696 = 53,59
+545 ÷ 1017 = 53,59    437 ÷ 816 = 53,55     624 ÷ 1165 = 53,56
+```
+
+Calcular el rinde por grupo con ese número es **circular**: devuelve siempre el rinde global, para
+cualquier grupo. `kg_vivo_real` guarda el kilaje de **nuestra** balanza, que es el único que hace
+que el rinde por grupo signifique algo.
+
+**Se conservan las dos**, no se pisa la del papel: son dos mediciones distintas y cuál es cuál
+importa. Misma regla que las tres balanzas de § 18.5.
