@@ -13,6 +13,7 @@ import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizad
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertasFcVenta } from "./alertas-fc-venta"
 import { PanelRevisiones } from "./panel-revisiones"
+import { PanelPruebas } from "./panel-pruebas"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable, type FacturaCandidato } from "@/hooks/useVinculacionAnticipo"
 import { toast } from "sonner"
@@ -189,6 +190,10 @@ export function VistaPrincipal() {
 
         {/* Pendientes de desarrollo (P-37). Modal y no solapa: una 13ª rompe el grid-cols-12
             del TabsList, mismo criterio que la ficha de proveedores. Esta vista ya es admin-only. */}
+        {/* 🧪 Pruebas de logica pura, cero escritura (A-FEAT-105). Corre en el navegador del
+            usuario, que es lo unico que ve las diferencias de entorno. */}
+        <PanelPruebas />
+
         <Button variant="secondary" onClick={() => setModalPendientes(true)} className="flex items-center gap-2">
           <ClipboardList className="h-4 w-4" />
           Pendientes
