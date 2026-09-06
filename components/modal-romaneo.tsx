@@ -237,6 +237,22 @@ export function ModalRomaneo({
 
   const guardar = async () => {
     if (!rom) return
+    // 🧮 Un garrón con una sola media res tiene el kilo de res a la mitad, y eso **corre el apareo
+    // por peso**: el rinde de TODOS los grupos queda mal, no sólo el de esa cabeza. Se avisa acá
+    // porque hasta ahora se podía guardar sin que nada lo dijera, y los números salían mal en
+    // silencio (A-BUG-116).
+    const incompletos = cabezasRomaneo().filter(c => c.medias !== 2)
+    if (incompletos.length && !window.confirm(
+      `⚠️ ${incompletos.length} garrón(es) tienen una sola media res: ${incompletos.map(c => c.garron).join(", ")}.
+
+` +
+      `Su kilo de res está a la mitad, así que el apareo por peso queda corrido y **los rindes de todos los grupos van a salir mal**.
+
+` +
+      `Lo recomendable es cerrar, corregirlos a mano y volver.
+
+¿Guardar igual?`
+    )) return
     setGuardando(true)
     try {
       const prod = supabase.schema("productivo")
@@ -275,9 +291,16 @@ export function ModalRomaneo({
         const porGrupo = new Map(rindePorGrupo(todasLasAdjudicaciones()).map(g => [`${g.tipo}|${g.precio}`, g]))
         const { error } = await prod.from("romaneo_lineas").insert(rom.lineas.map(x => {
           const g = porGrupo.get(`${x.tipo}|${x.precio_kg ?? 0}`)
-          // El grupo puede abarcar varias líneas: se le da a cada una su parte por kilo de carne.
-          const parte = g && g.kg_gancho > 0
-            ? Math.round(g.kg_vivo * (x.kg_faena / g.kg_gancho)) : null
+          // 🐞 **El denominador sale de las MISMAS líneas que el numerador** (A-BUG-116). Antes se
+          // repartía `g.kg_vivo × (kg_faena / g.kg_gancho)`, donde `kg_gancho` venía de las CABEZAS
+          // (que salen de las medias reses, y el PDF pierde algunas) mientras `kg_faena` venía de la
+          // LIQUIDACIÓN (completa). Con las dos fuentes mezcladas la suma del grupo se pasaba: en el
+          // grupo VA $6.600 el denominador era 302 y el numerador 607 — **el doble**.
+          const faenaDelGrupo = rom.lineas
+            .filter(y => y.tipo === x.tipo && (y.precio_kg ?? 0) === (x.precio_kg ?? 0))
+            .reduce((sum, y) => sum + y.kg_faena, 0)
+          const parte = g && faenaDelGrupo > 0
+            ? Math.round(g.kg_vivo * (x.kg_faena / faenaDelGrupo)) : null
           return {
             romaneo_id: romaneoId, cabezas: x.cabezas, tipo: x.tipo, clase: x.clase,
             dientes: x.dientes, contenido: x.contenido, kg_faena: x.kg_faena,

@@ -326,10 +326,16 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
     })
   }
 
-  // El precio de cada media sale de su línea de liquidación (mismo tipo+clase+dientes+contenido).
+  // El precio de cada media sale de su línea de liquidación.
+  //
+  // 🐞 **Con reserva en los dientes** (A-BUG-116). Exigir que coincidan `tipo+clase+dientes+contenido`
+  // dejó 3 medias sin precio: dos líneas quedaron con `dientes: null` porque en esas filas el PDF
+  // parte la celda, mientras las medias sí los traen. Una cabeza sin precio se cae de su grupo y
+  // arrastra su rinde a la nada. La clase y el contenido ya identifican el grupo con holgura: los
+  // dientes se usan para desempatar, no para exigir.
   for (const m of medias) {
-    const l = lineas.find(x => x.tipo === m.tipo && x.clase === m.clase
-      && x.dientes === m.dientes && x.contenido === m.contenido)
+    const mismo = (x: RomaneoLinea) => x.tipo === m.tipo && x.clase === m.clase && x.contenido === m.contenido
+    const l = lineas.find(x => mismo(x) && x.dientes === m.dientes) ?? lineas.find(mismo)
     if (l) m.precio_kg = l.precio_kg
   }
 
