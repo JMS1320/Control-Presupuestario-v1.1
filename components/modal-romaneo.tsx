@@ -88,6 +88,20 @@ export function ModalRomaneo({
 
   const limpiar = () => { setRom(null); setArchivo(null); setMapa({}); setCab({}); setVerDetalle(false) }
 
+  /**
+   * Cerrar con un romaneo leído y sin confirmar **pregunta**. Leer y revisar un romaneo lleva
+   * varios minutos, y perderlo por un click afuera es caro — pero lo caro de verdad es cerrar sin
+   * saber si se guardó, que es lo que le pasó al usuario.
+   */
+  const cerrarConAviso = () => {
+    if (rom && !window.confirm(
+      "El romaneo está leído pero NO se guardó todavía.\n\n" +
+      "Si cerrás se pierde y hay que volver a subir el PDF.\n\n¿Cerrar igual?"
+    )) return
+    limpiar()
+    onCerrar()
+  }
+
   const cargarCargas = async () => {
     if (cargas.length) return
     const { data } = await supabase.schema("productivo").from("cargas")
@@ -360,8 +374,13 @@ export function ModalRomaneo({
   )
 
   return (
-    <Dialog open={abierto} onOpenChange={o => { if (!o) { limpiar(); onCerrar() } }}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-auto">
+    <Dialog open={abierto} onOpenChange={o => { if (!o) cerrarConAviso() }}>
+      {/* Un click afuera o un Escape NO pueden tirar a la basura un romaneo ya leído y revisado.
+          Le pasó al usuario: «no sé qué apreté que se cerró pero me parece que lo tomó» — y no
+          había tomado nada. Lo peor no fue perder el trabajo: fue quedarse sin saber. A-BUG-117 */}
+      <DialogContent className="max-w-4xl max-h-[92vh] overflow-auto"
+        onInteractOutside={e => { if (rom) e.preventDefault() }}
+        onEscapeKeyDown={e => { if (rom) e.preventDefault() }}>
         <DialogHeader>
           <DialogTitle>📄 Cargar el romaneo del frigorífico</DialogTitle>
         </DialogHeader>
@@ -720,7 +739,7 @@ export function ModalRomaneo({
             <div className="flex items-center justify-between gap-2">
               <Button variant="ghost" size="sm" onClick={limpiar}>← Subir otro PDF</Button>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { limpiar(); onCerrar() }}>Cancelar</Button>
+                <Button variant="outline" onClick={cerrarConAviso}>Cancelar</Button>
                 <Button onClick={guardar} disabled={guardando}>
                   {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                   Confirmar y completar las ventas
