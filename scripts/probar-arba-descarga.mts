@@ -27,7 +27,9 @@ if (!fs.existsSync(GS)) {
 
 // Se extraen las funciones del .gs y se evalúan. `Utilities` se sustituye por un doble mínimo:
 // lo que se prueba es la lógica del nombre, no el formateador de fechas de Google.
-const fuente = fs.readFileSync(GS, "utf8")
+// Se normalizan los fines de línea: en Windows git deja CRLF y el corte por `\n}\n` no matchea.
+// Sin esto el test falla con «linksDeBoleta_ is not defined», que no dice nada de la causa.
+const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
 const necesarias = ["linksDeBoleta_", "nombreDeArchivo_"]
 let codigo = ""
 for (const fn of necesarias) {
@@ -37,8 +39,15 @@ for (const fn of necesarias) {
   const fin = fuente.indexOf("\n}\n", i)
   codigo += fuente.slice(i, fin + 3) + "\n"
 }
+// Doble mínimo de `Utilities.formatDate`. Honra el formato: un doble que devuelve siempre lo mismo
+// hace fallar casos que el código real pasa, y manda a buscar el bug en el lugar equivocado.
 const Utilities = {
-  formatDate: (d: Date, _tz: string, _fmt: string) => d.toISOString().slice(0, 10),
+  formatDate: (d: Date, _tz: string, fmt: string) => {
+    const iso = d.toISOString()
+    return fmt === "yyyy" ? iso.slice(0, 4)
+      : fmt === "MM-dd" ? iso.slice(5, 10)
+        : iso.slice(0, 10)
+  },
 }
 const { linksDeBoleta_, nombreDeArchivo_ } = new Function("Utilities", codigo + "\nreturn { linksDeBoleta_, nombreDeArchivo_ }")(Utilities)
 
@@ -73,26 +82,34 @@ chequear("Corta la puntuación pegada al final",
 
 // ── Cómo se nombra: la clave de la deduplicación ──────────────────────────────────────────────
 const REAL = "Deuda-Inmobiliario-0990158819-R.pdf"
-const mar = new Date("2026-03-10T12:00:00Z")
-const sep = new Date("2026-09-06T12:00:00Z")
+// Asuntos reales, de los mails del usuario (2026-09-06).
+const ASUNTO_C3 = "Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3"
+const ASUNTO_C4 = "Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 4"
+const ago = new Date("2026-08-27T18:17:00Z")
+const nov = new Date("2026-11-05T10:00:00Z")
 
-chequear("El nombre lleva la fecha del mail adelante",
-  "2026-03-10 - Deuda-Inmobiliario-0990158819-R.pdf", nombreDeArchivo_(REAL, mar, 0))
+chequear("El nombre lleva año y cuota, sacados del asunto",
+  "2026-C3 - Deuda-Inmobiliario-0990158819-R.pdf", nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3))
 
-chequear("🔴 La MISMA partida en otro mes es OTRO archivo (si no, se pierde una boleta)",
-  "true", String(nombreDeArchivo_(REAL, mar, 0) !== nombreDeArchivo_(REAL, sep, 0)))
+chequear("🔴 La MISMA partida en otra cuota es OTRO archivo (si no, se pierde una boleta)",
+  "true", String(nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3) !== nombreDeArchivo_(REAL, nov, 0, ASUNTO_C4)))
+
+// Un mail trae VARIAS boletas. Si el nombre dependiera de la posición del link, que ARBA
+// reordene la tabla bastaría para que todo se baje de nuevo con otro nombre.
+chequear("🔴 El nombre NO depende del orden del link dentro del mail",
+  "true", String(nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3) === nombreDeArchivo_(REAL, ago, 3, ASUNTO_C3)))
 
 chequear("El mismo mail procesado dos veces da el mismo nombre (no duplica)",
-  "true", String(nombreDeArchivo_(REAL, mar, 0) === nombreDeArchivo_(REAL, mar, 0)))
+  "true", String(nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3) === nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3)))
 
-chequear("Dos boletas de la misma partida en UN mail no colisionan",
-  "true", String(nombreDeArchivo_(REAL, mar, 0) !== nombreDeArchivo_(REAL, mar, 1)))
+chequear("Sin cuota en el asunto, cae a la fecha del mail",
+  "true", String(nombreDeArchivo_(REAL, ago, 0, "Otro asunto").indexOf("2026-08-27") >= 0))
 
-chequear("Sin nombre del servidor, igual arma uno con la fecha",
-  "true", String(nombreDeArchivo_("", mar, 0).indexOf("2026-03-10") >= 0))
+chequear("Sin nombre del servidor, igual arma uno con el período",
+  "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3).indexOf("2026-C3") >= 0))
 
 chequear("Siempre termina en .pdf",
-  "true", String([nombreDeArchivo_(REAL, mar, 0), nombreDeArchivo_("", mar, 2)].every((x: string) => x.endsWith(".pdf"))))
+  "true", String([nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3), nombreDeArchivo_("", ago, 2, ASUNTO_C3)].every((x: string) => x.endsWith(".pdf"))))
 
 for (const x of r) {
   console.log(`  ${x.ok ? "✓" : "✗"} ${x.caso}`)

@@ -17,7 +17,7 @@
  * hizo falta para ARCA.
  *
  * ## Configuración (Script Properties)
- *   ARBA_QUERY      búsqueda de Gmail. Default: `from:arba.gov.ar newer_than:60d`
+ *   ARBA_QUERY      búsqueda de Gmail. Default: `from:boletaelectronica@arba.gov.ar newer_than:60d`
  *   ARBA_CARPETA    id de la carpeta de Drive. Si falta, find-or-create «Boletas ARBA»
  *   APP_URL         base de la app, para avisarle de lo bajado (opcional)
  *
@@ -25,7 +25,10 @@
  * `setTrashed` ni reemplazo de carpetas.
  */
 
-var ARBA_QUERY_DEFAULT = 'from:arba.gov.ar newer_than:60d'
+// El remitente real, visto en los mails del usuario (2026-09-06). `from:arba.gov.ar` a secas
+// tambien matchea, pero trae cualquier otra cosa que mande ARBA -- y el tope de 50 conversaciones
+// se llenaria con ruido antes de llegar a las boletas.
+var ARBA_QUERY_DEFAULT = 'from:boletaelectronica@arba.gov.ar newer_than:60d'
 var ARBA_CARPETA_NOMBRE = 'Boletas ARBA'
 
 function propArba_(k, def) {
@@ -82,24 +85,33 @@ function bajarBoleta_(url) {
 }
 
 /**
- * 🔴 **El nombre lleva la FECHA DEL MAIL, y no es cosmético.**
+ * 🔴 **El nombre identifica la boleta por PARTIDA y PERÍODO, y no es cosmético.**
  *
  * ARBA nombra sus PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, período NO**. Como la
  * deduplicación es por nombre, la boleta de la **cuota 3** de esa misma partida se saltearía como
  * *«ya estaba»* — **una boleta distinta, perdida en silencio**.
  *
- * Con la fecha del mail adelante, dos boletas de la misma partida en meses distintos son dos
- * archivos, y re-correr el script sobre el mismo mail sigue sin duplicar. Además ordena solo en
- * Drive, que es como se mira una carpeta de boletas.
+ * Con el período adelante, dos boletas de la misma partida en cuotas distintas son dos archivos, y
+ * re-correr el script sobre el mismo mail sigue sin duplicar. Además ordena solo en Drive, que es
+ * como se mira una carpeta de boletas.
  *
- * El índice `k` desempata cuando un mismo mail trae **dos boletas de la misma partida** (cuota y
- * anual juntas), que si no colisionarían entre sí.
+ * 🔴 **Y el período sale del ASUNTO, no del índice del link.** Un mail trae **varias boletas** —una
+ * fila por partida— y numerarlas por su posición hace que el nombre **dependa del orden en que
+ * aparecen**: si ARBA reordena la tabla, los mismos archivos se bajan de nuevo con otro nombre.
+ * El asunto dice la cuota (*«…Inmobiliario Rural Cuota 3»*) y eso **no depende del orden**.
+ *
+ * El nombre del servidor ya trae la partida, así que `2026-C3 - Deuda-Inmobiliario-0990158819-R.pdf`
+ * identifica la boleta sin ambigüedad y re-correr el script da siempre lo mismo.
  */
-function nombreDeArchivo_(nombreOriginal, fechaMail, k) {
-  var fecha = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy-MM-dd')
-  if (!nombreOriginal) return 'ARBA - ' + fecha + ' - ' + (k + 1) + '.pdf'
+function nombreDeArchivo_(nombreOriginal, fechaMail, k, asunto) {
+  var anio = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy')
+  // El asunto trae la cuota: «Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3».
+  var mc = String(asunto || '').match(/Cuota\s*(\d+)/i)
+  var periodo = anio + (mc ? '-C' + mc[1] : '-' + Utilities.formatDate(fechaMail, 'GMT-3', 'MM-dd'))
+
+  if (!nombreOriginal) return 'ARBA ' + periodo + ' - ' + (k + 1) + '.pdf'
   var base = String(nombreOriginal).replace(/\.pdf$/i, '')
-  return fecha + ' - ' + base + (k > 0 ? ' (' + (k + 1) + ')' : '') + '.pdf'
+  return periodo + ' - ' + base + '.pdf'
 }
 
 /**
@@ -130,11 +142,11 @@ function bajarBoletasArba(soloContar) {
           var r = bajarBoleta_(links[k])
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
 
-          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k)
+          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject())
           if (soloContar) { bajadas.push({ asunto: msg.getSubject(), archivo: nombre }); continue }
 
-          // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva la FECHA DEL MAIL, y sin
-          // eso la deduplicación borraba boletas distintas en silencio.
+          // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
+          // el período la deduplicación borraba boletas distintas en silencio.
           var ex = carpeta.getFilesByName(nombre)
           if (ex.hasNext()) {
             yaEstaban.push({ archivo: nombre, url: ex.next().getUrl() })

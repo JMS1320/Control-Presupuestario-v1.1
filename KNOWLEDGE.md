@@ -1921,3 +1921,43 @@ pasa al usuario.
 
 ⚠️ Lo que un test automatizado **no** hace, corra donde corra: verificar que un número **tenga
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
+
+
+## Anatomía del mail de boletas de ARBA `#arba #referencia #2026-09-06`
+
+Leído de los mails reales del usuario. **Las tres empresas llegan a `sanmanuel.sp@gmail.com`.**
+
+| | |
+|---|---|
+| **Remitente** | `ARBA <boletaelectronica@arba.gov.ar>` |
+| **Asunto** | `Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3` · idem `Complementario` |
+| **Empresa** | por el **CUIT del contribuyente** en el cuerpo, no por la casilla |
+| **Impuesto y cuota** | **están en el asunto** |
+
+### 🔑 Un mail trae VARIAS boletas
+El cuerpo tiene una **tabla**, una fila por partida, con `Objeto Imponible · Importe $ · Descargar
+boleta (Ingresar) · Pagá con Cuenta DNI (QR)`. Ejemplo real, MSA cuota 3:
+
+```
+099-015881-9    40.934,10      Ingresar
+099-010611-8    22.394,70      Ingresar
+099-008368-1    76.169,40      Ingresar
+099-012766-2    22.255,20      Ingresar
+```
+
+El **complementario** trae **una sola fila**, y su objeto imponible es **el CUIT**
+(`20-04439022-2 - Rural`), no una partida: grava al contribuyente, no a la parcela.
+
+### 💡 Lo que esto habilita, y todavía no se aprovechó
+> **El cuerpo del mail ya trae `partida · importe · link`.** Es un **segundo camino al mismo número**,
+> independiente del PDF — la *pieza 4* del norte administrativo, gratis: si el importe del mail y el
+> del PDF no coinciden, algo se leyó mal, y se sabe **sin abrir nada**.
+
+Y para el complementario, que **no tiene partida en el PDF**, el cuerpo del mail es la **única** vía
+de saber el importe sin abrir el archivo. → `A-FEAT-107`.
+
+### ⚠️ Lo que se rompía antes de saber esto
+ARBA nombra los PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, período NO**. Y como un
+mail trae varias boletas, numerarlas por su posición hacía que el nombre **dependiera del orden de
+la tabla**. Las dos cosas juntas: la boleta de la cuota siguiente se salteaba como *«ya estaba»*, y
+un reordenamiento de ARBA bastaba para re-bajar todo con otro nombre. → `A-BUG-120`.
