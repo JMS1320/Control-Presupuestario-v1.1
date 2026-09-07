@@ -67,6 +67,83 @@ function linksDeBoleta_(html) {
   return unicos
 }
 
+/**
+ * El cuerpo del mail como TEXTO, sin etiquetas.
+ *
+ * 🔑 **A propósito no se parsea el HTML.** No tengo el markup real de ARBA a la vista, y un parser
+ * atado a `<tr>`/`<td>` se rompe el día que le cambien la maquetación — que es exactamente cómo
+ * nació `A-BUG-119`. Sobre el texto plano da igual si la fila es una tabla, un `div` o un `span`
+ * por celda: lo que se busca es **el orden en que aparecen los datos**, que no cambia.
+ */
+function textoPlanoDeMail_(html) {
+  var t = String(html || '')
+    .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+  t = t.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+  return t.replace(/\s+/g, ' ').trim()
+}
+
+/** `099-015881-9` → `0990158819`. Para cruzar la partida del mail con la del nombre del PDF. */
+function soloDigitos_(s) { return String(s || '').replace(/\D/g, '') }
+
+/**
+ * La partida que ARBA mete en el nombre del PDF: `Deuda-Inmobiliario-0990158819-R.pdf`.
+ * Devuelve `''` si el nombre no la trae — el **complementario** es justamente ese caso.
+ */
+function partidaDeNombre_(nombreOriginal) {
+  var m = String(nombreOriginal || '').match(/(\d{10})/)
+  return m ? m[1] : ''
+}
+
+/**
+ * 🔑 **A-FEAT-107 — las filas de la TABLA del cuerpo del mail.**
+ *
+ * Un mail de ARBA trae **varias boletas**: una fila por partida, con `Objeto Imponible · Importe $ ·
+ * Descargar`. Leerla da **un segundo camino al mismo número**, independiente del PDF: si el importe
+ * del mail y el del PDF no coinciden, algo se leyó mal **y se sabe sin abrir el archivo**.
+ * Y para el **complementario** —que no trae partida en el PDF— el cuerpo del mail es la **única**
+ * vía de saber a qué corresponde.
+ *
+ * ## Cómo se arma una fila
+ * Un solo barrido en orden. Cada **objeto imponible** abre una fila y el **primer importe que le
+ * sigue** es el suyo; el objeto siguiente la cierra. Eso es lo único que sobrevive a que muevan las
+ * columnas: no depende de cuántas celdas haya ni de en qué orden estén.
+ *
+ * - **Partida**: `099-015881-9` (`3-6-1` dígitos) — el inmobiliario, una por parcela.
+ * - **CUIT**: `20-04439022-2` (`2-8-1`) — el complementario grava **al contribuyente**, no a la
+ *   parcela, y su objeto imponible es el CUIT.
+ *
+ * ⚠️ Los dos patrones **no se pisan** (un CUIT no puede leerse como partida ni al revés), y el CUIT
+ * del encabezado —el que dice de qué empresa es el mail— sale **sin importe**: por eso se devuelve
+ * aparte en `contribuyente` en vez de ensuciar las filas.
+ *
+ * **Nunca falla ni rechaza**: si no reconoce nada devuelve lista vacía y la bajada sigue igual.
+ */
+function filasDelMail_(html) {
+  var texto = textoPlanoDeMail_(html)
+  var re = /(\b\d{3}-\d{6}-\d\b)|(\b\d{2}-\d{8}-\d\b)|(\b\d{1,3}(?:\.\d{3})*,\d{2}\b)/g
+
+  var filas = [], contribuyente = '', actual = null, m
+  var cerrar = function () {
+    if (!actual) return
+    // Un CUIT sin importe es el encabezado («de qué empresa es este mail»), no una fila de la tabla.
+    if (actual.tipo === 'cuit' && actual.importe === null) { if (!contribuyente) contribuyente = actual.objeto }
+    else filas.push(actual)
+    actual = null
+  }
+  while ((m = re.exec(texto)) !== null) {
+    if (m[1] || m[2]) {
+      cerrar()
+      actual = { objeto: m[1] || m[2], tipo: m[1] ? 'partida' : 'cuit', importe: null }
+    } else if (actual && actual.importe === null) {
+      actual.importe = parseFloat(m[3].replace(/\./g, '').replace(',', '.'))
+    }
+  }
+  cerrar()
+  return { filas: filas, contribuyente: contribuyente }
+}
+
 /** Baja el PDF de un link. Devuelve `{blob, nombre, urlFinal}` o `null` si no era un PDF. */
 function bajarBoleta_(url) {
   var res = UrlFetchApp.fetch(url, {
@@ -129,13 +206,32 @@ function bajarBoletasArba(soloContar) {
   var truncado = hilos.length >= TOPE
 
   var bajadas = [], yaEstaban = [], sinPdf = [], errores = []
+  // Lo leído de la tabla del cuerpo, mail por mail (A-FEAT-107). Va en la respuesta para poder
+  // verificar contra un mail REAL que la tabla se está leyendo bien, sin bajar nada.
+  var tablas = [], descuadres = []
 
   for (var h = 0; h < hilos.length; h++) {
     var msgs = hilos[h].getMessages()
     for (var i = 0; i < msgs.length; i++) {
       var msg = msgs[i]
-      var links = linksDeBoleta_(msg.getBody())
+      var cuerpo = msg.getBody()
+      var links = linksDeBoleta_(cuerpo)
       if (!links.length) continue
+
+      // 🔑 **A-FEAT-107** — la tabla del cuerpo, leída UNA vez por mail. De acá sale el importe que
+      // después se contrasta contra el del PDF, y la identidad del complementario.
+      var tabla = filasDelMail_(cuerpo)
+      tablas.push({
+        asunto: msg.getSubject(), contribuyente: tabla.contribuyente,
+        filas: tabla.filas, links: links.length,
+      })
+      // Si la cantidad no coincide, uno de los dos lados se leyó mal. No se elige ninguno: se avisa.
+      if (tabla.filas.length && tabla.filas.length !== links.length) {
+        descuadres.push({
+          asunto: msg.getSubject(),
+          detalle: tabla.filas.length + ' fila(s) en la tabla del mail contra ' + links.length + ' link(s) de descarga',
+        })
+      }
 
       for (var k = 0; k < links.length; k++) {
         try {
@@ -143,7 +239,22 @@ function bajarBoletasArba(soloContar) {
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
 
           var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject())
-          if (soloContar) { bajadas.push({ asunto: msg.getSubject(), archivo: nombre }); continue }
+          // La fila del mail que le corresponde: por PARTIDA cuando el PDF la trae en el nombre, y
+          // por posición sólo cuando no la trae (el complementario, que además viene solo).
+          var laPartida = partidaDeNombre_(r.nombre)
+          var fila = null
+          for (var f = 0; f < tabla.filas.length; f++) {
+            if (laPartida && soloDigitos_(tabla.filas[f].objeto) === laPartida) { fila = tabla.filas[f]; break }
+          }
+          if (!fila && !laPartida && tabla.filas.length === 1) fila = tabla.filas[0]
+
+          if (soloContar) {
+            bajadas.push({
+              asunto: msg.getSubject(), archivo: nombre,
+              objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null,
+            })
+            continue
+          }
 
           // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
           // el período la deduplicación borraba boletas distintas en silencio.
@@ -157,6 +268,9 @@ function bajarBoletasArba(soloContar) {
             asunto: msg.getSubject(),
             fecha: Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd'),
             archivo: nombre, file_id: file.getId(), url: file.getUrl(),
+            // El SEGUNDO camino al mismo número: lo que dice el mail, para contrastar contra el PDF.
+            objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null,
+            contribuyente: tabla.contribuyente || null,
           })
         } catch (e) {
           errores.push({ asunto: msg.getSubject(), error: String(e) })
@@ -165,12 +279,18 @@ function bajarBoletasArba(soloContar) {
     }
   }
 
+  var conImporte = 0
+  for (var b = 0; b < bajadas.length; b++) if (bajadas[b].importe_mail != null) conImporte++
+
   return {
     ok: true, modo: soloContar ? 'contar' : 'bajar', query: query,
     hilos: hilos.length, truncado: truncado,
     bajadas: bajadas, ya_estaban: yaEstaban, sin_pdf: sinPdf, errores: errores,
+    tablas: tablas, descuadres: descuadres,
     resumen: bajadas.length + ' bajada(s) · ' + yaEstaban.length + ' ya estaban · '
       + sinPdf.length + ' link(s) que no dieron PDF · ' + errores.length + ' error(es)'
+      + ' · ' + conImporte + '/' + bajadas.length + ' con importe leído del mail'
+      + (descuadres.length ? ' · ⚠️ ' + descuadres.length + ' mail(s) donde la tabla y los links no coinciden' : '')
       + (truncado ? ' · ⚠️ se llegó al tope de ' + TOPE + ' conversaciones: puede haber más sin mirar' : ''),
   }
 }

@@ -1948,13 +1948,43 @@ boleta (Ingresar) · Pagá con Cuenta DNI (QR)`. Ejemplo real, MSA cuota 3:
 El **complementario** trae **una sola fila**, y su objeto imponible es **el CUIT**
 (`20-04439022-2 - Rural`), no una partida: grava al contribuyente, no a la parcela.
 
-### 💡 Lo que esto habilita, y todavía no se aprovechó
-> **El cuerpo del mail ya trae `partida · importe · link`.** Es un **segundo camino al mismo número**,
+### ✅ Cómo se lee la tabla (`A-FEAT-107`, hecho 2026-09-07)
+> **El cuerpo del mail trae `partida · importe · link`.** Es un **segundo camino al mismo número**,
 > independiente del PDF — la *pieza 4* del norte administrativo, gratis: si el importe del mail y el
 > del PDF no coinciden, algo se leyó mal, y se sabe **sin abrir nada**.
+>
+> Y para el complementario, que **no tiene partida en el PDF**, el cuerpo del mail es la **única**
+> vía de saber a qué corresponde.
 
-Y para el complementario, que **no tiene partida en el PDF**, el cuerpo del mail es la **única** vía
-de saber el importe sin abrir el archivo. → `A-FEAT-107`.
+Lo hace `filasDelMail_()` en `gas-buscar-pdf/BoletasArba.gs` (GAS **v0.11.0**). Tres decisiones que
+conviene no revertir sin leer esto:
+
+**1 · Se parsea el TEXTO, no el HTML.** Un parser atado a `<tr>`/`<td>` se rompe el día que ARBA
+cambie la maquetación — que es exactamente cómo nació `A-BUG-119`. Se sacan las etiquetas y se lee
+el texto resultante. Los casos lo prueban con **la misma tabla maquetada de tres formas** (tabla,
+divs, texto suelto con `<br>`): si el parser dependiera del markup, dos de las tres fallarían.
+
+**2 · Una fila es «un objeto imponible y el primer importe que le sigue»**, y el objeto siguiente la
+cierra. No depende de cuántas celdas haya ni de su orden.
+
+**3 · Los dos objetos imponibles no se pisan**, y eso es lo que permite distinguirlos sin contexto:
+
+| | Forma | Qué grava |
+|---|---|---|
+| **Partida** | `099-015881-9` — `3-6-1` dígitos | la parcela (inmobiliario) |
+| **CUIT** | `20-04439022-2` — `2-8-1` dígitos | el contribuyente (complementario) |
+
+⚠️ **El CUIT del encabezado no es una fila.** Todo mail dice de qué empresa es, así que hay un CUIT
+suelto antes de la tabla. Se distingue porque **no tiene importe detrás**, y se devuelve aparte en
+`contribuyente` — que además resuelve la identificación de empresa de `A-DAT-27`.
+
+**El cruce PDF ↔ fila** va por **partida**: ARBA nombra el archivo `Deuda-Inmobiliario-0990158819-R.pdf`,
+así que se comparan los dígitos pelados. El complementario, que no la trae en el nombre, se aparea
+por posición **sólo cuando la tabla tiene una sola fila** — que es su caso.
+
+🔎 **Sin verificar contra un mail real todavía**: el HTML de ARBA no está en el repo. Por eso
+`bajarBoletasArba` devuelve `tablas` (lo leído, mail por mail) y `descuadres` (cuando la cantidad de
+filas no coincide con la de links), y `testArbaContar()` los muestra **sin bajar nada** → `A-TEST-101`.
 
 ### ⚠️ Lo que se rompía antes de saber esto
 ARBA nombra los PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, período NO**. Y como un
