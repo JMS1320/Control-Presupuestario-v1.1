@@ -82,6 +82,27 @@ function bajarBoleta_(url) {
 }
 
 /**
+ * 🔴 **El nombre lleva la FECHA DEL MAIL, y no es cosmético.**
+ *
+ * ARBA nombra sus PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, período NO**. Como la
+ * deduplicación es por nombre, la boleta de la **cuota 3** de esa misma partida se saltearía como
+ * *«ya estaba»* — **una boleta distinta, perdida en silencio**.
+ *
+ * Con la fecha del mail adelante, dos boletas de la misma partida en meses distintos son dos
+ * archivos, y re-correr el script sobre el mismo mail sigue sin duplicar. Además ordena solo en
+ * Drive, que es como se mira una carpeta de boletas.
+ *
+ * El índice `k` desempata cuando un mismo mail trae **dos boletas de la misma partida** (cuota y
+ * anual juntas), que si no colisionarían entre sí.
+ */
+function nombreDeArchivo_(nombreOriginal, fechaMail, k) {
+  var fecha = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy-MM-dd')
+  if (!nombreOriginal) return 'ARBA - ' + fecha + ' - ' + (k + 1) + '.pdf'
+  var base = String(nombreOriginal).replace(/\.pdf$/i, '')
+  return fecha + ' - ' + base + (k > 0 ? ' (' + (k + 1) + ')' : '') + '.pdf'
+}
+
+/**
  * Recorre los mails de ARBA, baja lo que encuentra y lo archiva.
  * @param {boolean} soloContar si es true no guarda nada: sólo informa qué encontraría.
  */
@@ -104,10 +125,11 @@ function bajarBoletasArba(soloContar) {
           var r = bajarBoleta_(links[k])
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
 
-          var nombre = r.nombre || ('ARBA - ' + Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd') + ' - ' + (k + 1) + '.pdf')
+          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k)
           if (soloContar) { bajadas.push({ asunto: msg.getSubject(), archivo: nombre }); continue }
 
-          // 🔒 Dedup por NOMBRE: re-correr el script no puede llenar la carpeta de copias.
+          // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva la FECHA DEL MAIL, y sin
+          // eso la deduplicación borraba boletas distintas en silencio.
           var ex = carpeta.getFilesByName(nombre)
           if (ex.hasNext()) {
             yaEstaban.push({ archivo: nombre, url: ex.next().getUrl() })
