@@ -255,8 +255,18 @@ export function ModalRomaneo({
               : c.nombre.startsWith("Cabezas") ? cabezas
                 : c.nombre.startsWith("Rinde") ? (kilos_vivos > 0 ? Math.round((kilos_gancho / kilos_vivos) * 10000) / 100 : 0)
                   : c.calculado
-        const tol = c.nombre.startsWith("Rinde") ? 0.05 : c.nombre.startsWith("Cabezas") ? 0 : 1
-        return { ...c, calculado: nuevo, cierra: c.impreso != null && Math.abs(nuevo - c.impreso) <= tol }
+        // ⚠️ Los que se cuentan de a uno van con tolerancia CERO. Con la tolerancia de $1 que usan
+        // los kilos, «19 medias de 20» cerraba: justo el caso que este control existe para agarrar.
+        const deAUno = c.nombre.startsWith("Cabezas") || c.nombre.startsWith("Medias reses")
+        const tol = c.nombre.startsWith("Rinde") ? 0.05 : deAUno ? 0 : 1
+        let cierra = c.impreso != null && Math.abs(nuevo - c.impreso) <= tol
+        // Una media que el PDF no trajo **se completa a mano**, y ahí el control queda saldado: el
+        // dato existe, lo puso el usuario, y la huella guarda que vino de él y no del papel.
+        if (!cierra && c.nombre.startsWith("Medias reses")) {
+          const faltan = cabezasRomaneo().filter(x => x.medias !== 2)
+          if (faltan.length > 0 && faltan.every(x => (ganchoFix[x.garron] ?? "").trim() !== "")) cierra = true
+        }
+        return { ...c, calculado: nuevo, cierra }
       }),
     }
   }

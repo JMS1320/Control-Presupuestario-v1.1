@@ -84,6 +84,41 @@ for (const corregir of [false, true]) {
   }
 }
 
+// ══ 2b · LA RED: qué pasa si el próximo romaneo SÍ pierde una media ═══════════════════════════
+// Con el PDF de hoy este camino no se ejecuta (A-BUG-123 hizo que las 20 aparezcan), así que se
+// prueba aparte, quitándole una media a mano. Un caso que no puede fallar no cubre nada.
+console.log("\n═══ 2b · SI FALTARA UNA MEDIA (simulado) ═══")
+{
+  const { garronesIncompletos } = await import(`file:///${B}/lib/ganaderia/parsear-romaneo.ts`)
+
+  // Se le saca UNA media al garrón 509. Su línea es `VA B ES/ES, 1 cabeza, 234 kg`: la que falta
+  // pesa 234 − 117 = 117, y eso el papel lo dice — no hay que adivinarlo.
+  const mutilado = rom.medias.filter((m: any, i: number) =>
+    !(m.garron === "509" && rom.medias.findIndex((x: any) => x.garron === "509") === i))
+  const inc = garronesIncompletos(mutilado, rom.lineas)
+  linea("detecta el garrón al que le falta una media", "509", inc.map((x: any) => x.garron).join(",") || "(ninguno)",
+    inc.length === 1 && inc[0].garron === "509")
+  linea("y DERIVA el kilo que falta (234 − 117)", "117", String(inc[0]?.falta), inc[0]?.falta === 117)
+
+  // Con el romaneo entero no puede sobrar nada: si acusara garrones incompletos, avisaría siempre.
+  linea("con las 20 medias no reporta ninguno", "0", String(garronesIncompletos(rom.medias, rom.lineas).length),
+    garronesIncompletos(rom.medias, rom.lineas).length === 0)
+
+  // 🔴 No adivina cuando hay dos líneas posibles: `VA C ES/ES` tiene la de $5.800 y la de $6.600.
+  const dosLineas = [
+    { cabezas: 1, tipo: "VA", clase: "C", contenido: "ES/ES", kg_faena: 300 },
+    { cabezas: 1, tipo: "VA", clase: "C", contenido: "ES/ES", kg_faena: 400 },
+  ]
+  const amb = garronesIncompletos([{ garron: "999", tipo: "VA", clase: "C", contenido: "ES/ES", peso_kg: 100 }], dosLineas)
+  linea("🔴 con DOS líneas posibles no propone kilo (no elige al azar)", "null", String(amb[0]?.falta),
+    amb.length === 1 && amb[0].falta === null)
+
+  // El control que ve el usuario tiene que decir 20 esperadas, no 18 leídas.
+  const ctl = rom.controles.find((c: any) => c.nombre.startsWith("Medias reses"))
+  linea("el control declara las medias ESPERADAS", "20", `${ctl?.calculado} de ${ctl?.impreso}`,
+    ctl?.impreso === 20 && ctl?.calculado === 20 && ctl?.cierra === true)
+}
+
 console.log("\n═══ 3 · LO QUE IRÍA A LAS VENTAS ═══")
 for (const t of ["VA", "TO"]) {
   const ls = rom.lineas.filter((l: any) => l.tipo === t)

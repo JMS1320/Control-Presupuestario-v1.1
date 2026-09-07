@@ -137,6 +137,37 @@ function indiceDe(buf: Uint8Array, pat: string, desde: number): number {
   return -1
 }
 
+/**
+ * Mapea **objeto de stream → página real**, leyendo el `/Contents` de cada página.
+ *
+ * 🐞 **A-BUG-123.** Un PDF puede partir el contenido de UNA página en VARIOS streams, y el spec
+ * dice que se **concatenan y se leen como uno solo**: la matriz de texto (`Tm`) sigue corriendo de
+ * un stream al siguiente. El romaneo de Arrebeef es exactamente eso — una sola página con
+ * `/Contents [10 0 R … 17 0 R]` —, y tratar cada stream como una página hacía que **en cada borde
+ * la coordenada volviera a 0** y la fila que quedaba a caballo se partiera en dos. Se perdían 2 de
+ * las 20 medias reses (117 kg y 188 kg) y **los dientes de una línea de liquidación**, que es lo
+ * que dejaba el precio de un garrón sin poder decidir.
+ *
+ * Devuelve `null` si no se pudo entender la estructura. Ahí el llamador vuelve al modo viejo (un
+ * stream = una página): peor, pero **nunca peor que no leer nada** (§ el importador nunca rechaza).
+ */
+function paginasDeContenido(pdf: string): Map<number, number> | null {
+  const mapa = new Map<number, number>()
+  let pagina = 0
+  // `/Type /Page` seguido de algo que NO sea `s`, para no agarrar el `/Type /Pages` del árbol.
+  for (const m of pdf.matchAll(/\/Type\s*\/Page(?![s])/g)) {
+    const ini = pdf.lastIndexOf(' obj', m.index)
+    const fin = pdf.indexOf('endobj', m.index)
+    const dict = pdf.slice(ini < 0 ? 0 : ini, fin < 0 ? pdf.length : fin)
+    const cont = dict.match(/\/Contents\s*(\[[^\]]*\]|\d+\s+\d+\s+R)/)
+    if (!cont) continue
+    pagina++
+    // El ORDEN del array es el orden en que se concatenan; el Map guarda a qué página va cada uno.
+    for (const r of cont[1].matchAll(/(\d+)\s+\d+\s+R/g)) mapa.set(Number(r[1]), pagina)
+  }
+  return mapa.size ? mapa : null
+}
+
 interface Pieza { pag: number; x: number; y: number; txt: string }
 interface Fila { pag: number; y: number; celdas: string[]; xs: number[] }
 
@@ -256,11 +287,66 @@ function dientesEntre(celdas: string[], desde: number, hasta: number): number | 
  * Parsea el PDF de un romaneo.
  * @param datos el archivo subido por el usuario
  */
+export interface GarronIncompleto {
+  garron: string
+  /** Cuántas medias se leyeron de ese animal. Tendrían que ser 2. */
+  leidas: number
+  /** Los kilos de la media que falta, **o `null` si no se pudieron derivar sin elegir al azar**. */
+  falta: number | null
+}
+
+/**
+ * Los garrones a los que les falta una media res, **con el kilo que falta cuando se puede derivar**.
+ *
+ * Derivar no es adivinar: si la línea de liquidación del garrón es de **una sola cabeza**, sus kilos
+ * son los de ese animal entero, y lo que falta es la resta. Se exige **una única línea candidata** —
+ * con dos no se propone nada y el usuario lo completa a mano, que es la misma regla con la que se
+ * asigna el precio (§ nada se elige al azar).
+ *
+ * 📌 Aparte de `parsearRomaneo` porque es la red del importador y hay que poder probarla con un
+ * romaneo al que le falte una fila **sin tener ese PDF**.
+ */
+export function garronesIncompletos(
+  medias: Pick<RomaneoMedia, 'garron' | 'tipo' | 'clase' | 'contenido' | 'peso_kg'>[],
+  lineas: Pick<RomaneoLinea, 'cabezas' | 'tipo' | 'clase' | 'contenido' | 'kg_faena'>[],
+): GarronIncompleto[] {
+  const porGarron = new Map<string, typeof medias>()
+  for (const m of medias) {
+    if (!porGarron.has(m.garron)) porGarron.set(m.garron, [])
+    porGarron.get(m.garron)!.push(m)
+  }
+  return [...porGarron.entries()]
+    .filter(([, ms]) => ms.length < 2)
+    .map(([garron, ms]) => {
+      const leido = ms.reduce((s, m) => s + m.peso_kg, 0)
+      const cands = lineas.filter(x => x.cabezas === 1 && x.tipo === ms[0].tipo
+        && x.clase === ms[0].clase && x.contenido === ms[0].contenido && x.kg_faena > leido)
+      return {
+        garron, leidas: ms.length,
+        falta: cands.length === 1 ? Math.round((cands[0].kg_faena - leido) * 100) / 100 : null,
+      }
+    })
+}
+
 export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParseado> {
   const buf = new Uint8Array(datos)
   diag.streams = 0; diag.inflados = 0; diag.conTexto = 0; diag.ultimoError = ""
   const piezas: Pieza[] = []
-  let pag = 0
+
+  // 🐞 **A-BUG-123** — los streams se agrupan por la página REAL antes de leerlos. Latin1 es 1 byte
+  // = 1 carácter, así que los offsets del texto y los del buffer son los mismos.
+  const pdfTxt = new TextDecoder('latin1').decode(buf)
+  const mapaPag = paginasDeContenido(pdfTxt)
+  const cabecerasObj = [...pdfTxt.matchAll(/(\d+)\s+\d+\s+obj\b/g)].map(m => ({ i: m.index, num: Number(m[1]) }))
+  /** A qué objeto pertenece el stream que empieza en `off`: el último «N 0 obj» antes de él. */
+  const objDe = (off: number): number | null => {
+    let r: number | null = null
+    for (const c of cabecerasObj) { if (c.i < off) r = c.num; else break }
+    return r
+  }
+
+  const porPagina = new Map<number, string[]>()
+  let sueltos = 0
   let i = 0
   while (true) {
     const a = indiceDe(buf, 'stream', i)
@@ -274,11 +360,22 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
     const texto = await inflar(buf.slice(st, e))
     if (texto && /BT/.test(texto) && /Tj|TJ/.test(texto)) {
       diag.conTexto++
-      pag++
-      piezas.push(...piezasDe(texto, pag))
+      const num = objDe(a)
+      // Un stream con texto que NO cuelga de ninguna página (un Form XObject, por ejemplo) se lee
+      // igual, pero **aislado**: se le da un número alto para que no se mezcle con una página real.
+      const pg = (mapaPag && num != null ? mapaPag.get(num) : null) ?? (1000 + ++sueltos)
+      if (!porPagina.has(pg)) porPagina.set(pg, [])
+      porPagina.get(pg)!.push(texto)
     }
     i = e + 9
   }
+
+  // Los streams de una misma página se concatenan y se leen de una sola pasada: así el `Tm` corre
+  // entre ellos y la fila del borde no se parte. El separador es un salto, como pide el spec.
+  for (const [pg, textos] of [...porPagina.entries()].sort((x, y) => x[0] - y[0])) {
+    piezas.push(...piezasDe(textos.join('\n'), pg))
+  }
+  const pag = [...porPagina.keys()].filter(p => p < 1000).length || porPagina.size
 
   const filas = filasDe(piezas)
   const crudo = filas.map(f => `p${f.pag} y${Math.round(f.y)} | ${f.celdas.join(' § ')}`)
@@ -447,6 +544,17 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
   const cabezas = lineas.reduce((s, l) => s + l.cabezas, 0)
   const rinde = kilos_vivos > 0 ? Math.round((kilos_gancho / kilos_vivos) * 10000) / 100 : null
 
+  // ── Cuántas medias TIENE que haber ─────────────────────────────────────────────────────────
+  // Pedido del usuario (2026-09-07): *«el sistema debería esperar y estar preparado para 20 medias
+  // res por haber cargado 10 cabezas; y si no las encuentra, dejarlo listo para que complete el
+  // usuario»*. La liquidación trae las cabezas **explícitas**, así que las medias esperadas no son
+  // una suposición: son un dato del papel — 2 por animal.
+  //
+  // 🔑 Esto es la red para el PRÓXIMO romaneo, no para éste. `A-BUG-123` hizo que las 20 aparezcan;
+  // el control es lo que avisa el día que el frigorífico vuelva a mover algo y se pierda otra.
+  const mediasEsperadas = cabezas * 2
+  const incompletos = garronesIncompletos(medias, lineas)
+
   // ── Controles: lo calculado contra lo IMPRESO en el mismo papel ────────────────────────────
   const cerca = (a: number, b: number | null, tol = 1) => b != null && Math.abs(a - b) <= tol
   const controles: ControlRomaneo[] = [
@@ -454,6 +562,13 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
     { nombre: 'Kilos gancho (medias reses vs. líneas)', impreso: kilos_gancho, calculado: kgMedias, cierra: cerca(kgMedias, kilos_gancho), detalle: `${medias.length} medias res` },
     { nombre: 'Kilos vivos', impreso: cabecera.kilos_vivos_impresos, calculado: kilos_vivos, cierra: cerca(kilos_vivos, cabecera.kilos_vivos_impresos) },
     { nombre: 'Cabezas', impreso: cabecera.cabezas_impresas, calculado: cabezas, cierra: cerca(cabezas, cabecera.cabezas_impresas, 0) },
+    {
+      nombre: 'Medias reses (2 por cabeza)', impreso: mediasEsperadas || null, calculado: medias.length,
+      cierra: mediasEsperadas > 0 && medias.length === mediasEsperadas,
+      detalle: incompletos.length
+        ? `Incompleto${incompletos.length > 1 ? 's' : ''}: ${incompletos.map(x => x.falta != null ? `garrón ${x.garron} (falta ${x.falta} kg)` : `garrón ${x.garron}`).join(', ')}`
+        : undefined,
+    },
     { nombre: 'Total liquidado', impreso: cabecera.total_impreso, calculado: total, cierra: cerca(total, cabecera.total_impreso, 1) },
     { nombre: 'Rinde %', impreso: cabecera.rinde_impreso, calculado: rinde ?? 0, cierra: cerca(rinde ?? 0, cabecera.rinde_impreso, 0.05) },
   ]
@@ -477,7 +592,18 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
     else if (diag.inflados === 0) avisos.push('Ningún stream se pudo descomprimir. Puede ser un PDF con otro filtro (no FlateDecode) o cifrado.')
     else if (diag.conTexto === 0) avisos.push('Los streams se descomprimieron pero ninguno tiene texto: el PDF puede ser un ESCANEO (imagen).')
   }
-  if (medias.length && medias.length % 2 !== 0) {
+  // El papel dice cuántas tiene que haber; si no aparecen, se nombra CUÁL falta y CUÁNTO, para que
+  // completarlo sea escribir un número y no ponerse a investigar el PDF.
+  if (medias.length && mediasEsperadas && medias.length < mediasEsperadas) {
+    const det = incompletos.map(x => x.falta != null
+      ? `al garrón ${x.garron} le falta una media de ${x.falta} kg`
+      : `al garrón ${x.garron} le falta una media (el kilo no se pudo derivar: hay más de una línea posible)`)
+    avisos.push(
+      `La liquidación declara ${cabezas} cabeza(s), o sea ${mediasEsperadas} medias reses, y se leyeron ${medias.length}. `
+      + (det.length ? `${det.join('; ')}. ` : '')
+      + `Corregí el kilo de res del garrón en la tabla de abajo y las cuentas se rehacen solas.`
+    )
+  } else if (medias.length && medias.length % 2 !== 0) {
     avisos.push(`Hay ${medias.length} medias reses, un número impar. Deberían ser 2 por animal — puede faltar una fila.`)
   }
   const sinPrecio = medias.filter(m => m.precio_kg == null).length
