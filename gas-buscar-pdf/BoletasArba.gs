@@ -109,7 +109,12 @@ function nombreDeArchivo_(nombreOriginal, fechaMail, k) {
 function bajarBoletasArba(soloContar) {
   var query = propArba_('ARBA_QUERY', ARBA_QUERY_DEFAULT)
   var carpeta = soloContar ? null : carpetaArba_()
-  var hilos = GmailApp.search(query, 0, 50)
+  var TOPE = 50
+  var hilos = GmailApp.search(query, 0, TOPE)
+  // ⚠️ Si la búsqueda trae MÁS del tope, los que sobran se pierden sin que nadie lo note. Se avisa:
+  // «bajé 40» sobre 40 encontradas y sobre 200 que había es la misma frase y significan cosas
+  // distintas. Se acota la ventana con la Script Property ARBA_QUERY (ej. `newer_than:15d`).
+  var truncado = hilos.length >= TOPE
 
   var bajadas = [], yaEstaban = [], sinPdf = [], errores = []
 
@@ -150,10 +155,11 @@ function bajarBoletasArba(soloContar) {
 
   return {
     ok: true, modo: soloContar ? 'contar' : 'bajar', query: query,
-    hilos: hilos.length,
+    hilos: hilos.length, truncado: truncado,
     bajadas: bajadas, ya_estaban: yaEstaban, sin_pdf: sinPdf, errores: errores,
     resumen: bajadas.length + ' bajada(s) · ' + yaEstaban.length + ' ya estaban · '
-      + sinPdf.length + ' link(s) que no dieron PDF · ' + errores.length + ' error(es)',
+      + sinPdf.length + ' link(s) que no dieron PDF · ' + errores.length + ' error(es)'
+      + (truncado ? ' · ⚠️ se llegó al tope de ' + TOPE + ' conversaciones: puede haber más sin mirar' : ''),
   }
 }
 
