@@ -328,15 +328,37 @@ export async function parsearRomaneo(datos: ArrayBuffer): Promise<RomaneoParsead
 
   // El precio de cada media sale de su línea de liquidación.
   //
-  // 🐞 **Con reserva en los dientes** (A-BUG-116). Exigir que coincidan `tipo+clase+dientes+contenido`
-  // dejó 3 medias sin precio: dos líneas quedaron con `dientes: null` porque en esas filas el PDF
-  // parte la celda, mientras las medias sí los traen. Una cabeza sin precio se cae de su grupo y
-  // arrastra su rinde a la nada. La clase y el contenido ya identifican el grupo con holgura: los
-  // dientes se usan para desempatar, no para exigir.
+  // 🐞 **Con reserva en los dientes, pero SIN adivinar** (A-BUG-116 y su secuela, A-BUG-118).
+  // Exigir `tipo+clase+dientes+contenido` dejaba 3 medias sin precio: dos líneas quedan con
+  // `dientes: null` porque el PDF parte esa celda. Pero relajarlo a «la primera que coincida en
+  // tipo+clase+contenido» fue peor: hay **dos** líneas `VA C` —una a $5.800 y otra a $6.600— y el
+  // garrón 512 se iba a la barata **en silencio**, con lo que su grupo de precio quedaba mal.
+  //
+  // 🔑 Cuando los dientes no alcanzan, desempata **el kilo de res**: el garrón completo pesa lo que
+  // dice su línea si esa línea es de una sola cabeza. Y si ni así se puede decidir, **queda sin
+  // precio y se avisa** — una media en el grupo equivocado es peor que una media sin grupo.
+  const ganchoPorGarron = new Map<string, number>()
+  for (const m of medias) ganchoPorGarron.set(m.garron, (ganchoPorGarron.get(m.garron) ?? 0) + m.peso_kg)
+
+  let ambiguas = 0
   for (const m of medias) {
     const mismo = (x: RomaneoLinea) => x.tipo === m.tipo && x.clase === m.clase && x.contenido === m.contenido
-    const l = lineas.find(x => mismo(x) && x.dientes === m.dientes) ?? lineas.find(mismo)
-    if (l) m.precio_kg = l.precio_kg
+    const exacta = lineas.find(x => mismo(x) && x.dientes === m.dientes)
+    if (exacta) { m.precio_kg = exacta.precio_kg; continue }
+
+    const cands = lineas.filter(mismo)
+    if (cands.length === 1) { m.precio_kg = cands[0].precio_kg; continue }
+    if (cands.length === 0) continue
+
+    // Desempate por peso: el garrón entero contra una línea de UNA cabeza.
+    const gancho = ganchoPorGarron.get(m.garron) ?? 0
+    const porPeso = cands.filter(x => x.cabezas === 1 && Math.abs(x.kg_faena - gancho) <= 1)
+    if (porPeso.length === 1) { m.precio_kg = porPeso[0].precio_kg; continue }
+    ambiguas++
+  }
+  if (ambiguas) {
+    avisos.push(`${ambiguas} media(s) res tienen más de una línea posible y no se pudo decidir cuál. `
+      + `Su grupo de precio queda sin asignar (no se elige al azar).`)
   }
 
   // ── Cabecera ───────────────────────────────────────────────────────────────────────────────

@@ -210,8 +210,15 @@ export function ModalRomaneo({
     return cs.map(c => {
       const fix = (ganchoFix[c.garron] ?? "").trim()
       if (!fix) return c
-      const n = parseFloat(fix.replace(/\./g, "").replace(",", "."))
-      return isNaN(n) ? c : { ...c, kg_gancho: n }
+      const kg = parseFloat(fix.replace(/\./g, "").replace(",", "."))
+      if (isNaN(kg)) return c
+      // 🔑 Corregir el kilo **vuelve a resolver el precio**. El parser no pudo decidirlo cuando el
+      // garrón venía a la mitad —para `VA C` hay dos líneas, a $5.800 y a $6.600— y con el peso
+      // completo la línea de una cabeza queda identificada sin ambigüedad. Sin esto la corrección
+      // arregla el kilaje y deja la cabeza en un grupo «$0», que es peor que antes (A-BUG-118).
+      const l = rom!.lineas.find(x => x.tipo === c.tipo && x.clase === c.clase
+        && x.contenido === c.contenido && x.cabezas === 1 && Math.abs(x.kg_faena - kg) <= 1)
+      return { ...c, kg_gancho: kg, precio_kg: l ? l.precio_kg : c.precio_kg }
     })
   }
 

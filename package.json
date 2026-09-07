@@ -10,7 +10,8 @@
     "type-check": "tsc --noEmit -p tsconfig.json",
     "type-check:diff": "node scripts/type-check-diff.mjs",
     "type-check:baseline": "node scripts/type-check-diff.mjs --accept",
-    "probar": "node --experimental-strip-types scripts/probar.mjs"
+    "probar": "node --experimental-strip-types scripts/probar.mjs",
+    "probar:romaneo": "node --experimental-strip-types scripts/probar-romaneo.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
