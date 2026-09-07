@@ -159,6 +159,39 @@ esté como esté"*. Sólo-manual duplica un dato que ya existe y los números de
 sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
 los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
 
+### 🚦 LOS CUATRO ESTADOS — y el permiso para cambiar de tema (REGLA)
+*Pedida por el usuario 2026-09-06, después de que Claude pasara del romaneo al parser de boletas
+por su cuenta: **«ignoraste la regla de pedirme permiso, sobre todo cambiar de test»**.*
+
+> **Se trabaja de a UN tema, en el orden que fija el usuario, y se le informa en cuál de los cuatro
+> estados está. Cambiar de tema requiere que él lo diga.**
+
+| Estado | Qué significa | Qué se espera |
+|---|---|---|
+| 🔵 **Listo para desarrollar** | el tema está entendido y priorizado; falta escribirlo | que Claude arranque |
+| 🟡 **Terminé desarrollo, listo para probar** | está escrito, **pero Claude todavía no lo probó** | que Claude corra los casos |
+| 🟢 **Terminé mis pruebas, aguarda test manual** | `npm run probar*` en verde y los casos escritos | **el usuario prueba** |
+| ✅ **Probado y cerrado** | el usuario confirmó | pasar al siguiente de la lista |
+
+🛑 **Al usuario NO se le pide que pruebe hasta el estado 🟢.** Antes de eso, «probá» significa
+«probá lo que yo no probé», y ya pasó: los cuatro bugs del 2026-09-06 estaban en algo entregado
+como listo.
+
+🛑 **Y el tema no cambia por iniciativa de Claude.** Ni siquiera para algo mejor, ni «de paso». Si
+aparece un hallazgo que abre otro frente, **se registra en `PENDIENTES.md` y se sigue con el tema en
+curso** — el usuario decide cuándo se toma.
+
+*Motivo: el usuario está probando en paralelo. Si Claude salta de tema, lo que él tiene delante deja
+de coincidir con lo que Claude está tocando, y las dos mitades del trabajo dejan de sumar.*
+
+📌 **Al cerrar un tema, ofrecer la lista** de lo que sigue con su estado, para que el orden lo elija él.
+
+### 📋 Dónde vive el testing del usuario
+**En la guía de pruebas**, no desparramado en la app. El usuario tiene que poder **correr todo desde
+un solo lugar**, sin buscar botones. Lo que hay adentro de la app son herramientas (el 🧪 Probar);
+**la secuencia** de lo que él tiene que hacer va en la guía, y se actualiza cuando el desarrollo
+cambia (§ 📋 Guía de pruebas).
+
 ### 📄 Importar un documento: plástico, editable y con HUELLA (REGLA)
 *Enunciada por el usuario 2026-09-06, sobre el importador de romaneos pero **para todo el tipo de
 proceso**: boletas de ARBA, facturas, extractos, cualquier papel que entre.*
