@@ -682,6 +682,25 @@ pero no fueron parte del desarrollo?»**. Sí podía. Y mayormente no los hice.*
 balanza que daba 6.501 kg, las 9 cabezas en vez de 10, el denominador mezclado, el match por
 dientes— **pasaron los dos** y los encontró el usuario mirando la base.
 
+🛑 **Y el permiso, que es la condición que hace segura a esta regla** *(agregado por el usuario
+el mismo día: «es la condición necesaria»)*:
+
+> **Un test que toca la BD NO se corre sin pedirle permiso al usuario, cada vez.** El permiso de una
+> corrida **no vale para la siguiente**.
+
+Sin esto, la regla de arriba —*«correr `npm run probar` antes de decir que está listo»*— es una
+**orden permanente de ejecutar la suite**. Hoy los casos no escriben nada, pero **el día que alguien
+agregue uno que escriba, esa orden lo autoriza sin preguntar**. El permiso es lo único que sobrevive
+a que la suite cambie.
+
+- **Sin BD** (lógica pura, como `lib/pruebas/casos.ts` hoy): se corre libremente. Es la compuerta.
+- **Con BD, aunque sea sólo leer**: se avisa qué va a mirar.
+- **Con escritura**: se pide permiso **explicando qué registro y cómo se restaura**, y se espera el
+  sí. Vale la § 🛑 Datos entera — apuntar por id, foto antes, restaurar después.
+
+*Motivo, con nombre propio: el test que inventó $5.443.200 sobre el movimiento real de 3 toros
+**reportó OK**. No hacía falta permiso para correrlo, y por eso se corrió.*
+
 - Los casos viven en **`lib/pruebas/casos.ts`**, con los **datos fijos en el archivo**: un caso que
   lee de la BD cambia de resultado porque alguien editó un registro, y ahí empieza a mentir.
 - **Cero escritura** mientras no esté resuelto [A-DEC-18](PENDIENTES.md#a-dec-18). Un test que no
