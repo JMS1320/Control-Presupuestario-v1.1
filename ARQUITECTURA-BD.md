@@ -520,6 +520,30 @@ la res»: sin romaneo el importe queda **vacío a propósito** (`MODULO_HACIENDA
 
 ---
 
+## 6e. `public.boletas_arba` — el importe llega por DOS caminos (2026-09-07)
+
+La boleta del inmobiliario se lee de **dos fuentes independientes**, y la tabla las guarda
+**separadas a propósito**: fundirlas en una sola columna perdería justamente el control.
+
+| Columna | De dónde sale |
+|---|---|
+| `importe` | del **PDF** (`lib/arba/parsear-boleta.ts` — glyph IDs con el CMap `/ToUnicode`) |
+| `importe_mail` | de la **tabla del cuerpo del mail** (`filasDelMail_` en el GAS, `A-FEAT-107`) |
+| `objeto_mail` | el objeto imponible según el mail: la **partida**, o el **CUIT** en el complementario |
+| `correcciones` | 🐾 la **huella**: `{campo: {leido, puesto}}` — sólo los que el usuario cambió |
+
+🔁 **Si `importe` e `importe_mail` no coinciden, algo se leyó mal** — y se sabe sin abrir el archivo.
+El panel lo muestra y **no elige ninguno**: decide el usuario.
+
+🔑 **`objeto_mail` no es redundante con `partida`.** El parser del PDF encuentra la partida en 27 de
+63 boletas; el mail la trae siempre. Y en el **complementario** el PDF no la trae **nunca**, porque
+esa boleta grava al contribuyente y no a la parcela: su objeto imponible **es el CUIT**.
+
+⚠️ **La boleta nunca pisa un template sola.** Aplicar escribe **sólo** `cuotas_egresos_sin_factura.monto`
+de la cuota elegida, y es un acto explícito del usuario, fila por fila.
+
+---
+
 ## 7. Referencias
 
 - **Columnas completas** → `ESTRUCTURA_BD_COLUMNAS.md` (apéndice auto-generado).
