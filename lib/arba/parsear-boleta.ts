@@ -40,6 +40,15 @@ export interface BoletaArba {
 
 const BS = String.fromCharCode(92)
 
+/** Un literal de PDF (`(texto)`) a texto: deshace los escapes y los octales (`\350` → `è`). */
+function literalPdf(raw: string): string {
+  return raw
+    .replace(new RegExp(BS + BS + "([0-7]{1,3})", "g"), (_, o) => String.fromCharCode(parseInt(o, 8)))
+    .split(BS + "(").join("(").split(BS + ")").join(")")
+    .split(BS + "n").join(" ").split(BS + "r").join(" ").split(BS + "t").join(" ")
+    .split(BS + BS).join(BS)
+}
+
 async function inflar(bytes: Uint8Array): Promise<string | null> {
   try {
     const ds = new DecompressionStream("deflate")
@@ -132,18 +141,39 @@ export async function textoDeBoleta(datos: ArrayBuffer): Promise<string> {
     const d = await inflar(buf.slice(st, e))
     if (d && /BT/.test(d)) {
       let cmap: Map<string, string> | null = null
-      for (const tok of d.matchAll(/\/(\w+)\s+[\d.]+\s+Tf|<([0-9A-Fa-f]+)>\s*Tj|\[([^\]]*)\]\s*TJ|\bTd\b|\bTD\b|\bT\*|\bTm\b/g)) {
+      // 🐞 **Se leen las DOS formas** (A-BUG-119). ARBA emite dos familias de PDF: las boletas de
+      // cuota traen fuentes subseteadas con glyph IDs en hexadecimal (`<002D> Tj`) y su CMap
+      // `/ToUnicode`; las liquidaciones integradas y los comprobantes usan `WinAnsiEncoding` con
+      // **texto literal** (`(Partida) Tj`) y **sin ToUnicode**. Leer sólo la primera devolvía vacío
+      // en silencio para **28 de 63** archivos — y sin quejarse, que es el modo de falla peor.
+      const RE = /\/(\w+)\s+[\d.]+\s+Tf|<([0-9A-Fa-f]+)>\s*Tj|\(((?:\\.|[^\\()])*)\)\s*Tj|\[([^\]]*)\]\s*TJ|\bTd\b|\bTD\b|\bT\*|\bTm\b/g
+      for (const tok of d.matchAll(RE)) {
         // 🔑 Cambiar de fuente cambia el significado de los glifos: hay que seguirlo.
         if (tok[1]) {
           const on = objPorNombre.get(tok[1])
           cmap = on != null ? (cmapPorObjeto.get(on) ?? null) : null
           continue
         }
+        // Literal suelto: si la fuente no tiene CMap, el texto **ya es** texto.
+        if (tok[3] != null) { salida += literalPdf(tok[3]); continue }
+
         const hexes = tok[2] ? [tok[2]]
-          : tok[3] ? [...tok[3].matchAll(/<([0-9A-Fa-f]+)>/g)].map(x => x[1]) : []
+          : tok[4] ? [...tok[4].matchAll(/<([0-9A-Fa-f]+)>/g)].map(x => x[1]) : []
+        // Un `TJ` mezcla trozos con los ajustes de kerning: pueden ser hex o literales.
+        if (tok[4] && !hexes.length) {
+          for (const l of tok[4].matchAll(/\(((?:\\.|[^\\()])*)\)/g)) salida += literalPdf(l[1])
+          continue
+        }
         for (const h of hexes) {
-          if (!cmap) continue
-          for (let k = 0; k + 4 <= h.length; k += 4) salida += cmap.get(h.substr(k, 4).toUpperCase()) ?? ""
+          if (cmap) {
+            // Fuente subseteada: cada 4 dígitos es un glyph ID que traduce el CMap.
+            for (let k = 0; k + 4 <= h.length; k += 4) salida += cmap.get(h.substr(k, 4).toUpperCase()) ?? ""
+          } else {
+            // 🐞 **Tercera forma** (A-BUG-119): hex **de un byte** con `WinAnsiEncoding` y sin
+            // `/ToUnicode` — `<49>` es `I`, `<6361>` es `ca`. Acá el hex **ya es** el código del
+            // carácter, no un glifo que haya que traducir. Exigir CMap dejaba estos PDFs mudos.
+            for (let k = 0; k + 2 <= h.length; k += 2) salida += String.fromCharCode(parseInt(h.substr(k, 2), 16))
+          }
         }
         if (!hexes.length) salida += " "   // un salto de posición separa palabras
       }
