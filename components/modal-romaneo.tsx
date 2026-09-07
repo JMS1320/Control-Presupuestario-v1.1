@@ -26,7 +26,7 @@
 
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { parsearRomaneo, type RomaneoParseado } from "@/lib/ganaderia/parsear-romaneo"
+import { parsearRomaneo, type RomaneoParseado, type RomaneoLinea } from "@/lib/ganaderia/parsear-romaneo"
 import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga, type CabezaNuestra } from "@/lib/ganaderia/adjudicar-romaneo"
 import { Button } from "@/components/ui/button"
@@ -80,6 +80,14 @@ export function ModalRomaneo({
   const [netoCamion, setNetoCamion] = useState<number | null>(null)
   /** Corrección a mano del kilo de res de un garrón — hace falta cuando el PDF perdió una media. */
   const [ganchoFix, setGanchoFix] = useState<Record<string, string>>({})
+  /**
+   * Correcciones sobre las LÍNEAS de liquidación, por `orden|campo`.
+   *
+   * Son las que alimentan la plata: de acá salen `kg_carne` e `importe` de cada venta. Que la
+   * cabecera fuera editable y los importes no era exactamente al revés de lo que hace falta
+   * (§ 📄 Importar un documento, condición 2).
+   */
+  const [lineaFix, setLineaFix] = useState<Record<string, string>>({})
   /** Las dos puntas del desbaste: cuándo pesamos nosotros y cuándo pesó el vivo el frigorífico. */
   const [horaCampo, setHoraCampo] = useState("")
   const [horaDestino, setHoraDestino] = useState("")
@@ -202,6 +210,79 @@ export function ModalRomaneo({
   const tiposDe = (r: RomaneoParseado) => [...new Set(r.lineas.map(l => l.tipo))]
 
   /**
+   * Las líneas **como quedan**: lo que leyó el parser, con lo que corrigió el usuario encima.
+   *
+   * 🔑 **El importe se recalcula solo** al tocar kg o precio. Corregir no puede obligar a rehacer
+   * la cuenta: si el usuario tiene que arreglar el dato *y además* la suma, el importador no le
+   * ahorró nada (§ 📄 Importar un documento, condición 3).
+   */
+  const lineasEfectivas = (): RomaneoLinea[] => (rom?.lineas ?? []).map(l => {
+    const leer = (campo: string) => {
+      const v = (lineaFix[`${l.orden}|${campo}`] ?? "").trim()
+      if (!v) return null
+      const n = parseFloat(v.replace(/\./g, "").replace(",", "."))
+      return isNaN(n) ? null : n
+    }
+    const kgf = leer("kg_faena") ?? l.kg_faena
+    const pk = leer("precio_kg") ?? l.precio_kg
+    const impManual = leer("importe")
+    return {
+      ...l,
+      cabezas: leer("cabezas") ?? l.cabezas,
+      kg_faena: kgf,
+      precio_kg: pk,
+      // El importe escrito a mano manda; si no, sale de kg × precio.
+      importe: impManual ?? (pk != null ? Math.round(kgf * pk * 100) / 100 : l.importe),
+    }
+  })
+
+  /** El romaneo con las líneas corregidas — es lo que ve todo lo de abajo y lo que se guarda. */
+  const romEfectivo = (): RomaneoParseado | null => {
+    if (!rom) return null
+    const lineas = lineasEfectivas()
+    const kilos_gancho = lineas.reduce((s2, l) => s2 + l.kg_faena, 0)
+    const kilos_vivos = lineas.reduce((s2, l) => s2 + l.kg_vivo, 0)
+    const total = lineas.reduce((s2, l) => s2 + l.importe, 0)
+    const cabezas = lineas.reduce((s2, l) => s2 + l.cabezas, 0)
+    return {
+      ...rom, lineas, kilos_gancho, kilos_vivos, total, cabezas,
+      rinde: kilos_vivos > 0 ? Math.round((kilos_gancho / kilos_vivos) * 10000) / 100 : null,
+      // Los controles se rehacen contra lo IMPRESO: así se ve si la corrección acercó o alejó.
+      controles: rom.controles.map(c => {
+        const nuevo = c.nombre.startsWith("Kilos gancho (líneas") ? kilos_gancho
+          : c.nombre.startsWith("Kilos vivos") ? kilos_vivos
+            : c.nombre.startsWith("Total") ? total
+              : c.nombre.startsWith("Cabezas") ? cabezas
+                : c.nombre.startsWith("Rinde") ? (kilos_vivos > 0 ? Math.round((kilos_gancho / kilos_vivos) * 10000) / 100 : 0)
+                  : c.calculado
+        const tol = c.nombre.startsWith("Rinde") ? 0.05 : c.nombre.startsWith("Cabezas") ? 0 : 1
+        return { ...c, calculado: nuevo, cierra: c.impreso != null && Math.abs(nuevo - c.impreso) <= tol }
+      }),
+    }
+  }
+
+  /** 🐾 La HUELLA: lo que leyó el parser junto a lo que puso el usuario (§ 📄, condición 4). */
+  const huella = () => {
+    const h: { campo: string; referencia: string; leido: unknown; corregido: unknown }[] = []
+    for (const [k, v] of Object.entries(cab)) {
+      const orig = (rom?.cabecera as unknown as Record<string, unknown>)?.[k]
+      if (v.trim() !== String(orig ?? "").trim()) h.push({ campo: k, referencia: "cabecera", leido: orig ?? null, corregido: v })
+    }
+    for (const [k, v] of Object.entries(ganchoFix)) {
+      if (!v.trim()) continue
+      const c = cabezasDeMedias(rom?.medias ?? []).find(x => x.garron === k)
+      h.push({ campo: "kg_gancho", referencia: `garrón ${k}`, leido: c?.kg_gancho ?? null, corregido: v })
+    }
+    for (const [k, v] of Object.entries(lineaFix)) {
+      if (!v.trim()) continue
+      const [orden, campo] = k.split("|")
+      const l = rom?.lineas.find(x => String(x.orden) === orden)
+      h.push({ campo, referencia: `línea ${l ? `${l.tipo} ${l.clase}` : orden}`, leido: (l as unknown as Record<string, unknown>)?.[campo] ?? null, corregido: v })
+    }
+    return h
+  }
+
+  /**
    * Las CABEZAS del romaneo: dos medias reses por animal, sumadas por garrón.
    * El kilo de res se puede corregir a mano — hace falta cuando el PDF perdió una media.
    */
@@ -277,6 +358,9 @@ export function ModalRomaneo({
     setGuardando(true)
     try {
       const prod = supabase.schema("productivo")
+      // Se guarda el romaneo YA CORREGIDO: si el usuario arregló una línea, lo que va a la base y a
+      // las ventas es lo arreglado. Lo que leyó el parser no se pierde — queda en `correcciones`.
+      const romG = romEfectivo()!
       const { data: cabR, error: e1 } = await prod.from("romaneos").insert({
         carga_id: cargaId,
         frigorifico: cab.frigorifico || null, matricula: cab.matricula || null,
@@ -284,14 +368,16 @@ export function ModalRomaneo({
         consignatario: rom.cabecera.consignatario, origen_estab: rom.cabecera.origen_estab,
         tropa: cab.tropa || null, fecha_faena: cab.fecha_faena || null,
         guia: cab.guia || null, dta: cab.dta || null,
-        cabezas_faenadas: rom.cabezas,
-        kilos_vivos: rom.kilos_vivos, kilos_gancho: rom.kilos_gancho,
-        rinde: rom.rinde, total_liquidado: rom.total,
+        cabezas_faenadas: romG.cabezas,
+        kilos_vivos: romG.kilos_vivos, kilos_gancho: romG.kilos_gancho,
+        rinde: romG.rinde, total_liquidado: romG.total,
         archivo_nombre: archivo?.name ?? null,
         origen: "pdf",
-        // Se guarda el resultado de los controles TAL COMO SALIÓ del papel, aunque el usuario haya
-        // corregido a mano: después hay que poder distinguir qué venía mal del PDF de qué puso él.
+        // Los controles TAL COMO SALIERON del papel, aunque el usuario haya corregido: después hay
+        // que poder distinguir qué venía mal del PDF de qué puso él. La corrección va aparte, abajo.
         controles: rom.controles,
+        // 🐾 La huella: lo leído junto a lo corregido, para poder auditar dónde falla el parser.
+        correcciones: huella(),
         observaciones: rom.avisos.length ? rom.avisos.join(" · ") : null,
       }).select("id").single()
       if (e1) throw e1
@@ -305,19 +391,19 @@ export function ModalRomaneo({
         })))
         if (error) throw error
       }
-      if (rom.lineas.length) {
+      if (romG.lineas.length) {
         // El vivo NUESTRO sale de las cabezas ADJUDICADAS (A-FEAT-97), no de un reparto
         // proporcional: repartir en proporción al kilo de carne se simplifica algebraicamente y
         // devuelve el rinde global para todos los grupos — el mismo defecto de la columna del papel.
         const porGrupo = new Map(rindePorGrupo(todasLasAdjudicaciones()).map(g => [`${g.tipo}|${g.precio}`, g]))
-        const { error } = await prod.from("romaneo_lineas").insert(rom.lineas.map(x => {
+        const { error } = await prod.from("romaneo_lineas").insert(romG.lineas.map(x => {
           const g = porGrupo.get(`${x.tipo}|${x.precio_kg ?? 0}`)
           // 🐞 **El denominador sale de las MISMAS líneas que el numerador** (A-BUG-116). Antes se
           // repartía `g.kg_vivo × (kg_faena / g.kg_gancho)`, donde `kg_gancho` venía de las CABEZAS
           // (que salen de las medias reses, y el PDF pierde algunas) mientras `kg_faena` venía de la
           // LIQUIDACIÓN (completa). Con las dos fuentes mezcladas la suma del grupo se pasaba: en el
           // grupo VA $6.600 el denominador era 302 y el numerador 607 — **el doble**.
-          const faenaDelGrupo = rom.lineas
+          const faenaDelGrupo = romG.lineas
             .filter(y => y.tipo === x.tipo && (y.precio_kg ?? 0) === (x.precio_kg ?? 0))
             .reduce((sum, y) => sum + y.kg_faena, 0)
           const parte = g && faenaDelGrupo > 0
@@ -361,8 +447,8 @@ export function ModalRomaneo({
         }).eq("id", cargaId)
       }
       anotarResultado("romaneo-guardar",
-        `${rom.cabezas} cab · ${rom.medias.length} medias · ${rom.lineas.length} líneas · `
-        + `${tocadas} venta(s) completada(s)`)
+        `${romG.cabezas} cab · ${romG.medias.length} medias · ${romG.lineas.length} líneas · `
+        + `${huella().length} corrección(es) · ${tocadas} venta(s) completada(s)`)
       toast.success(`Romaneo guardado${tocadas ? ` · ${tocadas} venta(s) completada(s)` : ""}`)
       onGuardado?.()
       limpiar()
@@ -426,7 +512,11 @@ export function ModalRomaneo({
               lo que lea el PDF es una propuesta, no una decisión.
             </p>
           </div>
-        ) : (
+        ) : (() => {
+          // Todo lo que sigue trabaja sobre el romaneo YA CORREGIDO: los controles, el rinde por
+          // grupo y lo que va a las ventas se rehacen solos cuando se edita una línea.
+          const romE = romEfectivo()!
+          return (
           <div className="space-y-4">
             {/* ── CONTROLES ─────────────────────────────────────────────────────────── */}
             <div className="rounded border">
@@ -434,7 +524,7 @@ export function ModalRomaneo({
                 🧮 Controles — lo sumado contra lo que dice el papel
               </div>
               <div className="grid grid-cols-2 gap-x-4 p-2 text-[11px]">
-                {rom.controles.map((c, i) => (
+                {romE.controles.map((c, i) => (
                   <div key={i} className={`flex items-center justify-between gap-2 rounded px-2 py-1 ${c.cierra ? "text-gray-600" : "bg-red-50 font-medium text-red-700"}`}>
                     <span>{c.cierra ? "✓" : "⚠"} {c.nombre}</span>
                     <span className="tabular-nums">
@@ -444,9 +534,9 @@ export function ModalRomaneo({
                   </div>
                 ))}
               </div>
-              {rom.avisos.length > 0 && (
+              {romE.avisos.length > 0 && (
                 <div className="border-t bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">
-                  {rom.avisos.map((a, i) => <div key={i}>⚠️ {a}</div>)}
+                  {romE.avisos.map((a, i) => <div key={i}>⚠️ {a}</div>)}
                   <div className="mt-1 text-amber-700">
                     Podés guardar igual y corregir los valores a mano — nada se guarda sin que lo confirmes.
                   </div>
@@ -547,12 +637,12 @@ export function ModalRomaneo({
                 </div>
                 <div>
                   <Label className="text-[10px] text-gray-500">Kilos vivos que recibió</Label>
-                  <Input type="text" className="h-7 text-xs" placeholder={String(rom.kilos_vivos)}
+                  <Input type="text" className="h-7 text-xs" placeholder={String(romE.kilos_vivos)}
                     value={kgDestino} onChange={e => setKgDestino(e.target.value)} />
                 </div>
               </div>
               {(() => {
-                const recibido = parseFloat((kgDestino || "").replace(/\./g, "").replace(",", ".")) || rom.kilos_vivos
+                const recibido = parseFloat((kgDestino || "").replace(/\./g, "").replace(",", ".")) || romE.kilos_vivos
                 const h = horaCampo && horaDestino
                   ? (new Date(horaDestino).getTime() - new Date(horaCampo).getTime()) / 3600000 : null
                 const fila = (et: string, base: number | null) => {
@@ -695,7 +785,7 @@ export function ModalRomaneo({
               <div className="border-t bg-gray-50 px-3 py-2 text-[10px] leading-4 text-gray-600">
                 Este rinde sale de <b>dos mediciones reales e independientes</b>: nuestra balanza y el kilo de
                 res del garrón. Por eso varía entre grupos. ⚠️ <b>El vivo del romaneo no sirve para esto</b>:
-                el frigorífico lo reparte con el rinde global y daría <b>{rom.rinde} %</b> para todos.
+                el frigorífico lo reparte con el rinde global y daría <b>{romE.rinde} %</b> para todos.
               </div>
             </div>
 
@@ -703,9 +793,9 @@ export function ModalRomaneo({
             <div className="rounded border">
               <button type="button" onClick={() => setVerDetalle(v => !v)}
                 className="flex w-full items-center justify-between px-3 py-1.5 text-xs font-medium hover:bg-gray-50">
-                <span>{verDetalle ? "▾" : "▸"} Detalle — {rom.lineas.length} línea(s) de liquidación · {rom.medias.length} media(s) res</span>
+                <span>{verDetalle ? "▾" : "▸"} Detalle — {romE.lineas.length} línea(s) de liquidación · {romE.medias.length} media(s) res</span>
                 <span className="font-normal text-gray-500">
-                  {kg(rom.kilos_gancho)} carne · {kg(rom.kilos_vivos)} vivo · rinde {rom.rinde}%
+                  {kg(romE.kilos_gancho)} carne · {kg(romE.kilos_vivos)} vivo · rinde {romE.rinde}%
                 </span>
               </button>
               {verDetalle && (
@@ -721,23 +811,41 @@ export function ModalRomaneo({
                       </tr>
                     </thead>
                     <tbody>
-                      {rom.lineas.map((l, i) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-1 py-0.5">{l.cabezas}</td><td className="px-1">{l.tipo}</td>
-                          <td className="px-1">{l.clase}</td><td className="px-1">{l.dientes ?? "—"}</td>
-                          <td className="px-1">{l.contenido}</td>
-                          <td className="px-1 text-right tabular-nums">{l.kg_vivo}</td>
-                          <td className="px-1 text-right tabular-nums">{l.kg_faena}</td>
-                          <td className="px-1 text-right tabular-nums">{m(l.precio_kg)}</td>
-                          <td className="px-1 text-right tabular-nums">{m(l.importe)}</td>
-                        </tr>
-                      ))}
+                      {romE.lineas.map((l, i) => {
+                        const orig = rom.lineas[i]
+                        const campo = (nombre: string, valor: number | null, ancho: string) => {
+                          const k = `${orig.orden}|${nombre}`
+                          const tocado = (lineaFix[k] ?? "").trim() !== ""
+                          return (
+                            <Input type="text" className={`h-5 ${ancho} text-right text-[11px] ${tocado ? "border-amber-400 bg-amber-50 font-medium" : ""}`}
+                              placeholder={valor == null ? "—" : String(valor)}
+                              value={lineaFix[k] ?? ""}
+                              onChange={e => { const v = e.target.value; setLineaFix(q => ({ ...q, [k]: v })) }} />
+                          )
+                        }
+                        return (
+                          <tr key={i} className="border-t">
+                            <td className="px-1 py-0.5">{campo("cabezas", orig.cabezas, "w-10")}</td>
+                            <td className="px-1">{l.tipo}</td>
+                            <td className="px-1">{l.clase}</td><td className="px-1">{l.dientes ?? "—"}</td>
+                            <td className="px-1">{l.contenido}</td>
+                            <td className="px-1 text-right tabular-nums text-gray-500">{l.kg_vivo}</td>
+                            <td className="px-1">{campo("kg_faena", orig.kg_faena, "w-16")}</td>
+                            <td className="px-1">{campo("precio_kg", orig.precio_kg, "w-20")}</td>
+                            <td className="px-1">{campo("importe", orig.importe, "w-24")}</td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                   <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
-                    El <b>$/kg no se lee del papel</b>: sale de <code>importe ÷ kg</code>, que es exacto y no
-                    depende de dónde imprima el precio el frigorífico. Los <b>dientes</b> mueven el precio
-                    tanto como la clase.
+                    <b>Todo esto se puede corregir</b>, y de acá salen los kilos y el importe de cada venta.
+                    Al tocar <b>kg</b> o <b>$/kg</b> el importe <b>se recalcula solo</b>; si escribís el importe
+                    a mano, manda el escrito. Los controles de arriba se rehacen contra lo impreso, así que
+                    vas viendo si la corrección acerca o aleja.
+                    <br />
+                    El <b>$/kg</b> que se propone no se lee del papel: sale de <code>importe ÷ kg</code>, que
+                    es exacto y no depende de dónde imprima el precio el frigorífico.
                   </p>
                 </div>
               )}
@@ -754,7 +862,8 @@ export function ModalRomaneo({
               </div>
             </div>
           </div>
-        )}
+          )
+        })()}
       </DialogContent>
     </Dialog>
   )

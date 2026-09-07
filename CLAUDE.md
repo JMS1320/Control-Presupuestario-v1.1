@@ -159,6 +159,37 @@ esté como esté"*. Sólo-manual duplica un dato que ya existe y los números de
 sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
 los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
 
+### 📄 Importar un documento: plástico, editable y con HUELLA (REGLA)
+*Enunciada por el usuario 2026-09-06, sobre el importador de romaneos pero **para todo el tipo de
+proceso**: boletas de ARBA, facturas, extractos, cualquier papel que entre.*
+
+> **«Que sea plástico y cubra gran nivel de errores. En un caso especial tendrás que cargar varias
+> cosas —corregir— pero las cuentas las hace bien, y siempre será menos trabajo. Y a medida que
+> surgen los errores, que vayan dejando la huella para ir corrigiendo el sistema: poder auditar
+> siempre los errores y que cada vez funcione mejor.»**
+
+Es la § 🏚️ *Default del dato real, siempre editable* aplicada a leer documentos, y agrega una
+pieza que aquella no tenía: **la huella**. Cuatro condiciones, y las cuatro obligan:
+
+**1 · Nunca rechaza.** Un importador que se planta el día que el emisor mueve una columna deja al
+usuario **sin herramienta** justo cuando la necesita. Devuelve lo que pudo leer y marca qué falló.
+
+**2 · Todo lo que se lee se puede corregir** — y en particular **lo que alimenta la plata**. Que la
+cabecera sea editable y los importes no es exactamente al revés de lo que hace falta.
+
+**3 · Las cuentas se hacen bien igual.** Con un dato corregido a mano, el total tiene que recalcularse
+solo. **Corregir no puede obligar a rehacer.** Si el usuario tiene que arreglar el dato *y además* la
+suma, el importador no le ahorró nada.
+
+**4 · Cada corrección deja HUELLA**: se guarda **lo que leyó el parser junto a lo que puso el
+usuario**. Sin las dos puntas la huella no sirve — saber que un campo se corrigió no dice nada;
+saber que se leyó `185` y el usuario puso `373` dice dónde falla y cuánto.
+📍 **Acá:** `productivo.romaneos.correcciones` y `public.boletas_arba.correcciones`.
+
+**Motivo, y es el que ordena las prioridades:** sin la huella, cada error se arregla **una vez** —
+cuando el usuario lo ve y avisa. Con la huella, el importador **mejora con el uso**: se puede
+preguntar qué campo se corrige más, en qué emisor, y si un cambio al parser mejoró o empeoró.
+
 ---
 
 ### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
