@@ -13,7 +13,9 @@
     "probar": "node --experimental-strip-types scripts/probar.mjs",
     "probar:romaneo": "node --experimental-strip-types scripts/probar-romaneo.mts",
     "probar:boletas": "node --experimental-strip-types scripts/probar-boletas.mts",
-    "probar:arba": "node --experimental-strip-types scripts/probar-arba-descarga.mts"
+    "probar:arba": "node --experimental-strip-types scripts/probar-arba-descarga.mts",
+    "probar:mag": "node --experimental-strip-types scripts/probar-mag.mts",
+    "probar:cinta": "node --experimental-strip-types scripts/probar-cinta.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

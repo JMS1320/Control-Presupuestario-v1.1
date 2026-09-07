@@ -109,9 +109,16 @@ export async function GET(request: Request) {
       }, { status: 502 })
     }
 
-    // PROVISORIOS vs DEFINITIVOS: un precio provisorio se corrige después.
+    // PROVISORIOS vs DEFINITIVOS: un precio provisorio **se corrige después**, así que comparar un
+    // negocio contra uno y no volver a mirarlo es quedarse con un número que el mercado ya cambió.
+    //
+    // 🐞 Se busca en TODO el html, no en el encabezado (A-BUG-121). El encabezado se recorta en el
+    // primer `<` y la leyenda viene en **otra etiqueta**: el estado salía siempre `desconocido`, o
+    // sea que el aviso existía en la respuesta y no decía nada. Lo agarró `npm run probar:mag`.
     const enc = limpiar((html.match(/PRECIOS POR CATEGOR[^<]*/i) ?? [""])[0])
-    const estado = /DEFINITIVO/i.test(enc) ? "definitivos" : /PROVISORIO/i.test(enc) ? "provisorios" : "desconocido"
+    const leyenda = limpiar(html.replace(/<[^>]+>/g, " "))
+    const estado = /PRECIOS\s+DEFINITIVOS/i.test(leyenda) ? "definitivos"
+      : /PRECIOS\s+PROVISORIOS/i.test(leyenda) ? "provisorios" : "desconocido"
 
     const filas: FilaMag[] = []
     for (const tr of tabla[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
