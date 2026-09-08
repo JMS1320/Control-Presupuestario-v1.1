@@ -16,6 +16,8 @@ export interface CuotaTemplate {
   monto: number
   /** `proyectado` | `estimado` | `conciliado` … — sólo importa si es `conciliado`. */
   estado: string
+  /** ISO. La que hoy tiene el template — puede estar vacía o vieja. */
+  fechaVencimiento?: string | null
 }
 
 export interface Decision {
@@ -23,6 +25,8 @@ export interface Decision {
   aplicar: boolean
   /** Por qué NO se propone, en palabras del usuario. `null` si no hay nada que decir. */
   problema: string | null
+  /** Qué cambiaría al aplicar. Vacío = no hay nada que cambiar. */
+  cambia: ("monto" | "vencimiento")[]
 }
 
 /** Tolerancia de $1: ARBA redondea, y un centavo no es una diferencia que valga la pena mover. */
@@ -35,19 +39,32 @@ export const TOL = 1
  * conciliada ya se pagó por ese importe: cambiarla **reescribe un hecho, no una proyección**. Se
  * puede tildar a mano igual —el usuario manda—, pero avisando.
  */
-export function decidirAplicar(cuota: CuotaTemplate | null, importeBoleta: number | null, cuotaNro: number | null): Decision {
-  if (cuotaNro == null) return { aplicar: false, problema: "boleta anual: no corresponde a una cuota puntual" }
-  if (!cuota) return { aplicar: false, problema: `el template no tiene cuota ${cuotaNro}` }
-  if (importeBoleta == null) return { aplicar: false, problema: "no se pudo leer el importe — escribilo a mano" }
+export function decidirAplicar(
+  cuota: CuotaTemplate | null,
+  importeBoleta: number | null,
+  cuotaNro: number | null,
+  vencimientoBoleta?: string | null,
+): Decision {
+  const nada: ("monto" | "vencimiento")[] = []
+  if (cuotaNro == null) return { aplicar: false, problema: "boleta anual: no corresponde a una cuota puntual", cambia: nada }
+  if (!cuota) return { aplicar: false, problema: `el template no tiene cuota ${cuotaNro}`, cambia: nada }
+  if (importeBoleta == null) return { aplicar: false, problema: "no se pudo leer el importe — escribilo a mano", cambia: nada }
 
-  const difiere = Math.abs(cuota.monto - importeBoleta) > TOL
+  const cambia: ("monto" | "vencimiento")[] = []
+  if (Math.abs(cuota.monto - importeBoleta) > TOL) cambia.push("monto")
+  // 🔑 **La fecha de vencimiento cuenta igual que el monto.** Si sólo mirara el importe, una boleta
+  // que llega con el mismo monto pero **otra fecha de vencimiento** no se propondría, y el usuario
+  // pagaría mirando una fecha vieja. Pedido explícito suyo: *«montos y fechas de venc»*.
+  if (vencimientoBoleta && vencimientoBoleta !== (cuota.fechaVencimiento ?? null)) cambia.push("vencimiento")
+
   if (cuota.estado === "conciliado") {
     return {
       aplicar: false,
-      problema: difiere ? "ya conciliada con otro importe — revisá antes de tocarla" : null,
+      problema: cambia.length ? "ya conciliada con otro importe — revisá antes de tocarla" : null,
+      cambia,
     }
   }
-  return { aplicar: difiere, problema: null }
+  return { aplicar: cambia.length > 0, problema: null, cambia }
 }
 
 export type EstadoControl = "coincide" | "difiere" | "sin_mail" | "sin_pdf"

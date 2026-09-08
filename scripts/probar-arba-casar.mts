@@ -51,6 +51,35 @@ chequear("Si el template no tiene esa cuota, lo dice con el número",
 chequear("Sin importe legible invita a escribirlo, no se planta",
   /escribilo a mano/.test(decidirAplicar(PROY, null, 1).problema ?? ""), decidirAplicar(PROY, null, 1).problema ?? "")
 
+// ── 🔴 La FECHA DE VENCIMIENTO cuenta igual que el monto ──────────────────────────────────────
+// Pedido explícito del usuario el día que tenía que pagar: «montos y fechas de venc». Si la decisión
+// mirara sólo el importe, una boleta con el mismo monto y OTRA fecha no se propondría, y él pagaría
+// mirando una fecha vieja.
+const VENC = "2026-09-11"
+const CON_FECHA = { monto: CASCO, estado: "proyectado", fechaVencimiento: "2026-08-11" }
+
+const soloFecha = decidirAplicar(CON_FECHA, CASCO, 1, VENC)
+chequear("🔴 Mismo monto pero OTRA fecha: se propone igual",
+  soloFecha.aplicar === true && soloFecha.cambia.join() === "vencimiento", `cambia: ${soloFecha.cambia.join()}`)
+
+chequear("Si cambian las dos cosas, lo dice",
+  decidirAplicar(CON_FECHA, 1300000, 1, VENC).cambia.join() === "monto,vencimiento",
+  decidirAplicar(CON_FECHA, 1300000, 1, VENC).cambia.join())
+
+chequear("Si no cambia nada, no se propone y no hay ruido",
+  (() => { const d = decidirAplicar({ monto: CASCO, estado: "proyectado", fechaVencimiento: VENC }, CASCO, 1, VENC)
+    return !d.aplicar && d.cambia.length === 0 && d.problema === null })(), "nada que cambiar")
+
+chequear("Un template SIN fecha cargada también se propone (hoy no la tiene, la boleta sí)",
+  decidirAplicar({ monto: CASCO, estado: "proyectado", fechaVencimiento: null }, CASCO, 1, VENC).aplicar === true, "se propone")
+
+chequear("Sin fecha en la boleta, la del template no se pisa",
+  decidirAplicar(CON_FECHA, CASCO, 1, null).cambia.length === 0, "no toca la fecha")
+
+chequear("🔴 Una CONCILIADA sigue sin proponerse aunque cambie sólo la fecha",
+  decidirAplicar({ monto: CASCO, estado: "conciliado", fechaVencimiento: "2026-08-11" }, CASCO, 1, VENC).aplicar === false,
+  "destildada")
+
 // ── 🔁 El mismo número por dos caminos ────────────────────────────────────────────────────────
 chequear("Mail y PDF de acuerdo: cierra",
   controlDosCaminos(CASCO, CASCO).cierra === true && controlDosCaminos(CASCO, CASCO).estado === "coincide", "coincide")

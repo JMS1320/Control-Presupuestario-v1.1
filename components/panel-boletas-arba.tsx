@@ -35,7 +35,11 @@ interface Comparacion {
   egresoId: string | null
   cuotaId: string | null
   montoTemplate: number | null
+  /** La fecha de vencimiento que hoy tiene el template. Puede estar vacía o vieja. */
+  vencTemplate: string | null
   estadoCuota: string | null
+  /** Qué cambiaría al aplicar: el monto, la fecha, o las dos. */
+  cambia: ("monto" | "vencimiento")[]
   aplicar: boolean
   aplicada: boolean
   problema: string | null
@@ -53,6 +57,8 @@ interface Comparacion {
    * exactamente al revés de lo que hace falta (§ 📄 Importar un documento, condición 2).
    */
   importeFix: string
+  /** La fecha de vencimiento corregida a mano (ISO). Vacía = vale la de la boleta. */
+  vencFix: string
 }
 
 const m = (n: number | null | undefined) =>
@@ -67,6 +73,13 @@ const esPartida = (s: string | null | undefined) => !!s && /^\d{3}-\d{6}-\d$/.te
  */
 const importeDe = (f: Comparacion) => aMonto(f.importeFix) ?? f.boleta.importe
 
+/** La fecha de vencimiento a aplicar: la corregida a mano si la hay, si no la de la boleta. */
+const vencDe = (f: Comparacion) => (f.vencFix.trim() || f.boleta.vencimiento) || null
+
+/** `2026-09-11` → `11/09/2026`. */
+const fecha = (iso: string | null | undefined) =>
+  iso ? iso.split("-").reverse().join("/") : "—"
+
 /**
  * Casa la boleta con la CUOTA que le corresponde del template, y propone si aplicarla.
  *
@@ -75,23 +88,28 @@ const importeDe = (f: Comparacion) => aMonto(f.importeFix) ?? f.boleta.importe
  */
 async function casarCuota(fila: Comparacion, egresoId: string, boleta: BoletaArba) {
   const nro = boleta.cuota && /^\d$/.test(boleta.cuota) ? parseInt(boleta.cuota) : null
-  let c: { id: string; monto: number; estado: string } | undefined
+  let c: { id: string; monto: number; estado: string; fecha_vencimiento: string | null } | undefined
   if (nro != null) {
     const { data: cs } = await supabase.from("cuotas_egresos_sin_factura")
-      .select("id, monto, estado, numero_cuota")
+      .select("id, monto, estado, numero_cuota, fecha_vencimiento")
       .eq("egreso_id", egresoId).eq("numero_cuota", nro)
     c = (cs ?? [])[0] as typeof c
   }
   if (c) {
     fila.cuotaId = c.id
     fila.montoTemplate = Number(c.monto)
+    fila.vencTemplate = c.fecha_vencimiento ?? null
     fila.estadoCuota = c.estado
   }
   // La decisión vive en `lib/arba/casar-boleta.ts`, aparte y sin base: es lo que mueve plata
   // proyectada, y adentro de un componente no se podía probar con números.
-  const d = decidirAplicar(c ? { monto: Number(c.monto), estado: c.estado } : null, boleta.importe, nro)
+  const d = decidirAplicar(
+    c ? { monto: Number(c.monto), estado: c.estado, fechaVencimiento: c.fecha_vencimiento ?? null } : null,
+    boleta.importe, nro, boleta.vencimiento,
+  )
   fila.aplicar = d.aplicar
   fila.problema = d.problema
+  fila.cambia = d.cambia
 }
 
 export function PanelBoletasArba() {
@@ -117,9 +135,10 @@ export function PanelBoletasArba() {
         const delMailEste = mailPorArchivo[f.name]
         const fila: Comparacion = {
           archivo: f.name, boleta, lote: null, egresoId: null, cuotaId: null,
-          montoTemplate: null, estadoCuota: null, aplicar: false, aplicada: false, problema: null,
+          montoTemplate: null, vencTemplate: null, estadoCuota: null, cambia: [],
+          aplicar: false, aplicada: false, problema: null,
           importeMail: delMailEste?.importe ?? null, objetoMail: delMailEste?.objeto ?? null,
-          importeFix: "",
+          importeFix: "", vencFix: "",
         }
 
         if (boleta.impuesto === "complementario") {
@@ -212,7 +231,8 @@ export function PanelBoletasArba() {
     if (!window.confirm(
       `¿Aplicar ${sel.length} boleta(s) al presupuesto?\n\n` +
       sel.map(f => `${f.lote} c${f.boleta.cuota}: ${m(f.montoTemplate)} → ${m(importeDe(f))}`
-        + (f.importeFix.trim() ? "  (corregido a mano)" : "")).join("\n") +
+        + (vencDe(f) && vencDe(f) !== f.vencTemplate ? `   ·   vence ${fecha(f.vencTemplate)} → ${fecha(vencDe(f))}` : "")
+        + (f.importeFix.trim() || f.vencFix.trim() ? "  (corregido a mano)" : "")).join("\n") +
       (conciliadas ? `\n\n⚠️ ${conciliadas} ya está(n) CONCILIADA(S): cambiarlas reescribe un pago que ya ocurrió.` : "") +
       (noCierran ? `\n\n⚠️ En ${noCierran}, el mail y el PDF NO dicen lo mismo.` : "")
     )) return
@@ -221,9 +241,14 @@ export function PanelBoletasArba() {
     try {
       for (const f of sel) {
         const importe = importeDe(f)!
-        // Se escribe SOLO el monto de la cuota. Nada más del template se toca.
+        const venc = vencDe(f)
+        // Se escriben SOLO el monto y la fecha de vencimiento de esa cuota. Nada más del template
+        // se toca — y `fecha_estimada` **no**: ésa mueve la proyección del Cash Flow y no es lo que
+        // dice la boleta. Si hay que correrla, se hace desde Egresos sin Factura (→ A-FEAT-110).
+        const cambios: Record<string, unknown> = { monto: importe }
+        if (venc) cambios.fecha_vencimiento = venc
         const { error } = await supabase.from("cuotas_egresos_sin_factura")
-          .update({ monto: importe }).eq("id", f.cuotaId!)
+          .update(cambios).eq("id", f.cuotaId!)
         if (error) throw error
 
         // Y queda registrado de dónde salió: la boleta guarda su propio dato, aparte.
@@ -232,7 +257,7 @@ export function PanelBoletasArba() {
           anio: f.boleta.anio ?? new Date().getFullYear(),
           cuota: f.boleta.cuota ?? "?", impuesto: f.boleta.impuesto,
           importe, importe_anual: f.boleta.importeAnual,
-          vencimiento: f.boleta.vencimiento, valuacion_fiscal: f.boleta.valuacionFiscal,
+          vencimiento: venc, valuacion_fiscal: f.boleta.valuacionFiscal,
           base_imponible: f.boleta.baseImponible,
           codigo_pago_electronico: f.boleta.codigoPagoElectronico,
           // 🔁 Los dos caminos se guardan SEPARADOS. Fundirlos en uno perdería justamente el control.
@@ -241,14 +266,16 @@ export function PanelBoletasArba() {
           // 🐾 La huella: qué leyó el parser y qué puso el usuario. Sirve para preguntarle después
           // al importador qué campo se corrige más y si un cambio lo mejoró o lo empeoró.
           correcciones: huellaBoleta(
-            { importe: f.boleta.importe, partida: f.boleta.partida },
-            { importe, partida: f.boleta.partida ?? f.objetoMail },
+            { importe: f.boleta.importe, partida: f.boleta.partida, vencimiento: f.boleta.vencimiento },
+            { importe, partida: f.boleta.partida ?? f.objetoMail, vencimiento: venc },
           ),
           aplicada: true, aplicada_at: new Date().toISOString(), origen: "pdf",
         }, { onConflict: "partida,anio,cuota,impuesto" })
       }
-      setFilas(fs => fs.map(x => sel.includes(x) ? { ...x, aplicada: true, aplicar: false, montoTemplate: importeDe(x) } : x))
-      toast.success(`${sel.length} cuota(s) actualizada(s) con el importe de la boleta`)
+      setFilas(fs => fs.map(x => sel.includes(x)
+        ? { ...x, aplicada: true, aplicar: false, cambia: [], montoTemplate: importeDe(x), vencTemplate: vencDe(x) ?? x.vencTemplate }
+        : x))
+      toast.success(`${sel.length} cuota(s) actualizada(s): importe y vencimiento`)
     } catch (e) {
       toast.error("No se pudo aplicar: " + (e as Error).message)
     } finally { setAplicando(false) }
@@ -342,6 +369,7 @@ export function PanelBoletasArba() {
                       <th className="px-2 py-1 text-right">Según el mail</th>
                       <th className="px-2 py-1 text-right">Boleta (PDF)</th>
                       <th className="px-2 py-1 text-right">Diferencia</th>
+                      <th className="px-2 py-1 text-left">Vence</th>
                       <th className="px-2 py-1 text-left">Estado</th>
                     </tr>
                   </thead>
@@ -403,10 +431,37 @@ export function PanelBoletasArba() {
                           <td className={`px-2 py-1 text-right tabular-nums ${d == null || Math.abs(d) <= 1 ? "text-gray-400" : d > 0 ? "text-rose-700" : "text-emerald-700"}`}>
                             {d == null ? "—" : Math.abs(d) <= 1 ? "coincide" : (d > 0 ? "+" : "−") + m(Math.abs(d)).slice(1)}
                           </td>
+                          {/* 🔴 La fecha de vencimiento se aplica igual que el monto: pedido explícito
+                              del usuario («montos y fechas de venc»). Editable, como todo lo leído. */}
+                          <td className="px-2 py-1">
+                            <Input type="date" disabled={f.aplicada}
+                              className="h-6 w-32 text-[11px]"
+                              value={f.vencFix || f.boleta.vencimiento || ""}
+                              onChange={e => setFilas(fs => fs.map((x, j) => {
+                                if (j !== i) return x
+                                const y = { ...x, vencFix: e.target.value }
+                                if (y.montoTemplate != null && y.estadoCuota && y.estadoCuota !== "conciliado") {
+                                  const iv = importeDe(y), vv = vencDe(y)
+                                  y.aplicar = (iv != null && Math.abs(iv - y.montoTemplate) > 1)
+                                    || (!!vv && vv !== y.vencTemplate)
+                                }
+                                return y
+                              }))} />
+                            <div className={`text-[9px] ${vencDe(f) && vencDe(f) !== f.vencTemplate ? "text-rose-700" : "text-gray-400"}`}>
+                              {f.vencTemplate
+                                ? (vencDe(f) === f.vencTemplate ? "= al template" : `el template dice ${fecha(f.vencTemplate)}`)
+                                : "el template no tenía fecha"}
+                            </div>
+                          </td>
                           <td className="px-2 py-1 text-[10px]">
                             {f.aplicada ? <span className="font-medium text-emerald-700">✓ aplicada</span>
                               : f.problema ? <span className="text-amber-800">⚠ {f.problema}</span>
-                              : <span className="text-gray-500">{f.estadoCuota}</span>}
+                              : <>
+                                  <div className="text-gray-500">{f.estadoCuota}</div>
+                                  {f.cambia.length > 0 && (
+                                    <div className="text-blue-700">cambia {f.cambia.join(" y ")}</div>
+                                  )}
+                                </>}
                           </td>
                         </tr>
                       )
