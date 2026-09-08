@@ -62,11 +62,48 @@ function nombreCarpeta_(responsable, empresaDelMail) {
   return (vino && vino !== duenio) ? duenio + ' - viene ' + vino : duenio
 }
 
-/** La subcarpeta adentro de «Boletas ARBA». Find-or-create: nunca reemplaza ni borra. */
-function subcarpetaDe_(padre, responsable, empresaDelMail) {
+/**
+ * La subcarpeta adentro de «Boletas ARBA». Find-or-create: nunca reemplaza ni borra.
+ *
+ * 🐞 **A-BUG-129 (2026-09-08) — con caché, porque Drive cobra por preguntar.**
+ * Cada llamada a `getFoldersByName` / `getFilesByName` es un viaje a los servidores de Google, y se
+ * hacían **dos por cada link**: 62 viajes para 31 boletas. A ~0,3-0,5 s cada uno son 20-30 segundos
+ * de puro «¿existe?» — **más caro que bajar los PDFs**, que era lo que parecía el problema. Por eso
+ * cada corrida avanzaba 6 y no llegaba nunca.
+ *
+ * El caché vive **una sola corrida**: se arma al empezar y se descarta al terminar, así no puede
+ * quedar desactualizado entre ejecuciones.
+ */
+function subcarpetaDe_(padre, responsable, empresaDelMail, cache) {
   var nombre = nombreCarpeta_(responsable, empresaDelMail)
+  if (cache && cache.carpetas[nombre]) return cache.carpetas[nombre]
   var it = padre.getFoldersByName(nombre)
-  return it.hasNext() ? it.next() : padre.createFolder(nombre)
+  var f = it.hasNext() ? it.next() : padre.createFolder(nombre)
+  if (cache) cache.carpetas[nombre] = f
+  return f
+}
+
+/**
+ * ¿Ya está ese archivo en esa carpeta? **Los nombres de la carpeta se leen UNA vez.**
+ *
+ * Listar una carpeta entera cuesta lo mismo que preguntar por un archivo, así que preguntar 31
+ * veces es 31 veces el mismo precio por la misma información.
+ */
+function yaEstaEn_(carpeta, nombre, cache) {
+  if (!cache) return carpeta.getFilesByName(nombre).hasNext()
+  var clave = carpeta.getId()
+  if (!cache.archivos[clave]) {
+    var mapa = {}
+    var it = carpeta.getFiles()
+    while (it.hasNext()) mapa[it.next().getName()] = true
+    cache.archivos[clave] = mapa
+  }
+  return cache.archivos[clave][nombre] === true
+}
+
+/** Se anota lo recién creado: si no, dos links iguales del mismo mail se bajarían dos veces. */
+function anotarCreado_(carpeta, nombre, cache) {
+  if (cache && cache.archivos[carpeta.getId()]) cache.archivos[carpeta.getId()][nombre] = true
 }
 
 function carpetaArba_() {
@@ -359,6 +396,9 @@ function bajarBoletasArba(soloContar, opciones) {
   // Cuántas boletas quedaron sin bajar por falta de tiempo. Volver a correr continúa: el dedup es
   // por nombre, así que lo ya archivado no se toca.
   var quedaron = 0, sinTiempo = false
+  // Caché de Drive de ESTA corrida: carpetas y nombres de archivo ya leídos (`A-BUG-129`).
+  // Vive una sola ejecución, así no puede quedar desactualizado entre corridas.
+  var cacheDrive = { carpetas: {}, archivos: {} }
 
   for (var h = 0; h < hilos.length; h++) {
     var msgs = hilos[h].getMessages()
@@ -427,18 +467,15 @@ function bajarBoletasArba(soloContar, opciones) {
           // El complementario no tiene partida: su dueño ES el contribuyente del mail.
           var duenio = info && info.responsable ? info.responsable
             : (/Complementario/i.test(msg.getSubject()) ? empresaDelMail : null)
-          var destino = subcarpetaDe_(carpeta, duenio, empresaDelMail)
+          var destino = subcarpetaDe_(carpeta, duenio, empresaDelMail, cacheDrive)
 
           // 🔒 Dedup por NOMBRE, mirando **la subcarpeta del dueño** y no la raíz: desde que cada
           // empresa tiene la suya, buscar en el padre daría «ya estaba» por un archivo de otra.
           var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
-          if (nombre) {
-            var yaEsta = destino.getFilesByName(nombre)
-            if (yaEsta.hasNext()) {
-              // ✅ Acá se ahorra la descarga: es lo que hace que re-correr sea barato.
-              yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: yaEsta.next().getUrl() })
-              continue
-            }
+          if (nombre && yaEstaEn_(destino, nombre, cacheDrive)) {
+            // ✅ Acá se ahorra la descarga: es lo que hace que re-correr sea barato.
+            yaEstaban.push({ archivo: nombre, carpeta: destino.getName() })
+            continue
           }
 
           var r = bajarBoleta_(links[k])
@@ -455,13 +492,13 @@ function bajarBoletasArba(soloContar, opciones) {
               }
             }
             nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
-            var ex = destino.getFilesByName(nombre)
-            if (ex.hasNext()) {
-              yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ex.next().getUrl() })
+            if (yaEstaEn_(destino, nombre, cacheDrive)) {
+              yaEstaban.push({ archivo: nombre, carpeta: destino.getName() })
               continue
             }
           }
           var file = destino.createFile(r.blob.setName(nombre))
+          anotarCreado_(destino, nombre, cacheDrive)
           bajadas.push({
             asunto: msg.getSubject(),
             fecha: Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd'),

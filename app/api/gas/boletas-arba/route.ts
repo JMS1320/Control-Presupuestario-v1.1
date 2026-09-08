@@ -15,8 +15,15 @@ import { NextResponse } from "next/server"
 export const runtime = "nodejs"
 export const maxDuration = 60
 
-/** Por debajo de `maxDuration`: así la ruta alcanza a devolver un error EXPLICADO en vez de que la plataforma la mate. */
-const TOPE_GAS_MS = 45_000
+/**
+ * Por debajo de `maxDuration`: así la ruta alcanza a devolver un error EXPLICADO en vez de que la
+ * plataforma la mate. Se dejan **5 s de margen** sobre los 60 de `maxDuration`.
+ *
+ * 📌 Subió de 45 s a 55 s el 08/09, cuando el caché de Drive (`A-BUG-129`) hizo que el tiempo se
+ * gaste bajando boletas y no preguntándole a Google si un archivo existe. Antes, dar más tiempo
+ * sólo habría comprado más preguntas.
+ */
+const TOPE_GAS_MS = 55_000
 
 export async function POST(request: Request) {
   const url = process.env.GAS_BUSCAR_PDF_URL
