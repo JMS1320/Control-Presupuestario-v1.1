@@ -1933,10 +1933,15 @@ El dato lo dio el usuario en cómo armó `- Comunicacion JMS Claude - Archivos/b
 suyas: *«Tango es de MSA pero pasa eso que a veces viene de PAM por error y duplicada. Pasa con
 otras»*.
 
-⚠️ **Esto NO está en la base.** `egresos_sin_factura` no tiene columna `empresa`; tiene
-`centro_costo`, que es **el campo y no el dueño** — y *Nazarenas* mezcla MSA y PAM. → `A-DAT-29`.
+✅ **El dueño está en `egresos_sin_factura.responsable`** (`MSA` · `PAM` · `MA`). Cargado y correcto:
+MSA 10 partidas, PAM 8, MA 1, más un complementario por empresa.
 
-### El mapa, derivado de sus carpetas — ⏳ **a confirmar antes de cargarlo**
+⚠️ **Corrección de un error mío (2026-09-08)**: había mirado `centro_costo` y escrito acá que el
+dato no existía. `centro_costo` es **el campo** —Nazarenas · Lima · Rojas · Quinta Roselló— y
+*Nazarenas* mezcla MSA y PAM, así que no sirve para el dueño; pero `responsable` sí, y estaba.
+**Buscar en una columna y concluir que el dato no existe es distinto de haber buscado.**
+
+### El mapa (confirmado contra `responsable`)
 
 | Dueño | Campo | Partida | Nota |
 |---|---|---|---|
@@ -1955,11 +1960,11 @@ otras»*.
 | **PAM** | Ombú | `099-016666-8` | |
 | **PAM** | Tapera 1 | `099-015882-7` | |
 | **PAM** | Tapera 2 | `099-015884-3` | |
-| **PAM** | Tapera 3 | `099-015886-0` | |
+| **PAM** | Tapera 3 | `099-015886-0` | ✗ **no llegó el 08/09** |
 | **MA** | Lima | `038-040142-8` | |
-| **ERM** | Quinta Roselló 1 | `099-001854-5` | 🆕 cuarta entidad, no está en `CLAUDE.md` |
-| **ERM** | Quinta Roselló 2 | `099-001846-4` | 🔁 llegó en el mail de PAM |
-| **ERM** | El Relincho | `099-025089-8` | ⚠️ **sin template** (`A-DAT-26`) |
+| **PAM** | Quinta Roselló 1 | `099-001854-5` | ⚠️ la carpeta la pone en **ERM**, el registro en **PAM** · ✗ **no llegó el 08/09** |
+| **PAM** | Quinta Roselló 2 | `099-001846-4` | ⚠️ idem: carpeta ERM, registro PAM |
+| **ERM** | El Relincho | `099-025089-8` | ⚠️ **sin template** (`A-DAT-26`) — ERM no está en `CLAUDE.md` |
 | **?** | — | `099-001274-1` | ⚠️ **sin template**, $510.316,10, llegó en el mail de PAM |
 
 🔑 **Todas las repetidas del 08/09 son de MSA y todas se repiten en el mail de PAM.** No es azar:

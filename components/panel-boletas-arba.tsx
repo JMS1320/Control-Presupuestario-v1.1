@@ -20,7 +20,7 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
 import { decidirAplicar, controlDosCaminos, huellaBoleta, aMonto } from "@/lib/arba/casar-boleta"
-import { armarInforme, esPartida, type Informe, type TablaMail, type ResGas } from "@/lib/arba/informe-boletas"
+import { armarInforme, esPartida, type Informe, type TablaMail, type ResGas, type TemplateArba } from "@/lib/arba/informe-boletas"
 import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -269,18 +269,22 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       // inmobiliario MSA, Tango 1, Tango 2, Tango 3; tal no encontró; tantos duplicados»*.
       // «4 links que no dieron PDF» no es un informe, es un log. El GAS no conoce los lotes —los
       // templates viven acá—, así que la traducción se hace en la app: partida → nombre del campo.
-      const objetos = [...new Set(((j.tablas ?? []) as TablaMail[])
-        .flatMap(t => (t.filas ?? []).map(f => f.objeto)))]
-      const nombres: Record<string, string> = {}
-      if (objetos.length) {
-        const { data: egs } = await supabase.from("egresos_sin_factura")
-          .select("nombre_referencia, partida_arba, activo")
-          .in("partida_arba", objetos).eq("activo", true)
-        for (const e of (egs ?? []) as { nombre_referencia: string; partida_arba: string }[]) {
-          nombres[e.partida_arba] = e.nombre_referencia
-        }
-      }
-      setInforme(armarInforme((j.tablas ?? []) as TablaMail[], nombres, j as ResGas))
+      // 🔑 El eje es **NUESTRO REGISTRO**, no lo que llegó: se traen TODOS los templates activos
+      // de inmobiliario con su `responsable`, y contra esa lista se marca qué vino y qué falta.
+      // Un informe que sólo enumera lo presente no puede avisar de lo ausente.
+      const { data: egs } = await supabase.from("egresos_sin_factura")
+        .select("nombre_referencia, partida_arba, responsable, activo")
+        .eq("activo", true)
+        .or("partida_arba.not.is.null,nombre_referencia.ilike.%Complementario%")
+      const templates: TemplateArba[] = ((egs ?? []) as {
+        nombre_referencia: string; partida_arba: string | null; responsable: string | null
+      }[])
+        .filter(e => e.responsable && (e.partida_arba || /complementario/i.test(e.nombre_referencia)))
+        .map(e => ({
+          nombre: e.nombre_referencia, partida: e.partida_arba,
+          responsable: e.responsable!, complementario: !e.partida_arba,
+        }))
+      setInforme(armarInforme((j.tablas ?? []) as TablaMail[], templates, j as ResGas))
 
       const filas = (j.tablas ?? []).reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
       const conImporte = Object.keys(idx).length
@@ -446,50 +450,73 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
             </div>
             {/* 🗣️ EL INFORME, en el idioma del usuario: qué campo, de qué empresa, por cuánta plata.
                 Los nombres de archivo y las cuentas de links quedan abajo, en el detalle técnico. */}
-            {informe && informe.lineas.length > 0 && (
+            {/* 🗣️ EL INFORME, con NUESTRO REGISTRO como eje. Pedido del usuario (08/09):
+                «que la app nos diga en función de nuestro registro, no mezcle cosas. MSA todas las
+                partidas, complementario, alerta si alguna no llegó o llegó alguna de más. Ídem PAM,
+                MA. Rápidamente ver si tenemos todo o falta algo. Luego viene: tales vinieron
+                también para PAM».
+                Por eso se parte de los templates activos y se marca qué llegó — al revés de listar
+                lo que vino, que no puede avisar de lo que falta. */}
+            {informe && informe.bloques.length > 0 && (
               <div className="mt-2 rounded border bg-white">
-                <div className="border-b bg-gray-50 px-2 py-1 text-[11px] font-medium">
-                  Encontré {informe.lineas.length} boleta(s) — {m(informe.total)} en total
+                <div className="flex items-baseline justify-between border-b bg-gray-50 px-2 py-1 text-[11px] font-medium">
+                  <span>
+                    {informe.totalFaltan === 0
+                      ? "✓ Están todas las boletas de nuestro registro"
+                      : `⚠ Faltan ${informe.totalFaltan} boleta(s)`}
+                  </span>
+                  <span className="tabular-nums">{m(informe.total)}</span>
                 </div>
-                <div className="max-h-72 overflow-auto">
-                  {[...new Set(informe.lineas.map(l => `${l.empresa}|${l.que}`))].map(clave => {
-                    const [emp, que] = clave.split("|")
-                    const ls = informe.lineas.filter(l => `${l.empresa}|${l.que}` === clave)
-                    return (
-                      <div key={clave} className="border-b last:border-b-0">
-                        <div className="bg-gray-50/70 px-2 py-1 text-[10px] font-medium text-gray-700">
-                          {emp} · {que}
-                          <span className="ml-2 font-normal text-gray-500">
-                            {ls.length} boleta(s) · {m(ls.reduce((s, x) => s + (x.importe ?? 0), 0))}
-                          </span>
-                        </div>
-                        {ls.map((l, i) => (
-                          <div key={i} className="flex items-baseline justify-between gap-2 px-2 py-0.5 text-[11px]">
-                            <span className={l.lote ? "" : "text-amber-800"}>
-                              {l.lote ?? `⚠ ${l.objeto} — sin campo asignado`}
-                            </span>
-                            <span className="shrink-0 tabular-nums">{m(l.importe)}</span>
-                          </div>
-                        ))}
+
+                <div className="max-h-80 overflow-auto">
+                  {informe.bloques.map(b => (
+                    <div key={b.empresa} className="border-b last:border-b-0">
+                      <div className={`flex items-baseline justify-between px-2 py-1 text-[10px] font-medium
+                        ${b.completo ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900"}`}>
+                        <span>{b.completo ? "✓" : "⚠"} {b.empresa} — {b.llegaron} de {b.esperadas}</span>
+                        <span className="tabular-nums">{m(b.total)}</span>
                       </div>
-                    )
-                  })}
+                      {b.filas.map((f, i) => (
+                        <div key={i} className={`flex items-baseline justify-between gap-2 px-2 py-0.5 text-[11px]
+                          ${f.llego ? "" : "bg-rose-50 font-medium text-rose-800"}`}>
+                          <span>
+                            {f.llego ? "" : "✗ NO LLEGÓ · "}{f.nombre}
+                            {f.vinoEnOtra && (
+                              <span className="ml-1 text-[9px] text-blue-700">vino en el mail de {f.vinoEnOtra}</span>
+                            )}
+                            {f.duplicadaEn.length > 1 && (
+                              <span className="ml-1 text-[9px] text-blue-700">
+                                duplicada ({f.duplicadaEn.join(" y ")})
+                              </span>
+                            )}
+                          </span>
+                          <span className="shrink-0 tabular-nums">{f.llego ? m(f.importe) : "—"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
-                {informe.sinTemplate.length > 0 && (
+
+                {/* «Llegó alguna de más»: no es nuestra o le falta el template. Nunca se descarta. */}
+                {informe.deMas.length > 0 && (
                   <div className="border-t bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-900">
-                    <b>{informe.sinTemplate.length} partida(s) sin campo asignado.</b> No las voy a poder
-                    casar con ningún template: hay que cargarles la partida en Egresos sin Factura, o
-                    el campo no está en el sistema.
+                    <b>Llegaron {informe.deMas.length} que no están en nuestro registro:</b>
+                    {informe.deMas.map((l, i) => (
+                      <div key={i}>· {l.objeto} — {m(l.importe)} (vino en el mail de {l.vinoEn})</div>
+                    ))}
                   </div>
                 )}
-                {informe.repetidas.length > 0 && (
+
+                {/* «Tales vinieron también para PAM». */}
+                {informe.cruzadas.length > 0 && (
                   <div className="border-t bg-blue-50 px-2 py-1.5 text-[10px] leading-4 text-blue-900">
-                    <b>{informe.repetidas.length} partida(s) llegaron más de una vez:</b>{" "}
-                    {informe.repetidas.map(x => `${x.objeto} (${x.empresas.join(" y ")})`).join(" · ")}.
-                    Puede ser correcto —ARBA le manda la misma partida a las dos empresas— pero
-                    <b> conviene mirarlo antes de aplicar</b>.
+                    <b>Vinieron también en el mail de otra empresa:</b>
+                    {informe.cruzadas.map((c, i) => (
+                      <div key={i}>· {c.nombre} (de {c.duena}) — también en el mail de {c.vinoEn.join(" y ")}</div>
+                    ))}
                   </div>
                 )}
+
                 {informe.pie.length > 0 && (
                   <div className="border-t px-2 py-1.5 text-[10px] leading-4 text-gray-600">
                     {informe.pie.map((p, i) => <div key={i}>{p}</div>)}
