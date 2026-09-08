@@ -18,7 +18,8 @@
     "probar:cinta": "node --experimental-strip-types scripts/probar-cinta.mts",
     "probar:mail": "node --experimental-strip-types scripts/probar-mail.mts",
     "probar:arba-casar": "node --experimental-strip-types scripts/probar-arba-casar.mts",
-    "probar:canales": "node --experimental-strip-types scripts/probar-canales.mts"
+    "probar:canales": "node --experimental-strip-types scripts/probar-canales.mts",
+    "probar:informe": "node --experimental-strip-types scripts/probar-arba-informe.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

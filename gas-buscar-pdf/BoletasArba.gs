@@ -54,17 +54,46 @@ function carpetaArba_() {
  * mandar cualquiera de los dos y quedarse sólo con uno perdería mails en silencio.
  */
 function linksDeBoleta_(html) {
+  var limpiar = function (u) { return String(u).replace(/&amp;/g, '&').replace(/[.,;)]+$/, '') }
+  var unicos = function (arr) {
+    var vistos = {}, res = []
+    for (var i = 0; i < arr.length; i++) if (!vistos[arr[i]]) { vistos[arr[i]] = 1; res.push(arr[i]) }
+    return res
+  }
+
+  // ── 1 · Los que están anclados en el texto de descarga ────────────────────────────────────────
+  //
+  // 🐞 **A-BUG-126 (2026-09-08).** ARBA envuelve **TODOS** los links del mail en su rastreador
+  // `lt.php` — también los del pie: inicio, Cuenta DNI, darse de baja. Quedarse con «todo lo que
+  // sea lt.php» traía **4 links de más por mail**, y cada uno costaba una descarga completa para
+  // descubrir que no era un PDF. Con 6 mails eran ~25 descargas al pedo: por eso se acababa el
+  // tiempo y quedaban 38 boletas sin bajar.
+  //
+  // 🔑 **Lo que distingue a una boleta no es el dominio, es de qué cuelga**: la celda «Descargar
+  // boleta» de la tabla dice *Ingresar*. Eso además hace que la cantidad de links **coincida con
+  // la cantidad de filas**, que es el control que venía avisando el descuadre.
+  var anclados = []
+  var reA = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi
+  var ma
+  while ((ma = reA.exec(html)) !== null) {
+    var texto = String(ma[2]).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
+    if (!/^(ingresar|descargar( boleta)?|ver boleta|descarga)$/i.test(texto)) continue
+    var ua = limpiar(ma[1])
+    if (/^https?:/i.test(ua)) anclados.push(ua)
+  }
+  if (anclados.length) return unicos(anclados)
+
+  // ── 2 · Si no hay anclas reconocibles, el modo viejo ──────────────────────────────────────────
+  // ⚠️ **Nunca quedarse sin bajar nada.** Si ARBA cambia el texto del botón, esto trae de más —
+  // que es molesto— en vez de traer de menos, que es perder una boleta en silencio.
   var out = []
   var re = /https?:\/\/[^\s"'<>]+/gi
   var m
   while ((m = re.exec(html)) !== null) {
-    var u = m[0].replace(/&amp;/g, '&').replace(/[.,;)]+$/, '')
+    var u = limpiar(m[0])
     if (/lt\.php\?tid=/i.test(u) || /pdfDeuda/i.test(u)) out.push(u)
   }
-  // Sin duplicados: el mismo link suele estar en el texto y en un botón.
-  var vistos = {}, unicos = []
-  for (var i = 0; i < out.length; i++) if (!vistos[out[i]]) { vistos[out[i]] = 1; unicos.push(out[i]) }
-  return unicos
+  return unicos(out)
 }
 
 /**
@@ -180,15 +209,37 @@ function bajarBoleta_(url) {
  * El nombre del servidor ya trae la partida, así que `2026-C3 - Deuda-Inmobiliario-0990158819-R.pdf`
  * identifica la boleta sin ambigüedad y re-correr el script da siempre lo mismo.
  */
-function nombreDeArchivo_(nombreOriginal, fechaMail, k, asunto) {
+function nombreDeArchivo_(nombreOriginal, fechaMail, k, asunto, objeto, url) {
   var anio = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy')
   // El asunto trae la cuota: «Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3».
   var mc = String(asunto || '').match(/Cuota\s*(\d+)/i)
   var periodo = anio + (mc ? '-C' + mc[1] : '-' + Utilities.formatDate(fechaMail, 'GMT-3', 'MM-dd'))
+  // El complementario y el aviso de débito son distintos y comparten cuota: sin esto, dos boletas
+  // del mismo contribuyente en la misma cuota se pisarían entre sí.
+  var clase = /Complementario/i.test(String(asunto || '')) ? ' Compl' : ''
+  if (/Aviso\s+de\s+d[eé]bito/i.test(String(asunto || ''))) clase += ' Debito'
 
-  if (!nombreOriginal) return 'ARBA ' + periodo + ' - ' + (k + 1) + '.pdf'
-  var base = String(nombreOriginal).replace(/\.pdf$/i, '')
-  return periodo + ' - ' + base + '.pdf'
+  if (nombreOriginal) {
+    var base = String(nombreOriginal).replace(/\.pdf$/i, '')
+    return periodo + ' - ' + base + '.pdf'
+  }
+
+  // 🐞 **A-BUG-127 (2026-09-08).** ARBA **no siempre manda el nombre** en el `Content-disposition`,
+  // y cuando falta el nombre de emergencia numeraba **por posición dentro del mail**:
+  // `ARBA 2026-C3 - 1.pdf`. Como el dedup es por nombre, el «1» del mail de MSA y el «1» del de PAM
+  // **son el mismo archivo**: la segunda boleta se saltea como «ya estaba». Es exactamente el
+  // defecto que `A-BUG-120` creía haber cerrado, entrando por la puerta de al lado.
+  //
+  // 🔑 El objeto imponible de la tabla del mail —la partida, o el CUIT en el complementario—
+  // identifica la boleta **sin depender del orden**. Es el mismo dato que ya se usa para casarla
+  // con su template.
+  if (objeto) return periodo + clase + ' - ' + String(objeto) + '.pdf'
+
+  // Último recurso: el identificador del propio link. Feo pero **estable y único** — el mismo mail
+  // procesado dos veces da el mismo, así que sigue sin duplicar.
+  var mt = String(url || '').match(/tid=([A-Za-z0-9_-]+)/)
+  if (mt) return 'ARBA ' + periodo + clase + ' - ' + mt[1] + '.pdf'
+  return 'ARBA ' + periodo + clase + ' - ' + (k + 1) + '.pdf'
 }
 
 /**
@@ -285,15 +336,23 @@ function bajarBoletasArba(soloContar, opciones) {
           var r = bajarBoleta_(links[k])
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
 
-          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject())
-          // La fila del mail que le corresponde: por PARTIDA cuando el PDF la trae en el nombre, y
-          // por posición sólo cuando no la trae (el complementario, que además viene solo).
+          // La fila del mail que le corresponde. Tres vías, de la más confiable a la menos:
+          //   1. por PARTIDA, cuando ARBA mandó el nombre del archivo y la trae adentro;
+          //   2. por POSICIÓN, cuando la cantidad de links coincide con la de filas — que es lo
+          //      normal desde `A-BUG-126`, porque ahora sólo se toman los links «Ingresar»;
+          //   3. la única fila, cuando el mail trae una sola (el complementario).
           var laPartida = partidaDeNombre_(r.nombre)
           var fila = null
           for (var f = 0; f < tabla.filas.length; f++) {
             if (laPartida && soloDigitos_(tabla.filas[f].objeto) === laPartida) { fila = tabla.filas[f]; break }
           }
+          if (!fila && !laPartida && tabla.filas.length === links.length) fila = tabla.filas[k]
           if (!fila && !laPartida && tabla.filas.length === 1) fila = tabla.filas[0]
+
+          // 🔑 El nombre lleva el objeto imponible cuando ARBA no manda el suyo: sin eso numeraba
+          // por posición y dos boletas de mails distintos colisionaban (A-BUG-127).
+          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(),
+            fila ? fila.objeto : null, links[k])
 
           // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
           // el período la deduplicación borraba boletas distintas en silencio.

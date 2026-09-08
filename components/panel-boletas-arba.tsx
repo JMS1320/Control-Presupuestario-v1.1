@@ -20,6 +20,7 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
 import { decidirAplicar, controlDosCaminos, huellaBoleta, aMonto } from "@/lib/arba/casar-boleta"
+import { armarInforme, esPartida, type Informe, type TablaMail, type ResGas } from "@/lib/arba/informe-boletas"
 import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -63,9 +64,6 @@ interface Comparacion {
 
 const m = (n: number | null | undefined) =>
   n == null ? "—" : `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-/** El objeto imponible del mail es una PARTIDA (`099-015881-9`) y no un CUIT (`20-04439022-2`). */
-const esPartida = (s: string | null | undefined) => !!s && /^\d{3}-\d{6}-\d$/.test(s)
 
 /**
  * El importe que se va a aplicar: **el corregido a mano si lo hay, si no el del PDF**.
@@ -155,6 +153,7 @@ export function PanelBoletasArba() {
   const [bajando, setBajando] = useState(false)
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
+  const [informe, setInforme] = useState<Informe | null>(null)
   type Bajada = { archivo: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: { archivo: string }[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
@@ -264,6 +263,24 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
         if (b.importe_mail != null || b.objeto_mail) idx[b.archivo] = { objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null }
       }
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
+
+      // 🗣️ **El informe va en el idioma del usuario, no en el del sistema.**
+      // Pedido textual (2026-09-08): *«el informe a mí tiene que ser en mi lenguaje: encontró
+      // inmobiliario MSA, Tango 1, Tango 2, Tango 3; tal no encontró; tantos duplicados»*.
+      // «4 links que no dieron PDF» no es un informe, es un log. El GAS no conoce los lotes —los
+      // templates viven acá—, así que la traducción se hace en la app: partida → nombre del campo.
+      const objetos = [...new Set(((j.tablas ?? []) as TablaMail[])
+        .flatMap(t => (t.filas ?? []).map(f => f.objeto)))]
+      const nombres: Record<string, string> = {}
+      if (objetos.length) {
+        const { data: egs } = await supabase.from("egresos_sin_factura")
+          .select("nombre_referencia, partida_arba, activo")
+          .in("partida_arba", objetos).eq("activo", true)
+        for (const e of (egs ?? []) as { nombre_referencia: string; partida_arba: string }[]) {
+          nombres[e.partida_arba] = e.nombre_referencia
+        }
+      }
+      setInforme(armarInforme((j.tablas ?? []) as TablaMail[], nombres, j as ResGas))
 
       const filas = (j.tablas ?? []).reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
       const conImporte = Object.keys(idx).length
@@ -427,6 +444,60 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                 <br />Si la bajada no llega a tiempo, <b>achicá los días</b> — y volvé a correrla: sigue donde iba.
               </span>
             </div>
+            {/* 🗣️ EL INFORME, en el idioma del usuario: qué campo, de qué empresa, por cuánta plata.
+                Los nombres de archivo y las cuentas de links quedan abajo, en el detalle técnico. */}
+            {informe && informe.lineas.length > 0 && (
+              <div className="mt-2 rounded border bg-white">
+                <div className="border-b bg-gray-50 px-2 py-1 text-[11px] font-medium">
+                  Encontré {informe.lineas.length} boleta(s) — {m(informe.total)} en total
+                </div>
+                <div className="max-h-72 overflow-auto">
+                  {[...new Set(informe.lineas.map(l => `${l.empresa}|${l.que}`))].map(clave => {
+                    const [emp, que] = clave.split("|")
+                    const ls = informe.lineas.filter(l => `${l.empresa}|${l.que}` === clave)
+                    return (
+                      <div key={clave} className="border-b last:border-b-0">
+                        <div className="bg-gray-50/70 px-2 py-1 text-[10px] font-medium text-gray-700">
+                          {emp} · {que}
+                          <span className="ml-2 font-normal text-gray-500">
+                            {ls.length} boleta(s) · {m(ls.reduce((s, x) => s + (x.importe ?? 0), 0))}
+                          </span>
+                        </div>
+                        {ls.map((l, i) => (
+                          <div key={i} className="flex items-baseline justify-between gap-2 px-2 py-0.5 text-[11px]">
+                            <span className={l.lote ? "" : "text-amber-800"}>
+                              {l.lote ?? `⚠ ${l.objeto} — sin campo asignado`}
+                            </span>
+                            <span className="shrink-0 tabular-nums">{m(l.importe)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+                {informe.sinTemplate.length > 0 && (
+                  <div className="border-t bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-900">
+                    <b>{informe.sinTemplate.length} partida(s) sin campo asignado.</b> No las voy a poder
+                    casar con ningún template: hay que cargarles la partida en Egresos sin Factura, o
+                    el campo no está en el sistema.
+                  </div>
+                )}
+                {informe.repetidas.length > 0 && (
+                  <div className="border-t bg-blue-50 px-2 py-1.5 text-[10px] leading-4 text-blue-900">
+                    <b>{informe.repetidas.length} partida(s) llegaron más de una vez:</b>{" "}
+                    {informe.repetidas.map(x => `${x.objeto} (${x.empresas.join(" y ")})`).join(" · ")}.
+                    Puede ser correcto —ARBA le manda la misma partida a las dos empresas— pero
+                    <b> conviene mirarlo antes de aplicar</b>.
+                  </div>
+                )}
+                {informe.pie.length > 0 && (
+                  <div className="border-t px-2 py-1.5 text-[10px] leading-4 text-gray-600">
+                    {informe.pie.map((p, i) => <div key={i}>{p}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
             {delMail && (
               <div className="mt-2 rounded bg-gray-50 px-2 py-1.5 text-[11px]">
                 <div className="font-medium">{delMail.resumen}</div>

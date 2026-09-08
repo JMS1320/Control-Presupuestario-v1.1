@@ -75,6 +75,45 @@ chequear("Dos boletas en el mismo mail son dos links",
 chequear("Ignora links que no son de boletas",
   "0", String(linksDeBoleta_(`<a href="https://www.arba.gov.ar/contacto">Contacto</a>`).length))
 
+// ── 🐞 A-BUG-126 · El pie del mail también viaja en el rastreador ──────────────────────────────
+// ARBA envuelve TODOS los links en `lt.php`, también los del pie. Quedarse con «todo lo que sea
+// lt.php» traía 4 de más por mail, y cada uno costaba una descarga entera para descubrir que no
+// era un PDF: con 6 mails, ~25 descargas al pedo y 38 boletas sin bajar por falta de tiempo.
+const t = (n: number) => `http://arbalist07.arba.gov.ar/lt.php?tid=TID${n}`
+const MAIL_REAL = `
+  <table>
+    <tr><td>099-015881-9</td><td>40.934,10</td><td><a href="${t(1)}">Ingresar</a></td>
+        <td><a href="${t(2)}"><img src="qr.png"></a></td></tr>
+    <tr><td>099-010611-8</td><td>22.394,70</td><td><a href="${t(3)}">Ingresar</a></td>
+        <td><a href="${t(4)}"><img src="qr.png"></a></td></tr>
+  </table>
+  <div class="pie">
+    <a href="${t(90)}">Inicio</a> · <a href="${t(91)}">Cuenta DNI</a> ·
+    <a href="${t(92)}">Darse de baja</a> · <a href="${t(93)}">Preguntas frecuentes</a>
+  </div>`
+
+chequear("🔴 De un mail real toma SÓLO los «Ingresar», no los 4 del pie",
+  "2", String(linksDeBoleta_(MAIL_REAL).length))
+
+chequear("🔑 Y así la cantidad de links COINCIDE con la de filas de la tabla",
+  "2 y 2", `${filasDelMail_(MAIL_REAL).filas.length} y ${linksDeBoleta_(MAIL_REAL).length}`)
+
+chequear("Son los links correctos, no dos cualesquiera",
+  `${t(1)},${t(3)}`, linksDeBoleta_(MAIL_REAL).join(","))
+
+chequear("El link del QR de Cuenta DNI no entra (es una imagen, no una boleta)",
+  "false", String(linksDeBoleta_(MAIL_REAL).includes(t(2))))
+
+chequear("Acepta también «Descargar boleta» por si cambian el texto",
+  "1", String(linksDeBoleta_(`<a href="${t(5)}">Descargar boleta</a><a href="${t(90)}">Inicio</a>`).length))
+
+// ⚠️ La red de seguridad: traer de más es molesto, traer de menos es perder una boleta en silencio.
+chequear("🔴 Si NINGÚN link tiene texto reconocible, vuelve al modo viejo y no se queda sin nada",
+  "2", String(linksDeBoleta_(`<a href="${t(1)}">📄</a><a href="${DIRECTO}">➡</a>`).length))
+
+chequear("Un link directo a pdfDeuda entra aunque el texto sea raro",
+  "1", String(linksDeBoleta_(`<a href="${DIRECTO}">x</a>`).length))
+
 chequear("Desarma el &amp; de los links en HTML",
   "true", String(linksDeBoleta_(`<a href="${DIRECTO}&amp;pk_source=phpList">x</a>`)[0]?.includes("&pk_source")))
 
@@ -108,6 +147,35 @@ chequear("Sin cuota en el asunto, cae a la fecha del mail",
 
 chequear("Sin nombre del servidor, igual arma uno con el período",
   "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3).indexOf("2026-C3") >= 0))
+
+// ── 🐞 A-BUG-127 · Cuando ARBA NO manda el nombre del archivo ─────────────────────────────────
+// Pasó de verdad el 08/09: los 8 PDFs bajados se llamaron `ARBA 2026-C3 - 1.pdf` … `- 8.pdf`.
+// El nombre de emergencia numeraba POR POSICIÓN dentro del mail, así que el «1» del mail de MSA y
+// el «1» del de PAM son el mismo archivo: la segunda boleta se saltea como «ya estaba».
+// Es el defecto de A-BUG-120 entrando por la puerta de al lado.
+const ASUNTO_COMPL = "Boleta por Mail - Vencimiento del Impuesto Inmobiliario Complementario Cuota 3"
+
+chequear("🔴 Sin nombre del servidor, el nombre lleva la PARTIDA y no la posición",
+  "2026-C3 - 099-015881-9.pdf", nombreDeArchivo_("", ago, 0, ASUNTO_C3, "099-015881-9"))
+
+chequear("🔴 Dos boletas de mails distintos ya NO colisionan",
+  "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3, "099-015881-9")
+    !== nombreDeArchivo_("", ago, 0, ASUNTO_C3, "099-010611-8")))
+
+chequear("El complementario se distingue del inmobiliario del mismo CUIT y cuota",
+  "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_COMPL, "30-61778601-6")
+    !== nombreDeArchivo_("", ago, 0, ASUNTO_C3, "30-61778601-6")))
+
+chequear("Y el «Aviso de débito» tampoco pisa al complementario común",
+  "true", String(nombreDeArchivo_("", ago, 0, "Boleta por Mail - Aviso de débito - Vencimiento del Impuesto Inmobiliario Complementario Cuota 3", "30-61778601-6")
+    !== nombreDeArchivo_("", ago, 0, ASUNTO_COMPL, "30-61778601-6")))
+
+chequear("Sin partida, cae al id del link — feo pero estable y único",
+  "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3, null, RASTREADOR).includes("KR0IAQQBAwtaBU4AWFdVSA")))
+
+chequear("El mismo link procesado dos veces da el mismo nombre (no duplica)",
+  "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3, null, RASTREADOR)
+    === nombreDeArchivo_("", ago, 5, ASUNTO_C3, null, RASTREADOR)))
 
 chequear("Siempre termina en .pdf",
   "true", String([nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3), nombreDeArchivo_("", ago, 2, ASUNTO_C3)].every((x: string) => x.endsWith(".pdf"))))
