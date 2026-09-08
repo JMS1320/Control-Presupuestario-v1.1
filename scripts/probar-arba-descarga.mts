@@ -30,7 +30,7 @@ if (!fs.existsSync(GS)) {
 // Se normalizan los fines de línea: en Windows git deja CRLF y el corte por `\n}\n` no matchea.
 // Sin esto el test falla con «linksDeBoleta_ is not defined», que no dice nada de la causa.
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_"]
+const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "nombreCarpeta_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -49,7 +49,7 @@ const Utilities = {
         : iso.slice(0, 10)
   },
 }
-const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_ } =
+const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, nombreCarpeta_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_ } =
   new Function("Utilities", codigo + `\nreturn { ${necesarias.join(", ")} }`)(Utilities)
 
 const r: { ok: boolean; caso: string; esperado: string; obtenido: string }[] = []
@@ -214,6 +214,25 @@ chequear("La misma boleta procesada dos veces da el mismo nombre (no duplica)",
 
 chequear("Una barra en el nombre del campo no rompe el archivo de Drive",
   "true", String(!nombreUsuario_(ago, ASUNTO_C3, "x", { x: { nombre: "Lote A/B", responsable: "MSA" } })!.includes("/")))
+
+// ── 🗂️ LA CARPETA, replicando cómo archiva el usuario ─────────────────────────────────────────
+chequear("Lo normal: la carpeta es la empresa, a secas",
+  "MSA", nombreCarpeta_("MSA", "MSA"))
+
+chequear("🔑 Si es de MSA pero llegó en el mail de PAM: «MSA - viene PAM»",
+  "MSA - viene PAM", nombreCarpeta_("MSA", "PAM"))
+
+chequear("Cada empresa la suya", "MA|PAM|ERM",
+  [nombreCarpeta_("MA", "MA"), nombreCarpeta_("PAM", "PAM"), nombreCarpeta_("ERM", "ERM")].join("|"))
+
+chequear("Lo que no está en nuestro registro va aparte, sin «viene»",
+  "_Sin asignar", nombreCarpeta_(null, "PAM"))
+
+chequear("Sin saber en qué mail vino, no se inventa un «viene»",
+  "PAM", nombreCarpeta_("PAM", null))
+
+chequear("🔴 Una boleta que llega por los DOS lados queda en dos carpetas distintas",
+  "true", String(nombreCarpeta_("MSA", "MSA") !== nombreCarpeta_("MSA", "PAM")))
 
 chequear("Siempre termina en .pdf",
   "true", String([nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3), nombreDeArchivo_("", ago, 2, ASUNTO_C3)].every((x: string) => x.endsWith(".pdf"))))

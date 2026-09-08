@@ -38,17 +38,33 @@ function propArba_(k, def) {
 
 /** Carpeta destino. Con `ARBA_CARPETA` usa ésa; si no, find-or-create en la raíz. */
 /**
- * La subcarpeta del responsable, adentro de «Boletas ARBA». Find-or-create, nunca reemplaza.
+ * 🗂️ El nombre de la subcarpeta, **replicando exactamente cómo archiva el usuario**:
  *
- * 🗂️ El usuario ya archivaba así a mano: una carpeta por empresa. Guardar todo junto obliga a
- * abrir archivo por archivo para saber de quién es.
+ * ```
+ * MSA              ← es de MSA y llegó en el mail de MSA
+ * MSA - viene PAM  ← es de MSA pero llegó en el mail de PAM
+ * PAM · MA · ERM
+ * _Sin asignar     ← llegó algo que no está en nuestro registro
+ * ```
  *
- * ⚠️ **La carpeta es del DUEÑO, no de dónde llegó.** Que una boleta de MSA venga en el mail de PAM
- * es un evento —y como tal lo reporta el informe—, no un cambio de propietario. Su carpeta manual
- * *«MSA - viene PAM»* mezcla las dos cosas; acá se separan.
+ * 🔑 **El «viene X» no es decoración: es el hecho que hay que ver.** Sus carpetas de ejemplo ya
+ * separaban *«MSA»* de *«MSA - viene PAM»* porque son dos situaciones distintas al momento de
+ * pagar y de reclamarle a ARBA. Yo las había fundido en una sola —el dueño— y me corrigió:
+ * *«replicá la carpeta tal cual, con el viene PAM»*.
+ *
+ * ⚠️ Una boleta que llega **por los dos lados** queda en las dos carpetas, una copia en cada una.
+ * Es correcto y es informativo: así se ve la duplicación **en el Drive**, no sólo en el informe.
  */
-function subcarpetaDe_(padre, responsable) {
-  var nombre = String(responsable || '').trim() || '_Sin asignar'
+function nombreCarpeta_(responsable, empresaDelMail) {
+  var duenio = String(responsable || '').trim()
+  if (!duenio) return '_Sin asignar'
+  var vino = String(empresaDelMail || '').trim()
+  return (vino && vino !== duenio) ? duenio + ' - viene ' + vino : duenio
+}
+
+/** La subcarpeta adentro de «Boletas ARBA». Find-or-create: nunca reemplaza ni borra. */
+function subcarpetaDe_(padre, responsable, empresaDelMail) {
+  var nombre = nombreCarpeta_(responsable, empresaDelMail)
   var it = padre.getFoldersByName(nombre)
   return it.hasNext() ? it.next() : padre.createFolder(nombre)
 }
@@ -412,12 +428,14 @@ function bajarBoletasArba(soloContar, opciones) {
           var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
             || nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
 
-          // El complementario no tiene partida: su dueño es el contribuyente del mail.
+          // En qué mail llegó, y de quién es. Casi siempre coinciden; cuando no, eso es el dato.
+          var empresaDelMail = (tabla.contribuyente && empresaPorCuit)
+            ? empresaPorCuit[tabla.contribuyente] : null
+          // El complementario no tiene partida: su dueño ES el contribuyente del mail.
           var info = elObjeto && mapaPartidas ? mapaPartidas[elObjeto] : null
           var duenio = info && info.responsable ? info.responsable
-            : (/Complementario/i.test(msg.getSubject()) && tabla.contribuyente && empresaPorCuit
-                ? empresaPorCuit[tabla.contribuyente] : null)
-          var destino = subcarpetaDe_(carpeta, duenio)
+            : (/Complementario/i.test(msg.getSubject()) ? empresaDelMail : null)
+          var destino = subcarpetaDe_(carpeta, duenio, empresaDelMail)
 
           // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
           // el período la deduplicación borraba boletas distintas en silencio.
