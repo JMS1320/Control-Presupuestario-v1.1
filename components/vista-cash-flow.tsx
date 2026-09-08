@@ -3060,6 +3060,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
               </Button>
+              {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
+                  CUOTA de esta pantalla.
+                  🐞 Estaba adentro del bloque `modoPagos` y el usuario no lo encontró: entrar a
+                  PAGOS es un paso que nada en la pantalla anuncia. Y ahí no correspondía — los
+                  botones de ese bloque operan sobre las filas SELECCIONADAS y se deshabilitan sin
+                  selección; importar boletas no depende de ninguna selección. */}
+              <PanelBoletasArba />
               {/* Botón Pago Manual - Templates Abiertos */}
               <Button
                 variant="outline"
@@ -3366,10 +3373,6 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       ✉ Encolar mail detalle
                     </Button>
                     <PanelMailsPago />
-                    {/* 🏛️ Boletas de ARBA: comparar contra el template y decidir cuál aplicar (A-FEAT-95).
-                        Vive acá porque lo que cambia es una CUOTA del Cash Flow, que es lo que se ve
-                        en esta pantalla. */}
-                    <PanelBoletasArba />
                     <Button
                       size="sm"
                       onClick={exportarLoteSeleccionados}
