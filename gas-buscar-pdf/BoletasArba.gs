@@ -37,6 +37,22 @@ function propArba_(k, def) {
 }
 
 /** Carpeta destino. Con `ARBA_CARPETA` usa ésa; si no, find-or-create en la raíz. */
+/**
+ * La subcarpeta del responsable, adentro de «Boletas ARBA». Find-or-create, nunca reemplaza.
+ *
+ * 🗂️ El usuario ya archivaba así a mano: una carpeta por empresa. Guardar todo junto obliga a
+ * abrir archivo por archivo para saber de quién es.
+ *
+ * ⚠️ **La carpeta es del DUEÑO, no de dónde llegó.** Que una boleta de MSA venga en el mail de PAM
+ * es un evento —y como tal lo reporta el informe—, no un cambio de propietario. Su carpeta manual
+ * *«MSA - viene PAM»* mezcla las dos cosas; acá se separan.
+ */
+function subcarpetaDe_(padre, responsable) {
+  var nombre = String(responsable || '').trim() || '_Sin asignar'
+  var it = padre.getFoldersByName(nombre)
+  return it.hasNext() ? it.next() : padre.createFolder(nombre)
+}
+
 function carpetaArba_() {
   var id = propArba_('ARBA_CARPETA', '')
   if (id) {
@@ -209,6 +225,40 @@ function bajarBoleta_(url) {
  * El nombre del servidor ya trae la partida, así que `2026-C3 - Deuda-Inmobiliario-0990158819-R.pdf`
  * identifica la boleta sin ambigüedad y re-correr el script da siempre lo mismo.
  */
+/**
+ * 🗂️ El nombre **con la convención del usuario**, la misma con la que venía archivando a mano:
+ *
+ * ```
+ * 2026 - Inmob - Cuota 3 - Tango Parra 1.pdf
+ * 2026 - Complementario - Cuota 3.pdf
+ * 2026 - Complementario - Cuota 3 - Aviso de debito.pdf
+ * ```
+ *
+ * 🔑 **El nombre del campo lo pone la APP, no el GAS.** El GAS sólo ve la partida; quién es «Tango
+ * Parra 1» y de quién es vive en `egresos_sin_factura`. Por eso el mapa viaja en el pedido: sin él
+ * el nombre cae a la partida, que identifica igual pero no se lee.
+ *
+ * Devuelve `null` si no se puede armar así; ahí el llamador usa el nombre técnico de siempre.
+ */
+function nombreUsuario_(fechaMail, asunto, objeto, mapa) {
+  var a = String(asunto || '')
+  var mc = a.match(/Cuota\s*(\d+)/i)
+  if (!mc) return null
+  var anio = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy')
+  var cuota = 'Cuota ' + mc[1]
+
+  if (/Complementario/i.test(a)) {
+    return anio + ' - Complementario - ' + cuota
+      + (/Aviso\s+de\s+d[eé]bito/i.test(a) ? ' - Aviso de debito' : '') + '.pdf'
+  }
+  // El nombre del campo si lo conocemos; si no, la partida — que es feo pero no ambiguo.
+  var info = mapa && objeto ? mapa[objeto] : null
+  var comoSeLlama = info && info.nombre ? info.nombre : objeto
+  if (!comoSeLlama) return null
+  // Drive no acepta `/` en un nombre de archivo.
+  return anio + ' - Inmob - ' + cuota + ' - ' + String(comoSeLlama).split('/').join('-') + '.pdf'
+}
+
 function nombreDeArchivo_(nombreOriginal, fechaMail, k, asunto, objeto, url) {
   var anio = Utilities.formatDate(fechaMail, 'GMT-3', 'yyyy')
   // El asunto trae la cuota: «Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3».
@@ -272,6 +322,12 @@ function bajarBoletasArba(soloContar, opciones) {
   if (Number(op.dias) > 0) {
     query = query.replace(/\s*newer_than:\d+[dmy]/i, '') + ' newer_than:' + Math.round(Number(op.dias)) + 'd'
   }
+  // 🗂️ El mapa **partida → { nombre del campo, responsable }**, que manda la app.
+  // El GAS no puede saberlo: quién es «Tango Parra 1» y de quién es vive en `egresos_sin_factura`.
+  // Se recibe en el pedido en vez de consultarlo, así siempre coincide con lo que el usuario ve.
+  var mapaPartidas = op.partidas || null
+  var empresaPorCuit = op.empresa_por_cuit || null
+
   var carpeta = soloContar ? null : carpetaArba_()
   var TOPE = 50
   var hilos = GmailApp.search(query, 0, TOPE)
@@ -349,23 +405,35 @@ function bajarBoletasArba(soloContar, opciones) {
           if (!fila && !laPartida && tabla.filas.length === links.length) fila = tabla.filas[k]
           if (!fila && !laPartida && tabla.filas.length === 1) fila = tabla.filas[0]
 
-          // 🔑 El nombre lleva el objeto imponible cuando ARBA no manda el suyo: sin eso numeraba
-          // por posición y dos boletas de mails distintos colisionaban (A-BUG-127).
-          var nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(),
-            fila ? fila.objeto : null, links[k])
+          var elObjeto = fila ? fila.objeto : null
+          // 🗂️ Primero la convención del usuario; si no se puede armar, el nombre técnico.
+          // 🔑 Éste lleva el objeto imponible cuando ARBA no manda el suyo: sin eso numeraba por
+          // posición y dos boletas de mails distintos colisionaban (A-BUG-127).
+          var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
+            || nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
+
+          // El complementario no tiene partida: su dueño es el contribuyente del mail.
+          var info = elObjeto && mapaPartidas ? mapaPartidas[elObjeto] : null
+          var duenio = info && info.responsable ? info.responsable
+            : (/Complementario/i.test(msg.getSubject()) && tabla.contribuyente && empresaPorCuit
+                ? empresaPorCuit[tabla.contribuyente] : null)
+          var destino = subcarpetaDe_(carpeta, duenio)
 
           // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
           // el período la deduplicación borraba boletas distintas en silencio.
-          var ex = carpeta.getFilesByName(nombre)
+          // ⚠️ El dedup mira **la subcarpeta del dueño**, no la raíz: desde que cada empresa tiene
+          // la suya, buscar en el padre daría «ya estaba» por un archivo que está en otro lado.
+          var ex = destino.getFilesByName(nombre)
           if (ex.hasNext()) {
-            yaEstaban.push({ archivo: nombre, url: ex.next().getUrl() })
+            yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ex.next().getUrl() })
             continue
           }
-          var file = carpeta.createFile(r.blob.setName(nombre))
+          var file = destino.createFile(r.blob.setName(nombre))
           bajadas.push({
             asunto: msg.getSubject(),
             fecha: Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd'),
-            archivo: nombre, file_id: file.getId(), url: file.getUrl(),
+            archivo: nombre, carpeta: destino.getName(),
+            file_id: file.getId(), url: file.getUrl(),
             // El SEGUNDO camino al mismo número: lo que dice el mail, para contrastar contra el PDF.
             objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null,
             contribuyente: tabla.contribuyente || null,

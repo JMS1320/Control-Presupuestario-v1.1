@@ -20,7 +20,7 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
 import { decidirAplicar, controlDosCaminos, huellaBoleta, aMonto } from "@/lib/arba/casar-boleta"
-import { armarInforme, esPartida, type Informe, type TablaMail, type ResGas, type TemplateArba } from "@/lib/arba/informe-boletas"
+import { armarInforme, esPartida, EMPRESA_POR_CUIT, type Informe, type TablaMail, type ResGas, type TemplateArba } from "@/lib/arba/informe-boletas"
 import { anotarResultado } from "@/lib/cinta-diagnostico"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -77,6 +77,35 @@ const vencDe = (f: Comparacion) => (f.vencFix.trim() || f.boleta.vencimiento) ||
 /** `2026-09-11` → `11/09/2026`. */
 const fecha = (iso: string | null | undefined) =>
   iso ? iso.split("-").reverse().join("/") : "—"
+
+/**
+ * `Inmobiliario Cuota Tango Parra 1` → `Tango Parra 1`.
+ * El template lleva el prefijo para ordenar la grilla; el nombre del archivo no lo necesita — la
+ * convención del usuario ya dice «Inmob» y la cuota.
+ */
+const nombreCorto = (n: string) =>
+  n.replace(/^Inmobiliario\s+(Cuota|Anual)\s+/i, "").trim() || n
+
+/**
+ * Los templates ACTIVOS de inmobiliario con su `responsable`.
+ *
+ * 🔑 Es **nuestro registro**: la lista de lo que tiene que llegar. De acá salen las tres cosas —
+ * el eje del informe, el nombre del archivo y la carpeta donde se guarda.
+ */
+async function cargarTemplates(): Promise<TemplateArba[]> {
+  const { data } = await supabase.from("egresos_sin_factura")
+    .select("nombre_referencia, partida_arba, responsable, activo")
+    .eq("activo", true)
+    .or("partida_arba.not.is.null,nombre_referencia.ilike.%Complementario%")
+  return ((data ?? []) as {
+    nombre_referencia: string; partida_arba: string | null; responsable: string | null
+  }[])
+    .filter(e => e.responsable && (e.partida_arba || /complementario/i.test(e.nombre_referencia)))
+    .map(e => ({
+      nombre: e.nombre_referencia, partida: e.partida_arba,
+      responsable: e.responsable!, complementario: !e.partida_arba,
+    }))
+}
 
 /**
  * Casa la boleta con la CUOTA que le corresponde del template, y propone si aplicarla.
@@ -154,7 +183,7 @@ export function PanelBoletasArba() {
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
   const [informe, setInforme] = useState<Informe | null>(null)
-  type Bajada = { archivo: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
+  type Bajada = { archivo: string; carpeta?: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: { archivo: string }[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
    * Lo que dijo el MAIL, por nombre de archivo. Se llena al bajar y se usa cuando después subís
@@ -244,9 +273,21 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
     avisar("info", soloContar ? "Buscando en el mail…" : "Bajando y archivando…",
       "Puede tardar hasta 45 segundos. Podés irte y volver: el resultado queda acá.")
     try {
+      // 🗂️ Los templates se cargan ANTES de llamar al GAS: de ellos salen el nombre del campo y el
+      // responsable, y con eso el archivo se guarda como el usuario lo nombraba a mano
+      // (`2026 - Inmob - Cuota 3 - Tango Parra 1.pdf`) y en la carpeta de su empresa.
+      const templates = await cargarTemplates()
+      const partidas: Record<string, { nombre: string; responsable: string }> = {}
+      for (const t of templates) {
+        if (t.partida) partidas[t.partida] = { nombre: nombreCorto(t.nombre), responsable: t.responsable }
+      }
+
       const r = await fetch("/api/gas/boletas-arba", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ solo_contar: soloContar, dias: Number(dias) || undefined }),
+        body: JSON.stringify({
+          solo_contar: soloContar, dias: Number(dias) || undefined,
+          partidas, empresa_por_cuit: EMPRESA_POR_CUIT,
+        }),
       })
       const j = await r.json()
       if (!j.ok) {
@@ -269,21 +310,6 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       // inmobiliario MSA, Tango 1, Tango 2, Tango 3; tal no encontró; tantos duplicados»*.
       // «4 links que no dieron PDF» no es un informe, es un log. El GAS no conoce los lotes —los
       // templates viven acá—, así que la traducción se hace en la app: partida → nombre del campo.
-      // 🔑 El eje es **NUESTRO REGISTRO**, no lo que llegó: se traen TODOS los templates activos
-      // de inmobiliario con su `responsable`, y contra esa lista se marca qué vino y qué falta.
-      // Un informe que sólo enumera lo presente no puede avisar de lo ausente.
-      const { data: egs } = await supabase.from("egresos_sin_factura")
-        .select("nombre_referencia, partida_arba, responsable, activo")
-        .eq("activo", true)
-        .or("partida_arba.not.is.null,nombre_referencia.ilike.%Complementario%")
-      const templates: TemplateArba[] = ((egs ?? []) as {
-        nombre_referencia: string; partida_arba: string | null; responsable: string | null
-      }[])
-        .filter(e => e.responsable && (e.partida_arba || /complementario/i.test(e.nombre_referencia)))
-        .map(e => ({
-          nombre: e.nombre_referencia, partida: e.partida_arba,
-          responsable: e.responsable!, complementario: !e.partida_arba,
-        }))
       setInforme(armarInforme((j.tablas ?? []) as TablaMail[], templates, j as ResGas))
 
       const filas = (j.tablas ?? []).reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
@@ -530,7 +556,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                 <div className="font-medium">{delMail.resumen}</div>
                 {delMail.bajadas.map((b, i) => (
                   <div key={i} className="text-[10px] text-gray-600">
-                    · {b.archivo}{b.url && <> — <a href={b.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">ver</a></>}
+                    · {b.carpeta && <span className="text-gray-400">{b.carpeta}/</span>}{b.archivo}
+                    {b.url && <> — <a href={b.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">ver</a></>}
                   </div>
                 ))}
                 {delMail.ya_estaban.length > 0 && (

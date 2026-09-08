@@ -30,7 +30,7 @@ if (!fs.existsSync(GS)) {
 // Se normalizan los fines de línea: en Windows git deja CRLF y el corte por `\n}\n` no matchea.
 // Sin esto el test falla con «linksDeBoleta_ is not defined», que no dice nada de la causa.
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_"]
+const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -49,7 +49,7 @@ const Utilities = {
         : iso.slice(0, 10)
   },
 }
-const { linksDeBoleta_, nombreDeArchivo_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_ } =
+const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_ } =
   new Function("Utilities", codigo + `\nreturn { ${necesarias.join(", ")} }`)(Utilities)
 
 const r: { ok: boolean; caso: string; esperado: string; obtenido: string }[] = []
@@ -176,6 +176,44 @@ chequear("Sin partida, cae al id del link — feo pero estable y único",
 chequear("El mismo link procesado dos veces da el mismo nombre (no duplica)",
   "true", String(nombreDeArchivo_("", ago, 0, ASUNTO_C3, null, RASTREADOR)
     === nombreDeArchivo_("", ago, 5, ASUNTO_C3, null, RASTREADOR)))
+
+// ── 🗂️ El nombre con LA CONVENCIÓN DEL USUARIO ────────────────────────────────────────────────
+// La misma con la que venía archivando a mano, leída de su carpeta de ejemplos:
+//   `2026 - Inmob - Cuota 1 + Anual - Tango Parra 1.pdf` · `2026 - Complementario - Cuota 1.pdf`
+const MAPA = {
+  "099-015883-5": { nombre: "Tango Parra 1", responsable: "MSA" },
+  "099-006595-0": { nombre: "Casco", responsable: "PAM" },
+}
+
+chequear("🗂️ Nombra como el usuario: año, Inmob, cuota y EL CAMPO",
+  "2026 - Inmob - Cuota 3 - Tango Parra 1.pdf",
+  nombreUsuario_(ago, ASUNTO_C3, "099-015883-5", MAPA))
+
+chequear("El complementario no lleva campo: grava al contribuyente",
+  "2026 - Complementario - Cuota 3.pdf",
+  nombreUsuario_(ago, ASUNTO_COMPL, "30-61778601-6", MAPA))
+
+chequear("🔴 El aviso de débito NO pisa al complementario común de la misma cuota",
+  "2026 - Complementario - Cuota 3 - Aviso de debito.pdf",
+  nombreUsuario_(ago, "Boleta por Mail - Aviso de débito - Vencimiento del Impuesto Inmobiliario Complementario Cuota 3", "30-61778601-6", MAPA))
+
+chequear("Una partida que NO conocemos cae a la partida, que es fea pero no ambigua",
+  "2026 - Inmob - Cuota 3 - 099-001274-1.pdf",
+  nombreUsuario_(ago, ASUNTO_C3, "099-001274-1", MAPA))
+
+chequear("Sin cuota en el asunto no fuerza la convención: devuelve null y manda el nombre técnico",
+  "null", String(nombreUsuario_(ago, "Otro asunto cualquiera", "099-015883-5", MAPA)))
+
+chequear("Dos campos distintos dan dos archivos distintos",
+  "true", String(nombreUsuario_(ago, ASUNTO_C3, "099-015883-5", MAPA)
+    !== nombreUsuario_(ago, ASUNTO_C3, "099-006595-0", MAPA)))
+
+chequear("La misma boleta procesada dos veces da el mismo nombre (no duplica)",
+  "true", String(nombreUsuario_(ago, ASUNTO_C3, "099-015883-5", MAPA)
+    === nombreUsuario_(ago, ASUNTO_C3, "099-015883-5", MAPA)))
+
+chequear("Una barra en el nombre del campo no rompe el archivo de Drive",
+  "true", String(!nombreUsuario_(ago, ASUNTO_C3, "x", { x: { nombre: "Lote A/B", responsable: "MSA" } })!.includes("/")))
 
 chequear("Siempre termina en .pdf",
   "true", String([nombreDeArchivo_(REAL, ago, 0, ASUNTO_C3), nombreDeArchivo_("", ago, 2, ASUNTO_C3)].every((x: string) => x.endsWith(".pdf"))))

@@ -27,12 +27,19 @@ export async function POST(request: Request) {
 
   let soloContar = true
   let dias: number | undefined
+  // 🗂️ El mapa partida → { nombre del campo, responsable } y el de CUIT → empresa. Los manda la
+  // pantalla porque el GAS no los puede saber: viven en `egresos_sin_factura`. Con ellos el archivo
+  // se nombra como el usuario lo nombraba a mano y va a la carpeta de su empresa.
+  let partidas: unknown
+  let empresaPorCuit: unknown
   try {
     const body = await request.json()
     soloContar = body?.solo_contar !== false
     // La ventana de búsqueda la elige el usuario desde la pantalla. Achicarla es lo primero que hay
     // que probar cuando la bajada no llega a tiempo.
     if (Number(body?.dias) > 0) dias = Math.round(Number(body.dias))
+    partidas = body?.partidas
+    empresaPorCuit = body?.empresa_por_cuit
   } catch { /* body vacío = contar */ }
 
   let r: Response
@@ -41,6 +48,7 @@ export async function POST(request: Request) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         _token: token, accion: "boletas_arba", solo_contar: soloContar, dias,
+        partidas, empresa_por_cuit: empresaPorCuit,
         // El GAS corta solo antes que nosotros: así devuelve «quedaron N» en vez de morir mudo.
         presupuesto_ms: TOPE_GAS_MS - 10_000,
       }),
