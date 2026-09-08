@@ -39,17 +39,32 @@ function texto(valor: unknown): string | null {
   return typeof valor === "string" && valor.trim() ? valor.trim() : null
 }
 
+/**
+ * ¿Esta foto está en NUESTRO Storage?
+ *
+ * Es lo que separa «una foto que ya es mía» de «una foto de afuera que habría que traer», y hace
+ * falta por las fotos que se cargaron **antes** de A-FEAT-85: aquéllas se guardaron en
+ * `avatar_url`, que ahora es la clave del proveedor, pero apuntan a Supabase. Sin este chequeo, a
+ * quien ya tenía foto se le mostrarían las iniciales y se le ofrecería «traer la de Google» — que
+ * sería la suya, dando una vuelta entera para volver al mismo archivo.
+ *
+ * No hay migración de datos que correr: se deduce de la URL, que es la que sabe la verdad.
+ */
+function esNuestra(url: string): boolean {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL
+  return Boolean(base && url.startsWith(base))
+}
+
 export function leerIdentidad(user: User | null | undefined): Identidad {
   const meta = (user?.user_metadata ?? {}) as Record<string, unknown>
 
-  const nombrePropio = texto(meta.nombre)
-  const fotoPropia = texto(meta.foto)
+  const heredada = texto(meta.avatar_url) // lo que escribía la app antes de A-FEAT-85
+  const fotoPropia =
+    texto(meta.foto) ?? (heredada && esNuestra(heredada) ? heredada : null)
 
   return {
-    nombre: nombrePropio ?? texto(meta.full_name) ?? texto(meta.name) ?? "",
+    nombre: texto(meta.nombre) ?? texto(meta.full_name) ?? texto(meta.name) ?? "",
     foto: fotoPropia ?? "",
-    fotoDelProveedor: fotoPropia
-      ? ""
-      : texto(meta.avatar_url) ?? texto(meta.picture) ?? "",
+    fotoDelProveedor: fotoPropia ? "" : heredada ?? texto(meta.picture) ?? "",
   }
 }
