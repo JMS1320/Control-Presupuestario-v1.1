@@ -179,6 +179,92 @@ privadas, CGNAT y sobre todo `169.254.169.254`, el metadata service del hosting)
 redirecciones **de a una revalidando cada salto**, y corta por timeout y por tamaño (el
 `content-length` declarado *y* los bytes que llegan de verdad).
 
+### 🔑 Entrar con Google, conviviendo con la contraseña (2026-09-07, A-FEAT-85)
+
+Pedido del usuario: *«tengo que poder crear usuarios que se puedan loguear con esa cuenta o que
+creen cuentas con la cuenta de google y después se puedan loguear con ella. Deberían convivir
+ambas opciones.»*
+
+#### Una persona = una cuenta, con dos llaves
+
+Supabase admite varias **identidades** sobre el mismo usuario y las vincula por **email
+verificado**. Así que quien fue invitado y puso su contraseña puede después entrar con Google con
+ese mismo mail y sigue siendo **el mismo `user.id`**: mismo rol, mismo TOTP, mismas preferencias,
+misma foto. No son dos cuentas y no hay que elegir una vía para siempre.
+
+⚠️ **Depende de que el email esté verificado de los dos lados.** `inviteUserByEmail` deja el mail
+sin confirmar hasta que la persona usa el link, y Supabase **no** vincula una identidad de Google a
+un usuario con mail sin verificar — es la defensa contra el *pre-account takeover*. Para alguien
+que va a entrar por Google conviene crear la cuenta ya confirmada
+(`admin.createUser({ email, email_confirm: true })`) en vez de invitarla.
+
+#### Los dos caminos de alta terminan en el mismo lugar
+
+```
+A · el admin invita     → cuenta CON rol    → entra con clave o con Google, indistinto
+B · se anota con Google → cuenta SIN rol    → /no-access → el admin le pone rol → entra
+```
+
+El camino B ya estaba construido sin que nadie lo hubiera planeado: `app/page.tsx` manda a
+`/no-access` cuando `getRole()` da null, `/no-access` ya dice *«pedile al administrador que te
+habilite»*, y `panel-usuarios.tsx` ya lista las cuentas con `placeholder="sin rol"` y su selector.
+Lo único que faltaba era la puerta de Google — y el candado.
+
+#### 🔒 El candado está en la BASE, no en la pantalla
+
+**Es la decisión que hace que todo esto sea aceptable.** Si el registro queda abierto, cualquiera
+con una cuenta de Google se crea un usuario. Que la app lo mande a `/no-access` **no lo frena**:
+con su cookie más la `anon_key` del bundle le pega directo a PostgREST.
+
+Por eso la policy de RLS pasó de *«hay sesión»* a **«tiene rol»**
+([A-SEC-07](PENDIENTES.md#a-sec-07)). Sin ese cambio, abrir el registro sería regalar la base.
+
+> Corolario para lo que venga: **cada vez que se agregue una forma nueva de conseguir una sesión,
+> hay que volver a preguntarse qué da esa sesión por sí sola.** Acá daba todo.
+
+#### 🪪 El nombre y la foto: claves nuestras, las de Google como default
+
+GoTrue vuelca los datos de la identidad en `user_metadata`, y usa **`full_name` y `avatar_url`** —
+justo las dos claves que la app venía usando para lo que la persona carga en `/perfil`. Sin
+separarlas, subir una foto y volver a entrar con Google la revertía **sin error y sin aviso**.
+
+`lib/auth/identidad.ts` las separa: **`nombre` y `foto` son nuestras** (sólo las escribe la
+persona) y las del proveedor **se leen como default y no se escriben nunca**. Es la §
+*«Default del dato real, siempre editable»* de `CLAUDE.md` tal cual: campo vacío = *usá el de
+Google*; campo lleno = *acá mando yo*. Y como es override y no copia, a quien nunca tocó su nombre
+se le actualiza solo si lo cambia en Google.
+
+La foto tiene un vuelta de tuerca: la de Google vive en `googleusercontent.com` y **el CSP la
+bloquea en silencio** (el mismo modo de falla de A-FEAT-79). Así que no se muestra: se ofrece como
+atajo *«Usar la foto de mi cuenta de Google»*, que entra por el mismo camino que un link pegado a
+mano y **termina descargada en nuestro Storage**.
+
+#### Por qué el OAuth arranca en el browser y no en una Server Action
+
+`redirectTo` tiene que ser el origen exacto desde el que se está mirando la app, y
+`window.location.origin` lo sabe sin adivinar. En el servidor habría que deducirlo de las cabeceras
+`x-forwarded-*`, y **cada preview de Vercel tiene un host distinto**: un error ahí devuelve a la
+persona a otro deployment con un `code` que ya no sirve. La vuelta sí es del servidor
+(`/auth/callback`), que canjea el `code` y valida el destino con el mismo `destinoSeguro()` que el
+login con contraseña — con la sesión ya iniciada, una redirección abierta es peor, no menor.
+
+Detalle que se paga si se olvida: **«Recordarme» se escribe antes de irse a Google**. El navegador
+abandona el sitio, así que si la preferencia no queda puesta antes, al volver ya no hay quién la
+ponga y la sesión se escribe persistente siempre.
+
+#### 🔴 Lo que hay que habilitar a mano (no lo puede hacer Claude)
+
+1. **Google como proveedor** en Supabase → Authentication → Providers: `Client ID` y `Client
+   Secret` de un OAuth Client de Google Cloud, con el `redirect URI` que indica Supabase.
+2. **Permitir el registro** (Authentication → Providers → *Allow new users to sign up*), que es lo
+   que habilita el camino B. ⚠️ **No tocar esto antes de correr `scripts/57`** con el fix de
+   A-SEC-07: sin el candado, abrir el registro abre la base.
+3. En Google Cloud, agregar como **URI autorizado** el dominio de producción y el de los previews.
+
+⚠️ El interruptor de registro es **global**: no se puede abrir para Google y dejarlo cerrado para
+email+contraseña. Si aparece ruido de cuentas basura, el paso siguiente es un hook
+`before-user-created` con lista de admitidos — no está hecho.
+
 ### 🐞 Corregido de paso: el bug que este archivo daba por abierto
 La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
 (la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol

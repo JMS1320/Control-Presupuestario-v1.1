@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { leerIdentidad } from "@/lib/auth/identidad"
 import { PREFERENCIAS_DEFAULT, leerPreferencias, type Preferencias } from "@/lib/auth/preferencias"
 import { AlertTriangle, ShieldCheck, ShieldAlert } from "lucide-react"
 
@@ -57,6 +58,8 @@ export function PanelPerfil({
   const [email, setEmail] = useState("")
   const [nombre, setNombre] = useState("")
   const [foto, setFoto] = useState("")
+  /** La de la cuenta de Google, si hay y si todavía no cargó una propia. */
+  const [fotoDeGoogle, setFotoDeGoogle] = useState("")
   const [prefs, setPrefs] = useState<Preferencias>(PREFERENCIAS_DEFAULT)
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
@@ -69,8 +72,12 @@ export function PanelPerfil({
       const u = data.user
       if (cancelado) return
       setEmail(u?.email ?? "")
-      setNombre((u?.user_metadata?.full_name as string) ?? "")
-      setFoto((u?.user_metadata?.avatar_url as string) ?? "")
+      // Nombre y foto salen de `leerIdentidad` y NO de `user_metadata` a secas: Google pisa
+      // `full_name` y `avatar_url` en cada ingreso. El porqué largo está en lib/auth/identidad.ts.
+      const identidad = leerIdentidad(u)
+      setNombre(identidad.nombre)
+      setFoto(identidad.foto)
+      setFotoDeGoogle(identidad.fotoDelProveedor)
       // La misma lectura tolerante que usa el servidor: una sola definición de qué es un default.
       setPrefs(leerPreferencias(u))
       setCargando(false)
@@ -89,12 +96,14 @@ export function PanelPerfil({
    * apuntando a la anterior sería guardar una mentira. El detalle largo, en `SelectorImagenPerfil`.
    */
   async function cambiarFoto(url: string) {
-    const { error } = await supabase.auth.updateUser({ data: { avatar_url: url || null } })
+    // Se escribe en `foto` (nuestra), nunca en `avatar_url` (del proveedor): ver identidad.ts.
+    const { error } = await supabase.auth.updateUser({ data: { foto: url || null } })
     if (error) {
       toast.error("Se cargó la imagen pero no se pudo guardar en tu perfil.")
       return
     }
     setFoto(url)
+    if (url) setFotoDeGoogle("") // ya tiene una propia: el atajo deja de tener sentido
     toast.success(url ? "Foto actualizada." : "Foto quitada.")
     // La barra de arriba lee los datos al montarse: sin esto sigue mostrando la foto vieja.
     setTimeout(() => window.location.reload(), 600)
@@ -126,7 +135,8 @@ export function PanelPerfil({
     e.preventDefault()
     setGuardando(true)
     const { error } = await supabase.auth.updateUser({
-      data: { full_name: nombre.trim() || null },
+      // `nombre` y no `full_name`, por lo mismo que la foto (lib/auth/identidad.ts).
+      data: { nombre: nombre.trim() || null },
     })
     setGuardando(false)
     if (error) {
@@ -161,6 +171,11 @@ export function PanelPerfil({
                   valor={foto}
                   iniciales={iniciales(nombre, email)}
                   onCambio={cambiarFoto}
+                  sugerencia={
+                    fotoDeGoogle
+                      ? { url: fotoDeGoogle, etiqueta: "Usar la foto de mi cuenta de Google" }
+                      : undefined
+                  }
                 />
                 <Ayuda>
                   Así te ven. Sin foto se muestran tus iniciales. La foto se guarda sola, apenas la

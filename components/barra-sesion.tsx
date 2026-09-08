@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { leerIdentidad } from "@/lib/auth/identidad"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   AlertDialog,
@@ -48,7 +49,8 @@ function iniciales(nombre: string | null, email: string | null): string {
  * — cuatro elementos compitiendo en la esquina por algo que se mira una vez por día. Ahora es un
  * solo avatar y el resto vive en el menú.
  *
- * La foto sale de `user_metadata.avatar_url` si está cargada, y si no van las iniciales.
+ * La foto sale de `user_metadata.foto` (la propia, ya en nuestro Storage) si está cargada, y si
+ * no van las iniciales. La de Google **no** se muestra acá: la bloquea el CSP → `identidad.ts`.
  * ⚠️ El **rol NO se lee de `user_metadata`** (el propio usuario puede editarlo): viene por prop,
  * desde la sesión validada en el servidor.
  *
@@ -74,9 +76,13 @@ export function BarraSesion({
     supabase.auth.getUser().then(({ data }) => {
       const u = data.user
       setEmail(u?.email ?? null)
-      // Cosméticos, no de seguridad: acá `user_metadata` es el lugar correcto.
-      setNombre((u?.user_metadata?.full_name as string) ?? (u?.user_metadata?.name as string) ?? null)
-      setFoto((u?.user_metadata?.avatar_url as string) ?? null)
+      // Cosméticos, no de seguridad: acá `user_metadata` es el lugar correcto. La lectura sale
+      // de `leerIdentidad` para que sea LA MISMA que la del perfil — si cada pantalla eligiera
+      // su clave, la barra mostraría la foto de Google y el perfil la propia (lo mismo que ya
+      // pasó con `categoriaPrecio()`: dos lecturas paralelas del mismo dato no coinciden nunca).
+      const identidad = leerIdentidad(u)
+      setNombre(identidad.nombre || null)
+      setFoto(identidad.foto || null)
     })
   }, [])
 

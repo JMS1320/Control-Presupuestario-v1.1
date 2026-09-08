@@ -35,6 +35,7 @@ export function SelectorImagenPerfil({
   valor,
   iniciales,
   onCambio,
+  sugerencia,
 }: {
   /** La URL de la foto actual, o vacío si no tiene. */
   valor: string
@@ -42,6 +43,12 @@ export function SelectorImagenPerfil({
   iniciales: string
   /** Se llama con la URL final ya guardable, o con `""` al quitarla. Persiste el que llama. */
   onCambio: (url: string) => Promise<void>
+  /**
+   * Una foto que ya tenemos a mano y que la persona puede querer usar — hoy, la de su cuenta de
+   * Google (A-FEAT-85). Es un atajo, no un automatismo: entra por el mismo camino que un link
+   * pegado a mano, así que **termina descargada en nuestro Storage** como todas las demás.
+   */
+  sugerencia?: { url: string; etiqueta: string }
 }) {
   const [link, setLink] = useState("")
   const [trabajando, setTrabajando] = useState<"" | "subiendo" | "bajando" | "quitando">("")
@@ -195,6 +202,25 @@ export function SelectorImagenPerfil({
               </Button>
             )}
           </div>
+
+          {/* El atajo aparece sólo si hay algo que sugerir y todavía no hay foto propia: una vez
+              que la persona eligió la suya, ofrecerle otra es ruido. */}
+          {sugerencia && !valor.trim() && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto px-0 text-xs text-muted-foreground hover:bg-transparent hover:text-foreground"
+              disabled={ocupado}
+              onClick={() => {
+                const cuerpo = new FormData()
+                cuerpo.set("url", sugerencia.url)
+                void enviar(cuerpo, "bajando")
+              }}
+            >
+              {sugerencia.etiqueta}
+            </Button>
+          )}
 
           {/* Dos cosas distintas en el mismo renglón, y por eso se parten: «subiendo…» es ESTADO
               (pasa o no pasa según lo que estés haciendo) y no se apaga nunca; el resto es

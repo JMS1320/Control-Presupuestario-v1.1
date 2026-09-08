@@ -47,6 +47,42 @@ para cargar a mano. **Desde ahí, cada login pide el código.**
 - Si el código de 6 dígitos falla siempre, revisar que **la hora del teléfono esté en automático**:
   el TOTP depende del reloj.
 
+### Entrar con Google 🟡 (2026-09-07, sin testear — A-FEAT-85)
+
+Debajo de «Entrar» hay un **«Continuar con Google»**. Las dos formas conviven y **son la misma
+cuenta**: si te invitaron por mail y pusiste una contraseña, después podés entrar con Google con
+ese mismo mail y seguís siendo vos — mismo rol, mismo segundo factor, misma foto. No hay que
+elegir una para siempre.
+
+**Si es tu primera vez y nadie te dio de alta**: entrá con Google igual. Te crea la cuenta y te
+deja en la pantalla que dice *«tu cuenta todavía no tiene un rol asignado»*. **Eso no es un
+error**: es el sistema esperando que un administrador te habilite. Avisale — te va a ver aparecer
+en Configuración → Usuarios con el rol vacío.
+
+**Si sos admin, Google no te saltea el segundo factor.** Entrás con Google y te sigue pidiendo el
+código de 6 dígitos. Es a propósito: desde Google no se puede saber si esa cuenta tiene 2FA puesto.
+
+**Tu nombre y tu foto no te los pisa Google.** Si nunca los cargaste, se muestran los de tu cuenta
+de Google. Si los cargaste en `/perfil`, mandan los tuyos y Google no los toca. Para usar la foto
+de Google hay un atajo en el perfil: **«Usar la foto de mi cuenta de Google»** — la trae y la
+guarda como propia.
+
+#### Cómo se prueba (A-TEST-93)
+1. **Que sean la misma cuenta**: entrá con tu mail y contraseña, salí, y entrá con Google con ese
+   mismo mail. Tenés que ver **tus** secciones y tus datos, no una cuenta vacía.
+2. **Alta por Google**: con un mail que no exista, entrar con Google → tiene que caer en *«sin rol
+   asignado»*, y aparecer en Configuración → Usuarios. Asignarle rol y volver a entrar.
+3. ⚠️ **La prueba que importa**, con la cuenta sin rol: que **no vea datos** aunque tenga sesión.
+   No alcanza con ver el cartel — hay que confirmar que la base tampoco le da nada (lo hace el
+   admin, ver [A-TEST-93](PENDIENTES.md#a-test-93)).
+4. Cargá una foto propia, salí, y volvé a entrar con Google: **tiene que seguir la tuya**.
+5. Tildá «Recordarme», entrá con Google, cerrá el navegador y volvé a abrirlo: tenés que seguir
+   adentro. Sin tildarlo, tiene que pedirte entrar de nuevo.
+
+⚠️ **No funciona hasta que se habilite Google en Supabase** y se corra `scripts/57`. Hasta
+entonces el botón está pero da error. El orden importa: **primero el script, después abrir el
+registro** — está explicado en `MODULO_USUARIOS.md` § Entrar con Google.
+
 ### Crear cuentas (sólo admin)
 Arriba a la derecha, link **Usuarios** → pantalla `/usuarios`.
 
@@ -3577,6 +3613,8 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 [A-FEAT-83](PENDIENTES.md) · test → [A-TEST-91](PENDIENTES.md)*
 *Ampliado 2026-09-05: las explicaciones se pueden apagar ·
 [A-FEAT-84](PENDIENTES.md) · test → [A-TEST-92](PENDIENTES.md)*
+*Ampliado 2026-09-07: el nombre y la foto pasaron a claves propias, así entrar con Google no te
+los pisa · [A-FEAT-85](PENDIENTES.md#a-feat-85) · test → [A-TEST-93](PENDIENTES.md#a-test-93)*
 
 ### Qué cambió
 

@@ -2674,6 +2674,80 @@ no como la única.
 
 ---
 
+## <a id="a-sec-07"></a>A-SEC-07 — La policy de RLS le abre la base a cualquier sesión (2026-09-07)
+
+**Hallado** al evaluar el login con Google ([A-FEAT-85](#a-feat-85)), leyendo
+`scripts/57-rls-login-cerrar-anon.sql` para ver si se podía dejar el registro abierto.
+
+### Qué decía
+
+```sql
+CREATE POLICY "solo_usuarios_logueados" ON %I.%I
+  FOR ALL TO authenticated
+  USING (auth.uid() IS NOT NULL)
+```
+
+`auth.uid() IS NOT NULL` significa **«hay sesión»**, no **«esta persona tiene acceso»**. Son dos
+cosas distintas y el sistema ya las distinguía en la app: una cuenta creada pero todavía sin rol
+va a `/no-access` (`app/page.tsx:32`). **La base no hacía esa distinción.**
+
+### Por qué el `/no-access` no alcanza
+
+Es una pantalla, no un permiso. Quien tenga sesión —aunque la app le muestre el cartel— tiene una
+cookie válida, y la `anon_key` viaja en el bundle JS **por diseño**. Con esas dos cosas le pega
+directo a PostgREST y lee y escribe las **72 tablas**: montos, CUITs, sueldos, todo. El cartel
+cierra la puerta de adelante; ésta es la de atrás.
+
+### Por qué hasta ahora no se notaba, y por qué ahora sí
+
+Las cuentas sólo nacían de un `inviteUserByEmail` que corre un admin, y el admin le pone el rol en
+el mismo movimiento. O sea: **no había cuentas sin rol**, salvo por descuido. El agujero existía
+pero no tenía por dónde entrar.
+
+Con el auto-registro de [A-FEAT-85](#a-feat-85) sí lo tiene: cualquiera con una cuenta de Google
+se crea la suya. Por eso este ítem **bloquea** a aquél — pero existe igual aunque Google no se
+haga nunca, porque hoy alcanza con que quede una cuenta sin rol por olvido.
+
+### El fix — ✅ ya escrito en el script, 🔴 la BD sin tocar
+
+La condición pasa de *tener sesión* a **tener rol**, en una función sola que llaman las 72
+policies:
+
+```sql
+CREATE OR REPLACE FUNCTION public.tiene_rol() RETURNS boolean
+LANGUAGE sql STABLE AS $fn$
+  SELECT coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') <> ''
+$fn$;
+```
+
+**`app_metadata` y no `user_metadata`**, por la misma razón de siempre: `user_metadata` lo escribe
+el propio usuario con un `auth.updateUser()`, así que un candado apoyado ahí lo abre el que está
+afuera. Es la regla de `lib/auth/roles.ts` bajada a la base.
+
+Que sea **una función y no la condición repetida 72 veces** es lo que hace que cambiar el criterio
+de acceso de todo el sistema sea cambiar tres líneas.
+
+⏱️ **Contrapartida conocida:** el rol viaja en el JWT, así que quitárselo a alguien tarda hasta que
+el token se renueve (≤ 1 h). Si algún día hace falta revocación instantánea, la función pasa a leer
+de una tabla — se cambia en un solo lugar. Con 3 usuarios, el claim alcanza.
+
+### Control (§ 🧮 todo desarrollo termina con su control)
+
+`scripts/57` § PASO 3 tiene ahora una consulta más, que **debe devolver cero filas**: lista las
+tablas cuya policy no menciona `tiene_rol`. Si alguna quedó con la condición vieja, aparece ahí en
+vez de descubrirse el día que alguien la use.
+
+Y el test de verdad es el de [A-TEST-93](#a-test-93), que se hace **salteando la UI**: con la
+sesión de una cuenta sin rol, pegarle a PostgREST tiene que devolver **0 filas**, no la tabla.
+
+### Cómo se corre
+
+Junto con el resto de `scripts/57`, con el protocolo de [A-SEC-01](#a-sec-01): paso a paso, con la
+foto previa y el revert listo. **Toca la BD → se hace con el usuario presente.**
+
+---
+
+
 ## <a id="a-doc-10"></a>A-DOC-10 — Otras 19 fugas doc → memoria
 
 **Hallazgo 2026-08-02, corrigiendo una afirmación mía errónea.** Al escribir la regla "la doc no
