@@ -193,10 +193,34 @@ function nombreDeArchivo_(nombreOriginal, fechaMail, k, asunto) {
 
 /**
  * Recorre los mails de ARBA, baja lo que encuentra y lo archiva.
- * @param {boolean} soloContar si es true no guarda nada: sólo informa qué encontraría.
+ *
+ * @param {boolean} soloContar si es true **no baja ni un PDF**: sólo informa qué encontraría.
+ * @param {Object=} opciones `{ dias, presupuesto_ms }`.
+ *
+ * 🐞 **Por qué «Ver qué hay» tardaba tanto que se moría (2026-09-08).** Bajaba **todos los PDFs
+ * igual** y recién después miraba si tenía que guardarlos: `bajarBoleta_()` corría para cada link
+ * y el resultado se descartaba. Con 60 días de mails eran docenas de descargas para no usar
+ * ninguna, y la ruta cortaba a los 45 s. **El paso que existe para mirar antes de tocar nada era
+ * tan caro como hacerlo de verdad.** Ahora no baja nada: lo que informa sale de la **tabla del
+ * cuerpo del mail** (`A-FEAT-107`), que es gratis y además dice más — partida e importe, no sólo
+ * el nombre del archivo.
+ *
+ * 🔑 **Y la bajada real tiene presupuesto de tiempo.** Antes seguía hasta terminar y la ruta se
+ * cansaba primero: los archivos quedaban guardados pero el usuario veía un error, que es la peor
+ * combinación. Ahora corta antes, dice **cuántos quedaron**, y como el dedup es por nombre
+ * **volver a correrlo continúa donde iba** sin duplicar nada.
  */
-function bajarBoletasArba(soloContar) {
+function bajarBoletasArba(soloContar, opciones) {
+  var op = opciones || {}
+  var arranque = Date.now()
+  // Por debajo de los 45 s que espera la ruta: mejor devolver «faltan 12» que morir sin decir nada.
+  var presupuestoMs = Number(op.presupuesto_ms) > 0 ? Number(op.presupuesto_ms) : 35000
+
+  // La ventana la manda quien llama; si no, la Script Property; si no, el default.
   var query = propArba_('ARBA_QUERY', ARBA_QUERY_DEFAULT)
+  if (Number(op.dias) > 0) {
+    query = query.replace(/\s*newer_than:\d+[dmy]/i, '') + ' newer_than:' + Math.round(Number(op.dias)) + 'd'
+  }
   var carpeta = soloContar ? null : carpetaArba_()
   var TOPE = 50
   var hilos = GmailApp.search(query, 0, TOPE)
@@ -209,6 +233,9 @@ function bajarBoletasArba(soloContar) {
   // Lo leído de la tabla del cuerpo, mail por mail (A-FEAT-107). Va en la respuesta para poder
   // verificar contra un mail REAL que la tabla se está leyendo bien, sin bajar nada.
   var tablas = [], descuadres = []
+  // Cuántas boletas quedaron sin bajar por falta de tiempo. Volver a correr continúa: el dedup es
+  // por nombre, así que lo ya archivado no se toca.
+  var quedaron = 0, sinTiempo = false
 
   for (var h = 0; h < hilos.length; h++) {
     var msgs = hilos[h].getMessages()
@@ -233,7 +260,27 @@ function bajarBoletasArba(soloContar) {
         })
       }
 
+      // 🔴 MIRAR NO CUESTA. En modo contar no se toca la red: se informa lo que dice la tabla del
+      // mail y cuántos links hay. Es lo que el usuario necesita para decidir si sigue.
+      if (soloContar) {
+        for (var q = 0; q < tabla.filas.length; q++) {
+          bajadas.push({
+            asunto: msg.getSubject(),
+            objeto_mail: tabla.filas[q].objeto, importe_mail: tabla.filas[q].importe,
+            contribuyente: tabla.contribuyente || null,
+          })
+        }
+        // Un mail con links pero sin tabla legible igual se cuenta: si no, «no encontré nada»
+        // se confundiría con «no hay nada», que es justo lo que no puede pasar.
+        if (!tabla.filas.length) {
+          bajadas.push({ asunto: msg.getSubject(), objeto_mail: null, importe_mail: null, links: links.length })
+        }
+        continue
+      }
+
       for (var k = 0; k < links.length; k++) {
+        // Se corta ANTES de que la ruta se canse, y se dice cuántos quedaron.
+        if (Date.now() - arranque > presupuestoMs) { quedaron += (links.length - k); sinTiempo = true; break }
         try {
           var r = bajarBoleta_(links[k])
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
@@ -247,14 +294,6 @@ function bajarBoletasArba(soloContar) {
             if (laPartida && soloDigitos_(tabla.filas[f].objeto) === laPartida) { fila = tabla.filas[f]; break }
           }
           if (!fila && !laPartida && tabla.filas.length === 1) fila = tabla.filas[0]
-
-          if (soloContar) {
-            bajadas.push({
-              asunto: msg.getSubject(), archivo: nombre,
-              objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null,
-            })
-            continue
-          }
 
           // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
           // el período la deduplicación borraba boletas distintas en silencio.
@@ -287,10 +326,15 @@ function bajarBoletasArba(soloContar) {
     hilos: hilos.length, truncado: truncado,
     bajadas: bajadas, ya_estaban: yaEstaban, sin_pdf: sinPdf, errores: errores,
     tablas: tablas, descuadres: descuadres,
-    resumen: bajadas.length + ' bajada(s) · ' + yaEstaban.length + ' ya estaban · '
-      + sinPdf.length + ' link(s) que no dieron PDF · ' + errores.length + ' error(es)'
-      + ' · ' + conImporte + '/' + bajadas.length + ' con importe leído del mail'
+    quedaron: quedaron, sin_tiempo: sinTiempo,
+    segundos: Math.round((Date.now() - arranque) / 100) / 10,
+    resumen: (soloContar
+      ? bajadas.length + ' boleta(s) encontrada(s) en ' + tablas.length + ' mail(s) · nada bajado'
+      : bajadas.length + ' bajada(s) · ' + yaEstaban.length + ' ya estaban · '
+        + sinPdf.length + ' link(s) que no dieron PDF · ' + errores.length + ' error(es)'
+        + ' · ' + conImporte + '/' + bajadas.length + ' con importe leído del mail')
       + (descuadres.length ? ' · ⚠️ ' + descuadres.length + ' mail(s) donde la tabla y los links no coinciden' : '')
+      + (sinTiempo ? ' · ⏳ quedaron ' + quedaron + ' sin bajar por tiempo: volvé a correrlo y sigue donde iba (no duplica)' : '')
       + (truncado ? ' · ⚠️ se llegó al tope de ' + TOPE + ' conversaciones: puede haber más sin mirar' : ''),
   }
 }

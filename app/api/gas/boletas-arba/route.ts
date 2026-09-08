@@ -26,13 +26,24 @@ export async function POST(request: Request) {
   }
 
   let soloContar = true
-  try { soloContar = (await request.json())?.solo_contar !== false } catch { /* body vacío = contar */ }
+  let dias: number | undefined
+  try {
+    const body = await request.json()
+    soloContar = body?.solo_contar !== false
+    // La ventana de búsqueda la elige el usuario desde la pantalla. Achicarla es lo primero que hay
+    // que probar cuando la bajada no llega a tiempo.
+    if (Number(body?.dias) > 0) dias = Math.round(Number(body.dias))
+  } catch { /* body vacío = contar */ }
 
   let r: Response
   try {
     r = await fetch(url, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ _token: token, accion: "boletas_arba", solo_contar: soloContar }),
+      body: JSON.stringify({
+        _token: token, accion: "boletas_arba", solo_contar: soloContar, dias,
+        // El GAS corta solo antes que nosotros: así devuelve «quedaron N» en vez de morir mudo.
+        presupuesto_ms: TOPE_GAS_MS - 10_000,
+      }),
       signal: AbortSignal.timeout(TOPE_GAS_MS),
     })
   } catch (e) {

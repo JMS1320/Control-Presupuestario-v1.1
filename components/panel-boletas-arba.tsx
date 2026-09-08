@@ -153,6 +153,8 @@ export function PanelBoletasArba() {
   const [aplicando, setAplicando] = useState(false)
   const [filas, setFilas] = useState<Comparacion[]>([])
   const [bajando, setBajando] = useState(false)
+  /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
+  const [dias, setDias] = useState("60")
   type Bajada = { archivo: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: { archivo: string }[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
@@ -245,7 +247,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
     try {
       const r = await fetch("/api/gas/boletas-arba", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ solo_contar: soloContar }),
+        body: JSON.stringify({ solo_contar: soloContar, dias: Number(dias) || undefined }),
       })
       const j = await r.json()
       if (!j.ok) {
@@ -414,8 +416,15 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
               <Button size="sm" disabled={bajando} onClick={() => bajarDelMail(false)}>
                 ⬇ Bajar y archivar
               </Button>
+              <label className="flex items-center gap-1 text-[10px] text-gray-600">
+                últimos
+                <Input type="text" value={dias} onChange={e => setDias(e.target.value.replace(/\D/g, ""))}
+                  className="h-6 w-12 text-center text-[11px] tabular-nums" />
+                días
+              </label>
               <span className="text-[10px] text-gray-500">
                 Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
+                <br />Si la bajada no llega a tiempo, <b>achicá los días</b> — y volvé a correrla: sigue donde iba.
               </span>
             </div>
             {delMail && (
