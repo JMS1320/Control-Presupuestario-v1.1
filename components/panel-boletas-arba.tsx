@@ -112,8 +112,43 @@ async function casarCuota(fila: Comparacion, egresoId: string, boleta: BoletaArb
   fila.cambia = d.cambia
 }
 
+/**
+ * Un aviso que **se queda**. No es un toast.
+ *
+ * 🐞 Pedido del usuario 2026-09-08, después de perderse el mensaje de error dos veces:
+ * *«veo que tarda el proceso y hago algo mientras tanto, y para cuando vuelvo se perdió el
+ * mensaje»*. Un aviso que se borra solo a los 8 segundos **no sirve para un proceso que tarda**:
+ * justo el que más necesita explicarse es el que uno no está mirando cuando termina.
+ *
+ * Por eso lleva **la hora**: al volver hay que poder saber si lo que se lee es de esta corrida o
+ * de la anterior.
+ */
+interface Aviso {
+  tipo: "error" | "ok" | "info"
+  titulo: string
+  /** El texto largo — la respuesta cruda del GAS, el detalle del error. Se abre con un click. */
+  detalle?: string
+  hora: string
+}
+
+const ESTILO_AVISO: Record<Aviso["tipo"], string> = {
+  error: "border-rose-300 bg-rose-50 text-rose-900",
+  ok: "border-emerald-300 bg-emerald-50 text-emerald-900",
+  info: "border-blue-200 bg-blue-50 text-blue-900",
+}
+const ICONO_AVISO: Record<Aviso["tipo"], string> = { error: "⚠", ok: "✓", info: "ℹ" }
+
 export function PanelBoletasArba() {
   const [abierto, setAbierto] = useState(false)
+  const [aviso, setAviso] = useState<Aviso | null>(null)
+  const [avisoAbierto, setAvisoAbierto] = useState(false)
+  /** Deja el aviso en el modal **y** lo pasa por toast: el toast llama la atención, el modal queda. */
+  const avisar = (tipo: Aviso["tipo"], titulo: string, detalle?: string) => {
+    setAviso({ tipo, titulo, detalle, hora: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) })
+    setAvisoAbierto(false)
+    if (tipo === "error") toast.error(titulo)
+    else if (tipo === "ok") toast.success(titulo)
+  }
   const [leyendo, setLeyendo] = useState(false)
   const [aplicando, setAplicando] = useState(false)
   const [filas, setFilas] = useState<Comparacion[]>([])
@@ -190,9 +225,11 @@ export function PanelBoletasArba() {
         `${nuevas.length} PDF · ${conPartida} con partida · ${casadas} casada(s) con su cuota`)
 
       setFilas(f => [...f, ...nuevas])
-      toast.success(`${nuevas.length} boleta(s) leída(s)`)
+      avisar("ok", `${nuevas.length} boleta(s) leída(s)`, `${conPartida} con partida · ${casadas} casada(s) con su cuota del template.` + (nuevas.length - casadas > 0 ? `
+
+${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : ""))
     } catch (e) {
-      toast.error("Error leyendo: " + (e as Error).message)
+      avisar("error", "No se pudieron leer los PDFs", (e as Error).message)
     } finally { setLeyendo(false) }
   }
 
@@ -203,13 +240,21 @@ export function PanelBoletasArba() {
   const bajarDelMail = async (soloContar: boolean) => {
     setBajando(true)
     setDelMail(null)
+    avisar("info", soloContar ? "Buscando en el mail…" : "Bajando y archivando…",
+      "Puede tardar hasta 45 segundos. Podés irte y volver: el resultado queda acá.")
     try {
       const r = await fetch("/api/gas/boletas-arba", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ solo_contar: soloContar }),
       })
       const j = await r.json()
-      if (!j.ok) { toast.error(j.error || "No se pudo hablar con el GAS"); return }
+      if (!j.ok) {
+        // 🔴 El error del GAS trae el texto que dice QUÉ HACER (falta desplegar, falta la env var,
+        // se pasó el tiempo). Perderlo es perder la única pista, así que queda entero acá.
+        avisar("error", "No se pudo traer del mail", String(j.error || "El GAS no dijo por qué.")
+          + `\n\nHTTP ${r.status}.`)
+        return
+      }
       setDelMail({ resumen: j.resumen ?? "", bajadas: j.bajadas ?? [], ya_estaban: j.ya_estaban ?? [], descuadres: j.descuadres ?? [] })
       // Se guarda lo que dijo el mail para poder cruzarlo cuando se suban los PDFs (A-FEAT-107).
       const idx: Record<string, { objeto: string | null; importe: number | null }> = {}
@@ -217,15 +262,35 @@ export function PanelBoletasArba() {
         if (b.importe_mail != null || b.objeto_mail) idx[b.archivo] = { objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null }
       }
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
-      toast.success(soloContar ? `Encontradas: ${(j.bajadas ?? []).length}` : j.resumen ?? "Listo")
+
+      const filas = (j.tablas ?? []).reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
+      const conImporte = Object.keys(idx).length
+      avisar(
+        // Si no leyó ninguna fila de la tabla del mail, NO es un éxito limpio: se dice.
+        filas === 0 ? "info" : "ok",
+        soloContar
+          ? `Encontradas ${(j.bajadas ?? []).length} boleta(s)` + (filas ? ` · ${filas} fila(s) leídas del mail` : " · sin leer la tabla del mail")
+          : String(j.resumen ?? "Listo"),
+        [
+          j.resumen ? `Resumen: ${j.resumen}` : "",
+          filas === 0
+            ? "⚠️ No se leyó ninguna fila de la tabla del cuerpo del mail. No te bloquea: los PDFs se bajan igual y podés seguir subiéndolos a mano. Guardá un mail como .eml en la carpeta de comunicación para que se pueda ajustar."
+            : `${conImporte} archivo(s) quedaron con su importe del mail.`,
+          ...(j.tablas ?? []).map((t: { asunto?: string; contribuyente?: string; filas?: { objeto: string; importe: number | null }[] }) =>
+            `\n▸ ${t.asunto ?? "(sin asunto)"}${t.contribuyente ? `  ·  CUIT ${t.contribuyente}` : ""}\n`
+            + (t.filas ?? []).map(f => `   ${f.objeto}   ${f.importe == null ? "(sin importe)" : m(f.importe)}`).join("\n")),
+          ...(j.descuadres ?? []).map((d: { asunto: string; detalle: string }) => `\n⚠️ ${d.asunto}: ${d.detalle}`),
+        ].filter(Boolean).join("\n"),
+      )
     } catch (e) {
-      toast.error("Error: " + (e as Error).message)
+      avisar("error", "No se pudo hablar con el servidor", (e as Error).message
+        + "\n\nSuele ser que la página quedó de un deploy viejo: refrescá y probá de nuevo.")
     } finally { setBajando(false) }
   }
 
   const aplicar = async () => {
     const sel = filas.filter(f => f.aplicar && f.cuotaId && importeDe(f) != null && !f.aplicada)
-    if (!sel.length) { toast.error("No hay ninguna tildada"); return }
+    if (!sel.length) { avisar("error", "No hay ninguna tildada", "Tildá al menos una fila, o usá «Tildar todas las que se pueden»."); return }
     const conciliadas = sel.filter(f => f.estadoCuota === "conciliado").length
     const noCierran = sel.filter(f => controlDosCaminos(f.boleta.importe, f.importeMail).estado === "difiere").length
     if (!window.confirm(
@@ -275,9 +340,12 @@ export function PanelBoletasArba() {
       setFilas(fs => fs.map(x => sel.includes(x)
         ? { ...x, aplicada: true, aplicar: false, cambia: [], montoTemplate: importeDe(x), vencTemplate: vencDe(x) ?? x.vencTemplate }
         : x))
-      toast.success(`${sel.length} cuota(s) actualizada(s): importe y vencimiento`)
+      avisar("ok", `${sel.length} cuota(s) actualizada(s)`,
+        "Se escribieron el importe y la fecha de vencimiento.\n\n"
+        + "Verificá en Egresos sin Factura → el template de esa partida.")
     } catch (e) {
-      toast.error("No se pudo aplicar: " + (e as Error).message)
+      avisar("error", "No se pudo aplicar", (e as Error).message
+        + "\n\nNo se escribió nada de lo que faltaba: revisá y volvé a intentar.")
     } finally { setAplicando(false) }
   }
 
@@ -297,6 +365,38 @@ export function PanelBoletasArba() {
           <DialogHeader>
             <DialogTitle>🏛️ Boletas de ARBA — comparar y decidir</DialogTitle>
           </DialogHeader>
+
+          {/* 🔴 EL AVISO QUEDA. No se borra solo: el proceso tarda hasta 45 s y el usuario se va a
+              hacer otra cosa — justo el mensaje que más hace falta es el que nadie está mirando
+              cuando termina. Lleva la HORA para saber si es de esta corrida o de la anterior, y el
+              detalle largo se abre con un click en vez de ocupar media pantalla siempre. */}
+          {aviso && (
+            <div className={`rounded border px-3 py-2 text-[11px] leading-4 ${ESTILO_AVISO[aviso.tipo]}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="font-medium">
+                  {ICONO_AVISO[aviso.tipo]} {aviso.titulo}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="tabular-nums opacity-60">{aviso.hora}</span>
+                  <button type="button" className="opacity-60 hover:opacity-100"
+                    title="Cerrar el aviso" onClick={() => setAviso(null)}>✕</button>
+                </div>
+              </div>
+              {aviso.detalle && (
+                <>
+                  <button type="button" className="mt-1 underline underline-offset-2 opacity-80 hover:opacity-100"
+                    onClick={() => setAvisoAbierto(v => !v)}>
+                    {avisoAbierto ? "ocultar el detalle" : "ver el detalle"}
+                  </button>
+                  {avisoAbierto && (
+                    <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-white/60 p-2 text-[10px] leading-4">
+                      {aviso.detalle}
+                    </pre>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] leading-4 text-blue-900">
             Subí los PDFs de las boletas. Se comparan contra <b>el template activo</b> de esa partida y
