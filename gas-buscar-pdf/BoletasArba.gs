@@ -405,46 +405,61 @@ function bajarBoletasArba(soloContar, opciones) {
         // Se corta ANTES de que la ruta se canse, y se dice cuántos quedaron.
         if (Date.now() - arranque > presupuestoMs) { quedaron += (links.length - k); sinTiempo = true; break }
         try {
-          var r = bajarBoleta_(links[k])
-          if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
+          // 🐞 **A-BUG-128 (2026-09-08) — PRIMERO EL NOMBRE, DESPUÉS LA DESCARGA.**
+          // Antes se bajaba el PDF entero y **recién al final** se preguntaba si ya estaba: en cada
+          // re-corrida se volvía a traer todo lo ya archivado para tirarlo. Con 31 boletas y un
+          // presupuesto de 35 s, cada pasada avanzaba ~10 y las anteriores se pagaban de nuevo.
+          // Es el mismo error que el de «Ver qué hay» (`A-BUG-125`), en el otro extremo del bucle.
+          //
+          // 🔑 Y no hacía falta: **el nombre sale de la tabla del mail**, no del archivo. Lo único
+          // que necesita el PDF es el camino de emergencia, cuando el asunto no trae la cuota.
 
-          // La fila del mail que le corresponde. Tres vías, de la más confiable a la menos:
-          //   1. por PARTIDA, cuando ARBA mandó el nombre del archivo y la trae adentro;
-          //   2. por POSICIÓN, cuando la cantidad de links coincide con la de filas — que es lo
-          //      normal desde `A-BUG-126`, porque ahora sólo se toman los links «Ingresar»;
-          //   3. la única fila, cuando el mail trae una sola (el complementario).
-          var laPartida = partidaDeNombre_(r.nombre)
+          // La fila del mail que le corresponde, SIN bajar nada: por posición cuando la cantidad de
+          // links coincide con la de filas —lo normal desde `A-BUG-126`—, o la única que hay.
           var fila = null
-          for (var f = 0; f < tabla.filas.length; f++) {
-            if (laPartida && soloDigitos_(tabla.filas[f].objeto) === laPartida) { fila = tabla.filas[f]; break }
-          }
-          if (!fila && !laPartida && tabla.filas.length === links.length) fila = tabla.filas[k]
-          if (!fila && !laPartida && tabla.filas.length === 1) fila = tabla.filas[0]
+          if (tabla.filas.length === links.length) fila = tabla.filas[k]
+          else if (tabla.filas.length === 1) fila = tabla.filas[0]
 
           var elObjeto = fila ? fila.objeto : null
-          // 🗂️ Primero la convención del usuario; si no se puede armar, el nombre técnico.
-          // 🔑 Éste lleva el objeto imponible cuando ARBA no manda el suyo: sin eso numeraba por
-          // posición y dos boletas de mails distintos colisionaban (A-BUG-127).
-          var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
-            || nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
-
-          // En qué mail llegó, y de quién es. Casi siempre coinciden; cuando no, eso es el dato.
           var empresaDelMail = (tabla.contribuyente && empresaPorCuit)
             ? empresaPorCuit[tabla.contribuyente] : null
-          // El complementario no tiene partida: su dueño ES el contribuyente del mail.
           var info = elObjeto && mapaPartidas ? mapaPartidas[elObjeto] : null
+          // El complementario no tiene partida: su dueño ES el contribuyente del mail.
           var duenio = info && info.responsable ? info.responsable
             : (/Complementario/i.test(msg.getSubject()) ? empresaDelMail : null)
           var destino = subcarpetaDe_(carpeta, duenio, empresaDelMail)
 
-          // 🔒 Dedup por NOMBRE. Ver `nombreDeArchivo_`: el nombre lleva PARTIDA + PERÍODO, y sin
-          // el período la deduplicación borraba boletas distintas en silencio.
-          // ⚠️ El dedup mira **la subcarpeta del dueño**, no la raíz: desde que cada empresa tiene
-          // la suya, buscar en el padre daría «ya estaba» por un archivo que está en otro lado.
-          var ex = destino.getFilesByName(nombre)
-          if (ex.hasNext()) {
-            yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ex.next().getUrl() })
-            continue
+          // 🔒 Dedup por NOMBRE, mirando **la subcarpeta del dueño** y no la raíz: desde que cada
+          // empresa tiene la suya, buscar en el padre daría «ya estaba» por un archivo de otra.
+          var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
+          if (nombre) {
+            var yaEsta = destino.getFilesByName(nombre)
+            if (yaEsta.hasNext()) {
+              // ✅ Acá se ahorra la descarga: es lo que hace que re-correr sea barato.
+              yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: yaEsta.next().getUrl() })
+              continue
+            }
+          }
+
+          var r = bajarBoleta_(links[k])
+          if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
+
+          // Camino de emergencia: sin cuota en el asunto no se puede armar el nombre del usuario, y
+          // ahí sí hace falta el que manda ARBA. Lleva el objeto imponible porque numerar por
+          // posición hacía colisionar boletas de mails distintos (`A-BUG-127`).
+          if (!nombre) {
+            var laPartida = partidaDeNombre_(r.nombre)
+            if (laPartida) {
+              for (var f = 0; f < tabla.filas.length; f++) {
+                if (soloDigitos_(tabla.filas[f].objeto) === laPartida) { elObjeto = tabla.filas[f].objeto; break }
+              }
+            }
+            nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
+            var ex = destino.getFilesByName(nombre)
+            if (ex.hasNext()) {
+              yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ex.next().getUrl() })
+              continue
+            }
           }
           var file = destino.createFile(r.blob.setName(nombre))
           bajadas.push({
