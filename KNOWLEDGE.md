@@ -1923,6 +1923,50 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Dueño de cada partida — el mail NO lo dice `#arba #referencia #2026-09-08`
+
+> 🔴 **El CUIT del mail dice DÓNDE LLEGÓ la boleta, no de quién es.** En la corrida del 08/09 el
+> mail de PAM trajo 13 partidas y **sólo 5 eran de PAM**.
+
+El dato lo dio el usuario en cómo armó `- Comunicacion JMS Claude - Archivos/boletas inmobiliario/`:
+**la carpeta dice de quién ES**, y el sufijo **«MSA - viene PAM»** dice **dónde LLEGA**. Palabras
+suyas: *«Tango es de MSA pero pasa eso que a veces viene de PAM por error y duplicada. Pasa con
+otras»*.
+
+⚠️ **Esto NO está en la base.** `egresos_sin_factura` no tiene columna `empresa`; tiene
+`centro_costo`, que es **el campo y no el dueño** — y *Nazarenas* mezcla MSA y PAM. → `A-DAT-29`.
+
+### El mapa, derivado de sus carpetas — ⏳ **a confirmar antes de cargarlo**
+
+| Dueño | Campo | Partida | Nota |
+|---|---|---|---|
+| **MSA** | Anexo | `099-008368-1` | |
+| **MSA** | Cholo 1 | `099-010611-8` | |
+| **MSA** | Cholo 2 | `099-012766-2` | |
+| **MSA** | Portería Nuevo | `099-015877-0` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Portería Viejo | `099-015879-7` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Rojas | `090-016369-0` | |
+| **MSA** | Sánchez | `099-015880-0` | |
+| **MSA** | Tango Prim Leboso | `099-015881-9` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Tango Parra 1 | `099-015883-5` | 📁 carpeta *«MSA - viene PAM»* · 🔁 duplicada |
+| **MSA** | Tango Parra 2 | `099-015885-1` | 📁 carpeta *«MSA - viene PAM»* · 🔁 duplicada |
+| **PAM** | Casco | `099-006595-0` | |
+| **PAM** | Entre Ríos | `099-025551-2` | |
+| **PAM** | Ombú | `099-016666-8` | |
+| **PAM** | Tapera 1 | `099-015882-7` | |
+| **PAM** | Tapera 2 | `099-015884-3` | |
+| **PAM** | Tapera 3 | `099-015886-0` | |
+| **MA** | Lima | `038-040142-8` | |
+| **ERM** | Quinta Roselló 1 | `099-001854-5` | 🆕 cuarta entidad, no está en `CLAUDE.md` |
+| **ERM** | Quinta Roselló 2 | `099-001846-4` | 🔁 llegó en el mail de PAM |
+| **ERM** | El Relincho | `099-025089-8` | ⚠️ **sin template** (`A-DAT-26`) |
+| **?** | — | `099-001274-1` | ⚠️ **sin template**, $510.316,10, llegó en el mail de PAM |
+
+🔑 **Todas las repetidas del 08/09 son de MSA y todas se repiten en el mail de PAM.** No es azar:
+es el patrón que el usuario venía describiendo.
+
+---
+
 ## Anatomía del mail de boletas de ARBA `#arba #referencia #2026-09-06`
 
 Leído de los mails reales del usuario. **Las tres empresas llegan a `sanmanuel.sp@gmail.com`.**
