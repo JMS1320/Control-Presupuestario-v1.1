@@ -25,8 +25,12 @@ export async function GET(request: Request) {
   const alLogin = (motivo: string) =>
     NextResponse.redirect(new URL(`/login?error=${motivo}`, url.origin))
 
-  // Google avisa acá cuando la persona cancela en su pantalla ("Volver al sitio").
-  if (url.searchParams.get("error")) return alLogin("cancelado")
+  // Cancelar en la pantalla de Google y "el proveedor está apagado" llegan por el mismo
+  // parámetro, y no se le dice lo mismo a alguien que se arrepintió que a alguien que se topó
+  // con algo que todavía no está habilitado. `access_denied` es lo único que significa "no
+  // quise"; el resto es un problema de configuración y va al mensaje genérico.
+  const falla = url.searchParams.get("error")
+  if (falla) return alLogin(falla === "access_denied" ? "cancelado" : "oauth")
   if (!code) return alLogin("oauth")
 
   const supabase = await createClientServer()
