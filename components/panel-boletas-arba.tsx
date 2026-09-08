@@ -183,6 +183,8 @@ export function PanelBoletasArba() {
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
   const [informe, setInforme] = useState<Informe | null>(null)
+  /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
+  const [pasadas, setPasadas] = useState(0)
   type Bajada = { archivo: string; carpeta?: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: { archivo: string }[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
@@ -271,7 +273,9 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
     setBajando(true)
     setDelMail(null)
     avisar("info", soloContar ? "Buscando en el mail…" : "Bajando y archivando…",
-      "Puede tardar hasta 45 segundos. Podés irte y volver: el resultado queda acá.")
+      "El GAS corta solo antes de que la app se canse, así que la respuesta siempre llega: "
+      + "nada queda corriendo por atrás.\n\n"
+      + (soloContar ? "" : "Si no entra todo en una pasada, sigo yo solo hasta terminar."))
     try {
       // 🗂️ Los templates se cargan ANTES de llamar al GAS: de ellos salen el nombre del campo y el
       // responsable, y con eso el archivo se guarda como el usuario lo nombraba a mano
@@ -282,22 +286,58 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
         if (t.partida) partidas[t.partida] = { nombre: nombreCorto(t.nombre), responsable: t.responsable }
       }
 
-      const r = await fetch("/api/gas/boletas-arba", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          solo_contar: soloContar, dias: Number(dias) || undefined,
-          partidas, empresa_por_cuit: EMPRESA_POR_CUIT,
-        }),
-      })
-      const j = await r.json()
-      if (!j.ok) {
-        // 🔴 El error del GAS trae el texto que dice QUÉ HACER (falta desplegar, falta la env var,
-        // se pasó el tiempo). Perderlo es perder la única pista, así que queda entero acá.
-        avisar("error", "No se pudo traer del mail", String(j.error || "El GAS no dijo por qué.")
-          + `\n\nHTTP ${r.status}.`)
-        return
+      /**
+       * 🔁 **Las pasadas las da la app, no el usuario.**
+       *
+       * Pedido textual (2026-09-08): *«quiero ver que lo pueda bajar todo de una sola»*. Cada
+       * llamada al GAS está limitada por el tiempo que la app puede esperar —un límite de la
+       * plataforma, no del trabajo—, así que con muchas boletas hace falta más de una pasada.
+       * **Que las cuente el usuario es trasladarle un problema nuestro.**
+       *
+       * Se corta cuando no queda nada (lo normal), cuando una pasada **no avanzó** —si no, sería
+       * un bucle infinito ante cualquier boleta que falle siempre— o al llegar al tope.
+       */
+      const TOPE_PASADAS = 12
+      let j: Record<string, unknown> = {}
+      let pasada = 0
+      const acumBajadas: Bajada[] = []
+      const acumYaEstaban: { archivo: string }[] = []
+
+      while (pasada < TOPE_PASADAS) {
+        pasada++
+        const r = await fetch("/api/gas/boletas-arba", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            solo_contar: soloContar, dias: Number(dias) || undefined,
+            partidas, empresa_por_cuit: EMPRESA_POR_CUIT,
+          }),
+        })
+        j = await r.json()
+        if (!j.ok) {
+          // 🔴 El error del GAS trae el texto que dice QUÉ HACER (falta desplegar, falta la env var,
+          // se pasó el tiempo). Perderlo es perder la única pista, así que queda entero acá.
+          avisar("error", "No se pudo traer del mail", String(j.error || "El GAS no dijo por qué.")
+            + `\n\nHTTP ${r.status}.` + (pasada > 1 ? `\n\nFalló en la pasada ${pasada}; lo de las anteriores quedó archivado.` : ""))
+          return
+        }
+        const nuevas = (j.bajadas ?? []) as Bajada[]
+        acumBajadas.push(...nuevas)
+        acumYaEstaban.push(...((j.ya_estaban ?? []) as { archivo: string }[]))
+
+        // Contar no baja nada: una sola pasada alcanza y repetir daría siempre lo mismo.
+        if (soloContar || !j.sin_tiempo) break
+        // Una pasada que no bajó nada nuevo no va a mejorar repitiéndola.
+        if (nuevas.length === 0) break
+
+        avisar("info", `Bajando… pasada ${pasada + 1}`,
+          `${acumBajadas.length} archivada(s) hasta ahora · quedan ${j.quedaron}.\n\n`
+          + "Sigo solo: no hace falta que hagas nada.")
       }
-      setDelMail({ resumen: j.resumen ?? "", bajadas: j.bajadas ?? [], ya_estaban: j.ya_estaban ?? [], descuadres: j.descuadres ?? [] })
+      setPasadas(pasada)
+
+      // Lo acumulado de TODAS las pasadas, no sólo de la última.
+      j = { ...j, bajadas: acumBajadas, ya_estaban: acumYaEstaban }
+      setDelMail({ resumen: String(j.resumen ?? ""), bajadas: acumBajadas, ya_estaban: acumYaEstaban, descuadres: (j.descuadres ?? []) as { asunto: string; detalle: string }[] })
       // Se guarda lo que dijo el mail para poder cruzarlo cuando se suban los PDFs (A-FEAT-107).
       const idx: Record<string, { objeto: string | null; importe: number | null }> = {}
       for (const b of (j.bajadas ?? []) as Bajada[]) {
@@ -312,23 +352,29 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       // templates viven acá—, así que la traducción se hace en la app: partida → nombre del campo.
       setInforme(armarInforme((j.tablas ?? []) as TablaMail[], templates, j as ResGas))
 
-      const filas = (j.tablas ?? []).reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
+      const tablasGas = (j.tablas ?? []) as TablaMail[]
+      const filas = tablasGas.reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
       const conImporte = Object.keys(idx).length
+      // 🔴 **Que se sepa si TERMINÓ.** Pregunta del usuario: *«¿cómo sé cuándo ya terminó?»*.
+      // Un resumen que enumera lo hecho no contesta eso — el estado final es un dato aparte.
+      const termino = !j.sin_tiempo
       avisar(
         // Si no leyó ninguna fila de la tabla del mail, NO es un éxito limpio: se dice.
-        filas === 0 ? "info" : "ok",
+        filas === 0 || !termino ? "info" : "ok",
         soloContar
-          ? `Encontradas ${(j.bajadas ?? []).length} boleta(s)` + (filas ? ` · ${filas} fila(s) leídas del mail` : " · sin leer la tabla del mail")
-          : String(j.resumen ?? "Listo"),
+          ? `Encontradas ${((j.bajadas ?? []) as unknown[]).length} boleta(s)` + (filas ? ` · ${filas} fila(s) leídas del mail` : " · sin leer la tabla del mail")
+          : termino
+            ? `✓ Listo — no queda nada por bajar${(j.bajadas as unknown[])?.length ? ` · ${(j.bajadas as unknown[]).length} archivada(s)` : ""}${pasada > 1 ? ` en ${pasada} pasadas` : ""}`
+            : `⏳ Quedaron ${j.quedaron} sin bajar después de ${pasada} pasada(s) — volvé a apretar «Bajar y archivar»`,
         [
           j.resumen ? `Resumen: ${j.resumen}` : "",
           filas === 0
             ? "⚠️ No se leyó ninguna fila de la tabla del cuerpo del mail. No te bloquea: los PDFs se bajan igual y podés seguir subiéndolos a mano. Guardá un mail como .eml en la carpeta de comunicación para que se pueda ajustar."
             : `${conImporte} archivo(s) quedaron con su importe del mail.`,
-          ...(j.tablas ?? []).map((t: { asunto?: string; contribuyente?: string; filas?: { objeto: string; importe: number | null }[] }) =>
+          ...tablasGas.map((t) =>
             `\n▸ ${t.asunto ?? "(sin asunto)"}${t.contribuyente ? `  ·  CUIT ${t.contribuyente}` : ""}\n`
             + (t.filas ?? []).map(f => `   ${f.objeto}   ${f.importe == null ? "(sin importe)" : m(f.importe)}`).join("\n")),
-          ...(j.descuadres ?? []).map((d: { asunto: string; detalle: string }) => `\n⚠️ ${d.asunto}: ${d.detalle}`),
+          ...((j.descuadres ?? []) as { asunto: string; detalle: string }[]).map((d) => `\n⚠️ ${d.asunto}: ${d.detalle}`),
         ].filter(Boolean).join("\n"),
       )
     } catch (e) {
@@ -471,7 +517,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
               </label>
               <span className="text-[10px] text-gray-500">
                 Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
-                <br />Si la bajada no llega a tiempo, <b>achicá los días</b> — y volvé a correrla: sigue donde iba.
+                <br />Si no entra todo en una pasada, <b>sigue solo</b> hasta terminar. No borres lo
+                ya archivado: lo que está no se vuelve a bajar.
               </span>
             </div>
             {/* 🗣️ EL INFORME, en el idioma del usuario: qué campo, de qué empresa, por cuánta plata.
