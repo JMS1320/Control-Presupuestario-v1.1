@@ -322,6 +322,40 @@ javier/…      ─┘   (integración)
   No adivinar el nombre: `git for-each-ref refs/remotes/origin` lo dice, pero **sólo después de que
   él la pushee** — una rama local en su máquina es invisible acá.
 
+
+### 🌿 UNA RAMA POR TEMA — y decir DÓNDE se está parado antes de escribir (REGLA)
+*Pedida por el usuario 2026-09-09, después de que yo escribiera tres dossiers de un tema nuevo
+directamente sobre `jms/arba`, que era la rama del tema de la otra terminal: **«creo que hay que
+poner una regla que claramente evalúe dónde se mueve. pensé que era medio básico. debemos trabajar
+en una rama nueva y si no hacemos nada queda solo como algo evaluado registrado en pendientes como
+algo futuro en evaluación y se pushea eso»**.*
+
+> **Antes de la primera escritura de un tema —código o documentación— se dice en qué rama se está y
+> en cuál se debería estar. Tema nuevo, rama nueva.**
+
+- **Se declara, no se asume**: `git branch --show-current` y decirlo en voz alta *antes* del primer
+  `Edit`. Si la rama actual es de otro tema, **se crea la del tema nuevo** y se dice el nombre.
+- **Una rama por tema, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
+  el 2026-09-04 y no obligó a nadie — ver el motivo abajo.)*
+- 🧊 **Un tema que se EVALÚA y no se construye también termina en una rama, y se pushea.** No hacer
+  el desarrollo **no es no dejar nada**: queda el ítem en `PENDIENTES.md` con su ID, en estado *futuro
+  en evaluación*, en su rama y **pusheado**. Ese es el entregable de una evaluación — sin push vive
+  en una sola máquina y no lo ve nadie.
+- ⚠️ **La rama es del WORKING TREE, no de la terminal.** Con 2 terminales sobre el mismo directorio
+  **no puede cada una tener la suya**: `checkout` es global y además está prohibido (§ Trabajo en
+  paralelo, regla 2). Las dos únicas salidas:
+  1. **`git worktree add <dir> <rama>`** — un directorio propio con su rama. Es la única separación
+     real, y la que corresponde cuando la segunda terminal va a tocar **código**.
+  2. **Aislar sólo por commit** cuando el trabajo es documentación: se commitea en la rama que está
+     montada y se mueve la rama propia con **`git branch -f <mi-rama> HEAD`** (no necesita checkout)
+     y se pushea ésa. Los commits quedan además en la rama del otro; **no es limpio, pero no es
+     destructivo**, y al mergear git los deduplica por hash.
+
+**Motivo, y es el que más rinde de todos:** *"una rama por tema"* **ya estaba decidido desde el
+2026-09-04 — pero vivía en `memory/`, no acá.** Por eso no obligó: yo leí el proyecto entero, tomé
+contexto del tablero y de las 8 dimensiones, y escribí igual sobre la rama ajena. **Una decisión que
+no está en su dimensión no es una regla, es un recuerdo** (§ ➡️ Dirección única: la doc manda sobre
+la memoria). Si algo se decide dos veces, la primera vez se guardó en el lugar equivocado.
 ### 👥 Segundo desarrollador en OTRO clon — qué protege git y qué no (REGLA)
 *Agregada 2026-09-02, al sumarse Javier (seguridad y logueo) con su propio clon y su propia rama.*
 
