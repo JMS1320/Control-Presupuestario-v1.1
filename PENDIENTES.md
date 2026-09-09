@@ -12737,6 +12737,173 @@ verificado.**
 
 ---
 
+
+## <a id="a-feat-123"></a>A-FEAT-123 — Parte diario del personal 🧑‍🌾 *(proyecto de DISEÑO)*
+
+> **Registrado 2026-09-09.** Idea del usuario, planteada como brainstorm: *"un parte diario desde el
+> empleado raso o capataz donde se ponga a empleado 1, 2 y 3 por cada turno (mañana, tarde) asignado
+> a Ganadería, Arrendamiento, Agricultura, Chalet. Eso se hace vía botón en app celular. Luego él
+> graba lo que hizo cada uno en cada turno."*
+>
+> ⚠️ **Esto es diseño, no una orden de trabajo.** No hay una línea de código escrita ni una tabla
+> creada. Lo que sigue es el relevamiento, la frontera con lo que ya existe, los riesgos y los tres
+> alcances posibles, para que el usuario decida **si** y **por dónde**.
+
+### Los dos objetivos, en palabras del usuario
+1. **"Tener un track de cuánto del personal se lleva cada actividad"**, con dashboards de rápida
+   comprensión y **cómo fluctúa en un año**.
+2. **Un agente acotado** que transcriba el mensaje, lo compare contra las tareas asignadas y
+   reconfigure el Gantt; que lo no previsto se aprenda; que la sanidad reportada se adjunte sola; y
+   que el admin dé **el OK final**. → El agente tiene dossier propio: [A-AUTO-03](#a-auto-03).
+
+---
+
+### 🔎 Lo primero: la mitad ya existe (§ CLAUDE.md — Buscar antes de escribir)
+
+| Ya existe | Qué es |
+|---|---|
+| `productivo.labores` | **maestro de labores**, con `tipo` (agrícola/…) |
+| `ordenes_aplicacion` · `lineas_orden_aplicacion` · `lineas_orden_labores` | **sanidad**: la orden, sus insumos y sus labores |
+| `ordenes_agricolas` · `lineas_orden_agricola_labores` | lo mismo del lado agrícola |
+| `productivo.actividades` · `public.centros_costo` | las actividades y su centro de costo |
+| `sueldos.empleados` · `sueldos.periodos` | el maestro de personal y **los días liquidados por mes** |
+| GAS con OCR de imágenes (v0.3.0) | precedente real de *foto de WhatsApp → texto validado* |
+
+🔴 **La consecuencia de diseño más importante de todo el análisis:** el parte diario **no puede
+inventar su propio universo de tareas**. Tiene que apuntar a `labores.id`, `actividades.id` y
+`sueldos.empleados.id`, y cuando se reporta sanidad debe **cerrar la orden que ya existe**, no crear
+un registro paralelo.
+
+*Motivo: si inventa el suyo, el parte va a decir que se vacunó y las órdenes van a decir que no.
+**Dos verdades sobre el mismo hecho** — el mismo modo de falla de los tres casos de la § Buscar
+antes de escribir: no duele el trabajo duplicado, duelen los números que no coinciden.*
+
+---
+
+### 🧭 La tesis: son DOS proyectos, y conviene que lo sean
+
+| | **A · La asignación** (turno × empleado × actividad) | **B · El agente** (voz → plan → Gantt) |
+|---|---|---|
+| Qué necesita | un formulario y una tabla | transcripción, extractor, matriz de previstas, Gantt |
+| ¿Hay LLM? | **cero** | todo |
+| ¿Alimenta el presupuesto? | **sí, directo** | indirecto |
+| Depende de | nada | de que exista **el plan**, que hoy no existe |
+| Riesgo | bajo | medio-alto |
+| Tamaño estimado | ~2 semanas | ~2 meses |
+
+**A es un formulario**: 3 empleados × 2 turnos = **6 decisiones por día**. Resolver eso con un agente
+sería usar un LLM para lo que un selector hace mejor, más barato y sin alucinar.
+**Y A es el que toca el norte. B es el que se ve lindo.**
+
+---
+
+### 🎯 Cómo incide en el presupuesto (§ CLAUDE.md — la pregunta obligatoria)
+
+**Destapa un hueco que no estaba registrado → [A-FEAT-124](#a-feat-124):** hoy la mano de obra **no
+se reparte por actividad**. El parte diario es el repartidor que falta: da, mes a mes y con dato
+real, qué porcentaje de las jornadas se llevó cada actividad.
+
+- alimenta el **objetivo 3 del norte** (resultado por actividad, período por período);
+- corrige el **margen**, que hoy le regala rentabilidad a la ganadería;
+- y encaja con la § 🎚️ **Default del dato real**: si hay partes, el reparto sale del real; si no,
+  se escribe un % a mano y queda como override.
+
+⚠️ **Doble conteo**: si `actividad_insumos` ya tiene un ítem «jornales», hay que decidir **cuál
+manda antes** de escribir la primera línea, no después.
+
+---
+
+### 🔁 Los controles que salen GRATIS (§ el mismo número por dos caminos)
+
+**Es la mejor parte de la idea, y no necesita agente:**
+
+| El mismo número, por dos caminos | Qué destapa |
+|---|---|
+| **Jornadas del parte** ↔ **días de `sueldos.periodos`** | el parte dice 24 y la liquidación paga 22 → o faltan partes, o se paga de más |
+| **Sanidad reportada** ↔ **`movimientos_insumos` / `lineas_orden_aplicacion`** | se vacunaron 300 vacas y **no bajó una dosis del stock** → uno de los dos miente |
+| **Labor reportada** ↔ **orden que la preveía** | labor sin orden = trabajo **no previsto** · orden sin labor = **lo que no se hizo** |
+
+📌 El tercero resuelve el *"se extraen las tareas del momento, se aprende"* del usuario **sin que el
+agente aprenda nada**: lo no previsto es, simplemente, lo que no matcheó. Se acumula, se mira una vez
+por mes, y lo que aparece seguido **se promueve al maestro `labores`**.
+
+---
+
+### ⚠️ Riesgos, ordenados por cuál mata el proyecto
+
+**1. 🔴 Seguridad — es dependencia dura, no un detalle.** Hoy no hay login real
+(`config/access-routes.ts` son rutas-como-password) y **`anon` puede borrar todas las tablas**
+([A-SEC-01](#a-sec-01)). Sumar capataz + peones + agrónomo + un agente multiplica la superficie, y
+ninguno es de confianza técnica. **Esto no se empieza antes de [A-SEC-03](#a-sec-03)** (el módulo
+Usuarios que tiene Javier). Un empleado con la URL en el historial del celular puede borrar la
+contabilidad.
+
+**2. 🔴 Adopción — si el capataz no aprieta el botón, todo lo demás es decoración.**
+- **< 30 segundos** o no se usa;
+- **tiene que andar sin señal** (offline-first con cola de envío). En el campo no hay señal: es
+  restricción de arquitectura, no un adorno;
+- **el parte de hoy viene precargado con el de ayer** — confirmar es un botón, y el dedo se pone
+  sólo donde cambió (§ Default del dato real aplicada a un formulario);
+- **nunca rechaza** (§ Importar un documento): si falta un dato o el audio no se entiende, se guarda
+  igual y queda marcado. Un parte a medias vale mucho más que ninguno.
+
+**3. 🟡 El semáforo que miente.** *"Si no reporta empieza a salir en rojo"* — **"no se hizo" y "no se
+reportó" son dos estados distintos** y necesitan dos colores distintos. Si todo lo no reportado sale
+en rojo, en tres semanas el rojo no significa nada (§ 🧮 el control se ve: un control que grita
+siempre no es un control).
+
+**4. 🟡 Goodhart — el dato se corrompe si se usa para evaluar personas.** Si el parte mide gente, el
+capataz aprende a reportar lo que el sistema quiere escuchar y el costeo se vuelve ficción.
+**Hay que decidir explícitamente si esto es costeo o supervisión.**
+
+**5. 🟢 El costo de la IA es irrelevante**: 3 empleados × 2 turnos × 365 ≈ **2.200 audios/año**. Lo
+caro no es la API: es mantener el prompt y **revisar las propuestas** — o sea tiempo de JMS o de
+Ulises, que es el recurso escaso (§ el permiso: automatizar es poder delegar).
+
+**6. 🟢 Desvío del norte**: puede volverse "la app de RRHH". Mitigación: primero la parte que alimenta
+el presupuesto, después la que ordena el trabajo.
+
+---
+
+### 📐 Alcances — mínimo · medio · máximo
+
+**🥉 MÍNIMO — el repartidor (~2 semanas, sin una línea de IA)**
+- `productivo.partes_diarios` + `partes_diarios_lineas` (fecha × turno × `empleado_id` ×
+  `actividad_id`), apuntando a los maestros que **ya existen**.
+- Pantalla móvil precargada con ayer, offline con cola.
+- Dashboard: jornadas por actividad apiladas por mes → la fluctuación del año de un vistazo.
+- Control cruzado contra `sueldos.periodos`.
+- Salida al presupuesto: **coeficiente de reparto de mano de obra por actividad**
+  ([A-FEAT-124](#a-feat-124)).
+
+→ Da el **objetivo 1 completo**. Si el proyecto se corta acá, valió la pena.
+
+**🥈 MEDIO — la voz (+4-6 semanas)** → [A-AUTO-03](#a-auto-03)
+- Nota de voz adjunta al parte → transcripción → **el texto crudo se guarda tal cual, siempre** →
+  labores candidatas a la bandeja.
+- El agrónomo carga sanidad con **foto del cuaderno** (el OCR del GAS es precedente).
+- El admin da el OK y **ahí** se cierra la orden y sale en el parte.
+
+**🥇 MÁXIMO — el plan (+2 meses, y sólo si el medio funcionó)**
+- La **matriz de mínimos** con semáforo. 📌 **Es [A-AUTO-02](#a-auto-02) con vencimientos de campo**:
+  un solo motor de alertas, dos fuentes. No se construyen dos.
+- **Gantt reconfigurable** — lo último, porque un Gantt necesita un plan y hoy el sistema tiene
+  órdenes puntuales, no cronograma anual.
+
+---
+
+### ❓ Las 4 preguntas que cambian el diseño (las contesta el usuario)
+1. **¿El parte lo carga UNO por los tres, o cada uno el suyo?** Cambia permisos, adopción y
+   confiabilidad del dato. *(Mi apuesta: el capataz solo — tres usuarios nuevos es tres veces el
+   riesgo de que no se use.)*
+2. **¿"Chalet" es actividad con centro de costo, o gastos generales?** Define si su mano de obra se
+   reparte o se acumula aparte.
+3. **¿La unidad es el turno o la hora?** Medio turno existe en el campo. Si mañana se quieren horas,
+   agregar la columna después cuesta el doble → **dejar el campo previsto desde el día 1**.
+4. **¿Es para costear o para supervisar?** Condiciona qué tan sincero va a ser el dato.
+
+**Estado**: 🔵 diseño registrado, **sin desarrollar**. No hay `A-TEST` porque todavía no hay nada que
+probar.
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`
