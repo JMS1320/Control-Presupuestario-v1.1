@@ -61,6 +61,8 @@ import {
   exportarExcel, exportarPDF,
   type DatosExport, type BloqueExport, type FilaExport, type ModoCatalogo,
 } from "@/lib/presupuesto/export"
+import { padronHacienda, padronTemplates } from "@/lib/presupuesto/padron"
+import { PanelHuecosPresupuesto } from "@/components/panel-huecos-presupuesto"
 import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
@@ -109,6 +111,8 @@ interface FilaTemplate {
   metodo: MetodoResuelto
   /** Declara más cuotas de las que hay en la historia. */
   avisoCuotas: string | null
+  /** Cuántas cuotas declara el template al año. **Es su padrón**: si dice 4 y hay 3, falta una. */
+  cuotasDeclaradas: number | null
 }
 
 interface FilaSueldo {
@@ -735,6 +739,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         cargaManual: t.aplica_generacion === true,
         metodo: metodos[t.id]!,
         avisoCuotas: avisos[t.id] ?? null,
+        cuotasDeclaradas: t.cuotas != null ? Number(t.cuotas) : null,
       })
     }
 
@@ -1453,6 +1458,51 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const nombreArchivoExport = () =>
     `Presupuesto_MSA_${new Date().toISOString().slice(0, 10)}`
 
+  /**
+   * 🧭 Los PADRONES — lo que debería existir, para poder ver lo que falta (`A-FEAT-119`).
+   *
+   * Se arman con lo que la pantalla **ya cargó**: no hay una consulta más. El padrón no es un dato
+   * nuevo, es **leer al revés** lo que ya está — el template declara sus cuotas, la existencia
+   * declara las cabezas, la historia declara qué cuentas gastaban.
+   *
+   * 🔴 **Grita de más a propósito.** Decisión del usuario: *«que grite de más y yo lo callo»*. La
+   * hacienda parte de **toda la existencia**, no de las categorías que se suelen vender — es
+   * preferible que moleste y él lo calle, a que se calle solo.
+   */
+  const padrones = useMemo(() => {
+    const templates = agrupadores.flatMap(ag => ag.templates)
+    // Cuántos meses de este período tienen una cuota REAL cargada (no proyectada).
+    const cargadas = (t: FilaTemplate) =>
+      Object.values(t.celdas).filter(c => c?.origen === "cuota").length
+    const tipico = (t: FilaTemplate) => {
+      const v = Object.values(t.montos).filter(x => x > 0)
+      return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
+    }
+
+    // Hacienda: la existencia y lo comprometido vienen dentro del disponible por categoría.
+    const cats = hacienda.categorias.map(c => {
+      const ds = Object.values(c.disponible)
+      const existencia = ds.reduce((s, d) => s + (d?.existentes ?? 0), 0)
+      const conVenta = ds.reduce((s, d) => s + (d?.comprometidas ?? 0), 0)
+      const cabezas = ds.reduce((s, d) => s + (d?.cabezas ?? 0), 0)
+      const plata = Object.values(c.montos).reduce((s, x) => s + x, 0)
+      return {
+        categoria: c.categoria, existencia, conVenta,
+        // $/cabeza de lo que YA se vendió de esa categoría; si no hay, no se inventa.
+        precioPorCabeza: conVenta > 0 && plata > 0 ? plata / conVenta : null,
+        _cabezas: cabezas,
+      }
+    }).filter(c => c.existencia > 0)
+
+    return [
+      padronHacienda(cats),
+      padronTemplates(templates.map(t => ({
+        id: t.id, nombre: t.nombre, cuotas: t.cuotasDeclaradas, cuotasCargadas: cargadas(t),
+        montoTipico: tipico(t),
+      })).filter(t => t.cuotas != null)),
+    ]
+  }, [agrupadores, hacienda])
+
   const cobertura = useMemo(() => {
     const avisos: { nivel: "alta" | "media"; texto: string }[] = []
 
@@ -1745,6 +1795,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
             title="Volver a leer todo: templates, sueldos, cuentas, variables e inversiones">
             <RefreshCw className={`h-3.5 w-3.5 ${cargando ? "animate-spin" : ""}`} /> Actualizar
           </Button>
+          {/* 🧭 Lo que FALTA — el tablero de huecos (A-FEAT-119). Va acá, en la barra del
+              presupuesto, porque la pregunta «¿está completo?» se hace mirando esta pantalla. */}
+          <PanelHuecosPresupuesto padrones={padrones} />
           <Button variant="outline" size="sm" onClick={() => toggleTodos(true)}>Expandir todo</Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
           <Button variant="outline" size="sm" className="gap-1"
