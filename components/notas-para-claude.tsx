@@ -26,6 +26,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { mirarFoco } from "@/lib/recorrido/foco"
+import { comprimir } from "@/lib/captura-imagen"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -39,9 +40,6 @@ import {
   instalarCinta, mirarCinta, confirmarCorte, reiniciarCorte, type EventoDiagnostico,
 } from "@/lib/cinta-diagnostico"
 
-/** Ancho máximo de la captura guardada. Suficiente para leer un cartel, liviano para la fila. */
-const ANCHO_MAX = 1400
-const CALIDAD = 0.72
 
 interface Captura {
   orden: number
@@ -149,16 +147,6 @@ function contextoActual() {
   }
 }
 
-/** Redimensiona y comprime para que la fila no pese de más. */
-async function comprimir(blob: Blob): Promise<string> {
-  const bitmap = await createImageBitmap(blob)
-  const escala = Math.min(1, ANCHO_MAX / bitmap.width)
-  const canvas = document.createElement("canvas")
-  canvas.width = Math.round(bitmap.width * escala)
-  canvas.height = Math.round(bitmap.height * escala)
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL("image/jpeg", CALIDAD)
-}
 
 export function NotasParaClaude() {
   const [grabando, setGrabando] = useState(false)

@@ -36,9 +36,8 @@ import { Flag, Loader2, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
 import { getRoleFromRoute } from "@/config/access-routes"
 import { contextoActual } from "@/lib/contexto-pantalla"
+import { comprimir } from "@/lib/captura-imagen"
 
-const ANCHO_MAX = 1400
-const CALIDAD = 0.72
 
 export interface RevisionAbierta {
   id: string
@@ -63,15 +62,6 @@ function rolActual(): string | null {
   return getRoleFromRoute(window.location.pathname.split("/").filter(Boolean)[0] ?? "")
 }
 
-async function comprimir(blob: Blob): Promise<string> {
-  const bitmap = await createImageBitmap(blob)
-  const escala = Math.min(1, ANCHO_MAX / bitmap.width)
-  const canvas = document.createElement("canvas")
-  canvas.width = Math.round(bitmap.width * escala)
-  canvas.height = Math.round(bitmap.height * escala)
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL("image/jpeg", CALIDAD)
-}
 
 /** Las marcas abiertas de una tabla, cargadas UNA vez por pantalla (no una consulta por fila). */
 export function useRevisionesDe(schema: string, tabla: string) {

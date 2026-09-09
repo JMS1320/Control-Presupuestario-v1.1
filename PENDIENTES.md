@@ -13020,6 +13020,104 @@ criterio de la casa es que **el real pisa al estimado**— y hacerlo **antes**, 
 números no cierren.
 
 **Estado**: 🔴 hueco registrado, sin desarrollar. Existe con o sin el parte diario.
+## <a id="a-bug-130"></a>A-BUG-130 — El 💡 Anotar del recorrido nunca guardó nada 🧨
+
+**Encontrado 2026-09-09**, al ir a agregarle las capturas que pidió el usuario. **No lo encontró un
+error: lo encontró leer el archivo de al lado.**
+
+### Qué pasaba
+`components/barra-recorrido.tsx` guardaba la idea así:
+
+```ts
+const { data, error } = await supabase.from("notas_para_claude")
+  .insert({ … }).select("id").single()
+```
+
+`anon` tiene sobre esa tabla **una sola política, de INSERT** — verificado en `pg_policies` el
+2026-09-09: `notas_anon_insert` y `capturas_anon_insert`, ninguna de SELECT. Un
+`INSERT … RETURNING` necesita **además** permiso de lectura para devolver la fila, así que la base
+respondía `42501: new row violates row-level security policy`, el `catch` mostraba
+*"No se pudo guardar"* y **la idea se perdía**.
+
+### El arreglo
+El id se genera del lado del cliente (`crypto.randomUUID()`) y no se pide nada de vuelta. Es
+**literalmente el mismo arreglo** que ya estaba en `components/notas-para-claude.tsx` desde el
+2026-08-31 (§ [A-SEC-04](#a-sec-04)), con su comentario explicando por qué.
+
+### 🔑 La lección, que no es sobre RLS
+Yo sabía esto. Está escrito, con motivo, en un archivo que leí. **Y escribí el patrón viejo igual**,
+porque escribí código nuevo mirando lo que quería lograr y no lo que ya había fallado haciendo lo
+mismo. Es primo de la § 🔎 *Buscar antes de escribir*: ahí el costo es duplicar; acá es **heredar el
+bug que el original ya tenía arreglado**.
+
+> **Cuando se escribe una segunda pieza que hace lo que otra ya hace, se copia la pieza vieja —
+> no se reescribe de memoria.** Los comentarios de la vieja son las cicatrices.
+
+⚠️ **Dónde más puede estar**: cualquier `.insert(...).select(...)` contra una tabla que `anon` sólo
+puede escribir. Al 2026-09-09 el barrido dio limpio fuera de éste, pero es un chequeo a repetir cada
+vez que se escriba en `notas_*`.
+
+**Estado**: 🟢 arreglado y con `type-check:diff` 113 → 113. **Sin test automático**: probarlo pide
+una sesión `anon` real contra la base, y hoy ninguna suite escribe (§ [A-DEC-18](#a-dec-18)). Se
+verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-feat-125"></a>A-FEAT-125 — Pegar capturas en el 💡 Anotar del recorrido
+
+**Pedido por el usuario 2026-09-09**, mientras se preparaba para el primer recorrido del
+presupuesto: *"quisiera que en anotar me deje poner capturas de pantalla"*.
+
+### Por qué importa acá más que en otros lados
+La nota del recorrido se escribe **sin salir de lo que estabas haciendo**. Cuanto más haya que
+tipear, menos se anota — y lo que no se anota en el momento se pierde, que es el motivo entero por
+el que existe el botón. Una pantalla reemplaza el párrafo que no se iba a escribir.
+
+### Cómo quedó
+- **`Win+Shift+S` → `Ctrl+V`** con el cartel abierto. El listener va sobre `document`, **no sobre el
+  textarea**: recién salido de la herramienta de recorte nadie tiene el foco puesto en un campo, y
+  pedirle que primero clickee es justo el paso que hace que la captura no se saque.
+- `preventDefault()` **sólo cuando lo pegado es una imagen**, para no romper el pegado de texto.
+- Alternativa por archivo, para cuando la captura ya está en el disco.
+- Se guarda en `notas_capturas.imagen`, la columna que **ya existía** — no hubo migración.
+
+### 🔑 Lo que se ordenó de paso
+`comprimir()` (redimensionar a 1400 px + JPEG 0,72) estaba **copiada carácter por carácter** en
+`notas-para-claude.tsx` y `boton-revision.tsx`, con sus dos constantes al lado. Ésta iba a ser la
+tercera. Ahora vive en **`lib/captura-imagen.ts`** y los tres la importan
+(§ CLAUDE.md ♻️ *Centralizar, no duplicar*). Motivo concreto: tocar el ancho en un lado y que la
+misma pantalla se guarde con dos calidades distintas según por qué botón entró.
+
+**Estado**: 🟢 hecho, `type-check:diff` 113 → 113, 3 suites en verde (`probar`, `probar:recorrido`,
+`probar:padron`). **Falta el test manual** → [A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-test-107"></a>A-TEST-107 — Capturas en el Anotar del recorrido (y que la nota LLEGUE)
+
+⚠️ **El segundo paso es el importante.** El primero se ve en pantalla; el segundo es el que estuvo
+fallando en silencio ([A-BUG-130](#a-bug-130)).
+
+1. Presupuesto → `⚠ N hueco(s)` → **🧭 Empezar el recorrido**.
+2. En la barra de abajo, **💡 Anotar**.
+3. Escribir una línea. Sacar una captura con `Win+Shift+S` y hacer `Ctrl+V` **sin clickear nada
+   antes** → tiene que aparecer la miniatura y el aviso *"Captura pegada"*.
+4. 🔴 **Guardar y seguir** → el cartel tiene que decir **"Anotado con la captura"**. Si dice
+   *"No se pudo guardar"*, volvió A-BUG-130.
+5. 🔴 **Y confirmar que llegó**: la nota tiene que aparecer en la lista de 📝 Notas, con su imagen
+   y con el hueco donde estabas parado. *(Ésta es la mitad que la pantalla sola no prueba.)*
+
+**Los adversarios:**
+- **Pegar TEXTO** dentro del cartel → tiene que pegarse el texto normalmente, sin tocar la imagen.
+- **Guardar sin captura** → tiene que guardar igual; la imagen es opcional.
+- **La papelera** sobre la miniatura → la saca y vuelve el recuadro punteado.
+- **Cerrar el cartel y volver a abrirlo** → tiene que arrancar limpio, sin la imagen anterior.
+- **Pegar dos capturas seguidas** → la segunda reemplaza a la primera (es un campo, no una lista).
+
+**Estado**: 🔵 sin probar.
+
+---
+
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`
