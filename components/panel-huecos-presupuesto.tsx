@@ -22,6 +22,7 @@
 import { useState, useMemo, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { marcador, porPrioridad, vigente, type Hueco, type Padron } from "@/lib/presupuesto/padron"
+import { ponerFoco, soltarFoco } from "@/lib/recorrido/foco"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -51,6 +52,8 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
   const [motivo, setMotivo] = useState("")
   const [vence, setVence] = useState(vencePorDefecto())
   const [guardando, setGuardando] = useState(false)
+  /** La idea sobre el recorrido en sí — otra cosa que el motivo de un hueco, y se pide distinto. */
+  const [idea, setIdea] = useState<{ titulo: string; texto: string } | null>(null)
 
   useEffect(() => { if (abierto) cargarMarcas() }, [abierto])
 
@@ -100,6 +103,46 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
       toast.success("Anotado")
     } catch (e) {
       toast.error("No se pudo guardar: " + (e as Error).message)
+    } finally { setGuardando(false) }
+  }
+
+  /**
+   * Guarda la idea en **el mismo sistema de notas de siempre** (`notas_para_claude` +
+   * `notas_capturas`), no en una tabla nueva.
+   *
+   * 🔑 Es una nota como cualquier otra: lo único distinto es **cómo se pide** y que llega con el
+   * foco puesto en el recorrido. Inventarle una tabla propia habría partido en dos la bandeja de
+   * entrada, y la mitad nueva no la miraría nadie.
+   *
+   * Se inserta directo en vez de reusar el widget flotante porque acá **no hay grabación**: es una
+   * idea escrita, no una secuencia de capturas. Duplicar la máquina de grabar para eso sería peor.
+   */
+  const guardarIdea = async () => {
+    if (!idea?.titulo.trim()) return
+    setGuardando(true)
+    try {
+      const { data, error } = await supabase.from("notas_para_claude")
+        .insert({ titulo: idea.titulo.trim().slice(0, 200), estado: "finalizada" })
+        .select("id").single()
+      if (error) throw error
+      const { error: e2 } = await supabase.from("notas_capturas").insert({
+        nota_id: (data as { id: string }).id, orden: 1,
+        texto: idea.texto.trim() || idea.titulo.trim(),
+        pantalla: "Presupuesto", subpantalla: "Recorrido — lo que falta",
+        modal: "Lo que le falta al presupuesto",
+        foco_tipo: "recorrido", foco_clave: "recorrido:presupuesto",
+        foco_texto: "El recorrido del presupuesto",
+        // 📸 Se guarda el estado del tablero en ese momento: sin eso, dentro de dos semanas la idea
+        // se lee sin saber contra qué se le ocurrió.
+        diagnostico: [{ tipo: "res", donde: "recorrido",
+          msg: `${m.abiertos} huecos abiertos · ${$(m.plata)} · ${m.aProposito} callados`, t: Date.now() }],
+      })
+      if (e2) throw e2
+      soltarFoco("recorrido:presupuesto")
+      setIdea(null)
+      toast.success("Guardada — la voy a leer con el tablero al lado")
+    } catch (e) {
+      toast.error("No se pudo guardar la idea: " + (e as Error).message)
     } finally { setGuardando(false) }
   }
 
@@ -200,7 +243,8 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
                               </span>
                             )}
                             <button className="text-blue-700 underline"
-                              onClick={() => { setCallando(h); setMotivo(h.motivo ?? ""); setVence(vencePorDefecto()) }}>
+                              onClick={() => { setCallando(h); setMotivo(h.motivo ?? ""); setVence(vencePorDefecto())
+                                ponerFoco({ tipo: "hueco", clave: h.clave, texto: h.que }) }}>
                               no va / todavía no
                             </button>
                           </>
@@ -213,6 +257,25 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
             )
           })}
 
+          {/* 💡 LA OTRA NOTA. Pedido del usuario: *«el recorrido me debería permitir ir anotando
+              temas que tal vez no tienen que ver con el paso en sí, sino con algo que me doy cuenta
+              del funcionamiento del mismo… merece una interfaz diferenciada»*.
+              Son dos cosas distintas y por eso se ven distinto: **una habla del dato que falta, la
+              otra del camino**. Mezclarlas en un solo botón obliga a explicar cuál es cuál en el
+              texto — justo el trabajo que esto viene a ahorrar. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50/70 px-4 py-3">
+            <div className="text-[12px] leading-4 text-violet-900">
+              <b>¿Se te ocurrió algo del recorrido en sí?</b><br />
+              <span className="text-[11px] text-violet-700">
+                Cómo está ordenado, qué le falta, qué te confundió. No de un hueco puntual.
+              </span>
+            </div>
+            <Button size="sm" variant="outline" className="border-violet-400 text-violet-800"
+              onClick={() => { setIdea({ titulo: "", texto: "" }); ponerFoco({ tipo: "recorrido", clave: "recorrido:presupuesto", texto: "El recorrido del presupuesto" }) }}>
+              💡 Anotar una idea
+            </Button>
+          </div>
+
           <p className="text-[10px] leading-4 text-muted-foreground">
             El hueco se vuelve a calcular cada vez: si cargás lo que falta, <b>desaparece solo</b>.
             Lo que queda guardado es tu decisión de callarlo — y esa <b>vence</b>, para que no se
@@ -221,8 +284,41 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
         </DialogContent>
       </Dialog>
 
+      {/* 💡 La idea sobre el recorrido — interfaz aparte, con lugar para escribir de verdad.
+          El diálogo de callar un hueco es un input de una línea porque el motivo es corto («quedan
+          de reposición»). Éste es lo contrario: pide contexto, y un campo chico invita a una
+          respuesta chica. */}
+      <Dialog open={!!idea} onOpenChange={o => { if (!o) { soltarFoco("recorrido:presupuesto"); setIdea(null) } }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader><DialogTitle>💡 Una idea sobre el recorrido</DialogTitle></DialogHeader>
+          <p className="text-[12px] leading-4 text-gray-600">
+            Contame qué viste. No hace falta que esté prolijo — <b>lo que sirve es el detalle</b>:
+            qué esperabas, qué pasó, y por qué te importa. Queda vinculada al recorrido, así que no
+            hace falta que expliques dónde estabas.
+          </p>
+
+          <label className="text-[11px] font-medium">En una línea</label>
+          <Input value={idea?.titulo ?? ""} autoFocus
+            onChange={e => setIdea(v => ({ ...v!, titulo: e.target.value }))}
+            placeholder="ej.: el orden de los pasos no me sirve cuando sólo cambió un precio" />
+
+          <label className="text-[11px] font-medium">Y con todo el detalle que quieras</label>
+          <textarea rows={7}
+            className="w-full rounded border px-2 py-1.5 text-[13px] leading-5"
+            value={idea?.texto ?? ""}
+            onChange={e => setIdea(v => ({ ...v!, texto: e.target.value }))}
+            placeholder={"Qué esperabas que pasara…\nQué pasó en cambio…\nPor qué te importa / qué te costó…"} />
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setIdea(null)}>Cancelar</Button>
+            <Button size="sm" disabled={guardando || !(idea?.titulo ?? "").trim()}
+              onClick={guardarIdea}>Guardar la idea</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Callar un hueco es una decisión, y una decisión sin motivo no se puede auditar. */}
-      <Dialog open={!!callando} onOpenChange={o => !o && setCallando(null)}>
+      <Dialog open={!!callando} onOpenChange={o => { if (!o) { if (callando) soltarFoco(callando.clave); setCallando(null) } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>¿Por qué no va?</DialogTitle></DialogHeader>
           <div className="text-[13px]"><b>{callando?.que}</b> — {$(callando?.plata)}</div>

@@ -25,6 +25,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { mirarFoco } from "@/lib/recorrido/foco"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -113,7 +114,8 @@ function contextoActual() {
   // El contexto real igual se relee al capturar (`ctxRef.current = contextoActual()`), así que
   // devolver vacío acá no pierde nada.
   if (typeof document === "undefined") {
-    return { ruta: "", pantalla: "", subpantalla: "", modal: "", titulo_doc: "", user_agent: "" }
+    return { ruta: "", pantalla: "", subpantalla: "", modal: "", titulo_doc: "", user_agent: "",
+      foco_tipo: null, foco_clave: null, foco_texto: null }
   }
   /**
    * TODAS las solapas activas, no sólo la primera — mejora 2026-09-03.
@@ -130,7 +132,14 @@ function contextoActual() {
     .map(t => textoLimpio(t))
     .filter(Boolean)
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
+  // 🎯 En QUÉ ítem estaba parado — lo único de esto que el DOM no puede decir. Lo declara la
+  // pantalla (ver `lib/recorrido/foco.ts`): sin el foco, una nota dejada sobre un hueco queda como
+  // «Presupuesto» y después hay que adivinar cuál era.
+  const f = mirarFoco()
   return {
+    foco_tipo: f?.tipo ?? null,
+    foco_clave: f?.clave ?? null,
+    foco_texto: f?.texto?.slice(0, 200) ?? null,
     ruta: rutaSinLlave(),
     pantalla: (activas[0] ?? "").slice(0, 120),
     subpantalla: activas.slice(1).join(" → ").slice(0, 200),
