@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Toaster } from '@/components/ui/sonner'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -18,20 +17,17 @@ export default function RootLayout({
       <body>
         {children}
         {/*
-          🔴 **Sin esto, TODA la app avisa al vacío.**
-          Hay 445 llamadas a `toast()` —280 de ellas `toast.error`— y el `Toaster` no estaba montado
-          en ninguna parte, así que ninguna se veía nunca. El usuario apretó «Ver qué hay» en las
-          boletas de ARBA, algo falló, la pantalla no dijo nada y quedó esperando (2026-09-08).
+          ⚠️ **Acá NO va un `<Toaster />`.** Ya hay uno en `dashboard.tsx`, montado a nivel app y
+          fuera de las pestañas.
 
-          Es el modo de falla más caro que tiene esta app: **el silencio miente**. Un error que no se
-          muestra no se distingue de que no haya pasado nada, y manda a buscar el problema donde no
-          está — acá, en el GAS que todavía no se había desplegado.
+          🐞 El 2026-09-08 puse uno acá porque busqué «Toaster» sólo en `app/` y `components/` —
+          **`dashboard.tsx` está en la raíz del repo y quedó afuera de la búsqueda**— y concluí que
+          no existía ninguno. Resultado: durante un día **cada aviso salió dos veces**.
 
-          `duration` largo y `closeButton` a propósito: varios de esos errores traen el texto que
-          explica qué hacer (la respuesta del GAS, el nombre de la columna que falta), y 4 segundos
-          no alcanzan para leerlo.
+          🔑 La lección, que es la que vale: *buscar en algunos lados y no encontrar algo no es lo
+          mismo que que no exista*. Es el mismo error que cometí con `egresos_sin_factura.responsable`
+          — mirar una columna, no verlo, y declarar que el dato no estaba.
         */}
-        <Toaster richColors closeButton duration={8000} position="bottom-right" />
       </body>
     </html>
   )

@@ -122,7 +122,12 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
     <div className="min-h-screen bg-gray-50 p-4">
       {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
           así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
-      <Toaster richColors closeButton position="top-right" />
+      {/* ⏱️ `duration` largo a proposito: varios errores traen el texto que dice QUE HACER --
+          la respuesta del GAS, la columna que falta-- y 4 segundos no alcanzan para leerlo. Y con
+          procesos que tardan 45 s, el aviso llega cuando el usuario ya esta mirando otra cosa.
+          Aun asi, el aviso de un proceso largo tiene que QUEDARSE en su pantalla: el toast llama la
+          atencion, no guarda el texto (ver el panel de boletas de ARBA). */}
+      <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
