@@ -21,6 +21,7 @@
     "probar:canales": "node --experimental-strip-types scripts/probar-canales.mts",
     "probar:informe": "node --experimental-strip-types scripts/probar-arba-informe.mts",
     "probar:export": "node --experimental-strip-types scripts/probar-export-presupuesto.mts",
+    "probar:padron": "node --experimental-strip-types scripts/probar-padron.mts",
     "excel:arba": "node --experimental-strip-types scripts/excel-boletas-arba.mts"
   },
   "dependencies": {
