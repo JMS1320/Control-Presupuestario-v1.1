@@ -12960,6 +12960,79 @@ avisar. Si todo cuelga de ella, el día que se cae te quedás sin parte diario. 
 **Y el orden sugerido**: empezar por **A (mail)**, que valida el flujo entero con cero
 infraestructura. Si el reenvío molesta en el uso real, **B se agrega después sin tocar nada aguas
 abajo** — que es justamente lo que la cola compra.
+
+### 🤖 vs 🔧 El MISMO circuito, con IA y sin IA (2026-09-09)
+
+*Pedido del usuario: **"me parece bueno como sería con y sin IA"**.*
+
+**La conclusión primero, porque no es la que yo esperaba al empezar a escribirla:**
+
+> **La IA no cambia el circuito. Cambia QUÉ CANAL es viable — y, sobre todo, QUIÉN hace el trabajo
+> de estructurar.** Ese trabajo no desaparece nunca: o lo hace el capataz apretando botones, o lo
+> hace un modelo y lo revisa un administrativo.
+
+---
+
+#### El circuito, paso por paso
+
+| # | Paso | 🔧 **SIN IA** | 🤖 **CON IA** |
+|---|---|---|---|
+| 1 | **Reportar** | el capataz abre la app y toca: 3 empleados × turno × actividad + labores de una lista | **manda el audio de WhatsApp que ya manda hoy**. Cero cambio de hábito |
+| 2 | **Que llegue** | la app escribe directo en la cola | el mensaje entra por reenvío al mail (vía A) o por la librería (vía B) |
+| 3 | **Estructurar** | **lo hace el capataz**, al tocar los botones | transcripción + extracción → **propuesta** |
+| 4 | **Comparar con lo esperado** | **exacto, por `id`**: la app le ofrece las labores previstas de hoy como tildes | **difuso, por texto**: acá es donde el modelo puede elegir la labor equivocada |
+| 5 | **Semáforo / alertas** | **idéntico** — puro algoritmo sobre la matriz de mínimos | **idéntico** |
+| 6 | **Lo no previsto** | el capataz elige *"otra"* y escribe. Se revisa a mano una vez por mes | **sale solo del relato**, sin que nadie lo tipee |
+| 7 | **OK del admin** | casi innecesario: el dato ya viene estructurado por una persona | **obligatorio** — es el invariante de [A-AUTO-03](#a-auto-03) |
+| 8 | **Dashboards / costos** | **idéntico** | **idéntico** |
+
+📌 **Fijate que los pasos 5 y 8 —el semáforo y los tableros, que son el objetivo de supervisión— son
+exactamente iguales en las dos columnas.** El valor de supervisar no lo aporta la IA.
+
+---
+
+#### Qué gana y qué pierde cada uno
+
+**🔧 SIN IA**
+- ✅ Menos piezas móviles: cero API, cero prompt, cero huella de agente, nada que se degrade solo.
+- ✅ El paso 4 es **mejor** que con IA: comparar por `id` no se equivoca nunca.
+- 🔴 **WhatsApp se cae como canal.** Texto libre sin modelo no se puede procesar de forma confiable;
+  el mensaje se puede guardar crudo y buscar, pero **sólo lo lee un humano**.
+- 🔴 **El trabajo de estructurar se le carga al capataz** — que es el que menos tiempo y menos
+  incentivo tiene. Es el riesgo de adopción otra vez, disfrazado.
+- 🔴 Se pierde el matiz del relato: *"la vaca del 7 vino coja"* no entra en ninguna botonera.
+
+**🤖 CON IA**
+- ✅ **El hábito no cambia**: el parte ya se manda, sólo se deja de tirar.
+- ✅ Captura **lo no previsto** sin que nadie lo tipee — que es literalmente el *"se aprende, se sabe
+  más de lo que pasa"* del usuario.
+- 🔴 **El trabajo de revisar es real y hay que asignarlo**: ~2 partes por día × ~2 min ≈ **1-2 horas
+  por mes**. Es poco, **pero tiene que tener dueño**. Si lo revisa JMS, la automatización *"le ahorró
+  trabajo a quien no era el cuello de botella"* (§ la quinta pieza: el permiso).
+- 🔴 El paso 4 puede errar, y por eso el paso 7 no se optimiza nunca.
+
+---
+
+#### 🟡 La vía tibia (WhatsApp sin IA), y por qué no la recomiendo sola
+Un formato rígido —`G/M: Beto, alambre lote 7`— se parsea sin modelo. **Funciona dos semanas.**
+Después el formato se relaja, el parser empieza a fallar en silencio y nadie sabe desde cuándo.
+Y tiene un defecto propio de la vía A: **sin respuesta automática, el capataz no sabe si llegó**. Un
+canal sin acuse de recibo se abandona solo.
+*(Con la librería —vía B— sí se puede contestar «recibido», que es justo lo que sostiene el hábito.
+Es el argumento más fuerte a favor de B, y no es la automatización: es el feedback.)*
+
+---
+
+#### ✅ La conclusión: híbrido, y en este orden
+
+1. **Primero la espina dorsal, sin una línea de IA**: la **cola agnóstica del canal**, la **matriz de
+   mínimos**, el **semáforo** y el **OK del admin**. Son los pasos 2, 5, 7 y 8 — **idénticos en las
+   dos versiones** y donde vive todo el valor de supervisión.
+2. **Después la IA, enchufada como un alimentador más de esa cola.** Si se apaga —ban, cambio de
+   protocolo, un modelo que empeora— **el sistema sigue funcionando con la app**.
+
+*Motivo: es la misma razón por la que la cola es agnóstica del canal. Lo que puede romperse solo no
+puede estar en el medio del circuito; tiene que estar en un borde, enchufado.*
 **Estado**: 🔵 diseño registrado, **sin desarrollar**. No hay `A-TEST` porque todavía no hay nada que
 probar.
 
