@@ -1349,12 +1349,43 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       })))
     }
 
+    // 🐞 **Los ingresos van fila por fila, como en la pantalla.**
+    // Hasta el 09/09 el export los colapsaba en un solo renglón —«Total de ingresos»— mientras la
+    // grilla muestra **tres filas por campo** (fijado · presupuestado · disponible) y **una por
+    // categoría de hacienda**. Lo detectó el usuario: *«en el export veo Ingresos y en el
+    // presupuesto veo Nazarenas fijado, presupuestado, disponible a fijar»*.
+    //
+    // 🔑 Y las tres capas **no son lo mismo**: fijado es plata comprometida con factura,
+    // presupuestado es una proyección contra Matba, y disponible es lo que ya se podía haber
+    // fijado y no se fijó. Sumarlas en un renglón esconde justamente la decisión que hay que tomar.
     const ingresos: BloqueExport[] = []
-    if (totalIngresosPorMes && Object.keys(totalIngresosPorMes).length > 0) {
+    if (campos.length > 0) {
+      const filasCampos: FilaExport[] = []
+      for (const c of campos) {
+        filasCampos.push({ concepto: c.campo, montos: {}, regla: "" })
+        filasCampos.push({ concepto: "fijado", montos: c.fijado, nivel: 1,
+          regla: "Precio cerrado, con factura — plata comprometida" })
+        filasCampos.push({ concepto: "presupuestado", montos: c.presupuestado, nivel: 1,
+          regla: "Toneladas sin fijar × Matba de la posición × tipo de cambio",
+          confianza: Object.values(c.estimado).some(Boolean) ? "media" : "alta" })
+        filasCampos.push({ concepto: "disponible a fijar", montos: c.disponible, nivel: 1,
+          regla: "Toneladas cuya fecha de cobro ya pasó sin fijar" })
+      }
+      contar("fijo:arrendamiento")
+      ingresos.push(bloque("Arrendamientos agrícolas", filasCampos))
+    }
+    if (hacienda.categorias.length > 0) {
       contar("fijo:ingresos")
-      ingresos.push(bloque("Ingresos", [{
-        concepto: "Total de ingresos", montos: totalIngresosPorMes,
-        regla: "Ventas presupuestadas y confirmadas",
+      ingresos.push(bloque("Venta de hacienda", hacienda.categorias.map(c => ({
+        concepto: c.categoria, montos: c.montos,
+        regla: "Lote con fecha de venta, valorizado en el mes de cobro",
+        confianza: Object.values(c.estimado).some(Boolean) ? "media" : "alta",
+      }))))
+    }
+    if (Object.keys(hacienda.iibb).length > 0) {
+      ingresos.push(bloque("IIBB sobre ventas", [{
+        concepto: "Ingresos brutos", montos: hacienda.iibb,
+        regla: "Alícuota sobre la venta de hacienda",
       }]))
     }
     if (inversiones.length > 0) contar("fijo:inversion")
@@ -1395,7 +1426,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       { familia: "Sin configurar", clave: "sueldos", etiqueta: "Proyección de sueldos", cuando: "Sale del módulo de sueldos: escala, cargas y adicionales", usos: usos["fijo:sueldos"] ?? 0 },
       { familia: "Sin configurar", clave: "variable", etiqueta: "Cantidad × precio", cuando: "Variables de costo: se declara cuánto y a qué precio, y se reparte en los meses", usos: usos["fijo:variable"] ?? 0 },
       { familia: "Sin configurar", clave: "produccion", etiqueta: "Tramos de actividad", cuando: "Sale del lote: curva de peso, ración y días de cada tramo", usos: usos["fijo:produccion"] ?? 0 },
-      { familia: "Sin configurar", clave: "ingresos", etiqueta: "Ventas presupuestadas", cuando: "Ventas cargadas: presupuestadas, confirmadas o fijadas", usos: usos["fijo:ingresos"] ?? 0 },
+      { familia: "Sin configurar", clave: "arrendamiento", etiqueta: "Arrendamiento en 3 capas", cuando: "Fijado (con factura) · presupuestado (Matba × TC) · disponible a fijar. Las tres NO son lo mismo", usos: usos["fijo:arrendamiento"] ?? 0 },
+      { familia: "Sin configurar", clave: "ingresos", etiqueta: "Venta de hacienda", cuando: "Lote con fecha de venta, valorizado en el mes de cobro", usos: usos["fijo:ingresos"] ?? 0 },
       { familia: "Sin configurar", clave: "inversion", etiqueta: "Inversión cargada a mano", cuando: "Se muestra pero NO suma al total: sale plata, no es gasto del período", usos: usos["fijo:inversion"] ?? 0 },
     ]
 

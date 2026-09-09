@@ -11,7 +11,12 @@
 // El PDF sólo lleva el resumen: un PDF de 40 páginas no lo abre nadie. El detalle vive en el Excel,
 // que es donde de verdad se audita.
 
-import * as XLSX from 'xlsx'
+// 🎨 `xlsx-js-style` en vez de `xlsx`: MISMA API, pero soporta estilos de celda. El `xlsx`
+// libre de SheetJS no escribe negrita ni fondos, y un export sin jerarquía visual se lee como un
+// volcado. Es un reemplazo directo — no hubo que reescribir nada, sólo agregar `s` a las celdas.
+// ⚠️ Import por DEFAULT, no por namespace: el paquete es CommonJS y sólo expone `default`, así que
+// `import * as XLSX` deja `XLSX.utils` en undefined fuera de webpack. Con webpack andaba de casualidad.
+import XLSX from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 
@@ -80,6 +85,96 @@ export interface DatosExport {
 
 const clave = (m: MesExport) => `${m.anio}-${String(m.mes).padStart(2, '0')}`
 const redondear = (n: number) => Math.round(n)
+
+// ── 🎨 Formato ───────────────────────────────────────────────────────────────────────────────
+//
+// Pedido del usuario (2026-09-09): *«que tenga formato, tipo presentación clara de primer impacto
+// visual. Tonos con cierta transparencia y claros, negrita, que se vea toda la columna pero sin ser
+// anchas de más, números como en la app»*.
+//
+// 🔑 **La jerarquía visual no es decoración: es lo que hace legible una grilla de 24 columnas.**
+// Sin ella, un subtotal y una fila cualquiera se leen igual, y hay que ir contando renglones.
+// Los tonos son claros a propósito — un Excel con colores fuertes se vuelve ilegible al imprimir,
+// y esto se imprime.
+
+/** Formato de número **igual al de la app**: miles con punto, sin decimales, negativo en rojo. */
+const FMT_PESOS = '#,##0;[Red]-#,##0'
+const FMT_ENTERO = '#,##0'
+
+const BORDE_SUAVE = { style: 'thin' as const, color: { rgb: 'FFE2E5E9' } }
+const bordes = { top: BORDE_SUAVE, bottom: BORDE_SUAVE, left: BORDE_SUAVE, right: BORDE_SUAVE }
+
+const ESTILO = {
+  /** Título del documento. */
+  titulo: { font: { bold: true, sz: 14, color: { rgb: 'FF1F2937' } } },
+  subtitulo: { font: { sz: 9, color: { rgb: 'FF6B7280' } } },
+  /** Encabezado de columnas: oscuro y fijo arriba. */
+  cabecera: {
+    font: { bold: true, sz: 10, color: { rgb: 'FFFFFFFF' } },
+    fill: { patternType: 'solid', fgColor: { rgb: 'FF374151' } },
+    alignment: { horizontal: 'center' as const, vertical: 'center' as const, wrapText: true },
+    border: bordes,
+  },
+  /** Título de bloque: la banda que separa una sección de otra. */
+  bloque: {
+    font: { bold: true, sz: 11, color: { rgb: 'FF1F2937' } },
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFEEF2F7' } },
+    border: bordes,
+  },
+  /** Fila normal. */
+  texto: { font: { sz: 10 }, alignment: { vertical: 'center' as const }, border: bordes },
+  numero: { font: { sz: 10 }, numFmt: FMT_PESOS, alignment: { horizontal: 'right' as const }, border: bordes },
+  /** La regla: gris y en cursiva — acompaña, no compite con el número. */
+  regla: {
+    font: { sz: 9, italic: true, color: { rgb: 'FF6B7280' } },
+    alignment: { vertical: 'center' as const, wrapText: true }, border: bordes,
+  },
+  /** Subtotal de bloque. */
+  subtexto: {
+    font: { bold: true, sz: 10 },
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFF6F8FA' } }, border: bordes,
+  },
+  subnumero: {
+    font: { bold: true, sz: 10 }, numFmt: FMT_PESOS,
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFF6F8FA' } },
+    alignment: { horizontal: 'right' as const }, border: bordes,
+  },
+  /** Los totales que se leen primero. */
+  fuertetexto: {
+    font: { bold: true, sz: 10.5, color: { rgb: 'FF111827' } },
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFE4EAF1' } }, border: bordes,
+  },
+  fuertenumero: {
+    font: { bold: true, sz: 10.5, color: { rgb: 'FF111827' } }, numFmt: FMT_PESOS,
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFE4EAF1' } },
+    alignment: { horizontal: 'right' as const }, border: bordes,
+  },
+  aviso: { font: { sz: 9, color: { rgb: 'FF9A3412' } }, alignment: { wrapText: true } },
+}
+
+/**
+ * Ancho de columna que muestra el contenido **sin pasarse**.
+ *
+ * *«Que se vea toda la columna pero sin ser anchas de más»*: se mide el contenido real y se acota
+ * entre un mínimo legible y un máximo. Una columna de 80 caracteres obliga a scrollear igual, así
+ * que no gana nada.
+ */
+function anchoDe(valores: unknown[], min: number, max: number): { wch: number } {
+  let n = min
+  for (const v of valores) {
+    if (v == null) continue
+    const largo = typeof v === 'number' ? Math.round(v).toLocaleString('es-AR').length : String(v).length
+    if (largo > n) n = largo
+  }
+  return { wch: Math.min(max, n + 2) }
+}
+
+/** Aplica un estilo a una celda ya escrita. Si la celda no existe, no hace nada. */
+function estilar(hoja: XLSX.WorkSheet, fila: number, col: number, estilo: object) {
+  const ref = XLSX.utils.encode_cell({ r: fila, c: col })
+  const celda = (hoja as Record<string, unknown>)[ref] as { s?: object; z?: string } | undefined
+  if (celda) celda.s = estilo
+}
 
 /** Suma de un bloque por mes. */
 function totalBloque(b: BloqueExport, meses: MesExport[]): Record<string, number> {
@@ -185,7 +280,7 @@ export function armarTabla(d: DatosExport): { celdas: (string | number)[]; fuert
     out.push({ celdas: ["", b.titulo, ...d.meses.map(() => ""), ""], titulo: true })
     for (const f of b.filas) {
       // La sangría es la jerarquía: sin ella, un hijo y su padre se leen como dos filas iguales.
-      const regla = f.regla ?? "—"
+      const regla = (f.regla ?? "").trim() || "—"
       out.push({
         celdas: fila(f.confianza && f.confianza !== "alta" ? `${regla}  (confianza ${f.confianza})` : regla,
           "   ".repeat(f.nivel ?? 0) + f.concepto, f.montos),
@@ -233,20 +328,71 @@ export function armarTabla(d: DatosExport): { celdas: (string | number)[]; fuert
 
 /** La hoja de LA TABLA: la grilla completa, con la regla de cada fila adelante. */
 function hojaTabla(d: DatosExport) {
+  const cuerpo = armarTabla(d)
+  const CAB = 4 // fila (0-based) del encabezado de columnas
   const filas: (string | number)[][] = [
     [`PRESUPUESTO ${d.empresa}${d.campana ? ` — campaña ${d.campana}` : ''} · la tabla completa`],
     [`Saldo de arranque: ${d.saldoInicial.toLocaleString('es-AR')} (${d.origenSaldo})`],
     [`Generado el ${new Date().toLocaleDateString('es-AR')}`],
     [],
     ['Cómo se llena', 'Concepto', ...d.meses.map(m => m.label), 'TOTAL'],
-    ...armarTabla(d).map(f => f.celdas),
+    ...cuerpo.map(f => f.celdas),
   ]
+  const desdeAvisos = filas.length + 1
   if (d.advertencias.length > 0) filas.push([], ['ADVERTENCIAS'], ...d.advertencias.map(a => [a]))
 
   const hoja = XLSX.utils.aoa_to_sheet(filas)
-  hoja['!cols'] = [{ wch: 42 }, { wch: 44 }, ...d.meses.map(() => ({ wch: 13 })), { wch: 15 }]
-  // Fija las dos primeras columnas y el encabezado: con 24 meses, sin esto se pierde el renglón.
-  hoja['!freeze'] = { xSplit: 2, ySplit: 5 }
+  const nCols = 2 + d.meses.length + 1
+
+  // Anchos medidos sobre el contenido real, acotados.
+  hoja['!cols'] = [
+    anchoDe(cuerpo.map(f => f.celdas[0]), 22, 40),
+    anchoDe(cuerpo.map(f => f.celdas[1]), 20, 38),
+    ...d.meses.map((_, i) => anchoDe(cuerpo.map(f => f.celdas[2 + i]), 11, 15)),
+    anchoDe(cuerpo.map(f => f.celdas[nCols - 1]), 13, 17),
+  ]
+  // ⚠️ SheetJS NO escribe paneles fijos en el .xlsx — se probó y no llegan al archivo. Se deja
+  // dicho acá en vez de poner una línea que no hace nada y que el próximo dé por funcionando.
+
+  estilar(hoja, 0, 0, ESTILO.titulo)
+  estilar(hoja, 1, 0, ESTILO.subtitulo)
+  estilar(hoja, 2, 0, ESTILO.subtitulo)
+  for (let c = 0; c < nCols; c++) estilar(hoja, CAB, c, ESTILO.cabecera)
+
+  /**
+   * 🔽 **La agrupación, ya hecha desde el export.**
+   *
+   * Pedido del usuario: *«si hay algo colapsable, el export debería poder usar la función agrupar
+   * de Excel — pero que el export ya lo haya hecho, entonces uno puede colapsar si quiere»*.
+   *
+   * Las filas de detalle van en **nivel 1**; los títulos de bloque y los subtotales quedan en 0.
+   * Excel dibuja solo los `+`/`−` al margen. Se dejan **desplegadas** al abrir: colapsar es una
+   * decisión de quien lee, y abrir un archivo con todo cerrado esconde justamente lo que se vino
+   * a mirar.
+   */
+  const filasExcel: { hpx?: number; level?: number }[] = []
+  for (let i = 0; i < CAB + 1; i++) filasExcel.push({})
+  cuerpo.forEach((f, i) => {
+    const r = CAB + 1 + i
+    const esDetalle = !f.titulo && !f.fuerte
+    filasExcel.push(esDetalle ? { level: 1 } : {})
+    const est = f.titulo ? ESTILO.bloque : f.fuerte ? ESTILO.fuertetexto : ESTILO.texto
+    const estN = f.titulo ? ESTILO.bloque : f.fuerte ? ESTILO.fuertenumero : ESTILO.numero
+    // La primera columna (la regla) va gris y en cursiva cuando es una fila de detalle.
+    estilar(hoja, r, 0, f.titulo ? ESTILO.bloque : f.fuerte ? ESTILO.fuertetexto : ESTILO.regla)
+    estilar(hoja, r, 1, est)
+    for (let c = 2; c < nCols; c++) estilar(hoja, r, c, estN)
+    // El subtotal de un bloque lleva un tono más suave que los totales generales: los dos son
+    // negrita, pero no pesan lo mismo y el ojo tiene que poder distinguirlos de un vistazo.
+    if (f.fuerte && String(f.celdas[1] ?? '').startsWith('Subtotal')) {
+      estilar(hoja, r, 0, ESTILO.subtexto)
+      estilar(hoja, r, 1, ESTILO.subtexto)
+      for (let c = 2; c < nCols; c++) estilar(hoja, r, c, ESTILO.subnumero)
+    }
+  })
+  hoja['!rows'] = filasExcel
+
+  for (let i = 0; i < d.advertencias.length; i++) estilar(hoja, desdeAvisos + i, 0, ESTILO.aviso)
   return hoja
 }
 

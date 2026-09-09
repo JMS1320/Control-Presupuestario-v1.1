@@ -20,6 +20,7 @@
     "probar:arba-casar": "node --experimental-strip-types scripts/probar-arba-casar.mts",
     "probar:canales": "node --experimental-strip-types scripts/probar-canales.mts",
     "probar:informe": "node --experimental-strip-types scripts/probar-arba-informe.mts",
+    "probar:export": "node --experimental-strip-types scripts/probar-export-presupuesto.mts",
     "excel:arba": "node --experimental-strip-types scripts/excel-boletas-arba.mts"
   },
   "dependencies": {
@@ -83,6 +84,7 @@
     "unpdf": "^1.6.2",
     "vaul": "^0.9.6",
     "xlsx": "latest",
+    "xlsx-js-style": "^1.2.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
