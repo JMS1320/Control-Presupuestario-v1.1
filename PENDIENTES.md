@@ -12904,6 +12904,120 @@ el presupuesto, después la que ordena el trabajo.
 
 **Estado**: 🔵 diseño registrado, **sin desarrollar**. No hay `A-TEST` porque todavía no hay nada que
 probar.
+
+## <a id="a-auto-03"></a>A-AUTO-03 — El agente del parte diario: propone, nunca dispone 🎙️
+
+> **Registrado 2026-09-09.** Es la parte con IA de [A-FEAT-123](#a-feat-123), separada a propósito:
+> el parte diario **sirve solo, sin una línea de LLM**, y mezclarlos haría que el objetivo barato
+> quede rehén del caro.
+>
+> Pregunta textual del usuario: *"¿qué tan viable es y qué tan riesgosa al meter agente en vez de
+> algoritmos?"*
+
+### La respuesta no es sí/no: es DÓNDE se corta
+
+**El LLM es genuinamente bueno en dos cosas, y las dos hacen falta:**
+1. **Audio → texto.** Tarea resuelta, barata, sin alternativa algorítmica. Si transcribe mal, se ve.
+2. **Texto libre → candidatos estructurados.** *"a la mañana con el Beto arreglamos el alambre del 7
+   y a la tarde curamos las vacas del rodeo chico"* → `[{labor: alambrado, lote: 7, turno: mañana},
+   {labor: sanidad, rodeo: chico, turno: tarde}]`. Ningún regex hace eso.
+
+**El LLM es inaceptable en una sola cosa, y es la que hay que blindar: DECIDIR QUE ALGO PASÓ.**
+
+### 🔒 El invariante — y es un PERMISO, no una buena intención
+
+> **Todo lo que produce el agente nace en estado `propuesto`.** No cierra una orden, no descuenta
+> stock, no marca una labor como hecha, no toca el presupuesto.
+
+Y no se sostiene con disciplina: **el rol del agente no tiene `UPDATE` sobre las tablas de verdad**.
+Si mañana el prompt se vuelve loco o cambia el modelo, el peor daño posible es **una fila fea en una
+bandeja**. Es la § 🔑 *la quinta pieza: el permiso* usada al revés — no para habilitar a alguien,
+para acotarlo.
+
+El **OK del admin** —que el usuario ya había pensado: *"se activan triggers para empleado admin que
+debe ver de dar el ok final"*— es lo que convierte propuesta en hecho. **Ese paso no se optimiza
+nunca**, ni cuando el agente acierte el 98 %.
+
+📌 **Forma conocida en la casa**: es una **cuarta bandeja de entrada**, hermana de
+`notas_para_claude` / `pendientes_comentarios` / `pendientes_propuestos` (§ 6c de
+`ARQUITECTURA-BD.md`). Mismo patrón y misma disciplina de cierre: entra, y termina **aplicada** o
+**descartada con motivo**.
+
+### 🐾 La huella es obligatoria (§ CLAUDE.md — Importar un documento)
+
+Se guardan **las dos puntas**: audio + transcripción cruda + lo que propuso el agente + **lo que
+corrigió el humano**.
+
+*Motivo, y es el que más rinde a largo plazo: es la única forma de saber si el agente **empeoró**
+cuando cambie el modelo o el prompt. Sin huella, la degradación de un LLM es invisible — funciona un
+poco peor cada mes y nadie tiene con qué demostrarlo.* Es exactamente el mismo argumento que
+`productivo.romaneos.correcciones`: saber que un campo se corrigió no dice nada; saber que **leyó
+185 y el usuario puso 373** dice dónde falla y cuánto.
+
+### Las 4 piezas del norte administrativo, en este caso
+| Pieza | Acá |
+|---|---|
+| **1 · Disparador** | el parte del turno — algo que ya va a ocurrir todos los días |
+| **2 · Dato ya disponible** | **el audio que el capataz ya graba**: hoy no existiría, pero una vez que existe, tirarlo sería el desperdicio típico de la pieza 2 |
+| **3 · Alerta con destinatario** | el semáforo de lo que está sobre la hora, al admin — ⚠️ **con "no se hizo" y "no se reportó" en colores distintos**, o el rojo deja de significar algo |
+| **4 · Control** | **jornadas del parte ↔ días de `sueldos.periodos`** · **sanidad reportada ↔ consumo de `movimientos_insumos`**. Dos fuentes independientes, comparación gratis |
+
+### 🚧 Lo que NO se construye acá
+- **El Gantt.** Necesita un plan, y hoy el sistema tiene órdenes puntuales, no cronograma anual.
+- **La matriz de mínimos.** 📌 Ya está pedida y es [A-AUTO-02](#a-auto-02) —el checklist de
+  obligaciones con *alerta ANTES* y *control DESPUÉS*—: **la misma máquina, con vencimientos de campo
+  en vez de vencimientos de AFIP**. Un solo motor de alertas con dos fuentes; construir dos sería el
+  error de la § ♻️ Centralizar, no duplicar.
+- **"Que el agente aprenda".** Lo no previsto es lo que **no matcheó** contra una orden: se acumula,
+  se mira una vez por mes y lo que se repite se promueve al maestro `labores`. Aprendizaje
+  auditable, sin magia.
+
+### Costo y riesgo, medidos
+- **Volumen**: 3 empleados × 2 turnos × 365 ≈ **2.200 audios/año**. La transcripción y un extractor
+  chico son centavos.
+- **El costo real es humano**: mantener el prompt y **revisar las propuestas**. O sea el tiempo de
+  JMS o de Ulises — el recurso escaso. Si la revisión no se puede delegar, la automatización *"le
+  ahorra trabajo a quien no era el cuello de botella"* (§ el permiso).
+- **Riesgo residual con el invariante puesto**: bajo. Sin el invariante: alto, y del tipo que se
+  descubre tarde — una orden cerrada que nadie ejecutó.
+
+**Estado**: 🔵 diseño registrado, sin desarrollar. **No se empieza antes de [A-SEC-03](#a-sec-03)**
+(login real y RLS): sin roles reales, el invariante del permiso no se puede implementar.
+
+## <a id="a-feat-124"></a>A-FEAT-124 — La mano de obra no se reparte por actividad 🕳️ *(hueco del norte)*
+
+> **Registrado 2026-09-09**, al relevar [A-FEAT-123](#a-feat-123). Se anota aunque no se resuelva
+> hoy: § CLAUDE.md — *"que el vínculo todavía no esté creado no significa que no deba existir. Si no
+> existe → es un hueco, no un no-problema."*
+
+### Lo medido (2026-09-09)
+`lib/presupuesto/margen.ts` y `lib/productivo/actividades.ts` **no tienen una sola línea de jornal ni
+de mano de obra**. El costo por actividad contempla maíz, concentrado, sanidad, hectáreas… y **no al
+que da de comer**. El sueldo entra al presupuesto **como bloque** (`lib/presupuesto/sueldos.ts`, la
+plantilla de [P-35](#p-35)) y ahí termina: nunca se abre por actividad.
+
+### Por qué importa
+- **Rompe el objetivo 3 del norte** — *resultado por actividad, período por período, más su
+  proyección*: el resultado por actividad ignora, en un campo, uno de los costos más grandes.
+- **El margen queda sesgado a favor de la ganadería**, que es la que más mano de obra consume. El
+  costeo de recría cerró punta a punta sin una línea de jornal propia.
+- Y es del tipo de error que **no se ve**: no rompe nada, no da error, sólo devuelve un número
+  optimista.
+
+### Cómo se llenaría
+1. **Con dato real** → [A-FEAT-123](#a-feat-123): el parte diario da el % de jornadas por actividad,
+   mes a mes.
+2. **Mientras tanto, a mano** → un % de reparto editable, que es la § 🎚️ *Default del dato real,
+   siempre editable* en su forma pura: **el campo se deja previsto desde el día 1 aunque hoy se
+   escriba a mano**, y el día que exista el parte, lo que no se pisó mejora solo.
+
+### ⚠️ Antes de escribir la primera línea: el doble conteo
+Si `productivo.actividad_insumos` ya tiene un ítem tipo «jornales» en alguna actividad, sumar el
+reparto del parte diario **contaría la mano de obra dos veces**. Hay que decidir cuál manda —el
+criterio de la casa es que **el real pisa al estimado**— y hacerlo **antes**, no después de que los
+números no cierren.
+
+**Estado**: 🔴 hueco registrado, sin desarrollar. Existe con o sin el parte diario.
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`
