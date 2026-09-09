@@ -45,7 +45,9 @@ import {
 } from "@/lib/productivo/actividades"
 import {
   calcularCuenta, sugerirModo, esProduccion, netearExcluidos,
+  ETIQUETA_MODO,
   type ConfigCuenta, type PuntoHistorico, type PuntoProveedor, type CeldaPresupuesto,
+  type ModoPresupuesto,
 } from "@/lib/presupuesto/modos"
 import {
   calcularVariable, repartirEnMeses, avisoCupoAnual, AVISO_CUPO_ANUAL_SIN_VALIDAR,
@@ -57,7 +59,7 @@ import {
 } from "@/lib/presupuesto/sueldos"
 import {
   exportarExcel, exportarPDF,
-  type DatosExport, type BloqueExport, type FilaExport,
+  type DatosExport, type BloqueExport, type FilaExport, type ModoCatalogo,
 } from "@/lib/presupuesto/export"
 import {
   proyectarTemplate, avisoFaltaGenerar,
@@ -300,7 +302,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
-  const [cuentas, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[] }[]>([])
+  const [cuentas, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[]; modo: ModoPresupuesto }[]>([])
   /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
   const [variables, setVariables] = useState<
     { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
@@ -505,7 +507,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // de `esProduccion()`: la cuenta queda afuera PORQUE tiene variable, no porque alguien la
       // escribió en el código. Sólo cuentan las variables completas: una a medias no tapa nada.
       .filter(nro => !cubiertasPorVariable.has(nro))
-      .map(nro => ({ nro, nombre: nombres[nro] || nro, celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
+      .map(nro => ({ nro, nombre: nombres[nro] || nro, modo: cfgDe(nro).modo, celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
       .filter(f => f.celdas.some(c => c.monto > 0))
       .sort((a, b) => b.celdas.reduce((s, c) => s + c.monto, 0) - a.celdas.reduce((s, c) => s + c.monto, 0))
     setCuentas(filas)
@@ -1292,30 +1294,110 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const bloque = (titulo: string, filas: FilaExport[], sumaAlTotal = true): BloqueExport =>
       ({ titulo, filas, sumaAlTotal })
 
+    // 🔑 **Cada fila viaja con la regla que la llena.** El dato ya existía —`t.metodo` en los
+    // templates, `c.modo` en las cuentas— y sólo se usaba para el tooltip. Un número presupuestado
+    // sin su regla al lado no se puede discutir: se acepta o se desconfía.
+    const usos: Record<string, number> = {}
+    const contar = (k: string) => { usos[k] = (usos[k] ?? 0) + 1 }
+
     const egresos: BloqueExport[] = []
     for (const ag of agrupadores) {
-      egresos.push(bloque(ag.nombre, ag.templates.map(t => ({ concepto: t.nombre, montos: t.montos }))))
+      egresos.push(bloque(ag.nombre, ag.templates.map(t => {
+        contar(`template:${t.metodo.metodo}`)
+        return {
+          concepto: t.nombre, montos: t.montos,
+          // Que lo haya elegido el usuario o se haya heredado cambia cómo se lee el número.
+          regla: ETIQUETA_METODO[t.metodo.metodo] + (t.metodo.manual ? " (elegido a mano)" : ""),
+        }
+      })))
     }
     if (sueldoFilas.length > 0) {
-      egresos.push(bloque("Sueldos", sueldoFilas.map(s => ({ concepto: s.nombre, montos: s.montos }))))
+      egresos.push(bloque("Sueldos", sueldoFilas.map(s => {
+        contar("fijo:sueldos")
+        return { concepto: s.nombre, montos: s.montos, regla: "Proyección de sueldos (escala y cargas)" }
+      })))
     }
     if (cuentas.length > 0) {
-      egresos.push(bloque("Cuentas contables", cuentas.map(c => ({
-        concepto: c.nombre,
-        montos: Object.fromEntries(c.celdas.map(x => [x.mes, x.monto])),
-      }))))
+      egresos.push(bloque("Cuentas contables", cuentas.map(c => {
+        contar(`cuenta:${c.modo}`)
+        // La confianza la calcula `calcularCuenta` mes a mes; se reporta la PEOR, que es la que
+        // manda: una fila con un mes flojo no es una fila confiable.
+        const peor = c.celdas.some(x => x.confianza === "baja") ? "baja"
+          : c.celdas.some(x => x.confianza === "media") ? "media" : "alta"
+        return {
+          concepto: c.nombre,
+          montos: Object.fromEntries(c.celdas.map(x => [x.mes, x.monto])),
+          regla: ETIQUETA_MODO[c.modo], confianza: peor,
+        }
+      })))
     }
     if (variables.length > 0) {
-      egresos.push(bloque("Variables de costo", variables.map(v => ({ concepto: v.concepto, montos: v.montos }))))
+      egresos.push(bloque("Variables de costo", variables.map(v => {
+        contar("fijo:variable")
+        return {
+          concepto: v.concepto, montos: v.montos,
+          regla: "Cantidad × precio" + (v.esCupoAnual ? " (cupo anual)" : "")
+            + (v.faltantes.length > 0 ? ` — INCOMPLETA: ${v.faltantes.join(", ")}` : ""),
+          confianza: v.faltantes.length > 0 ? "baja" : "alta",
+        }
+      })))
     }
     if (costoProd.length > 0) {
-      egresos.push(bloque("Costos de producción", costoProd.map(c => ({ concepto: c.nombre, montos: c.montos }))))
+      egresos.push(bloque("Costos de producción", costoProd.map(c => {
+        contar("fijo:produccion")
+        return { concepto: c.nombre, montos: c.montos, regla: "Tramos de actividad del lote (curva de peso × ración)" }
+      })))
     }
 
     const ingresos: BloqueExport[] = []
     if (totalIngresosPorMes && Object.keys(totalIngresosPorMes).length > 0) {
-      ingresos.push(bloque("Ingresos", [{ concepto: "Total de ingresos", montos: totalIngresosPorMes }]))
+      contar("fijo:ingresos")
+      ingresos.push(bloque("Ingresos", [{
+        concepto: "Total de ingresos", montos: totalIngresosPorMes,
+        regla: "Ventas presupuestadas y confirmadas",
+      }]))
     }
+    if (inversiones.length > 0) contar("fijo:inversion")
+
+    /**
+     * 📚 **El catálogo: todos los modos que existen, se usen o no.**
+     *
+     * Pedido del usuario: *«tal vez haya alguno nunca usado por el presupuesto y me interesaría
+     * saberlo»*. Por eso se lista el catálogo **completo** y se le pega el conteo — no se listan
+     * los usados. Un modo con cero es el dato que se busca.
+     */
+    const catalogo: ModoCatalogo[] = [
+      ...(Object.keys(ETIQUETA_METODO) as (keyof typeof ETIQUETA_METODO)[]).map(k => ({
+        familia: "Templates", clave: k, etiqueta: ETIQUETA_METODO[k],
+        cuando: {
+          declaradas: "El template dice cuántas cuotas al año y la historia dice en qué meses",
+          mensual: "Se paga todos los meses",
+          patron: "No declara cuotas fijas, pero la historia muestra un patrón claro",
+          promedio: "Gasto abierto, sin periodicidad: se reparte el promedio",
+          manual: "Se sabe el monto y no se quiere que lo toque ninguna fórmula",
+          no_proyectar: "No es gasto, o no hay historia de dónde proyectar",
+        }[k],
+        usos: usos[`template:${k}`] ?? 0,
+      })),
+      ...(Object.keys(ETIQUETA_MODO) as (keyof typeof ETIQUETA_MODO)[]).map(k => ({
+        familia: "Cuentas contables", clave: k, etiqueta: ETIQUETA_MODO[k],
+        cuando: {
+          ultima_fc: "Un proveedor, una factura por mes, monto estable",
+          promedio_n: "Cuenta variada y recurrente: se promedian los últimos N meses",
+          estacional: "Estacional de verdad: mismo mes del año pasado + inflación. Necesita 12+ meses",
+          por_cabeza: "Escala con el rodeo: $/cabeza histórico × cabezas proyectadas",
+          manual: "Un monto fijo puesto a mano",
+          excluida: "No se presupuesta acá porque ya entra por otro lado (un template, típicamente)",
+        }[k],
+        usos: usos[`cuenta:${k}`] ?? 0,
+      })),
+      // Los bloques que no se configuran: su regla es fija y viene de otro módulo.
+      { familia: "Sin configurar", clave: "sueldos", etiqueta: "Proyección de sueldos", cuando: "Sale del módulo de sueldos: escala, cargas y adicionales", usos: usos["fijo:sueldos"] ?? 0 },
+      { familia: "Sin configurar", clave: "variable", etiqueta: "Cantidad × precio", cuando: "Variables de costo: se declara cuánto y a qué precio, y se reparte en los meses", usos: usos["fijo:variable"] ?? 0 },
+      { familia: "Sin configurar", clave: "produccion", etiqueta: "Tramos de actividad", cuando: "Sale del lote: curva de peso, ración y días de cada tramo", usos: usos["fijo:produccion"] ?? 0 },
+      { familia: "Sin configurar", clave: "ingresos", etiqueta: "Ventas presupuestadas", cuando: "Ventas cargadas: presupuestadas, confirmadas o fijadas", usos: usos["fijo:ingresos"] ?? 0 },
+      { familia: "Sin configurar", clave: "inversion", etiqueta: "Inversión cargada a mano", cuando: "Se muestra pero NO suma al total: sale plata, no es gasto del período", usos: usos["fijo:inversion"] ?? 0 },
+    ]
 
     return {
       empresa: "MSA",
@@ -1325,13 +1407,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       egresos,
       inversiones: inversiones.length > 0
         ? { titulo: "Inversiones", sumaAlTotal: false,
-            filas: inversiones.map(i => ({ concepto: i.nombre, montos: i.montos })) }
+            filas: inversiones.map(i => ({ concepto: i.nombre, montos: i.montos, regla: "Inversión cargada a mano (no suma al total)" })) }
         : null,
       saldoInicial,
       origenSaldo: arranqueModo === "ultimo_conciliado"
         ? `último conciliado${arranqueFecha ? ` al ${new Date(arranqueFecha + "T00:00:00").toLocaleDateString("es-AR")}` : ""}`
         : "declarado a mano",
       advertencias: cobertura.avisos.map(a => a.texto),
+      catalogo,
     }
   }
 

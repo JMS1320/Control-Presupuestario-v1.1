@@ -23,6 +23,36 @@ export interface FilaExport {
   montos: Record<string, number>
   /** Para poder sangrar los hijos bajo su subtotal. */
   nivel?: number
+  /**
+   * 🔑 **Con qué regla se está llenando esta fila**, en castellano.
+   *
+   * Pedido del usuario (2026-09-09): *«quiero que me pongas como primera columna la regla usada
+   * actualmente para llenarla; o sea, el presupuesto pasa a decir línea por línea cómo se está
+   * llenando»*.
+   *
+   * No hubo que inventar nada: el dato **ya existía** —`FilaTemplate.metodo` para los templates,
+   * `ConfigCuenta.modo` para las cuentas— y se calculaba para el tooltip. Lo único que faltaba era
+   * que llegara hasta acá. Un número presupuestado sin su regla al lado **no se puede discutir**:
+   * se acepta o se desconfía, que son las dos peores maneras de mirarlo.
+   */
+  regla?: string
+  /** `alta` · `media` · `baja` — cuánto se puede confiar en la proyección de esta fila. */
+  confianza?: string
+}
+
+/**
+ * Un modo de llenado del catálogo, con **cuántas filas lo están usando hoy**.
+ *
+ * El cero es el dato interesante: *«tal vez haya alguno nunca usado y me interesaría saberlo»*.
+ * Un modo que existe y nadie usa es una de dos cosas —una herramienta que no se conoce o una que
+ * no sirve— y las dos merecen enterarse.
+ */
+export interface ModoCatalogo {
+  familia: string
+  clave: string
+  etiqueta: string
+  cuando: string
+  usos: number
 }
 
 export interface BloqueExport {
@@ -44,6 +74,8 @@ export interface DatosExport {
   origenSaldo: string
   /** Avisos del control de cobertura. Van en el documento: esconderlos sería maquillar. */
   advertencias: string[]
+  /** El catálogo completo de modos, con sus usos. Va en su propia hoja. */
+  catalogo?: ModoCatalogo[]
 }
 
 const clave = (m: MesExport) => `${m.anio}-${String(m.mes).padStart(2, '0')}`
@@ -121,6 +153,129 @@ export function armarResumen(d: DatosExport): { etiqueta: string; valores: numbe
   return out
 }
 
+/**
+ * 📋 **La grilla tal cual se ve**, aplanada en una sola lista.
+ *
+ * Es otra cosa que `armarResumen`, y por eso convive con él en vez de reemplazarlo:
+ *
+ * | | El informe (`armarResumen`) | La tabla (esto) |
+ * |---|---|---|
+ * | Para | los socios, la reunión | el usuario, trabajar |
+ * | Muestra | subtotales, y el detalle aparte | **todas las filas, en el orden de la pantalla** |
+ * | Responde | *¿cómo venimos?* | *¿de dónde sale este número?* |
+ *
+ * Pedido del usuario (2026-09-09): *«un export del presupuesto, sólo del presupuesto, o sea la
+ * tabla»*. El informe existente parte el detalle en una hoja por bloque; acá va todo junto y con
+ * la sangría, que es lo que hace que se lea igual que la grilla.
+ *
+ * 🔑 Los subtotales y el saldo se calculan **con las mismas funciones que el informe**. Si cada
+ * documento hiciera su propia cuenta, en tres meses dirían cosas distintas — y ahí no se sabe cuál
+ * creer.
+ */
+export function armarTabla(d: DatosExport): { celdas: (string | number)[]; fuerte?: boolean; titulo?: boolean }[] {
+  const out: { celdas: (string | number)[]; fuerte?: boolean; titulo?: boolean }[] = []
+  /** La regla va PRIMERO: es lo que hace que la fila se pueda discutir y no sólo leer. */
+  const fila = (regla: string, etiqueta: string, t: Record<string, number>) => {
+    const vals = d.meses.map(m => redondear(t[clave(m)] || 0))
+    return [regla, etiqueta, ...vals, vals.reduce((a, b) => a + b, 0)]
+  }
+
+  const bloque = (b: BloqueExport) => {
+    if (b.filas.length === 0) return
+    out.push({ celdas: ["", b.titulo, ...d.meses.map(() => ""), ""], titulo: true })
+    for (const f of b.filas) {
+      // La sangría es la jerarquía: sin ella, un hijo y su padre se leen como dos filas iguales.
+      const regla = f.regla ?? "—"
+      out.push({
+        celdas: fila(f.confianza && f.confianza !== "alta" ? `${regla}  (confianza ${f.confianza})` : regla,
+          "   ".repeat(f.nivel ?? 0) + f.concepto, f.montos),
+      })
+    }
+    // Un subtotal no tiene regla propia: es la suma de las de arriba. Ponerle una sería inventarla.
+    out.push({ celdas: fila("suma de las filas de arriba", `Subtotal ${b.titulo}`, totalBloque(b, d.meses)), fuerte: true })
+  }
+
+  let totalIng: Record<string, number> = {}
+  for (const b of d.ingresos) { bloque(b); totalIng = sumar(totalIng, totalBloque(b, d.meses), d.meses) }
+  if (d.ingresos.length > 0) out.push({ celdas: fila("suma de los bloques de ingreso", "TOTAL INGRESOS", totalIng), fuerte: true })
+
+  let totalEgr: Record<string, number> = {}
+  for (const b of d.egresos) {
+    bloque(b)
+    if (b.sumaAlTotal !== false) totalEgr = sumar(totalEgr, totalBloque(b, d.meses), d.meses)
+  }
+  out.push({ celdas: fila("suma de los bloques de egreso", "TOTAL EGRESOS", totalEgr), fuerte: true })
+
+  // Las inversiones se muestran pero NO entran al total: la plata sale, pero no es gasto del
+  // período. Fundirlas con los egresos infla el resultado y esconde justamente eso.
+  const tInv = d.inversiones ? totalBloque(d.inversiones, d.meses) : {}
+  if (d.inversiones) {
+    bloque(d.inversiones)
+    out.push({ celdas: fila("no suma al total: sale plata pero no es gasto del período", "INVERSIONES (fuera del total)", tInv), fuerte: true })
+  }
+
+  const resultado: Record<string, number> = {}
+  for (const m of d.meses) {
+    const k = clave(m)
+    resultado[k] = (totalIng[k] || 0) - (totalEgr[k] || 0) - (tInv[k] || 0)
+  }
+  out.push({ celdas: fila("ingresos − egresos − inversiones", "RESULTADO DEL MES", resultado), fuerte: true })
+
+  let acum = d.saldoInicial
+  const saldo: number[] = []
+  for (const m of d.meses) { acum += resultado[clave(m)] || 0; saldo.push(redondear(acum)) }
+  // El saldo acumulado no se suma en la columna TOTAL: sumar saldos de meses distintos no significa
+  // nada. Va el último, que es el que contesta «¿con cuánto termino?».
+  out.push({ celdas: ["saldo de arranque + resultado, mes a mes", "SALDO ACUMULADO", ...saldo, saldo[saldo.length - 1] ?? 0], fuerte: true })
+
+  return out
+}
+
+/** La hoja de LA TABLA: la grilla completa, con la regla de cada fila adelante. */
+function hojaTabla(d: DatosExport) {
+  const filas: (string | number)[][] = [
+    [`PRESUPUESTO ${d.empresa}${d.campana ? ` — campaña ${d.campana}` : ''} · la tabla completa`],
+    [`Saldo de arranque: ${d.saldoInicial.toLocaleString('es-AR')} (${d.origenSaldo})`],
+    [`Generado el ${new Date().toLocaleDateString('es-AR')}`],
+    [],
+    ['Cómo se llena', 'Concepto', ...d.meses.map(m => m.label), 'TOTAL'],
+    ...armarTabla(d).map(f => f.celdas),
+  ]
+  if (d.advertencias.length > 0) filas.push([], ['ADVERTENCIAS'], ...d.advertencias.map(a => [a]))
+
+  const hoja = XLSX.utils.aoa_to_sheet(filas)
+  hoja['!cols'] = [{ wch: 42 }, { wch: 44 }, ...d.meses.map(() => ({ wch: 13 })), { wch: 15 }]
+  // Fija las dos primeras columnas y el encabezado: con 24 meses, sin esto se pierde el renglón.
+  hoja['!freeze'] = { xSplit: 2, ySplit: 5 }
+  return hoja
+}
+
+/**
+ * La hoja del CATÁLOGO: todos los modos que existen, usados o no.
+ *
+ * 🔑 **El cero es el dato que se busca.** Pedido del usuario: *«tal vez haya alguno nunca usado por
+ * el presupuesto y me interesaría saberlo»*. Un modo sin usos es una herramienta que no se conoce
+ * o una que no sirve — y las dos cosas conviene saberlas.
+ */
+function hojaCatalogo(d: DatosExport) {
+  const cat = d.catalogo ?? []
+  const sinUso = cat.filter(c => c.usos === 0)
+  const filas: (string | number)[][] = [
+    ['MODOS DE LLENADO — todos los que existen, se usen o no'],
+    [`${cat.length} modos · ${cat.length - sinUso.length} en uso · ${sinUso.length} sin usar`],
+    [],
+    ['Familia', 'Modo', 'Cómo llena', 'Cuándo conviene', 'Filas que lo usan'],
+    ...cat.map(c => [c.familia, c.clave, c.etiqueta, c.cuando, c.usos]),
+  ]
+  if (sinUso.length > 0) {
+    filas.push([], [`NUNCA USADOS — ${sinUso.length}`],
+      ...sinUso.map(c => [`${c.familia} · ${c.etiqueta}`, '', c.cuando, '', 0]))
+  }
+  const hoja = XLSX.utils.aoa_to_sheet(filas)
+  hoja['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 38 }, { wch: 62 }, { wch: 17 }]
+  return hoja
+}
+
 /** Excel: resumen + una hoja por bloque. */
 export function exportarExcel(d: DatosExport, nombreArchivo: string) {
   const wb = XLSX.utils.book_new()
@@ -140,6 +295,16 @@ export function exportarExcel(d: DatosExport, nombreArchivo: string) {
     filasRes.push([], ['ADVERTENCIAS'], ...d.advertencias.map(a => [a]))
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filasRes), 'Resumen')
+
+  // ── Hoja 2: LA TABLA, tal cual se ve en pantalla, con la regla de cada fila ──
+  // Va acá y no en un botón aparte: es el mismo documento visto con otro nivel de detalle, y
+  // partirlo en dos archivos obliga a acordarse de bajar los dos.
+  XLSX.utils.book_append_sheet(wb, hojaTabla(d), 'La tabla')
+
+  // ── Hoja 3: el catálogo de modos, con los que nadie usa ──
+  if ((d.catalogo ?? []).length > 0) {
+    XLSX.utils.book_append_sheet(wb, hojaCatalogo(d), 'Modos de llenado')
+  }
 
   // ── Una hoja por bloque, con el detalle ──
   const bloques = [...d.ingresos, ...d.egresos, ...(d.inversiones ? [d.inversiones] : [])]
