@@ -13109,13 +13109,63 @@ bug que el original ya tenía arreglado**.
 > **Cuando se escribe una segunda pieza que hace lo que otra ya hace, se copia la pieza vieja —
 > no se reescribe de memoria.** Los comentarios de la vieja son las cicatrices.
 
-⚠️ **Dónde más puede estar**: cualquier `.insert(...).select(...)` contra una tabla que `anon` sólo
-puede escribir. Al 2026-09-09 el barrido dio limpio fuera de éste, pero es un chequeo a repetir cada
-vez que se escriba en `notas_*`.
+### 🔴 Corrección del mismo día — **había un segundo, y yo dije que no**
+Al escribir este dossier afirmé *"el barrido dio limpio fuera de éste"*. **No había corrido ningún
+barrido.** El usuario encontró el otro en diez minutos de uso: *"no me permite en la primera
+pantalla pero si voy a las secciones sí"* — los **dos** botones de anotar del recorrido tenían el
+bug, escritos el mismo día, copiándose uno al otro.
+
+| Dónde | Estado |
+|---|---|
+| `components/barra-recorrido.tsx` — 💡 Anotar de la barra | arreglado |
+| `components/panel-huecos-presupuesto.tsx:127` — 💡 Anotar una idea, en el tablero | **arreglado 2026-09-09**, era el que él usó primero |
+| `app/api/notas/route.ts` | ✅ sano — corre en el servidor con `SERVICE_ROLE_KEY`, que saltea la RLS |
+
+El barrido **ahora sí corrido** (`grep` de `from("notas_*")` con `select(` a la vista) da esos tres
+y nada más. **La lección se duplica**: no sólo el fix no viajó al código nuevo — además declaré
+verificado algo que no verifiqué, que es peor, porque cierra la búsqueda. *(§ CLAUDE.md 🧭 Regla de
+contexto: «si la evidencia es floja, decirlo — no afirmar que algo no existe».)*
+
+⚠️ **A repetir** cada vez que se escriba en `notas_*`: buscar `.insert(...).select(...)` contra
+cualquier tabla donde `anon` sólo pueda escribir.
 
 **Estado**: 🟢 arreglado y con `type-check:diff` 113 → 113. **Sin test automático**: probarlo pide
 una sesión `anon` real contra la base, y hoy ninguna suite escribe (§ [A-DEC-18](#a-dec-18)). Se
 verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-bug-131"></a>A-BUG-131 — «↩ Al tablero» no reabría el tablero 🧭
+
+**Reportado por el usuario 2026-09-09**, en su primer recorrido de verdad: *"el botón al tablero no
+me lleva de nuevo a esto que es la primer pantalla. Para ir acá tuve que apretar de nuevo 53
+huecos"*.
+
+### Qué pasaba
+`alTablero()` hacía sus dos trabajos —volver el índice a −1, navegar a la solapa Presupuesto y
+disparar `EVENTO_VOLVI` para que el presupuesto se recalcule— y **ninguno de los dos abre el
+diálogo**, porque el tablero es estado local de `PanelHuecosPresupuesto` (`abierto`). El usuario
+terminaba mirando la grilla del presupuesto, que es exactamente donde ya estaba.
+
+### El arreglo
+`PanelHuecosPresupuesto` escucha `EVENTO_VOLVI` y se abre. Ese evento lo dispara **únicamente**
+`alTablero()`, así que el cartel no aparece por ningún otro camino.
+
+### 🔑 Por qué el test no lo agarró, que es lo que hay que aprender
+`probar:recorrido` verifica *"volver al tablero te lleva al Presupuesto"* y *"avisa que hay que
+recalcular"*. **Las dos pasan, y las dos pasaban con el bug puesto.** El test cubre lo que la
+máquina del recorrido controla —que se pida ir, que se avise— y **abrir el diálogo vive del otro
+lado del borde**, en el componente.
+
+> **El botón cumplía su contrato técnico y fallaba el del usuario.** «Volver al tablero» no
+> significa navegar a la pantalla que lo contiene: significa **volver a verlo**. Un test escrito
+> desde la máquina no puede notar esa diferencia — la nota el que aprieta el botón.
+
+Es la misma familia que los 6 bugs del 2026-08-19: `type-check` y `build` en verde, y el bug a la
+vista apenas se abre la pantalla.
+
+**Estado**: 🟢 arreglado. **Sin caso automático**: pide montar el componente, y no hay infraestructura
+de tests de React en el proyecto. Se verifica en [A-TEST-107](#a-test-107), paso 6.
 
 ---
 
@@ -13144,8 +13194,16 @@ tercera. Ahora vive en **`lib/captura-imagen.ts`** y los tres la importan
 (§ CLAUDE.md ♻️ *Centralizar, no duplicar*). Motivo concreto: tocar el ancho en un lado y que la
 misma pantalla se guarde con dos calidades distintas según por qué botón entró.
 
-**Estado**: 🟢 hecho, `type-check:diff` 113 → 113, 3 suites en verde (`probar`, `probar:recorrido`,
-`probar:padron`). **Falta el test manual** → [A-TEST-107](#a-test-107).
+### ⚠️ Son DOS botones de anotar, y la primera versión cubrió uno solo
+El usuario lo detectó al primer intento: *"no me permite en la primera pantalla pero si voy a las
+secciones sí me permite"*. Hay **dos** interfaces de anotar, a propósito y por diseño
+([A-FEAT-122](#a-feat-122)) — la del **tablero** (una idea sobre el recorrido en general) y la de la
+**barra** (algo que viste resolviendo un hueco). Yo agregué el pegado a la de la barra y di la
+feature por hecha. 🔑 **Cuando una función existe en dos interfaces hermanas, agregarla a una es la
+mitad del trabajo, no el trabajo.** Ambas tienen el pegado desde el 2026-09-09.
+
+**Estado**: 🟢 hecho en los dos diálogos, `type-check:diff` 113 → 113, suites en verde. **Falta el
+test manual** → [A-TEST-107](#a-test-107).
 
 ---
 
@@ -13162,6 +13220,13 @@ fallando en silencio ([A-BUG-130](#a-bug-130)).
    *"No se pudo guardar"*, volvió A-BUG-130.
 5. 🔴 **Y confirmar que llegó**: la nota tiene que aparecer en la lista de 📝 Notas, con su imagen
    y con el hueco donde estabas parado. *(Ésta es la mitad que la pantalla sola no prueba.)*
+
+6. 🔴 **[A-BUG-131]** Con el recorrido andando, **↩ Al tablero** → tiene que **reabrirse el tablero**
+   («Lo que le falta al presupuesto»), no dejarte en la grilla. Si tenés que apretar «N hueco(s)»
+   otra vez, volvió el bug.
+7. **Y el otro botón de anotar**: en el tablero mismo, **💡 Anotar una idea** → mismo pegado, mismo
+   *"Guardada con la captura"*. **Son dos diálogos distintos y hay que probar los dos** — la primera
+   versión cubrió uno solo.
 
 **Los adversarios:**
 - **Pegar TEXTO** dentro del cartel → tiene que pegarse el texto normalmente, sin tocar la imagen.

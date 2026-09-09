@@ -19,14 +19,16 @@
  * **la decisión de callar un hueco** — que es lo único que el sistema no puede deducir solo.
  */
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { marcador, porPrioridad, vigente, type Hueco, type Padron } from "@/lib/presupuesto/padron"
 import { ponerFoco, soltarFoco } from "@/lib/recorrido/foco"
-import { arrancar, irAlHueco } from "@/lib/recorrido/recorrido"
+import { comprimir, imagenPegada } from "@/lib/captura-imagen"
+import { arrancar, irAlHueco, EVENTO_VOLVI } from "@/lib/recorrido/recorrido"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
 
 const $ = (n: number | null | undefined) =>
@@ -54,7 +56,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
   const [vence, setVence] = useState(vencePorDefecto())
   const [guardando, setGuardando] = useState(false)
   /** La idea sobre el recorrido en sí — otra cosa que el motivo de un hueco, y se pide distinto. */
-  const [idea, setIdea] = useState<{ titulo: string; texto: string } | null>(null)
+  const [idea, setIdea] = useState<{ titulo: string; texto: string; imagen: string } | null>(null)
 
   useEffect(() => { if (abierto) cargarMarcas() }, [abierto])
 
@@ -118,17 +120,69 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
    * Se inserta directo en vez de reusar el widget flotante porque acá **no hay grabación**: es una
    * idea escrita, no una secuencia de capturas. Duplicar la máquina de grabar para eso sería peor.
    */
+  /**
+   * ↩ «Al tablero» tiene que REABRIR el tablero — A-BUG-131.
+   *
+   * `alTablero()` navega a la solapa y avisa que hay que recalcular, pero el diálogo es estado
+   * local de acá: sin esto el usuario volvía a la grilla del presupuesto —justo donde ya estaba—
+   * y tenía que apretar «N hueco(s)» de nuevo para ver la lista. **Volver significa volver a VER
+   * el tablero**, no navegar a la pantalla que lo contiene.
+   *
+   * `EVENTO_VOLVI` lo dispara **únicamente** `alTablero()`, así que escucharlo acá no abre el
+   * cartel por ningún otro camino.
+   */
+  useEffect(() => {
+    const volver = () => setAbierto(true)
+    window.addEventListener(EVENTO_VOLVI, volver)
+    return () => window.removeEventListener(EVENTO_VOLVI, volver)
+  }, [])
+
+  /**
+   * Pegar la captura — A-FEAT-125.
+   *
+   * Va sobre `document` porque recién salido de `Win+Shift+S` el foco no está en ningún campo, y
+   * exigir un click previo es el paso que hace que la captura no se saque. Sólo con el cartel
+   * abierto: fuera de acá, pegar sigue haciendo lo de siempre.
+   */
+  const pegarIdea = useCallback(async (e: ClipboardEvent) => {
+    try {
+      const img = await imagenPegada(e)
+      if (!img) return
+      setIdea(v => (v ? { ...v, imagen: img } : v))
+      toast.success("Captura pegada")
+    } catch { toast.error("No se pudo procesar la imagen") }
+  }, [])
+
+  useEffect(() => {
+    if (!idea) return
+    document.addEventListener("paste", pegarIdea as unknown as EventListener)
+    return () => document.removeEventListener("paste", pegarIdea as unknown as EventListener)
+  }, [!!idea, pegarIdea])
+
   const guardarIdea = async () => {
     if (!idea?.titulo.trim()) return
     setGuardando(true)
     try {
-      const { data, error } = await supabase.from("notas_para_claude")
-        .insert({ titulo: idea.titulo.trim().slice(0, 200), estado: "finalizada" })
-        .select("id").single()
+      /**
+       * 🧨 El id se genera ACÁ y NO se pide de vuelta — A-BUG-130.
+       *
+       * Igual que en `barra-recorrido.tsx`: `anon` tiene sobre `notas_para_claude` una sola
+       * política, de INSERT. Un `INSERT … RETURNING` necesita **además** permiso de lectura, así
+       * que esto devolvía `42501` y **la idea se perdía**. Los dos botones de anotar del recorrido
+       * tenían el mismo bug, escrito el mismo día, copiándose uno al otro.
+       */
+      const notaId = crypto.randomUUID()
+      const { error } = await supabase.from("notas_para_claude").insert({
+        id: notaId,
+        titulo: idea.titulo.trim().slice(0, 200),
+        estado: "finalizada",
+        finalizada_at: new Date().toISOString(),
+      })
       if (error) throw error
       const { error: e2 } = await supabase.from("notas_capturas").insert({
-        nota_id: (data as { id: string }).id, orden: 1,
+        nota_id: notaId, orden: 1,
         texto: idea.texto.trim() || idea.titulo.trim(),
+        imagen: idea.imagen || null,
         pantalla: "Presupuesto", subpantalla: "Recorrido — lo que falta",
         modal: "Lo que le falta al presupuesto",
         foco_tipo: "recorrido", foco_clave: "recorrido:presupuesto",
@@ -141,7 +195,9 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
       if (e2) throw e2
       soltarFoco("recorrido:presupuesto")
       setIdea(null)
-      toast.success("Guardada — la voy a leer con el tablero al lado")
+      toast.success(idea.imagen
+        ? "Guardada con la captura — la voy a leer con el tablero al lado"
+        : "Guardada — la voy a leer con el tablero al lado")
     } catch (e) {
       toast.error("No se pudo guardar la idea: " + (e as Error).message)
     } finally { setGuardando(false) }
@@ -287,7 +343,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
               </span>
             </div>
             <Button size="sm" variant="outline" className="border-violet-400 text-violet-800"
-              onClick={() => { setIdea({ titulo: "", texto: "" }); ponerFoco({ tipo: "recorrido", clave: "recorrido:presupuesto", texto: "El recorrido del presupuesto" }) }}>
+              onClick={() => { setIdea({ titulo: "", texto: "", imagen: "" }); ponerFoco({ tipo: "recorrido", clave: "recorrido:presupuesto", texto: "El recorrido del presupuesto" }) }}>
               💡 Anotar una idea
             </Button>
           </div>
@@ -324,6 +380,37 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
             value={idea?.texto ?? ""}
             onChange={e => setIdea(v => ({ ...v!, texto: e.target.value }))}
             placeholder={"Qué esperabas que pasara…\nQué pasó en cambio…\nPor qué te importa / qué te costó…"} />
+
+          {/* 📷 La captura — A-FEAT-125. Acá vale doble: una idea sobre el recorrido casi siempre
+              es sobre algo que se VE, y describirlo con palabras cuesta más que mostrarlo. */}
+          <label className="text-[11px] font-medium">Captura de pantalla — opcional</label>
+          {idea?.imagen ? (
+            <div className="relative">
+              <img src={idea.imagen} alt="captura"
+                className="max-h-52 w-full rounded border bg-gray-50 object-contain" />
+              <button onClick={() => setIdea(v => ({ ...v!, imagen: "" }))} title="Quitar"
+                className="absolute right-1 top-1 rounded bg-white/90 p-1 text-gray-500 hover:text-red-600">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="rounded border border-dashed bg-gray-50 p-3 text-center">
+              <ImageOff className="mx-auto mb-1 h-5 w-5 text-gray-300" />
+              <p className="text-[12px] text-gray-600">
+                Sacala con <strong>Win + Shift + S</strong> y pegala acá con <strong>Ctrl + V</strong>
+              </p>
+              <p className="mt-0.5 text-[11px] text-gray-400">
+                No hace falta clickear nada primero — con este cartel abierto, pegar la trae.
+              </p>
+              <input type="file" accept="image/*" className="mx-auto mt-2 block text-[11px]"
+                onChange={async e => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  try { const img = await comprimir(f); setIdea(v => ({ ...v!, imagen: img })) }
+                  catch { toast.error("No se pudo leer la imagen") }
+                }} />
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => setIdea(null)}>Cancelar</Button>
