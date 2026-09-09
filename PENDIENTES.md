@@ -12904,6 +12904,61 @@ el presupuesto, después la que ordena el trabajo.
    agregar la columna después cuesta el doble → **dejar el campo previsto desde el día 1**.
 4. **¿Es para costear o para supervisar?** Condiciona qué tan sincero va a ser el dato.
 
+
+### ✅ Las 4 respuestas del usuario (2026-09-09) — y lo que cambian
+
+| # | Respuesta | Qué cambia en el diseño |
+|---|---|---|
+| **1** | *"podría ser el capataz solo o el capataz y uno más"*. Y: *"el reporte normalmente es por **WhatsApp**… idealmente que WhatsApp sea el comunicador sería ideal. Pero debemos pensar paralelamente cómo se hace por WhatsApp y cómo por la app directo"* | **El parte es POR REPORTANTE**, no por día: dos personas pueden reportar el mismo turno y **contradecirse**. La consolidación es una **vista**, no el dato guardado (si se guarda consolidado, la contradicción se pierde y con ella la información). Y nace la **vía WhatsApp** — ver abajo |
+| **2** | **Chalet es un centro de costo**: *"no produce, solo gasta en principio"* | Su mano de obra **no va al margen por actividad**: es **gasto de estructura**. El reparto tiene entonces **dos destinos que no se suman igual** — actividades productivas (al margen) y centros que sólo gastan (al resultado, no al margen). Mezclarlos en una sola suma sería el error |
+| **3** | **La unidad es el turno**, en principio | Turno como unidad. **El campo de horas se deja previsto y vacío** desde el día 1 (§ Default del dato real): agregarlo después cuesta el doble |
+| **4** | *"sobre todo **supervisar**, y puede ser también para asignar costos en márgenes pero eso sería algo secundario ahora"* | 🔁 **Invierte el orden que yo había recomendado.** Ver abajo |
+
+---
+
+### 🔁 El orden cambia — y lo digo porque yo había recomendado lo contrario
+
+Mi alcance **mínimo** era *«el repartidor»* (jornadas por actividad → presupuesto), porque alimentaba
+el norte. **Con supervisión como objetivo primario, ese mínimo deja de ser el más valioso: repartir
+jornadas no supervisa nada.** Lo que supervisa es **comparar lo reportado contra lo esperado** — o
+sea la **matriz de mínimos**, que yo había puesto en el alcance *máximo*.
+
+📌 **Pero la matriz no arrastra al Gantt.** 5-10 tareas con plazo y responsable **ya supervisan**. El
+Gantt sigue siendo lo último: necesita un plan anual que hoy no existe.
+
+⚠️ **Y el riesgo 4 (Goodhart) sube de categoría.** Si el objetivo declarado es supervisar, el dato
+**va a ser político**: el capataz reporta sabiendo que se lo mide. Consecuencia práctica que hay que
+aceptar de entrada: **el costeo —el objetivo secundario— hereda un dato sesgado**. No lo invalida,
+pero explica por qué repartir costos con esto va a ser *"mucho mejor que nada"*, no *"exacto"*.
+
+---
+
+### 📱 La vía WhatsApp
+
+🔑 **El hallazgo: el parte diario YA EXISTE y se tira.** El capataz ya reporta todos los días por
+WhatsApp. Es al mismo tiempo la **pieza 1** del norte administrativo (*¿qué llega solo?*) y la
+**pieza 2** (*¿qué estamos tirando?*). **No hay que crear el hábito — hay que dejar de descartar el
+mensaje.** Eso baja el riesgo de adopción, que era el segundo más grave.
+
+**Tres vías, de más barata a más cara:**
+
+| Vía | Cómo | Costo real | Riesgo |
+|---|---|---|---|
+| **A · Reenviar al mail** | el capataz reenvía el mensaje o el audio a una casilla; **el GAS ya sabe leer mails, adjuntos e imágenes con OCR** | **cero infraestructura nueva** — el circuito ya existe y está probado: las FC que llegan por WhatsApp se reenvían así (*"Documento de Jose"*) | un toque más para el capataz; si se olvida, no llega |
+| **B · Librería no oficial** (whatsapp-web.js, Baileys) | un proceso que se loguea **como si fuera un celular** (QR + sesión persistente) | 🔴 **necesita un host encendido siempre**: la app es Next.js en **Vercel, serverless** — no puede sostener un proceso. Sería **el primer servidor permanente del proyecto** | 🔴 **riesgo de ban del número** y se rompe cuando WhatsApp cambia el protocolo. **Nunca en el número personal ni en el de la empresa**: número dedicado y descartable |
+| **C · API oficial (Cloud API)** | la vía soportada por Meta | es la paga que el usuario descartó, y pide cuenta business + número dedicado | ninguno técnico |
+
+**📌 La recomendación que sale de esto: construir la COLA AGNÓSTICA DEL CANAL.** El sistema recibe
+**un parte** = `(fecha, turno, quién reportó, texto crudo, adjuntos, canal)`. La app y WhatsApp son
+**dos alimentadores de la misma cola**, no dos sistemas.
+
+*Motivo: la vía B es la única pieza que se puede romper sola —un ban, un cambio de protocolo— y sin
+avisar. Si todo cuelga de ella, el día que se cae te quedás sin parte diario. Con la cola se cae
+**un alimentador** y el resto sigue funcionando.*
+
+**Y el orden sugerido**: empezar por **A (mail)**, que valida el flujo entero con cero
+infraestructura. Si el reenvío molesta en el uso real, **B se agrega después sin tocar nada aguas
+abajo** — que es justamente lo que la cola compra.
 **Estado**: 🔵 diseño registrado, **sin desarrollar**. No hay `A-TEST` porque todavía no hay nada que
 probar.
 
