@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
@@ -36,6 +36,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
+import { EVENTO_IR } from "@/lib/recorrido/recorrido"
+import { BarraRecorrido } from "@/components/barra-recorrido"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { MarcaFlotante } from "@/components/boton-revision"
 import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
@@ -118,6 +120,24 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
     return 'principal'
   }
 
+  /**
+   * 🧭 La solapa activa, **CONTROLADA** — antes era `defaultValue` y no había forma de cambiarla
+   * por código. Sin esto, el tablero de huecos podía decir dónde se resuelve algo pero no llevarte.
+   *
+   * ⚠️ Se inicializa con `useState(getDefaultTab)` —la función, no su resultado—: pasarle
+   * `getDefaultTab()` la llamaría en cada render, y aunque hoy devuelva siempre lo mismo, ata el
+   * estado a algo que este componente no controla.
+   */
+  const [solapa, setSolapa] = useState<string>(getDefaultTab)
+  useEffect(() => {
+    const ir = (e: Event) => {
+      const destino = (e as CustomEvent<string>).detail
+      if (typeof destino === "string" && destino) setSolapa(destino)
+    }
+    window.addEventListener(EVENTO_IR, ir)
+    return () => window.removeEventListener(EVENTO_IR, ir)
+  }, [])
+
   return (
     <div className="min-h-screen bg-gray-50 p-4">
       {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
@@ -136,9 +156,12 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           notas — porque tiene que estar en TODA la app: el usuario no puede depender de que
           alguien haya cableado una bandera en la pantalla donde encontró el problema. */}
       <MarcaFlotante />
+      {/* 🧭 La barra del recorrido. A nivel app, como las notas y las marcas: el viaje CRUZA
+          pantallas, asi que la barra tiene que seguirte a donde vayas. */}
+      <BarraRecorrido />
       <div className="mx-auto max-w-7xl space-y-6">
         {/* pestañas principales */}
-        <Tabs defaultValue={getDefaultTab()} className="w-full">
+        <Tabs value={solapa} onValueChange={setSolapa} className="w-full">
           <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-12'}`}>
             {shouldShowTab('principal') && (
               <TabsTrigger value="principal" className="flex items-center gap-2">

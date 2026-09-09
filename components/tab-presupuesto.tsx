@@ -63,6 +63,7 @@ import {
 } from "@/lib/presupuesto/export"
 import { padronHacienda, padronTemplates } from "@/lib/presupuesto/padron"
 import { PanelHuecosPresupuesto } from "@/components/panel-huecos-presupuesto"
+import { EVENTO_VOLVI } from "@/lib/recorrido/recorrido"
 import {
   proyectarTemplate, avisoFaltaGenerar,
   ETIQUETA_METODO,
@@ -1469,6 +1470,19 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * hacienda parte de **toda la existencia**, no de las categorías que se suelen vender — es
    * preferible que moleste y él lo calle, a que se calle solo.
    */
+  /**
+   * 🔴 **Al volver de resolver algo, el presupuesto se REHACE.**
+   *
+   * Es la parte delicada del recorrido. Sin esto: se carga la venta, se vuelve, y el hueco sigue
+   * ahi -- y en ese momento es imposible saber si fallo la carga o si el tablero quedo viejo.
+   * **Esa duda es exactamente la que hace perder la tarde**, que es lo que el usuario pidio evitar.
+   */
+  useEffect(() => {
+    const alVolver = () => { cargarDatos() }
+    window.addEventListener(EVENTO_VOLVI, alVolver)
+    return () => window.removeEventListener(EVENTO_VOLVI, alVolver)
+  }, [])
+
   const padrones = useMemo(() => {
     const templates = agrupadores.flatMap(ag => ag.templates)
     // Cuántos meses de este período tienen una cuota REAL cargada (no proyectada).

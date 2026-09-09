@@ -23,6 +23,7 @@ import { useState, useMemo, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { marcador, porPrioridad, vigente, type Hueco, type Padron } from "@/lib/presupuesto/padron"
 import { ponerFoco, soltarFoco } from "@/lib/recorrido/foco"
+import { arrancar, irAlHueco } from "@/lib/recorrido/recorrido"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -191,6 +192,17 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
             </div>
           </div>
 
+          {/* 🧭 ARRANCAR EL VIAJE. Camina SOLO los que siguen abiertos y en el orden en que estan
+              -- por plata. Meter los ya callados obligaria a saltearlos de a uno. */}
+          {m.abiertos > 0 && (
+            <Button className="w-full" onClick={() => {
+              arrancar(huecos.filter(h => h.estado === "abierto" || !vigente(h)))
+              setAbierto(false)
+            }}>
+              🧭 Empezar el recorrido — {m.abiertos} paso(s), empezando por el que más mueve
+            </Button>
+          )}
+
           <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-900">
             Esto <b>grita de más a propósito</b>: parte de todo lo que existe, no de lo que se suele
             vender. Si algo no va, <b>calalo con su motivo</b> — es mejor que grite y lo calles a que
@@ -222,6 +234,10 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
                       </div>
                       <div className="text-[11px] leading-4 text-gray-600">{h.porque}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px]">
+                        <button className="rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
+                          onClick={() => { arrancar(huecos.filter(x => x.estado === "abierto" || !vigente(x)))
+                            irAlHueco(h.clave); setAbierto(false) }}
+                          title={`Ir a ${h.donde.pantalla}`}>ir →</button>
                         <span className="text-gray-500">
                           Se resuelve en <b>{h.donde.pantalla}</b>
                           {h.donde.detalle && <> — {h.donde.detalle}</>}
