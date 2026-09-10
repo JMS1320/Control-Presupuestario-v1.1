@@ -37,7 +37,7 @@ import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
-import { simularSecuencia, retencionDelGrupo } from "@/lib/sicore/minimo"
+import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 
 export interface Resultado {
   caso: string
@@ -230,6 +230,19 @@ export function correrCasos(): Resultado[] {
   const solaChica = simularSecuencia([95916.33], MIN_BIENES, ALIC_BIENES)
   chequear("SICORE", "Una sola factura bajo el mínimo sigue sin retener",
     "$0,00", `$${n2(solaChica[0].retencion)}`, solaChica[0].retencion === 0, "A-BUG-137")
+
+  // El descuento pronto pago baja el neto pagado → consume MENOS mínimo → la siguiente retiene menos.
+  // Con un descuento de $8.202,62 neto sobre la primera, consume 140.000 en vez de 148.202,62.
+  const conDescuento = calcularRetencion({
+    neto: 95916.33, minimoRegimen: MIN_BIENES, netoPrevio: 140000, yaRetuvo: false, alicuota: ALIC_BIENES,
+  })
+  chequear("SICORE", "El descuento de la primera baja lo consumido, y la 2ª retiene MENOS",
+    "$238,33", `$${n2(conDescuento.retencion)}`,
+    cerca(conDescuento.retencion, (95916.33 - (MIN_BIENES - 140000)) * ALIC_BIENES, 0.01), "A-BUG-139")
+
+  chequear("SICORE", "…y sin descontarlo retendría de más",
+    "menos que $402,38", `$${n2(conDescuento.retencion)}`,
+    conDescuento.retencion < 402.38, "A-BUG-139")
 
   // Servicios tiene otro mínimo: la MISMA factura que no retiene por bienes, retiene por servicios.
   const porServicios = simularSecuencia([95916.33], 67170, 0.02)

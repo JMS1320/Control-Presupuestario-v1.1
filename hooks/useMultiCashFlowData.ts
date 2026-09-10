@@ -282,9 +282,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: estadoDeGrupo(fs.map(f => f.estado)),
         sicore: null,
-        imp_neto_gravado: 0,
-        imp_neto_no_gravado: 0,
-        imp_op_exentas: 0,
+        // 🔴 Estos tres estaban en **0**, y eso apagaba SICORE para todo grupo (A-BUG-138): el
+        // portón calcula el neto con ellos, un neto 0 nunca llega al mínimo, y el grupo pasaba
+        // derecho a 'pagar' **sin preguntar nada**. Justo lo contrario de lo que dice el comentario
+        // de `tipo_comprobante` doce líneas más abajo — ahí se eligió a propósito el lado seguro
+        // (ante la duda, que pase por SICORE) y estos ceros lo anulaban en silencio.
+        imp_neto_gravado: Math.round(fs.reduce((s, f) => s + (f.imp_neto_gravado || 0), 0) * 100) / 100,
+        imp_neto_no_gravado: Math.round(fs.reduce((s, f) => s + (f.imp_neto_no_gravado || 0), 0) * 100) / 100,
+        imp_op_exentas: Math.round(fs.reduce((s, f) => s + (f.imp_op_exentas || 0), 0) * 100) / 100,
         imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
         monto_sicore: Math.round(fs.reduce((s, f) => s + (f.monto_sicore || 0), 0) * 100) / 100 || null,
         descuento_aplicado: Math.round(fs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0) * 100) / 100 || null,
