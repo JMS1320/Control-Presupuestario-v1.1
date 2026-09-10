@@ -269,9 +269,9 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
       .in('id', porTipo['grupo'])
     for (const g of grupos || []) {
       const fcGrupo = await supabaseAdmin.schema(schemaEmpresa).from('comprobantes_arca')
-        .select('cuit').eq('grupo_pago_id', g.id)
+        .select('cuit, monto_a_abonar, imp_total').eq('grupo_pago_id', g.id)
       const cuotasGrupo = await supabaseAdmin.from('cuotas_egresos_sin_factura')
-        .select('id, egreso_id').eq('grupo_pago_id', g.id)
+        .select('id, egreso_id, monto').eq('grupo_pago_id', g.id)
       const cuitsFc = [...new Set((fcGrupo.data || []).map((f: any) => f.cuit))]
       let cuitsCuotas: string[] = []
       if (cuotasGrupo.data && cuotasGrupo.data.length) {
@@ -284,10 +284,23 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
       if (cuitsTodos.length > 1) {
         bloqueante = `Grupo con múltiples CUITs (${cuitsTodos.length}): no se puede exportar como una sola fila`
       }
+      // 🔴 El monto a transferir sale de los MIEMBROS, no de `grupos_pago.monto_total`.
+      //
+      // `monto_total` se estampa **cuando se arma el grupo** y no se vuelve a tocar. Si después se
+      // aplican retención SICORE o descuento pronto pago, queda con el importe BRUTO y el lote se
+      // exporta de más: en el caso Alcorta del 10/09, $385.093,90 en vez de $364.272,27 — **$20.821,63
+      // de más transferidos** (A-BUG-141). Antes no se notaba porque se agrupaba *después* de aplicar
+      // el SICORE, así que el congelado ya venía neto.
+      //
+      // `monto_a_abonar` es el saldo real de cada factura (total − retención − descuento). Se cae a
+      // `monto_total` sólo si el grupo no devolvió miembros, para no exportar 0 en silencio.
+      const montoFc = (fcGrupo.data || []).reduce((s: number, f: any) => s + Number(f.monto_a_abonar ?? f.imp_total ?? 0), 0)
+      const montoCuotas = (cuotasGrupo.data || []).reduce((s: number, c: any) => s + Number(c.monto || 0), 0)
+      const montoMiembros = Math.round((montoFc + montoCuotas) * 100) / 100
       out.push({
         tipo: 'grupo', id: g.id, schema: schemaEmpresa,
         cuit: cuitsTodos[0] || g.cuit, razon_social: g.proveedor,
-        monto: Number(g.monto_total || 0),
+        monto: montoMiembros > 0 ? montoMiembros : Number(g.monto_total || 0),
         descripcion: `G ${g.proveedor?.slice(0, 8) || ''}`.trim(), moneda: 'ARS', bloqueante,
       })
     }
