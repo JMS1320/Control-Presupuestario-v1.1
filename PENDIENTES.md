@@ -13750,6 +13750,127 @@ Ganancias MSA *(la campaña vieja — ver [A-DAT-32](#a-dat-32))*
 
 ---
 
+
+## <a id="a-bug-137"></a>A-BUG-137 — SICORE no retenía si ninguna factura llegaba SOLA al mínimo 🧾
+
+> **Encontrado por el usuario el 2026-09-10**, con una nota desde la app (pantalla Cash Flow):
+> *"tengo 3 facturas de alcorta que voy a pasar a pagar y debe procesar sicore ya que sumadas
+> sobrepasan el mínimo no imp de bienes. Esto ya estaba corregido supuestamente… pero mira como
+> sigue."*
+>
+> **Arreglado el mismo día** (commit `b396c26`, rama `jms/sicore-minimo`). **Sin testear a mano** →
+> [A-TEST-108](#a-test-108).
+
+### El caso, con los números reales (ALCORTA EDMUNDO, CUIT 20103619115)
+
+| Comprobante | Neto | |
+|---|---:|---|
+| FC 6337 | 148.202,62 | |
+| FC 6328 | 95.916,33 | |
+| FC 6347 | 74.140,48 | |
+| **Total** | **318.259,43** | mínimo Bienes **224.000** → corresponde **$1.885,19** |
+
+**Retenía $0.** Ninguna llega **sola** al mínimo, y las tres juntas sí.
+
+### Por qué fallaba, si "ya estaba corregido"
+
+Porque el acumulado (`e3657a5`, la *Idea 2*) quedó **sólo en el portón**:
+
+1. **El portón** (`ejecutarLote`) agrupa por CUIT y suma: `318.259 > 67.170` → **califica**, y aparece
+   el cartel *"3 facturas califican para retención SICORE"*. Hasta acá, bien.
+2. **El cálculo** (`calcularRetencionSicoreCF`) aplicaba el mínimo **entero a cada factura suelta**:
+   `minimoDisponible = 224.000 − netoPrevio`, con `netoPrevio = 0` porque
+   `netoPagosPreviosSinRetencion` lee de la base facturas ya en `pagar/pagado/echeq/conciliado` — **y
+   las hermanas del mismo lote todavía estaban en `pendiente`**.
+3. `148.202,62 ≤ 224.000` → **`alert("No corresponde retención")`** + `return`.
+
+> 🔴 **Y ese `return` mataba la cola entera.** No llamaba a `cancelarSicoreCF`, así que las otras dos
+> **no se procesaban ni se guardaban, sin un solo aviso**. Era la única salida del flujo que no
+> continuaba la cola: todas las demás sí lo hacen.
+
+**En una línea:** el acumulado funcionaba **en serie** (pagar el día 3 y el día 13, con la primera ya
+escrita), y **nunca dentro de un mismo lote**.
+
+### El arreglo
+
+1. **La que no llega ya no corta**: consume mínimo, se paga sin retención y **la cola sigue**. Al
+   quedar en `pagar` con `sicore` en NULL, la siguiente la ve como `netoPrevio` — ahí el acumulado
+   empieza a valer también dentro del lote.
+2. **Deja su fila en `sicore_retenciones` con retención 0** (`registrarConsumoDeMinimoCF`).
+   🔑 **Por qué importa, y no es evidente:** el TXT que va a AFIP agrupa por `cuit + régimen` y emite
+   **UN renglón por certificado**, sumando `pago`, `neto_gravado_pagado` y `retencion`. Sin esa fila
+   el renglón sale **corto**: declararía **$205.768,75** de pago en vez de **$385.093,90**. *(Lo
+   confirmó el usuario al preguntarlo: "es un solo renglón donde se paga el total de las 3 facturas y
+   la retención es la que corresponde".)* No estampa `comprobantes_arca.sicore`, que significa otra
+   cosa.
+3. **El TXT saltea los grupos con retención 0** — una factura chica bajo el mínimo no puede generar
+   un renglón de `0,00` para AFIP. Y el guard de idempotencia (`yaAsignados`) pasó a medirse **sólo
+   sobre las filas que sí forman certificado**: si no, una quincena ya cerrada **se renumeraba**.
+4. **La cuenta salió del componente** a `lib/sicore/minimo.ts` — adentro estaba mezclada con lecturas
+   a Supabase y con el estado del modal, y **no se podía probar**.
+5. **Los dos `67170` hardcodeados** salen ahora de `tipos_sicore_config` (`minimoGateSicore()`). Los
+   mínimos los actualiza AFIP; con el número clavado, el día que cambien el portón sigue con el viejo
+   **y no avisa**.
+
+### Cómo queda el reparto
+
+| Factura | Mínimo disponible | Consume | Base | Retiene |
+|---|---:|---:|---:|---:|
+| 148.202,62 | 224.000,00 | 148.202,62 | 0 | — |
+| 95.916,33 | 75.797,38 | 75.797,38 | 20.118,95 | **402,38** |
+| 74.140,48 | ya consumido | 0 | 74.140,48 | **1.482,81** |
+| | | **224.000,00** | **94.259,43** | **1.885,19** |
+
+🧮 **Los dos controles** (§ el camino inverso): factura por factura da **exactamente**
+`(total − mínimo) × alícuota`, y la suma de los mínimos consumidos da **el mínimo del régimen, una
+sola vez**. Los dos están como caso.
+
+### 🧪 Probado — y qué NO cubre
+**`npm run probar` → 24/24**, con **8 casos nuevos** sobre los netos reales de Alcorta (escritos como
+constantes: no se leen de la base). `type-check:diff` 113 → 113.
+
+⚠️ **Lo que los casos NO prueban: que la cola de la pantalla avance.** La aritmética está cubierta;
+el recorrido de la UI se prueba a mano → [A-TEST-108](#a-test-108). Se dice explícito porque un caso
+que aparenta cobertura es peor que no tenerla.
+
+### ❓ Lo que queda abierto
+- **El acumulado agrupa por CUIT, no por CUIT + régimen.** El certificado sí es por régimen (así lo
+  arma el TXT), y los mínimos son distintos (Bienes 224.000 · Servicios 67.170 · Arrendamiento
+  134.400). Si un proveedor factura **bienes y servicios en la misma quincena**, hoy se acumulan
+  juntos. La fila con retención 0 ahora **guarda el régimen**, que es el dato que faltaba para
+  poder separarlos. **Decisión pendiente del usuario.**
+- **Observación, previa a este arreglo y sin tocar:** el TXT declara como *base de cálculo* el
+  `neto_gravado_pagado` (el neto completo), no la `base_imponible` (neto − mínimo), que existe como
+  columna y no se usa. Es así desde siempre y las DDJJ se vienen presentando — **verificar con la
+  contadora una vez**, no cambiarlo por las dudas.
+
+---
+
+## <a id="a-test-108"></a>A-TEST-108 — Probar la retención acumulada de SICORE
+
+**Cubre [A-BUG-137](#a-bug-137).** 🔴 **Lo que hay que probar es lo que los casos no pueden: que la
+cola avance sola.**
+
+**Antes de empezar**: las 3 FC de ALCORTA tienen que estar en `pendiente` con `fecha_pago` 10/09.
+
+1. **Cash Flow → modo PAGOS** → marcar **FC 6337, FC 6328 y FC 6347** de ALCORTA EDMUNDO.
+2. Estado → `pagar`, fecha de pago **10/09/2026**.
+3. Tiene que aparecer *"3 facturas califican para retención SICORE"* → **Retener**.
+4. **FC 6337** → elegir **Bienes**. **Esperado**: aviso de que no llega al mínimo, que **consume
+   $148.202,62** y que *sigue con 2 más* — y **la pantalla pasa sola a la siguiente**.
+   🛑 *Si acá se cierra todo y no pasa nada, el bug volvió.*
+5. **FC 6328** → **Bienes** → retención **$402,38** (base 20.118,95).
+6. **FC 6347** → **Bienes** → retención **$1.482,81** (base 74.140,48, sin mínimo).
+7. **Total retenido: $1.885,19.**
+
+**Después, el TXT** (Facturas ARCA → cerrar quincena 26-09 1ra): **UN solo renglón** para ALCORTA,
+con pago **$385.093,90**, base **$318.259,43** y retención **$1.885,19**.
+
+**Adversarios:**
+- **Cancelar** en el cartel de las 3 → **ninguna** queda en `pagar`.
+- Cancelar **en el medio** (después de la primera) → la primera queda paga sin retención y las otras
+  dos **sin tocar**; no debe quedar ninguna a medias.
+- Una FC chica sola, bajo el mínimo → se paga sin retención **y NO aparece en el TXT**.
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`
