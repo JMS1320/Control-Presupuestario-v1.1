@@ -259,6 +259,31 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
             </Button>
           )}
 
+          {/* 💡 LA OTRA NOTA — **arriba, no al fondo** (A-FEAT-126).
+              El usuario lo pidió con captura: *«este boton debe estar arriba no abajo»*. Con 53
+              huecos, al fondo hay que scrollear la lista entera para encontrarlo — y la idea sobre
+              el recorrido se te ocurre **mirando la lista**, no después de recorrerla. Un botón que
+              hay que buscar es un botón que no se usa.
+
+              Pedido original: *«el recorrido me debería permitir ir anotando
+              temas que tal vez no tienen que ver con el paso en sí, sino con algo que me doy cuenta
+              del funcionamiento del mismo… merece una interfaz diferenciada»*.
+              Son dos cosas distintas y por eso se ven distinto: **una habla del dato que falta, la
+              otra del camino**. Mezclarlas en un solo botón obliga a explicar cuál es cuál en el
+              texto — justo el trabajo que esto viene a ahorrar. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50/70 px-4 py-3">
+            <div className="text-[12px] leading-4 text-violet-900">
+              <b>¿Se te ocurrió algo del recorrido en sí?</b><br />
+              <span className="text-[11px] text-violet-700">
+                Cómo está ordenado, qué le falta, qué te confundió. No de un hueco puntual.
+              </span>
+            </div>
+            <Button size="sm" variant="outline" className="border-violet-400 text-violet-800"
+              onClick={() => { setIdea({ titulo: "", texto: "", imagen: "" }); ponerFoco({ tipo: "recorrido", clave: "recorrido:presupuesto", texto: "El recorrido del presupuesto" }) }}>
+              💡 Anotar una idea
+            </Button>
+          </div>
+
           <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-900">
             Esto <b>grita de más a propósito</b>: parte de todo lo que existe, no de lo que se suele
             vender. Si algo no va, <b>calalo con su motivo</b> — es mejor que grite y lo calles a que
@@ -328,25 +353,6 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
               </div>
             )
           })}
-
-          {/* 💡 LA OTRA NOTA. Pedido del usuario: *«el recorrido me debería permitir ir anotando
-              temas que tal vez no tienen que ver con el paso en sí, sino con algo que me doy cuenta
-              del funcionamiento del mismo… merece una interfaz diferenciada»*.
-              Son dos cosas distintas y por eso se ven distinto: **una habla del dato que falta, la
-              otra del camino**. Mezclarlas en un solo botón obliga a explicar cuál es cuál en el
-              texto — justo el trabajo que esto viene a ahorrar. */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-200 bg-violet-50/70 px-4 py-3">
-            <div className="text-[12px] leading-4 text-violet-900">
-              <b>¿Se te ocurrió algo del recorrido en sí?</b><br />
-              <span className="text-[11px] text-violet-700">
-                Cómo está ordenado, qué le falta, qué te confundió. No de un hueco puntual.
-              </span>
-            </div>
-            <Button size="sm" variant="outline" className="border-violet-400 text-violet-800"
-              onClick={() => { setIdea({ titulo: "", texto: "", imagen: "" }); ponerFoco({ tipo: "recorrido", clave: "recorrido:presupuesto", texto: "El recorrido del presupuesto" }) }}>
-              💡 Anotar una idea
-            </Button>
-          </div>
 
           <p className="text-[10px] leading-4 text-muted-foreground">
             El hueco se vuelve a calcular cada vez: si cargás lo que falta, <b>desaparece solo</b>.

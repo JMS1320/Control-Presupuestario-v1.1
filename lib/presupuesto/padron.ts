@@ -164,7 +164,7 @@ export function porPrioridad(huecos: Hueco[], hoy = new Date()): Hueco[] {
 export interface TemplateEsperado {
   id: string
   nombre: string
-  /** Cuántas cuotas declara el template al año. `0`/`null` = no tiene número fijo. */
+  /** Cuántas cuotas declara el template **al año**. `0`/`null` = no tiene número fijo. */
   cuotas: number | null
   /** Cuántas hay efectivamente cargadas en el período. */
   cuotasCargadas: number
@@ -174,25 +174,69 @@ export interface TemplateEsperado {
 }
 
 /**
+ * Cuántos meses cubre el presupuesto que se está mirando, y desde cuándo — **A-BUG-132/133**.
+ *
+ * Las dos cosas hacen falta y por motivos distintos: `meses` para saber **cuántas cuotas esperar**
+ * (12 al año contra una ventana de 24 meses son 24, no 12), y `desde`/`hasta` para poder **decirlo
+ * en el texto del hueco**, que es lo que evita que un número correcto parezca roto.
+ */
+export interface Ventana {
+  /** Meses que cubre el período visible. */
+  meses: number
+  /** `YYYY-MM` del primero y del último, para nombrar la ventana en el porqué. */
+  desde: string
+  hasta: string
+}
+
+/** «Sep 26 – Ago 28», como lo dice la pantalla. */
+function nombrarVentana(v: Ventana): string {
+  const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+  const decir = (m: string) => {
+    const [a, mm] = m.split('-')
+    return `${M[Number(mm) - 1] ?? mm} ${a.slice(2)}`
+  }
+  return `${decir(v.desde)} – ${decir(v.hasta)}`
+}
+
+/**
  * 📋 **¿Están todas las cuotas de los templates?**
  *
  * El padrón lo declara **el template mismo**: si dice que son 4 cuotas al año y hay 3 cargadas,
  * falta una. No hace falta preguntarle nada a nadie.
  *
+ * ## 🔇 Lo esperado se ESCALA a la ventana — A-BUG-132
+ * `cuotas` es **al año**, pero las cargadas se cuentan sobre **todo el período visible**, que hoy
+ * son 24 meses (sep 26 – ago 28). Comparar 12 contra 24 meses hacía que el hueco **se cerrara con
+ * el primer año lleno y el segundo vacío, sin que nada avisara** — es el objetivo 2 del norte
+ * (presupuesto a 2 años, constante) fallando en silencio, y es gritar de MENOS justo donde el
+ * usuario pidió lo contrario: *«que grite de más y yo lo callo»*.
+ *
+ * Se redondea **para arriba**: con una ventana de 18 meses y 12 al año, esperar 18 y sobrar es
+ * preferible a esperar 17 y que el hueco se cierre antes de tiempo. Un hueco de más se calla en
+ * dos clicks; uno de menos no se entera nadie.
+ *
  * ⚠️ Un template con `cuotas` en 0 o null **no tiene padrón** — son los gastos abiertos, sin
  * periodicidad fija. Inventarles un número esperado los convertiría en huecos permanentes.
  */
-export function padronTemplates(templates: TemplateEsperado[]): Padron {
+export function padronTemplates(templates: TemplateEsperado[], ventana?: Ventana): Padron {
   const conNumero = templates.filter(t => (t.cuotas ?? 0) > 0)
+  // Sin ventana declarada se asume un año, que es como se comportaba antes de A-BUG-132.
+  const meses = ventana?.meses ?? 12
+  const donde = ventana ? ` en ${nombrarVentana(ventana)}` : ''
+  const esperar = (alAño: number) => Math.ceil((alAño * meses) / 12)
   const huecos: Hueco[] = []
   for (const t of conNumero) {
-    const faltan = (t.cuotas ?? 0) - t.cuotasCargadas
+    const espera = esperar(t.cuotas ?? 0)
+    const faltan = espera - t.cuotasCargadas
     if (faltan <= 0) continue
     huecos.push({
       dominio: 'templates',
       clave: `template:${t.id}`,
       que: t.nombre + (t.responsable ? ` (${t.responsable})` : ''),
-      porque: `declara ${t.cuotas} cuota(s) al año y hay ${t.cuotasCargadas} cargada(s)`,
+      // 🗣️ A-BUG-133: el texto dice CONTRA QUÉ VENTANA cuenta. Sin eso el usuario abre Egresos,
+      // ve 13 cuotas donde el tablero dice 2, y desconfía del sistema con toda la razón: los dos
+      // números son ciertos y el que faltaba era el «dónde miro».
+      porque: `declara ${t.cuotas} cuota(s) al año → ${espera}${donde}, y hay ${t.cuotasCargadas} cargada(s)`,
       plata: t.montoTipico != null ? t.montoTipico * faltan : null,
       donde: { pantalla: 'Egresos sin Factura', detalle: t.nombre },
       estado: 'abierto',
@@ -201,7 +245,7 @@ export function padronTemplates(templates: TemplateEsperado[]): Padron {
   return {
     dominio: 'templates',
     pregunta: '¿Están todas las cuotas de los gastos que se repiten?',
-    huecos, esperados: conNumero.reduce((s, t) => s + (t.cuotas ?? 0), 0),
+    huecos, esperados: conNumero.reduce((s, t) => s + esperar(t.cuotas ?? 0), 0),
   }
 }
 

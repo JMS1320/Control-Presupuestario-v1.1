@@ -69,6 +69,48 @@ chequear("🔴 Un gasto ABIERTO (sin cuotas fijas) no tiene padrón y NO es un h
 
 chequear("El completo no aparece", !tpl.huecos.some((h: any) => /Lima/.test(h.que)), "Lima afuera")
 
+// ── 🔇 A-BUG-132 · lo esperado se ESCALA a la ventana ─────────────────────────────────────────
+// 🔴 El caso que rompe con el código viejo. El presupuesto real son **24 meses** (sep 26 – ago 28)
+//    y `cuotas` viene declarada AL AÑO. Comparando 12 contra 24 meses, un template con el primer
+//    año lleno se daba por completo **y el segundo quedaba vacío sin que nada avisara** — que es
+//    el objetivo 2 del norte fallando en silencio, y gritar de MENOS justo donde el usuario pidió
+//    lo contrario.
+const V24 = { meses: 24, desde: "2026-09", hasta: "2028-08" }
+const dosAnios = P.padronTemplates([
+  { id: "m1", nombre: "Retiro MA mensual", cuotas: 12, cuotasCargadas: 12, montoTipico: 4_000_000 },
+  { id: "m2", nombre: "Retiro completo", cuotas: 12, cuotasCargadas: 24, montoTipico: 4_000_000 },
+], V24)
+
+chequear("🔴 12 al año con 12 cargadas en una ventana de 24 meses SIGUE siendo un hueco",
+  dosAnios.huecos.some((h: any) => /Retiro MA/.test(h.que)),
+  dosAnios.huecos.map((h: any) => h.que).join(" · ") || "ninguno — el segundo año quedaría mudo")
+
+chequear("🔴 Y falta el año entero, no una cuota: 12 × el monto típico",
+  dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.plata === 48_000_000,
+  $(dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.plata))
+
+chequear("Con las 24 cargadas SÍ se cierra — no grita para siempre",
+  !dosAnios.huecos.some((h: any) => /Retiro completo/.test(h.que)), "cerrado")
+
+chequear("Una ventana partida redondea PARA ARRIBA (18 meses, 12 al año → 18)",
+  (() => { const r = P.padronTemplates(
+    [{ id: "x", nombre: "X", cuotas: 12, cuotasCargadas: 17, montoTipico: 1 }],
+    { meses: 18, desde: "2026-09", hasta: "2028-02" })
+    return r.huecos.length === 1 })(),
+  "un hueco de más se calla en dos clicks; uno de menos no lo ve nadie")
+
+chequear("Sin ventana declarada se comporta como antes (un año)",
+  P.padronTemplates([{ id: "y", nombre: "Y", cuotas: 12, cuotasCargadas: 12, montoTipico: 1 }]).huecos.length === 0,
+  "compatible")
+
+// ── 🗣️ A-BUG-133 · el porqué dice CONTRA QUÉ VENTANA cuenta ───────────────────────────────────
+// El usuario abrió Egresos, vio «13 Cuotas Encontradas» y el tablero le decía «2 cargadas». Los
+// dos números eran ciertos: 11 de esas 13 son de ene–may 2026 y caen ANTES del período. El
+// diagnóstico estaba bien y parecía roto por no decir dónde miraba.
+chequear("🔴 El porqué nombra la ventana, así un número correcto no parece roto",
+  /24 en sep 26 – ago 28/.test(dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.porque ?? ""),
+  dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.porque ?? "")
+
 // ── 💸 Cuentas — el hueco más silencioso ──────────────────────────────────────────────────────
 const cta = P.padronCuentas([
   { nro: "4.1.3", nombre: "Gasoil", gastoAnterior: 4_000_000, presupuestado: 0, excluida: false },

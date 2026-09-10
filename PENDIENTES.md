@@ -13211,6 +13211,85 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-bug-132"></a>A-BUG-132 — El padrón de templates gritaba de MENOS 🔇
+
+**Encontrado 2026-09-09 verificando una duda del usuario**, no un error. Él anotó desde el recorrido:
+*"diagnostico correcto? Me dice que de 12 hay 2 cargadas y voy… y veo que 2026 tiene todas"*.
+
+### Qué pasaba
+`TemplateInfo.cuotas` está declarada **al año** (lo dice su propio comentario). `cargadas(t)` cuenta
+las celdas con cuota real sobre **todo el período visible**, que son **24 meses** (sep 26 – ago 28).
+El padrón comparaba **12 contra una ventana de 24**.
+
+🧨 **La consecuencia no es un número raro: es un silencio.** Un template mensual con el primer año
+completo daba `12 − 12 = 0` → **hueco cerrado**, con el segundo año entero vacío y nada que lo
+señalara. Es el **objetivo 2 del norte** —presupuesto a 2 años, constante— fallando sin ruido, y es
+exactamente lo contrario del criterio que el usuario eligió: *«que grite de más y yo lo callo»*.
+
+### El arreglo
+`padronTemplates` recibe una `Ventana` (`meses`, `desde`, `hasta`) y espera
+`ceil(cuotasAlAño × meses / 12)`. Se redondea **para arriba** a propósito: con 18 meses y 12 al año,
+esperar 18 y que sobre es preferible a esperar 17 y cerrar el hueco antes de tiempo. **Un hueco de
+más se calla en dos clicks; uno de menos no lo ve nadie.** Sin ventana declarada se comporta como
+antes (un año), así que nada que no la pase cambia de conducta.
+
+⚠️ **Efecto visible**: el número de huecos **sube**, y bastante — cada template mensual pasa a
+esperar 24. Es lo correcto y es incómodo; para eso está el «no va / todavía no».
+
+### 🔑 Cómo se encontró, que es lo que vale
+El usuario **no reportó un bug**: preguntó si el diagnóstico era correcto. Al verificar contra la
+base (13 cuotas, 11 de ellas de ene–may 2026 y fuera del período) el número resultó **bien** — y en
+el camino apareció éste, que es peor y que nadie estaba mirando. *Una duda sobre un número correcto
+destapó un silencio.*
+
+**Estado**: 🟢 arreglado, con 5 casos nuevos en `probar:padron` (31/31). **Contraprueba corrida**: el
+padrón de `HEAD` no detecta el hueco del segundo año y el nuevo sí — los casos no aparentan
+cobertura. Falta el test manual → [A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-bug-133"></a>A-BUG-133 — El porqué no decía contra qué ventana contaba 🗣️
+
+**Mismo hallazgo que [A-BUG-132](#a-bug-132), y la mitad que el usuario vio primero.**
+
+El hueco decía *«declara 12 cuota(s) al año y hay 2 cargada(s)»*. Él abrió Egresos, filtró por
+«retiro MA mensual» y vio **13 Cuotas Encontradas**. Con razón desconfió.
+
+**Los dos números eran ciertos.** Verificado en la base:
+
+| Meses | Cuotas | Dentro de sep 26 – ago 28 |
+|---|---|---|
+| ene–may 2026 | **11** (conciliadas) | no — son el pasado |
+| nov y dic 2026 | **2** (pendientes) | sí |
+| | **13 total** | **2** |
+
+Faltaba **el «dónde miro»**. Ahora dice: *«declara 12 cuota(s) al año → 24 en sep 26 – ago 28, y hay
+2 cargada(s)»*.
+
+> 🔑 **Un número correcto que no dice contra qué se calculó es indistinguible de uno roto.** Y cuesta
+> más caro que un error: el error se arregla, la desconfianza se lleva puesto todo el tablero.
+> Hermana de la § 🧮 *Todo desarrollo termina con su control*: el control tiene que **verse**, y para
+> verse tiene que decir qué comparó.
+
+**Estado**: 🟢 arreglado, con caso en `probar:padron`.
+
+---
+
+## <a id="a-feat-126"></a>A-FEAT-126 — El 💡 Anotar una idea, arriba
+
+**Pedido del usuario 2026-09-09, con captura**: *"este boton debe estar arriba no abajo"*.
+
+Estaba al pie del tablero, después de los 53 huecos: había que scrollear la lista entera. Y **la idea
+sobre el recorrido se te ocurre mirando la lista, no después de recorrerla** — que es justo cuando el
+botón quedaba fuera de la pantalla. Movido arriba, debajo del aviso de «grita de más a propósito».
+
+🔑 **Un botón que hay que buscar es un botón que no se usa.** Vale doble acá, porque este botón es
+**el canal por el que el recorrido se corrige a sí mismo**: si no se usa, el recorrido no mejora.
+
+**Estado**: 🟢 hecho.
+
+---
+
 ## <a id="a-bug-131"></a>A-BUG-131 — «↩ Al tablero» no reabría el tablero 🧭
 
 **Reportado por el usuario 2026-09-09**, en su primer recorrido de verdad: *"el botón al tablero no

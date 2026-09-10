@@ -1510,12 +1510,19 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     return [
       padronHacienda(cats),
+      // 🔇 La ventana real del presupuesto, no un año supuesto — A-BUG-132/133. `cuotas` viene
+      // declarada AL AÑO y las cargadas se cuentan sobre todo el período: sin esto, 12 contra 24
+      // meses cerraba el hueco con el segundo año vacío.
       padronTemplates(templates.map(t => ({
         id: t.id, nombre: t.nombre, cuotas: t.cuotasDeclaradas, cuotasCargadas: cargadas(t),
         montoTipico: tipico(t),
-      })).filter(t => t.cuotas != null)),
+      })).filter(t => t.cuotas != null), {
+        meses: meses.length,
+        desde: `${meses[0].anio}-${String(meses[0].mes).padStart(2, "0")}`,
+        hasta: `${meses[meses.length - 1].anio}-${String(meses[meses.length - 1].mes).padStart(2, "0")}`,
+      }),
     ]
-  }, [agrupadores, hacienda])
+  }, [agrupadores, hacienda, meses])
 
   const cobertura = useMemo(() => {
     const avisos: { nivel: "alta" | "media"; texto: string }[] = []
