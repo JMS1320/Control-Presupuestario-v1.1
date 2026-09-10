@@ -270,6 +270,29 @@ la jerarquía de `lib/presupuesto/templates.ts` dice **cuota cargada → manda s
 (Cash Flow, Pagos, conciliación) la lee como **compromiso firme** — el `…123` sólo lo entiende el
 Presupuesto. Decisión 2026-08-22: **se genera la campaña en curso; 2027 cuando llegue.**
 
+### ↻ Confirmada el 2026-09-10 — y el padrón del presupuesto la estaba violando
+
+*Esta § tenía 18 días cuando el padrón de huecos del Presupuesto salió pidiendo exactamente lo que
+acá se decidió no hacer. La confirmó el usuario frenándolo:* **«creo que te fuiste en la dirección
+contraria… vos te fuiste a gritar más»**.
+
+El padrón preguntaba *«¿están todas las cuotas?»* y contaba las que faltaban hasta el fin del
+período. Con eso, un template mensual con la campaña en curso cargada mostraba **22 meses en falta**
+— y hacerle caso habría significado generar 2027 entero, que es lo que este § prohíbe **y que además
+degrada el presupuesto**, porque cada cuota estimada lejana pisa la proyección con un número peor.
+
+**Cambiado el 2026-09-10** → `PENDIENTES.md` § [A-FEAT-127](PENDIENTES.md#a-feat-127). La pregunta
+pasó a ser **«¿el presupuesto puede proyectar esto?»**, y la señal son los meses en cero **por falta
+de historia** — no los meses sin cuota.
+
+> 🔑 **Para el que venga a construir el próximo padrón (arrendamientos, sueldos, cuentas):** antes de
+> escribir la primera línea, **buscar en el `MODULO_<X>.md` del dominio si ya está decidido qué es
+> normal que falte.** Un detector de ausencias construido sin esa respuesta no detecta ausencias:
+> detecta la diferencia entre la realidad y una expectativa inventada.
+
+Y la tabla de los dos horizontes de arriba pasó a ser una decisión con ID propio, porque se usa
+fuera de este módulo → [A-DEC-21](PENDIENTES.md#a-dec-21).
+
 ### `aplica_generacion` — sembrado completo (2026-08-22)
 
 Los anuales estaban en `NULL` a propósito (*"a decidir en el generador, caso por caso"*, ver

@@ -13215,6 +13215,134 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-feat-127"></a>A-FEAT-127 — El padrón de templates cambia de PREGUNTA 🔄
+
+**Nace de un diálogo con el usuario el 2026-09-09/10**, después de que él frenara mi arreglo de
+[A-BUG-132](#a-bug-132): *«esto es algo que debemos charlar… por ahora solo quiero que veas lo que
+dejamos documentado en el generador de períodos de templates»*.
+
+### La pregunta vieja y por qué estaba mal
+> ❌ *«¿Están todas las cuotas de los gastos que se repiten?»*
+
+Comparaba las cuotas declaradas del template contra las cargadas en el período. **Presupone que
+todos los meses deberían tener cuota**, y eso contradice una decisión tomada el 2026-08-22
+(`MODULO_TEMPLATES.md` § 13):
+
+> *«El presupuesto no las necesita: proyecta solo los meses sin cuota. Y generarlas tiene un costo
+> real: una cuota estimada de un año lejano **pisa la proyección** con un estimado peor, y el resto
+> del sistema la lee como **compromiso firme**.»*
+
+El padrón viejo **empujaba a un trabajo inútil que además rompe lo que quiere arreglar**.
+
+### La pregunta nueva
+> ✅ *«¿Hay algún gasto que el presupuesto no pueda proyectar?»*
+
+Es la del usuario, textual: *«que el presupuesto evalúe que los templates están llenos… y que tienen
+suficiente para presupuestarse»*.
+
+### 🔑 El hallazgo que la hizo implementable: `vacio` eran TRES cosas
+Un mes en cero se veía igual viniera de donde viniera. Al abrir `calcularCeldas` resultó que había
+**tres causas mezcladas en un solo `if`**, y el usuario ya había dicho la mitad: *«un mes vacío
+puede ser legítimo»*.
+
+| Causa | ¿Legítimo? | Por qué |
+|---|---|---|
+| `no_proyectar` | ✅ **sí** | el usuario lo decidió, con motivo. Volver a preguntar es desautorizarlo |
+| `fuera_de_patron` | ✅ **sí** | es la periodicidad: el inmobiliario no paga en marzo porque paga en enero y julio. El cero **es el dato** |
+| `sin_historia` | ❌ **no** | no hay ninguna cuota de la que sacar un número. El mes queda en cero **sin que nadie lo haya decidido** |
+
+Ahora la celda lleva `motivoVacio` y el padrón cuenta **sólo el tercero**.
+
+### Lo que cambia en la práctica
+- «Retiro MA mensual» (2 cuotas, 22 meses proyectados) → **deja de ser un hueco**. Antes eran 22.
+- Aparece en cambio el template **sin una sola cuota en su historia**, que es el que de verdad deja
+  al presupuesto sin número.
+- **La plata suele ser `null`, y es honesto**: sin historia no hay de dónde estimar cuánto vale. El
+  tablero ya sabe mostrarlos sin contarlos como cero.
+
+### 🔑 Lo que se aprende, y vale más que el cambio
+> **Un padrón no se calibra subiendo o bajando el número: se calibra cambiando la pregunta.** Yo
+> pasé dos iteraciones ajustando *cuántas* cuotas esperar —12, después 24— cuando el problema era
+> que **preguntar por cuotas era el error**. Ninguna cantidad de tuning arregla una pregunta mal
+> hecha, y los tests pasan igual: **verifican la respuesta, no la pregunta.**
+
+Corolario para los padrones que faltan (arrendamientos, sueldos, cuentas): antes de escribir el
+primero, **buscar en su `MODULO_<X>.md` si ya se decidió qué es normal que falte**.
+
+**Estado**: 🟢 hecho. `probar:padron` 28/28, `type-check:diff` 113 → 113. Falta test manual →
+[A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-dec-21"></a>A-DEC-21 — Los dos horizontes del gasto son dos preguntas 🕰️
+
+*Decidido con el usuario 2026-09-10, desenterrando `MODULO_TEMPLATES.md` § 13. Él preguntó
+directo: **«lo del horizonte corto no entendí, cuál sería el problema o la pregunta?»** — así que
+acá queda escrito con la respuesta.*
+
+| | **Horizonte largo** | **Horizonte corto** |
+|---|---|---|
+| Ventana | todo el período (24 meses) | la campaña en curso |
+| La pregunta | ¿el presupuesto **puede proyectar** esto? | ¿voy a **ver venir el vencimiento**? |
+| Si falla | el presupuesto **miente por omisión**: proyecta $0 donde hay un gasto | **se te pasa un pago** |
+| Se arregla | dándole historia o un método al template | **generando las cuotas de la campaña** |
+| Quién lo mira | [A-FEAT-127](#a-feat-127) — el padrón | `avisoFaltaGenerar` — **ya existía y ya se muestra** |
+
+**El problema del horizonte corto, en una línea:** el Cash Flow **sólo muestra lo que tiene cuota
+cargada**. Sin cuota no hay fila, y un impuesto sin fila es un impuesto que se pasa. Por eso la
+cuota estimada se carga aunque el monto sea flojo — *«se carga para no olvidarse de que hay que
+pagarlo»* (§ 13). **El valor está en la fecha, no en el número.**
+
+Y por eso **más allá de la campaña no se cargan**: ahí ya no hay nada que olvidarse de pagar, es
+planeamiento — y ahí el que manda es el presupuesto, proyectando.
+
+🔑 **Mezclarlos fue el error de fondo.** Un solo padrón preguntando las dos cosas a la vez daba un
+número que no significaba nada: sumaba *«no puedo proyectar esto»* con *«esto todavía no hace falta
+cargarlo»*. Las consecuencias son distintas —una miente, la otra cuesta plata— y por eso se resuelven
+distinto.
+
+⚠️ **Queda una punta abierta** → [A-DAT-31](#a-dat-31): el aviso del horizonte corto cuenta sobre
+24 meses, cuando por esta misma decisión debería contar sobre la campaña en curso.
+
+---
+
+## <a id="a-feat-128"></a>A-FEAT-128 — Llevar al RENGLÓN, no sólo a la pantalla 📍
+
+**Preguntado por el usuario 2026-09-09**: *«qué tan difícil es que me lleve al lugar? sólo te estoy
+preguntando»*. Medido, no estimado a ojo:
+
+| Destino | Costo | Por qué |
+|---|---|---|
+| **Dentro del Presupuesto** (hacienda + la mayoría) | **chico**, ~medio día | `expandidos` ya es un `Record<clave, boolean>`: abrir el grupo correcto es una línea. Falta **el ancla en la fila** — hoy sólo tienen `key` de React, que no llega al DOM. Grep de `scrollIntoView` / `id=` / `data-fila` en la grilla: **0**. Hay que marcar la fila, hacer scroll y prender un resaltado que se apague solo |
+| **A otra pantalla** (Egresos sin Factura) | **mediano** | hay que tocar `vista-templates-egresos.tsx`, grande y de otro dominio, y acordar un contrato: que el evento lleve el id y esa vista lo ponga **en su buscador** — que es lo que el usuario hoy hace a mano tipeando el nombre. El riesgo no es técnico, es de convivencia |
+
+🔑 **El 80 % del valor está en el primero y sale barato.** El segundo puede esperar sin que el
+recorrido pierda gran cosa.
+
+**Estado**: 🔵 medido y listo para desarrollar. **Sin empezar** — el usuario preguntó, no pidió.
+
+---
+
+## <a id="a-dat-31"></a>A-DAT-31 — El aviso de generar campaña quizá cuenta de más ⚠️
+
+**Visto al pasar el 2026-09-10** mientras se rediseñaba el padrón. **No se tocó** (§ 🚦 los cuatro
+estados: se registra y se sigue con el tema en curso).
+
+El cartel del Presupuesto dice: *«Falta generar la campaña de 35 templates. El presupuesto los
+estimó (**24 meses**, $185.537.609), pero como son compromisos de pago conviene cargarles las
+cuotas.»*
+
+Pero por [A-DEC-21](#a-dec-21) / `MODULO_TEMPLATES.md` § 13, **la campaña que hay que generar es la
+en curso, no dos años**. Si es así, el número está inflado y empuja exactamente a lo que la decisión
+prohíbe — el mismo error que tenía el padrón, en otro cartel.
+
+⚠️ **Mirarlo con el usuario antes de tocar**: `avisoFaltaGenerar` es anterior y puede tener un
+motivo que no conozco. **No asumir que está mal por parecerse a algo que sí lo estaba.**
+
+**Estado**: 🔵 registrado, sin investigar.
+
+---
+
 ## <a id="a-bug-132"></a>A-BUG-132 — El padrón de templates gritaba de MENOS 🔇
 
 **Encontrado 2026-09-09 verificando una duda del usuario**, no un error. Él anotó desde el recorrido:
@@ -13230,15 +13358,31 @@ completo daba `12 − 12 = 0` → **hueco cerrado**, con el segundo año entero 
 señalara. Es el **objetivo 2 del norte** —presupuesto a 2 años, constante— fallando sin ruido, y es
 exactamente lo contrario del criterio que el usuario eligió: *«que grite de más y yo lo callo»*.
 
-### El arreglo
-`padronTemplates` recibe una `Ventana` (`meses`, `desde`, `hasta`) y espera
-`ceil(cuotasAlAño × meses / 12)`. Se redondea **para arriba** a propósito: con 18 meses y 12 al año,
-esperar 18 y que sobre es preferible a esperar 17 y cerrar el hueco antes de tiempo. **Un hueco de
-más se calla en dos clicks; uno de menos no lo ve nadie.** Sin ventana declarada se comporta como
-antes (un año), así que nada que no la pase cambia de conducta.
+### ❌ Mi arreglo estuvo MAL y duró un día — lo paró el usuario
+Escalé lo esperado a la ventana: 12 al año × 24 meses = 24. **Iba justo para el lado contrario.**
+El usuario lo cortó en una línea: *«creo que te fuiste en la dirección contraria, yo diría que
+estaba bien lo de MA y que arreglando debería gritar menos. Vos te fuiste a gritar más.»*
 
-⚠️ **Efecto visible**: el número de huecos **sube**, y bastante — cada template mensual pasa a
-esperar 24. Es lo correcto y es incómodo; para eso está el «no va / todavía no».
+Y tenía **una decisión escrita** de respaldo, de 18 días antes, que yo no leí —
+`MODULO_TEMPLATES.md` § 13, del 2026-08-22:
+
+> *«No generar campañas futuras para alimentar el presupuesto. El presupuesto no las necesita:
+> proyecta solo los meses sin cuota. Y generarlas tiene un costo real: una cuota estimada de un año
+> lejano **pisa la proyección** con un estimado peor, y el resto del sistema la lee como
+> **compromiso firme**. Se genera la campaña en curso; 2027 cuando llegue.»*
+
+Así que **faltar cuotas en los meses lejanos es lo correcto y lo buscado**. El bug original pedía 12
+donde no correspondía pedir nada; **mi arreglo pidió 24, que es peor**: empujaba a hacer justo lo
+prohibido, y hacerle caso habría **degradado el presupuesto**.
+
+🔑 **El fallo de método**: la § 🧭 Regla de contexto manda leer `MODULO_<X>.md` **antes** que el
+código, y yo arranqué por el código. La decisión existía, con su motivo, en su dimensión. *No la
+busqué porque no se me ocurrió que la hubiera* — que es exactamente el modo de falla que la regla
+describe.
+
+**Reemplazado por [A-FEAT-127](#a-feat-127)**, que cambia la pregunta en vez de ajustar el número.
+De este dossier sobrevive el diagnóstico (12 contra 24 meses era una comparación sin sentido) y
+muere la conclusión.
 
 ### 🔑 Cómo se encontró, que es lo que vale
 El usuario **no reportó un bug**: preguntó si el diagnóstico era correcto. Al verificar contra la
@@ -13246,9 +13390,9 @@ base (13 cuotas, 11 de ellas de ene–may 2026 y fuera del período) el número 
 el camino apareció éste, que es peor y que nadie estaba mirando. *Una duda sobre un número correcto
 destapó un silencio.*
 
-**Estado**: 🟢 arreglado, con 5 casos nuevos en `probar:padron` (31/31). **Contraprueba corrida**: el
-padrón de `HEAD` no detecta el hueco del segundo año y el nuevo sí — los casos no aparentan
-cobertura. Falta el test manual → [A-TEST-107](#a-test-107).
+**Estado**: ⚰️ **revertido y superado por [A-FEAT-127](#a-feat-127)**. Queda como registro de un
+error de dirección, que es más útil que borrarlo: **la contraprueba estaba bien corrida y los casos
+pasaban — probar que el código hace lo que quisiste no prueba que quisieras lo correcto.**
 
 ---
 
@@ -13386,6 +13530,14 @@ fallando en silencio ([A-BUG-130](#a-bug-130)).
 7. **Y el otro botón de anotar**: en el tablero mismo, **💡 Anotar una idea** → mismo pegado, mismo
    *"Guardada con la captura"*. **Son dos diálogos distintos y hay que probar los dos** — la primera
    versión cubrió uno solo.
+
+8. 🔴 **[A-FEAT-127]** En el tablero, la sección de gastos ahora se llama **«¿Hay algún gasto que el
+   presupuesto no pueda proyectar?»**. **Retiro MA mensual NO tiene que estar** — tiene 2 cuotas y
+   el resto proyectado, y eso está bien. Los que queden tienen que decir *«no hay historia de la que
+   sacar un número»*, y varios van a aparecer **sin plata**: es correcto, sin historia no hay de
+   dónde estimarla.
+9. **El número total de huecos tiene que BAJAR bastante** respecto de los 53. Si subió, algo salió
+   al revés.
 
 **Los adversarios:**
 - **Pegar TEXTO** dentro del cartel → tiene que pegarse el texto normalmente, sin tocar la imagen.

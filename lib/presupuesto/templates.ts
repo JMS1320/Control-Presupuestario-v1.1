@@ -171,6 +171,22 @@ export interface CuotaMes {
 
 export type OrigenCelda = 'cuota' | 'proyectado' | 'vacio'
 
+/**
+ * Por qué un mes quedó en cero. **Las tres cosas se veían igual y no son lo mismo** — A-FEAT-127.
+ *
+ * El usuario lo dijo en una línea: *«un mes vacío puede ser legítimo»*. Tiene razón en dos de los
+ * tres casos, y confundirlos es lo que hacía que el tablero gritara por meses que están bien:
+ *
+ * - `no_proyectar` — **está decidido**. El usuario marcó que este template no se proyecta, con su
+ *   motivo. Volver a preguntarlo es desautorizar una decisión suya.
+ * - `fuera_de_patron` — **es la periodicidad del gasto**. El inmobiliario no paga en marzo porque
+ *   paga en enero y julio. El cero es correcto y es el dato.
+ * - `sin_historia` — **acá sí falta algo**: no hay ninguna cuota de la que sacar un número, así que
+ *   el presupuesto no puede proyectar y el mes queda en cero **sin que nadie lo haya decidido**.
+ *   Éste es el único que es un hueco.
+ */
+export type MotivoVacio = 'no_proyectar' | 'fuera_de_patron' | 'sin_historia'
+
 export interface CeldaTemplate {
   mes: string
   monto: number
@@ -178,6 +194,8 @@ export interface CeldaTemplate {
   explicacion: string
   /** Proyectado en un template que el usuario carga a mano → falta generar la campaña. */
   faltaGenerar: boolean
+  /** Sólo en `origen: 'vacio'`. Ver `MotivoVacio`: dos de los tres son legítimos. */
+  motivoVacio?: MotivoVacio
 }
 
 const km = (a: number, m: number) => a * 12 + (m - 1)
@@ -371,12 +389,21 @@ export function proyectarTemplate(
     }
 
     if (metodo.metodo === 'no_proyectar' || !ultima || !patron.has(m.mes)) {
+      // 🔑 El ORDEN importa y no es casual: una decisión del usuario manda sobre todo lo demás.
+      // Si marcó «no proyectar», da igual que además no haya historia — ya está resuelto y no
+      // vuelve a preguntarse.
+      const motivoVacio: MotivoVacio = metodo.metodo === 'no_proyectar'
+        ? 'no_proyectar'
+        : !ultima ? 'sin_historia' : 'fuera_de_patron'
       return {
         mes: clave, monto: 0, origen: 'vacio' as const,
-        explicacion: metodo.metodo === 'no_proyectar'
+        explicacion: motivoVacio === 'no_proyectar'
           ? metodo.motivo
-          : `No paga en ${MESES_TXT[m.mes - 1]} (paga en ${nombresMeses(patron)})`,
+          : motivoVacio === 'sin_historia'
+            ? 'No hay ninguna cuota en la historia: no hay de dónde sacar un número'
+            : `No paga en ${MESES_TXT[m.mes - 1]} (paga en ${nombresMeses(patron)})`,
         faltaGenerar: false,
+        motivoVacio,
       }
     }
 

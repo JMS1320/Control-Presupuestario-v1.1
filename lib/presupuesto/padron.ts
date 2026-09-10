@@ -164,88 +164,99 @@ export function porPrioridad(huecos: Hueco[], hoy = new Date()): Hueco[] {
 export interface TemplateEsperado {
   id: string
   nombre: string
-  /** Cuántas cuotas declara el template **al año**. `0`/`null` = no tiene número fijo. */
-  cuotas: number | null
-  /** Cuántas hay efectivamente cargadas en el período. */
-  cuotasCargadas: number
-  /** Lo que vale una cuota, para estimar la plata del hueco. */
+  /**
+   * Meses del período que quedaron en cero **porque no hay historia de la que proyectar**.
+   *
+   * ⚠️ NO son todos los meses en cero. Un mes fuera del patrón de pago (el inmobiliario no paga
+   * en marzo) y un template marcado «no proyectar» también dan cero, y los dos están bien.
+   * Ver `MotivoVacio` en `lib/presupuesto/templates.ts`.
+   */
+  mesesSinPoderProyectar: number
+  /** Cuántos meses tiene el período, para poder decir «12 de 24» y no un número suelto. */
+  mesesDelPeriodo: number
+  /** Lo que vale un mes típico, si hay con qué estimarlo. Casi siempre `null` acá — ver abajo. */
   montoTipico: number | null
   responsable?: string | null
 }
 
 /**
- * Cuántos meses cubre el presupuesto que se está mirando, y desde cuándo — **A-BUG-132/133**.
+ * Cuántos meses cubre el presupuesto que se está mirando, y cuáles — **A-BUG-133**.
  *
- * Las dos cosas hacen falta y por motivos distintos: `meses` para saber **cuántas cuotas esperar**
- * (12 al año contra una ventana de 24 meses son 24, no 12), y `desde`/`hasta` para poder **decirlo
- * en el texto del hueco**, que es lo que evita que un número correcto parezca roto.
+ * Hace falta para poder **decir la ventana en el texto del hueco**. Sin eso el usuario abre
+ * Egresos, ve 13 cuotas donde el tablero habla de 2, y desconfía del sistema con toda la razón:
+ * los dos números son ciertos y el que falta es el «dónde miro».
  */
 export interface Ventana {
-  /** Meses que cubre el período visible. */
   meses: number
-  /** `YYYY-MM` del primero y del último, para nombrar la ventana en el porqué. */
+  /** `YYYY-MM` del primero y del último. */
   desde: string
   hasta: string
 }
 
-/** «Sep 26 – Ago 28», como lo dice la pantalla. */
-function nombrarVentana(v: Ventana): string {
+/** «sep 26 – ago 28», como lo dice la pantalla. */
+export function nombrarVentana(v: Ventana): string {
   const M = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
   const decir = (m: string) => {
     const [a, mm] = m.split('-')
-    return `${M[Number(mm) - 1] ?? mm} ${a.slice(2)}`
+    return `${M[Number(mm) - 1] ?? mm} ${(a ?? '').slice(2)}`
   }
   return `${decir(v.desde)} – ${decir(v.hasta)}`
 }
 
 /**
- * 📋 **¿Están todas las cuotas de los templates?**
+ * 📋 **¿Hay algún gasto que el presupuesto NO PUEDA proyectar?**
  *
- * El padrón lo declara **el template mismo**: si dice que son 4 cuotas al año y hay 3 cargadas,
- * falta una. No hace falta preguntarle nada a nadie.
+ * ## ⚠️ Ésta NO es la pregunta que hacía antes, y el cambio es de fondo
+ * Hasta el 2026-09-10 preguntaba *«¿están todas las cuotas cargadas?»* y comparaba las cuotas
+ * declaradas del template contra las cargadas en el período. **Estaba mal de raíz**, y lo dice una
+ * decisión que ya existía —`MODULO_TEMPLATES.md` § 13, del 2026-08-22— que yo no leí:
  *
- * ## 🔇 Lo esperado se ESCALA a la ventana — A-BUG-132
- * `cuotas` es **al año**, pero las cargadas se cuentan sobre **todo el período visible**, que hoy
- * son 24 meses (sep 26 – ago 28). Comparar 12 contra 24 meses hacía que el hueco **se cerrara con
- * el primer año lleno y el segundo vacío, sin que nada avisara** — es el objetivo 2 del norte
- * (presupuesto a 2 años, constante) fallando en silencio, y es gritar de MENOS justo donde el
- * usuario pidió lo contrario: *«que grite de más y yo lo callo»*.
+ * > *«No generar campañas futuras para alimentar el presupuesto. El presupuesto no las necesita:
+ * > proyecta solo los meses sin cuota. Y generarlas tiene un costo real: una cuota estimada de un
+ * > año lejano **pisa la proyección** con un estimado peor, y el resto del sistema la lee como
+ * > **compromiso firme**. Se genera la campaña en curso; 2027 cuando llegue.»*
  *
- * Se redondea **para arriba**: con una ventana de 18 meses y 12 al año, esperar 18 y sobrar es
- * preferible a esperar 17 y que el hueco se cierre antes de tiempo. Un hueco de más se calla en
- * dos clicks; uno de menos no se entera nadie.
+ * O sea que **es correcto y deseado que falten cuotas** en los meses lejanos. El padrón viejo
+ * empujaba a cargarlas, que es trabajo inútil y además **degrada el presupuesto**.
  *
- * ⚠️ Un template con `cuotas` en 0 o null **no tiene padrón** — son los gastos abiertos, sin
- * periodicidad fija. Inventarles un número esperado los convertiría en huecos permanentes.
+ * ## Los dos horizontes son dos preguntas, y ésta es una sola de ellas
+ * | Horizonte | La pregunta | Quién la hace |
+ * |---|---|---|
+ * | **Largo** (todo el período) | ¿el presupuesto puede **proyectar** esto? | **este padrón** |
+ * | **Corto** (campaña en curso) | ¿voy a **ver venir el vencimiento**? | `avisoFaltaGenerar`, que ya existe y ya se muestra |
+ *
+ * Mezclarlas fue el error: la consecuencia de la primera es *el presupuesto miente por omisión*;
+ * la de la segunda es *se te pasa un pago*. Son distintas y se resuelven distinto.
+ *
+ * ## Qué cuenta como hueco, entonces
+ * Sólo los meses en cero **por falta de historia**. Un mes fuera del patrón de pago y un template
+ * marcado «no proyectar» **no son huecos** — el usuario lo dijo en una línea: *«un mes vacío puede
+ * ser legítimo»*.
+ *
+ * 💡 **La plata casi siempre es `null` acá, y es honesto que lo sea**: si no hay historia, no hay
+ * de dónde sacar cuánto vale. El tablero ya sabe mostrar los huecos sin valorizar sin contarlos
+ * como cero.
  */
 export function padronTemplates(templates: TemplateEsperado[], ventana?: Ventana): Padron {
-  const conNumero = templates.filter(t => (t.cuotas ?? 0) > 0)
-  // Sin ventana declarada se asume un año, que es como se comportaba antes de A-BUG-132.
-  const meses = ventana?.meses ?? 12
-  const donde = ventana ? ` en ${nombrarVentana(ventana)}` : ''
-  const esperar = (alAño: number) => Math.ceil((alAño * meses) / 12)
+  const donde = ventana ? ` de ${nombrarVentana(ventana)}` : ''
   const huecos: Hueco[] = []
-  for (const t of conNumero) {
-    const espera = esperar(t.cuotas ?? 0)
-    const faltan = espera - t.cuotasCargadas
-    if (faltan <= 0) continue
+  for (const t of templates) {
+    if (t.mesesSinPoderProyectar <= 0) continue
     huecos.push({
       dominio: 'templates',
       clave: `template:${t.id}`,
       que: t.nombre + (t.responsable ? ` (${t.responsable})` : ''),
-      // 🗣️ A-BUG-133: el texto dice CONTRA QUÉ VENTANA cuenta. Sin eso el usuario abre Egresos,
-      // ve 13 cuotas donde el tablero dice 2, y desconfía del sistema con toda la razón: los dos
-      // números son ciertos y el que faltaba era el «dónde miro».
-      porque: `declara ${t.cuotas} cuota(s) al año → ${espera}${donde}, y hay ${t.cuotasCargadas} cargada(s)`,
-      plata: t.montoTipico != null ? t.montoTipico * faltan : null,
+      porque: `el presupuesto no puede proyectarlo: no hay historia de la que sacar un número, `
+        + `y ${t.mesesSinPoderProyectar} de los ${t.mesesDelPeriodo} meses${donde} quedan en cero`,
+      plata: t.montoTipico != null ? t.montoTipico * t.mesesSinPoderProyectar : null,
       donde: { pantalla: 'Egresos sin Factura', detalle: t.nombre },
       estado: 'abierto',
     })
   }
   return {
     dominio: 'templates',
-    pregunta: '¿Están todas las cuotas de los gastos que se repiten?',
-    huecos, esperados: conNumero.reduce((s, t) => s + esperar(t.cuotas ?? 0), 0),
+    pregunta: '¿Hay algún gasto que el presupuesto no pueda proyectar?',
+    huecos, esperados: templates.length,
   }
 }
 

@@ -45,71 +45,49 @@ chequear("Dice POR QUÉ cree que falta, para poder discutirlo",
   /existen 340 y ninguna tiene venta/.test(hac.huecos.find((h: any) => /CUT/.test(h.que))?.porque ?? ""),
   hac.huecos.find((h: any) => /CUT/.test(h.que))?.porque ?? "")
 
-// ── 📋 Templates — el padrón lo declara el template mismo ─────────────────────────────────────
-const tpl = P.padronTemplates([
-  { id: "t1", nombre: "Inmobiliario Casco", cuotas: 4, cuotasCargadas: 3, montoTipico: 1_362_096, responsable: "PAM" },
-  { id: "t2", nombre: "Inmobiliario Lima", cuotas: 4, cuotasCargadas: 4, montoTipico: 810_725, responsable: "MA" },
-  { id: "t3", nombre: "Comisiones bancarias", cuotas: 0, cuotasCargadas: 2, montoTipico: 5_000 },
-  { id: "t4", nombre: "Seguro flota", cuotas: 12, cuotasCargadas: 9, montoTipico: 200_000 },
-])
-
-chequear("Detecta el template al que le falta una cuota",
-  tpl.huecos.some((h: any) => /Casco/.test(h.que)), tpl.huecos.map((h: any) => h.que).join(" · "))
-
-chequear("Estima la plata por lo que FALTA, no por el total del año",
-  tpl.huecos.find((h: any) => /Casco/.test(h.que))?.plata === 1_362_096,
-  $(tpl.huecos.find((h: any) => /Casco/.test(h.que))?.plata))
-
-chequear("Tres cuotas faltantes valen tres veces",
-  tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.plata === 600_000,
-  $(tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.plata))
-
-chequear("🔴 Un gasto ABIERTO (sin cuotas fijas) no tiene padrón y NO es un hueco",
-  !tpl.huecos.some((h: any) => /Comisiones/.test(h.que)), "queda afuera")
-
-chequear("El completo no aparece", !tpl.huecos.some((h: any) => /Lima/.test(h.que)), "Lima afuera")
-
-// ── 🔇 A-BUG-132 · lo esperado se ESCALA a la ventana ─────────────────────────────────────────
-// 🔴 El caso que rompe con el código viejo. El presupuesto real son **24 meses** (sep 26 – ago 28)
-//    y `cuotas` viene declarada AL AÑO. Comparando 12 contra 24 meses, un template con el primer
-//    año lleno se daba por completo **y el segundo quedaba vacío sin que nada avisara** — que es
-//    el objetivo 2 del norte fallando en silencio, y gritar de MENOS justo donde el usuario pidió
-//    lo contrario.
+// ── 📋 Templates — ¿el presupuesto PUEDE proyectarlo? ─────────────────────────────────────────
+// ⚠️ Esta pregunta cambió el 2026-09-10 (A-FEAT-127). Antes era «¿están todas las cuotas?» y
+//    estaba mal de raíz: `MODULO_TEMPLATES.md` § 13 decidió el 22/08 que **no se generan campañas
+//    futuras para alimentar el presupuesto**, porque una cuota estimada lejana PISA la proyección
+//    con un estimado peor y el resto del sistema la lee como compromiso firme. Faltar cuotas en
+//    los meses lejanos es lo correcto y lo buscado.
 const V24 = { meses: 24, desde: "2026-09", hasta: "2028-08" }
-const dosAnios = P.padronTemplates([
-  { id: "m1", nombre: "Retiro MA mensual", cuotas: 12, cuotasCargadas: 12, montoTipico: 4_000_000 },
-  { id: "m2", nombre: "Retiro completo", cuotas: 12, cuotasCargadas: 24, montoTipico: 4_000_000 },
+const tpl = P.padronTemplates([
+  // El caso real que lo destapó: 2 cuotas cargadas, el resto proyectado. NO es un hueco.
+  { id: "t1", nombre: "Retiro MA mensual", mesesSinPoderProyectar: 0, mesesDelPeriodo: 24, montoTipico: 4_000_000, responsable: "MA" },
+  // Un template nuevo, sin una sola cuota nunca: el presupuesto no tiene de dónde sacar el número.
+  { id: "t2", nombre: "Seguro galpón nuevo", mesesSinPoderProyectar: 24, mesesDelPeriodo: 24, montoTipico: null },
+  // Uno al que le falta parte del período.
+  { id: "t3", nombre: "Tasa vial", mesesSinPoderProyectar: 6, mesesDelPeriodo: 24, montoTipico: 150_000, responsable: "PAM" },
 ], V24)
 
-chequear("🔴 12 al año con 12 cargadas en una ventana de 24 meses SIGUE siendo un hueco",
-  dosAnios.huecos.some((h: any) => /Retiro MA/.test(h.que)),
-  dosAnios.huecos.map((h: any) => h.que).join(" · ") || "ninguno — el segundo año quedaría mudo")
+chequear("🔴 Un template con cuotas viejas y el resto PROYECTADO no es un hueco",
+  !tpl.huecos.some((h: any) => /Retiro MA/.test(h.que)),
+  "faltar cuotas lejanas es lo correcto — MODULO_TEMPLATES § 13")
 
-chequear("🔴 Y falta el año entero, no una cuota: 12 × el monto típico",
-  dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.plata === 48_000_000,
-  $(dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.plata))
+chequear("🔴 Sí lo es el que NO SE PUEDE proyectar por falta de historia",
+  tpl.huecos.some((h: any) => /Seguro galpón/.test(h.que)),
+  tpl.huecos.map((h: any) => h.que).join(" · "))
 
-chequear("Con las 24 cargadas SÍ se cierra — no grita para siempre",
-  !dosAnios.huecos.some((h: any) => /Retiro completo/.test(h.que)), "cerrado")
+chequear("La pregunta del dominio cambió: ya no habla de cuotas",
+  tpl.pregunta === "¿Hay algún gasto que el presupuesto no pueda proyectar?", tpl.pregunta)
 
-chequear("Una ventana partida redondea PARA ARRIBA (18 meses, 12 al año → 18)",
-  (() => { const r = P.padronTemplates(
-    [{ id: "x", nombre: "X", cuotas: 12, cuotasCargadas: 17, montoTipico: 1 }],
-    { meses: 18, desde: "2026-09", hasta: "2028-02" })
-    return r.huecos.length === 1 })(),
-  "un hueco de más se calla en dos clicks; uno de menos no lo ve nadie")
+chequear("🔴 Sin historia NO se inventa la plata: se declara que no se pudo valorizar",
+  tpl.huecos.find((h: any) => /Seguro galpón/.test(h.que))?.plata === null,
+  "plata = " + String(tpl.huecos.find((h: any) => /Seguro galpón/.test(h.que))?.plata))
 
-chequear("Sin ventana declarada se comporta como antes (un año)",
-  P.padronTemplates([{ id: "y", nombre: "Y", cuotas: 12, cuotasCargadas: 12, montoTipico: 1 }]).huecos.length === 0,
-  "compatible")
+chequear("Con monto típico sí la estima, y por los meses que faltan",
+  tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.plata === 900_000,
+  $(tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.plata))
 
-// ── 🗣️ A-BUG-133 · el porqué dice CONTRA QUÉ VENTANA cuenta ───────────────────────────────────
-// El usuario abrió Egresos, vio «13 Cuotas Encontradas» y el tablero le decía «2 cargadas». Los
-// dos números eran ciertos: 11 de esas 13 son de ene–may 2026 y caen ANTES del período. El
-// diagnóstico estaba bien y parecía roto por no decir dónde miraba.
-chequear("🔴 El porqué nombra la ventana, así un número correcto no parece roto",
-  /24 en sep 26 – ago 28/.test(dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.porque ?? ""),
-  dosAnios.huecos.find((h: any) => /Retiro MA/.test(h.que))?.porque ?? "")
+chequear("🗣️ El porqué dice CUÁNTOS meses y de QUÉ ventana (A-BUG-133)",
+  /6 de los 24 meses de sep 26 – ago 28/.test(
+    tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.porque ?? ""),
+  tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.porque ?? "")
+
+chequear("Y explica el motivo, no sólo el síntoma",
+  /no puede proyectarlo/.test(tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.porque ?? ""),
+  tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.porque ?? "")
 
 // ── 💸 Cuentas — el hueco más silencioso ──────────────────────────────────────────────────────
 const cta = P.padronCuentas([
@@ -130,12 +108,18 @@ chequear("Y lo insignificante no ensucia el tablero",
 
 // ── 🎯 El marcador ────────────────────────────────────────────────────────────────────────────
 const todos = [...hac.huecos, ...tpl.huecos, ...cta.huecos]
-// 5 huecos: 2 de hacienda (CUT y vaquillonas) + 2 de templates (Casco y Seguro) + 1 de cuentas.
+// 5 huecos: 2 de hacienda (CUT y vaquillonas) + 2 de templates + 1 de cuentas.
+// 🔑 Uno de los de templates (Seguro galpón) va SIN PLATA a propósito: sin historia no hay de
+//    dónde estimarla. Por eso este caso también prueba que el marcador **no lo cuenta como cero**.
 const m = P.marcador(todos, HOY)
 
 chequear("Cuenta los abiertos y suma su plata",
-  m.abiertos === 5 && m.plata === 180_200_000 + 42_000_000 + 1_362_096 + 600_000 + 4_000_000,
-  `${m.abiertos} abiertos · ${$(m.plata)}`)
+  m.abiertos === 5 && m.plata === 180_200_000 + 42_000_000 + 900_000 + 4_000_000,
+  `${m.abiertos} abiertos · ${$(m.plata)} · ${m.sinValorizar} sin valorizar`)
+
+chequear("🔴 El hueco sin historia se cuenta como HUECO pero no como $0",
+  m.abiertos === 5 && m.sinValorizar === 1,
+  `${m.sinValorizar} sin poder valorizar — el total de plata es un piso, no la cifra completa`)
 
 chequear("🔴 Con huecos abiertos, NO está cerrado", m.cerrado === false, "no cerrado")
 

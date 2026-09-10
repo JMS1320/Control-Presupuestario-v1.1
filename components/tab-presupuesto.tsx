@@ -1485,9 +1485,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   const padrones = useMemo(() => {
     const templates = agrupadores.flatMap(ag => ag.templates)
-    // Cuántos meses de este período tienen una cuota REAL cargada (no proyectada).
-    const cargadas = (t: FilaTemplate) =>
-      Object.values(t.celdas).filter(c => c?.origen === "cuota").length
+    /**
+     * Los meses que quedan en cero **porque no hay de dónde proyectar** — A-FEAT-127.
+     *
+     * ⚠️ No es "meses sin cuota": es correcto y deseado que falten cuotas en los meses lejanos
+     * (`MODULO_TEMPLATES.md` § 13). Y tampoco es "meses en cero": un mes fuera del patrón de pago
+     * y un template marcado «no proyectar» también dan cero, y los dos están bien.
+     */
+    const sinPoderProyectar = (t: FilaTemplate) =>
+      Object.values(t.celdas).filter(c => c?.motivoVacio === "sin_historia").length
     const tipico = (t: FilaTemplate) => {
       const v = Object.values(t.montos).filter(x => x > 0)
       return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
@@ -1510,13 +1516,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     return [
       padronHacienda(cats),
-      // 🔇 La ventana real del presupuesto, no un año supuesto — A-BUG-132/133. `cuotas` viene
-      // declarada AL AÑO y las cargadas se cuentan sobre todo el período: sin esto, 12 contra 24
-      // meses cerraba el hueco con el segundo año vacío.
+      // 📋 La pregunta es «¿el presupuesto puede proyectar esto?», NO «¿están todas las cuotas?».
+      // Ver el comentario largo de `padronTemplates`: pedir las cuotas de los meses lejanos empuja
+      // justo a lo que `MODULO_TEMPLATES.md` § 13 decidió no hacer.
       padronTemplates(templates.map(t => ({
-        id: t.id, nombre: t.nombre, cuotas: t.cuotasDeclaradas, cuotasCargadas: cargadas(t),
+        id: t.id, nombre: t.nombre,
+        mesesSinPoderProyectar: sinPoderProyectar(t),
+        mesesDelPeriodo: meses.length,
         montoTipico: tipico(t),
-      })).filter(t => t.cuotas != null), {
+      })), {
         meses: meses.length,
         desde: `${meses[0].anio}-${String(meses[0].mes).padStart(2, "0")}`,
         hasta: `${meses[meses.length - 1].anio}-${String(meses[meses.length - 1].mes).padStart(2, "0")}`,
