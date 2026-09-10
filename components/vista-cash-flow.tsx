@@ -14,6 +14,7 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { calcularRetencion } from "@/lib/sicore/minimo"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
@@ -325,6 +326,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Estados modal SICORE anticipo
   const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
+
+  /**
+   * El **portón** del acumulado: el mínimo más bajo de los regímenes activos.
+   *
+   * Se usa sólo para decidir *si vale la pena preguntar*; el mínimo que manda es el del régimen que
+   * el usuario elige después (`tipo.minimo_no_imponible`). Por eso el portón tiene que ser el más
+   * bajo: uno más alto dejaría afuera facturas que sí retienen por servicios.
+   *
+   * ⚠️ **Salía de un `67170` escrito a mano en dos lugares.** Los mínimos los actualiza AFIP y viven
+   * en `tipos_sicore_config`; con el número clavado, el día que cambien el portón sigue usando el
+   * viejo **y no avisa** — un default silencioso, que es justo lo que no se hace acá.
+   */
+  const minimoGateSicore = () => {
+    const minimos = tiposSicore.map(t => Number(t.minimo_no_imponible)).filter(n => Number.isFinite(n) && n > 0)
+    return minimos.length > 0 ? Math.min(...minimos) : 67170
+  }
   const [mostrarModalSicoreAnticipo, setMostrarModalSicoreAnticipo] = useState(false)
   const [anticipoSicoreId, setAnticipoSicoreId] = useState<string | null>(null)
   const [anticipoSicoreCuit, setAnticipoSicoreCuit] = useState('')
@@ -1472,7 +1489,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setProcesandoLote(true)
 
     try {
-      const minimoSicore = 67170
+      const minimoSicore = minimoGateSicore()
       const calcularNetoLote = (f: CashFlowRow) => {
         const tc = f.tc_pago ?? f.tipo_cambio ?? 1
         return ((f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)) * tc
@@ -1862,7 +1879,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoFactura = netoGravado + netoNoGravado + opExentas
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
-    const minimoServicios = 67170
+    const minimoServicios = minimoGateSicore()
     const quincena = quincenaDePago(fila)
     if (!quincena) {
       // Sin fecha de pago no hay quincena, y sin quincena no puede haber retención.
@@ -1971,6 +1988,54 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setMostrarModalSicore(true)
   }
 
+  /**
+   * La factura que NO llega al mínimo igual deja su fila en `sicore_retenciones`, con **retención 0**.
+   *
+   * 🔑 **Por qué, y es la parte que no se ve:** el TXT que va a AFIP agrupa por `cuit + régimen` y
+   * emite **UN renglón por certificado** (`generarTXTCierreV2`), sumando `pago`,
+   * `neto_gravado_pagado` y `retencion` de todas las filas del grupo. Si la factura que consumió el
+   * mínimo no deja fila, ese renglón sale **corto**: declara menos pago y menos base de las que
+   * realmente se pagaron, con la retención completa. En el caso Alcorta serían $205.768,75 en vez
+   * de $385.093,90.
+   *
+   * Y deja además un dato que hoy no existe en ninguna parte: **de qué régimen era un pago que no
+   * retuvo**. Sin eso, el acumulado del mínimo no puede distinguir bienes de servicios.
+   *
+   * ⚠️ **No estampa `comprobantes_arca.sicore`** — eso significa "esta factura tiene retención" y lo
+   * usa `verificarRetencionPreviaFactura`. Si se estampara acá, la siguiente factura del lote creería
+   * que el mínimo ya se consumió entero y retendría sobre el neto completo.
+   */
+  const registrarConsumoDeMinimoCF = async (
+    fila: CashFlowRow, tipo: TipoSicore, netoFacturaPesos: number, quincena: string
+  ) => {
+    const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
+    const impTotalPesos = Math.round((fila.imp_total || 0) * tc * 100) / 100
+    const fa = fila as any
+    await registrarEnSicoreRetenciones('msa', {
+      origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
+      quincena,
+      fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString().split('T')[0],
+      factura_id: fila.id,
+      fecha_emision: fa.fecha_emision ?? null,
+      tipo_comprobante: fa.tipo_comprobante ?? null,
+      punto_venta: fa.punto_venta ?? null,
+      numero_desde: fa.numero_desde ?? null,
+      cuit_emisor: fila.cuit_proveedor ?? null,
+      denominacion_emisor: fila.nombre_proveedor ?? null,
+      tipo_sicore: tipo.tipo,
+      alicuota: tipo.porcentaje_retencion,
+      neto_gravado_pagado: netoFacturaPesos,
+      total_pagado: impTotalPesos,
+      descuento_aplicado: 0,
+      // Lo que esta factura consumió del mínimo. La suma de los `minimo_no_imponible` del grupo
+      // tiene que dar **exactamente el mínimo del régimen, una sola vez**: ése es el control.
+      minimo_no_imponible: netoFacturaPesos,
+      base_imponible: 0,
+      retencion: 0,
+      pago: impTotalPesos,
+    })
+  }
+
   // Calcular retención según tipo seleccionado. ignorarPrevios = override (no restar pagos previos del mínimo).
   const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore, ignorarPrevios = false) => {
     // SICORE se calcula sobre lo pagado: usar TC de pago para convertir a pesos
@@ -1993,14 +2058,41 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (!yaRetuvo) {
       // Capa 2: pagos previos (sin retención) que consumieron parte del mínimo (override = ignorarlos).
       netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena) // real, para mostrar
-      const minimoDisponible = Math.max(0, tipo.minimo_no_imponible - (ignorarPrevios ? 0 : netoPrevio))
-      if (netoFacturaPesos <= minimoDisponible) {
-        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFacturaPesos.toLocaleString('es-AR')}\nMínimo disponible: $${minimoDisponible.toLocaleString('es-AR')}${netoPrevio > 0 ? ` (mínimo $${tipo.minimo_no_imponible.toLocaleString('es-AR')} − $${netoPrevio.toLocaleString('es-AR')} ya pagados)` : ''}`)
-        setMostrarModalSicore(false)
+      // 📐 La cuenta vive en `lib/sicore/minimo.ts`, no acá: mezclada con el estado del modal y con
+      // las lecturas a Supabase **no se podía probar**. Ahora tiene casos (`npm run probar`).
+      const reparto = calcularRetencion({
+        neto: netoFacturaPesos,
+        minimoRegimen: tipo.minimo_no_imponible,
+        netoPrevio: ignorarPrevios ? 0 : netoPrevio,
+        yaRetuvo: false,
+        alicuota: tipo.porcentaje_retencion,
+      })
+      if (!reparto.retiene) {
+        // 🔴 NO es el final del camino: esta factura CONSUME parte del mínimo y **la cola tiene que
+        // seguir**. Acá había un `alert()` + `return` que mataba la cola entera: con tres facturas
+        // que superan el mínimo sólo SUMADAS, la primera cortaba y las otras dos no se procesaban
+        // nunca — aunque el portón del lote las hubiera dado por calificadas. Caso Alcorta 10/09
+        // (A-BUG-137): tres FC de bienes por $318.259,43 contra un mínimo de $224.000, y no retenía
+        // ni un peso porque ninguna llegaba **sola** al mínimo.
+        //
+        // Al pasar a 'pagar' sin retención, la factura queda contada por
+        // `netoPagosPreviosSinRetencion` (estado 'pagar' + `sicore` en NULL), así que la siguiente
+        // de la cola ve el mínimo ya consumido. Ahí es donde el acumulado empieza a funcionar
+        // también dentro de un mismo lote, y no sólo entre pagos de días distintos.
+        await registrarConsumoDeMinimoCF(fila, tipo, netoFacturaPesos, quincena)
+        const fmt = (n: number) => `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`
+        const quedan = colaLoteSicore.length
+        toast.info(
+          `${fila.detalle?.slice(0, 28) ?? 'La factura'}: el neto (${fmt(netoFacturaPesos)}) no llega al mínimo de ${tipo.tipo}. ` +
+          `Se paga sin retención y consume ${fmt(reparto.minimoAplicado)} del mínimo.` +
+          (quedan > 0 ? ` Sigo con ${quedan} más.` : ''),
+          { duration: 7000 }
+        )
+        await cancelarSicoreCF(true)
         return
       }
-      baseImponible = netoFacturaPesos - minimoDisponible
-      minimoAplicado = minimoDisponible
+      baseImponible = reparto.baseImponible
+      minimoAplicado = reparto.minimoAplicado
     }
 
     const retencionCalculada = Math.round(baseImponible * tipo.porcentaje_retencion * 100) / 100

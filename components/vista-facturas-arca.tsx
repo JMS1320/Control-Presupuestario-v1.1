@@ -4938,9 +4938,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       grupos[key].ids.push(r.id)
     }
 
-    const gruposOrdenados = Object.values(grupos).sort((a: any, b: any) =>
+    // Un grupo cuya retención suma 0 NO es un certificado: es una factura que consumió parte del
+    // mínimo y se pagó sin retener. Deja fila en `sicore_retenciones` para que el renglón del
+    // certificado declare el pago y la base completos (ver `registrarConsumoDeMinimoCF` en el Cash
+    // Flow), pero **no se le manda un renglón a AFIP con retención 0,00**.
+    const gruposConRetencion = (Object.values(grupos) as any[]).filter(g => (Number(g.retencion) || 0) > 0)
+
+    const gruposOrdenados = gruposConRetencion.sort((a: any, b: any) =>
       a.cuit_emisor.localeCompare(b.cuit_emisor)
     )
+
+    // Las filas que sí forman parte de un certificado. El guard de idempotencia se mide sobre
+    // éstas: las de retención 0 nunca reciben número, y mirándolas a todas `yaAsignados` daría
+    // siempre `false` y **renumeraría una quincena ya cerrada**.
+    const idsConCertificado = new Set(gruposOrdenados.flatMap((g: any) => g.ids as string[]))
 
     // Parsear quincena "26-03 - 1ra" → yy=26, mm=03, q=1
     const partes = quincena.split(' - ')
@@ -4950,7 +4961,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Verificar si esta quincena ya fue cerrada (guard idempotencia)
     // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
-    const yaAsignados = registrosVigentes.every((r: any) => r.nro_comprobante != null)
+    const yaAsignados = registrosVigentes
+      .filter((r: any) => idsConCertificado.has(r.id))
+      .every((r: any) => r.nro_comprobante != null)
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')

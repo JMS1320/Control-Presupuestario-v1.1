@@ -37,6 +37,7 @@ import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
+import { simularSecuencia, retencionDelGrupo } from "@/lib/sicore/minimo"
 
 export interface Resultado {
   caso: string
@@ -81,6 +82,9 @@ const CABEZAS_OK: CabezaRomaneo[] = cabezasDeMedias(MEDIAS).map(c =>
 
 const n = (v: number) => v.toLocaleString("es-AR", { maximumFractionDigits: 2 })
 const cerca = (a: number, b: number, tol = 1) => Math.abs(a - b) <= tol
+/** Plata: siempre con 2 decimales, es-AR. */
+const n2 = (v: number) => v.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const r2 = (v: number) => Math.round(v * 100) / 100
 
 export function correrCasos(): Resultado[] {
   const r: Resultado[] = []
@@ -182,6 +186,56 @@ export function correrCasos(): Resultado[] {
   chequear("Desbaste", "Contra el camión da un desbaste normal (0,15–0,20 %/h)",
     "≈0,176 %/h", `${(pctCamion / horas).toFixed(3)} %/h`,
     cerca(pctCamion / horas, 0.176, 0.005), "A-FEAT-100")
+
+  // ══ SICORE: el mínimo se consume UNA vez por proveedor, no una por factura ════════════════
+  // Los tres netos son los reales de ALCORTA EDMUNDO del 10/09/2026 (FC 6337, 6328 y 6347),
+  // escritos acá como constantes: si mañana alguien edita esas filas, el caso no cambia.
+  const ALCORTA = [148202.62, 95916.33, 74140.48]
+  const MIN_BIENES = 224000      // tipos_sicore_config → Bienes
+  const ALIC_BIENES = 0.02
+
+  const pasos = simularSecuencia(ALCORTA, MIN_BIENES, ALIC_BIENES)
+  const totalRetenido = r2(pasos.reduce((s, p) => s + p.retencion, 0))
+
+  // 🔴 EL CASO DEL BUG: ninguna de las tres llega sola al mínimo, y sumadas sí.
+  chequear("SICORE", "Tres facturas bajo el mínimo que SUMADAS lo superan sí retienen",
+    "$1.885,19", `$${n2(totalRetenido)}`, cerca(totalRetenido, 1885.19, 0.01), "A-BUG-137")
+
+  chequear("SICORE", "Ninguna de las tres llega sola al mínimo de Bienes",
+    "las 3 por debajo de $224.000", `máx $${n2(Math.max(...ALCORTA))}`,
+    Math.max(...ALCORTA) < MIN_BIENES, "A-BUG-137")
+
+  // El control del camino inverso (§ CLAUDE.md): de atrás para adelante tiene que dar lo mismo.
+  const deUnaVez = retencionDelGrupo(ALCORTA, MIN_BIENES, ALIC_BIENES)
+  chequear("SICORE", "Factura por factura da lo mismo que (total − mínimo) × alícuota",
+    `$${n2(deUnaVez)}`, `$${n2(totalRetenido)}`, cerca(totalRetenido, deUnaVez, 0.01), "A-BUG-137")
+
+  // El mínimo es UNO por proveedor y régimen: si se aplicara por factura, se consumiría 3 veces.
+  const minimoConsumido = r2(pasos.reduce((s, p) => s + p.minimoAplicado, 0))
+  chequear("SICORE", "El mínimo se consume una sola vez entre las tres",
+    `$${n2(MIN_BIENES)}`, `$${n2(minimoConsumido)}`, cerca(minimoConsumido, MIN_BIENES, 0.01), "A-BUG-137")
+
+  // La primera no retiene pero NO es el final: si el circuito se corta ahí, se retienen $0.
+  chequear("SICORE", "La primera no retiene, y las dos siguientes sí",
+    "no · sí · sí", pasos.map(p => p.retiene ? "sí" : "no").join(" · "),
+    !pasos[0].retiene && pasos[1].retiene && pasos[2].retiene, "A-BUG-137")
+
+  // El orden no puede cambiar el total: era un objetivo declarado del acumulado.
+  const alReves = r2(simularSecuencia([...ALCORTA].reverse(), MIN_BIENES, ALIC_BIENES)
+    .reduce((s, p) => s + p.retencion, 0))
+  chequear("SICORE", "Al revés da lo mismo — el orden no cambia lo que se retiene",
+    `$${n2(totalRetenido)}`, `$${n2(alReves)}`, cerca(alReves, totalRetenido, 0.01), "A-BUG-137")
+
+  // Y que siga siendo cierto lo de siempre: una sola factura bajo el mínimo NO retiene.
+  const solaChica = simularSecuencia([95916.33], MIN_BIENES, ALIC_BIENES)
+  chequear("SICORE", "Una sola factura bajo el mínimo sigue sin retener",
+    "$0,00", `$${n2(solaChica[0].retencion)}`, solaChica[0].retencion === 0, "A-BUG-137")
+
+  // Servicios tiene otro mínimo: la MISMA factura que no retiene por bienes, retiene por servicios.
+  const porServicios = simularSecuencia([95916.33], 67170, 0.02)
+  chequear("SICORE", "La misma factura por Servicios sí retiene (otro mínimo)",
+    "$574,93", `$${n2(porServicios[0].retencion)}`,
+    cerca(porServicios[0].retencion, (95916.33 - 67170) * 0.02, 0.01), "A-BUG-137")
 
   return r
 }
