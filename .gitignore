@@ -62,3 +62,9 @@ arca-poc/
 
 # Credenciales — NUNCA al repo (A-SEC-02). El archivo tiene un token a revocar.
 CREDENCIALES_SUPABASE_NUEVO.md
+
+# Playwright — artefactos de las corridas de UI (capturas, videos, trazas, reporte)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

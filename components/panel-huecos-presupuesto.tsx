@@ -19,12 +19,13 @@
  * **la decisión de callar un hueco** — que es lo único que el sistema no puede deducir solo.
  */
 
-import { useState, useMemo, useEffect, useCallback } from "react"
+import { useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react"
 import { supabase } from "@/lib/supabase"
 import { marcador, porPrioridad, vigente, type Hueco, type Padron } from "@/lib/presupuesto/padron"
 import { ponerFoco, soltarFoco } from "@/lib/recorrido/foco"
 import { comprimir, imagenPegada } from "@/lib/captura-imagen"
-import { arrancar, irAlHueco, EVENTO_VOLVI } from "@/lib/recorrido/recorrido"
+import { arrancar, irAlHueco } from "@/lib/recorrido/recorrido"
+import { suscribirTablero, mirarTablero, abrirTablero, cerrarTablero } from "@/lib/recorrido/tablero"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -67,7 +68,13 @@ const vencePorDefecto = () => {
 }
 
 export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
-  const [abierto, setAbierto] = useState(false)
+  /**
+   * 🔁 Fuera del componente — A-BUG-144. Este panel **se desmonta** mientras el presupuesto
+   * recalcula (`if (cargando) return <spinner/>` en `tab-presupuesto`), que es justo lo que pasa
+   * al volver del recorrido. Con `useState` acá, el «↩ Al tablero» abría un cartel que moría con
+   * el componente medio segundo después. Ver `lib/recorrido/tablero.ts`.
+   */
+  const abierto = useSyncExternalStore(suscribirTablero, mirarTablero, mirarTablero)
   const [marcas, setMarcas] = useState<Record<string, Marca>>({})
   const [callando, setCallando] = useState<Hueco | null>(null)
   const [motivo, setMotivo] = useState("")
@@ -149,12 +156,6 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
    * `EVENTO_VOLVI` lo dispara **únicamente** `alTablero()`, así que escucharlo acá no abre el
    * cartel por ningún otro camino.
    */
-  useEffect(() => {
-    const volver = () => setAbierto(true)
-    window.addEventListener(EVENTO_VOLVI, volver)
-    return () => window.removeEventListener(EVENTO_VOLVI, volver)
-  }, [])
-
   /**
    * Pegar la captura — A-FEAT-125.
    *
@@ -238,12 +239,12 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
     <>
       <Button variant="outline" size="sm"
         className={m.cerrado ? "border-emerald-400 text-emerald-800" : "border-rose-400 text-rose-800"}
-        onClick={() => setAbierto(true)}
+        onClick={abrirTablero}
         title="Lo que le falta al presupuesto, comparado contra lo que debería haber">
         {m.cerrado ? "✓ Sin huecos" : `⚠ ${m.abiertos} hueco(s)`}
       </Button>
 
-      <Dialog open={abierto} onOpenChange={o => !o && setAbierto(false)}>
+      <Dialog open={abierto} onOpenChange={o => !o && cerrarTablero()}>
         <DialogContent className="max-h-[92vh] max-w-4xl overflow-auto">
           <DialogHeader><DialogTitle>🧭 Lo que le falta al presupuesto</DialogTitle></DialogHeader>
 
@@ -270,7 +271,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
           {m.abiertos > 0 && (
             <Button className="w-full" onClick={() => {
               arrancar(huecos.filter(h => h.estado === "abierto" || !vigente(h)))
-              setAbierto(false)
+              cerrarTablero()
             }}>
               {/* El orden es por plata, así que la promesa sólo vale si hay plata que ordenar
                   (A-BUG-136): con todos sin valorizar, «el que más mueve» es una promesa vacía. */}
@@ -337,7 +338,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px]">
                         <button className="rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
                           onClick={() => { arrancar(huecos.filter(x => x.estado === "abierto" || !vigente(x)))
-                            irAlHueco(h.clave); setAbierto(false) }}
+                            irAlHueco(h.clave); cerrarTablero() }}
                           title={`Ir a ${h.donde.pantalla}`}>ir →</button>
                         <span className="text-gray-500">
                           Se resuelve en <b>{h.donde.pantalla}</b>

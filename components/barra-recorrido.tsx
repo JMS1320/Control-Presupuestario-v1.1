@@ -21,6 +21,7 @@ import { supabase } from "@/lib/supabase"
 import {
   suscribir, mirar, avance, siguiente, alTablero, terminar, refrescar,
 } from "@/lib/recorrido/recorrido"
+import { abrirTablero } from "@/lib/recorrido/tablero"
 import { vigente, type Hueco } from "@/lib/presupuesto/padron"
 import { ponerFoco, soltarFoco } from "@/lib/recorrido/foco"
 import { comprimir, imagenPegada } from "@/lib/captura-imagen"
@@ -189,8 +190,13 @@ export function BarraRecorrido() {
               title="Algo que viste mientras resolvías — queda vinculado a este paso">
               💡 Anotar
             </Button>
+            {/* 🔁 Las DOS cosas — A-BUG-144. «Volver al tablero» significa **volver a verlo**:
+                `alTablero()` reposiciona el viaje y pide el recálculo, `abrirTablero()` lo muestra.
+                Con una sola, el usuario volvía a la grilla donde ya estaba y tenía que apretar
+                «N hueco(s)» otra vez. */}
             <Button size="sm" variant="ghost" className="h-8 text-white hover:bg-white/10"
-              onClick={alTablero} title="Volver al tablero — el presupuesto se recalcula">
+              onClick={() => { alTablero(); abrirTablero() }}
+              title="Volver al tablero — el presupuesto se recalcula">
               ↩ Al tablero
             </Button>
             {!a.terminado && (

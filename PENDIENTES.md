@@ -13229,6 +13229,47 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-bug-144"></a>A-BUG-144 — A-BUG-131 no estaba arreglado 🔁
+
+**Lo encontró Playwright la primera vez que se corrió**, el 2026-09-10, apretando un botón sobre un
+bug que yo había declarado cerrado ocho horas antes. Es el mejor argumento que existe para tenerlo.
+
+### La cadena
+```
+↩ Al tablero  →  alTablero()  →  EVENTO_VOLVI
+                                   → tab-presupuesto recalcula → setCargando(true)
+                                     → `if (cargando) return <spinner/>`
+                                       → PanelHuecosPresupuesto DESMONTADO
+                                         → el setAbierto(true) muere con él
+```
+
+El arreglo de [A-BUG-131](#a-bug-131) —que el panel escuchara `EVENTO_VOLVI` y se abriera— **no
+podía funcionar**: el pedido de abrir y el recálculo que lo borra **viajan en el mismo evento**. No
+hay orden de listeners que lo salve.
+
+### 🔑 La lección, que ya estaba escrita en el repo
+`lib/recorrido/recorrido.ts` es un store de módulo **por esta razón exacta**, y lo dice en su
+encabezado: *«el viaje cruza pantallas; si viviera dentro del Presupuesto, desaparecería justo al
+dar el primer paso»*. **La repetí una capa más abajo**, con el estado del tablero.
+
+> **Un estado que tiene que sobrevivir a un recálculo no puede vivir en el componente que el
+> recálculo desmonta.**
+
+Ahora vive en `lib/recorrido/tablero.ts`, y el botón **compone las dos acciones**: `alTablero()`
+reposiciona el viaje y pide el recálculo, `abrirTablero()` lo muestra. La composición se hace en el
+componente y no adentro de `alTablero()`, para no meter un import cruzado entre dos módulos de `lib`
+que los scripts de prueba resuelven distinto que Next.
+
+### Por qué ninguna otra capa lo vio
+- `probar:recorrido` (17 casos) **pasa igual**: verifica que `alTablero()` avise, y avisa.
+- `ensayo:padron` no mira la UI.
+- Yo lo había «verificado» **leyendo el código**, y el código se leía bien: el listener estaba
+  puesto, sin early return, sin key. **Lo que no se ve leyendo es que el componente ya no está.**
+
+**Estado**: 🟢 arreglado y **verificado por el test que lo encontró** — `npm run ui` 4/4.
+
+---
+
 ## <a id="a-bug-136"></a>A-BUG-136 — «$0 sin cubrir» con 16 huecos abiertos 🪧
 
 **Encontrado el 2026-09-10 recorriendo la pantalla desde el lugar del usuario** — no corriendo un
@@ -13645,8 +13686,10 @@ lado del borde**, en el componente.
 Es la misma familia que los 6 bugs del 2026-08-19: `type-check` y `build` en verde, y el bug a la
 vista apenas se abre la pantalla.
 
-**Estado**: 🟢 arreglado. **Sin caso automático**: pide montar el componente, y no hay infraestructura
-de tests de React en el proyecto. Se verifica en [A-TEST-107](#a-test-107), paso 6.
+⚠️ **Este arreglo NO funcionaba** — el panel se desmonta al recalcular y se lleva puesto el
+estado. Ver [A-BUG-144](#a-bug-144), que lo encontró Playwright apretando el botón.
+
+**Estado**: ⚰️ superado por [A-BUG-144](#a-bug-144). Ahora sí, con caso automático de UI.
 
 ---
 

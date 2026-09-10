@@ -139,6 +139,9 @@ export function siguiente(sigueAbierto: (h: Hueco) => boolean) {
 export function alTablero() {
   cambiar({ ...estado, indice: -1 })
   irASeccion('presupuesto')
+  // 🔁 Ojo: **esto no abre el cartel**. Quien lo abre es el botón, que compone `alTablero()` con
+  //    `abrirTablero()` — ver `barra-recorrido.tsx` y A-BUG-144. Se deja acá el puntero porque
+  //    «volver al tablero» sin verlo fue un bug real, y desde adentro de esta función no se nota.
   avisarQueVolvi()
 }
 
