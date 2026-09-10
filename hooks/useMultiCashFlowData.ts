@@ -291,6 +291,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         imp_neto_no_gravado: Math.round(fs.reduce((s, f) => s + (f.imp_neto_no_gravado || 0), 0) * 100) / 100,
         imp_op_exentas: Math.round(fs.reduce((s, f) => s + (f.imp_op_exentas || 0), 0) * 100) / 100,
         imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
+        // 🔴 Faltaba, y no era cosmético: el DESCUENTO se reparte en proporción a gravado/IVA
+        // (`aplicarDescuentoSicoreCF`). Sin `iva`, un 5 % daba el 5 % del **neto** en vez del 5 % de
+        // la factura — menos descuento del pedido, y el proveedor cobraba de más (A-BUG-140).
+        iva: Math.round(fs.reduce((s, f) => s + (f.iva || 0), 0) * 100) / 100,
         monto_sicore: Math.round(fs.reduce((s, f) => s + (f.monto_sicore || 0), 0) * 100) / 100 || null,
         descuento_aplicado: Math.round(fs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0) * 100) / 100 || null,
         monto_a_abonar: Math.round(fs.reduce((s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0) * 100) / 100,

@@ -2021,7 +2021,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (ids.length === 0) { salida.push(f); continue }
       const schema = schemaDeFila(f)
       const { data: miembros, error } = await supabase.schema(schema).from('comprobantes_arca')
-        .select('id, estado, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, imp_total, tipo_cambio, tc_pago, tipo_comprobante, punto_venta, numero_desde, fecha_emision, fecha_pago, fecha_vencimiento, fecha_estimada, cuit, denominacion_emisor, detalle')
+        .select('id, estado, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, iva, imp_total, tipo_cambio, tc_pago, tipo_comprobante, punto_venta, numero_desde, fecha_emision, fecha_pago, fecha_vencimiento, fecha_estimada, cuit, denominacion_emisor, detalle')
         .in('id', ids)
       if (error || !miembros?.length) {
         // No se pudo abrir: **no se inventa nada**. Va sin retención y se avisa, en vez de
@@ -2040,6 +2040,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           imp_neto_gravado: m.imp_neto_gravado,
           imp_neto_no_gravado: m.imp_neto_no_gravado,
           imp_op_exentas: m.imp_op_exentas,
+          // Sin `iva` el descuento se calcula sobre el neto y no sobre la factura (A-BUG-140).
+          iva: m.iva,
           imp_total: m.imp_total,
           tipo_cambio: m.tipo_cambio,
           tc_pago: m.tc_pago,
