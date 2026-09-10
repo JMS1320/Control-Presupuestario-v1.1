@@ -13218,6 +13218,118 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-bug-134"></a>A-BUG-134 — El padrón nuevo daba CERO 🕳️
+
+**Encontrado el 2026-09-10 antes de que el usuario probara**, porque pidió exactamente eso:
+*«tratá de dar los tests de rigor que sabemos que vos ibas a hacer siempre antes de que yo pruebe.
+Tratá de acortarme la prueba y error»*.
+
+### Cómo se encontró — y es el método, no la suerte
+Se escribió un **ensayo**: un script que corre **la lógica real contra los datos reales** —las
+mismas queries de `cargarTemplates()`, `proyectarTemplate` de verdad, `padronTemplates` de verdad—
+y **dice qué va a ver el usuario cuando abra la pantalla**. Resultado:
+
+```
+huecos: 0    (el día anterior: 52)
+```
+
+**Ninguna suite lo habría visto.** Las fixtures le pasan al padrón la señal *ya cocinada*
+(`mesesSinPoderProyectar: 24`); el bug estaba en **quién la cocina**.
+
+### Qué pasaba
+`metodoHeredado` devuelve `no_proyectar` en dos situaciones opuestas:
+
+```ts
+if (noGasto) return { metodo: 'no_proyectar', … }                     // es financiero → correcto
+if (!tieneHistoria) return { metodo: 'no_proyectar', … }              // ¡no hay de dónde! → HUECO
+```
+
+El padrón leía el `no_proyectar` como *«el usuario decidió no proyectarlo»* y lo daba por legítimo.
+Pero en el segundo caso **el método vale `no_proyectar` justamente porque falta lo que el padrón
+busca**. La señal quedaba **tapada por su propia consecuencia**, y mi rama `!ultima` nunca se
+alcanzaba.
+
+**Lo que estaba callando** (12 templates proyectando $0 en el presupuesto de MSA):
+los 5 retiros semestrales (Andrés, José, Manuel, Mechi, Soledad), Impuesto País, IIBB Bancario,
+Créditos Tomados, Percepción RG 5463/23, Comisión Cheques, Comisión Certificaciones de Firma,
+Com. Uso ATM. Verificado en la base: **cero cuotas en toda su vida**, no es que la ventana no
+llegue.
+
+### El arreglo
+`MetodoResuelto` lleva ahora `causa: 'no_es_gasto' | 'sin_historia'`, y el orden de decisión quedó
+explícito: **decisión del usuario → financiero → sin poder proyectar → fuera de patrón**. Adivinar
+por el texto del `motivo` habría sido frágil.
+
+### 🔑 Las dos lecciones
+> **Un padrón que nunca grita es peor que uno que grita de más.** El de más se calla en dos clicks;
+> el mudo se confunde con «está todo bien» — que es el estado que el tablero existe para desmentir.
+
+> **Un test con fixtures prueba la función; sólo el dato real prueba el sistema.** Los tres bugs
+> de este día —éste, [A-BUG-135](#a-bug-135) y el falso positivo de «Créditos Tomados»— vivían
+> todos en el **cableado**, que es donde las fixtures no llegan. Es la misma familia que
+> [A-BUG-130](#a-bug-130) y [A-BUG-131](#a-bug-131).
+
+📌 **El ensayo queda como método**, no como script: cuando un cálculo nuevo va a cambiar lo que el
+usuario ve, **correrlo contra los datos reales y predecir la pantalla** antes de decir que está
+listo.
+
+**Estado**: 🟢 arreglado. 15 huecos reales, medidos.
+
+---
+
+## <a id="a-bug-135"></a>A-BUG-135 — «Falta la cuota» y «falta el monto» se decían igual 💵
+
+Salió del mismo ensayo. Cuatro de los 15 huecos **no son lo que el texto decía**:
+
+| Template | Cuotas | Con monto |
+|---|---:|---:|
+| Imp Automotores Toyota 2015 Anual | 1 | **0** |
+| Imp Automotores Tiguan 2012 Anual | 1 | **0** |
+| Imp Automotores Gol 2012 Anual | 1 | **0** |
+| Anticipo Ganancias MSA *(campaña 12/25–09/26)* | 10 | **0** |
+
+El vencimiento **está cargado**; lo que falta es el número. Es la otra mitad de
+`MODULO_TEMPLATES.md` § 13 —*«la cuota estimada se carga para no olvidarse de que hay que pagarlo»,
+aunque el monto no se sepa*— y resulta que **nadie estaba mirando si el monto llegaba después**.
+
+Ahora el hueco dice *«tiene N cuota(s) cargada(s) pero todas en $0: el vencimiento está, falta el
+monto»* en vez de *«no tiene ninguna cuota»*.
+
+> 🔑 **Decirlo mal no es un matiz de redacción: manda al usuario a crear una cuota que ya existe.**
+> Un hueco tiene que decir **qué hacer**, no sólo que algo falta. Tercera vez en dos días que el
+> texto del hueco es el problema y no el número (ver [A-BUG-133](#a-bug-133)).
+
+**Estado**: 🟢 arreglado, con caso propio en `probar:padron`.
+
+---
+
+## <a id="a-dat-32"></a>A-DAT-32 — Campañas vencidas todavía activas 🗓️
+
+Visto en el mismo ensayo. **8 nombres con dos templates activos cada uno**: Anticipo Ganancias,
+Cargas Sociales, Imp .Ganancias, Seguro Flota, SICORE 1ra y 2da, Tarjeta Visa Business, UATRE.
+
+⚠️ **No son duplicados — son campañas**, y eso se verificó antes de alarmar:
+
+| Template | Período de sus cuotas | Montos cargados |
+|---|---|---:|
+| Anticipo Ganancias MSA | 12/2025 – 09/2026 *(vieja)* | **0 de 10** |
+| Anticipo Ganancias MSA | 12/2026 – 09/2027 *(nueva)* | 10 de 10 |
+| Seguro Flota | 07/2025 – 06/2026 *(vieja)* | 5 de 12 |
+| Seguro Flota | 07/2026 – 06/2027 *(nueva)* | 12 de 12 |
+
+**El tema**: la campaña vieja sigue `activo = true`, entra al presupuesto y aporta **cero**. Aparece
+además como hueco en [A-BUG-135](#a-bug-135), y ahí el hueco es *técnicamente cierto y
+prácticamente inútil* — esa campaña ya pasó, no hay nada que cargarle.
+
+**La pregunta para el usuario**: ¿la campaña vencida se desactiva al generar la nueva, o hay un
+motivo para dejarla? Si se desactiva, el padrón se limpia solo.
+
+⚠️ **Son datos suyos: no se toca nada** (§ 🛑 Datos).
+
+**Estado**: 🔵 registrado, sin tocar.
+
+---
+
 ## <a id="a-feat-127"></a>A-FEAT-127 — El padrón de templates cambia de PREGUNTA 🔄
 
 **Nace de un diálogo con el usuario el 2026-09-09/10**, después de que él frenara mi arreglo de
@@ -13534,13 +13646,43 @@ fallando en silencio ([A-BUG-130](#a-bug-130)).
    *"Guardada con la captura"*. **Son dos diálogos distintos y hay que probar los dos** — la primera
    versión cubrió uno solo.
 
-8. 🔴 **[A-FEAT-127]** En el tablero, la sección de gastos ahora se llama **«¿Hay algún gasto que el
-   presupuesto no pueda proyectar?»**. **Retiro MA mensual NO tiene que estar** — tiene 2 cuotas y
-   el resto proyectado, y eso está bien. Los que queden tienen que decir *«no hay historia de la que
-   sacar un número»*, y varios van a aparecer **sin plata**: es correcto, sin historia no hay de
-   dónde estimarla.
-9. **El número total de huecos tiene que BAJAR bastante** respecto de los 53. Si subió, algo salió
-   al revés.
+### 🔢 Los números EXACTOS que tenés que ver — medidos contra tus datos, no estimados
+
+> Corridos el 2026-09-10 con la lógica real sobre la base real (§ [A-BUG-134](#a-bug-134)). **Si un
+> número no coincide, es un bug — no lo dudes, avisá.**
+
+| Qué mirás | Tiene que decir |
+|---|---:|
+| Botón arriba del Presupuesto | **⚠ 16 hueco(s)** *(15 de gastos + 1 de hacienda)* |
+| Marcador del tablero | **$0 sin cubrir · 15 sin poder valorizar** |
+| Sección **¿Hay algún gasto que el presupuesto no pueda proyectar?** | **15 sin resolver** |
+| Sección **¿Están todas las ventas de hacienda?** | **1 sin resolver** *(58.961 Vaca CUT/Descarte)* |
+
+**Antes de este cambio eran 53.** Si ves 53, no refrescaste. Si ves 0, hay un bug.
+
+**Los 15, uno por uno** — 11 dicen *«no tiene ninguna cuota cargada»*:
+Retiro Andres · Retiro Jose · Retiro Manuel · Retiro Mechi · Retiro Soledad *(los 5 semestrales
+MSA)* · Impuesto País · IIBB Bancario · Percepción RG 5463/23 · Comisión Cheques · Comisión
+Certificaciones de Firma · Com. Uso ATM
+
+**Y 4 dicen *«tiene N cuota(s) cargada(s) pero todas en $0: el vencimiento está, falta el monto»***:
+Imp Automotores Toyota 2015 · Imp Automotores Tiguan 2012 · Imp Automotores Gol 2012 · Anticipo
+Ganancias MSA *(la campaña vieja — ver [A-DAT-32](#a-dat-32))*
+
+🔴 **Los que NO tienen que estar**, y si aparecen es que volvió el bug:
+- **Retiro MA mensual** y cualquier template con cuotas viejas y el resto proyectado → faltar cuotas
+  lejanas **es lo correcto** (`MODULO_TEMPLATES.md` § 13).
+- **Interbancarias, FIMA, Tarjeta Visa Business, Caja, Créditos Pagados/Tomados** → son financieros,
+  no se proyectan a propósito.
+- Los **7 que marcaste a mano** como «no proyectar».
+
+8. 🔴 **[A-FEAT-127]** La sección de gastos ahora se llama **«¿Hay algún gasto que el presupuesto no
+   pueda proyectar?»** — ya no habla de cuotas.
+9. 🔴 **[A-BUG-135]** Abrí uno de los **Imp Automotores** y confirmá que dice **«falta el monto»**,
+   no «no tiene ninguna cuota». Es la diferencia entre ir a poner un número y ir a crear algo que ya
+   existe.
+10. **Todos van a salir sin plata.** Es correcto y es honesto: sin historia no hay de dónde estimar.
+   El tablero los pone al final pero **no los esconde**.
 
 **Los adversarios:**
 - **Pegar TEXTO** dentro del cartel → tiene que pegarse el texto normalmente, sin tocar la imagen.

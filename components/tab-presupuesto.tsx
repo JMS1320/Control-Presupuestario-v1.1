@@ -1493,7 +1493,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
      * y un template marcado «no proyectar» también dan cero, y los dos están bien.
      */
     const sinPoderProyectar = (t: FilaTemplate) =>
-      Object.values(t.celdas).filter(c => c?.motivoVacio === "sin_historia").length
+      Object.values(t.celdas).filter(c =>
+        c?.motivoVacio === "sin_historia" || c?.motivoVacio === "sin_monto").length
+
+    /** Cuál de las dos causas, para poder decirle al usuario qué tiene que hacer. */
+    const causaDe = (t: FilaTemplate): "sin_historia" | "sin_monto" | undefined =>
+      Object.values(t.celdas).some(c => c?.motivoVacio === "sin_monto") ? "sin_monto"
+      : Object.values(t.celdas).some(c => c?.motivoVacio === "sin_historia") ? "sin_historia"
+      : undefined
     const tipico = (t: FilaTemplate) => {
       const v = Object.values(t.montos).filter(x => x > 0)
       return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null
@@ -1523,6 +1530,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         id: t.id, nombre: t.nombre,
         mesesSinPoderProyectar: sinPoderProyectar(t),
         mesesDelPeriodo: meses.length,
+        causa: causaDe(t),
+        cuotasCargadas: Object.values(t.celdas).filter(c => c?.origen === "cuota").length,
         montoTipico: tipico(t),
       })), {
         meses: meses.length,

@@ -58,7 +58,11 @@ const tpl = P.padronTemplates([
   // Un template nuevo, sin una sola cuota nunca: el presupuesto no tiene de dónde sacar el número.
   { id: "t2", nombre: "Seguro galpón nuevo", mesesSinPoderProyectar: 24, mesesDelPeriodo: 24, montoTipico: null },
   // Uno al que le falta parte del período.
-  { id: "t3", nombre: "Tasa vial", mesesSinPoderProyectar: 6, mesesDelPeriodo: 24, montoTipico: 150_000, responsable: "PAM" },
+  { id: "t3", nombre: "Tasa vial", mesesSinPoderProyectar: 6, mesesDelPeriodo: 24, montoTipico: 150_000, responsable: "PAM", causa: "sin_historia" },
+  // 🔴 El caso REAL medido el 2026-09-10: el vencimiento está cargado y el monto quedó en $0.
+  //    Es hueco igual, pero se arregla distinto — y decirlo mal manda al usuario a crear una
+  //    cuota que ya existe.
+  { id: "t4", nombre: "Imp Automotores Gol 2012 Anual", mesesSinPoderProyectar: 24, mesesDelPeriodo: 24, montoTipico: null, causa: "sin_monto", cuotasCargadas: 1 },
 ], V24)
 
 chequear("🔴 Un template con cuotas viejas y el resto PROYECTADO no es un hueco",
@@ -85,9 +89,15 @@ chequear("🗣️ El porqué dice CUÁNTOS meses y de QUÉ ventana (A-BUG-133)",
     tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.porque ?? ""),
   tpl.huecos.find((h: any) => /Tasa vial/.test(h.que))?.porque ?? "")
 
-chequear("Y explica el motivo, no sólo el síntoma",
-  /no puede proyectarlo/.test(tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.porque ?? ""),
-  tpl.huecos.find((h: any) => /Seguro/.test(h.que))?.porque ?? "")
+chequear("🔴 «Falta el monto» y «falta la cuota» NO se dicen igual: la acción es distinta",
+  /1 cuota\(s\) cargada\(s\) pero todas en \$0/.test(
+    tpl.huecos.find((h: any) => /Gol 2012/.test(h.que))?.porque ?? ""),
+  tpl.huecos.find((h: any) => /Gol 2012/.test(h.que))?.porque ?? "")
+
+chequear("Y el que no tiene ninguna dice que no tiene ninguna",
+  /no tiene ninguna cuota cargada/.test(
+    tpl.huecos.find((h: any) => /Seguro galpón/.test(h.que))?.porque ?? ""),
+  tpl.huecos.find((h: any) => /Seguro galpón/.test(h.que))?.porque ?? "")
 
 // ── 💸 Cuentas — el hueco más silencioso ──────────────────────────────────────────────────────
 const cta = P.padronCuentas([
@@ -108,17 +118,17 @@ chequear("Y lo insignificante no ensucia el tablero",
 
 // ── 🎯 El marcador ────────────────────────────────────────────────────────────────────────────
 const todos = [...hac.huecos, ...tpl.huecos, ...cta.huecos]
-// 5 huecos: 2 de hacienda (CUT y vaquillonas) + 2 de templates + 1 de cuentas.
+// 6 huecos: 2 de hacienda (CUT y vaquillonas) + 3 de templates + 1 de cuentas.
 // 🔑 Uno de los de templates (Seguro galpón) va SIN PLATA a propósito: sin historia no hay de
 //    dónde estimarla. Por eso este caso también prueba que el marcador **no lo cuenta como cero**.
 const m = P.marcador(todos, HOY)
 
 chequear("Cuenta los abiertos y suma su plata",
-  m.abiertos === 5 && m.plata === 180_200_000 + 42_000_000 + 900_000 + 4_000_000,
+  m.abiertos === 6 && m.plata === 180_200_000 + 42_000_000 + 900_000 + 4_000_000,
   `${m.abiertos} abiertos · ${$(m.plata)} · ${m.sinValorizar} sin valorizar`)
 
-chequear("🔴 El hueco sin historia se cuenta como HUECO pero no como $0",
-  m.abiertos === 5 && m.sinValorizar === 1,
+chequear("🔴 Los huecos sin valorizar se cuentan como HUECOS pero no como $0",
+  m.abiertos === 6 && m.sinValorizar === 2,
   `${m.sinValorizar} sin poder valorizar — el total de plata es un piso, no la cifra completa`)
 
 chequear("🔴 Con huecos abiertos, NO está cerrado", m.cerrado === false, "no cerrado")
@@ -129,7 +139,7 @@ chequear("🔴 Con huecos abiertos, NO está cerrado", m.cerrado === false, "no 
     ? { ...h, estado: "a_proposito", venceEl: "2026-12-31", motivo: "se venden el año que viene" } : h)
   const m2 = P.marcador(conMarca, HOY)
   chequear("Marcar a propósito lo saca del marcador",
-    m2.abiertos === 4 && m2.aProposito === 1, `${m2.abiertos} abiertos · ${m2.aProposito} a propósito`)
+    m2.abiertos === 5 && m2.aProposito === 1, `${m2.abiertos} abiertos · ${m2.aProposito} a propósito`)
   chequear("Y le saca la plata: si no, el número nunca baja",
     m2.plata === m.plata - 180_200_000, $(m2.plata))
 }
@@ -140,7 +150,7 @@ chequear("🔴 Con huecos abiertos, NO está cerrado", m.cerrado === false, "no 
     ? { ...h, estado: "a_proposito", venceEl: "2026-06-30", motivo: "no se venden" } : h)
   const m3 = P.marcador(vencida, HOY)
   chequear("🔴 Una decisión VENCIDA vuelve a contar como abierta",
-    m3.abiertos === 5 && m3.vencidos === 1, `${m3.abiertos} abiertos · ${m3.vencidos} vencido(s)`)
+    m3.abiertos === 6 && m3.vencidos === 1, `${m3.abiertos} abiertos · ${m3.vencidos} vencido(s)`)
   chequear("Un «a propósito» SIN fecha se toma por vencido: una marca eterna es un olvido con permiso",
     P.marcador([{ ...todos[0], estado: "a_proposito", venceEl: null }], HOY).abiertos === 1, "cuenta igual")
 }

@@ -181,11 +181,16 @@ export type OrigenCelda = 'cuota' | 'proyectado' | 'vacio'
  *   motivo. Volver a preguntarlo es desautorizar una decisión suya.
  * - `fuera_de_patron` — **es la periodicidad del gasto**. El inmobiliario no paga en marzo porque
  *   paga en enero y julio. El cero es correcto y es el dato.
- * - `sin_historia` — **acá sí falta algo**: no hay ninguna cuota de la que sacar un número, así que
- *   el presupuesto no puede proyectar y el mes queda en cero **sin que nadie lo haya decidido**.
- *   Éste es el único que es un hueco.
+ * - `sin_historia` — **acá sí falta algo**: no existe ninguna cuota, así que el presupuesto no
+ *   tiene de dónde sacar un número y el mes queda en cero **sin que nadie lo haya decidido**.
+ * - `sin_monto` — **hay cuotas cargadas pero TODAS en $0**. Es la otra mitad de
+ *   `MODULO_TEMPLATES.md` § 13: la cuota se carga para no olvidar el vencimiento *aunque no se
+ *   sepa el monto*, y a ésta nunca se le puso. Es hueco igual, pero **se arregla distinto**: el
+ *   vencimiento ya está, falta el número. Medido el 2026-09-10: 4 templates reales.
+ *
+ * Los dos últimos son huecos; los dos primeros no.
  */
-export type MotivoVacio = 'no_proyectar' | 'fuera_de_patron' | 'sin_historia'
+export type MotivoVacio = 'no_proyectar' | 'fuera_de_patron' | 'sin_historia' | 'sin_monto'
 
 export interface CeldaTemplate {
   mes: string
@@ -226,6 +231,17 @@ export interface MetodoResuelto {
   /** true si lo eligió el usuario; false si se heredó. */
   manual: boolean
   motivo: string
+  /**
+   * Por qué se heredó `no_proyectar`. **Son dos cosas opuestas y se veían igual** — A-BUG-134.
+   *
+   * - `no_es_gasto` — es financiero (colocación, tarjeta, interbancaria). **Correcto no proyectar.**
+   * - `sin_historia` — no hay ninguna cuota de la que sacar un número. **El presupuesto no puede
+   *   proyectarlo y pone $0 sin que nadie lo haya decidido**: eso es un hueco, no una decisión.
+   *
+   * Sin este campo hay que adivinar por el texto del `motivo`, y el padrón terminaba tomando los
+   * dos por buenos: 12 templates proyectando $0 quedaban invisibles.
+   */
+  causa?: 'no_es_gasto' | 'sin_historia'
 }
 
 /**
@@ -240,10 +256,14 @@ export function metodoHeredado(info: TemplateInfo, tieneHistoria: boolean): Meto
   // Antes que nada: si no es un gasto, no se presupuesta. Da igual cuántas cuotas declare.
   // El tipo lo declara el template; el plan de cuentas es fallback (ver `resolverTipo`).
   const noGasto = noEsGasto(tipoEfectivo(info))
-  if (noGasto) return { metodo: 'no_proyectar', manual: false, motivo: noGasto }
+  if (noGasto) return { metodo: 'no_proyectar', manual: false, motivo: noGasto, causa: 'no_es_gasto' }
 
   if (!tieneHistoria) {
-    return { metodo: 'no_proyectar', manual: false, motivo: 'Sin cuotas cargadas: no hay de dónde proyectar' }
+    return {
+      metodo: 'no_proyectar', manual: false,
+      motivo: 'Sin cuotas cargadas: no hay de dónde proyectar',
+      causa: 'sin_historia',
+    }
   }
   if (info.tipo_recurrencia === 'abierto') {
     return { metodo: 'promedio', manual: false, motivo: 'Gasto abierto: no tiene periodicidad fija' }
@@ -392,16 +412,28 @@ export function proyectarTemplate(
       // 🔑 El ORDEN importa y no es casual: una decisión del usuario manda sobre todo lo demás.
       // Si marcó «no proyectar», da igual que además no haya historia — ya está resuelto y no
       // vuelve a preguntarse.
-      const motivoVacio: MotivoVacio = metodo.metodo === 'no_proyectar'
-        ? 'no_proyectar'
-        : !ultima ? 'sin_historia' : 'fuera_de_patron'
+      const motivoVacio: MotivoVacio =
+        // 1º una decisión del usuario manda sobre todo: si eligió no proyectar, está resuelto.
+        metodo.manual && metodo.metodo === 'no_proyectar' ? 'no_proyectar'
+        // 2º financiero (colocación, tarjeta, interbancaria): correcto no proyectarlo.
+        : metodo.causa === 'no_es_gasto' ? 'no_proyectar'
+        // 3º no hay de dónde sacar un número, y NADIE lo decidió. Va antes que el `no_proyectar`
+        //    heredado porque el método se resuelve así JUSTAMENTE por esto: si no se mira primero,
+        //    el hueco queda tapado por su propia consecuencia (A-BUG-134).
+        //    Y se parte en dos porque se arreglan distinto: crear la cuota vs. ponerle el monto.
+        : (!ultima) ? (historia.length > 0 ? 'sin_monto' : 'sin_historia')
+        // 4º cualquier otro `no_proyectar` heredado.
+        : metodo.metodo === 'no_proyectar' ? 'no_proyectar'
+        : 'fuera_de_patron'
       return {
         mes: clave, monto: 0, origen: 'vacio' as const,
         explicacion: motivoVacio === 'no_proyectar'
           ? metodo.motivo
           : motivoVacio === 'sin_historia'
-            ? 'No hay ninguna cuota en la historia: no hay de dónde sacar un número'
-            : `No paga en ${MESES_TXT[m.mes - 1]} (paga en ${nombresMeses(patron)})`,
+            ? 'No hay ninguna cuota cargada: no hay de dónde sacar un número'
+            : motivoVacio === 'sin_monto'
+              ? `Hay ${historia.length} cuota(s) cargada(s) pero todas en $0: falta el monto`
+              : `No paga en ${MESES_TXT[m.mes - 1]} (paga en ${nombresMeses(patron)})`,
         faltaGenerar: false,
         motivoVacio,
       }

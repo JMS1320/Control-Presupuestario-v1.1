@@ -174,6 +174,15 @@ export interface TemplateEsperado {
   mesesSinPoderProyectar: number
   /** Cuántos meses tiene el período, para poder decir «12 de 24» y no un número suelto. */
   mesesDelPeriodo: number
+  /**
+   * **Por qué** no se puede proyectar. Cambia qué tiene que hacer el usuario, así que cambia el
+   * texto del hueco — no es un matiz:
+   * - `sin_historia` → no hay ninguna cuota. **Hay que cargarlas.**
+   * - `sin_monto` → el vencimiento está cargado y el monto quedó en $0. **Sólo falta el número.**
+   */
+  causa?: 'sin_historia' | 'sin_monto'
+  /** Cuántas cuotas tiene cargadas (todas en $0 si la causa es `sin_monto`). */
+  cuotasCargadas?: number
   /** Lo que vale un mes típico, si hay con qué estimarlo. Casi siempre `null` acá — ver abajo. */
   montoTipico: number | null
   responsable?: string | null
@@ -246,8 +255,11 @@ export function padronTemplates(templates: TemplateEsperado[], ventana?: Ventana
       dominio: 'templates',
       clave: `template:${t.id}`,
       que: t.nombre + (t.responsable ? ` (${t.responsable})` : ''),
-      porque: `el presupuesto no puede proyectarlo: no hay historia de la que sacar un número, `
-        + `y ${t.mesesSinPoderProyectar} de los ${t.mesesDelPeriodo} meses${donde} quedan en cero`,
+      porque: (t.causa === 'sin_monto'
+        ? `tiene ${t.cuotasCargadas ?? 0} cuota(s) cargada(s) pero todas en $0: el vencimiento `
+          + `está, falta el monto`
+        : `no tiene ninguna cuota cargada: el presupuesto no tiene de dónde sacar un número`)
+        + ` — ${t.mesesSinPoderProyectar} de los ${t.mesesDelPeriodo} meses${donde} quedan en cero`,
       plata: t.montoTipico != null ? t.montoTipico * t.mesesSinPoderProyectar : null,
       donde: { pantalla: 'Egresos sin Factura', detalle: t.nombre },
       estado: 'abierto',
