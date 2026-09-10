@@ -72,6 +72,27 @@ const extraerPrefijoComun = (nombres: string[]): string => {
 }
 
 // Interface unificada para Cash Flow (10 columnas finales)
+/**
+ * Las dos reglas de ARRASTRE de fechas: `fecha_vencimiento` y `fecha_pago` **mueven también
+ * `fecha_estimada`**, que es la columna con la que el Cash Flow ordena y proyecta.
+ *
+ * 🔴 **Vive acá, en un solo lugar, porque estaba en uno solo de los dos caminos** (A-BUG-142):
+ * `actualizarRegistro` (editar de a una) la aplicaba, y `actualizarBatch` (el botón PAGOS, en lote)
+ * mandaba el campo pelado. Resultado: pagar una factura sola dejaba la estimada al día, y pagar
+ * tres en lote las dejaba proyectadas en la fecha vieja — el mismo cambio, dos resultados según
+ * desde dónde se hiciera.
+ *
+ * Y no es cosmético: si la estimada no acompaña, **el Cash Flow sigue mostrando la plata saliendo
+ * el día que ya no es**.
+ */
+function conArrastreDeFechas(campo: string, valor: any): Record<string, any> {
+  const update: Record<string, any> = { [campo]: valor }
+  if ((campo === 'fecha_vencimiento' || campo === 'fecha_pago') && valor) {
+    update.fecha_estimada = valor
+  }
+  return update
+}
+
 export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
@@ -961,20 +982,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       || filaOrigen?.origen_tabla === 'msa.grupos_pago'
     if (origen === 'SUELDO' && !esPagoDeSueldo) return false
     try {
-      // Preparar objeto de actualización
-      let updateData: any = { [campo]: valor }
-
-      // Regla automática: Si se actualiza fecha_vencimiento, actualizar fecha_estimada para coincidir
-      if (campo === 'fecha_vencimiento' && valor) {
-        updateData.fecha_estimada = valor
-        console.log(`🔄 Auto-actualización: fecha_vencimiento = ${valor} → fecha_estimada = ${valor}`)
-      }
-
-      // Regla automática: fecha_pago también arrastra a fecha_estimada (ordena el cash flow)
-      if (campo === 'fecha_pago' && valor) {
-        updateData.fecha_estimada = valor
-        console.log(`🔄 Auto-actualización: fecha_pago = ${valor} → fecha_estimada = ${valor}`)
-      }
+      // Preparar objeto de actualización, con las dos reglas de arrastre (ver `conArrastreDeFechas`)
+      let updateData: any = conArrastreDeFechas(campo, valor)
 
       if (origen === 'SUELDO' && esPagoDeSueldo) {
         // Un pago de sueldo tiene **una sola fecha** (`sueldos.pagos.fecha`), que es la fecha en
@@ -1183,7 +1192,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const { error, count } = await supabase
           .schema(schemaDeFila(fila))
           .from('comprobantes_arca')
-          .update({ [update.campo]: update.valor }, { count: 'exact' })
+          .update(conArrastreDeFechas(update.campo, update.valor), { count: 'exact' })
           .in('id', ids)
 
         if (error) throw error
@@ -1197,7 +1206,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const ids = (fila?.ids_grupo && fila.ids_grupo.length > 0) ? fila.ids_grupo : [update.id]
         const { error, count } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ [update.campo]: update.valor }, { count: 'exact' })
+          .update(conArrastreDeFechas(update.campo, update.valor), { count: 'exact' })
           .in('id', ids)
 
         if (error) throw error

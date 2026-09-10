@@ -2225,7 +2225,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setMontoRetencion(r2(baseAjustada * tipoSeleccionado.porcentaje_retencion))
       setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
     } else {
-      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado })
+      // El MÍNIMO CONSUMIDO también baja con el descuento: lo que consume es el neto **realmente
+      // pagado**. Sin esto el modal mostraba «Monto no imponible: $148.202,62» (el neto de antes del
+      // descuento) mientras se guardaba $140.792,49 — el número correcto, pero no el que se veía.
+      //
+      // Es cosmético en la plata y **no lo es en la confianza**: un número a la vista que no coincide
+      // con el que se usa hace dudar de todos los demás, que sí estaban bien (A-BUG-143).
+      // Sólo se toca cuando había un mínimo consumido: en el camino de «descuento sin retención»
+      // vale 0 y tiene que seguir en 0.
+      setDatosSicoreCalculo({
+        ...datosSicoreCalculo,
+        netoFactura: netoAjustado,
+        ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoAjustado } : {}),
+      })
     }
   }
 
@@ -2238,6 +2250,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       calcularRetencionSicoreCF(facturaEnProceso, tipoSeleccionado) // restaura cálculo original
     } else {
       setMontoRetencion(0)
+      // Sacar el descuento tiene que **deshacer** el neto ajustado, no dejarlo puesto: si no, se
+      // registraba como mínimo consumido un neto con un descuento que ya no existe.
+      if (datosSicoreCalculo) {
+        const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
+        const netoOriginal = Math.round(
+          ((facturaEnProceso.imp_neto_gravado || 0) + (facturaEnProceso.imp_neto_no_gravado || 0)
+            + (facturaEnProceso.imp_op_exentas || 0)) * tc * 100
+        ) / 100
+        setDatosSicoreCalculo({
+          ...datosSicoreCalculo,
+          netoFactura: netoOriginal,
+          ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoOriginal } : {}),
+        })
+      }
     }
   }
 
