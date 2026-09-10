@@ -34,6 +34,24 @@ import { toast } from "sonner"
 const $ = (n: number | null | undefined) =>
   n == null ? "—" : `$${Math.round(n).toLocaleString("es-AR")}`
 
+/**
+ * Cómo se dice la plata de un grupo de huecos — **A-BUG-136**.
+ *
+ * Un total de `$0` puede significar dos cosas opuestas: *no falta plata* o **no se pudo medir
+ * ninguno**. Mostrarlas igual hace que el cartel diga justo lo contrario de lo que pasa: el
+ * 2026-09-10 el tablero mostraba *«16 huecos abiertos · $0 sin cubrir»*, que leído rápido es
+ * «no pasa nada».
+ *
+ * § CLAUDE.md 🧮: *nada se descarta en silencio; si algo no se pudo verificar, se muestra que no
+ * se pudo*.
+ */
+function plataDicha(m: { abiertos: number; plata: number; sinValorizar: number }): string {
+  if (m.abiertos === 0) return ""
+  if (m.sinValorizar === m.abiertos) return "sin poder valorizar todavía"
+  if (m.sinValorizar > 0) return `${$(m.plata)} medidos · ${m.sinValorizar} sin valorizar`
+  return `${$(m.plata)} sin cubrir`
+}
+
 interface Marca {
   clave: string
   estado: "a_proposito" | "todavia_no"
@@ -237,8 +255,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
               <span className="text-4xl font-bold tabular-nums">{m.abiertos}</span>
               <div className="text-[13px] leading-5 opacity-85">
                 {m.abiertos === 0 ? "No queda ningún hueco abierto." : <>
-                  huecos abiertos · <b>{$(m.plata)}</b> sin cubrir
-                  {m.sinValorizar > 0 && <> · {m.sinValorizar} sin poder valorizar</>}
+                  huecos abiertos · <b>{plataDicha(m)}</b>
                 </>}
                 <br />
                 {m.aProposito > 0 && <>{m.aProposito} callado(s) a propósito · </>}
@@ -255,7 +272,10 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
               arrancar(huecos.filter(h => h.estado === "abierto" || !vigente(h)))
               setAbierto(false)
             }}>
-              🧭 Empezar el recorrido — {m.abiertos} paso(s), empezando por el que más mueve
+              {/* El orden es por plata, así que la promesa sólo vale si hay plata que ordenar
+                  (A-BUG-136): con todos sin valorizar, «el que más mueve» es una promesa vacía. */}
+              🧭 Empezar el recorrido — {m.abiertos} paso(s)
+              {m.sinValorizar < m.abiertos && ", empezando por el que más mueve"}
             </Button>
           )}
 
@@ -299,7 +319,7 @@ export function PanelHuecosPresupuesto({ padrones }: { padrones: Padron[] }) {
                   ${mp.cerrado ? "bg-emerald-50 text-emerald-900" : "bg-gray-50"}`}>
                   <span>{mp.cerrado ? "✓" : "⚠"} {p.pregunta}</span>
                   <span className="text-[11px] font-normal text-gray-600">
-                    {mp.abiertos === 0 ? "todo cubierto" : `${mp.abiertos} sin resolver · ${$(mp.plata)}`}
+                    {mp.abiertos === 0 ? "todo cubierto" : `${mp.abiertos} sin resolver · ${plataDicha(mp)}`}
                   </span>
                 </div>
                 {suyos.length === 0 && (

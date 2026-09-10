@@ -48,6 +48,22 @@ chequear("El avance arranca en cero y suma toda la plata",
     return a.hechos === 0 && a.total === 3 && a.faltaPlata === 182_200_000 })(),
   `${R.avance(abierto).hechos}/${R.avance(abierto).total} · falta ${R.avance(abierto).faltaPlata.toLocaleString("es-AR")}`)
 
+// ── 🪧 A-BUG-136 · el cero que significa «no pude medir» ──────────────────────────────────────
+{
+  const sinPlata = [
+    { ...(HUECOS[0] as object), plata: null },
+    { ...(HUECOS[1] as object), plata: null },
+  ] as never[]
+  R.arrancar(sinPlata)
+  const a = R.avance(abierto)
+  chequear("🔴 Con todo sin valorizar, la plata que falta NO se puede leer como cero",
+    a.faltaPlata === 0 && a.sinValorizar === 2 && a.sinValorizar === a.total - a.hechos,
+    `falta ${a.faltaPlata} · ${a.sinValorizar} sin valorizar de ${a.total - a.hechos} que quedan`)
+  R.arrancar(HUECOS)
+  chequear("Y con plata de verdad, sinValorizar queda en cero (no ensucia el caso normal)",
+    R.avance(abierto).sinValorizar === 0, "0 sin valorizar")
+}
+
 // ── Siguiente, y que TE LLEVE ─────────────────────────────────────────────────────────────────
 eventos.length = 0
 R.siguiente(abierto)

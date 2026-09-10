@@ -160,13 +160,22 @@ export function BarraRecorrido() {
                   </span>
                   {a.hueco.que}
                 </div>
-                <div className="truncate text-[11px] text-gray-400">
+                {/* Dos líneas, no `truncate` — A-BUG-136. El porqué pasó a decir contra qué
+                    ventana cuenta (A-BUG-133) y ese dato quedaba **justo del lado cortado**: el
+                    texto que existe para que el número no parezca roto, invisible. */}
+                <div className="line-clamp-2 text-[11px] leading-4 text-gray-400">
                   {a.hueco.porque} · se resuelve en <b className="text-gray-300">{a.hueco.donde.pantalla}</b>
                 </div>
               </>
             ) : (
               <div className="text-[13px]">
-                <b>{a.hechos} de {a.total}</b> resueltos · falta cubrir <b>{$(a.faltaPlata)}</b>
+                <b>{a.hechos} de {a.total}</b> resueltos
+                {/* A-BUG-136: un 0 que significa «no pude medir» no se dice como 0. */}
+                {a.sinValorizar === a.total - a.hechos
+                  ? <> · lo que falta <b>no se pudo valorizar</b></>
+                  : a.sinValorizar > 0
+                    ? <> · falta cubrir <b>{$(a.faltaPlata)}</b> y <b>{a.sinValorizar}</b> sin valorizar</>
+                    : <> · falta cubrir <b>{$(a.faltaPlata)}</b></>}
               </div>
             )}
           </div>

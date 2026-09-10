@@ -13219,6 +13219,58 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-bug-136"></a>A-BUG-136 — «$0 sin cubrir» con 16 huecos abiertos 🪧
+
+**Encontrado el 2026-09-10 recorriendo la pantalla desde el lugar del usuario** — no corriendo un
+test. Él preguntó si eso se podía hacer: *«¿hay forma de que vos vayas testeando y poniéndote en mi
+lugar para mejorar la experiencia, los detalles o cosas más gruesas que yo voy a terminar
+encontrando?»*. Esto salió de intentarlo.
+
+### Qué pasaba
+Al quedar **todos** los huecos sin valorizar ([A-FEAT-127](#a-feat-127): sin historia no hay de
+dónde estimar), la suma da 0 — y el 0 se mostraba como un hecho:
+
+```
+16
+huecos abiertos · $0 sin cubrir
+```
+
+**Leído rápido eso dice «no falta plata».** Es el mensaje exactamente contrario al que el tablero
+existe para dar. Lo mismo en cada encabezado de sección (*«15 sin resolver · $0»*) y en la barra
+(*«0 de 16 resueltos · falta cubrir $0»*).
+
+Y dos de arrastre, del mismo origen:
+- El botón prometía *«empezando por el que más mueve»* — pero el orden es **por plata**, y sin plata
+  esa promesa es vacía.
+- El porqué nuevo es largo y la barra lo cortaba con `truncate` **justo antes del dato de la
+  ventana**, que se había agregado en [A-BUG-133](#a-bug-133) para que el número no pareciera roto.
+  El texto que existe para dar confianza quedaba del lado invisible.
+
+### El arreglo
+`plataDicha()` en el tablero y `avance().sinValorizar` en la máquina distinguen los dos ceros:
+
+| Situación | Qué dice ahora |
+|---|---|
+| todos sin valorizar | *«sin poder valorizar todavía»* — **sin ningún $0** |
+| algunos | *«$X medidos · N sin valorizar»* |
+| todos medidos | *«$X sin cubrir»* |
+
+El botón sólo promete el orden cuando hay plata que ordenar, y el porqué pasó a `line-clamp-2`.
+
+### 🔑 La lección
+> **Un cero que significa «no pude medir» no se muestra como cero.** Es la § 🧮 *nada se descarta en
+> silencio* aplicada a la presentación: el dato faltante estaba bien tratado en el modelo (`plata:
+> null`, y el `$()` del tablero ya devolvía «—» por fila) y **se perdía al sumar**. La suma es
+> justamente donde el «no sé» se disfraza de «cero».
+
+📌 Y el método: **esto no lo agarra ninguna suite ni el ensayo de datos reales.** Los números eran
+todos correctos; lo que fallaba era **qué querían decir en pantalla**. Hace falta el tercer nivel —
+recorrer el camino del usuario leyendo el render.
+
+**Estado**: 🟢 arreglado, con caso propio en `probar:recorrido` (17/17).
+
+---
+
 ## <a id="a-bug-134"></a>A-BUG-134 — El padrón nuevo daba CERO 🕳️
 
 **Encontrado el 2026-09-10 antes de que el usuario probara**, porque pidió exactamente eso:

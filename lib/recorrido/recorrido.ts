@@ -159,8 +159,15 @@ export interface Avance {
   /** En cuál va, contando desde 1. `0` si está en el tablero. */
   posicion: number
   hueco: Hueco | null
-  /** Plata que todavía falta cubrir. */
+  /** Plata que todavía falta cubrir. **Es un piso**: ver `sinValorizar`. */
   faltaPlata: number
+  /**
+   * Cuántos de los que faltan **no se pudieron valorizar** — A-BUG-136.
+   *
+   * Sin esto, `faltaPlata` en 0 es ambiguo entre *no falta plata* y *no se pudo medir ninguno*, y
+   * la barra terminaba diciendo «falta cubrir $0» con 16 huecos abiertos delante.
+   */
+  sinValorizar: number
   terminado: boolean
 }
 
@@ -181,6 +188,7 @@ export function avance(sigueAbierto: (h: Hueco) => boolean): Avance {
     posicion: estado.indice >= 0 ? Math.min(estado.indice + 1, total) : 0,
     hueco,
     faltaPlata: abiertos.reduce((s, h) => s + (h.plata ?? 0), 0),
+    sinValorizar: abiertos.filter(h => h.plata == null).length,
     terminado: abiertos.length === 0,
   }
 }
