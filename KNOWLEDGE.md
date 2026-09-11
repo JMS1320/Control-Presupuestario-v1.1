@@ -1923,6 +1923,45 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Playwright — instalado, y qué SÍ y qué NO agarra `#testing #herramientas #2026-09-10`
+
+Instalado el **2026-09-10**. La § de arriba (06/09) decía que *«habría pasado ese bug por alto»* y
+**sigue siendo cierta**: no ve las diferencias de entorno del navegador del usuario. Pero encontró
+otra clase de bug **en su primera corrida**, y por eso se queda.
+
+```bash
+npm run ui          # corre los casos (headless)
+npm run ui:ver      # con el navegador a la vista
+npm run ui:reporte  # abre el reporte de la última corrida
+```
+
+- Los casos viven en **`pruebas-ui/`**. Hoy son **4**.
+- Tarda **~1,3 min** y **necesita `npm run dev` levantado** — que es **recurso exclusivo** cuando hay
+  otra terminal (§ 🔀 Trabajo en paralelo, regla 3).
+- Se corre **antes de entregar**, no en cada cambio.
+
+### Lo que agarró y ninguna otra capa iba a agarrar
+
+**`A-BUG-144`**: apretó *«↩ Al tablero»* y el tablero no apareció — con el bug **ya declarado
+cerrado** (`A-BUG-131`). El panel se **desmontaba** al recalcular y el estado moría con él.
+
+> 🔑 **Es la capa del ESTADO DE LA UI**: lo que pasa entre un click y el siguiente render. Un cálculo
+> puro no lo tiene, un ensayo contra la base no lo ve, y leer el código lo esconde — porque el código
+> de las dos mitades está bien y lo que falla es el orden.
+
+### Y lo que sigue sin cubrir, dicho en voz alta
+
+| No lo ve | Quién sí |
+|---|---|
+| diferencias del navegador del usuario | probar en su navegador (§ de arriba) |
+| que un número sea **plausible** | el usuario |
+| que la **pregunta** esté bien hecha | leer el `MODULO_<X>.md` antes de escribir |
+| que **guardar** funcione (hoy ningún test escribe) | **nadie** → `A-DEC-18` / `A-DEC-22` |
+
+📌 El encuadre completo de las tres capas y su techo → `PENDIENTES.md` § **A-DEC-22**.
+
+---
+
 ## Dueño de cada partida — el mail NO lo dice `#arba #referencia #2026-09-08`
 
 > 🔴 **El CUIT del mail dice DÓNDE LLEGÓ la boleta, no de quién es.** En la corrida del 08/09 el
