@@ -13230,6 +13230,85 @@ verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
 
 ---
 
+## <a id="a-dec-22"></a>A-DEC-22 — Las TRES CAPAS de test 🧪
+
+**Estado**: 🔵 **decisión abierta — falta que el usuario elija la salida del agujero de escritura.**
+
+> ⚠️ **Esta propuesta murió en una transcripción.** Se entregó el **2026-09-10 ~20:35**, el usuario
+> no llegó a decidir y el corte de luz mató la sesión. Se rescató el 2026-09-11 leyendo el `.jsonl`.
+> **Registrarla acá es el punto**: lo que sólo vive en un chat no existe para la próxima sesión.
+
+### El dato que la origina — quién encontró los 8 bugs del 09-10/09
+
+| Bug | Lo encontró | Lo habría encontrado |
+|---|---|---|
+| [A-BUG-130](#a-bug-130) · el Anotar nunca guardó | **el usuario** | Playwright |
+| [A-BUG-131](#a-bug-131) · «Al tablero» | **el usuario** | Playwright |
+| [A-FEAT-125](#a-feat-125) a medias · dos botones | **el usuario** | Playwright |
+| [A-BUG-132](#a-bug-132)/[133](#a-bug-133) · la pregunta mal hecha | **el usuario** | **nada** |
+| [A-BUG-134](#a-bug-134) · el padrón mudo | el ensayo | el ensayo |
+| [A-BUG-135](#a-bug-135) · falta el monto ≠ falta la cuota | el ensayo | el ensayo |
+| [A-BUG-136](#a-bug-136) · «$0 sin cubrir» | leer el render | Playwright |
+| [A-BUG-144](#a-bug-144) · el panel desmontado | **Playwright** | Playwright |
+
+🧨 **Las suites `probar*` —13 archivos, +200 casos— encontraron CERO.** No son inútiles: cuidan que
+un cálculo no se rompa cuando se lo toca. Pero **no es ahí donde están los bugs**, y seguir
+invirtiendo ahí es **trabajar donde hay luz**.
+
+### Las 5 reglas propuestas
+
+**1 · Nada pasa a 🟢 sin las tres capas corridas — y con los números escritos.**
+No *«probá el recorrido»*, sino *«tenés que ver 16, 15 de gastos y 1 de hacienda, y estos NO tienen
+que aparecer»*. Es lo que le ahorra prueba y error al usuario (§ 🚦 Los cuatro estados).
+
+**2 · Nivel 1 — `npm run probar*` (lógica pura): FRENAR el crecimiento.**
+Un caso nuevo sólo si hay un cálculo puro nuevo, o si reproduce un bug real con números a mano.
+**Nunca por cobertura.** Sigue rigiendo: si el caso pasa igual antes y después del arreglo, no
+cubre nada (§ 🧪 Una feature nueva se registra en dos lados).
+
+**3 · Nivel 2 — el ENSAYO (lógica real contra datos reales, sin UI): uno por pantalla que condense números.**
+Hoy hay uno: `npm run ensayo:padron`. El criterio es la regla del usuario —*cuanto más condensado es
+el número, más control necesita*—. Candidatos: **Cash Flow**, **margen por actividad**, **resultado
+por período**. 🔑 **El ensayo es el que PRODUCE los números de la guía de pruebas**: no se estiman,
+se imprimen. Fue el que encontró A-BUG-134 y 135.
+
+**4 · Nivel 3 — Playwright (`npm run ui`): pocos, y cada uno defiende un bug que YA pasó.**
+Un test de UI que no defiende un bug real envejece mal: se rompe cuando se mueve un botón y no
+protegía nada. Hoy son **4**. Techo razonable: **15-20**, en los circuitos que más duelen (cargar una
+cuota, conciliar, cobrar, el recorrido). Se corre **antes de entregar**, no en cada cambio: tarda
+~1,3 min y necesita `npm run dev`, que es recurso exclusivo (§ 🔀 Trabajo en paralelo, regla 3).
+
+**5 · Lo que NINGUNA capa cubre, y hay que decirlo en voz alta: si la PREGUNTA está bien hecha.**
+A-BUG-132/133 fue eso — se verificaba perfecto una pregunta equivocada, y los tests pasaban las dos
+veces. La única defensa es la disciplina ya escrita: **leer el `MODULO_<X>.md` del dominio antes de
+la primera línea**. No es un test.
+
+### 🕳️ El agujero: la regla de CERO ESCRITURA impide probar que GUARDAR funcione
+
+Y `A-BUG-130` fue exactamente eso, un guardado que fallaba. Un test que lo agarre **tiene que
+guardar de verdad**, y eso escribe en la base real (§ 🛑 Datos — no hay entorno de prueba).
+
+**Tres salidas. La decisión es del usuario y está PENDIENTE:**
+
+| | Salida | Costo |
+|---|---|---|
+| **a** | **Dejarlo así** — no se prueban guardados, los sigue encontrando el usuario | lo más seguro; es lo que hay hoy |
+| **b** | **Tanda chica de tests que escriben**, con § Datos entera: apuntar **por id**, foto antes, restaurar después, **permiso cada vez** | el precedente en contra: el test que inventó $5.443.200 sobre 3 toros reales **reportó OK** |
+| **c** | **Convención de descarte** — lo que escribe el test se marca (`PRUEBA-AUTOMATICA`) y se borra al terminar | más simple, pero **deja basura si se corta a la mitad** |
+
+📌 **No es una pregunta nueva: es [A-DEC-18](#a-dec-18)** —*«¿cómo se prueba el camino de ESCRITURA
+sin ensuciar la base?»*, abierta desde antes y **sin dossier propio** (por eso el link no baja a
+ningún lado). Las tres salidas de arriba son **sus opciones**; al decidirse, se cierra A-DEC-18 y
+esta § queda como su detalle. 🔑 Que la misma pregunta haya vuelto a aparecer sola, dos veces, dice
+que es real — y que una fila de índice sin dossier **no alcanza para que se decida**.
+
+### Y lo que sigue siendo del usuario
+
+El **calibre** —si grita de más o de menos, si el orden de los pasos sirve, si la barra molesta— y
+**la pregunta**. Eso no lo reemplaza ninguna capa.
+
+---
+
 ## <a id="a-bug-144"></a>A-BUG-144 — A-BUG-131 no estaba arreglado 🔁
 
 **Lo encontró Playwright la primera vez que se corrió**, el 2026-09-10, apretando un botón sobre un
