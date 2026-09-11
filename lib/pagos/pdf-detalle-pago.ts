@@ -28,6 +28,14 @@ export const generarPDFDetallePago = async (
     comprobante: string
     fecha: string
     fecha_estimada?: string | null
+    /**
+     * 🐞 **A-BUG-152** — la fecha que se rotula «Fecha de Pago» tiene que ser la de PAGO.
+     * Antes se usaba `fecha_estimada`, y el papel de IGLESIAS decía `17/09` arriba y `04/09` en
+     * el desglose. Coincidían sólo en los pagos posteriores al arrastre de A-BUG-142, que es lo
+     * que hizo que el primer caso mirado pareciera correcto.
+     * **Opcional a propósito**: quien no la pase cae en la estimada, como antes.
+     */
+    fecha_pago?: string | null
     imp_total: number
     monto_sicore?: number | null
     descuento_aplicado?: number | null
@@ -58,7 +66,8 @@ export const generarPDFDetallePago = async (
     // Fecha de pago: del anticipo si existe, si no fecha_estimada del primer item
     const fechaPagoRaw = anticipo
       ? anticipo.fecha_pago
-      : (items[0]?.fecha_estimada || null)
+      // A-BUG-152: la de PAGO primero; la estimada es el fallback, no la fuente.
+      : (items[0]?.fecha_pago || items[0]?.fecha_estimada || null)
     const fechaPago = fechaPagoRaw ? fmtFechaStr(fechaPagoRaw) : '-'
 
     // ── Header ────────────────────────────────────────────────────────────

@@ -5932,6 +5932,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       comprobante: `FC ${f.tipo_comprobante}-${String((f.punto_venta as number) || 0).padStart(5, '0')}-${String((f.numero_desde as number) || 0).padStart(8, '0')}`,
       fecha: (f.fecha_emision as string) || '',
       fecha_estimada: (f.fecha_estimada as string) || (f.fecha_vencimiento as string) || null,
+      fecha_pago: (f.fecha_pago as string) || null,   // A-BUG-152
       imp_total: ((f.imp_total as number) || 0) * tc,
       monto_sicore: f.monto_sicore as number | null,
       descuento_aplicado: f.descuento_aplicado as number | null,

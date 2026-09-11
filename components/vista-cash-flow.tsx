@@ -1243,6 +1243,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
+          fecha_pago: f.fecha_pago,   // A-BUG-152
           imp_total: fa.imp_total ?? f.debitos ?? 0,
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
@@ -1295,6 +1296,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
+          fecha_pago: f.fecha_pago,   // A-BUG-152
           imp_total: fa.imp_total ?? f.debitos ?? 0,
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,

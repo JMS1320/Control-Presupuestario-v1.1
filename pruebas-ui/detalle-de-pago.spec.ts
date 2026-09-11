@@ -25,11 +25,27 @@
 import { test, expect } from '@playwright/test'
 import { irAlInicio, RUTA } from './ayuda'
 
-const CUIT_ALCORTA = '20103619115'
 const OUT = 'C:/Users/josem/AppData/Local/Temp/claude/D--Users-josem-Documents-Jose-Automatizarr-Claude-Control-Presupuestario-v1-1/93fe67ed-ce98-4c07-9cab-ef2f6c13fccd/scratchpad'
 
-test('📄 el Detalle de Pago de ALCORTA sale con UNA transferencia y cierra', async ({ page }) => {
+/**
+ * Los dos casos que cubren las dos formas de pagar, elegidos **por su número de comprobante**.
+ *
+ * | | ALCORTA | IGLESIAS |
+ * |---|---|---|
+ * | Forma | 3 facturas agrupadas, **una transferencia** | **echeq + transferencia** |
+ * | Prueba | A-BUG-145 (un pago, un renglón) · A-BUG-151 (las 3 nombradas) | A-BUG-102 (el echeq se anuncia como echeq, no como transferencia) |
+ * | SICORE | $1.566,93 | $57.400,40 |
+ * | Descuento | $19.254,70 | — |
+ */
+const CASOS = [
+  { nombre: 'ALCORTA', cuit: '20103619115', fila: '6337', archivo: 'detalle-alcorta.pdf' },
+  { nombre: 'IGLESIAS', cuit: '20122085326', fila: '816', archivo: 'detalle-iglesias.pdf' },
+]
+
+for (const CASO of CASOS) {
+test(`📄 Detalle de Pago de ${CASO.nombre} — bajar el PDF y leerlo`, async ({ page }) => {
   test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  const CUIT_ALCORTA = CASO.cuit
 
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
@@ -55,7 +71,7 @@ test('📄 el Detalle de Pago de ALCORTA sale con UNA transferencia y cierra', a
    * 📌 Es la § 🛑 Datos aplicada a leer: *apuntar al registro, no a «lo que aparezca»*. Un test que
    * agarra de más da un resultado que parece rico y no dice nada.
    */
-  const filaPago = page.getByRole('row').filter({ hasText: '6337' }).first()
+  const filaPago = page.getByRole('row').filter({ hasText: CASO.fila }).first()
   await expect(filaPago).toBeVisible()
   await filaPago.getByRole('checkbox').first().click()
   await expect(page.getByRole('button', { name: /Aplicar a 1 filas/ })).toBeVisible()
@@ -66,10 +82,11 @@ test('📄 el Detalle de Pago de ALCORTA sale con UNA transferencia y cierra', a
     page.waitForEvent('download', { timeout: 60_000 }),
     page.getByRole('button', { name: /Detalle PDF/ }).click(),
   ])
-  const destino = `${OUT}/detalle-alcorta.pdf`
+  const destino = `${OUT}/${CASO.archivo}`
   await descarga.saveAs(destino)
   console.log(`\n📄 PDF guardado: ${descarga.suggestedFilename()} → ${destino}`)
 
   console.log(`\n🔴 errores de página: ${errores.length}`)
   for (const e of errores) console.log('   ' + e.slice(0, 300))
 })
+}
