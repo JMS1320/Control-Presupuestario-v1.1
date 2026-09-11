@@ -28,7 +28,8 @@
     "ui:reporte": "playwright show-report",
     "probar:recorrido": "node --experimental-strip-types scripts/probar-recorrido.mts",
     "excel:arba": "node --experimental-strip-types scripts/excel-boletas-arba.mts",
-    "ensayo:detalle": "npx --yes tsx scripts/ensayo-detalle-pago.mts"
+    "ensayo:detalle": "npx --yes tsx scripts/ensayo-detalle-pago.mts",
+    "ui:escribe": "node scripts/ui-escribe.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

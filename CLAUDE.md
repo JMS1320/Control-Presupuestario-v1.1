@@ -875,6 +875,33 @@ duplica en ninguna de las dos direcciones.
 saca la marca, y el manual miente. Una línea `→ A-TEST-NN` deja la verdad en `PENDIENTES`, que es su
 dimensión, y el manual sólo la señala.
 
+#### 🧪 Un A-TEST nace con SU PROCESO — para que aparezca donde se prueba (REGLA)
+*Pedida por el usuario 2026-09-11: **«¿podés poner los tests a la vista siempre? que me proponga al
+editar un pago si quiero probar esto. siempre dejarlo anotado en la app así voy testeando en
+procesos reales»**.*
+
+> **Todo `A-TEST` que se prueba usando la app se escribe con la marca de su PROCESO**
+> (`@pantalla/proceso`), no sólo la de su pantalla.
+
+Con esa marca, el pendiente **le aparece al usuario en el modal donde corre ese proceso**
+([A-FEAT-129](PENDIENTES.md#a-feat-129)) — en vez de esperar a que alguien abra `PENDIENTES.md`.
+
+- **La sintaxis ya existía**: es el sub-nivel de la marca de pantalla. `@sueldos/pago`,
+  `@cashflow/sicore`, `@cashflow/detalle-pago`.
+- **Se responde desde ahí**: ✅ anduvo / 🔴 falló van a `pendientes_comentarios`, que es el canal 2
+  de los tres del usuario — el que Claude mira al abrir sesión.
+- **Y el control lo verifica**: `npm run verificar-pendientes` lista los `A-TEST` abiertos, con
+  pantalla y no automáticos, que **no** tienen proceso. **Avisa y no rompe**: hay tests que no
+  cuelgan de un circuito y forzarlos a inventar uno manda el aviso a la pantalla equivocada.
+
+⚠️ **Un proceso mal elegido es peor que ninguno.** Si no está claro a qué circuito pertenece, se
+deja sin marca y lo agarra el control — no se inventa una para que el control se calle.
+
+**Motivo, y es el que convierte esto en regla y no en una buena costumbre:** el usuario fijó que
+**prueba usando la app, no en sesiones de test** — *«lo mejor siempre es que yo lo testeo la próxima
+vuelta, sino me lleva mucho tiempo»*. Con ese criterio, **un test que no está en el lugar donde se
+corre el proceso no se va a probar nunca**: no es que se pruebe más tarde, es que no se prueba.
+
 #### 📋 Después de una tanda sin supervisión: la GUÍA DE PRUEBAS (REGLA)
 *Pedido del usuario 2026-09-06: **«siempre después de desarrollar mucho sin mi supervisión, dejame
 los manuales para el test — deben guiarme, apretá acá, etc. Si hubo modificaciones,

@@ -142,6 +142,14 @@ test('🐞 A-BUG-97 · abrir un pago de CAJA no lo cambia a «banco»', async ({
   await expect(modal).toBeVisible({ timeout: 20_000 })
   await page.screenshot({ path: `${OUT}/sueldos-04-medio-pago.png` })
 
+  // 🧪 A-FEAT-129 — el cartel de «lo que hay que mirar» tiene que estar TAMBIÉN acá.
+  //    Pedido del usuario: *«que me proponga al editar un pago si quiero probar esto»*.
+  const cartel = modal.getByRole('button', { name: /cosas? para mirar en esta corrida/ })
+  const hayCartel = await cartel.count() > 0
+  console.log(`\n🧪 cartel de tests en el modal de pago: ${hayCartel ? 'SÍ' : 'no (sin tests abiertos de este proceso)'}`)
+  if (hayCartel) console.log('   ' + (await cartel.innerText()).replace(/\n/g, ' · '))
+  expect(hayCartel, 'el cartel de A-FEAT-129 tiene que aparecer al editar un pago').toBe(true)
+
   // 🔴 El bug: el modal abría con «Banco» aunque el pago fuera de caja, y al confirmar lo pisaba.
   const textoModal = await modal.innerText()
   console.log('\n🐞 EL MODAL DICE (medio de pago):\n' + textoModal)

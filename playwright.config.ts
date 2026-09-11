@@ -75,6 +75,25 @@ if (!RUTA) {
 
 export default defineConfig({
   testDir: './pruebas-ui',
+  /**
+   * 🛑 **LOS TESTS QUE ESCRIBEN NO CORREN CON `npm run ui`.**
+   *
+   * 🐞 Pasó el 2026-09-11, y es el motivo de que esto exista: `sicore-doble-click.spec.ts` —el
+   * único que completa un pago de verdad— quedó en esta carpeta, y una corrida de `npm run ui`
+   * **lo ejecutó sin que nadie lo pidiera**: volvió a pasar la FC de MERCURE a `pagar`, le estampó
+   * la quincena y creó su fila de retención. Hubo que restaurar a mano.
+   *
+   * 🔑 Es **literalmente** lo que advierte `CLAUDE.md` § ✅ «Terminé» significa que ya lo probé:
+   * *«el día que alguien agregue uno que escriba, esa orden lo autoriza sin preguntar»*. El
+   * docstring del spec decía que el permiso no se hereda — **pero un docstring no frena a un
+   * runner**. El permiso tiene que estar en la configuración, no en un comentario.
+   *
+   * Para correr uno de ésos, con permiso del usuario y a propósito:
+   * ```
+   * npm run ui:escribe        # los habilita para esa corrida
+   * ```
+   */
+  testIgnore: process.env.PRUEBA_ESCRITURA === '1' ? [] : ['**/*.escribe.spec.ts'],
   // Uno por vez: son pocos, tocan la misma app y compiten por el mismo servidor de dev.
   workers: 1,
   fullyParallel: false,

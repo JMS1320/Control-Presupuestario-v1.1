@@ -3,6 +3,7 @@
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1681,6 +1682,10 @@ export function TabSueldos() {
               {editandoPago ? 'Editar Pago' : antTipo === 'sueldo' ? 'Registrar Pago Saldo' : 'Registrar Anticipo'}
             </DialogTitle>
           </DialogHeader>
+          {/* 🧪 A-FEAT-129 — lo que quedó pendiente de probar DE ESTE PROCESO, acá donde se corre.
+              El usuario lo pidió explícito: *«que me proponga al editar un pago si quiero probar
+              esto; siempre dejarlo anotado en la app así voy testeando en procesos reales»*. */}
+          <TestsDelProceso proceso="sueldos/pago" pantalla="sueldos" />
           <div className="space-y-4 py-2">
             {/* Selector tipo — solo en creación */}
             {!editandoPago && (
