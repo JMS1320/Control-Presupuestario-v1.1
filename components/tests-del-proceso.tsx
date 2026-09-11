@@ -84,6 +84,8 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
   const [enviando, setEnviando] = useState<string | null>(null)
   /** Respondidos en esta corrida: salen de la lista sin esperar a que Claude toque el `.md`. */
   const [respondidos, setRespondidos] = useState<Set<string>>(new Set())
+  /** Cuál tiene el detalle desplegado. Uno por vez: el cartel se tiene que poder barrer. */
+  const [expandido, setExpandido] = useState<string | null>(null)
 
   useEffect(() => {
     let vivo = true
@@ -162,8 +164,22 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
               <div className="text-[11px] font-medium text-gray-800">
                 <span className="font-mono text-amber-700">{p.id}</span> · {p.titulo}
               </div>
+              {/* 🔴 El detalle va RECORTADO a dos líneas, y se abre el que interese.
+                  Mirando la primera versión renderizada: los detalles de `PENDIENTES.md` son
+                  párrafos enteros, y cinco juntos tapaban el modal. Cumplía la letra del modo de
+                  falla 2 —arranca colapsado, no bloquea— pero no el espíritu: **un cartel que no
+                  se puede barrer con la vista se cierra sin leer**, que es el modo de falla 1 por
+                  la puerta de al lado. Lo encontró verlo, no un caso. */}
               {p.detalle && (
-                <p className="mt-1 text-[11px] leading-4 text-gray-600">{p.detalle}</p>
+                <p
+                  onClick={() => setExpandido(e => (e === p.id ? null : p.id))}
+                  title={expandido === p.id ? 'Contraer' : 'Ver el detalle completo'}
+                  className={`mt-1 cursor-pointer text-[11px] leading-4 text-gray-600 ${
+                    expandido === p.id ? '' : 'line-clamp-2'
+                  }`}
+                >
+                  {p.detalle}
+                </p>
               )}
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {RESPUESTAS.map(r => (
