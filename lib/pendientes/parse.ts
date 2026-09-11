@@ -94,6 +94,19 @@ export interface Pendiente {
   esGeneral: boolean
   /** El sub-nivel de cada marca (`@ingresos/subdiarios` → `subdiarios`), si lo tiene. */
   subPantallas: string[]
+  /**
+   * El sub-nivel **junto con su pantalla**: `@cashflow/sicore` → `cashflow/sicore`. Es el
+   * identificador de un **PROCESO** — un circuito concreto dentro de una pantalla.
+   *
+   * 🔑 Nace de [A-FEAT-129] y **no inventa sintaxis nueva**: el sub-nivel ya existía y su comentario
+   * ya decía para qué era — *«manda el prefijo, el resto es detalle; así se etiqueta grueso hoy y
+   * se afina después sin rehacer nada»*. Esto es ese «después».
+   *
+   * `subPantallas` sigue estando porque hay código que la usa, pero es **ambigua cuando hay dos
+   * marcas**: `@cashflow/sicore @egresos/lote` deja `['sicore','lote']` sin decir cuál es de cuál.
+   * Para decidir si un ítem pertenece a un proceso se usa ésta.
+   */
+  procesos: string[]
   /** Marcas que NO coinciden con ninguna solapa real: error de tipeo. Ver `marcasDesconocidas`. */
   marcasInvalidas: string[]
 }
@@ -178,10 +191,12 @@ function anclaDe(texto: string): string | null {
  * metadato, no parte de la descripción.
  */
 function extraerMarcas(texto: string): {
-  limpio: string; pantallas: Pantalla[]; subPantallas: string[]; invalidas: string[]; general: boolean
+  limpio: string; pantallas: Pantalla[]; subPantallas: string[]; procesos: string[]
+  invalidas: string[]; general: boolean
 } {
   const pantallas: Pantalla[] = []
   const subPantallas: string[] = []
+  const procesos: string[] = []
   const invalidas: string[] = []
   let general = false
 
@@ -191,7 +206,14 @@ function extraerMarcas(texto: string): {
       general = true
     } else if ((PANTALLAS as readonly string[]).includes(n)) {
       if (!pantallas.includes(n as Pantalla)) pantallas.push(n as Pantalla)
-      if (sub) subPantallas.push(sub.slice(1))
+      if (sub) {
+        const s = sub.slice(1).toLowerCase()
+        subPantallas.push(s)
+        // El proceso lleva su pantalla pegada: con dos marcas, `subPantallas` sola no alcanza
+        // para saber cuál sub es de cuál pantalla (A-FEAT-129).
+        const proceso = `${n}/${s}`
+        if (!procesos.includes(proceso)) procesos.push(proceso)
+      }
     } else {
       // No se traga el error: se reporta y el ítem queda "sin ubicar" (visible en todas).
       invalidas.push(n)
@@ -199,7 +221,20 @@ function extraerMarcas(texto: string): {
     return ''
   })
 
-  return { limpio: limpio.replace(/\s{2,}/g, ' ').trim(), pantallas, subPantallas, invalidas, general }
+  return { limpio: limpio.replace(/\s{2,}/g, ' ').trim(), pantallas, subPantallas, procesos, invalidas, general }
+}
+
+/**
+ * ¿Este pendiente pertenece al proceso dado? (`'cashflow/sicore'`)
+ *
+ * ⚠️ **Sin marca de proceso NO entra.** Es lo contrario de `pantallasDe`, y a propósito: un ítem
+ * sin ubicar se muestra **en todas las pantallas** porque el invariante es que nada se pierda;
+ * pero un cartel dentro de un modal de pago tiene que mostrar **sólo lo que se prueba corriendo ese
+ * proceso**. Si heredara el «sin marca = en todos lados», el modal de SICORE arrancaría con 598
+ * ítems y nadie lo miraría nunca (§ A-FEAT-129, modo de falla 1).
+ */
+export function esDelProceso(p: Pick<Pendiente, 'procesos'>, proceso: string): boolean {
+  return p.procesos.includes(proceso.toLowerCase())
 }
 
 /**
@@ -345,6 +380,7 @@ export function parsePendientes(md: string): ResultadoPendientes {
       pantallas: marcas.pantallas,
       esGeneral: marcas.general,
       subPantallas: marcas.subPantallas,
+      procesos: marcas.procesos,
       marcasInvalidas: marcas.invalidas,
     })
   }

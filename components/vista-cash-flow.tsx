@@ -14,6 +14,7 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { calcularRetencion } from "@/lib/sicore/minimo"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
@@ -5035,6 +5036,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               {facturaEnProceso ? `${facturaEnProceso.nombre_proveedor} · CUIT ${facturaEnProceso.cuit_proveedor}` : ''}
             </DialogDescription>
           </DialogHeader>
+
+          {/* 🧪 Lo que quedó pendiente de probar DE ESTE PROCESO (A-FEAT-129). Va en el paso del
+              tipo y no en el del cálculo: acá el usuario todavía está decidiendo, en el otro está
+              por confirmar un importe y no hay que distraerlo. Si no hay nada, no ocupa lugar. */}
+          {pasoSicore === 'tipo' && <TestsDelProceso proceso="cashflow/sicore" pantalla="cashflow" />}
 
           {pasoSicore === 'tipo' && (
             <div className="space-y-4">

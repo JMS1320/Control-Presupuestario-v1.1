@@ -39,6 +39,7 @@ import {
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
+import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 
 export interface Resultado {
   caso: string
@@ -295,6 +296,65 @@ export function correrCasos(): Resultado[] {
   chequear("SICORE", "Filas sin factura ni anticipo no se descartan entre sí",
     "las 2 quedan", `quedan ${sueltas.vigentes.length}`,
     sueltas.vigentes.length === 2, "A-BUG-146")
+
+  // ── A-FEAT-129 — el test viaja con el proceso: la marca `@pantalla/proceso` ─────────────────
+  //
+  // Lo que se prueba acá es **qué ve el modal**, que es lo único que decide si la feature sirve:
+  // de más, se vuelve ruido y se deja de mirar; de menos, no avisa de nada.
+  const MD = [
+    '| ID | Estado | Prio | Ítem |',
+    '|----|--------|------|------|',
+    '| A-TEST-500 | 🔴 | Test | Probar la retención acumulada `@cashflow/sicore` |',
+    '| A-TEST-501 | 🟢 | Test | Probar el lote de Galicia `@cashflow/lote` |',
+    '| A-TEST-502 | ✅ | Test | Ya probado, no tiene que aparecer `@cashflow/sicore` |',
+    '| A-TEST-503 | 🔴 | Test | Sin marca de proceso, sólo de pantalla `@cashflow` |',
+    '| A-BUG-500 | 🔴 | Bug | Un bug del mismo proceso, que NO es un test `@cashflow/sicore` |',
+  ].join('\n')
+  const parsed = parsePendientes(MD)
+  const abiertoP = (p: { estado: string }) => !['✅', '⚰️', '⏸️'].some(e => (p.estado || '').includes(e))
+  const delModal = parsed.pendientes.filter(p =>
+    esDelProceso(p, 'cashflow/sicore') && /^A-TEST-/i.test(p.id) && abiertoP(p))
+
+  chequear("Tests del proceso", "El modal de SICORE muestra SÓLO el test abierto de su proceso",
+    "A-TEST-500", delModal.map(p => p.id).join(', ') || '(ninguno)',
+    delModal.length === 1 && delModal[0].id === 'A-TEST-500', "A-FEAT-129")
+
+  // 🔴 Los cuatro adversarios, uno por cada forma de colarse.
+  chequear("Tests del proceso", "🔴 Un test de OTRO proceso de la misma pantalla no entra",
+    "A-TEST-501 afuera", delModal.some(p => p.id === 'A-TEST-501') ? "entró" : "afuera",
+    !delModal.some(p => p.id === 'A-TEST-501'), "A-FEAT-129")
+
+  chequear("Tests del proceso", "🔴 Un test YA PROBADO no vuelve a aparecer",
+    "A-TEST-502 afuera", delModal.some(p => p.id === 'A-TEST-502') ? "entró" : "afuera",
+    !delModal.some(p => p.id === 'A-TEST-502'), "A-FEAT-129")
+
+  // El más importante: sin marca de proceso NO entra. Si heredara el «sin marca = en todas las
+  // pantallas» de `pantallasDe`, el modal arrancaría con cientos de ítems y nadie lo miraría.
+  chequear("Tests del proceso", "🔴 Sin marca de PROCESO no entra (aunque tenga la de pantalla)",
+    "A-TEST-503 afuera", delModal.some(p => p.id === 'A-TEST-503') ? "entró" : "afuera",
+    !delModal.some(p => p.id === 'A-TEST-503'), "A-FEAT-129")
+
+  chequear("Tests del proceso", "🔴 Un BUG del mismo proceso no entra: el cartel es de tests",
+    "A-BUG-500 afuera", delModal.some(p => p.id === 'A-BUG-500') ? "entró" : "afuera",
+    !delModal.some(p => p.id === 'A-BUG-500'), "A-FEAT-129")
+
+  // 🐞 Y el que reproduce el bug que cometí escribiendo esto: filtrar por la columna `tipo` daba
+  // CERO con los cinco bien marcados, porque en varias tablas del índice esa celda no se mapea.
+  const porColumnaTipo = parsed.pendientes.filter(p =>
+    esDelProceso(p, 'cashflow/sicore') && p.tipo === 'Test' && abiertoP(p))
+  chequear("Tests del proceso", "Filtrar por la columna `tipo` NO sirve — por eso se usa el ID",
+    "0 por columna vs 1 por ID", `${porColumnaTipo.length} vs ${delModal.length}`,
+    porColumnaTipo.length !== delModal.length || porColumnaTipo.length === 0, "A-FEAT-129")
+
+  // Dos marcas en la misma fila: cada sub tiene que quedar pegado a SU pantalla.
+  const dos = parsePendientes([
+    '| ID | Estado | Prio | Ítem |', '|----|--------|------|------|',
+    '| A-TEST-504 | 🔴 | Test | Dos procesos `@cashflow/sicore` `@egresos/subdiarios` |',
+  ].join('\n')).pendientes[0]
+  chequear("Tests del proceso", "Con dos marcas, cada proceso queda pegado a SU pantalla",
+    "cashflow/sicore + egresos/subdiarios", dos?.procesos.join(' + ') || '(ninguno)',
+    !!dos && dos.procesos.includes('cashflow/sicore') && dos.procesos.includes('egresos/subdiarios'),
+    "A-FEAT-129")
 
   return r
 }
