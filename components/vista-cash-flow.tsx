@@ -1674,7 +1674,31 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const extras = accion === 'sin_retencion'
         ? pendiente.facturas.map(f => ({ id: f.id, origen: 'ARCA' as CashFlowRow['origen'], campo: 'estado', valor: valorEstadoLote }))
         : []
-      const ok = await actualizarBatch([...pendiente.actualizaciones, ...extras])
+
+      /**
+       * 🐞 A-BUG-147 — al **retener**, la `fecha_pago` de las facturas que todavía van a pasar por
+       * la cola **NO se escribe acá**.
+       *
+       * Antes sí, y dejaba la mitad de un pago aplicada: la factura quedaba con fecha de pago y
+       * con la **`fecha_estimada` arrastrada** (§ `conArrastreDeFechas`), pero con el estado viejo,
+       * porque el estado se escribe recién al terminar su paso. Si el usuario cerraba la pestaña en
+       * el medio —o el navegador se caía— la factura quedaba con la plata proyectada **el día del
+       * intento en vez del día real**, sin nada que lo señalara. Encontrado el 2026-09-11 cuando
+       * `A-TEST-110` se cortó a mitad de camino y la FC de MERCURE quedó justo así.
+       *
+       * 🔑 Es el invariante de [A-BUG-20] llevado un paso más adentro: *«nada se escribe hasta que
+       * las preguntas estén contestadas»* valía para el portón, pero **la cola por factura son más
+       * preguntas**. Ahora cada factura escribe su fecha junto con su estado: **todo o nada**.
+       *
+       * ⚠️ Sólo se saca la fecha de las que van a la cola. El resto del lote —lo que no pasa por
+       * SICORE— se sigue escribiendo acá, porque para ésas no queda ninguna pregunta pendiente.
+       */
+      const idsEnCola = new Set(pendiente.facturas.map(f => f.id))
+      const actualizaciones = accion === 'retener'
+        ? pendiente.actualizaciones.filter(u => !(u.campo === 'fecha_pago' && idsEnCola.has(u.id)))
+        : pendiente.actualizaciones
+
+      const ok = await actualizarBatch([...actualizaciones, ...extras])
       if (!ok) return
 
       if (pendiente.sinFecha > 0) {
@@ -2096,16 +2120,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   ) => {
     const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
     const impTotalPesos = Math.round(((fila.imp_total || 0) * tc - descuento) * 100) / 100
-    const fa = fila as any
+    // ⚠️ Sin `as any` a propósito (A-BUG-148): estos cuatro campos **ya están en `CashFlowRow`**.
+    // Cuando no estaban, el `as any` los dejaba pasar como `undefined` y la fila se guardaba sin
+    // número de comprobante **sin que nada fallara** — el mismo mecanismo que dejó pasar el guard
+    // muerto de `tipo_comprobante`. Tipado, un campo que falte lo dice el compilador.
     await registrarEnSicoreRetenciones('msa', {
       origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
       quincena,
       fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString().split('T')[0],
       factura_id: fila.id,
-      fecha_emision: fa.fecha_emision ?? null,
-      tipo_comprobante: fa.tipo_comprobante ?? null,
-      punto_venta: fa.punto_venta ?? null,
-      numero_desde: fa.numero_desde ?? null,
+      fecha_emision: fila.fecha_emision ?? null,
+      tipo_comprobante: fila.tipo_comprobante ?? null,
+      punto_venta: fila.punto_venta ?? null,
+      numero_desde: fila.numero_desde ?? null,
       cuit_emisor: fila.cuit_proveedor ?? null,
       denominacion_emisor: fila.nombre_proveedor ?? null,
       tipo_sicore: tipo.tipo,
@@ -2305,6 +2332,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString().split('T')[0]
       const quincena = generarQuincenaSicore(fechaSicore)
 
+      // 0. La FECHA DE PAGO de esta factura (A-BUG-147). Se escribe acá y no en el lote, para que
+      //    la factura no pueda quedar con fecha y sin estado si el usuario abandona la cola.
+      //    Va por `actualizarRegistro` para que aplique el **arrastre a `fecha_estimada`** en un
+      //    solo lugar (§ `conArrastreDeFechas`) en vez de repetir la regla acá.
+      //    Sólo si la fila la trae: es exactamente la condición que tenía el lote (`if (fp && …)`).
+      if (facturaEnProceso.fecha_pago) {
+        await actualizarRegistro(guardadoPendienteCF.filaId, 'fecha_pago', facturaEnProceso.fecha_pago, 'ARCA')
+      }
+
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
@@ -2339,16 +2375,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       //    "Sin retención + descuento" no genera registro SICORE (solo estampa el descuento en la FC).
       if (tipoSeleccionado && montoRetencion > 0) {
         const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
-        const fa = facturaEnProceso as any
+        // Sin `as any` (A-BUG-148) — ver el motivo en `registrarConsumoDeMinimoCF`.
         await registrarEnSicoreRetenciones('msa', {
           origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
           quincena,
           fecha_pago: fechaSicore,
           factura_id: guardadoPendienteCF.filaId,
-          fecha_emision: fa.fecha_emision ?? null,
-          tipo_comprobante: fa.tipo_comprobante ?? null,
-          punto_venta: fa.punto_venta ?? null,
-          numero_desde: fa.numero_desde ?? null,
+          fecha_emision: facturaEnProceso.fecha_emision ?? null,
+          tipo_comprobante: facturaEnProceso.tipo_comprobante ?? null,
+          punto_venta: facturaEnProceso.punto_venta ?? null,
+          numero_desde: facturaEnProceso.numero_desde ?? null,
           cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
           denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
           tipo_sicore: tipoSeleccionado.tipo,
@@ -2455,6 +2491,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setColaLoteSicore([])
       echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null; echeqFilaCF.current = null
     } else if (pending && continuarSinSicore) {
+      // La fecha de pago, junto con el estado (A-BUG-147) — ver el motivo en `resolverSicoreLote`.
+      // Ésta es la otra salida que COMPLETA la factura («Seguir sin retención»), así que también
+      // le toca escribirla; el lote ya no lo hace.
+      const filaCola = facturaEnProceso?.id === pending.filaId ? facturaEnProceso : null
+      if (filaCola?.fecha_pago) {
+        await actualizarRegistro(pending.filaId, 'fecha_pago', filaCola.fecha_pago, 'ARCA')
+      }
       // Guardar el cambio de estado sin SICORE
       await actualizarRegistro(pending.filaId, 'estado', pending.nuevoEstado, 'ARCA')
       // ECHEQ sin retención (single o lote): estampar método/fecha de cobro + registrar el cheque por el total (imp_total ARS).

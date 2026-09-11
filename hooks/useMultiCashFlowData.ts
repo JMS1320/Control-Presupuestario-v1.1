@@ -132,6 +132,15 @@ export interface CashFlowRow {
    * igual. El `as any` fue lo que dejó pasar el error.
    */
   tipo_comprobante?: number | null
+  /**
+   * Los que identifican al comprobante. Van a `sicore_retenciones` y de ahí al **certificado del
+   * proveedor** y a la DDJJ: sin ellos, el proveedor no sabe contra qué factura se le retuvo
+   * (A-BUG-148). Nulos en una fila **agrupada**, que no representa a una factura sola — ahí los
+   * repone `abrirGruposArca` al abrir el grupo en sus miembros.
+   */
+  punto_venta?: number | null
+  numero_desde?: number | null
+  fecha_emision?: string | null
   imp_neto_gravado?: number
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
@@ -249,6 +258,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         tc_pago: f.tc_pago ?? null,
         comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
         tipo_comprobante: f.tipo_comprobante ?? null,
+        /**
+         * 🐞 A-BUG-148 — estos tres se usaban **sólo para armar el texto de `comprobante_display`**
+         * y no viajaban como campos. Consecuencia: la retención de una factura **suelta** se
+         * guardaba con `numero_desde`, `punto_venta` y `fecha_emision` en `null`, y ese número es
+         * el que identifica contra qué factura se retuvo — en el certificado del proveedor y en la
+         * DDJJ. Medido el 2026-09-11: **11 de 16 filas `directo`** sin número.
+         *
+         * 🔑 [A-BUG-138](../PENDIENTES.md#a-bug-138) ya lo había arreglado, pero **sólo para el
+         * camino de agrupación** (`abrirGruposArca` los relee de la base). Una fila que no es grupo
+         * pasa por ahí sin tocar, así que el arreglo nunca la alcanzó. Mismo patrón que A-BUG-142:
+         * **la regla vivía en un camino de dos.** Acá viven para los dos, porque es el origen.
+         */
+        punto_venta: f.punto_venta ?? null,
+        numero_desde: f.numero_desde ?? null,
+        fecha_emision: f.fecha_emision ?? null,
         grupo_pago_id: null,
       }
     })
