@@ -377,7 +377,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-FEAT-127 | 🟢 | **Alta** | 🔄 **El padrón de templates cambia de PREGUNTA.** De *«¿están todas las cuotas?»* a **«¿el presupuesto puede proyectar esto?»**. La vieja estaba mal de raíz: `MODULO_TEMPLATES.md` § 13 (22/08) decidió que **no se generan campañas futuras para alimentar el presupuesto** — faltar cuotas lejanas es lo correcto, y cargarlas **empeora** la proyección (una cuota estimada lejana la pisa con un número peor y el resto del sistema la lee como compromiso firme). 🔑 La señal nueva son los meses en cero **por falta de historia**, separados de los otros dos ceros que **sí son legítimos** (fuera del patrón de pago · marcado «no proyectar») — palabras del usuario: *«un mes vacío puede ser legítimo»*. **Grita mucho menos y grita donde duele** | → [A-FEAT-127](#a-feat-127) `@presupuesto @recorrido` |
 | A-DEC-21 | 🟢 | Decisión | 🕰️ **Los dos horizontes del gasto son DOS preguntas, no una.** **Largo** (todo el período): *¿el presupuesto puede proyectarlo?* → si no, **miente por omisión** → lo cubre [A-FEAT-127](#a-feat-127). **Corto** (campaña en curso): *¿voy a ver venir el vencimiento?* → si no, **se te pasa un pago** → ya lo cubre `avisoFaltaGenerar`, que existe desde antes y ya se muestra en el Presupuesto. Sale de `MODULO_TEMPLATES.md` § 13. 🔑 Mezclarlas en un solo padrón fue el error de fondo: **tienen consecuencias distintas y se resuelven distinto** | → [A-DEC-21](#a-dec-21) `@presupuesto` |
 | A-BUG-145 | 🔴 | 🔴 **Alta** | 📨 **El Detalle de Pago le anuncia al proveedor TRES transferencias cuando se hizo UNA.** Encontrado el 2026-09-11 por `npm run ensayo:detalle` sobre el pago real de ALCORTA del 10/09 (3 FC agrupadas). El desglose dice *«Transferencia $170.358,89 · Transferencia $110.097,55 · Transferencia $83.815,83»* y el banco mandó **una sola de $364.272,27**. 🔑 `obtenerMediosPagoFactura` paso 4 agrega **un medio por factura** (el `monto_a_abonar` de cada una) y **nadie sabe que están en el mismo grupo de pago** — `grupos_pago` no entra en la función. ⚠️ **La cuenta CIERRA igual** ($385.093,90 = $385.093,90), por eso ningún control lo agarra: el total está bien y el **desglose miente**. 🧨 Es la familia de [A-BUG-102](#a-bug-102): el proveedor concilia su cuenta corriente contra esto y va a buscar tres acreditaciones que no existen. Pasa en el **cuerpo del mail y en el PDF** (los dos pintan una fila por medio). 📌 Y es justo lo que el usuario quiso lograr al agrupar: **un solo pago** | → [A-BUG-145](#a-bug-145) `@cashflow @egresos` |
-| A-BUG-146 | 🔴 | 🔴 **URGENTE** | 👯 **`sicore_retenciones` guardó DOS filas vigentes idénticas para la misma factura.** FC 10-6337 de ALCORTA: `c93ac4d0…` y `87b81892…`, las dos con `anulado=false`, retención $0,00 y mínimo consumido $140.792,49, creadas con **0,69 segundos de diferencia** (22:27:37.247 y .934 del 10/09). Es la fila de *«consume mínimo y no retiene»* de [A-BUG-137](#a-bug-137), escrita dos veces. 🧮 **Rompe el control de [A-TEST-109](#a-test-109)**: Σ `minimo_no_imponible` del grupo da **$364.792,49** en vez de **$224.000,00 exacto**. ✅ **No afectó plata**: el mínimo se calcula desde `comprobantes_arca` (`netoPagosPreviosSinRetencion`), no desde esta tabla, así que la 6328 recibió bien sus $83.207,51. 🔑 **Pero es el control el que quedó ciego**: la identidad que existe para detectar un reparto mal hecho ahora falla por una causa distinta, y la próxima vez que falle de verdad va a parecer lo mismo. 🧨 **Y el TXT SÍ se lleva la duplicada: iría a ARCA con $170.358,89 de pago y $140.792,49 de base DE MÁS.** `generarTXTCierreV2` agrupa por `cuit_emisor||tipo_sicore` **sumando fila por fila** (`pago`, `neto_gravado_pagado`), y no deduplica por `factura_id`. Medido: declararía **pago $534.631,16 · base $443.138,95** en vez de **$364.272,27 · $302.346,46**. La **retención sí queda bien** ($1.566,93), así que la plata retenida no cambia — lo que queda mal es **lo declarado**. ✅ **Hay tiempo**: la quincena `26-09 - 1ra` está **abierta** (`ddjj_confirmada=false`, `fecha_declarada=null`), no se presentó nada. 🔑 **Dos arreglos y hacen falta los dos**: que no se inserte dos veces (la causa) y que el TXT **deduplique por `factura_id`** (la red) — porque las filas duplicadas que ya existen no se van a borrar solas | → [A-BUG-146](#a-bug-146) `@cashflow` |
+| A-BUG-146 | 🟢 | 🔴 **URGENTE** | 👯 **ARREGLADO 2026-09-11 (sin testear → [A-TEST-110](#a-test-110)) — `sicore_retenciones` guardó DOS filas vigentes idénticas para la misma factura.** FC 10-6337 de ALCORTA: `c93ac4d0…` y `87b81892…`, las dos con `anulado=false`, retención $0,00 y mínimo consumido $140.792,49, creadas con **0,69 segundos de diferencia** (22:27:37.247 y .934 del 10/09). Es la fila de *«consume mínimo y no retiene»* de [A-BUG-137](#a-bug-137), escrita dos veces. 🧮 **Rompe el control de [A-TEST-109](#a-test-109)**: Σ `minimo_no_imponible` del grupo da **$364.792,49** en vez de **$224.000,00 exacto**. ✅ **No afectó plata**: el mínimo se calcula desde `comprobantes_arca` (`netoPagosPreviosSinRetencion`), no desde esta tabla, así que la 6328 recibió bien sus $83.207,51. 🔑 **Pero es el control el que quedó ciego**: la identidad que existe para detectar un reparto mal hecho ahora falla por una causa distinta, y la próxima vez que falle de verdad va a parecer lo mismo. 🧨 **Y el TXT SÍ se lleva la duplicada: iría a ARCA con $170.358,89 de pago y $140.792,49 de base DE MÁS.** `generarTXTCierreV2` agrupa por `cuit_emisor||tipo_sicore` **sumando fila por fila** (`pago`, `neto_gravado_pagado`), y no deduplica por `factura_id`. Medido: declararía **pago $534.631,16 · base $443.138,95** en vez de **$364.272,27 · $302.346,46**. La **retención sí queda bien** ($1.566,93), así que la plata retenida no cambia — lo que queda mal es **lo declarado**. ✅ **Hay tiempo**: la quincena `26-09 - 1ra` está **abierta** (`ddjj_confirmada=false`, `fecha_declarada=null`), no se presentó nada. 🔑 **Dos arreglos y hacen falta los dos**: que no se inserte dos veces (la causa) y que el TXT **deduplique por `factura_id`** (la red) — porque las filas duplicadas que ya existen no se van a borrar solas | → [A-BUG-146](#a-bug-146) `@cashflow` |
+| A-TEST-110 | 🔴 | Test | **Probar que la fila duplicada de SICORE no vuelve, y que el TXT no la suma** ([A-BUG-146](#a-bug-146)). **(1)** En el modal de SICORE, sobre una factura que **consume mínimo**, apretar «✅ Confirmar y pasar a Pagar» **dos veces rápido** → tiene que quedar **UNA sola fila** en `sicore_retenciones` (antes quedaban dos). **(2)** Generar el TXT de la quincena `26-09 - 1ra` → el renglón de ALCORTA/Bienes tiene que decir pago **$364.272,27** y base **$302.346,46** (con la duplicada que todavía está en la base decía **$534.631,16** y **$443.138,95**), y **avisar por toast** que descartó 1 fila duplicada. **(3)** El control de [A-TEST-109](#a-test-109): Σ `minimo_no_imponible` del grupo vuelve a dar **$224.000,00 exacto**. 🔴 **Adversario — es el que importa**: pagar la **misma factura en dos parciales** dentro de la misma quincena **tiene que dejar las DOS filas**. Si el dedup se las come, el arreglo es peor que el bug | → [A-BUG-146](#a-bug-146) `@cashflow` |
 | A-DEC-22 | 🔵 | **Decisión** | 🧪 **LAS TRES CAPAS DE TEST — dónde se prueba cada cosa, y cuántos casos aguanta cada capa.** Propuesta entregada el 2026-09-10 (la sesión murió por corte de luz **antes** de que el usuario decidiera; vivía sólo en la transcripción). El dato que la origina: de los **8 bugs** del 09-10/09, las suites `probar*` —13 archivos, +200 casos— encontraron **cero**; los encontraron el usuario (4), el ensayo contra datos reales (2), leer el render (1) y **Playwright en su primera corrida** (1, → [A-BUG-144](#a-bug-144)). 🔑 **Seguir invirtiendo en la capa 1 es trabajar donde hay luz.** Las tres capas y su techo → dossier | → [A-DEC-22](#a-dec-22) `@testing` |
 | A-FEAT-128 | 🔵 | Media | 📍 **Llevar al RENGLÓN, no sólo a la pantalla.** Preguntado por el usuario 2026-09-09: *«qué tan difícil es que me lleve al lugar?»*. **Dentro del Presupuesto: chico** (~medio día) — `expandidos` ya es estado por clave de agrupador, y falta sólo un ancla en la fila: hoy tienen `key` de React, que no llega al DOM (grep de `scrollIntoView`/`id=`/`data-fila` en la grilla da **0**). **A otra pantalla: mediano** — hay que tocar `vista-templates-egresos.tsx`, grande y de otro dominio, y acordar un contrato para que el evento lleve el id y esa vista lo ponga en su buscador. 🔑 **El 80 % del valor está en el primero y sale barato** | → [A-FEAT-128](#a-feat-128) `@presupuesto @recorrido` |
 | A-DAT-31 | 🔵 | Dato | ⚠️ **`avisoFaltaGenerar` cuenta sobre los 24 meses, y quizá debería contar sobre la campaña en curso.** Detectado al pasar el 2026-09-10 (no se tocó — § los 4 estados). El cartel dice *«falta generar la campaña de 35 templates … 24 meses, $185.537.609»*, pero por `MODULO_TEMPLATES.md` § 13 la campaña que hay que generar es **la en curso**, no dos años. Si es así, el número está inflado y empuja a lo mismo que la decisión prohíbe. **Hay que mirarlo con el usuario antes de tocar nada** | → [A-DAT-31](#a-dat-31) `@presupuesto @egresos` |
@@ -13304,6 +13305,85 @@ cualquier tabla donde `anon` sólo pueda escribir.
 **Estado**: 🟢 arreglado y con `type-check:diff` 113 → 113. **Sin test automático**: probarlo pide
 una sesión `anon` real contra la base, y hoy ninguna suite escribe (§ [A-DEC-18](#a-dec-18)). Se
 verifica mirando que la fila aparezca — ver [A-TEST-107](#a-test-107).
+
+---
+
+## <a id="a-bug-146"></a>A-BUG-146 — La fila duplicada de SICORE 👯
+
+**Estado**: 🟢 **arreglado 2026-09-11, sin testear** → [A-TEST-110](#a-test-110).
+🔴 **Y queda una parte que NO es código**: la fila duplicada **sigue en la base**. Es un dato del
+usuario y se toca con su permiso (§ 🛑 Datos) — ver *Lo que falta* al final.
+
+### Cómo apareció
+No lo encontró una pantalla ni una suite: lo encontró **mirar la base para verificar otra cosa**.
+Se estaba comprobando si el Detalle de Pago de ALCORTA salía bien ([A-BUG-145](#a-bug-145)) y al
+listar `sicore_retenciones` aparecieron dos filas donde tenía que haber una.
+
+| id | factura | retención | mínimo consumido | creada |
+|---|---|---:|---:|---|
+| `c93ac4d0…` | FC 10-6337 | $0,00 | $140.792,49 | 22:27:37.**247** |
+| `87b81892…` | FC 10-6337 | $0,00 | $140.792,49 | 22:27:37.**934** |
+
+**0,69 segundos.** Es un doble click, no dos decisiones.
+
+### Qué rompía — y por qué ningún control de plata lo veía
+`generarTXTCierreV2` agrupa por `cuit_emisor||tipo_sicore` **sumando fila por fila** (`pago`,
+`neto_gravado_pagado`). Medido contra la base:
+
+| | Pago declarado | Base declarada | Retención | Σ mínimos |
+|---|---:|---:|---:|---:|
+| con la duplicada | **$534.631,16** | **$443.138,95** | $1.566,93 | $364.792,49 |
+| correcto | $364.272,27 | $302.346,46 | $1.566,93 | **$224.000,00** |
+
+🧨 **La retención está bien en los dos casos.** La plata que se le retuvo al proveedor y que va a
+AFIP no cambia — **lo que queda mal es lo declarado**. Por eso ningún control de dinero lo agarra:
+todos los que existen miran importes de pago, y el error está en el renglón de la DDJJ.
+
+✅ **No llegó a ARCA**: la quincena `26-09 - 1ra` estaba **abierta**, `ddjj_confirmada = false`,
+`fecha_declarada = null`.
+
+✅ **Y no afectó el cálculo del mínimo**, que era el otro miedo: `netoPagosPreviosSinRetencion` lo
+calcula desde **`comprobantes_arca`**, no desde esta tabla, así que la 6328 recibió correctamente
+sus $83.207,51 de mínimo disponible.
+
+### El arreglo — TRES capas, y hacen falta las tres
+
+**1 · La causa, en `lib/sicore/registrar-retencion.ts`.** La función **insertaba a ciegas**: ni
+miraba si ya había una fila de ese comprobante. Ahora sale sin escribir si existe una no anulada
+con el mismo comprobante + quincena + tipo **y los mismos importes**.
+🔑 **Va en la capa compartida y no en el botón**: el botón es **uno de varios llamadores** (Cash
+Flow, el Modal, y el que venga). Es literalmente la lección de [A-BUG-142](#a-bug-142), donde la
+regla vivía en un solo camino de los dos y el mismo cambio daba dos resultados.
+
+**2 · La red, en el TXT.** Deduplica antes de agrupar, y **avisa por toast qué descartó** (§ 🧮
+*nada se descarta en silencio*). Extraído a **`lib/sicore/dedup.ts`** porque adentro del componente
+no se puede probar — el mismo motivo por el que se extrajo `lib/sicore/minimo.ts`.
+🔑 **Sin ésta el arreglo no sirve para el caso real**: la capa 1 evita filas **nuevas**, pero la que
+ya está en la base la sumaría igual.
+
+**3 · El disparador, en el botón.** «✅ Confirmar y pasar a Pagar» **no tenía guarda de re-entrada**
+y el flujo es largo (update de la FC + fila de SICORE + avance de la cola), así que el doble click
+lo corría entero dos veces. Es un `useRef` y no un `useState`: el segundo click llega **antes de que
+React repinte**. Se libera en `finally` — si algo falla a mitad, el botón tiene que volver a servir.
+
+### 🔴 El adversario, que es lo que hace seguro al arreglo
+**Dos pagos parciales legítimos de la misma factura en la misma quincena NO se pueden colapsar.**
+Por eso la clave de identidad **incluye los importes**: un segundo pago real tiene otro
+`total_pagado`. Un dedup por `factura_id` a secas habría borrado un pago verdadero — el arreglo
+sería peor que el bug. Está como caso.
+
+### 🧪 Casos
+5 nuevos en `npm run probar` (**31/31**), con los números reales de Alcorta: que la duplicada quede
+afuera, que el pago declarado vuelva a $364.272,27, que **sin deduplicar dé $534.631,16** (si este
+no fallara con el código viejo, el caso no cubriría nada), que los parciales sobrevivan, y que una
+fila sin factura ni anticipo no se descarte contra otra.
+
+### Lo que falta — y es del usuario
+🔴 **La fila `87b81892-f4d6-44f4-bd89-f29bc743af14` sigue vigente en la base.** El TXT ya no la
+suma, pero mientras esté ahí el control de [A-TEST-109](#a-test-109) sigue dando $364.792,49 en vez
+de $224.000. Las dos salidas —**anularla** (`anulado = true`, deja rastro) o **borrarla**— tocan un
+dato real y **las decide el usuario** (§ 🛑 Datos). Recomendada: **anular**, porque conserva la
+huella de que el doble click ocurrió.
 
 ---
 
