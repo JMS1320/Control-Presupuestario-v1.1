@@ -40,6 +40,81 @@ El usuario avisó que puede no llegarse para el 01/10 — hay que **decidir con 
 
 ---
 
+## 🧪 <a id="guia-pruebas-2026-09-10"></a>GUÍA DE PRUEBAS — tanda del 09 y 10 de septiembre
+
+> **Para ejecutar, no para entender.** Es la vista operable de todo lo que quedó sin probar de esos
+> dos días (§ `CLAUDE.md` 📋 Después de una tanda sin supervisión). **Los pasos completos siguen
+> viviendo en cada `A-TEST-NN`** — acá está el orden, los números y qué mirar primero.
+>
+> ⚠️ **Escrita el 2026-09-11 reconstruyendo dos sesiones que murieron por un corte de luz.**
+> Si el desarrollo cambia, **esta guía se actualiza**: una guía vieja manda a probar lo que ya no existe.
+
+### 🔴 PRIMERO — esto invalida todo lo que sigue si está mal
+
+**① Que el deploy sea el correcto.** Todo lo de abajo se probó contra `5425634` o posterior.
+Si abrís una preview vieja de Vercel, vas a ver los bugs ya arreglados. **La rama con todo es
+`jms/arba`.**
+
+**② El padrón tiene que decir 16, no 53 y no 0.** Es el número del que cuelga toda la pantalla del
+Presupuesto. Si dice **53**, no refrescaste; si dice **0**, hay un bug nuevo.
+
+### 1️⃣ SICORE — el pago real de Alcorta 🔴 *lo más caro si falla: mueve plata*
+
+→ `A-TEST-108` (retención acumulada) y `A-TEST-109` (desde un grupo, y el descuento).
+**Dónde**: Cash Flow → modo **PAGOS** → FC **6337, 6328 y 6347** de **ALCORTA** (CUIT 20103619115).
+
+| Paso | Tiene que dar |
+|---|---:|
+| Las 3 a `pagar`, fecha 10/09 | cartel **«3 facturas califican»** |
+| Retener → **Bienes** en las tres | 1ª: avisa que **consume mínimo** y sigue sola |
+| Retención de la 2ª y la 3ª | **$402,38** y **$1.482,81** |
+| Total retenido | **$1.885,19** |
+| Σ `minimo_no_imponible` del grupo | **$224.000 exacto**, una sola vez |
+| Poner **5 %** de descuento en la 6337 | mínimo consumido **$140.792,49** *(no $148.202,62)* |
+| **Excel del lote Galicia** | **$364.272,27** *(si dice $385.093,90, volvió `A-BUG-141`)* |
+| TXT de la quincena | **UN** renglón: pago $385.093,90 · base $318.259,43 · retención $1.885,19 |
+| Después de pagar en **lote** | `fecha_estimada` **se mueve a la de pago** *(`A-BUG-142`)* |
+
+**Adversario**: cancelar en el medio **no debe dejar** ninguna factura en `pagar` ni filas vigentes
+en `sicore_retenciones`. Y **agrupar antes o después tiene que dar lo mismo**.
+
+### 2️⃣ El PADRÓN del presupuesto — los números están medidos, no estimados
+
+→ `A-TEST-105` (25 casos ya en verde) + la tabla completa en `A-TEST-107`.
+
+| Qué mirás | Tiene que decir |
+|---|---:|
+| Botón arriba del Presupuesto | **⚠ 16 hueco(s)** (15 gastos + 1 hacienda) |
+| Marcador del tablero | **$0 sin cubrir · 15 sin poder valorizar** |
+| Gastos que no se pueden proyectar | **15 sin resolver** |
+| Ventas de hacienda | **1 sin resolver** (58.961 Vaca CUT/Descarte) |
+
+🔴 **Abrí uno de los «Imp Automotores»**: tiene que decir **«falta el monto»**, no «falta la cuota»
+(`A-BUG-135`). Son cosas distintas y decirlo mal te manda a **crear una cuota que ya existe**.
+
+### 3️⃣ El RECORRIDO — el circuito entero, a prueba de fallas
+
+→ `A-TEST-106` (15 casos en verde) + `A-TEST-107`.
+
+1. Desde un hueco, **«Resolver»** → tiene que **llevarte a la pantalla** correspondiente.
+2. **↩ Al tablero** → tiene que **reabrirse el tablero**, no dejarte en la grilla.
+   🔴 *Éste ya se dio por arreglado una vez y no lo estaba* (`A-BUG-131` → `A-BUG-144`).
+3. **«Siguiente»** nunca debe llevarte a algo **que ya resolviste**.
+4. **Los DOS botones de anotar** —💡 *Anotar una idea* (tablero) y el del paso— con **captura
+   pegada** (`Win+Shift+S` → `Ctrl+V`). **Son dos diálogos distintos**; la primera versión cubrió uno.
+5. 🔴 **Y confirmá que LLEGÓ**: la nota tiene que aparecer en 📝 Notas, **con su imagen y con el
+   hueco donde estabas parado**. *(Es la mitad que la pantalla sola no prueba — `A-BUG-130` fue
+   justamente un guardado que fallaba en silencio.)*
+
+### ✅ Lo que YA corrí yo (no hace falta que lo repitas)
+
+`npm run probar` y las 13 suites — **en verde**. `npm run ui` (Playwright, 4 casos). Los ensayos
+contra datos reales: `npm run ensayo:padron`.
+⚠️ **Y no encontraron los bugs**: de los 8 de estos dos días, las suites encontraron **cero**. Por
+eso los pasos de arriba son tuyos y no míos → § [A-DEC-22](#a-dec-22).
+
+---
+
 ## 📐 Cómo usar este archivo (ESTÁNDAR — no romper)
 
 El archivo tiene **dos partes**:
