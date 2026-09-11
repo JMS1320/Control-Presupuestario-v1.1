@@ -41,6 +41,7 @@ import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/si
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
+import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 
 export interface Resultado {
   caso: string
@@ -447,6 +448,44 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle de pago", "Un ANTICIPO se sigue anunciando como «Anticipo»",
     "Anticipo", etiquetaComprobante({ comprobante: "lo que sea", origen: "ANTICIPO" }),
     etiquetaComprobante({ comprobante: "x", origen: "ANTICIPO" }) === "Anticipo", "A-BUG-105")
+
+  // ── A-FEAT-77 — los pagos de sueldos agrupados por empleado ─────────────────────────────────
+  const PAGOS_SUELDO = [
+    { id: "p1", empleado_id: "e-sigot", monto: 450000.50, empleado: { nombre: "Ruben Sigot" } },
+    { id: "p2", empleado_id: "e-wilson", monto: 380000, empleado: { nombre: "Wilson Barreto" } },
+    { id: "p3", empleado_id: "e-sigot", monto: 120000.25, empleado: { nombre: "Ruben Sigot" } },
+    { id: "p4", empleado_id: "e-alondra", monto: 290000, empleado: { nombre: "Alondra Olivo" } },
+    { id: "p5", empleado_id: "e-sigot", monto: 80000.25, empleado: { nombre: "Ruben Sigot" } },
+  ]
+  const gruposSueldo = agruparPagosPorEmpleado(PAGOS_SUELDO)
+
+  chequear("Sueldos", "Los pagos se agrupan por empleado, ordenados por nombre",
+    "Alondra Olivo, Ruben Sigot, Wilson Barreto", gruposSueldo.map(g => g.nombre).join(", "),
+    gruposSueldo.map(g => g.nombre).join(", ") === "Alondra Olivo, Ruben Sigot, Wilson Barreto", "A-FEAT-77")
+
+  const sigot = gruposSueldo.find(g => g.empleadoId === "e-sigot")!
+  chequear("Sueldos", "🔴 El total del grupo SUMA sus pagos — es lo único que se ve cerrado",
+    "$650.001,00 en 3 pagos", `$${n2(sigot.total)} en ${sigot.cantidad} pagos`,
+    cerca(sigot.total, 650001, 0.01) && sigot.cantidad === 3, "A-FEAT-77")
+
+  chequear("Sueldos", "…y ningún pago se pierde en el agrupado",
+    `${PAGOS_SUELDO.length} pagos`, `${gruposSueldo.reduce((s, g) => s + g.pagos.length, 0)} pagos`,
+    gruposSueldo.reduce((s, g) => s + g.pagos.length, 0) === PAGOS_SUELDO.length, "A-FEAT-77")
+
+  // 🔴 El adversario: dos empleados con el MISMO nombre no se pueden juntar. Agrupar por texto
+  //    daría un total inflado, que en una pantalla de plata no se lee como error sino como dato.
+  const homonimos = agruparPagosPorEmpleado([
+    { id: "h1", empleado_id: "e-uno", monto: 100000, empleado: { nombre: "Juan Perez" } },
+    { id: "h2", empleado_id: "e-dos", monto: 250000, empleado: { nombre: "Juan Perez" } },
+  ])
+  chequear("Sueldos", "🔴 Dos empleados con el MISMO nombre no se juntan (se agrupa por id)",
+    "2 grupos", `${homonimos.length} grupo(s)`, homonimos.length === 2, "A-FEAT-77")
+
+  // Y un pago sin nombre cargado no rompe la lista ni se muestra vacío.
+  const sinNombre = agruparPagosPorEmpleado([{ id: "x", empleado_id: "e-x", monto: 1000 }])
+  chequear("Sueldos", "Un pago sin nombre de empleado se muestra igual, no desaparece",
+    "(sin nombre)", sinNombre[0]?.nombre ?? "(no salió)",
+    sinNombre.length === 1 && sinNombre[0].nombre === "(sin nombre)", "A-FEAT-77")
 
   return r
 }

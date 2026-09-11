@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
+import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -105,11 +106,52 @@ interface Campana {
   activa: boolean
 }
 
+/**
+ * 🐞 **A-FEAT-78 — con DECIMALES.**
+ *
+ * Estaba en `maximumFractionDigits: 0`, así que un pago de $1.234.567,89 se veía como $1.234.568 y
+ * **no se podía cotejar contra el extracto ni contra el recibo**, que sí traen los centavos.
+ * Pedido del usuario el 28/08.
+ *
+ * 📌 Además era una desviación de la regla del proyecto (§ CLAUDE.md 💰 Convención Inputs
+ * Monetarios): *«Display en tabla: `minimumFractionDigits: 2, maximumFractionDigits: 2`»*. Acá el
+ * formato decía otra cosa desde antes que la regla existiera.
+ */
 function formatoMoneda(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
   return new Intl.NumberFormat('es-AR', {
-    style: 'currency', currency: 'ARS', maximumFractionDigits: 0,
+    style: 'currency', currency: 'ARS',
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(v)
+}
+
+/**
+ * 🏦 **A-FEAT-79 — de QUIÉN es cada cuenta, no sólo el número.**
+ *
+ * El selector mostraba `alias ?? banco`, y el campo `alias` **suele tener el CBU crudo**. Ruben
+ * Sigot tiene tres cuentas y se veían así:
+ * ```
+ * 0070379430004007610456      ← Galicia
+ * 0140363127650050694347      ← Lucresia
+ * sigotruben0531              ← Santander
+ * ```
+ * Textual del usuario: *«yo antes seleccionaba la palabra lucrecia… sino no sé cuál es cuál. lo
+ * mismo con las otras 2, una es de Santander y otra de Galicia»*.
+ *
+ * 🔴 **Elegir a ciegas entre CBUs es una transferencia al destinatario equivocado esperando.**
+ *
+ * Ahora manda el **banco** —que es lo que la persona reconoce— y el número va detrás, recortado a
+ * los últimos 4 para poder distinguir dos cuentas del mismo banco sin llenar el renglón. Si no hay
+ * banco cargado, se muestra el identificador entero: **nunca se deja el renglón sin nada**.
+ */
+function etiquetaCuenta(c: { banco: string | null; alias: string | null }): string {
+  const ident = (c.alias ?? '').trim()
+  const banco = (c.banco ?? '').trim()
+  if (!banco) return ident || '(sin datos)'
+  if (!ident) return banco
+  // Un CBU son 22 dígitos: se recorta. Un alias de verdad («sigotruben0531») se muestra entero.
+  const esNumero = /^\d{15,}$/.test(ident)
+  return esNumero ? `${banco} · …${ident.slice(-4)}` : `${banco} · ${ident}`
 }
 
 function tipoLabel(tipo: string | undefined): string {
@@ -179,6 +221,12 @@ export function TabSueldos() {
   const [antDesc, setAntDesc] = useState('')
   const [antEstado, setAntEstado] = useState('pagar')
   const [antMedioPago, setAntMedioPago] = useState('banco')
+  /**
+   * Qué empleados tienen la lista de pagos desplegada (A-FEAT-77).
+   * **Arranca vacío a propósito: todos cerrados.** Pedido del usuario — *«vengan cerrados
+   * automáticamente y se abran apretando»*.
+   */
+  const [empleadosAbiertos, setEmpleadosAbiertos] = useState<Set<string>>(new Set())
   const [antMesAplicado, setAntMesAplicado] = useState<{ anio: number; mes: number }>({ anio: 2026, mes: 3 })
   const [guardando, setGuardando] = useState(false)
 
@@ -523,6 +571,18 @@ export function TabSueldos() {
     setAntCuenta(pago.cuenta_destino_id ?? '__none__')
     setAntDesc(pago.descripcion ?? '')
     setAntEstado((pago as any).estado ?? 'pagar')
+    /**
+     * 🐞 **A-BUG-97 — el medio de pago se carga del PAGO, no se deja el anterior.**
+     *
+     * Esta función seteaba todos los campos del formulario **menos éste**, así que `antMedioPago`
+     * conservaba lo último que hubiera (o su valor inicial, `'banco'`) y al guardar **pisaba** el
+     * medio real: un pago de CAJA se guardaba como banco con sólo abrirlo y confirmar.
+     *
+     * Textual del usuario: *«por default. no debe cambiar nada por default. ya me ha traído
+     * problemas»*. 🔑 **Un default que pisa un dato ya cargado no es un default: es una pérdida
+     * silenciosa** — no falla, no avisa, y el dato viejo no se puede recuperar.
+     */
+    setAntMedioPago((pago as any).medio_pago ?? 'banco')
     // Mes al que pertenece el pago: buscarlo en los períodos cargados
     const periodoPago = periodos.find(p => p.id === pago.periodo_id)
     setAntMesAplicado(periodoPago ? { anio: periodoPago.anio, mes: periodoPago.mes } : mesActual)
@@ -1276,8 +1336,8 @@ export function TabSueldos() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Empleado</TableHead>
+                  <TableHead className="w-8"></TableHead>
+                  <TableHead>Empleado / Fecha</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead>Medio</TableHead>
@@ -1287,12 +1347,41 @@ export function TabSueldos() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[...pagos].sort((a, b) => (a.empleado?.nombre ?? '').localeCompare(b.empleado?.nombre ?? '')).map(pago => (
+                {/* 👥 A-FEAT-77 — agrupados por empleado y CERRADOS por default: se abren apretando.
+                    El agrupado y los totales viven en `lib/sueldos/agrupar-pagos.ts` (probado). */}
+                {agruparPagosPorEmpleado(pagos).map(grupo => {
+                  const abierto = empleadosAbiertos.has(grupo.empleadoId)
+                  return (
+                  <Fragment key={grupo.empleadoId}>
+                    {/* La cabecera: con el grupo cerrado, esto es TODO lo que se ve del empleado.
+                        Por eso lleva el total y la cantidad — si no, habría que abrir para saber
+                        si hay algo que mirar, que es justo lo que el colapsado viene a evitar. */}
+                    <TableRow
+                      className="bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                      onClick={() => setEmpleadosAbiertos(prev => {
+                        const s = new Set(prev)
+                        if (s.has(grupo.empleadoId)) s.delete(grupo.empleadoId); else s.add(grupo.empleadoId)
+                        return s
+                      })}
+                    >
+                      <TableCell className="text-gray-400 w-8">{abierto ? '▾' : '▸'}</TableCell>
+                      <TableCell className="font-medium">{grupo.nombre}</TableCell>
+                      <TableCell colSpan={3} className="text-xs text-gray-500">
+                        {grupo.cantidad} {grupo.cantidad === 1 ? 'pago' : 'pagos'}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-medium">{formatoMoneda(grupo.total)}</TableCell>
+                      <TableCell colSpan={2}></TableCell>
+                    </TableRow>
+
+                    {abierto && grupo.pagos.map(pago => (
                   <TableRow key={pago.id}>
-                    <TableCell className="text-sm tabular-nums">
+                    {/* Sangría: el renglón se lee como hijo de su empleado. */}
+                    <TableCell className="w-8"></TableCell>
+                    {/* El NOMBRE ya no se repite acá: está en la cabecera del grupo, y repetirlo
+                        en cada fila era justo el ruido que hacía difícil encontrar un dato. */}
+                    <TableCell className="text-sm tabular-nums text-gray-600">
                       {pago.fecha.split('-').reverse().join('/')}
                     </TableCell>
-                    <TableCell>{pago.empleado?.nombre}</TableCell>
                     <TableCell>
                       <span className={`inline-block px-2 py-0.5 rounded text-xs capitalize ${
                         pago.tipo === 'anticipo' ? 'bg-orange-50 text-orange-700' : 'bg-green-50 text-green-700'
@@ -1351,7 +1440,10 @@ export function TabSueldos() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                    ))}
+                  </Fragment>
+                  )
+                })}
               </TableBody>
             </Table>
           </CardContent>
@@ -1697,7 +1789,7 @@ export function TabSueldos() {
                     {cuentas
                       .filter(c => c.empleado_id === antEmpId)
                       .map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.alias ?? c.banco}</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>{etiquetaCuenta(c)}</SelectItem>
                       ))}
                   </SelectContent>
                 </Select>
