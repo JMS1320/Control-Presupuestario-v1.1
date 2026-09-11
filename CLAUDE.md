@@ -420,6 +420,11 @@ lo pierde la otra.*
 `type-check` (escriben `.next/` y `tsconfig.tsbuildinfo`), `git commit` (el índice es uno solo),
 y **MCP en write / cambios de BD** (además, con el usuario presente — § Datos).
 *Motivo: dos builds simultáneos se corrompen entre sí y el error no dice por qué.*
+⚠️ **Y el síntoma es traicionero** *(visto 2026-09-10)*: el `npm run dev` de una terminal dejó
+`.next/dev/types/validator.ts` —archivo **generado**— **truncado a medio escribir**, y
+`npm run type-check:diff` lo reportó como error **empeorado** en la otra terminal, que no lo había
+tocado. Ante un error en un archivo generado que nadie editó, **mirar si la otra terminal estaba
+buildeando** antes de salir a buscar la causa en el código propio.
 
 **4 · Archivos compartidos de alto tráfico** (`PENDIENTES.md`, éste, `MEMORY.md`, `MANUAL-USO.md`,
 `KNOWLEDGE.md`): los toca cualquier trabajo, así que no se pueden tomar para toda la sesión.
@@ -492,6 +497,35 @@ al final, no al principio.
 reglas nacieron en el tablero y casi se pierden: hubo que mudarlas. Si el aprendizaje de cada sesión
 se queda en `.claude/`, la próxima empieza de cero y se vuelve a negociar todo. **Que la próxima sea
 corta depende de que ésta suba lo que aprendió.***
+
+#### ⚡ El cierre puede NO LLEGAR NUNCA — y por eso no se acumula nada para el final
+*Agregado 2026-09-11, después de que un **corte de luz** matara las dos terminales a la vez
+(10/09, 19:57 y 20:35). Ninguna de las dos alcanzó a cerrar.*
+
+> **El protocolo de cierre es una buena práctica; que no haya nada esperándolo es la regla.**
+
+**Qué sobrevivió y qué no**, que es todo el argumento:
+
+| | Resultado |
+|---|---|
+| Lo **commiteado** (código, `PENDIENTES.md` con cada bug y su dossier) | ✅ **intacto** — cero commits sin pushear en 5 ramas |
+| El **tablero** (`.claude/`) | ⚠️ quedó vivo, con lo tomado por las dos y sin liberar |
+| La **memoria** (`memory/`) | ❌ **no existía** — dos días sin cierre, hubo que reconstruirlos leyendo los `.jsonl` |
+| Una **decisión entregada y no registrada** (las 3 capas de test) | ❌ murió en la transcripción; se rescató por casualidad, al ir a buscar otra cosa |
+
+- **Lo que se salvó, se salvó por la regla 4 y la 12 en su versión dura**: *el que edita commitea
+  enseguida*, y *el ID se reclama escribiendo la fila*. Las dos terminales las cumplieron todo el
+  día, y por eso el corte costó **cero trabajo**.
+- **Lo que se perdió fue lo que esperaba al cierre.** Ninguna de las dos cosas era grande: un
+  cierre de memoria y una fila en `PENDIENTES`. Pero *«lo registro al final»* es una apuesta a que
+  va a haber un final.
+- 📌 **Corolario para una decisión entregada**: una propuesta que el usuario todavía no contestó
+  **ya es un pendiente** — va a `PENDIENTES.md` con su ID **cuando se entrega**, no cuando se
+  responde. Si se responde, se actualiza la fila; si no, sobrevive igual.
+
+*Se puede reconstruir desde `~/.claude/projects/<proyecto>/*.jsonl`, que guarda la sesión entera —
+pero es arqueología, cuesta caro y depende de acordarse de que la sesión existió.*
+
 
 **12 · El espacio de IDs de `PENDIENTES.md` es un recurso compartido: se mira ANTES, no después.**
 *(Regla nacida de un choque real, 2026-08-27.)* Antes de escribir un ID nuevo se busca el máximo **en
