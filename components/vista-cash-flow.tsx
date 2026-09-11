@@ -239,6 +239,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
+  /**
+   * ¿Está corriendo el «✅ Confirmar y pasar a Pagar» del modal de SICORE? (A-BUG-146)
+   *
+   * El botón no tenía guarda y el flujo es largo —`update` de la FC, fila en `sicore_retenciones`,
+   * avance de la cola—, así que un doble click lo corría **entero dos veces**. El 10/09 dejó dos
+   * filas idénticas para la FC 6337. Es un `useRef` y no un `useState` a propósito: el segundo
+   * click llega **antes** de que React repinte, así que un estado no alcanza para frenarlo.
+   */
+  const finalizandoSicoreCF = useRef(false)
   // Filtros de origen para modo PAGOS
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState<{
     arca: boolean
@@ -2279,6 +2288,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const esConsumoDeMinimo = datosSicoreCalculo?.sinRetencion === true && !!tipoSeleccionado
     if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0 && !esConsumoDeMinimo) return
 
+    // Guarda de re-entrada (A-BUG-146): el segundo click no vuelve a correr el flujo.
+    if (finalizandoSicoreCF.current) return
+    finalizandoSicoreCF.current = true
+
     try {
       // SICORE se calcula sobre lo pagado: usar TC de pago
       const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
@@ -2398,6 +2411,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
     } catch (error) {
       toast.error('Error finalizando SICORE: ' + (error as Error).message)
+    } finally {
+      // En `finally` y no al final del `try`: si algo falla a mitad de camino, el botón tiene que
+      // volver a servir — si no, el modal queda muerto y hay que recargar la página.
+      finalizandoSicoreCF.current = false
     }
   }
 

@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
+import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 
 export interface Resultado {
   caso: string
@@ -249,6 +250,51 @@ export function correrCasos(): Resultado[] {
   chequear("SICORE", "La misma factura por Servicios sí retiene (otro mínimo)",
     "$574,93", `$${n2(porServicios[0].retencion)}`,
     cerca(porServicios[0].retencion, (95916.33 - 67170) * 0.02, 0.01), "A-BUG-137")
+
+  // ── A-BUG-146 — filas repetidas antes del TXT que va a ARCA ─────────────────────────────────
+  //
+  // Los números son los REALES del pago de ALCORTA del 10/09: la FC 6337 quedó duplicada y el
+  // renglón del certificado declaraba $534.631,16 de pago en vez de $364.272,27.
+  const F6337 = { id: "a", factura_id: "f-6337", quincena: "26-09 - 1ra", tipo_sicore: "Bienes",
+    total_pagado: 170358.89, retencion: 0, pago: 170358.89, neto_gravado_pagado: 140792.49 }
+  const F6328 = { id: "b", factura_id: "f-6328", quincena: "26-09 - 1ra", tipo_sicore: "Bienes",
+    total_pagado: 110255.81, retencion: 158.26, pago: 110097.55, neto_gravado_pagado: 91120.51 }
+  const F6347 = { id: "c", factura_id: "f-6347", quincena: "26-09 - 1ra", tipo_sicore: "Bienes",
+    total_pagado: 85224.50, retencion: 1408.67, pago: 83815.83, neto_gravado_pagado: 70433.46 }
+  const DUP6337 = { ...F6337, id: "a2" }   // la del doble click: otro id, todo lo demás igual
+
+  const conDup = deduplicarFilasSicore([F6337, DUP6337, F6328, F6347])
+  const sumaPago = (fs: typeof conDup.vigentes) => r2(fs.reduce((s, f) => s + (f.pago as number), 0))
+
+  chequear("SICORE", "La fila duplicada por el doble click queda FUERA del TXT",
+    "1 descartada de 4", `${conDup.descartados.length} descartada(s) de 4`,
+    conDup.descartados.length === 1 && conDup.vigentes.length === 3, "A-BUG-146")
+
+  chequear("SICORE", "…y el pago declarado a ARCA vuelve al correcto",
+    "$364.272,27", `$${n2(sumaPago(conDup.vigentes))}`,
+    cerca(sumaPago(conDup.vigentes), 364272.27, 0.01), "A-BUG-146")
+
+  chequear("SICORE", "Sin deduplicar declararía de más — el caso falla con el código viejo",
+    "$534.631,16", `$${n2(r2([F6337, DUP6337, F6328, F6347].reduce((s, f) => s + f.pago, 0)))}`,
+    cerca(r2([F6337, DUP6337, F6328, F6347].reduce((s, f) => s + f.pago, 0)), 534631.16, 0.01), "A-BUG-146")
+
+  // 🔴 El adversario, y es el que hace que el arreglo sea seguro: DOS PAGOS PARCIALES legítimos de
+  // la misma factura en la misma quincena **no se pueden colapsar**. Se distinguen por el importe.
+  const parcial1 = { ...F6328, id: "p1", total_pagado: 50000, pago: 49900, retencion: 100 }
+  const parcial2 = { ...F6328, id: "p2", total_pagado: 60255.81, pago: 60197.55, retencion: 58.26 }
+  const conParciales = deduplicarFilasSicore([parcial1, parcial2])
+  chequear("SICORE", "🔴 Dos pagos PARCIALES de la misma factura NO se colapsan",
+    "las 2 quedan", `quedan ${conParciales.vigentes.length}`,
+    conParciales.vigentes.length === 2 && conParciales.descartados.length === 0, "A-BUG-146")
+
+  // Y una fila sin factura ni anticipo cae en su propio id: ante la duda, se conserva.
+  const sueltas = deduplicarFilasSicore([
+    { id: "x", quincena: "26-09 - 1ra", tipo_sicore: "Bienes", total_pagado: 100, retencion: 2, pago: 98 },
+    { id: "y", quincena: "26-09 - 1ra", tipo_sicore: "Bienes", total_pagado: 100, retencion: 2, pago: 98 },
+  ])
+  chequear("SICORE", "Filas sin factura ni anticipo no se descartan entre sí",
+    "las 2 quedan", `quedan ${sueltas.vigentes.length}`,
+    sueltas.vigentes.length === 2, "A-BUG-146")
 
   return r
 }

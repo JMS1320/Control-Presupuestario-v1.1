@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
+import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -4914,7 +4915,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
 
     // Defensivo: filtrar anulados (no deberían venir, pero protegemos por si)
-    const registrosVigentes = registros.filter((r: any) => !r.anulado)
+    const registrosAnuladosFuera = registros.filter((r: any) => !r.anulado)
+
+    // ── Dedup de filas repetidas (A-BUG-146) ──────────────────────────────────────────────────
+    //
+    // 🐞 La FC 10-6337 de ALCORTA quedó con dos filas vigentes idénticas (doble click en
+    // «Confirmar»). Como este agrupador **suma fila por fila** (`pago`, `neto_gravado_pagado`), el
+    // renglón del certificado salía con **$170.358,89 de pago y $140.792,49 de base de más** — y
+    // eso es lo que se le declara a ARCA.
+    //
+    // 🔑 **Hacen falta los dos arreglos.** La causa se tapó en `registrarEnSicoreRetenciones`, pero
+    // eso sólo evita filas NUEVAS: **las que ya están en la base siguen ahí**, y el TXT las leería
+    // igual. Por eso esta red, que además protege contra cualquier otra vía de duplicado.
+    //
+    // La clave incluye los importes a propósito: dos pagos parciales legítimos de la misma factura
+    // en la misma quincena tienen distinto `total_pagado` y **no se colapsan**. El detalle y los
+    // casos viven en `lib/sicore/dedup.ts` — acá no, porque adentro del componente no se prueba.
+    const { vigentes: registrosVigentes, descartados } = deduplicarFilasSicore(registrosAnuladosFuera)
+    // ⚠️ Nada se descarta en silencio (§ CLAUDE.md 🧮): si hubo duplicados, se dicen cuáles.
+    if (descartados.length > 0) {
+      console.warn(`🔁 TXT SICORE: ${descartados.length} fila(s) duplicada(s) descartada(s) del cálculo`,
+        descartados.map((r: any) => ({ id: r.id, factura_id: r.factura_id, comp: r.numero_desde, pago: r.pago })))
+      toast.warning(
+        `${descartados.length} fila(s) duplicada(s) de SICORE quedaron fuera del TXT`,
+        { description: 'El renglón se calculó sin ellas. Revisá A-BUG-146: siguen en la base y hay que limpiarlas.' }
+      )
+    }
 
     // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
     const grupos: Record<string, any> = {}
