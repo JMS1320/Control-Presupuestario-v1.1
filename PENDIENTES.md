@@ -13408,6 +13408,87 @@ WHERE id = '87b81892-f4d6-44f4-bd89-f29bc743af14' AND anulado = false;
 
 ---
 
+## <a id="a-feat-129"></a>A-FEAT-129 — El test viaja con el PROCESO 🧪
+
+**Estado**: 🔵 diseñado, sin construir. Idea del usuario, 2026-09-11.
+
+> *«Para este tipo de cosas —bugs menores o laterales— dejar anotado lo que hay que testear. Son
+> procesos que se corren una vez por semana mínimo. Entonces dejamos el test en el modal de SICORE,
+> cuando corro la próxima vez el mismo proceso me lo muestra, y yo puedo dejar notas para verlo
+> con vos.»*
+
+### Por qué es la mejor salida del agujero de escritura
+
+[A-DEC-22](#a-dec-22) dejó abierta la pregunta de **cómo probar el camino de escritura** sin
+ensuciar la base, con tres salidas. **Ésta es una cuarta, y le gana a todas:**
+
+| Salida | Quién escribe | Qué cuesta |
+|---|---|---|
+| (a) no probar guardados | nadie | los bugs los sigue encontrando el usuario, tarde |
+| (b) tests que escriben | un test | foto, restauración y **permiso cada vez**; y el precedente es el test que inventó $5.443.200 **y reportó OK** |
+| (c) convención de descarte | un test | deja basura si se corta a la mitad |
+| **(d) el test viaja con el proceso** | **el proceso real** | **esperar a la próxima corrida** |
+
+🔑 **El que escribe es el trabajo de verdad, que es el único con derecho a hacerlo.** No hay dato
+sintético, no hay restauración, no hay permiso que pedir, no se consume un número de certificado.
+Y la espera es corta: los procesos que importan —pagos, SICORE, conciliación, sueldos— **se corren
+al menos una vez por semana**.
+
+📌 Y hay un beneficio que ninguna de las otras tres da: **se prueba con el caso real**, con los
+importes y los proveedores de verdad. Los cuatro bugs de [A-TEST-110](#a-test-110) salieron
+justamente de correr el proceso contra una factura real, no contra una fixture.
+
+### 🧱 Lo que YA existe — esto no es un sistema nuevo
+
+| Pieza | Dónde | Qué falta |
+|---|---|---|
+| Parseo de `PENDIENTES.md` con `tipo`, `estado`, `pantallas` | `lib/pendientes/parse.ts` | nada |
+| El endpoint que los sirve | `app/api/pendientes/route.ts` | nada |
+| Conteo por solapa | `badgePendientes()` en `dashboard.tsx` | nada |
+| El panel que los muestra | `components/modal-pendientes.tsx` | nada |
+| **El canal del «lo probé»** | `pendientes_comentarios` — canal 2 de los 3 del usuario | nada: Claude ya tiene la regla de mirarlo al abrir sesión |
+| Notas con captura y contexto | `components/notas-para-claude.tsx` | nada |
+
+**Cero tablas nuevas.** Lo único que falta son dos cosas chicas:
+
+1. **Una marca más fina que `@pantalla`.** Una pantalla tiene muchos procesos: el Cash Flow tiene
+   pagos, SICORE, echeq, lote de Galicia. Se propone **`@proceso:sicore`**, que no colisiona con las
+   marcas existentes y que `parse.ts` puede leer igual que `@pantalla`.
+2. **El renglón dentro del modal**: los `A-TEST` abiertos de ese proceso, con su número esperado.
+
+### Cómo se cierra el círculo, sin inventar nada
+
+```
+A-TEST-111 en PENDIENTES.md  →  el modal de SICORE lo muestra al correr el proceso
+        ↑                                        ↓
+   Claude lo cierra                    el usuario aprieta ✅ anduvo / 🔴 falló
+        ↑                                        ↓
+   lo lee al abrir sesión  ←  pendientes_comentarios (canal 2, ya existe)
+```
+
+### 🚨 Los tres modos de falla que hay que evitar — y son los que deciden si sirve
+
+**1 · Un aviso que no se puede CERRAR se vuelve invisible.** Si el renglón queda ahí para siempre,
+en tres semanas ya no se ve — es el mismo final de los 🟡 que quedaron desparramados por el manual
+(§ `CLAUDE.md`, corrección 2026-09-03). Por eso el **✅ anduvo / 🔴 falló** no es un adorno: es lo
+que lo saca de la lista. Un aviso sin salida es peor que ninguno.
+
+**2 · No puede INTERRUMPIR el trabajo.** El usuario abre ese modal para pagar, no para testear. Si
+hay que despacharlo para seguir, se convierte en un impuesto y lo va a cerrar sin leer. Va **al
+costado, legible y saltéable** — y sobre todo: **si lo ignora, el proceso sigue igual**.
+
+**3 · No puede volverse la fuente de verdad.** `PENDIENTES.md` manda (§ dimensión 1). Esto es una
+**vista** que lo muestra en el lugar de uso, y el comentario vuelve por el canal que ya existe.
+Si el modal tuviera su propia lista, en dos semanas diría otra cosa que el archivo.
+
+### Qué calificaría para aparecer ahí
+
+No todos los `A-TEST`. Sólo los que **no se pueden probar de otra forma**: los que necesitan que el
+proceso corra de verdad. `A-TEST-111` y `A-TEST-112` son los dos primeros candidatos, y nacieron
+justamente de ahí.
+
+---
+
 ## <a id="a-dec-22"></a>A-DEC-22 — Las TRES CAPAS de test 🧪
 
 **Estado**: 🔵 **decisión abierta — falta que el usuario elija la salida del agujero de escritura.**
@@ -13473,6 +13554,8 @@ guardar de verdad**, y eso escribe en la base real (§ 🛑 Datos — no hay ent
 | **a** | **Dejarlo así** — no se prueban guardados, los sigue encontrando el usuario | lo más seguro; es lo que hay hoy |
 | **b** | **Tanda chica de tests que escriben**, con § Datos entera: apuntar **por id**, foto antes, restaurar después, **permiso cada vez** | el precedente en contra: el test que inventó $5.443.200 sobre 3 toros reales **reportó OK** |
 | **c** | **Convención de descarte** — lo que escribe el test se marca (`PRUEBA-AUTOMATICA`) y se borra al terminar | más simple, pero **deja basura si se corta a la mitad** |
+
+✅ **SALIDA (d), propuesta por el usuario el 2026-09-11 y probablemente la respuesta**: que el test **viaje con el proceso** y lo corra el trabajo real → [A-FEAT-129](#a-feat-129). No escribe nada de más, no pide permiso, no consume certificados, y prueba con el caso de verdad. Deja a (b) y (c) sin razón de ser.
 
 📌 **No es una pregunta nueva: es [A-DEC-18](#a-dec-18)** —*«¿cómo se prueba el camino de ESCRITURA
 sin ensuciar la base?»*, abierta desde antes y **sin dossier propio** (por eso el link no baja a
