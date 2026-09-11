@@ -13378,12 +13378,28 @@ afuera, que el pago declarado vuelva a $364.272,27, que **sin deduplicar dé $53
 no fallara con el código viejo, el caso no cubriría nada), que los parciales sobrevivan, y que una
 fila sin factura ni anticipo no se descarte contra otra.
 
-### Lo que falta — y es del usuario
-🔴 **La fila `87b81892-f4d6-44f4-bd89-f29bc743af14` sigue vigente en la base.** El TXT ya no la
-suma, pero mientras esté ahí el control de [A-TEST-109](#a-test-109) sigue dando $364.792,49 en vez
-de $224.000. Las dos salidas —**anularla** (`anulado = true`, deja rastro) o **borrarla**— tocan un
-dato real y **las decide el usuario** (§ 🛑 Datos). Recomendada: **anular**, porque conserva la
-huella de que el doble click ocurrió.
+### ✅ La fila duplicada: ANULADA el 2026-09-11, con permiso del usuario
+Eligió **anular y no borrar**, que es lo que conserva la huella. Se apuntó **por id** y se anuló
+**la que llegó última** (`87b81892…`, creada .934), conservando la primera (`c93ac4d0…`, .247):
+
+```sql
+UPDATE msa.sicore_retenciones SET anulado = true, fecha_anulacion = now(),
+  motivo_anulacion = 'A-BUG-146: fila duplicada por doble click…'
+WHERE id = '87b81892-f4d6-44f4-bd89-f29bc743af14' AND anulado = false;
+```
+
+🧮 **El control, corrido después** — y es el que dice que quedó bien:
+
+| | Antes | Ahora |
+|---|---:|---:|
+| Filas vigentes | 4 | **3** |
+| Pago declarado | $534.631,16 | **$364.272,27** |
+| Base declarada | $443.138,95 | **$302.346,46** |
+| Retención | $1.566,93 | $1.566,93 *(no cambió, como tenía que ser)* |
+| **Σ mínimos** | $364.792,49 | **$224.000,00 — CIERRA EXACTO** ✅ |
+
+📌 La identidad de [A-TEST-109](#a-test-109) vuelve a cerrar. **Y eso la devuelve a ser un control
+útil**: mientras daba mal por esta causa, no podía avisar de un reparto realmente mal hecho.
 
 ---
 
