@@ -8,6 +8,7 @@
 // SICORE es SOLO MSA. Ver MANUAL-USO § Pagos.
 
 import { supabase } from "@/lib/supabase"
+import { restosComoMedios } from "./cuenta-detalle-pago"
 
 export interface MedioPago {
   tipo: 'anticipo' | 'echeq' | 'transferencia'
@@ -139,14 +140,28 @@ export async function obtenerMediosPagoFactura(schema: string, facturaIds: strin
   // Se descuenta lo ya cubierto por cheques y extracto DE ESA MISMA FACTURA: `guardarChequeFactura`
   // libra justamente por `monto_a_abonar`, así que sumar los dos lo contaría dos veces.
   const { data: fcs } = await supabase.schema(schema).from('comprobantes_arca')
-    .select('id, monto_a_abonar, fecha_pago').in('id', facturaIds)
-  for (const f of (fcs ?? [])) {
-    const resto = ((f.monto_a_abonar as number) || 0) - (cubierto.get(f.id as string) ?? 0)
-    if (resto > 0.01) {
-      medios.push({ tipo: 'transferencia', monto: resto,
-        fecha: (f.fecha_pago as string) || null, detalle: 'Transferencia' })
-    }
-  }
+    .select('id, monto_a_abonar, fecha_pago, grupo_pago_id').in('id', facturaIds)
+
+  /**
+   * 🐞 **A-BUG-145 — un pago es UN renglón.**
+   *
+   * Antes esto empujaba **un medio por factura**, así que un grupo de 3 facturas pagadas con **una
+   * sola transferencia** le anunciaba al proveedor *«Transferencia $170.358,89 · Transferencia
+   * $110.097,55 · Transferencia $83.815,83»*, cuando el banco le mandó **una de $364.272,27**.
+   * Caso ALCORTA del 10/09.
+   *
+   * ⚠️ **Y la cuenta cerraba igual** ($385.093,90 = $385.093,90), por eso ningún control lo agarró:
+   * el total estaba bien y **el desglose mentía**. El proveedor concilia su cuenta corriente contra
+   * esto y busca tres acreditaciones que no existen — misma familia que A-BUG-102.
+   *
+   * 🔑 **Se agrupa por `grupo_pago_id`, no "todo junto"**, porque ése es el recorte con el que la
+   * plata sale de verdad: el export del lote de Galicia emite **una línea por grupo**. Dos grupos
+   * distintos del mismo proveedor son dos transferencias distintas y **tienen que seguir siendo dos
+   * renglones**. Una factura sin grupo se paga sola y va sola.
+   */
+  // El agrupado vive en `cuenta-detalle-pago.ts` (aritmética pura): así lo usan también el
+  // ensayo y los casos, en vez de tener cada uno su copia. Ver el motivo allá.
+  medios.push(...restosComoMedios((fcs ?? []) as any[], cubierto))
 
   return medios
 }

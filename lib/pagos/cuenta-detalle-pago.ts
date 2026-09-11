@@ -53,7 +53,106 @@ export interface Cuenta {
 
 export const money = (n: number) => `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
 
+/**
+ * 🏦 El «resto» que paga cada factura, agrupado en **un renglón por transferencia real**.
+ *
+ * ## El bug que resuelve (A-BUG-145)
+ * `monto_a_abonar` es lo que queda a pagar de cada factura después de anticipos y retención, y es
+ * un medio de pago real. Pero si se emite **uno por factura**, un grupo de 3 pagadas con **una
+ * sola transferencia** le anuncia al proveedor tres acreditaciones que nunca van a llegar.
+ * Caso ALCORTA 10/09: *«Transferencia $170.358,89 · $110.097,55 · $83.815,83»* contra **una de
+ * $364.272,27**.
+ *
+ * ⚠️ **La cuenta cerraba igual**, por eso ningún control lo agarró: el total estaba bien y el
+ * desglose mentía. Misma familia que A-BUG-102.
+ *
+ * ## Por qué se agrupa por `grupo_pago_id` y no "todo junto"
+ * Porque ése es el recorte con el que la plata **sale de verdad**: el export del lote de Galicia
+ * emite **una línea por grupo**. Dos grupos del mismo proveedor son dos transferencias y tienen
+ * que seguir siendo dos renglones. Una factura sin grupo se paga sola y va sola.
+ *
+ * ## Por qué vive acá y no en `medios-pago.ts`
+ * Porque `medios-pago.ts` importa Supabase y **no se puede probar ni usar desde un ensayo en Node**.
+ * Acá es aritmética pura: la usan la app y `npm run ensayo:detalle`, que es lo que evita que el
+ * ensayo tenga su propia copia — la tuvo, y por eso siguió mostrando tres renglones después de
+ * arreglar el bug (§ ♻️ Centralizar, no duplicar).
+ */
+export function restosComoMedios(
+  filas: Array<{ id: string; monto_a_abonar?: number | null; fecha_pago?: string | null; grupo_pago_id?: string | null }>,
+  cubierto: Map<string, number> = new Map(),
+): MedioPago[] {
+  const porPago = new Map<string, { monto: number; fecha: string | null; facturas: number }>()
+
+  for (const f of filas) {
+    const resto = Math.round((((f.monto_a_abonar ?? 0)) - (cubierto.get(f.id) ?? 0)) * 100) / 100
+    if (resto <= 0.01) continue
+    // Sin grupo, la clave es la factura: no se junta con nada.
+    const clave = f.grupo_pago_id ?? `sola:${f.id}`
+    const acum = porPago.get(clave)
+    if (acum) {
+      acum.monto = Math.round((acum.monto + resto) * 100) / 100
+      acum.facturas += 1
+      if (!acum.fecha) acum.fecha = f.fecha_pago ?? null
+    } else {
+      porPago.set(clave, { monto: resto, fecha: f.fecha_pago ?? null, facturas: 1 })
+    }
+  }
+
+  return Array.from(porPago.values()).map(r => ({
+    tipo: "transferencia" as const,
+    monto: r.monto,
+    fecha: r.fecha,
+    // Se dice cuántas facturas cubre: el proveedor ve UNA acreditación y así sabe qué cancela.
+    detalle: r.facturas > 1 ? `Transferencia (${r.facturas} facturas)` : "Transferencia",
+  }))
+}
+
 export const esAnticipo = (i: ItemPago) => i.origen === "ANTICIPO"
+
+/**
+ * Lo que ve el PROVEEDOR de cada renglón: **sólo la identificación del comprobante**.
+ *
+ * El `detalle` del Cash Flow viene armado como «FC 816 - PROVEEDOR · nota interna», y esa nota es
+ * de uso interno —*"Mano de obra 1.1MM - 2 semiejes 980K - placa crapodina…"*, *"(parcial - pend.
+ * conciliar)"*—. **No tiene por qué salir de la empresa**, ni en el cuerpo del mail ni en el PDF
+ * adjunto, que son las dos cosas que le llegan.
+ *
+ * Reportado por el usuario 2026-09-05: *"en el cuerpo del mail trae el detalle y no debería
+ * traerlo, la info de detalle es interna"*.
+ */
+// `etiquetaComprobante` vive en `cuenta-detalle-pago.ts` (texto puro, sin jsPDF): así la
+// pueden usar los casos y cualquier otra vista sin arrastrar el renderizador entero.
+/**
+ * 🐞 **A-BUG-151 — la nota se saca de CADA comprobante, no del renglón entero.**
+ *
+ * Una fila de **grupo** trae los comprobantes unidos con `" | "`, y cada uno puede llevar su nota
+ * interna después de `" · "`:
+ * ```
+ * FC 6337 - ALCORTA · Insumos Veterinarios | FC 6328 - ALCORTA · Insumos | FC 6347 - ALCORTA · Insumos
+ * ```
+ * Cortar en el **primer** `" · "` sacaba la nota **y las otras dos facturas**: el PDF decía
+ * `FC 6337 — $385.093,90` cuando la 6337 es de $179.325,15. El proveedor no podía saber qué se le
+ * estaba cancelando.
+ *
+ * 🧨 Y la otra mitad, según cuál tenga nota: si la primera **no** tiene, el corte caía más adelante
+ * y podía **filtrar la nota interna de otra factura** — justo lo que el corte venía a evitar.
+ *
+ * 📌 Funcionaba perfecto para una factura sola, que es como se probó. Lo encontró **leer el PDF**.
+ */
+const SEP_COMPROBANTES = ' | '
+const SEP_NOTA = ' · '
+
+export const etiquetaComprobante = (i: { comprobante?: string | null; origen?: string }): string => {
+  if (i.origen === 'ANTICIPO') return 'Anticipo'
+  const txt = (i.comprobante || '').trim()
+  if (!txt) return '-'
+  return txt
+    .split(SEP_COMPROBANTES)
+    .map(parte => parte.split(SEP_NOTA)[0].trim())
+    .filter(Boolean)
+    .join(SEP_COMPROBANTES) || '-'
+}
+
 
 /**
  * La cuenta del pago.

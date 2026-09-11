@@ -55,7 +55,7 @@ const enLista = (ids: string[]) => `(${ids.map(i => `"${i}"`).join(",")})`
 console.log(`\n🔬 ENSAYO — Detalle de pago\n${CASO.nombre}\n${"─".repeat(72)}\n`)
 
 const fcs = await api(
-  `comprobantes_arca?select=id,punto_venta,numero_desde,imp_total,monto_sicore,descuento_aplicado,monto_a_abonar,fecha_pago&id=in.${enLista(CASO.facturaIds)}`,
+  `comprobantes_arca?select=id,punto_venta,numero_desde,imp_total,monto_sicore,descuento_aplicado,monto_a_abonar,fecha_pago,grupo_pago_id&id=in.${enLista(CASO.facturaIds)}`,
   CASO.schema)
 if (fcs.length !== CASO.facturaIds.length) {
   console.log(`🔴 Se pidieron ${CASO.facturaIds.length} facturas y volvieron ${fcs.length}. Abortado.`)
@@ -92,10 +92,10 @@ for (const e of exts) {
   }
 }
 
-for (const f of fcs) {
-  const resto = (f.monto_a_abonar ?? 0) - (cubierto.get(f.id) ?? 0)
-  if (resto > 0.01) medios.push({ tipo: "transferencia", monto: resto, detalle: "Transferencia" })
-}
+// 🔑 El resto lo agrupa **la función de verdad** (`restosComoMedios`), no una copia de acá.
+// La primera versión de este ensayo la duplicaba, y por eso **siguió mostrando tres renglones
+// después de arreglar A-BUG-145**: un ensayo que reimplementa lo que prueba deja de probarlo.
+medios.push(...C.restosComoMedios(fcs, cubierto))
 
 // ── La cuenta, con la función de verdad ─────────────────────────────────────────────────────────
 const items = fcs.map(f => ({

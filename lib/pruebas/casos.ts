@@ -40,6 +40,7 @@ import {
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
+import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
 
 export interface Resultado {
   caso: string
@@ -355,6 +356,97 @@ export function correrCasos(): Resultado[] {
     "cashflow/sicore + egresos/subdiarios", dos?.procesos.join(' + ') || '(ninguno)',
     !!dos && dos.procesos.includes('cashflow/sicore') && dos.procesos.includes('egresos/subdiarios'),
     "A-FEAT-129")
+
+  // ── A-BUG-145 / A-BUG-149 — el Detalle de Pago que sale de la empresa ───────────────────────
+  //
+  // 🔴 Lo que se calcula acá **lo lee el proveedor** y concilia su cuenta corriente contra esto.
+  // Números reales del pago de ALCORTA del 10/09.
+  const ALCORTA_PAGO = [
+    { comprobante: "FC 6337", imp_total: 179325.15, monto_sicore: null, descuento_aplicado: 8966.26, monto_a_abonar: 170358.89, origen: "ARCA" },
+    { comprobante: "FC 6328", imp_total: 116058.75, monto_sicore: 158.26, descuento_aplicado: 5802.94, monto_a_abonar: 110097.55, origen: "ARCA" },
+    { comprobante: "FC 6347", imp_total: 89710.00, monto_sicore: 1408.67, descuento_aplicado: 4485.50, monto_a_abonar: 83815.83, origen: "ARCA" },
+  ]
+
+  // A-BUG-145: las 3 facturas se pagaron con UNA transferencia (mismo grupo de pago).
+  const unaTransferencia = [{ tipo: "transferencia" as const, monto: 364272.27, detalle: "Transferencia (3 facturas)" }]
+  const cAlcorta = calcularCuenta(ALCORTA_PAGO, unaTransferencia, "arca")
+
+  chequear("Detalle de pago", "🔴 Un pago con UNA transferencia se anuncia como UN renglón",
+    "1 medio", `${unaTransferencia.length} medio(s)`, unaTransferencia.length === 1, "A-BUG-145")
+
+  chequear("Detalle de pago", "…y la cuenta cierra igual: $385.093,90",
+    "$385.093,90", `$${n2(cAlcorta.totalCancelado)}`,
+    cerca(cAlcorta.totalCancelado, 385093.90, 0.01) && cerca(cAlcorta.bruto, 385093.90, 0.01), "A-BUG-145")
+
+  // 🔑 El que explica por qué ningún control lo agarraba: con TRES renglones la cuenta **también**
+  // cerraba. El total estaba bien y el desglose mentía — por eso hizo falta mirarlo, no sumarlo.
+  const tresTransferencias = ALCORTA_PAGO.map(i => ({ tipo: "transferencia" as const, monto: i.monto_a_abonar }))
+  const cTres = calcularCuenta(ALCORTA_PAGO, tresTransferencias, "arca")
+  chequear("Detalle de pago", "Con 3 renglones la cuenta CERRABA igual — por eso el bug sobrevivió",
+    "cierra, y está mal igual", `dif $${n2(cTres.dif)} con ${tresTransferencias.length} renglones`,
+    Math.abs(cTres.dif) <= 1 && tresTransferencias.length === 3, "A-BUG-145")
+
+  // A-BUG-149: un ANTICIPO no es una factura. Es el caso IGLESIAS que dio nombre a A-BUG-105.
+  const conAnticipo = [
+    { comprobante: "FC 816", imp_total: 3554000, monto_sicore: 57400.40, descuento_aplicado: null, monto_a_abonar: 1042599.60, origen: "ARCA" },
+    { comprobante: "Anticipo", imp_total: 2454000, monto_sicore: null, descuento_aplicado: null, monto_a_abonar: 2454000, origen: "ANTICIPO" },
+  ]
+  const cAnt = calcularCuenta(conAnticipo, [
+    { tipo: "echeq" as const, monto: 2454000 }, { tipo: "transferencia" as const, monto: 1042599.60 },
+  ], "arca")
+  chequear("Detalle de pago", "🔴 Un ANTICIPO no suma al «Importe facturas»",
+    "$3.554.000,00", `$${n2(cAnt.bruto)}`, cerca(cAnt.bruto, 3554000, 0.01), "A-BUG-149")
+
+  // Y el que falla con el código viejo: así sumaba el PDF antes (a mano, sin mirar `origen`).
+  const brutoViejo = conAnticipo.reduce((s, i) => s + i.imp_total, 0)
+  chequear("Detalle de pago", "Sumando a mano daba $6.008.000 — el PDF hacía exactamente eso",
+    "$6.008.000,00 (mal)", `$${n2(brutoViejo)}`,
+    cerca(brutoViejo, 6008000, 0.01) && !cerca(brutoViejo, cAnt.bruto, 1), "A-BUG-149")
+
+  // 🔴 El invariante que pidió el usuario: ver y encolar tienen que dar lo MISMO. Las dos cuentas
+  // salen de la misma función, así que con los mismos items y medios no pueden diferir.
+  const cVer = calcularCuenta(conAnticipo, [{ tipo: "echeq" as const, monto: 2454000 }, { tipo: "transferencia" as const, monto: 1042599.60 }], "arca")
+  chequear("Detalle de pago", "🔴 VER el PDF y ENCOLARLO al mail dan el mismo número",
+    `$${n2(cAnt.totalCancelado)}`, `$${n2(cVer.totalCancelado)}`,
+    cerca(cAnt.totalCancelado, cVer.totalCancelado, 0.01) && cerca(cAnt.bruto, cVer.bruto, 0.01), "A-BUG-149")
+
+  // ── A-BUG-151 — la etiqueta del comprobante que LEE EL PROVEEDOR ────────────────────────────
+  const NOTA = "Insumos Veterinarios Varios + Reproductiva"
+  const grupo3 = [
+    `FC 6337 - ALCORTA EDMUNDO ERNESTO · ${NOTA}`,
+    `FC 6328 - ALCORTA EDMUNDO ERNESTO · ${NOTA}`,
+    `FC 6347 - ALCORTA EDMUNDO ERNESTO · ${NOTA}`,
+  ].join(" | ")
+  const et3 = etiquetaComprobante({ comprobante: grupo3 })
+
+  chequear("Detalle de pago", "🔴 Un grupo nombra LAS TRES facturas, no sólo la primera",
+    "6337, 6328 y 6347", et3,
+    et3.includes("6337") && et3.includes("6328") && et3.includes("6347"), "A-BUG-151")
+
+  chequear("Detalle de pago", "…y ninguna nota interna sale de la empresa",
+    "sin la nota", et3.includes(NOTA) ? "SE FILTRÓ la nota" : "sin la nota",
+    !et3.includes(NOTA), "A-BUG-151")
+
+  // 🔴 La otra mitad, y es la que se escapa si el arreglo se hace a medias: cuando la PRIMERA no
+  // tiene nota, el corte viejo caía más adelante y filtraba la nota de otra.
+  const primeraSinNota = [
+    "FC 6337 - ALCORTA EDMUNDO ERNESTO",
+    `FC 6328 - ALCORTA EDMUNDO ERNESTO · ${NOTA}`,
+  ].join(" | ")
+  const etMixta = etiquetaComprobante({ comprobante: primeraSinNota })
+  chequear("Detalle de pago", "🔴 Con la primera SIN nota, tampoco se filtra la nota de la otra",
+    "sin la nota, con las 2 facturas", etMixta,
+    !etMixta.includes(NOTA) && etMixta.includes("6337") && etMixta.includes("6328"), "A-BUG-151")
+
+  // Y lo que ya andaba tiene que seguir andando: una factura sola, con su nota.
+  const sola = etiquetaComprobante({ comprobante: `FC 6337 - ALCORTA EDMUNDO ERNESTO · ${NOTA}` })
+  chequear("Detalle de pago", "Una factura sola sigue saliendo igual que antes",
+    "FC 6337 - ALCORTA EDMUNDO ERNESTO", sola,
+    sola === "FC 6337 - ALCORTA EDMUNDO ERNESTO", "A-BUG-151")
+
+  chequear("Detalle de pago", "Un ANTICIPO se sigue anunciando como «Anticipo»",
+    "Anticipo", etiquetaComprobante({ comprobante: "lo que sea", origen: "ANTICIPO" }),
+    etiquetaComprobante({ comprobante: "x", origen: "ANTICIPO" }) === "Anticipo", "A-BUG-105")
 
   return r
 }

@@ -14,23 +14,11 @@
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { MedioPago } from './medios-pago'
+import { calcularCuenta, etiquetaComprobante } from './cuenta-detalle-pago'
 
-/**
- * Lo que ve el PROVEEDOR de cada renglón: **sólo la identificación del comprobante**.
- *
- * El `detalle` del Cash Flow viene armado como «FC 816 - PROVEEDOR · nota interna», y esa nota es
- * de uso interno —*"Mano de obra 1.1MM - 2 semiejes 980K - placa crapodina…"*, *"(parcial - pend.
- * conciliar)"*—. **No tiene por qué salir de la empresa**, ni en el cuerpo del mail ni en el PDF
- * adjunto, que son las dos cosas que le llegan.
- *
- * Reportado por el usuario 2026-09-05: *"en el cuerpo del mail trae el detalle y no debería
- * traerlo, la info de detalle es interna"*.
- */
-export const etiquetaComprobante = (i: { comprobante?: string | null; origen?: string }): string => {
-  if (i.origen === 'ANTICIPO') return 'Anticipo'
-  const txt = (i.comprobante || '').trim()
-  return txt.split(' · ')[0].trim() || '-'
-}
+// Se re-exporta desde acá porque hay vistas que la importan de este módulo desde antes de la
+// mudanza. El `export … from` NO trae el nombre al scope local: por eso además se importa arriba.
+export { etiquetaComprobante }
 
 export const generarPDFDetallePago = async (
   tipo: 'arca' | 'template',
@@ -108,6 +96,19 @@ export const generarPDFDetallePago = async (
     // Si hay desglose de medios, la tabla principal NO muestra Transferido/Cancelado (lo cubre el desglose)
     const hayMedios = (opciones?.mediosPago ?? []).length > 0
 
+    /**
+     * 🧮 **LA CUENTA, UNA SOLA VEZ Y COMPARTIDA CON EL CUERPO DEL MAIL** (A-BUG-149).
+     *
+     * `calcularCuenta` es la misma función que usa `armarDesglose` para el texto del mail. Se
+     * calcula acá arriba porque la usan **los dos** totales del PDF: el de la tabla principal y el
+     * del desglose por medios. Antes cada uno sumaba por su cuenta —y los dos sumaban el anticipo
+     * al bruto, que es [A-BUG-105] sin arreglar.
+     *
+     * No se usa en la rama `anticipo` de abajo: ese camino recibe el anticipo **aparte** de los
+     * items y tiene su propia forma; tocarlo sin un caso que lo cubra sería cambiar lo que anda.
+     */
+    const cuenta = calcularCuenta(items, opciones?.mediosPago ?? [], tipo)
+
     const head: string[][] = [[
       'Comprobante',
       'Fecha',
@@ -152,17 +153,14 @@ export const generarPDFDetallePago = async (
           ...(hayMedios ? [] : [fmt(montoTransferido), fmt(totalCancelado)]),
         ]
       })
-      const totalBruto = items.reduce((s, i) => s + i.imp_total, 0)
-      const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
-      const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
-      const totalTransferido = items.reduce((s, i) => s + i.monto_a_abonar, 0)
-      const totalCancelado = totalTransferido + totalRet + totalDesc
+      // 🐞 A-BUG-149 — los cuatro totales salían de sumar `items` a mano, y el bruto **incluía los
+      //    anticipos**. Ahora salen de la cuenta compartida, igual que el cuerpo del mail.
       body.push([
         'TOTAL', '',
-        fmt(totalBruto),
-        ...(hayRetencion ? [fmt(totalRet)] : []),
-        ...(hayDescuento ? [fmt(totalDesc)] : []),
-        ...(hayMedios ? [] : [fmt(totalTransferido), fmt(totalCancelado)]),
+        fmt(cuenta.bruto),
+        ...(hayRetencion ? [fmt(cuenta.retencion)] : []),
+        ...(hayDescuento ? [fmt(cuenta.descuento)] : []),
+        ...(hayMedios ? [] : [fmt(cuenta.pagado), fmt(cuenta.pagado + cuenta.retencion + cuenta.descuento)]),
       ])
     }
 
@@ -198,17 +196,38 @@ export const generarPDFDetallePago = async (
     const medios = opciones?.mediosPago ?? []
     if (medios.length > 0) {
       const fmtFechaMedio = (f?: string | null) => f ? fmtFechaStr(f) : ''
-      const totalRet = items.reduce((s, i) => s + (i.monto_sicore || 0), 0)
-      const totalDesc = items.reduce((s, i) => s + (i.descuento_aplicado || 0), 0)
-      const totalFactura = items.reduce((s, i) => s + i.imp_total, 0)
-      const sumaMedios = medios.reduce((s, m) => s + m.monto, 0)
-      const totalDesglose = sumaMedios + totalRet + totalDesc
 
+      /**
+       * 🐞 **A-BUG-149 — la cuenta sale de `calcularCuenta`, la MISMA que arma el cuerpo del mail.**
+       *
+       * Acá vivía una segunda implementación, a mano:
+       * ```
+       * const totalFactura = items.reduce((s, i) => s + i.imp_total, 0)   // ← sumaba los anticipos
+       * const totalDesglose = sumaMedios + totalRet + totalDesc
+       * ```
+       * Y por eso **el arreglo de A-BUG-105 nunca llegó al PDF**: el tipo de `items` declara
+       * `origen` con el comentario *«un ANTICIPO no es una factura: no suma al bruto»* **tres
+       * líneas más arriba**, y esta cuenta no lo miraba. La regla estaba escrita en el tipo y no
+       * aplicada en el código.
+       *
+       * 🧨 Lo grave es que **el PDF es el adjunto del mismo mail cuyo cuerpo sí usa la función
+       * buena**: un mail con una factura y su anticipo podía decir **dos números distintos**, uno
+       * en el texto y otro en el papel. Pedido del usuario: *«debe ser lo mismo pedir el reporte de
+       * pago para uno verlo que encolarlo al mail lo que le llega adjunto»*.
+       */
       const mHead = [['Medio de pago', 'Fecha', 'Monto']]
       const mBody: string[][] = medios.map(m => [m.detalle || m.tipo, fmtFechaMedio(m.fecha), fmt(m.monto)])
-      if (totalRet > 0) mBody.push(['Retención SICORE', '', fmt(totalRet)])
-      if (totalDesc > 0) mBody.push(['Descuento pronto pago', '', fmt(totalDesc)])
-      mBody.push(['TOTAL', '', fmt(totalDesglose)])
+      if (cuenta.retencion > 0) mBody.push(['Retención SICORE', '', fmt(cuenta.retencion)])
+      if (cuenta.descuento > 0) mBody.push(['Descuento pronto pago', '', fmt(cuenta.descuento)])
+      mBody.push(['TOTAL', '', fmt(cuenta.totalCancelado)])
+      // Qué fila es el TOTAL: el resaltado la buscaba como «la última», y al agregar el renglón de
+      // saldo dejaba de serlo — se habría pintado el saldo y el total quedaría sin destacar.
+      const filaTotal = mBody.length - 1
+      // ⚠️ Si no cierra contra el importe de las facturas, **se dice en el papel**. El cuerpo del
+      // mail ya lo decía y el adjunto callaba: el proveedor se enteraba al conciliar (§ 🧮 nada se
+      // descarta en silencio). La tolerancia de $1 es la misma de `calcularCuenta`.
+      if (cuenta.dif > 1) mBody.push(['Saldo pendiente', '', fmt(cuenta.dif)])
+      else if (cuenta.dif < -1) mBody.push(['Pagado a cuenta', '', fmt(-cuenta.dif)])
 
       const startY2 = ((doc as any).lastAutoTable?.finalY ?? 56) + 8
       doc.setFontSize(11)
@@ -223,19 +242,34 @@ export const generarPDFDetallePago = async (
         bodyStyles: { fontSize: 9 },
         columnStyles: { 2: { halign: 'right' } },
         didParseCell: (data: any) => {
-          if (data.row.index === mBody.length - 1 && data.section === 'body') {
+          if (data.row.index === filaTotal && data.section === 'body') {
             data.cell.styles.fillColor = [220, 220, 220]
             data.cell.styles.fontStyle = 'bold'
           }
         }
       })
-      // Aviso si el desglose no cuadra con el total de la factura (tolerancia $1)
-      if (Math.abs(totalDesglose - totalFactura) > 1) {
+      // Aviso si el desglose no cuadra con el total de la factura (tolerancia $1, la de `cuenta`).
+      // A-BUG-149: los dos números salen de la cuenta compartida, no de sumas propias.
+      if (cuenta.desviado) {
         const y3 = ((doc as any).lastAutoTable?.finalY ?? startY2) + 6
         doc.setFontSize(8)
         doc.setFont('helvetica', 'italic')
         doc.setTextColor(180, 60, 60)
-        doc.text(`⚠ El desglose (${fmt(totalDesglose)}) no coincide con el total de factura (${fmt(totalFactura)}).`, 15, y3)
+        /**
+         * 🐞 **A-BUG-150 — sin `⚠`.**
+         *
+         * El símbolo (U+26A0) **no existe en WinAnsiEncoding**, que es lo que usan las fuentes
+         * estándar de jsPDF, y al meterlo **se rompe la codificación de toda la línea**: salía
+         * `& E l   d e s g l o s e   ( $ 2 . 7 9 1 . 0 8 3 , 2 5 ) …`, letra por letra.
+         *
+         * 🧨 Y de todas las líneas del PDF, ésta: aparece **sólo cuando la cuenta NO cierra**, así
+         * que el defecto vivía escondido justo en el caso que había que leer. El `—` del
+         * encabezado sí está en WinAnsi y por eso sale bien — el problema es este carácter, no
+         * jsPDF.
+         *
+         * ⚠️ **Al agregar texto a este PDF: sólo latin-1.** Nada de emoji ni de símbolos técnicos.
+         */
+        doc.text(`ATENCION: el desglose (${fmt(cuenta.totalCancelado)}) no coincide con el total de factura (${fmt(cuenta.bruto)}).`, 15, y3)
         doc.setTextColor(0, 0, 0)
       }
     }

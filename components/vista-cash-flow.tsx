@@ -1247,6 +1247,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
           monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          // 🐞 A-BUG-149 — faltaba, y por eso VER el PDF no daba lo mismo que encolarlo: sin
+          // `origen`, un ANTICIPO se suma al bruto como si fuera una factura (A-BUG-105).
+          // `encolarMailsSeleccionados` sí lo pasaba, **con el comentario del bug al lado**.
+          origen: f.origen,
         }
       })
       // Medios de pago reales (anticipo/echeq/transferencia) para el desglose multimedio — solo ARCA (MSA)
