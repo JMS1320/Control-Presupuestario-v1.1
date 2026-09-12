@@ -2565,3 +2565,50 @@ columna. **La columna del CUIT es `leyendas_adicionales_2`**; lo que hay que cor
    `TRANSFERENCIA A TERCEROS` (→ `PENDIENTES.md` § A-BUG-17).
 3. Un CUIT del extracto que **no está en `proveedores`** es un hueco a dar de alta, no una
    conciliación fallida (§ Contrapartes en `CLAUDE.md`).
+
+---
+
+## 32 — Filtrar por la NOTA del usuario (`nota_operador`) — 2026-09-11
+
+**Qué es**: un filtro de tres estados en la barra de Filtros rápidos del Extracto —
+`📝 Notas: todas / Con nota mía / Sin nota`— sobre `msa_galicia.nota_operador`, la nota que el
+usuario deja con el 📝 de cada movimiento. Pedido suyo: *«poder filtrar por con mensaje de usuario
+—los que voy dejando en movimientos bancarios sin conciliar— y sin mensajes de usuario»*.
+
+📌 **Lo pidió «para Cash Flow» y va acá.** El Cash Flow **no carga movimientos bancarios**: sus
+orígenes son ARCA, TEMPLATE, SUELDO, ANTICIPO y VENTA. Las notas se crean y se ven en el Extracto,
+que es el único lugar donde el filtro tiene datos.
+
+### Las dos decisiones que deciden si sirve
+
+**1 · Se filtra en la CONSULTA, no en pantalla.** El extracto trae hasta 2.000 filas con un límite
+configurable. Filtrar después de traer daría *«3 con nota»* sobre las que entraron, no sobre las que
+hay — **un recorte con cara de respuesta**.
+
+**2 · «Sin nota» incluye los `NULL` y los VACÍOS.**
+
+```ts
+// con_nota
+query.not('nota_operador', 'is', null).neq('nota_operador', '')
+// sin_nota
+query.or('nota_operador.is.null,nota_operador.eq.')
+```
+
+⚠️ Una nota borrada puede quedar como cadena vacía. Con un `.is(null)` a secas, esos movimientos
+**no aparecerían en ninguno de los dos filtros** — desaparecerían de la app sin que nada lo diga,
+que es el peor resultado posible para un filtro.
+
+### El control, y por qué NO es el obvio
+
+El control natural sería *«con nota + sin nota = total»*. **Es falso con un límite de filas**: `sin
+nota` devuelve 200 cuando hay más, y el control fallaría **sin que hubiera nada roto**.
+
+Se controla la propiedad que sí vale con cualquier límite: **ningún movimiento está en los dos
+lados**. Verificado el 2026-09-11: con nota 17, sin nota 200, **en los dos: 0**.
+
+### Se copió un patrón que ya existía
+
+`filtroRevisado` (`todas | revisadas | no_revisadas`) tiene exactamente la misma forma y el mismo
+recorrido: estado → `filtrosActivos` → los dos armadores de filtros → el `select`-chip → `Limpiar`.
+**Los cinco puntos hay que tocarlos**; olvidar el de `Limpiar` deja un botón que dice que limpió y
+no limpió.
