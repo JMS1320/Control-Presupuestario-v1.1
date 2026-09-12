@@ -14442,6 +14442,171 @@ cuál no se pudo mirar**: un vínculo no mirado se parece demasiado a uno que no
   otro, se corrige después desde la tabla — no se inventa un campo más en el editor sin que haga falta.
 
 
+## <a id="guia-2026-09-12"></a>🧪 GUÍA DE PRUEBAS — tanda del 2026-09-12 (conciliación + templates)
+
+> Escrita para **ejecutar**, no para entender: dónde apretar, en qué orden, y qué número tiene que
+> salir. Cubre `A-TEST-119` a `A-TEST-125`. Los pasos de cada una viven en su ficha de
+> `PENDIENTES.md`; esto es la vista operable de todas juntas.
+>
+> **Rama:** `jms/dia-a-dia` (ya mergeada). `npm run dev` y a la app.
+
+---
+
+## 🔴 ANTES QUE NADA — 2 minutos, y condicionan todo lo demás
+
+Si estas dos no dan bien, lo que sigue no se puede interpretar.
+
+**1 · Que los 141 detalles estén puestos** (A-DAT-35, ya corregido en la base).
+Extracto Bancario → MSA Galicia → buscá `Rescate Fima` → la columna **Detalle** tiene que decir
+`Rescate FIMA` en los 11. Antes estaba vacía.
+
+**2 · Que las 6 reglas muertas no estén** (A-DAT-36).
+Configurador de reglas → cuenta `MSA Galicia` → buscá `25413` en el buscador nuevo.
+Tienen que quedar **3** (`Imp. Deb.`, `Imp. Cre.`, `Dev.imp.deb.`), no 6.
+
+---
+
+## 1 · ⌨️ Ctrl+click en Templates — 1 minuto · `A-TEST-125`
+
+*Egresos → Egresos sin Factura → Cuotas*
+
+| Paso | Qué tiene que pasar |
+|---|---|
+| **Sin** prender «Modo Edición», Ctrl+click en una celda de **Monto** | entra en edición |
+| Prendé «Modo Edición» | las celdas editables se pintan; sigue andando igual |
+| `Ctrl+Shift+click` en **Monto** **sin** Modo Edición | **NO** hace nada (correcto: eso convierte Anual↔Cuotas y reescribe el plan entero) |
+
+---
+
+## 2 · 📅 La fecha de pago — 5 minutos · `A-TEST-120`
+
+*Misma pantalla. Es el bug que reportaste con Lote Puerto.*
+
+1. Ctrl+click en la celda **Estado** de una cuota, ponela en **`pagado`**
+   → **tiene que abrirse el cartel** «¿Con qué fecha se pagó?», proponiendo hoy.
+2. 🔴 **Apretá Cancelar.** La cuota **NO puede haber cambiado de estado**.
+   *(Si quedó `pagado` sin fecha, volvió el bug exacto que reportaste.)*
+3. Repetí y ahora **confirmá** con la fecha real → la cuota queda con **estado y fecha juntos**.
+   Verificalo en la columna **Fecha Pago**.
+4. Poné otra cuota en **`pendiente`** → **no tiene que preguntar nada**.
+5. Marcá 3 cuotas, edición masiva a **`pagar`** → pregunta **una sola vez** para las tres.
+
+📌 **Y de paso arreglás el dato**: la cuota 2 de *Red Vial Cuota Lote Puerto* que pusiste en
+`pagado` quedó **sin fecha de pago**. Ponésela acá — es el paso 3 con un caso real.
+
+---
+
+## 3 · ✏️ El editor de campaña — 10 minutos · `A-TEST-119`
+
+*Misma pantalla. Es lo que pediste: ver el template, sus cuotas, y editarlas.*
+
+1. Buscá `Red Vial Cuota Lote Puerto` → **✏️** al lado del nombre.
+2. Tiene que abrir mostrando **4 cuotas** y decir abajo **🔗 2 movimientos conciliados**.
+3. **El check, que es lo que pediste**: cambiá el **monto de la cuota 1** (que está conciliada) a
+   cualquier otra cosa → aparece **un aviso rojo debajo de esa fila**, en el momento.
+   Dejala como estaba.
+4. **Agregá las 2 cuotas** que faltan (te propone fecha +3 meses y copia el monto).
+5. Mirá el resumen de **«Al guardar:»** — las que cambian tienen que decir
+   **«mismo id — el vínculo se conserva»**.
+6. **Guardá.**
+
+🔴 **Y lo que hay que verificar después de guardar** (es el invariante que pediste):
+
+- Volvé a abrir el ✏️ → las cuotas 1 y 2 **siguen con el 🔗**.
+- La numeración quedó **1 a 6** por fecha.
+- En Extracto Bancario, los movimientos del **16/03** ($54.770,60) y **16/06** ($30.215)
+  **siguen diciendo `conciliado`** y siguen apuntando a sus cuotas.
+
+⚠️ **Adversario**: cambiale la fecha a una cuota conciliada **más de 5 días** → aviso rojo →
+**Cancelar** → no puede haber quedado nada tocado.
+
+---
+
+## 4 · 🔁 El detalle que viaja al template — 3 minutos · `A-TEST-121`
+
+*Extracto Bancario. **Éste lo ofreciste vos**: «yo edito nuevamente los 2 detalles».*
+
+1. Buscá los **2 movimientos de Municipalidad de San Pedro** que conciliaste.
+2. Editá el **Detalle** de uno y apretá **Enter**.
+3. Editá el del otro y **salí del campo sin Enter** (son dos caminos distintos en el código).
+4. Andá a *Egresos sin Factura* y abrí el ✏️ del template → **la cuota tiene el mismo texto**.
+
+📌 **No te va a avisar nada, y está bien** — lo corregiste vos: *«es lo esperado»*. Sólo habla si
+falla.
+
+⚠️ **Adversario**: vaciá el detalle en el extracto → la cuota también queda vacía. Son el mismo dato.
+
+---
+
+## 5 · 📝 Las notas — 8 minutos · `A-TEST-123`
+
+*Extracto Bancario, chips de arriba.*
+
+1. **Buscar adentro**: en **🔍 en mis notas…** escribí una palabra que sepas que está en alguna nota
+   → Enter. La lista se recorta y el rótulo de arriba dice `nota dice "…"`.
+2. **Que se combine**: agregá un rango de fechas y el chip `Pendientes`.
+   🧮 **El control: el número NUNCA puede subir** al agregar un filtro.
+3. **Limpiar** → tiene que apagar **también** la búsqueda de notas.
+4. **Anotar en lote**: filtrá algo chico (5-10 filas) → **📝 Anotar los N**.
+   El cartel tiene que decir **el mismo N** que ves en pantalla.
+5. Elegí **Agregar al final** sobre filas que ya tenían nota → queda **el texto viejo Y el nuevo**,
+   en dos renglones. No pisado.
+6. **Borrar al conciliar**: marcá 2-3 movimientos **que tengan nota**, edición masiva → estado
+   `conciliado` → guardá.
+   → **Tiene que aparecer un cartel** diciendo cuántos tenían nota, **con las notas a la vista**.
+   - **«Que queden»** → las notas siguen ahí.
+   - Repetí con otros y elegí **«Borrar las N»** → se van.
+7. 🔴 **El caso que definiste vos**: conciliá movimientos **sin ninguna nota**
+   → **NO tiene que aparecer ningún cartel.**
+
+---
+
+## 6 · 👤 El proveedor del banco — 3 minutos · `A-TEST-122`
+
+*Extracto Bancario, edición masiva.*
+
+1. Buscá un movimiento **sin proveedor** que el banco haya mandado con CUIT.
+2. Asignale una categoría por edición masiva.
+   → aviso **«Proveedor tomado del extracto en N movimiento(s)»** y la columna se llena.
+3. Repetilo sobre uno que **ya tiene** proveedor escrito → **no se toca**.
+4. Si sale el aviso naranja de **CUIT que no están en Proveedores**: 🔴 **anotalos**. Son
+   contrapartes que faltan en el maestro, y eso rompe pagos y cobros aguas abajo.
+
+---
+
+## 7 · 🏷️ El detalle de las reglas — 2 minutos · `A-TEST-124`
+
+*Extracto Bancario, motor.*
+
+1. Pasá el motor sobre movimientos nuevos con regla (FIMA, IVA, comisiones)
+   → la columna **Detalle** se llena con lo que dice la regla.
+2. ⚠️ **El adversario, que es el que importa**: escribí un detalle **a mano** en un movimiento
+   pendiente, y **después** pasá el motor → **tu texto no se pisa**.
+
+---
+
+## 8 · 🔎 El buscador de reglas — 1 minuto · `A-TEST-125`
+
+*Configurador de reglas.*
+
+| Buscás | Tiene que quedar |
+|---|---|
+| `FIMA` | 2 |
+| `#35` | la de orden 35 |
+| algo que no exista | un cartel recordándote que **mira sólo la cuenta elegida arriba** |
+
+---
+
+## ✅ Cómo contestar
+
+En cualquier modal que tenga el cartel **«N cosas para mirar en esta corrida»**, están los ✅/🔴.
+Si no, decímelo acá y lo paso a `PENDIENTES` con tu comentario.
+
+**Si algo falla, lo que más sirve es**: qué apretaste, qué esperabas y qué salió — y si es un número,
+el número.
+
+---
+
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`
