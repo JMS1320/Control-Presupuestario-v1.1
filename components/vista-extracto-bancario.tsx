@@ -51,6 +51,9 @@ import { ConfiguradorReglasParseo } from "./configurador-reglas-parseo"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
+import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
+import { proveedorDelMovimiento } from "@/lib/conciliacion/proveedor-del-movimiento"
+import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
@@ -348,6 +351,24 @@ export function VistaExtractoBancario() {
   // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
   const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
+
+  /**
+   * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
+   * *«Debería hacerlo, son 1 en esencia»* (usuario, 2026-09-12). La lógica vive en
+   * `lib/conciliacion/propagar-detalle.ts`; acá sólo se avisa qué pasó.
+   *
+   * 🧮 Se avisa **siempre que haya vinculo**, también cuando sale bien: el usuario tiene que
+   * poder ver que el dato llegó al otro lado sin ir a mirarlo. Un cambio que se propaga en silencio
+   * se parece demasiado a uno que no se propagó — que es justo el bug que se está arreglando.
+   */
+  const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
+    const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
+    if (r.error) {
+      toast.error('El detalle se guardó en el extracto pero NO llegó al template', { description: r.error })
+    } else if (r.propagado) {
+      toast.success('Detalle propagado a la cuota del template')
+    }
+  }
 
   // Set de categs de templates (para validación de categ en extracto)
   const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
@@ -1039,6 +1060,50 @@ export function VistaExtractoBancario() {
               }
             }
           }
+        }
+
+        /**
+         * 👤 **A-FEAT-132 — el proveedor sale del propio movimiento.**
+         *
+         * Pedido del usuario 2026-09-12: *«asigné el otro pago a CZ ganadería ok, pero no llenó
+         * proveedor y tiene por extracto bancario cómo tomarlo»*. El banco manda el CUIT de la
+         * contraparte en `leyendas_adicionales_2`, el motor automático ya lo usaba, y el camino
+         * manual —que es el que se usa **justo cuando el automático no alcanzó**— lo tiraba.
+         *
+         * 🔑 **Se llena sólo si está vacío** (§ `CLAUDE.md` 🎚️ Default del dato real, siempre
+         * editable): campo vacío = *«usá el real»*, campo lleno = *«acá mando yo»*. Pisar un nombre
+         * escrito a mano convertiría la ayuda en pérdida de datos.
+         *
+         * ⚠️ **Y si el CUIT no está en `proveedores`, se dice.** Ese silencio es exactamente el
+         * hueco que la § 👥 Contrapartes existe para tapar: un movimiento cuya contraparte no está
+         * en el maestro rompe pagos y cobros aguas abajo. Acá **no se da de alta** — una contraparte
+         * creada desde una pantalla de conciliación nace sin razón social real y sin saber si es
+         * cliente o proveedor.
+         */
+        const sinProveedorEnMaestro: string[] = []
+        let proveedoresLlenados = 0
+        for (const movimientoId of ids) {
+          const mov = movimientos.find(m => m.id === movimientoId) as any
+          if (!mov || (mov.proveedor_nombre || '').trim()) continue
+          // ⚠️ `proveedores` vive SIEMPRE en `public`, aunque el movimiento sea de `ma` o `pam`:
+          // la búsqueda va con `supabase` pelado y el update con el cliente del schema activo.
+          const prop = await proveedorDelMovimiento(supabase, mov)
+          if (!prop) continue
+          if (prop.nombre) {
+            const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase).from(tablaActiva)
+              .update({ proveedor_nombre: prop.nombre }).eq('id', movimientoId)
+            if (!error) { actualizarLocal(movimientoId, { proveedor_nombre: prop.nombre }); proveedoresLlenados++ }
+          } else if (!sinProveedorEnMaestro.includes(prop.cuit)) {
+            sinProveedorEnMaestro.push(prop.cuit)
+          }
+        }
+        if (proveedoresLlenados > 0) {
+          toast.success(`Proveedor tomado del extracto en ${proveedoresLlenados} movimiento(s)`,
+            { description: 'Estaba vacío y el banco manda el CUIT. Los que ya tenían nombre no se tocaron.' })
+        }
+        if (sinProveedorEnMaestro.length > 0) {
+          toast.warning(`${sinProveedorEnMaestro.length} CUIT(s) del banco NO están en Proveedores`,
+            { description: sinProveedorEnMaestro.join(', ') + ' — conviene darlos de alta para que pagos y cobros los encuentren.' })
         }
 
         // Actualizar localmente sin recargar — preserva filtros y contexto de trabajo
@@ -3309,6 +3374,7 @@ export function VistaExtractoBancario() {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
                                       actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
+                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
@@ -3318,6 +3384,7 @@ export function VistaExtractoBancario() {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
                                       actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
+                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
                                     }
                                     setEditandoDetalleId(null)
                                   }}
