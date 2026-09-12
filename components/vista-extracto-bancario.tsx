@@ -253,8 +253,19 @@ export function VistaExtractoBancario() {
    */
   const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
   const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
-  /** 🧹 A-FEAT-135 — default en `false`: la nota se conserva salvo que se pida lo contrario. */
-  const [borrarNotasAlConciliar, setBorrarNotasAlConciliar] = useState(false)
+  /**
+   * 🧹 **A-FEAT-135** — qué hacer con las notas de lo que se acaba de conciliar.
+   *
+   * Empezó siendo un tilde en el panel de edición masiva y el usuario lo corrigió (2026-09-12):
+   * *«acá sí me debe preguntar si quiero borrar las notas de lo que quiero conciliar (…) pero si
+   * no hay notas no alerta»*.
+   *
+   * 🔑 **La diferencia no es de interfaz, es de momento.** Un tilde se marca **antes** de
+   * conciliar, cuando todavía no se sabe cuántos de los seleccionados tenían nota ni qué decían.
+   * La pregunta llega **después**, con el número real delante — y sólo si hay algo que decidir.
+   */
+  const [modalNotasConciliadas, setModalNotasConciliadas] = useState<{ isOpen: boolean; ids: string[] }>(
+    { isOpen: false, ids: [] })
   /** 📝 A-FEAT-133 — la misma nota para todas las filas filtradas. */
   const [modalNotaLote, setModalNotaLote] = useState<{ isOpen: boolean; texto: string; modo: 'agregar' | 'reemplazar' | 'borrar' }>(
     { isOpen: false, texto: '', modo: 'agregar' })
@@ -418,12 +429,45 @@ ${texto.trim()}` : texto.trim()
     }
   }
 
+  /**
+   * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
+   * *«Debería hacerlo, son 1 en esencia»* (usuario, 2026-09-12). La lógica vive en
+   * `lib/conciliacion/propagar-detalle.ts`.
+   *
+   * 🔇 **Cuando sale bien NO avisa, y es una corrección del usuario** (2026-09-12):
+   * *«no debe avisar ya que es lo esperado»*. Y sigue del mismo argumento que sostiene la feature:
+   * si el movimiento y la cuota **son 1 en esencia**, propagar no es un evento que merezca
+   * contarse — es lo que significa guardar. Un aviso por cada detalle tecleado es ruido, y el ruido
+   * entrena a despachar sin leer el aviso que sí importa.
+   *
+   * 🔴 **El error sí se muestra.** Ahí las dos mitades quedaron distintas y eso el usuario no tiene
+   * cómo verlo. La § 🧮 *nada se descarta en silencio* obliga a que no pase inadvertido **el
+   * fallo**, no el éxito — confundir las dos cosas es lo que llena una app de carteles.
+   */
+  /**
+   * 🧹 **A-FEAT-135** — borra las notas que el usuario decidió dejar ir.
+   *
+   * Cerrar el cartel sin apretar nada **conserva** las notas: el default de una acción destructiva
+   * no puede ser el silencio (§ `CLAUDE.md` 🛑 Datos).
+   */
+  const borrarNotasDeConciliados = async () => {
+    const ids = modalNotasConciliadas.ids
+    setModalNotasConciliadas({ isOpen: false, ids: [] })
+    if (ids.length === 0) return
+    const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+      .from(tablaActiva).update({ nota_operador: null }).in('id', ids)
+    if (error) {
+      toast.error('No se pudieron borrar las notas', { description: error.message })
+    } else {
+      actualizarLocal(ids, { nota_operador: null })
+      toast.success(`${ids.length} nota(s) borrada(s)`)
+    }
+  }
+
   const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
     const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
     if (r.error) {
       toast.error('El detalle se guardó en el extracto pero NO llegó al template', { description: r.error })
-    } else if (r.propagado) {
-      toast.success('Detalle propagado a la cuota del template')
     }
   }
 
@@ -1188,21 +1232,15 @@ ${texto.trim()}` : texto.trim()
          *
          * ⚠️ Borrar es destructivo (§ 🛑 Datos): se dice cuántas se van antes de irse.
          */
-        if (editData.estado === 'conciliado' && borrarNotasAlConciliar) {
+        if (editData.estado === 'conciliado') {
           const conNota = ids.filter(id => {
             const m = movimientos.find(x => x.id === id) as any
             return (m?.nota_operador || '').trim()
           })
-          if (conNota.length > 0) {
-            const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-              .from(tablaActiva).update({ nota_operador: null }).in('id', conNota)
-            if (error) {
-              toast.error('No se pudieron borrar las notas', { description: error.message })
-            } else {
-              actualizarLocal(conNota, { nota_operador: null })
-              toast.success(`${conNota.length} nota(s) borrada(s) al conciliar`)
-            }
-          }
+          // 🔇 **Si no hay notas no pasa nada.** Corrección del usuario 2026-09-12:
+          // *«si no hay notas no alerta»*. Una pregunta que se hace siempre — incluso cuando no
+          // hay nada que decidir — se contesta sin leer, y el día que importe se contesta igual.
+          if (conNota.length > 0) setModalNotasConciliadas({ isOpen: true, ids: conNota })
         }
 
         if (Object.keys(camposLocales).length > 0) actualizarLocal(ids, camposLocales)
@@ -3079,18 +3117,6 @@ ${texto.trim()}` : texto.trim()
                       </SelectContent>
                     </Select>
 
-                    {/* 🧹 A-FEAT-135 — sólo aparece al conciliar, que es cuando la pregunta
-                        tiene sentido. Default apagado: borrar es destructivo. */}
-                    {editData.estado === 'conciliado' && (
-                      <label className="flex items-center gap-1.5 mt-2 text-xs text-gray-600 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={borrarNotasAlConciliar}
-                          onChange={(e) => setBorrarNotasAlConciliar(e.target.checked)}
-                        />
-                        🧹 Borrar mis notas de los que se concilien
-                      </label>
-                    )}
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Contable</label>
@@ -4206,6 +4232,43 @@ ${texto.trim()}` : texto.trim()
       </Dialog>
 
       {/* Modal Asignar Manualmente */}
+      {/* 🧹 A-FEAT-135 — se concilió algo que tenía notas: ¿se van o se quedan? */}
+      <Dialog open={modalNotasConciliadas.isOpen} onOpenChange={v => { if (!v) setModalNotasConciliadas({ isOpen: false, ids: [] }) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>🧹 {modalNotasConciliadas.ids.length} de los conciliados tenían nota tuya</DialogTitle>
+            <DialogDescription>
+              Una nota suele ser una pregunta abierta — <em>«¿esto qué es?»</em>, <em>«falta el detalle»</em>.
+              Al conciliar, muchas <strong>ya quedaron contestadas</strong> y desde ahí sólo ensucian el filtro.
+              Pero no todas.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 👁️ Las notas, a la vista antes de decidir. Preguntar «¿borro 12 notas?» sin mostrar
+              qué dicen es pedir una decisión a ciegas sobre algo que no se puede deshacer. */}
+          <div className="max-h-48 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1">
+            {modalNotasConciliadas.ids.map(id => {
+              const m = movimientos.find(x => x.id === id) as any
+              return (
+                <div key={id} className="flex gap-2">
+                  <span className="text-gray-400 shrink-0">{m?.fecha ? String(m.fecha).split('-').reverse().join('/') : ''}</span>
+                  <span className="text-gray-700 whitespace-pre-wrap">{(m?.nota_operador || '').trim()}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setModalNotasConciliadas({ isOpen: false, ids: [] })}>
+              Que queden
+            </Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={borrarNotasDeConciliados}>
+              Borrar las {modalNotasConciliadas.ids.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 📝 A-FEAT-133 — la misma nota para todas las filas que estoy viendo. */}
       <Dialog open={modalNotaLote.isOpen} onOpenChange={v => { if (!v) setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' }) }}>
         <DialogContent className="max-w-lg">
