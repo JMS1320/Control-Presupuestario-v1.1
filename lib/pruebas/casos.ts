@@ -43,6 +43,7 @@ import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 
 export interface Resultado {
   caso: string
@@ -512,6 +513,59 @@ export function correrCasos(): Resultado[] {
   chequear("Fecha de pago", "🔴 Sin fecha propuesta se pregunta",
     "pregunta", hayQuePreguntarFechaPago([{ fecha_pago: HOY }], "") ? "pregunta" : "no pregunta",
     hayQuePreguntarFechaPago([{ fecha_pago: HOY }], "") === true, "P-45")
+
+  // ── B-BUG-CLIENTE-NO-SE-CREA / A-FEAT-41 — el upsert de contrapartes ────────────────────────
+  const FICHAS = [
+    { cuit: "20103619115", es_cliente: false, es_proveedor: true },   // ALCORTA: proveedor, no cliente
+    { cuit: "30714279315", es_cliente: true, es_proveedor: true },    // MERCURE: ya es las dos cosas
+  ]
+  const planCli = planificarContrapartes([
+    { cuit: "20-10361911-5", razon_social: "ALCORTA EDMUNDO ERNESTO" },  // existe, falta el flag
+    { cuit: "30714279315", razon_social: "LA MERCURE S.R.L." },          // existe y ya tiene el flag
+    { cuit: "30-99999999-7", razon_social: "SANPA S.A." },               // no existe → crear
+    { cuit: "", razon_social: "sin cuit" },                              // se descarta, pero se cuenta
+  ], FICHAS, "cliente")
+
+  chequear("Contrapartes", "🔴 El que NO existe se CREA (no se hace sólo UPDATE)",
+    "1 a crear: 30999999997", `${planCli.aCrear.length} a crear: ${planCli.aCrear.map(c => c.cuit).join(",")}`,
+    planCli.aCrear.length === 1 && planCli.aCrear[0].cuit === "30999999997", "B-BUG-CLIENTE-NO-SE-CREA")
+
+  // 🔴 EL adversario de este arreglo, y viene del ESQUEMA: `es_proveedor` tiene DEFAULT true.
+  //    Crear un cliente puro sin decir nada lo deja marcado como proveedor, contra la regla.
+  chequear("Contrapartes", "🔴 Un cliente nuevo nace con es_proveedor = FALSE (el default es true)",
+    "es_cliente=true · es_proveedor=false",
+    `es_cliente=${planCli.aCrear[0]?.es_cliente} · es_proveedor=${planCli.aCrear[0]?.es_proveedor}`,
+    planCli.aCrear[0]?.es_cliente === true && planCli.aCrear[0]?.es_proveedor === false,
+    "B-BUG-CLIENTE-NO-SE-CREA")
+
+  chequear("Contrapartes", "Al que existe SIN el flag se le marca, no se lo duplica",
+    "marcar 20103619115", planCli.aMarcar.join(",") || "(ninguno)",
+    planCli.aMarcar.length === 1 && planCli.aMarcar[0] === "20103619115", "B-BUG-CLIENTE-NO-SE-CREA")
+
+  chequear("Contrapartes", "Al que ya tiene el flag no se lo toca",
+    "MERCURE afuera", planCli.aMarcar.includes("30714279315") ? "se tocó" : "afuera",
+    !planCli.aMarcar.includes("30714279315"), "B-BUG-CLIENTE-NO-SE-CREA")
+
+  chequear("Contrapartes", "El CUIT se normaliza: con guiones y sin guiones son el MISMO",
+    "1 a crear (no 2)", `${planCli.aCrear.length} a crear`,
+    planCli.aCrear.length === 1, "B-BUG-CLIENTE-NO-SE-CREA")
+
+  chequear("Contrapartes", "⚠️ Lo que viene sin CUIT se descarta pero SE CUENTA",
+    "1 sin cuit", `${planCli.sinCuit} sin cuit`, planCli.sinCuit === 1, "B-BUG-CLIENTE-NO-SE-CREA")
+
+  // Y el espejo: por el lado de compras, un proveedor nuevo NO nace marcado como cliente.
+  const planProv = planificarContrapartes([{ cuit: "30-55555555-5", razon_social: "NUEVO SRL" }], [], "proveedor")
+  chequear("Contrapartes", "Un proveedor nuevo nace con es_cliente = false",
+    "es_proveedor=true · es_cliente=false",
+    `es_proveedor=${planProv.aCrear[0]?.es_proveedor} · es_cliente=${planProv.aCrear[0]?.es_cliente}`,
+    planProv.aCrear[0]?.es_proveedor === true && planProv.aCrear[0]?.es_cliente === false,
+    "B-BUG-CLIENTE-NO-SE-CREA")
+
+  // Sin razón social, `razon_social` es NOT NULL: se usa el CUIT antes que romper el import.
+  const planSinNombre = planificarContrapartes([{ cuit: "30111111117" }], [], "cliente")
+  chequear("Contrapartes", "Sin razón social se usa el CUIT — no se rompe el import",
+    "30111111117", planSinNombre.aCrear[0]?.razon_social ?? "(vacío)",
+    planSinNombre.aCrear[0]?.razon_social === "30111111117", "B-BUG-CLIENTE-NO-SE-CREA")
 
   return r
 }

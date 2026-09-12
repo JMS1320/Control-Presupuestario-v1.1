@@ -14,6 +14,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { registrarContrapartes } from '@/lib/contrapartes/registrar'
 import { createClient } from '@supabase/supabase-js'
 import * as Papa from 'papaparse'
 import * as XLSX from 'xlsx'
@@ -200,6 +201,35 @@ export async function POST(req: Request) {
     }
     console.log(`🧾 [import-ventas] insertadas: ${inserted?.length}`)
 
+    /**
+     * 👥 **Las contrapartes quedan registradas** (B-BUG-CLIENTE-NO-SE-CREA).
+     *
+     * 🔴 Esta era **la peor de las cinco entradas**: el importador de ventas **no tocaba
+     * `proveedores` en absoluto** — ni un `UPDATE` inútil, nada. Y es **la vía de volumen**: por acá
+     * entran los Comprobantes Emitidos de ARCA en bloque, así que es la que más clientes dejaba sin
+     * ficha. Compras lo hace desde siempre (`import-facturas-arca`); ventas nunca lo hizo.
+     *
+     * Mismo criterio que compras: **si falla, el import ya terminó bien y no se revierte**. Lo que
+     * se pierde es el registro de la contraparte, no los comprobantes — y se dice en la respuesta,
+     * que es lo que lo hace distinto de un hueco silencioso.
+     */
+    let contrapartes = { creados: 0, marcados: 0 }
+    try {
+      const res = await registrarContrapartes(
+        supabase,
+        (nuevas as Array<{ cuit_cliente?: string | null; denominacion_cliente?: string | null }>)
+          .map(v => ({ cuit: v.cuit_cliente, razon_social: v.denominacion_cliente })),
+        'cliente',
+      )
+      if (res.error) console.error('👥 [import-ventas] no se pudieron registrar contrapartes:', res.error)
+      else {
+        contrapartes = { creados: res.creados, marcados: res.marcados }
+        console.log(`👥 [import-ventas] clientes creados: ${res.creados} · marcados: ${res.marcados}`)
+      }
+    } catch (e) {
+      console.error('👥 [import-ventas] contrapartes falló (el import quedó OK igual):', e)
+    }
+
     // ── Vincular retenciones pendientes por CUIT (cargadas antes de importar la factura) ──
     // `retenciones_recibidas` sólo existe en el schema `msa`; para PAM/MA se saltea el paso
     // en vez de fallar. Si esas empresas llegan a manejar retenciones sufridas, hay que crear
@@ -222,6 +252,10 @@ export async function POST(req: Request) {
       insertadas: inserted?.length || 0,
       duplicadas,
       retenciones_vinculadas: retVinculadas,
+      // Se dice cuántos clientes se crearon: sin esto el alta sería invisible, y un registro que
+      // nadie ve es medio hermano del hueco que este arreglo vino a tapar.
+      clientes_creados: contrapartes.creados,
+      clientes_marcados: contrapartes.marcados,
     })
   } catch (err) {
     console.error('🧾 [import-ventas] ERROR:', err)

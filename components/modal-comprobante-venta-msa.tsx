@@ -10,6 +10,7 @@ import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
+import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
 
 export interface ComprobanteVenta {
@@ -225,12 +226,24 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
         if (error) throw error
       }
 
-      // Marcar es_cliente=true en proveedores
-      await supabase
-        .from('proveedores')
-        .update({ es_cliente: true })
-        .eq('cuit', cliente.cuit)
-        .eq('es_cliente', false)
+      /**
+       * 👥 **La contraparte queda registrada — upsert, nunca sólo `UPDATE`** (B-BUG-CLIENTE-NO-SE-CREA).
+       *
+       * Acá había un `.update({ es_cliente: true }).eq('cuit', …)`. Si el cliente **no existía**,
+       * ese UPDATE matcheaba **0 filas, no fallaba, y nadie se enteraba**: la venta quedaba cargada
+       * y el cliente sin ficha. Así se perdieron Sanpa y Provinvest, que hubo que crear a mano.
+       *
+       * `registrarContrapartes` crea el que falta (con `es_proveedor: false`, porque el default del
+       * esquema es `true`) y marca el flag al que ya está. Nunca lanza: si algo falla, la venta ya
+       * se guardó y lo que se rompe es el registro de la contraparte, no el comprobante.
+       */
+      const rc = await registrarContrapartes(supabase, [{ cuit: cliente.cuit, razon_social: cliente.nombre || null }], 'cliente')
+      if (rc.error) {
+        console.error('⚠️ No se pudo registrar la contraparte:', rc.error)
+        toast.warning('La venta se guardó, pero el cliente no quedó registrado en Proveedores', { description: rc.error.slice(0, 120) })
+      } else if (rc.creados > 0) {
+        toast.success(`Cliente ${cliente.nombre || cliente.cuit} dado de alta en Proveedores`)
+      }
 
       toast.success(esEdicion ? 'Comprobante actualizado' : 'Comprobante registrado')
       onOpenChange(false)

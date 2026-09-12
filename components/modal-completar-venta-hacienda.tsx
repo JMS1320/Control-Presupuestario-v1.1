@@ -33,6 +33,7 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -298,6 +299,22 @@ export function ModalCompletarVentaHacienda({
         cuit: cliente.cuit || null,
       }).eq("id", movimiento.id)
       if (eMov) throw eMov
+
+      /**
+       * 👥 **El cliente queda en `public.proveedores`** (A-FEAT-41).
+       *
+       * La venta de hacienda guardaba el nombre y el CUIT **adentro del movimiento** y nada más:
+       * el cliente no llegaba nunca al maestro. Se ve en A-DAT-07 — a **Ballester hubo que crearlo
+       * a mano**. Contra la regla § 👥 Contrapartes: *si entra un comprobante, su contraparte tiene
+       * que quedar en el maestro*.
+       *
+       * Misma función que usan las ventas de MSA y el importador: un solo lugar para la regla.
+       */
+      if (cliente.cuit) {
+        const rc = await registrarContrapartes(supabase, [{ cuit: cliente.cuit, razon_social: cliente.nombre }], 'cliente')
+        if (rc.error) console.error('⚠️ No se pudo registrar el cliente de la venta:', rc.error)
+        else if (rc.creados > 0) toast.success(`Cliente ${cliente.nombre || cliente.cuit} dado de alta en Proveedores`)
+      }
 
       /**
        * Adjudicar las caravanas: quedan colgadas de la venta y dadas de baja del rodeo.
