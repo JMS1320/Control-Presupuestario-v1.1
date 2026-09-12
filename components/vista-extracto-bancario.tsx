@@ -730,17 +730,11 @@ export function VistaExtractoBancario() {
     setSelectorAbierto(false)
   }
 
-  // Aplicar filtros
-  const aplicarFiltros = () => {
-    cargarMovimientos({
-      estado: filtroEstado,
-      busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros,
-      categEspecial: filtroCategEspecial || undefined,
-      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined,
-      filtroNota: filtroNota !== 'todas' ? filtroNota : undefined
-    })
-  }
+  /**
+   * El botón «Filtrar». También armaba su propio objeto y **tampoco pasaba fechas, montos ni
+   * detalle** (A-BUG-155): apretarlo después de poner un rango de fechas las descartaba en silencio.
+   */
+  const aplicarFiltros = () => cargarMovimientos(construirFiltros())
 
   // Formatear moneda
   const formatCurrency = (amount: number) => {
@@ -1989,15 +1983,36 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Aplicar filtros avanzados extracto bancario
-  const aplicarFiltrosAvanzados = () => {
+  /**
+   * 🧹 **TODOS los filtros activos, en un solo objeto** (A-BUG-155).
+   *
+   * ## El bug que resuelve
+   * Cada chip de la barra armaba **su propio** objeto —`{ estado, busqueda, limite }`— y lo mandaba
+   * a `cargarMovimientos`. Todo lo que no nombraba **se perdía**: fechas, montos, detalle,
+   * categorías, notas. Reportado por el usuario conciliando: *«pongo filtro hasta tal fecha y
+   * después pongo no conciliados, y me vuelve a mostrar todo»*.
+   *
+   * 🧨 **Y lo grave no es el click de más**: la lista vuelve a traer TODO, así que se puede estar
+   * mirando «los pendientes de todo el extracto» creyendo que son «los pendientes hasta el 18/06».
+   * Un filtro que se va solo **no avisa que se fue**.
+   *
+   * ## ⚠️ Los `overrides` NO son un lujo: son la trampa de React
+   * `setFiltroEstado('pendiente')` **no actualiza el estado en esta vuelta**. Si el chip llamara a
+   * `construirFiltros()` a secas después de setear, el objeto saldría con el valor **viejo** y la
+   * pantalla mostraría el filtro anterior — un bug peor que el original, porque el chip se vería
+   * apretado y la lista diría otra cosa.
+   *
+   * 👉 **El valor nuevo SIEMPRE va como override**, nunca se lee del estado recién seteado.
+   *
+   * 📌 Un `undefined` explícito en `overrides` **apaga** ese filtro (el spread lo pisa igual), que
+   * es lo que necesita un chip que funciona como interruptor.
+   */
+  const construirFiltros = (overrides: Record<string, any> = {}) => {
     const filtros: any = {
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros
+      limite: limiteRegistros,
     }
-
-    // Agregar filtros adicionales
     if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
@@ -2007,9 +2022,11 @@ export function VistaExtractoBancario() {
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
     if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
     if (filtroNota !== 'todas') filtros.filtroNota = filtroNota
-
-    cargarMovimientos(filtros)
+    return { ...filtros, ...overrides }
   }
+
+  // Aplicar filtros avanzados extracto bancario
+  const aplicarFiltrosAvanzados = () => cargarMovimientos(construirFiltros())
 
   // Limpiar filtros avanzados
   const limpiarFiltrosAvanzados = () => {
@@ -2026,7 +2043,16 @@ export function VistaExtractoBancario() {
     setSoloSinRevisar(false)
     setCategsFiltro(null)
     setCategFiltroBusqueda('')
+    /**
+     * ⚠️ Estos dos faltaban (A-BUG-155). Limpiaba doce filtros y dejaba los dos chips puestos:
+     * el chip se veía **activo** y la consulta ya no lo aplicaba. Es el mismo desacuerdo entre lo
+     * que la pantalla dice y lo que la lista muestra, por la puerta de al lado — y acá es peor,
+     * porque el control **parece** puesto.
+     */
+    setFiltroRevisado('todas')
+    setFiltroNota('todas')
 
+    // Reset completo: acá SÍ va el objeto mínimo — se limpió todo, no hay nada que preservar.
     cargarMovimientos({
       estado: 'Todos',
       limite: limiteRegistros
@@ -2469,7 +2495,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('pendiente')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'pendiente', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'pendiente' }))
                   }}
                 >
                   Pendientes ({estadisticas.pendientes})
@@ -2481,7 +2507,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('auditar')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'auditar', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'auditar' }))
                   }}
                 >
                   Auditar ({estadisticas.auditar})
@@ -2493,7 +2519,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroCategEspecial(filtroCategEspecial === 'invalida' ? null : 'invalida')
                     setFiltroEstado('Todos')
-                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida' }))
                   }}
                 >
                   CATEG Inválida
@@ -2505,7 +2531,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroCategEspecial(filtroCategEspecial === 'sin_categ' ? null : 'sin_categ')
                     setFiltroEstado('Todos')
-                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ' }))
                   }}
                 >
                   Sin CATEG ({estadisticas.sin_categ})
@@ -2517,7 +2543,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('conciliado')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'conciliado', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'conciliado' }))
                   }}
                 >
                   Conciliados ({estadisticas.conciliados})
@@ -2528,7 +2554,7 @@ export function VistaExtractoBancario() {
                   onChange={(e) => {
                     const nuevo = e.target.value as 'todas' | 'revisadas' | 'no_revisadas'
                     setFiltroRevisado(nuevo)
-                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, filtroRevisado: nuevo !== 'todas' ? nuevo : undefined })
+                    cargarMovimientos(construirFiltros({ filtroRevisado: nuevo !== 'todas' ? nuevo : undefined }))
                   }}
                   className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroRevisado !== 'todas' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-600 border-rose-300'}`}
                 >
@@ -2546,14 +2572,7 @@ export function VistaExtractoBancario() {
                   onChange={(e) => {
                     const nuevo = e.target.value as 'todas' | 'con_nota' | 'sin_nota'
                     setFiltroNota(nuevo)
-                    cargarMovimientos({
-                      estado: filtroEstado,
-                      busqueda: busqueda.trim() || undefined,
-                      limite: limiteRegistros,
-                      categEspecial: filtroCategEspecial || undefined,
-                      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined,
-                      filtroNota: nuevo !== 'todas' ? nuevo : undefined,
-                    })
+                    cargarMovimientos(construirFiltros({ filtroNota: nuevo !== 'todas' ? nuevo : undefined }))
                   }}
                   title="Filtrar por las notas que dejaste con el 📝 en cada movimiento"
                   className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroNota !== 'todas' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300'}`}
@@ -2571,10 +2590,27 @@ export function VistaExtractoBancario() {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
                       setFiltroRevisado('todas')
-                      // Faltaba limpiarlo también acá: un «Limpiar» que deja un filtro puesto es
-                      // peor que no tenerlo — la lista queda recortada y el botón dice lo contrario.
+                      // Un «Limpiar» que deja un filtro puesto es peor que no tenerlo: la lista
+                      // queda recortada y el botón dice lo contrario.
                       setFiltroNota('todas')
-                      cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                      /**
+                       * ⚠️ Acá los overrides van **al revés** que en los chips: hay que APAGAR
+                       * explícitamente lo que se acaba de limpiar.
+                       *
+                       * Es la misma trampa de React por el otro lado — `construirFiltros()` a secas
+                       * leería el estado **viejo** y volvería a aplicar justo los filtros que este
+                       * botón acaba de sacar. Quedaría un «Limpiar» que no limpia nada, que es
+                       * exactamente el bug que este arreglo vino a cerrar (A-BUG-155).
+                       *
+                       * 📌 Este botón sólo limpia los de ESTA barra. Las fechas, los montos y el
+                       * detalle son de «Avanzados» y tienen su propio limpiar — por eso se dejan.
+                       */
+                      cargarMovimientos(construirFiltros({
+                        estado: 'Todos',
+                        categEspecial: undefined,
+                        filtroRevisado: undefined,
+                        filtroNota: undefined,
+                      }))
                     }}
                   >
                     <X className="h-3 w-3 mr-1" />
