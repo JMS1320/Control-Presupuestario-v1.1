@@ -1923,6 +1923,43 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Un `limit` alto NO garantiza traer todo: PostgREST corta en 1.000 `#bd #control #2026-09-12`
+
+Migrando 548 filas ([A-DAT-37](PENDIENTES.md#a-dat-37)), el control del final reportó
+**«no cierra por -25»** con la migración **perfectamente bien hecha**. Verificado contra la base:
+0 filas con `descripcion`, 128 con `detalle`, exactamente lo esperado.
+
+El control traía las filas así:
+
+```
+cuotas_egresos_sin_factura?select=id,descripcion,detalle&limit=5000
+```
+
+Hay **1.045** cuotas y `limit=5000`, así que parecía cubierto. **PostgREST devolvió 1.000**: el
+`max-rows` del servidor manda sobre el `limit` del pedido, y **no avisa** — la respuesta es un 200
+con menos filas.
+
+> 🔑 **El `limit` es un pedido, no una garantía.** Cuando el número importa, se cuenta **en el
+> servidor**, no trayendo filas:
+> ```
+> HEAD /rest/v1/tabla?select=id&<filtros>     con  Prefer: count=exact
+> → content-range: 0-999/1045                 ← el total real va DESPUÉS de la barra
+> ```
+
+### Y la lección de arriba, que es la que cuesta
+**Un control que grita de más enseña a ignorarlo**, y entonces deja de servir justo el día que
+tiene razón. Ya hay precedente en este proyecto (§ *Un control que grita de más, o que falla sin
+que haya nada roto*). La reacción correcta ante un control en rojo **no es** ni creerle ni
+ignorarlo: es **verificar contra la fuente** y después arreglar al que estaba mal — que esa vez fue
+el control.
+
+⚠️ Y el otro defecto del mismo control, más común de lo que parece: **el esperado se calculaba
+sobre el universo que la consulta había filtrado**, no sobre el total. Las filas que ya tenían
+`detalle` sin `descripcion` nunca entraron al cálculo. Cuando se cuenta un «antes y después», las
+dos puntas tienen que medir **el mismo universo**.
+
+---
+
 ## Elegir el destino por el NOMBRE de la columna y no por dónde se ve el dato `#bd #metodo #2026-09-12`
 
 Al hacer que el detalle del Extracto viajara a la cuota conciliada
