@@ -402,7 +402,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-BUG-155 | 🟢 | 🔴 **Alta** | 🧹 **ARREGLADO 2026-09-12 y verificado en pantalla (sin testear → [A-TEST-118](#a-test-118)) — los filtros rápidos del Extracto BORRABAN los otros filtros — hay que volver a apretar «Filtrar» cada vez.** Reportado por el usuario 2026-09-12 conciliando: *«si pongo filtro hasta tal fecha y después pongo no conciliados o pendientes, me vuelve a mostrar todo y debo volver a apretar filtrar hasta la fecha»*. Ídem con el filtro de notas. 🔑 **Cada chip arma su PROPIO objeto de filtros** con lo que le parece —`{ estado, busqueda, limite }`— y manda eso a `cargarMovimientos`, así que **todo lo que no nombró se pierde**: fechas, montos, detalle, contraparte, categorías. Hay **8 llamadores** y cada uno pasa un subconjunto distinto. ⚠️ **El filtro nuevo de notas nace con el mismo defecto** ([A-FEAT-130](#a-feat-130)): pasa `categEspecial` y `filtroRevisado` pero no las fechas. 🧨 **Lo grave conciliando no es el click de más**: la lista vuelve a traer TODO y el usuario puede creer que está mirando «los pendientes hasta el 18/06» cuando está mirando los pendientes de todo el extracto. 📌 El archivo ya tiene el patrón escrito para el rótulo —*«si mañana se agrega un filtro, se agrega ACÁ y el resto lo hereda solo»*— pero **el camino de CARGA no lo sigue** | → [A-BUG-155](#a-bug-155) `@extracto/conciliacion` |
 | A-TEST-118 | 🟢 | Test | ✅ **CORRIDO POR CLAUDE 2026-09-12** ([A-BUG-155](#a-bug-155)) — sin filtros **100** · desde 01/08 **36** · +pendientes **36** (la fecha **sobrevivió**; antes volvía a ~100) · +conciliados **0** · +sin nota **36**. 🔑 El caso de «conciliados» está para cerrar la duda del otro lado: *«nunca más que antes»* se cumple igual **si el chip se ignorara** — con dos estados que dan números distintos se prueba que sí se aplica. 🔴 **Lo tuyo, conciliando**: poné un rango de fechas y **encadená tres o cuatro** (estado → notas → revisadas → contraparte). El número **nunca puede subir** al agregar uno. Y probá **«Limpiar»**: tiene que apagar los chips **y** la lista al mismo tiempo — si el chip queda pintado y la lista se abre, volvió el desacuerdo | → [A-BUG-155](#a-bug-155) `@extracto/conciliacion` |
 | A-BUG-156 | 🔵 | 🔴 **Alta** | 🔗 **9 movimientos CONCILIADOS apuntan a cuotas que ya no existen — y nada lo impide, porque `template_cuota_id` NO es foreign key en ninguna de las 12 tablas que la tienen.** Encontrado el 2026-09-12 al mapear qué hay que proteger antes de construir [A-FEAT-131](#a-feat-131). De **491** links vivos, **9 están rotos**: 8 en `public.msa_galicia` y 1 en `public.pam_galicia_cc`. 🔑 **Los 9 tienen `template_id` VÁLIDO y `template_cuota_id` muerto** — la firma de una REGENERACIÓN de cuotas: se borró y recreó la tanda, los UUID nuevos no son los viejos, y el movimiento quedó colgado. ⚠️ **Y están entre los importes que el usuario estaba conciliando**: `468.762,23` (16/03 y 16/06) y `1.042.045,82` (16/06), los pagos agrupados de Red Vial. 🧨 **El movimiento sigue diciendo `conciliado`**: la pantalla lo muestra cerrado, pero no se puede saber **contra qué cuota** — la conciliación existe como estado y no como vínculo. 📌 Las 12 tablas: `msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma.ma_galicia`, `ma.tarjeta_visa`, `msa.caja_ams`, `msa.caja_general`, `msa.caja_sigot`, `msa.tarjeta_visa_business`, `pam.tarjeta_visa`. 🔎 **Antes de poner la FK hay que decidir qué pasa con los 9** (§ 🛑 Datos: no se tocan sin permiso) — y **`ON DELETE SET NULL` sería lo PEOR acá**: borraría la última pista de contra qué estaba conciliado | → [A-FEAT-131](#a-feat-131) `@extracto/conciliacion @templates` |
-| A-FEAT-131 | 🔵 | 🔴 **Alta** | ✏️ **EDITAR UNA CAMPAÑA DE TEMPLATES CON APERTURA — ver el template, sus cuotas, editar sus datos, y que los LINKS CONCILIADOS SOBREVIVAN A CUALQUIER COSA QUE SE HAGA.** Pedido del usuario 2026-09-12, textual: *«debería ser una opción de editar con apertura (…) debo poder en la herramienta ver el template, sus cuotas y editar sus datos. El tema caliente es que si hay cosas conciliadas, sea lo que sea que yo haga, los links de códigos deben perdurar. Eventualmente advertir: si cambio una cuota a otra fecha o monto, hace el check al momento, se fija contra qué está vinculado y advierte que tal vez estoy por cambiar algo erróneamente porque coincide proveedor, fecha, monto contra salida bancaria por ej.»*. 🕳️ **El hueco es real y está escrito en el código**: `generador-renovacion-campana.tsx` dice literal *«Editar sus cuotas todavía no se hace desde acá — se editan en Templates»*, y el modal de «agregar cuota» de Templates y Cash Flow filtra `tipo_template = 'abierto'`, así que **un template `fijo` no aparece nunca**. Caso que lo destapó: `Red Vial Cuota Lote Puerto` es `fijo` de 4 cuotas y hay que llevarlo a 6 — hoy no hay pantalla que lo permita. 🔒 **El invariante que manda sobre el diseño**: editar NO puede pasar por borrar-y-recrear cuotas, que es justo lo que ya rompió 9 vínculos ([A-BUG-156](#a-bug-156)) — las cuotas con link se **modifican en su lugar, conservando el `id`**, y agregar/quitar toca sólo las que no tienen nada enganchado. 🚨 **La advertencia va ANTES de guardar, no después**: al cambiar fecha o monto de una cuota vinculada, mirar contra qué está conciliada y avisar si el cambio la aleja de su movimiento bancario — o si la acerca a OTRO (mismo proveedor, misma fecha, mismo importe), que es el error que el usuario quiere que el sistema vea por él. 📌 Es la § 🧮 *Todo desarrollo termina con su control* aplicada a la edición: el control corre **en el momento del cambio**, con el dato a la vista | → [A-FEAT-131](#a-feat-131) `@templates/editar @cashflow` |
+| A-FEAT-131 | 🟢 | 🔴 **Alta** | ✏️ **HECHO 2026-09-12 y verificado en pantalla con Playwright (sin testear → [A-TEST-119](#a-test-119)) — EDITAR UNA CAMPAÑA DE TEMPLATES CON APERTURA — ver el template, sus cuotas, editar sus datos, y que los LINKS CONCILIADOS SOBREVIVAN A CUALQUIER COSA QUE SE HAGA.** Pedido del usuario 2026-09-12, textual: *«debería ser una opción de editar con apertura (…) debo poder en la herramienta ver el template, sus cuotas y editar sus datos. El tema caliente es que si hay cosas conciliadas, sea lo que sea que yo haga, los links de códigos deben perdurar. Eventualmente advertir: si cambio una cuota a otra fecha o monto, hace el check al momento, se fija contra qué está vinculado y advierte que tal vez estoy por cambiar algo erróneamente porque coincide proveedor, fecha, monto contra salida bancaria por ej.»*. 🕳️ **El hueco es real y está escrito en el código**: `generador-renovacion-campana.tsx` dice literal *«Editar sus cuotas todavía no se hace desde acá — se editan en Templates»*, y el modal de «agregar cuota» de Templates y Cash Flow filtra `tipo_template = 'abierto'`, así que **un template `fijo` no aparece nunca**. Caso que lo destapó: `Red Vial Cuota Lote Puerto` es `fijo` de 4 cuotas y hay que llevarlo a 6 — hoy no hay pantalla que lo permita. 🔒 **El invariante que manda sobre el diseño**: editar NO puede pasar por borrar-y-recrear cuotas, que es justo lo que ya rompió 9 vínculos ([A-BUG-156](#a-bug-156)) — las cuotas con link se **modifican en su lugar, conservando el `id`**, y agregar/quitar toca sólo las que no tienen nada enganchado. 🚨 **La advertencia va ANTES de guardar, no después**: al cambiar fecha o monto de una cuota vinculada, mirar contra qué está conciliada y avisar si el cambio la aleja de su movimiento bancario — o si la acerca a OTRO (mismo proveedor, misma fecha, mismo importe), que es el error que el usuario quiere que el sistema vea por él. 📌 Es la § 🧮 *Todo desarrollo termina con su control* aplicada a la edición: el control corre **en el momento del cambio**, con el dato a la vista | → [A-FEAT-131](#a-feat-131) `@templates/editar @cashflow` |
+| A-TEST-119 | 🟢 | Test | ✅ **CORRIDO POR CLAUDE 2026-09-12** ([A-FEAT-131](#a-feat-131)) — sobre el caso real *Red Vial Cuota Lote Puerto*: el editor abre, muestra **las 4 cuotas**, declara **2 movimientos conciliados**, avisa **en rojo** al cambiar el monto de la cuota conciliada (*«esta cuota está conciliada y el cambio la deja sin cerrar»*) y suma la **5ª cuota**. Cero escritura — salió por Cancelar — y **0 errores de JS**. 🔴 **Lo tuyo, y es lo que yo no puedo probar sin escribir**: agregarle de verdad las **2 cuotas** que faltan a Lote Puerto y **apretar Guardar**. Después verificá las tres cosas que importan: (1) las cuotas 1 y 2 **siguen conciliadas** contra sus movimientos del 16/03 y el 16/06 — el 🔗 tiene que seguir ahí; (2) el Cash Flow muestra las cuotas nuevas; (3) volvé a abrir el editor y fijate que la **numeración** quedó 1..6 por fecha. ⚠️ **Y el caso adversario**: cambiale la fecha a una cuota conciliada más de 5 días, mirá el aviso rojo, y **cancelá** — no tiene que haber quedado nada tocado 📌 El botón dice *«Guardar igual (hay avisos en rojo)»* a propósito: el aviso **no bloquea**, porque a veces el que está mal es el dato viejo | → [A-FEAT-131](#a-feat-131) `@templates/editar` |
 | A-DEC-22 | 🔵 | **Decisión** | 🧪 **LAS TRES CAPAS DE TEST — dónde se prueba cada cosa, y cuántos casos aguanta cada capa.** Propuesta entregada el 2026-09-10 (la sesión murió por corte de luz **antes** de que el usuario decidiera; vivía sólo en la transcripción). El dato que la origina: de los **8 bugs** del 09-10/09, las suites `probar*` —13 archivos, +200 casos— encontraron **cero**; los encontraron el usuario (4), el ensayo contra datos reales (2), leer el render (1) y **Playwright en su primera corrida** (1, → [A-BUG-144](#a-bug-144)). 🔑 **Seguir invirtiendo en la capa 1 es trabajar donde hay luz.** Las tres capas y su techo → dossier | → [A-DEC-22](#a-dec-22) `@testing` |
 | A-FEAT-128 | 🔵 | Media | 📍 **Llevar al RENGLÓN, no sólo a la pantalla.** Preguntado por el usuario 2026-09-09: *«qué tan difícil es que me lleve al lugar?»*. **Dentro del Presupuesto: chico** (~medio día) — `expandidos` ya es estado por clave de agrupador, y falta sólo un ancla en la fila: hoy tienen `key` de React, que no llega al DOM (grep de `scrollIntoView`/`id=`/`data-fila` en la grilla da **0**). **A otra pantalla: mediano** — hay que tocar `vista-templates-egresos.tsx`, grande y de otro dominio, y acordar un contrato para que el evento lleve el id y esa vista lo ponga en su buscador. 🔑 **El 80 % del valor está en el primero y sale barato** | → [A-FEAT-128](#a-feat-128) `@presupuesto @recorrido` |
 | A-DAT-31 | 🔵 | Dato | ⚠️ **`avisoFaltaGenerar` cuenta sobre los 24 meses, y quizá debería contar sobre la campaña en curso.** Detectado al pasar el 2026-09-10 (no se tocó — § los 4 estados). El cartel dice *«falta generar la campaña de 35 templates … 24 meses, $185.537.609»*, pero por `MODULO_TEMPLATES.md` § 13 la campaña que hay que generar es **la en curso**, no dos años. Si es así, el número está inflado y empuja a lo mismo que la decisión prohíbe. **Hay que mirarlo con el usuario antes de tocar nada** | → [A-DAT-31](#a-dat-31) `@presupuesto @egresos` |
@@ -14282,6 +14283,148 @@ con pago **$385.093,90**, base **$318.259,43** y retención **$1.885,19**.
 - Cancelar **en el medio** (después de la primera) → la primera queda paga sin retención y las otras
   dos **sin tocar**; no debe quedar ninguna a medias.
 - Una FC chica sola, bajo el mínimo → se paga sin retención **y NO aparece en el TXT**.
+
+## <a id="a-bug-156"></a>A-BUG-156 — 9 vínculos conciliados apuntan a cuotas que ya no existen 🔗
+
+**Encontrado el 2026-09-12**, mapeando qué había que proteger antes de construir
+[A-FEAT-131](#a-feat-131). No lo reportó nadie: **no se ve desde ninguna pantalla.**
+
+### El número
+De **491** movimientos bancarios conciliados contra una cuota de template, **9 apuntan a cuotas que
+no existen**: 8 en `public.msa_galicia` y 1 en `public.pam_galicia_cc`.
+
+### Por qué nada lo impidió
+`template_cuota_id` existe en **12 tablas** de 4 schemas — `msa_galicia`, `pam_galicia`,
+`pam_galicia_cc`, `ma.ma_galicia`, `ma.tarjeta_visa`, `msa.caja_ams`, `msa.caja_general`,
+`msa.caja_sigot`, `msa.tarjeta_visa_business`, `pam.tarjeta_visa` — y **en ninguna es foreign key**.
+Es un UUID suelto con nombre de vínculo.
+
+> 🔑 **Un vínculo sin FK no es un vínculo: es una convención.** Y una convención la rompe cualquiera
+> que escriba SQL sin acordarse de ella, incluido el Claude de dentro de tres meses.
+
+La base **no puede** avisar de lo que no sabe que es una referencia: no hay cascade, no hay error, no
+hay `NOT NULL` violado. La cuota se va y el movimiento se queda hablando de un muerto.
+
+### La firma dice qué pasó
+Los 9 tienen **`template_id` válido y `template_cuota_id` muerto**. O sea: el template sigue ahí y la
+cuota no. Eso es **una regeneración** — borrar la tanda de cuotas y volver a crearla. Los UUID nuevos
+no son los viejos, y el movimiento apunta a los viejos.
+
+📌 **Y no fue la app**: hoy no hay un solo `.delete()` sobre `cuotas_egresos_sin_factura` en todo el
+repositorio (verificado 2026-09-12). Entró por SQL a mano, por un import, o por código que ya no
+está. Lo cual no consuela: **significa que puede volver a pasar por el mismo camino**.
+
+### Qué se ve en pantalla mientras tanto
+El movimiento sigue diciendo **`conciliado`**. Está cerrado para la vista y **no cierra contra nada**:
+no hay forma de saber contra qué cuota se había conciliado. La conciliación sobrevive como *estado* y
+no como *vínculo*, que es la mitad que sirve.
+
+⚠️ **Y están justo entre los importes que se estaban conciliando**: `468.762,23` (16/03 y 16/06) y
+`1.042.045,82` (16/06) — los pagos agrupados de Red Vial que el usuario estaba tratando de cuadrar.
+
+### Qué hacer, y qué NO
+La FK es lo que corresponde, pero **primero hay que decidir qué pasa con los 9** (§ 🛑 Datos: no se
+tocan sin permiso), porque una FK no se puede agregar con filas que la violan.
+
+🚨 **`ON DELETE SET NULL` sería lo PEOR acá.** Suena prolijo y es exactamente el daño: borraría el
+único rastro de contra qué estaba conciliado el movimiento. La opción correcta es `ON DELETE
+RESTRICT` — que la base **se niegue** a borrar una cuota que alguien está mirando. Es el mismo
+principio que [A-FEAT-131](#a-feat-131) hace cumplir del lado de la app: **una cuota con vínculo no
+se borra, se desactiva.**
+
+📌 El editor nuevo ya no puede causar esto (no emite ningún `DELETE`), pero **la app no es la única
+que escribe en esta base**. La FK es lo que cubre el resto.
+
+---
+
+## <a id="a-feat-131"></a>A-FEAT-131 — Editar una campaña de templates con apertura ✏️
+
+**HECHO 2026-09-12** · verificado en pantalla con Playwright · sin testear →
+[A-TEST-119](#a-test-119) · rama `jms/editar-campana-templates`
+
+### Lo que pidió el usuario, textual
+> *«Debería ser una opción de editar con apertura. Siempre están las funciones que te he pedido que
+> deben estar, pero debo poder en la herramienta ver el template, sus cuotas y editar sus datos. El
+> tema caliente es que si hay cosas conciliadas, sea lo que sea que yo haga, los links de códigos
+> deben perdurar. Eventualmente advertir: si cambio una cuota a otra fecha o monto, hace el check al
+> momento, se fija contra qué está vinculado y advierte que tal vez estoy por cambiar algo
+> erróneamente porque coincide proveedor, fecha, monto contra salida bancaria por ej.»*
+
+### El hueco era real y estaba escrito en el código
+El caso: **`Red Vial Cuota Lote Puerto`** — un plan de **4 cuotas** al que hay que agregarle **2**.
+No había pantalla que lo permitiera, y por tres razones que se tapaban entre sí:
+
+| Dónde | Qué pasaba |
+|---|---|
+| **Templates** | la tabla es de **cuotas sueltas**, no de templates: se edita celda por celda y no hay dónde decir *«agregale una cuota a este plan»* |
+| **El modal «agregar cuota»** | filtra `tipo_template = 'abierto'`, y éste es **`fijo`** — nunca aparece en la lista |
+| **Renovar campaña** | decía **literal**: *«Editar sus cuotas todavía no se hace desde acá — se editan en Templates»*. Y en Templates tampoco |
+
+📌 **Un hueco declarado en un comentario no está registrado.** Esa frase estuvo ahí sin ID hasta hoy,
+así que nunca entró a ninguna lista de trabajo — se leía cuando ya estabas trabado.
+
+### El invariante manda sobre el diseño
+El vínculo entre un movimiento bancario y una cuota **es el `id` de la cuota**. No hay nada más.
+Y como no es FK ([A-BUG-156](#a-bug-156)), perderlo no da error. De ahí las tres reglas:
+
+**1 · Editar es `UPDATE` por `id`. Nunca borrar y recrear.** Cambiar fecha o monto no cambia la
+identidad: es la misma cuota con otro dato.
+
+**2 · Quitar una cuota la DESACTIVA.** `estado = 'desactivado'`, que ya existe en el modelo y la vista
+ya lo esconde. **Vale también para las que no tienen nada enganchado**, a propósito (§ `CLAUDE.md`
+🛑 Datos: *nada destructivo, nunca*): el `id` es la única pista de contra qué estaba conciliado algo.
+🔒 **No hay un solo `DELETE` en todo el camino de guardado.**
+
+**3 · `numero_cuota` se recalcula por fecha, pero no es la identidad.** Que la 2 pase a ser 3 al
+intercalar una anterior es cosmético; por eso se renumera **al final**, después de que las cuotas y
+sus vínculos ya estén bien.
+
+### El check, y por qué corre mientras se tipea
+El usuario pidió *«hace el check al momento»*, y ahí está toda la diferencia: un control que aparece
+al apretar **Guardar** llega cuando la decisión ya se tomó, y lo único que puede hacer es dar trabajo
+de más. Acá el aviso sale **pegado a la fila** en cada tecla.
+
+| Nivel | Código | Cuándo |
+|---|---|---|
+| 🔴 | `VINCULO_SE_ROMPE` | la cuota está conciliada y el cambio la **aleja** de su movimiento |
+| 🟠 | `COINCIDE_CON_OTRO` | el valor nuevo cae sobre un movimiento que **ya es de otra cuota** |
+| 🔵 | `SE_ACERCA` | el valor nuevo cae sobre una salida **sin conciliar** — probablemente sea lo que buscabas |
+| 🟠 | `DESACTIVA_VINCULADA` | se quitó una cuota que tiene vínculo: se desactiva, no se borra |
+| 🟠 | `EDITA_PAGADA` | dice `pagado` pero **ningún movimiento la señala**: el estado no sale de una conciliación |
+
+🔑 **El criterio de coincidencia es el MISMO que el del motor** — importe exacto y ≤ 5 días
+(`useMotorConciliacion.buscarEnPool`) — y eso es una decisión, no una casualidad. Con un criterio
+propio más laxo avisaría de matches que el motor **nunca va a hacer**, y la advertencia se vuelve
+ruido; con uno más estricto callaría justo los casos que el motor sí agarra solo.
+
+⚠️ **El aviso rojo NO bloquea.** El botón pasa a decir *«Guardar igual (hay avisos en rojo)»*. A veces
+el que está mal es el dato viejo, y un control que impide corregirlo deja de ser un control y pasa a
+ser un obstáculo.
+
+### Dónde vive
+| Archivo | Qué hace |
+|---|---|
+| `lib/templates/editar-campana.ts` | el plan y los avisos. **Puro** — sin React ni Supabase. 13 casos en `npm run probar` |
+| `lib/templates/cargar-vinculos.ts` | busca los movimientos reales en las **12 tablas**, desde `CUENTAS_BANCARIAS` |
+| `components/editor-campana-template.tsx` | la pantalla |
+
+📌 **Se mira más de una tabla a propósito.** Sólo `msa_galicia` cubriría 472 de 491 vínculos — y
+dejaría afuera justo los de PAM y MA, que son los que nadie recuerda. Si una tabla falla, **se dice
+cuál no se pudo mirar**: un vínculo no mirado se parece demasiado a uno que no existe
+(§ 🧮 *nada se descarta en silencio*).
+
+### Los dos caminos para llegar
+- **Egresos → Egresos sin Factura → Cuotas** — el ✏️ al lado del nombre del template, en cualquier fila.
+- **Renovar campaña → «Ya generados»** — el ✏️ *editar*, que reemplazó a la frase que decía que no se podía.
+
+### Lo que quedó afuera, dicho
+- **La FK sigue sin estar** → [A-BUG-156](#a-bug-156). El editor ya no puede romper un vínculo, pero
+  **la app no es la única que escribe en esta base**.
+- **No edita cuotas de varios templates a la vez.** Para eso está la edición masiva de la tabla.
+- **`fecha_vencimiento` se iguala a `fecha_estimada`** al crear una cuota nueva. Si el vencimiento es
+  otro, se corrige después desde la tabla — no se inventa un campo más en el editor sin que haga falta.
+
+
 ## 🗂️ Archivos que este documento reemplaza (ya borrados / a borrar)
 - `PENDIENTES_GENERAL.md`
 - `PENDIENTES_PUSH_A_MAIN.md`

@@ -2504,6 +2504,63 @@ todos lados.
 
 ---
 
+## ✏️ Templates → editar una campaña (ver el template y sus cuotas juntos)
+
+*Sirve para lo que la grilla no deja hacer: **agregarle una cuota a un plan**, cambiarle las fechas o
+los montos a varias, o corregir los datos del template — todo en la misma pantalla.*
+
+### Cómo se abre
+Dos caminos, el mismo editor:
+
+- **Egresos → Egresos sin Factura → Cuotas** — al lado del nombre del template, en cualquiera de sus
+  filas, hay un **✏️**. Da igual cuál fila: abre el template entero.
+- **Renovar campaña → «Ya generados en …»** — el **✏️ editar** de cada template de la lista.
+
+### Qué muestra
+Arriba, **los datos del template**: nombre, proveedor, quién cobra, CUIT, categoría, centro de costo,
+responsable y si está activo. Se editan escribiendo encima.
+
+Abajo, **todas sus cuotas**, ordenadas por fecha, con su número, su fecha, su monto y su estado.
+
+Al final del todo dice cuántos **movimientos bancarios conciliados** dependen de estas cuotas.
+
+### El candado verde 🔗
+Una cuota con un **🔗 verde** al lado del estado está **conciliada contra un movimiento bancario**.
+
+> **Podés editarla igual.** Lo único que el editor no hace nunca es **borrar** una cuota: cuando
+> apretás *Quitar*, la cuota se **desactiva** y el vínculo con el banco queda intacto. Así, si más
+> adelante hay que revisar contra qué se pagó algo, el rastro sigue estando.
+
+### Agregar cuotas
+**Agregar cuota** suma una fila al final, copiando el monto de la última y poniéndole una fecha tres
+meses después — casi siempre es lo que querés, y si no, lo cambiás. Los números se reordenan solos
+por fecha cuando guardás.
+
+### Los avisos mientras escribís
+Apenas cambiás una fecha o un monto, si hay algo para mirar aparece **debajo de esa misma fila**:
+
+| | Qué te está diciendo |
+|---|---|
+| 🔴 rojo | esa cuota **está conciliada** y con el valor nuevo **ya no coincide** con el movimiento del banco. El vínculo no se pierde, pero el movimiento va a seguir diciendo «conciliado» sin cerrar contra nada |
+| 🟠 naranja | con ese valor **coincide con otra salida bancaria que ya es de otra cuota**. Ojo: puede que estés corrigiendo la cuota equivocada |
+| 🔵 azul | con ese valor **coincide con una salida que todavía no está conciliada**. Suele ser buena noticia: es justo lo que estabas buscando |
+
+Un aviso rojo **no te frena**: el botón pasa a decir *«Guardar igual (hay avisos en rojo)»*. A veces
+el que está mal es el dato viejo y justamente lo venías a corregir.
+
+### Antes de guardar
+Arriba del botón aparece **la lista de lo que va a pasar**: qué cuota cambia, cuál se crea, cuál se
+desactiva. Las que cambian dicen **«mismo id — el vínculo se conserva»**.
+
+**Cancelar no guarda nada**, ni siquiera lo que ya habías escrito.
+
+⚠️ Si el editor no pudo revisar alguna cuenta bancaria, lo dice arriba en naranja. Significa que los
+avisos pueden estar incompletos — no que no haya vínculos.
+
+⚠️ Sin probar todavía → A-TEST-119
+
+---
+
 ## 🧾 Templates → activar y desactivar
 
 En la grilla de templates, con el **Modo Edición** prendido, la columna **Activo** se cambia con

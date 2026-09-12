@@ -1923,6 +1923,57 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Un vínculo sin FK no es un vínculo: es una convención `#bd #conciliacion #2026-09-12`
+
+Salió de mapear qué había que proteger antes de escribir el editor de campañas
+([A-FEAT-131](PENDIENTES.md#a-feat-131)), y el número apareció en la primera consulta:
+**de 491 movimientos bancarios conciliados contra una cuota de template, 9 apuntan a cuotas que ya no
+existen.**
+
+`template_cuota_id` está en **12 tablas** y **en ninguna es foreign key**. Así que cuando la cuota se
+va, no pasa nada: no hay error, no hay cascade, no hay `NOT NULL` violado. El movimiento sigue
+diciendo `conciliado` y no cierra contra nada.
+
+**La parte que hay que retener no es el bug: es cómo se descubrió.** Nadie lo reportó y no se ve
+desde ninguna pantalla — porque *la pantalla muestra el estado, no el vínculo*. Apareció con una
+consulta de dos líneas que nadie había corrido nunca:
+
+```sql
+SELECT count(*) FILTER (WHERE q.id IS NULL) AS huerfanos
+FROM public.msa_galicia m LEFT JOIN public.cuotas_egresos_sin_factura q ON q.id = m.template_cuota_id
+WHERE m.template_cuota_id IS NOT NULL;
+```
+
+> 🔑 **Donde haya un link lógico, hay un control gratis esperando: contar los que apuntan a la nada.**
+> Es la § 🧮 *Todo desarrollo termina con su control* aplicada al esquema, y vale para los otros links
+> sin FK de este proyecto — `comprobante_arca_id`, `sueldo_pago_id`, `anticipo_id`.
+
+### Tres cosas que casi se creen y son falsas
+
+**1 · «No hay FK porque cruzan schemas».** Lo decía `ARQUITECTURA-BD.md` § 6.2, y para éste **no es
+cierto**: `public.msa_galicia` → `public.cuotas_egresos_sin_factura` es el mismo schema. El motivo
+explicaba las cajas y las tarjetas, y se aplicó de más a las cuatro tablas de `public` — que son
+justo **las que tienen 488 de los 491 vínculos**. Una razón correcta para un caso se convirtió en
+coartada para todos.
+
+**2 · «Lo habrá roto la app».** No: hoy no hay **un solo `.delete()`** sobre
+`cuotas_egresos_sin_factura` en el repositorio. Entró por SQL a mano o por código que ya no está — lo
+cual es peor, porque significa que el camino sigue abierto y no está en ningún archivo donde mirarlo.
+
+**3 · «`ON DELETE SET NULL` es lo prudente».** Es lo **peor** acá. Borraría el único rastro de contra
+qué estaba conciliado el movimiento — exactamente el daño que se quiere evitar, hecho prolijamente.
+Va `RESTRICT`: que la base **se niegue**.
+
+### Cómo se lee la causa
+Los 9 tienen **`template_id` válido y `template_cuota_id` muerto**: el padre vive, el hijo no. Eso no
+es un borrado suelto, es **una regeneración** — borrar la tanda y recrearla. Los UUID nuevos no son
+los viejos.
+
+📌 Por eso el editor nuevo **no emite ni un `DELETE`**: quitar una cuota la desactiva. La regla no
+salió de una preferencia estética; salió de contar los muertos.
+
+---
+
 ## Leer el artefacto que SALE de la empresa — la capa que faltaba `#testing #control #2026-09-11`
 
 Bajar el PDF del Detalle de Pago **y leerlo** encontró **cuatro bugs en una tarde**, dos de los
