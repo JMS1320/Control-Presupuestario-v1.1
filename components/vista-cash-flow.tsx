@@ -14,6 +14,7 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { calcularRetencion } from "@/lib/sicore/minimo"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
@@ -1482,7 +1483,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // Antes se asumía la estimada, que casi nunca es la real porque el registro se hace el día en
     // que se paga. Y no es cosmético: la quincena de SICORE sale de esta fecha.
     if (cambiarEstadoLote && ESTADOS_QUE_PAGAN.includes(valorEstadoLote)) {
-      setModalFechaPago({ open: true, fecha: new Date().toISOString().split('T')[0] })
+      /**
+       * 🐞 **P-45 — si la fecha de pago YA es la que se iba a poner, no se pregunta.**
+       *
+       * El cartel arranca proponiendo **hoy**, así que cuando las filas ya tienen `fecha_pago` =
+       * hoy la pregunta es *«¿querés cambiar esta fecha por esta misma fecha?»*. Caso Longo, 18/08.
+       *
+       * 🔑 **La pregunta no se elimina, se saltea cuando no tiene nada que preguntar.** Existe por
+       * un motivo bueno (A-FEAT-22: la estimada casi nunca es la fecha real, y de ella sale la
+       * quincena de SICORE); lo que molesta no es que exista, es que aparezca cuando la respuesta
+       * ya está. Un cartel que se contesta solo enseña a despacharlo sin leer — y el día que
+       * pregunte algo distinto, se despacha igual.
+       */
+      const hoy = new Date().toISOString().split('T')[0]
+      const seleccionadas = Array.from(filasSeleccionadas)
+        .map(id => data.find(f => f.id === id))
+        .filter(Boolean) as CashFlowRow[]
+      // La decisión vive en `lib/pagos/preguntar-fecha-pago.ts`: ahí se prueba, y ahí está escrito
+      // que ante la duda SE PREGUNTA (no preguntar de menos escribe una fecha mala en SICORE).
+      if (hayQuePreguntarFechaPago(seleccionadas, hoy)) {
+        setModalFechaPago({ open: true, fecha: hoy })
+        return
+      }
+      // Ya la tienen: se sigue sin tocar la fecha, y se dice por qué no se preguntó.
+      toast.info(`${seleccionadas.length} registro(s) ya tienen fecha de pago ${hoy.split('-').reverse().join('/')}`,
+        { description: 'No se preguntó por la fecha porque ya es la que correspondía.' })
+      await ejecutarLote('ninguna', '')
       return
     }
 

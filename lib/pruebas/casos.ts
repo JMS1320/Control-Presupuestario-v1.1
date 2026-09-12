@@ -42,6 +42,7 @@ import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
+import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 
 export interface Resultado {
   caso: string
@@ -486,6 +487,31 @@ export function correrCasos(): Resultado[] {
   chequear("Sueldos", "Un pago sin nombre de empleado se muestra igual, no desaparece",
     "(sin nombre)", sinNombre[0]?.nombre ?? "(no salió)",
     sinNombre.length === 1 && sinNombre[0].nombre === "(sin nombre)", "A-FEAT-77")
+
+  // ── P-45 — cuándo NO hay que preguntar por la fecha de pago ─────────────────────────────────
+  const HOY = "2026-09-11"
+  const preguntar = (filas: Array<{ fecha_pago?: string | null }>) => hayQuePreguntarFechaPago(filas, HOY)
+
+  chequear("Fecha de pago", "Si TODAS ya tienen la fecha de hoy, no se pregunta",
+    "no pregunta", preguntar([{ fecha_pago: HOY }, { fecha_pago: HOY }]) ? "pregunta" : "no pregunta",
+    preguntar([{ fecha_pago: HOY }, { fecha_pago: HOY }]) === false, "P-45")
+
+  // 🔴 Los cuatro adversarios. Todos tienen que caer del lado de PREGUNTAR: no preguntar de menos
+  //    escribe una fecha equivocada, y de ella sale la quincena de SICORE.
+  chequear("Fecha de pago", "🔴 Si UNA tiene otra fecha, se pregunta por el lote entero",
+    "pregunta", preguntar([{ fecha_pago: HOY }, { fecha_pago: "2026-09-04" }]) ? "pregunta" : "no pregunta",
+    preguntar([{ fecha_pago: HOY }, { fecha_pago: "2026-09-04" }]) === true, "P-45")
+
+  chequear("Fecha de pago", "🔴 Si UNA no tiene fecha, se pregunta",
+    "pregunta", preguntar([{ fecha_pago: HOY }, { fecha_pago: null }]) ? "pregunta" : "no pregunta",
+    preguntar([{ fecha_pago: HOY }, { fecha_pago: null }]) === true, "P-45")
+
+  chequear("Fecha de pago", "🔴 Con la lista VACÍA se pregunta (no se asume nada)",
+    "pregunta", preguntar([]) ? "pregunta" : "no pregunta", preguntar([]) === true, "P-45")
+
+  chequear("Fecha de pago", "🔴 Sin fecha propuesta se pregunta",
+    "pregunta", hayQuePreguntarFechaPago([{ fecha_pago: HOY }], "") ? "pregunta" : "no pregunta",
+    hayQuePreguntarFechaPago([{ fecha_pago: HOY }], "") === true, "P-45")
 
   return r
 }
