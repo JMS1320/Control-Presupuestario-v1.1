@@ -382,6 +382,30 @@ las 13 que **sí** cruza clones: dos personas pueden inventar `A-BUG-95` sin toc
 git no ve nada raro hasta el merge. Vale igual: **pedir el número → escribir la fila y commitear →
 recién entonces trabajar**, y un chequeo de ID **vence** si entre consultar y escribir hubo una pausa.
 
+**4 · 🛑 LAS RAMAS DE OTRO NO SE BORRAN. NUNCA, Y NO LAS BORRA CLAUDE.**
+*Pedido del usuario 2026-09-12, al ir a limpiar las ramas ya mergeadas: **«lo de Javier nunca debes
+borrarlo tú, eso está en su territorio»**.*
+
+> **Claude borra sólo las ramas que creó Claude en esta máquina.** Una rama de otro desarrollador no
+> se borra ni aunque figure como mergeada.
+
+- **La regla § 🌿 «se borra al mergear» vale para las propias**, no para las ajenas. Que una rama
+  esté contenida en otra dice que sus commits están a salvo — **no dice que el dueño haya terminado
+  con ella**: puede estar usándola de base, puede tener trabajo local sin pushear que cuelga de ahí,
+  puede tener su preview de Vercel abierto para mostrarle algo a alguien.
+- ⚠️ **Y acá git NO protege.** `git branch -d` se niega si la rama local no está mergeada, pero
+  `git push origin --delete` **borra sin preguntar nada**. La red de seguridad que existe para el
+  código no existe para esto.
+- Si conviene limpiarla, **se le dice al dueño y la borra él**. Al 2026-09-12 las de Javier son
+  `feature/login-google`, `feature/perfil-imagen-preferencias` y `home-dashboard` — pero **el
+  criterio no es la lista, es de quién es**: ante la duda sobre una rama que Claude no creó, no se
+  borra.
+
+*Motivo: es el mismo principio que la regla 6 de la § siguiente (nada destructivo sobre lo ajeno),
+que estaba escrita sólo para archivos. Una rama es trabajo de alguien igual que un archivo, y
+borrarla del remoto es más difícil de deshacer que recuperar un archivo — del otro lado no queda ni
+el rastro de que existió.*
+
 **3 · Acceso al repo.** Javier necesita permiso de escritura en `JMS1320/Control-Presupuestario-v1.1`.
 Sin eso su push falla y termina en un **fork** — otro repositorio, invisible desde acá, que nadie
 mira hasta que es tarde.
