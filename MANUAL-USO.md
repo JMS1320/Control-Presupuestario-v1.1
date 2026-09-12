@@ -2504,6 +2504,99 @@ todos lados.
 
 ---
 
+## 📝 Extracto → trabajar con tus notas
+
+*La nota es el 📝 de cada movimiento: lo que dejás escrito mientras conciliás.*
+
+### Buscar adentro de las notas
+Al lado del chip `📝 Notas`, el campo **🔍 en mis notas…** busca **dentro del texto**. Escribí y
+apretá Enter (o salí del campo).
+
+Los dos se combinan y se suman a todo lo demás: fechas, estado, contraparte. El rótulo de filtros
+activos de arriba te dice todo lo que está puesto, y **«Limpiar» apaga también esta búsqueda**.
+
+### Anotar en todas las que estás viendo
+El botón **📝 Anotar los N** deja la misma nota en **todos los movimientos que tenés en pantalla** —
+no en una selección a mano. Por eso conviene filtrar primero: el filtro ya es el criterio.
+
+El cartel te dice **en cuántos va a escribir** antes de hacerlo. Tres modos:
+
+| Modo | Qué hace |
+|---|---|
+| **Agregar al final** | suma un renglón. **No pisa** lo que la nota ya decía |
+| **Reemplazar la nota** | deja sólo el texto nuevo |
+| **🧹 Borrar las notas** | las vacía. No se puede deshacer |
+
+### Que las notas se vayan al conciliar
+En la **edición masiva**, cuando ponés el estado en `conciliado`, aparece un tilde:
+**🧹 Borrar mis notas de los que se concilien**.
+
+Viene **apagado**: por defecto la nota se conserva. Tildalo cuando la nota era una pregunta que la
+conciliación ya contestó; dejalo apagado cuando dice algo que vas a querer leer después.
+
+---
+
+## 👤 Extracto → el proveedor sale del banco
+
+Cuando asignás una categoría por **edición masiva**, si el movimiento **no tiene proveedor** y el
+banco mandó el CUIT de quien cobró, se completa solo y te avisa cuántos llenó.
+
+- Los que **ya tenían** un nombre escrito **no se tocan**.
+- Si el CUIT **no está en Proveedores**, sale un aviso naranja con los CUIT. Conviene darlos de alta:
+  de ese maestro salen el CBU, los mails y el mensaje de transferencia.
+
+---
+
+## 🔁 Extracto → el detalle llega al template
+
+Si editás el **Detalle** de un movimiento que está conciliado contra una cuota de template, el mismo
+texto se escribe en la cuota, y te lo confirma. Son el mismo hecho visto de dos lados.
+
+Si el movimiento no está conciliado, se guarda y no pasa nada más.
+
+---
+
+## 📅 Templates → poner una cuota en pagado
+
+Al cambiar el **Estado** de una cuota a `pagar`, `preparado`, `pagado`, `conciliado` o `debito`, se
+abre un cartel preguntando **con qué fecha se pagó**, proponiendo hoy.
+
+**De esa fecha sale la quincena de SICORE**, así que conviene que sea la real y no la estimada.
+
+- Si pasás varias cuotas juntas con la edición masiva, pregunta **una sola vez** para el lote.
+- Si la cuota **ya tiene** esa misma fecha, no pregunta.
+- Con `pendiente`, `programado`, `crédito` o `anterior` **no pregunta**: no hay pago.
+
+---
+
+## ⌨️ Editar una celda: Ctrl+click, en cualquier grilla
+
+**Ctrl+click sobre una celda la pone en edición.** Vale igual en Cash Flow, en Templates y en el
+Extracto — ya no hace falta prender ningún modo antes.
+
+El **Modo Edición** sigue existiendo y sirve para otra cosa: pinta cuáles son las celdas editables y
+habilita la selección de varias filas para editarlas juntas.
+
+⚠️ La excepción es **Ctrl+Shift+click sobre el monto** en Templates, que convierte el template de
+Anual a Cuotas y viceversa: eso **sí** pide el Modo Edición, porque reescribe el plan entero.
+
+---
+
+## 🔎 Reglas de conciliación → encontrar una
+
+Arriba de la lista hay un buscador. Busca por **texto que la regla busca, categoría, detalle, centro
+de costo, códigos, tipo y número de orden** (podés escribir `#35`).
+
+Mira **sólo la cuenta elegida arriba**. Si no encuentra nada te lo recuerda, porque la regla puede
+estar cargada en otra cuenta.
+
+📌 Conviene buscar **antes de crear una regla nueva**: si ya hay una que matchea el mismo texto, gana
+la de orden más bajo y la nueva queda sin efecto sin avisar.
+
+⚠️ Sin probar todavía → A-TEST-120 a A-TEST-125
+
+---
+
 ## ✏️ Templates → editar una campaña (ver el template y sus cuotas juntos)
 
 *Sirve para lo que la grilla no deja hacer: **agregarle una cuota a un plan**, cambiarle las fechas o
