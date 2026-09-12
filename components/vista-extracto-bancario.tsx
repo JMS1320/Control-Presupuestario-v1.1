@@ -243,6 +243,12 @@ export function VistaExtractoBancario() {
   const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
   const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
   const [filtroRevisado, setFiltroRevisado] = useState<'todas' | 'revisadas' | 'no_revisadas'>('todas')
+  /**
+   * 📝 Filtro por NOTA DEL USUARIO — A-FEAT-130.
+   * Pedido 2026-09-11: *«poder filtrar por con mensaje de usuario —los que voy dejando en
+   * movimientos bancarios sin conciliar— y sin mensajes de usuario»*.
+   */
+  const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
@@ -410,10 +416,11 @@ export function VistaExtractoBancario() {
     if (busquedaDetalle.trim()) items.push(`detalle "${busquedaDetalle.trim()}"`)
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
+    if (filtroNota !== 'todas') items.push(filtroNota === 'con_nota' ? 'con nota mía' : 'sin nota mía')
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
   }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
-      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroCategEspecial])
+      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, filtroCategEspecial])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -730,7 +737,8 @@ export function VistaExtractoBancario() {
       busqueda: busqueda.trim() || undefined,
       limite: limiteRegistros,
       categEspecial: filtroCategEspecial || undefined,
-      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined
+      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined,
+      filtroNota: filtroNota !== 'todas' ? filtroNota : undefined
     })
   }
 
@@ -1998,6 +2006,7 @@ export function VistaExtractoBancario() {
     // categ multi-select se aplica client-side via movimientosVisibles
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
     if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
+    if (filtroNota !== 'todas') filtros.filtroNota = filtroNota
 
     cargarMovimientos(filtros)
   }
@@ -2527,7 +2536,33 @@ export function VistaExtractoBancario() {
                   <option value="no_revisadas">No revisadas ({estadisticas.sin_revisar})</option>
                   <option value="revisadas">Revisadas</option>
                 </select>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas') && (
+                {/* 📝 A-FEAT-130 — filtrar por MIS notas.
+                    Se usa el mismo `select`-chip que el filtro de al lado y no dos botones sueltos:
+                    son vecinos y hacen lo mismo (recortar la lista por un atributo), así que tienen
+                    que leerse como una familia. Dos controles con la misma función y dos formas
+                    distintas obligan a aprender cada uno por separado. */}
+                <select
+                  value={filtroNota}
+                  onChange={(e) => {
+                    const nuevo = e.target.value as 'todas' | 'con_nota' | 'sin_nota'
+                    setFiltroNota(nuevo)
+                    cargarMovimientos({
+                      estado: filtroEstado,
+                      busqueda: busqueda.trim() || undefined,
+                      limite: limiteRegistros,
+                      categEspecial: filtroCategEspecial || undefined,
+                      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined,
+                      filtroNota: nuevo !== 'todas' ? nuevo : undefined,
+                    })
+                  }}
+                  title="Filtrar por las notas que dejaste con el 📝 en cada movimiento"
+                  className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroNota !== 'todas' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300'}`}
+                >
+                  <option value="todas">📝 Notas: todas</option>
+                  <option value="con_nota">📝 Con nota mía</option>
+                  <option value="sin_nota">💬 Sin nota</option>
+                </select>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2536,6 +2571,9 @@ export function VistaExtractoBancario() {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
                       setFiltroRevisado('todas')
+                      // Faltaba limpiarlo también acá: un «Limpiar» que deja un filtro puesto es
+                      // peor que no tenerlo — la lista queda recortada y el botón dice lo contrario.
+                      setFiltroNota('todas')
                       cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
                     }}
                   >
