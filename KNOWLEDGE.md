@@ -1923,6 +1923,49 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Elegir el destino por el NOMBRE de la columna y no por dónde se ve el dato `#bd #metodo #2026-09-12`
+
+Al hacer que el detalle del Extracto viajara a la cuota conciliada
+([A-BUG-158](PENDIENTES.md#a-bug-158)), escribí en `cuotas_egresos_sin_factura.detalle` **porque se
+llama igual** que la columna del extracto. Esa columna está muerta: de **1.045 cuotas tenía UNA** —
+la que acababa de escribir yo—, ninguna pantalla la muestra y ningún código la lee.
+
+**Lo encontró el usuario en dos minutos**, editando el detalle y mirando Templates.
+
+### Por qué sobrevivió a todo
+| Control | Por qué no lo vio |
+|---|---|
+| `type-check` | la columna **existe**; el tipo está bien |
+| `npm run probar` | la lógica es pura y correcta: el destino es un detalle de IO |
+| Mi verificación **en la base** | consulté **la columna a la que había escrito**. Dio lo que esperaba |
+
+> 🔑 **Un `UPDATE` a una columna que existe pero nadie lee no falla nunca.** Es el mismo silencio del
+> `UPDATE` que matchea 0 filas (§ 👥 Contrapartes) y del `.eq()` sobre un campo que no existe: la
+> base contesta *«listo»* y no hay a quién reclamarle.
+
+### La regla que sale de acá
+**El destino de un dato se elige por dónde se VE, no por cómo se llama la columna.** Antes de
+escribir en una columna que no se conocía, dos preguntas de un minuto:
+
+```sql
+-- 1. ¿La usa alguien?  Si da 0 o 1, es una columna muerta.
+SELECT count(*) FILTER (WHERE col IS NOT NULL AND col <> '') FROM tabla;
+```
+```bash
+# 2. ¿La lee alguien?  Si no aparece en ninguna pantalla, escribir ahí es escribir en el vacío.
+grep -rn "\.col" --include=*.tsx components/ hooks/
+```
+
+### Y la parte que más duele: la respuesta ya estaba escrita
+No hacía falta deducir nada. `crearCuotaEnTemplate` —el motor, cuando una regla tiene
+`llena_template`— inserta `descripcion: regla.detalle || movimiento.descripcion`. **El sistema ya
+mapeaba `extracto.detalle` → `cuota.descripcion`**, y el Cash Flow lee de ahí. Buscar *cómo lo
+resuelve el código que ya existe* habría dado la respuesta antes de escribir la primera línea
+(§ `CLAUDE.md` 🔎 Buscar antes de escribir) — y es doblemente irónico, porque **la feature entera
+trataba de que el dato apareciera donde el usuario lo ve**.
+
+---
+
 ## Un vínculo sin FK no es un vínculo: es una convención `#bd #conciliacion #2026-09-12`
 
 Salió de mapear qué había que proteger antes de escribir el editor de campañas
