@@ -358,8 +358,47 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 ```
 
 ### 6.2 Links lógicos (SIN FK — los llena el motor/UI)
-- Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`. No hay constraint porque cruzan schemas.
+- Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`.
+
+  ⚠️ **El motivo escrito acá era «porque cruzan schemas», y para `template_cuota_id` NO es cierto**
+  (medido 2026-09-12 → [A-BUG-156](PENDIENTES.md#a-bug-156)). `public.msa_galicia.template_cuota_id`
+  apunta a `public.cuotas_egresos_sin_factura`: **mismo schema, FK perfectamente posible.** Lo mismo
+  para `pam_galicia` y `pam_galicia_cc`. El cross-schema explica las cajas y las tarjetas (`msa.*`,
+  `pam.*`, `ma.*`), no las cuatro tablas de `public` — que son **las que tienen 488 de los 491
+  vínculos vivos**.
+
+  🧨 **Y ya costó**: de esos 491, **9 apuntan a cuotas que no existen** — 8 en `msa_galicia`, 1 en
+  `pam_galicia_cc`. Los 9 con `template_id` válido y `template_cuota_id` muerto: la firma de una
+  regeneración de cuotas (borrar + recrear). El movimiento sigue diciendo `conciliado` y **no cierra
+  contra nada**. Sin FK la base no puede avisar: no sabe que eso es una referencia.
+
+  🔑 **Un vínculo sin FK no es un vínculo: es una convención.** El día que se ponga la constraint,
+  va **`ON DELETE RESTRICT`** y no `SET NULL` — `SET NULL` borraría el único rastro de contra qué
+  estaba conciliado el movimiento, que es exactamente el daño que se quiere evitar.
+
+  📌 **Las 12 tablas que tienen `template_cuota_id`**: `public.msa_galicia`, `public.pam_galicia`,
+  `public.pam_galicia_cc`, `ma.ma_galicia`, `ma.tarjeta_visa`, `msa.caja_ams`, `msa.caja_general`,
+  `msa.caja_sigot`, `msa.tarjeta_visa_business`, `pam.tarjeta_visa`. Quien toque cuotas tiene que
+  mirarlas **todas** — mirar sólo `msa_galicia` deja afuera justo las de PAM y MA.
 - **`pendientes_comentarios.pendiente_id` → un ID de `PENDIENTES.md`** (`'A-BUG-27'`). Es el único link que **no apunta a la BD sino a un archivo**: los pendientes viven en un `.md` versionado, no en una tabla. Ver § 6c.
+
+
+### 6.2-bis Tablas de RESPALDO de correcciones de datos (2026-09-12)
+
+Dos tablas nuevas, creadas al corregir datos viejos con permiso del usuario. **No son de la app**:
+ningún código las lee. Existen para que una corrección masiva **se pueda deshacer sin depender de
+que alguien se acuerde de cómo estaba** (§ `CLAUDE.md` 🛑 Datos: foto antes, restaurar después).
+
+| Tabla | Qué guarda | De dónde salió |
+|---|---|---|
+| `public.respaldo_a_dat_35` | `tabla`, `id`, `fecha`, `descripcion`, `detalle_antes`, `detalle_nuevo` de los **141** movimientos a los que se les rellenó el detalle | [A-DAT-35](PENDIENTES.md#a-dat-35) |
+| `public.respaldo_reglas_borradas` | la fila completa de las **6** reglas de conciliación inalcanzables que se borraron, + `motivo` | [A-DAT-36](PENDIENTES.md#a-dat-36) |
+
+🔑 **Revertir cualquiera de las dos es un `UPDATE`/`INSERT` desde su respaldo**, y eso es todo el
+punto: una corrección masiva sin foto previa no es reversible, es definitiva — y las definitivas
+sobre datos del usuario no se hacen.
+
+⚠️ **No se borran por prolijidad.** Pesan nada y son la única prueba de qué había antes.
 
 ### 6b-bis. RLS de las notas — el único caso de `anon` sólo-INSERT (2026-08-31)
 

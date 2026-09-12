@@ -4,6 +4,10 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
+import {
+  extraerCuitBancario as extraerCuitDelMovimiento,
+  buscarNombreProveedor as buscarNombreEnMaestro,
+} from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
@@ -244,31 +248,15 @@ export function useMotorConciliacion() {
   const normalizarCuit = (cuit: string | null | undefined): string =>
     (cuit || '').replace(/[-.\s]/g, '')
 
-  // Extraer CUIT válido de leyendas_adicionales_2 (si existe)
-  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null => {
-    // El tipo dice leyendas_adicionales2 pero BD devuelve leyendas_adicionales_2
-    const mov = movimiento as any
-    const valor = (mov.leyendas_adicionales_2 || mov.leyendas_adicionales2 || '').trim()
-    if (!valor) return null
-    // CUIT argentino: exactamente 11 dígitos, prefijo válido
-    if (!/^\d{11}$/.test(valor)) return null
-    const prefijo = parseInt(valor.substring(0, 2))
-    if ([20, 23, 24, 27, 30, 33, 34].includes(prefijo)) return valor
-    return null
-  }
+  // 👤 A-FEAT-132 — las dos salieron de acá a `lib/conciliacion/proveedor-del-movimiento.ts`.
+  // Vivían encerradas en este hook, así que el único que podía usarlas era el motor automático;
+  // el camino MANUAL —el que se usa justo cuando el automático no alcanzó— no tenía cómo, y el
+  // CUIT que el banco ya manda se tiraba. Acá quedan los adaptadores para no tocar los llamadores.
+  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null =>
+    extraerCuitDelMovimiento(movimiento)
 
-  // Buscar nombre del proveedor en BBDD proveedores por CUIT
-  const buscarNombreProveedor = async (cuit: string | null | undefined): Promise<string | null> => {
-    if (!cuit) return null
-    const cuitLimpio = cuit.replace(/[-\s]/g, '')
-    if (!cuitLimpio) return null
-    const { data } = await supabase
-      .from('proveedores')
-      .select('razon_social')
-      .eq('cuit', cuitLimpio)
-      .maybeSingle()
-    return data?.razon_social || null
-  }
+  const buscarNombreProveedor = (cuit: string | null | undefined): Promise<string | null> =>
+    buscarNombreEnMaestro(supabase, cuit)
 
   /**
    * Busca match en el Cash Flow.
@@ -762,10 +750,25 @@ export function useMotorConciliacion() {
               const provNombreRegla = await buscarNombreProveedor(cuitRegla)
 
               // Actualizar extracto con categ/detalle/estado y códigos de la regla
+              //
+              // 🏷️ **A-BUG-160** — acá faltaba `regla.detalle` y el renglón escribía `null`.
+              // El comentario de arriba ya decía «categ/**detalle**/estado de la regla» y la línea
+              // de `categ` sí tiene su fallback: es un olvido de una sola línea, con **74 reglas
+              // activas que tienen el detalle cargado** y no lo llenaban nunca.
+              //
+              // 🧨 Lo encontró el usuario conciliando un lote de FIMA (2026-09-12):
+              // *«se conciliaron bien, pero el tema es que no llenó detalle, y en la configuración
+              // creo que está puesto como debe llenar detalle»*. Tenía razón — las dos reglas de
+              // FIMA dicen `Rescate FIMA` / `Suscripcion FIMA`, y los 12 movimientos conciliados
+              // desde junio quedaron con `detalle = NULL`.
+              //
+              // 🔑 **Y el orden importa**: lo que el usuario ya escribió a mano **nunca se pisa**
+              // — es la misma precedencia del camino de Cash Flow de arriba. Una regla que
+              // sobrescribe una anotación manual convierte la automatización en pérdida de datos.
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || null,
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || regla.detalle || null,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,

@@ -25,6 +25,32 @@ export interface FilaConFechaPago {
 }
 
 /**
+ * 📅 **A-BUG-157 — los estados a partir de los cuales la fecha de pago importa.**
+ *
+ * El usuario, 2026-09-12: *«primero hubiera pensado que me pida fecha de pago, para cash flow como
+ * para templates, cuando paso a pagar o superior»*. Lo dijo después de pasar una cuota de Red Vial
+ * a `pagado` **sin que le preguntara nada** — y quedar sin fecha.
+ *
+ * 🔑 **La lista vive acá y no en cada pantalla.** Hasta el 2026-09-12 el gate existía **sólo en
+ * Cash Flow**, y Templates no preguntaba por ninguno de sus dos caminos (la celda `estado` y la
+ * edición masiva). Un criterio copiado en tres lados se desincroniza en el primero que se toca.
+ *
+ * **Qué entra y qué no**, que es la parte que hay que poder discutir:
+ * - `pagar` · `preparado` — la plata **está por salir** y ya hay una fecha real prevista. El
+ *   usuario los incluyó explícitamente (*«pagar o superior»*).
+ * - `pagado` · `conciliado` — la plata **ya salió**.
+ * - `debito` — salió sola; la fecha es la del débito, no la estimada.
+ * - ❌ `pendiente` · `programado` · `credito` · `anterior` · `desactivado` — **no hay pago**, así
+ *   que preguntar una fecha de pago sería inventar un dato. Es el otro modo de falla: un cartel que
+ *   aparece donde no corresponde enseña a despacharlo sin leer, igual que uno que se contesta solo.
+ */
+export const ESTADOS_QUE_PAGAN = ['pagar', 'preparado', 'pagado', 'conciliado', 'debito'] as const
+
+/** ¿Pasar a este estado implica que hay una fecha de pago real que registrar? */
+export const esEstadoQuePaga = (estado: string | null | undefined): boolean =>
+  !!estado && (ESTADOS_QUE_PAGAN as readonly string[]).includes(String(estado).toLowerCase().trim())
+
+/**
  * `true` si hay que abrir el cartel de la fecha.
  *
  * Sólo devuelve `false` cuando **todas** las filas ya tienen exactamente la fecha que se iba a

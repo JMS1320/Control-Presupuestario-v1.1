@@ -90,6 +90,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
      * no sobre las que hay — y ese número parece una respuesta cuando es un recorte.
      */
     filtroNota?: 'todas' | 'con_nota' | 'sin_nota'
+    /** 🔍 A-FEAT-134 — texto a buscar DENTRO de la nota del usuario. Se combina con `filtroNota`. */
+    busquedaNota?: string
   }) => {
     try {
       setLoading(true)
@@ -159,6 +161,26 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.not('nota_operador', 'is', null).neq('nota_operador', '')
       } else if (filtros?.filtroNota === 'sin_nota') {
         query = query.or('nota_operador.is.null,nota_operador.eq.')
+      }
+
+      /**
+       * 🔍 **A-FEAT-134 — buscar DENTRO de la nota.** Pedido del usuario 2026-09-12:
+       * *«que pueda filtrar según anotado dentro. Filtro tipo excel»*.
+       *
+       * No reemplaza a `filtroNota` (con/sin), lo afina: buscar «FIMA» entre las notas es otra
+       * pregunta que «tiene nota». Los dos se combinan — la consulta los aplica juntos.
+       *
+       * 🔑 **Se filtra acá y no en pantalla**, por el mismo motivo que A-FEAT-130: con un
+       * límite de filas, buscar después de traer devolvería *«3 que dicen FIMA»* sobre las que
+       * entraron y no sobre las que hay — un recorte con cara de respuesta.
+       *
+       * ⚠️ Se escapan `%` `_` y `,`: el primero convertiría la búsqueda en «todo» y la coma
+       * **rompe el parser de PostgREST**, que la usa para separar argumentos.
+       */
+      const textoNota = (filtros?.busquedaNota || '').trim()
+      if (textoNota) {
+        const seguro = textoNota.replace(/[%_,]/g, ' ')
+        query = query.ilike('nota_operador', `%${seguro}%`)
       }
 
       // Ordenar por orden descendente — respeta el orden del extracto bancario original

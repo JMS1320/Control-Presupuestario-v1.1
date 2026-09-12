@@ -308,3 +308,69 @@ Sembrados los 154 pendientes con el criterio que es **la definición misma del c
 
 Los 6 ya decididos no se tocaron. Quedan **0 en `NULL`**. Es un punto de partida, no una sentencia:
 el usuario corrige desde el generador con el opt-in ↑ y el opt-out ↓, y la corrección persiste.
+
+---
+
+## 15. Editar una campaña — la identidad de una cuota es su `id` (2026-09-12)
+
+*Diseño de [A-FEAT-131](PENDIENTES.md#a-feat-131). Lo que sigue son decisiones tomadas, no opciones.*
+
+### El problema que resolvía
+Un template **`fijo`** de 4 cuotas al que hay que llevarlo a 6. Hasta el 2026-09-12 **no había
+pantalla que lo permitiera**, y las tres puertas estaban cerradas por motivos distintos:
+
+| Puerta | Por qué no servía |
+|---|---|
+| La grilla de Templates | es una tabla de **cuotas sueltas** (`cuotas_egresos_sin_factura` con el egreso por join). Se edita celda por celda; no hay un lugar donde el template exista como unidad |
+| El modal «agregar cuota» / Pago Manual | filtra `tipo_template = 'abierto'` (`vista-templates-egresos.tsx` § `cargarTemplatesAbiertos`). Está bien que lo haga: **su caso de uso es registrar un pago suelto en un template que se llena por conciliación**, no planificar |
+| Renovar campaña | su editor de detalle (mes/día/monto) opera sobre **la campaña que todavía no existe** — estado en memoria, no toca la base |
+
+📌 **El tercero es el que más enseña**: el modal correcto **ya estaba escrito**, con la forma exacta
+que hacía falta. Lo que le faltaba no era interfaz: era apuntar a cuotas reales y hacerse cargo de
+los vínculos.
+
+### La decisión que ordena todo lo demás
+> **La identidad de una cuota es su `id`. Ni su número, ni su fecha, ni su monto.**
+
+Porque el vínculo con el banco **es** ese `id`, copiado a `template_cuota_id` — y no es foreign key en
+ninguna de las 12 tablas que lo tienen ([A-BUG-156](PENDIENTES.md#a-bug-156)). Perderlo no da error.
+
+De ahí, tres reglas que valen para **cualquier** código que toque cuotas, no sólo para el editor:
+
+1. **Editar es `UPDATE` por `id`.** Nunca borrar y recrear. Una cuota con otra fecha sigue siendo la
+   misma cuota.
+2. **Quitar es desactivar** (`estado = 'desactivado'`). También para las que no tienen vínculo: el
+   `id` es la única pista de contra qué se pagó algo, y conservarlo no cuesta nada.
+3. **`numero_cuota` es cosmético.** Se recalcula por fecha y se escribe **al final** del guardado,
+   después de que las cuotas y sus vínculos ya estén bien: si esa parte falla, lo único que queda mal
+   es un número de orden.
+
+⚠️ **La regla 2 es la que ya se violó** — los 9 vínculos rotos tienen la firma de una regeneración
+(borrar la tanda y recrearla). No lo hizo la app: hoy no hay un solo `.delete()` sobre
+`cuotas_egresos_sin_factura` en el repositorio. Lo hizo alguien con SQL.
+
+### El check, y por qué reusa el criterio del motor
+La advertencia se calcula **en cada tecla** y no al guardar (pedido del usuario: *«hace el check al
+momento»*). Corre contra los movimientos reales de las 12 tablas, cargados al abrir.
+
+🔑 **Coincidencia = importe exacto + ≤ 5 días**, que es literalmente lo que hace
+`useMotorConciliacion.buscarEnPool`. Es una decisión con motivo:
+
+- con un criterio **más laxo**, el editor avisaría de matches que el motor **nunca va a hacer** — y
+  una advertencia que no se corresponde con ninguna acción posible es ruido;
+- con uno **más estricto**, callaría justo los casos que el motor sí agarra solo.
+
+Si algún día cambia la tolerancia del motor, **cambian las dos o ninguna**: `TOLERANCIA_DIAS` está
+declarada en `lib/templates/editar-campana.ts` con ese comentario.
+
+### Y el aviso no bloquea
+El rojo pinta el botón y cambia su texto a *«Guardar igual (hay avisos en rojo)»*, pero deja pasar.
+**A veces el dato que está mal es el viejo**, y justamente se viene a corregir. Un control que impide
+corregir deja de ser control.
+
+### Qué no hace, a propósito
+- **No edita varios templates a la vez** — para eso está la edición masiva de la grilla.
+- **No pone la FK.** Eso es [A-BUG-156](PENDIENTES.md#a-bug-156) y necesita decidir antes qué se hace
+  con los 9 huérfanos (§ 🛑 Datos).
+- **`fecha_vencimiento` se iguala a `fecha_estimada`** en una cuota nueva. Un campo más en el editor
+  para un caso que se corrige desde la grilla es interfaz que se paga todos los días.
