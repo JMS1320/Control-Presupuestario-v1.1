@@ -2556,6 +2556,37 @@ Si el movimiento no está conciliado, se guarda y no pasa nada más.
 
 ---
 
+## 🪪 Templates → Descripción y Detalle son dos cosas distintas
+
+En *Egresos sin Factura → Cuotas* hay dos columnas de texto, y **no son lo mismo**:
+
+| Columna | Qué va ahí |
+|---|---|
+| **Descripción** | **qué cuota es**: `UATRE MSA - Septiembre 2026`. La arma el sistema |
+| **Detalle** | **lo tuyo**: `1.740 Kg Maíz Castillo a 193.000 la ton (ya descontado 20% por gorgojos)` |
+
+Las dos se editan con **Ctrl+click**.
+
+### Dónde se junta todo
+En el **Cash Flow** las ves compuestas en un solo renglón:
+
+```
+con detalle:  UATRE MSA - Septiembre 2026 · 1.740 Kg Maíz Castillo a 193.000 la ton
+sin detalle:  UATRE MSA - Septiembre 2026
+```
+
+Por eso **no hace falta copiar el identificador al detalle**: si el detalle está vacío, igual ves
+la etiqueta. Y si el template cambia de nombre o de período, la etiqueta se actualiza sola — lo que
+escribiste vos no se toca.
+
+### Y el detalle que viene del Extracto
+Cuando editás el **Detalle** de un movimiento conciliado en el Extracto Bancario, ese texto llega a
+la columna **Detalle** de la cuota. La **Descripción** no se toca.
+
+⚠️ Sin probar todavía → A-TEST-126
+
+---
+
 ## 📅 Templates → poner una cuota en pagado
 
 Al cambiar el **Estado** de una cuota a `pagar`, `preparado`, `pagado`, `conciliado` o `debito`, se

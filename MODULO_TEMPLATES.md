@@ -374,3 +374,62 @@ corregir deja de ser control.
   con los 9 huérfanos (§ 🛑 Datos).
 - **`fecha_vencimiento` se iguala a `fecha_estimada`** en una cuota nueva. Un campo más en el editor
   para un caso que se corrige desde la grilla es interfaz que se paga todos los días.
+
+---
+
+## 16. Identificador vs detalle en una cuota — el identificador se GENERA (2026-09-12)
+
+*Decisión del usuario, [A-FEAT-137](PENDIENTES.md#a-feat-137). Sus palabras:*
+> **«Detalle es detalle y descripción es lo que es un identificador.»**
+
+### Las dos cosas, y por qué son dos
+
+| | Qué es | Quién lo pone |
+|---|---|---|
+| **identificador** | *qué cuota es ésta*: `«UATRE MSA - Septiembre 2026»` | el sistema, **al mostrar** |
+| **`detalle`** | la especificación: `«1.740 Kg Maíz Castillo a 193.000 la ton»` | **el usuario**, o el Extracto al conciliar |
+
+Es la § 30.1 de `MODULO_CONCILIACION.md` aplicada a las cuotas — la misma que separa *quién*, *qué*
+y *la especificación* en el extracto.
+
+### 🔑 El identificador NO se guarda
+
+`lib/templates/identificador-cuota.ts` lo arma de `nombre_referencia` + `responsable` + el período
+de `fecha_estimada`. Todo eso ya está en la cuota y su template.
+
+**Es el patrón de las facturas ARCA**, que este proyecto ya usaba y funciona:
+`useMultiCashFlowData` hace `detalle: f.detalle ? '<base> · <f.detalle>' : '<base>'`, donde la base
+se **construye** (`FC A 0001-000123 - LUMINATUS SA`). Se componen al mostrar.
+
+### ⚠️ Y por eso NO se copia el identificador al detalle cuando está vacío
+
+Fue la duda del usuario —*«detalle se debería llenar con descripción si no hay nada, entonces es
+como un bucle»*— y la respuesta es que **no hace falta**: sin detalle, la pantalla muestra el
+identificador solo. Copiarlo no agrega nada visible y cuesta dos cosas:
+
+1. **Borra la distinción.** Copiado, nadie puede decir si ese texto lo escribió una persona o lo
+   armó el sistema — y esa diferencia es la que decide si se puede pisar.
+2. **Congela.** El identificador cambia cuando cambia el nombre del template, el responsable o el
+   período. Copiado, queda la versión vieja adentro del detalle para siempre. Es el mismo error que
+   un `id` de template hardcodeado, que acá ya rompió dos cosas al renovar una campaña.
+
+> **Un dato derivado no se guarda: se deriva.** Guardarlo cambia *«siempre correcto»* por
+> *«correcto el día que se escribió»*.
+
+### Cómo se llegó acá — dos intentos fallidos, y valen
+
+1. La propagación del detalle escribió en `cuotas_egresos_sin_factura.detalle` **porque se llama
+   igual** que en el extracto. Esa columna no la mostraba ninguna pantalla: el dato se guardaba
+   bien y era invisible ([A-BUG-161](PENDIENTES.md#a-bug-161)).
+2. Se corrigió a `descripcion`, que sí se veía. Andaba, pero **pisaba la etiqueta generada**.
+
+El problema nunca fue el destino: era que **una sola columna hacía dos trabajos**. De 548
+`descripcion` cargadas, **107 eran etiqueta y 436 texto libre del usuario**.
+
+### Estado y qué falta
+- ✅ El código compone y la columna **Detalle** ya está en la grilla de Templates, editable.
+- ⏳ Las 543 filas viejas siguen en `descripcion` → [A-DAT-37](PENDIENTES.md#a-dat-37). **El código
+  funciona sin tocarlas**: mientras no se muden, se siguen mostrando como detalle, para no hacer
+  desaparecer de la pantalla lo que el usuario ya tenía escrito.
+- ⏳ El generador de campaña **todavía guarda** la etiqueta en `descripcion`. Cuando se migre,
+  puede dejar de hacerlo: la etiqueta se regenera sola.

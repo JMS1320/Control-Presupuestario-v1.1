@@ -16,7 +16,11 @@
  * movimiento puede estar enganchado a una cuota, a una factura o a un sueldo. La decisión de a
  * quién avisarle no puede estar escrita dentro de un manejador de teclado.
  *
- * ## 🎯 A dónde va: `descripcion`, NO `detalle` (A-BUG-161)
+ * ## 🎯 A dónde va: `detalle` — y la historia de cómo se llegó ahí
+ * **Resuelto por [A-FEAT-137]: `detalle` es el destino correcto.** Pero se llegó dando una vuelta
+ * que conviene dejar escrita, porque el error intermedio es instructivo.
+ *
+ * ### Primer intento (mal, [A-BUG-161])
  * La primera versión de este archivo escribía en `cuotas_egresos_sin_factura.detalle` **porque se
  * llama igual que la columna del extracto**. Esa columna está muerta: de **1.045 cuotas tenía UNA**
  * — la que escribió esta misma función —, ninguna pantalla la muestra y ningún código la lee.
@@ -33,11 +37,16 @@
  * verificación en la base, porque se consultó la columna a la que se había escrito. Lo encontró el
  * usuario mirando la pantalla.
  *
- * ### Y sí, pisa la etiqueta generada — a sabiendas
- * `descripcion` suele traer `«Red Vial Cuota Lote Puerto - Junio 2026»`, que arma el generador de
- * campaña. Escribir encima la borra. Es aceptable y no rompe nada: **el motor matchea por importe y
- * fecha**, no por ese texto (`buscarEnPool`); la `descripcion` se usa para **mostrar**. Y además el
- * texto es reconstruible — nombre, mes y año siguen en la cuota y su template.
+ * ### Segundo intento (también mal, y por eso nació A-FEAT-137)
+ * Se apuntó a `descripcion`, que era la columna **visible** y la que el motor ya usaba. Andaba,
+ * pero **pisaba la etiqueta generada** (`«Red Vial Cuota Lote Puerto - Junio 2026»`). El usuario
+ * puso el dedo en la llaga: *«detalle es detalle y descripción es lo que es un identificador»*.
+ * El problema no era el destino: era que **una sola columna estaba haciendo dos trabajos**.
+ *
+ * ### Ahora
+ * Con [A-FEAT-137] el identificador **se genera** y `detalle` guarda sólo lo del usuario, así que
+ * este `UPDATE` ya no tiene que elegir entre pisar una etiqueta o escribir en el vacío. Y el
+ * detalle que llega del Extracto **es exactamente eso**: lo que una persona escribió.
  *
  * ## ⚠️ Qué NO hace, y es a propósito
  * - **No propaga al revés** (template → extracto). El usuario pidió esta dirección, que es la del
@@ -78,8 +87,8 @@ export async function propagarDetalleACuota(
   try {
     const { error } = await supabase
       .from('cuotas_egresos_sin_factura')
-      // 🎯 `descripcion`, no `detalle` — ver A-BUG-161 en el encabezado.
-      .update({ descripcion: detalle || null, updated_at: new Date().toISOString() })
+      // 🎯 `detalle`, y ahora sí es el campo correcto — ver A-FEAT-137 en el encabezado.
+      .update({ detalle: detalle || null, updated_at: new Date().toISOString() })
       .eq('id', templateCuotaId)
 
     if (error) return { propagado: false, cuotaId: templateCuotaId, error: error.message }

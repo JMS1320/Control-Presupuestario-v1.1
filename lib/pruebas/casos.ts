@@ -44,6 +44,9 @@ import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import {
+  identificadorDeCuota, detalleCompleto, esElIdentificadorGenerado,
+} from "@/lib/templates/identificador-cuota"
+import {
   planificarEdicion, evaluarAvisos, diasEntre, coincide,
   type CuotaExistente, type MovimientoBancario as MovBancario,
 } from "@/lib/templates/editar-campana"
@@ -709,6 +712,70 @@ export function correrCasos(): Resultado[] {
   chequear("Editar campaña", "⚠️ Una cuota en $0 no coincide con nada (hay 20 así en la base)",
     "no coincide", coincide(mov({ id: "x", fecha: "2026-06-16", debitos: 0 }), "2026-06-16", 0) ? "coincide" : "no coincide",
     !coincide(mov({ id: "x", fecha: "2026-06-16", debitos: 0 }), "2026-06-16", 0), "A-FEAT-131")
+
+
+  // ══ El identificador de una cuota se GENERA (A-FEAT-137) ══════════════════════════════════
+  //
+  // 🪪 *«Detalle es detalle y descripción es lo que es un identificador»* (usuario, 2026-09-12).
+  // Los datos son reales: `UATRE MSA` es uno de los 20 templates que llevan la empresa en el
+  // nombre, y el texto libre salió de una cuota de la base.
+  const TPL_UATRE = { nombre_referencia: "UATRE MSA", responsable: "MSA" }
+  const TPL_REDVIAL = { nombre_referencia: "Red Vial Cuota Lote Puerto", responsable: "MSA" }
+  const CUOTA_SEP = { fecha_estimada: "2026-09-05" }
+
+  chequear("Identificador cuota", "⚠️ El responsable NO se repite si el nombre ya lo tiene",
+    "UATRE MSA - Septiembre 2026", identificadorDeCuota(CUOTA_SEP, TPL_UATRE),
+    identificadorDeCuota(CUOTA_SEP, TPL_UATRE) === "UATRE MSA - Septiembre 2026", "A-FEAT-137")
+
+  chequear("Identificador cuota", "…y SÍ se agrega cuando no lo tiene",
+    "Red Vial Cuota Lote Puerto MSA - Septiembre 2026", identificadorDeCuota(CUOTA_SEP, TPL_REDVIAL),
+    identificadorDeCuota(CUOTA_SEP, TPL_REDVIAL) === "Red Vial Cuota Lote Puerto MSA - Septiembre 2026",
+    "A-FEAT-137")
+
+  // 🔴 Sin nombre no se devuelve media etiqueta: eso se lee como un dato roto, no como uno ausente.
+  chequear("Identificador cuota", "Sin nombre de template devuelve vacío, no ' - Septiembre 2026'",
+    "(vacío)", identificadorDeCuota(CUOTA_SEP, { nombre_referencia: null }) || "(vacío)",
+    identificadorDeCuota(CUOTA_SEP, { nombre_referencia: null }) === "", "A-FEAT-137")
+
+  chequear("Identificador cuota", "Sin fecha queda sólo el nombre (no inventa período)",
+    "UATRE MSA", identificadorDeCuota({ fecha_estimada: null }, TPL_UATRE),
+    identificadorDeCuota({ fecha_estimada: null }, TPL_UATRE) === "UATRE MSA", "A-FEAT-137")
+
+  // ── La composición: identificador · detalle ──────────────────────────────────────────────
+  const LIBRE = "1.740 Kg Maiz Castillo a 193.000 la ton"
+  chequear("Identificador cuota", "Con detalle se COMPONE, no se pisa",
+    `UATRE MSA - Septiembre 2026 · ${LIBRE}`, detalleCompleto(CUOTA_SEP, TPL_UATRE, LIBRE),
+    detalleCompleto(CUOTA_SEP, TPL_UATRE, LIBRE) === `UATRE MSA - Septiembre 2026 · ${LIBRE}`,
+    "A-FEAT-137")
+
+  // 🔑 El caso que contesta la duda del usuario: «¿hay que llenar detalle con descripción?».
+  //    No: sin detalle se muestra el identificador solo. Copiarlo no agregaría NADA visible,
+  //    y en cambio borraría la distinción entre lo escrito y lo generado.
+  chequear("Identificador cuota", "🔑 Sin detalle se ve el identificador solo (por eso NO se copia)",
+    "UATRE MSA - Septiembre 2026", detalleCompleto(CUOTA_SEP, TPL_UATRE, null),
+    detalleCompleto(CUOTA_SEP, TPL_UATRE, null) === "UATRE MSA - Septiembre 2026", "A-FEAT-137")
+
+  // Durante la migración hay filas cuyo detalle YA empieza con el identificador. No se duplica.
+  const YA_COPIADO = "UATRE MSA - Septiembre 2026 · algo"
+  chequear("Identificador cuota", "⚠️ Si el detalle ya empieza con el identificador, no lo repite",
+    YA_COPIADO, detalleCompleto(CUOTA_SEP, TPL_UATRE, YA_COPIADO),
+    detalleCompleto(CUOTA_SEP, TPL_UATRE, YA_COPIADO) === YA_COPIADO, "A-FEAT-137")
+
+  // ── El reparto de las 543 filas viejas (A-DAT-37) ────────────────────────────────────────
+  chequear("Identificador cuota", "La etiqueta generada se reconoce (se puede vaciar)",
+    "es identificador", esElIdentificadorGenerado("UATRE MSA - Septiembre 2026", CUOTA_SEP, TPL_UATRE) ? "es identificador" : "es del usuario",
+    esElIdentificadorGenerado("UATRE MSA - Septiembre 2026", CUOTA_SEP, TPL_UATRE) === true, "A-DAT-37")
+
+  chequear("Identificador cuota", "🔴 El texto libre NO se confunde con identificador (no se borra)",
+    "es del usuario", esElIdentificadorGenerado(LIBRE, CUOTA_SEP, TPL_UATRE) ? "es identificador" : "es del usuario",
+    esElIdentificadorGenerado(LIBRE, CUOTA_SEP, TPL_UATRE) === false, "A-DAT-37")
+
+  // ⚠️ El sesgo: ante la duda, «es del usuario». Una etiqueta de OTRO período no es la de esta
+  //    cuota, así que no se toca — equivocarse hacia acá deja texto redundante; hacia el otro lado
+  //    borra algo que escribió una persona.
+  chequear("Identificador cuota", "⚠️ Una etiqueta de otro período NO se da por generada",
+    "es del usuario", esElIdentificadorGenerado("UATRE MSA - Marzo 2025", CUOTA_SEP, TPL_UATRE) ? "es identificador" : "es del usuario",
+    esElIdentificadorGenerado("UATRE MSA - Marzo 2025", CUOTA_SEP, TPL_UATRE) === false, "A-DAT-37")
 
   return r
 }
