@@ -762,10 +762,25 @@ export function useMotorConciliacion() {
               const provNombreRegla = await buscarNombreProveedor(cuitRegla)
 
               // Actualizar extracto con categ/detalle/estado y códigos de la regla
+              //
+              // 🏷️ **A-BUG-160** — acá faltaba `regla.detalle` y el renglón escribía `null`.
+              // El comentario de arriba ya decía «categ/**detalle**/estado de la regla» y la línea
+              // de `categ` sí tiene su fallback: es un olvido de una sola línea, con **74 reglas
+              // activas que tienen el detalle cargado** y no lo llenaban nunca.
+              //
+              // 🧨 Lo encontró el usuario conciliando un lote de FIMA (2026-09-12):
+              // *«se conciliaron bien, pero el tema es que no llenó detalle, y en la configuración
+              // creo que está puesto como debe llenar detalle»*. Tenía razón — las dos reglas de
+              // FIMA dicen `Rescate FIMA` / `Suscripcion FIMA`, y los 12 movimientos conciliados
+              // desde junio quedaron con `detalle = NULL`.
+              //
+              // 🔑 **Y el orden importa**: lo que el usuario ya escribió a mano **nunca se pisa**
+              // — es la misma precedencia del camino de Cash Flow de arriba. Una regla que
+              // sobrescribe una anotación manual convierte la automatización en pérdida de datos.
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || null,
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || regla.detalle || null,
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
