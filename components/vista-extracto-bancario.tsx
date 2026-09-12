@@ -252,6 +252,12 @@ export function VistaExtractoBancario() {
    * movimientos bancarios sin conciliar— y sin mensajes de usuario»*.
    */
   const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
+  const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
+  /** 🧹 A-FEAT-135 — default en `false`: la nota se conserva salvo que se pida lo contrario. */
+  const [borrarNotasAlConciliar, setBorrarNotasAlConciliar] = useState(false)
+  /** 📝 A-FEAT-133 — la misma nota para todas las filas filtradas. */
+  const [modalNotaLote, setModalNotaLote] = useState<{ isOpen: boolean; texto: string; modo: 'agregar' | 'reemplazar' | 'borrar' }>(
+    { isOpen: false, texto: '', modo: 'agregar' })
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
@@ -361,6 +367,57 @@ export function VistaExtractoBancario() {
    * poder ver que el dato llegó al otro lado sin ir a mirarlo. Un cambio que se propaga en silencio
    * se parece demasiado a uno que no se propagó — que es justo el bug que se está arreglando.
    */
+  /**
+   * 📝 **A-FEAT-133 / A-FEAT-135 — la misma nota (o el borrado) en todo lo filtrado.**
+   *
+   * Opera sobre **lo que hay en pantalla**, no sobre una selección a mano: eso es lo que lo hace
+   * útil conciliando — el filtro ya expresa el criterio («todos los de FIMA hasta el 18/06») y
+   * repetir ese mismo razonamiento fila por fila es el trabajo que se viene a sacar.
+   *
+   * ⚠️ **Por eso el número se muestra ANTES.** El filtro puede traer más de lo que uno cree — que
+   * es exactamente [A-BUG-155] — y acá ese error se paga en N filas escritas.
+   *
+   * 🔑 **«Agregar» no pisa lo que ya había**: suma un renglón. Reemplazar y borrar son los que
+   * destruyen, y por eso son una elección explícita y no el default.
+   */
+  const aplicarNotaEnLote = async () => {
+    const { texto, modo } = modalNotaLote
+    const ids = movimientos.map(m => m.id)
+    if (ids.length === 0) return
+
+    const cli = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+    let tocados = 0
+    try {
+      if (modo === 'borrar' || modo === 'reemplazar') {
+        const valor = modo === 'borrar' ? null : texto.trim()
+        const { error } = await cli().from(tablaActiva).update({ nota_operador: valor }).in('id', ids)
+        if (error) throw error
+        actualizarLocal(ids, { nota_operador: valor })
+        tocados = ids.length
+      } else {
+        // Agregar: hay que leer cada una, así que va de a uno. Son las filas de la pantalla,
+        // no el extracto entero, así que el costo está acotado por el límite de la lista.
+        for (const id of ids) {
+          const m = movimientos.find(x => x.id === id) as any
+          const previo = (m?.nota_operador || '').trim()
+          const nuevo = previo ? `${previo}
+${texto.trim()}` : texto.trim()
+          const { error } = await cli().from(tablaActiva).update({ nota_operador: nuevo }).eq('id', id)
+          if (error) throw error
+          actualizarLocal(id, { nota_operador: nuevo })
+          tocados++
+        }
+      }
+      setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' })
+      toast.success(modo === 'borrar'
+        ? `${tocados} nota(s) borrada(s)`
+        : `Nota escrita en ${tocados} movimiento(s)`)
+    } catch (e: any) {
+      toast.error(`Se alcanzaron a tocar ${tocados} de ${ids.length}`, { description: e?.message || String(e) })
+      await recargar()
+    }
+  }
+
   const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
     const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
     if (r.error) {
@@ -438,10 +495,11 @@ export function VistaExtractoBancario() {
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
     if (filtroNota !== 'todas') items.push(filtroNota === 'con_nota' ? 'con nota mía' : 'sin nota mía')
+    if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
   }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
-      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, filtroCategEspecial])
+      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -1116,6 +1174,37 @@ export function VistaExtractoBancario() {
         if (editData.interno?.trim()) camposLocales.interno = editData.interno.trim()
         if (editData.detalle?.trim()) camposLocales.detalle = editData.detalle.trim()
         if (editData.estado === 'conciliado') camposLocales.motivo_revision = null
+
+        /**
+         * 🧹 **A-FEAT-135 — al conciliar, las notas se pueden ir (o quedarse).**
+         *
+         * Pedido del usuario 2026-09-12: *«sería bueno poder borrar las notas una vez que por
+         * ejemplo se concilian. Al conciliar con notas poder elegir borrarlas o que perduren»*.
+         *
+         * 🔑 **Una nota del operador es una pregunta abierta** — *«¿esto qué es?»*, *«falta el
+         * detalle»*. Cuando el movimiento se concilia, la mayoría **ya está contestada** y desde
+         * ahí sólo ensucia el filtro de [A-FEAT-130]. Pero **no todas**: algunas dicen algo que hay
+         * que recordar después. Por eso se elige, y por eso el default es **conservarlas**.
+         *
+         * ⚠️ Borrar es destructivo (§ 🛑 Datos): se dice cuántas se van antes de irse.
+         */
+        if (editData.estado === 'conciliado' && borrarNotasAlConciliar) {
+          const conNota = ids.filter(id => {
+            const m = movimientos.find(x => x.id === id) as any
+            return (m?.nota_operador || '').trim()
+          })
+          if (conNota.length > 0) {
+            const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+              .from(tablaActiva).update({ nota_operador: null }).in('id', conNota)
+            if (error) {
+              toast.error('No se pudieron borrar las notas', { description: error.message })
+            } else {
+              actualizarLocal(conNota, { nota_operador: null })
+              toast.success(`${conNota.length} nota(s) borrada(s) al conciliar`)
+            }
+          }
+        }
+
         if (Object.keys(camposLocales).length > 0) actualizarLocal(ids, camposLocales)
       }
     } catch (error) {
@@ -2087,6 +2176,7 @@ export function VistaExtractoBancario() {
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
     if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
     if (filtroNota !== 'todas') filtros.filtroNota = filtroNota
+    if (busquedaNota.trim()) filtros.busquedaNota = busquedaNota.trim()
     return { ...filtros, ...overrides }
   }
 
@@ -2646,7 +2736,32 @@ export function VistaExtractoBancario() {
                   <option value="con_nota">📝 Con nota mía</option>
                   <option value="sin_nota">💬 Sin nota</option>
                 </select>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas') && (
+
+                {/* 🔍 A-FEAT-134 — buscar DENTRO de la nota. Va pegado al chip porque es su
+                    afinado: el chip dice «si tiene o no» y esto «qué dice». Se aplica al salir o con
+                    Enter y no en cada tecla: cada cambio es una consulta a la base. */}
+                <input
+                  type="text"
+                  value={busquedaNota}
+                  placeholder="🔍 en mis notas…"
+                  title="Buscar dentro del texto de tus notas (A-FEAT-134)"
+                  onChange={(e) => setBusquedaNota(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') cargarMovimientos(construirFiltros()) }}
+                  onBlur={() => cargarMovimientos(construirFiltros())}
+                  className={`h-7 text-xs px-2 w-36 rounded-md border ${busquedaNota.trim() ? 'bg-amber-50 border-amber-400 text-amber-800' : 'bg-white border-amber-300'}`}
+                />
+
+                {/* 📝 A-FEAT-133 — anotar de una vez a TODAS las filtradas. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2 text-amber-700 border-amber-300"
+                  onClick={() => setModalNotaLote({ isOpen: true, texto: '', modo: 'agregar' })}
+                  title="Dejar la misma nota en todos los movimientos que estas viendo (A-FEAT-133)"
+                >
+                  📝 Anotar los {movimientos.length}
+                </Button>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas' || busquedaNota.trim()) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2658,6 +2773,7 @@ export function VistaExtractoBancario() {
                       // Un «Limpiar» que deja un filtro puesto es peor que no tenerlo: la lista
                       // queda recortada y el botón dice lo contrario.
                       setFiltroNota('todas')
+                      setBusquedaNota('')   // A-FEAT-134: si queda puesta, «Limpiar» miente igual que antes
                       /**
                        * ⚠️ Acá los overrides van **al revés** que en los chips: hay que APAGAR
                        * explícitamente lo que se acaba de limpiar.
@@ -2962,6 +3078,19 @@ export function VistaExtractoBancario() {
                         <SelectItem value="pendiente">Pendiente</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    {/* 🧹 A-FEAT-135 — sólo aparece al conciliar, que es cuando la pregunta
+                        tiene sentido. Default apagado: borrar es destructivo. */}
+                    {editData.estado === 'conciliado' && (
+                      <label className="flex items-center gap-1.5 mt-2 text-xs text-gray-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={borrarNotasAlConciliar}
+                          onChange={(e) => setBorrarNotasAlConciliar(e.target.checked)}
+                        />
+                        🧹 Borrar mis notas de los que se concilien
+                      </label>
+                    )}
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Contable</label>
@@ -4077,6 +4206,62 @@ export function VistaExtractoBancario() {
       </Dialog>
 
       {/* Modal Asignar Manualmente */}
+      {/* 📝 A-FEAT-133 — la misma nota para todas las filas que estoy viendo. */}
+      <Dialog open={modalNotaLote.isOpen} onOpenChange={v => { if (!v) setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' }) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>📝 Anotar en los {movimientos.length} movimientos filtrados</DialogTitle>
+            <DialogDescription>
+              Conciliando, <strong>el filtro ya es el criterio</strong>: lo que te llevó a mirar estos
+              movimientos suele ser lo mismo que querés dejar escrito en cada uno.
+              {filtrosActivos.length > 0 ? <> Ahora mismo: <em>{filtrosActivos.join(' · ')}</em>.</> : null}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 🧮 El número, antes de escribir. El filtro puede traer más de lo que uno cree — que
+              es justo lo que arregló A-BUG-155 — y acá eso se paga en N filas escritas. */}
+          <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Se va a escribir en <strong>{movimientos.length}</strong> movimiento(s) — los que ves en pantalla, no todo el extracto.
+          </div>
+
+          <div className="flex gap-2 text-xs">
+            {([['agregar', 'Agregar al final'], ['reemplazar', 'Reemplazar la nota'], ['borrar', '🧹 Borrar las notas']] as const).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setModalNotaLote(x => ({ ...x, modo: m }))}
+                className={`px-2 py-1 rounded border ${modalNotaLote.modo === m ? 'bg-amber-600 text-white border-amber-600' : 'bg-white border-gray-300 text-gray-600'}`}
+              >{label}</button>
+            ))}
+          </div>
+
+          {modalNotaLote.modo !== 'borrar' ? (
+            <textarea
+              autoFocus
+              rows={3}
+              value={modalNotaLote.texto}
+              onChange={e => setModalNotaLote(x => ({ ...x, texto: e.target.value }))}
+              placeholder="Ej.: revisar contra el resumen de FIMA de julio"
+              className="w-full border rounded px-2 py-1 text-sm"
+            />
+          ) : (
+            <p className="text-sm text-red-700">
+              Se van a borrar las notas de los {movimientos.length} movimientos filtrados. <strong>No se puede deshacer.</strong>
+            </p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' })}>Cancelar</Button>
+            <Button
+              onClick={aplicarNotaEnLote}
+              disabled={modalNotaLote.modo !== 'borrar' && !modalNotaLote.texto.trim()}
+              className={modalNotaLote.modo === 'borrar' ? 'bg-red-600 hover:bg-red-700' : ''}
+            >
+              {modalNotaLote.modo === 'borrar' ? `Borrar ${movimientos.length} nota(s)` : `Anotar en ${movimientos.length}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={modalAsignar} onOpenChange={setModalAsignar}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
