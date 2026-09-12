@@ -42,6 +42,7 @@ interface CuotaEgresoSinFactura {
   monto: number
   descripcion: string | null
   estado: string
+  detalle?: string | null       // A-FEAT-137 — lo que escribe el usuario
   created_at: string
   updated_at: string
   egreso?: {
@@ -70,7 +71,13 @@ const COLUMNAS_CONFIG = {
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto: { label: "Monto", visible: true, width: "130px" },
+  // 💪 A-FEAT-137 — las dos, y son cosas distintas:
+  //   descripcion = el IDENTIFICADOR (hoy guardado; se va a generar — ver A-DAT-37)
+  //   detalle     = lo que escribe el usuario, y lo que llega del Extracto al conciliar
+  // Hasta A-FEAT-137 `detalle` existía en la tabla y **no se mostraba en ninguna pantalla**: por eso
+  // un dato propagado ahí se guardaba bien y era invisible (A-BUG-161).
   descripcion: { label: "Descripción", visible: true, width: "200px" },
+  detalle: { label: "Detalle", visible: true, width: "220px" },
   estado: { label: "Estado", visible: true, width: "100px" },
   // Campos del egreso padre
   categ: { label: "CATEG", visible: true, width: "120px" },
@@ -552,7 +559,7 @@ export function VistaTemplatesEgresos() {
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'estado',
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'detalle', 'estado',
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
@@ -1114,7 +1121,7 @@ export function VistaTemplatesEgresos() {
     let valor: any
 
     // Obtener valor según la columna
-    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'detalle', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
     } else if (columna === 'categ') {
       // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
@@ -1373,6 +1380,7 @@ export function VistaTemplatesEgresos() {
 
         case 'nombre_quien_cobra':
         case 'descripcion':
+        case 'detalle':
           return (
             <div className="max-w-xs truncate" title={valor as string}>
               {valor as string}

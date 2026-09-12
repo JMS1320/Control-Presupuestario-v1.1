@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { detalleCompleto } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
@@ -385,14 +386,24 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
         responsable: c.egreso?.responsable || '',
-        detalle: c.descripcion || c.egreso?.nombre_referencia || '',
-        detalle_usuario: c.descripcion || null,
+        /**
+         * 💪 **A-FEAT-137** — el mismo patrón que las facturas ARCA de este archivo:
+         * el identificador **se genera** y el detalle guarda sólo lo del usuario; se COMPONEN
+         * acá, al mostrar. Antes esto leía `c.descripcion` para las dos cosas, y por eso no había
+         * dónde poner el detalle que llega del Extracto al conciliar ([A-BUG-161](#a-bug-161)).
+         *
+         * 📌 Durante la migración ([A-DAT-37]) todavía hay filas con texto en `descripcion`:
+         * se sigue mostrando como detalle hasta que se muden, para no hacer desaparecer de la
+         * pantalla lo que el usuario ya tenía escrito.
+         */
+        detalle: detalleCompleto(c, c.egreso ?? {}, c.detalle ?? c.descripcion),
+        detalle_usuario: c.detalle ?? c.descripcion ?? null,
         debitos: esIngreso ? 0 : monto,
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
         medio_pago: c.medio_pago || 'banco',
-        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,
+        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,   // el QUÉ — no lleva el detalle
         grupo_pago_id: null,
       }
     })
