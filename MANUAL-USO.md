@@ -1098,6 +1098,39 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 ### Alta de empleado
 - Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.
 
+## 👷 Sueldos → los pagos del mes, por empleado *(2026-09-11)*
+
+La lista de **Pagos registrados** viene **agrupada por empleado y cerrada**. De cada uno ves, sin
+abrir nada:
+
+```
+▸  Ruben Sigot     4 pagos    $ 2.238.085,80
+```
+
+- **Apretá el renglón** para desplegar sus pagos; apretalo de nuevo para cerrarlo.
+- Podés tener varios abiertos a la vez.
+- Los importes van **con centavos**, para poder cotejarlos contra el extracto y el recibo.
+
+### Editar un pago
+
+El lápiz abre el pago **con sus datos reales**, incluido el **Medio de Pago**. Si era «Caja Sigot»,
+abre en «Caja Sigot» — antes se cambiaba solo a «Banco» y te lo guardaba así.
+
+### Elegir la cuenta destino
+
+El desplegable de **Cuenta destino** ahora dice de **quién** es cada cuenta:
+
+```
+Lucresia · …4347
+Galicia · …0456
+Santander · sigotruben0531
+```
+
+Antes veías dos CBUs crudos sin forma de distinguirlos. Si una cuenta no tiene banco cargado, se
+muestra el identificador entero.
+
+⚠️ Sin probar por vos todavía → `A-TEST-114` (probá **guardar** un pago de caja y que siga en caja).
+
 ## 🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)
 
 **Dónde:** Egresos → Templates → botón **"Renovar campaña"**.
@@ -1632,6 +1665,33 @@ de los datos. Y para las mejoras (*"quiero decimales acá"*) no aporta nada.
 
 ---
 
+## 🧪 «Lo que hay que mirar en esta corrida» — el cartel de pruebas *(2026-09-11)*
+
+Cuando abrís un proceso que tiene algo pendiente de probar, arriba del modal aparece:
+
+> 🧪 **N cosas para mirar en esta corrida**
+> *Son pruebas pendientes de este mismo proceso. Podés ignorarlas: el pago sigue igual.*
+
+**Está en dos lugares por ahora:**
+
+| Dónde | Cuándo aparece |
+|---|---|
+| Cash Flow → modal de **retención SICORE** | al elegir el tipo de operación |
+| Sueldos → modal de **registrar o editar un pago** | al abrirlo |
+
+### Cómo se usa
+
+1. **Apretá «ver ▼»** para desplegarlo. Cada ítem trae su número (`A-TEST-111`) y qué hay que mirar.
+   El texto viene recortado a dos líneas: **tocalo para verlo entero**.
+2. Cuando lo probaste, apretá **✅ Anduvo** o **🔴 Falló**. El ítem **desaparece de la lista** y queda
+   anotado para Claude.
+3. Si algo falla y querés contarlo con más detalle o con una captura, usá **📝 Notas**.
+
+**Si no querés mirarlo, ignoralo**: arranca cerrado y el proceso sigue exactamente igual.
+
+📌 Lo que respondas va a los **comentarios del pendiente**, que Claude lee al abrir sesión. Es el
+mismo canal que ya usabas desde el panel de Pendientes.
+
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.
@@ -1740,6 +1800,22 @@ porque los grupos viejos llegaban a `conciliado` por el motor de conciliación, 
    ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
+
+## 📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*
+
+Al pasar facturas a un estado que paga, la app pregunta **con qué fecha se pagaron** — porque de esa
+fecha sale la **quincena de SICORE**, y la estimada casi nunca es la real.
+
+**Lo que cambió**: si las facturas que marcaste **ya tienen fecha de pago de hoy**, no te pregunta
+nada. Avisa *«N registro(s) ya tienen fecha de pago …»* y sigue.
+
+Te va a seguir preguntando si:
+- alguna **no tiene** fecha de pago,
+- alguna tiene **otra** fecha.
+
+📌 Basta que **una** del lote no la tenga para que pregunte por todas: un lote se confirma junto.
+
+⚠️ Sin probar por vos todavía → `A-TEST-115`.
 
 ## 🧩 Reglas de parseo — desglosar el texto del banco 🟡 *(nuevo 2026-08-09, sin testear)*
 
@@ -1997,6 +2073,26 @@ En la primera corrida real aparecieron tres cosas mal. Al probar, mirar puntualm
    filas de la lista.
 
 ---
+
+## 📝 Extracto → filtrar por TUS notas *(2026-09-11)*
+
+En la barra de **Filtros rápidos**, al lado del filtro de revisadas, hay uno nuevo:
+
+```
+📝 Notas: todas   ·   📝 Con nota mía   ·   💬 Sin nota
+```
+
+Filtra por las notas que dejás con el **📝 de cada movimiento** (el ícono se ve gris cuando no hay
+nota y en color cuando sí).
+
+- **Con nota mía** → sólo los movimientos donde dejaste algo escrito.
+- **Sin nota** → el resto. Incluye los que tuvieron una nota y la borraste.
+- Se combina con los demás filtros (estado, fechas, contraparte…), y **«Limpiar» también lo apaga**.
+
+📌 El filtro se aplica **al traer los datos**, no sobre lo que está en pantalla: el número que ves es
+de todo el extracto, no de las filas que entraron por el límite.
+
+⚠️ Sin probar por vos todavía → `A-TEST-117`.
 
 ## 🏦 Conciliar sueldos que el motor no encuentra ✅ *(testeado OK 2026-08-19)*
 
