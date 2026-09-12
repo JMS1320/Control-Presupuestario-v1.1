@@ -16,6 +16,29 @@
  * movimiento puede estar enganchado a una cuota, a una factura o a un sueldo. La decisión de a
  * quién avisarle no puede estar escrita dentro de un manejador de teclado.
  *
+ * ## 🎯 A dónde va: `descripcion`, NO `detalle` (A-BUG-161)
+ * La primera versión de este archivo escribía en `cuotas_egresos_sin_factura.detalle` **porque se
+ * llama igual que la columna del extracto**. Esa columna está muerta: de **1.045 cuotas tenía UNA**
+ * — la que escribió esta misma función —, ninguna pantalla la muestra y ningún código la lee.
+ *
+ * 🔑 **La equivalencia buena ya estaba escrita en el código, no hacía falta deducirla**:
+ * `crearCuotaEnTemplate` (el motor, cuando una regla tiene `llena_template`) inserta
+ * `descripcion: regla.detalle || movimiento.descripcion`. O sea que el sistema **ya mapea
+ * `extracto.detalle` → `cuota.descripcion`**. Y el Cash Flow lee de ahí
+ * (`useMultiCashFlowData`: `detalle: c.descripcion || c.egreso?.nombre_referencia`).
+ *
+ * 🧨 **El error de método vale más que el bug**: se eligió el destino por **cómo se llama la
+ * columna** y no por **dónde se ve el dato** — justo lo que esta feature vino a resolver. Y un
+ * `UPDATE` a una columna que existe **no falla**: pasó el type-check, los casos, y hasta la
+ * verificación en la base, porque se consultó la columna a la que se había escrito. Lo encontró el
+ * usuario mirando la pantalla.
+ *
+ * ### Y sí, pisa la etiqueta generada — a sabiendas
+ * `descripcion` suele traer `«Red Vial Cuota Lote Puerto - Junio 2026»`, que arma el generador de
+ * campaña. Escribir encima la borra. Es aceptable y no rompe nada: **el motor matchea por importe y
+ * fecha**, no por ese texto (`buscarEnPool`); la `descripcion` se usa para **mostrar**. Y además el
+ * texto es reconstruible — nombre, mes y año siguen en la cuota y su template.
+ *
  * ## ⚠️ Qué NO hace, y es a propósito
  * - **No propaga al revés** (template → extracto). El usuario pidió esta dirección, que es la del
  *   trabajo real: se concilia mirando el banco. La vuelta necesita decidir qué gana cuando los dos
@@ -44,7 +67,7 @@ export interface ResultadoPropagacion {
  * Lleva el `detalle` del movimiento a la cuota de template que tiene conciliada.
  *
  * @param templateCuotaId  el `template_cuota_id` del movimiento — si viene vacío no hay nada que hacer
- * @param detalle          lo que quedó escrito en el extracto
+ * @param detalle          lo que quedó escrito en el extracto (va a `descripcion` de la cuota)
  */
 export async function propagarDetalleACuota(
   templateCuotaId: string | null | undefined,
@@ -55,7 +78,8 @@ export async function propagarDetalleACuota(
   try {
     const { error } = await supabase
       .from('cuotas_egresos_sin_factura')
-      .update({ detalle: detalle || null, updated_at: new Date().toISOString() })
+      // 🎯 `descripcion`, no `detalle` — ver A-BUG-161 en el encabezado.
+      .update({ descripcion: detalle || null, updated_at: new Date().toISOString() })
       .eq('id', templateCuotaId)
 
     if (error) return { propagado: false, cuotaId: templateCuotaId, error: error.message }
