@@ -1923,6 +1923,96 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Leer el artefacto que SALE de la empresa — la capa que faltaba `#testing #control #2026-09-11`
+
+Bajar el PDF del Detalle de Pago **y leerlo** encontró **cuatro bugs en una tarde**, dos de los
+cuales ninguna otra capa podía ver:
+
+| | Qué decía el papel |
+|---|---|
+| `A-BUG-145` | tres transferencias anunciadas, y el banco mandó **una** |
+| `A-BUG-149` | el PDF tenía **aritmética propia**, distinta de la del cuerpo del mail |
+| `A-BUG-150` | la línea de alerta salía `& E l   d e s g l o s e …`, letra por letra |
+| `A-BUG-151` | un grupo nombraba **una sola factura** con el importe de las tres |
+
+> 🔑 **Los casos prueban la función, el ensayo prueba los datos, la UI prueba la pantalla — y el
+> PDF no lo miraba ninguno.** Era el único artefacto que el proveedor recibe de verdad, y el único
+> que nadie había abierto nunca.
+
+**Cómo se lee sin instalar nada**: Playwright captura la descarga (`page.waitForEvent('download')`
+→ `saveAs`) y `PyPDF2` —ya está en la máquina— saca el texto. Comparar ese texto contra el del PDF
+que se adjunta al mail es lo que prueba el invariante *«ver y encolar dan lo mismo»*.
+
+📌 **Y hacen falta DOS casos, no uno.** Con ALCORTA solo, `A-BUG-152` parecía correcto: ahí
+`fecha_pago` y `fecha_estimada` coinciden. Recién con IGLESIAS —donde difieren— el papel se
+contradijo solo. **Un caso puede coincidir por casualidad; dos ya no.**
+
+---
+
+## El permiso tiene que estar en la CONFIGURACIÓN, no en un comentario `#testing #datos #2026-09-11`
+
+`sicore-doble-click.spec.ts` es el único test que completa un pago real. Su docstring decía, con
+todas las letras, que el permiso **no se hereda** y que sólo se corre pidiéndolo. Quedó en
+`pruebas-ui/` sin distintivo, y **una corrida de `npm run ui` lo ejecutó**: pasó una factura a
+`pagar`, le estampó la quincena de SICORE, le creó la fila de retención **y de paso encoló dos
+mails a proveedores**, porque también corrió el spec de encolar.
+
+> 🔑 **Un aviso escrito para humanos no frena a una herramienta.** El runner no lee docstrings.
+
+Es exactamente lo que advertía `CLAUDE.md` § ✅ «Terminé» significa que ya lo probé —*«el día que
+alguien agregue uno que escriba, esa orden lo autoriza sin preguntar»*— y pasó **el mismo día que
+se escribió el primero**.
+
+**Cómo quedó**: los que escriben se llaman `*.escribe.spec.ts`, `playwright.config.ts` los excluye
+por `testIgnore`, y entran sólo con `npm run ui:escribe`, que además avisa por consola. Verificado:
+la suite pasó de 13 a 10 casos.
+
+📌 **Y el alcance del daño lo dio el inventario, no el reporte.** Fui a borrar las 2 filas de cola
+que sabía que había creado y encontré **4**. Contar antes de limpiar es lo que evitó dejar dos
+mails de proveedor listos para salir.
+
+---
+
+## Un control que grita de más, o que falla sin que haya nada roto `#control #2026-09-11`
+
+Dos formas de arruinar un control, las dos aparecieron el mismo día:
+
+**1 · Gritar de más.** El control nuevo de «A-TEST sin proceso» listaba **98** ítems metiendo a las
+suites `npm run probar*` —que las corre Claude y no tienen pantalla donde aparecer— y a las de GAS
+y API. Acotado a lo que el usuario corre en una pantalla, da **81**, que son reales. *Una lista que
+no se puede accionar deja de leerse justo cuando tiene algo importante.*
+
+**2 · Fallar sin que haya nada roto.** El test del filtro de notas comparaba *«con nota + sin nota =
+total»*. Es cierto **sin límite de filas**; con el tope de 200 falla siempre, sin que el filtro
+tenga nada malo. Se cambió por la propiedad que **sí** vale con cualquier límite: que ningún
+movimiento esté en los dos lados.
+
+> 🔑 **Un rojo que no significa nada enseña a ignorar los rojos** — y para cuando aparezca uno de
+> verdad, ya nadie mira.
+
+📌 El mismo día, un tercer caso de la familia: el control de `A-TEST-109` (Σ mínimos = $224.000)
+estuvo **dando mal por una fila duplicada**, no por un reparto mal hecho. Un control roto no es
+neutro: **ocupa el lugar del que sí avisa**.
+
+---
+
+## `as any` es lo que deja pasar el dato que falta `#tipos #2026-09-11`
+
+Dos veces el mismo día, en los dos sentidos:
+
+- **A-BUG-148** — `registrarEnSicoreRetenciones` recibía `fila as any` y leía
+  `fa.numero_desde`. El campo **no existía en `CashFlowRow`**, así que llegaba `undefined` y la
+  retención se guardaba sin número de comprobante. **11 de 16 filas.** Al tipar los campos y sacar
+  el `as any`, `type-check` bajó de **113 a 110**: los tres errores de ese archivo eran justamente
+  eso. *El compilador lo venía señalando.*
+- **Y al conectar el upsert de contrapartes**, escribí `cliente.razon_social` sobre un objeto que es
+  `{ cuit, nombre }`. **El compilador lo frenó.** Con `as any` habría pasado `undefined` y el
+  cliente se habría creado con el CUIT por nombre, en silencio.
+
+> 🔑 La diferencia entre los dos casos es **sólo el `as any`**. El error era el mismo.
+
+---
+
 ## Playwright — instalado, y qué SÍ y qué NO agarra `#testing #herramientas #2026-09-10`
 
 Instalado el **2026-09-10**. La § de arriba (06/09) decía que *«habría pasado ese bug por alto»* y

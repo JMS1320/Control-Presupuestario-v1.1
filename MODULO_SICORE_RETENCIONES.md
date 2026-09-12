@@ -166,6 +166,72 @@ setMontoRetencion(baseAjustada * tipo.porcentaje_retencion)
 
 ---
 
+## 🔁 Idempotencia: una fila por comprobante, y el TXT deduplica *(2026-09-11)*
+
+**Dos defensas, y hacen falta las dos.**
+
+### 1 · Al escribir — `lib/sicore/registrar-retencion.ts`
+
+Antes **insertaba a ciegas**. El 10/09 la FC 10-6337 de ALCORTA quedó con **dos filas vigentes
+idénticas**, creadas con **0,69 s de diferencia**: el botón «✅ Confirmar y pasar a Pagar» no tenía
+guarda de re-entrada y un doble click corrió el flujo entero dos veces.
+
+Ahora sale **sin escribir** si ya existe una fila no anulada con el mismo comprobante + quincena +
+tipo **y los mismos importes**.
+
+⚠️ **Los importes entran en la comparación a propósito**: dos pagos parciales legítimos de la misma
+factura en la misma quincena tienen distinto `total_pagado` y **no se colapsan**.
+
+🔑 **Va en la capa compartida y no en el botón**: el botón es uno de varios llamadores. Es la
+lección de `A-BUG-142` — *la regla vivía en un camino de dos*.
+
+### 2 · Al exportar — `lib/sicore/dedup.ts`
+
+`generarTXTCierreV2` agrupa por `cuit_emisor||tipo_sicore` **sumando fila por fila**, así que una
+duplicada se sumaba. Medido sobre el caso real:
+
+| | Pago declarado | Base declarada | Retención |
+|---|---:|---:|---:|
+| con la duplicada | **$534.631,16** | **$443.138,95** | $1.566,93 |
+| correcto | $364.272,27 | $302.346,46 | $1.566,93 |
+
+🧨 **La retención sale bien en los dos casos.** Lo que queda mal es **lo declarado** — por eso
+ningún control de plata lo agarraba: el dinero retenido es correcto y el error está en el renglón
+de la DDJJ.
+
+🔑 **Sin esta segunda defensa el arreglo no sirve para el caso real**: la primera evita filas
+*nuevas*, pero las que ya están en la base se sumarían igual. Y **nada se descarta en silencio**: si
+descarta alguna, lo dice por toast.
+
+### 3 · El disparador — la guarda del botón
+
+«Confirmar y pasar a Pagar» usa un `useRef` (no `useState`): el segundo click llega **antes de que
+React repinte**. Se libera en `finally`, para que un error no deje el modal muerto.
+
+## 📆 La fecha de pago se escribe con el ESTADO, no antes *(2026-09-11)*
+
+`resolverSicoreLote('retener')` ya **no** escribe la `fecha_pago` de las facturas que van a la cola.
+La escribe cada factura al completar su paso, junto con su estado.
+
+**Por qué**: abandonar la cola —cerrar la pestaña, un corte— dejaba la factura con fecha de pago y
+con la `fecha_estimada` arrastrada, **pero con el estado viejo**. El Cash Flow proyectaba la plata
+saliendo el día del intento y nada lo señalaba (`A-BUG-147`).
+
+🔑 Es el invariante de `A-BUG-20` un paso más adentro: *«nada se escribe hasta que las preguntas
+estén contestadas»* valía para el portón, pero **la cola por factura son más preguntas**.
+
+📌 De paso arregla la salida «Cancelar», que restauraba el estado y **dejaba la fecha escrita igual**.
+
+## 🔢 El número de comprobante llega al certificado *(2026-09-11)*
+
+`numero_desde`, `punto_venta` y `fecha_emision` se usaban **sólo para armar el texto de la fila** del
+Cash Flow y no viajaban como campos, así que la retención de una factura **suelta** se guardaba sin
+número: **11 de 16 filas `origen='directo'`**. `A-BUG-138` lo había arreglado **sólo para el camino
+de agrupación**. Ahora viven en el origen (`useMultiCashFlowData`) y sirven para los dos.
+
+⚠️ **Las 11 filas viejas siguen sin número**: el arreglo es hacia adelante. Si hay que reimprimir
+alguna de esas quincenas, se completan a mano.
+
 ## 📁 Archivos del módulo
 
 | Archivo | Rol |

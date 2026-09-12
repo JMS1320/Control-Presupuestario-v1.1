@@ -248,6 +248,29 @@ Los pagos se filtran por **`periodo_id`** (el mes al que fue asignado el pago), 
 
 ---
 
+## 👥 La lista de pagos: agrupada por empleado *(2026-09-11)*
+
+`lib/sueldos/agrupar-pagos.ts` — **pura**, por eso se prueba.
+
+- Los pagos del mes se agrupan por empleado y la lista arranca **cerrada**. Pedido del usuario dos
+  veces (18/08 y 28/08), y precisado el 11/09: *«vengan cerrados automáticamente y se abran
+  apretando»*.
+- La cabecera lleva **el total y la cantidad**: con el grupo cerrado eso es **todo** lo que se ve del
+  empleado. Sin el número habría que abrir para saber si hay algo que mirar — justo lo que el
+  colapsado viene a evitar.
+- El nombre **dejó de repetirse** en cada fila: era el ruido que hacía difícil encontrar un dato.
+
+🔑 **Se agrupa por `empleado_id`, no por nombre.** Dos empleados homónimos darían un total inflado, y
+en una pantalla de plata eso **no se lee como error, se lee como dato**. Está como caso adversario.
+
+## 📝 Detalles de la pantalla que costaron un bug *(2026-09-11)*
+
+| | Qué pasaba |
+|---|---|
+| **Medio de pago** | `abrirEdicionPago` seteaba todos los campos del formulario **menos `antMedioPago`**, así que quedaba el anterior y al guardar **pisaba** el real: un pago de caja se guardaba como banco con sólo abrirlo y confirmar. 🔑 *Un default que pisa un dato ya cargado no es un default: es una pérdida silenciosa* |
+| **Importes** | `formatoMoneda` estaba en `maximumFractionDigits: 0`. Además de perder los centavos, era una **desviación de la § 💰 Convención Inputs Monetarios** de `CLAUDE.md`, que fija 2 decimales para display |
+| **Cuenta destino** | el selector mostraba `alias ?? banco`, y `alias` **suele tener el CBU crudo**. Sigot tiene 3 cuentas y se veían dos números indistinguibles. Ahora manda el **banco** y el número va recortado: `Lucresia · …4347`. 🔴 *Elegir a ciegas entre CBUs es una transferencia al destinatario equivocado esperando* |
+
 ## 📁 Archivos del Módulo
 
 | Archivo | Rol |
