@@ -382,6 +382,24 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
   mirarlas **todas** — mirar sólo `msa_galicia` deja afuera justo las de PAM y MA.
 - **`pendientes_comentarios.pendiente_id` → un ID de `PENDIENTES.md`** (`'A-BUG-27'`). Es el único link que **no apunta a la BD sino a un archivo**: los pendientes viven en un `.md` versionado, no en una tabla. Ver § 6c.
 
+
+### 6.2-bis Tablas de RESPALDO de correcciones de datos (2026-09-12)
+
+Dos tablas nuevas, creadas al corregir datos viejos con permiso del usuario. **No son de la app**:
+ningún código las lee. Existen para que una corrección masiva **se pueda deshacer sin depender de
+que alguien se acuerde de cómo estaba** (§ `CLAUDE.md` 🛑 Datos: foto antes, restaurar después).
+
+| Tabla | Qué guarda | De dónde salió |
+|---|---|---|
+| `public.respaldo_a_dat_35` | `tabla`, `id`, `fecha`, `descripcion`, `detalle_antes`, `detalle_nuevo` de los **141** movimientos a los que se les rellenó el detalle | [A-DAT-35](PENDIENTES.md#a-dat-35) |
+| `public.respaldo_reglas_borradas` | la fila completa de las **6** reglas de conciliación inalcanzables que se borraron, + `motivo` | [A-DAT-36](PENDIENTES.md#a-dat-36) |
+
+🔑 **Revertir cualquiera de las dos es un `UPDATE`/`INSERT` desde su respaldo**, y eso es todo el
+punto: una corrección masiva sin foto previa no es reversible, es definitiva — y las definitivas
+sobre datos del usuario no se hacen.
+
+⚠️ **No se borran por prolijidad.** Pesan nada y son la única prueba de qué había antes.
+
 ### 6b-bis. RLS de las notas — el único caso de `anon` sólo-INSERT (2026-08-31)
 
 `notas_para_claude` y `notas_capturas` tienen **RLS activa con una sola política cada una**:
