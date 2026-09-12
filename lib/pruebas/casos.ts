@@ -43,6 +43,10 @@ import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import {
+  planificarEdicion, evaluarAvisos, diasEntre, coincide,
+  type CuotaExistente, type MovimientoBancario as MovBancario,
+} from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 
 export interface Resultado {
@@ -566,6 +570,145 @@ export function correrCasos(): Resultado[] {
   chequear("Contrapartes", "Sin razón social se usa el CUIT — no se rompe el import",
     "30111111117", planSinNombre.aCrear[0]?.razon_social ?? "(vacío)",
     planSinNombre.aCrear[0]?.razon_social === "30111111117", "B-BUG-CLIENTE-NO-SE-CREA")
+
+  // ══ Editar una campaña de templates (A-FEAT-131) ══════════════════════════════════════════
+  //
+  // 🔒 El invariante: **los links conciliados perduran hagas lo que hagas.** Los datos de abajo son
+  // los REALES de `Red Vial Cuota Lote Puerto` al 2026-09-12, escritos acá como constantes — es el
+  // template que destapó el hueco (hay que llevarlo de 4 cuotas a 6 y no hay pantalla que lo haga).
+  //
+  // ⚠️ Un caso tiene que fallar con el código viejo. Acá el «código viejo» es *borrar y recrear*,
+  // que es lo que ya rompió 9 vínculos (A-BUG-156): los dos primeros casos fallarían con esa
+  // implementación, porque el `id` cambiaría.
+  const C1 = "0d15c8d6-ebf1-4f21-bec9-855f945b4940"   // 16/03, $54.770,60 — CONCILIADA
+  const C2 = "5dfe31fa-c0c9-43fe-9489-f681e236421a"   // 16/06, $30.215,00 — pagada, sin vínculo
+  const C3 = "87c6991f-7c39-4764-930f-378e73f7612b"   // 05/09, $54.770,60 — pendiente
+  const C4 = "425ebf6b-fd74-46e8-b78b-08cddb1b8587"   // 05/12, $54.770,60 — pendiente
+
+  const CUOTAS_LOTE_PUERTO: CuotaExistente[] = [
+    { id: C1, numero_cuota: 1, fecha_estimada: "2026-03-16", monto: 54770.60, estado: "conciliado" },
+    { id: C2, numero_cuota: 2, fecha_estimada: "2026-06-16", monto: 30215.00, estado: "pagado" },
+    { id: C3, numero_cuota: 3, fecha_estimada: "2026-09-05", monto: 54770.60, estado: "pendiente" },
+    { id: C4, numero_cuota: 4, fecha_estimada: "2026-12-05", monto: 54770.60, estado: "pendiente" },
+  ]
+  const igual = (c: CuotaExistente) => ({ id: c.id, fecha_estimada: c.fecha_estimada!, monto: c.monto })
+
+  // El movimiento REAL que está enganchado a la cuota 1, y el REAL de $30.215 que sigue pendiente.
+  const mov = (o: Partial<MovBancario> & { id: string; fecha: string; debitos: number }): MovBancario => ({
+    tabla: "msa_galicia", creditos: 0, descripcion: "Trf Inmed Proveed",
+    estado: "pendiente", template_cuota_id: null, ...o,
+  })
+  const MOV_VINCULADO = mov({ id: "f5e86271", fecha: "2026-03-16", debitos: 54770.6, estado: "conciliado", template_cuota_id: C1 })
+  const MOV_SUELTO_30215 = mov({ id: "58693d0f", fecha: "2026-06-16", debitos: 30215 })
+  const MOV_DE_OTRA_CUOTA = mov({ id: "b9244cdc", fecha: "2026-06-16", debitos: 468762.23, estado: "conciliado", template_cuota_id: "456bd8bb" })
+
+  // ── 1 · Editar NO recrea: la cuota conserva su id ────────────────────────────────────────
+  const planMonto = planificarEdicion(CUOTAS_LOTE_PUERTO, [
+    { id: C1, fecha_estimada: "2026-03-16", monto: 60000 },
+    ...CUOTAS_LOTE_PUERTO.slice(1).map(igual),
+  ])
+  const accionesCrear = planMonto.acciones.filter(a => a.tipo === "crear")
+  chequear("Editar campaña", "🔒 Cambiar el monto EDITA la cuota — no la recrea",
+    "1 modificar · 0 crear", `${planMonto.acciones.filter(a => a.tipo === "modificar").length} modificar · ${accionesCrear.length} crear`,
+    planMonto.acciones.length === 1 && planMonto.acciones[0].tipo === "modificar"
+    && planMonto.acciones[0].id === C1, "A-FEAT-131")
+
+  chequear("Editar campaña", "🔒 Y las otras tres cuotas no se tocan",
+    "0 acciones sobre C2/C3/C4", `${planMonto.acciones.filter(a => a.tipo !== "crear" && a.id !== C1).length} acciones`,
+    planMonto.acciones.every(a => a.tipo === "crear" || a.id === C1), "A-FEAT-131")
+
+  // ── 2 · Quitar una cuota la DESACTIVA: el id (y el link) sobrevive ───────────────────────
+  const planQuitar = planificarEdicion(CUOTAS_LOTE_PUERTO, CUOTAS_LOTE_PUERTO.slice(1).map(igual))
+  const desact = planQuitar.acciones.find(a => a.tipo === "desactivar")
+  chequear("Editar campaña", "🔒 Sacar una cuota de la lista la DESACTIVA, nunca la borra",
+    `desactivar ${C1.slice(0, 8)}`, desact ? `${desact.tipo} ${desact.id.slice(0, 8)}` : "(ninguna acción)",
+    desact?.tipo === "desactivar" && desact.id === C1, "A-FEAT-131")
+
+  // ── 3 · El caso que lo originó: 4 cuotas → 6, sin tocar las 4 ────────────────────────────
+  const planSeis = planificarEdicion(CUOTAS_LOTE_PUERTO, [
+    ...CUOTAS_LOTE_PUERTO.map(igual),
+    { id: null, fecha_estimada: "2027-03-05", monto: 54770.60 },
+    { id: null, fecha_estimada: "2027-06-05", monto: 54770.60 },
+  ])
+  chequear("Editar campaña", "Agregar 2 cuotas a un plan de 4: sólo 2 altas, cero modificaciones",
+    "2 crear · 0 modificar · 0 desactivar",
+    `${planSeis.acciones.filter(a => a.tipo === "crear").length} crear · `
+    + `${planSeis.acciones.filter(a => a.tipo === "modificar").length} modificar · `
+    + `${planSeis.acciones.filter(a => a.tipo === "desactivar").length} desactivar`,
+    planSeis.acciones.length === 2 && planSeis.acciones.every(a => a.tipo === "crear"), "A-FEAT-131")
+
+  chequear("Editar campaña", "Los 4 ids originales siguen en la renumeración (ninguno se perdió)",
+    "4 ids", `${Object.keys(planSeis.renumerar).length} ids`,
+    [C1, C2, C3, C4].every(id => planSeis.renumerar[id] > 0), "A-FEAT-131")
+
+  // Insertar una cuota ANTES de todas renumera, pero no cambia ni un id.
+  const planIntercalar = planificarEdicion(CUOTAS_LOTE_PUERTO, [
+    { id: null, fecha_estimada: "2026-01-10", monto: 1000 },
+    ...CUOTAS_LOTE_PUERTO.map(igual),
+  ])
+  chequear("Editar campaña", "Intercalar una cuota anterior corre los NÚMEROS, no los ids",
+    "la que era 1 pasa a 2", `pasa a ${planIntercalar.renumerar[C1]}`,
+    planIntercalar.renumerar[C1] === 2 && planIntercalar.acciones.every(a => a.tipo === "crear"), "A-FEAT-131")
+
+  // ── 4 · El check al momento: el vínculo que se queda sin cerrar ──────────────────────────
+  const avisosMonto = evaluarAvisos(planMonto, [MOV_VINCULADO], [MOV_VINCULADO])
+  chequear("Editar campaña", "🔴 Cambiar el monto de una cuota CONCILIADA avisa en rojo",
+    "VINCULO_SE_ROMPE", avisosMonto.map(a => a.codigo).join(", ") || "(ningún aviso)",
+    avisosMonto.some(a => a.codigo === "VINCULO_SE_ROMPE" && a.nivel === "rojo"), "A-FEAT-131")
+
+  // La tolerancia es la del motor: 5 días pasa, 6 no. Si estos dos dieran igual, el aviso estaría
+  // usando un criterio propio y avisaría de matches que el motor nunca haría.
+  const conFecha = (f: string) => evaluarAvisos(
+    planificarEdicion(CUOTAS_LOTE_PUERTO, [{ id: C1, fecha_estimada: f, monto: 54770.60 }, ...CUOTAS_LOTE_PUERTO.slice(1).map(igual)]),
+    [MOV_VINCULADO], [])
+  chequear("Editar campaña", "Correr la fecha 5 días NO avisa (es la tolerancia del motor)",
+    "sin aviso rojo", `${conFecha("2026-03-21").filter(a => a.nivel === "rojo").length} rojos`,
+    conFecha("2026-03-21").every(a => a.nivel !== "rojo"), "A-FEAT-131")
+  chequear("Editar campaña", "…y correrla 6 días SÍ avisa",
+    "1 aviso rojo", `${conFecha("2026-03-22").filter(a => a.nivel === "rojo").length} rojos`,
+    conFecha("2026-03-22").some(a => a.nivel === "rojo"), "A-FEAT-131")
+
+  // ── 5 · El que pidió el usuario: «coincide proveedor, fecha, monto contra salida bancaria» ─
+  const planHaciaOtro = planificarEdicion(CUOTAS_LOTE_PUERTO, [
+    ...CUOTAS_LOTE_PUERTO.slice(0, 2).map(igual),
+    { id: C3, fecha_estimada: "2026-06-16", monto: 468762.23 },
+    igual(CUOTAS_LOTE_PUERTO[3]),
+  ])
+  const avisosOtro = evaluarAvisos(planHaciaOtro, [MOV_VINCULADO], [MOV_DE_OTRA_CUOTA, MOV_SUELTO_30215])
+  chequear("Editar campaña", "🟠 Si el valor nuevo coincide con un movimiento que YA es de otra cuota, avisa",
+    "COINCIDE_CON_OTRO", avisosOtro.map(a => a.codigo).join(", ") || "(ningún aviso)",
+    avisosOtro.some(a => a.codigo === "COINCIDE_CON_OTRO"), "A-FEAT-131")
+
+  // Y el otro lado: si el valor nuevo cae sobre una salida SIN conciliar, se informa en azul.
+  // 📌 Es el caso real del 16/06: $30.215 sigue pendiente en el banco y la cuota 2 ya dice ese monto.
+  const planHaciaSuelto = planificarEdicion(CUOTAS_LOTE_PUERTO, [
+    ...CUOTAS_LOTE_PUERTO.slice(0, 2).map(igual),
+    { id: C3, fecha_estimada: "2026-06-16", monto: 30215 },
+    igual(CUOTAS_LOTE_PUERTO[3]),
+  ])
+  const avisosSuelto = evaluarAvisos(planHaciaSuelto, [], [MOV_SUELTO_30215])
+  chequear("Editar campaña", "🔵 Si cae sobre una salida SIN conciliar, lo dice (no lo calla)",
+    "SE_ACERCA", avisosSuelto.map(a => a.codigo).join(", ") || "(ningún aviso)",
+    avisosSuelto.some(a => a.codigo === "SE_ACERCA" && a.nivel === "azul"), "A-FEAT-131")
+
+  // ── 6 · Desactivar algo vinculado se anuncia ─────────────────────────────────────────────
+  const avisosQuitar = evaluarAvisos(planQuitar, [MOV_VINCULADO], [])
+  chequear("Editar campaña", "Quitar una cuota conciliada lo dice antes de guardar",
+    "DESACTIVA_VINCULADA", avisosQuitar.map(a => a.codigo).join(", ") || "(ningún aviso)",
+    avisosQuitar.some(a => a.codigo === "DESACTIVA_VINCULADA"), "A-FEAT-131")
+
+  // ── 7 · La trampa del huso horario ───────────────────────────────────────────────────────
+  // Si `diasEntre` mezclara medianoche local con medianoche UTC, dos fechas iguales darían 1 día en
+  // Argentina (UTC-3) y un match exacto se reportaría como «fecha no exacta».
+  chequear("Editar campaña", "Dos fechas iguales distan 0 días (no 1 por el huso horario)",
+    "0 días", `${diasEntre("2026-06-16", "2026-06-16")} días`,
+    diasEntre("2026-06-16", "2026-06-16") === 0, "A-FEAT-131")
+
+  // Un monto en cero nunca puede «coincidir»: hay 20 cuotas de Red Vial en $0 (A-BUG-135) y todas
+  // matchearían entre sí, llenando la pantalla de avisos que no significan nada.
+  chequear("Editar campaña", "⚠️ Una cuota en $0 no coincide con nada (hay 20 así en la base)",
+    "no coincide", coincide(mov({ id: "x", fecha: "2026-06-16", debitos: 0 }), "2026-06-16", 0) ? "coincide" : "no coincide",
+    !coincide(mov({ id: "x", fecha: "2026-06-16", debitos: 0 }), "2026-06-16", 0), "A-FEAT-131")
 
   return r
 }

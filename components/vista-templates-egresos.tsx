@@ -28,6 +28,7 @@ import useInlineEditor, { CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 import { GeneradorRenovacionCampana } from "./generador-renovacion-campana"
+import { EditorCampanaTemplate } from "@/components/editor-campana-template"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
 
@@ -95,6 +96,7 @@ export function VistaTemplatesEgresos() {
   const [error, setError] = useState<string | null>(null)
   const [mostrarWizard, setMostrarWizard] = useState(false)
   const [mostrarGenerador, setMostrarGenerador] = useState(false)
+  const [editandoCampana, setEditandoCampana] = useState<string | null>(null)   // A-FEAT-131
   
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
@@ -1264,6 +1266,25 @@ export function VistaTemplatesEgresos() {
           )
         
         case 'nombre_referencia':
+          // ✏️ A-FEAT-131 — desde acá se abre el template entero: sus datos y TODAS sus cuotas.
+          // La tabla es de cuotas sueltas, así que para agregar una sexta cuota a un plan de cuatro
+          // no había dónde: el modal de «agregar cuota» filtra `tipo_template = 'abierto'` y este
+          // template es `fijo`. Ese era el hueco.
+          return (
+            <div className="max-w-xs truncate flex items-center gap-1" title={valor as string}>
+              <span className="truncate">{valor as string}</span>
+              {cuota.egreso_id && (
+                <button
+                  onClick={e => { e.stopPropagation(); setEditandoCampana(cuota.egreso_id!) }}
+                  className="shrink-0 text-blue-600 hover:text-blue-800 text-xs"
+                  title="Editar la campaña: el template, sus cuotas y sus datos (los vínculos conciliados se conservan)"
+                >
+                  ✏️
+                </button>
+              )}
+            </div>
+          )
+
         case 'nombre_quien_cobra':
         case 'descripcion':
           return (
@@ -1949,6 +1970,15 @@ export function VistaTemplatesEgresos() {
 
       {mostrarGenerador && (
         <GeneradorRenovacionCampana onClose={() => { setMostrarGenerador(false); cargarCuotas() }} />
+      )}
+
+      {/* ✏️ A-FEAT-131 — editar la campaña del template de esta fila. */}
+      {editandoCampana && (
+        <EditorCampanaTemplate
+          templateId={editandoCampana}
+          onClose={() => setEditandoCampana(null)}
+          onGuardado={() => cargarCuotas()}
+        />
       )}
 
       {/* Modal Conversión Masiva Anual → Cuotas */}
