@@ -54,6 +54,7 @@ import { supabase } from "@/lib/supabase"
 import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
 import { proveedorDelMovimiento } from "@/lib/conciliacion/proveedor-del-movimiento"
 import { detalleCompleto } from "@/lib/templates/identificador-cuota"
+import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
 import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -115,7 +116,24 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       else if (matchMontoCercano) score += 50
 
       // ── 2. CUIT ─────────────────────────────────────────────────────────────
-      if (cuitMatch) score += matchMonto ? 100 : 30   // 100 extra si también hay monto
+      /**
+       * 🐞 **A-BUG-170** — el CUIT sin monto valía **30**, y un importe parecido de un desconocido
+       * valía **50**. Al conciliar un pago de I.C.T. NET —con su CUIT viniendo en el extracto— las
+       * cuatro primeras sugerencias eran de **otros proveedores**; el correcto estaba abajo.
+       *
+       * 🔑 **Un importe parecido es una coincidencia; el CUIT es un hecho que manda el banco.**
+       * Cuando el movimiento lo trae, lo de esa contraparte va primero **aunque el monto no
+       * coincida** — la pregunta en ese momento es *«¿qué le debo a ICT NET?»*, no *«¿qué factura
+       * vale $35.497?»*.
+       *
+       * 📌 **Y el caso que lo destapó es donde más importa**: ese pago **no coincide con ninguna
+       * factura a propósito** — cubre comprobantes que el proveedor reclamaba como impagos. Ordenar
+       * por monto **nunca** lo iba a encontrar.
+       *
+       * Con 90: CUIT solo (90) > monto exacto ajeno (80) > monto parecido ajeno (50), y CUIT+monto
+       * sigue ganando a todo (180).
+       */
+      if (cuitMatch) score += matchMonto ? 100 : 90
 
       // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
       const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
@@ -151,8 +169,10 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       } else if (matchMonto && matchFecha) {
         badges.push({ texto: 'Monto + Fecha', color: 'bg-blue-100 text-blue-800' })
       } else if (matchMonto) {
-        const label = matchMontoCercano || diffAbs <= 2 ? 'Monto exacto' : 'Monto ≈'
-        badges.push({ texto: label, color: 'bg-purple-100 text-purple-700' })
+        // 🏷️ A-BUG-169 — decía 'Monto exacto' con hasta 5% de diferencia. Ahora exacto es
+        //    exacto, y si no lo es se muestra CUÁNTO se aparta. Ver `lib/conciliacion/etiqueta-monto`.
+        const et = etiquetaMonto(monto, montoFactura)
+        badges.push({ texto: et.texto, color: et.exacto ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600' })
       } else if (cuitMatch) {
         badges.push({ texto: 'CUIT (monto distinto)', color: 'bg-yellow-100 text-yellow-700' })
       }

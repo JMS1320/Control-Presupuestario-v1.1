@@ -43,6 +43,7 @@ import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
 import {
   identificadorDeCuota, detalleCompleto, esElIdentificadorGenerado,
 } from "@/lib/templates/identificador-cuota"
@@ -776,6 +777,39 @@ export function correrCasos(): Resultado[] {
   chequear("Identificador cuota", "⚠️ Una etiqueta de otro período NO se da por generada",
     "es del usuario", esElIdentificadorGenerado("UATRE MSA - Marzo 2025", CUOTA_SEP, TPL_UATRE) ? "es identificador" : "es del usuario",
     esElIdentificadorGenerado("UATRE MSA - Marzo 2025", CUOTA_SEP, TPL_UATRE) === false, "A-DAT-37")
+
+
+  // ══ La etiqueta del monto en la propuesta de conciliación (A-BUG-169) ═════════════════════
+  //
+  // 🏷️ *«Es raro que me dé tantas cosas erróneas»* (usuario, 2026-09-13). El caso real: conciliando
+  // un pago de I.C.T. NET de **$35.497,81**, la app ofrecía `BAILO ANDRES` por **$35.500,00** con el
+  // cartel **«Monto exacto»**. Difería $2,19.
+  //
+  // 🔴 **Este caso falla con el código viejo**: la condición era `matchMontoCercano || diffAbs <= 2`,
+  // y `matchMontoCercano` es ±5% — o sea que decía «exacto» hasta con $1.700 de diferencia.
+  chequear("Etiqueta monto", "🔴 $35.497,81 contra $35.500,00 NO es exacto — dice cuánto se aparta",
+    "≈ $2,19", etiquetaMonto(35497.81, 35500).texto,
+    etiquetaMonto(35497.81, 35500).texto === "≈ $2,19", "A-BUG-169")
+
+  chequear("Etiqueta monto", "Exacto es diferencia CERO",
+    "Monto exacto", etiquetaMonto(35497.81, 35497.81).texto,
+    etiquetaMonto(35497.81, 35497.81).exacto === true, "A-BUG-169")
+
+  // Con importes grandes el peso no dice nada y el porcentaje sí: $40.000 sobre 2 M es 2%.
+  chequear("Etiqueta monto", "Diferencias grandes se muestran en PORCENTAJE",
+    "≈ 2%", etiquetaMonto(2000000, 2040000).texto,
+    etiquetaMonto(2000000, 2040000).texto === "≈ 2%", "A-BUG-169")
+
+  // Y al revés: con importes chicos el porcentaje engaña ($18 sobre $600 «suena» a 3%).
+  chequear("Etiqueta monto", "…y las chicas en PESOS",
+    "≈ $18,00", etiquetaMonto(600, 618).texto,
+    etiquetaMonto(600, 618).texto === "≈ $18,00", "A-BUG-169")
+
+  // ⚠️ Un centavo NO es exacto. Es el borde que más tienta redondear, y el que más caro sale:
+  //    si un centavo pasa por exacto, la diferencia se pierde y reaparece en un arqueo.
+  chequear("Etiqueta monto", "⚠️ Un centavo de diferencia NO es exacto",
+    "≈ $0,01", etiquetaMonto(1000, 1000.01).texto,
+    etiquetaMonto(1000, 1000.01).exacto === false, "A-BUG-169")
 
   return r
 }
