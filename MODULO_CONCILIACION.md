@@ -2888,10 +2888,18 @@ Cada movimiento conciliado apunta a **su** origen, por **su** columna. Las demá
 
 ⚠️ **`template_cuota_id` guarda una cuota O un `grupo_pago_id`** cuando el pago fue agrupado. No es
 una excepción prolija — es el motivo por el que **no se le puede poner FK**
-([A-DEC-23](../../PENDIENTES.md#a-dec-23)) y por el que un control ingenuo reporta rotos todos los
+([A-DEC-23](PENDIENTES.md#a-dec-23)) y por el que un control ingenuo reporta rotos todos los
 pagos agrupados.
 
-**🧮 Control 1** — ningún movimiento con **dos** columnas de vínculo llenas.
+⚠️ **Y hay UNA combinación de dos vínculos que es CORRECTA: `comprobante_arca_id` + `anticipo_id`.**
+*(Corregido el 2026-09-13 al medir para § 30.9.7: la primera versión de esta § decía «uno y sólo
+uno» sin excepciones, y con ese criterio **7 de los 8 casos serían falsos positivos**.)*
+Es el cierre normal de un anticipo: se adelantó plata, después llegó la factura, y el movimiento
+apunta a las dos cosas — que es justamente lo que pide § F (*un anticipo no es un destino*). **El par
+`ARCA + anticipo` no es un error: es el final feliz del circuito.**
+
+**🧮 Control 1** — ningún movimiento con **dos** columnas de vínculo llenas, **excepto
+`ARCA + anticipo`**.
 **🧮 Control 2** — ningún movimiento `conciliado` con **ninguna**.
 
 ---
@@ -2967,7 +2975,7 @@ Objetivos, medibles, y ninguno necesita interpretar nada:
 | **7** | el importe del banco **cuadra** contra su origen (§ 30.9.2) |
 | **8** | el Proveedor está lleno **cuando el origen lo tiene** |
 
-⚠️ **El control 7 hoy sólo mira los de template** — es el límite que dejó [A-BUG-171](../../PENDIENTES.md#a-bug-171).
+⚠️ **El control 7 hoy sólo mira los de template** — es el límite que dejó [A-BUG-171](PENDIENTES.md#a-bug-171).
 
 ---
 
@@ -3018,6 +3026,150 @@ Medido sobre los movimientos de sueldo, **por empleado**, que es de donde depend
 
 📌 **Y en template y ARCA no hay un solo caso mixto**: o todos tienen o ninguno. Así que el dato
 perdido está **sólo acá**.
+
+### 30.9.7 — 🎯 LA CORRIDA DEL AUDIT: qué esperamos ANTES de correrlo
+
+*Escrito el 2026-09-13, a pedido del usuario: **«quiero que dejes todo documentado, incluso que
+estamos por correr el audit y qué es lo que esperamos — dejar registrado los casos que están mal y
+deben ser corregidos»**.*
+
+> **Esta § se escribe ANTES de que el audit exista.** Si al correrlo da otra cosa, entonces **o el
+> audit está mal, o esta medición estaba mal** — y las dos posibilidades hay que mirarlas.
+
+🔑 **Por qué esto no es ceremonia.** Un audit recién escrito no tiene contra qué compararse: lo que
+reporte va a parecer cierto sólo porque lo dijo la máquina. Este día produjo **tres falsas alarmas**
+—un `limit` que PostgREST recorta a 1000, un `r.json()` sobre un 201 vacío, un universo contado
+después de filtrarlo— y **las tres se veían exactamente igual que un hallazgo real**. La única
+defensa barata es tener el número escrito de antes.
+
+---
+
+#### A · EL ALCANCE — sobre qué corre, y sobre qué no
+
+**La pregunta del usuario fue literal: *«esto corre sobre todos los movimientos de extracto,
+¿verdad?»*. La respuesta es NO, y la distinción importa:**
+
+> **El audit recorre las 10 cuentas enteras, pero sólo le EXIGE el estándar a los CONCILIADOS.**
+
+**Un movimiento pendiente no tiene obligación de llevar proveedor, comprobante ni categ** — todavía
+no se decidió qué es. Exigírselo convertiría al audit en una máquina de reportar 822 falsos
+positivos, que es la forma más rápida de que nadie lo vuelva a abrir.
+
+| Cuenta | Movimientos | **Conciliados** = lo auditable |
+|---|---|---|
+| `public.msa_galicia` | 849 | **650** |
+| `public.pam_galicia_cc` | 76 | **16** |
+| `msa.tarjeta_visa_business` | 320 | **7** |
+| `public.pam_galicia` | 25 | **3** |
+| `msa.caja_sigot` | 79 | 0 |
+| `pam.tarjeta_visa` | 53 | 0 |
+| `ma.ma_galicia` | 96 | 0 |
+| `ma.tarjeta_visa` · `msa.caja_general` · `msa.caja_ams` | 0 | 0 |
+| **TOTAL** | **1.498** | **676** |
+
+📌 **El 96% de lo conciliado está en una sola cuenta.** No es un reparto parejo: `msa_galicia` es
+prácticamente todo el universo auditable, y las otras seis cuentas con extracto importado están
+**sin conciliar**, no mal conciliadas. Son dos problemas distintos y el audit sólo ve el segundo.
+
+**Y por origen**, que es como se aplica el estándar de § 30.9.6:
+
+| Origen | Conciliados |
+|---|---|
+| Template | **506** |
+| ARCA | **116** |
+| Sueldo | **43** |
+| 🔴 Sin vínculo | **10** |
+| Anticipo suelto | **1** |
+
+---
+
+#### B · LA EXPECTATIVA, CONTROL POR CONTROL
+
+Medido el 2026-09-13 sobre los 676. **Estos son los números que el audit tiene que reproducir.**
+
+| # | Control | Esperado | Lectura |
+|---|---|---|---|
+| **1** | un solo vínculo | **8** — pero **7 son correctos** | ver ⚠️ abajo |
+| **2** | todo conciliado con vínculo | 🔴 **10** | conciliados que no apuntan a nada |
+| **3** | el detalle no repite | 🔴 **96** | ARCA 57 · sueldo 35 · template 3 · sin vínculo 1 |
+| **4** | el comprobante identifica cuál | 🔴 **16** sin comprobante | ARCA 4 · sueldo 3 · anticipo 1 · **sin vínculo 8** · template **0** ✅ |
+| **5** | la categ existe en el plan | 🔴 **152 movs**, pero **21 categorías** | ver 📌 abajo |
+| **6a** | ARCA lleva `nro_cuenta` | 🔴 **13** de 116 | el hueco real de imputación |
+| **6b** | los demás **no** lo llevan | 🔴 **9** | template/sueldo con `nro_cuenta` puesto |
+| **7** | el importe cuadra | ✅ **446 / 446** | ya corregido hoy (§ 30.9.2) |
+| **8** | proveedor lleno | **209** — pero casi todo es del origen | template 190 · sueldo 6 · ARCA 4 · sin vínculo 8 · anticipo 1 |
+
+⚠️ **Control 1 — la excepción que hay que declarar ANTES de correrlo.** De los 8 con dos vínculos,
+**7 son `ARCA + anticipo` y están BIEN**: son pagos que cancelaron una factura aplicando un anticipo
+previo, que es exactamente lo que el usuario definió en § F (*«los anticipos siempre terminan en una
+factura o un template; nunca deberían terminar así»*). **El control tal como está escrito en
+§ 30.9.6 los daría como error.** Hay que exceptuar el par `ARCA + anticipo`.
+🔴 **El único real es uno**: 06/04, $84.000, `GASTOS VARIOS GANADERIA` — **template + sueldo a la
+vez**, que no se explica de ninguna manera.
+
+📌 **Control 5 — son 152 movimientos, pero el trabajo son 21 altas.** Y **18 de las 21 son
+categorías reales y de uso diario que faltan dar de alta**, no basura: `Sueldos` (44 movs),
+`Impuesto Red Vial` (13), `Impuesto inmobiliario` (12), `Seguros Estructura` (11),
+`Distribucion Mama` (10)…
+🔴 **Basura verdadera hay 4 movimientos**: `INVALIDA:` (3) y `SIN_CATEG` (1).
+*Un audit que reporte «152 errores» sin agrupar hace parecer enorme algo que son 18 filas de alta.*
+
+📌 **Control 8 — el hueco no está en el movimiento.** De los 190 de template sin proveedor, **el
+movimiento no puede llenarlo si el template no lo tiene**: la conciliación propaga bien lo que
+encuentra (es el mismo hallazgo que [A-DAT-41](PENDIENTES.md#a-dat-41) con el centro de costo).
+**Reportarlos como error del extracto manda a corregir 190 filas en vez de las pocas del origen.**
+
+---
+
+#### C · LOS TRES DESTINOS DEL CONTROL 3 — vaciar NO es el arreglo
+
+Al mirar los 96 casos aparecen **tres situaciones distintas**, y tratarlas igual destruye dato:
+
+| | Ejemplo real | Qué hacer |
+|---|---|---|
+| **Puro ruido** | prov `GOROSITO OLGA MARIA` · detalle `GOROSITO OLGA MARIA` | **vaciar** |
+| **Ruido + algo propio** | `Factura 1-236 - AGRICOLA HNOS CATTANEO \| Anticipo $712.560,9 (28/2/2026)` | **recortar** — el anticipo sí aporta |
+| 🔴 **El detalle hace el trabajo de otra columna** | comprobante **vacío**, detalle con **las 6 facturas de Alcorta** | **mover a `comprobantes_pagados`** |
+
+🔑 **El tercero es el que importa**, y es invisible para el control 4: ese movimiento *tiene* la
+información de cuál obligación pagó — está guardada **en la columna equivocada**. Un audit que
+vacíe el detalle por «repetido» **borraría el único lugar donde ese dato existe**.
+
+---
+
+#### D · LOS DOS CONTROLES QUE NO EXISTEN TODAVÍA
+
+Los 8 controles de § 30.9.6 recorren **el movimiento**. Hay dos huecos que por diseño no ven:
+
+**🧮 Control 10 — la consistencia entre CASOS IGUALES.** No compara contra una regla escrita:
+**deduce el estándar de la propia coherencia de los datos**. Si un empleado tiene el código contable
+en 5 movimientos y le falta en 7, la regla existe — y el hueco es objetivo sin que nadie la haya
+enunciado. Es el control que encontró [A-DAT-42](PENDIENTES.md#a-dat-42), y **ninguno de los 8 lo
+habría agarrado**: los 7 movimientos de Alondra Olivo están, individualmente, perfectos.
+📌 Es el mismo mecanismo que el testigo de Red Vial PAM en § 30.9.2 — *sin el par para comparar, el
+de marzo se veía perfectamente normal*.
+
+**🧮 Control 11 — el lado del ORIGEN.** Los 8 controles caminan el extracto; si el hueco está en el
+template o en el maestro, **no lo ven nunca**. Los 61 templates sin centro de costo
+([A-DAT-41](PENDIENTES.md#a-dat-41)) y los 190 movimientos sin proveedor del control 8 son **el
+mismo hueco visto desde el lado inútil**: corregir el extracto no arregla nada, porque la próxima
+conciliación vuelve a propagar el vacío.
+
+⚠️ **Y el control 7 sigue mirando sólo los de template** — el límite que dejó
+[A-BUG-171](PENDIENTES.md#a-bug-171), y una instancia más de § 30.9.5.
+
+---
+
+#### E · QUÉ SE ESPERA QUE EL AUDIT HAGA CON LO QUE ENCUENTRE
+
+**Que lo muestre agrupado y que NO lo corrija solo.** El criterio es el de § 🛑 Datos, y se ganó el
+día tres veces:
+
+1. **Agrupar por causa, no listar por fila** — «18 categorías a dar de alta», no «152 errores».
+2. **Separar lo que corresponde arreglar en el ORIGEN** de lo que se arregla en el movimiento.
+3. **Proponer, nunca aplicar.** El arreglo lo decide el usuario, caso por caso o en lote, y con foto
+   previa. Un audit que corrige solo es un script de migración con otro nombre.
+4. **Y decir lo que NO pudo verificar** (§ 🧮 *nada se descarta en silencio*).
 
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
