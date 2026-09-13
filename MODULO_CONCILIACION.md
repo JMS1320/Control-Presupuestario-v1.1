@@ -2905,7 +2905,7 @@ Las preguntas son las de § 30.9; acá está **de dónde sale cada una**.
 | **ARCA** | razón social del maestro por CUIT | la de la factura | `FC A - 00012345` | sólo lo específico |
 | **Template** | `nombre_quien_cobra` del template | la de la cuota, o la del template | `<Nombre> <Resp> - <Mes> <Año>` | ídem |
 | **Sueldo** | **el EMPLEADO** del pago | `Sueldos` | `Haberes <Mes> <Año> — a cuenta` / `— saldo` | ídem |
-| **Anticipo** | el proveedor del anticipo | la del anticipo | ❓ *a definir* | ídem |
+| **Anticipo** | — | — | — | — → **ver la nota de abajo: un anticipo no es un destino final** |
 | **Venta** | el cliente | la de la venta | el número del comprobante | ídem |
 
 📌 **El vocabulario de sueldos lo corrigió el usuario**: de cuatro pagos de un mes, **tres son «a
@@ -2971,12 +2971,53 @@ Objetivos, medibles, y ninguno necesita interpretar nada:
 
 ---
 
-#### ❓ Lo que falta definir — el usuario lo completa
-1. **Anticipos**: qué va en el Comprobante.
-2. **Trf Orden Judic.** (embargos): son pagos de sueldo con las cuatro columnas vacías. ¿Llevan el
-   empleado como proveedor, o es un caso aparte con su propio formato?
-3. **`contable` / `interno`** (`RET 3 MA`, `CTA AMS`, `CTA JMS`): aparecen en unos sueldos y en
-   otros no. ¿Cuándo corresponden?
+#### F · 💸 Un ANTICIPO no es un destino: es un estado transitorio
+
+*Respuesta del usuario 2026-09-13: **«los anticipos siempre terminan en una factura o un template o
+algo. Nunca deberían terminar así. Por lo tanto terminan heredando lo que corresponda»**.*
+
+Un movimiento con `anticipo_id` **está a mitad de camino**. Cuando el anticipo se aplica, el
+movimiento **hereda las cuatro columnas del destino** — la factura o la cuota que canceló — y se
+audita contra **ese** origen, no como anticipo.
+
+> 🧮 **Control 9** — un movimiento que queda con `anticipo_id` como **único** vínculo y en estado
+> final **no está terminado**. No es un formato distinto: es trabajo pendiente.
+
+📌 Y eso explica por qué la fila de «Anticipo» de la tabla B está vacía: **no tiene formato propio
+porque no debería quedarse ahí**.
+
+#### G · ⚖️ Los pagos judiciales son PAGOS DE SUELDO
+
+*Respuesta del usuario 2026-09-13 sobre las `Trf Orden Judic.`: **«son las de pago de cuota
+alimentaria a Lucresia. Es un pago de sueldo a Sigot de cualquier manera»**.*
+
+No son un caso aparte. Siguen el estándar de **sueldo**: el Proveedor es **el empleado** (Ruben
+Sigot), la CATEG es `Sueldos` y el Comprobante es el de su período. Lo único propio es el **Detalle**,
+y encaja perfecto con la regla negativa: *cuota alimentaria — Lucresia* es exactamente **lo que no se
+deduce de las otras tres columnas**.
+
+🔴 **Hoy los tres tienen las cuatro columnas vacías** y están en `auditar`.
+
+#### H · 🔢 `contable` / `interno` — salen de REGLAS, y hay 7 movimientos que las perdieron
+
+*El usuario, 2026-09-13: **«son reglas que deberían estar funcionando, pero no nos podemos meter en
+eso ahora. Lo único: si vemos casos, habría que ver si se perdió algún dato de interno o contable»**.*
+
+Medido sobre los movimientos de sueldo, **por empleado**, que es de donde depende el código:
+
+| Empleado | Empresa | Movs | Con código | Sin | |
+|---|---|---|---|---|---|
+| **AMS** | MSA/PAM/MA | 8 | **8** | 0 | `CTA AMS` ✅ siempre |
+| **JMS** | MSA/PAM/MA | 6 | **6** | 0 | `CTA JMS` ✅ siempre |
+| 🔴 **Alondra Olivo** | **MA** | 12 | 5 | **7** | `RET 3 MA` — **inconsistente** |
+| Ruben Sigot · Wilson Barreto · Ignacio Pucheta | MSA | 21 | 0 | 21 | ✅ correcto: son de MSA, no hay retiro |
+
+🔑 **La regla existe y funciona** — la aplicó 5 veces sobre el mismo empleado. **El hueco es acotado:
+7 movimientos de Alondra Olivo**, que es de MA y cobra desde la cuenta de MSA, así que le corresponde
+`RET 3 MA` como a los otros cinco.
+
+📌 **Y en template y ARCA no hay un solo caso mixto**: o todos tienen o ninguno. Así que el dato
+perdido está **sólo acá**.
 
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
