@@ -2504,6 +2504,36 @@ todos lados.
 
 ---
 
+## 🧾 La cuenta corriente de un proveedor o cliente
+
+*En la **ficha** de cualquier contraparte, arriba de las listas de facturas y pagos.*
+
+Es **una sola lista ordenada por fecha** con el saldo acumulado al costado: cada factura suma, cada
+pago resta, y el número de la derecha te dice cómo van las cosas en ese momento.
+
+Arriba de todo, el estado en una línea: **«Le debo $X»**, **«Saldo a favor $X»** o **«Al día»**.
+
+### ⚠️ Los pagos en ámbar
+Un pago pintado de ámbar es uno que **no dice contra qué comprobante fue**. Son los que dejan saldo
+sin que nadie lo note — típicamente cuando le pagaste algo que no tenés facturado, o de más.
+
+El aviso de arriba te dice cuántos hay.
+
+### Si la contraparte compra Y vende
+Las facturas de **venta restan** de lo que le debés. Así ves el neto real, que es lo que importa
+cuando se compensan entre sí en vez de pagarse.
+
+### 🔑 No se guarda, se arma
+El saldo se calcula cada vez que abrís la ficha. Por eso **nunca queda viejo**: si entra una factura
+nueva o se concilia un pago, la próxima vez ya está al día sin que nadie recalcule nada.
+
+⚠️ Lo que la ficha **no ve** lo avisa ella misma: pagos por caja o por cheque que no pasaron por el
+extracto.
+
+⚠️ Sin probar todavía → A-TEST-130
+
+---
+
 ## 📐 Cómo se registra un movimiento — qué va en cada columna
 
 *Vale para todo lo que se concilia: banco, caja, tarjeta, echeq. **El detalle es el detalle para

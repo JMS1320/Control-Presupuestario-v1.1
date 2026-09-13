@@ -44,6 +44,7 @@ import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
+import { armarCuentaCorriente, leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
 import {
   identificadorDeCuota, detalleCompleto, esElIdentificadorGenerado,
 } from "@/lib/templates/identificador-cuota"
@@ -810,6 +811,69 @@ export function correrCasos(): Resultado[] {
   chequear("Etiqueta monto", "⚠️ Un centavo de diferencia NO es exacto",
     "≈ $0,01", etiquetaMonto(1000, 1000.01).texto,
     etiquetaMonto(1000, 1000.01).exacto === false, "A-BUG-169")
+
+
+  // ══ La cuenta corriente de una contraparte (A-FEAT-141) ══════════════════════════════════
+  //
+  // 🧾 Los datos son los REALES de I.C.T. NET de febrero a abril de 2026, que es el tramo donde
+  // pasa todo: un pago que no corresponde a ninguna factura, y su descuento un mes después.
+  const FC_ICT = [
+    { id: "f1", fecha: "2026-02-01", numero: "FC - 10558", total: 22094.30, tipo: "compra" as const },
+    { id: "f2", fecha: "2026-03-01", numero: "FC - 10661", total: 22800.01, tipo: "compra" as const },
+    { id: "f3", fecha: "2026-04-01", numero: "FC - 10762", total: 28602.99, tipo: "compra" as const },
+  ]
+  const PG_ICT = [
+    { id: "p1", fecha: "2026-02-11", monto: 22094.30, comprobantes_pagados: "FC - 10558" },
+    { id: "p2", fecha: "2026-03-10", monto: 22800.01, comprobantes_pagados: "FC - 10661" },
+    // 🔴 El pago sin referencia: cubre comprobantes que el proveedor reclamaba y no están cargados.
+    { id: "p3", fecha: "2026-03-13", monto: 35497.81, detalle: "Pago ICT Net Octubre y abril que ya estaban pagos" },
+    { id: "p4", fecha: "2026-04-10", monto: 8990.21, comprobantes_pagados: "FC - 10762" },
+  ]
+  const cc = armarCuentaCorriente(FC_ICT, PG_ICT)
+
+  // 🔑 El número que hoy no se puede ver en ninguna pantalla y hay que reconstruir a mano.
+  chequear("Cuenta corriente", "🔑 El saldo a favor de ICT NET sale solo",
+    "-15.885,03", cc.saldo.toFixed(2),
+    cc.saldo === -15885.03, "A-FEAT-141")
+
+  chequear("Cuenta corriente", "…y se lee sin interpretar el signo",
+    "Saldo a favor $15.885,03", leyendaSaldo(cc.saldo),
+    leyendaSaldo(cc.saldo) === "Saldo a favor $15.885,03", "A-FEAT-141")
+
+  chequear("Cuenta corriente", "Los totales cierran contra el detalle",
+    "comprado 73.497,30 · pagado 89.382,33",
+    `comprado ${cc.totalComprado.toFixed(2)} · pagado ${cc.totalPagado.toFixed(2)}`,
+    cc.totalComprado === 73497.30 && cc.totalPagado === 89382.33, "A-FEAT-141")
+
+  // 🔴 La señal a mirar: el pago que no dice contra qué fue es el que genera el saldo sin avisar.
+  chequear("Cuenta corriente", "🔴 Marca el pago que no dice contra qué comprobante fue",
+    "1 sin referencia", `${cc.pagosSinReferencia} sin referencia`,
+    cc.pagosSinReferencia === 1, "A-FEAT-141")
+
+  // A igual fecha, primero la factura y después el pago: si no, el saldo intermedio muestra un
+  // negativo que nunca existió y la columna se vuelve imposible de leer.
+  const mismoDia = armarCuentaCorriente(
+    [{ id: "f", fecha: "2026-05-01", numero: "FC - 1", total: 1000, tipo: "compra" }],
+    [{ id: "p", fecha: "2026-05-01", monto: 1000, comprobantes_pagados: "FC - 1" }])
+  chequear("Cuenta corriente", "A igual fecha, primero la factura y después el pago",
+    "compra, pago", mismoDia.asientos.map(a => a.tipo).join(", "),
+    mismoDia.asientos[0].tipo === "compra" && mismoDia.asientos[1].saldo === 0, "A-FEAT-141")
+
+  // 🤝 El caso proveedor-CLIENTE (AFA): una factura de venta COMPENSA. Con dos saldos separados
+  //    esa compensación no se ve; con uno solo, sí — y es el canal de pago de A-FEAT-140.
+  const afa = armarCuentaCorriente(
+    [{ id: "c", fecha: "2026-05-01", numero: "FC compra", total: 100000, tipo: "compra" },
+     { id: "v", fecha: "2026-05-02", numero: "FC venta",  total: 40000,  tipo: "venta" }], [])
+  chequear("Cuenta corriente", "🤝 Una factura de VENTA compensa lo que le debo (caso AFA)",
+    "Le debo $60.000,00", leyendaSaldo(afa.saldo),
+    afa.saldo === 60000, "A-FEAT-141")
+
+  // ⚠️ Sin fecha no se descarta: si se escondiera, el saldo dejaría de cerrar contra el detalle.
+  const sinFecha = armarCuentaCorriente(
+    [{ id: "x", fecha: null, numero: "FC sin fecha", total: 500, tipo: "compra" }], [])
+  chequear("Cuenta corriente", "⚠️ Un comprobante sin fecha entra igual (no se descarta plata)",
+    "1 asiento · saldo 500", `${sinFecha.asientos.length} asiento · saldo ${sinFecha.saldo}`,
+    sinFecha.asientos.length === 1 && sinFecha.saldo === 500, "A-FEAT-141")
 
   return r
 }
