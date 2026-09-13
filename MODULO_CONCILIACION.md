@@ -3132,7 +3132,16 @@ factura o un template; nunca deberían terminar así»*). **El control tal como 
 🔴 **El único real es uno**: 06/04, $84.000, `GASTOS VARIOS GANADERIA` — **template + sueldo a la
 vez**, que no se explica de ninguna manera.
 
-📌 **Control 5 — son 152 movimientos, pero el trabajo son 21 altas.** Y **18 de las 21 son
+⚠️ **Control 5 — CORREGIDO 2026-09-13 por el usuario: NO es un hueco hoy.** La primera redacción
+decía que estas 152 filas comprometían el presupuesto. **No es así, y el usuario tiene razón:**
+*«es un plan de templates de cualquier manera, y los pagos en extracto vinculan con su template vía
+id»*. Medido: de los 152, **93 son de template y los 93 templates tienen su `tipo` cargado** — el
+presupuesto los clasifica por ahí, no por la `categ` del movimiento. 43 son sueldos (circuito
+propio) y 5 de ARCA (la factura lleva su cuenta). 🔑 **El control sigue valiendo como señal de orden,
+pero baja de prioridad**: se resuelve cuando se encare el plan de cuentas ([C-24](PENDIENTES.md#c-24)),
+no ahora.
+
+📌 **Y cuando se encare — son 152 movimientos, pero el trabajo son 21 altas.** Y **18 de las 21 son
 categorías reales y de uso diario que faltan dar de alta**, no basura: `Sueldos` (44 movs),
 `Impuesto Red Vial` (13), `Impuesto inmobiliario` (12), `Seguros Estructura` (11),
 `Distribucion Mama` (10)…
