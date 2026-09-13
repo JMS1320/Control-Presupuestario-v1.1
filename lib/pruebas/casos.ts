@@ -53,6 +53,10 @@ import {
   type CuotaExistente, type MovimientoBancario as MovBancario,
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
+import {
+  auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
+  type MovimientoAuditable as MovAuditable,
+} from "@/lib/conciliacion/auditoria"
 
 export interface Resultado {
   caso: string
@@ -874,6 +878,141 @@ export function correrCasos(): Resultado[] {
   chequear("Cuenta corriente", "⚠️ Un comprobante sin fecha entra igual (no se descarta plata)",
     "1 asiento · saldo 500", `${sinFecha.asientos.length} asiento · saldo ${sinFecha.saldo}`,
     sinFecha.asientos.length === 1 && sinFecha.saldo === 500, "A-FEAT-141")
+
+
+  // ══ 🧪 EL AUDIT DE CONSISTENCIA (A-FEAT-145) ══════════════════════════════════════════════════
+  // Los datos de abajo son los CASOS REALES que se midieron el 2026-09-13 al escribir la
+  // expectativa (§ 30.9.7), reducidos a una fila cada uno. Los números esperados salen de ahí.
+
+  const movAudBase = {
+    cuenta: "MSA Galicia", fecha: "2026-04-06", descripcion: "Trf Inmed Proveed",
+    debitos: 84000, creditos: 0, estado: "conciliado",
+    categ: "GASTOS VARIOS GANADERIA", nro_cuenta: null, proveedor_nombre: "Alguien",
+    comprobantes_pagados: "FC - 1", detalle: null,
+    comprobante_arca_id: null, template_cuota_id: null, sueldo_pago_id: null, anticipo_id: null,
+  }
+  const movAud = (id: string, over: Partial<MovAuditable>): MovAuditable =>
+    ({ ...movAudBase, id, ...over } as MovAuditable)
+
+  const PLAN = new Set(["GASTOS VARIOS GANADERIA"])
+
+  // 🔑 LA EXCEPCIÓN QUE SE DESCUBRIÓ AL MEDIR: 7 de los 8 casos con dos vínculos eran
+  //    ARCA + anticipo, que es el cierre normal del circuito. Sin esto el control da 7 falsos
+  //    positivos — y la primera versión de § 30.9.6 lo daba.
+  chequear("Audit", "🔑 ARCA + anticipo NO es error: es el cierre normal de un anticipo",
+    "legítimo", vinculoDobleEsLegitimo(["ARCA", "anticipo"]) ? "legítimo" : "reportado como error",
+    vinculoDobleEsLegitimo(["ARCA", "anticipo"]) === true, "A-FEAT-145")
+
+  chequear("Audit", "Template + sueldo a la vez SÍ es error (el caso real del 06/04)",
+    "error", vinculoDobleEsLegitimo(["template", "sueldo"]) ? "legítimo" : "error",
+    vinculoDobleEsLegitimo(["template", "sueldo"]) === false, "A-DAT-44")
+
+  // Un pago que canceló una factura usando un anticipo ES de ARCA para el estándar: lleva
+  // número de cuenta, y el anticipo ya dejó de ser un destino.
+  chequear("Audit", "Con ARCA + anticipo, el origen que manda es ARCA",
+    "ARCA", origenDe(movAud("x", { comprobante_arca_id: "a", anticipo_id: "b" })),
+    origenDe(movAud("x", { comprobante_arca_id: "a", anticipo_id: "b" })) === "ARCA", "A-FEAT-145")
+
+  // ── Los TRES destinos del detalle repetido ────────────────────────────────────────────────
+  // Tratarlos igual destruye dato: es la razón por la que el audit propone y no aplica.
+  const ruido = movAud("d1", { proveedor_nombre: "GOROSITO OLGA MARIA", detalle: "GOROSITO OLGA MARIA" })
+  chequear("Audit", "Detalle = proveedor y nada más → se VACÍA",
+    "vaciar", String(destinoDelDetalle(ruido)), destinoDelDetalle(ruido) === "vaciar", "A-DAT-46")
+
+  const conAporte = movAud("d2", {
+    proveedor_nombre: "AGRICOLA HERMANOS CATTANEO",
+    comprobantes_pagados: "FC - 236",
+    detalle: "Factura 1-236 - AGRICOLA HERMANOS CATTANEO | Anticipo $712.560,9 (28/2/2026)",
+  })
+  chequear("Audit", "Repite pero el anticipo SÍ aporta → se RECORTA, no se vacía",
+    "recortar", String(destinoDelDetalle(conAporte)),
+    destinoDelDetalle(conAporte) === "recortar", "A-DAT-46")
+
+  // 🔴 El caso que un vaciado masivo destruiría: el comprobante está VACÍO y el detalle guarda
+  //    las 6 facturas de Alcorta. Es el único lugar donde ese dato existe.
+  const enLaColumnaEquivocada = movAud("d3", {
+    proveedor_nombre: "ALCORTA EDMUNDO ERNESTO",
+    comprobantes_pagados: null,
+    detalle: "Factura 1-5943 - ALCORTA EDMUNDO ERNESTO · Factura 1-5930 - ALCORTA EDMUNDO ERNESTO",
+  })
+  chequear("Audit", "🔴 El comprobante está vacío y el detalle lo guarda → se MUEVE, no se borra",
+    "mover", String(destinoDelDetalle(enLaColumnaEquivocada)),
+    destinoDelDetalle(enLaColumnaEquivocada) === "mover", "A-DAT-46")
+
+  const detallePropio = movAud("d4", { proveedor_nombre: "Ruben Sigot", detalle: "Santander | Galicia" })
+  chequear("Audit", "Un detalle que NO repite nada no se toca",
+    "sin hallazgo", String(destinoDelDetalle(detallePropio)),
+    destinoDelDetalle(detallePropio) === null, "A-DAT-46")
+
+  // ── El alcance: a un PENDIENTE no se le exige nada ────────────────────────────────────────
+  // Es la decisión que evita 822 falsos positivos sobre 1.498 filas.
+  const soloPendientes = auditar({
+    movimientos: [movAud("p1", { estado: "pendiente", proveedor_nombre: null, comprobantes_pagados: null, categ: "INVENTADA" })],
+    categsDelPlan: PLAN,
+  })
+  chequear("Audit", "🔑 A un movimiento PENDIENTE no se le exige el estándar",
+    "0 hallazgos · 0 auditados", `${soloPendientes.grupos.length} hallazgos · ${soloPendientes.auditados} auditados`,
+    soloPendientes.grupos.length === 0 && soloPendientes.auditados === 0 && soloPendientes.universo === 1,
+    "A-FEAT-145")
+
+  // ── La imputación, que es donde estaban las dos falsas alarmas ────────────────────────────
+  const arcaSinNro = movAud("i1", { comprobante_arca_id: "f1" })
+  const tplConNro = movAud("i2", { template_cuota_id: "c1", nro_cuenta: "1.1.1" })
+  const tplSinNro = movAud("i3", { template_cuota_id: "c2" })
+  const impu = auditar({ movimientos: [arcaSinNro, tplConNro, tplSinNro], categsDelPlan: PLAN })
+  const gImp = impu.grupos.find(g => g.control === "imputacion")
+  chequear("Audit", "🚩 Sólo ARCA lleva número de cuenta: el template SIN número está BIEN",
+    "2 casos (ARCA sin, template con)", `${gImp?.total ?? 0} casos`,
+    gImp?.total === 2, "A-DAT-45")
+
+  // ── Agrupar por CAUSA: 152 movimientos son 18 altas, no 152 arreglos ──────────────────────
+  const mismaCateg = ["c1", "c2", "c3"].map(id => movAud(id, { categ: "Sueldos", sueldo_pago_id: "s" }))
+  const agrup = auditar({ movimientos: mismaCateg, categsDelPlan: PLAN })
+  const gCateg = agrup.grupos.find(g => g.control === "categ-fuera-plan")
+  chequear("Audit", "📌 3 movimientos con la MISMA categoría faltante = 1 sola causa",
+    "3 movimientos · 1 causa", `${gCateg?.total} movimientos · ${gCateg?.causas.length} causa`,
+    gCateg?.total === 3 && gCateg?.causas.length === 1, "A-FEAT-145")
+
+  // ── Lo que no se pudo verificar se DICE, no se descarta en silencio ───────────────────────
+  const sinCuotas = auditar({ movimientos: [movAud("z", { template_cuota_id: "c" })], categsDelPlan: PLAN })
+  chequear("Audit", "⚠️ Sin las cuotas cargadas, la cuadratura se informa como NO verificada",
+    "1 aviso", `${sinCuotas.noVerificado.length} aviso`,
+    sinCuotas.noVerificado.length === 1, "A-FEAT-145")
+
+  const cuadra = auditar({
+    movimientos: [movAud("q", { template_cuota_id: "c", debitos: 1042045.82 })],
+    categsDelPlan: PLAN,
+    cuadratura: [{ movimientoId: "q", importeBanco: 1042045.82, importeOrigen: 60178.94 }],
+  })
+  chequear("Audit", "🧮 El pago agrupado contra UNA cuota: el banco no cuadra con el origen",
+    "1 hallazgo de cuadratura", `${cuadra.grupos.find(g => g.control === "cuadratura")?.total ?? 0} hallazgo de cuadratura`,
+    cuadra.grupos.find(g => g.control === "cuadratura")?.total === 1, "A-FEAT-142")
+
+  // ── El hueco que está en el ORIGEN, no en el movimiento ───────────────────────────────────
+  const tplSinProv = auditar({
+    movimientos: [movAud("o", { template_cuota_id: "c", proveedor_nombre: null })],
+    categsDelPlan: PLAN,
+  })
+  const gProv = tplSinProv.grupos.find(g => g.control === "sin-proveedor")
+  chequear("Audit", "🔑 Un template sin proveedor se arregla en el TEMPLATE, no en el movimiento",
+    "marcado en el origen", gProv?.enElOrigen === 1 ? "marcado en el origen" : "mandado a corregir el extracto",
+    gProv?.enElOrigen === 1, "A-DAT-41")
+
+  // ── El más grave: el estado dice conciliado y no hay obligación del otro lado ──────────────
+  const huerfano = auditar({
+    movimientos: [movAud("h", { proveedor_nombre: null, comprobantes_pagados: null })],
+    categsDelPlan: PLAN,
+  })
+  chequear("Audit", "🔴 Conciliado sin ningún vínculo: el estado miente",
+    "1 sin vínculo", `${huerfano.grupos.find(g => g.control === "sin-vinculo")?.total ?? 0} sin vínculo`,
+    huerfano.grupos.find(g => g.control === "sin-vinculo")?.total === 1, "A-DAT-43")
+
+  // Un comprobante sin número ni período no identifica CUÁL obligación — es el caso
+  // "Haberes" a secas que el usuario marcó con una nota desde la app.
+  chequear("Audit", "«Haberes» a secas no identifica cuál obligación; «Haberes May 2026» sí",
+    "no · sí",
+    `${comprobanteIdentifica("Haberes") ? "sí" : "no"} · ${comprobanteIdentifica("Haberes May 2026") ? "sí" : "no"}`,
+    !comprobanteIdentifica("Haberes") && comprobanteIdentifica("Haberes May 2026"), "A-BUG-171")
 
   return r
 }

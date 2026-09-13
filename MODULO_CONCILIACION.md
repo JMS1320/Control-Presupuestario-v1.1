@@ -3089,15 +3089,40 @@ Medido el 2026-09-13 sobre los 676. **Estos son los números que el audit tiene 
 
 | # | Control | Esperado | Lectura |
 |---|---|---|---|
-| **1** | un solo vínculo | **8** — pero **7 son correctos** | ver ⚠️ abajo |
+| **1** | un solo vínculo | **9** — pero **7 son correctos** | ⚠️ *corregido: decía 8* — ver abajo |
 | **2** | todo conciliado con vínculo | 🔴 **10** | conciliados que no apuntan a nada |
 | **3** | el detalle no repite | 🔴 **96** | ARCA 57 · sueldo 35 · template 3 · sin vínculo 1 |
-| **4** | el comprobante identifica cuál | 🔴 **16** sin comprobante | ARCA 4 · sueldo 3 · anticipo 1 · **sin vínculo 8** · template **0** ✅ |
+| **4** | el comprobante identifica cuál | 🔴 **25** | ⚠️ *corregido: decía 16* — 16 vacíos **+ 9 que no identifican nada** |
 | **5** | la categ existe en el plan | 🔴 **152 movs**, pero **21 categorías** | ver 📌 abajo |
 | **6a** | ARCA lleva `nro_cuenta` | 🔴 **13** de 116 | el hueco real de imputación |
 | **6b** | los demás **no** lo llevan | 🔴 **9** | template/sueldo con `nro_cuenta` puesto |
 | **7** | el importe cuadra | ✅ **446 / 446** | ya corregido hoy (§ 30.9.2) |
 | **8** | proveedor lleno | **209** — pero casi todo es del origen | template 190 · sueldo 6 · ARCA 4 · sin vínculo 8 · anticipo 1 |
+
+#### B.1 · ✅ LA PRIMERA CORRIDA — 8 de 10 clavados, y los 2 que no
+
+*Corrido el 2026-09-13 con `scripts/verificar-auditoria.mts` (sólo lectura), que usa **la misma
+función que la pantalla**.*
+
+> **Las dos divergencias fueron del lado de la expectativa, no del audit** — y las dos por el mismo
+> motivo: **la medición previa era una consulta SQL; el audit implementa el estándar escrito.**
+
+| | Expectativa | Audit | Quién tenía razón |
+|---|---|---|---|
+| Control 1 | 8 | **9** | 🧪 el audit. Medí sobre **4 columnas de vínculo**: `comprobante_venta_id` **sólo existe en `msa_galicia`** y no lo incluí. El 9º caso (anticipo + venta, 31/07, **importe 0**) era invisible para esa consulta |
+| Control 4 | 16 | **25** | 🧪 el audit. Conté los comprobantes **vacíos**; el estándar pide más: que **identifique cuál**. Los 9 que faltaban tienen texto que no identifica nada — 6 **repiten el nombre del proveedor** (`AUTOPISTAS URBANAS S. A.`) y 3 son partidas de ARBA **sin período** |
+
+🔑 **Esto es exactamente lo que el usuario venía señalando** con los sueldos: *«hay uno que incluso
+dice conciliado pero sólo dice haberes, no se sabe nada»*. Un comprobante que repite al proveedor
+pasa cualquier chequeo de «está lleno» y **no dice cuál obligación se pagó**, que es su única razón
+de existir.
+
+📌 **Y es el argumento de por qué el audit vale más que la consulta a mano**: las dos mediciones
+salieron del mismo día y de la misma persona, pero una implementa la regla **escrita** y la otra
+implementa lo que uno **se acuerda** de la regla. 📊 **Resultado de la primera corrida: 281 de 676
+conciliados cumplen el estándar entero.**
+
+---
 
 ⚠️ **Control 1 — la excepción que hay que declarar ANTES de correrlo.** De los 8 con dos vínculos,
 **7 son `ARCA + anticipo` y están BIEN**: son pagos que cancelaron una factura aplicando un anticipo

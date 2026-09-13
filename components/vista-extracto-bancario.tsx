@@ -8,6 +8,7 @@ import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, parseEmpresas, type Empresa }
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -42,7 +43,8 @@ import {
   DollarSign,
   Loader2,
   Info,
-  ChevronDown
+  ChevronDown,
+  ShieldCheck
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
@@ -2618,7 +2620,7 @@ ${marca}` : marca
 
       {/* Tabs del contenido */}
       <Tabs defaultValue="movimientos" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="movimientos" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Movimientos
@@ -2630,6 +2632,10 @@ ${marca}` : marca
           <TabsTrigger value="reportes" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Reportes
+          </TabsTrigger>
+          <TabsTrigger value="auditoria" className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            Auditoría
           </TabsTrigger>
         </TabsList>
 
@@ -4219,6 +4225,11 @@ ${marca}` : marca
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 🧪 A-FEAT-145 — el audit de consistencia contra el estandar por origen (§ 30.9.6). */}
+        <TabsContent value="auditoria" className="space-y-4">
+          <PanelAuditoriaConciliacion />
         </TabsContent>
       </Tabs>
 
