@@ -2861,6 +2861,123 @@ FROM public.msa_galicia;
 problema intacto en los otros cuatro**. El control de cuadratura de § 30.9.2 tiene hoy ese límite —
 sólo mira los de template.
 
+### 30.9.6 — 📏 EL ESTÁNDAR POR ORIGEN — qué debe tener un movimiento conciliado
+
+*Escrito el 2026-09-13 a pedido del usuario: **«tenés que saber lo que debe haber y cómo debe estar
+antes. Esto debería estar clarísimo en la app, nítido, subrayado (…) son cosas objetivas, o deberían
+serlo»**.*
+
+> **Esta § es la referencia contra la que se audita.** Antes de ella, cada medición se hacía contra
+> un criterio inventado en el momento — y así se reportaron dos falsas alarmas el mismo día:
+> *«494 movimientos sin `nro_cuenta`»* (no corresponde que lo tengan) y *«28 sueldos sin contable»*
+> (ídem). **Medir sin estándar no es auditar: es opinar con números.**
+
+---
+
+#### A · El VÍNCULO: uno y sólo uno
+
+Cada movimiento conciliado apunta a **su** origen, por **su** columna. Las demás quedan **vacías**.
+
+| Origen | Columna que se llena | Además |
+|---|---|---|
+| Factura de ARCA | `comprobante_arca_id` | — |
+| Cuota de template | `template_cuota_id` | + `template_id` |
+| Pago de sueldo | `sueldo_pago_id` | — |
+| Anticipo | `anticipo_id` | — |
+| Cobro de venta | `comprobante_venta_id` | — |
+
+⚠️ **`template_cuota_id` guarda una cuota O un `grupo_pago_id`** cuando el pago fue agrupado. No es
+una excepción prolija — es el motivo por el que **no se le puede poner FK**
+([A-DEC-23](../../PENDIENTES.md#a-dec-23)) y por el que un control ingenuo reporta rotos todos los
+pagos agrupados.
+
+**🧮 Control 1** — ningún movimiento con **dos** columnas de vínculo llenas.
+**🧮 Control 2** — ningún movimiento `conciliado` con **ninguna**.
+
+---
+
+#### B · LAS CUATRO COLUMNAS DE TEXTO, origen por origen
+
+Las preguntas son las de § 30.9; acá está **de dónde sale cada una**.
+
+| | **Proveedor** · ¿quién cobró? | **CATEG** · ¿qué tipo? | **Comprobante** · ¿cuál obligación? | **Detalle** |
+|---|---|---|---|---|
+| **ARCA** | razón social del maestro por CUIT | la de la factura | `FC A - 00012345` | sólo lo específico |
+| **Template** | `nombre_quien_cobra` del template | la de la cuota, o la del template | `<Nombre> <Resp> - <Mes> <Año>` | ídem |
+| **Sueldo** | **el EMPLEADO** del pago | `Sueldos` | `Haberes <Mes> <Año> — a cuenta` / `— saldo` | ídem |
+| **Anticipo** | el proveedor del anticipo | la del anticipo | ❓ *a definir* | ídem |
+| **Venta** | el cliente | la de la venta | el número del comprobante | ídem |
+
+📌 **El vocabulario de sueldos lo corrigió el usuario**: de cuatro pagos de un mes, **tres son «a
+cuenta» y el último es el «saldo»** — no «tres anticipos y un sueldo». `comprobanteDeSueldo()` ya lo
+hace bien; los formatos `Anticipo May 2026` y `Pago Saldo Abr 2026` son **anteriores y no cumplen**.
+
+---
+
+#### C · LA IMPUTACIÓN CONTABLE
+
+| Origen | Lleva `nro_cuenta` | Por qué |
+|---|---|---|
+| **ARCA** | ✅ **sí** | *«la cuenta se trabaja vía su número de cuenta, no su string»* (usuario, 2026-09-13) |
+| Template · Sueldo · Anticipo | ❌ **no** | su imputación viaja **por el vínculo**: la cuota lleva su template, el pago lleva su empleado |
+
+🚩 **Lo que esto corrige**: los *«494 sin `nro_cuenta`»* que reporté como problema **no lo son**. El
+hueco real son los **11 de ARCA** que sí deberían tenerlo.
+
+⚠️ **Y la CATEG sí es de todos**: tiene que existir en `public.cuentas_contables` (§ `CLAUDE.md`
+🏷️ Templates). Medido el 2026-09-13: **150 movimientos conciliados con una categ que no está en el
+plan** — `Sueldos`, `Impuesto Red Vial`, `Impuestos ARCA`, `Viaticos` y 11 más. No son basura: son
+categorías **reales y de uso diario, que faltan dar de alta** → § C-26.
+
+---
+
+#### D · EL DETALLE — la regla es NEGATIVA
+
+> **El detalle no repite el proveedor, ni la categoría, ni el comprobante.** Si lo que ibas a
+> escribir ya está en otra columna, el detalle va **vacío**.
+
+El ejemplo bueno y el malo, los dos reales y del mismo día:
+
+```
+✅  Comprobante: Haberes May 2026 — a cuenta
+    Proveedor:   Ruben Sigot
+    Detalle:     Santander | Galicia          ← lo único que no se deduce
+
+🔴  Comprobante: Anticipo May 2026
+    Proveedor:   Jose Maria Martinez
+    Detalle:     Anticipo May 2026 — Jose Maria Martinez   ← las otras dos, otra vez
+```
+
+**🧮 Control 3** — el detalle **no contiene** el texto del comprobante ni el del proveedor.
+
+---
+
+#### E · LOS CONTROLES QUE SALEN DE ACÁ
+
+Objetivos, medibles, y ninguno necesita interpretar nada:
+
+| | Qué verifica |
+|---|---|
+| **1** | un solo vínculo por movimiento |
+| **2** | todo `conciliado` tiene vínculo |
+| **3** | el detalle no repite proveedor ni comprobante |
+| **4** | el Comprobante **identifica cuál** — lleva período o número |
+| **5** | la CATEG existe en el plan de cuentas |
+| **6** | ARCA tiene `nro_cuenta`; los demás orígenes **no** |
+| **7** | el importe del banco **cuadra** contra su origen (§ 30.9.2) |
+| **8** | el Proveedor está lleno **cuando el origen lo tiene** |
+
+⚠️ **El control 7 hoy sólo mira los de template** — es el límite que dejó [A-BUG-171](../../PENDIENTES.md#a-bug-171).
+
+---
+
+#### ❓ Lo que falta definir — el usuario lo completa
+1. **Anticipos**: qué va en el Comprobante.
+2. **Trf Orden Judic.** (embargos): son pagos de sueldo con las cuatro columnas vacías. ¿Llevan el
+   empleado como proveedor, o es un caso aparte con su propio formato?
+3. **`contable` / `interno`** (`RET 3 MA`, `CTA AMS`, `CTA JMS`): aparecen en unos sueldos y en
+   otros no. ¿Cuándo corresponden?
+
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
 Cuatro huecos en un solo día, **y tres los encontró el usuario abriendo la pantalla**. El patrón de
