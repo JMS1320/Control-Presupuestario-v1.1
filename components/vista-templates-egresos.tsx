@@ -30,6 +30,7 @@ import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 import { GeneradorRenovacionCampana } from "./generador-renovacion-campana"
 import { EditorCampanaTemplate } from "@/components/editor-campana-template"
 import { hayQuePreguntarFechaPago, esEstadoQuePaga } from "@/lib/pagos/preguntar-fecha-pago"
+import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
 
@@ -559,7 +560,10 @@ export function VistaTemplatesEgresos() {
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'detalle', 'estado',
+    // 🪪 `descripcion` salió de la lista (A-FEAT-138): es **derivada**, se genera del template
+    // y el período. Editarla guardaría un valor que al día siguiente contradice al que se muestra.
+    // Lo que el usuario escribe va a `detalle`, que está al lado.
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'detalle', 'estado',
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
@@ -1124,6 +1128,22 @@ export function VistaTemplatesEgresos() {
     // Obtener valor según la columna
     if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'detalle', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
+    } else if (columna === 'descripcion') {
+      /**
+       * 🪪 **A-FEAT-138** — la Descripción se GENERA, no se lee.
+       *
+       * Desde que la etiqueta dejó de guardarse (A-DAT-37), esta celda leía una columna vacía y
+       * mostraba `-`. **Y eso era un hueco de verdad**, señalado por el usuario: *«¿no sirve igual
+       * para ubicarme cuando veo los templates?»*. Sí sirve — por eso se compone acá, igual que ya
+       * se hacía en el Cash Flow y en el Extracto. Faltaba **esta** pantalla, que es donde él mira.
+       *
+       * 🔑 Generada es **mejor** que guardada: si se renombra el template o cambia el
+       * responsable, las 12 cuotas se actualizan solas. Guardada, quedaban con el nombre viejo.
+       *
+       * ⚠️ Si alguna fila todavía tiene texto guardado (quedaron 0, pero puede volver a pasar si
+       * algo lo escribe), **gana lo guardado**: mostrar lo generado encima ocultaría un dato real.
+       */
+      valor = (cuota as any).descripcion || identificadorDeCuota(cuota as any, (cuota.egreso ?? {}) as any)
     } else if (columna === 'categ') {
       // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
       valor = (cuota as any).categ || cuota.egreso?.categ
@@ -1379,8 +1399,15 @@ export function VistaTemplatesEgresos() {
             </div>
           )
 
-        case 'nombre_quien_cobra':
         case 'descripcion':
+          // Gris e itálica: se lee de un vistazo que la pone el sistema, no una persona.
+          return (
+            <div className="max-w-xs truncate text-gray-500 italic" title={`${valor} · generado del template y el período`}>
+              {valor as string}
+            </div>
+          )
+
+        case 'nombre_quien_cobra':
         case 'detalle':
           return (
             <div className="max-w-xs truncate" title={valor as string}>
