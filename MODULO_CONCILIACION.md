@@ -2826,6 +2826,41 @@ conciliación que lo arregle**. El día que se quiera el resultado por actividad
 gastos no se pueden asignar. Los **16** son otra cosa: conciliaciones manuales que se saltearon el
 paso (el de Red Vial del 16/03 era uno, ya corregido).
 
+### 30.9.5 — 🧨 El modo de falla del protocolo: normalizar UN universo y dar por normalizado todo
+
+*La lección más cara del 2026-09-13, y se repitió **cinco veces en un día**.*
+
+| | Qué se normalizó | Qué quedó afuera |
+|---|---|---|
+| [A-BUG-161](PENDIENTES.md#a-bug-161) | se escribió en una columna | **nadie la leía** |
+| [A-BUG-164](PENDIENTES.md#a-bug-164) | se vació una columna | **el buscador de grupos la usaba** |
+| [A-BUG-165](PENDIENTES.md#a-bug-165) | se generó el identificador en 2 pantallas | **la tercera** |
+| [A-BUG-166](PENDIENTES.md#a-bug-166) | se arregló la fila suelta | **la agrupada** |
+| [A-BUG-171](PENDIENTES.md#a-bug-171) | se normalizaron los movimientos de **template** | **los de SUELDO** |
+
+**Las cinco tienen la misma forma** y ninguna la encontró un control: cuatro las encontró el usuario
+abriendo la pantalla, y la quinta con una nota desde la app.
+
+> 🔑 **Antes de decir «normalizado», enumerar los universos.** En este circuito hay cinco orígenes
+> (ARCA, template, sueldo, anticipo, venta) y cada uno se vincula por **su propia columna**. Un
+> `UPDATE` que filtra por una de ellas toca **un quinto** del problema — y desde afuera se ve
+> idéntico a haberlo resuelto entero.
+
+**La pregunta que lo evita**, y cuesta treinta segundos:
+
+```sql
+-- ¿Por qué columnas se vincula un movimiento? Cada una es un universo distinto.
+SELECT count(*) FILTER (WHERE comprobante_arca_id IS NOT NULL) AS arca,
+       count(*) FILTER (WHERE template_cuota_id  IS NOT NULL) AS template,
+       count(*) FILTER (WHERE sueldo_pago_id     IS NOT NULL) AS sueldo,
+       count(*) FILTER (WHERE anticipo_id        IS NOT NULL) AS anticipo
+FROM public.msa_galicia;
+```
+
+⚠️ **Y el corolario para los controles**: un control que mira un solo universo **da verde con el
+problema intacto en los otros cuatro**. El control de cuadratura de § 30.9.2 tiene hoy ese límite —
+sólo mira los de template.
+
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
 Cuatro huecos en un solo día, **y tres los encontró el usuario abriendo la pantalla**. El patrón de
