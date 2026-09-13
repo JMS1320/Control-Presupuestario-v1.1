@@ -359,6 +359,12 @@ export function VistaExtractoBancario() {
   const [verConciliadas, setVerConciliadas] = useState(false)
   const [arcaConciliadas, setArcaConciliadas] = useState<any[]>([])
   const [motivoForzar, setMotivoForzar] = useState('')
+  /**
+   * 🔎 **A-FEAT-143** — contra QUÉ movimiento está conciliada la factura elegida.
+   * Se busca **al elegirla**, no al cargar la lista: son cientos de facturas y sólo importa la que
+   * se está por vincular.
+   */
+  const [movDeLaConciliada, setMovDeLaConciliada] = useState<{ cargando: boolean; encontrados: any[] } | null>(null)
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
   const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
   const [busquedaAsignarGrupo, setBusquedaAsignarGrupo] = useState('')
@@ -2100,6 +2106,7 @@ ${marca}` : marca
       //    vez las conciliadas aparecerían solas y dejaría de ser una decisión consciente.
       setVerConciliadas(false)
       setMotivoForzar('')
+      setMovDeLaConciliada(null)
       // Lo que se soltó por el camino se dice. Un cambio que el usuario no pidió y no ve es el
       // modo de falla que originó A-BUG-42.
       if (avisosAsignacion.length > 0) alert(avisosAsignacion.join('\n\n'))
@@ -4430,7 +4437,7 @@ ${marca}` : marca
         </DialogContent>
       </Dialog>
 
-      <Dialog open={modalAsignar} onOpenChange={(v) => { setModalAsignar(v); if (!v) { setVerConciliadas(false); setMotivoForzar('') } }}>
+      <Dialog open={modalAsignar} onOpenChange={(v) => { setModalAsignar(v); if (!v) { setVerConciliadas(false); setMotivoForzar(''); setMovDeLaConciliada(null) } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Asignar Manualmente</DialogTitle>
@@ -4762,7 +4769,22 @@ ${marca}` : marca
                       {conciliadas.map((f: any) => (
                         <div
                           key={f.id}
-                          onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                          onClick={async () => {
+                            const quitar = arcaElegida?.id === f.id
+                            setArcaElegida(quitar ? null : f)
+                            setMovDeLaConciliada(null)
+                            if (quitar) return
+                            setMovDeLaConciliada({ cargando: true, encontrados: [] })
+                            const hallados: any[] = []
+                            for (const [tabla, esquema] of [['msa_galicia', null], ['pam_galicia', null], ['pam_galicia_cc', null], ['ma_galicia', 'ma']] as [string, string | null][]) {
+                              const cli = esquema ? supabase.schema(esquema as any) : supabase
+                              const { data } = await cli.from(tabla)
+                                .select('fecha, debitos, creditos, detalle')
+                                .eq('comprobante_arca_id', f.id).limit(5)
+                              ;(data ?? []).forEach((m: any) => hallados.push({ ...m, cuenta: tabla }))
+                            }
+                            setMovDeLaConciliada({ cargando: false, encontrados: hallados })
+                          }}
                           className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
                             arcaElegida?.id === f.id ? 'border-amber-500 bg-amber-50' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50'}`}
                         >
@@ -5070,8 +5092,40 @@ ${marca}` : marca
           {tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && (
             <div className="rounded border border-amber-400 bg-amber-50 p-3 text-sm">
               <p className="font-medium text-amber-900">
-                ⚠️ {arcaElegida.display_referencia} ya está conciliada contra otro movimiento.
+                ⚠️ {arcaElegida.display_referencia} ya está conciliada.
               </p>
+
+              {/* 🔎 **Contra QUÉ**, para poder ir a mirarlo.
+                  Pedido del usuario al probarlo: *«sería bueno ver contra cuánto fue conciliada,
+                  así puedo identificar más fácilmente dónde ir»*. Decir sólo «ya está conciliada»
+                  obliga a salir a buscarlo a mano — justo el trabajo que se quiere evitar.
+                  Si no aparece, se dice: un «no se encontró» explícito es mejor que un silencio,
+                  que se lee como «no hay». */}
+              {movDeLaConciliada?.cargando && (
+                <p className="text-xs text-amber-700 mt-0.5">buscando contra qué movimiento…</p>
+              )}
+              {movDeLaConciliada && !movDeLaConciliada.cargando && (
+                movDeLaConciliada.encontrados.length > 0 ? (
+                  <ul className="mt-1 text-xs text-amber-900 space-y-0.5">
+                    {movDeLaConciliada.encontrados.map((m: any, i: number) => (
+                      <li key={i}>
+                        → <strong>{String(m.fecha).split('-').reverse().join('/')}</strong>{' · '}
+                        <span className="font-mono">
+                          ${Number(m.debitos || m.creditos || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
+                        {' · '}{m.cuenta}
+                        {m.detalle ? <span className="text-amber-700"> · {m.detalle}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-amber-700">
+                    No se encontró el movimiento contra el que se concilió — puede estar en una cuenta
+                    sin extracto importado.
+                  </p>
+                )
+              )}
+
               <p className="text-xs text-amber-800 mt-0.5">
                 Vincularla de nuevo es poco habitual y no se deshace solo. Queda registrado en la nota
                 del movimiento, para que dentro de seis meses se sepa que fue a propósito.
@@ -5087,7 +5141,7 @@ ${marca}` : marca
           )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setModalAsignar(false); setVerConciliadas(false); setMotivoForzar('') }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setModalAsignar(false); setVerConciliadas(false); setMotivoForzar(''); setMovDeLaConciliada(null) }}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
               disabled={guardandoAsignacion
