@@ -433,3 +433,125 @@ El problema nunca fue el destino: era que **una sola columna hacía dos trabajos
   desaparecer de la pantalla lo que el usuario ya tenía escrito.
 - ⏳ El generador de campaña **todavía guarda** la etiqueta en `descripcion`. Cuando se migre,
   puede dejar de hacerlo: la etiqueta se regenera sola.
+
+---
+
+## 17. FLUJO DE LOS DATOS DE TEXTO — del alta del template a la conciliación (2026-09-12)
+
+*Pedido del usuario: «armame el flujo de trabajo de los datos en los templates con cada columna,
+para qué sirve en cada caso, desde que se crea el template hasta que se termina, cómo se asignan
+automáticamente o input de datos». Todo lo de abajo está verificado contra el código y la base.*
+
+### Las columnas de las que hablamos
+
+| Tabla | Columna | Qué es | Quién la pone |
+|---|---|---|---|
+| `egresos_sin_factura` | **`nombre_referencia`** | 🪪 **LA identidad del template.** `«Red Vial Cuota Lote Puerto»` | el usuario, al crearlo |
+| | `responsable` | la empresa: `MSA` / `PAM` / `MA` | el usuario |
+| | `observaciones_template` | notas del template. **No viaja a ningún lado**: es para leer | el usuario |
+| `cuotas_egresos_sin_factura` | **`descripcion`** | históricamente **la etiqueta** `«<nombre> <resp> - <Mes> <Año>»` … y también otras 2 cosas (ver abajo) | 5 caminos distintos |
+| | **`detalle`** | ✏️ la **especificación** del usuario | el usuario, o el Extracto al conciliar |
+| `msa_galicia` y las otras 11 | `comprobantes_pagados` | **QUÉ** se pagó | la conciliación |
+| | `detalle` | la especificación | el usuario, o la conciliación |
+| | `proveedor_nombre` | **QUIÉN** cobró | la conciliación |
+
+📌 **185 templates, 0 sin `nombre_referencia`, 0 sin `responsable`.** Eso es lo que permite generar el
+identificador siempre, sin depender de ninguna columna guardada.
+
+---
+
+### Paso 1 · Nace el template
+**Wizard** (`wizard-templates-egresos.tsx`) o **import de Excel**. Todo input del usuario:
+`nombre_referencia`, `responsable`, `categ`, `centro_costo`, `cuotas`, `monto_por_cuota`,
+`fecha_primera_cuota`, `periodicidad`, `tipo_template`.
+
+⚠️ `categ` **tiene que existir en `cuentas_contables`** (§ `CLAUDE.md` 🏷️), o el presupuesto lo asume
+gasto y el número queda mal sin avisar.
+
+### Paso 2 · Nacen las cuotas — y acá está el origen del enredo
+**Cinco caminos escriben `descripcion`, con tres cosas distintas:**
+
+| Camino | Qué escribe en `descripcion` | Qué es en realidad |
+|---|---|---|
+| **Wizard**, al crear el template | `«<nombre> <resp> - <Mes> <Año>»` | 🪪 etiqueta |
+| **Generador de campaña** | ídem (y no repite el responsable si el nombre ya lo tiene) | 🪪 etiqueta |
+| **Motor**, regla con `llena_template` | `regla.detalle \|\| movimiento.descripcion` | 📋 el detalle de **la regla** |
+| **Pago manual** | lo que escriba el usuario, o `«<nombre> - Manual»` | ✏️ del usuario, **o** etiqueta |
+| **Import de Excel** | la columna *Descripción* del archivo | ✏️ del usuario |
+
+🧨 **Ése es el problema de fondo, y explica los números**: al 2026-09-12 había **548** cargadas —
+**95 etiquetas exactas**, **326 detalles de regla** y **127 textos del usuario**. Una sola columna
+llenada por cinco manos con tres intenciones.
+
+### Paso 3 · El usuario trabaja la cuota
+En *Egresos sin Factura → Cuotas*, con **Ctrl+click**: fechas, monto, estado, categ… y **`detalle`**,
+que es donde va lo suyo desde [A-FEAT-137](PENDIENTES.md#a-feat-137).
+
+### Paso 4 · La cuota llega al Cash Flow
+`useMultiCashFlowData` arma **tres campos** que son los que viajan después:
+
+```
+detalle             = identificadorDeCuota(cuota, template) · cuota.detalle
+detalle_usuario     = cuota.detalle                     ← SÓLO lo del usuario
+comprobante_display = template.nombre_referencia || cuota.descripcion
+```
+
+### Paso 5 · 🔑 SE CONCILIA — acá se contesta la pregunta
+
+**Para MATCHEAR, el texto no participa.** `buscarEnPool` compara **importe exacto y ≤ 5 días**. Ni la
+descripción ni el detalle intervienen en decidir qué cuota corresponde a qué movimiento.
+
+**Para ESCRIBIR en el extracto, sí.** `columnasDelExtracto` hace:
+
+```
+proveedor_nombre     ← maestro de proveedores || nombre_proveedor de la fila
+comprobantes_pagados ← comprobante_display          ← nombre_referencia (|| descripcion)
+detalle              ← el detalle que YA tenía el movimiento || detalle_usuario
+```
+
+> **Sí: el texto de la cuota forma parte de lo que queda escrito en el movimiento bancario.**
+> Por dos vías, y conviene distinguirlas porque pesan distinto:
+>
+> 1. **`comprobantes_pagados`** ← `nombre_referencia` **|| `descripcion`**. La descripción es
+>    **fallback** de un campo que **los 185 templates tienen**, así que en la práctica **nunca se
+>    activa**.
+> 2. **`detalle` del movimiento** ← `detalle_usuario`, que es **`cuota.detalle`**. Esta vía es
+>    **directa**, y es la que importa.
+>
+> ⚠️ Y notar el orden de la vía 2: **lo que el movimiento ya tenía escrito gana**. La cuota sólo
+> completa el hueco; nunca pisa lo que el usuario puso en el extracto.
+
+Además se guardan los vínculos: `template_id` + `template_cuota_id` en el movimiento, y la cuota
+pasa a `conciliado`.
+
+### Paso 6 · Después de conciliar — el camino de vuelta
+Si el usuario edita el **Detalle** del movimiento en el Extracto, ese texto se escribe en
+`cuota.detalle` ([A-BUG-158](PENDIENTES.md#a-bug-158)). *«Son 1 en esencia.»*
+
+📌 Con el paso 5 son **las dos direcciones**: al conciliar, la cuota completa el detalle del
+movimiento; después, el movimiento actualiza el de la cuota.
+
+---
+
+### 🧯 Qué cambió al repartir `descripcion` ([A-DAT-37](PENDIENTES.md#a-dat-37)), y qué NO
+
+| Consumidor | Antes | Después |
+|---|---|---|
+| El **match** del motor | no usaba el texto | igual |
+| `comprobantes_pagados` | `nombre_referencia` (la descripción era fallback muerto) | **igual** |
+| `detalle` del movimiento al conciliar | `descripcion` | **`detalle`** — y ahora son los 127 textos reales, no las 326 repeticiones de la categoría |
+| La lista de candidatos al conciliar | `nombre_referencia \|\| descripcion` | **igual** (el nombre siempre está) |
+| 🔴 **El buscador de grupos de pago** | armaba su texto con `c.descripcion` | **quedó vacío** → hay que componerlo con el identificador + detalle |
+
+🧨 **El único roto es el buscador de grupos**, y lo destapó el usuario preguntando por esto — no un
+control. **La lección**: se verificó a dónde se escribía y no **quién leía**. Es el mismo error que
+[A-BUG-161](PENDIENTES.md#a-bug-161), dos pasos antes, en el mismo circuito.
+
+### ⏳ Lo que queda por limpiar
+Los **cinco caminos siguen escribiendo `descripcion`**. Mientras sigan haciéndolo, la columna se
+vuelve a llenar de las tres cosas mezcladas. El orden natural:
+1. Que el **wizard** y el **generador de campaña** dejen de guardar la etiqueta — se genera sola.
+2. Que el **motor** (`crearCuotaEnTemplate`) escriba el detalle de la regla en **`detalle`**.
+3. Que el **pago manual** y el **import de Excel** escriban en **`detalle`**.
+
+Recién ahí `descripcion` queda sin uso, y se puede decidir si se borra.
