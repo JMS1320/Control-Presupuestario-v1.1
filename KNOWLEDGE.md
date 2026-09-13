@@ -1923,6 +1923,33 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Reconstruir en tres iteraciones algo que ya estaba escrito `#metodo #documentacion #2026-09-12`
+
+Al separar el identificador del detalle en las cuotas de template ([A-FEAT-137]), hice tres
+intentos: escribí en una columna muerta, después en una que pisaba la etiqueta, y recién al tercero
+llegué al diseño bueno.
+
+**Las tres decisiones que fui reconstruyendo estaban documentadas.** `MODULO_CONCILIACION.md`
+§ 30.2 y § 30.3 decían, textual, que el `detalle_usuario` de un template salía de `c.descripcion` y
+su `comprobante_display` de `nombre_referencia`. **No las leí antes de tocar el código.**
+
+> 🔑 **El costo no fue el trabajo repetido — fue cambiar un diseño documentado sin saber que lo
+> era.** Un cambio consciente contra una decisión escrita es una decisión nueva, que se discute y se
+> fecha. Uno inconsciente es un accidente que después nadie puede reconstruir.
+
+Es exactamente el modo de falla que previene § `CLAUDE.md` 🧭 *Regla de contexto*: **primero las
+dimensiones, después el código**. Y la trampa es que **sí había leído código** — buenísimo código,
+con sus comentarios — y eso da la sensación de haber investigado. No es lo mismo: el código dice
+**qué hace**; la dimensión dice **qué se decidió y por qué**.
+
+### La otra mitad: dejar la doc vieja también miente
+Al cambiar el diseño, § 30.2 y § 30.3 pasaron a describir algo que ya no existe. **Una dimensión
+desactualizada es peor que una ausente**: la ausente manda a mirar el código, la vieja manda a
+confiar. Se actualizaron en el momento, con la marca `⚠️ cambió 2026-09-12` y el puntero al ID — así
+el que la lea dentro de seis meses ve **que hubo un cambio**, no sólo el estado final.
+
+---
+
 ## Tratar un ÉXITO como si fuera un fallo — dos formas, el mismo día `#control #api #2026-09-12`
 
 Corrigiendo 497 movimientos ([A-DAT-38](PENDIENTES.md#a-dat-38)) el script se rompió **dos veces**, y

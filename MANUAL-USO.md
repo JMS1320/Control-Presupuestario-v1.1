@@ -2504,6 +2504,37 @@ todos lados.
 
 ---
 
+## 📐 Cómo se registra un movimiento — qué va en cada columna
+
+*Vale para todo lo que se concilia: banco, caja, tarjeta, echeq. **El detalle es el detalle para
+todo**, no uno distinto por cada medio.*
+
+Cada columna contesta **una** pregunta, y ninguna repite a otra:
+
+| Columna | Qué contesta | Ejemplo |
+|---|---|---|
+| **Proveedor** | quién cobró | `Municipalidad SP` |
+| **CATEG** | qué tipo de gasto es | `Impuesto Red Vial` |
+| **Comprobante** | **cuál** obligación se saldó | `Red Vial Lote Puerto - Junio 2026` |
+| **Detalle** | lo que **no** se deduce de las otras tres | `incluye ajuste retroactivo` |
+
+### 🔑 Detalle vacío está bien
+Si las otras tres ya lo dijeron, **no hay nada que escribir**. Un Detalle que repite la CATEG no
+agrega información: agrega ruido.
+
+### Lo que escribe el sistema y lo que escribíis vos
+- El **Comprobante** lo arma el sistema y **se actualiza solo**. Si renombrás un template, todas sus
+  cuotas cambian sin que toques nada. En la grilla de Templates lo ves **en gris e itálica**, y por
+  eso no se edita.
+- El **Detalle** es tuyo. Lo escribís en el Extracto o en la cuota, y **viaja entre los dos**.
+
+⚠️ **Lo que vos escribiste nunca se pisa.** Cuando conciliás, el detalle de la cuota **completa** el
+del movimiento sólo si estaba vacío.
+
+⚠️ Sin probar todavía → A-TEST-127
+
+---
+
 ## 📝 Extracto → trabajar con tus notas
 
 *La nota es el 📝 de cada movimiento: lo que dejás escrito mientras conciliás.*
