@@ -2750,6 +2750,82 @@ antes y por su cuenta. Eso es lo que la vuelve un patrón y no una preferencia.
 (§ `CLAUDE.md` 🔍 La auditoría permanente), con su medición de datos viejos — como se hizo en
 [A-DAT-38](PENDIENTES.md#a-dat-38).
 
+### 30.9.2 — 🧮 El CONTROL DE CUADRATURA: el banco contra las cuotas
+
+*Nació el 2026-09-13 y encontró en dos minutos cosas que llevaban seis meses invisibles.*
+
+> **Para cada movimiento conciliado contra un template, el débito del banco tiene que ser igual a
+> la suma de las cuotas que ese vínculo señala.** Si apunta a una cuota, esa cuota; si apunta a un
+> grupo, la suma del grupo.
+
+**Por qué ninguna pantalla lo veía.** Todas miran el **estado** — y el estado decía `conciliado`.
+Ninguna comparaba **el importe del banco contra las cuotas**. Ahí está el valor: es un control que
+existe **gratis** porque el mismo número llega por dos caminos independientes (§ `CLAUDE.md` 🔁).
+
+**Lo que encontró en la primera corrida (446 movimientos):**
+
+| | |
+|---|---|
+| Cuadran | **444** |
+| **Pagos agrupados apuntando a UNA cuota** | **2** |
+
+Los dos eran el mismo error: `template_cuota_id` señalaba una cuota suelta en vez del grupo, así que
+el extracto decía que un pago de **$1.042.045,82** había saldado una partida de **$60.178,94**.
+
+📌 **El más instructivo es el de Red Vial PAM**, porque tiene su propio testigo: el **mismo pago
+trimestral**, hecho igual en marzo y en junio. El de junio apuntaba al grupo; el de marzo, no. Sin el
+par para comparar, el de marzo se veía perfectamente normal.
+
+✅ **Corregidos los dos** (con respaldo en `respaldo_vinculo_grupo`). El control da **446/446**.
+
+### 30.9.3 — ⚠️ El total de un grupo se GUARDA, y por eso miente
+
+`msa.grupos_pago.monto_total` se escribe **una vez**, al armar el grupo. Si después cambia cualquier
+miembro, no se recalcula.
+
+**Medido el 2026-09-13 sobre los 46 grupos** (contando cuotas **y** facturas de ARCA):
+
+| | |
+|---|---|
+| Total correcto | **12** |
+| Total en **cero** | **15** |
+| Total **distinto** | **15** |
+| Vacíos | 4 |
+
+**30 de 42 grupos con contenido tienen el total mal**, con $14,9 M de diferencia acumulada.
+
+🔑 **Es el mismo derivado-guardado de § 30.9**, y la salida es la misma: **el total de un grupo no
+debería guardarse, debería sumarse de sus miembros.** Y acá hay un corolario que decide el orden del
+trabajo:
+
+> **Si primero se arregla cómo se genera, el pasado se corrige solo.** Corregir los 30 hoy es trabajo
+> que se deshace en el próximo pago agrupado, porque el código sigue guardando el total.
+
+📌 **Hoy no rompe nada visible**: ninguna pantalla lee ese campo — la app siempre suma las cuotas.
+Por eso no es urgente. ⚠️ Antes de eliminarlo, confirmar que no lo use el armado de **lotes de pago**
+ni los exports, que es donde más lógico sería.
+
+### 30.9.4 — El centro de costo lo tiene el TEMPLATE, no la conciliación
+
+*Duda del usuario 2026-09-13: «¿no se deberían estar llenando con la conciliación, o tenerlo el
+template?». Medido:*
+
+De **506** movimientos conciliados contra una cuota, **419 no tienen centro de costo**. Pero:
+
+| | |
+|---|---|
+| Sin centro de costo **cuyo template tampoco lo tiene** | **403** |
+| Sin centro de costo **aunque el template SÍ lo tiene** | **16** |
+| Con centro de costo **distinto** al del template | **1** |
+
+> **La conciliación lo propaga bien. El problema es el origen: de 185 templates, 63 no tienen centro
+> de costo cargado — y 61 de ésos están activos.**
+
+🧨 **Consecuencia:** todo lo que pase por esos 61 llega al extracto sin centro de costo, y **no hay
+conciliación que lo arregle**. El día que se quiera el resultado por actividad o por campo, esos
+gastos no se pueden asignar. Los **16** son otra cosa: conciliaciones manuales que se saltearon el
+paso (el de Red Vial del 16/03 era uno, ya corregido).
+
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
 Cuatro huecos en un solo día, **y tres los encontró el usuario abriendo la pantalla**. El patrón de
