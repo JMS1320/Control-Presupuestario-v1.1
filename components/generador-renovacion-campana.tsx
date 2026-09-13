@@ -487,17 +487,14 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             fecha_vencimiento: f.esVencimiento ? fecha : null,   // fechas de la fila = vencimiento (checkbox)
             monto: it.monto,
             estado: 'pendiente',
-            // Fórmula de descripción reproducida con el período nuevo (etiqueta del extracto al conciliar)
-            // El responsable NO se agrega si el nombre ya lo tiene: "Tarjeta Visa Business MSA"
-            // salía como "Tarjeta Visa Business MSA **MSA** - Agosto 2026". Pasa en 20 de los
-            // templates activos, que llevan la empresa en el propio nombre.
-            descripcion: (() => {
-              const nombre = String(t.nombre_referencia ?? '').trim()
-              const resp = String(t.responsable ?? '').trim()
-              const yaLoTiene = resp !== '' && nombre.toUpperCase().includes(resp.toUpperCase())
-              const encabezado = yaLoTiene || resp === '' ? nombre : `${nombre} ${resp}`
-              return `${encabezado} - ${MESES_LARGO[mesNum - 1]} ${anioNum}`.replace(/\s+/g, ' ').trim()
-            })(),
+            // 🪪 A-FEAT-138 — la etiqueta YA NO se guarda acá. La genera `identificadorDeCuota()`
+            // con la misma regla que vivía en este bloque (incluido el «no repetir el responsable
+            // si el nombre ya lo tiene», que afecta a 20 templates activos).
+            //
+            // 🔑 Guardarla era el problema de fondo: la campaña escribía 12 filas con el nombre de
+            // HOY, y al renombrar el template quedaban congeladas. Y además ocupaba `descripcion`,
+            // que es donde el usuario y el motor querían escribir otra cosa — de ahí salieron las
+            // 548 filas con tres contenidos distintos mezclados (A-DAT-37).
             cuenta_contable: t.codigo_contable ?? null,
             centro_costo: t.centro_costo ?? null,
             categ: t.categ ?? null,

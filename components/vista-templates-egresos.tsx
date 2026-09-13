@@ -1032,7 +1032,8 @@ export function VistaTemplatesEgresos() {
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
-          descripcion: descripcionFinal,
+          // 🪪 A-FEAT-138 — lo que el usuario escribe va a `detalle`; la etiqueta se genera.
+          detalle: descripcionFinal,
           estado: 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
           medio_pago: medioPagoManual
