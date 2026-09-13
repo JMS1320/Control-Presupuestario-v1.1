@@ -455,7 +455,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         : ''
       const detallesCombinados = prefijoLimpio
         ? `${prefijoLimpio} ${responsable}${infoCuota} · ${sufijos.join(' · ')}`
-        : cs.map(c => c.descripcion || c.egreso?.nombre_referencia || '').join(' · ')
+        : cs.map(c => detalleCompleto(c, c.egreso ?? {}, c.detalle) || '').join(' · ')
 
       return {
         id: grupoId,
@@ -471,7 +471,17 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
         detalle: detallesCombinados,
-        detalle_usuario: cs.map(c => c.descripcion).filter(Boolean).join(' | ') || null,
+        /**
+         * 🐞 **Regresión mía, arreglada.** Al apuntar la fila individual a `c.detalle`
+         * ([A-FEAT-137]) **no miré la agrupada**, que siguió leyendo `c.descripcion` — vacía
+         * desde [A-DAT-37]. Los grupos de pago quedaron sin detalle de usuario.
+         *
+         * 🧨 **Y el proyecto ya tenía escrito este error con nombre**: *«arreglar la fila
+         * individual sin mirar la agrupada rompió otra cosa»* (cierre 2026-08-31). Cada origen de
+         * este archivo tiene **dos** caminos — suelto y agrupado — y tocar uno sin el otro los
+         * deja diciendo cosas distintas del mismo hecho.
+         */
+        detalle_usuario: cs.map(c => c.detalle).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,

@@ -2410,12 +2410,16 @@ Cada fila del extracto bancario tiene 3 columnas de información textual con rol
 
 ### 30.2 — Formato de `comprobantes_pagados` por origen
 
+> ⚠️ **Actualizado 2026-09-12** ([A-FEAT-138](PENDIENTES.md#a-feat-138)): los **templates** pasaron
+> de `nombre_referencia` a secas al **identificador con período**. Antes las 12 cuotas de un template
+> mensual decían todas lo mismo y el extracto no distinguía cuál se había saldado. Ver § 30.9.
+
 | Origen | Formato | Ejemplo |
 |---|---|---|
 | ARCA individual | `FC/NC/ND - {numero_desde}` | `FC - 12345` |
 | ARCA grupo | Ídem, separados por ` + ` | `FC - 12345 + FC - 67890` |
-| Template individual | `nombre_referencia` del template | `Seguro Flota` |
-| Template grupo | Nombres únicos separados por ` + ` | `Red Vial SP + Red Vial Rojas` |
+| Template individual | **identificador generado**: `<nombre> <resp> - <Mes> <Año>` ⚠️ *cambió 2026-09-12* | `Seguro Flota MSA - Junio 2026` |
+| Template grupo | Ídem por cuota, separados por ` + ` | `Red Vial SP MSA - Jun 2026 + Red Vial Rojas MSA - Jun 2026` |
 | Sueldo individual | `{tipo} {Mes} {Año}` (período, no fecha pago) | `Pago Saldo Mar 2026` |
 | Sueldo grupo | Ídem por cada pago, separados por ` + ` | `Saldo Abr 2026 + Anticipo May 2026` |
 | Anticipo con FC | FC vinculada | `FC - 9876` |
@@ -2441,13 +2445,13 @@ interface CashFlowRow {
 
 **`detalle_usuario`** contiene solo lo que el usuario escribió:
 - ARCA: `f.detalle` (campo detalle de la factura, editable por usuario)
-- Template: `c.descripcion` (descripción de la cuota)
+- Template: **`c.detalle`** ⚠️ *cambió 2026-09-12* — antes era `c.descripcion`, que además guardaba el identificador y el detalle de las reglas, todo mezclado ([A-FEAT-137](PENDIENTES.md#a-feat-137))
 - Sueldo: `null` (no hay input de usuario)
 - Anticipo: `a.descripcion` (descripción del anticipo)
 
 **`comprobante_display`** contiene la referencia documental limpia:
 - ARCA: `"FC - 1234"` (usando `tipoComprobanteAbrev()`)
-- Template: `nombre_referencia` del egreso
+- Template: **`identificadorDeCuota(cuota, egreso)`** ⚠️ *cambió 2026-09-12* — antes `nombre_referencia` a secas, que no decía **cuál** cuota
 - Sueldo: `"Saldo Mar 2026"` (período)
 - Anticipo: `"ANTICIPO descripcion"`
 
@@ -2612,3 +2616,130 @@ lados**. Verificado el 2026-09-11: con nota 17, sin nota 200, **en los dos: 0**.
 recorrido: estado → `filtrosActivos` → los dos armadores de filtros → el `select`-chip → `Limpiar`.
 **Los cinco puntos hay que tocarlos**; olvidar el de `Limpiar` deja un botón que dice que limpió y
 no limpió.
+
+---
+
+### 30.9 — 📐 EL PROTOCOLO DE REGISTRO (hito 2026-09-12)
+
+> **Cómo se reparte el texto de un movimiento entre sus columnas, sea cual sea su origen.**
+>
+> Pedido del usuario al cerrar el trabajo sobre templates: *«el detalle es el detalle para todo, y
+> no diferente para caja que banco que echeq»*. → [A-FEAT-139](PENDIENTES.md#a-feat-139)
+
+Esto **amplía §§ 30.1, 30.2 y 30.3**, que ya fijaban las tres columnas y el formato por origen. Lo
+nuevo es **qué se guarda y qué se genera**, y el estado real de los 9 caminos.
+
+> 🧨 **Y lo primero que hay que decir es un error de método.** § 30.2 y § 30.3 **ya decían** que
+> el `detalle_usuario` de un template salía de `c.descripcion` y su `comprobante_display` de
+> `nombre_referencia`. **No las leí antes de tocar el código**, y reconstruí en tres iteraciones algo
+> que estaba escrito. Es exactamente lo que previene § `CLAUDE.md` 🧭 *Regla de contexto*:
+> **primero las dimensiones, después el código**. El costo no fue el trabajo repetido — fue haber
+> cambiado un diseño documentado **sin saber que lo era**.
+
+---
+
+## 1 · Cuatro columnas, cuatro preguntas
+
+| Columna | La pregunta | ⚠️ El error típico |
+|---|---|---|
+| `proveedor_nombre` | ¿**quién** cobró? | poner el banco por donde salió la plata |
+| `categ` | ¿**qué tipo** de gasto es? | — |
+| `comprobantes_pagados` | ¿**qué obligación concreta** se saldó? | poner el nombre genérico, sin período ni número |
+| `detalle` | ¿qué más hay que saber, **que no se deduzca de las otras tres**? | repetir la categoría o el comprobante |
+
+> 🔑 **`detalle` vacío es la respuesta correcta la mayoría de las veces.** No es un hueco: es que
+> las otras tres ya lo dijeron. Al 2026-09-12, de 68 reglas de conciliación activas, **60 tenían el
+> `detalle` idéntico a la `categ`** — 60 renglones diciendo dos veces lo mismo.
+
+## 2 · La regla que ordena todo: **lo derivado se genera, lo escrito se guarda**
+
+| | Se guarda | Se genera |
+|---|---|---|
+| Qué es | lo que escribió una persona | lo que se puede reconstruir de otros campos |
+| Ejemplo | `«1.740 Kg Maíz Castillo a 193.000 la ton»` | `«UATRE MSA - Junio 2026»` |
+| Si cambia el origen | no se toca — es de su autor | **se actualiza solo** |
+
+**Guardar un dato derivado cambia «siempre correcto» por «correcto el día que se escribió».** El
+generador de campaña guardaba la etiqueta en 12 filas con el nombre del template de ese día; al
+renombrarlo, las 12 quedaban mintiendo. Es el mismo error que un `id` hardcodeado, que en este
+proyecto ya rompió dos cosas al renovar una campaña.
+
+### ⚠️ Y por eso el identificador NO se copia al detalle cuando el detalle está vacío
+Fue la duda del usuario —*«¿no habría que llenar detalle con descripción si no hay nada? es como un
+bucle»*— y la respuesta es que **no hace falta**: la pantalla compone `identificador · detalle`, así
+que sin detalle se ve igual. Copiarlo cuesta dos cosas y no aporta ninguna:
+
+1. **Borra la distinción** entre lo escrito y lo generado — y esa diferencia es la que decide si un
+   texto se puede pisar.
+2. **Congela** el identificador viejo adentro del detalle, para siempre.
+
+## 3 · La forma, igual para todos los orígenes
+
+```ts
+comprobante_display  = <identificador generado>     // qué obligación
+detalle_usuario      = <sólo lo que escribió el usuario>
+detalle              = detalle_usuario ? `${identificador} · ${detalle_usuario}` : identificador
+```
+
+Y al conciliar, `columnasDelExtracto()` escribe:
+```
+comprobantes_pagados ← comprobante_display
+detalle              ← el detalle que YA tenía el movimiento || detalle_usuario
+```
+
+⚠️ **Ese orden importa**: lo que el usuario escribió en el extracto **gana**. El origen sólo completa
+el hueco, nunca pisa.
+
+## 4 · Auditoría de los 9 caminos (2026-09-12)
+
+`useMultiCashFlowData` arma **9 filas distintas**, y cada origen tiene **dos**: suelta y agrupada.
+
+| Origen | Identificador | Detalle del usuario | |
+|---|---|---|---|
+| **ARCA** suelta | `FC A - 00012345` | `f.detalle` | ✅ **el modelo** |
+| ARCA agrupada | los números unidos | los detalles unidos | ✅ |
+| **SUELDO** · pagos | `Haberes Mayo 2026 — saldo` | `especificacionDeSueldo()` | ✅ **el mejor** — saca el período del texto para no repetirlo |
+| **TEMPLATE** suelta | `UATRE MSA - Junio 2026` | `c.detalle` | ✅ desde [A-FEAT-138](PENDIENTES.md#a-feat-138) |
+| TEMPLATE agrupada | ídem | `c.detalle` | ✅ desde [A-BUG-166](PENDIENTES.md#a-bug-166) |
+| **VENTA** · cobros | `c.nro_comprobante` | — | ⚠️ sin detalle de usuario |
+| **VENTA** · hacienda | `null` | — | 🔴 [A-BUG-168](PENDIENTES.md#a-bug-168) |
+| **ANTICIPO** | `<tipo> <a.descripcion>` | `a.descripcion` | 🔴 [A-BUG-167](PENDIENTES.md#a-bug-167) — **el mismo texto en las dos** |
+| **SUELDO** · períodos | `Saldo Mayo 2026` | `null` fijo | ⚠️ [A-DAT-39](PENDIENTES.md#a-dat-39) |
+
+📌 **Los dos que ya estaban bien no se tocaron**: ARCA y los pagos de sueldo llegaron a esta forma
+antes y por su cuenta. Eso es lo que la vuelve un patrón y no una preferencia.
+
+⚠️ **No se migran todos de una vez.** Cada origen se pasa **cuando se pasa por su circuito**
+(§ `CLAUDE.md` 🔍 La auditoría permanente), con su medición de datos viejos — como se hizo en
+[A-DAT-38](PENDIENTES.md#a-dat-38).
+
+## 5 · 🧨 Cómo se diagnostica un bug de este tipo
+
+Cuatro huecos en un solo día, **y tres los encontró el usuario abriendo la pantalla**. El patrón de
+los cuatro es el mismo y se puede buscar a propósito:
+
+> **Se verificó dónde se ESCRIBE y no quién LEE.**
+
+| Hueco | Qué pasó |
+|---|---|
+| [A-BUG-161](PENDIENTES.md#a-bug-161) | se escribió en una columna que **ninguna pantalla muestra** — 1 fila en 1.045 |
+| [A-BUG-164](PENDIENTES.md#a-bug-164) | se vació una columna que alimentaba **el buscador de grupos** |
+| [A-BUG-165](PENDIENTES.md#a-bug-165) | se generó el identificador en 2 pantallas de 3 |
+| [A-BUG-166](PENDIENTES.md#a-bug-166) | se arregló la fila suelta y **no la agrupada** |
+
+**Antes de escribir o vaciar una columna, listar sus lectores.** Cuesta treinta segundos:
+
+```bash
+grep -rn "\.columna\b" --include=*.tsx --include=*.ts components/ hooks/ lib/
+```
+```sql
+-- ¿La usa alguien? Si da 0 o 1, es una columna muerta.
+SELECT count(*) FILTER (WHERE col IS NOT NULL AND col <> '') FROM tabla;
+```
+
+🔑 **Un `UPDATE` a una columna que existe pero nadie lee no falla nunca.** Pasa el `type-check`, pasa
+los casos, y pasa incluso una verificación en la base — porque se consulta la columna a la que se
+escribió. El único control que lo agarra es **mirar la pantalla**.
+
+📌 Y el corolario que más rinde: **en este archivo cada origen tiene dos caminos.** Arreglar el
+suelto sin el agrupado ya rompió algo el 2026-08-31 y volvió a romperlo hoy, en el mismo archivo.
