@@ -344,6 +344,21 @@ export function VistaExtractoBancario() {
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
   const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo'>('template')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
+  /**
+   * 🔒 **A-FEAT-143 — el camino para vincular contra una factura YA CONCILIADA.**
+   *
+   * Pedido del usuario **con su restricción incluida**: *«nunca debe proponerse como lo primero, ya
+   * que todas las facturas conciliadas siempre se mostrarían. Debe haber una manera que requiera
+   * que conscientemente quieras hacerlo (…) de cierto “difícil” acceso, ya que es muy poco habitual
+   * y se trata de evitar»*.
+   *
+   * 🔑 **Por eso vive en un estado aparte y NO en la lista normal.** Las conciliadas ni se cargan
+   * hasta que se piden: así no hay forma de elegir una sin querer, y el motor no las ve nunca.
+   * Se apaga al cerrar el modal — no queda pegado para la próxima.
+   */
+  const [verConciliadas, setVerConciliadas] = useState(false)
+  const [arcaConciliadas, setArcaConciliadas] = useState<any[]>([])
+  const [motivoForzar, setMotivoForzar] = useState('')
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
   const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
   const [busquedaAsignarGrupo, setBusquedaAsignarGrupo] = useState('')
@@ -1287,6 +1302,37 @@ ${texto.trim()}` : texto.trim()
     }
   }
 
+  /**
+   * 🔒 **A-FEAT-143** — trae las facturas **ya conciliadas**, sólo cuando el usuario las pide.
+   *
+   * Consulta aparte a propósito: si viajaran con las demás habría que acordarse de filtrarlas en
+   * cada lugar que las use — sugerencias, lista, búsqueda — y **alcanza con olvidarse en uno**.
+   * Separadas, el default seguro es no hacer nada.
+   */
+  const cargarFacturasConciliadas = async () => {
+    const res = await Promise.all(EMPRESAS.map(async (empresa) => {
+      const { data } = await supabase
+        .schema(schemaDeEmpresa(empresa))
+        .from('comprobantes_arca')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit, fecha_emision, estado')
+        .eq('estado', 'conciliado')
+        .order('fecha_emision', { ascending: false })
+        .limit(1500)
+      return (data ?? []).map(f => ({ ...f, __empresa: empresa }))
+    }))
+    setArcaConciliadas(res.flat().map((f: any) => ({
+      id: f.id, tipo: 'ARCA' as const, empresa: f.__empresa,
+      origen_tabla: `${schemaDeEmpresa(f.__empresa)}.comprobantes_arca`,
+      tipo_comprobante: f.tipo_comprobante, numero_desde: f.numero_desde,
+      denominacion_emisor: f.denominacion_emisor, monto_a_abonar: f.monto_a_abonar,
+      fecha_estimada: f.fecha_estimada, cuit: f.cuit, fecha_emision: f.fecha_emision,
+      display_nombre: f.denominacion_emisor,
+      display_referencia: `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde || ''}`,
+      display_monto: f.monto_a_abonar,
+      yaConciliada: true,
+    })))
+  }
+
   const cargarFacturasDisponibles = async () => {
     try {
       cargarCodigosUsados()
@@ -1824,6 +1870,24 @@ ${texto.trim()}` : texto.trim()
           estado: 'conciliado',
           comprobantes_pagados: arcaElegida.display_referencia || null
         }
+
+        /**
+         * 🔒 **A-FEAT-143 — la HUELLA de haber forzado contra una factura ya conciliada.**
+         *
+         * El motivo va a `nota_operador` con un prefijo fijo, y eso es una decisión, no comodidad:
+         * esa columna **ya es buscable** desde los filtros de notas del Extracto ([A-FEAT-134]), así
+         * que estos casos se pueden listar sin inventar una columna ni una pantalla.
+         *
+         * 🔑 **Sin huella, forzar es indistinguible de un error.** Dentro de seis meses, un
+         * movimiento vinculado a una factura que ya estaba paga parece un bug — y alguien lo va a
+         * "arreglar". Con el motivo escrito, se sabe que fue deliberado y **por qué**.
+         */
+        if ((arcaElegida as any).yaConciliada) {
+          const previa = (movimientoAsignando as any).nota_operador?.trim()
+          const marca = `🔒 Vinculada a una FC YA CONCILIADA (${arcaElegida.display_referencia}): ${motivoForzar.trim()}`
+          updateArca.nota_operador = previa ? `${previa}
+${marca}` : marca
+        }
         // No pisar con null lo que ya estaba: sin proveedor en el maestro se conserva lo que hubiera
         // (A-BUG-05 punto 4), y el detalle deja de borrarse en cada reasignación (punto 1).
         const nombreProv = provArca?.razon_social || arcaElegida.denominacion_emisor || null
@@ -2032,6 +2096,10 @@ ${texto.trim()}` : texto.trim()
       }
 
       setModalAsignar(false)
+      // 🔒 A-FEAT-143 — el camino difícil se apaga SIEMPRE al cerrar. Si quedara pegado, la próxima
+      //    vez las conciliadas aparecerían solas y dejaría de ser una decisión consciente.
+      setVerConciliadas(false)
+      setMotivoForzar('')
       // Lo que se soltó por el camino se dice. Un cambio que el usuario no pidió y no ve es el
       // modo de falla que originó A-BUG-42.
       if (avisosAsignacion.length > 0) alert(avisosAsignacion.join('\n\n'))
@@ -4362,7 +4430,7 @@ ${texto.trim()}` : texto.trim()
         </DialogContent>
       </Dialog>
 
-      <Dialog open={modalAsignar} onOpenChange={setModalAsignar}>
+      <Dialog open={modalAsignar} onOpenChange={(v) => { setModalAsignar(v); if (!v) { setVerConciliadas(false); setMotivoForzar('') } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Asignar Manualmente</DialogTitle>
@@ -4630,13 +4698,21 @@ ${texto.trim()}` : texto.trim()
 
                   // Con búsqueda activa: filtrar todo
                   if (busqueda) {
-                    return propuestas
-                      .filter(({ factura: f }) =>
-                        normalizarBusqueda(f.display_nombre).includes(busqueda) ||
-                        (f.cuit || '').includes(busqueda) ||
-                        String(f.display_monto).includes(busqueda)
-                      )
-                      .map(({ factura: f }) => (
+                    const coincide = (f: any) =>
+                      normalizarBusqueda(f.display_nombre).includes(busqueda) ||
+                      (f.cuit || '').includes(busqueda) ||
+                      String(f.display_monto).includes(busqueda)
+
+                    const pendientes = propuestas.filter(({ factura: f }) => coincide(f))
+                    /**
+                     * 🔒 **A-FEAT-143** — las YA CONCILIADAS sólo entran si se pidieron **y** se está
+                     * buscando. Nunca aparecen solas, nunca en Sugerencias, nunca para el motor.
+                     */
+                    const conciliadas = verConciliadas ? arcaConciliadas.filter(coincide) : []
+
+                    return (
+                      <>
+                      {pendientes.map(({ factura: f }) => (
                         <div
                           key={f.id}
                           onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
@@ -4649,7 +4725,62 @@ ${texto.trim()}` : texto.trim()
                             {montoRow(f)}
                           </div>
                         </div>
-                      ))
+                      ))}
+
+                      {/* 🔒 A-FEAT-143 — el camino difícil, y a propósito.
+                          Un enlace gris al pie, no un chip arriba: hay que ir a buscarlo. Si no hay
+                          ninguna que coincida el enlace ni aparece — ofrecer un camino que no lleva
+                          a ningún lado es peor que no ofrecerlo. */}
+                      {!verConciliadas && (() => {
+                        const cuantas = arcaConciliadas.length
+                          ? arcaConciliadas.filter(coincide).length
+                          : null
+                        return (
+                          <div className="pt-2 mt-1 border-t text-center">
+                            {pendientes.length === 0 && (
+                              <p className="text-xs text-gray-400 mb-1">Sin resultados entre las pendientes.</p>
+                            )}
+                            <button
+                              onClick={async () => {
+                                if (arcaConciliadas.length === 0) await cargarFacturasConciliadas()
+                                setVerConciliadas(true)
+                              }}
+                              className="text-xs text-gray-500 hover:text-amber-700 underline"
+                            >
+                              🔒 Buscar también entre las YA CONCILIADAS{cuantas !== null ? ` (${cuantas})` : ''}
+                            </button>
+                          </div>
+                        )
+                      })()}
+
+                      {verConciliadas && conciliadas.length === 0 && (
+                        <p className="pt-2 mt-1 border-t text-center text-xs text-gray-400">
+                          Tampoco hay coincidencias entre las ya conciliadas.
+                        </p>
+                      )}
+
+                      {conciliadas.map((f: any) => (
+                        <div
+                          key={f.id}
+                          onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
+                          className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                            arcaElegida?.id === f.id ? 'border-amber-500 bg-amber-50' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium text-sm">{f.display_nombre}</div>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-200 text-amber-900 shrink-0">
+                              YA CONCILIADA
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                            <span>{f.cuit}</span>
+                            {fechasRow(f)}
+                            {montoRow(f)}
+                          </div>
+                        </div>
+                      ))}
+                      </>
+                    )
                   }
 
                   // Sin búsqueda: sugerencias primero, luego el resto
@@ -4934,11 +5065,35 @@ ${texto.trim()}` : texto.trim()
             </div>
           </div>
 
+          {/* 🔒 A-FEAT-143 — el aviso y el motivo, sólo con una YA CONCILIADA elegida.
+              Va pegado al pie, donde se decide: un cartel arriba se lee al entrar y se olvida. */}
+          {tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && (
+            <div className="rounded border border-amber-400 bg-amber-50 p-3 text-sm">
+              <p className="font-medium text-amber-900">
+                ⚠️ {arcaElegida.display_referencia} ya está conciliada contra otro movimiento.
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Vincularla de nuevo es poco habitual y no se deshace solo. Queda registrado en la nota
+                del movimiento, para que dentro de seis meses se sepa que fue a propósito.
+              </p>
+              <input
+                autoFocus
+                value={motivoForzar}
+                onChange={(e) => setMotivoForzar(e.target.value)}
+                placeholder="Por qué la vinculás igual (obligatorio)"
+                className="mt-2 w-full border border-amber-400 rounded px-2 py-1 text-sm"
+              />
+            </div>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setModalAsignar(false); setVerConciliadas(false); setMotivoForzar('') }}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
-              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)}
+              disabled={guardandoAsignacion
+                || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)
+                /* 🔒 A-FEAT-143 — con una YA CONCILIADA elegida, sin motivo no se guarda. */
+                || (tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && !motivoForzar.trim())}
             >
               {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
             </Button>
