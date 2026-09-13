@@ -228,6 +228,32 @@ de enterarse de si tiene que hacer algo.
 lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
 precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
 
+#### 🔄 Un HITO se documenta corrigiendo lo viejo, no agregando al lado (REGLA)
+*Pedida por el usuario 2026-09-12: **«cuando se documentan este tipo de hitos, ¿se mira que no haya
+info histórica contradictoria que pueda confundir en próximas tomas de contexto?»**. No se miraba —
+y ese mismo día quedaron **ocho lugares** afirmando algo que ya se sabía falso.*
+
+> **Antes de dar por cerrado un hito, buscar qué dice HOY la documentación sobre ese mismo tema y
+> corregirlo. Un hallazgo nuevo que convive con el viejo no aclara: confunde.**
+
+- **Se busca por concepto, no por ID**: `grep` del número, del nombre de la columna, del síntoma.
+  Lo mismo suele estar dicho en tres dimensiones distintas con tres redacciones.
+- **Lo viejo NO se borra si enseña algo**: se marca **`❌ FALSA ALARMA`** o **`⚠️ cambió <fecha>`**
+  arriba, con el diagnóstico correcto primero y el recorrido debajo. Así el que lo lea ve **que hubo
+  una corrección**, que es información que borrar destruye.
+- **Y se corrige en el momento del hito**, no después: para cuando alguien lo note, la afirmación
+  falsa ya viajó a la memoria, a un cierre de sesión y a la próxima toma de contexto.
+
+**Motivo, con el caso:** [A-BUG-156](PENDIENTES.md#a-bug-156) concluyó que había *«9 vínculos
+conciliados apuntando a cuotas que ya no existen»*. **Eran pagos agrupados** — el vínculo guardaba el
+grupo, no la cuota, y el control no lo sabía. La afirmación falsa llegó a **`PENDIENTES`,
+`ARQUITECTURA-BD`, `KNOWLEDGE` y la memoria** en el mismo día. Sin esta regla, la sesión siguiente
+abre creyendo que hay datos rotos y sale a repararlos.
+
+⚠️ **Y el corolario que la hace barata:** el momento de escribir el hito es el único en que se tiene
+todo el tema en la cabeza. Corregir lo contradictorio cuesta **minutos** ahí, y una sesión entera
+tres semanas después.
+
 ### 📋 Dónde vive el testing del usuario
 **En la guía de pruebas**, no desparramado en la app. El usuario tiene que poder **correr todo desde
 un solo lugar**, sin buscar botones. Lo que hay adentro de la app son herramientas (el 🧪 Probar);

@@ -2690,6 +2690,43 @@ detalle              ← el detalle que YA tenía el movimiento || detalle_usuar
 ⚠️ **Ese orden importa**: lo que el usuario escribió en el extracto **gana**. El origen sólo completa
 el hueco, nunca pisa.
 
+### 30.9.1 — Los CAMINOS por donde sale (o se salda) la plata
+
+*Completado por el usuario 2026-09-12. **Al desarrollar hay que cubrirlos todos, o al llegar a uno
+usar lo que ya existe — nunca hacerle algo aparte.***
+
+**A · Los 10 canales que dejan movimiento** — todos pasan por el mismo motor de conciliación:
+
+| Naturaleza | Cuentas |
+|---|---|
+| **Bancos** (4) | MSA Galicia CC · PAM Galicia CA · PAM Galicia CC · MA Galicia CA |
+| **Cajas** (3) | Caja General MSA · Caja AMS · Caja Sigot |
+| **Tarjetas** (3) | VISA Business MSA · VISA PAM · VISA MA |
+
+**B · 🔴 Los que NO dejan movimiento en ningún canal** — y por eso el motor no los ve:
+
+| | Qué es | Por qué no toca un canal |
+|---|---|---|
+| **Echeq** | cheque electrónico | **se puede ENDOSAR**: pasa de mano en mano sin tocar la cuenta |
+| **Cuenta corriente** | factura de venta contra factura de compra | se compensan entre sí; no hay plata en movimiento |
+
+> ⚠️ **Éstos son el punto ciego del circuito.** Una obligación saldada por echeq endosado o por
+> cuenta corriente **está pagada y no hay movimiento bancario que conciliar**. Si el único camino
+> para marcar algo como pagado pasa por el extracto, estas dos quedan afuera — o se marcan a mano,
+> que es lo mismo que no tener circuito.
+
+📌 **Pendiente de definir cómo se manejan** (anotado por el usuario 2026-09-12: *«para agregar y
+luego ver cómo manejar»*). Lo que sí vale desde ya: **cuando se toque cualquiera de los dos, la
+forma de registrar es la de § 30.9** — mismo Comprobante, mismo Detalle. *El detalle es el detalle
+para todo.*
+
+### ⚠️ Hueco detectado: `medio_pago` no se usa
+Las **1.045** cuotas tienen `medio_pago = 'banco'`, **sin una sola excepción** — incluidas las de
+Caja. El campo existe y nadie lo llena. Hoy no molesta porque la conciliación se hace contra la
+**cuenta**, no contra el medio; molestará el día que se quiera un reporte **por medio de pago**, o
+cuando entren echeq y cuenta corriente, que **no tienen cuenta donde conciliarse** y sólo se
+distinguirían por ahí.
+
 ## 4 · Auditoría de los 9 caminos (2026-09-12)
 
 `useMultiCashFlowData` arma **9 filas distintas**, y cada origen tiene **dos**: suelta y agrupada.
