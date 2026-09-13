@@ -58,7 +58,8 @@ interface CuotaGenerada {
   fecha_estimada: string
   fecha_vencimiento?: string
   monto: number
-  descripcion: string
+  /** 🪪 A-FEAT-138 — opcional: la etiqueta se genera, ya no se guarda. */
+  descripcion?: string
 }
 
 interface WizardState {
@@ -191,7 +192,9 @@ export function WizardTemplatesEgresos() {
           fecha_estimada: fecha.toISOString().split('T')[0],
           fecha_vencimiento: fecha.toISOString().split('T')[0],
           monto,
-          descripcion: `${datos_basicos.nombre_referencia} ${datos_basicos.responsable} - ${MESES[mes - 1].label} ${año_actual}`
+          // 🪪 A-FEAT-138 — la etiqueta YA NO se guarda: `identificadorDeCuota()` la genera de
+          // `nombre_referencia` + `responsable` + el período. Guardarla la congelaba: al renombrar
+          // el template quedaban 12 cuotas con el nombre viejo adentro.
         })
       }
     } else if (configuracion.tipo === 'anual') {
@@ -201,7 +204,9 @@ export function WizardTemplatesEgresos() {
         fecha_estimada: fecha.toISOString().split('T')[0],
         fecha_vencimiento: fecha.toISOString().split('T')[0],
         monto: datos_basicos.monto_base,
-        descripcion: `${datos_basicos.nombre_referencia} ${datos_basicos.responsable} - ${año_actual}`
+        // 🪪 A-FEAT-138 — la etiqueta YA NO se guarda: `identificadorDeCuota()` la genera de
+        // `nombre_referencia` + `responsable` + el período. Guardarla la congelaba: al renombrar
+        // el template quedaban 12 cuotas con el nombre viejo adentro.
       })
     } else if (configuracion.tipo === 'cuotas_especificas') {
       const meses = configuracion.meses_especificos || []
@@ -220,7 +225,9 @@ export function WizardTemplatesEgresos() {
           fecha_estimada: fecha.toISOString().split('T')[0],
           fecha_vencimiento: fecha.toISOString().split('T')[0],
           monto: datos_basicos.monto_base,
-          descripcion: `${datos_basicos.nombre_referencia} ${datos_basicos.responsable} - ${MESES[mes - 1].label} ${año_actual}`
+          // 🪪 A-FEAT-138 — la etiqueta YA NO se guarda: `identificadorDeCuota()` la genera de
+          // `nombre_referencia` + `responsable` + el período. Guardarla la congelaba: al renombrar
+          // el template quedaban 12 cuotas con el nombre viejo adentro.
         })
       })
     }
@@ -343,7 +350,6 @@ export function WizardTemplatesEgresos() {
           fecha_estimada: cuota.fecha_estimada,
           fecha_vencimiento: cuota.fecha_vencimiento,
           monto: cuota.monto,
-          descripcion: cuota.descripcion,
           estado: 'pendiente'
         }))
 

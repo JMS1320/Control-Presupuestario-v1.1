@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { detalleCompleto } from "@/lib/templates/identificador-cuota"
+import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
@@ -403,7 +403,19 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
         medio_pago: c.medio_pago || 'banco',
-        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,   // el QUÉ — no lleva el detalle
+        /**
+         * 🎯 **A-FEAT-138** — el Comprobante tiene que decir **CUÁL** obligación se saldó.
+         *
+         * Antes ponía `nombre_referencia` a secas, así que las 4 cuotas de *Red Vial Lote Puerto* y
+         * los 12 meses de *UATRE* **decían todos lo mismo**: el extracto no distinguía cuál era.
+         * Las facturas ya lo resuelven (`FC A - 00012345`) y los sueldos también
+         * (`Saldo Mayo 2026`, vía `comprobanteDeSueldo`) — las cuotas eran el único origen sin
+         * identidad propia.
+         *
+         * 🧨 La prueba de que hacía falta la escribió el usuario a mano: en el movimiento del
+         * 16/06 puso `«Lote Puerto Cuota 3.»` **en el Detalle**, tapando el agujero de esta columna.
+         */
+        comprobante_display: identificadorDeCuota(c, c.egreso ?? {}) || c.egreso?.nombre_referencia || null,
         grupo_pago_id: null,
       }
     })
@@ -469,7 +481,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         estado: estadoDeGrupo(cs.map(c => c.estado)),
         fecha_pago: cs.map(c => c.fecha_pago).filter(Boolean).sort().at(-1) ?? null,
         medio_pago: primera.medio_pago || 'banco',
-        comprobante_display: [...new Set(cs.map(c => c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
+        comprobante_display: [...new Set(cs.map(c => identificadorDeCuota(c, c.egreso ?? {}) || c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: cs.length,
         ids_grupo: cs.map(c => c.id),

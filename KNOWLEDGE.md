@@ -1923,6 +1923,43 @@ pasa al usuario.
 sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
 
 
+## Tratar un ÉXITO como si fuera un fallo — dos formas, el mismo día `#control #api #2026-09-12`
+
+Corrigiendo 497 movimientos ([A-DAT-38](PENDIENTES.md#a-dat-38)) el script se rompió **dos veces**, y
+las dos por la misma confusión de fondo: **algo salió bien y el código lo leyó como que salió mal.**
+
+### 1 · `r.json()` sobre un `INSERT` que responde 201 **sin cuerpo**
+```
+SyntaxError: Unexpected end of JSON input
+```
+PostgREST responde un `INSERT` con **201 y cuerpo vacío** salvo que se le pida
+`Prefer: return=representation`. El helper hacía `r.json()` para todo lo que no fuera 204, así que
+**reventó después de escribir**. Desde afuera se veía como *«se cortó a la mitad»* — y quedaron 200
+filas insertadas que parecían basura de un fallo, cuando eran trabajo hecho.
+
+> 🔑 **Un 2xx sin cuerpo es éxito, no un error de formato.** Se lee `await r.text()` y se parsea
+> **sólo si hay algo**.
+
+### 2 · El control, otra vez, contando sobre un universo recortado
+El control dijo *«no cierra por 9»* con los 497 perfectamente bien corregidos. Los 9 eran los que el
+propio script **salteaba a propósito** (vínculos rotos de A-BUG-156): tenían detalle, seguían
+teniéndolo, y el esperado no los incluía porque el `continue` ocurría antes de contarlos.
+
+**Es la segunda vez en el mismo día** — la primera fue en [A-DAT-37](PENDIENTES.md#a-dat-37), con el
+`limit` que PostgREST recorta. Distinta causa, misma forma:
+
+> 🧨 **Cuando un control compara un «antes» con un «después», las dos puntas tienen que medir el
+> MISMO universo.** Todo lo que la lógica saltea con un `continue` sigue existiendo en la base, y el
+> esperado tiene que contarlo — o el control reclama como sobrante algo que nunca tuvo que tocar.
+
+### Por qué esto importa más que los dos bugs
+Un control que grita en falso **entrena a ignorarlo**, y después no sirve el día que tiene razón. La
+reacción correcta ante un rojo no es creerle ni ignorarlo: es **verificar contra la fuente** — las
+dos veces alcanzó una consulta SQL de cuatro líneas — y después arreglar al que estaba mal, que las
+dos veces fue el control.
+
+---
+
 ## Un `limit` alto NO garantiza traer todo: PostgREST corta en 1.000 `#bd #control #2026-09-12`
 
 Migrando 548 filas ([A-DAT-37](PENDIENTES.md#a-dat-37)), el control del final reportó

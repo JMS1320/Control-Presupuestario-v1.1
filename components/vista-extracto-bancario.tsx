@@ -53,6 +53,7 @@ import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
 import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
 import { proveedorDelMovimiento } from "@/lib/conciliacion/proveedor-del-movimiento"
+import { detalleCompleto } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -1466,7 +1467,23 @@ ${texto.trim()}` : texto.trim()
         fecha: primera.fecha_estimada,
         cuit: cuitsUnicos.join(', '),
         nombre_proveedor: proveedoresUnicos.join(', '),
-        descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
+        /**
+         * 🔎 **A-BUG-164** — esto alimenta el BUSCADOR de grupos (más abajo:
+         * `normalizarBusqueda(g.descripciones).includes(busqueda)`), así que no es cosmético.
+         *
+         * 🧨 Antes leía `c.descripcion` a secas, y al repartir esa columna ([A-DAT-37]) la
+         * búsqueda de grupos de template **dejó de encontrar nada**: las cuotas ya no guardan ahí
+         * su etiqueta. Lo detectó el usuario preguntando *«¿no deberían tener descripción, ya que
+         * es como se llenan luego los datos en las conciliaciones?»* — **no un control**. Tercera
+         * vez en el mismo circuito que se verifica dónde se ESCRIBE y no quién LEE.
+         *
+         * 🔑 Ahora se compone igual que en el Cash Flow: **identificador generado + detalle**.
+         * Y el buscador queda **mejor que antes**, porque el identificador trae el nombre del
+         * template — que es por lo que uno busca — y antes sólo estaba si alguien lo había escrito.
+         */
+        descripciones: cuotas
+          .map((c: any) => detalleCompleto(c, c.egreso ?? {}, c.detalle))
+          .filter(Boolean).join(' + '),
       }
     })
 

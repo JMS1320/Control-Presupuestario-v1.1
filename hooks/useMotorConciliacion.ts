@@ -195,6 +195,27 @@ export function useMotorConciliacion() {
     }
   }
 
+  /**
+   * 🎯 **A-FEAT-138** — el `detalle` de una regla sólo se copia si **dice algo que la CATEG no dice**.
+   *
+   * Medido el 2026-09-12: de **68 reglas activas, 60 tienen `detalle` idéntico a `categ`**. Copiarlas
+   * deja el movimiento así:
+   * ```
+   * CATEG:   Comision Transferencias
+   * Detalle: Comision Transferencias   ← no aporta nada
+   * ```
+   * Es la misma duplicación que [A-FEAT-31] ya había sacado cuando el motor derivaba
+   * `detalle = «<comprobante> — <proveedor>»`. **Detalle vacío no es un hueco**: es que las otras
+   * columnas ya lo dijeron.
+   *
+   * 📌 Las **8** reglas cuyo detalle sí aporta lo siguen escribiendo — para eso existe el campo.
+   */
+  const detalleQueAporta = (detalle: string | null | undefined, categ: string | null | undefined): string | null => {
+    const d = (detalle ?? '').trim()
+    if (!d) return null
+    return d.toLowerCase() === (categ ?? '').trim().toLowerCase() ? null : d
+  }
+
   // Función para evaluar si una regla hace match con un movimiento
   const evaluarRegla = (movimiento: MovimientoBancario, regla: ReglaConciliacion): boolean => {
     try {
@@ -768,7 +789,7 @@ export function useMotorConciliacion() {
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || (movimiento as any).detalle || regla.detalle || null,
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleQueAporta(regla.detalle, regla.categ),
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
@@ -893,7 +914,17 @@ export function useMotorConciliacion() {
           monto,
           estado: 'conciliado',
           tipo_movimiento: tipoMovimiento,
-          descripcion: regla.detalle || movimiento.descripcion
+          /**
+           * 🪪 **A-FEAT-138** — esto escribía en `descripcion`, y es de dónde salieron **326** de
+           * las 548 filas mezcladas (A-DAT-37): el `detalle` de la regla ocupando la columna del
+           * identificador. Ahora va a **`detalle`**, que es su lugar.
+           *
+           * ⚠️ **Y sólo si APORTA algo.** De 68 reglas activas, **60 tienen el `detalle` idéntico a
+           * la `categ`**: copiarlo deja la cuota diciendo `«Comision Transferencias»` en un renglón
+           * cuya CATEG ya dice eso. Es la duplicación que prohíbe § 30.1 de `MODULO_CONCILIACION.md`.
+           * **Vacío es la respuesta correcta** cuando no hay nada que agregar.
+           */
+          detalle: detalleQueAporta(regla.detalle, regla.categ) || movimiento.descripcion || null
         })
         .select('id')
         .single()
