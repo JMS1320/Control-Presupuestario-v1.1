@@ -1969,7 +1969,7 @@ filas insertadas que parecían basura de un fallo, cuando eran trabajo hecho.
 
 ### 2 · El control, otra vez, contando sobre un universo recortado
 El control dijo *«no cierra por 9»* con los 497 perfectamente bien corregidos. Los 9 eran los que el
-propio script **salteaba a propósito** (vínculos rotos de A-BUG-156): tenían detalle, seguían
+propio script **salteaba a propósito** (los que A-BUG-156 creía rotos y resultaron **pagos agrupados**): tenían detalle, seguían
 teniéndolo, y el esperado no los incluía porque el `continue` ocurría antes de contarlos.
 
 **Es la segunda vez en el mismo día** — la primera fue en [A-DAT-37](PENDIENTES.md#a-dat-37), con el

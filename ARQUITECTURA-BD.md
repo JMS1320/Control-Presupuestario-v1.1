@@ -367,10 +367,13 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
   `pam.*`, `ma.*`), no las cuatro tablas de `public` — que son **las que tienen 488 de los 491
   vínculos vivos**.
 
-  🧨 **Y ya costó**: de esos 491, **9 apuntan a cuotas que no existen** — 8 en `msa_galicia`, 1 en
-  `pam_galicia_cc`. Los 9 con `template_id` válido y `template_cuota_id` muerto: la firma de una
-  regeneración de cuotas (borrar + recrear). El movimiento sigue diciendo `conciliado` y **no cierra
-  contra nada**. Sin FK la base no puede avisar: no sabe que eso es una referencia.
+  ⚠️ **La columna guarda DOS cosas distintas** (verificado 2026-09-12): si el pago saldó **una**
+  obligación, guarda esa cuota; si fue un **pago agrupado**, guarda el **`grupo_pago_id`**. Por eso
+  un control que pregunte sólo *«¿este id existe entre las cuotas?»* reporta los agrupados como
+  rotos — **pasó, y dio 9 falsos positivos**.
+
+  ✅ **Chequeo integral 2026-09-12: CERO vínculos rotos** en las 4 tablas con volumen —
+  cuotas/grupos 506 · templates 506 · facturas ARCA 108 · anticipos 8.
 
   🔑 **Un vínculo sin FK no es un vínculo: es una convención.** El día que se ponga la constraint,
   va **`ON DELETE RESTRICT`** y no `SET NULL` — `SET NULL` borraría el único rastro de contra qué
