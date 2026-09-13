@@ -186,6 +186,48 @@ de coincidir con lo que Claude está tocando, y las dos mitades del trabajo deja
 
 📌 **Al cerrar un tema, ofrecer la lista** de lo que sigue con su estado, para que el orden lo elija él.
 
+### 🗣️ CÓMO SE PRESENTA LA INFORMACIÓN — primero el qué, nunca el cómo (REGLA)
+*Pedida por el usuario 2026-09-12, después de una tanda donde cada respuesta abría con nombres de
+archivo y líneas de código: **«lo primero quiero que me haga entender rápido lo que se hizo, lo que
+se propone, o las preguntas antes de poder empezar. Sintético y sin recurrir a código para explicar.
+Preciso a nivel conceptual, mejor usando nuestro glosario de la app»**.*
+
+> **Toda respuesta abre con lo que el usuario necesita para decidir, en el lenguaje de la app. El
+> código, los archivos y las líneas vienen después — o no vienen.**
+
+**Las tres cosas que van primero, y sólo una aplica por vez:**
+
+| | Cuándo | Qué se dice |
+|---|---|---|
+| **Lo que se hizo** | ya está hecho | qué cambió para él, no qué archivo se tocó |
+| **Lo que se propone** | hay que decidir | la opción recomendada y qué implica |
+| **La pregunta** | no se puede arrancar sin la respuesta | la pregunta sola, sin el análisis que llevó a ella |
+
+**El glosario es el de la app, no el del repo.** Se dice *cuota*, *template*, *movimiento*,
+*conciliar*, *comprobante*, *detalle*, *campaña* — no `cuotas_egresos_sin_factura`,
+`comprobante_display` ni `useMultiCashFlowData`. Si un concepto no tiene nombre en la app, ése es el
+hallazgo: hay que ponerle uno.
+
+**Y el orden es el de una minuta, no el de una investigación:**
+1. **Qué pasa / qué se hizo** — una o dos líneas.
+2. **Qué impacto tiene** — en la plata, en el trabajo del usuario, o en el riesgo. Si no tiene
+   ninguno, decirlo también.
+3. **Qué se propone**, con recomendación. No un menú de opciones equivalentes.
+4. **Qué hace falta de él** — una decisión, un dato, o nada.
+5. *(recién acá, si sirve)* el detalle técnico.
+
+⚠️ **Un hallazgo no es una respuesta.** Contar el recorrido —*«busqué acá, encontré esto, después
+miré allá»*— es narrar la investigación en vez de entregar la conclusión. El recorrido va al final o
+al commit, no arriba.
+
+⚠️ **Y no se abre con una disculpa ni con el error propio.** Si hubo un error, se dice **qué
+significa para él** y después qué fue. Al revés, el usuario tiene que leer todo el mea culpa antes
+de enterarse de si tiene que hacer algo.
+
+**Motivo:** el usuario decide con esto. Una respuesta que empieza en `hooks/useMultiCashFlowData.ts`
+lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
+precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
+
 ### 📋 Dónde vive el testing del usuario
 **En la guía de pruebas**, no desparramado en la app. El usuario tiene que poder **correr todo desde
 un solo lugar**, sin buscar botones. Lo que hay adentro de la app son herramientas (el 🧪 Probar);
