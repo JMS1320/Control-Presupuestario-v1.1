@@ -40,6 +40,10 @@ export type ControlId =
   | 'imputacion'
   | 'sin-proveedor'
   | 'cuadratura'
+  // 🕳️ Los del ORIGEN — A-BUG-172. Ver `EntidadOrigen`.
+  | 'origen-template-sin-quien-cobra'
+  | 'origen-factura-sin-numero'
+  | 'origen-factura-sin-cuenta'
 
 export interface MovimientoAuditable {
   id: string
@@ -57,6 +61,8 @@ export interface MovimientoAuditable {
   detalle: string | null
   comprobante_arca_id: string | null
   template_cuota_id: string | null
+  /** El template del que salió la cuota. Lo usa el control del ORIGEN para saber a quién culpar. */
+  template_id?: string | null
   sueldo_pago_id: string | null
   anticipo_id: string | null
   comprobante_venta_id?: string | null
@@ -67,6 +73,34 @@ export interface ParCuadratura {
   movimientoId: string
   importeBanco: number
   importeOrigen: number
+}
+
+/**
+ * 🕳️ **Una fila del lado del ORIGEN — A-BUG-172.**
+ *
+ * El audit nació caminando el extracto, y por eso **midió 8 donde había 141**: reportó 13
+ * movimientos de ARCA sin `nro_cuenta`, pero del lado de la factura había **141 comprobantes** en la
+ * misma situación. Las otras 128 **todavía no tienen su movimiento conciliado**, así que ninguna
+ * línea del extracto las delata.
+ *
+ * 🔑 **El audit no se equivocó: contestó bien una pregunta más chica que el problema** — y desde
+ * afuera eso se ve idéntico a estar completo. Lo detectó el usuario preguntando *«¿cómo pudo haber
+ * pasado de 8 a 141 si corrimos un audit?»*.
+ */
+export interface EntidadOrigen {
+  tipo: 'template' | 'factura'
+  id: string
+  /** Cómo se lo nombra en la app: el nombre del template, o proveedor + número de factura. */
+  nombre: string
+  /** Sólo facturas: el nombre de la cuenta contable. */
+  cuenta_contable?: string | null
+  /** Sólo facturas: el número de cuenta, que es como se trabaja la imputación. */
+  nro_cuenta?: string | null
+  /** Sólo templates: las dos columnas donde puede estar quién cobra. */
+  nombre_quien_cobra?: string | null
+  proveedor?: string | null
+  /** Cuántos movimientos conciliados dependen de esta fila. Ordena el trabajo por impacto. */
+  movimientosQueDependen?: number
 }
 
 export interface Hallazgo {
@@ -81,6 +115,10 @@ export interface Hallazgo {
   problema: string
   /** Por dónde se agrupa. Dos hallazgos con la misma causa se cuentan juntos. */
   causa: string
+  /** `movimiento` (el default) o la fila de origen que hay que corregir. */
+  entidad?: 'movimiento' | 'template' | 'factura'
+  /** Cuántos movimientos conciliados dependen de esta fila de origen. */
+  dependen?: number
   /**
    * 🔑 `true` cuando el hueco **no está en el movimiento sino en el template, el empleado o el
    * maestro**. Mandar a corregir el extracto en estos casos hace trabajar 190 filas en vez de las
@@ -225,6 +263,12 @@ export interface EntradaAuditoria {
   categsDelPlan: Set<string>
   /** Pares banco↔origen para el control de cuadratura. Si no viene, se informa como no verificado. */
   cuadratura?: ParCuadratura[]
+  /**
+   * 🕳️ Las filas del lado del ORIGEN (templates y facturas). Si no vienen, los controles del origen
+   * **se informan como no verificados** — nunca se dan por buenos en silencio. Es el hueco que dejó
+   * [A-BUG-172].
+   */
+  origenes?: EntidadOrigen[]
 }
 
 /**
@@ -235,7 +279,7 @@ export interface EntradaAuditoria {
  * número por fila mide el síntoma; el número por causa mide el trabajo.
  */
 export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
-  const { movimientos, categsDelPlan, cuadratura } = entrada
+  const { movimientos, categsDelPlan, cuadratura, origenes } = entrada
   const conciliados = movimientos.filter(esConciliado)
 
   const porOrigen: Record<Origen, number> = {
@@ -364,12 +408,65 @@ export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
     )
   }
 
+  // ── 🕳️ LOS CONTROLES DEL ORIGEN — A-BUG-172 ──────────────────────────────────────────────────
+  // Se cuentan sobre la fila que hay que corregir, NO sobre los movimientos que la sufren: el
+  // trabajo son 16 templates, no 190 líneas del extracto.
+  if (origenes && origenes.length > 0) {
+    for (const o of origenes) {
+      const baseO = {
+        movimientoId: o.id,
+        cuenta: o.tipo === 'template' ? 'Template' : 'Factura ARCA',
+        fecha: null,
+        descripcion: o.nombre,
+        importe: 0,
+        origen: (o.tipo === 'template' ? 'template' : 'ARCA') as Origen,
+        entidad: o.tipo,
+        enElOrigen: true,
+        dependen: o.movimientosQueDependen ?? 0,
+      }
+
+      if (o.tipo === 'template' && !t(o.nombre_quien_cobra) && !t(o.proveedor)) {
+        hallazgos.push({
+          ...baseO, control: 'origen-template-sin-quien-cobra',
+          problema: 'El template no dice quién cobra, así que ningún movimiento suyo puede decirlo',
+          causa: 'Falta el dato en el template',
+        })
+      }
+
+      if (o.tipo === 'factura') {
+        const conNombre = !!t(o.cuenta_contable)
+        const conNumero = !!t(o.nro_cuenta)
+        if (conNombre && !conNumero) {
+          hallazgos.push({
+            ...baseO, control: 'origen-factura-sin-numero',
+            problema: `Tiene el nombre de la cuenta ("${t(o.cuenta_contable)}") y no su número`,
+            causa: t(o.cuenta_contable),
+          })
+        } else if (!conNombre && !conNumero) {
+          hallazgos.push({
+            ...baseO, control: 'origen-factura-sin-cuenta',
+            problema: 'No tiene ninguna cuenta contable: ni nombre ni número',
+            causa: 'Sin imputación, hay que decidirla',
+          })
+        }
+      }
+    }
+  } else {
+    noVerificado.push(
+      'Los controles del ORIGEN (templates y facturas): no se pudo verificar porque no se cargaron ' +
+      'las filas de origen. Es el hueco de A-BUG-172 — el extracto solo no los muestra.'
+    )
+  }
+
   if (categsDelPlan.size === 0) {
     noVerificado.push('Categorías contra el plan de cuentas: no se pudo verificar porque el plan vino vacío.')
   }
 
   const grupos = agrupar(hallazgos)
-  const conHallazgo = new Set(hallazgos.map(h => h.movimientoId))
+  // ⚠️ Sólo los hallazgos de MOVIMIENTO cuentan para «limpios». Los del origen apuntan a un
+  // template o a una factura, y mezclarlos daba un imposible: «−18 de 676 cumplen».
+  const conHallazgo = new Set(
+    hallazgos.filter(h => !h.entidad || h.entidad === 'movimiento').map(h => h.movimientoId))
 
   return {
     universo: movimientos.length,
@@ -410,6 +507,18 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
     titulo: 'Categorías que no están en el plan de cuentas',
     regla: 'Una categoría se usa sólo si existe antes en el plan, con su tipo cargado. Si falta, el sistema la asume gasto y el presupuesto queda mal sin avisar.',
   },
+  'origen-template-sin-quien-cobra': {
+    titulo: '🕳️ TEMPLATES que no dicen quién cobra',
+    regla: 'El proveedor del movimiento sale del template. Si el template no lo tiene, ninguna de sus cuotas puede tenerlo — y corregir el extracto no arregla nada: la próxima conciliación vuelve a propagar el vacío.',
+  },
+  'origen-factura-sin-numero': {
+    titulo: '🕳️ FACTURAS con el nombre de la cuenta y sin su número',
+    regla: 'La cuenta se trabaja por su número, no por su string. El nombre ya está escrito: falta derivar el número del plan. Afecta al extracto y también al Libro IVA.',
+  },
+  'origen-factura-sin-cuenta': {
+    titulo: '🕳️ FACTURAS sin ninguna cuenta contable',
+    regla: 'Sin nombre ni número no hay nada que derivar: la imputación hay que decidirla.',
+  },
   'sin-proveedor': {
     titulo: 'No dicen quién cobró',
     regla: 'El proveedor sale del origen: el maestro por CUIT en ARCA, el template en las cuotas, el empleado en los sueldos.',
@@ -420,6 +529,8 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
 const ORDEN: ControlId[] = [
   'sin-vinculo', 'vinculo-doble', 'cuadratura', 'sin-comprobante',
   'imputacion', 'detalle-repite', 'categ-fuera-plan', 'sin-proveedor',
+  // Los del origen van al final: no son del extracto, pero es donde se arregla lo de arriba.
+  'origen-template-sin-quien-cobra', 'origen-factura-sin-numero', 'origen-factura-sin-cuenta',
 ]
 
 function agrupar(hallazgos: Hallazgo[]): GrupoHallazgos[] {

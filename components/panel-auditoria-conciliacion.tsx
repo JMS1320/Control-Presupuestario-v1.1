@@ -22,8 +22,10 @@ import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import {
   auditar, importeDe,
   type MovimientoAuditable, type ResultadoAuditoria, type ParCuadratura, type Hallazgo,
+  type EntidadOrigen,
 } from "@/lib/conciliacion/auditoria"
-import { ShieldCheck, AlertTriangle, ChevronDown, ChevronRight, Loader2, CheckCircle2 } from "lucide-react"
+import { ShieldCheck, AlertTriangle, ChevronDown, ChevronRight, Loader2, CheckCircle2, Download } from "lucide-react"
+import { exportarAuditoria } from "@/lib/conciliacion/exportar-auditoria"
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -84,6 +86,7 @@ export function PanelAuditoriaConciliacion() {
             detalle: f.detalle ?? null,
             comprobante_arca_id: f.comprobante_arca_id ?? null,
             template_cuota_id: f.template_cuota_id ?? null,
+            template_id: f.template_id ?? null,
             sueldo_pago_id: f.sueldo_pago_id ?? null,
             anticipo_id: f.anticipo_id ?? null,
             comprobante_venta_id: f.comprobante_venta_id ?? null,
@@ -117,7 +120,52 @@ export function PanelAuditoriaConciliacion() {
         cuadratura.push({ movimientoId: m.id, importeBanco: importeDe(m), importeOrigen: origen })
       }
 
-      setRes(auditar({ movimientos, categsDelPlan, cuadratura }))
+      // ── 🕳️ EL LADO DEL ORIGEN — A-BUG-172 ───────────────────────────────────────────────────
+      // Sin esto el audit mide 8 donde hay 141: las facturas cuyo movimiento todavía no está
+      // conciliado no las delata ninguna línea del extracto.
+      const origenes: EntidadOrigen[] = []
+
+      // Cuántos movimientos conciliados dependen de cada template: ordena el trabajo por impacto.
+      const dependenDelTemplate = new Map<string, number>()
+      for (const m of movimientos) {
+        if (String(m.estado ?? "").toLowerCase() !== "conciliado") continue
+        const tid = (m as any).template_id
+        if (tid) dependenDelTemplate.set(String(tid), (dependenDelTemplate.get(String(tid)) ?? 0) + 1)
+      }
+
+      const templates = await traerTodo((d, h) => supabase
+        .from("egresos_sin_factura")
+        .select("id, nombre_referencia, nombre_quien_cobra, proveedor")
+        .range(d, h))
+      for (const tpl of templates) {
+        // Sólo los que ya producen movimientos: auditar templates que nadie usó sería ruido.
+        const dep = dependenDelTemplate.get(String(tpl.id)) ?? 0
+        if (dep === 0) continue
+        origenes.push({
+          tipo: "template", id: String(tpl.id),
+          nombre: String(tpl.nombre_referencia ?? "(sin nombre)"),
+          nombre_quien_cobra: tpl.nombre_quien_cobra ?? null,
+          proveedor: tpl.proveedor ?? null,
+          movimientosQueDependen: dep,
+        })
+      }
+
+      for (const sch of ["msa", "pam", "ma"] as const) {
+        const facturas = await traerTodo((d, h) => supabase
+          .schema(sch as any).from("comprobantes_arca")
+          .select("id, nro_cuenta, cuenta_contable, denominacion_emisor, punto_venta, numero_desde")
+          .range(d, h))
+        for (const f of facturas) {
+          origenes.push({
+            tipo: "factura", id: String(f.id),
+            nombre: `${f.denominacion_emisor ?? "?"} — ${f.punto_venta ?? "?"}-${f.numero_desde ?? "?"}`,
+            cuenta_contable: f.cuenta_contable ?? null,
+            nro_cuenta: f.nro_cuenta ?? null,
+          })
+        }
+      }
+
+      setRes(auditar({ movimientos, categsDelPlan, cuadratura, origenes }))
     } catch (e: any) {
       setError(e?.message ?? String(e))
     } finally {
@@ -134,9 +182,16 @@ export function PanelAuditoriaConciliacion() {
               <ShieldCheck className="h-5 w-5 text-blue-700" />
               Auditoría de consistencia
             </span>
-            <Button onClick={correr} disabled={corriendo}>
-              {corriendo ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Revisando…</> : "Correr auditoría"}
-            </Button>
+            <span className="flex gap-2">
+              {res && (
+                <Button variant="outline" onClick={() => exportarAuditoria(res)}>
+                  <Download className="h-4 w-4 mr-2" />Descargar Excel
+                </Button>
+              )}
+              <Button onClick={correr} disabled={corriendo}>
+                {corriendo ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Revisando…</> : "Correr auditoría"}
+              </Button>
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-gray-600 space-y-1">
@@ -255,10 +310,13 @@ export function PanelAuditoriaConciliacion() {
 function Fila({ h }: { h: Hallazgo }) {
   return (
     <div className="px-3 py-2 text-xs flex flex-wrap items-baseline gap-x-3 gap-y-1">
-      <span className="text-gray-500 tabular-nums">{h.fecha ?? "sin fecha"}</span>
+      {h.fecha && <span className="text-gray-500 tabular-nums">{h.fecha}</span>}
       <span className="text-gray-500">{h.cuenta}</span>
-      <span className="font-medium tabular-nums">{money(h.importe)}</span>
+      {!!h.importe && <span className="font-medium tabular-nums">{money(h.importe)}</span>}
       <span className="flex-1 min-w-[12rem] text-gray-700">{h.descripcion ?? "—"}</span>
+      {!!h.dependen && (
+        <Badge variant="outline" className="font-normal">{h.dependen} movs dependen</Badge>
+      )}
       <span className="text-amber-800">{h.problema}</span>
     </div>
   )

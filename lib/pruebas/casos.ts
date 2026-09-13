@@ -55,7 +55,7 @@ import {
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
-  type MovimientoAuditable as MovAuditable,
+  type MovimientoAuditable as MovAuditable, type EntidadOrigen,
 } from "@/lib/conciliacion/auditoria"
 
 export interface Resultado {
@@ -975,9 +975,11 @@ export function correrCasos(): Resultado[] {
 
   // ── Lo que no se pudo verificar se DICE, no se descarta en silencio ───────────────────────
   const sinCuotas = auditar({ movimientos: [movAud("z", { template_cuota_id: "c" })], categsDelPlan: PLAN })
+  // Se pregunta por EL aviso que interesa, no por cuántos hay: contar el total hace que el caso
+  // se rompa cada vez que se agrega un control, sin que nada esté mal.
   chequear("Audit", "⚠️ Sin las cuotas cargadas, la cuadratura se informa como NO verificada",
-    "1 aviso", `${sinCuotas.noVerificado.length} aviso`,
-    sinCuotas.noVerificado.length === 1, "A-FEAT-145")
+    "avisa", sinCuotas.noVerificado.some(n => n.includes("Cuadratura")) ? "avisa" : "no avisa",
+    sinCuotas.noVerificado.some(n => n.includes("Cuadratura")), "A-FEAT-145")
 
   const cuadra = auditar({
     movimientos: [movAud("q", { template_cuota_id: "c", debitos: 1042045.82 })],
@@ -1013,6 +1015,58 @@ export function correrCasos(): Resultado[] {
     "no · sí",
     `${comprobanteIdentifica("Haberes") ? "sí" : "no"} · ${comprobanteIdentifica("Haberes May 2026") ? "sí" : "no"}`,
     !comprobanteIdentifica("Haberes") && comprobanteIdentifica("Haberes May 2026"), "A-BUG-171")
+
+  // ── 🕳️ LOS CONTROLES DEL ORIGEN (A-BUG-172) ───────────────────────────────────────────────
+  // El audit nacio caminando el extracto y midio 8 donde habia 141: las facturas cuyo movimiento
+  // todavia no esta conciliado no las delata ninguna linea del banco.
+  const origenes: EntidadOrigen[] = [
+    { tipo: "template", id: "t1", nombre: "Debitos / Creditos", nombre_quien_cobra: null,
+      proveedor: "Banco Galicia", movimientosQueDependen: 46 },
+    { tipo: "template", id: "t2", nombre: "Otros Gastos", nombre_quien_cobra: null,
+      proveedor: null, movimientosQueDependen: 2 },
+    { tipo: "factura", id: "f1", nombre: "GROSCAN — 43-10707",
+      cuenta_contable: "COMBUSTIBLES Y LUBRICANTES", nro_cuenta: null },
+    { tipo: "factura", id: "f2", nombre: "GOROSITO — 3-4230", cuenta_contable: null, nro_cuenta: null },
+    { tipo: "factura", id: "f3", nombre: "OK — 1-1", cuenta_contable: "LUZ", nro_cuenta: "422118" },
+  ]
+  const conOrigen = auditar({ movimientos: [], categsDelPlan: PLAN, origenes })
+
+  // 🔑 El template que tiene el dato en `proveedor` y no en `nombre_quien_cobra` NO es un hueco:
+  //    el dato esta, solo que en la otra columna. Son los 125 movimientos de Banco Galicia.
+  chequear("Audit", "🔑 Un template con el proveedor cargado (aunque sea en la otra columna) no es hueco",
+    "1 template sin quien cobra",
+    `${conOrigen.grupos.find(g => g.control === "origen-template-sin-quien-cobra")?.total ?? 0} template sin quien cobra`,
+    conOrigen.grupos.find(g => g.control === "origen-template-sin-quien-cobra")?.total === 1,
+    "A-BUG-172")
+
+  chequear("Audit", "🕳️ La factura con el NOMBRE de la cuenta y sin numero se cuenta aparte",
+    "1 · 1",
+    `${conOrigen.grupos.find(g => g.control === "origen-factura-sin-numero")?.total ?? 0} · ${conOrigen.grupos.find(g => g.control === "origen-factura-sin-cuenta")?.total ?? 0}`,
+    conOrigen.grupos.find(g => g.control === "origen-factura-sin-numero")?.total === 1
+      && conOrigen.grupos.find(g => g.control === "origen-factura-sin-cuenta")?.total === 1,
+    "A-DAT-48")
+
+  // El trabajo se ordena por impacto: 46 movimientos dependen de UNA fila de template.
+  const hOrigen = conOrigen.grupos.find(g => g.control === "origen-template-sin-quien-cobra")
+  chequear("Audit", "El hallazgo del origen dice cuantos movimientos dependen de esa fila",
+    "2", String(hOrigen?.causas[0]?.ejemplos[0]?.dependen ?? 0),
+    hOrigen?.causas[0]?.ejemplos[0]?.dependen === 2, "A-BUG-172")
+
+  // ⚠️ Y si no se cargan los origenes NO se dan por buenos: se informa que no se verificaron.
+  const sinOrigenes = auditar({ movimientos: [], categsDelPlan: PLAN })
+  chequear("Audit", "⚠️ Sin las filas de origen, los controles del origen se informan NO verificados",
+    "avisa", sinOrigenes.noVerificado.some(n => n.includes("ORIGEN")) ? "avisa" : "los da por buenos",
+    sinOrigenes.noVerificado.some(n => n.includes("ORIGEN")), "A-BUG-172")
+
+  // 🧨 Los hallazgos del ORIGEN no son movimientos: contarlos como tales daba «-18 de 676 cumplen».
+  const mixto = auditar({
+    movimientos: [movAud("lim", { template_cuota_id: "c", comprobantes_pagados: "FC - 9" })],
+    categsDelPlan: PLAN,
+    origenes: [{ tipo: "factura", id: "fx", nombre: "X", cuenta_contable: null, nro_cuenta: null }],
+  })
+  chequear("Audit", "🧨 Un hallazgo del ORIGEN no descuenta movimientos limpios",
+    "1 limpio de 1", `${mixto.limpios} limpio de ${mixto.auditados}`,
+    mixto.limpios === 1 && mixto.auditados === 1, "A-BUG-172")
 
   return r
 }

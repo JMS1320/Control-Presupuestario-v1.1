@@ -18,7 +18,7 @@
  * igual que un hallazgo real.
  */
 import fs from 'node:fs'
-import { auditar, importeDe, type MovimientoAuditable, type ParCuadratura } from '../lib/conciliacion/auditoria.ts'
+import { auditar, importeDe, type MovimientoAuditable, type ParCuadratura, type EntidadOrigen } from '../lib/conciliacion/auditoria.ts'
 
 const R = process.cwd()
 const env = Object.fromEntries(
@@ -81,6 +81,9 @@ const ESPERADO: Record<string, number> = {
   imputacion: 22,            // 13 ARCA sin nro_cuenta + 9 de otros orígenes con él
   'sin-proveedor': 209,
   cuadratura: 0,             // 446/446 tras las correcciones del 13/09
+  // 🕳️ Los del origen (A-BUG-172). El 141 es el número que destapó el bug: el audit veía 13.
+  'origen-factura-sin-numero': 141,
+  'origen-factura-sin-cuenta': 152,
 }
 
 const movimientos: MovimientoAuditable[] = []
@@ -95,7 +98,7 @@ for (const c of CUENTAS) {
       proveedor_nombre: f.proveedor_nombre ?? null,
       comprobantes_pagados: f.comprobantes_pagados ?? null, detalle: f.detalle ?? null,
       comprobante_arca_id: f.comprobante_arca_id ?? null,
-      template_cuota_id: f.template_cuota_id ?? null,
+      template_cuota_id: f.template_cuota_id ?? null, template_id: f.template_id ?? null,
       sueldo_pago_id: f.sueldo_pago_id ?? null, anticipo_id: f.anticipo_id ?? null,
       comprobante_venta_id: f.comprobante_venta_id ?? null,
     })
@@ -123,7 +126,32 @@ for (const m of movimientos) {
   cuadratura.push({ movimientoId: m.id, importeBanco: importeDe(m), importeOrigen: origen })
 }
 
-const res = auditar({ movimientos, categsDelPlan, cuadratura })
+// 🕳️ El lado del ORIGEN (A-BUG-172): sin esto el audit mide 8 donde hay 141.
+const origenes: EntidadOrigen[] = []
+const dependen = new Map<string, number>()
+for (const m of movimientos) {
+  if (String(m.estado ?? '').toLowerCase() !== 'conciliado') continue
+  if (m.template_id) dependen.set(String(m.template_id), (dependen.get(String(m.template_id)) ?? 0) + 1)
+}
+const tpls = await traerTodo('egresos_sin_factura', 'public', 'id,nombre_referencia,nombre_quien_cobra,proveedor')
+for (const t of tpls) {
+  const dep = dependen.get(String(t.id)) ?? 0
+  if (dep === 0) continue
+  origenes.push({ tipo: 'template', id: String(t.id), nombre: String(t.nombre_referencia ?? '(sin nombre)'),
+    nombre_quien_cobra: t.nombre_quien_cobra ?? null, proveedor: t.proveedor ?? null, movimientosQueDependen: dep })
+}
+for (const sch of ['msa', 'pam', 'ma']) {
+  const fac = await traerTodo('comprobantes_arca', sch, 'id,nro_cuenta,cuenta_contable,denominacion_emisor,punto_venta,numero_desde')
+  for (const f of fac) {
+    origenes.push({ tipo: 'factura', id: String(f.id),
+      nombre: `${f.denominacion_emisor ?? '?'} — ${f.punto_venta ?? '?'}-${f.numero_desde ?? '?'}`,
+      cuenta_contable: f.cuenta_contable ?? null, nro_cuenta: f.nro_cuenta ?? null })
+  }
+}
+console.log(`
+🕳️  Origen: ${origenes.filter(o => o.tipo === 'template').length} templates en uso · ${origenes.filter(o => o.tipo === 'factura').length} facturas`)
+
+const res = auditar({ movimientos, categsDelPlan, cuadratura, origenes })
 
 console.log(`\n📏 Plan de cuentas: ${categsDelPlan.size} categorías · cuotas: ${cuotas.length} · pares de cuadratura: ${cuadratura.length}`)
 console.log(`\nOrígenes: ${Object.entries(res.porOrigen).filter(([, n]) => n > 0).map(([o, n]) => `${o} ${n}`).join(' · ')}`)
