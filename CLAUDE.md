@@ -874,6 +874,36 @@ ese lugar afecte a todo lo que lo usa.
   casos que la causan**: el número global avisa que algo pasa, **la lista es la que deja arreglarlo**.
 - ⚠️ **Nada se descarta en silencio.** Si algo no se pudo verificar, se muestra que no se pudo.
 
+#### 🚦 Un control que FRENA vs. uno que AVISA — no son lo mismo (REGLA)
+*Precisión del usuario 2026-09-13, sobre el PDF del Detalle de Pago. Yo proponía no generar el
+documento si los números no cerraban. **Negativo**: «me debe advertir si no da el control, pero es
+posible que yo tenga que pagar más o menos por algún motivo. Pero si se ve un bug de inconsistencia
+de la app, sí debe avisar y no permitir usar — digamos, si está plasmando números mal de cuentas o
+algo así, más allá de que yo cancele parcialmente o más de la factura».*
+
+> **Sólo frena lo que delata un error DE LA APP. Una diferencia que puede explicar el negocio se
+> advierte y se sigue.**
+
+La distinción es objetiva y se decide por **contra qué se compara**:
+
+| | Qué compara | Qué significa una diferencia | Acción |
+|---|---|---|---|
+| **Integridad** | el resultado **contra sí mismo** — las partes suman el todo que el propio sistema imprime | el sistema **se contradice**: es un bug | 🛑 **frena** |
+| **Discrepancia** | el resultado contra **el hecho del negocio** (lo que se pagó, lo que se cobró) | puede tener una explicación que sólo el usuario conoce | ⚠️ **avisa y deja seguir** |
+
+Ejemplo del caso que la originó: que las líneas de un comprobante **no sumen el total que ese mismo
+comprobante muestra** es integridad — no hay explicación posible, el papel miente. Que lo pagado no
+coincida con lo facturado es discrepancia: **puede ser un pago parcial, o de más**, y frenar ahí le
+saca la herramienta justo cuando la necesita.
+
+🔑 **El costo de equivocarse es asimétrico y por eso la regla existe:** frenar de más convierte el
+control en un obstáculo y termina en que alguien lo saltee o lo apague; frenar de menos deja salir
+un número falso. Por eso **frena sólo la contradicción interna**, que es el único caso donde se está
+seguro de que el error es del sistema.
+
+📌 Y el aviso que no frena **igual tiene que verse** — es la § de arriba: si se muestra la diferencia
+y el usuario decide seguir, eso es una decisión suya. Si no se muestra, es un descarte en silencio.
+
 **Motivo — los tres casos que la originaron, todos del mismo día:**
 `Total − Neto − Exento − IVA − Otros Trib. − sin crédito = 0` destapó $0,01 de redondeo repartido en
 4 facturas de ARCA (§ A-TEST-27). Un cartel que mostraba `78.262.800 − 31.305.120 = 40.306.014`
