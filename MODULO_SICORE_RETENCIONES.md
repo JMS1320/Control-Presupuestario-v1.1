@@ -131,6 +131,56 @@ function generarQuincenaSicore(fecha: string): string {
 
 ---
 
+
+## 🧠 LA RETENCIÓN ES DE LA ORDEN DE PAGO, NO DE LA FACTURA *(concepto, 2026-09-13)*
+
+*Enunciado por el usuario al revisar el PDF del Detalle de Pago: **«la retención SICORE se practica
+sobre la orden de pago total. El por factura es como el sistema calcula para llegar, pero eso es
+subjetivo: se podría haber empezado por otra factura a calcular y serían distintos parciales para el
+mismo total»**.*
+
+> **La retención existe UNA sola vez, a nivel de la orden de pago. El reparto por factura es un
+> artefacto del cálculo, no un hecho.**
+
+### Por qué el parcial por factura no es real
+
+El cálculo de ganancias es **no lineal**: hay un **mínimo no imponible** que se consume una vez y una
+escala que se aplica sobre el acumulado. Entonces, cuando una orden de pago cubre varias facturas:
+
+- la **suma** de los netos y el mínimo superado **determinan el total**, y ese total es único;
+- pero **el orden en que se recorren las facturas cambia cuál de ellas "consume" el mínimo**, y por
+  lo tanto cambia cuánto le toca a cada una.
+
+🔑 **Mismo total, parciales distintos, según por dónde se empiece.** Un número que depende del orden
+de iteración no es un dato del negocio: es un residuo del algoritmo.
+
+### Las tres consecuencias, y las tres obligan
+
+**1 · El TXT de ARCA declara una retención GLOBAL, nunca parciales.** Es la prueba de que el
+organismo tampoco reconoce el reparto: lo que se informa es un certificado por orden de pago.
+
+**2 · El certificado también es uno solo.** No hay «certificado de la factura 6347».
+
+**3 · 🛑 Y por eso NO se muestra retención por factura en ningún lado.** Mostrarla invita a sumarla,
+a cuadrarla contra la factura y a discutir un número que no significa nada. El lugar de la retención
+es el **total de la orden de pago**, y ahí sí es exacta.
+
+### El descuento SÍ es por factura
+
+No confundirlos aunque viajen juntos en la misma pantalla:
+
+| | De quién es | ¿Se puede listar por factura? |
+|---|---|---|
+| **Descuento** | de **cada factura** — es una condición comercial de ese comprobante | ✅ **sí**, y conviene |
+| **Retención de ganancias** | de la **orden de pago** | 🛑 **no**: el parcial es subjetivo |
+
+📌 Y el motivo por el que el descuento sí: es **lineal**. Sumar los descuentos de las facturas da el
+descuento total, en cualquier orden. La retención no tiene esa propiedad.
+
+### Dónde impacta esto hoy
+
+→ [A-BUG-173](PENDIENTES.md#a-bug-173): el cuadro 1 del PDF del Detalle de Pago mostraba
+`Retención Ganancias` factura por factura. Sale.
 ## 🧮 Lógica descuento proporcional
 
 Cuando el usuario ingresa un descuento (% o monto fijo):
