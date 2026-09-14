@@ -2874,7 +2874,7 @@ serlo»**.*
 
 ---
 
-#### A · El VÍNCULO: uno y sólo uno
+#### A · El VÍNCULO: uno y sólo uno — **salvo `ARCA + anticipo`**
 
 Cada movimiento conciliado apunta a **su** origen, por **su** columna. Las demás quedan **vacías**.
 
