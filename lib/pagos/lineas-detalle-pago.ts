@@ -40,6 +40,24 @@ export interface LineaDetalle {
 
 const t = (s: string | null | undefined) => (s ?? '').trim()
 
+/**
+ * 🐞 **La misma columna traía dos formatos de fecha.** Lo vio el usuario en el PDF de Alcorta: las
+ * tres del grupo salían `2026-08-28` y la suelta `15/09/2026`, porque **vienen de dos fuentes** —
+ * las del grupo se leen crudas de la base y la suelta llega ya formateada por el llamador.
+ *
+ * 📌 Dijo *«no es un problema en sí»*, y no lo es para el número; pero un documento que sale hacia
+ * un proveedor con dos formatos en la misma columna **invita a desconfiar del resto**, que es
+ * justamente lo que un Detalle de Pago no se puede permitir.
+ */
+function fechaES(valor: string | null | undefined): string {
+  const v = t(valor)
+  if (!v) return ''
+  // Ya viene en dd/mm/aaaa: se respeta.
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) return v
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v
+}
+
 const SEP_COMPROBANTES = ' | '
 const SEP_NOTA = ' · '
 
@@ -89,7 +107,7 @@ export function lineasDelDetalle(
       for (const f of i.facturas) {
         salida.push({
           comprobante: sinElProveedor(etiquetaLimpia(f.comprobante), proveedor),
-          fecha: t(f.fecha) || t(i.fecha),
+          fecha: fechaES(f.fecha) || fechaES(i.fecha),
           imp_total: Number(f.imp_total) || 0,
           descuento: Number(f.descuento_aplicado) || 0,
         })
@@ -101,7 +119,7 @@ export function lineasDelDetalle(
       comprobante: i.origen === 'ANTICIPO'
         ? 'Anticipo'
         : sinElProveedor(etiquetaLimpia(i.comprobante), proveedor) || '-',
-      fecha: t(i.fecha),
+      fecha: fechaES(i.fecha),
       imp_total: Number(i.imp_total) || 0,
       descuento: Number(i.descuento_aplicado) || 0,
     })

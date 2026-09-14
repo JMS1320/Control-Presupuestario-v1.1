@@ -1137,5 +1137,15 @@ export function correrCasos(): Resultado[] {
     "1 · FC 2752", `${lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP).length} · ${lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP)[0].comprobante}`,
     lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP)[0].comprobante === "FC 2752", "A-BUG-173")
 
+  // 🐞 Las del grupo se leen crudas de la base (ISO) y la suelta llega formateada: misma columna,
+  //    dos formatos. Lo vio el usuario en el PDF de Alcorta.
+  const fechasMixtas = lineasDelDetalle([
+    { comprobante: "FC 6337", imp_total: 100, facturas: [{ comprobante: "FC 6337", fecha: "2026-08-28", imp_total: 100 }] },
+    { comprobante: "FC 2752", fecha: "15/09/2026", imp_total: 200 },
+  ], ALCORTA_DP)
+  chequear("Detalle de pago", "🐞 Las fechas salen todas en dd/mm/aaaa, vengan de donde vengan",
+    "28/08/2026 · 15/09/2026", `${fechasMixtas[0].fecha} · ${fechasMixtas[1].fecha}`,
+    fechasMixtas[0].fecha === "28/08/2026" && fechasMixtas[1].fecha === "15/09/2026", "A-BUG-173")
+
   return r
 }
