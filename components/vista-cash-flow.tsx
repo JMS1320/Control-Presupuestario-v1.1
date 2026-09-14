@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
+import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
@@ -1238,9 +1239,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const tareas = Array.from(grupos.entries()).map(async ([k, fs]) => {
       const [cuit, proveedor] = k.split('||')
       const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
+      // 📄 A-BUG-173 — si la fila es un GRUPO, se traen sus facturas para listar una por línea.
+      //    Sin esto el cuadro 1 muestra los 3 comprobantes en un renglón con el importe sumado.
+      const subsA = new Map<string, any[]>()
+      for (const f of fs) {
+        if (f.origen === 'ARCA' && f.facturas_agrupadas && f.ids_grupo?.length) {
+          subsA.set(f.id, await facturasDelGrupo(schemaDeFila(f), f.ids_grupo))
+        }
+      }
       const items = fs.map(f => {
         const fa = f as any
         return {
+          facturas: subsA.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
@@ -1291,9 +1301,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const [cuit, proveedor] = k.split('||')
       // 'arca' si CUALQUIER fila del grupo es ARCA (sino el cert SICORE se saltea al mezclar con transferencias/anticipos)
       const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
+      // 📄 A-BUG-173 — ídem acá: el mail encolado tiene que decir lo mismo que el PDF que se ve.
+      const subsB = new Map<string, any[]>()
+      for (const f of fs) {
+        if (f.origen === 'ARCA' && f.facturas_agrupadas && f.ids_grupo?.length) {
+          subsB.set(f.id, await facturasDelGrupo(schemaDeFila(f), f.ids_grupo))
+        }
+      }
       const items = fs.map(f => {
         const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
         return {
+          facturas: subsB.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,

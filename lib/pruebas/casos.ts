@@ -54,6 +54,9 @@ import {
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 import {
+  lineasDelDetalle, controlarDetalle, sinElProveedor,
+} from "@/lib/pagos/lineas-detalle-pago"
+import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
 } from "@/lib/conciliacion/auditoria"
@@ -1067,6 +1070,72 @@ export function correrCasos(): Resultado[] {
   chequear("Audit", "🧨 Un hallazgo del ORIGEN no descuenta movimientos limpios",
     "1 limpio de 1", `${mixto.limpios} limpio de ${mixto.auditados}`,
     mixto.limpios === 1 && mixto.auditados === 1, "A-BUG-172")
+
+  // ══ 📄 EL CUADRO 1 DEL DETALLE DE PAGO (A-BUG-173) ═══════════════════════════════════════════
+  // Los datos son el pago REAL a Alcorta del 10/09/2026, que esta frenado por este bug.
+  const ALCORTA_DP = "ALCORTA EDMUNDO ERNESTO"
+  const itemsAlcorta = [
+    { comprobante: "FC 6347 - ALCORTA EDMUNDO ERNESTO | FC 6328 - ALCORTA EDMUNDO ERNESTO | FC 6337 - ALCORTA EDMUNDO ERNESTO",
+      fecha: "10/09/2026", imp_total: 385093.90, descuento_aplicado: 19254.70,
+      facturas: [
+        { comprobante: "FC 6347 - ALCORTA EDMUNDO ERNESTO", imp_total: 179325.15, descuento_aplicado: 19254.70 },
+        { comprobante: "FC 6328 - ALCORTA EDMUNDO ERNESTO", imp_total: 102884.37 },
+        { comprobante: "FC 6337 - ALCORTA EDMUNDO ERNESTO", imp_total: 102884.38 },
+      ] },
+    { comprobante: "FC 2752 - ALCORTA EDMUNDO ERNESTO", fecha: "15/09/2026", imp_total: 1690975.00 },
+  ]
+  const lineasAlc = lineasDelDetalle(itemsAlcorta, ALCORTA_DP)
+
+  chequear("Detalle de pago", "📄 El grupo de 3 facturas se abre en 3 lineas (antes era 1 sola)",
+    "4 lineas", `${lineasAlc.length} lineas`, lineasAlc.length === 4, "A-BUG-173")
+
+  chequear("Detalle de pago", "🏷️ No repite el proveedor: ya esta en el encabezado",
+    "FC 6347", lineasAlc[0].comprobante, lineasAlc[0].comprobante === "FC 6347", "A-BUG-173")
+
+  // El descuento SI viaja por factura: es lineal y es condicion comercial de ese comprobante.
+  chequear("Detalle de pago", "⚖️ El descuento queda en SU factura, no repartido",
+    "19254.7 en la 6347 · 0 en la 6328",
+    `${lineasAlc[0].descuento} en la 6347 · ${lineasAlc[1].descuento} en la 6328`,
+    lineasAlc[0].descuento === 19254.70 && lineasAlc[1].descuento === 0, "A-BUG-173")
+
+  // 🛑 INTEGRIDAD: las lineas suman el total que el propio comprobante imprime.
+  const okAlc = controlarDetalle(lineasAlc,
+    { bruto: 2076068.90, descuento: 19254.70, pagado: 2027297.27, retencion: 29516.93 })
+  chequear("Detalle de pago", "🧮 El pago real de Alcorta cierra: 4 lineas = $2.076.068,90",
+    "sin errores, se emite", `${okAlc.errores.length} errores, ${okAlc.puedeEmitirse ? "se emite" : "NO se emite"}`,
+    okAlc.errores.length === 0 && okAlc.puedeEmitirse === true, "A-BUG-173")
+
+  // 🛑 Si al desagregar se pierde plata, el documento se contradice: FRENA.
+  const rotas = lineasDelDetalle([{ ...itemsAlcorta[0], facturas: itemsAlcorta[0].facturas!.slice(0, 2) }], ALCORTA_DP)
+  const mal = controlarDetalle(rotas, { bruto: 385093.90, descuento: 19254.70, pagado: 0, retencion: 0 })
+  chequear("Detalle de pago", "🛑 INTEGRIDAD: si las lineas no suman su propio total, NO se emite",
+    "NO se emite", mal.puedeEmitirse ? "se emite igual" : "NO se emite",
+    mal.puedeEmitirse === false && mal.errores.length > 0, "A-BUG-173")
+
+  // ⚠️ Pero un pago PARCIAL no es un bug: el usuario puede pagar de menos. Avisa y deja seguir.
+  //    «me debe advertir si no da el control, pero es posible que yo tenga que pagar mas o menos»
+  const parcial = controlarDetalle(lineasAlc,
+    { bruto: 2076068.90, descuento: 19254.70, pagado: 1000000, retencion: 0 })
+  chequear("Detalle de pago", "⚠️ Un pago PARCIAL avisa pero NO frena (lo decide el usuario)",
+    "avisa y se emite",
+    `${parcial.avisos.length > 0 ? "avisa" : "no avisa"} y ${parcial.puedeEmitirse ? "se emite" : "NO se emite"}`,
+    parcial.avisos.length === 1 && parcial.puedeEmitirse === true, "A-BUG-173")
+
+  chequear("Detalle de pago", "⚠️ Pagar de MAS tambien avisa sin frenar",
+    "avisa y se emite",
+    (() => { const r = controlarDetalle(lineasAlc, { bruto: 2076068.90, descuento: 19254.70, pagado: 3000000, retencion: 0 })
+             return `${r.avisos.length > 0 ? "avisa" : "no avisa"} y ${r.puedeEmitirse ? "se emite" : "NO se emite"}` })(),
+    controlarDetalle(lineasAlc, { bruto: 2076068.90, descuento: 19254.70, pagado: 3000000, retencion: 0 }).puedeEmitirse === true,
+    "A-BUG-173")
+
+  // Si sacar el proveedor dejaria el renglon vacio, se devuelve entero: perderlo es peor que repetir.
+  chequear("Detalle de pago", "Si al sacar el proveedor no queda nada, se deja la etiqueta entera",
+    ALCORTA_DP, sinElProveedor(ALCORTA_DP, ALCORTA_DP), sinElProveedor(ALCORTA_DP, ALCORTA_DP) === ALCORTA_DP, "A-BUG-173")
+
+  // Una factura suelta (sin grupo) sigue funcionando igual: los otros llamadores no se tocan.
+  chequear("Detalle de pago", "Una factura suelta sin grupo sigue dando 1 linea",
+    "1 · FC 2752", `${lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP).length} · ${lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP)[0].comprobante}`,
+    lineasDelDetalle([itemsAlcorta[1]], ALCORTA_DP)[0].comprobante === "FC 2752", "A-BUG-173")
 
   return r
 }

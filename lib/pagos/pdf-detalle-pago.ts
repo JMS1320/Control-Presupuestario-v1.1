@@ -15,6 +15,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { MedioPago } from './medios-pago'
 import { calcularCuenta, etiquetaComprobante } from './cuenta-detalle-pago'
+import { lineasDelDetalle, controlarDetalle } from './lineas-detalle-pago'
 
 // Se re-exporta desde acá porque hay vistas que la importan de este módulo desde antes de la
 // mudanza. El `export … from` NO trae el nombre al scope local: por eso además se importa arriba.
@@ -95,10 +96,10 @@ export const generarPDFDetallePago = async (
     doc.text(fechaPago, 47, 48)
 
     // ── Construir columnas y filas ─────────────────────────────────────────
-    // Si hay anticipo, las columnas de retención/descuento vienen del anticipo
-    const hayRetencion = anticipo
-      ? (anticipo.monto_sicore || 0) > 0
-      : items.some(i => (i.monto_sicore || 0) > 0)
+    // 📌 Acá vivía `hayRetencion`, que decidía si el cuadro 1 mostraba «Retención Ganancias».
+    //    Se fue con A-BUG-173: esa columna **no debe existir** — la retención es de la orden de
+    //    pago, no de la factura. El total sigue en el cuadro de medios, que es su lugar.
+    // Si hay anticipo, la columna de descuento viene del anticipo.
     const hayDescuento = anticipo
       ? (anticipo.descuento_aplicado || 0) > 0
       : items.some(i => (i.descuento_aplicado || 0) > 0)
@@ -117,12 +118,25 @@ export const generarPDFDetallePago = async (
      * items y tiene su propia forma; tocarlo sin un caso que lo cubra sería cambiar lo que anda.
      */
     const cuenta = calcularCuenta(items, opciones?.mediosPago ?? [], tipo)
+    /** ⚠️ Diferencias contra el pago que se muestran pero no frenan (pago parcial, o de más). */
+    let avisosDelControl: string[] = []
 
+    /**
+     * 🛑 **A-BUG-173 — el cuadro 1 NO lleva «Retención Ganancias».**
+     *
+     * La retención se practica sobre la **orden de pago**, no sobre cada factura: el reparto por
+     * factura depende del orden en que se recorren (el mínimo no imponible se consume una vez), así
+     * que **los parciales cambian con el mismo total**. El TXT de ARCA declara una retención global
+     * y el certificado es uno solo. → `MODULO_SICORE_RETENCIONES.md` § 🧠 La retención es de la
+     * orden de pago. El total sigue estando, y exacto, en el cuadro de abajo.
+     *
+     * ⚖️ El **descuento sí** se lista por factura: es lineal y es condición comercial de ese
+     * comprobante.
+     */
     const head: string[][] = [[
       'Comprobante',
       'Fecha',
       'Total Factura',
-      ...(hayRetencion ? ['Retención Ganancias'] : []),
       ...(hayDescuento ? ['Descuento'] : []),
       ...(hayMedios ? [] : ['Monto Transferido', 'Total Cancelado']),
     ]]
@@ -137,7 +151,6 @@ export const generarPDFDetallePago = async (
         etiquetaComprobante(i),
         i.fecha,
         fmt(i.imp_total),
-        ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
         ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
         ...cols([]),
       ])
@@ -145,21 +158,38 @@ export const generarPDFDetallePago = async (
       body.push([
         'TOTAL', '',
         fmt(totalBruto),
-        ...(hayRetencion ? [fmt(anticipo.monto_sicore || 0)] : []),
         ...(hayDescuento ? [fmt(anticipo.descuento_aplicado || 0)] : []),
         ...cols([]),
       ])
     } else {
-      body = items.map(i => {
-        const montoTransferido = i.monto_a_abonar
-        const totalCancelado = i.monto_a_abonar + (i.monto_sicore || 0) + (i.descuento_aplicado || 0)
+      // 📄 A-BUG-173 — una línea por FACTURA. La fila del Cash Flow es el grupo de pago: llega con
+      //    los comprobantes unidos y el importe sumado. `lineasDelDetalle` la abre cuando el ítem
+      //    trae sus facturas, y la deja igual cuando no (una factura suelta, o un template).
+      const lineas = lineasDelDetalle(items as any, proveedor)
+
+      // 🚦 El control, con la distinción que pidió el usuario: la contradicción interna FRENA, la
+      //    diferencia contra el pago sólo AVISA — «es posible que yo tenga que pagar más o menos
+      //    por algún motivo» (§ `CLAUDE.md` 🚦 Un control que frena vs. uno que avisa).
+      const control = controlarDetalle(lineas, {
+        bruto: cuenta.bruto, descuento: cuenta.descuento,
+        pagado: cuenta.pagado, retencion: cuenta.retencion,
+      })
+      if (!control.puedeEmitirse) {
+        throw new Error(
+          'El detalle de pago no cierra contra su propio total, así que no se emite: ' +
+          control.errores.join(' · '))
+      }
+      avisosDelControl = control.avisos
+
+      body = lineas.map(l => {
+        // Sin desglose de medios, cada línea muestra lo suyo; el reparto del pago es del total.
+        const montoTransferido = l.imp_total - l.descuento
         return [
-          etiquetaComprobante(i),
-          i.fecha,
-          fmt(i.imp_total),
-          ...(hayRetencion ? [i.monto_sicore ? fmt(i.monto_sicore) : '-'] : []),
-          ...(hayDescuento ? [i.descuento_aplicado ? fmt(i.descuento_aplicado) : '-'] : []),
-          ...(hayMedios ? [] : [fmt(montoTransferido), fmt(totalCancelado)]),
+          l.comprobante,
+          l.fecha,
+          fmt(l.imp_total),
+          ...(hayDescuento ? [l.descuento ? fmt(l.descuento) : '-'] : []),
+          ...(hayMedios ? [] : [fmt(montoTransferido), fmt(l.imp_total)]),
         ]
       })
       // 🐞 A-BUG-149 — los cuatro totales salían de sumar `items` a mano, y el bruto **incluía los
@@ -167,7 +197,6 @@ export const generarPDFDetallePago = async (
       body.push([
         'TOTAL', '',
         fmt(cuenta.bruto),
-        ...(hayRetencion ? [fmt(cuenta.retencion)] : []),
         ...(hayDescuento ? [fmt(cuenta.descuento)] : []),
         ...(hayMedios ? [] : [fmt(cuenta.pagado), fmt(cuenta.pagado + cuenta.retencion + cuenta.descuento)]),
       ])
@@ -198,6 +227,23 @@ export const generarPDFDetallePago = async (
         }
       }
     })
+
+    /**
+     * ⚠️ **Los avisos del control SE VEN en el papel** — § `CLAUDE.md` 🧮 *nada se descarta en
+     * silencio*, y § 🚦 *un control que frena vs. uno que avisa*.
+     *
+     * Un pago parcial o de más **no frena** la emisión (es una decisión del usuario), pero tampoco
+     * se calla: si el detalle sale hacia el proveedor con una diferencia contra lo facturado, el
+     * papel lo dice. Callarlo sería elegir un número en silencio.
+     */
+    if (avisosDelControl.length > 0) {
+      const yAviso = (doc as any).lastAutoTable.finalY + 6
+      doc.setFontSize(8)
+      doc.setTextColor(150, 90, 0)
+      avisosDelControl.forEach((a, i) => doc.text(`⚠ ${a}`, 14, yAviso + i * 4))
+      doc.setTextColor(0, 0, 0)
+      doc.setFontSize(9)
+    }
 
     // ── Desglose de MEDIOS de pago (transferencia/anticipo + echeq + ...) ──────
     // Cuando un pago se reparte en varios medios (ej. anticipo por transferencia + echeq del saldo),
