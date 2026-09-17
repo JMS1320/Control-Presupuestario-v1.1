@@ -3655,8 +3655,10 @@ La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar
   preferís el teclado o el mouse te juega en contra, cada una tiene ↑ ↓ en su esquina y hacen lo
   mismo.
 - **Para sacar**: la ✕ de la esquina.
-- **Se acomodan en dos columnas.** Los avisos anchos (extractos viejos, movimientos sin desglosar,
-  FC de ventas) toman la fila entera: son textos y a media columna no se leen.
+- **Para cambiar el tamaño**: los botones **▬ / ▭** ensanchan o angostan (una o dos columnas) y
+  **⇕ / ↕** agrandan el alto. Cada widget arranca con un tamaño razonable —los avisos con texto
+  vienen anchos, porque a media columna no se leen— pero **todo se puede cambiar**.
+- **Se acomodan en dos columnas**, y lo que no entra baja solo.
 - **Las tarjetas muestran sólo el número.** El detalle está detrás de **Ver** — así el inicio se
   lee de un vistazo sin perder de dónde sale cada cosa.
 - **Se guarda solo**, en el momento. No hay botón de guardar.

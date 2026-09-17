@@ -41,6 +41,14 @@ export type Preferencias = {
    * `seccionInicio`.
    */
   widgets: string[] | null
+  /**
+   * El tamaño que el usuario le dio a un widget, sólo para los que tocó (A-FEAT-88).
+   *
+   * `{ "alertas-pagos": { ancho: 2, alto: 1 } }`. Lo que no está acá usa el tamaño que declara el
+   * registro. Se guarda **disperso y no completo** a propósito: si guardáramos los 8 siempre,
+   * cambiar el default de un widget no le llegaría nunca a quien ya abrió la pantalla una vez.
+   */
+  widgetsTamano: Record<string, { ancho: 1 | 2; alto: 1 | 2 }>
 }
 
 /**
@@ -58,6 +66,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   // por default le sacaría la ayuda justamente al que todavía no aprendió a encenderla.
   explicaciones: true,
   widgets: null,
+  widgetsTamano: {},
 }
 
 /**
@@ -68,6 +77,23 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
  * quedado con otro tipo después de un cambio acá. Cada campo se valida por separado y el que no
  * cierra cae a su default, en vez de romper la pantalla entera por una clave mal tipada.
  */
+/**
+ * Valida el mapa de tamaños campo por campo. Es JSON libre que el propio usuario puede escribir:
+ * un `ancho: 7` no rompería nada visible, dejaría una grilla rota sin explicación.
+ */
+function leerTamanos(crudo: unknown): Record<string, { ancho: 1 | 2; alto: 1 | 2 }> {
+  if (!crudo || typeof crudo !== "object") return {}
+  const salida: Record<string, { ancho: 1 | 2; alto: 1 | 2 }> = {}
+  for (const [id, valor] of Object.entries(crudo as Record<string, unknown>)) {
+    if (!valor || typeof valor !== "object") continue
+    const v = valor as Record<string, unknown>
+    const ancho = v.ancho === 2 ? 2 : 1
+    const alto = v.alto === 2 ? 2 : 1
+    salida[id] = { ancho, alto }
+  }
+  return salida
+}
+
 export function leerPreferencias(user: User | null | undefined): Preferencias {
   const crudo = user?.user_metadata?.preferencias
   if (!crudo || typeof crudo !== "object") return PREFERENCIAS_DEFAULT
@@ -87,5 +113,6 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     widgets: Array.isArray(p.widgets)
       ? (p.widgets as unknown[]).filter((w): w is string => typeof w === "string")
       : null,
+    widgetsTamano: leerTamanos(p.widgetsTamano),
   }
 }

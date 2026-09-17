@@ -36,7 +36,9 @@ export function VistaInicio({
   const [guardando, setGuardando] = useState(false)
   /** Qué widget se está arrastrando, y sobre cuál está parado. */
   const [arrastrando, setArrastrando] = useState<string | null>(null)
-  const [encima, setEncima] = useState<string | null>(null)
+  /** De qué lado del widget de destino está el cursor: ahí es donde va a caer. */
+  const [encima, setEncima] = useState<{ id: string; lado: "antes" | "despues" } | null>(null)
+  const [tamanos, setTamanos] = useState(preferencias.widgetsTamano)
 
   const visibles = widgetsVisibles(elegidos, secciones)
   // Lo que se puede agregar: del registro, lo que el rol permite y todavía no está puesto.
@@ -50,12 +52,31 @@ export function VistaInicio({
     setGuardando(true)
     // Se manda el objeto entero: `updateUser` REEMPLAZA la clave, no la mergea.
     const { error } = await supabase.auth.updateUser({
-      data: { preferencias: { ...preferencias, widgets: nuevos } },
+      data: { preferencias: { ...preferencias, widgets: nuevos, widgetsTamano: tamanos } },
     })
     setGuardando(false)
     if (error) {
       setElegidos(anterior)
       toast.error("No se pudo guardar. Probá de nuevo.")
+    }
+  }
+
+  /** El tamaño de un widget: lo que eligió el usuario, y si no, lo que declara el registro. */
+  const tamanoDe = (w: { id: string; ancho: "medio" | "completo" }) =>
+    tamanos[w.id] ?? { ancho: w.ancho === "completo" ? 2 : 1, alto: 1 }
+
+  async function cambiarTamano(id: string, campo: "ancho" | "alto", actual: 1 | 2) {
+    const nuevo = { ...tamanoDe({ id, ancho: "medio" }), ...tamanos[id] }
+    nuevo[campo] = actual === 2 ? 1 : 2
+    const nuevos = { ...tamanos, [id]: nuevo }
+    const anterior = tamanos
+    setTamanos(nuevos)
+    const { error } = await supabase.auth.updateUser({
+      data: { preferencias: { ...preferencias, widgets: elegidos, widgetsTamano: nuevos } },
+    })
+    if (error) {
+      setTamanos(anterior)
+      toast.error("No se pudo guardar el tamaño.")
     }
   }
 
@@ -69,14 +90,21 @@ export function VistaInicio({
    * mismo, no otro camino. Si tuviera su propia escritura, una de las dos se desincronizaría el
    * día que cambie el formato de la preferencia.
    */
-  function soltarEn(destino: string) {
+  function soltarEn(destino: string, lado: "antes" | "despues") {
     const origen = arrastrando
     setArrastrando(null)
     setEncima(null)
     if (!origen || origen === destino) return
-    const nuevos = elegidos.filter((w) => w !== origen)
-    nuevos.splice(elegidos.indexOf(destino), 0, origen)
-    guardar(nuevos)
+
+    // ⚠️ El índice se calcula sobre la lista YA SIN el que se arrastra. Calcularlo sobre la
+    // original daba un corrimiento de uno al mover hacia adelante —la tarjeta caía del otro lado
+    // del destino— y por eso no se podía dejar algo *entre* dos widgets: el resultado dependía de
+    // la dirección del arrastre en vez de dónde soltaste.
+    const sinOrigen = elegidos.filter((w) => w !== origen)
+    const i = sinOrigen.indexOf(destino)
+    if (i < 0) return
+    sinOrigen.splice(lado === "antes" ? i : i + 1, 0, origen)
+    guardar(sinOrigen)
   }
 
   function mover(id: string, delta: number) {
@@ -173,65 +201,101 @@ export function VistaInicio({
           largo de cada fila le impone su alto a los demás y la pantalla se ve desprolija.
         */
         <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
-          {visibles.map((w) => (
-            <div
-              key={w.id}
-              className={[
-                "relative",
-                w.ancho === "completo" ? "sm:col-span-2" : "",
-                // Sólo se arrastra con el configurador abierto: si no, un clic largo sobre una
-                // tarjeta movería la pantalla sin que nadie lo haya pedido.
-                configurando ? "cursor-move" : "",
-                arrastrando === w.id ? "opacity-40" : "",
-                encima === w.id && arrastrando !== w.id
-                  ? "ring-2 ring-primary ring-offset-2 rounded-lg"
-                  : "",
-              ].join(" ")}
-              draggable={configurando}
-              onDragStart={() => setArrastrando(w.id)}
-              onDragEnd={() => { setArrastrando(null); setEncima(null) }}
-              onDragOver={(e) => {
-                if (!configurando || !arrastrando) return
-                e.preventDefault() // sin esto el navegador no admite el drop
-                setEncima(w.id)
-              }}
-              onDragLeave={(e) => {
-                // Sólo si se salió de verdad de la tarjeta: pasar sobre un hijo dispara
-                // `dragleave` igual, y sin esta guarda el resaltado parpadea.
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) setEncima(null)
-              }}
-              onDrop={(e) => { e.preventDefault(); soltarEn(w.id) }}
-            >
-              {configurando && (
-                <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-md border bg-background p-1 shadow-sm">
-                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                  <Button
-                    variant="ghost" size="sm" className="h-7 px-2"
-                    onClick={() => mover(w.id, -1)}
-                    aria-label={`Subir ${w.titulo}`}
-                  >
-                    ↑
-                  </Button>
-                  <Button
-                    variant="ghost" size="sm" className="h-7 px-2"
-                    onClick={() => mover(w.id, 1)}
-                    aria-label={`Bajar ${w.titulo}`}
-                  >
-                    ↓
-                  </Button>
-                  <Button
-                    variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground"
-                    onClick={() => quitar(w.id)}
-                    aria-label={`Quitar ${w.titulo}`}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-              {/* Cada widget carga lo suyo: uno lento no tapa a los demás. */}
-              <w.Componente />
-            </div>
-          ))}
+          {visibles.map((w) => {
+            const t = tamanoDe(w)
+            return (
+              <div
+                key={w.id}
+                className={[
+                  "relative",
+                  t.ancho === 2 ? "sm:col-span-2" : "",
+                  // El alto se hace con min-height y no con `row-span`: con filas automáticas, un
+                  // row-span empuja a los vecinos de forma impredecible según lo que haya al lado.
+                  t.alto === 2 ? "min-h-[20rem]" : "",
+                  configurando ? "cursor-move" : "",
+                  arrastrando === w.id ? "opacity-40" : "",
+                ].join(" ")}
+                draggable={configurando}
+                onDragStart={() => setArrastrando(w.id)}
+                onDragEnd={() => { setArrastrando(null); setEncima(null) }}
+                onDragOver={(e) => {
+                  if (!configurando || !arrastrando) return
+                  e.preventDefault() // sin esto el navegador no admite el drop
+                  // De qué lado cae: mitad izquierda = antes, mitad derecha = después. Es lo que
+                  // permite dejar una tarjeta ENTRE otras dos en vez de sólo encima de una.
+                  const r = e.currentTarget.getBoundingClientRect()
+                  const lado = e.clientX < r.left + r.width / 2 ? "antes" : "despues"
+                  setEncima({ id: w.id, lado })
+                }}
+                onDragLeave={(e) => {
+                  // Sólo si se salió de verdad: pasar sobre un hijo dispara `dragleave` igual, y
+                  // sin esta guarda la marca parpadea.
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) setEncima(null)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  soltarEn(w.id, encima?.id === w.id ? encima.lado : "despues")
+                }}
+              >
+                {/* La marca de dónde va a caer. Una línea en el borde dice «acá en el medio»;
+                    un recuadro alrededor decía «encima de éste», que no es lo que pasa. */}
+                {encima?.id === w.id && arrastrando !== w.id && (
+                  <span
+                    aria-hidden="true"
+                    className={`absolute inset-y-0 z-20 w-1 rounded bg-primary ${
+                      encima.lado === "antes" ? "-left-2" : "-right-2"
+                    }`}
+                  />
+                )}
+
+                {configurando && (
+                  <div className="absolute -top-2 right-2 z-10 flex items-center gap-0.5 rounded-md border bg-background p-1 shadow-sm">
+                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-1.5"
+                      onClick={() => cambiarTamano(w.id, "ancho", t.ancho)}
+                      title={t.ancho === 2 ? "Angostar" : "Ensanchar"}
+                      aria-label={`${t.ancho === 2 ? "Angostar" : "Ensanchar"} ${w.titulo}`}
+                    >
+                      {t.ancho === 2 ? "▭" : "▬"}
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-1.5"
+                      onClick={() => cambiarTamano(w.id, "alto", t.alto)}
+                      title={t.alto === 2 ? "Achicar el alto" : "Agrandar el alto"}
+                      aria-label={`${t.alto === 2 ? "Achicar" : "Agrandar"} el alto de ${w.titulo}`}
+                    >
+                      {t.alto === 2 ? "↕" : "⇕"}
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-2"
+                      onClick={() => mover(w.id, -1)}
+                      aria-label={`Subir ${w.titulo}`}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-2"
+                      onClick={() => mover(w.id, 1)}
+                      aria-label={`Bajar ${w.titulo}`}
+                    >
+                      ↓
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground"
+                      onClick={() => quitar(w.id)}
+                      aria-label={`Quitar ${w.titulo}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+
+                {/* Cada widget carga lo suyo: uno lento no tapa a los demás. */}
+                <w.Componente />
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
