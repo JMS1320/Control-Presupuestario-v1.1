@@ -3651,13 +3651,13 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar mi inicio»**:
 
 - **Para agregar**: los widgets disponibles aparecen como botones. Tocás uno y se suma abajo.
-- **Para ordenar**: con el configurador abierto, **arrastrá las tarjetas** a donde las quieras. Si
-  preferís el teclado o el mouse te juega en contra, cada una tiene ↑ ↓ en su esquina y hacen lo
-  mismo.
-- **Para sacar**: la ✕ de la esquina.
-- **Para cambiar el tamaño**: los botones **▬ / ▭** ensanchan o angostan (una o dos columnas) y
-  **⇕ / ↕** agrandan el alto. Cada widget arranca con un tamaño razonable —los avisos con texto
-  vienen anchos, porque a media columna no se leen— pero **todo se puede cambiar**.
+- **Para mover**: agarrá la tarjeta de su **manija** (⣿, arriba a la izquierda) y arrastrala. Una
+  **línea azul** te muestra dónde va a caer — si la dejás sobre la mitad izquierda de otra tarjeta
+  cae antes, y sobre la derecha cae después. Así se puede meter una **entre** dos.
+  Si preferís no arrastrar, las flechas ↑ ↓ de la manija hacen lo mismo.
+- **Para cambiar el tamaño**: pasá el mouse por el **borde derecho** (ancho) o el **borde de
+  abajo** (alto) y arrastrá. Se pintan al acercarte.
+- **Para sacar**: la ✕ de la manija.
 - **Se acomodan en dos columnas**, y lo que no entra baja solo.
 - **Las tarjetas muestran sólo el número.** El detalle está detrás de **Ver** — así el inicio se
   lee de un vistazo sin perder de dónde sale cada cosa.

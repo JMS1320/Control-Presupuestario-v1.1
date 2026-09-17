@@ -44,11 +44,17 @@ export type Preferencias = {
   /**
    * El tamaño que el usuario le dio a un widget, sólo para los que tocó (A-FEAT-88).
    *
-   * `{ "alertas-pagos": { ancho: 2, alto: 1 } }`. Lo que no está acá usa el tamaño que declara el
-   * registro. Se guarda **disperso y no completo** a propósito: si guardáramos los 8 siempre,
-   * cambiar el default de un widget no le llegaría nunca a quien ya abrió la pantalla una vez.
+   * `{ "alertas-pagos": { ancho: 2, alto: 320 } }` — `ancho` en columnas (1 o 2) y `alto` en
+   * píxeles, o `0` para que lo decida el contenido.
+   *
+   * El alto va en píxeles y no en "chico/grande" porque se ajusta **arrastrando el borde**: un
+   * par de tamaños fijos haría que el gesto salte, y el usuario pidió poder agrandarlo *si fuera
+   * necesario* — o sea, lo que necesite, no lo que previmos.
+   *
+   * Se guarda **disperso**: sólo los widgets que se tocaron. Si guardáramos los 8 siempre,
+   * cambiar el default de uno no le llegaría nunca a quien ya abrió la pantalla una vez.
    */
-  widgetsTamano: Record<string, { ancho: 1 | 2; alto: 1 | 2 }>
+  widgetsTamano: Record<string, { ancho: 1 | 2; alto: number }>
 }
 
 /**
@@ -81,15 +87,19 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
  * Valida el mapa de tamaños campo por campo. Es JSON libre que el propio usuario puede escribir:
  * un `ancho: 7` no rompería nada visible, dejaría una grilla rota sin explicación.
  */
-function leerTamanos(crudo: unknown): Record<string, { ancho: 1 | 2; alto: 1 | 2 }> {
+function leerTamanos(crudo: unknown): Record<string, { ancho: 1 | 2; alto: number }> {
   if (!crudo || typeof crudo !== "object") return {}
-  const salida: Record<string, { ancho: 1 | 2; alto: 1 | 2 }> = {}
+  const salida: Record<string, { ancho: 1 | 2; alto: number }> = {}
   for (const [id, valor] of Object.entries(crudo as Record<string, unknown>)) {
     if (!valor || typeof valor !== "object") continue
     const v = valor as Record<string, unknown>
-    const ancho = v.ancho === 2 ? 2 : 1
-    const alto = v.alto === 2 ? 2 : 1
-    salida[id] = { ancho, alto }
+    // El alto se acota a un rango usable: un valor absurdo dejaría una tarjeta de 9000px sin
+    // ningún error que lo explique, y esto es un JSON que el propio usuario puede escribir.
+    const altoCrudo = typeof v.alto === "number" && Number.isFinite(v.alto) ? v.alto : 0
+    salida[id] = {
+      ancho: v.ancho === 2 ? 2 : 1,
+      alto: altoCrudo <= 0 ? 0 : Math.min(Math.max(altoCrudo, 120), 800),
+    }
   }
   return salida
 }
