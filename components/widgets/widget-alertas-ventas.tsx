@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { TrendingUp, CheckCircle2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
 
 /**
@@ -18,6 +20,7 @@ export function WidgetAlertasVentas() {
   const [ventasPendientes, setVentasPendientes] = useState<any[]>([])
   const [retencionesSinVincular, setRetencionesSinVincular] = useState<any[]>([])
   const [cargandoVentas, setCargandoVentas] = useState(false)
+  const [detalle, setDetalle] = useState(false)
 
   const cargarAlertasVentas = useCallback(async () => {
     setCargandoVentas(true)
@@ -52,8 +55,54 @@ export function WidgetAlertasVentas() {
   }
 
 
+  const hayAlgo = ventasPendientes.length > 0 || retencionesSinVincular.length > 0
+
   return (
-    <Card>
+    <>
+      {/* RESUMEN — los dos números que importan. El detalle, en el diálogo (§ 🧮). */}
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
+          <div className="flex items-start gap-3">
+            <TrendingUp className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Alertas de ventas</p>
+              {cargandoVentas ? (
+                <p className="text-xs text-muted-foreground">Cargando…</p>
+              ) : !hayAlgo ? (
+                <p className="text-xs text-muted-foreground">Sin alertas pendientes.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {ventasPendientes.length > 0 && (
+                    <span className="font-semibold text-emerald-700">
+                      {ventasPendientes.length} a cobrar
+                    </span>
+                  )}
+                  {ventasPendientes.length > 0 && retencionesSinVincular.length > 0 && " · "}
+                  {retencionesSinVincular.length > 0 && (
+                    <span className="font-semibold text-orange-700">
+                      {retencionesSinVincular.length} ret. sin vincular
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {hayAlgo && (
+            <Button size="sm" variant="secondary" className="self-start" onClick={() => setDetalle(true)}>
+              Ver el detalle
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* DETALLE — el bloque tal como estaba. */}
+      <Dialog open={detalle} onOpenChange={setDetalle}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Alertas de ventas</DialogTitle>
+          </DialogHeader>
+          <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5 text-emerald-600" />
@@ -117,6 +166,9 @@ export function WidgetAlertasVentas() {
             </div>
           )}
         </CardContent>
-      </Card>
+          </Card>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

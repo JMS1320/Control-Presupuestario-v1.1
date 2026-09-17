@@ -38,6 +38,15 @@ export type Widget = {
   descripcion: string
   /** La sección de la que salen sus DATOS. Decide quién lo puede ver. */
   seccion: string
+  /**
+   * Cuánto ocupa en la grilla. `"medio"` entra de a dos por fila; `"completo"` toma la fila
+   * entera.
+   *
+   * Es propiedad del widget y no del usuario a propósito: las alertas anchas **son avisos con
+   * texto**, y partirlas a media columna las vuelve ilegibles. Dejar elegir el ancho sonaba más
+   * configurable y sólo habría dado más formas de que la pantalla quede mal.
+   */
+  ancho: "medio" | "completo"
   Componente: ComponentType
 }
 
@@ -47,6 +56,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Pendientes por pantalla",
     descripcion: "Cuántos ítems sin resolver tiene cada sección del sistema.",
     seccion: "principal",
+    ancho: "medio",
     Componente: WidgetPendientes,
   },
   {
@@ -54,6 +64,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Último IPC",
     descripcion: "El último índice cargado, con su mes y su fuente.",
     seccion: "principal",
+    ancho: "medio",
     Componente: WidgetUltimoIPC,
   },
   {
@@ -61,6 +72,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Ficha de proveedor",
     descripcion: "Acceso rápido para buscar un proveedor y ver su cuenta corriente.",
     seccion: "principal",
+    ancho: "medio",
     Componente: WidgetFichaProveedor,
   },
   {
@@ -68,6 +80,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Extractos sin actualizar",
     descripcion: "Avisa si los movimientos bancarios están viejos.",
     seccion: "extracto",
+    ancho: "completo",
     Componente: AlertaExtractosDesactualizados,
   },
   {
@@ -75,6 +88,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Movimientos sin desglosar",
     descripcion: "Importados a los que les falta pasar por las reglas.",
     seccion: "extracto",
+    ancho: "completo",
     Componente: AlertaParseoPendiente,
   },
   {
@@ -82,6 +96,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Facturas de crédito de ventas",
     descripcion: "Llegó una FC: ¿corresponde a esta venta?",
     seccion: "ingresos",
+    ancho: "completo",
     Componente: AlertasFcVenta,
   },
   {
@@ -89,6 +104,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Alertas de pagos",
     descripcion: "Anticipos de SICORE sin vincular a su factura.",
     seccion: "egresos",
+    ancho: "medio",
     Componente: WidgetAlertasPagos,
   },
   {
@@ -96,6 +112,7 @@ export const WIDGETS: Widget[] = [
     titulo: "Alertas de ventas",
     descripcion: "Facturas a cobrar y retenciones sin vincular.",
     seccion: "ingresos",
+    ancho: "medio",
     Componente: WidgetAlertasVentas,
   },
 ]

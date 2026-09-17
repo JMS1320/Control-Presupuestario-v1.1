@@ -5,7 +5,7 @@ import { ClipboardList } from "lucide-react"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
 import { SOLAPAS } from "@/components/layout-app"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { ModalPendientes } from "@/components/modal-pendientes"
 
 /**
@@ -30,48 +30,45 @@ export function WidgetPendientes() {
 
   const total = filas.reduce((a, f) => a + f.total, 0)
 
+  // Las tres con más trabajo. La lista completa está en el modal: una tarjeta de inicio que
+  // enumera 12 secciones deja de ser un vistazo y pasa a ser una tabla.
+  const top = [...filas].sort((a, b) => b.total - a.total).slice(0, 3)
+  const urgentes = filas.reduce((a, f) => a + f.urgentes, 0)
+
   return (
     <>
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ClipboardList className="h-5 w-5 text-slate-600" />
-            Pendientes por pantalla
-            {total > 0 && (
-              <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                {total}
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filas.length === 0 ? (
-            // Sin datos y sin pendientes se ven igual, así que no se afirma «no hay»: el hook se
-            // traga los errores a propósito y devolvería un mapa vacío también si falló.
-            <p className="text-sm text-muted-foreground">Sin pendientes para mostrar.</p>
-          ) : (
-            <ul className="divide-y text-sm">
-              {filas.map((f) => (
-                <li key={f.id} className="flex items-center justify-between py-1.5">
-                  <span>{f.label}</span>
-                  <span className="flex items-center gap-2">
-                    {f.urgentes > 0 && (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                        {f.urgentes} urgente{f.urgentes > 1 ? "s" : ""}
-                      </span>
-                    )}
-                    <span className="tabular-nums text-muted-foreground">{f.total}</span>
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
+          <div className="flex items-start gap-3">
+            <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-slate-600" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">
+                Pendientes
+                {total > 0 && <span className="ml-1.5 text-muted-foreground">({total})</span>}
+                {urgentes > 0 && (
+                  <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                    {urgentes} urgente{urgentes > 1 ? "s" : ""}
                   </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            className="mt-3 gap-2"
-            onClick={() => setAbierto(true)}
-          >
+                )}
+              </p>
+              {top.length === 0 ? (
+                // El hook se traga los errores a propósito, así que «vacío» y «no cargó» se ven
+                // igual. No se afirma que no hay: se dice que no hay nada que mostrar.
+                <p className="text-xs text-muted-foreground">Nada que mostrar.</p>
+              ) : (
+                <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {top.map((f) => (
+                    <li key={f.id} className="flex justify-between gap-2">
+                      <span className="truncate">{f.label}</span>
+                      <span className="tabular-nums">{f.total}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <Button size="sm" variant="secondary" className="self-start" onClick={() => setAbierto(true)}>
             Ver el detalle
           </Button>
         </CardContent>

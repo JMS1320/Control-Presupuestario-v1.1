@@ -34,6 +34,9 @@ export function VistaInicio({
   )
   const [configurando, setConfigurando] = useState(false)
   const [guardando, setGuardando] = useState(false)
+  /** Qué widget se está arrastrando, y sobre cuál está parado. */
+  const [arrastrando, setArrastrando] = useState<string | null>(null)
+  const [encima, setEncima] = useState<string | null>(null)
 
   const visibles = widgetsVisibles(elegidos, secciones)
   // Lo que se puede agregar: del registro, lo que el rol permite y todavía no está puesto.
@@ -58,6 +61,23 @@ export function VistaInicio({
 
   const quitar = (id: string) => guardar(elegidos.filter((w) => w !== id))
   const agregar = (id: string) => guardar([...elegidos, id])
+
+  /**
+   * Suelta `arrastrando` en la posición de `destino`.
+   *
+   * Termina en el mismo `guardar()` que los botones ↑ ↓: el arrastre es otra forma de pedir lo
+   * mismo, no otro camino. Si tuviera su propia escritura, una de las dos se desincronizaría el
+   * día que cambie el formato de la preferencia.
+   */
+  function soltarEn(destino: string) {
+    const origen = arrastrando
+    setArrastrando(null)
+    setEncima(null)
+    if (!origen || origen === destino) return
+    const nuevos = elegidos.filter((w) => w !== origen)
+    nuevos.splice(elegidos.indexOf(destino), 0, origen)
+    guardar(nuevos)
+  }
 
   function mover(id: string, delta: number) {
     const i = elegidos.indexOf(id)
@@ -88,8 +108,9 @@ export function VistaInicio({
         <Card className="border-dashed">
           <CardContent className="space-y-4 p-4">
             <Ayuda className="text-sm">
-              Elegí qué querés ver al entrar y en qué orden. Se guarda solo, y es tuyo: no le
-              cambia la pantalla a nadie más.
+              Elegí qué querés ver al entrar y en qué orden: <strong>arrastrá las tarjetas</strong>
+              para acomodarlas, o usá las flechas. Se guarda solo, y es tuyo: no le cambia la
+              pantalla a nadie más.
             </Ayuda>
 
             {disponibles.length > 0 ? (
@@ -145,9 +166,42 @@ export function VistaInicio({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-6">
+        /*
+          Grilla de 2 columnas desde `sm`. Los widgets `completo` toman la fila entera: son avisos
+          con texto, y a media columna no se leen.
+          `items-start` para que una tarjeta alta no estire a su vecina — sin eso, el widget más
+          largo de cada fila le impone su alto a los demás y la pantalla se ve desprolija.
+        */
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
           {visibles.map((w) => (
-            <div key={w.id} className="relative">
+            <div
+              key={w.id}
+              className={[
+                "relative",
+                w.ancho === "completo" ? "sm:col-span-2" : "",
+                // Sólo se arrastra con el configurador abierto: si no, un clic largo sobre una
+                // tarjeta movería la pantalla sin que nadie lo haya pedido.
+                configurando ? "cursor-move" : "",
+                arrastrando === w.id ? "opacity-40" : "",
+                encima === w.id && arrastrando !== w.id
+                  ? "ring-2 ring-primary ring-offset-2 rounded-lg"
+                  : "",
+              ].join(" ")}
+              draggable={configurando}
+              onDragStart={() => setArrastrando(w.id)}
+              onDragEnd={() => { setArrastrando(null); setEncima(null) }}
+              onDragOver={(e) => {
+                if (!configurando || !arrastrando) return
+                e.preventDefault() // sin esto el navegador no admite el drop
+                setEncima(w.id)
+              }}
+              onDragLeave={(e) => {
+                // Sólo si se salió de verdad de la tarjeta: pasar sobre un hijo dispara
+                // `dragleave` igual, y sin esta guarda el resaltado parpadea.
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) setEncima(null)
+              }}
+              onDrop={(e) => { e.preventDefault(); soltarEn(w.id) }}
+            >
               {configurando && (
                 <div className="absolute -top-2 right-2 z-10 flex items-center gap-1 rounded-md border bg-background p-1 shadow-sm">
                   <GripVertical className="h-4 w-4 text-muted-foreground" />

@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ModalVinculacionAnticipo } from "@/components/modal-vinculacion-anticipo"
 import {
   useVinculacionAnticipo,
@@ -32,6 +33,7 @@ export function WidgetAlertasPagos() {
   const [anticiposSinVincular, setAnticiposSinVincular] = useState<AnticipoSicore[]>([])
   const [facturasCandidatos, setFacturasCandidatos] = useState<Record<string, FacturaCandidato[]>>({})
   const [cargandoAlertas, setCargandoAlertas] = useState(false)
+  const [detalle, setDetalle] = useState(false)
 
   // Wizard de vinculación — lógica compartida en useVinculacionAnticipo
   const v = useVinculacionAnticipo(() => cargarAlertasSicore())
@@ -113,9 +115,65 @@ export function WidgetAlertasPagos() {
     }
   }
 
+  // Los que YA tienen una factura candidata esperando: son los accionables, y por eso son el
+  // número que va en la tarjeta. Los otros no se pueden resolver todavía aunque se los mire.
+  const conFC = anticiposSinVincular.filter(
+    (a) => (facturasCandidatos[a.id] || []).length > 0
+  ).length
+
   return (
     <>
-      {/* Alertas SICORE — anticipos sin vincular */}
+      {/*
+        RESUMEN. La tarjeta dice CUÁNTOS y el diálogo dice CUÁLES.
+        Antes el bloque entero vivía en la pantalla de inicio y ocupaba media página para mostrar,
+        casi siempre, que no había nada que hacer. Un inicio se mira de un vistazo: lo que no se
+        puede leer en dos segundos no pertenece a la tarjeta.
+        ⚠️ El detalle NO se sacó, se movió — un número condensado sin camino a lo que lo compone es
+        justo lo que prohíbe la § 🧮 de CLAUDE.md.
+      */}
+      <Card className="h-full">
+        <CardContent className="flex h-full flex-col justify-between gap-3 p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle
+              className={`mt-0.5 h-5 w-5 shrink-0 ${conFC > 0 ? "text-red-600" : "text-blue-600"}`}
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Alertas de pagos</p>
+              {cargandoAlertas ? (
+                <p className="text-xs text-muted-foreground">Cargando…</p>
+              ) : anticiposSinVincular.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Sin anticipos sin vincular.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {anticiposSinVincular.length} anticipo
+                  {anticiposSinVincular.length > 1 ? "s" : ""} sin vincular
+                  {conFC > 0 && (
+                    <>
+                      {" · "}
+                      <span className="font-semibold text-red-700">
+                        {conFC} con factura esperando
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {anticiposSinVincular.length > 0 && (
+            <Button size="sm" variant="secondary" className="self-start" onClick={() => setDetalle(true)}>
+              Ver y vincular
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* DETALLE — el bloque tal como estaba, sin tocarle nada. */}
+      <Dialog open={detalle} onOpenChange={setDetalle}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Alertas de pagos</DialogTitle>
+          </DialogHeader>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -235,6 +293,9 @@ export function WidgetAlertasPagos() {
           })()}
         </CardContent>
       </Card>
+
+        </DialogContent>
+      </Dialog>
 
       {/* Modal vinculación — wizard 2 pasos (compartido) */}
       <ModalVinculacionAnticipo controller={v} />

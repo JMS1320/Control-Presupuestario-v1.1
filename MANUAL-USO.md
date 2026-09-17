@@ -3651,7 +3651,14 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar mi inicio»**:
 
 - **Para agregar**: los widgets disponibles aparecen como botones. Tocás uno y se suma abajo.
-- **Para ordenar y sacar**: con el configurador abierto, cada widget muestra ↑ ↓ y ✕ en su esquina.
+- **Para ordenar**: con el configurador abierto, **arrastrá las tarjetas** a donde las quieras. Si
+  preferís el teclado o el mouse te juega en contra, cada una tiene ↑ ↓ en su esquina y hacen lo
+  mismo.
+- **Para sacar**: la ✕ de la esquina.
+- **Se acomodan en dos columnas.** Los avisos anchos (extractos viejos, movimientos sin desglosar,
+  FC de ventas) toman la fila entera: son textos y a media columna no se leen.
+- **Las tarjetas muestran sólo el número.** El detalle está detrás de **Ver** — así el inicio se
+  lee de un vistazo sin perder de dónde sale cada cosa.
 - **Se guarda solo**, en el momento. No hay botón de guardar.
 - **«Volver a la pantalla original»** deja todo como estaba antes de que tocaras nada.
 
