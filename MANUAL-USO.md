@@ -3658,7 +3658,10 @@ La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar
 - **Para cambiar el tamaño**: pasá el mouse por el **borde derecho** (ancho) o el **borde de
   abajo** (alto) y arrastrá. Se pintan al acercarte.
 - **Para sacar**: la ✕ de la manija.
-- **Se acomodan en dos columnas**, y lo que no entra baja solo.
+- **Se acomodan en dos columnas y se empaquetan sin huecos**: cada tarjeta ocupa sólo su alto y la
+  siguiente arranca pegada. El orden va **hacia abajo y después a la derecha** (no de izquierda a
+  derecha) — es lo que evita que una tarjeta corta al lado de una larga deje media pantalla en
+  blanco.
 - **Las tarjetas muestran sólo el número.** El detalle está detrás de **Ver** — así el inicio se
   lee de un vistazo sin perder de dónde sale cada cosa.
 - **Se guarda solo**, en el momento. No hay botón de guardar.

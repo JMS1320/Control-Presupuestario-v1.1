@@ -227,7 +227,18 @@ export function VistaInicio({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        /*
+          MASONRY con columnas CSS, no con `grid`.
+          ⚠️ Con `grid` las tarjetas se acomodan por FILAS, y la fila entera mide lo que mide la
+          más alta. Una tarjeta corta al lado de una larga dejaba media pantalla en blanco — y ese
+          blanco no es un hueco donde soltar algo, es el sobrante de la fila: por más que se
+          arreglara el arrastre, ahí no entraba nada. Con columnas, cada tarjeta ocupa su alto y la
+          siguiente arranca pegada.
+          El precio, que conviene saber: el orden fluye **hacia abajo y después a la derecha**, no
+          de izquierda a derecha. Con pocas tarjetas se lee igual, y es lo que hace que no queden
+          huecos.
+        */
+        <div className="columns-1 gap-4 sm:columns-2">
           {visibles.map((w) => {
             const t = tamanoDe(w)
             const alto = altoVivo?.id === w.id ? altoVivo.px : t.alto
@@ -244,7 +255,13 @@ export function VistaInicio({
                   // `height:100%` se resuelve contra la ALTURA del padre, que acá es `auto` —
                   // así que la tarjeta quedaba de su tamaño y el contenedor crecía vacío.
                   "group/w relative flex flex-col",
-                  ancho === 2 ? "sm:col-span-2" : "",
+                  // En columnas CSS hay que pedir explícitamente que la tarjeta no se parta al
+                  // medio entre una columna y la siguiente. `w-full` + el margen de abajo hacen
+                  // de separación: el `gap` de las columnas sólo separa en horizontal.
+                  "mb-4 w-full break-inside-avoid",
+                  // El widget "ancho" cruza las dos columnas. `column-span` es la forma de
+                  // hacerlo en multicolumna; `col-span-2` es de grid y acá no hace nada.
+                  ancho === 2 ? "sm:[column-span:all]" : "",
                   arrastrando === w.id ? "opacity-40" : "",
                 ].join(" ")}
                 /*
