@@ -277,6 +277,49 @@ ponga y la sesión se escribe persistente siempre.
 email+contraseña. Si aparece ruido de cuentas basura, el paso siguiente es un hook
 `before-user-created` con lista de admitidos — no está hecho.
 
+### 🔐 Recuperar el segundo factor: la pregunta es QUIÉN aprieta el botón (2026-09-17, A-FEAT-86)
+
+**Nació de un caso real.** El usuario tenía el TOTP inscripto desde el 03/09 y la llave no estaba
+en ninguna app. Sistema exigiendo el código, nadie capaz de generarlo, y la única salida fue borrar
+el factor con `service_role`. Preguntó lo obvio: *¿no puede el propio usuario borrarlo desde la
+pantalla de dos pasos?*
+
+**La respuesta depende de dónde viva ese botón, y los dos casos parecen el mismo.**
+
+| Dónde | Sesión | ¿Vale? |
+|---|---|---|
+| `/perfil`, ya adentro | **`aal2`** | ✅ ya demostró los dos factores |
+| En la pantalla del desafío | **`aal1`** | ❌ **anula el 2FA** |
+| `/usuarios`, lo aprieta **otro** admin | **`aal2`** del otro | ✅ la autorización la pone una segunda persona |
+
+El del medio es el que hay que saber rechazar, y conviene verlo en números:
+
+```
+Con 2FA:           contraseña (o Google)  +  código             = 2 factores
+Con ese botón:     contraseña (o Google)  +  clic en «lo perdí» = 1 factor
+```
+
+Quien robó la contraseña **no pelea con el TOTP: aprieta el botón**. El camino del atacante queda
+**más corto que el del usuario legítimo** — y la pantalla sigue diciendo que hay 2FA, así que la
+protección desaparece sin que nadie se entere. Es el mismo modo de falla que la CSP bloqueando
+imágenes en silencio, aplicado a algo que sí importa.
+
+**Lo implementado**, que son los dos casos legítimos:
+
+1. **`/perfil` → Segundo factor → «Cambiar de dispositivo»**: da de baja el factor y manda al alta.
+   Es seguro porque **el middleware no deja entrar a ninguna pantalla con un factor inscripto sin
+   pasar el desafío** — o sea que quien llega a `/perfil` ya es `aal2`. La seguridad no la aporta
+   el botón: la aporta el camino para llegar a él.
+2. **`/usuarios` → «Resetear 2FA»**: `DELETE /api/admin/usuarios/[id]/2fa`, con `exigirAdmin()`
+   (sesión + rol + `aal2`) y **prohibido sobre uno mismo** — para eso está el caso 1. El candado
+   propio no es estrictamente necesario (un admin trabado no llegaría a la pantalla igual), pero
+   se escribe explícito para que nadie lo relaje después sin toparse con el motivo.
+
+⚠️ **Lo que esto NO cubre: el admin solo.** Los dos casos dependen de algo que puede faltar — el 1
+exige estar adentro, el 2 exige **otro** admin. Con un único admin que pierde el autenticador, no
+hay salida desde la app. Ese hueco lo cierran los **códigos de recuperación**
+([A-SEC-08](PENDIENTES.md#a-sec-08)), que Supabase no trae y hay que implementar.
+
 ### 🐞 Corregido de paso: el bug que este archivo daba por abierto
 La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
 (la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol

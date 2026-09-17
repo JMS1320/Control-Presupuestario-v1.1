@@ -115,6 +115,32 @@ export function PanelUsuarios({ miId }: { miId: string }) {
     toast.success(`Mail enviado a ${j.email}.`)
   }
 
+  /**
+   * Resetea el segundo factor de OTRA persona (A-FEAT-86) — el caso «perdí el teléfono».
+   *
+   * Es destructivo y no se deshace, así que se confirma. La autorización la aporta quien aprieta:
+   * este endpoint exige un admin con `aal2`, o sea alguien que ya demostró sus dos factores. Para
+   * la cuenta propia no sirve, a propósito: para eso está Perfil → Cambiar de dispositivo.
+   */
+  async function resetear2FA(id: string, email: string) {
+    if (
+      !confirm(
+        `¿Dar de baja el segundo factor de ${email}?\n\n` +
+          "Va a poder entrar con su contraseña (o con Google) y el sistema le va a pedir que " +
+          "inscriba un autenticador nuevo. El anterior deja de servir."
+      )
+    ) {
+      return
+    }
+    const r = await fetch(`/api/admin/usuarios/${id}/2fa`, { method: "DELETE" })
+    const j = await r.json()
+    if (!r.ok) return toast.error(j.error ?? "No se pudo resetear")
+    toast.success(
+      j.yaEstaba ? "Esa cuenta ya no tenía segundo factor." : `Segundo factor dado de baja.`
+    )
+    cargar()
+  }
+
   /** Respaldo: link nuevo para copiar, si el mail no llega o el envío está limitado. */
   async function generarLink(id: string) {
     const r = await fetch(`/api/admin/usuarios/${id}/link`, { method: "POST" })
@@ -288,6 +314,15 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                               >
                                 Copiar link
                               </Button>
+                              {u.tiene2FA && (
+                                <Button
+                                  variant="ghost" size="sm"
+                                  onClick={() => resetear2FA(u.id, u.email ?? "esa cuenta")}
+                                  title="Si perdió el autenticador: lo da de baja y le pide inscribir uno nuevo al entrar"
+                                >
+                                  Resetear 2FA
+                                </Button>
+                              )}
                               <Button variant="outline" size="sm" onClick={() => revocar(u.id, u.email)}>
                                 Revocar
                               </Button>

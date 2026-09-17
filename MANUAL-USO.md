@@ -26,6 +26,23 @@
 4. Ya adentro, la app se ve igual que siempre; **el rol decide qué se ve**: admin todo, contable
    sólo la solapa Egresos (ARCA + Templates).
 
+### Si perdiste el autenticador 🟡 (2026-09-17, sin testear — A-FEAT-86)
+
+**Antes de perderlo** (cambio de teléfono planificado): `/perfil` → **Segundo factor** →
+**Cambiar de dispositivo**. Te da un QR nuevo y el anterior deja de servir. Guardá la llave donde
+la vayas a encontrar.
+
+**Si ya lo perdiste** y no podés pasar la pantalla del código: **pedile a otro administrador** que
+entre a Configuración → Usuarios, busque tu fila y toque **Resetear 2FA**. Después entrás normal y
+el sistema te pide inscribir uno nuevo.
+
+⚠️ **No hay un botón de «no tengo el autenticador» en la pantalla del código, y no lo va a haber.**
+Ese botón dejaría entrar a cualquiera que tenga tu contraseña, que es justo de lo que el código te
+protege. El motivo largo está en `MODULO_USUARIOS.md` § Recuperar el segundo factor.
+
+⚠️ **Si sos el único administrador, esto no te cubre**: no hay otro que te resetee y hay que tocar
+la base. Mientras haya dos admins, no es un problema.
+
 ### La primera vez (admin) — alta del segundo factor
 Al entrar por primera vez, la app manda a una pantalla con un **QR**. Escanearlo con la app de
 autenticación y escribir el número que muestra. Si no se puede escanear, hay un código de texto

@@ -64,6 +64,9 @@ export function PanelPerfil({
   const [cargando, setCargando] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [tiene2FA, setTiene2FA] = useState<boolean | null>(null)
+  /** El factor inscripto, para poder darlo de baja al cambiar de dispositivo (A-FEAT-86). */
+  const [idFactor, setIdFactor] = useState<string | null>(null)
+  const [sacando2FA, setSacando2FA] = useState(false)
 
   useEffect(() => {
     let cancelado = false
@@ -83,7 +86,11 @@ export function PanelPerfil({
       setCargando(false)
 
       const { data: factores } = await supabase.auth.mfa.listFactors()
-      if (!cancelado) setTiene2FA((factores?.totp?.length ?? 0) > 0)
+      if (!cancelado) {
+        const totp = factores?.totp ?? []
+        setTiene2FA(totp.length > 0)
+        setIdFactor(totp[0]?.id ?? null)
+      }
     })()
     return () => { cancelado = true }
   }, [])
@@ -129,6 +136,36 @@ export function PanelPerfil({
     // Las preferencias las lee el servidor en cada carga: sin refresh, el menú y la sección de
     // inicio siguen con los valores con los que se renderizó esta página.
     router.refresh()
+  }
+
+  /**
+   * Da de baja el segundo factor — el caso «cambié de teléfono» (A-FEAT-86).
+   *
+   * ⚠️ **Esto es seguro acá y NO lo sería en la pantalla del código.** Para llegar a `/perfil` la
+   * sesión ya pasó por el desafío (el middleware no deja entrar a ningún lado sin `aal2` si hay
+   * un factor inscripto), así que quien aprieta este botón **ya demostró los dos factores**. El
+   * mismo botón en la pantalla del desafío convertiría 2 factores en 1: cualquiera con la
+   * contraseña lo apretaría en vez de pelear con el TOTP. Ver A-SEC-08.
+   *
+   * Después de sacarlo, a un admin el middleware lo manda a inscribir uno nuevo en cuanto navega
+   * — que es justamente lo que se quiere al cambiar de dispositivo.
+   */
+  async function sacarSegundoFactor(volverAInscribir: boolean) {
+    if (!idFactor) return
+    setSacando2FA(true)
+    const { error } = await supabase.auth.mfa.unenroll({ factorId: idFactor })
+    setSacando2FA(false)
+    if (error) {
+      toast.error("No se pudo dar de baja el segundo factor.")
+      return
+    }
+    setTiene2FA(false)
+    setIdFactor(null)
+    if (volverAInscribir) {
+      router.push("/login/2fa/alta")
+      return
+    }
+    toast.success("Segundo factor dado de baja.")
   }
 
   async function guardar(e: React.FormEvent) {
@@ -306,9 +343,36 @@ export function PanelPerfil({
             {tiene2FA === null ? (
               <span className="text-muted-foreground">Consultando…</span>
             ) : tiene2FA ? (
-              <div className="flex items-start gap-2 text-emerald-700">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>Activado. Te pide el código de 6 dígitos al entrar.</span>
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 text-emerald-700">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Activado. Te pide el código de 6 dígitos al entrar.</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={sacando2FA}
+                    onClick={() => sacarSegundoFactor(true)}
+                  >
+                    {sacando2FA ? "Dando de baja…" : "Cambiar de dispositivo"}
+                  </Button>
+                  {userRole !== "admin" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={sacando2FA}
+                      onClick={() => sacarSegundoFactor(false)}
+                    >
+                      Quitar
+                    </Button>
+                  )}
+                </div>
+                <Ayuda>
+                  Hacelo <strong>antes</strong> de perder el teléfono: te da un código QR nuevo y el
+                  anterior deja de servir. Si ya lo perdiste, pedile a otro administrador que te lo
+                  resetee desde Configuración → Usuarios.
+                </Ayuda>
               </div>
             ) : (
               <div className="space-y-3">
