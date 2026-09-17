@@ -29,6 +29,18 @@ export type Preferencias = {
    * se apagan nunca — `CLAUDE.md` § 🧮. El detalle de qué se marca, en `components/ayuda.tsx`.
    */
   explicaciones: boolean
+  /**
+   * Qué widgets se ven en la pantalla de inicio y **en qué orden** (A-FEAT-88).
+   *
+   * `null` = todavía no eligió → se muestra el conjunto por defecto. No es lo mismo que `[]`,
+   * que significa «los saqué todos a propósito»: sin esa distinción, vaciar la pantalla la
+   * devolvería al default en la siguiente carga y no habría forma de dejarla limpia.
+   *
+   * ⚠️ **Esta lista NO decide permisos.** Vive en `user_metadata`, que el propio usuario escribe;
+   * se filtra contra las secciones de su rol antes de renderizar nada. Misma puerta que
+   * `seccionInicio`.
+   */
+  widgets: string[] | null
 }
 
 /**
@@ -45,6 +57,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   // Encendidas: el que no sabe que esto existe tiene que seguir viendo las explicaciones. Apagarlas
   // por default le sacaría la ayuda justamente al que todavía no aprendió a encenderla.
   explicaciones: true,
+  widgets: null,
 }
 
 /**
@@ -69,5 +82,10 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     contadoresPendientes: bool("contadoresPendientes", PREFERENCIAS_DEFAULT.contadoresPendientes),
     confirmarSalida: bool("confirmarSalida", PREFERENCIAS_DEFAULT.confirmarSalida),
     explicaciones: bool("explicaciones", PREFERENCIAS_DEFAULT.explicaciones),
+    // Se aceptan sólo strings: un id que no exista lo descarta después el registro, pero un
+    // número o un objeto acá romperían el render.
+    widgets: Array.isArray(p.widgets)
+      ? (p.widgets as unknown[]).filter((w): w is string => typeof w === "string")
+      : null,
   }
 }

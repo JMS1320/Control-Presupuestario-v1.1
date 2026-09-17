@@ -3644,6 +3644,31 @@ datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige so
 
 ---
 
+## 🏠 **Tu pantalla de inicio** — armala como quieras 🟡 (2026-09-17, sin testear)
+
+*[A-FEAT-88](PENDIENTES.md#a-feat-88) · test → [A-TEST-96](PENDIENTES.md#a-test-96)*
+
+La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar mi inicio»**:
+
+- **Para agregar**: los widgets disponibles aparecen como botones. Tocás uno y se suma abajo.
+- **Para ordenar y sacar**: con el configurador abierto, cada widget muestra ↑ ↓ y ✕ en su esquina.
+- **Se guarda solo**, en el momento. No hay botón de guardar.
+- **«Volver a la pantalla original»** deja todo como estaba antes de que tocaras nada.
+
+Es **tuyo**: no le cambia la pantalla a nadie más, igual que las otras preferencias del perfil.
+
+⚠️ **Sólo se ofrecen los widgets de secciones que tu rol habilita.** Si sos `contable` no vas a ver
+el de Cash Flow en la lista — y tampoco aparece si lo forzás por otro lado.
+
+### Cómo se prueba (A-TEST-96)
+1. Agregá, sacá y reordená widgets. Salí de la app y volvé: **tiene que quedar como lo dejaste**.
+2. Sacalos **todos**: tiene que decir «Tu inicio está vacío» con el camino de vuelta, no quedar en
+   blanco.
+3. ⚠️ **Comparar números**: cada widget tiene que decir **lo mismo** que la pantalla de la que
+   salió. Si difieren, se duplicó la lógica en vez de compartirla.
+4. Tocá el camino al detalle de cada uno (**Ver la serie**, **Ver el detalle**, **Abrir**): tiene
+   que llevar a donde el número se puede verificar.
+
 ## 🪪 **Tu perfil** — y el menú en todas las pantallas 🟡 (sin testear)
 
 *Implementado 2026-09-05 · [A-FEAT-78](PENDIENTES.md) · test → [A-TEST-86](PENDIENTES.md)*

@@ -1768,3 +1768,26 @@ sumaba en una variable… y no lo usaba en la comparación. El control existía 
 📌 Cómo buscarlo en otro lado: donde haya un prorrateo (kilo-día, hectáreas, cabezas, metros
 cuadrados, horas), preguntarse *"¿qué control fallaría si la clave estuviera mal?"*. Si la respuesta
 es *"ninguno, porque el total igual cierra"*, falta un control.
+
+
+## 🧩 Widgets de la pantalla de inicio — el criterio (A-FEAT-88, 2026-09-17)
+
+Transversal porque **cualquier pantalla puede aportar un widget**, y equivocarse al agregarlo no se
+ve.
+
+**Un widget declara la sección de sus DATOS, y eso es lo que decide quién lo ve.** No la sección
+donde a uno le gustaría mostrarlo. La lista de widgets elegidos vive en `user_metadata`, que el
+propio usuario escribe: si el filtro no fuera por rol, agregarse un widget a mano sería agrandar lo
+que se ve. Poner mal la `seccion` **no rompe nada visible — abre un permiso en silencio.**
+
+**Cada widget lleva su camino al detalle.** Es la § 🧮 aplicada al caso extremo: el inicio es la
+pantalla con más números de conclusión y menos contexto de todo el sistema. Un total sin forma de
+llegar a lo que lo compone es el cartel de A-TEST-32 otra vez.
+
+**Cada widget carga lo suyo y es el MISMO componente que usa su pantalla.** No una copia. Dos
+lecturas paralelas del mismo dato terminan mostrando números distintos en dos lugares — es
+exactamente lo que ya pasó con `categoriaPrecio()` (§ buscar antes de escribir).
+
+**Al extraer, no arreglar.** Los bloques se movieron de `vista-principal` **sin tocarles la
+lógica**. Si algo cambia de número después de un refactor que también "mejoró" cosas, no hay forma
+de saber cuál de las dos lo causó.

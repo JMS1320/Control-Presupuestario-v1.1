@@ -16,7 +16,7 @@ import { VistaIngresos } from "./components/vista-ingresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
-import { VistaPrincipal } from "./components/vista-principal"
+import { VistaInicio } from "./components/vista-inicio"
 import { usePendientesPorPantalla } from "./hooks/usePendientesPorPantalla"
 import { VistaSectorProductivo } from "./components/vista-sector-productivo"
 import { TabSueldos } from "./components/tab-sueldos"
@@ -36,7 +36,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { LayoutApp, SOLAPAS } from "@/components/layout-app"
-import type { Preferencias } from "@/lib/auth/preferencias"
+import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
@@ -234,9 +234,14 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             )}
           </TabsList>
 
-          {/* VISTA PRINCIPAL */}
+          {/* VISTA PRINCIPAL — configurable por el usuario (A-FEAT-88) */}
           <TabsContent value="principal" className="space-y-6">
-            <VistaPrincipal />
+            {/* `permitidas` y no la preferencia: es lo que decide QUÉ widgets puede ver, y sale
+                del rol. La preferencia sólo dice cuáles de esos quiere y en qué orden. */}
+            <VistaInicio
+              preferencias={preferencias ?? PREFERENCIAS_DEFAULT}
+              secciones={[...permitidas]}
+            />
           </TabsContent>
 
           {/* DASHBOARD */}
