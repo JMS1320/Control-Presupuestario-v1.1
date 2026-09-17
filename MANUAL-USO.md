@@ -106,7 +106,12 @@ Arriba a la derecha, link **Usuarios** → pantalla `/usuarios`.
 1. **Crear cuenta**: email + rol (*contable* o *admin*) → **Crear e invitar**.
 2. La app devuelve un **link de invitación**. **Copiarlo y pasárselo a la persona** por un canal
    privado. Es de **un solo uso** y vence; si se pierde, se crea la invitación otra vez.
-3. La persona abre el link, **pone la contraseña que quiera** y ya entra. Vos nunca ves su clave.
+3. La persona abre el link y cae en **Bienvenida** 🟡 (2026-09-17), donde elige **cómo va a
+   entrar de ahora en más**: definir una contraseña, vincular su cuenta de Google, o las dos. Vos
+   nunca ves su clave.
+   ⚠️ Si elige Google, tiene que ser **el mismo mail** al que le mandaste la invitación.
+   ⚠️ Si no hace ninguna de las dos, va a poder usar el sistema en esa visita pero después va a
+   necesitar un link nuevo. La pantalla se lo avisa.
 4. Si la hiciste **admin**, la primera vez le va a pedir configurar el segundo factor con el QR.
 
 **La persona puede entrar de las dos formas, con la misma cuenta**: con la contraseña que eligió

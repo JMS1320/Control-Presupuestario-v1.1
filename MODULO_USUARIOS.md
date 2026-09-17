@@ -320,6 +320,46 @@ exige estar adentro, el 2 exige **otro** admin. Con un único admin que pierde e
 hay salida desde la app. Ese hueco lo cierran los **códigos de recuperación**
 ([A-SEC-08](PENDIENTES.md#a-sec-08)), que Supabase no trae y hay que implementar.
 
+### ✉️ Dónde termina una invitación, y por qué hay DOS rutas de vuelta (2026-09-17, A-FEAT-87)
+
+**El hueco**: el link de invitación apuntaba a `/login`, y **no existía ninguna pantalla para
+definir la contraseña** — `updateUser({password})` no aparecía en ninguna parte del código. Este
+mismo archivo y el manual describían el paso («la persona abre el link, pone la contraseña que
+quiera») como si estuviera hecho. **Nadie lo había construido**, y sólo se nota cuando invitás a
+alguien de verdad: entra una vez y no puede volver nunca más.
+
+Es el modo de falla de la § *«buscar antes de escribir»* al revés — documentación que se adelantó
+al código y después nadie volvió a contrastar.
+
+#### Las dos rutas de vuelta, y por qué no pueden ser una
+
+| Ruta | Atiende | Canje |
+|---|---|---|
+| `/auth/callback` | OAuth (Google) | `exchangeCodeForSession()` |
+| `/auth/confirm` | links de mail (invitación, recuperación) | `verifyOtp({ token_hash, type })` |
+
+La diferencia no es de estilo: **es quién abrió el flujo.** En OAuth lo inició el mismo navegador,
+que dejó guardado el `code_verifier` del PKCE. Un link de mail **lo abre otra persona, en otro
+navegador, días después**: ahí no hay verifier y `exchangeCodeForSession()` no tiene con qué
+trabajar. `verifyOtp` no lo necesita.
+
+`/auth/confirm` acepta **las dos formas** (`token_hash`+`type` y `code`) a propósito: según la
+plantilla de mail y la configuración del proyecto, Supabase devuelve una u otra. Atender sólo una y
+acertar por suerte es un bug que aparece recién el día que invitás a alguien de verdad.
+
+#### `/bienvenida` — el paso que faltaba
+
+Se llega **con sesión ya iniciada**, así que la persona ya está adentro. Lo que se resuelve ahí no
+es entrar: es **dejar armada la forma de volver mañana**. Ofrece contraseña, Google, o las dos, y
+ninguna es obligatoria — trabar a alguien en esa pantalla sería peor que el problema que resuelve,
+y con Google vinculado la contraseña no hace falta. Si no elige ninguna, se le avisa.
+
+⚠️ **El caso que obligó a tocar el middleware**: a un admin recién invitado, el middleware lo manda
+a inscribir el 2FA **antes** de dejarlo llegar a `/bienvenida`. Como el alta del TOTP volvía
+siempre a `/`, se salteaba la pantalla y quedaba igual de trabado que antes. Ahora el middleware
+guarda el destino en `?next=` y las dos pantallas de 2FA lo respetan (validado con `destinoSeguro()`,
+como todo destino que viaja en la URL).
+
 ### 🐞 Corregido de paso: el bug que este archivo daba por abierto
 La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
 (la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol

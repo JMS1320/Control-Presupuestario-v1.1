@@ -40,7 +40,7 @@ export async function POST(
 
   const origen = urlBase(request)
   const { error } = await supabaseAdmin.auth.resetPasswordForEmail(u.user.email, {
-    redirectTo: `${origen}/login`,
+    redirectTo: `${origen}/auth/confirm?next=/bienvenida`,
   })
 
   if (error) {

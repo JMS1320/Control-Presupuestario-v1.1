@@ -42,7 +42,7 @@ export async function POST(
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: "recovery",
     email: u.user.email,
-    options: { redirectTo: `${origen}/login` },
+    options: { redirectTo: `${origen}/auth/confirm?next=/bienvenida` },
   })
 
   if (error) {

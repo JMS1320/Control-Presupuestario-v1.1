@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { destinoSeguro } from "@/lib/auth/destino-seguro"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,6 +17,10 @@ const CODIGO_OK = /^\d{6}$/
  */
 export function DesafioTOTP() {
   const router = useRouter()
+  // A dónde ir después. Importa para la invitación de un admin (A-FEAT-87): el middleware lo
+  // manda a inscribir el 2FA ANTES de dejarlo llegar a /bienvenida, así que si acá volviéramos
+  // siempre a "/", se saltearía la pantalla donde define su contraseña y no podría volver nunca.
+  const destino = destinoSeguro(useSearchParams().get("next"))
   const [codigo, setCodigo] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
@@ -51,7 +56,7 @@ export function DesafioTOTP() {
     }
 
     router.refresh()
-    router.replace("/")
+    router.replace(destino)
   }
 
   return (
@@ -87,6 +92,10 @@ export function DesafioTOTP() {
  */
 export function AltaTOTP() {
   const router = useRouter()
+  // A dónde ir después. Importa para la invitación de un admin (A-FEAT-87): el middleware lo
+  // manda a inscribir el 2FA ANTES de dejarlo llegar a /bienvenida, así que si acá volviéramos
+  // siempre a "/", se saltearía la pantalla donde define su contraseña y no podría volver nunca.
+  const destino = destinoSeguro(useSearchParams().get("next"))
   const [qr, setQr] = useState<string | null>(null)
   const [secreto, setSecreto] = useState<string | null>(null)
   const [factorId, setFactorId] = useState<string | null>(null)
@@ -158,7 +167,7 @@ export function AltaTOTP() {
     }
 
     router.refresh()
-    router.replace("/")
+    router.replace(destino)
   }
 
   return (

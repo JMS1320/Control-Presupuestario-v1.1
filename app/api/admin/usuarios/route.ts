@@ -91,7 +91,7 @@ export async function POST(request: Request) {
    * Para que salga siempre → habilitar SMTP propio (A-AUTO-02 § Envío de mail).
    */
   const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origen}/login`,
+    redirectTo: `${origen}/auth/confirm?next=/bienvenida`,
   })
 
   if (error) {

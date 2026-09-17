@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { createClientServer } from "@/lib/supabase-server"
 import { esAdmin } from "@/lib/auth/roles"
@@ -41,7 +42,10 @@ export default async function Page() {
         <p className="mb-6 text-sm text-muted-foreground">
           Escribí el código de tu app de autenticación.
         </p>
-        <DesafioTOTP />
+        {/* Suspense: el componente lee `?next=` para volver a donde iba (A-FEAT-87). */}
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Cargando…</p>}>
+          <DesafioTOTP />
+        </Suspense>
 
         {/*
           La salida para quien SÍ tiene factor pero perdió el autenticador. No borra nada —eso

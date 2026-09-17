@@ -16,6 +16,10 @@ const ERRORES: Record<string, string> = {
   sin_alta:
     "Esa cuenta de Google todavía no está habilitada. Pedile el alta a un administrador.",
   oauth: "No se pudo completar el ingreso con Google. Probá de nuevo.",
+  link_vencido:
+    "Ese link ya se usó o venció. Pedile a un administrador que te genere uno nuevo.",
+  link_invalido:
+    "El link está incompleto. Puede haberse cortado al copiarlo: pedí que te lo manden de nuevo.",
 }
 
 export default async function LoginPage({

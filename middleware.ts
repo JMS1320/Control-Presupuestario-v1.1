@@ -127,6 +127,10 @@ export async function middleware(request: NextRequest) {
     if ((necesitaDesafio || adminSinFactor) && !pathname.startsWith("/login")) {
       const url = request.nextUrl.clone()
       url.pathname = adminSinFactor ? "/login/2fa/alta" : "/login/2fa"
+      // Se recuerda a dónde iba. Sin esto, un admin recién invitado quedaba mandado a la raíz
+      // después de inscribir el 2FA y **nunca veía `/bienvenida`**, que es donde define su
+      // contraseña — o sea que entraba una vez y no podía volver (A-FEAT-87).
+      url.searchParams.set("next", pathname)
       return cabecerasDeSeguridad(NextResponse.redirect(url), urlSupabase)
     }
 
