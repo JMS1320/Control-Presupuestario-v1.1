@@ -93,24 +93,12 @@ export function LoginForm({
           </div>
         </div>
 
-        <div className="flex items-start gap-2">
-          <Checkbox
-            id="recordar"
-            name="recordar"
-            className="mt-0.5"
-            checked={recordar}
-            onCheckedChange={(v) => setRecordar(v === true)}
-          />
-          <div className="space-y-1">
-            <Label htmlFor="recordar" className="font-normal">
-              Recordarme en este navegador
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              Sin esto, se cierra la sesión al cerrar el navegador. No lo tildes en una
-              computadora compartida.
-            </p>
-          </div>
-        </div>
+        {/*
+          El visible está ABAJO, después del botón de Google: la preferencia vale para las dos
+          formas de entrar, y arriba del todo parecía ser sólo de la contraseña. Acá queda el
+          campo que viaja en el FormData, atado al mismo estado.
+        */}
+        <input type="hidden" name="recordar" value={recordar ? "on" : ""} />
 
         {estado.error && (
           <p role="alert" className="text-sm text-red-600 dark:text-red-400">
@@ -129,6 +117,27 @@ export function LoginForm({
       </div>
 
       <BotonGoogle volverA={volverA} recordar={recordar} />
+
+      {/* Vale para las dos: la contraseña y Google. Por eso está debajo de ambas y no dentro
+          del formulario — ahí se leía como una opción del login con contraseña. */}
+      <div className="flex items-start gap-2 border-t pt-4">
+        <Checkbox
+          id="recordar"
+          className="mt-0.5"
+          checked={recordar}
+          onCheckedChange={(v) => setRecordar(v === true)}
+        />
+        <div className="space-y-1">
+          <Label htmlFor="recordar" className="font-normal">
+            Recordarme en este navegador
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            Vale para las dos formas de entrar. Sin esto se cierra la sesión al cerrar el
+            navegador —y volvés a poner el código de 6 dígitos—. No lo tildes en una computadora
+            compartida.
+          </p>
+        </div>
+      </div>
 
       {errorInicial && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
