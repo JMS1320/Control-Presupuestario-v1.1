@@ -104,8 +104,23 @@ export function AltaTOTP() {
         await supabase.auth.mfa.unenroll({ factorId: pendiente.id })
       }
 
+      /**
+       * ⚠️ `issuer` va explícito, y es lo que la persona va a leer en su app de autenticación
+       * durante años.
+       *
+       * Sin él, Supabase lo deduce del **Site URL** del proyecto, y la entrada queda nombrada
+       * `localhost:3000` — que no dice qué sistema es, y encima es el puerto de OTRA aplicación.
+       * `friendlyName` no alcanza: ése es el nombre interno que ve el admin en la lista de
+       * factores, no el del QR.
+       *
+       * Y por eso es un **nombre fijo y no la URL**: el QR se escanea una vez y esa entrada
+       * sobrevive al cambio de dominio. Si el issuer saliera del host, quien se inscribe hoy en
+       * local vería «localhost» en el teléfono para siempre, incluso después de pasar a
+       * producción — y dos ambientes distintos crearían entradas que parecen sistemas distintos.
+       */
       const { data, error: err } = await supabase.auth.mfa.enroll({
         factorType: "totp",
+        issuer: "Control Presupuestario",
         friendlyName: "Control Presupuestario",
       })
       if (cancelado) return
