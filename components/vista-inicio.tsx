@@ -47,6 +47,7 @@ export function VistaInicio({
   const [redim, setRedim] = useState<Redimension | null>(null)
   /** El alto en vivo mientras se arrastra el borde, antes de guardarlo. */
   const [altoVivo, setAltoVivo] = useState<{ id: string; px: number } | null>(null)
+  const [anchoVivo, setAnchoVivo] = useState<{ id: string; cols: 1 | 2 | null } | null>(null)
   const cajas = useRef<Record<string, HTMLDivElement | null>>({})
 
   const visibles = widgetsVisibles(elegidos, secciones)
@@ -79,15 +80,6 @@ export function VistaInicio({
   const guardarOrden = (ids: string[]) => persistir(ids, tamanos)
   const quitar = (id: string) => guardarOrden(elegidos.filter((w) => w !== id))
   const agregar = (id: string) => guardarOrden([...elegidos, id])
-
-  function mover(id: string, delta: number) {
-    const i = elegidos.indexOf(id)
-    const j = i + delta
-    if (i < 0 || j < 0 || j >= elegidos.length) return
-    const nuevos = [...elegidos]
-    ;[nuevos[i], nuevos[j]] = [nuevos[j], nuevos[i]]
-    guardarOrden(nuevos)
-  }
 
   function soltarEn(destino: string, lado: "antes" | "despues") {
     const origen = arrastrando
@@ -124,7 +116,14 @@ export function VistaInicio({
   function moverRedim(e: React.PointerEvent) {
     if (!redim) return
     if (redim.eje === "alto") {
-      setAltoVivo({ id: redim.id, px: Math.min(Math.max(redim.altoInicial + (e.clientY - redim.desdeY), 120), 800) })
+      setAltoVivo({
+        id: redim.id,
+        px: Math.min(Math.max(redim.altoInicial + (e.clientY - redim.desdeY), 120), 800),
+      })
+    } else {
+      // Aviso en vivo también para el ancho: sin esto, arrastrar el borde derecho no mostraba
+      // NADA hasta soltar, y si no llegabas al umbral parecía que la tarjeta estaba trabada.
+      setAnchoVivo({ id: redim.id, cols: e.clientX - redim.desdeX > 60 ? 2 : e.clientX - redim.desdeX < -60 ? 1 : null })
     }
   }
 
@@ -144,6 +143,7 @@ export function VistaInicio({
 
     setRedim(null)
     setAltoVivo(null)
+    setAnchoVivo(null)
     if (nuevo.ancho !== actual.ancho || nuevo.alto !== actual.alto) {
       persistir(elegidos, { ...tamanos, [w.id]: nuevo })
     }
@@ -231,14 +231,20 @@ export function VistaInicio({
           {visibles.map((w) => {
             const t = tamanoDe(w)
             const alto = altoVivo?.id === w.id ? altoVivo.px : t.alto
+            const ancho =
+              anchoVivo?.id === w.id && anchoVivo.cols !== null ? anchoVivo.cols : t.ancho
             return (
               <div
                 key={w.id}
                 ref={(el) => { cajas.current[w.id] = el }}
                 style={alto > 0 ? { minHeight: alto } : undefined}
                 className={[
-                  "group/w relative",
-                  t.ancho === 2 ? "sm:col-span-2" : "",
+                  // `flex` + `flex-1` en el hijo es lo que hace que el alto llegue a la tarjeta.
+                  // Con `min-height` en el contenedor y `h-full` adentro no pasaba nada: un
+                  // `height:100%` se resuelve contra la ALTURA del padre, que acá es `auto` —
+                  // así que la tarjeta quedaba de su tamaño y el contenedor crecía vacío.
+                  "group/w relative flex flex-col",
+                  ancho === 2 ? "sm:col-span-2" : "",
                   arrastrando === w.id ? "opacity-40" : "",
                 ].join(" ")}
                 /*
@@ -297,8 +303,6 @@ export function VistaInicio({
                       title="Arrastrame para mover la tarjeta"
                     >
                       <GripVertical className="h-4 w-4 text-muted-foreground" />
-                      <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => mover(w.id, -1)} aria-label={`Subir ${w.titulo}`}>↑</Button>
-                      <Button variant="ghost" size="sm" className="h-6 px-1.5" onClick={() => mover(w.id, 1)} aria-label={`Bajar ${w.titulo}`}>↓</Button>
                       <Button variant="ghost" size="sm" className="h-6 px-1.5 text-muted-foreground" onClick={() => quitar(w.id)} aria-label={`Quitar ${w.titulo}`}>
                         <X className="h-3.5 w-3.5" />
                       </Button>
@@ -325,7 +329,7 @@ export function VistaInicio({
                 )}
 
                 {/* Cada widget carga lo suyo: uno lento no tapa a los demás. */}
-                <div className={alto > 0 ? "h-full" : undefined}>
+                <div className="flex-1 [&>*]:h-full">
                   <w.Componente />
                 </div>
               </div>
