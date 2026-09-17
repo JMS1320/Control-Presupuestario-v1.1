@@ -194,9 +194,21 @@ misma foto. No son dos cuentas y no hay que elegir una vía para siempre.
 
 ⚠️ **Depende de que el email esté verificado de los dos lados.** `inviteUserByEmail` deja el mail
 sin confirmar hasta que la persona usa el link, y Supabase **no** vincula una identidad de Google a
-un usuario con mail sin verificar — es la defensa contra el *pre-account takeover*. Para alguien
-que va a entrar por Google conviene crear la cuenta ya confirmada
-(`admin.createUser({ email, email_confirm: true })`) en vez de invitarla.
+un usuario con mail sin verificar — es la defensa contra el *pre-account takeover*.
+
+✅ **Resuelto 2026-09-17** en `app/api/admin/usuarios/route.ts`: el alta marca `email_confirm: true`
+en la misma llamada que pone el rol. Se eligió esto y **no** reemplazar la invitación por
+`admin.createUser()`, porque `inviteUserByEmail` es lo único que **manda el mail**: cambiarlo habría
+obligado al admin a copiar un link a mano en todas las altas para arreglar un caso que es de Google.
+Así el alta queda igual que siempre y las dos vías funcionan desde el minuto cero.
+
+Damos el mail por confirmado porque **el admin ya está afirmando que es de esa persona** al
+escribirlo — el mismo acto de confianza que mandarle la invitación ahí. Escribirlo mal tiene
+exactamente la consecuencia que tenía antes: el acceso le llega a otro.
+
+⚠️ **Las cuentas invitadas ANTES de este cambio siguen sin confirmar**, y para ésas la vinculación
+no va a ocurrir: entrar con Google les crea una cuenta aparte, sin rol. La lista de `/usuarios` las
+marca *«invitación pendiente ⚠️»*. Se arregla solo cuando usan el link de invitación.
 
 #### Los dos caminos de alta terminan en el mismo lugar
 

@@ -50,6 +50,9 @@ export function PanelUsuarios({ miId }: { miId: string }) {
 
   useEffect(() => { cargar() }, [cargar])
 
+  /** Cuentas creadas que todavía nadie habilitó. Las revocadas no cuentan: ésas son a propósito. */
+  const esperandoRol = usuarios.filter((u) => !u.rol && !u.bloqueado)
+
   async function crear(e: React.FormEvent) {
     e.preventDefault()
     setCreando(true)
@@ -123,13 +126,36 @@ export function PanelUsuarios({ miId }: { miId: string }) {
 
   return (
     <div className="space-y-8">
+      {/*
+        Quien entra con Google sin estar dado de alta queda con la cuenta creada y SIN ROL,
+        esperando que un admin la habilite (A-FEAT-85). Sin este aviso, esa espera no la ve
+        nadie: la fila queda perdida en una lista ordenada por fecha. Es la § «alerta con
+        destinatario» de CLAUDE.md — el destinatario acá es el admin que está mirando esta
+        pantalla, y el momento es ahora.
+      */}
+      {esperandoRol.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p className="font-medium text-amber-900">
+            {esperandoRol.length === 1
+              ? "Hay 1 cuenta esperando que le asignes un rol"
+              : `Hay ${esperandoRol.length} cuentas esperando que les asignes un rol`}
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            Entraron con Google pero todavía no ven nada del sistema. Asignales el rol en la lista
+            de abajo: {esperandoRol.map((u) => u.email).join(" · ")}
+          </p>
+        </div>
+      )}
+
       {/* ---------- alta ---------- */}
       <section className="rounded-lg border bg-white p-4">
         <h2 className="mb-1 font-semibold">Crear cuenta</h2>
         <p className="mb-4 text-sm text-muted-foreground">
           No se define ninguna contraseña acá: le llega una <strong>invitación por mail</strong> y
           la persona elige la suya. Así nadie conoce la clave de otro. Si el mail no llega, cada
-          fila tiene <strong>Reenviar mail</strong> y <strong>Copiar link</strong>.
+          fila tiene <strong>Reenviar mail</strong> y <strong>Copiar link</strong>.{" "}
+          <strong>También puede entrar con Google</strong> usando ese mismo mail, sin tocar el
+          link: es la misma cuenta, con el rol que le pongas acá.
         </p>
 
         <form onSubmit={crear} className="flex flex-wrap items-end gap-3">
@@ -224,7 +250,20 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                     </TableCell>
                     <TableCell className="text-sm">{FECHA(u.ultimoIngreso)}</TableCell>
                     <TableCell className="text-sm">
-                      {u.bloqueado ? "🚫 revocado" : u.confirmado ? "activo" : "invitación pendiente"}
+                      {u.bloqueado ? (
+                        "🚫 revocado"
+                      ) : u.confirmado ? (
+                        "activo"
+                      ) : (
+                        // Una cuenta con el mail sin confirmar NO puede entrar con Google: Supabase
+                        // no vincula la identidad hasta que el mail está verificado (A-FEAT-85).
+                        // Las altas nuevas nacen confirmadas; las anteriores a ese cambio, no —
+                        // y el síntoma sería "entré con Google y no veo nada", que no se parece
+                        // en nada a la causa. Por eso se dice acá.
+                        <span title="Todavía no usó el link de invitación. Hasta que lo use, entrar con Google le va a crear una cuenta aparte.">
+                          invitación pendiente ⚠️
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {!soyYo && (

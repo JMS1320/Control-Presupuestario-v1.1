@@ -92,9 +92,25 @@ Arriba a la derecha, link **Usuarios** → pantalla `/usuarios`.
 3. La persona abre el link, **pone la contraseña que quiera** y ya entra. Vos nunca ves su clave.
 4. Si la hiciste **admin**, la primera vez le va a pedir configurar el segundo factor con el QR.
 
+**La persona puede entrar de las dos formas, con la misma cuenta**: con la contraseña que eligió
+desde el link, o con **Continuar con Google** usando ese mismo mail. No hay que decidirlo en el
+alta ni avisarle nada — es la misma cuenta, con el rol que le pusiste.
+
+### Cuando alguien se anota solo (2026-09-07 🟡)
+
+Si una persona entra con Google sin que la hayas dado de alta, **la cuenta se crea igual pero sin
+rol**: ve el cartel de *«tu cuenta todavía no tiene un rol asignado»* y nada más. Vos la vas a ver
+arriba de esta pantalla, en un **aviso ámbar** que dice cuántas cuentas están esperando rol y con
+qué mail. Le asignás el rol en la lista y listo — **no** hay que crearla de nuevo (si lo intentás,
+la pantalla te lo dice).
+
 En la lista de cuentas se ve el rol (cambiable ahí mismo), si tiene 2FA, el último ingreso y el
 estado. **Revocar** bloquea el acceso — **no borra la cuenta**, para no perder el rastro de lo que
 hizo, y se puede reactivar.
+
+⚠️ **«invitación pendiente ⚠️»** en la columna de estado quiere decir que esa persona todavía no
+usó su link. Hasta que lo use, **si entra con Google se le va a crear una cuenta aparte** en vez de
+la suya. Aplica sólo a las cuentas creadas antes del 17/09/2026; las nuevas ya nacen listas.
 
 Dos cosas que la pantalla no te deja hacer, a propósito: **cambiarte el rol a vos mismo** y
 **revocarte a vos mismo**. Si el único admin se bajara a contable, nadie podría volver a entrar
