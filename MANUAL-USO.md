@@ -152,6 +152,10 @@ dirección figura en su lista de **Redirect URLs**. Si no figura, **no da error*
 destino por el **Site URL** del proyecto y te devuelve un link que se ve perfecto y lleva a otro
 lado.
 
+Esa lista quedó configurada el **18/09/2026** con producción, los previews de Vercel y
+`localhost:3001`. **Si algún día cambia el dominio, o aparece un puerto nuevo, hay que agregarlo
+ahí** (Supabase → Authentication → URL Configuration) o los links de ese sitio dejan de funcionar.
+
 Por eso «Copiar link» tiene un **control**: compara a dónde pidió ir contra a dónde va el link que
 volvió. Si no coinciden, en vez del mensaje de éxito sale un **cartel rojo** que dice cuál fue el
 destino real y qué hay que agregar en Supabase. **Si ves ese cartel, no mandes el link**: arreglá

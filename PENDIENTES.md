@@ -229,7 +229,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) `@extracto` |
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
-| **A-BUG-98** | 🔴 | **Alta** | **Los links de invitación/recuperación creados desde producción van a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
+| **A-BUG-98** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -3383,8 +3383,8 @@ Modelo de edición acordado:
 
 | # | Paso | Tiene que pasar |
 |---|---|---|
-| 1 | **Antes de tocar Supabase**, en producción: Configuración → Usuarios → «Copiar link» | Sale el **cartel rojo** diciendo que Supabase reemplazó el destino por `http://localhost:3000`. Si sale el link como si nada, **el control no anda** |
-| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-98](#a-bug-98)) | — |
+| 1 | ~~Ver el cartel rojo con la config rota~~ | ⛔ **Ya no se puede probar**: la config se arregló el 2026-09-18 y el estado que lo disparaba desapareció. **El control del cartel queda sin verificar** — la forma honesta de probarlo sería sacar una Redirect URL a propósito, y no vale la pena tocar la config de auth para eso |
+| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-98](#a-bug-98)) | ✅ **HECHO 2026-09-18**, verificado por sondeo |
 | 3 | Repetir «Copiar link» en producción | Sin cartel, y el link lleva a `control-presupuestario-v2.vercel.app/auth/confirm` |
 | 4 | Lo mismo desde **local (3001)** | El link lleva a `localhost:3001`, **no** a producción |
 | 5 | Lo mismo desde un **preview** de Vercel | El link lleva **al preview**, no a producción — es lo que arregla el cambio de precedencia en `url-base.ts` |
@@ -3448,8 +3448,11 @@ notar el día del merge a `main`, que es el peor día para descubrirlo.
 
 ### El fix — tiene dos mitades y sólo una es mía
 
-**1 · Configuración de Supabase (la que resuelve el problema). La hace el usuario**, en
-Authentication → URL Configuration:
+**1 · Configuración de Supabase (la que resuelve el problema). La hizo el usuario el
+2026-09-18** ✅, en Authentication → URL Configuration. Verificado con el mismo sondeo: las cinco
+direcciones que usa la app (prod, preview, local 3001; `/auth/confirm` y `/auth/callback`) ahora se
+respetan, el Site URL pasó a ser producción, y `http://localhost:3000` quedó **fuera** — lo que
+apunte ahí rebota a producción en vez de golpear la otra app. Los valores que quedaron:
 
 - **Site URL** → `https://control-presupuestario-v2.vercel.app`
   *(es el fallback de todo lo que no matchee: tiene que ser un lugar válido, no `localhost`)*
