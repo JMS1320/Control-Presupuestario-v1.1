@@ -98,7 +98,7 @@ function leerTamanos(crudo: unknown): Record<string, { ancho: 1 | 2; alto: numbe
     const altoCrudo = typeof v.alto === "number" && Number.isFinite(v.alto) ? v.alto : 0
     salida[id] = {
       ancho: v.ancho === 2 ? 2 : 1,
-      alto: altoCrudo <= 0 ? 0 : Math.min(Math.max(altoCrudo, 120), 800),
+      alto: altoCrudo <= 0 ? 0 : Math.min(Math.max(altoCrudo, 100), 800),
     }
   }
   return salida

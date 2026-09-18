@@ -118,7 +118,7 @@ export function VistaInicio({
     if (redim.eje === "alto") {
       setAltoVivo({
         id: redim.id,
-        px: Math.min(Math.max(redim.altoInicial + (e.clientY - redim.desdeY), 120), 800),
+        px: Math.min(Math.max(redim.altoInicial + (e.clientY - redim.desdeY), 100), 800),
       })
     } else {
       // Aviso en vivo también para el ancho: sin esto, arrastrar el borde derecho no mostraba
@@ -248,7 +248,8 @@ export function VistaInicio({
               <div
                 key={w.id}
                 ref={(el) => { cajas.current[w.id] = el }}
-                style={alto > 0 ? { minHeight: alto } : undefined}
+                /* El alto va en el contenido, no acá: si lo pusiéramos en el contenedor, achicar
+                   dejaría la tarjeta flotando con espacio muerto debajo en vez de encogerse. */
                 className={[
                   // `flex` + `flex-1` en el hijo es lo que hace que el alto llegue a la tarjeta.
                   // Con `min-height` en el contenedor y `h-full` adentro no pasaba nada: un
@@ -306,7 +307,7 @@ export function VistaInicio({
                   <span
                     aria-hidden="true"
                     className={`absolute inset-y-0 z-20 w-1 rounded bg-primary ${
-                      encima.lado === "antes" ? "-left-2" : "-right-2"
+                      encima.lado === "antes" ? "left-0" : "right-0"
                     }`}
                   />
                 )}
@@ -316,7 +317,7 @@ export function VistaInicio({
                     {/* Manija: el único punto desde el que arranca el arrastre. Que la tarjeta
                         entera fuera el asa hacía que intentar seleccionar un texto moviera todo. */}
                     <div
-                      className="absolute -left-1 -top-2 z-10 flex cursor-grab items-center gap-0.5 rounded-md border bg-background p-1 shadow-sm active:cursor-grabbing"
+                      className="absolute left-1 top-1 z-10 flex cursor-grab items-center gap-0.5 rounded-md border bg-background p-1 shadow-sm active:cursor-grabbing"
                       title="Arrastrame para mover la tarjeta"
                     >
                       <GripVertical className="h-4 w-4 text-muted-foreground" />
@@ -331,7 +332,7 @@ export function VistaInicio({
                       onPointerMove={moverRedim}
                       onPointerUp={(e) => terminarRedim(e, w)}
                       title={t.ancho === 2 ? "Arrastrá a la izquierda para angostar" : "Arrastrá a la derecha para ensanchar"}
-                      className="absolute -right-1 inset-y-6 z-10 w-2 cursor-col-resize rounded-full bg-primary/0 transition-colors hover:bg-primary/60 group-hover/w:bg-primary/20"
+                      className="absolute right-0 inset-y-6 z-10 w-2 cursor-col-resize rounded-full bg-primary/0 transition-colors hover:bg-primary/60 group-hover/w:bg-primary/20"
                     />
 
                     {/* Borde INFERIOR — alto. */}
@@ -340,13 +341,22 @@ export function VistaInicio({
                       onPointerMove={moverRedim}
                       onPointerUp={(e) => terminarRedim(e, w)}
                       title="Arrastrá para cambiar el alto"
-                      className="absolute -bottom-1 inset-x-6 z-10 h-2 cursor-row-resize rounded-full bg-primary/0 transition-colors hover:bg-primary/60 group-hover/w:bg-primary/20"
+                      className="absolute bottom-0 inset-x-6 z-10 h-2 cursor-row-resize rounded-full bg-primary/0 transition-colors hover:bg-primary/60 group-hover/w:bg-primary/20"
                     />
                   </>
                 )}
 
                 {/* Cada widget carga lo suyo: uno lento no tapa a los demás. */}
-                <div className="flex-1 [&>*]:h-full">
+                {/*
+                  Con alto elegido: altura fija y **scroll adentro de la tarjeta**. Es lo que hace
+                  que achicar signifique algo — antes el contenido no se podía encoger, así que la
+                  tarjeta quedaba de su tamaño y el contenedor crecía vacío debajo.
+                  Sin alto elegido: lo que mida el contenido, que es lo que espera el masonry.
+                */}
+                <div
+                  className={alto > 0 ? "min-h-0 flex-1 overflow-y-auto" : "flex-1"}
+                  style={alto > 0 ? { height: alto } : undefined}
+                >
                   <w.Componente />
                 </div>
               </div>
