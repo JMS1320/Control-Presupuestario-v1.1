@@ -32,7 +32,9 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   const [email, setEmail] = useState("")
   const [rol, setRol] = useState<string>("contable")
   const [creando, setCreando] = useState(false)
-  const [invitacion, setInvitacion] = useState<{ email: string; link: string } | null>(null)
+  const [invitacion, setInvitacion] = useState<
+    { email: string; link: string; advertencia?: string | null } | null
+  >(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -146,8 +148,10 @@ export function PanelUsuarios({ miId }: { miId: string }) {
     const r = await fetch(`/api/admin/usuarios/${id}/link`, { method: "POST" })
     const j = await r.json()
     if (!r.ok) { toast.error(j.error ?? "No se pudo generar"); return }
-    setInvitacion({ email: j.email, link: j.link })
-    toast.success("Link nuevo generado.")
+    setInvitacion({ email: j.email, link: j.link, advertencia: j.advertencia })
+    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-98).
+    if (j.advertencia) toast.error("El link apunta a otro sitio. Mirá el aviso de abajo.")
+    else toast.success("Link nuevo generado.")
   }
 
   return (
@@ -214,6 +218,18 @@ export function PanelUsuarios({ miId }: { miId: string }) {
               Respaldo para cuando el mail no llega. Es de <strong>un solo uso</strong> y vence:
               pasáselo por un canal privado.
             </p>
+            {/*
+              El control de A-BUG-98. Grande y rojo porque el link se ve perfecto: sin esto, el
+              admin lo copia, lo manda, y el error aparece recién del otro lado.
+            */}
+            {invitacion.advertencia && (
+              <p
+                role="alert"
+                className="mb-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-medium text-red-800"
+              >
+                ⚠️ {invitacion.advertencia}
+              </p>
+            )}
             <div className="flex gap-2">
               <Input readOnly value={invitacion.link} className="font-mono text-xs" />
               <Button

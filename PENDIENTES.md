@@ -229,7 +229,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) `@extracto` |
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
-| **A-BUG-98** | 🔴 | **Alta** | **Los links de invitación/recuperación creados desde producción van a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@usuarios` |
+| **A-BUG-98** | 🔴 | **Alta** | **Los links de invitación/recuperación creados desde producción van a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -255,6 +255,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-94 | 🔴 | Test | **Recuperar el segundo factor** (A-FEAT-86) — **desde `/perfil`**: con el 2FA puesto, «cambiar de dispositivo» → sale QR nuevo → el código viejo **deja de servir** y el nuevo entra · «quitar» → al volver a entrar te pide inscribirlo de nuevo (si sos admin) . **Desde Usuarios**: un admin resetea a otro, el otro entra y cae en el alta del 2FA. ⚠️⚠️ **Los candados, que son lo que hay que probar salteando la UI**: que **no** se pueda resetear el 2FA con una sesión `aal1` (pegarle al endpoint a mano estando trabado en el desafío → **403**) · que un `contable` **no** pueda pegarle a ese endpoint · y que **no puedas resetearte a vos mismo** desde Usuarios (para eso está `/perfil`, que sí exige `aal2`) | → [A-FEAT-86](#a-feat-86) `@general` |
 | A-TEST-95 | 🔴 | Test | **Invitar a alguien de punta a punta** (A-FEAT-87) — con una cuenta **de verdad, que no sea tuya**: invitar desde Configuración → Usuarios · ⚠️ **ver si el mail llega** (el mailer interno de Supabase limita a ~2/hora: si no llega, usar «Copiar link», que es el respaldo previsto) · abrir el link → tiene que caer en **Bienvenida**, no en el login ni en un error · **definir contraseña** y salir y entrar con ella · repetir con otra persona pero **vinculando Google** en vez de contraseña, y que entre con Google · y una tercera que haga **las dos** y entre indistinto. ⚠️ **Lo que más se rompe**: que el link **vencido o ya usado** dé un mensaje que se entienda y no una pantalla en blanco · que quien ya tiene contraseña **no** pueda usar `/bienvenida` de otro · y que al terminar vea **sus** secciones según el rol que le pusiste | → [A-FEAT-87](#a-feat-87) `@general` |
 | A-TEST-96 | 🔴 | Test | **Inicio configurable** (A-FEAT-88) — elegir widgets, reordenarlos, salir y volver: tienen que quedar · quitar todos y que la pantalla **diga qué hacer** en vez de quedar en blanco · que cada widget muestre **lo mismo** que la pantalla de la que salió (comparar número por número: si difieren, se duplicó la lógica en vez de compartirla) · que el **camino al detalle** de cada uno lleve a donde se verifica el número. ⚠️⚠️ **El candado, salteando la UI**: con una cuenta `contable`, escribir a mano un widget de una sección que su rol NO tiene (`updateUser({data:{preferencias:{widgets:['cashflow…']}}})`) y recargar → **no se tiene que ver**. Si aparece, la preferencia está decidiendo un permiso · y que un widget que falla **no rompa los demás** | → [A-FEAT-88](#a-feat-88) `@principal` |
+| **A-TEST-97** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-98). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-97](#a-test-97) `@general` |
 
 ### Seguridad
 | ID | Estado | Prio | Ítem | Detalle |
@@ -3373,6 +3374,109 @@ Modelo de edición acordado:
 - **`pago` (SU PAGO) → cta cte**: el pago de la tarjeta concilia contra el débito en cuenta corriente. No implementado (hoy se rotula "pago → cta cte").
 - **Caso agrupado FC−NC**: ej MEDICUS 807.028,07 = FC 850.818,25 − NC 43.790,18. No auto-matchea por monto único → manual.
 - **37 facturas MSA en `conciliado` sin link a ningún movimiento** ($4.7M) — NO son del bug de tarjeta (no matchean montos de tarjeta). Revisar aparte (históricas / cancelaciones FC-NC / echeq / externas).
+
+---
+
+## <a id="a-test-97"></a>A-TEST-97 — El link de alta apunta a donde se creó (A-BUG-98)
+
+**Cómo se prueba** → `MANUAL-USO.md` § «A dónde lleva el link de alta».
+
+| # | Paso | Tiene que pasar |
+|---|---|---|
+| 1 | **Antes de tocar Supabase**, en producción: Configuración → Usuarios → «Copiar link» | Sale el **cartel rojo** diciendo que Supabase reemplazó el destino por `http://localhost:3000`. Si sale el link como si nada, **el control no anda** |
+| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-98](#a-bug-98)) | — |
+| 3 | Repetir «Copiar link» en producción | Sin cartel, y el link lleva a `control-presupuestario-v2.vercel.app/auth/confirm` |
+| 4 | Lo mismo desde **local (3001)** | El link lleva a `localhost:3001`, **no** a producción |
+| 5 | Lo mismo desde un **preview** de Vercel | El link lleva **al preview**, no a producción — es lo que arregla el cambio de precedencia en `url-base.ts` |
+| 6 | **Crear un usuario nuevo de verdad** y abrir el mail | El link del mail cae en `/bienvenida` del sitio correcto |
+| 7 | **Login con Google desde producción** | Vuelve a producción y no a `localhost:3000` (mismo origen del bug) |
+
+⚠️ El paso 5 **no se puede probar sin un deploy de preview**; y el 6 consume uno de los ~2 mails
+por hora del mailer de Supabase.
+
+---
+
+## <a id="a-bug-98"></a>A-BUG-98 — Los links de invitación creados desde producción van a `localhost:3000` (2026-09-18)
+
+**Hallado** al pedir el usuario que se verificara a dónde apunta el link que se genera al crear una
+cuenta. **No es un bug del código**: el código arma bien el destino y Supabase lo tira a la basura.
+
+### El mecanismo — un fallo que no devuelve error
+
+Supabase (GoTrue) **valida el `redirectTo` contra la lista de Redirect URLs del proyecto**. Si no
+coincide con ninguna, **no falla**: lo descarta y lo reemplaza por el **Site URL**. La llamada
+devuelve `error: null`, el mail sale, el link se ve perfecto — y lleva a otro lado.
+
+Es exactamente el modo de falla que `CLAUDE.md` marca dos veces: el `UPDATE` que matchea 0 filas y
+no falla (§ Contrapartes), y la categoría ausente que se asume por default (§ Templates). **El
+silencio miente.**
+
+### Lo verificado, 2026-09-18
+
+Sondeando `GET /auth/v1/verify` con un token inválido y distintos `redirect_to` — es una lectura,
+no crea nada, y GoTrue valida el destino **antes** que el token, así que el `Location` de la
+respuesta dice si la dirección está permitida y cuál es el fallback:
+
+| Destino pedido | Resultado |
+|---|---|
+| `https://control-presupuestario-v2.vercel.app/auth/confirm` | ❌ rechazado |
+| `https://control-presupuestario-v2.vercel.app/` | ❌ rechazado |
+| `https://control-presupuestario-v2.vercel.app/auth/callback` | ❌ rechazado |
+| `https://control-presupuestario-v2-git-<rama>.vercel.app/…` (preview) | ❌ rechazado |
+| `http://localhost:3001/…` | ✅ aceptado |
+| `http://localhost:3000/…` | ✅ aceptado |
+
+Y todos los rechazados caen en el mismo lugar: **`http://localhost:3000`**, que es el Site URL del
+proyecto.
+
+⚠️ **`localhost:3000` no es ni siquiera esta app**: es **otra aplicación del usuario** (lo aclaró
+él mismo el 2026-09-17, cuando este proyecto se levantó en el 3001). O sea que el link de una
+invitación termina golpeando un sistema ajeno.
+
+### El alcance es más ancho que las invitaciones
+
+La misma lista gobierna **todo** destino de vuelta de Auth. Como el host de producción está
+ausente por completo —no es un problema del path ni del query string—, desde producción **también**
+quedan rotos:
+
+- el **login con Google** (`/auth/callback`, `components/boton-google.tsx` → [A-FEAT-85](#a-feat-85));
+- el **«Reenviar mail»** y el **«Copiar link»** de Usuarios ([A-FEAT-85](#a-feat-85));
+- cualquier recuperación de contraseña.
+
+Hoy no se nota **porque producción corre código viejo y nadie invitó desde ahí todavía**. Se va a
+notar el día del merge a `main`, que es el peor día para descubrirlo.
+
+### El fix — tiene dos mitades y sólo una es mía
+
+**1 · Configuración de Supabase (la que resuelve el problema). La hace el usuario**, en
+Authentication → URL Configuration:
+
+- **Site URL** → `https://control-presupuestario-v2.vercel.app`
+  *(es el fallback de todo lo que no matchee: tiene que ser un lugar válido, no `localhost`)*
+- **Redirect URLs** → las cuatro:
+  - `https://control-presupuestario-v2.vercel.app/**`
+  - `https://control-presupuestario-v2-*.vercel.app/**` ← los previews
+  - `http://localhost:3001/**`
+  - `http://localhost:3000/**` sólo si se quiere conservar; **conviene sacarla**, porque ahí
+    corre otra app y es la que hoy recibe los tokens.
+
+**2 · Código (hecho 2026-09-18).** Dos cosas, ninguna sustituye a la anterior:
+
+- **`lib/auth/url-base.ts`** — en un **preview de Vercel, el host del deploy gana sobre
+  `NEXT_PUBLIC_SITE_URL`**. Motivo: al agregar una variable en Vercel se marcan los **tres**
+  entornos por defecto, así que con la regla al revés un admin que invita desde un preview
+  mandaría un link a **producción**, que en ese momento corre otro código. El pedido del usuario
+  fue que el link caiga **donde se creó**.
+- **El control** (§ 🧮 de `CLAUDE.md`, y de los baratos: el mismo dato por dos caminos).
+  `generateLink` devuelve el link ya armado, así que el destino que Supabase **aceptó** viaja en su
+  query string. `destinoDescartado()` lo compara con el que pedimos; si no coinciden, el endpoint
+  `/api/admin/usuarios/[id]/link` devuelve `advertencia` y `components/panel-usuarios.tsx` la
+  muestra **en rojo**, sin toast de éxito. Convierte un fallo mudo en un cartel.
+
+⚠️ **El control no cubre `inviteUserByEmail` ni `resetPasswordForEmail`**: esas no devuelven el
+link, sólo mandan el mail, así que no hay con qué comparar. Ahí la única red es la configuración.
+
+**SIN TESTEAR** → [A-TEST-97](#a-test-97)
 
 ---
 

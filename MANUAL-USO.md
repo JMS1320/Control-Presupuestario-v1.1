@@ -141,6 +141,27 @@ acá nunca más.
 ⚠️ **La primera cuenta admin no se crea acá** (esta pantalla ya exige ser admin): esa se hace una
 sola vez desde el dashboard de Supabase. Ver `MODULO_USUARIOS.md` § 0.
 
+### 🟡 A dónde lleva el link de alta *(sin testear — A-TEST-97)*
+
+**El link apunta al sitio desde el que lo creaste**: si lo generás en producción lleva a
+producción, si lo generás en local lleva a tu local, y si lo generás en un preview de Vercel lleva
+a ese preview. No hace falta hacer nada para eso.
+
+⚠️ **Pero hay una condición que está fuera de la app**: Supabase sólo respeta ese destino si la
+dirección figura en su lista de **Redirect URLs**. Si no figura, **no da error** — cambia el
+destino por el **Site URL** del proyecto y te devuelve un link que se ve perfecto y lleva a otro
+lado.
+
+Por eso «Copiar link» tiene un **control**: compara a dónde pidió ir contra a dónde va el link que
+volvió. Si no coinciden, en vez del mensaje de éxito sale un **cartel rojo** que dice cuál fue el
+destino real y qué hay que agregar en Supabase. **Si ves ese cartel, no mandes el link**: arreglá
+la configuración primero (Authentication → URL Configuration; los valores exactos están en
+`PENDIENTES.md` § A-BUG-98).
+
+El control **no llega** a «Reenviar mail» ni al mail de la invitación: esos no devuelven el link,
+así que no hay con qué comparar. Si dudás, generá un «Copiar link» primero — si ese cierra, el
+mail también.
+
 ### Cerrar sesión
 Desde el botón de salir. (No se cierra sola por abrir un link: el logout es sólo por POST, a
 propósito, para que nadie pueda desloguearte con una imagen escondida en una página.)
