@@ -2871,7 +2871,31 @@ ${marca}` : marca
                   Filtrar
                 </Button>
                 <Button
-                  onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
+                  onClick={() => {
+                    /**
+                     * 📅 **Al ABRIR el panel, mes y año ya puestos** — pedido del usuario
+                     * 2026-09-20: *«que por default ya sea mes 09 año 2026, porque es el mes y año
+                     * actual; yo hoy escribiría que quiero ir del 19 06 y ya estará completo 2026»*.
+                     *
+                     * Un `<input type="date">` no deja precargar sólo el mes y el año, así que se
+                     * cargan las dos fechas del mes actual: al tipear el día —y el mes si cambia—
+                     * el año ya está. Escribir `19/06` sobre `01/09/2026` deja `19/06/2026`.
+                     *
+                     * 🔑 **Se precarga al abrir el panel y no al entrar a la pantalla**, y eso es lo
+                     * que lo hace seguro: el panel tiene su botón *Aplicar*, así que tener fechas
+                     * escritas **no filtra nada** hasta que el usuario lo decide.
+                     *
+                     * 📌 Y sólo si están vacías: nunca pisa un rango que el usuario ya puso.
+                     */
+                    if (!mostrarFiltrosAvanzados && !fechaMovDesde && !fechaMovHasta) {
+                      const h = new Date()
+                      const p2 = (n: number) => String(n).padStart(2, '0')
+                      const y = h.getFullYear(), m = h.getMonth()
+                      setFechaMovDesde(`${y}-${p2(m + 1)}-01`)
+                      setFechaMovHasta(`${y}-${p2(m + 1)}-${p2(new Date(y, m + 1, 0).getDate())}`)
+                    }
+                    setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)
+                  }}
                   variant={mostrarFiltrosAvanzados ? "default" : "outline"}
                   size="sm"
                 >
@@ -3667,7 +3691,15 @@ ${marca}` : marca
                             />
                           </TableHead>
                         )}
-                        <TableHead>Fecha</TableHead>
+                        {/*
+                          📅 **A-FEAT-156 también acá** — pedido del usuario 2026-09-20: *«lo que
+                          hiciste con Cash Flow de la columna de fecha siempre a la vista lo preciso
+                          también para extracto bancario»*. Con las columnas opcionales encendidas
+                          (detalle, proveedor, comprobantes, motivo…) la tabla se va lejos a la
+                          derecha y se pierde de qué fila se está leyendo.
+                          ⚠️ Lleva fondo propio: sin él se ve pasar el contenido por debajo.
+                        */}
+                        <TableHead className="sticky left-0 z-20 bg-gray-50">Fecha</TableHead>
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Débitos</TableHead>
                         <TableHead className="text-right">Créditos</TableHead>
@@ -3705,7 +3737,7 @@ ${marca}` : marca
                               />
                             </TableCell>
                           )}
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className="font-mono text-sm sticky left-0 z-10 bg-white">
                             {new Date(movimiento.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
                           </TableCell>
                           <TableCell className="max-w-xs truncate">
