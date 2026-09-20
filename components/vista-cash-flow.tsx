@@ -5,6 +5,7 @@ import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
+import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
@@ -3529,24 +3530,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 {/* Filtros de fecha */}
+                {/*
+                  📅 A-FEAT-161 — el rango compartido. Con «Este mes» / «Mes anterior» ya no hay que
+                  tipear el año, que era el pedido: *«yo hoy escribiría 19 06 y ya estará completo
+                  2026»*. **No autollena al montar**: este panel filtra en vivo, así que precargar
+                  un mes escondería el resto sin que nadie lo haya pedido.
+                */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">📅 Rango de Fechas</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="date"
-                      placeholder="Desde"
-                      value={fechaDesde}
-                      onChange={(e) => setFechaDesde(e.target.value)}
-                      className="text-xs"
-                    />
-                    <Input
-                      type="date"
-                      placeholder="Hasta"
-                      value={fechaHasta}
-                      onChange={(e) => setFechaHasta(e.target.value)}
-                      className="text-xs"
-                    />
-                  </div>
+                  <RangoDeFechas
+                    desde={fechaDesde}
+                    hasta={fechaHasta}
+                    onCambiar={(d, h) => { setFechaDesde(d); setFechaHasta(h) }}
+                  />
                 </div>
                 
                 {/* Búsqueda de proveedor */}

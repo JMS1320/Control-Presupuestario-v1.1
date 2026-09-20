@@ -57,6 +57,7 @@ import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
+import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1399,6 +1400,26 @@ export function correrCasos(): Resultado[] {
     "no opina",
     pareceDetalleAutogenerado("FC 482 - X", "") || pareceDetalleAutogenerado("", "X") ? "opina" : "no opina",
     pareceDetalleAutogenerado("FC 482 - X", "") === false && pareceDetalleAutogenerado("", "X") === false, "A-DAT-54")
+
+  // ══ 📅 EL RANGO DE FECHAS COMPARTIDO (A-FEAT-161) ═══════════════════════════════════════════
+  chequear("Rango de fechas", "📅 Un mes va del 1 al ultimo dia, con ceros",
+    "2026-09-01 a 2026-09-30", `${mesCompleto(2026, 8).desde} a ${mesCompleto(2026, 8).hasta}`,
+    mesCompleto(2026, 8).desde === "2026-09-01" && mesCompleto(2026, 8).hasta === "2026-09-30",
+    "A-FEAT-161")
+
+  chequear("Rango de fechas", "Febrero de un año bisiesto termina el 29",
+    "2024-02-29", mesCompleto(2024, 1).hasta, mesCompleto(2024, 1).hasta === "2024-02-29", "A-FEAT-161")
+
+  // 🔑 El mes anterior tiene que cruzar bien el cambio de año: enero -> diciembre del año pasado.
+  chequear("Rango de fechas", "🔑 En enero, el mes anterior es diciembre del año pasado",
+    "2025-12-01 a 2025-12-31",
+    `${mesAnterior(new Date(2026, 0, 15)).desde} a ${mesAnterior(new Date(2026, 0, 15)).hasta}`,
+    mesAnterior(new Date(2026, 0, 15)).desde === "2025-12-01"
+      && mesAnterior(new Date(2026, 0, 15)).hasta === "2025-12-31", "A-FEAT-161")
+
+  chequear("Rango de fechas", "El mes actual sale de la fecha que se le pase",
+    "2026-07-01", mesActual(new Date(2026, 6, 20)).desde,
+    mesActual(new Date(2026, 6, 20)).desde === "2026-07-01", "A-FEAT-161")
 
   return r
 }

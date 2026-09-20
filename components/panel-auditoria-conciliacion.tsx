@@ -32,6 +32,7 @@ import {
 import { proveedorDelTemplate } from "@/lib/conciliacion/datos-del-origen"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
+import { RangoDeFechas } from "@/components/rango-de-fechas"
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -384,50 +385,19 @@ export function PanelAuditoriaConciliacion() {
           </p>
 
           {/* 📅 El rango, para mirar un lote de conciliación sin que el resto lo tape. */}
-          <div className="flex flex-wrap items-end gap-3 p-3 bg-gray-50 rounded-md border">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Desde</label>
-              <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
-                className="border rounded px-2 py-1 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Hasta</label>
-              <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
-                className="border rounded px-2 py-1 text-sm" />
-            </div>
-            {/*
-              📅 **Atajos de mes — pedido del usuario 2026-09-19**: *«para los filtros por fecha
-              quiero que siempre para mes y año la app por default tenga el mes y el año actual»*.
-              Con un click quedan puestos el 1 y el último día, sin tipear.
-
-              📌 **Los campos arrancan VACÍOS a propósito**: si el default fuera el mes actual, la
-              primera corrida mostraría 0 conciliados (todavía no hay nada de septiembre) y parecería
-              que el audit no encuentra nada. El atajo da la comodidad sin esconder el universo.
-            */}
-            <Button variant="outline" size="sm" onClick={() => {
-              const h = new Date()
-              const p = (n: number) => String(n).padStart(2, '0')
-              setDesde(`${h.getFullYear()}-${p(h.getMonth() + 1)}-01`)
-              setHasta(`${h.getFullYear()}-${p(h.getMonth() + 1)}-${p(new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate())}`)
-            }}>Este mes</Button>
-            <Button variant="outline" size="sm" onClick={() => {
-              const h = new Date(); const m = h.getMonth() - 1
-              const y = m < 0 ? h.getFullYear() - 1 : h.getFullYear()
-              const mes = ((m % 12) + 12) % 12
-              const p = (n: number) => String(n).padStart(2, '0')
-              setDesde(`${y}-${p(mes + 1)}-01`)
-              setHasta(`${y}-${p(mes + 1)}-${p(new Date(y, mes + 1, 0).getDate())}`)
-            }}>Mes anterior</Button>
-            {(desde || hasta) && (
-              <Button variant="ghost" size="sm" onClick={() => { setDesde(''); setHasta('') }}>
-                Ver todo
-              </Button>
-            )}
-            <p className="text-xs text-gray-500 flex-1 min-w-[16rem]">
-              {desde || hasta
+          {/*
+            📅 A-FEAT-161 — el mismo componente que el Cash Flow. Antes esto tenía su propia copia
+            de los atajos de mes; dos copias de lo mismo es cómo empiezan a divergir.
+          */}
+          <div className="p-3 bg-gray-50 rounded-md border">
+            <RangoDeFechas
+              desde={desde}
+              hasta={hasta}
+              onCambiar={(d, h) => { setDesde(d); setHasta(h) }}
+              ayuda={desde || hasta
                 ? 'Con rango se miran sólo los movimientos de esas fechas — útil para revisar el lote que acabás de conciliar. Las facturas de ARCA quedan fuera: no tienen fecha de movimiento.'
                 : 'Sin rango audita todo. Poné fechas para mirar sólo un lote.'}
-            </p>
+            />
           </div>
 
           <p className="text-gray-500">
