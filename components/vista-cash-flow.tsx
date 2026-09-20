@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
@@ -1195,6 +1195,37 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Los chips de origen (siempre visibles) ya filtran; en Modo Pagos usamos el mismo set operativo.
   const datosFiltradosPagos = datosOperativos
+
+  /**
+   * 🧹 **A-BUG-177 — al filtrar, se suelta lo seleccionado que dejó de verse.**
+   *
+   * Reportado por el usuario 2026-09-19: *«permanecen seleccionadas cosas que no están siendo vistas
+   * luego del filtro, eso es peligroso»*.
+   *
+   * 🔑 **Y es peligroso de verdad, no incómodo**: las acciones de la barra de PAGOS operan sobre
+   * `filasSeleccionadas`, así que una fila que quedó marcada y ya no se ve **igual se paga, se
+   * agrupa o se exporta** — el usuario aprieta el botón mirando tres filas y toca cinco.
+   *
+   * 📌 **Y no se vuelve a marcar sola al desfiltrar**, que es la otra mitad de lo que pidió: si al
+   * volver a filtrar reapareciera seleccionada, el olvido volvería con ella. Se suelta y punto —
+   * volver a marcar es barato; pagar de más, no.
+   */
+  useEffect(() => {
+    setFilasSeleccionadas(prev => {
+      if (prev.size === 0) return prev
+      const visibles = new Set(datosFiltradosPagos.map(f => f.id))
+      const quedan = [...prev].filter(id => visibles.has(id))
+      return quedan.length === prev.size ? prev : new Set(quedan)
+    })
+  }, [datosFiltradosPagos])
+
+  /** 💰 Lo que suma lo seleccionado — pedido del usuario: ver el total antes de apretar Pagar. */
+  const totalSeleccionado = useMemo(() => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const debitos = filas.reduce((s, f) => s + (Number(f.debitos) || 0), 0)
+    const creditos = filas.reduce((s, f) => s + (Number(f.creditos) || 0), 0)
+    return { debitos, creditos, neto: debitos - creditos, cantidad: filas.length }
+  }, [datosOperativos, filasSeleccionadas])
 
   /**
    * Si hay UNA sola fila seleccionada y es un grupo, el botón "Agrupar" pasa a ser "Desagrupar".
@@ -3695,8 +3726,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-blue-800">
-                    💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}
+                  {/*
+                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
+                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
+                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
+                    justo lo que uno quiere notar antes de pagar.
+                  */}
+                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
+                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
+                    {totalSeleccionado.cantidad > 0 && (
+                      <span className="text-sm font-normal">
+                        {totalSeleccionado.debitos > 0 && (
+                          <span className="text-red-700 font-semibold tabular-nums">
+                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {totalSeleccionado.creditos > 0 && (
+                          <span className="text-green-700 font-semibold tabular-nums ml-3">
+                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </h4>
                   <div className="flex items-center gap-2">
                     <Button

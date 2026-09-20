@@ -1188,12 +1188,38 @@ ${texto.trim()}` : texto.trim()
                 .eq('id', movimiento.template_cuota_id)
             }
 
-            // Pago sueldo ya vinculado
+            /**
+             * 🔗 **A-BUG-176 — si el pago es de un GRUPO, se concilian TODOS sus miembros.**
+             *
+             * El vínculo guarda **el primer miembro** del grupo, y eso es deliberado (A-BUG-41): un
+             * `grupo_pago_id` en `sueldo_pago_id` apuntaría a otra tabla, y desde el primer pago se
+             * llega al grupo. **Eso no se toca.**
+             *
+             * 🧨 Lo que faltaba es la otra mitad: marcar `conciliado` **sólo al primero** deja a los
+             * demás en `pendiente`, así que el mismo pago bancario aparece medio saldado — y los
+             * miembros restantes se vuelven a ofrecer para conciliar contra otra cosa.
+             *
+             * 📌 Caso real: los haberes de $2.699.370 son **3 pagos y 2 beneficiarios**
+             * (Sigot ×2 + Barreto). Sin esto quedarían conciliados $1.487.477 de los tres.
+             */
             if (movimiento.sueldo_pago_id) {
-              await supabase
+              const { data: pagoVinculado } = await supabase
                 .from('sueldos_pagos')
-                .update({ estado: 'conciliado' })
+                .select('id, grupo_pago_id')
                 .eq('id', movimiento.sueldo_pago_id)
+                .maybeSingle()
+
+              if (pagoVinculado?.grupo_pago_id) {
+                await supabase
+                  .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('grupo_pago_id', pagoVinculado.grupo_pago_id)
+              } else {
+                await supabase
+                  .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', movimiento.sueldo_pago_id)
+              }
             }
           }
         }
