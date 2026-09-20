@@ -304,13 +304,16 @@ export function PanelAuditoriaConciliacion() {
    */
   async function aplicarCausa(g: ResumenCorregible) {
     const clave = `${g.control}|${g.causa}`
+    const distintas = [...new Set(g.correcciones.map(c => c.explicacion))]
+    const SALTO = String.fromCharCode(10)
+    const detalle = distintas.length === 1
+      ? distintas[0]
+      : `Cada movimiento recibe su propio valor (${distintas.length} distintos):` + SALTO +
+        ' · ' + distintas.slice(0, 8).join(SALTO + ' · ') + (distintas.length > 8 ? SALTO + ' · …' : '')
     if (!confirm(
-      `Se van a corregir ${g.corregibles} movimientos.
-
-${g.correcciones[0]?.explicacion ?? ''}
-
-` +
-      `Antes se descarga una foto del estado actual. ¿Aplicar?`)) return
+      `Se van a corregir ${g.corregibles} movimientos.` + SALTO + SALTO +
+      detalle + SALTO + SALTO +
+      '¿Aplicar? Antes se descarga una foto del estado actual.')) return
 
     setAplicando(clave)
     try {
@@ -364,7 +367,7 @@ ${g.correcciones[0]?.explicacion ?? ''}
             </span>
             <span className="flex gap-2">
               {res && (
-                <Button variant="outline" onClick={() => exportarAuditoria(res)}>
+                <Button variant="outline" onClick={() => exportarAuditoria(res, rangoCorrido)}>
                   <Download className="h-4 w-4 mr-2" />Descargar Excel
                 </Button>
               )}
@@ -516,8 +519,26 @@ ${g.correcciones[0]?.explicacion ?? ''}
                   return (
                     <div key={clave} className="flex flex-wrap items-center gap-3 bg-white border rounded-md px-3 py-2 text-xs">
                       <span className="font-medium min-w-[10rem]">{g.causa}</span>
+                      {/*
+                        ⚠️ **La explicación sólo se muestra cuando vale para TODAS.**
+
+                        🧨 Lo vio el usuario en la primera corrida real: el botón decía *«Corregir 4
+                        — Poner "Comision Extraccion Efectivo - Junio 2026"»*, pero los 4 eran
+                        movimientos **distintos** (Comisión, IVA, Percepción, Imp. al Débito) y cada
+                        uno recibe **su propio** comprobante. El parche estaba bien; **el cartel
+                        mentía**, y eso es peor: se aprueba creyendo otra cosa.
+
+                        Cuando difieren se dice cuántos valores distintos hay y se muestran los
+                        primeros, para que se pueda evaluar sin abrir nada.
+                      */}
                       <span className="text-gray-500 flex-1 min-w-[14rem]">
-                        {g.correcciones[0]?.explicacion}
+                        {(() => {
+                          const distintas = [...new Set(g.correcciones.map(c => c.explicacion))]
+                          if (distintas.length === 1) return distintas[0]
+                          const muestra = distintas.slice(0, 3).map(d =>
+                            d.replace(/^Poner «/, '').replace(/», que es lo que dice el origen$/, '').replace(/»$/, ''))
+                          return `Cada uno recibe el suyo (${distintas.length} distintos): ${muestra.join(' · ')}${distintas.length > 3 ? '…' : ''}`
+                        })()}
                       </span>
                       {g.manuales > 0 && (
                         <Badge variant="outline" className="font-normal">

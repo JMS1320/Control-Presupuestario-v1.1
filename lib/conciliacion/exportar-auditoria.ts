@@ -44,7 +44,27 @@ function filaDe(h: Hallazgo) {
   }
 }
 
-export function exportarAuditoria(res: ResultadoAuditoria, fecha = new Date()) {
+/**
+ * 📅 **El nombre del archivo dice el PERÍODO auditado, no el día en que se bajó.**
+ *
+ * Pedido del usuario 2026-09-20: *«el nombre del excel debe ser sobre el período filtrado, no
+ * siempre sobre la fecha de hoy»*. 🔑 Con la fecha de descarga, dos auditorías de **meses
+ * distintos** bajadas el mismo día se llaman igual y se pisan en la carpeta; y al abrir una vieja no
+ * hay forma de saber qué rango mirabas.
+ */
+function nombreDelArchivo(rango?: { desde?: string; hasta?: string } | null, hoy = new Date()): string {
+  const d = (rango?.desde ?? '').slice(0, 10)
+  const h = (rango?.hasta ?? '').slice(0, 10)
+  if (!d && !h) return `Auditoria_conciliacion_completa_${hoy.toISOString().slice(0, 10)}`
+  if (d && h && d === h) return `Auditoria_conciliacion_${d}`
+  return `Auditoria_conciliacion_${d || 'inicio'}_a_${h || 'hoy'}`
+}
+
+export function exportarAuditoria(
+  res: ResultadoAuditoria,
+  rango?: { desde?: string; hasta?: string } | null,
+  fecha = new Date(),
+) {
   const wb = XLSX.utils.book_new()
 
   const resumen = [
@@ -75,7 +95,6 @@ export function exportarAuditoria(res: ResultadoAuditoria, fecha = new Date()) {
       hoja(`${i + 1} ${g.titulo.replace(/^🕳️ /, "")}`))
   })
 
-  const d = fecha.toISOString().slice(0, 10)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const blob = new Blob([out], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -83,7 +102,7 @@ export function exportarAuditoria(res: ResultadoAuditoria, fecha = new Date()) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `Auditoria_conciliacion_${d}.xlsx`
+  a.download = `${nombreDelArchivo(rango, fecha)}.xlsx`
   document.body.appendChild(a)
   a.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
