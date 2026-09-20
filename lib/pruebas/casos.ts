@@ -53,6 +53,7 @@ import {
   type CuotaExistente, type MovimientoBancario as MovBancario,
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
+import { heredarDelOrigen, proveedorDelTemplate } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -1146,6 +1147,52 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle de pago", "🐞 Las fechas salen todas en dd/mm/aaaa, vengan de donde vengan",
     "28/08/2026 · 15/09/2026", `${fechasMixtas[0].fecha} · ${fechasMixtas[1].fecha}`,
     fechasMixtas[0].fecha === "28/08/2026" && fechasMixtas[1].fecha === "15/09/2026", "A-BUG-173")
+
+  // ══ 🧲 LO QUE EL MOVIMIENTO HEREDA DEL ORIGEN (A-BUG-175) ════════════════════════════════════
+  // Caso real del lote 19-30/06: un impuesto al debito NO trae CUIT en el extracto, asi que el
+  // proveedor quedaba vacio aunque el template dijera Banco Galicia.
+  const tplBanco = { nombre_referencia: "Debitos / Creditos", responsable: "MSA",
+                     nombre_quien_cobra: null, proveedor: "Banco Galicia", centro_costo: null }
+
+  const h1 = heredarDelOrigen({}, tplBanco, "Debitos / Creditos MSA - Junio 2026", null)
+  chequear("Herencia del origen", "🧲 El impuesto al debito hereda el proveedor DEL TEMPLATE",
+    "Banco Galicia", String(h1.proveedor_nombre), h1.proveedor_nombre === "Banco Galicia", "A-BUG-175")
+  chequear("Herencia del origen", "🧾 Y el comprobante con su periodo",
+    "Debitos / Creditos MSA - Junio 2026", String(h1.comprobantes_pagados),
+    h1.comprobantes_pagados === "Debitos / Creditos MSA - Junio 2026", "A-BUG-175")
+
+  // 🔑 La precedencia que fijo el usuario: el ORIGEN le gana al banco.
+  const h2 = heredarDelOrigen({}, tplBanco, null, "OTRO QUE INFORMA EL BANCO")
+  chequear("Herencia del origen", "🔑 Si el template tiene proveedor, ese entra — no el del banco",
+    "Banco Galicia", String(h2.proveedor_nombre),
+    h2.proveedor_nombre === "Banco Galicia" && h2.proveedorVieneDelBanco === false, "A-BUG-175")
+
+  // Recien si el origen no tiene nada, se usa el del banco -- y queda marcado para poder preguntar.
+  const h3 = heredarDelOrigen({}, { nombre_referencia: "X", responsable: "MSA" }, null, "PROVEEDOR DEL BANCO")
+  chequear("Herencia del origen", "🏦 Sin dato en el origen se usa el del banco, y se MARCA",
+    "PROVEEDOR DEL BANCO · marcado", `${h3.proveedor_nombre} · ${h3.proveedorVieneDelBanco ? "marcado" : "sin marcar"}`,
+    h3.proveedor_nombre === "PROVEEDOR DEL BANCO" && h3.proveedorVieneDelBanco === true, "A-BUG-175")
+
+  // ⚠️ Lo que el usuario escribio a mano NUNCA se pisa.
+  const h4 = heredarDelOrigen({ proveedor_nombre: "LO QUE PUSE YO", comprobantes_pagados: "MI COMPROBANTE" },
+    tplBanco, "Debitos / Creditos MSA - Junio 2026", "DEL BANCO")
+  chequear("Herencia del origen", "⚠️ Lo escrito a mano nunca se pisa",
+    "LO QUE PUSE YO · MI COMPROBANTE", `${h4.proveedor_nombre} · ${h4.comprobantes_pagados}`,
+    h4.proveedor_nombre === "LO QUE PUSE YO" && h4.comprobantes_pagados === "MI COMPROBANTE", "A-BUG-175")
+
+  // 📛 nombre_quien_cobra y proveedor son LO MISMO; gana la completa (proveedor esta truncado a 30).
+  chequear("Herencia del origen", "📛 Gana `nombre_quien_cobra`: `proveedor` viene truncado a 30",
+    "Consorcio De Propietarios Posadas",
+    String(proveedorDelTemplate({ nombre_quien_cobra: "Consorcio De Propietarios Posadas",
+                                  proveedor: "Consorcio De Propietarios Posa" })),
+    proveedorDelTemplate({ nombre_quien_cobra: "Consorcio De Propietarios Posadas",
+                           proveedor: "Consorcio De Propietarios Posa" }) === "Consorcio De Propietarios Posadas",
+    "A-BUG-175")
+
+  // 🏷️ El centro de costo tambien baja del template (A-FEAT-153).
+  const h5 = heredarDelOrigen({}, { ...tplBanco, centro_costo: "Estructura" }, null, null)
+  chequear("Herencia del origen", "🏷️ El centro de costo tambien se hereda del template",
+    "Estructura", String(h5.centro_de_costo), h5.centro_de_costo === "Estructura", "A-FEAT-153")
 
   return r
 }

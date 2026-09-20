@@ -11,6 +11,8 @@ import {
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
+import { heredarDelOrigen, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
+import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -814,9 +816,38 @@ export function useMotorConciliacion() {
                   if (codigosTab2F2.contable) extraRegla.contable = codigosTab2F2.contable
                   if (codigosTab2F2.interno) extraRegla.interno = codigosTab2F2.interno
 
+                  /**
+                   * 🧲 **A-BUG-175 — recién acá se sabe a qué template quedó vinculado, así que
+                   * recién acá se puede heredar de él.**
+                   *
+                   * El UPDATE de arriba dejó el proveedor que salía del **CUIT bancario**, que en
+                   * un impuesto al débito o una comisión **no existe**. Ahora que hay template, se
+                   * aplica la precedencia que fijó el usuario: *lo que escribió a mano* manda sobre
+                   * *lo que dice el origen*, y el origen manda sobre *lo que informa el banco*.
+                   *
+                   * 📌 Se pasa `movimiento.proveedor_nombre` —el valor **previo** a conciliar— como
+                   * «lo del usuario», y `provNombreRegla` como «lo del banco». Si no fuera así, el
+                   * proveedor recién escrito por el CUIT se tomaría por manual y bloquearía al
+                   * template, que es justo lo que este bug venía haciendo.
+                   */
+                  const herencia = heredarDelOrigen(
+                    { proveedor_nombre: (movimiento as any).proveedor_nombre,
+                      comprobantes_pagados: (movimiento as any).comprobantes_pagados,
+                      centro_de_costo: (movimiento as any).centro_de_costo },
+                    cuotaResult.template,
+                    identificadorDeCuota(
+                      { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
+                      cuotaResult.template ?? {}),
+                    provNombreRegla,
+                  )
+
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,
+                    proveedor_nombre: herencia.proveedor_nombre,
+                    comprobantes_pagados: herencia.comprobantes_pagados,
+                    // El centro de costo de la regla sigue teniendo prioridad si la regla lo trae.
+                    centro_de_costo: regla.centro_costo || herencia.centro_de_costo,
                     ...extraRegla
                   })
                 }
@@ -859,12 +890,20 @@ export function useMotorConciliacion() {
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
     movimiento: MovimientoBancario
-  ): Promise<{ templateId: string; cuotaId: string; responsable?: string | null } | null> => {
+  ): Promise<{
+    templateId: string; cuotaId: string; responsable?: string | null
+    /** 🧲 A-BUG-175 — lo que el movimiento hereda: proveedor, comprobante y centro de costo. */
+    template?: TemplateOrigen | null
+    fechaCuota?: string | null
+  } | null> => {
     try {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
-        .select('id, responsable, solo_conciliacion')
+        // 🧲 A-BUG-175 — se traen también las columnas que el movimiento HEREDA. Antes el select
+        //    pedía sólo `id, responsable, solo_conciliacion`, así que el motor vinculaba el
+        //    movimiento a su template y no tenía de dónde copiar el proveedor ni el comprobante.
+        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo')
         .eq('categ', regla.categ)
         .eq('activo', true)
 
@@ -938,7 +977,11 @@ export function useMotorConciliacion() {
       return {
         templateId: template.id,
         cuotaId: cuota.id,
-        responsable: (template as any).responsable ?? null
+        responsable: (template as any).responsable ?? null,
+        // 🧲 A-BUG-175 — el template entero y la fecha de la cuota viajan de vuelta: son lo que el
+        //    movimiento necesita para heredar proveedor, comprobante y centro de costo.
+        template: template as TemplateOrigen,
+        fechaCuota: (cuota as any)?.fecha_estimada ?? movimiento.fecha ?? null,
       }
 
     } catch (err) {
