@@ -53,6 +53,7 @@ import {
   type CuotaExistente, type MovimientoBancario as MovBancario,
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
+import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1208,6 +1209,32 @@ export function correrCasos(): Resultado[] {
   chequear("Herencia del origen", "El mismo CUIT con guiones no discrepa",
     "no opina", cuitsDiscrepan("30-61778601-6", "30617786016") ? "discrepa" : "no opina",
     cuitsDiscrepan("30-61778601-6", "30617786016") === false, "A-FEAT-154")
+
+  // ══ 👥 EL REPARTO DE UN PAGO A VARIOS BENEFICIARIOS (A-FEAT-155) ═════════════════════════════
+  // El caso real: el banco agrupo $2.699.370 de haberes en un solo movimiento.
+  chequear("Reparto de grupo", "Escala corta: redondeo a 100K, M y K",
+    "1,6M · 1,1M · 600K · 100K · <100K",
+    [1612477, 1086893, 588333, 125000, 40000].map(montoCorto).join(" · "),
+    [1612477, 1086893, 588333, 125000, 40000].map(montoCorto).join(" · ") === "1,6M · 1,1M · 600K · 100K · <100K",
+    "A-FEAT-155")
+
+  chequear("Reparto de grupo", "Sin decimal cuando el millon es redondo",
+    "2M", montoCorto(2000000), montoCorto(2000000) === "2M", "A-FEAT-155")
+
+  // 🔑 Sigot aparece DOS veces en el pago real: se suma por nombre, no se lista dos veces.
+  const repartoReal = repartoDelGrupo([
+    { nombre: "Ruben Sigot", monto: 1487477 },
+    { nombre: "Wilson Barreto", monto: 1086893 },
+    { nombre: "Ruben Sigot", monto: 125000 },
+  ])
+  chequear("Reparto de grupo", "🔑 El mismo beneficiario se SUMA, no se lista dos veces",
+    "Ruben Sigot 1,6M + Wilson Barreto 1,1M", repartoReal,
+    repartoReal === "Ruben Sigot 1,6M + Wilson Barreto 1,1M", "A-FEAT-155")
+
+  // Con uno solo no se repite el importe: ya es el del movimiento.
+  chequear("Reparto de grupo", "Con un solo beneficiario va el nombre sin importe",
+    "Ruben Sigot", repartoDelGrupo([{ nombre: "Ruben Sigot", monto: 1487477 }]),
+    repartoDelGrupo([{ nombre: "Ruben Sigot", monto: 1487477 }]) === "Ruben Sigot", "A-FEAT-155")
 
   return r
 }

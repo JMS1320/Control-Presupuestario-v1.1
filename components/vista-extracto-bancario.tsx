@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
+import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -2080,7 +2081,25 @@ ${marca}` : marca
         const { data: provGrupo } = cuitGrupo ? await supabase
           .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
 
-        const nombreProvGrupo = provGrupo?.razon_social || grupoElegido.nombre_proveedor || null
+        /**
+         * 👥 **A-FEAT-155 — con varios beneficiarios, el renglón dice cuánto a cada uno.**
+         *
+         * Pedido del usuario 2026-09-19 sobre el pago de haberes que el banco agrupó: *«si ve que se
+         * pagaron 2.700.000 a Sigot y Barreto, pensará cuánto a cada uno»*. Queda
+         * `Ruben Sigot 1,6M + Wilson Barreto 1,1M` — redondeado a 100K, **a título informativo**:
+         * para los cálculos el sistema entra al grupo y toma los importes exactos.
+         *
+         * 📌 Suma por nombre, porque en el caso real **Sigot aparece dos veces** y listarlo dos
+         * veces haría pensar que son dos personas.
+         */
+        const repartoSueldos = grupoElegido.tipo_grupo === 'sueldo'
+          ? repartoDelGrupo((grupoElegido.cuotas ?? []).map((p: any) => ({
+              nombre: p.empleado?.nombre ?? '', monto: parseFloat(p.monto) || 0,
+            })))
+          : ''
+
+        const nombreProvGrupo = repartoSueldos
+          || provGrupo?.razon_social || grupoElegido.nombre_proveedor || null
         const updateGrupo: Record<string, any> = {
           categ: grupoElegido.categ,
           // Se preserva lo que el usuario haya escrito; si no, se deriva del grupo. Antes iba

@@ -3918,10 +3918,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       </th>
                     )}
                     
+                    {/*
+                      📅 **A-FEAT-156 — la FECHA Estimada queda fija al ir hacia la derecha.**
+                      Pedido del usuario 2026-09-19: *«en la vista del Cash Flow debo siempre ver la
+                      fecha estimada aunque me vaya para la derecha»*. Sin eso, al llegar a las
+                      columnas del final no se sabe de qué fila se está leyendo — y la grilla ordena
+                      justamente por esa fecha.
+                      ⚠️ Lleva `bg-*` propio: una celda `sticky` sin fondo deja ver lo que pasa por
+                      debajo. Y el `z` del encabezado tiene que ser mayor que el de la celda, o el
+                      `thead sticky` se lo come al scrollear en vertical.
+                    */}
                     {columnasDefinicion.map((col) => (
                       <th 
                         key={col.key} 
-                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width}`}
+                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width} ${
+                          col.key === 'fecha_estimada' ? 'sticky left-0 z-20 bg-gray-50' : ''
+                        }`}
                       >
                         {col.label}
                       </th>
@@ -3966,7 +3978,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         
                         {/* Columnas de datos */}
                         {columnasDefinicion.map((col) => (
-                          <td key={col.key} className="p-3 text-sm">
+                          <td key={col.key}
+                            className={`p-3 text-sm ${
+                              col.key === 'fecha_estimada' ? 'sticky left-0 z-10 bg-white' : ''
+                            }`}
+                          >
                             {renderizarCelda(fila, col)}
                           </td>
                         ))}
