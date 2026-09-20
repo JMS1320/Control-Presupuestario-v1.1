@@ -55,6 +55,17 @@ export function PanelAuditoriaConciliacion() {
   const [res, setRes] = useState<ResultadoAuditoria | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [abierto, setAbierto] = useState<Record<string, boolean>>({})
+  /**
+   * 📅 **El filtro por fecha — pedido del usuario 2026-09-19 para conciliar por lotes.**
+   *
+   * El audit mira **todo lo conciliado**, y al conciliar un lote nuevo cambian numerador y
+   * denominador a la vez: «281 de 676» se vuelve ilegible cuando pasa a ser «281 de 776». Con el
+   * rango se ve **sólo el lote**, sin depender de haber corrido el audit antes de empezar.
+   */
+  const [desde, setDesde] = useState('')
+  const [hasta, setHasta] = useState('')
+  /** El rango con el que se corrió, para que el encabezado no mienta si después se cambian los inputs. */
+  const [rangoCorrido, setRangoCorrido] = useState<{ desde: string; hasta: string } | null>(null)
 
   async function correr() {
     setCorriendo(true); setError(null); setRes(null)
@@ -94,6 +105,19 @@ export function PanelAuditoriaConciliacion() {
         }
       }
 
+      /**
+       * 📅 El recorte por fecha. Se aplica **acá**, antes de la cuadratura y de los orígenes, para
+       * que todo lo que sigue hable del mismo universo — si se filtrara sólo al final, el panel
+       * mostraría hallazgos de origen que no corresponden a ningún movimiento del rango.
+       */
+      const movimientosDelRango = movimientos.filter(m => {
+        const f = (m.fecha ?? '').slice(0, 10)
+        if (!f) return !desde && !hasta   // sin fecha entra sólo cuando no se filtra
+        if (desde && f < desde) return false
+        if (hasta && f > hasta) return false
+        return true
+      })
+
       const plan = await traerTodo((d, h) =>
         supabase.from("cuentas_contables").select("categ").range(d, h))
       const categsDelPlan = new Set<string>(plan.map((c: any) => String(c.categ ?? "").trim()))
@@ -112,7 +136,7 @@ export function PanelAuditoriaConciliacion() {
       }
 
       const cuadratura: ParCuadratura[] = []
-      for (const m of movimientos) {
+      for (const m of movimientosDelRango) {
         const v = m.template_cuota_id
         if (!v || String(m.estado ?? "").toLowerCase() !== "conciliado") continue
         const origen = porGrupo.has(String(v)) ? porGrupo.get(String(v))! : porCuota.get(String(v))
@@ -127,7 +151,7 @@ export function PanelAuditoriaConciliacion() {
 
       // Cuántos movimientos conciliados dependen de cada template: ordena el trabajo por impacto.
       const dependenDelTemplate = new Map<string, number>()
-      for (const m of movimientos) {
+      for (const m of movimientosDelRango) {
         if (String(m.estado ?? "").toLowerCase() !== "conciliado") continue
         const tid = (m as any).template_id
         if (tid) dependenDelTemplate.set(String(tid), (dependenDelTemplate.get(String(tid)) ?? 0) + 1)
@@ -150,7 +174,14 @@ export function PanelAuditoriaConciliacion() {
         })
       }
 
-      for (const sch of ["msa", "pam", "ma"] as const) {
+      /**
+       * ⚠️ **Con rango de fechas, las facturas NO se auditan enteras.** Una factura no tiene fecha
+       * de movimiento —puede no estar conciliada todavía—, así que filtrar «julio» y mostrar igual
+       * las 141 facturas de todo el universo mezclaría dos cosas y haría parecer que el lote está
+       * peor de lo que está. Se omiten, **y se dice** (§ 🧮 nada se descarta en silencio).
+       */
+      const hayRango = !!(desde || hasta)
+      for (const sch of (hayRango ? [] : ["msa", "pam", "ma"]) as readonly ("msa"|"pam"|"ma")[]) {
         const facturas = await traerTodo((d, h) => supabase
           .schema(sch as any).from("comprobantes_arca")
           .select("id, nro_cuenta, cuenta_contable, denominacion_emisor, punto_venta, numero_desde")
@@ -165,7 +196,14 @@ export function PanelAuditoriaConciliacion() {
         }
       }
 
-      setRes(auditar({ movimientos, categsDelPlan, cuadratura, origenes }))
+      const resultado = auditar({ movimientos: movimientosDelRango, categsDelPlan, cuadratura, origenes })
+      if (hayRango) {
+        resultado.noVerificado.push(
+          'Las FACTURAS de ARCA no se auditaron: al filtrar por fecha se miran sólo los movimientos ' +
+          'del rango, y una factura puede no tener movimiento todavía. Corré sin rango para verlas.')
+      }
+      setRes(resultado)
+      setRangoCorrido(desde || hasta ? { desde, hasta } : null)
     } catch (e: any) {
       setError(e?.message ?? String(e))
     } finally {
@@ -194,11 +232,36 @@ export function PanelAuditoriaConciliacion() {
             </span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-sm text-gray-600 space-y-1">
+        <CardContent className="text-sm text-gray-600 space-y-3">
           <p>
             Revisa <b>todos los movimientos de las cuentas</b>, pero sólo le exige el estándar a los
             <b> conciliados</b>: un movimiento pendiente todavía no tiene decidido qué es.
           </p>
+
+          {/* 📅 El rango, para mirar un lote de conciliación sin que el resto lo tape. */}
+          <div className="flex flex-wrap items-end gap-3 p-3 bg-gray-50 rounded-md border">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Desde</label>
+              <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+                className="border rounded px-2 py-1 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Hasta</label>
+              <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
+                className="border rounded px-2 py-1 text-sm" />
+            </div>
+            {(desde || hasta) && (
+              <Button variant="ghost" size="sm" onClick={() => { setDesde(''); setHasta('') }}>
+                Ver todo
+              </Button>
+            )}
+            <p className="text-xs text-gray-500 flex-1 min-w-[16rem]">
+              {desde || hasta
+                ? 'Con rango se miran sólo los movimientos de esas fechas — útil para revisar el lote que acabás de conciliar. Las facturas de ARCA quedan fuera: no tienen fecha de movimiento.'
+                : 'Sin rango audita todo. Poné fechas para mirar sólo un lote.'}
+            </p>
+          </div>
+
           <p className="text-gray-500">
             No corrige nada — muestra qué está fuera del estándar y dónde se arregla.
           </p>
@@ -216,7 +279,10 @@ export function PanelAuditoriaConciliacion() {
       {res && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Resumen label="Movimientos" valor={res.universo} nota="en todas las cuentas" />
+            <Resumen label="Movimientos" valor={res.universo}
+              nota={rangoCorrido
+                ? `del ${rangoCorrido.desde || '…'} al ${rangoCorrido.hasta || '…'}`
+                : "en todas las cuentas"} />
             <Resumen label="Auditados" valor={res.auditados} nota="los conciliados" />
             <Resumen label="Sin observaciones" valor={res.limpios} nota="cumplen el estándar" tono="ok" />
             <Resumen

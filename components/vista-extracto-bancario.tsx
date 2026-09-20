@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -901,6 +901,41 @@ ${texto.trim()}` : texto.trim()
    * El botón «Filtrar». También armaba su propio objeto y **tampoco pasaba fechas, montos ni
    * detalle** (A-BUG-155): apretarlo después de poner un rango de fechas las descartaba en silencio.
    */
+  /**
+   * 🔍 **A-BUG-162 — buscar tiene que mirar la cuenta ENTERA, no lo que quedó cargado.**
+   *
+   * Reportado por el usuario: *«tengo X movimientos a la vista cuando abro extracto; si en el
+   * buscador pongo, me busca sólo en ese rango (…) pienso que algo no existe»*.
+   *
+   * 🔑 **El daño no es no encontrar: es la conclusión falsa.** Un buscador que devuelve cero sobre
+   * un subconjunto, sin decir que era un subconjunto, **afirma que algo no existe**.
+   *
+   * ## Por qué se amplía la CARGA y no se busca en el servidor
+   * La búsqueda es client-side **a propósito**: así es insensible a tildes (`normalizarBusqueda`),
+   * que un `ilike` de PostgREST no da. Mandarla al servidor arreglaría el alcance y rompería eso.
+   * Entonces se ataca el otro lado: **al escribir, se trae la cuenta completa** y el filtro sigue
+   * donde estaba. La cuenta más grande tiene ~850 movimientos, así que traerla entera no se nota.
+   *
+   * 📌 **El límite inicial NO se toca** (decisión del usuario): entrar y ver lo reciente está bien.
+   * Lo que estaba mal era que **buscar heredara ese recorte en silencio**.
+   */
+  const yaSeCargoTodo = useRef(false)
+  useEffect(() => { yaSeCargoTodo.current = false }, [tablaActiva, schemaActivo])
+
+  useEffect(() => {
+    if (!busqueda.trim() || yaSeCargoTodo.current) return
+    // Si lo cargado ya es toda la cuenta, no hay nada que traer.
+    if (estadisticas.total > 0 && movimientos.length >= estadisticas.total) {
+      yaSeCargoTodo.current = true
+      return
+    }
+    const t = setTimeout(() => {
+      yaSeCargoTodo.current = true
+      cargarMovimientos({ ...construirFiltros(), limite: 5000 })
+    }, 350)   // el debounce evita una recarga por tecla
+    return () => clearTimeout(t)
+  }, [busqueda, estadisticas.total, movimientos.length])
+
   const aplicarFiltros = () => cargarMovimientos(construirFiltros())
 
   // Formatear moneda
