@@ -12,6 +12,7 @@ import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/
 import { schemaDeFila } from "@/lib/empresas"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
+import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -313,6 +314,30 @@ export function useMotorConciliacion() {
     for (const pool of pools) {
       const resultado = buscarEnPool(movimiento, pool)
       if (resultado) return resultado
+    }
+
+    /**
+     * 🎯 **A-FEAT-158 — último intento: importe exacto aunque la fecha estimada esté lejos.**
+     *
+     * Caso real: movimiento del 29/06 por **$1.465.100** y la factura de CACERES por el mismo
+     * importe con `fecha_estimada` **11/07** — **12 días**, y la tolerancia de arriba es 5. Quedaban
+     * los dos sueltos: el movimiento sin vincular y la factura paga por otro lado.
+     *
+     * 🔑 `fecha_estimada` es **una estimación** —cuándo se pensaba pagar—, no un hecho. El importe
+     * exacto sí lo es. Descartar por una estimación equivocada esconde un vínculo que existe.
+     *
+     * ⚠️ **Nunca concilia derecho: siempre `auditar`.** El importe solo no alcanza para dar por
+     * cierto un vínculo; alcanza para **traerlo a la vista**. Y con dos candidatos del mismo importe
+     * no propone ninguno — elegir sería adivinar.
+     */
+    const porImporte = matchPorImporteExacto(movimiento as any, base as any)
+    if (porImporte) {
+      return {
+        match: true,
+        cashFlowRow: porImporte.candidato,
+        requiere_revision: true,
+        motivo_revision: porImporte.motivo,
+      }
     }
 
     return { match: false }

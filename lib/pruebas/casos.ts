@@ -55,6 +55,7 @@ import {
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
+import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1297,6 +1298,54 @@ export function correrCasos(): Resultado[] {
     "2 causas · 1 corregible + 1 manual en la primera",
     `${gruposC.length} causas · ${gruposC[0].corregibles} corregible + ${gruposC[0].manuales} manual en la primera`,
     gruposC.length === 2 && gruposC.some(g => g.corregibles === 1 && g.manuales === 1), "A-FEAT-159")
+
+  // ══ 🎯 MATCH POR IMPORTE EXACTO FUERA DE TOLERANCIA (A-FEAT-158) ═════════════════════════════
+  // El caso real: movimiento del 29/06 por $1.465.100 y la factura de CACERES por el mismo importe
+  // con fecha_estimada 11/07 -- 12 dias, y la tolerancia del motor es 5.
+  const movCaceres = { debitos: 1465100, creditos: 0, fecha: "2026-06-29" }
+  const poolCaceres = [{ id: "fc-caceres", debitos: 1465100, fecha_estimada: "2026-07-11" }]
+
+  const mC = matchPorImporteExacto(movCaceres, poolCaceres)
+  chequear("Match por importe", "🎯 El caso Caceres: importe exacto a 12 dias, se propone",
+    "fc-caceres a 12 dias", `${mC?.candidato.id} a ${mC?.dias} dias`,
+    mC?.candidato.id === "fc-caceres" && mC?.dias === 12, "A-FEAT-158")
+
+  // 🛑 Con DOS del mismo importe no se elige: adivinar hace dano en silencio.
+  const mDos = matchPorImporteExacto(movCaceres, [
+    { id: "a", debitos: 1465100, fecha_estimada: "2026-07-11" },
+    { id: "b", debitos: 1465100, fecha_estimada: "2026-07-20" },
+  ])
+  chequear("Match por importe", "🛑 Con DOS candidatos del mismo importe no se propone ninguno",
+    "sin propuesta", mDos === null ? "sin propuesta" : "elige uno", mDos === null, "A-FEAT-158")
+
+  // Lo que cae dentro de la tolerancia normal ya lo probo el motor: no se repite.
+  chequear("Match por importe", "Lo que esta dentro de los 5 dias no se vuelve a proponer",
+    "sin propuesta",
+    matchPorImporteExacto(movCaceres, [{ id: "x", debitos: 1465100, fecha_estimada: "2026-07-01" }]) === null
+      ? "sin propuesta" : "propone",
+    matchPorImporteExacto(movCaceres, [{ id: "x", debitos: 1465100, fecha_estimada: "2026-07-01" }]) === null,
+    "A-FEAT-158")
+
+  // Mas alla de 45 dias un importe igual es probablemente coincidencia.
+  chequear("Match por importe", "Mas alla de 45 dias no se propone",
+    "sin propuesta",
+    matchPorImporteExacto(movCaceres, [{ id: "y", debitos: 1465100, fecha_estimada: "2026-09-30" }]) === null
+      ? "sin propuesta" : "propone",
+    matchPorImporteExacto(movCaceres, [{ id: "y", debitos: 1465100, fecha_estimada: "2026-09-30" }]) === null,
+    "A-FEAT-158")
+
+  // Un candidato SIN fecha entra igual: es justo el que nadie encuentra buscando.
+  const mSinFecha = matchPorImporteExacto(movCaceres, [{ id: "z", debitos: 1465100, fecha_estimada: null }])
+  chequear("Match por importe", "Un candidato sin fecha estimada entra igual",
+    "z", String(mSinFecha?.candidato.id), mSinFecha?.candidato.id === "z", "A-FEAT-158")
+
+  // Un importe distinto no entra aunque la fecha sea perfecta.
+  chequear("Match por importe", "Importe distinto no entra, por mas que la fecha coincida",
+    "sin propuesta",
+    matchPorImporteExacto(movCaceres, [{ id: "w", debitos: 1465101, fecha_estimada: "2026-07-11" }]) === null
+      ? "sin propuesta" : "propone",
+    matchPorImporteExacto(movCaceres, [{ id: "w", debitos: 1465101, fecha_estimada: "2026-07-11" }]) === null,
+    "A-FEAT-158")
 
   return r
 }
