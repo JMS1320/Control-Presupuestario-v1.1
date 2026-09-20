@@ -3205,6 +3205,116 @@ día tres veces:
    previa. Un audit que corrige solo es un script de migración con otro nombre.
 4. **Y decir lo que NO pudo verificar** (§ 🧮 *nada se descarta en silencio*).
 
+
+### 30.9.8 — 🧪 EL PRIMER LOTE CONCILIADO CON LA HERRAMIENTA: 19 al 30/06/2026
+
+*El usuario retomó la conciliación el 2026-09-19 **hacia adelante**, por lotes, corriendo el audit
+antes y después de cada uno. Esta § es el registro de ese primer lote — lo que se hizo, lo que el
+audit encontró y lo que quedó pendiente.*
+
+> 🔑 **Lo más valioso del lote no fueron los movimientos: fueron los SIETE bugs que destapó.** Cinco
+> los encontró el audit; **dos los encontró el usuario preguntando**, antes de que nadie los midiera.
+
+---
+
+#### A · Qué se conció
+
+| | |
+|---|---|
+| Movimientos del rango | **35** |
+| Conciliados al terminar | **28** (eran 3) |
+| Quedan pendientes | 6 |
+
+**Lo que el motor tomó**: los gastos bancarios recurrentes (impuesto al débito, IVA, percepción,
+comisiones, extracciones) contra sus templates.
+**Lo que dejó para el usuario**: los pagos grandes — sueldos, transferencias a proveedores — que
+necesitan vínculo real y no una regla genérica. **Eso está bien y es el reparto correcto.**
+
+---
+
+#### B · 🐞 Los siete bugs que destapó el lote
+
+| | Qué estaba mal | Cómo apareció |
+|---|---|---|
+| [A-BUG-175](../PENDIENTES.md#a-bug-175) | **El motor vinculaba al template y no le copiaba nada**: ni proveedor ni comprobante. 25 de 28 sin proveedor | el **audit**, comparando contra los casos iguales de antes |
+| [A-BUG-176](../PENDIENTES.md#a-bug-176) | Al conciliar un grupo de sueldos se marcaba `conciliado` **sólo al primer pago** | leyendo el código **antes** de que el usuario conciliara |
+| [A-BUG-177](../PENDIENTES.md#a-bug-177) | Quedaban filas **seleccionadas** que el filtro ya no mostraba | el usuario, usando la pantalla |
+| [A-BUG-178](../PENDIENTES.md#a-bug-178) | El reparto por beneficiario estaba **en un camino de dos** | el uso real: conció por el camino que no lo tenía |
+| [A-BUG-179](../PENDIENTES.md#a-bug-179) | Los números de arriba y abajo del audit **no coinciden** y nada lo explica | el usuario, leyendo la pantalla |
+| *(sin ID)* | El botón de corregir mostraba **una explicación como si valiera para todas** | el usuario, mirando el botón |
+| [A-FEAT-158](../PENDIENTES.md#a-feat-158) | El match descartaba por `fecha_estimada` a 12 días un importe **exacto** | el caso Cáceres |
+
+🧨 **Y el modo de falla se repitió DOS veces en el mismo lote**: A-BUG-178 y el reparto del panel son
+los dos *«se arregló un camino de los dos»* (§ 30.9.5). **Cuando algo se puede hacer desde dos
+pantallas, arreglar una y no mirar la otra es el error más repetido de este proyecto.**
+
+---
+
+#### C · 🧭 Tres diagnósticos míos que resultaron FALSOS
+
+*Se dejan escritos porque el patrón vale más que los casos: **las tres veces afirmé una causa sin
+haber leído el código o el dato que la desmentía**.*
+
+**1 · «El motor no pone el comprobante nunca».** Falso: lo pone en varios caminos. Lo que no hacía
+era copiarlo **del template**.
+
+**2 · «El caso Cáceres no matchea por el CUIT».** Falso: el CUIT **prioriza pero no excluye**, el
+motor ya reintenta contra toda la base ([A-BUG-29](../PENDIENTES.md#a-bug-29)). La causa real era
+**la fecha estimada a 12 días** contra una tolerancia de 5.
+
+**3 · «Es obvio que el vínculo al primer miembro del grupo es un bug».** Falso: es una **decisión
+deliberada y documentada** ([A-BUG-41](../PENDIENTES.md#a-bug-41)) — un `grupo_pago_id` en
+`sueldo_pago_id` apuntaría a otra tabla. El bug real era otro: no se conciliaban los hermanos.
+
+🔑 **La regla que sale de las tres:** *antes de cambiar al que escribe, leer al que lee — y buscar si
+alguien ya decidió esto.* El usuario lo dijo mejor: **«¿estás chequeando de verdad con rigor?»**
+
+---
+
+#### D · 📊 El audit del lote — qué devolvió
+
+Corrido sobre **30/06/2026** (el día más cargado): **10 movimientos, 10 auditados, 10 con
+observaciones**.
+
+**Propone corregir 10 hallazgos, en 3 causas:**
+
+| Causa | Cuántos | Qué pondría |
+|---|---|---|
+| El dato sale del template | **5** | `Banco Galicia` · `Martinez Sobrado Agro SRL` *(cada uno el suyo)* |
+| Falta el comprobante | **4** | `Comision Extraccion Efectivo - Junio 2026`, `Iva Bancario - Junio 2026`… |
+| El pago fue a varios | **1** | `Ruben Sigot 1,6M + Wilson Barreto 1,1M` |
+
+**Y muestra sin ofrecer corregir** las **5 categorías fuera del plan** (`Sueldos`,
+`Retenciones ARCA`, `Impuesto Red Vial`) — marcadas *«se arreglan en el origen»*, porque eso es un
+alta en el plan de cuentas y no un parche en el extracto.
+
+⚠️ **Lo que quedó sin probar: aplicar la corrección.** El usuario siguió con julio antes de
+apretar los botones.
+
+---
+
+#### E · ⏸️ Lo que quedó abierto de este lote
+
+| | |
+|---|---|
+| **6 movimientos sin conciliar** | el caso **Cáceres** ($1.465.100 — ahora el motor debería proponerlo en `auditar`), 2 Compra Débito y 3 más |
+| [A-FEAT-160](../PENDIENTES.md#a-feat-160) | **elegir cuáles corregir**: hoy el botón es todo o nada, y con un caso dudoso se pierden los buenos |
+| [A-DAT-52](../PENDIENTES.md#a-dat-52) | el **Rescate FIMA** recibiría `Martinez Sobrado Agro SRL` como proveedor — *«fondos comunes no habría proveedor en principio»* |
+| [A-DAT-51](../PENDIENTES.md#a-dat-51) | la conciliación manual de ARCA **escribe un detalle que repite** el comprobante y el proveedor |
+| Las 5 categorías | alta en el plan de cuentas → [C-26](../PENDIENTES.md#c-26) |
+
+---
+
+#### F · 🔁 El método que quedó probado, y conviene repetir
+
+1. **Correr el audit del rango ANTES de conciliar** — así se sabe de dónde se parte.
+2. Conciliar el lote.
+3. **Correr el audit del mismo rango después** y comparar.
+4. Mirar lo que aparece **caso por caso**, no sólo el total.
+
+📌 **El paso 4 es el que rinde.** El total dice *«10 con observaciones»* y no enseña nada; abrir los
+casos fue lo que destapó que el motor no copiaba del template — un bug que llevaba meses y que
+**ninguna pantalla mostraba**, porque todas miran el estado y ninguna la calidad del dato.
 ## 5 · 🧨 Cómo se diagnostica un bug de este tipo
 
 Cuatro huecos en un solo día, **y tres los encontró el usuario abriendo la pantalla**. El patrón de
