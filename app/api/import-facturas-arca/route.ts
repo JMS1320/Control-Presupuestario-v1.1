@@ -321,7 +321,27 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     centro_costo: null,
     estado: reglaCuit.estado, // ← Aplicar regla CUIT si existe
     observaciones_pago: null,
-    detalle: `${tipoComprobanteAbrev(datosBasicos.tipo_comprobante)} ${datosBasicos.numero_desde} - ${datosBasicos.denominacion_emisor || 'Sin nombre'}`,
+    /**
+     * 🎭 **A-DAT-54 — LA FUENTE del detalle autogenerado. Acá nacía, y por eso no se cortaba
+     * arreglando la conciliación.**
+     *
+     * Escribía `«FC 482 - MASSAGLIA ALDO ENRIQUE»` en el `detalle` de **cada factura importada** —
+     * **480 de 530** lo tienen. Y esas dos cosas ya viven en sus propias columnas
+     * (`tipo_comprobante`+`numero_desde` y `denominacion_emisor`), así que era **una tercera copia**.
+     *
+     * 🧨 **El daño no era la repetición: era que se hacía pasar por dato del usuario.** Al conciliar,
+     * el motor respeta lo que parece escrito a mano — y esto lo parecía. De ahí saltaba al extracto
+     * y repetía el proveedor y el comprobante en la única columna que debía decir *lo que no se
+     * deduce* (§ 30.9.6 D).
+     *
+     * 📌 **Nada se pierde en pantalla**: el Cash Flow arma ese mismo texto al vuelo con
+     * `generarDetalleBase()`, y cuando hay detalle propio lo agrega detrás. Con `null` la grilla se
+     * ve igual — la diferencia es que ahora **el campo queda libre para lo que escriba una persona**.
+     *
+     * 📎 Los otros seis importadores ya ponían `detalle: null` con el comentario *«se llena en
+     * conciliación»*. Éste era el único que no.
+     */
+    detalle: null,
     archivo_origen: nombreArchivo
   }
 

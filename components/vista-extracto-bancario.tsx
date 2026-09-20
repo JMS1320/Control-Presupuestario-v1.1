@@ -554,6 +554,32 @@ ${texto.trim()}` : texto.trim()
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
   }, [movimientos])
 
+  /**
+   * 🏷️ **A-BUG-180 — una categoría que aparece DESPUÉS de filtrar queda oculta.**
+   *
+   * Reportado por el usuario 2026-09-20 desde la app: *«bug en filtrado de extracto bancario por
+   * categ — si actualizo la página desaparece; hoy apareció luego de correr la conciliación»*.
+   *
+   * 🔑 **El filtro guarda lo INCLUIDO, no lo excluido.** Cuando se concilia, los movimientos
+   * **cambian de categoría** (`INVALIDA:` pasa a `Sueldos`, a `Iva Bancario`…). Esa categoría nueva
+   * no estaba en el conjunto elegido, así que **esos movimientos desaparecen de la vista** — justo
+   * los que se acaban de conciliar, que son los que uno quiere mirar.
+   *
+   * 📌 Y por eso «se arregla refrescando»: al recargar, el filtro vuelve a *sin filtro*.
+   *
+   * ✅ **Una categoría que nunca existió no puede haber sido descartada**, así que al aparecer se
+   * suma al filtro. Lo que el usuario destildó **sigue destildado**: sólo entran las nuevas.
+   */
+  const categsConocidas = useRef<Set<string> | null>(null)
+  useEffect(() => {
+    const previas = categsConocidas.current
+    categsConocidas.current = new Set(categsUnicas)
+    if (previas === null || categsFiltro === null) return
+    const nuevas = categsUnicas.filter(c => !previas.has(c))
+    if (nuevas.length === 0) return
+    setCategsFiltro(prev => (prev === null ? null : new Set([...prev, ...nuevas])))
+  }, [categsUnicas])
+
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   /**
    * ⭐ FUENTE ÚNICA de "qué está filtrado".
