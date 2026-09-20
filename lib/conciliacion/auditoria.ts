@@ -39,6 +39,7 @@ export type ControlId =
   | 'categ-fuera-plan'
   | 'imputacion'
   | 'sin-proveedor'
+  | 'proveedor-incompleto'
   | 'cuadratura'
   // 🕳️ Los del ORIGEN — A-BUG-172. Ver `EntidadOrigen`.
   | 'origen-template-sin-quien-cobra'
@@ -264,6 +265,15 @@ export interface EntradaAuditoria {
   /** Pares banco↔origen para el control de cuadratura. Si no viene, se informa como no verificado. */
   cuadratura?: ParCuadratura[]
   /**
+   * 👥 Para los pagos que van a **varios beneficiarios**: cómo debería quedar el renglón
+   * (`Ruben Sigot 1,6M + Wilson Barreto 1,1M`), por id de movimiento.
+   *
+   * 🔑 **Sin esto, un pago agrupado con UN solo nombre pasa el control de «sin proveedor»** —
+   * tiene proveedor, sólo que nombra a uno de dos. Lo encontró el usuario preguntando si ya podía
+   * probar el audit sobre su grupo de 3 sueldos: no iba a aparecer.
+   */
+  repartoEsperado?: Map<string, string>
+  /**
    * 🕳️ Las filas del lado del ORIGEN (templates y facturas). Si no vienen, los controles del origen
    * **se informan como no verificados** — nunca se dan por buenos en silencio. Es el hueco que dejó
    * [A-BUG-172].
@@ -279,7 +289,7 @@ export interface EntradaAuditoria {
  * número por fila mide el síntoma; el número por causa mide el trabajo.
  */
 export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
-  const { movimientos, categsDelPlan, cuadratura, origenes } = entrada
+  const { movimientos, categsDelPlan, cuadratura, origenes, repartoEsperado } = entrada
   const conciliados = movimientos.filter(esConciliado)
 
   const porOrigen: Record<Origen, number> = {
@@ -369,6 +379,22 @@ export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
         ...base(m), control: 'imputacion',
         problema: `Es de ${origen} y tiene número de cuenta puesto: su imputación tiene que viajar por el vínculo`,
         causa: `${origen} con número de cuenta`,
+      })
+    }
+
+    /**
+     * 👥 **El proveedor nombra a TODOS los beneficiarios, no a uno de varios.**
+     *
+     * Un pago que el banco agrupó —$2.699.370 de haberes a Sigot ×2 + Barreto— tiene proveedor y
+     * por eso **pasa el control de arriba**; pero dice sólo «Wilson Barreto» y esconde que a Sigot
+     * le fueron $1,6M. Quien lee el extracto no tiene cómo saberlo.
+     */
+    const esperado = repartoEsperado?.get(m.id)
+    if (esperado && t(m.proveedor_nombre) && t(m.proveedor_nombre) !== esperado) {
+      hallazgos.push({
+        ...base(m), control: 'proveedor-incompleto',
+        problema: `Dice «${t(m.proveedor_nombre)}» y el pago fue a varios: ${esperado}`,
+        causa: 'El pago fue a varios beneficiarios y el renglón nombra a uno',
       })
     }
 
@@ -519,6 +545,10 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
     titulo: '🕳️ FACTURAS sin ninguna cuenta contable',
     regla: 'Sin nombre ni número no hay nada que derivar: la imputación hay que decidirla.',
   },
+  'proveedor-incompleto': {
+    titulo: '👥 Nombran a UN beneficiario y el pago fue a varios',
+    regla: 'Cuando el banco agrupa un pago a varias personas, el renglón tiene que nombrarlas a todas con cuánto le fue a cada una. Con un solo nombre, el resto del dinero queda invisible para quien lee.',
+  },
   'sin-proveedor': {
     titulo: 'No dicen quién cobró',
     regla: 'El proveedor sale del origen: el maestro por CUIT en ARCA, el template en las cuotas, el empleado en los sueldos.',
@@ -528,7 +558,7 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
 /** El orden en que se muestran: primero lo que compromete la plata, después lo que compromete la lectura. */
 const ORDEN: ControlId[] = [
   'sin-vinculo', 'vinculo-doble', 'cuadratura', 'sin-comprobante',
-  'imputacion', 'detalle-repite', 'categ-fuera-plan', 'sin-proveedor',
+  'imputacion', 'detalle-repite', 'categ-fuera-plan', 'sin-proveedor', 'proveedor-incompleto',
   // Los del origen van al final: no son del extracto, pero es donde se arregla lo de arriba.
   'origen-template-sin-quien-cobra', 'origen-factura-sin-numero', 'origen-factura-sin-cuenta',
 ]

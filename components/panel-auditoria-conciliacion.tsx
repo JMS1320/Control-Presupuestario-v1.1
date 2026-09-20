@@ -211,7 +211,34 @@ export function PanelAuditoriaConciliacion() {
         }
       }
 
-      const resultado = auditar({ movimientos: movimientosDelRango, categsDelPlan, cuadratura, origenes })
+      /**
+       * 👥 El reparto esperado de cada pago agrupado, para el control `proveedor-incompleto`.
+       * Se arma antes de auditar porque el audit lo necesita para comparar.
+       */
+      const pagosSueldoPrev = await traerTodo((d, h) => supabase
+        .from("sueldos_pagos")
+        .select("id, monto, grupo_pago_id, empleado:sueldos_empleados(nombre)")
+        .range(d, h))
+      const gruposSueldo = new Map<string, any[]>()
+      for (const p of pagosSueldoPrev) {
+        if (!p.grupo_pago_id) continue
+        const g = String(p.grupo_pago_id)
+        gruposSueldo.set(g, [...(gruposSueldo.get(g) ?? []), p])
+      }
+      const pagoPorId = new Map(pagosSueldoPrev.map((p: any) => [String(p.id), p]))
+      const repartoEsperado = new Map<string, string>()
+      for (const m of movimientosDelRango) {
+        if (!m.sueldo_pago_id) continue
+        const pago = pagoPorId.get(String(m.sueldo_pago_id))
+        const hermanos = pago?.grupo_pago_id ? gruposSueldo.get(String(pago.grupo_pago_id)) ?? [] : []
+        if (hermanos.length > 1) {
+          repartoEsperado.set(m.id, repartoDelGrupo(hermanos.map((h: any) => ({
+            nombre: h.empleado?.nombre ?? '', monto: parseFloat(h.monto) || 0,
+          }))))
+        }
+      }
+
+      const resultado = auditar({ movimientos: movimientosDelRango, categsDelPlan, cuadratura, origenes, repartoEsperado })
       if (hayRango) {
         resultado.noVerificado.push(
           'Las FACTURAS de ARCA no se auditaron: al filtrar por fecha se miran sólo los movimientos ' +
@@ -230,17 +257,9 @@ export function PanelAuditoriaConciliacion() {
       const datos = new Map<string, DatosParaCorregir>()
 
       // Los pagos de sueldo agrupados, para poder ofrecer el reparto.
-      const pagosSueldo = await traerTodo((d, h) => supabase
-        .from("sueldos_pagos")
-        .select("id, monto, grupo_pago_id, empleado:sueldos_empleados(nombre)")
-        .range(d, h))
-      const porPagoSueldo = new Map(pagosSueldo.map((p: any) => [String(p.id), p]))
-      const porGrupoSueldo = new Map<string, any[]>()
-      for (const p of pagosSueldo) {
-        if (!p.grupo_pago_id) continue
-        const g = String(p.grupo_pago_id)
-        porGrupoSueldo.set(g, [...(porGrupoSueldo.get(g) ?? []), p])
-      }
+      // Ya se trajeron arriba para el control `proveedor-incompleto`: no se consulta dos veces.
+      const porPagoSueldo = pagoPorId
+      const porGrupoSueldo = gruposSueldo
 
       for (const m of movimientosDelRango) {
         const tpl = m.template_id ? porTemplate.get(String(m.template_id)) : null

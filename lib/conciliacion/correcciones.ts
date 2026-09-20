@@ -35,6 +35,7 @@ export interface Correccion {
 /** Los controles cuyo arreglo es mecánico. El resto se muestra y no se ofrece corregir. */
 export const CONTROLES_CORREGIBLES = [
   'sin-proveedor',
+  'proveedor-incompleto',
   'sin-comprobante',
   'imputacion',
   'detalle-repite',
@@ -69,6 +70,7 @@ export function corregir(h: Hallazgo, datos: DatosParaCorregir): Correccion | nu
   const base = { movimientoId: h.movimientoId, cuenta: h.cuenta }
 
   switch (h.control) {
+    case 'proveedor-incompleto':
     case 'sin-proveedor': {
       // Con varios beneficiarios manda el reparto, que dice cuánto a cada uno.
       const nombre = t(datos.repartoDeBeneficiarios) || t(datos.proveedorDelOrigen)

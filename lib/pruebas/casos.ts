@@ -1347,5 +1347,34 @@ export function correrCasos(): Resultado[] {
     matchPorImporteExacto(movCaceres, [{ id: "w", debitos: 1465101, fecha_estimada: "2026-07-11" }]) === null,
     "A-FEAT-158")
 
+  // 👥 El caso REAL del usuario: el pago de haberes agrupado quedo con UN solo nombre.
+  //    Tiene proveedor, asi que pasa el control de "sin proveedor" -- por eso hace falta este.
+  const conUnNombre = auditar({
+    movimientos: [movAud("g1", {
+      sueldo_pago_id: "sp1", proveedor_nombre: "Wilson Barreto",
+      comprobantes_pagados: "Haberes Jun 2026 — a cuenta", categ: "GASTOS VARIOS GANADERIA",
+    })],
+    categsDelPlan: PLAN,
+    repartoEsperado: new Map([["g1", "Ruben Sigot 1,6M + Wilson Barreto 1,1M"]]),
+  })
+  chequear("Audit", "👥 Un pago agrupado con UN solo nombre se detecta (tiene proveedor igual)",
+    "1 hallazgo",
+    `${conUnNombre.grupos.find(g => g.control === "proveedor-incompleto")?.total ?? 0} hallazgo`,
+    conUnNombre.grupos.find(g => g.control === "proveedor-incompleto")?.total === 1, "A-FEAT-159")
+
+  // Y si ya nombra a todos, no molesta.
+  const yaCompleto = auditar({
+    movimientos: [movAud("g2", {
+      sueldo_pago_id: "sp2", proveedor_nombre: "Ruben Sigot 1,6M + Wilson Barreto 1,1M",
+      comprobantes_pagados: "Haberes Jun 2026 — a cuenta", categ: "GASTOS VARIOS GANADERIA",
+    })],
+    categsDelPlan: PLAN,
+    repartoEsperado: new Map([["g2", "Ruben Sigot 1,6M + Wilson Barreto 1,1M"]]),
+  })
+  chequear("Audit", "Si ya nombra a todos, el control no molesta",
+    "0 hallazgos",
+    `${yaCompleto.grupos.find(g => g.control === "proveedor-incompleto")?.total ?? 0} hallazgos`,
+    (yaCompleto.grupos.find(g => g.control === "proveedor-incompleto")?.total ?? 0) === 0, "A-FEAT-159")
+
   return r
 }
