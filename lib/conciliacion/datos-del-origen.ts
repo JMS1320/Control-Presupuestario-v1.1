@@ -35,6 +35,7 @@
 
 export interface TemplateOrigen {
   nombre_referencia?: string | null
+  cuit_quien_cobra?: string | null
   responsable?: string | null
   nombre_quien_cobra?: string | null
   proveedor?: string | null
@@ -94,4 +95,36 @@ export function heredarDelOrigen(
     // Sólo cuenta como "del banco" si el origen no tenía nada que aportar.
     proveedorVieneDelBanco: !yaTiene && !delOrigen && !!t(proveedorSegunBanco),
   }
+}
+
+
+/**
+ * 🪪 **A-FEAT-154 — el CUIT del banco contra el del origen.**
+ *
+ * Pedido del usuario 2026-09-19: *«el control sería de coincidencia con el CUIT en leyendas
+ * adicionales. Si no coincide deja como auditar. **Pero si encuentra campo en blanco, no se le hace
+ * caso**»*.
+ *
+ * 🔑 **Esa segunda mitad es la que lo hace usable.** Los gastos bancarios —impuesto al débito, IVA,
+ * comisiones— **no traen CUIT en el extracto**: un control que exigiera coincidencia mandaría medio
+ * lote a `auditar` y terminaría apagado. **Campo vacío = no opina.**
+ *
+ * 📌 **Advierte, no bloquea** (§ `CLAUDE.md` 🚦): el pago pudo hacerse a un CUIT distinto por una
+ * razón real —una cesión, un pago a nombre de otro—, así que el movimiento se concilia igual y
+ * queda marcado para que lo mire una persona.
+ */
+export function cuitsDiscrepan(
+  cuitDelBanco: string | null | undefined,
+  cuitDelOrigen: string | null | undefined,
+): boolean {
+  const soloDigitos = (x: string | null | undefined) => (x ?? '').replace(/\D/g, '')
+  const a = soloDigitos(cuitDelBanco)
+  const b = soloDigitos(cuitDelOrigen)
+  if (!a || !b) return false        // alguno en blanco → no opina
+  return a !== b
+}
+
+/** El motivo que se escribe en `motivo_revision` cuando los CUIT no coinciden. */
+export function motivoCuitDistinto(cuitDelBanco: string, cuitDelOrigen: string): string {
+  return `El banco informa CUIT ${cuitDelBanco} y el origen tiene ${cuitDelOrigen}`
 }

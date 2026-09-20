@@ -11,7 +11,7 @@ import {
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
-import { heredarDelOrigen, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
+import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -841,9 +841,27 @@ export function useMotorConciliacion() {
                     provNombreRegla,
                   )
 
+                  /**
+                   * 🪪 **A-FEAT-154 — el CUIT del banco contra el del origen.**
+                   *
+                   * Si los dos tienen valor y **no coinciden**, el movimiento se concilia igual pero
+                   * queda en `auditar`: puede haber una razón real (una cesión, un pago a nombre de
+                   * otro), así que **advierte y no bloquea** (§ `CLAUDE.md` 🚦).
+                   *
+                   * 🔑 **Si alguno está en blanco, no opina** — los gastos bancarios no traen CUIT,
+                   * y un control que los mandara a `auditar` terminaría apagado.
+                   */
+                  const cuitBanco = extraerCuitBancario(movimiento)
+                  const cuitOrigen = cuotaResult.template?.cuit_quien_cobra
+                  const hayDiscrepancia = cuitsDiscrepan(cuitBanco, cuitOrigen)
+
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,
+                    ...(hayDiscrepancia ? {
+                      estado: 'auditar',
+                      motivo_revision: motivoCuitDistinto(String(cuitBanco), String(cuitOrigen)),
+                    } : {}),
                     proveedor_nombre: herencia.proveedor_nombre,
                     comprobantes_pagados: herencia.comprobantes_pagados,
                     // El centro de costo de la regla sigue teniendo prioridad si la regla lo trae.
@@ -903,7 +921,7 @@ export function useMotorConciliacion() {
         // 🧲 A-BUG-175 — se traen también las columnas que el movimiento HEREDA. Antes el select
         //    pedía sólo `id, responsable, solo_conciliacion`, así que el motor vinculaba el
         //    movimiento a su template y no tenía de dónde copiar el proveedor ni el comprobante.
-        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo')
+        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra')
         .eq('categ', regla.categ)
         .eq('activo', true)
 

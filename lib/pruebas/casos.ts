@@ -53,7 +53,7 @@ import {
   type CuotaExistente, type MovimientoBancario as MovBancario,
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
-import { heredarDelOrigen, proveedorDelTemplate } from "@/lib/conciliacion/datos-del-origen"
+import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -1193,6 +1193,21 @@ export function correrCasos(): Resultado[] {
   const h5 = heredarDelOrigen({}, { ...tplBanco, centro_costo: "Estructura" }, null, null)
   chequear("Herencia del origen", "🏷️ El centro de costo tambien se hereda del template",
     "Estructura", String(h5.centro_de_costo), h5.centro_de_costo === "Estructura", "A-FEAT-153")
+
+  // 🪪 A-FEAT-154 — el CUIT del banco contra el del origen.
+  chequear("Herencia del origen", "🪪 CUITs distintos → se marca para auditar",
+    "discrepa", cuitsDiscrepan("20334997651", "30617786016") ? "discrepa" : "no opina",
+    cuitsDiscrepan("20334997651", "30617786016") === true, "A-FEAT-154")
+
+  // 🔑 La mitad que lo hace usable: un impuesto al debito no trae CUIT, y no debe ir a auditar.
+  chequear("Herencia del origen", "🔑 Campo en blanco NO opina (si no, medio lote va a auditar)",
+    "no opina · no opina",
+    `${cuitsDiscrepan("", "30617786016") ? "discrepa" : "no opina"} · ${cuitsDiscrepan("20334997651", null) ? "discrepa" : "no opina"}`,
+    cuitsDiscrepan("", "30617786016") === false && cuitsDiscrepan("20334997651", null) === false, "A-FEAT-154")
+
+  chequear("Herencia del origen", "El mismo CUIT con guiones no discrepa",
+    "no opina", cuitsDiscrepan("30-61778601-6", "30617786016") ? "discrepa" : "no opina",
+    cuitsDiscrepan("30-61778601-6", "30617786016") === false, "A-FEAT-154")
 
   return r
 }
