@@ -555,30 +555,22 @@ ${texto.trim()}` : texto.trim()
   }, [movimientos])
 
   /**
-   * 🏷️ **A-BUG-180 — una categoría que aparece DESPUÉS de filtrar queda oculta.**
+   * 🏷️ **A-BUG-180 — acá hubo un arreglo MÍO que estaba mal, y se quitó.**
    *
-   * Reportado por el usuario 2026-09-20 desde la app: *«bug en filtrado de extracto bancario por
-   * categ — si actualizo la página desaparece; hoy apareció luego de correr la conciliación»*.
+   * Puse un efecto que, al aparecer categorías nuevas después de conciliar, **las sumaba solas al
+   * filtro**. Razonaba que *«una categoría que nunca existió no pudo haber sido descartada»*.
    *
-   * 🔑 **El filtro guarda lo INCLUIDO, no lo excluido.** Cuando se concilia, los movimientos
-   * **cambian de categoría** (`INVALIDA:` pasa a `Sueldos`, a `Iva Bancario`…). Esa categoría nueva
-   * no estaba en el conjunto elegido, así que **esos movimientos desaparecen de la vista** — justo
-   * los que se acaban de conciliar, que son los que uno quiere mirar.
+   * 🧨 **El efecto era el contrario del que hacía falta:** el usuario filtra por una categoría para
+   * trabajar sobre ella, concilia, y el filtro **se ensancha solo** — que es exactamente lo que él
+   * describió como *«no responde al comando»*.
    *
-   * 📌 Y por eso «se arregla refrescando»: al recargar, el filtro vuelve a *sin filtro*.
+   * 📌 **Y el síntoma original era correcto, no un bug:** si filtrás por `INVALIDA:` y conciliás,
+   * esos movimientos **dejan de ser `INVALIDA:`** y desaparecen de la vista. Eso es lo que tiene que
+   * pasar — el filtro dice la verdad sobre el dato nuevo.
    *
-   * ✅ **Una categoría que nunca existió no puede haber sido descartada**, así que al aparecer se
-   * suma al filtro. Lo que el usuario destildó **sigue destildado**: sólo entran las nuevas.
+   * ✅ Verificado con `pruebas-ui/filtro-categ.spec.ts` (sólo lectura): tildar una categoría lleva
+   * la tabla de **100 filas a 1**. El filtro base anda.
    */
-  const categsConocidas = useRef<Set<string> | null>(null)
-  useEffect(() => {
-    const previas = categsConocidas.current
-    categsConocidas.current = new Set(categsUnicas)
-    if (previas === null || categsFiltro === null) return
-    const nuevas = categsUnicas.filter(c => !previas.has(c))
-    if (nuevas.length === 0) return
-    setCategsFiltro(prev => (prev === null ? null : new Set([...prev, ...nuevas])))
-  }, [categsUnicas])
 
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   /**
