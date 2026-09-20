@@ -56,6 +56,7 @@ import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
+import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1375,6 +1376,29 @@ export function correrCasos(): Resultado[] {
     "0 hallazgos",
     `${yaCompleto.grupos.find(g => g.control === "proveedor-incompleto")?.total ?? 0} hallazgos`,
     (yaCompleto.grupos.find(g => g.control === "proveedor-incompleto")?.total ?? 0) === 0, "A-FEAT-159")
+
+  // ══ 🎭 EL DETALLE QUE PARECE DEL USUARIO PERO LO GENERO UN PROCESO (A-DAT-54) ════════════════
+  // 480 de 530 facturas tienen guardado "FC <nro> - <EMISOR>" en su propio campo detalle.
+  chequear("Detalle autogenerado", "🎭 Reconoce el patron FC <nro> - <EMISOR>",
+    "autogenerado", pareceDetalleAutogenerado("FC 482 - MASSAGLIA ALDO ENRIQUE", "MASSAGLIA ALDO ENRIQUE") ? "autogenerado" : "propio",
+    pareceDetalleAutogenerado("FC 482 - MASSAGLIA ALDO ENRIQUE", "MASSAGLIA ALDO ENRIQUE") === true, "A-DAT-54")
+
+  chequear("Detalle autogenerado", "🎭 Tambien con abreviaturas raras (T82)",
+    "autogenerado", pareceDetalleAutogenerado("T82 12800 - ESPADA FARALDO MARGARITA MERCEDES", "ESPADA FARALDO MARGARITA MERCEDES") ? "autogenerado" : "propio",
+    pareceDetalleAutogenerado("T82 12800 - ESPADA FARALDO MARGARITA MERCEDES", "ESPADA FARALDO MARGARITA MERCEDES") === true, "A-DAT-54")
+
+  // 🛑 LO QUE IMPORTA: si hay texto PROPIO no se toca. Borrar lo que alguien escribio es peor.
+  chequear("Detalle autogenerado", "🛑 Un detalle con texto propio NO se marca",
+    "propio · propio",
+    `${pareceDetalleAutogenerado("Insumos veterinarios de la recria", "MASSAGLIA ALDO ENRIQUE") ? "auto" : "propio"} · ${pareceDetalleAutogenerado("FC 482 - MASSAGLIA ALDO ENRIQUE | Anticipo aplicado", "MASSAGLIA ALDO ENRIQUE") ? "auto" : "propio"}`,
+    pareceDetalleAutogenerado("Insumos veterinarios de la recria", "MASSAGLIA ALDO ENRIQUE") === false
+      && pareceDetalleAutogenerado("FC 482 - MASSAGLIA ALDO ENRIQUE | Anticipo aplicado", "MASSAGLIA ALDO ENRIQUE") === false,
+    "A-DAT-54")
+
+  chequear("Detalle autogenerado", "Sin emisor o sin detalle no opina",
+    "no opina",
+    pareceDetalleAutogenerado("FC 482 - X", "") || pareceDetalleAutogenerado("", "X") ? "opina" : "no opina",
+    pareceDetalleAutogenerado("FC 482 - X", "") === false && pareceDetalleAutogenerado("", "X") === false, "A-DAT-54")
 
   return r
 }
