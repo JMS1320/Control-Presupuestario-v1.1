@@ -1896,8 +1896,10 @@ ${texto.trim()}` : texto.trim()
         // pisa con null cuando el CUIT no está en el maestro (punto 4).
         const nombreProvTpl = provTemplate?.razon_social || templateElegido.denominacion_emisor || null
         if (nombreProvTpl) updateTemplate.proveedor_nombre = nombreProvTpl
-        updateTemplate.detalle = movimientoAsignando.detalle?.trim()
-          || `${templateElegido.nombre_referencia || templateElegido.display_referencia || 'Template'}${nombreProvTpl ? ' — ' + nombreProvTpl : ''}`
+        // 📝 A-DAT-51 — ídem ARCA: el nombre del template ya va al comprobante y el proveedor a su
+        //    columna. Inventar un detalle con los dos era copiar las dos celdas de al lado.
+        //    ⚠️ Lo escrito a mano se sigue respetando (eso era A-BUG-05).
+        updateTemplate.detalle = movimientoAsignando.detalle?.trim() || null
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
@@ -1962,8 +1964,23 @@ ${marca}` : marca
         // (A-BUG-05 punto 4), y el detalle deja de borrarse en cada reasignación (punto 1).
         const nombreProv = provArca?.razon_social || arcaElegida.denominacion_emisor || null
         if (nombreProv) updateArca.proveedor_nombre = nombreProv
-        const detalleArca = `${arcaElegida.display_referencia || 'FC'} — ${nombreProv || 'sin proveedor'}`
-        updateArca.detalle = movimientoAsignando.detalle?.trim() || detalleArca
+        /**
+         * 📝 **A-DAT-51 — el detalle NO repite el comprobante ni el proveedor.**
+         *
+         * 🧨 Acá se armaba `«FC 424 — PAIS DIEGO LUIS»` y se escribía en `detalle`, cuando
+         * `comprobantes_pagados` **ya dice** `FC - 424` y `proveedor_nombre` **ya dice**
+         * `PAIS DIEGO LUIS`. Las dos columnas de al lado, copiadas.
+         *
+         * 🔴 **Y no era un dato viejo: lo escribía esta pantalla en CADA conciliación manual de
+         * ARCA.** Medido el 2026-09-20 sobre la 1ª quincena de julio: **11 de 11** movimientos con
+         * detalle repetido salieron de acá. Crecía un renglón por cada factura conciliada.
+         *
+         * 📏 § 30.9.6 D: *el detalle no repite el proveedor, ni la categoría, ni el comprobante; si
+         * lo que ibas a escribir ya está en otra columna, va vacío*.
+         *
+         * ✅ **Lo que el usuario escribió a mano se respeta siempre** — eso no cambia.
+         */
+        updateArca.detalle = movimientoAsignando.detalle?.trim() || null
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
@@ -2023,7 +2040,8 @@ ${marca}` : marca
 
         const nombreEmpleado = sueldoElegido.empleado?.nombre || ''
         const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
-        const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
+        // 📝 Acá vivía `detalleSueldo`. Se fue con A-DAT-51: repetía el empleado y el período, que
+        //    ya viajan en `proveedor_nombre` y en `comprobantes_pagados`.
         const mesesAbrev = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
         const periodoLabel = sueldoElegido.periodo
           ? `${mesesAbrev[(sueldoElegido.periodo.mes || 1) - 1]} ${sueldoElegido.periodo.anio}`
@@ -2066,7 +2084,9 @@ ${marca}` : marca
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
           // `detalleSueldo` ya se calcula arriba y se descartaba escribiendo null (A-BUG-05 p.1)
-          detalle: movimientoAsignando.detalle?.trim() || detalleSueldo || null,
+          // 📝 A-DAT-51 — `detalleSueldo` era `«Anticipo <empleado> - <descripción>»`: el empleado
+          //    ya está en el proveedor y el período en el comprobante.
+          detalle: movimientoAsignando.detalle?.trim() || null,
           estado: 'conciliado',
           /**
            * 👥 **A-FEAT-155 también acá: si el pago elegido pertenece a un GRUPO, el renglón nombra
@@ -2159,8 +2179,9 @@ ${marca}` : marca
           categ: grupoElegido.categ,
           // Se preserva lo que el usuario haya escrito; si no, se deriva del grupo. Antes iba
           // `null` fijo y borraba el detalle en cada reasignación (A-BUG-05 punto 1).
-          detalle: movimientoAsignando.detalle?.trim()
-            || `Grupo de ${grupoElegido.cuotas?.length ?? 0}${nombreProvGrupo ? ' — ' + nombreProvGrupo : ''}`,
+          // 📝 A-DAT-51 — «Grupo de 3 — <proveedor>» tampoco aporta: el comprobante ya lista los
+          //    tres y el proveedor ya está en su columna (con el reparto, si son varios).
+          detalle: movimientoAsignando.detalle?.trim() || null,
           estado: 'conciliado',
           proveedor_nombre: nombreProvGrupo,
           comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
