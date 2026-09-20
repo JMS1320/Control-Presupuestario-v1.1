@@ -2029,6 +2029,23 @@ ${marca}` : marca
           ? `${mesesAbrev[(sueldoElegido.periodo.mes || 1) - 1]} ${sueldoElegido.periodo.anio}`
           : ''
 
+        /**
+         * 👥 Si este pago pertenece a un grupo, se traen sus hermanos para armar el reparto.
+         * Si no tiene grupo, `repartoDelGrupoSueldo` queda vacío y manda el nombre del empleado.
+         */
+        let repartoDelGrupoSueldo = ''
+        if (sueldoElegido.grupo_pago_id) {
+          const { data: hermanos } = await supabase
+            .from('sueldos_pagos')
+            .select('monto, empleado:sueldos_empleados(nombre)')
+            .eq('grupo_pago_id', sueldoElegido.grupo_pago_id)
+          if (hermanos && hermanos.length > 1) {
+            repartoDelGrupoSueldo = repartoDelGrupo(hermanos.map((h: any) => ({
+              nombre: h.empleado?.nombre ?? '', monto: parseFloat(h.monto) || 0,
+            })))
+          }
+        }
+
         // Buscar códigos contable/interno por empleado (Tipo C)
         const empleadoId = sueldoElegido.empleado_id || sueldoElegido.empleado?.id
         let codigosSueldo: { contable?: string | null, interno?: string | null } = {}
@@ -2051,7 +2068,19 @@ ${marca}` : marca
           // `detalleSueldo` ya se calcula arriba y se descartaba escribiendo null (A-BUG-05 p.1)
           detalle: movimientoAsignando.detalle?.trim() || detalleSueldo || null,
           estado: 'conciliado',
-          proveedor_nombre: nombreEmpleado,
+          /**
+           * 👥 **A-FEAT-155 también acá: si el pago elegido pertenece a un GRUPO, el renglón nombra
+           * a todos con su reparto.**
+           *
+           * 🧨 Se probó en real el 2026-09-19 y salió mal: el usuario armó el grupo de haberes
+           * ($2.699.370 = Sigot ×2 + Barreto) y lo concilió **por este camino**, el de asignación
+           * individual — no por el de grupo, que era el único que tenía el reparto. Resultado: el
+           * movimiento decía **sólo «Wilson Barreto»**, escondiendo que a Sigot le fueron $1,6M.
+           *
+           * 🔑 Es el modo de falla de `MODULO_CONCILIACION.md` § 30.9.5 otra vez: **se arregló un
+           * camino de los dos**. Acá el pago sabe que tiene grupo, así que se mira siempre.
+           */
+          proveedor_nombre: repartoDelGrupoSueldo || nombreEmpleado,
           comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
           // (la limpieza de los otros vínculos ya viene de `vinculosLimpios()` arriba)
         }
