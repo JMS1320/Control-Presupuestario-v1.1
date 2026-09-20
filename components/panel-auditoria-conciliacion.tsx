@@ -13,7 +13,7 @@
  * ⚠️ **No corrige nada.** Propone y muestra; el arreglo lo decide el usuario (§ 🛑 Datos).
  */
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +26,12 @@ import {
 } from "@/lib/conciliacion/auditoria"
 import { ShieldCheck, AlertTriangle, ChevronDown, ChevronRight, Loader2, CheckCircle2, Download } from "lucide-react"
 import { exportarAuditoria } from "@/lib/conciliacion/exportar-auditoria"
+import {
+  agruparCorrecciones, type DatosParaCorregir, type ResumenCorregible,
+} from "@/lib/conciliacion/correcciones"
+import { proveedorDelTemplate } from "@/lib/conciliacion/datos-del-origen"
+import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
+import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -66,6 +72,12 @@ export function PanelAuditoriaConciliacion() {
   const [hasta, setHasta] = useState('')
   /** El rango con el que se corrió, para que el encabezado no mienta si después se cambian los inputs. */
   const [rangoCorrido, setRangoCorrido] = useState<{ desde: string; hasta: string } | null>(null)
+  /** 🛠️ A-FEAT-159 — lo que el audit puede arreglar solo, agrupado por causa. */
+  const [corregibles, setCorregibles] = useState<ResumenCorregible[]>([])
+  const [aplicando, setAplicando] = useState<string | null>(null)
+  const [hechas, setHechas] = useState<Record<string, number>>({})
+  /** La tabla de cada movimiento, para saber a dónde escribir el parche. */
+  const tablaDeMov = useRef(new Map<string, { tabla: string; schema: string }>())
 
   async function correr() {
     setCorriendo(true); setError(null); setRes(null)
@@ -82,6 +94,9 @@ export function PanelAuditoriaConciliacion() {
         const filas = await traerTodo((d, h) => tabla().select("*").range(d, h))
 
         for (const f of filas) {
+          // Se anota dónde vive cada movimiento: el parche de una corrección tiene que ir a su
+          // propia tabla y schema, no a una sola.
+          tablaDeMov.current.set(String(f.id), { tabla: cta.tabla_bd, schema: cta.schema_bd ?? 'public' })
           movimientos.push({
             id: String(f.id),
             cuenta: cta.nombre,
@@ -203,11 +218,119 @@ export function PanelAuditoriaConciliacion() {
           'del rango, y una factura puede no tener movimiento todavía. Corré sin rango para verlas.')
       }
       setRes(resultado)
+
+      /**
+       * 🛠️ **A-FEAT-159 — qué de todo esto se puede arreglar solo.**
+       *
+       * Se arma el dato del ORIGEN para cada movimiento observado: quién cobra, el comprobante con
+       * período y —si el pago es de un grupo de sueldos— el reparto por beneficiario. Con eso,
+       * `agruparCorrecciones` decide qué es mecánico y qué necesita una persona.
+       */
+      const porTemplate = new Map(templates.map((t: any) => [String(t.id), t]))
+      const datos = new Map<string, DatosParaCorregir>()
+
+      // Los pagos de sueldo agrupados, para poder ofrecer el reparto.
+      const pagosSueldo = await traerTodo((d, h) => supabase
+        .from("sueldos_pagos")
+        .select("id, monto, grupo_pago_id, empleado:sueldos_empleados(nombre)")
+        .range(d, h))
+      const porPagoSueldo = new Map(pagosSueldo.map((p: any) => [String(p.id), p]))
+      const porGrupoSueldo = new Map<string, any[]>()
+      for (const p of pagosSueldo) {
+        if (!p.grupo_pago_id) continue
+        const g = String(p.grupo_pago_id)
+        porGrupoSueldo.set(g, [...(porGrupoSueldo.get(g) ?? []), p])
+      }
+
+      for (const m of movimientosDelRango) {
+        const tpl = m.template_id ? porTemplate.get(String(m.template_id)) : null
+        const d: DatosParaCorregir = {}
+
+        if (tpl) {
+          d.proveedorDelOrigen = proveedorDelTemplate(tpl as any)
+          d.comprobanteDelOrigen = identificadorDeCuota({ fecha_estimada: m.fecha }, tpl as any)
+        }
+
+        if (m.sueldo_pago_id) {
+          const pago = porPagoSueldo.get(String(m.sueldo_pago_id))
+          if (pago?.empleado?.nombre) d.proveedorDelOrigen = pago.empleado.nombre
+          if (pago?.grupo_pago_id) {
+            const hermanos = porGrupoSueldo.get(String(pago.grupo_pago_id)) ?? []
+            if (hermanos.length > 1) {
+              d.repartoDeBeneficiarios = repartoDelGrupo(hermanos.map((h: any) => ({
+                nombre: h.empleado?.nombre ?? '', monto: parseFloat(h.monto) || 0,
+              })))
+            }
+          }
+        }
+        datos.set(m.id, d)
+      }
+
+      setCorregibles(agruparCorrecciones(resultado.grupos.flatMap(g => g.causas.flatMap(c => c.ejemplos)), datos))
+      setHechas({})
       setRangoCorrido(desde || hasta ? { desde, hasta } : null)
     } catch (e: any) {
       setError(e?.message ?? String(e))
     } finally {
       setCorriendo(false)
+    }
+  }
+
+  /**
+   * 🛠️ Aplica las correcciones de UNA causa, con foto previa descargada al disco.
+   *
+   * 📸 **La foto se baja como archivo antes de escribir**: son datos reales y el usuario tiene que
+   * poder volver atrás sin depender de que yo guarde nada (§ 🛑 Datos). Si la descarga falla, no se
+   * escribe.
+   */
+  async function aplicarCausa(g: ResumenCorregible) {
+    const clave = `${g.control}|${g.causa}`
+    if (!confirm(
+      `Se van a corregir ${g.corregibles} movimientos.
+
+${g.correcciones[0]?.explicacion ?? ''}
+
+` +
+      `Antes se descarga una foto del estado actual. ¿Aplicar?`)) return
+
+    setAplicando(clave)
+    try {
+      // 📸 Foto ANTES de tocar nada.
+      const campos = [...new Set(g.correcciones.flatMap(c => Object.keys(c.parche)))]
+      const antes: any[] = []
+      for (const c of g.correcciones) {
+        const ubic = tablaDeMov.current.get(c.movimientoId)
+        if (!ubic) continue
+        const q = ubic.schema !== 'public'
+          ? supabase.schema(ubic.schema as any).from(ubic.tabla)
+          : supabase.from(ubic.tabla)
+        const { data } = await q.select(['id', ...campos].join(',')).eq('id', c.movimientoId).maybeSingle()
+        if (data) antes.push({ ...(data as unknown as Record<string, unknown>), __tabla: ubic.tabla, __schema: ubic.schema })
+      }
+      const blob = new Blob([JSON.stringify({ causa: g.causa, fecha: new Date().toISOString(), antes }, null, 2)],
+        { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `respaldo-audit-${g.control}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+      document.body.appendChild(a); a.click()
+      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+
+      let ok = 0
+      for (const c of g.correcciones) {
+        const ubic = tablaDeMov.current.get(c.movimientoId)
+        if (!ubic) continue
+        const q = ubic.schema !== 'public'
+          ? supabase.schema(ubic.schema as any).from(ubic.tabla)
+          : supabase.from(ubic.tabla)
+        const { error } = await q.update(c.parche).eq('id', c.movimientoId)
+        if (!error) ok++
+      }
+      setHechas(h => ({ ...h, [clave]: ok }))
+    } catch (e: any) {
+      setError(e?.message ?? String(e))
+    } finally {
+      setAplicando(null)
     }
   }
 
@@ -250,6 +373,29 @@ export function PanelAuditoriaConciliacion() {
               <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
                 className="border rounded px-2 py-1 text-sm" />
             </div>
+            {/*
+              📅 **Atajos de mes — pedido del usuario 2026-09-19**: *«para los filtros por fecha
+              quiero que siempre para mes y año la app por default tenga el mes y el año actual»*.
+              Con un click quedan puestos el 1 y el último día, sin tipear.
+
+              📌 **Los campos arrancan VACÍOS a propósito**: si el default fuera el mes actual, la
+              primera corrida mostraría 0 conciliados (todavía no hay nada de septiembre) y parecería
+              que el audit no encuentra nada. El atajo da la comodidad sin esconder el universo.
+            */}
+            <Button variant="outline" size="sm" onClick={() => {
+              const h = new Date()
+              const p = (n: number) => String(n).padStart(2, '0')
+              setDesde(`${h.getFullYear()}-${p(h.getMonth() + 1)}-01`)
+              setHasta(`${h.getFullYear()}-${p(h.getMonth() + 1)}-${p(new Date(h.getFullYear(), h.getMonth() + 1, 0).getDate())}`)
+            }}>Este mes</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              const h = new Date(); const m = h.getMonth() - 1
+              const y = m < 0 ? h.getFullYear() - 1 : h.getFullYear()
+              const mes = ((m % 12) + 12) % 12
+              const p = (n: number) => String(n).padStart(2, '0')
+              setDesde(`${y}-${p(mes + 1)}-01`)
+              setHasta(`${y}-${p(mes + 1)}-${p(new Date(y, mes + 1, 0).getDate())}`)
+            }}>Mes anterior</Button>
             {(desde || hasta) && (
               <Button variant="ghost" size="sm" onClick={() => { setDesde(''); setHasta('') }}>
                 Ver todo
@@ -319,6 +465,62 @@ export function PanelAuditoriaConciliacion() {
               <CardContent className="pt-6 text-sm text-green-900 flex gap-2">
                 <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>Los {res.auditados} movimientos conciliados cumplen el estándar.</span>
+              </CardContent>
+            </Card>
+          )}
+
+          {/*
+            🛠️ **A-FEAT-159 — lo que el audit puede arreglar solo, para aprobar POR CAUSA.**
+
+            📌 **Por causa y no por control**: dentro de «el detalle repite» conviven un arreglo
+            obvio (vaciar el ruido) y uno que destruiría datos (mover lo que no está en otro lado).
+            Un botón por control los mezclaría. Lo que necesita criterio simplemente no aparece acá.
+          */}
+          {corregibles.length > 0 && (
+            <Card className="border-blue-300 bg-blue-50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  🛠️ Se pueden corregir solos
+                  <Badge variant="secondary">
+                    {corregibles.reduce((n, g) => n + g.corregibles, 0)}
+                  </Badge>
+                </CardTitle>
+                <p className="text-xs text-gray-600">
+                  Sólo aparece lo que se arregla copiando o borrando un dato que ya existe en otro lado.
+                  Lo que hay que averiguar no se ofrece. <b>Antes de escribir se descarga una foto.</b>
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {corregibles.map(g => {
+                  const clave = `${g.control}|${g.causa}`
+                  const hecho = hechas[clave]
+                  return (
+                    <div key={clave} className="flex flex-wrap items-center gap-3 bg-white border rounded-md px-3 py-2 text-xs">
+                      <span className="font-medium min-w-[10rem]">{g.causa}</span>
+                      <span className="text-gray-500 flex-1 min-w-[14rem]">
+                        {g.correcciones[0]?.explicacion}
+                      </span>
+                      {g.manuales > 0 && (
+                        <Badge variant="outline" className="font-normal">
+                          {g.manuales} quedan a mano
+                        </Badge>
+                      )}
+                      {hecho !== undefined ? (
+                        <Badge className="bg-green-600">✓ {hecho} corregidos</Badge>
+                      ) : (
+                        <Button size="sm" disabled={aplicando !== null}
+                          onClick={() => aplicarCausa(g)}>
+                          {aplicando === clave
+                            ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Corrigiendo…</>
+                            : `Corregir ${g.corregibles}`}
+                        </Button>
+                      )}
+                    </div>
+                  )
+                })}
+                <p className="text-xs text-gray-500 pt-1">
+                  Después de corregir, volvé a correr la auditoría para ver cómo quedó.
+                </p>
               </CardContent>
             </Card>
           )}

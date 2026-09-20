@@ -54,6 +54,7 @@ import {
 } from "@/lib/templates/editar-campana"
 import { planificarContrapartes } from "@/lib/contrapartes/registrar"
 import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
+import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1235,6 +1236,67 @@ export function correrCasos(): Resultado[] {
   chequear("Reparto de grupo", "Con un solo beneficiario va el nombre sin importe",
     "Ruben Sigot", repartoDelGrupo([{ nombre: "Ruben Sigot", monto: 1487477 }]),
     repartoDelGrupo([{ nombre: "Ruben Sigot", monto: 1487477 }]) === "Ruben Sigot", "A-FEAT-155")
+
+  // ══ 🛠️ EL AUDIT QUE PROPONE LA CORRECCION (A-FEAT-159) ═══════════════════════════════════════
+  const hallC = (over: any) => ({
+    control: "sin-proveedor", movimientoId: "m1", cuenta: "MSA Galicia", fecha: "2026-06-30",
+    descripcion: "Imp. Deb.", importe: 894, origen: "template" as const,
+    problema: "", causa: "", ...over,
+  })
+
+  // ✅ Corregible: el dato existe en el origen, solo hay que copiarlo.
+  const c1 = corregir(hallC({ causa: "El dato sale del template" }), { proveedorDelOrigen: "Banco Galicia" })
+  chequear("Audit corrige", "✅ Copia el proveedor que ya dice el origen",
+    "Banco Galicia", String(c1?.parche.proveedor_nombre), c1?.parche.proveedor_nombre === "Banco Galicia", "A-FEAT-159")
+
+  // 🛑 Si el origen tampoco lo tiene, NO se ofrece: no hay nada que copiar.
+  const c2 = corregir(hallC({ causa: "El dato sale del template" }), {})
+  chequear("Audit corrige", "🛑 Si el origen tampoco lo tiene, no se ofrece corregir",
+    "sin propuesta", c2 === null ? "sin propuesta" : "propone igual", c2 === null, "A-FEAT-159")
+
+  // 👥 Con varios beneficiarios manda el reparto, no un nombre suelto.
+  const c3 = corregir(hallC({ causa: "x" }),
+    { proveedorDelOrigen: "Wilson Barreto", repartoDeBeneficiarios: "Ruben Sigot 1,6M + Wilson Barreto 1,1M" })
+  chequear("Audit corrige", "👥 Con varios beneficiarios gana el reparto",
+    "Ruben Sigot 1,6M + Wilson Barreto 1,1M", String(c3?.parche.proveedor_nombre),
+    c3?.parche.proveedor_nombre === "Ruben Sigot 1,6M + Wilson Barreto 1,1M", "A-FEAT-159")
+
+  // 🛑 LA MITAD QUE IMPORTA: de los 3 destinos del detalle, solo el ruidoC puro se corrige solo.
+  const ruidoC   = corregir(hallC({ control: "detalle-repite", causa: "Puro ruidoC: se vacía" }), {})
+  const recorteC = corregir(hallC({ control: "detalle-repite", causa: "Repite y además aporta algo: se recorta" }), {})
+  const moverC   = corregir(hallC({ control: "detalle-repite", causa: "🔴 Guarda lo que falta en el comprobante: se MUEVE, no se borra" }), {})
+  chequear("Audit corrige", "🛑 Del detalle solo se vacía el RUIDO PURO; recortar y moverC no se ofrecen",
+    "vacía · no · no",
+    `${ruidoC ? "vacía" : "no"} · ${recorteC ? "sí" : "no"} · ${moverC ? "sí" : "no"}`,
+    ruidoC?.parche.detalle === null && recorteC === null && moverC === null, "A-FEAT-159")
+
+  // La imputación: solo el caso simétrico. El de ARCA sin número es A-DAT-48 y no se toca acá.
+  const impuOk = corregir(hallC({ control: "imputacion", causa: "template con número de cuenta" }), {})
+  const impuNo = corregir(hallC({ control: "imputacion", causa: "ARCA sin número de cuenta" }), {})
+  chequear("Audit corrige", "Vacía el nro de cuenta de un template; el de ARCA sin número no se toca",
+    "vacía · no", `${impuOk ? "vacía" : "no"} · ${impuNo ? "sí" : "no"}`,
+    impuOk?.parche.nro_cuenta === null && impuNo === null, "A-FEAT-159")
+
+  // 🕳️ Un hallazgo del ORIGEN no se corrige desde el extracto.
+  chequear("Audit corrige", "🕳️ Los hallazgos del ORIGEN no se corrigen desde acá",
+    "sin propuesta",
+    corregir(hallC({ entidad: "template" }), { proveedorDelOrigen: "X" }) === null ? "sin propuesta" : "propone",
+    corregir(hallC({ entidad: "template" }), { proveedorDelOrigen: "X" }) === null, "A-FEAT-159")
+
+  // 📌 Se agrupa por CAUSA, que es la unidad con la que el usuario aprueba.
+  const gruposC = agruparCorrecciones([
+    hallC({ movimientoId: "a", causa: "El dato sale del template" }),
+    hallC({ movimientoId: "b", causa: "El dato sale del template" }),
+    hallC({ movimientoId: "c", control: "detalle-repite", causa: "Puro ruidoC: se vacía" }),
+  ], new Map([
+    ["a", { proveedorDelOrigen: "Banco Galicia" }],
+    ["b", {}],   // sin dato en el origen → cuenta como manual
+    ["c", {}],
+  ]))
+  chequear("Audit corrige", "📌 Agrupa por causa y separa corregibles de manuales",
+    "2 causas · 1 corregible + 1 manual en la primera",
+    `${gruposC.length} causas · ${gruposC[0].corregibles} corregible + ${gruposC[0].manuales} manual en la primera`,
+    gruposC.length === 2 && gruposC.some(g => g.corregibles === 1 && g.manuales === 1), "A-FEAT-159")
 
   return r
 }
