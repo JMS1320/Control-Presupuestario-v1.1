@@ -1213,6 +1213,25 @@ Se reparte en **cuotas**, cada una con **fecha de cobro** y **posición de fijac
 La suma de qq de las cuotas debería dar el arrendamiento total. Si no da, la app **avisa
 pero no bloquea**.
 
+**Cargar el contrato con sus cuotas.** **Nuevo contrato** y **Editar** abren el mismo modal, y
+ahí se define el contrato entero: los datos de arriba y, abajo, la sección **Cuotas**.
+
+- **Agregar cuota**: qq/ha, fecha de cobro y posición. La posición arranca igual al mes de
+  cobro (dice *= cobro*); si la cambiás, queda *a mano*.
+- **Copiar cuotas de otro contrato…**: trae el esquema de cualquier contrato —de cualquier
+  empresa— **corrido a la campaña** del que estás editando. Es un punto de partida: después
+  ajustás cantidad de cuotas, qq/ha y fechas como diga este contrato. Ej.: PAM Nazarenas 25/26
+  copia de MSA Nazarenas 26/27 y las fechas quedan un año antes.
+- Una cuota que **ya tiene una venta** no se puede borrar (dice *vendido*), ni dejarse con menos
+  toneladas que las vendidas: el botón **Guardar** se desactiva y dice por qué.
+- Las cuotas **ya cobradas** se cargan igual y después se registran con **Fijar**, con su fecha
+  y precio reales.
+- Si un contrato no tiene cuotas, su tarjeta lo dice y ofrece **Cargar cuotas**.
+- Si el cliente no tiene CUIT, el modal lo avisa: elegilo de la lista, porque sin CUIT no se
+  encuentra después su factura.
+
+→ A-TEST-133
+
 **`Días de cobro del disponible`**: días corridos entre la fijación y el cobro cuando vendés
 disponible. **Es por cliente**: Sanpa 15, el resto 20.
 

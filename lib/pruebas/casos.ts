@@ -58,6 +58,10 @@ import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
+import {
+  copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
+  type CuotaGuardada, type FilaCuota,
+} from "@/lib/arrendamientos/cuotas"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1400,6 +1404,87 @@ export function correrCasos(): Resultado[] {
     "no opina",
     pareceDetalleAutogenerado("FC 482 - X", "") || pareceDetalleAutogenerado("", "X") ? "opina" : "no opina",
     pareceDetalleAutogenerado("FC 482 - X", "") === false && pareceDetalleAutogenerado("", "X") === false, "A-DAT-54")
+
+  // ══ 🌾 CUOTAS DE UN CONTRATO DE ARRENDAMIENTO (A-BUG-101) ═══════════════════════════════════
+  // Datos: las 3 cuotas reales de MSA Nazarenas 26/27 (Provinvest, 15 qq/ha), escritas acá.
+  {
+    const NAZ: CuotaGuardada[] = [
+      { id: "q1", numero_cuota: 1, qq_ha_cuota: 6, fecha_cobro_estimada: "2026-11-20", posicion_anio: 2026, posicion_mes: 11 },
+      { id: "q2", numero_cuota: 2, qq_ha_cuota: 1.5, fecha_cobro_estimada: "2026-11-20", posicion_anio: 2027, posicion_mes: 5 },
+      { id: "q3", numero_cuota: 3, qq_ha_cuota: 7.5, fecha_cobro_estimada: "2027-04-20", posicion_anio: 2027, posicion_mes: 5 },
+    ]
+    const pam = copiarEsquemaCuotas(NAZ, "26/27", "25/26")
+    const txt = (fs: FilaCuota[]) => fs.map(f => `${f.qq_ha_cuota}@${f.fecha_cobro}·${f.posicion_mes}/${f.posicion_anio}`).join(" ")
+
+    chequear("Cuotas arrendamiento", "🔑 Copiar Nazarenas 26/27 a PAM 25/26 corre fechas y posición un año atrás",
+      "6@2025-11-20·11/2025 1.5@2025-11-20·5/2026 7.5@2026-04-20·5/2026", txt(pam),
+      txt(pam) === "6@2025-11-20·11/2025 1.5@2025-11-20·5/2026 7.5@2026-04-20·5/2026", "A-BUG-101")
+
+    // La copia toma lo que dice el CONTRATO, no a dónde movió la cuota el presupuesto.
+    const movida: CuotaGuardada[] = [{ ...NAZ[0], fecha_cobro_estimada: "2027-01-15", posicion_mes: 1, posicion_anio: 2027,
+      fecha_cobro_original: "2026-11-20", posicion_orig_anio: 2026, posicion_orig_mes: 11 }]
+    chequear("Cuotas arrendamiento", "Copiar una cuota movida usa la fecha del contrato, no la movida",
+      "6@2026-11-20·11/2026", txt(copiarEsquemaCuotas(movida, "26/27", "26/27")),
+      txt(copiarEsquemaCuotas(movida, "26/27", "26/27")) === "6@2026-11-20·11/2026", "A-BUG-101")
+
+    chequear("Cuotas arrendamiento", "Campaña en los formatos que se usan",
+      "2025 2025 2025 null", [anioInicioCampania("25/26"), anioInicioCampania("2025/26"),
+        anioInicioCampania("2025/2026"), anioInicioCampania("campaña")].join(" "),
+      anioInicioCampania("25/26") === 2025 && anioInicioCampania("2025/26") === 2025
+        && anioInicioCampania("2025/2026") === 2025 && anioInicioCampania("campaña") === null, "A-BUG-101")
+
+    chequear("Cuotas arrendamiento", "Un 29/02 corrido a un año no bisiesto cae el 28/02",
+      "2027-02-28", correrAnios("2028-02-29", -1), correrAnios("2028-02-29", -1) === "2027-02-28", "A-BUG-101")
+
+    // Control: el esquema de 15 qq en un contrato de 15 cierra; en MA Lima (15,5) avisa y no frena.
+    const ok15 = validarCuotas(pam, 211.16, 15, {}, [])
+    chequear("Cuotas arrendamiento", "✓ PAM: 15 qq/ha en cuotas contra 15 del contrato → ni aviso ni freno",
+      "0 frenos · 0 avisos", `${ok15.frenos.length} frenos · ${ok15.avisos.length} avisos`,
+      ok15.frenos.length === 0 && ok15.avisos.length === 0, "A-BUG-101")
+
+    const ma = validarCuotas(pam, 85.36, 15.5, {}, [])
+    chequear("Cuotas arrendamiento", "MA: suma 15 contra 15,5 del contrato → AVISA y deja guardar",
+      "0 frenos · 1 aviso con -0,5", `${ma.frenos.length} frenos · ${ma.avisos.length} aviso · ${ma.avisos[0] ?? ""}`,
+      ma.frenos.length === 0 && ma.avisos.length === 1 && ma.avisos[0].includes("-0,5"), "A-BUG-101")
+
+    // 🛑 Borrar una cuota borra sus ventas EN CASCADA en la BD: por eso esto frena.
+    const filasNaz = NAZ.map(filaDesdeGuardada)
+    const sinQ1 = validarCuotas(filasNaz.slice(1), 144.93, 15, { q1: 50 }, ["q1", "q2", "q3"])
+    chequear("Cuotas arrendamiento", "🛑 Borrar una cuota con venta fijada FRENA",
+      "1 freno", `${sinQ1.frenos.length} freno(s): ${sinQ1.frenos.join(" | ")}`,
+      sinQ1.frenos.length === 1 && sinQ1.frenos[0].includes("borrar"), "A-BUG-101")
+
+    // 144,93 ha × 3 qq / 10 = 43,48 tn, con 50 tn ya vendidas
+    const bajo = validarCuotas([{ ...filasNaz[0], qq_ha_cuota: 3 }, ...filasNaz.slice(1)], 144.93, 15, { q1: 50 }, ["q1", "q2", "q3"])
+    chequear("Cuotas arrendamiento", "🛑 Bajar una cuota por debajo de lo ya vendido FRENA",
+      "1 freno", `${bajo.frenos.length} freno(s)`, bajo.frenos.length === 1 && bajo.frenos[0].includes("vendidas"), "A-BUG-101")
+
+    // Plan de escritura: borrar la 1 renumera las otras; una nueva nace con la original = estimada.
+    const plan = planificarCuotas(NAZ, [...filasNaz.slice(1),
+      { qq_ha_cuota: 6, fecha_cobro: "2027-07-10", posicion_anio: 2027, posicion_mes: 7 }])
+    const planTxt = `borrar ${plan.borrar.join(",")} · renumerar ${plan.actualizar.map(u => `${u.id}→${u.cambios.numero_cuota}`).join(",")}`
+      + ` · nueva #${plan.insertar[0]?.numero_cuota} orig ${plan.insertar[0]?.fecha_cobro_original}`
+    chequear("Cuotas arrendamiento", "Borrar la cuota 1 renumera 2→1 y 3→2; la nueva es la #3",
+      "borrar q1 · renumerar q2→1,q3→2 · nueva #3 orig 2027-07-10", planTxt,
+      planTxt === "borrar q1 · renumerar q2→1,q3→2 · nueva #3 orig 2027-07-10", "A-BUG-101")
+
+    // Si el presupuesto había movido la cuota, cambiar el contrato no pisa el movimiento.
+    const planMov = planificarCuotas(movida, [{ ...filaDesdeGuardada(movida[0]), fecha_cobro: "2026-12-01", posicion_mes: 12 }])
+    const c = planMov.actualizar[0]?.cambios ?? {}
+    chequear("Cuotas arrendamiento", "🔑 Editar una cuota MOVIDA cambia lo del contrato y respeta a dónde se movió",
+      "original 2026-12-01 · estimada sin tocar", `original ${c.fecha_cobro_original} · estimada ${c.fecha_cobro_estimada ?? "sin tocar"}`,
+      c.fecha_cobro_original === "2026-12-01" && c.fecha_cobro_estimada === undefined, "A-BUG-101")
+
+    const planQuieta = planificarCuotas(NAZ.slice(0, 1), [{ ...filasNaz[0], fecha_cobro: "2026-12-01", posicion_mes: 12 }])
+    const cq = planQuieta.actualizar[0]?.cambios ?? {}
+    chequear("Cuotas arrendamiento", "Editar una cuota NO movida mueve también la estimada",
+      "estimada 2026-12-01 · posición 12", `estimada ${cq.fecha_cobro_estimada} · posición ${cq.posicion_mes}`,
+      cq.fecha_cobro_estimada === "2026-12-01" && cq.posicion_mes === 12, "A-BUG-101")
+
+    chequear("Cuotas arrendamiento", "Sin cambios no se escribe nada",
+      "0 · 0 · 0", (p => `${p.insertar.length} · ${p.actualizar.length} · ${p.borrar.length}`)(planificarCuotas(NAZ, filasNaz)),
+      (p => p.insertar.length + p.actualizar.length + p.borrar.length === 0)(planificarCuotas(NAZ, filasNaz)), "A-BUG-101")
+  }
 
   // ══ 📅 EL RANGO DE FECHAS COMPARTIDO (A-FEAT-161) ═══════════════════════════════════════════
   chequear("Rango de fechas", "📅 Un mes va del 1 al ultimo dia, con ceros",
