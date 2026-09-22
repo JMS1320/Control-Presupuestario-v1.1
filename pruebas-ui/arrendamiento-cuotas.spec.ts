@@ -122,6 +122,17 @@ test('🌾 Fijar Rojas #5: propone 112,960 tn exactas y el TC arranca vacío', a
   await expect(modal.getByPlaceholder(/dejar vacío/)).toHaveValue('')
   await expect(modal.getByRole('button', { name: /usar el del presupuesto/ })).toBeVisible()
 
+  // A-FEAT-163 — el cartel del test del proceso: resumen para el usuario, 3 respuestas y nota.
+  // 🛑 NO se aprieta ninguna respuesta: eso escribe un comentario real en pendientes_comentarios.
+  await modal.getByRole('button', { name: /para mirar en esta corrida/ }).click()
+  await expect(modal.getByText('A-TEST-134')).toBeVisible()
+  await expect(modal.getByText(/Qué probar:/)).toBeVisible()
+  await expect(modal.getByText(/5 casos en npm run probar/)).toBeHidden()   // lo técnico, plegado
+  for (const r of ['✅ Anduvo', '🟡 Anduvo en parte', '🔴 Falló']) {
+    await expect(modal.getByRole('button', { name: r })).toBeVisible()
+  }
+  await expect(modal.getByPlaceholder(/Nota \(opcional\)/)).toBeVisible()
+
   await page.screenshot({ path: 'test-results/arrendamiento-fijar-rojas5.png', fullPage: true })
   await modal.getByRole('button', { name: 'Cancelar' }).click()
   expect(errores).toEqual([])

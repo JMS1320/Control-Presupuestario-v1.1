@@ -41,6 +41,7 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { esDelProceso, type Pendiente } from "@/lib/pendientes/parse"
+import { queProbarVos, tituloCorto, textoRespuesta, RESPUESTAS_TEST } from "@/lib/pendientes/resumen-test"
 
 interface Props {
   /** El proceso, como se marca en `PENDIENTES.md`: `@cashflow/sicore` → `"cashflow/sicore"`. */
@@ -50,13 +51,17 @@ interface Props {
 }
 
 /**
- * Los estados que ya acepta `/api/pendientes/comentarios`. **No se agregó ninguno**: `chequeado` y
- * `revisar` decían exactamente esto desde antes.
+ * Tres respuestas, no dos (A-FEAT-163, pedido del usuario 2026-09-21): *«que haya opción de que
+ * funcionó parcialmente»*. Con sólo sí/no, lo que anduvo a medias se contesta mal para cualquiera
+ * de los dos lados. **No se agregó ningún estado**: «en parte» va a `revisar` como «falló», y lo
+ * que las distingue es la etiqueta y la nota, que viajan en el texto del comentario.
  */
-const RESPUESTAS = [
-  { estado: "chequeado", etiqueta: "✅ Anduvo", clase: "border-green-600 text-green-700 hover:bg-green-50" },
-  { estado: "revisar", etiqueta: "🔴 Falló", clase: "border-red-600 text-red-700 hover:bg-red-50" },
-] as const
+const CLASE: Record<string, string> = {
+  anduvo: "border-green-600 text-green-700 hover:bg-green-50",
+  parcial: "border-amber-500 text-amber-700 hover:bg-amber-50",
+  fallo: "border-red-600 text-red-700 hover:bg-red-50",
+}
+const RESPUESTAS = RESPUESTAS_TEST.map(r => ({ ...r, clase: CLASE[r.clave] }))
 
 /**
  * ¿Es un test? **Por el ID, no por la columna `tipo`.**
@@ -86,6 +91,8 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
   const [respondidos, setRespondidos] = useState<Set<string>>(new Set())
   /** Cuál tiene el detalle desplegado. Uno por vez: el cartel se tiene que poder barrer. */
   const [expandido, setExpandido] = useState<string | null>(null)
+  /** La nota que el usuario escribe en cada test, antes de responder. */
+  const [notas, setNotas] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let vivo = true
@@ -114,7 +121,7 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pendiente_id: p.id,
-          texto: `${etiqueta} — probado al correr el proceso (${proceso}).`,
+          texto: textoRespuesta(etiqueta, notas[p.id] ?? "", proceso),
           estado_usuario: estado,
           pantalla: pantalla ?? proceso.split("/")[0],
         }),
@@ -162,25 +169,38 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
           {visibles.map(p => (
             <div key={p.id} className="rounded border border-amber-200 bg-white px-2.5 py-2">
               <div className="text-[11px] font-medium text-gray-800">
-                <span className="font-mono text-amber-700">{p.id}</span> · {p.titulo}
+                <span className="font-mono text-amber-700">{p.id}</span> · {tituloCorto(p.titulo)}
               </div>
-              {/* 🔴 El detalle va RECORTADO a dos líneas, y se abre el que interese.
-                  Mirando la primera versión renderizada: los detalles de `PENDIENTES.md` son
-                  párrafos enteros, y cinco juntos tapaban el modal. Cumplía la letra del modo de
-                  falla 2 —arranca colapsado, no bloquea— pero no el espíritu: **un cartel que no
-                  se puede barrer con la vista se cierra sin leer**, que es el modo de falla 1 por
-                  la puerta de al lado. Lo encontró verlo, no un caso. */}
-              {p.detalle && (
-                <p
-                  onClick={() => setExpandido(e => (e === p.id ? null : p.id))}
-                  title={expandido === p.id ? 'Contraer' : 'Ver el detalle completo'}
-                  className={`mt-1 cursor-pointer text-[11px] leading-4 text-gray-600 ${
-                    expandido === p.id ? '' : 'line-clamp-2'
-                  }`}
-                >
-                  {p.detalle}
-                </p>
-              )}
+              {/* Primero lo que el usuario tiene que hacer, en su idioma (A-FEAT-163). El resto
+                  —casos, IDs, adversarios— es para Claude y queda plegado como detalle técnico. */}
+              {(() => {
+                const paraVos = queProbarVos(p.titulo) ?? queProbarVos(p.detalle)
+                const tecnico = [p.titulo, p.detalle].filter(Boolean).join(" · ")
+                return (
+                  <>
+                    {paraVos && (
+                      <p className="mt-1 text-[11px] leading-4 text-gray-800">
+                        <strong>Qué probar:</strong> {paraVos}
+                      </p>
+                    )}
+                    <button type="button"
+                      onClick={() => setExpandido(e => (e === p.id ? null : p.id))}
+                      className="mt-1 text-[10px] text-gray-500 underline">
+                      {expandido === p.id ? "ocultar detalle técnico" : paraVos ? "ver detalle técnico" : "ver detalle"}
+                    </button>
+                    {expandido === p.id && (
+                      <p className="mt-1 text-[10px] leading-4 text-gray-500">{tecnico}</p>
+                    )}
+                  </>
+                )
+              })()}
+              <textarea
+                value={notas[p.id] ?? ""}
+                onChange={e => setNotas(n => ({ ...n, [p.id]: e.target.value }))}
+                placeholder="Nota (opcional): qué viste, qué no anduvo…"
+                rows={2}
+                className="mt-1.5 w-full rounded border border-gray-200 px-2 py-1 text-[11px] leading-4"
+              />
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {RESPUESTAS.map(r => (
                   <Button

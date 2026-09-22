@@ -63,6 +63,9 @@ import {
   partirCuota, DECIMALES_QQ,
   type CuotaGuardada, type FilaCuota,
 } from "@/lib/arrendamientos/cuotas"
+import {
+  queProbarVos, tituloCorto, textoRespuesta, RESPUESTAS_TEST,
+} from "@/lib/pendientes/resumen-test"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1516,6 +1519,39 @@ export function correrCasos(): Resultado[] {
     chequear("Cuotas arrendamiento", "Lima #1 tiene 66,154 tn: a 2 decimales se pierden 0,004",
       "66.154 (2 dec: 66.15)", `${lima} (2 dec: ${Math.round(lima * 100) / 100})`,
       lima === 66.154 && Math.round(lima * 100) / 100 === 66.15, "A-BUG-184")
+  }
+
+  // ══ 🧪 EL CARTEL DE TESTS HABLA EN EL IDIOMA DEL USUARIO (A-FEAT-163) ══════════════════════
+  // Texto real (recortado) del A-TEST-134, tal como está en PENDIENTES.md.
+  {
+    const T134 = "🌾 Fijar una cuota de arrendamiento (A-BUG-183, A-BUG-184, A-FEAT-164) — ✅ Probado por Claude: "
+      + "5 casos en npm run probar (187/187). Qué probar vos, la próxima vez que fijes: (1) al abrir Fijar, "
+      + "las toneladas vienen con 3 decimales y el TC vacío."
+    chequear("Cartel de tests", "🔑 Muestra sólo lo que el usuario tiene que hacer, sin casos ni IDs",
+      "(1) al abrir Fijar, las toneladas vienen con 3 decimales y el TC vacío.", queProbarVos(T134) ?? "null",
+      queProbarVos(T134) === "(1) al abrir Fijar, las toneladas vienen con 3 decimales y el TC vacío.", "A-FEAT-163")
+
+    chequear("Cartel de tests", "Un test viejo sin «Qué probar vos» no inventa nada",
+      "null", String(queProbarVos("Probar el FLETE de la carga (A-FEAT-98). Pasos: (1) …")),
+      queProbarVos("Probar el FLETE de la carga (A-FEAT-98). Pasos: (1) …") === null, "A-FEAT-163")
+
+    chequear("Cartel de tests", "El título se corta antes del primer « — » o paréntesis",
+      "🌾 Fijar una cuota de arrendamiento", tituloCorto(T134),
+      tituloCorto(T134) === "🌾 Fijar una cuota de arrendamiento", "A-FEAT-163")
+
+    chequear("Cartel de tests", "Tres respuestas: anduvo, en parte y falló",
+      "chequeado · revisar · revisar", RESPUESTAS_TEST.map(r => r.estado).join(" · "),
+      RESPUESTAS_TEST.length === 3 && RESPUESTAS_TEST[1].estado === "revisar", "A-FEAT-163")
+
+    const conNota = textoRespuesta("🟡 Anduvo en parte", "  el TC vino vacío pero la fecha no  ", "ingresos/fijar-arrendamiento")
+    chequear("Cartel de tests", "La nota del usuario viaja en el comentario",
+      "🟡 Anduvo en parte: el TC vino vacío pero la fecha no — probado al correr el proceso (ingresos/fijar-arrendamiento).",
+      conNota, conNota === "🟡 Anduvo en parte: el TC vino vacío pero la fecha no — probado al correr el proceso (ingresos/fijar-arrendamiento).",
+      "A-FEAT-163")
+
+    chequear("Cartel de tests", "Sin nota queda como antes",
+      "✅ Anduvo — probado al correr el proceso (x).", textoRespuesta("✅ Anduvo", "", "x"),
+      textoRespuesta("✅ Anduvo", "", "x") === "✅ Anduvo — probado al correr el proceso (x).", "A-FEAT-163")
   }
 
   // ══ 📅 EL RANGO DE FECHAS COMPARTIDO (A-FEAT-161) ═══════════════════════════════════════════

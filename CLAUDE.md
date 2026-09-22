@@ -1032,9 +1032,10 @@ figure la nota para el test. Sería ideal ponerlo siempre al terminar un desarro
   pantalla no le aparece a nadie.
 - **Tres respuestas, no dos**: ✅ anduvo · 🟡 **anduvo en parte** · 🔴 falló — y **siempre con lugar
   para escribir una nota**. Con sólo sí/no, lo que anduvo a medias se contesta mal para cualquiera de
-  los dos lados. → [A-FEAT-163](PENDIENTES.md#a-feat-163) *(hoy el cartel tiene sólo ✅/🔴 y sin nota)*.
+  los dos lados. → [A-FEAT-163](PENDIENTES.md#a-feat-163) *(hecho 2026-09-22)*.
 - **Y el texto del cartel se escribe para él**, no para Claude: qué hacer y qué tiene que ver, en el
-  lenguaje de la app (§ 🗣️). *Motivo: el primer cartel real (A-TEST-133) era el dossier entero con IDs
+  lenguaje de la app (§ 🗣️). **Se escribe después de «Qué probar vos:»** dentro del `A-TEST`: el
+  cartel muestra sólo esa parte y pliega el resto (casos, IDs, adversarios) como detalle técnico. *Motivo: el primer cartel real (A-TEST-133) era el dossier entero con IDs
   y adversarios — «menciona muchas cosas que tal vez no entiendo».*
 
 **Motivo, y es el que convierte esto en regla y no en una buena costumbre:** el usuario fijó que
