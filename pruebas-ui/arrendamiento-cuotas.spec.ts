@@ -126,14 +126,50 @@ test('🌾 Fijar Rojas #5: propone 112,960 tn exactas y el TC arranca vacío', a
   // 🛑 NO se aprieta ninguna respuesta: eso escribe un comentario real en pendientes_comentarios.
   await modal.getByRole('button', { name: /para mirar en esta corrida/ }).click()
   await expect(modal.getByText('A-TEST-134')).toBeVisible()
-  await expect(modal.getByText(/Qué probar:/)).toBeVisible()
+  // Puede haber varios tests del mismo proceso (134 y 135 en Fijar): se mira el primero de cada cosa
+  await expect(modal.getByText(/Qué probar:/).first()).toBeVisible()
   await expect(modal.getByText(/5 casos en npm run probar/)).toBeHidden()   // lo técnico, plegado
   for (const r of ['✅ Anduvo', '🟡 Anduvo en parte', '🔴 Falló']) {
-    await expect(modal.getByRole('button', { name: r })).toBeVisible()
+    await expect(modal.getByRole('button', { name: r }).first()).toBeVisible()
   }
-  await expect(modal.getByPlaceholder(/Nota \(opcional\)/)).toBeVisible()
+  await expect(modal.getByPlaceholder(/Nota \(opcional\)/).first()).toBeVisible()
 
   await page.screenshot({ path: 'test-results/arrendamiento-fijar-rojas5.png', fullPage: true })
   await modal.getByRole('button', { name: 'Cancelar' }).click()
+  expect(errores).toEqual([])
+})
+
+/**
+ * ✏️ A-BUG-100 + A-FEAT-164 — editar una venta CERRADA: Rojas 26/27 cuota #3 (48,4 tn, TC 1.500).
+ * 🛑 CERO ESCRITURA: borra el TC en pantalla, mira que vuelva a «falta el TC» y CANCELA.
+ */
+test('✏️ Editar la venta cerrada de Rojas #3: se puede sacar el TC (sin guardar)', async ({ page }) => {
+  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  const errores: string[] = []
+  page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
+
+  await irAlInicio(page)
+  await page.getByRole('tab', { name: 'Ingresos' }).click()
+  await page.getByRole('tab', { name: 'Arrendamientos' }).click()
+  const tarjeta = page.locator('div.rounded-lg', { hasText: 'Rojas' }).filter({ hasText: '26/27' }).first()
+  const venta = tarjeta.locator('tr', { hasText: 'Venta · 48,40 tn' })
+  await expect(venta).toContainText('cerrada', { timeout: 60_000 })
+  await venta.getByRole('button', { name: 'Editar' }).click()
+
+  const modal = page.getByRole('dialog')
+  await expect(modal.getByText(/Editar venta — Rojas cuota #3/)).toBeVisible()
+  await expect(modal.getByText(/Cobro:/)).toBeVisible()
+  await expect(modal.getByText('(de la venta)')).toBeVisible()
+  const tc = modal.getByPlaceholder(/dejar vacío/)
+  await expect(tc).toHaveValue('1.500,00')
+  await expect(modal.getByText('$26.499.000')).toBeVisible()
+
+  await tc.fill('')
+  await expect(modal.getByText(/— falta el TC/)).toBeVisible()
+  await expect(modal.getByRole('button', { name: 'Guardar cambios' })).toBeEnabled()
+
+  await page.screenshot({ path: 'test-results/arrendamiento-editar-venta.png', fullPage: true })
+  await modal.getByRole('button', { name: 'Cancelar' }).click()
+  await expect(modal).toBeHidden()
   expect(errores).toEqual([])
 })

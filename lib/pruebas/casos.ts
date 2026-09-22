@@ -60,7 +60,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
-  partirCuota, DECIMALES_QQ,
+  partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion,
   type CuotaGuardada, type FilaCuota,
 } from "@/lib/arrendamientos/cuotas"
 import {
@@ -1523,6 +1523,39 @@ export function correrCasos(): Resultado[] {
     chequear("Cuotas arrendamiento", "Lima #1 tiene 66,154 tn: a 2 decimales se pierden 0,004",
       "66.154 (2 dec: 66.15)", `${lima} (2 dec: ${Math.round(lima * 100) / 100})`,
       lima === 66.154 && Math.round(lima * 100) / 100 === 66.15, "A-BUG-184")
+  }
+
+  // ══ ✏️ EDITAR UNA VENTA DE ARRENDAMIENTO (A-BUG-100) ════════════════════════════════════════
+  // Caso real: Rojas 26/27 cuota #3, 48,4 tn matba a USD 365 × TC 1.500 = $26.499.000, «cerrada».
+  {
+    const cerrada = camposDeVenta({ tons: 48.4, modo: "matba", precio: 365, tc: 1500, fechaFijacion: "2026-08-01" })
+    chequear("Editar venta", "La venta de Rojas #3 con TC da $26.499.000",
+      "26499000", String(Math.round(cerrada.monto_pesos ?? 0)), Math.round(cerrada.monto_pesos ?? 0) === 26499000, "A-BUG-100")
+
+    // 🔑 Lo que pidió el usuario: sacar el TC la vuelve a «falta TC», sin monto en pesos.
+    const sinTc = camposDeVenta({ tons: 48.4, modo: "matba", precio: 365, tc: null, fechaFijacion: "2026-08-01",
+      tcAnterior: 1500, fechaTcAnterior: "2026-08-05" })
+    // Misma regla que `estadoVenta` de calculo.ts (que no se puede importar acá): matba sin TC = falta TC
+    const est = sinTc.modo === "matba" && sinTc.precio_usd && sinTc.tc == null ? "sin_tc" : "otro"
+    chequear("Editar venta", "🔑 Borrar el TC de una venta cerrada la deja en «falta TC»",
+      "sin_tc · tc null · fecha TC null · monto null",
+      `${est} · tc ${sinTc.tc} · fecha TC ${sinTc.fecha_fijacion_tc} · monto ${sinTc.monto_pesos}`,
+      est === "sin_tc" && sinTc.tc === null && sinTc.fecha_fijacion_tc === null && sinTc.monto_pesos === null, "A-BUG-100")
+
+    const mismoTc = camposDeVenta({ tons: 50, modo: "matba", precio: 365, tc: 1500, fechaFijacion: "2026-09-22",
+      tcAnterior: 1500, fechaTcAnterior: "2026-08-05" })
+    chequear("Editar venta", "Si el TC no cambia, se conserva la fecha en que se fijó",
+      "2026-08-05", String(mismoTc.fecha_fijacion_tc), mismoTc.fecha_fijacion_tc === "2026-08-05", "A-BUG-100")
+
+    const pizarra = camposDeVenta({ tons: 159.72, modo: "pizarra", precio: 490000, tc: 1500, fechaFijacion: "2026-07-01" })
+    chequear("Editar venta", "En pizarra no hay TC aunque quede tipeado: 159,72 × $490.000 = $78.262.800",
+      "tc null · 78262800", `tc ${pizarra.tc} · ${Math.round(pizarra.monto_pesos ?? 0)}`,
+      pizarra.tc === null && Math.round(pizarra.monto_pesos ?? 0) === 78262800, "A-BUG-100")
+
+    // Rojas #4 tiene 100 tn en una sola venta: editándola, el tope es la cuota entera (100), no 0.
+    chequear("Editar venta", "Al editar, el tope es la cuota menos las OTRAS ventas",
+      "100 · 40", `${tonsMaximasEdicion(100, 0)} · ${tonsMaximasEdicion(100, 60)}`,
+      tonsMaximasEdicion(100, 0) === 100 && tonsMaximasEdicion(100, 60) === 40, "A-BUG-100")
   }
 
   // ══ 🔗 QUÉ FACTURA PUEDE SER DE QUÉ VENTA (A-BUG-186/187/188) ══════════════════════════════

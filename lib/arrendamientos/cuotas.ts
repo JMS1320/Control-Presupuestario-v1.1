@@ -285,3 +285,46 @@ export function partirCuota(has: number, qqCuota: number, tonsQueQuedan: number)
     qqSaldo: redondearQq((tonsSaldo * 10) / has),
   }
 }
+
+// ── Guardar una venta (fijación) — alta o edición (A-BUG-100) ────────────────
+// Una venta cerrada se tiene que poder CAMBIAR: el usuario le puso TC sin querer y no había forma
+// de sacarlo (*«la solución es permitir cambiar algo de una posición cerrada, que quedaría abierta
+// pendiente de TC en este caso»*). El estado de la venta no se guarda: sale de sus campos
+// (`estadoVenta` en calculo.ts), así que borrar el TC la vuelve a «falta TC» sola.
+
+export interface CamposVenta {
+  tons: number
+  modo: "matba" | "pizarra"
+  precio_usd: number | null
+  precio_pesos: number | null
+  tc: number | null
+  fecha_fijacion_tc: string | null
+  monto_pesos: number | null
+}
+
+/**
+ * @param tcAnterior / fechaTcAnterior de la venta que se edita: si el TC no cambió, se conserva la
+ *   fecha en que se fijó. En un alta van null.
+ */
+export function camposDeVenta(p: {
+  tons: number; modo: "matba" | "pizarra"; precio: number; tc: number | null
+  fechaFijacion: string; tcAnterior?: number | null; fechaTcAnterior?: string | null
+}): CamposVenta {
+  const tc = p.modo === "matba" && p.tc && p.tc > 0 ? p.tc : null
+  const fechaTc = tc == null ? null
+    : (p.tcAnterior != null && Number(p.tcAnterior) === tc && p.fechaTcAnterior ? p.fechaTcAnterior : p.fechaFijacion)
+  return {
+    tons: p.tons,
+    modo: p.modo,
+    precio_usd: p.modo === "matba" ? p.precio : null,
+    precio_pesos: p.modo === "pizarra" ? p.precio : null,
+    tc,
+    fecha_fijacion_tc: fechaTc,
+    monto_pesos: p.modo === "pizarra" ? p.tons * p.precio : (tc ? p.tons * p.precio * tc : null),
+  }
+}
+
+/** Toneladas máximas de una venta que se EDITA: lo que tiene la cuota menos las OTRAS ventas. */
+export function tonsMaximasEdicion(tonsDeLaCuota: number, tonsOtrasVentas: number): number {
+  return Math.max(0, tonsDeLaCuota - tonsOtrasVentas)
+}

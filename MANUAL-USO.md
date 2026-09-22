@@ -1254,6 +1254,16 @@ El **TC arranca vacío**. Si querés usar el del presupuesto, al lado del campo 
 
 Las **toneladas a fijar** arrancan con todo el disponible, con sus 3 decimales (ej. 66,154).
 
+La **fecha de cobro** en Matba viene de la cuota y se ve como dato: *Cobro: 10/05/2027 (de la
+cuota) · cambiar*. Tocá **cambiar** sólo si el cobro va a ser otro día.
+
+**Editar una venta.** Cada venta tiene **Editar**, esté abierta o cerrada. Abre el mismo modal
+con lo que tiene guardado y se cambia cualquier dato. **Si le borrás el TC**, la venta vuelve a
+*falta TC* y reaparece **Fijar TC**. Si la venta ya tiene factura vinculada y el monto cambia, la
+app avisa para que revises ese vínculo, pero deja guardar.
+
+→ A-TEST-137
+
 **Fijación parcial**: si fijás menos toneladas que las disponibles, la app **parte la cuota**.
 La original queda con lo vendido y el saldo pasa a una **cuota nueva** marcada `(saldo)`, que
 después movés y valorizás por su cuenta. Una cuota se fija entera o se parte. Las toneladas de
