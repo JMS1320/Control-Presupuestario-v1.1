@@ -24,7 +24,7 @@ import {
   type PrecioGrano, type TipoCambio,
 } from "@/lib/arrendamientos/calculo"
 import {
-  copiarEsquemaCuotas, validarCuotas, planificarCuotas, aplicarPlanCuotas, filaDesdeGuardada,
+  copiarEsquemaCuotas, validarCuotas, planificarCuotas, aplicarPlanCuotas, filaDesdeGuardada, partirCuota, DECIMALES_QQ,
   type FilaCuota, type CuotaGuardada,
 } from "@/lib/arrendamientos/cuotas"
 import { altaContraparte } from "@/lib/proveedores/alta"
@@ -279,10 +279,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                               {MESES[q.posicion_mes - 1]} {String(q.posicion_anio).slice(-2)}
                             </td>
                             <td className="px-3 py-2 text-right text-emerald-700">
-                              {vendido > 0 ? fmtAR(vendido, 2) : "—"}
+                              {vendido > 0 ? fmtAR(vendido, 3) : "—"}
                             </td>
                             <td className="px-3 py-2 text-right text-amber-700">
-                              {disp > 0.001 ? fmtAR(disp, 2) : "—"}
+                              {disp > 0.001 ? fmtAR(disp, 3) : "—"}
                             </td>
                             <td className="px-3 py-2">
                               <Badge variant="outline" className="text-[10px]">{est}</Badge>
@@ -385,7 +385,9 @@ const anioDe = (fecha: string) => fecha.slice(0, 4)
 function aFilaEdit(c: FilaCuota): FilaEdit {
   return {
     id: c.id,
-    qq: fmtAR(c.qq_ha_cuota),
+    // Todos los decimales que tenga (hasta 6): una cuota partida tiene qq/ha como 4,667769, y
+    // mostrarla con 2 la redondearía al guardar — volviendo a meter el error de A-BUG-183.
+    qq: Number(c.qq_ha_cuota).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: DECIMALES_QQ }),
     fecha: c.fecha_cobro,
     posMes: c.posicion_mes,
     posAnio: String(c.posicion_anio),
@@ -701,6 +703,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const [modo, setModo] = useState<"matba" | "pizarra">("matba")
   const [precio, setPrecio] = useState("")
   const [tc, setTc] = useState("")
+  const [tcSugerido, setTcSugerido] = useState<number | null>(null)
   const [fechaCobro, setFechaCobro] = useState("")
   // La fecha de fijación ES la fecha de la venta, y desde ahí se cuentan los días
   // de cobro del disponible. No siempre es hoy.
@@ -718,10 +721,16 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
     const p = resolverPrecio(precios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes)
     const t = resolverTC(tcs, cuota.posicion_anio, cuota.posicion_mes)
 
-    setTons(fmtAR(disp, 2))
+    // 3 decimales (A-BUG-184): con 2, 66,154 tn se proponía 66,15 y la fijación salía PARCIAL por
+    // 0,004 tn, dejando una cuota de saldo basura si el usuario no lo notaba.
+    setTons(fmtAR(disp, 3))
     setModo("matba")
     setPrecio(p.precio_usd ? fmtAR(p.precio_usd) : "")
-    setTc(t.tc ? fmtAR(t.tc) : "")
+    // El TC arranca VACÍO (A-FEAT-164, decidido por el usuario): proponer el del presupuesto hacía
+    // fácil fijarlo sin querer, y una venta con TC queda cerrada (así nació A-BUG-100). El del
+    // presupuesto se ofrece al lado, para ponerlo con un clic si corresponde.
+    setTc("")
+    setTcSugerido(t.tc || null)
     setFechaCobro(cuota.fecha_cobro_estimada)
     setFechaFijacion(new Date().toISOString().slice(0, 10))
     setError(null)
@@ -750,7 +759,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const confirmar = async () => {
     setError(null)
     if (tonsAFijar <= 0) return setError("Indicá cuántas toneladas fijás")
-    if (tonsAFijar > disponible + 0.001) return setError(`Sólo hay ${fmtAR(disponible, 2)} tn disponibles`)
+    if (tonsAFijar > disponible + 0.001) return setError(`Sólo hay ${fmtAR(disponible, 3)} tn disponibles`)
     if (!precio.trim()) return setError("Falta el precio")
     if (!fechaFijacion) return setError("Falta la fecha de fijación (es la fecha de la venta)")
 
@@ -761,8 +770,9 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
       // Fijar PARCIAL parte la cuota: la original queda con lo que se vende y el saldo
       // pasa a una cuota nueva, que después se puede mover y valorizar por su cuenta.
       if (esParcial) {
-        const qqSaldo = (saldo * 10) / Number(contrato.has)
-        const qqRestante = Number(cuota.qq_ha_cuota) - qqSaldo
+        // Mandan las TONELADAS (A-BUG-183): la original se queda con lo ya vendido + lo de ahora.
+        const { qqOriginal: qqRestante, qqSaldo } =
+          partirCuota(Number(contrato.has), Number(cuota.qq_ha_cuota), tonsTotal - saldo)
 
         const { data: maxQ } = await supabase
           .from("cuotas_arrendamiento").select("numero_cuota")
@@ -771,7 +781,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
         const { error: e1 } = await supabase.from("cuotas_arrendamiento").insert({
           contrato_id: contrato.id,
           numero_cuota: ((maxQ?.numero_cuota as number) ?? 0) + 1,
-          qq_ha_cuota: Number(qqSaldo.toFixed(4)),
+          qq_ha_cuota: qqSaldo,
           fecha_cobro_estimada: cuota.fecha_cobro_estimada,
           posicion_anio: cuota.posicion_anio,
           posicion_mes: cuota.posicion_mes,
@@ -780,12 +790,12 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
           posicion_orig_mes: cuota.posicion_mes,
           estado: "presupuestado",
           cuota_padre_id: cuota.id,
-          notas: `Saldo de la cuota #${cuota.numero_cuota} al fijar ${fmtAR(tonsAFijar, 2)} tn`,
+          notas: `Saldo de la cuota #${cuota.numero_cuota} al fijar ${fmtAR(tonsAFijar, 3)} tn`,
         })
         if (e1) throw new Error(e1.message)
 
         const { error: e2 } = await supabase.from("cuotas_arrendamiento")
-          .update({ qq_ha_cuota: Number(qqRestante.toFixed(4)), updated_at: new Date().toISOString() })
+          .update({ qq_ha_cuota: qqRestante, updated_at: new Date().toISOString() })
           .eq("id", cuota.id)
         if (e2) throw new Error(e2.message)
       }
@@ -829,9 +839,11 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
           </DialogTitle>
         </DialogHeader>
 
+        {/* Los A-TEST de este proceso, a la vista donde se corre (§ 🧪 CLAUDE.md) */}
+        <TestsDelProceso proceso="ingresos/fijar-arrendamiento" pantalla="ingresos" />
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
-            Disponible: <strong>{fmtAR(disponible, 2)} tn</strong> de {fmtAR(tonsTotal, 2)} tn ·
+            Disponible: <strong>{fmtAR(disponible, 3)} tn</strong> de {fmtAR(tonsTotal, 3)} tn ·
             posición {MESES[cuota.posicion_mes - 1]} {cuota.posicion_anio}
           </p>
 
@@ -871,6 +883,15 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
                   value={tc} onChange={e => setTc(e.target.value)} />
                 <p className="mt-1 text-[10px] text-gray-400">
                   Precio y TC son momentos distintos
+                  {tcSugerido && !tc.trim() && (
+                    <>
+                      {" · "}
+                      <button type="button" className="underline"
+                        onClick={() => setTc(fmtAR(tcSugerido))}>
+                        usar el del presupuesto ({fmtAR(tcSugerido)})
+                      </button>
+                    </>
+                  )}
                 </p>
               </div>
             ) : (

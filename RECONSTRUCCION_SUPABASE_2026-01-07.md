@@ -11368,7 +11368,7 @@ CREATE INDEX idx_contratos_arr_empresa_camp ON contratos_arrendamiento(empresa, 
 
 CREATE TABLE public.cuotas_arrendamiento (
   id uuid PK, contrato_id uuid FK->contratos_arrendamiento ON DELETE CASCADE,
-  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,
+  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,   -- ⚠️ ampliada a numeric(12,6) el 2026-09-21 (A-BUG-183), ver § CAMBIOS POST
   fecha_cobro_estimada date, posicion_anio int, posicion_mes int CHECK 1..12,
   fecha_cobro_original date, posicion_orig_anio int, posicion_orig_mes int,  -- "volver a default"
   estado varchar(20) DEFAULT 'presupuestado'
@@ -12591,3 +12591,15 @@ dos veces **actualiza** esa fila; no deja dos compromisos por el mismo viaje.
 
 🔑 **`flete_km_arranque` son km MÍNIMOS, no un extra.** Si el viaje es más corto se cobran igual.
 Sin ese campo, todo flete corto se subestima — y el error es sistemático, siempre para el mismo lado.
+
+### Ampliación 2026-09-21 · `qq_ha_cuota` con 6 decimales (A-BUG-183)
+
+```sql
+ALTER TABLE public.cuotas_arrendamiento ALTER COLUMN qq_ha_cuota TYPE numeric(12,6);
+```
+
+🔑 **Al fijar parcial, la cuota se parte en TONELADAS** y los qq/ha se derivan (`partirCuota` en
+`lib/arrendamientos/cuotas.ts`). Con 2 decimales las toneladas no podían quedar exactas: en Rojas
+(242 ha) 0,01 qq/ha = 0,242 tn, y fijar 100 de 212,96 tn dejaba 99,946 + 113,014. Sólo agranda la
+columna: ningún dato cambia al aplicarla. Se corrigió la única cuota partida que existía (Rojas
+26/27 #4/#5) con autorización del usuario y foto en `respaldos/a-bug-183-rojas-cuotas-4-5-antes.json`.

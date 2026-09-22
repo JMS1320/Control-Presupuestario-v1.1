@@ -60,6 +60,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
+  partirCuota, DECIMALES_QQ,
   type CuotaGuardada, type FilaCuota,
 } from "@/lib/arrendamientos/cuotas"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
@@ -1484,6 +1485,37 @@ export function correrCasos(): Resultado[] {
     chequear("Cuotas arrendamiento", "Sin cambios no se escribe nada",
       "0 · 0 · 0", (p => `${p.insertar.length} · ${p.actualizar.length} · ${p.borrar.length}`)(planificarCuotas(NAZ, filasNaz)),
       (p => p.insertar.length + p.actualizar.length + p.borrar.length === 0)(planificarCuotas(NAZ, filasNaz)), "A-BUG-101")
+
+    // ── Partir al fijar parcial: mandan las TONELADAS (A-BUG-183) ──
+    // El caso real: Rojas 26/27 cuota #4 = 242 ha × 8,8 qq/ha = 212,96 tn; el usuario fijó 100 tn.
+    // Con el reparto viejo (qq/ha a 2 decimales) quedó 99,946 + 113,014.
+    const tn = (has: number, qq: number) => Math.round((has * qq) / 10 * 1000) / 1000
+    const rojas = partirCuota(242, 8.8, 100)
+    const txtRojas = `${tn(242, rojas.qqOriginal)} + ${tn(242, rojas.qqSaldo)}`
+    chequear("Cuotas arrendamiento", "🔑 Rojas #4: fijar 100 de 212,96 tn deja 100 + 112,96 exactos",
+      "100 + 112.96", txtRojas, txtRojas === "100 + 112.96", "A-BUG-183")
+
+    // El caso tiene que FALLAR con el reparto viejo: qq/ha a 2 decimales, como guardaba la columna.
+    const viejo = { o: Math.round((8.8 - (112.96 * 10) / 242) * 100) / 100, s: Math.round(((112.96 * 10) / 242) * 100) / 100 }
+    chequear("Cuotas arrendamiento", "El reparto viejo (qq/ha a 2 decimales) da el error que vio el usuario",
+      "99.946 + 113.014", `${tn(242, viejo.o)} + ${tn(242, viejo.s)}`,
+      tn(242, viejo.o) === 99.946 && tn(242, viejo.s) === 113.014, "A-BUG-183")
+
+    chequear("Cuotas arrendamiento", "Los qq/ha de las dos partes suman los de la cuota",
+      "8.8", String(Number((rojas.qqOriginal + rojas.qqSaldo).toFixed(DECIMALES_QQ))),
+      Math.abs(rojas.qqOriginal + rojas.qqSaldo - 8.8) < 1e-5, "A-BUG-183")
+
+    // Con una venta previa: la original se queda con lo vendido antes + lo de ahora.
+    const conPrevia = partirCuota(242, 8.8, 50 + 60)
+    chequear("Cuotas arrendamiento", "Con 50 tn ya vendidas, fijar 60 más deja 110 + 102,96",
+      "110 + 102.96", `${tn(242, conPrevia.qqOriginal)} + ${tn(242, conPrevia.qqSaldo)}`,
+      tn(242, conPrevia.qqOriginal) === 110 && tn(242, conPrevia.qqSaldo) === 102.96, "A-BUG-183")
+
+    // MA Lima: 85,36 ha × 7,75 = 66,154 tn. A 2 decimales se proponía 66,15 → parcial por 0,004 (A-BUG-184).
+    const lima = tn(85.36, 7.75)
+    chequear("Cuotas arrendamiento", "Lima #1 tiene 66,154 tn: a 2 decimales se pierden 0,004",
+      "66.154 (2 dec: 66.15)", `${lima} (2 dec: ${Math.round(lima * 100) / 100})`,
+      lima === 66.154 && Math.round(lima * 100) / 100 === 66.15, "A-BUG-184")
   }
 
   // ══ 📅 EL RANGO DE FECHAS COMPARTIDO (A-FEAT-161) ═══════════════════════════════════════════

@@ -1,0 +1,40 @@
+[
+  {
+    "id": "82ad9f9a-daf0-4ab3-bb77-af2130117e8b",
+    "contrato_id": "f42d6b16-dbf7-4dd6-876a-c8c83aa75d40",
+    "numero_cuota": 5,
+    "qq_ha_cuota": 4.67,
+    "fecha_cobro_estimada": "2027-05-10",
+    "posicion_anio": 2027,
+    "posicion_mes": 5,
+    "fecha_cobro_original": "2027-05-10",
+    "posicion_orig_anio": 2027,
+    "posicion_orig_mes": 5,
+    "estado": "presupuestado",
+    "notas": "Saldo de la cuota #4 al fijar 100,00 tn",
+    "created_at": "2026-09-22T01:38:08.753089+00:00",
+    "updated_at": "2026-09-22T01:38:08.753089+00:00",
+    "precio_usd_override": null,
+    "precio_pesos_override": null,
+    "cuota_padre_id": "93288381-8203-4ba4-8757-be0aeec84af2"
+  },
+  {
+    "id": "93288381-8203-4ba4-8757-be0aeec84af2",
+    "contrato_id": "f42d6b16-dbf7-4dd6-876a-c8c83aa75d40",
+    "numero_cuota": 4,
+    "qq_ha_cuota": 4.13,
+    "fecha_cobro_estimada": "2027-05-10",
+    "posicion_anio": 2027,
+    "posicion_mes": 5,
+    "fecha_cobro_original": "2027-05-10",
+    "posicion_orig_anio": 2027,
+    "posicion_orig_mes": 5,
+    "estado": "presupuestado",
+    "notas": null,
+    "created_at": "2026-07-26T23:31:17.300719+00:00",
+    "updated_at": "2026-09-22T01:38:08.978+00:00",
+    "precio_usd_override": null,
+    "precio_pesos_override": null,
+    "cuota_padre_id": null
+  }
+]

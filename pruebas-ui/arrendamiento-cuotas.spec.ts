@@ -5,9 +5,8 @@
  * Cancelar. Nunca toca Guardar.
  *
  * ## El caso es el real
- * PAM Nazarenas 25/26 (Provinvest, 15 qq/ha) no tiene cuotas. El esquema de MSA Nazarenas 26/27
- * (mismo cliente, 15 qq/ha, 3 cuotas) corrido un año atrás tiene que cerrar exacto. Y MA Lima
- * (15,5 qq/ha, sin CUIT del cliente) tiene que AVISAR las dos cosas sin frenar.
+ * El esquema de MSA Nazarenas 26/27 (Provinvest, 15 qq/ha, 3 cuotas) copiado a un contrato de PAM
+ * 25/26 tiene que cerrar exacto, corrido un año; copiado a uno de 15,5 qq/ha tiene que AVISAR sin frenar.
  */
 
 import { test, expect, type Page } from '@playwright/test'
@@ -40,15 +39,30 @@ async function copiarDeMsaNazarenas(page: Page) {
   await page.getByRole('option', { name: /MSA · Nazarenas 26\/27/ }).click()
 }
 
-test('🌾 PAM Nazarenas: copiar el esquema de MSA da 3 cuotas y cierra en 15 qq/ha', async ({ page }) => {
+/**
+ * ⚠️ Parten de NUEVO CONTRATO, no de un contrato existente. La primera versión editaba PAM Nazarenas
+ * esperando «sin cuotas» y MA Lima esperando «falta el CUIT»: el día que el usuario cargó las cuotas
+ * reales las dos fallaron sin que nada estuviera roto. Un test que depende del estado de los datos
+ * miente en cuanto alguien los usa (§ 🧪 CLAUDE.md: los datos del caso van en el caso).
+ */
+async function nuevoContrato(page: Page, campania: string, has: string, qq: string) {
+  await page.getByRole('button', { name: 'Nuevo contrato' }).click()
+  const modal = page.getByRole('dialog')
+  await expect(modal.getByText('Nuevo contrato')).toBeVisible()
+  await modal.getByPlaceholder('26/27').fill(campania)
+  const montos = modal.getByPlaceholder('0,00')
+  await montos.nth(0).fill(has)   // Hectáreas
+  await montos.nth(1).fill(qq)    // qq/ha
+  return modal
+}
+
+test('🌾 PAM: un contrato nuevo 25/26 copia el esquema de MSA Nazarenas corrido un año y cierra en 15', async ({ page }) => {
   test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
   await abrirArrendamientos(page, 'PAM')
-  await page.getByRole('button', { name: 'Editar' }).first().click()
-  const modal = page.getByRole('dialog')
-  await expect(modal.getByText('Editar contrato')).toBeVisible()
+  const modal = await nuevoContrato(page, '25/26', '211,16', '15')
   await expect(modal.getByRole('combobox').first()).toHaveText('PAM')
   await expect(modal.getByText(/Sin cuotas/)).toBeVisible()
 
@@ -64,22 +78,51 @@ test('🌾 PAM Nazarenas: copiar el esquema de MSA da 3 cuotas y cierra en 15 qq
   expect(errores).toEqual([])
 })
 
-test('🌾 MA Lima: avisa que falta el CUIT y que 15 no son 15,5 — y deja guardar', async ({ page }) => {
+test('🌾 MA: 15 qq copiados contra 15,5 del contrato AVISA la diferencia y deja guardar', async ({ page }) => {
   test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
   await abrirArrendamientos(page, 'MA')
-  await page.getByRole('button', { name: 'Editar' }).first().click()
-  const modal = page.getByRole('dialog')
+  const modal = await nuevoContrato(page, '26/27', '85,36', '15,5')
   await expect(modal.getByRole('combobox').first()).toHaveText('MA')
-  await expect(modal.getByText(/Falta el CUIT del cliente/)).toBeVisible()
 
   await copiarDeMsaNazarenas(page)
   await expect(modal.getByText(/diferencia -0,5/)).toBeVisible()
   await expect(modal.getByRole('button', { name: 'Guardar' })).toBeEnabled()
 
   await page.screenshot({ path: 'test-results/arrendamiento-ma.png', fullPage: true })
+  await modal.getByRole('button', { name: 'Cancelar' }).click()
+  expect(errores).toEqual([])
+})
+
+/**
+ * 🌾 A-BUG-183/184 + A-FEAT-164 — el modal de Fijar sobre el saldo real de Rojas 26/27 (#5).
+ * 🛑 CERO ESCRITURA: abre Fijar, mira y cancela.
+ * Después de corregir el dato, el saldo es 112,960 tn exacto; antes decía 113,014.
+ */
+test('🌾 Fijar Rojas #5: propone 112,960 tn exactas y el TC arranca vacío', async ({ page }) => {
+  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  const errores: string[] = []
+  page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
+
+  await irAlInicio(page)
+  await page.getByRole('tab', { name: 'Ingresos' }).click()
+  await page.getByRole('tab', { name: 'Arrendamientos' }).click()
+  // La tarjeta de Rojas 26/27, fila de la cuota #5 (la de saldo)
+  const tarjeta = page.locator('div.rounded-lg', { hasText: 'Rojas' }).filter({ hasText: '26/27' }).first()
+  const fila = tarjeta.locator('tr', { hasText: '#5' })
+  await expect(fila).toContainText('112,960', { timeout: 60_000 })
+  await fila.getByRole('button', { name: /Fijar/ }).click()
+
+  const modal = page.getByRole('dialog')
+  await expect(modal.getByText(/Fijar — Rojas cuota #5/)).toBeVisible()
+  await expect(modal.getByText(/Disponible: 112,960 tn/)).toBeVisible()
+  await expect(modal.locator('input').nth(1)).toHaveValue('112,960')   // 0: fecha · 1: toneladas
+  await expect(modal.getByPlaceholder(/dejar vacío/)).toHaveValue('')
+  await expect(modal.getByRole('button', { name: /usar el del presupuesto/ })).toBeVisible()
+
+  await page.screenshot({ path: 'test-results/arrendamiento-fijar-rojas5.png', fullPage: true })
   await modal.getByRole('button', { name: 'Cancelar' }).click()
   expect(errores).toEqual([])
 })

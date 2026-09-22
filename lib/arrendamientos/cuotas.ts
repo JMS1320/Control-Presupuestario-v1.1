@@ -262,3 +262,26 @@ export async function aplicarPlanCuotas(db: any, contratoId: string, plan: PlanC
   }
   return null
 }
+
+// ── Partir una cuota al fijar parcial (A-BUG-183) ────────────────────────────
+// Al partir MANDAN LAS TONELADAS: lo vendido y el saldo tienen que quedar exactos, y los qq/ha se
+// derivan de ahí. Antes se repartía en qq/ha y la columna guardaba 2 decimales: en Rojas (242 ha)
+// 0,01 qq/ha son 0,242 tn, y fijar 100 tn dejaba la cuota en 99,946 y el saldo en 113,014.
+
+/** Decimales con que se guardan los qq/ha de una cuota (`cuotas_arrendamiento.qq_ha_cuota`). */
+export const DECIMALES_QQ = 6
+
+const redondearQq = (qq: number) => Number(qq.toFixed(DECIMALES_QQ))
+
+/**
+ * @param tonsQueQuedan toneladas que se queda la cuota original (lo ya vendido + lo que se fija ahora).
+ * El saldo es el resto de la cuota. Los dos qq/ha salen de sus toneladas, no uno por diferencia del otro.
+ */
+export function partirCuota(has: number, qqCuota: number, tonsQueQuedan: number): { qqOriginal: number; qqSaldo: number } {
+  const tonsTotal = tonsCuota(has, qqCuota)
+  const tonsSaldo = tonsTotal - tonsQueQuedan
+  return {
+    qqOriginal: redondearQq((tonsQueQuedan * 10) / has),
+    qqSaldo: redondearQq((tonsSaldo * 10) / has),
+  }
+}

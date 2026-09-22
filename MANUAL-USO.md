@@ -1249,9 +1249,17 @@ Botón **Fijar** en cada cuota que tenga disponible. Se elige:
 después: la venta queda registrada, el monto en USD ya es cierto y el de pesos queda
 **estimado** (marcado con `*`) hasta que uses **Fijar TC**.
 
+El **TC arranca vacío**. Si querés usar el del presupuesto, al lado del campo está
+**usar el del presupuesto (…)** y lo pone con un clic.
+
+Las **toneladas a fijar** arrancan con todo el disponible, con sus 3 decimales (ej. 66,154).
+
 **Fijación parcial**: si fijás menos toneladas que las disponibles, la app **parte la cuota**.
 La original queda con lo vendido y el saldo pasa a una **cuota nueva** marcada `(saldo)`, que
-después movés y valorizás por su cuenta. Una cuota se fija entera o se parte.
+después movés y valorizás por su cuenta. Una cuota se fija entera o se parte. Las toneladas de
+las dos partes quedan **exactas**: fijar 100 de 212,96 tn deja 100 + 112,96.
+
+→ A-TEST-134
 
 ### 3. Mover y valorizar (simulación financiera)
 
