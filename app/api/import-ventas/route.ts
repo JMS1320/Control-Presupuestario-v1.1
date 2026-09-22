@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as Papa from 'papaparse'
 import * as XLSX from 'xlsx'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
@@ -107,6 +108,9 @@ function mapearFilaVenta(fila: any, nombreArchivo: string, fechaCobro: string | 
 }
 
 export async function POST(req: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File

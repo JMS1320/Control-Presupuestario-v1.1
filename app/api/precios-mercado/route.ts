@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 // Precios de hacienda de entresurcosycorralesya.com (endpoint ajax-modulo-ternero.php).
 // Server-side (evita CORS). Devuelve la tabla parseada: 8 columnas por fila.
@@ -31,6 +32,9 @@ function parseRango(cat: string): { lo: number; hi: number | null } {
 }
 
 export async function GET(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   const { searchParams } = new URL(request.url)
   const desde = searchParams.get("desde")
   const hasta = searchParams.get("hasta")

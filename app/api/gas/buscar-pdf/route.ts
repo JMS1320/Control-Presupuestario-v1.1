@@ -30,6 +30,7 @@ import type {
   SchemaEmpresa,
 } from '@/lib/gas-pdf/types'
 import { gasStatusToFc } from '@/lib/gas-pdf/types'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 export const maxDuration = 60 // GAS tarda 5-15s típicamente, margen para reintento
@@ -70,6 +71,9 @@ function empresaToSchema(e: Empresa): SchemaEmpresa {
 }
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   const supabase = supabaseAdmin
 
   try {

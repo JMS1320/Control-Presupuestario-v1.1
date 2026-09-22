@@ -20,6 +20,7 @@ import { NextResponse } from 'next/server'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { parsePendientes, contarPorGrupo } from '@/lib/pendientes/parse'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'   // usa fs: no puede ser edge
 
@@ -35,6 +36,9 @@ export const runtime = 'nodejs'   // usa fs: no puede ser edge
  */
 
 export async function GET(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     // Mismo criterio que el resto de la app: el rol es UX, no seguridad — no hay login real
     // (ver CLAUDE.md § Accesos y roles). Se valida igual para no exponer la lista por defecto.

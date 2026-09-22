@@ -25,6 +25,7 @@
 
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
@@ -63,6 +64,9 @@ export interface PagoFicha {
 }
 
 export async function GET(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const url = new URL(request.url)
     const cuitParam = url.searchParams.get('cuit')

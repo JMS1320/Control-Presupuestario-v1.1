@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +16,9 @@ const supabase = createClient(
  * Propaga categ a extractos bancarios vinculados (msa_galicia, pam_galicia, pam_galicia_cc).
  */
 export async function PATCH(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = await request.json()
     const { ids, nro_cuenta, cuenta_contable } = body as {

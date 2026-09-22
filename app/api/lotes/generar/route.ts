@@ -27,12 +27,16 @@ import {
   nombreArchivoLote, empresaToSchema,
 } from '@/lib/lotes-galicia/helpers'
 import { computarPreview } from '@/lib/lotes-galicia/preview-core'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
 const MAX_FILAS_POR_ARCHIVO = 50
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = (await request.json()) as GenerarLoteInput
     const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje } = body

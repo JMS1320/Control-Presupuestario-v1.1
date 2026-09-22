@@ -1,6 +1,10 @@
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 // ... (importaciones y funciones iguales que antes)
 
 export async function POST(req: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const formData = await req.formData()
     const file = formData.get("file") as File
