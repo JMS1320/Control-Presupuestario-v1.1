@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
+import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -345,7 +346,18 @@ export function VistaExtractoBancario() {
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
-  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo'>('template')
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo' | 'venta'>('template')
+  /**
+   * 💰 **A-FEAT-167 — asignar un COBRO a su comprobante de venta.**
+   *
+   * ⚠️ **Acotado a UNO a UNO por decisión del usuario 2026-09-22**: un crédito puede cubrir varios
+   * comprobantes, o una venta facturarse en varios — *«no están del todo los pasos a dar»*. Esa
+   * parte queda afuera hasta definir el modelo. **Lo que sí está claro y desbloquea hoy es el caso
+   * simple**, que es el 99% de lo que hay pendiente.
+   */
+  const [ventasParaAsignar, setVentasParaAsignar] = useState<any[]>([])
+  const [ventaElegida, setVentaElegida] = useState<any>(null)
+  const [busquedaAsignarVenta, setBusquedaAsignarVenta] = useState('')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
   /**
    * 🔒 **A-FEAT-143 — el camino para vincular contra una factura YA CONCILIADA.**
@@ -1554,7 +1566,49 @@ ${texto.trim()}` : texto.trim()
     setBusquedaAsignarTemplate('')
     setBusquedaAsignarSueldo('')
     setBusquedaAsignarGrupo('')
-    setTabAsignar('template')
+    setVentaElegida(null)
+    setBusquedaAsignarVenta('')
+    setVentasParaAsignar([])
+
+    /**
+     * 💰 **Si el movimiento es un CRÉDITO, el modal abre directo en Ventas.**
+     *
+     * Pedido del usuario: *«si estoy conciliando ingresos me podría mostrar el panel directo en
+     * ventas»*. Un ingreso **nunca** se concilia contra un template de egreso ni contra una factura
+     * de compra, así que abrir en «Template» es hacerle cambiar de pestaña todas las veces.
+     */
+    const esIngreso = Number(movimiento.creditos) > 0
+    setTabAsignar(esIngreso ? 'venta' : 'template')
+
+    if (esIngreso) {
+      /**
+       * Los comprobantes de venta de las 3 empresas, con su **pago según condiciones** — que es lo
+       * que el banco acredita de verdad (§ `lib/ventas/cobro-esperado.ts`). Las retenciones viven
+       * en otra tabla, así que se traen y se suman por comprobante.
+       */
+      const res = await Promise.all(EMPRESAS.map(async (empresa) => {
+        const sch = schemaDeEmpresa(empresa)
+        const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante')
+          .order('fecha_liquidacion', { ascending: false })
+          .limit(500)
+        const ids = (comps ?? []).map((c: any) => c.id)
+        let retPorComp = new Map<string, number>()
+        if (ids.length) {
+          const { data: rets } = await supabase.schema(sch).from('retenciones_recibidas')
+            .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids)
+          for (const r of rets ?? []) {
+            const k = String((r as any).comprobante_venta_id)
+            retPorComp.set(k, (retPorComp.get(k) ?? 0) + (Number((r as any).monto) || 0))
+          }
+        }
+        return (comps ?? []).map((c: any) => {
+          const cobro = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
+          return { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+        })
+      }))
+      setVentasParaAsignar(res.flat())
+    }
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
     setCategManualAsignar('')
@@ -2157,6 +2211,60 @@ ${marca}` : marca
 
         // Actualizar localmente — preserva filtros y contexto de trabajo
         actualizarLocal(movimientoAsignando.id, updateSueldo)
+
+      } else if (tabAsignar === 'venta' && ventaElegida) {
+        /**
+         * 💰 **A-FEAT-167 — el cobro queda atado a su comprobante de venta.**
+         *
+         * ⚠️ **UNO a UNO.** Un crédito que cubre varios comprobantes queda afuera hasta que se
+         * defina el modelo (decisión del usuario 2026-09-22).
+         *
+         * 🔑 **Se marca `cobrado` el comprobante y `conciliado` el movimiento en la misma acción.**
+         * Dejar sólo uno de los dos es lo que produjo *«la misma plata en dos estados»* en sueldos
+         * ([A-DAT-50]) y en la factura de Provinvest, que figuraba cobrada con el extracto pendiente.
+         */
+        const cobro = ventaElegida.__cobro
+        const acreditado = Number(movimientoAsignando.creditos) || 0
+        const dif = diferenciaContraElBanco(acreditado, cobro)
+
+        const updateVenta: Record<string, any> = {
+          ...vinculosLimpios(),
+          estado: 'conciliado',
+          categ: categManualAsignar.trim() || movimientoAsignando.categ || null,
+          proveedor_nombre: ventaElegida.denominacion_cliente || null,
+          comprobantes_pagados: ventaElegida.nro_comprobante || null,
+          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D).
+          detalle: movimientoAsignando.detalle?.trim() || null,
+          comprobante_venta_id: ventaElegida.id,
+        }
+
+        /**
+         * ⚠️ **Si no coincide exacto, queda en `auditar` con el motivo** — no se calla la diferencia.
+         * En ventas lo más común es que falte cargar una retención, y eso hay que poder verlo.
+         */
+        if (!dif.exacto) {
+          updateVenta.estado = 'auditar'
+          updateVenta.motivo_revision = cobro.retenciones === 0
+            ? `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) y el comprobante no tiene retenciones cargadas`
+            : `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) contra el pago según condiciones`
+        }
+
+        const { error: errExt } = await dbCuenta()
+          .from(tablaActiva).update(updateVenta).eq('id', movimientoAsignando.id)
+        if (errExt) throw errExt
+
+        // El otro lado: el comprobante pasa a cobrado.
+        const { error: errVenta } = await supabase
+          .schema(ventaElegida.__schema)
+          .from('comprobantes_venta')
+          .update({ estado: 'cobrado' })
+          .eq('id', ventaElegida.id)
+        if (errVenta) throw errVenta
+
+        actualizarLocal(movimientoAsignando.id, updateVenta)
+        toast.success(dif.exacto
+          ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
+          : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
         // Buscar códigos contable/interno por template (si aplica)
@@ -4664,7 +4772,92 @@ ${marca}` : marca
               <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
               <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
               <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
+              {/* 💰 Sólo para ingresos: un débito nunca se concilia contra una venta. */}
+              {Number(movimientoAsignando?.creditos) > 0 && (
+                <TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger>
+              )}
             </TabsList>
+
+            {/* 💰 Tab VENTA — A-FEAT-167, acotado a UNO a UNO */}
+            <TabsContent value="venta" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por cliente, CUIT o número de comprobante..."
+                value={busquedaAsignarVenta}
+                onChange={e => setBusquedaAsignarVenta(e.target.value)}
+                autoFocus
+              />
+              <p className="text-[11px] text-gray-500">
+                Se compara contra el <b>pago según condiciones</b> (total − deducciones − retenciones
+                − IVA RG 2300), que es lo que acredita el banco. Los más cercanos al importe van primero.
+              </p>
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const acreditado = Number(movimientoAsignando?.creditos) || 0
+                  const q = normalizarBusqueda(busquedaAsignarVenta)
+                  const cuitMov = String(movimientoAsignando?.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
+
+                  const lista = ventasParaAsignar
+                    .filter(v => {
+                      if (!q) return true
+                      return [v.denominacion_cliente, v.cuit_cliente, v.nro_comprobante]
+                        .some(c => normalizarBusqueda(String(c ?? '')).includes(q))
+                    })
+                    .map(v => {
+                      const d = diferenciaContraElBanco(acreditado, v.__cobro)
+                      // 🎯 El CUIT del banco pesa: es el dato más duro que tenemos del otro lado.
+                      const mismoCuit = !!cuitMov && String(v.cuit_cliente ?? '').replace(/\D/g, '') === cuitMov
+                      return { ...v, __dif: d, __mismoCuit: mismoCuit }
+                    })
+                    .sort((a, b) => {
+                      if (a.__mismoCuit !== b.__mismoCuit) return a.__mismoCuit ? -1 : 1
+                      return Math.abs(a.__dif.diferencia) - Math.abs(b.__dif.diferencia)
+                    })
+                    .slice(0, 60)
+
+                  if (lista.length === 0) {
+                    return <p className="text-xs text-gray-500 py-4 text-center">No hay comprobantes de venta cargados.</p>
+                  }
+
+                  return lista.map(v => {
+                    const elegido = ventaElegida?.id === v.id
+                    const d = v.__dif
+                    return (
+                      <button key={v.id} type="button"
+                        onClick={() => setVentaElegida(v)}
+                        className={`w-full text-left p-2 rounded border text-xs ${
+                          elegido ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+                        }`}>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="font-medium truncate">
+                            {v.nro_comprobante || '—'} · {v.denominacion_cliente || '—'}
+                          </span>
+                          <span className="text-gray-500 whitespace-nowrap">
+                            {v.fecha_liquidacion ? new Date(v.fecha_liquidacion + 'T12:00:00').toLocaleDateString('es-AR') : ''}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-baseline gap-x-3 mt-0.5">
+                          <span>Pago s/cond. <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          {v.__cobro.retenciones > 0 && (
+                            <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
+                          )}
+                          {v.__mismoCuit && <Badge variant="secondary" className="text-[10px]">mismo CUIT</Badge>}
+                          {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
+                          <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
+                            {d.exacto ? 'coincide exacto'
+                              : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
+                          </span>
+                        </div>
+                        {!d.exacto && Math.abs(d.porcentaje) > 1 && v.__cobro.retenciones === 0 && (
+                          <p className="text-[11px] text-amber-800 mt-0.5">
+                            ⚠️ No tiene retenciones cargadas — la diferencia puede ser eso.
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            </TabsContent>
 
             {/* Tab Template */}
             <TabsContent value="template" className="space-y-3 mt-3">
@@ -5350,7 +5543,7 @@ ${marca}` : marca
             <Button
               onClick={ejecutarAsignacion}
               disabled={guardandoAsignacion
-                || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)
+                || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : tabAsignar === 'venta' ? !ventaElegida : !sueldoElegido)
                 /* 🔒 A-FEAT-143 — con una YA CONCILIADA elegida, sin motivo no se guarda. */
                 || (tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && !motivoForzar.trim())}
             >
