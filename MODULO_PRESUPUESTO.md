@@ -711,6 +711,7 @@ el schema sale de `contrato.empresa`.
 ### Ventas (BBDD fuente)
 - ABM de contratos (empresa · campaña · centro de costo · cliente · has · qq/ha).
 - Grilla de cuotas con `tons`, `%`, fecha de cobro, posición, estado, disponible.
+  ⚠️ *Desde 2026-09-21 las cuotas se crean y editan en el modal del contrato (Nuevo/Editar), con «Copiar cuotas de otro contrato» — antes sólo se sembraban por SQL (A-BUG-101). Fijar parcial parte la cuota en **toneladas** exactas (A-BUG-183), y cada venta se puede editar (A-BUG-100).*
 - Acción **Fijar** (permite parcial): tons a fijar + modo + precio + TC → congela y genera comprobante.
 - Acción **Mover** (sólo no fijadas, respetando R1/R3) + **Volver a default**.
 

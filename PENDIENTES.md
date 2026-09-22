@@ -913,7 +913,7 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 ### Features a medio hacer
 | ID | Estado | Prio | Ítem |
 |----|--------|------|------|
-| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) `@presupuesto @ingresos` |
+| B-FEAT-PRESU-INGRESOS | 🟡 | Alta | **Presupuesto de INGRESOS — arrendamientos agrícolas** (ver [dossier](#b-feat-presu-ingresos)). Diseño CERRADO + BD creada + datos MSA sembrados + `lib/arrendamientos/calculo.ts` + ABM precios/TC + 3 filas por campo en Presupuesto. **Falta:** ABM de contratos en Ventas, acción Fijar (parcial), volcado IIBB al template, Cash Flow, replicar PAM/MA. (2026-07-26) ⚠️ **cambió 2026-09-22**: el ABM de contratos **con sus cuotas** y Fijar (parcial, en toneladas exactas) ya existen, y PAM/MA ya cargan contratos y cuotas ([A-BUG-101](#a-bug-101), [A-BUG-183](#a-bug-183)). Lo que sigue faltando de «replicar PAM/MA» es que **lleguen al Presupuesto** → [A-FEAT-162](#a-feat-162). `@presupuesto @ingresos` |
 | B-FEAT-01 | 🔴 | Alta | Órdenes de Pago — tabla intermedia `extracto → orden_pago → [FC1,FC2...]` (hoy `comprobante_arca_id` permite 1 sola FC) `@cashflow @extracto` |
 | B-FEAT-02 | ⏸️ | Media | Arquitectura bidireccional FCI/Caja — diseñado, migración SQL lista sin ejecutar `@dashboard @presupuesto` |
 | B-FEAT-03 | ⏸️ | Media | Dashboard rediseño — decisión arquitectural (5 opciones, recomendada B). Plan: `MODULO_DASHBOARD.md` `@dashboard` |
@@ -7683,7 +7683,7 @@ Productivo y la curva se arma sola.
 ##### Pendiente que deja
 **C-23** — lo mismo para el otro lado: editar o borrar una venta ya presupuestada desde el
 presupuesto (hoy la celda con plata no es clickeable, hay que ir a Productivo). Y el equivalente
-para arrendamientos, que ya tiene su modal de cuotas pero no permite crear.
+para arrendamientos, que ya tiene su modal de cuotas pero no permite crear. *(⚠️ 2026-09-21: desde **Ingresos → Arrendamientos** sí se crean — el contrato se define entero con sus cuotas, A-BUG-101. Desde el Presupuesto sigue sin poder.)*
 
 
 #### 🧾 IIBB MENSUAL — doble conteo confirmado *(2026-07-31)*
