@@ -941,8 +941,22 @@ ${texto.trim()}` : texto.trim()
   const yaSeCargoTodo = useRef(false)
   useEffect(() => { yaSeCargoTodo.current = false }, [tablaActiva, schemaActivo])
 
+  /**
+   * 🔎 **Ampliado 2026-09-22 (A-BUG-162): también cuando se busca por CONTRAPARTE.**
+   *
+   * Lo vio el usuario: *«acabo de buscar por contraparte en extracto bancario y me buscó sobre los
+   * 200 movimientos de preset»*. **Tenía razón y es el mismo bug que yo había arreglado a medias**:
+   * cubrí el buscador de texto y dejé afuera el filtro de proveedor, que también filtra **en
+   * memoria** sobre lo que quedó cargado.
+   *
+   * 🔑 Es el modo de falla de § 30.9.5 otra vez —*se arregló un camino de los dos*— y van cinco en
+   * cuatro días. **Cualquier filtro client-side nuevo tiene que entrar en esta lista**, o repite el
+   * problema: devuelve cero sobre un subconjunto sin decir que era un subconjunto.
+   */
+  const hayQueBuscarSobreTodo = !!busqueda.trim() || !!filtroProveedor
+
   useEffect(() => {
-    if (!busqueda.trim() || yaSeCargoTodo.current) return
+    if (!hayQueBuscarSobreTodo || yaSeCargoTodo.current) return
     // Si lo cargado ya es toda la cuenta, no hay nada que traer.
     if (estadisticas.total > 0 && movimientos.length >= estadisticas.total) {
       yaSeCargoTodo.current = true
@@ -953,7 +967,7 @@ ${texto.trim()}` : texto.trim()
       cargarMovimientos({ ...construirFiltros(), limite: 5000 })
     }, 350)   // el debounce evita una recarga por tecla
     return () => clearTimeout(t)
-  }, [busqueda, estadisticas.total, movimientos.length])
+  }, [hayQueBuscarSobreTodo, estadisticas.total, movimientos.length])
 
   const aplicarFiltros = () => cargarMovimientos(construirFiltros())
 
