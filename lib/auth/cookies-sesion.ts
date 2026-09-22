@@ -25,3 +25,22 @@ export function ajustarPersistencia(
   const { maxAge, expires, ...resto } = options
   return resto
 }
+
+/**
+ * Escribe la preferencia desde el BROWSER.
+ *
+ * Existe por el login con Google (A-FEAT-85): ahí no hay Server Action que la escriba antes del
+ * sign-in —el navegador se va a `accounts.google.com` y vuelve por `/auth/callback`—, así que la
+ * preferencia tiene que quedar puesta **antes de irse**. Cuando el usuario vuelve, el callback ya
+ * la encuentra y escribe las cookies de sesión con la persistencia correcta.
+ *
+ * Se puede escribir desde acá porque `COOKIE_RECORDAR` **no es httpOnly a propósito**: no es un
+ * secreto, es una preferencia de UI (ver el comentario en `app/login/actions.ts`).
+ */
+export function escribirRecordarEnElBrowser(recordar: boolean): void {
+  if (typeof document === "undefined") return
+  const seguro = location.protocol === "https:" ? "; Secure" : ""
+  document.cookie = recordar
+    ? `${COOKIE_RECORDAR}=1; Max-Age=${MAX_AGE_RECORDAR}; Path=/; SameSite=Lax${seguro}`
+    : `${COOKIE_RECORDAR}=; Max-Age=0; Path=/; SameSite=Lax${seguro}`
+}

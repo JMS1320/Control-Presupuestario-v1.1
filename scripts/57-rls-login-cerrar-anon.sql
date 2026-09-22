@@ -59,9 +59,38 @@ END $$;
 
 -- -------------------------------------------------------------------------------------
 -- PASO 2 — RLS REAL PARA `authenticated`
---   Reemplaza las 41 policies `allow all` por una que exige usuario logueado de verdad.
---   `TO authenticated` + `auth.uid() IS NOT NULL`: sin sesión válida no hay fila.
+--   Reemplaza las 41 policies `allow all` por una que exige usuario logueado **y habilitado**.
+--
+-- ⚠️ A-SEC-07 (2026-09-07) — POR QUÉ NO ALCANZA CON `auth.uid() IS NOT NULL`
+--   Esa condición dice *"hay sesión"*, no *"esta persona tiene acceso"*. Una cuenta creada pero
+--   todavía **sin rol** —la que la app manda a `/no-access`— tiene sesión válida igual: con su
+--   cookie más la `anon_key` (que viaja en el bundle JS por diseño) le pega directo a PostgREST y
+--   se lleva las 72 tablas. El `/no-access` cierra la puerta de adelante; ésta es la de atrás.
+--
+--   Mientras las cuentas nacían sólo de una invitación del admin, el agujero era teórico. Con el
+--   auto-registro de A-FEAT-85 (entrar con Google) deja de serlo: cualquiera se crea la cuenta.
+--
+--   Por eso la condición pasa a ser **tener rol**. Y el rol se lee de `app_metadata`, que sólo
+--   escribe `service_role`: si viviera en `user_metadata` esto no serviría de nada, porque el
+--   propio usuario se lo pondría con un `auth.updateUser()` (misma razón que en lib/auth/roles.ts).
+--
+--   ⏱️ Contrapartida conocida: el rol viaja en el JWT, así que **quitárselo a alguien tarda hasta
+--   que el token se renueve** (≤ 1 h). Si algún día hace falta revocación instantánea, la función
+--   pasa a leer de una tabla en vez del claim — se cambia acá y en ningún otro lado.
 -- -------------------------------------------------------------------------------------
+
+-- El candado, en una sola función: todas las policies la llaman, así que cambiar el criterio
+-- de acceso de todo el sistema es cambiar estas tres líneas.
+CREATE OR REPLACE FUNCTION public.tiene_rol() RETURNS boolean
+LANGUAGE sql STABLE AS $fn$
+  SELECT coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') <> ''
+$fn$;
+
+COMMENT ON FUNCTION public.tiene_rol() IS
+  'A-SEC-07 — ¿la sesión tiene rol asignado? Es el candado de todas las policies RLS. Lee app_metadata del JWT, que sólo escribe service_role.';
+
+REVOKE ALL ON FUNCTION public.tiene_rol() FROM anon;
+
 DO $$
 DECLARE r record;
 BEGIN
@@ -78,12 +107,12 @@ BEGIN
            EXECUTE format(''DROP POLICY %%I ON %I.%I'', p.policyname);
          END LOOP; END $inner$', r.sch, r.tab, r.sch, r.tab);
 
-    -- 2) policy única: sólo sesión válida
+    -- 2) policy única: sesión válida Y con rol asignado (A-SEC-07)
     EXECUTE format(
-      'CREATE POLICY "solo_usuarios_logueados" ON %I.%I
+      'CREATE POLICY "solo_usuarios_habilitados" ON %I.%I
          FOR ALL TO authenticated
-         USING (auth.uid() IS NOT NULL)
-         WITH CHECK (auth.uid() IS NOT NULL)', r.sch, r.tab);
+         USING (public.tiene_rol())
+         WITH CHECK (public.tiene_rol())', r.sch, r.tab);
 
     -- 3) recién ahora activar RLS (con la policy ya puesta)
     EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', r.sch, r.tab);
@@ -98,6 +127,13 @@ SELECT n.nspname, c.relname, 'RLS APAGADA' AS problema
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname IN ('public','msa','pam','ma','productivo','sueldos')
   AND c.relkind='r' AND c.relrowsecurity = false;
+
+SELECT n.nspname, c.relname, 'POLICY VIEJA: alcanza con estar logueado (A-SEC-07)' AS problema
+FROM pg_policies p
+JOIN pg_class c ON c.relname = p.tablename
+JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = p.schemaname
+WHERE p.schemaname IN ('public','msa','pam','ma','productivo','sueldos')
+  AND p.qual NOT LIKE '%tiene_rol%';
 
 SELECT n.nspname, c.relname, 'anon TODAVIA TIENE PERMISOS' AS problema
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -127,3 +163,6 @@ WHERE n.nspname IN ('public','msa','pam','ma','productivo','sueldos')
 --     EXECUTE format('ALTER TABLE %I.%I DISABLE ROW LEVEL SECURITY', r.sch, r.tab);
 --   END LOOP;
 -- END $$;
+--
+-- -- El candado de A-SEC-07. Se borra al final: con RLS apagada ya no lo usa nadie.
+-- DROP FUNCTION IF EXISTS public.tiene_rol();

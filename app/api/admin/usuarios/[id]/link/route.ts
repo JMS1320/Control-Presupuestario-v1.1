@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
-import { urlBase } from "@/lib/auth/url-base"
+import { urlBase, destinoDescartado } from "@/lib/auth/url-base"
 
 /**
  * POST — generar un link de acceso NUEVO para una cuenta que ya existe.
@@ -39,15 +39,37 @@ export async function POST(
   }
 
   const origen = urlBase(request)
+  const destino = `${origen}/auth/confirm?next=/bienvenida`
+
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: "recovery",
     email: u.user.email,
-    options: { redirectTo: `${origen}/login` },
+    options: { redirectTo: destino },
   })
 
   if (error) {
     return NextResponse.json({ error: "No se pudo generar el link." }, { status: 500 })
   }
 
-  return NextResponse.json({ email: u.user.email, link: data.properties.action_link })
+  /**
+   * CONTROL (A-BUG-98): ¿el link apunta a donde lo pedimos?
+   *
+   * Supabase descarta en silencio el `redirectTo` que no esté en sus **Redirect URLs** y lo
+   * cambia por el **Site URL** del proyecto. No devuelve error: devuelve un link perfecto que
+   * lleva a otro lado. Como el destino aceptado viaja dentro del link, compararlo es gratis
+   * — y es la diferencia entre enterarse acá o que la persona invitada termine en una pantalla
+   * que no es la nuestra.
+   */
+  const descartado = destinoDescartado(data.properties.action_link, destino)
+
+  return NextResponse.json({
+    email: u.user.email,
+    link: data.properties.action_link,
+    // La UI lo muestra como alerta. Se manda el link igual: el admin decide, pero avisado.
+    advertencia: descartado
+      ? `Supabase no aceptó el destino ${destino} y lo reemplazó por ${descartado}. ` +
+        "El link NO va a funcionar: hay que agregar esta dirección en Supabase → Authentication " +
+        "→ URL Configuration → Redirect URLs."
+      : null,
+  })
 }

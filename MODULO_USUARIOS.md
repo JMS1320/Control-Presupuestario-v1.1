@@ -120,6 +120,246 @@ admin + botón Salir). Antes no había cómo cerrar sesión porque no había ses
 - Las **29 API routes usan `service_role`**, o sea que **saltean RLS por diseño**. Hoy su única
   defensa es el middleware → [A-SEC-06](PENDIENTES.md#a-sec-06).
 
+### ⚙️ Preferencias personales — dónde viven y qué NO puede entrar ahí (2026-09-05, A-FEAT-83)
+
+Cada usuario configura cosas de su propia cuenta desde `/perfil`: en qué sección lo abre la app, si
+el menú arranca abierto, si quiere los contadores de pendientes, si le pregunta antes de salir, y
+si quiere ver las explicaciones de las pantallas (A-FEAT-84 — el criterio de qué se puede apagar
+está en `KNOWLEDGE.md` § `data-ayuda`, porque es transversal a todo el sistema).
+
+**Por qué las explicaciones son preferencia de usuario y no configuración de la app**: es el caso
+Ulises, o sea la § quinta pieza (el PERMISO) aplicada a otra cosa. Él es nuevo y necesita la letra
+chica; JMS hizo el sistema y le sobra. Un interruptor global significaría que el que sabe se la
+apaga **también al que está aprendiendo** — y el que está aprendiendo es justamente el que hace que
+la tarea se pueda delegar.
+
+**Dónde**: `user_metadata.preferencias`, un objeto, junto al nombre y la foto. Lo lee
+`lib/auth/preferencias.ts` y lo escribe el propio usuario con `auth.updateUser()`.
+
+**Por qué ahí y no en una tabla.** Son datos **de una persona, sobre su propia pantalla**: no los
+consulta nadie más, no entran en ningún reporte y no hay que cruzarlos con nada. Una tabla nueva
+pediría RLS, endpoint y migración para guardar cuatro banderitas que ya viajan en el JWT que la
+sesión trae igual.
+
+⚠️ **Y acá está la contracara, que es la parte que hay que respetar:** `user_metadata` **lo edita
+el propio dueño de la cuenta** — es el mismo motivo por el que el rol vive en `app_metadata` (§
+Decisiones técnicas). Entonces:
+
+> **Ninguna preferencia puede decidir un permiso.** Lo que se elige acá **no agranda lo que se ve,
+> sólo lo acomoda.**
+
+El caso concreto es la *sección de inicio*: se guarda un id de sección en un lugar que el usuario
+escribe a mano. Si esa preferencia decidiera qué se muestra, un `contable` se pondría
+`seccionInicio: "sueldos"` con un `updateUser` y entraría a Sueldos. **No decide**: se valida
+igual contra las secciones permitidas del rol (`dashboard.tsx`), y una que no corresponde cae al
+default. Es la misma puerta que ya cerró A-FEAT-82 para el `?seccion=` de la URL — la preferencia
+entra por la misma validación, no por un atajo.
+
+**Lectura tolerante, a propósito**: `leerPreferencias()` valida campo por campo y el que no cierra
+cae a su default, en vez de romper la pantalla. Es un JSON libre que el usuario puede escribir con
+cualquier contenido, y además una preferencia vieja puede haber quedado con otro tipo después de un
+cambio del código.
+
+### 🖼️ La foto de perfil: el link se descarga, no se guarda como link (2026-09-05, A-FEAT-83)
+
+`/api/perfil/avatar` acepta **un archivo o una URL**, y las dos terminan igual: la imagen guardada
+en nuestro Storage, en `<user.id>/avatar`.
+
+**Un link ajeno no se puede guardar como link**, aunque parezca lo más simple: el CSP de
+`middleware.ts` sólo permite imágenes de `'self'` y de Supabase, así que el navegador lo bloquea
+**en silencio** — la URL responde 200, el perfil se guarda bien, y el avatar muestra las iniciales
+como si nunca hubieras cargado nada. Es el mismo modo de falla que ya había costado una sesión con
+las fotos de Storage. Descargarla, además, la vuelve nuestra: no se rompe el día que el otro sitio
+la borra y no le cuenta a ese sitio quién mira la app.
+
+⚠️ **Descargar una URL que elige el usuario es una puerta al SSRF**: el que la pega elige a qué
+dirección se conecta **el servidor**, no su navegador. `lib/red/traer-imagen-remota.ts` la cierra —
+sólo http/https, **resuelve el nombre antes de conectarse** y rechaza IPs internas (loopback,
+privadas, CGNAT y sobre todo `169.254.169.254`, el metadata service del hosting), sigue las
+redirecciones **de a una revalidando cada salto**, y corta por timeout y por tamaño (el
+`content-length` declarado *y* los bytes que llegan de verdad).
+
+### 🔑 Entrar con Google, conviviendo con la contraseña (2026-09-07, A-FEAT-85)
+
+Pedido del usuario: *«tengo que poder crear usuarios que se puedan loguear con esa cuenta o que
+creen cuentas con la cuenta de google y después se puedan loguear con ella. Deberían convivir
+ambas opciones.»*
+
+#### Una persona = una cuenta, con dos llaves
+
+Supabase admite varias **identidades** sobre el mismo usuario y las vincula por **email
+verificado**. Así que quien fue invitado y puso su contraseña puede después entrar con Google con
+ese mismo mail y sigue siendo **el mismo `user.id`**: mismo rol, mismo TOTP, mismas preferencias,
+misma foto. No son dos cuentas y no hay que elegir una vía para siempre.
+
+⚠️ **Depende de que el email esté verificado de los dos lados.** `inviteUserByEmail` deja el mail
+sin confirmar hasta que la persona usa el link, y Supabase **no** vincula una identidad de Google a
+un usuario con mail sin verificar — es la defensa contra el *pre-account takeover*.
+
+✅ **Resuelto 2026-09-17** en `app/api/admin/usuarios/route.ts`: el alta marca `email_confirm: true`
+en la misma llamada que pone el rol. Se eligió esto y **no** reemplazar la invitación por
+`admin.createUser()`, porque `inviteUserByEmail` es lo único que **manda el mail**: cambiarlo habría
+obligado al admin a copiar un link a mano en todas las altas para arreglar un caso que es de Google.
+Así el alta queda igual que siempre y las dos vías funcionan desde el minuto cero.
+
+Damos el mail por confirmado porque **el admin ya está afirmando que es de esa persona** al
+escribirlo — el mismo acto de confianza que mandarle la invitación ahí. Escribirlo mal tiene
+exactamente la consecuencia que tenía antes: el acceso le llega a otro.
+
+⚠️ **Las cuentas invitadas ANTES de este cambio siguen sin confirmar**, y para ésas la vinculación
+no va a ocurrir: entrar con Google les crea una cuenta aparte, sin rol. La lista de `/usuarios` las
+marca *«invitación pendiente ⚠️»*. Se arregla solo cuando usan el link de invitación.
+
+#### Los dos caminos de alta terminan en el mismo lugar
+
+```
+A · el admin invita     → cuenta CON rol    → entra con clave o con Google, indistinto
+B · se anota con Google → cuenta SIN rol    → /no-access → el admin le pone rol → entra
+```
+
+El camino B ya estaba construido sin que nadie lo hubiera planeado: `app/page.tsx` manda a
+`/no-access` cuando `getRole()` da null, `/no-access` ya dice *«pedile al administrador que te
+habilite»*, y `panel-usuarios.tsx` ya lista las cuentas con `placeholder="sin rol"` y su selector.
+Lo único que faltaba era la puerta de Google — y el candado.
+
+#### 🔒 El candado está en la BASE, no en la pantalla
+
+**Es la decisión que hace que todo esto sea aceptable.** Si el registro queda abierto, cualquiera
+con una cuenta de Google se crea un usuario. Que la app lo mande a `/no-access` **no lo frena**:
+con su cookie más la `anon_key` del bundle le pega directo a PostgREST.
+
+Por eso la policy de RLS pasó de *«hay sesión»* a **«tiene rol»**
+([A-SEC-07](PENDIENTES.md#a-sec-07)). Sin ese cambio, abrir el registro sería regalar la base.
+
+> Corolario para lo que venga: **cada vez que se agregue una forma nueva de conseguir una sesión,
+> hay que volver a preguntarse qué da esa sesión por sí sola.** Acá daba todo.
+
+#### 🪪 El nombre y la foto: claves nuestras, las de Google como default
+
+GoTrue vuelca los datos de la identidad en `user_metadata`, y usa **`full_name` y `avatar_url`** —
+justo las dos claves que la app venía usando para lo que la persona carga en `/perfil`. Sin
+separarlas, subir una foto y volver a entrar con Google la revertía **sin error y sin aviso**.
+
+`lib/auth/identidad.ts` las separa: **`nombre` y `foto` son nuestras** (sólo las escribe la
+persona) y las del proveedor **se leen como default y no se escriben nunca**. Es la §
+*«Default del dato real, siempre editable»* de `CLAUDE.md` tal cual: campo vacío = *usá el de
+Google*; campo lleno = *acá mando yo*. Y como es override y no copia, a quien nunca tocó su nombre
+se le actualiza solo si lo cambia en Google.
+
+La foto tiene un vuelta de tuerca: la de Google vive en `googleusercontent.com` y **el CSP la
+bloquea en silencio** (el mismo modo de falla de A-FEAT-79). Así que no se muestra: se ofrece como
+atajo *«Usar la foto de mi cuenta de Google»*, que entra por el mismo camino que un link pegado a
+mano y **termina descargada en nuestro Storage**.
+
+#### Por qué el OAuth arranca en el browser y no en una Server Action
+
+`redirectTo` tiene que ser el origen exacto desde el que se está mirando la app, y
+`window.location.origin` lo sabe sin adivinar. En el servidor habría que deducirlo de las cabeceras
+`x-forwarded-*`, y **cada preview de Vercel tiene un host distinto**: un error ahí devuelve a la
+persona a otro deployment con un `code` que ya no sirve. La vuelta sí es del servidor
+(`/auth/callback`), que canjea el `code` y valida el destino con el mismo `destinoSeguro()` que el
+login con contraseña — con la sesión ya iniciada, una redirección abierta es peor, no menor.
+
+Detalle que se paga si se olvida: **«Recordarme» se escribe antes de irse a Google**. El navegador
+abandona el sitio, así que si la preferencia no queda puesta antes, al volver ya no hay quién la
+ponga y la sesión se escribe persistente siempre.
+
+#### 🔴 Lo que hay que habilitar a mano (no lo puede hacer Claude)
+
+1. **Google como proveedor** en Supabase → Authentication → Providers: `Client ID` y `Client
+   Secret` de un OAuth Client de Google Cloud, con el `redirect URI` que indica Supabase.
+2. **Permitir el registro** (Authentication → Providers → *Allow new users to sign up*), que es lo
+   que habilita el camino B. ⚠️ **No tocar esto antes de correr `scripts/57`** con el fix de
+   A-SEC-07: sin el candado, abrir el registro abre la base.
+3. En Google Cloud, agregar como **URI autorizado** el dominio de producción y el de los previews.
+
+⚠️ El interruptor de registro es **global**: no se puede abrir para Google y dejarlo cerrado para
+email+contraseña. Si aparece ruido de cuentas basura, el paso siguiente es un hook
+`before-user-created` con lista de admitidos — no está hecho.
+
+### 🔐 Recuperar el segundo factor: la pregunta es QUIÉN aprieta el botón (2026-09-17, A-FEAT-86)
+
+**Nació de un caso real.** El usuario tenía el TOTP inscripto desde el 03/09 y la llave no estaba
+en ninguna app. Sistema exigiendo el código, nadie capaz de generarlo, y la única salida fue borrar
+el factor con `service_role`. Preguntó lo obvio: *¿no puede el propio usuario borrarlo desde la
+pantalla de dos pasos?*
+
+**La respuesta depende de dónde viva ese botón, y los dos casos parecen el mismo.**
+
+| Dónde | Sesión | ¿Vale? |
+|---|---|---|
+| `/perfil`, ya adentro | **`aal2`** | ✅ ya demostró los dos factores |
+| En la pantalla del desafío | **`aal1`** | ❌ **anula el 2FA** |
+| `/usuarios`, lo aprieta **otro** admin | **`aal2`** del otro | ✅ la autorización la pone una segunda persona |
+
+El del medio es el que hay que saber rechazar, y conviene verlo en números:
+
+```
+Con 2FA:           contraseña (o Google)  +  código             = 2 factores
+Con ese botón:     contraseña (o Google)  +  clic en «lo perdí» = 1 factor
+```
+
+Quien robó la contraseña **no pelea con el TOTP: aprieta el botón**. El camino del atacante queda
+**más corto que el del usuario legítimo** — y la pantalla sigue diciendo que hay 2FA, así que la
+protección desaparece sin que nadie se entere. Es el mismo modo de falla que la CSP bloqueando
+imágenes en silencio, aplicado a algo que sí importa.
+
+**Lo implementado**, que son los dos casos legítimos:
+
+1. **`/perfil` → Segundo factor → «Cambiar de dispositivo»**: da de baja el factor y manda al alta.
+   Es seguro porque **el middleware no deja entrar a ninguna pantalla con un factor inscripto sin
+   pasar el desafío** — o sea que quien llega a `/perfil` ya es `aal2`. La seguridad no la aporta
+   el botón: la aporta el camino para llegar a él.
+2. **`/usuarios` → «Resetear 2FA»**: `DELETE /api/admin/usuarios/[id]/2fa`, con `exigirAdmin()`
+   (sesión + rol + `aal2`) y **prohibido sobre uno mismo** — para eso está el caso 1. El candado
+   propio no es estrictamente necesario (un admin trabado no llegaría a la pantalla igual), pero
+   se escribe explícito para que nadie lo relaje después sin toparse con el motivo.
+
+⚠️ **Lo que esto NO cubre: el admin solo.** Los dos casos dependen de algo que puede faltar — el 1
+exige estar adentro, el 2 exige **otro** admin. Con un único admin que pierde el autenticador, no
+hay salida desde la app. Ese hueco lo cierran los **códigos de recuperación**
+([A-SEC-08](PENDIENTES.md#a-sec-08)), que Supabase no trae y hay que implementar.
+
+### ✉️ Dónde termina una invitación, y por qué hay DOS rutas de vuelta (2026-09-17, A-FEAT-87)
+
+**El hueco**: el link de invitación apuntaba a `/login`, y **no existía ninguna pantalla para
+definir la contraseña** — `updateUser({password})` no aparecía en ninguna parte del código. Este
+mismo archivo y el manual describían el paso («la persona abre el link, pone la contraseña que
+quiera») como si estuviera hecho. **Nadie lo había construido**, y sólo se nota cuando invitás a
+alguien de verdad: entra una vez y no puede volver nunca más.
+
+Es el modo de falla de la § *«buscar antes de escribir»* al revés — documentación que se adelantó
+al código y después nadie volvió a contrastar.
+
+#### Las dos rutas de vuelta, y por qué no pueden ser una
+
+| Ruta | Atiende | Canje |
+|---|---|---|
+| `/auth/callback` | OAuth (Google) | `exchangeCodeForSession()` |
+| `/auth/confirm` | links de mail (invitación, recuperación) | `verifyOtp({ token_hash, type })` |
+
+La diferencia no es de estilo: **es quién abrió el flujo.** En OAuth lo inició el mismo navegador,
+que dejó guardado el `code_verifier` del PKCE. Un link de mail **lo abre otra persona, en otro
+navegador, días después**: ahí no hay verifier y `exchangeCodeForSession()` no tiene con qué
+trabajar. `verifyOtp` no lo necesita.
+
+`/auth/confirm` acepta **las dos formas** (`token_hash`+`type` y `code`) a propósito: según la
+plantilla de mail y la configuración del proyecto, Supabase devuelve una u otra. Atender sólo una y
+acertar por suerte es un bug que aparece recién el día que invitás a alguien de verdad.
+
+#### `/bienvenida` — el paso que faltaba
+
+Se llega **con sesión ya iniciada**, así que la persona ya está adentro. Lo que se resuelve ahí no
+es entrar: es **dejar armada la forma de volver mañana**. Ofrece contraseña, Google, o las dos, y
+ninguna es obligatoria — trabar a alguien en esa pantalla sería peor que el problema que resuelve,
+y con Google vinculado la contraseña no hace falta. Si no elige ninguna, se le avisa.
+
+⚠️ **El caso que obligó a tocar el middleware**: a un admin recién invitado, el middleware lo manda
+a inscribir el 2FA **antes** de dejarlo llegar a `/bienvenida`. Como el alta del TOTP volvía
+siempre a `/`, se salteaba la pantalla y quedaba igual de trabado que antes. Ahora el middleware
+guarda el destino en `?next=` y las dos pantallas de 2FA lo respetan (validado con `destinoSeguro()`,
+como todo destino que viaja en la URL).
+
 ### 🐞 Corregido de paso: el bug que este archivo daba por abierto
 La sección 1 decía que **`VistaEgresos` no recibe el prop `userRole`**. **Ya estaba arreglado**
 (la firma lo recibe y lo baja a `VistaFacturasArca`); lo que seguía vivo era la lectura del rol

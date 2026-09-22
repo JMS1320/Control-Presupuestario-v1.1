@@ -16,7 +16,7 @@ import { VistaIngresos } from "./components/vista-ingresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
 import { VistaExtractoBancario } from "./components/vista-extracto-bancario"
-import { VistaPrincipal } from "./components/vista-principal"
+import { VistaInicio } from "./components/vista-inicio"
 import { usePendientesPorPantalla } from "./hooks/usePendientesPorPantalla"
 import { VistaSectorProductivo } from "./components/vista-sector-productivo"
 import { TabSueldos } from "./components/tab-sueldos"
@@ -35,16 +35,23 @@ import { PanelControlProveedores } from "./components/panel-control-proveedores"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Toaster } from "@/components/ui/sonner"
+import { LayoutApp, SOLAPAS } from "@/components/layout-app"
+import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
-import { Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
+import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: 'admin' | 'contable'
+  /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
+  seccionInicial?: string
+  /** Preferencias personales del usuario (A-FEAT-83): menú abierto, contadores, salida. */
+  preferencias?: Preferencias
+  /** Ids de las secciones que ve este usuario, de `public.roles`. */
+  secciones?: string[]
 }
 
-export default function ControlPresupuestario({ userRole = 'admin' }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -104,36 +111,43 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
   const { resumen, loading } = useFinancialData(año, semestre)
   const { resumenPorSeccion, estadisticas, loading: loadingDistribucion } = useDistribucionSociosData(año, semestre)
 
-  // Función para determinar si mostrar una pestaña según el rol
-  const shouldShowTab = (tabName: string): boolean => {
-    if (userRole === 'admin') return true
-    if (userRole === 'contable') return tabName === 'egresos'
-    return false
-  }
+  /**
+   * ¿Este usuario ve esta sección? Sale de `public.roles` (prop `secciones`); si la tabla todavía
+   * no existe, del reparto de siempre.
+   */
+  const permitidas = new Set<string>(
+    secciones ?? SOLAPAS.filter((s) => userRole === 'admin' || s.id === 'egresos').map((s) => s.id)
+  )
+  const shouldShowTab = (tabName: string): boolean => permitidas.has(tabName)
 
-  // Determinar valor por defecto del tab según rol
-  const getDefaultTab = (): string => {
-    if (userRole === 'admin') return 'principal'
-    if (userRole === 'contable') return 'egresos'
-    return 'principal'
-  }
+  /** La primera sección que ve este usuario. Si no ve ninguna, no hay a dónde ir. */
+  const getDefaultTab = (): string =>
+    SOLAPAS.find((s) => permitidas.has(s.id))?.id ?? 'principal' 
+
+  /** Qué sección se está viendo. Pasó a ser estado controlado porque ahora la navegación la maneja
+   *  el menú lateral, que vive fuera del `<Tabs>` y no puede usar `defaultValue`. */
+  const [tab, setTab] = useState<string>(
+    // ⚠️ Se valida contra las secciones PERMITIDAS, no sólo contra las que existen: si no,
+    // un `contable` entraba a `/?seccion=sueldos` escribiéndolo a mano y veía Sueldos.
+    seccionInicial && permitidas.has(seccionInicial) ? seccionInicial : getDefaultTab()
+  )
+
+  /** Cambiar de sección tampoco puede saltarse el permiso. */
+  const irA = (id: string) => { if (permitidas.has(id)) setTab(id) }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      {/* Toaster a nivel app (fuera de las pestañas): los toasts sobreviven el cambio de pestaña,
-          así p.ej. la supervisión avisa al terminar aunque estés en otra sección. Antes no se montaba. */}
-      <Toaster richColors closeButton position="top-right" />
+    <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
       <NotasParaClaude />
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Quién sos, tu rol y por dónde salir. Antes no había forma de cerrar sesión porque no
-            había sesión que cerrar: se entraba por URL. */}
-        <BarraSesion userRole={userRole} />
-        {/* pestañas principales */}
-        <Tabs defaultValue={getDefaultTab()} className="w-full">
-          <TabsList className={`grid w-full ${userRole === 'contable' ? 'grid-cols-1' : 'grid-cols-12'}`}>
+        <Tabs value={tab} onValueChange={irA} className="w-full">
+          {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
+              pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
+              se saca, cada nota se guarda con `pantalla: ""` y P-34 deja de agrupar. La navegación
+              visible es el menú lateral; esto queda como fuente de ese dato y para lectores de
+              pantalla. */}
+          <TabsList className="sr-only">
             {shouldShowTab('principal') && (
               <TabsTrigger value="principal" className="flex items-center gap-2">
                 <Home className="h-4 w-4" />
@@ -220,9 +234,14 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
             )}
           </TabsList>
 
-          {/* VISTA PRINCIPAL */}
+          {/* VISTA PRINCIPAL — configurable por el usuario (A-FEAT-88) */}
           <TabsContent value="principal" className="space-y-6">
-            <VistaPrincipal />
+            {/* `permitidas` y no la preferencia: es lo que decide QUÉ widgets puede ver, y sale
+                del rol. La preferencia sólo dice cuáles de esos quiere y en qué orden. */}
+            <VistaInicio
+              preferencias={preferencias ?? PREFERENCIAS_DEFAULT}
+              secciones={[...permitidas]}
+            />
           </TabsContent>
 
           {/* DASHBOARD */}
@@ -255,7 +274,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               <TablaResumenFinanciero resumen={resumen} mostrarDecimales={mostrarDecimales} />
             )}
 
-            {showCategorias && <CorrectorCategorias />}
+            {showCategorias && <div className="entrada-suave"><CorrectorCategorias /></div>}
           </TabsContent>
 
           {/* DISTRIBUCIÓN */}
@@ -292,7 +311,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               />
             )}
 
-            {showInterno && <CorrectorInterno />}
+            {showInterno && <div className="entrada-suave"><CorrectorInterno /></div>}
           </TabsContent>
 
           {/* REPORTE DETALLADO */}
@@ -384,19 +403,25 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               </Button>
             </div>
 
-            {showPreciosTC && <ConfiguradorPreciosTC onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showActividades && <ConfiguradorActividades />}
-            {showCampos && <ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showVariables && <ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showInversiones && <ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showSueldosPre && <ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showIngresosAct && <ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} />}
+            {/* Los `<div className="entrada-suave">` son sólo para la animación de entrada: estos
+                paneles aparecen y desaparecen de golpe y reacomodan la página entera. La clase está
+                en `app/globals.css` (transición + `@starting-style`). El wrapper existe porque los
+                paneles no reenvían `className`; si alguno empieza a hacerlo, se le pasa directo. */}
+            {showPreciosTC && <div className="entrada-suave"><ConfiguradorPreciosTC onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showActividades && <div className="entrada-suave"><ConfiguradorActividades /></div>}
+            {showCampos && <div className="entrada-suave"><ConfiguradorCampos onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showVariables && <div className="entrada-suave"><ConfiguradorVariables onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showInversiones && <div className="entrada-suave"><ConfiguradorInversiones onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showSueldosPre && <div className="entrada-suave"><ConfiguradorSueldosPresupuesto onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showIngresosAct && <div className="entrada-suave"><ConfiguradorIngresosActividad onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
             {showMargen && (
-              <PanelMargen recargarToken={tokenPresupuesto}
-                onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
+              <div className="entrada-suave">
+                <PanelMargen recargarToken={tokenPresupuesto}
+                  onCargarPrecio={() => { setShowPreciosTC(true); setShowMargen(true) }} />
+              </div>
             )}
-            {showCuentas && <PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} />}
-            {showProveedores && <PanelControlProveedores />}
+            {showCuentas && <div className="entrada-suave"><PanelPresupuestoCuentas onCambio={() => setTokenPresupuesto(t => t + 1)} /></div>}
+            {showProveedores && <div className="entrada-suave"><PanelControlProveedores /></div>}
 
             <TabPresupuesto recargarToken={tokenPresupuesto} />
           </TabsContent>
@@ -443,8 +468,8 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
           </TabsContent>
         </Tabs>
 
-        {/* Información general del sistema */}
-        <Card>
+          {/* Información general del sistema */}
+          <Card>
           <CardHeader>
             <CardTitle>Información del Sistema</CardTitle>
           </CardHeader>
@@ -473,8 +498,7 @@ export default function ControlPresupuestario({ userRole = 'admin' }: ControlPre
               </div>
             </div>
           </CardContent>
-        </Card>
-      </div>
-    </div>
+          </Card>
+    </LayoutApp>
   )
 }

@@ -166,13 +166,12 @@ export function VistaPrincipal() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Control Presupuestario</h1>
-          <p className="text-gray-600 mt-1">Panel principal del sistema</p>
-        </div>
-      </div>
+      {/* El nombre de la SECCIÓN y nada más.
+          Antes decía «Control Presupuestario» —el nombre de la app, que ya está en el menú— con el
+          subtítulo «Panel principal del sistema», que no aporta nada que la pantalla no muestre
+          sola. Cada elemento tiene que ganarse el lugar; estos dos no lo hacían, y ocupaban ~90px
+          de alto arriba de todo, que es el lugar más caro de la pantalla. */}
+      <h1 className="titulo-pantalla text-gray-900">Principal</h1>
 
       {/* Barra superior con IPC */}
       <div className="flex items-center gap-4 mb-8">

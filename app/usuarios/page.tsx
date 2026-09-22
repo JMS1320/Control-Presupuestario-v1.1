@@ -1,35 +1,12 @@
-import Link from "next/link"
 import { redirect } from "next/navigation"
-import { createClientServer } from "@/lib/supabase-server"
-import { esAdmin } from "@/lib/auth/roles"
-import { PanelUsuarios } from "@/components/panel-usuarios"
 
-export const metadata = { title: "Usuarios — Control Presupuestario" }
-
-export default async function UsuariosPage() {
-  const supabase = await createClientServer()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  // Doble puerta: el middleware ya cortó, pero la página vuelve a chequear. La API hace lo
-  // mismo por su cuenta (lib/auth/guard-admin.ts) — A-SEC-06.
-  if (!esAdmin(user)) redirect("/")
-
-  return (
-    <main className="min-h-screen bg-gray-50 p-4">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Usuarios</h1>
-            <p className="text-sm text-muted-foreground">
-              Cuentas del sistema, sus roles y su acceso.
-            </p>
-          </div>
-          <Link href="/" className="text-sm underline underline-offset-4">
-            ← Volver al sistema
-          </Link>
-        </div>
-        <PanelUsuarios miId={user!.id} />
-      </div>
-    </main>
-  )
+/**
+ * `/usuarios` se mudó adentro de Configuración (2026-09-05).
+ *
+ * La ruta se mantiene y redirige en vez de borrarse: estaba linkeada desde el menú del avatar y
+ * puede estar guardada en algún favorito. Una ruta que desaparece devuelve un 404 sin explicar
+ * a dónde se fue.
+ */
+export default function UsuariosPage() {
+  redirect("/configuracion?panel=usuarios")
 }

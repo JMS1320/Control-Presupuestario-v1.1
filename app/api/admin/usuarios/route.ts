@@ -91,7 +91,7 @@ export async function POST(request: Request) {
    * Para que salga siempre → habilitar SMTP propio (A-AUTO-02 § Envío de mail).
    */
   const { data, error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${origen}/login`,
+    redirectTo: `${origen}/auth/confirm?next=/bienvenida`,
   })
 
   if (error) {
@@ -107,19 +107,44 @@ export async function POST(request: Request) {
     const { data: lista } = await supabaseAdmin.auth.admin.listUsers({ perPage: 200 })
     const existente = lista?.users.find((u) => u.email?.toLowerCase() === email)
     const revocada = Boolean((existente as { banned_until?: string } | undefined)?.banned_until)
-    return NextResponse.json(
-      {
-        error: revocada
-          ? "Ya existe esa cuenta y está REVOCADA. Reactivala desde la lista de abajo en vez de crearla de nuevo."
-          : "Ya existe una cuenta con ese email. Si perdió el link, generale uno nuevo desde la lista.",
-      },
-      { status: 409 }
-    )
+    // Caso nuevo desde A-FEAT-85: la persona ya entró con Google, así que la cuenta existe y
+    // está esperando rol. Crearla de nuevo no es lo que hay que hacer — hay que habilitarla.
+    const seAnotoSola = !revocada && existente && !existente.app_metadata?.role
+
+    let mensaje: string
+    if (revocada) {
+      mensaje =
+        "Ya existe esa cuenta y está REVOCADA. Reactivala desde la lista de abajo en vez de crearla de nuevo."
+    } else if (seAnotoSola) {
+      mensaje =
+        "Esa persona ya entró con Google y su cuenta está esperando rol. Asignáselo desde la lista de abajo: no hace falta crearla."
+    } else {
+      mensaje =
+        "Ya existe una cuenta con ese email. Si perdió el link, generale uno nuevo desde la lista."
+    }
+
+    return NextResponse.json({ error: mensaje }, { status: 409 })
   }
 
-  // El rol va en app_metadata (service_role): el usuario no puede tocarlo desde su sesión.
+  /**
+   * Dos cosas en la misma llamada, y la segunda es la que habilita la vía de Google.
+   *
+   * 1. **El rol** va en `app_metadata` (sólo `service_role` lo escribe): el usuario no puede
+   *    tocarlo desde su sesión.
+   *
+   * 2. **`email_confirm`** (A-FEAT-85). `inviteUserByEmail` deja el mail **sin confirmar** hasta
+   *    que la persona usa el link, y Supabase **no vincula una identidad de Google a un usuario
+   *    con mail sin verificar** — es su defensa contra el *pre-account takeover*. Sin esto, a
+   *    quien invitás y entra por Google se le crea una **cuenta nueva sin rol** en vez de entrar
+   *    a la suya: mismo mail, dos cuentas, y el rol en la que no usa.
+   *
+   *    Lo damos por confirmado porque **el admin ya está afirmando que ese mail es de esa
+   *    persona** al escribirlo — es el mismo acto de confianza que mandarle la invitación ahí.
+   *    Escribir mal el mail tiene la misma consecuencia que antes: el acceso le llega a otro.
+   */
   const { error: errRol } = await supabaseAdmin.auth.admin.updateUserById(data.user.id, {
     app_metadata: { role: rol },
+    email_confirm: true,
   })
   if (errRol) {
     return NextResponse.json(

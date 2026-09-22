@@ -147,7 +147,11 @@ export function AlertasFcVenta() {
 
   if (cargando) {
     return (
-      <Card><CardContent className="flex items-center justify-center py-8 text-gray-400">
+      // Las `key` distintas acá y abajo NO son decorativas: sin ellas React ve dos <Card> en la
+      // misma posición, reutiliza el mismo nodo del DOM y `@starting-style` no dispara nunca
+      // (sólo corre cuando el elemento entra al DOM, no cuando le cambia una clase). Con keys
+      // distintas el <Card> de carga se desmonta y el de contenido entra de verdad.
+      <Card key="cargando"><CardContent className="flex items-center justify-center py-8 text-gray-400">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Buscando facturas de ventas…
       </CardContent></Card>
     )
@@ -156,7 +160,7 @@ export function AlertasFcVenta() {
   if (candidatos.length === 0 && ventasSinCuit.length === 0) return null
 
   return (
-    <Card>
+    <Card key="contenido" className="entrada-suave">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Link2 className="h-4 w-4" />

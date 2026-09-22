@@ -32,7 +32,9 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   const [email, setEmail] = useState("")
   const [rol, setRol] = useState<string>("contable")
   const [creando, setCreando] = useState(false)
-  const [invitacion, setInvitacion] = useState<{ email: string; link: string } | null>(null)
+  const [invitacion, setInvitacion] = useState<
+    { email: string; link: string; advertencia?: string | null } | null
+  >(null)
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -49,6 +51,9 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+
+  /** Cuentas creadas que todavía nadie habilitó. Las revocadas no cuentan: ésas son a propósito. */
+  const esperandoRol = usuarios.filter((u) => !u.rol && !u.bloqueado)
 
   async function crear(e: React.FormEvent) {
     e.preventDefault()
@@ -112,24 +117,75 @@ export function PanelUsuarios({ miId }: { miId: string }) {
     toast.success(`Mail enviado a ${j.email}.`)
   }
 
+  /**
+   * Resetea el segundo factor de OTRA persona (A-FEAT-86) — el caso «perdí el teléfono».
+   *
+   * Es destructivo y no se deshace, así que se confirma. La autorización la aporta quien aprieta:
+   * este endpoint exige un admin con `aal2`, o sea alguien que ya demostró sus dos factores. Para
+   * la cuenta propia no sirve, a propósito: para eso está Perfil → Cambiar de dispositivo.
+   */
+  async function resetear2FA(id: string, email: string) {
+    if (
+      !confirm(
+        `¿Dar de baja el segundo factor de ${email}?\n\n` +
+          "Va a poder entrar con su contraseña (o con Google) y el sistema le va a pedir que " +
+          "inscriba un autenticador nuevo. El anterior deja de servir."
+      )
+    ) {
+      return
+    }
+    const r = await fetch(`/api/admin/usuarios/${id}/2fa`, { method: "DELETE" })
+    const j = await r.json()
+    if (!r.ok) return toast.error(j.error ?? "No se pudo resetear")
+    toast.success(
+      j.yaEstaba ? "Esa cuenta ya no tenía segundo factor." : `Segundo factor dado de baja.`
+    )
+    cargar()
+  }
+
   /** Respaldo: link nuevo para copiar, si el mail no llega o el envío está limitado. */
   async function generarLink(id: string) {
     const r = await fetch(`/api/admin/usuarios/${id}/link`, { method: "POST" })
     const j = await r.json()
     if (!r.ok) { toast.error(j.error ?? "No se pudo generar"); return }
-    setInvitacion({ email: j.email, link: j.link })
-    toast.success("Link nuevo generado.")
+    setInvitacion({ email: j.email, link: j.link, advertencia: j.advertencia })
+    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-98).
+    if (j.advertencia) toast.error("El link apunta a otro sitio. Mirá el aviso de abajo.")
+    else toast.success("Link nuevo generado.")
   }
 
   return (
     <div className="space-y-8">
+      {/*
+        Quien entra con Google sin estar dado de alta queda con la cuenta creada y SIN ROL,
+        esperando que un admin la habilite (A-FEAT-85). Sin este aviso, esa espera no la ve
+        nadie: la fila queda perdida en una lista ordenada por fecha. Es la § «alerta con
+        destinatario» de CLAUDE.md — el destinatario acá es el admin que está mirando esta
+        pantalla, y el momento es ahora.
+      */}
+      {esperandoRol.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm">
+          <p className="font-medium text-amber-900">
+            {esperandoRol.length === 1
+              ? "Hay 1 cuenta esperando que le asignes un rol"
+              : `Hay ${esperandoRol.length} cuentas esperando que les asignes un rol`}
+          </p>
+          <p className="mt-1 text-xs text-amber-800">
+            Entraron con Google pero todavía no ven nada del sistema. Asignales el rol en la lista
+            de abajo: {esperandoRol.map((u) => u.email).join(" · ")}
+          </p>
+        </div>
+      )}
+
       {/* ---------- alta ---------- */}
       <section className="rounded-lg border bg-white p-4">
         <h2 className="mb-1 font-semibold">Crear cuenta</h2>
         <p className="mb-4 text-sm text-muted-foreground">
           No se define ninguna contraseña acá: le llega una <strong>invitación por mail</strong> y
           la persona elige la suya. Así nadie conoce la clave de otro. Si el mail no llega, cada
-          fila tiene <strong>Reenviar mail</strong> y <strong>Copiar link</strong>.
+          fila tiene <strong>Reenviar mail</strong> y <strong>Copiar link</strong>.{" "}
+          <strong>También puede entrar con Google</strong> usando ese mismo mail, sin tocar el
+          link: es la misma cuenta, con el rol que le pongas acá.
         </p>
 
         <form onSubmit={crear} className="flex flex-wrap items-end gap-3">
@@ -162,6 +218,18 @@ export function PanelUsuarios({ miId }: { miId: string }) {
               Respaldo para cuando el mail no llega. Es de <strong>un solo uso</strong> y vence:
               pasáselo por un canal privado.
             </p>
+            {/*
+              El control de A-BUG-98. Grande y rojo porque el link se ve perfecto: sin esto, el
+              admin lo copia, lo manda, y el error aparece recién del otro lado.
+            */}
+            {invitacion.advertencia && (
+              <p
+                role="alert"
+                className="mb-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-medium text-red-800"
+              >
+                ⚠️ {invitacion.advertencia}
+              </p>
+            )}
             <div className="flex gap-2">
               <Input readOnly value={invitacion.link} className="font-mono text-xs" />
               <Button
@@ -224,7 +292,20 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                     </TableCell>
                     <TableCell className="text-sm">{FECHA(u.ultimoIngreso)}</TableCell>
                     <TableCell className="text-sm">
-                      {u.bloqueado ? "🚫 revocado" : u.confirmado ? "activo" : "invitación pendiente"}
+                      {u.bloqueado ? (
+                        "🚫 revocado"
+                      ) : u.confirmado ? (
+                        "activo"
+                      ) : (
+                        // Una cuenta con el mail sin confirmar NO puede entrar con Google: Supabase
+                        // no vincula la identidad hasta que el mail está verificado (A-FEAT-85).
+                        // Las altas nuevas nacen confirmadas; las anteriores a ese cambio, no —
+                        // y el síntoma sería "entré con Google y no veo nada", que no se parece
+                        // en nada a la causa. Por eso se dice acá.
+                        <span title="Todavía no usó el link de invitación. Hasta que lo use, entrar con Google le va a crear una cuenta aparte.">
+                          invitación pendiente ⚠️
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
                       {!soyYo && (
@@ -249,6 +330,15 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                               >
                                 Copiar link
                               </Button>
+                              {u.tiene2FA && (
+                                <Button
+                                  variant="ghost" size="sm"
+                                  onClick={() => resetear2FA(u.id, u.email ?? "esa cuenta")}
+                                  title="Si perdió el autenticador: lo da de baja y le pide inscribir uno nuevo al entrar"
+                                >
+                                  Resetear 2FA
+                                </Button>
+                              )}
                               <Button variant="outline" size="sm" onClick={() => revocar(u.id, u.email)}>
                                 Revocar
                               </Button>

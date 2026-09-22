@@ -5654,7 +5654,7 @@ function SubTabOrdenesAplicacion() {
                 )}
               </div>
               {cargaManualRodeos && (
-                <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
+                <p data-ayuda className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1 mb-2">
                   Modo manual: se listan todas las categorías. Tildá la/s que correspondan e ingresá la cantidad (útil para sanidad retroactiva).
                 </p>
               )}
@@ -5844,7 +5844,7 @@ function SubTabOrdenesAplicacion() {
               )}
 
               {laborEspecial === 'destete' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+                <div data-ayuda className="bg-blue-50 border border-blue-200 rounded-md p-3">
                   <p className="text-sm text-blue-800">
                     La vinculacion a Ciclo de Cria y Pesada se realiza despues de confirmar la orden, desde el boton dedicado en la tarjeta de la orden ejecutada.
                   </p>
@@ -6585,7 +6585,7 @@ function SubTabNecesidadCompra() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
+      <p data-ayuda className="text-sm text-muted-foreground">
         Insumos necesarios para órdenes planificadas vs stock disponible.
       </p>
 
@@ -7343,7 +7343,7 @@ function SubTabOrdenesAgricolas() {
                       })}
                     </TableBody>
                   </Table>
-                  <p className="text-xs text-muted-foreground">
+                  <p data-ayuda className="text-xs text-muted-foreground">
                     Marque para recuento real. Si no marca, se descuenta la cantidad planificada.
                   </p>
                 </div>

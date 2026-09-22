@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { supabase } from "@/lib/supabase"
+import { destinoSeguro } from "@/lib/auth/destino-seguro"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,6 +17,10 @@ const CODIGO_OK = /^\d{6}$/
  */
 export function DesafioTOTP() {
   const router = useRouter()
+  // A dónde ir después. Importa para la invitación de un admin (A-FEAT-87): el middleware lo
+  // manda a inscribir el 2FA ANTES de dejarlo llegar a /bienvenida, así que si acá volviéramos
+  // siempre a "/", se saltearía la pantalla donde define su contraseña y no podría volver nunca.
+  const destino = destinoSeguro(useSearchParams().get("next"))
   const [codigo, setCodigo] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
@@ -51,7 +56,7 @@ export function DesafioTOTP() {
     }
 
     router.refresh()
-    router.replace("/")
+    router.replace(destino)
   }
 
   return (
@@ -87,6 +92,10 @@ export function DesafioTOTP() {
  */
 export function AltaTOTP() {
   const router = useRouter()
+  // A dónde ir después. Importa para la invitación de un admin (A-FEAT-87): el middleware lo
+  // manda a inscribir el 2FA ANTES de dejarlo llegar a /bienvenida, así que si acá volviéramos
+  // siempre a "/", se saltearía la pantalla donde define su contraseña y no podría volver nunca.
+  const destino = destinoSeguro(useSearchParams().get("next"))
   const [qr, setQr] = useState<string | null>(null)
   const [secreto, setSecreto] = useState<string | null>(null)
   const [factorId, setFactorId] = useState<string | null>(null)
@@ -104,8 +113,23 @@ export function AltaTOTP() {
         await supabase.auth.mfa.unenroll({ factorId: pendiente.id })
       }
 
+      /**
+       * ⚠️ `issuer` va explícito, y es lo que la persona va a leer en su app de autenticación
+       * durante años.
+       *
+       * Sin él, Supabase lo deduce del **Site URL** del proyecto, y la entrada queda nombrada
+       * `localhost:3000` — que no dice qué sistema es, y encima es el puerto de OTRA aplicación.
+       * `friendlyName` no alcanza: ése es el nombre interno que ve el admin en la lista de
+       * factores, no el del QR.
+       *
+       * Y por eso es un **nombre fijo y no la URL**: el QR se escanea una vez y esa entrada
+       * sobrevive al cambio de dominio. Si el issuer saliera del host, quien se inscribe hoy en
+       * local vería «localhost» en el teléfono para siempre, incluso después de pasar a
+       * producción — y dos ambientes distintos crearían entradas que parecen sistemas distintos.
+       */
       const { data, error: err } = await supabase.auth.mfa.enroll({
         factorType: "totp",
+        issuer: "Control Presupuestario",
         friendlyName: "Control Presupuestario",
       })
       if (cancelado) return
@@ -143,7 +167,7 @@ export function AltaTOTP() {
     }
 
     router.refresh()
-    router.replace("/")
+    router.replace(destino)
   }
 
   return (

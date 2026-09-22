@@ -82,7 +82,7 @@ export function AlertaExtractosDesactualizados() {
   const hayGrave = atrasadas.some(a => a.dias === null || a.dias >= DIAS_GRAVE)
 
   return (
-    <Card className={hayGrave ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}>
+    <Card className={`entrada-suave ${hayGrave ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <AlertTriangle className={`h-5 w-5 shrink-0 mt-0.5 ${hayGrave ? 'text-red-600' : 'text-amber-600'}`} />

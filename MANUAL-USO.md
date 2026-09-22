@@ -26,6 +26,23 @@
 4. Ya adentro, la app se ve igual que siempre; **el rol decide qué se ve**: admin todo, contable
    sólo la solapa Egresos (ARCA + Templates).
 
+### Si perdiste el autenticador 🟡 (2026-09-17, sin testear — A-FEAT-86)
+
+**Antes de perderlo** (cambio de teléfono planificado): `/perfil` → **Segundo factor** →
+**Cambiar de dispositivo**. Te da un QR nuevo y el anterior deja de servir. Guardá la llave donde
+la vayas a encontrar.
+
+**Si ya lo perdiste** y no podés pasar la pantalla del código: **pedile a otro administrador** que
+entre a Configuración → Usuarios, busque tu fila y toque **Resetear 2FA**. Después entrás normal y
+el sistema te pide inscribir uno nuevo.
+
+⚠️ **No hay un botón de «no tengo el autenticador» en la pantalla del código, y no lo va a haber.**
+Ese botón dejaría entrar a cualquiera que tenga tu contraseña, que es justo de lo que el código te
+protege. El motivo largo está en `MODULO_USUARIOS.md` § Recuperar el segundo factor.
+
+⚠️ **Si sos el único administrador, esto no te cubre**: no hay otro que te resetee y hay que tocar
+la base. Mientras haya dos admins, no es un problema.
+
 ### La primera vez (admin) — alta del segundo factor
 Al entrar por primera vez, la app manda a una pantalla con un **QR**. Escanearlo con la app de
 autenticación y escribir el número que muestra. Si no se puede escanear, hay un código de texto
@@ -47,18 +64,75 @@ para cargar a mano. **Desde ahí, cada login pide el código.**
 - Si el código de 6 dígitos falla siempre, revisar que **la hora del teléfono esté en automático**:
   el TOTP depende del reloj.
 
+### Entrar con Google 🟡 (2026-09-07, sin testear — A-FEAT-85)
+
+Debajo de «Entrar» hay un **«Continuar con Google»**. Las dos formas conviven y **son la misma
+cuenta**: si te invitaron por mail y pusiste una contraseña, después podés entrar con Google con
+ese mismo mail y seguís siendo vos — mismo rol, mismo segundo factor, misma foto. No hay que
+elegir una para siempre.
+
+**Si es tu primera vez y nadie te dio de alta**: entrá con Google igual. Te crea la cuenta y te
+deja en la pantalla que dice *«tu cuenta todavía no tiene un rol asignado»*. **Eso no es un
+error**: es el sistema esperando que un administrador te habilite. Avisale — te va a ver aparecer
+en Configuración → Usuarios con el rol vacío.
+
+**Si sos admin, Google no te saltea el segundo factor.** Entrás con Google y te sigue pidiendo el
+código de 6 dígitos. Es a propósito: desde Google no se puede saber si esa cuenta tiene 2FA puesto.
+
+**Tu nombre y tu foto no te los pisa Google.** Si nunca los cargaste, se muestran los de tu cuenta
+de Google. Si los cargaste en `/perfil`, mandan los tuyos y Google no los toca. Para usar la foto
+de Google hay un atajo en el perfil: **«Usar la foto de mi cuenta de Google»** — la trae y la
+guarda como propia.
+
+#### Cómo se prueba (A-TEST-93)
+1. **Que sean la misma cuenta**: entrá con tu mail y contraseña, salí, y entrá con Google con ese
+   mismo mail. Tenés que ver **tus** secciones y tus datos, no una cuenta vacía.
+2. **Alta por Google**: con un mail que no exista, entrar con Google → tiene que caer en *«sin rol
+   asignado»*, y aparecer en Configuración → Usuarios. Asignarle rol y volver a entrar.
+3. ⚠️ **La prueba que importa**, con la cuenta sin rol: que **no vea datos** aunque tenga sesión.
+   No alcanza con ver el cartel — hay que confirmar que la base tampoco le da nada (lo hace el
+   admin, ver [A-TEST-93](PENDIENTES.md#a-test-93)).
+4. Cargá una foto propia, salí, y volvé a entrar con Google: **tiene que seguir la tuya**.
+5. Tildá «Recordarme», entrá con Google, cerrá el navegador y volvé a abrirlo: tenés que seguir
+   adentro. Sin tildarlo, tiene que pedirte entrar de nuevo.
+
+⚠️ **No funciona hasta que se habilite Google en Supabase** y se corra `scripts/57`. Hasta
+entonces el botón está pero da error. El orden importa: **primero el script, después abrir el
+registro** — está explicado en `MODULO_USUARIOS.md` § Entrar con Google.
+
 ### Crear cuentas (sólo admin)
 Arriba a la derecha, link **Usuarios** → pantalla `/usuarios`.
 
 1. **Crear cuenta**: email + rol (*contable* o *admin*) → **Crear e invitar**.
 2. La app devuelve un **link de invitación**. **Copiarlo y pasárselo a la persona** por un canal
    privado. Es de **un solo uso** y vence; si se pierde, se crea la invitación otra vez.
-3. La persona abre el link, **pone la contraseña que quiera** y ya entra. Vos nunca ves su clave.
+3. La persona abre el link y cae en **Bienvenida** 🟡 (2026-09-17), donde elige **cómo va a
+   entrar de ahora en más**: definir una contraseña, vincular su cuenta de Google, o las dos. Vos
+   nunca ves su clave.
+   ⚠️ Si elige Google, tiene que ser **el mismo mail** al que le mandaste la invitación.
+   ⚠️ Si no hace ninguna de las dos, va a poder usar el sistema en esa visita pero después va a
+   necesitar un link nuevo. La pantalla se lo avisa.
 4. Si la hiciste **admin**, la primera vez le va a pedir configurar el segundo factor con el QR.
+
+**La persona puede entrar de las dos formas, con la misma cuenta**: con la contraseña que eligió
+desde el link, o con **Continuar con Google** usando ese mismo mail. No hay que decidirlo en el
+alta ni avisarle nada — es la misma cuenta, con el rol que le pusiste.
+
+### Cuando alguien se anota solo (2026-09-07 🟡)
+
+Si una persona entra con Google sin que la hayas dado de alta, **la cuenta se crea igual pero sin
+rol**: ve el cartel de *«tu cuenta todavía no tiene un rol asignado»* y nada más. Vos la vas a ver
+arriba de esta pantalla, en un **aviso ámbar** que dice cuántas cuentas están esperando rol y con
+qué mail. Le asignás el rol en la lista y listo — **no** hay que crearla de nuevo (si lo intentás,
+la pantalla te lo dice).
 
 En la lista de cuentas se ve el rol (cambiable ahí mismo), si tiene 2FA, el último ingreso y el
 estado. **Revocar** bloquea el acceso — **no borra la cuenta**, para no perder el rastro de lo que
 hizo, y se puede reactivar.
+
+⚠️ **«invitación pendiente ⚠️»** en la columna de estado quiere decir que esa persona todavía no
+usó su link. Hasta que lo use, **si entra con Google se le va a crear una cuenta aparte** en vez de
+la suya. Aplica sólo a las cuentas creadas antes del 17/09/2026; las nuevas ya nacen listas.
 
 Dos cosas que la pantalla no te deja hacer, a propósito: **cambiarte el rol a vos mismo** y
 **revocarte a vos mismo**. Si el único admin se bajara a contable, nadie podría volver a entrar
@@ -66,6 +140,31 @@ acá nunca más.
 
 ⚠️ **La primera cuenta admin no se crea acá** (esta pantalla ya exige ser admin): esa se hace una
 sola vez desde el dashboard de Supabase. Ver `MODULO_USUARIOS.md` § 0.
+
+### 🟡 A dónde lleva el link de alta *(sin testear — A-TEST-97)*
+
+**El link apunta al sitio desde el que lo creaste**: si lo generás en producción lleva a
+producción, si lo generás en local lleva a tu local, y si lo generás en un preview de Vercel lleva
+a ese preview. No hace falta hacer nada para eso.
+
+⚠️ **Pero hay una condición que está fuera de la app**: Supabase sólo respeta ese destino si la
+dirección figura en su lista de **Redirect URLs**. Si no figura, **no da error** — cambia el
+destino por el **Site URL** del proyecto y te devuelve un link que se ve perfecto y lleva a otro
+lado.
+
+Esa lista quedó configurada el **18/09/2026** con producción, los previews de Vercel y
+`localhost:3001`. **Si algún día cambia el dominio, o aparece un puerto nuevo, hay que agregarlo
+ahí** (Supabase → Authentication → URL Configuration) o los links de ese sitio dejan de funcionar.
+
+Por eso «Copiar link» tiene un **control**: compara a dónde pidió ir contra a dónde va el link que
+volvió. Si no coinciden, en vez del mensaje de éxito sale un **cartel rojo** que dice cuál fue el
+destino real y qué hay que agregar en Supabase. **Si ves ese cartel, no mandes el link**: arreglá
+la configuración primero (Authentication → URL Configuration; los valores exactos están en
+`PENDIENTES.md` § A-BUG-98).
+
+El control **no llega** a «Reenviar mail» ni al mail de la invitación: esos no devuelven el link,
+así que no hay con qué comparar. Si dudás, generá un «Copiar link» primero — si ese cierra, el
+mail también.
 
 ### Cerrar sesión
 Desde el botón de salir. (No se cierra sola por abrir un link: el logout es sólo por POST, a
@@ -3394,3 +3493,417 @@ El total del margen tiene que dar **exactamente** lo mismo que la suma de los tr
 Si no coincide, **el problema no está en el margen** — está aguas arriba, y el orden para buscarlo
 es: ¿los cinco controles de Facturas están en ✓? → ¿las mediciones son las seis? → ¿el rodeo
 concilia 189 = 189?
+
+---
+
+## ✨ Toda la app → **Movimiento de la interfaz** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-74](PENDIENTES.md) · test → [A-TEST-82](PENDIENTES.md)*
+
+No es una pantalla: son tres cambios de comportamiento que se ven en toda la app. Se documentan acá
+porque **hay que probarlos a mano** — ninguno se puede verificar con un test automático, y lo que
+define si están bien es cómo se sienten después de un día de uso, no cómo se ven una vez.
+
+### Qué cambió
+
+| Dónde | Antes | Ahora |
+|---|---|---|
+| **Cualquier botón** | Nada confirmaba que el click se registró | Se hunde apenas al apretarlo (3 %, 150 ms) y vuelve al soltar |
+| **Alertas de Principal** (extractos sin cargar, parseo pendiente, FC de venta) | Aparecían de golpe al terminar de cargar y empujaban la página | Entran con un fundido corto desde arriba (200 ms) |
+| **Paneles del Presupuesto** (Cuentas contables, Actividades, Campos, Variables, Inversiones, Sueldos, Ingresos, Margen, Precios y TC, Proveedores) y los correctores de Dashboard y Distribución | Aparecían y desaparecían de golpe | Entran igual que las alertas. **Al cerrarlos desaparecen al instante, a propósito** |
+
+### Cómo se prueba
+
+1. **El pulsado.** Entrá a cualquier pantalla y apretá botones un rato — los de la barra del
+   Presupuesto son los mejores porque hay 10 juntos. Lo que hay que juzgar **no es si se ve**, sino
+   si **molesta**: tiene que sentirse casi imperceptible. Si lo notás como "animación", está mal y
+   hay que bajarlo. Probá también un botón que dispare algo lento (un importador).
+2. **Las alertas de Principal.** Recargá la pantalla Principal (F5) y mirá las tres tarjetas de
+   alerta. Tienen que entrar suave, sin saltos. ⚠️ Cargan de tres consultas independientes, así que
+   **van a entrar en momentos distintos** — eso es correcto, no es un error.
+3. **Los paneles del Presupuesto.** Andá a Presupuesto y abrí/cerrá un panel **rápido y repetido**
+   (click, click, click). Tiene que entrar suave cada vez y no trabarse ni parpadear.
+4. **El caso dudoso — el que más importa mirar.** Abrí un panel del Presupuesto, cambiá a otra
+   pestaña y volvé. El panel **vuelve a animar la entrada**, porque las pestañas desmontan su
+   contenido. Decidir si molesta: si molesta, se saca la clase `entrada-suave` de esos paneles y se
+   deja sólo en las alertas.
+5. **Reducir movimiento.** En macOS: Configuración → Accesibilidad → Pantalla → *Reducir
+   movimiento*. Con eso activado tiene que **quedar el fundido y desaparecer el desplazamiento**, y
+   los botones cambian de opacidad en vez de hundirse. No tiene que quedar todo quieto.
+
+### Qué NO se animó, y por qué
+
+- **El cambio de pestaña.** Es la navegación central: se usa decenas de veces por día y cualquier
+  animación ahí hace que toda la app se sienta lenta.
+- **El paso de "Cargando…" a la tabla** del Dashboard y de Distribución Socios. Se evaluó y se
+  descartó: las pestañas desmontan su contenido, así que el fundido **también dispararía cada vez
+  que volvés a la solapa** — es decir, se convertiría en una animación de cambio de pestaña por la
+  puerta de atrás.
+- **El valor del IPC y los contadores de las solapas.** Son datos que se leen; animarlos retrasa la
+  lectura.
+
+---
+
+## 🧭 Toda la app → **Menú lateral** (reemplaza la barra de solapas) 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-75](PENDIENTES.md) · test → [A-TEST-83](PENDIENTES.md)*
+
+### Qué cambió
+
+La barra horizontal de 12 solapas **ya no está**. En su lugar hay un **botón ☰ arriba a la
+izquierda** que abre un menú lateral con las mismas 12 secciones.
+
+Se cambió porque la barra estaba rota, no por gusto: las 12 solapas se repartían 106 px cada una y
+7 de ellas necesitaban más, así que el texto se salía y **los contadores de pendientes quedaban
+encima de la etiqueta de al lado** — se leía `E18xtracto Bancario`, `P2roductivo`, `91Importar Excel`.
+
+### Cómo se usa
+
+1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Cmd+B`** (`Ctrl+B` en Windows).
+2. **Navegar**: click en la sección. **El menú se cierra solo** al elegir.
+3. **Cerrar sin elegir**: el mismo botón ☰ —que **con el menú abierto está adentro del menú**,
+   arriba de todo— o `Cmd+B` otra vez. El botón acompaña al menú en vez de quedar flotando en el
+   contenido: un control va al lado de lo que controla.
+4. Los **contadores de pendientes** siguen ahí, a la derecha de cada sección, con los mismos colores
+   de antes (gris → ámbar → rojo según cuántos urgentes).
+5. En **pantalla chica** el menú se comporta como un panel que entra desde el costado.
+
+⚠️ **Lo que se perdió a cambio, y se aceptó a sabiendas**: cada navegación son ahora **2 clicks**
+(abrir + elegir) en vez de 1, y **los contadores no se ven sin abrir el menú**. Se evaluó la
+alternativa de que el menú se encogiera a una columna de íconos —que mantenía 1 click y los
+contadores a la vista— y se eligió ésta para tener el ancho completo de pantalla para las tablas.
+
+### Cómo se prueba
+
+1. **Las 12 secciones.** Abrí el menú y entrá a cada una. Todas tienen que cargar como antes.
+2. **Que se cierre al elegir.** Elegí una sección: el menú tiene que irse solo.
+3. **Los contadores.** Tienen que mostrar los mismos números que mostraba la barra de solapas.
+4. **El rol `contable`.** Entrando con una cuenta `contable`, el menú tiene que mostrar **sólo
+   Egresos**. ⚠️ **Esto no está probado** — no hay cuenta contable disponible todavía.
+5. ⚠️ **El control importante — las notas.** Dejá una nota (botón flotante) en **2 o 3 pantallas
+   distintas** y verificá que cada una quedó guardada con el nombre de su pantalla y no en blanco.
+   Es lo que se rompía si la barra de solapas se borraba del todo: el detector de pantalla la lee
+   del DOM. Por eso quedó montada pero invisible.
+6. **`Cmd+B`.** Tiene que abrir y cerrar el menú.
+7. **Achicá la ventana.** El menú tiene que pasar a comportarse como panel lateral.
+
+---
+
+## 🍎 Toda la app → **Barra superior fija y títulos de pantalla** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-76](PENDIENTES.md) · test → [A-TEST-84](PENDIENTES.md)*
+
+### Qué cambió
+
+1. **La barra de arriba ya no se va al scrollear.** El botón del menú (☰) y el botón **Salir**
+   quedan siempre visibles. La barra es translúcida: el contenido se ve pasar por debajo, borroso.
+2. **El título de la pantalla Principal** dice ahora **«Principal»**. Antes decía «Control
+   Presupuestario» con el subtítulo «Panel principal del sistema».
+
+**Por qué**: las pantallas de esta app son muy largas. Con la barra estática, al bajar media tabla
+desaparecían el menú y el botón de salir — o sea, cómo ir a otro lado y cómo cerrar sesión. Y el
+encabezado viejo repetía el nombre de la app (que ya está en el menú) y agregaba un subtítulo que
+no decía nada, ocupando ~90 px arriba de todo, que es el lugar más caro de la pantalla.
+
+### Cómo se prueba
+
+1. **Entrá a Principal y scrolleá hasta abajo.** El ☰ y **Salir** tienen que quedar arriba.
+2. ⚠️ **Lo que más puede fallar: la legibilidad.** Scrolleá hasta que pase por debajo de la barra
+   una **tabla clara o una tarjeta de color** (Egresos o Extracto Bancario son buenas). El texto de
+   la barra tiene que seguir leyéndose sin esfuerzo. Si en algún fondo se pierde, hay que subir la
+   opacidad del vidrio.
+3. **El borde de abajo** de la barra es un degradado corto, no una línea. No tiene que verse como
+   una franja gris marcada.
+4. **Reducir transparencia** (macOS: Accesibilidad → Pantalla → *Reducir transparencia*): la barra
+   tiene que volverse **sólida**, sin desenfoque.
+5. **Aumentar contraste** (misma sección): tiene que aparecer un **borde definido** abajo de la
+   barra y desaparecer el degradado.
+6. **Tamaño de letra grande** (Accesibilidad → tamaño de texto): el título «Principal» tiene que
+   crecer sin romper el layout.
+7. **Decidí si extrañás el subtítulo.** Si te resultaba útil, se repone en un minuto.
+
+### Lo que NO se tocó
+
+Las **3 tarjetas de alerta** de Principal siguen con el mismo peso visual entre sí, aunque no son
+igual de urgentes (una cuenta con 162 días sin cargar el extracto pesa distinto que 21 movimientos
+sin desglosar). Diferenciarlas es una decisión de **producto** —cuál es más grave— y no se toma
+desde el diseño. Si querés, se hace: queda anotado como candidato a `A-FEAT-77`.
+
+---
+
+## 👤 Toda la app → **Avatar de sesión** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-77](PENDIENTES.md) · test → [A-TEST-85](PENDIENTES.md)*
+
+### Qué cambió
+
+Arriba a la derecha había cuatro cosas sueltas: tu mail entero, tu rol, un link **Usuarios** y un
+botón **Salir**. Ahora hay **un avatar redondo**; todo lo demás está adentro, al hacerle click.
+
+### Cómo se usa
+
+1. **Click en el avatar** (arriba a la derecha). Se despliega el menú con tu mail, tu rol,
+   **Tu perfil**, **Configuración** (sólo si sos admin) y **Salir**.
+2. **Las iniciales** salen de tu nombre si está cargado y, si no, de las dos primeras letras de tu
+   mail (`javiergc89@…` → **JA**).
+3. **Para que aparezca tu foto** en vez de las iniciales hay que cargar `avatar_url` en el
+   `user_metadata` de tu usuario. ⚠️ **Hoy eso sólo se hace desde el panel de Supabase** —
+   Authentication → Users → tu usuario → User Metadata. No hay pantalla en la app para subirla.
+
+### Cómo se prueba
+
+1. **Que las iniciales sean las tuyas.**
+2. ⚠️ **El control que más importa: que «Salir» siga cerrando sesión.** Dejó de ser un botón suelto
+   y pasó a ser un ítem de menú que dispara el envío del formulario por código. Probalo de verdad:
+   tenés que terminar en `/login`.
+3. **Con una cuenta `contable`**: el menú **no** tiene que ofrecer *Usuarios*.
+4. **La foto**: cargá un `avatar_url` a mano en Supabase y verificá que aparezca el círculo con la
+   imagen en lugar de las iniciales.
+5. **Decidí si extrañás ver el mail sin abrir el menú.** Con una sola cuenta no hace falta; si
+   alternás entre cuentas, capaz sí.
+
+### Dónde quedó «Usuarios»
+
+Ya no está suelto en este menú: es una sección **adentro de Configuración**, junto con Roles y los
+datos de la aplicación. El link viejo `/usuarios` sigue andando — redirige solo.
+
+---
+
+## 🏠 **Tu pantalla de inicio** — armala como quieras 🟡 (2026-09-17, sin testear)
+
+*[A-FEAT-88](PENDIENTES.md#a-feat-88) · test → [A-TEST-96](PENDIENTES.md#a-test-96)*
+
+La solapa **Principal** ahora la armás vos. Arriba a la derecha, **«Configurar mi inicio»**:
+
+- **Para agregar**: los widgets disponibles aparecen como botones. Tocás uno y se suma abajo.
+- **Para mover**: agarrá la tarjeta de su **manija** (⣿, arriba a la izquierda) y arrastrala. Una
+  **línea azul** te muestra dónde va a caer — si la dejás sobre la mitad izquierda de otra tarjeta
+  cae antes, y sobre la derecha cae después. Así se puede meter una **entre** dos.
+  Si preferís no arrastrar, las flechas ↑ ↓ de la manija hacen lo mismo.
+- **Para cambiar el tamaño**: pasá el mouse por el **borde derecho** (ancho) o el **borde de
+  abajo** (alto) y arrastrá. Se pintan al acercarte.
+- **Para sacar**: la ✕ de la manija.
+- **Se acomodan en dos columnas y se empaquetan sin huecos**: cada tarjeta ocupa sólo su alto y la
+  siguiente arranca pegada. El orden va **hacia abajo y después a la derecha** (no de izquierda a
+  derecha) — es lo que evita que una tarjeta corta al lado de una larga deje media pantalla en
+  blanco.
+- **Las tarjetas muestran sólo el número.** El detalle está detrás de **Ver** — así el inicio se
+  lee de un vistazo sin perder de dónde sale cada cosa.
+- **Se guarda solo**, en el momento. No hay botón de guardar.
+- **«Volver a la pantalla original»** deja todo como estaba antes de que tocaras nada.
+
+Es **tuyo**: no le cambia la pantalla a nadie más, igual que las otras preferencias del perfil.
+
+⚠️ **Sólo se ofrecen los widgets de secciones que tu rol habilita.** Si sos `contable` no vas a ver
+el de Cash Flow en la lista — y tampoco aparece si lo forzás por otro lado.
+
+### Cómo se prueba (A-TEST-96)
+1. Agregá, sacá y reordená widgets. Salí de la app y volvé: **tiene que quedar como lo dejaste**.
+2. Sacalos **todos**: tiene que decir «Tu inicio está vacío» con el camino de vuelta, no quedar en
+   blanco.
+3. ⚠️ **Comparar números**: cada widget tiene que decir **lo mismo** que la pantalla de la que
+   salió. Si difieren, se duplicó la lógica en vez de compartirla.
+4. Tocá el camino al detalle de cada uno (**Ver la serie**, **Ver el detalle**, **Abrir**): tiene
+   que llevar a donde el número se puede verificar.
+
+## 🪪 **Tu perfil** — y el menú en todas las pantallas 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-78](PENDIENTES.md) · test → [A-TEST-86](PENDIENTES.md)*
+*Ampliado 2026-09-05: la foto en un solo campo + preferencias personales ·
+[A-FEAT-83](PENDIENTES.md) · test → [A-TEST-91](PENDIENTES.md)*
+*Ampliado 2026-09-05: las explicaciones se pueden apagar ·
+[A-FEAT-84](PENDIENTES.md) · test → [A-TEST-92](PENDIENTES.md)*
+*Ampliado 2026-09-07: el nombre y la foto pasaron a claves propias, así entrar con Google no te
+los pisa · [A-FEAT-85](PENDIENTES.md#a-feat-85) · test → [A-TEST-93](PENDIENTES.md#a-test-93)*
+
+### Qué cambió
+
+1. **Hay una pantalla `/perfil`**: avatar → **Tu perfil**.
+2. **`/usuarios` ya no es una isla.** Antes no tenía menú ni avatar y sólo se salía con un link
+   «← Volver al sistema». Ahora tiene el mismo marco que el resto.
+3. **El menú lateral funciona desde cualquier pantalla.** Si lo usás estando en `/usuarios` o
+   `/perfil`, te lleva a la sección elegida.
+4. **Se puede linkear una sección directo**: `…/?seccion=extracto` abre Extracto Bancario. Sirve
+   para mandarle a alguien el link de una sección puntual.
+
+### Cómo se usa `/perfil`
+
+1. Click en tu **avatar** → **Tu perfil**.
+2. **Nombre**: si lo cargás, las iniciales del avatar salen de ahí en vez de tu mail.
+3. **La foto** — 🆕 **un solo campo, cuatro maneras** (2026-09-05, A-FEAT-83). El recuadro
+   punteado al lado del avatar acepta:
+   - **Pegar el link** de una imagen y apretar **Usar** (o Enter).
+   - **Elegir** un archivo de la computadora, con el botón de la derecha.
+   - **Arrastrar** la imagen adentro del recuadro — sirve desde el escritorio **y desde otra
+     pestaña del navegador**.
+   - **Ctrl+V** sobre el recuadro: si copiaste una captura de pantalla, la sube; si copiaste un
+     link, lo escribe en el campo.
+
+   Las cuatro **se guardan solas**, apenas la elegís: no hay que apretar **Guardar cambios**.
+   JPG, PNG, WEBP o GIF, hasta 2 MB. El tachito de la derecha la quita y vuelven las iniciales.
+
+   ⚠️ **El link no se guarda como link**: el sistema **descarga** la imagen y la guarda como
+   propia. Si guardara el link, el navegador la bloquearía (la app sólo acepta imágenes de sus
+   propios dominios) y verías tus iniciales sin ningún mensaje de error. Por eso también un link
+   de una **página** no sirve: hay que copiar la dirección **de la imagen** (botón derecho →
+   *Copiar dirección de la imagen*).
+
+   El bucket ya está creado (2026-09-05). Si alguna vez aparece *«Falta crear el bucket de fotos
+   en la base»*, se recrea con `npx tsx scripts/59-crear-bucket-avatares.mts` (o el `.sql` del
+   mismo número); es idempotente y no toca los archivos existentes.
+
+3bis. 🆕 **Cómo querés que te abra la app** — preferencias tuyas, de tu cuenta, valen en cualquier
+   computadora donde entres. **No cambian lo que ves, sólo cómo te lo acomoda**, y se guardan
+   solas al tocarlas:
+   - **Sección al entrar**: dónde caés al abrir la app. Por defecto, la primera que tenés. Sólo se
+     ofrecen las secciones que ves.
+   - **Arrancar con el menú abierto**: por defecto viene cerrado y se abre con el ☰.
+   - **Contadores de pendientes en el menú** (sólo admin): los globitos con la cantidad de cada
+     sección. Apagados, ni siquiera se piden.
+   - **Preguntar antes de salir**: «Salir» comparte menú con «Tu perfil», y un click distraído te
+     hace volver a entrar con clave y código.
+   - 🆕 **Mostrar las explicaciones** (A-FEAT-84): la letra chica que cuenta para qué sirve cada
+     cosa. Encendida por default. Cuando ya te sabés una pantalla, apagala y queda más limpia.
+     ⚠️ **Apaga sólo lo didáctico.** Los avisos y los controles —lo que depende de tus datos: un
+     total que no cierra, una factura sobre el mínimo de SICORE, «esta acción no se puede
+     deshacer»— **no se apagan nunca**. Si alguna vez apagás las explicaciones y desaparece algo
+     que te estaba avisando de un problema, eso es un error y hay que reportarlo.
+     Por ahora está marcada la letra chica de **Perfil, Configuración, Facturas ARCA y Sector
+     Productivo**; el resto de las pantallas se va marcando a medida que se las toca.
+4. **Guardar cambios** recarga la pantalla para que el avatar de arriba tome los datos nuevos.
+5. A la derecha ves tu **mail** y tu **rol** (de sólo lectura: el rol lo asigna un administrador,
+   nadie puede cambiarse el suyo) y el estado de tu **segundo factor**, con botón para activarlo si
+   te falta.
+
+### Cómo se prueba
+
+1. ⚠️ **Lo primero y más importante: que `/usuarios` siga funcionando entera** — crear cuenta,
+   reenviar mail, copiar link, cambiar rol, revocar. No se tocó su lógica, pero **sí el layout de
+   alrededor**, y eso es lo que hay que descartar.
+2. **Guardá un nombre y una foto** en `/perfil` y verificá que el avatar de arriba cambie.
+2bis. 🆕 **La foto, por las cuatro vías** (A-TEST-91) — probalas todas, porque son cuatro caminos
+   distintos hasta el mismo lugar: elegir archivo · arrastrar del escritorio · arrastrar desde otra
+   pestaña (eso trae un **link**, no un archivo) · Ctrl+V de una captura · Ctrl+V de un link ·
+   pegar el link a mano.
+   - **El control que importa**: después de guardar un link, la foto **tiene que verse**. Si ves
+     tus iniciales, algo quedó apuntando afuera — y ahora la pantalla te lo dice en ámbar en vez
+     de quedarse callada.
+   - **Los que tienen que fallar bien**: un link de una **página** (tiene que decir «es de una
+     página, no de una imagen»), uno de **más de 2 MB**, y uno **inventado**.
+2ter. 🆕 **Las preferencias** (A-TEST-91): elegí una **sección al entrar**, salí, volvé a entrar y
+   fijate que caigas ahí — pero que `…/?seccion=otra` **le gane** cuando lo escribís. Probá el
+   **menú abierto**, **apagá los contadores** y **preguntar antes de salir**.
+   - **El control de la sección huérfana**: elegí una sección, sacásela al rol desde
+     Configuración → Permisos, y volvé al perfil. Tiene que **avisar en ámbar**, no quedarse en
+     blanco.
+2quater. 🆕 **Las explicaciones apagables** (A-TEST-92): apagá **Mostrar las explicaciones** y
+   recorré Perfil, Configuración, Facturas ARCA y Sector Productivo — tiene que quedar todo más
+   limpio.
+   - ⚠️ **La prueba que de verdad importa es la contraria: buscá lo que NO tiene que desaparecer.**
+     Con las explicaciones apagadas tienen que **seguir viéndose**: el aviso de la foto que no
+     carga, el de la sección huérfana, el «Falta crear la tabla de roles», el «sin ninguna sección
+     no ve nada», el estado del segundo factor, «esta acción no se puede deshacer» y los avisos de
+     SICORE. Si alguno se fue, está mal marcado — avisame cuál.
+   - Que **el interruptor no se apague a sí mismo** (su propia explicación tiene que quedar) y que
+     **no quede ninguna caja de color vacía** donde antes había un recuadro con texto.
+3. **Desde `/usuarios`, abrí el menú y elegí una sección**: tiene que llevarte ahí.
+4. **Probá un link roto a propósito**: `…/?seccion=cualquiera`. Tiene que abrir Principal, no una
+   pantalla en blanco.
+5. **Con una cuenta `contable`**: tiene que poder entrar a `/perfil` y **no** a `/usuarios`.
+6. **Las notas**: dejá una en la pantalla principal y verificá que siga guardando el nombre de la
+   pantalla. Es lo que este refactor podría haber roto.
+
+### Un detalle deliberado
+
+El botón de **notas para Claude** sigue apareciendo **sólo en la pantalla principal**, no en
+`/perfil` ni en `/usuarios`. Es a propósito: detecta en qué pantalla estás leyendo la solapa activa,
+que ahí no existe, así que la nota se guardaría sin pantalla — peor que no tenerlo.
+
+
+---
+
+## ⚙️ **Configuración** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-80](PENDIENTES.md) · test → [A-TEST-88](PENDIENTES.md)*
+
+Avatar → **Configuración** (sólo admin). Tiene su propio menú al costado con tres secciones:
+
+| Sección | Qué es | ¿Se puede editar? |
+|---|---|---|
+| **Usuarios** | El panel de siempre: crear cuentas, cambiar rol, reenviar la invitación, revocar | **Sí** |
+| **Roles** | Cada rol con cuántas cuentas lo tienen, cuántas secciones ve y si le exige 2FA | **Sí** (menos `admin`) |
+| **Permisos** | La matriz completa: qué puede hacer cada rol, sección por sección | No, todavía |
+| **Aplicación** | Las 3 empresas con su razón social y CUIT | No, de sólo lectura |
+
+⚠️ **Las dos tablas de Permisos no valen lo mismo, y la pantalla lo aclara:**
+- **Secciones de la app** sale de la misma función que decide el acceso de verdad → no se puede
+  desincronizar.
+- **Administración** está **escrita a mano**, porque esos permisos viven repartidos en guardas de
+  páginas y de endpoints. Por eso cada fila muestra **en qué archivo se aplica**: para poder
+  verificarla. Si se agrega una guarda nueva, hay que sumarla ahí a mano.
+
+**Roles no es una lista escrita a mano**: sale de la misma función que aplica el permiso de verdad,
+así que si mañana cambia lo que ve un `contable`, esta pantalla cambia sola. Sirve para contestar
+*"¿qué ve Ulises?"* sin abrir el código. Los roles **no se crean ni se editan** — son dos y están
+fijos; lo que se cambia es qué rol tiene cada cuenta, y eso se hace en Usuarios.
+
+**Aplicación** muestra los CUIT de donde salen los encabezados de todos los reportes. Está para
+poder verificarlos de un vistazo: el Libro IVA de PAM y de MA ya salió una vez con la razón social
+y el CUIT de MSA impresos.
+
+### Cómo se prueba
+
+1. ⚠️ **Lo primero: que Usuarios siga funcionando entera** — crear cuenta, reenviar mail, copiar
+   link, cambiar rol, revocar. Es la segunda vez en el día que se le cambia el contenedor.
+2. **Entrá a `/usuarios` a mano** (el link viejo): tiene que llevarte a Configuración → Usuarios,
+   no dar 404.
+3. **Abrí las tres secciones.**
+4. **Contrastá Roles con la realidad**: entrá con una cuenta `contable` y verificá que ve
+   exactamente lo que la pantalla de Roles dice que ve. Si no coincide, la pantalla miente.
+5. **Verificá los CUIT** de Aplicación contra los reales.
+6. **Con una cuenta `contable`**: no tiene que ver la opción Configuración en su menú, ni poder
+   entrar escribiendo `/configuracion` a mano.
+
+
+---
+
+## 🔑 Configuración → **Editar los permisos de un rol** 🟡 (sin testear)
+
+*Implementado 2026-09-05 · [A-FEAT-82](PENDIENTES.md) · test → [A-TEST-90](PENDIENTES.md)*
+
+⚠️ **Requiere haber corrido `scripts/60-roles-permisos.sql`** en el editor SQL de Supabase. Hasta
+entonces la pantalla muestra un aviso ámbar y **no guarda**: sigue funcionando con el reparto que
+estaba escrito en el código, así que la app anda igual que siempre.
+
+### Cómo se usa
+
+1. Avatar → **Configuración** → **Roles**.
+2. En el rol que quieras cambiar, **Editar permisos**.
+3. Se tildan y destildan las secciones. El contador de arriba se actualiza mientras elegís.
+4. **Guardar permisos**.
+5. ⚠️ **El cambio se aplica al recargar.** Quien ya esté adentro sigue viendo lo de antes hasta que
+   recargue la pantalla.
+
+### `admin` no se puede editar, y es a propósito
+
+Está marcado como **rol de sistema**. Si se le pudieran sacar secciones, alguien deja el sistema
+**sin nadie que pueda administrarlo** — un candado sin llave. Está protegido en tres lugares
+distintos: la pantalla no lo ofrece, el endpoint lo rechaza, y un trigger de la base lo rechaza
+también (porque el endpoint usa `service_role`, que se saltea la seguridad de filas).
+
+### Cómo se prueba
+
+1. **Corré `scripts/60`.** El aviso ámbar tiene que desaparecer.
+2. **Editá `contable`**: agregale Cash Flow, guardá. Entrá con esa cuenta y verificá que lo ve.
+3. **Sacale Egresos** y verificá que deja de verlo.
+4. ⚠️ **Los tres candados de `admin`**: (a) la pantalla no ofrece editarlo; (b) un `PATCH` a mano a
+   `/api/admin/roles` con `id: "admin"` tiene que dar **403**; (c) un `UPDATE` directo en la base
+   tiene que fallar por el trigger. **Son tres puertas distintas: probá las tres.**
+5. **El atajo por URL**: con una cuenta sin Sueldos, entrá a `/?seccion=sueldos` escribiéndolo a
+   mano. No tiene que dejarte.
+6. **Dejá un rol sin ninguna sección** y mirá qué pasa al entrar con esa cuenta.
+
+### Lo que todavía no se puede
+
+**Crear roles nuevos.** El nombre del rol está metido en el tipo de 12 componentes, así que agregar
+uno obliga a tocarlos todos. Los permisos de los que existen sí se editan.
