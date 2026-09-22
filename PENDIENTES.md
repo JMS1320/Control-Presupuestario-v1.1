@@ -43,8 +43,7 @@ El usuario avisó que puede no llegarse para el 01/10 — hay que **decidir con 
 ## 🧪 <a id="guia-pruebas-2026-09-22"></a>GUÍA DE PRUEBAS — tanda del 21 y 22 de septiembre (arrendamientos y ventas)
 
 > **Para ejecutar, no para entender.** Los pasos completos viven en cada `A-TEST-NN`; acá va el orden
-> y qué número tiene que salir. **Todo esto está en `jms/dia-a-dia`** (desde `42bd3fd`; lo último,
-> A-FEAT-165/166, cuando se sume). Varias pruebas te aparecen solas en el **cartel amarillo** del modal
+> y qué número tiene que salir. **Todo esto está en `jms/dia-a-dia`** (desde `451f60a`). Varias pruebas te aparecen solas en el **cartel amarillo** del modal
 > donde se hacen: respondé ahí mismo (✅ / 🟡 en parte / 🔴) con una nota si hace falta.
 
 ### 🔴 PRIMERO — el dato que se corrigió
