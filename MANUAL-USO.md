@@ -1230,8 +1230,6 @@ ahí se define el contrato entero: los datos de arriba y, abajo, la sección **C
 - Si el cliente no tiene CUIT, el modal lo avisa: elegilo de la lista, porque sin CUIT no se
   encuentra después su factura.
 
-→ A-TEST-133
-
 **`Días de cobro del disponible`**: días corridos entre la fijación y el cobro cuando vendés
 disponible. **Es por cliente**: Sanpa 15, el resto 20.
 

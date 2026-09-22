@@ -1012,12 +1012,30 @@ Con esa marca, el pendiente **le aparece al usuario en el modal donde corre ese 
   `@cashflow/sicore`, `@cashflow/detalle-pago`.
 - **Se responde desde ahí**: ✅ anduvo / 🔴 falló van a `pendientes_comentarios`, que es el canal 2
   de los tres del usuario — el que Claude mira al abrir sesión.
-- **Y el control lo verifica**: `npm run verificar-pendientes` lista los `A-TEST` abiertos, con
-  pantalla y no automáticos, que **no** tienen proceso. **Avisa y no rompe**: hay tests que no
-  cuelgan de un circuito y forzarlos a inventar uno manda el aviso a la pantalla equivocada.
+- **Y el control lo verifica**: `npx tsx scripts/verificar-parser-pendientes.mts` lista los
+  `A-TEST` abiertos, con pantalla y no automáticos, que **no** tienen proceso. **Avisa y no rompe**:
+  hay tests que no cuelgan de un circuito y forzarlos a inventar uno manda el aviso a la pantalla
+  equivocada. *(⚠️ corregido 2026-09-21: acá decía `npm run verificar-pendientes`, que no existe.)*
 
 ⚠️ **Un proceso mal elegido es peor que ninguno.** Si no está claro a qué circuito pertenece, se
 deja sin marca y lo agarra el control — no se inventa una para que el control se calle.
+
+##### ✅ Y SIEMPRE al terminar un desarrollo — el ciclo completo *(ampliada por el usuario 2026-09-21)*
+*Después de probar A-TEST-133 desde el cartel dentro del modal del contrato: **«me gustó lo de que
+figure la nota para el test. Sería ideal ponerlo siempre al terminar un desarrollo»**.*
+
+> **Se desarrolla → queda el `A-TEST` pendiente → aparece en la PRÓXIMA ejecución del proceso → el
+> usuario responde ahí mismo.**
+
+- **Siempre, no cuando se acuerda**: si el proceso ya tiene su cartel (`<TestsDelProceso>`), alcanza
+  con la marca; **si no lo tiene, se le pone** como parte del desarrollo. Una marca sin cartel en la
+  pantalla no le aparece a nadie.
+- **Tres respuestas, no dos**: ✅ anduvo · 🟡 **anduvo en parte** · 🔴 falló — y **siempre con lugar
+  para escribir una nota**. Con sólo sí/no, lo que anduvo a medias se contesta mal para cualquiera de
+  los dos lados. → [A-FEAT-163](PENDIENTES.md#a-feat-163) *(hoy el cartel tiene sólo ✅/🔴 y sin nota)*.
+- **Y el texto del cartel se escribe para él**, no para Claude: qué hacer y qué tiene que ver, en el
+  lenguaje de la app (§ 🗣️). *Motivo: el primer cartel real (A-TEST-133) era el dossier entero con IDs
+  y adversarios — «menciona muchas cosas que tal vez no entiendo».*
 
 **Motivo, y es el que convierte esto en regla y no en una buena costumbre:** el usuario fijó que
 **prueba usando la app, no en sesiones de test** — *«lo mejor siempre es que yo lo testeo la próxima
