@@ -58,6 +58,7 @@ import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
+import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1697,6 +1698,43 @@ export function correrCasos(): Resultado[] {
   chequear("Rango de fechas", "El mes actual sale de la fecha que se le pase",
     "2026-07-01", mesActual(new Date(2026, 6, 20)).desde,
     mesActual(new Date(2026, 6, 20)).desde === "2026-07-01", "A-FEAT-161")
+
+  // ══ 💰 CUANTO ACREDITA EL BANCO POR UNA VENTA (A-FEAT-167) ══════════════════════════════════
+  // Numeros REALES de la pantalla de Liquidaciones, 2026-09-22.
+
+  // 🌾 AFA — liquidacion primaria de granos: el comprador RETIENE el IVA (RG 2300).
+  const afaLiq = cobroEsperado({
+    imp_total: 6080286.72, iva: 430375.82,
+    comision_neto: 105568.69, comision_iva: 22168.43,
+    almacenaje_neto: 0, almacenaje_iva: 0,
+    ret_iva: 105568.69, ret_iibb: 0,
+  }, 211693.32)
+  chequear("Cobro de venta", "🌾 En granos el IVA RG2300 se retiene: el banco paga MENOS que el neto",
+    "neto > pago s/cond",
+    `${afaLiq.importeNeto.toFixed(2)} > ${afaLiq.pagoCondiciones.toFixed(2)}`,
+    afaLiq.pagoCondiciones < afaLiq.importeNeto && afaLiq.ivaRg2300 > 0, "A-FEAT-167")
+
+  // 🔑 Sin IVA retenido los dos coinciden -- por eso `pagoCondiciones` es el correcto SIEMPRE.
+  const provinvest = cobroEsperado({ imp_total: 50000850, iva: 0 }, 2999379)
+  chequear("Cobro de venta", "🔑 Sin IVA RG2300, neto y pago s/cond son iguales",
+    "47001471 · 47001471",
+    `${provinvest.importeNeto} · ${provinvest.pagoCondiciones}`,
+    provinvest.importeNeto === 47001471 && provinvest.pagoCondiciones === 47001471, "A-FEAT-167")
+
+  chequear("Cobro de venta", "Las retenciones cargadas APARTE entran en la cuenta",
+    "2999379", String(provinvest.retenciones), provinvest.retenciones === 2999379, "A-FEAT-167")
+
+  // ⚠️ Cuando faltan cargar retenciones, la diferencia AVISA -- no es un descuadre.
+  //    Caso Sanpa FC-20: 0 retenciones cargadas y el banco acredito 6,5% menos.
+  const sanpa20 = cobroEsperado({ imp_total: 95715830.32, iva: 0 }, 0)
+  const difSanpa = diferenciaContraElBanco(89494973.35, sanpa20)
+  chequear("Cobro de venta", "⚠️ Sin retenciones cargadas, la diferencia da ~6,5% y hay que avisarlo",
+    "-6,5%", `${difSanpa.porcentaje.toFixed(1)}%`,
+    Math.abs(difSanpa.porcentaje + 6.5) < 0.1 && !difSanpa.exacto, "A-FEAT-167")
+
+  chequear("Cobro de venta", "Un cobro que coincide exacto se marca exacto",
+    "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
+    diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
 
   return r
 }
