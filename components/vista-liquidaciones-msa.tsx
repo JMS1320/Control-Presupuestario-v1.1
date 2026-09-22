@@ -112,26 +112,45 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
       }
       setRetMap(rMap)
 
-      // Conteo de ventas por liquidación — el circuito de granos es sólo de MSA
-      if (!esMsa) { setVentasPorLiq(new Map()); return }
-      const { data: pivot2 } = await supabase
-        .schema('msa')
-        .from('ventas_comprobantes')
-        .select('venta_id, comprobante_id')
-      const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
-      const { data: ventas2 } = ventaIds.size > 0 ? await supabase
-        .schema('msa')
-        .from('ventas')
-        .select('id, denominacion_cliente')
-        .in('id', Array.from(ventaIds)) : { data: [] }
-      const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
+      // Ventas vinculadas a cada comprobante (A-BUG-185).
+      // 🔑 Los vínculos de ventas de ARRENDAMIENTO y de HACIENDA viven en `public.ventas_facturas`
+      // (polimórfica, con `empresa`). Esta columna leía sólo `msa.ventas_comprobantes` —el circuito
+      // viejo de granos, vacío— y por eso decía «sin vincular» con la FC 00010-00000021 de Sanpa
+      // vinculada desde el 18/08. Se leen las dos fuentes; la vieja sólo existe en MSA.
       const map = new Map<string, { count: number, clientes: string[] }>()
-      for (const row of (pivot2 || []) as any[]) {
-        const nom = ventasMap.get(row.venta_id) || '?'
-        const cur = map.get(row.comprobante_id) || { count: 0, clientes: [] }
+      const sumar = (compId: string, nombre: string) => {
+        const cur = map.get(compId) || { count: 0, clientes: [] }
         cur.count += 1
-        if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
-        map.set(row.comprobante_id, cur)
+        if (!cur.clientes.includes(nombre)) cur.clientes.push(nombre)
+        map.set(compId, cur)
+      }
+
+      const empresaMay = String(empresa || 'MSA').toUpperCase()
+      const { data: vinc } = compIds.length > 0 ? await supabase
+        .from('ventas_facturas')
+        .select('venta_id, comprobante_id')
+        .eq('vinculado', true).eq('empresa', empresaMay).in('comprobante_id', compIds)
+        : { data: [] as any[] }
+      const idsVenta = Array.from(new Set((vinc || []).map((v: any) => v.venta_id)))
+      const { data: ventasU } = idsVenta.length > 0 ? await supabase
+        .from('ventas_unificadas').select('venta_id, centro_costo, cliente_nombre').in('venta_id', idsVenta)
+        : { data: [] as any[] }
+      const nombreU = new Map((ventasU || []).map((v: any) => [v.venta_id, `${v.centro_costo} · ${v.cliente_nombre}`]))
+      for (const row of (vinc || []) as any[]) sumar(row.comprobante_id, nombreU.get(row.venta_id) || '?')
+
+      if (esMsa) {
+        const { data: pivot2 } = await supabase
+          .schema('msa')
+          .from('ventas_comprobantes')
+          .select('venta_id, comprobante_id')
+        const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
+        const { data: ventas2 } = ventaIds.size > 0 ? await supabase
+          .schema('msa')
+          .from('ventas')
+          .select('id, denominacion_cliente')
+          .in('id', Array.from(ventaIds)) : { data: [] }
+        const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
+        for (const row of (pivot2 || []) as any[]) sumar(row.comprobante_id, ventasMap.get(row.venta_id) || '?')
       }
       setVentasPorLiq(map)
     } catch (err) {
@@ -190,6 +209,12 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
         .delete()
         .eq('id', l.id)
       if (error) throw error
+      // `ventas_facturas` no tiene FK al comprobante (es polimórfica, una tabla por empresa), así
+      // que nada lo borra solo: sin esto el vínculo quedaba apuntando a un comprobante inexistente y
+      // la venta seguía contando como facturada. El cartel de arriba ya lo prometía.
+      const { error: eVinc } = await supabase.from('ventas_facturas').delete()
+        .eq('comprobante_id', l.id).eq('empresa', String(empresa || 'MSA').toUpperCase())
+      if (eVinc) toast.error('La liquidación se borró, pero sus vínculos no: ' + eVinc.message)
       toast.success('Liquidación eliminada')
       await cargar()
     } catch (err) {

@@ -66,6 +66,10 @@ import {
 import {
   queProbarVos, tituloCorto, textoRespuesta, RESPUESTAS_TEST,
 } from "@/lib/pendientes/resumen-test"
+import {
+  armarCandidatos, dondeSeCargaElCuit,
+  type VentaEsperando, type FacturaVenta, type Vinculo,
+} from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1519,6 +1523,56 @@ export function correrCasos(): Resultado[] {
     chequear("Cuotas arrendamiento", "Lima #1 tiene 66,154 tn: a 2 decimales se pierden 0,004",
       "66.154 (2 dec: 66.15)", `${lima} (2 dec: ${Math.round(lima * 100) / 100})`,
       lima === 66.154 && Math.round(lima * 100) / 100 === 66.15, "A-BUG-184")
+  }
+
+  // ══ 🔗 QUÉ FACTURA PUEDE SER DE QUÉ VENTA (A-BUG-186/187/188) ══════════════════════════════
+  // Los datos son los reales del 22/09 (pantalla principal), escritos acá.
+  {
+    const cuitIgual = (a?: string | null, b?: string | null) => (a ?? "").replace(/\D/g, "") === (b ?? "").replace(/\D/g, "")
+    const SANPA = "30712200622", PROV = "33710346939"
+    const ventas: VentaEsperando[] = [
+      { venta_id: "rojas1", venta_tipo: "arrendamiento", empresa: "MSA", centro_costo: "Rojas", cliente_nombre: "Sanpa Semillas SA", cliente_cuit: SANPA, monto_pesos: 78262800, facturado: 78262800 },
+      { venta_id: "rojas3", venta_tipo: "arrendamiento", empresa: "MSA", centro_costo: "Rojas", cliente_nombre: "Sanpa Semillas SA", cliente_cuit: SANPA, monto_pesos: 26499000, facturado: 0 },
+      { venta_id: "nazPam", venta_tipo: "arrendamiento", empresa: "PAM", centro_costo: "Nazarenas", cliente_nombre: "PROVINVEST S.A.", cliente_cuit: PROV, monto_pesos: 87895350, facturado: 0 },
+      { venta_id: "genta", venta_tipo: "ganaderia", empresa: "MSA", centro_costo: "Recria", cliente_nombre: "Pedro Genta", cliente_cuit: null, monto_pesos: 88988382, facturado: 0 },
+    ]
+    const facturas: FacturaVenta[] = [
+      { id: "fc20", empresa: "MSA", nro_comprobante: "00010-00000020", cuit_cliente: SANPA, imp_total: 95715830.32, fecha_liquidacion: "2026-05-11" },
+      { id: "fc21", empresa: "MSA", nro_comprobante: "00010-00000021", cuit_cliente: SANPA, imp_total: 78262800, fecha_liquidacion: "2026-07-22" },
+      { id: "fc09", empresa: "MSA", nro_comprobante: "00010-00000009", cuit_cliente: PROV, imp_total: 50000850, fecha_liquidacion: "2026-07-01" },
+    ]
+    const vinculos: Vinculo[] = [{ venta_id: "rojas1", comprobante_id: "fc21", empresa: "MSA", monto_asignado: 78262800, vinculado: true }]
+    const { candidatos, sinCuit } = armarCandidatos(ventas, facturas, vinculos, cuitIgual)
+    const pares = candidatos.map(c => `${c.nro_comprobante}→${c.centro_costo}`).join(" · ")
+
+    chequear("Vincular factura de venta", "🔑 Sólo queda la FC 20 para Rojas: ni la 21 (ya usada) ni la de MSA para PAM",
+      "00010-00000020→Rojas", pares, pares === "00010-00000020→Rojas", "A-BUG-186")
+
+    // Cada bug por separado, para que si vuelve se sepa cuál. Los dos tienen que FALLAR con el código viejo.
+    const conLa21 = armarCandidatos(ventas, facturas, [], cuitIgual).candidatos.some(c => c.comprobante_id === "fc21" && c.venta_id === "rojas3")
+    chequear("Vincular factura de venta", "Sin el vínculo de Rojas #1, la FC 21 sí se ofrecería (el caso discrimina)",
+      "se ofrece", conLa21 ? "se ofrece" : "no se ofrece", conLa21, "A-BUG-186")
+
+    const cruzaEmpresa = candidatos.some(c => c.comprobante_id === "fc09")
+    chequear("Vincular factura de venta", "🛑 Una factura de MSA nunca se ofrece para una venta de PAM",
+      "no se ofrece", cruzaEmpresa ? "SE OFRECE" : "no se ofrece", !cruzaEmpresa, "A-BUG-187")
+
+    const facPam: FacturaVenta = { ...facturas[2], id: "fcPam", empresa: "PAM" }
+    const enPam = armarCandidatos(ventas, [facPam], [], cuitIgual).candidatos.map(c => c.venta_id).join(",")
+    chequear("Vincular factura de venta", "La misma factura, cargada en PAM, sí se ofrece para la venta de PAM",
+      "nazPam", enPam, enPam === "nazPam", "A-BUG-187")
+
+    // Una factura usada EN PARTE sigue disponible por lo que le queda.
+    const parcial = armarCandidatos(ventas, [facturas[0]], [{ venta_id: "otra", comprobante_id: "fc20", empresa: "MSA", monto_asignado: 90000000, vinculado: true }], cuitIgual)
+      .candidatos.find(c => c.venta_id === "rojas3")
+    chequear("Vincular factura de venta", "Una factura usada en parte se ofrece por lo que le queda",
+      "5.715.830,32", parcial ? parcial.disponible_factura.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "no se ofrece",
+      !!parcial && Math.abs(parcial.disponible_factura - 5715830.32) < 0.01, "A-BUG-186")
+
+    chequear("Vincular factura de venta", "Una venta de hacienda sin CUIT manda a cargarlo en la venta, no en el contrato",
+      "Recria (Pedro Genta) → en la venta de hacienda (Productivo)",
+      sinCuit.map(s => `${s.texto} → ${dondeSeCargaElCuit(s.venta_tipo)}`).join(" · "),
+      sinCuit.length === 1 && dondeSeCargaElCuit(sinCuit[0].venta_tipo) === "en la venta de hacienda (Productivo)", "A-BUG-188")
   }
 
   // ══ 🧪 EL CARTEL DE TESTS HABLA EN EL IDIOMA DEL USUARIO (A-FEAT-163) ══════════════════════

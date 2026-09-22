@@ -23,35 +23,20 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Link2, AlertTriangle, Check, X } from "lucide-react"
 import { esCuitValido, formatearCuit, mismoCuit } from "@/lib/cuit"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { armarCandidatos, dondeSeCargaElCuit, type Candidato, type SinCuit } from "@/lib/ventas/candidatos-factura"
+
+/** Las facturas de venta viven una tabla por empresa. Antes se leía sólo MSA (A-BUG-187). */
+const SCHEMAS = [["msa", "MSA"], ["pam", "PAM"], ["ma", "MA"]] as const
 
 const fmtPesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const fmtAR = (n: number) => Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const parseAR = (v: string) => parseFloat(String(v).replace(/\./g, "").replace(",", ".")) || 0
 
-interface Candidato {
-  venta_id: string
-  venta_tipo: string
-  empresa: string
-  centro_costo: string
-  cliente_nombre: string
-  cliente_cuit: string
-  monto_venta: number
-  facturado: number
-  remanente: number
-  comprobante_id: string
-  nro_comprobante: string
-  imp_total: number
-  fecha_liquidacion: string | null
-  /** Cómo se encontró: por CUIT (lo normal) o por importe exacto con CUIT distinto. */
-  coincide_por: 'cuit' | 'importe'
-  /** El CUIT que trae la factura — sólo interesa cuando NO coincide con el de la venta. */
-  cuit_comprobante: string
-}
-
 export function AlertasFcVenta() {
   const [cargando, setCargando] = useState(true)
   const [candidatos, setCandidatos] = useState<Candidato[]>([])
-  const [ventasSinCuit, setVentasSinCuit] = useState<string[]>([])
+  const [ventasSinCuit, setVentasSinCuit] = useState<SinCuit[]>([])
   const [montos, setMontos] = useState<Record<string, string>>({})
   const [procesando, setProcesando] = useState<string | null>(null)
 
@@ -60,67 +45,24 @@ export function AlertasFcVenta() {
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [{ data: ventas }, { data: comprobantes }, { data: decisiones }] = await Promise.all([
+      const [{ data: ventas }, { data: decisiones }, ...porEmpresa] = await Promise.all([
         supabase.from("ventas_unificadas").select("*"),
-        supabase.schema("msa").from("comprobantes_venta")
+        supabase.from("ventas_facturas").select("venta_id, comprobante_id, empresa, monto_asignado, vinculado"),
+        ...SCHEMAS.map(([schema]) => supabase.schema(schema).from("comprobantes_venta")
           .select("id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion")
-          .neq("estado", "conciliado").neq("estado", "anterior"),
-        supabase.from("ventas_facturas").select("venta_id, comprobante_id"),
+          .neq("estado", "conciliado").neq("estado", "anterior")),
       ])
+      const facturas = porEmpresa.flatMap((r, k) =>
+        (r.data || []).map((c: any) => ({ ...c, empresa: SCHEMAS[k][1] })))
 
-      // Pares ya decididos (sí o no): no se vuelve a preguntar
-      const decididos = new Set((decisiones || []).map((d: any) => `${d.venta_id}|${d.comprobante_id}`))
-
-      // Ventas a las que todavía les falta facturar algo
-      const pendientes = (ventas || []).filter((v: any) => {
-        const monto = Number(v.monto_pesos) || 0
-        return monto - (Number(v.facturado) || 0) > 0.01
-      })
-
-      // Sin CUIT no hay match posible — se avisa aparte
-      setVentasSinCuit(
-        pendientes.filter((v: any) => !v.cliente_cuit)
-          .map((v: any) => `${v.centro_costo} (${v.cliente_nombre})`)
-      )
-
-      const out: Candidato[] = []
-      for (const v of pendientes) {
-        if (!v.cliente_cuit) continue
-        const monto = Number(v.monto_pesos) || 0
-        const remanente = monto - (Number(v.facturado) || 0)
-
-        for (const c of comprobantes || []) {
-          if (decididos.has(`${v.venta_id}|${c.id}`)) continue
-
-          const porCuit = mismoCuit(c.cuit_cliente, v.cliente_cuit)
-          // Segundo camino: el importe cierra exacto con lo que falta facturar. Sirve justo
-          // cuando el CUIT está mal tipeado de un lado — que es cuando el match por CUIT no
-          // puede ayudar y, sin esto, la factura correcta quedaba invisible.
-          const porImporte = !porCuit &&
-            Math.abs((Number(c.imp_total) || 0) - remanente) < 0.01
-
-          if (!porCuit && !porImporte) continue
-
-          out.push({
-            venta_id: v.venta_id, venta_tipo: v.venta_tipo, empresa: v.empresa,
-            centro_costo: v.centro_costo, cliente_nombre: v.cliente_nombre,
-            cliente_cuit: v.cliente_cuit, monto_venta: monto,
-            facturado: Number(v.facturado) || 0, remanente,
-            comprobante_id: c.id, nro_comprobante: c.nro_comprobante || "",
-            imp_total: Number(c.imp_total) || 0, fecha_liquidacion: c.fecha_liquidacion,
-            coincide_por: porCuit ? 'cuit' : 'importe',
-            cuit_comprobante: String(c.cuit_cliente || ""),
-          })
-        }
-      }
-      // Los que cierran por importe exacto van primero: son los más probables, y además
-      // arrastran un CUIT a corregir.
-      out.sort((a, b) => (a.coincide_por === b.coincide_por ? 0 : a.coincide_por === 'importe' ? -1 : 1))
-
+      const { candidatos: out, sinCuit } = armarCandidatos(
+        (ventas || []) as any[], facturas, (decisiones || []) as any[], mismoCuit)
+      setVentasSinCuit(sinCuit)
       setCandidatos(out)
       // Default del monto asignado: lo que menos sea entre la factura y lo que falta facturar
       const m: Record<string, string> = {}
-      out.forEach(c => { m[`${c.venta_id}|${c.comprobante_id}`] = fmtAR(Math.min(c.imp_total, c.remanente)) })
+      // Lo que menos sea entre lo que le queda a la factura y lo que le falta a la venta (A-BUG-186)
+      out.forEach(c => { m[`${c.venta_id}|${c.comprobante_id}`] = fmtAR(Math.min(c.disponible_factura, c.remanente)) })
       setMontos(m)
     } finally { setCargando(false) }
   }, [])
@@ -166,13 +108,15 @@ export function AlertasFcVenta() {
       </CardHeader>
 
       <CardContent className="space-y-3">
+        {/* Los A-TEST de este proceso, a la vista donde se corre (§ 🧪 CLAUDE.md) */}
+        <TestsDelProceso proceso="principal/vincular-factura-venta" pantalla="principal" />
         {ventasSinCuit.length > 0 && (
           <p className="flex items-start gap-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
-              Estas ventas esperan factura pero <strong>el contrato no tiene CUIT</strong>, así que
-              no se puede buscar coincidencia: {ventasSinCuit.join(" · ")}. Cargá el CUIT del
-              cliente en el contrato (Ingresos → Arrendamiento).
+              Estas ventas esperan factura pero <strong>no tienen el CUIT del cliente</strong>, así
+              que no se puede buscar coincidencia:{" "}
+              {ventasSinCuit.map(v => `${v.texto} — cargalo ${dondeSeCargaElCuit(v.venta_tipo)}`).join(" · ")}.
             </span>
           </p>
         )}
@@ -186,7 +130,8 @@ export function AlertasFcVenta() {
             <div key={k} className={`rounded border p-3 space-y-2 ${c.coincide_por === 'importe' ? 'border-amber-400 bg-amber-50/40' : ''}`}>
               <p className="text-sm">
                 Llegó la factura <strong>{c.nro_comprobante || "(sin nº)"}</strong> de{" "}
-                <strong>{c.cliente_nombre}</strong> por {fmtPesos(c.imp_total)}.
+                <strong>{c.cliente_nombre}</strong> por {fmtPesos(c.imp_total)}
+                {c.disponible_factura < c.imp_total - 0.01 && ` (le quedan ${fmtPesos(c.disponible_factura)} sin asignar)`}.
                 ¿Es de la venta de <strong>{c.centro_costo}</strong> ({fmtPesos(c.monto_venta)}
                 {c.facturado > 0 && `, ya facturada ${fmtPesos(c.facturado)}`})?
               </p>
