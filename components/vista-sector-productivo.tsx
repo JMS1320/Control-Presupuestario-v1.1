@@ -18,6 +18,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { altaContraparte } from "@/lib/proveedores/alta"
 import { ModalCompletarVentaHacienda, type MovimientoVenta } from "@/components/modal-completar-venta-hacienda"
 import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
@@ -1376,6 +1377,15 @@ function TabHacienda() {
       }
       ventaCreadaId = sv.id
       datos.stock_venta_id = sv.id          // el movimiento queda colgado de SU venta
+
+      // § Contrapartes: el comprador queda en el maestro, marcado como cliente (find-or-create).
+      // Faltaba acá; con el buscador que separa «otros del maestro» (A-FEAT-165) se hacía visible.
+      if (nuevoMov.cuit) {
+        const r = await altaContraparte(supabase, {
+          cuit: nuevoMov.cuit, razon_social: nuevoMov.proveedor_cliente || '', como: 'cliente',
+        })
+        if (!r.ok) toast.error('La venta se registró, pero el cliente no quedó en el maestro: ' + r.error)
+      }
     }
 
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
@@ -2942,6 +2952,7 @@ function TabHacienda() {
                 */}
                 <ProveedorCombobox
                   label={nuevoMov.tipo === 'venta' ? 'Cliente' : 'Proveedor/Cliente'}
+                  rol={nuevoMov.tipo === 'venta' ? 'cliente' : undefined}
                   value={{ cuit: nuevoMov.cuit, nombre: nuevoMov.proveedor_cliente }}
                   onChange={sel => setNuevoMov(p => ({ ...p, proveedor_cliente: sel.nombre, cuit: sel.cuit }))}
                 />

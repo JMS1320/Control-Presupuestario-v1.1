@@ -307,6 +307,7 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
             <div className="font-semibold text-sm">Cliente</div>
             <ProveedorCombobox
               label="Cliente"
+              rol="cliente"
               required
               value={{ cuit: cliente.cuit, nombre: cliente.nombre }}
               onChange={(sel) => setCliente({ cuit: sel.cuit, nombre: sel.nombre })}

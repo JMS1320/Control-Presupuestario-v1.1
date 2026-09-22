@@ -657,6 +657,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
           <Section title="2. Comprador">
             <ProveedorCombobox
               label="Comprador"
+              rol="cliente"
               required
               value={{ cuit: cliente.cuit, nombre: cliente.nombre }}
               onChange={(sel) => setCliente({ cuit: sel.cuit, nombre: sel.nombre })}

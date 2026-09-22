@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { altaContraparte } from "@/lib/proveedores/alta"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertTriangle, CheckCircle2, Upload, ClipboardPaste } from "lucide-react"
@@ -294,6 +295,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
         notas: notas || null,
       }).eq("id", editar.id)
       if (error) { alert("Error al guardar: " + error.message); return }
+      await registrarCliente()
 
       // El movimiento de stock refleja el monto: si la venta cambia, tiene que cambiar con ella.
       await p.from("movimientos_hacienda").update({
@@ -304,6 +306,17 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
 
       onConfirmado(); onCerrar()
     } finally { setGuardando(false) }
+  }
+
+  // § Contrapartes (CLAUDE.md): el cliente de la venta tiene que quedar en el maestro, y marcado
+  // como cliente. Faltaba acá — y con el buscador que separa «otros del maestro» (A-FEAT-165) se
+  // vuelve visible: elegir a un proveedor como comprador no lo marcaba nunca. Find-or-create: si ya
+  // existe no se pisa nada, a lo sumo se le prende `es_cliente`. La venta ya está guardada: si esto
+  // falla se avisa y no se deshace nada.
+  const registrarCliente = async () => {
+    if (!clienteCuit) return
+    const r = await altaContraparte(supabase, { cuit: clienteCuit, razon_social: cliente || "", como: "cliente" })
+    if (!r.ok) alert("La venta se guardó, pero el cliente no quedó en el maestro: " + r.error)
   }
 
   const confirmar = async () => {
@@ -336,6 +349,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
         ].filter(Boolean).join(" — "),
       }).select("id").single()
       if (e1 || !venta) { alert("Error al registrar la venta: " + (e1?.message ?? "")); return }
+      await registrarCliente()
 
       // 2 · El movimiento de stock. Se GENERA desde la venta: si se cargara a mano habría dos
       //     fuentes de verdad sobre la misma salida de animales.
@@ -444,6 +458,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
             <div className="col-span-2">
               <ProveedorCombobox
                 label="Cliente"
+                rol="cliente"
                 value={{ cuit: clienteCuit, nombre: cliente }}
                 onChange={sel => { setCliente(sel.nombre); setClienteCuit(sel.cuit) }}
               />

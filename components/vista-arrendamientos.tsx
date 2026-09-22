@@ -25,7 +25,7 @@ import {
 } from "@/lib/arrendamientos/calculo"
 import {
   copiarEsquemaCuotas, validarCuotas, planificarCuotas, aplicarPlanCuotas, filaDesdeGuardada, partirCuota, DECIMALES_QQ,
-  camposDeVenta, tonsMaximasEdicion,
+  camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
   type FilaCuota, type CuotaGuardada,
 } from "@/lib/arrendamientos/cuotas"
 import { altaContraparte } from "@/lib/proveedores/alta"
@@ -71,7 +71,7 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
   const [tcs, setTcs] = useState<TipoCambio[]>([])
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({})
 
-  const [modalContrato, setModalContrato] = useState<Partial<Contrato> | null>(null)
+  const [modalContrato, setModalContrato] = useState<DatosModalContrato | null>(null)
   // Con `venta` es EDITAR una venta ya hecha (A-BUG-100); sin ella, fijar una nueva.
   const [modalFijar, setModalFijar] = useState<{ cuota: Cuota; contrato: Contrato; venta?: Venta } | null>(null)
   const [modalTC, setModalTC] = useState<Venta | null>(null)
@@ -160,6 +160,24 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
     return null
   }
 
+  // Duplicar a otra campaña (A-FEAT-166): abre Nuevo contrato ya lleno, con la campaña siguiente y
+  // las cuotas corridas un año. No guarda nada hasta que el usuario aprieta Guardar.
+  const duplicarContrato = (c: Contrato) => {
+    const campania = campaniaSiguiente(c.campania)
+    const yaExiste = contratos.some(x => x.empresa === c.empresa && x.centro_costo === c.centro_costo && x.campania === campania)
+    if (yaExiste && !confirm(`Ya hay un contrato de ${c.centro_costo} ${campania} en ${c.empresa}. ¿Duplicar igual?`)) return
+    setModalContrato({
+      empresa: c.empresa, campania, centro_costo: c.centro_costo,
+      cliente_cuit: c.cliente_cuit, cliente_nombre: c.cliente_nombre,
+      has: c.has, qq_ha_total: c.qq_ha_total, grano: c.grano,
+      dias_cobro_disponible: c.dias_cobro_disponible,
+      _copiaDe: {
+        etiqueta: `${c.centro_costo} ${c.campania}`, campania: c.campania,
+        cuotas: cuotasDe(c.id) as unknown as CuotaGuardada[],
+      },
+    })
+  }
+
   const bajaContrato = async (id: string) => {
     if (!confirm("¿Desactivar este contrato? Las cuotas y ventas quedan guardadas.")) return
     await supabase.from("contratos_arrendamiento").update({ activo: false }).eq("id", id)
@@ -212,6 +230,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                 </button>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => setModalContrato(c)}>Editar</Button>
+                  <Button variant="ghost" size="sm" title="Nuevo contrato igual a éste, en la campaña siguiente"
+                    onClick={() => duplicarContrato(c)}>
+                    Duplicar
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => bajaContrato(c.id)}>
                     <Trash2 className="h-3.5 w-3.5 text-gray-400" />
                   </Button>
@@ -371,6 +393,11 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
 // Cada contrato es independiente — cantidad de cuotas, qq/ha y fechas son libres. "Copiar cuotas
 // de…" trae el esquema de otro contrato como punto de partida, corrido a esta campaña.
 
+/** Lo que abre el modal: un contrato, y si es una copia (A-FEAT-166), de dónde salen las cuotas. */
+type DatosModalContrato = Partial<Contrato> & {
+  _copiaDe?: { etiqueta: string; campania: string; cuotas: CuotaGuardada[] }
+}
+
 /** Fila del editor mientras se tipea: los qq van como texto es-AR. */
 interface FilaEdit {
   id?: string
@@ -414,7 +441,7 @@ function aFilaCuota(e: FilaEdit): FilaCuota {
 }
 
 function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: {
-  datos: Partial<Contrato> | null
+  datos: DatosModalContrato | null
   /** Cuotas guardadas del contrato (vacío si es nuevo). */
   cuotas: CuotaGuardada[]
   /** Toneladas ya vendidas (fijadas) de cada cuota, por id. */
@@ -432,14 +459,20 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
 
   useEffect(() => {
     if (!datos) return
+    const { _copiaDe, ...contrato } = datos
     setF({
-      ...datos,
+      ...contrato,
       has: datos.has != null ? fmtAR(Number(datos.has)) : "",
       qq_ha_total: datos.qq_ha_total != null ? fmtAR(Number(datos.qq_ha_total)) : "",
     })
     const orden = [...cuotas].sort((a, b) => a.numero_cuota - b.numero_cuota)
     setOriginales(orden)
     setFilas(orden.map(c => aFilaEdit(filaDesdeGuardada(c))))
+    // Duplicado: las cuotas del contrato original, corridas a la campaña nueva
+    if (datos._copiaDe) {
+      setFilas(copiarEsquemaCuotas(datos._copiaDe.cuotas, datos._copiaDe.campania, datos.campania || datos._copiaDe.campania)
+        .map(aFilaEdit))
+    }
     setError(null)
 
     // Contratos de los que se puede copiar el esquema: de CUALQUIER empresa (el de MSA sirve de
@@ -508,7 +541,16 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
   return (
     <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-        <DialogHeader><DialogTitle>{datos.id ? "Editar contrato" : "Nuevo contrato"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>
+          {datos.id ? "Editar contrato" : "Nuevo contrato"}
+          {datos._copiaDe && <span className="ml-2 text-sm font-normal text-gray-500">copia de {datos._copiaDe.etiqueta}</span>}
+        </DialogTitle></DialogHeader>
+        {datos._copiaDe && (
+          <p className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Es una copia de <strong>{datos._copiaDe.etiqueta}</strong>, con la campaña siguiente y las cuotas corridas un
+            año. Revisá lo que cambie en el contrato nuevo — nada se guarda hasta que apretás <strong>Guardar</strong>.
+          </p>
+        )}
         {/* Los A-TEST de este proceso, a la vista donde se corre (§ 🧪 CLAUDE.md, A-FEAT-129) */}
         <TestsDelProceso proceso="ingresos/contrato-arrendamiento" pantalla="ingresos" />
         <div className="grid grid-cols-2 gap-3">
@@ -537,6 +579,7 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
           <div className="col-span-2">
             <ProveedorCombobox
               label="Cliente"
+              rol="cliente"
               value={{ cuit: f.cliente_cuit || "", nombre: f.cliente_nombre || "" }}
               onChange={sel => setF({ ...f, cliente_nombre: sel.nombre, cliente_cuit: sel.cuit })}
             />

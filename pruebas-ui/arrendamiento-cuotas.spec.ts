@@ -87,6 +87,13 @@ test('🌾 MA: 15 qq copiados contra 15,5 del contrato AVISA la diferencia y dej
   const modal = await nuevoContrato(page, '26/27', '85,36', '15,5')
   await expect(modal.getByRole('combobox').first()).toHaveText('MA')
 
+  // A-FEAT-165: el buscador de cliente, con el cliente vacío, muestra dos secciones
+  await modal.getByPlaceholder(/Buscar cliente/).click()
+  await expect(modal.getByText('Clientes', { exact: true })).toBeVisible()
+  await expect(modal.getByText(/Otros del maestro/)).toBeVisible()
+  await page.screenshot({ path: 'test-results/buscador-cliente.png' })
+  await modal.getByText('Nuevo contrato', { exact: true }).click()   // cierra la lista sin elegir nadie
+
   await copiarDeMsaNazarenas(page)
   await expect(modal.getByText(/diferencia -0,5/)).toBeVisible()
   await expect(modal.getByRole('button', { name: 'Guardar' })).toBeEnabled()
@@ -171,5 +178,38 @@ test('✏️ Editar la venta cerrada de Rojas #3: se puede sacar el TC (sin guar
   await page.screenshot({ path: 'test-results/arrendamiento-editar-venta.png', fullPage: true })
   await modal.getByRole('button', { name: 'Cancelar' }).click()
   await expect(modal).toBeHidden()
+  expect(errores).toEqual([])
+})
+
+/**
+ * 📋 A-FEAT-166 — Duplicar PAM Nazarenas 25/26 abre un Nuevo contrato 26/27 con las cuotas corridas.
+ * 👥 A-FEAT-165 — y en ese mismo modal, el buscador de cliente muestra primero los clientes.
+ * 🛑 CERO ESCRITURA: abre, mira y cancela.
+ */
+test('📋 Duplicar PAM Nazarenas 25/26 → 26/27 con las cuotas un año después (sin guardar)', async ({ page }) => {
+  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  const errores: string[] = []
+  page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
+
+  await abrirArrendamientos(page, 'PAM')
+  // .last(): los contenedores de afuera también contienen el texto; la tarjeta es el más interno
+  const tarjeta = page.locator('div.rounded-lg', { hasText: 'Nazarenas' }).filter({ hasText: '25/26' }).last()
+  // PAM Nazarenas 26/27 ya existe (el usuario la cargó): la app PREGUNTA antes de duplicar. Aceptar
+  // sólo abre el modal — no guarda nada. Se verifica que la pregunta aparezca, que es el control.
+  let pregunta = ''
+  page.once('dialog', d => { pregunta = d.message(); d.accept() })
+  await tarjeta.getByRole('button', { name: 'Duplicar' }).click()
+  expect(pregunta).toContain('Ya hay un contrato de Nazarenas 26/27')
+
+  const modal = page.getByRole('dialog')
+  await expect(modal.getByText('copia de Nazarenas 25/26', { exact: true })).toBeVisible()
+  await expect(modal.getByPlaceholder('26/27')).toHaveValue('26/27')
+  await expect(modal.locator('tbody tr')).toHaveCount(3)
+  await expect(modal.locator('input[type="date"]').first()).toHaveValue('2026-11-20')
+
+  await expect(modal.getByText('PROVINVEST S.A.').first()).toBeVisible()   // el cliente viene del original
+
+  await page.screenshot({ path: 'test-results/arrendamiento-duplicar.png', fullPage: true })
+  await modal.getByRole('button', { name: 'Cancelar' }).click()
   expect(errores).toEqual([])
 })

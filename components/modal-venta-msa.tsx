@@ -243,6 +243,7 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
             <div className="col-span-2">
               <ProveedorCombobox
                 label="Cliente"
+                rol="cliente"
                 required
                 value={{ cuit: cliente.cuit, nombre: cliente.nombre }}
                 onChange={(sel) => setCliente({ cuit: sel.cuit, nombre: sel.nombre })}

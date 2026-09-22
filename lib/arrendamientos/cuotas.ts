@@ -328,3 +328,17 @@ export function camposDeVenta(p: {
 export function tonsMaximasEdicion(tonsDeLaCuota: number, tonsOtrasVentas: number): number {
   return Math.max(0, tonsDeLaCuota - tonsOtrasVentas)
 }
+
+// ── Duplicar un contrato a otra campaña (A-FEAT-166) ─────────────────────────
+// Pedido del usuario 2026-09-21: *«también se podría copiar todo un contrato con cuotas y todo
+// dentro cuando sólo hay cambio de campaña»*. Se abre el modal de Nuevo contrato ya lleno — campo,
+// cliente, has, qq/ha — con la campaña siguiente y las cuotas corridas un año. Nada se guarda hasta
+// que el usuario aprieta Guardar: es un punto de partida, igual que «Copiar cuotas de…».
+
+/** "26/27" → "27/28" · "2025/26" → "2026/27" · "2025/2026" → "2026/2027". Si no se entiende, igual. */
+export function campaniaSiguiente(campania: string): string {
+  const m = String(campania ?? "").trim().match(/^(\d{2}|\d{4})\s*\/\s*(\d{2}|\d{4})$/)
+  if (!m) return campania
+  const suma = (x: string) => String(Number(x) + 1).padStart(x.length, "0").slice(-x.length)
+  return `${suma(m[1])}/${suma(m[2])}`
+}

@@ -387,6 +387,7 @@ export function ModalCompletarVentaHacienda({
           <div className="col-span-2">
             <ProveedorCombobox
               label="Cliente"
+              rol="cliente"
               value={cliente}
               onChange={setCliente}
             />

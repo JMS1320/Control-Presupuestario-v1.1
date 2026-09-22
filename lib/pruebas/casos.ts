@@ -60,12 +60,13 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
-  partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion,
+  partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
   type CuotaGuardada, type FilaCuota,
 } from "@/lib/arrendamientos/cuotas"
 import {
   queProbarVos, tituloCorto, textoRespuesta, RESPUESTAS_TEST,
 } from "@/lib/pendientes/resumen-test"
+import { partirPorRol } from "@/lib/contrapartes/orden-por-rol"
 import {
   armarCandidatos, dondeSeCargaElCuit,
   type VentaEsperando, type FacturaVenta, type Vinculo,
@@ -1523,6 +1524,42 @@ export function correrCasos(): Resultado[] {
     chequear("Cuotas arrendamiento", "Lima #1 tiene 66,154 tn: a 2 decimales se pierden 0,004",
       "66.154 (2 dec: 66.15)", `${lima} (2 dec: ${Math.round(lima * 100) / 100})`,
       lima === 66.154 && Math.round(lima * 100) / 100 === 66.15, "A-BUG-184")
+  }
+
+  // ══ 📋 DUPLICAR UN CONTRATO A LA CAMPAÑA SIGUIENTE (A-FEAT-166) ══════════════════════════════
+  {
+    const casos: Array<[string, string]> = [["26/27", "27/28"], ["25/26", "26/27"], ["2025/26", "2026/27"], ["2025/2026", "2026/2027"], ["99/00", "00/01"], ["campaña", "campaña"]]
+    const obt = casos.map(([a]) => campaniaSiguiente(a)).join(" ")
+    chequear("Duplicar contrato", "La campaña siguiente en los formatos que se usan (y el cambio de siglo)",
+      casos.map(c => c[1]).join(" "), obt, obt === casos.map(c => c[1]).join(" "), "A-FEAT-166")
+
+    // PAM Nazarenas 25/26 duplicado a 26/27: mismas cuotas, un año después (las cargó el usuario el 21/09).
+    const PAM2526: CuotaGuardada[] = [
+      { id: "a", numero_cuota: 1, qq_ha_cuota: 6, fecha_cobro_estimada: "2025-11-20", posicion_anio: 2025, posicion_mes: 11 },
+      { id: "b", numero_cuota: 2, qq_ha_cuota: 1.5, fecha_cobro_estimada: "2025-11-20", posicion_anio: 2026, posicion_mes: 5 },
+      { id: "c", numero_cuota: 3, qq_ha_cuota: 7.5, fecha_cobro_estimada: "2026-04-20", posicion_anio: 2026, posicion_mes: 5 },
+    ]
+    const dup = copiarEsquemaCuotas(PAM2526, "25/26", campaniaSiguiente("25/26"))
+    const txtDup = dup.map(f => `${f.fecha_cobro}·${f.posicion_mes}/${f.posicion_anio}`).join(" ")
+    chequear("Duplicar contrato", "🔑 Duplicar PAM Nazarenas 25/26 deja las 3 cuotas un año después, sin ids",
+      "2026-11-20·11/2026 2026-11-20·5/2027 2027-04-20·5/2027 · sin ids", `${txtDup} · ${dup.some(f => f.id) ? "CON ids" : "sin ids"}`,
+      txtDup === "2026-11-20·11/2026 2026-11-20·5/2027 2027-04-20·5/2027" && !dup.some(f => f.id), "A-FEAT-166")
+  }
+
+  // ══ 👥 EL BUSCADOR DE CLIENTE: PRIMERO LOS CLIENTES (A-FEAT-165) ════════════════════════════
+  {
+    const lista = [
+      { razon_social: "ALCORTA", es_cliente: false, es_proveedor: true },
+      { razon_social: "PROVINVEST S.A.", es_cliente: true, es_proveedor: false },
+      { razon_social: "MERCURE", es_cliente: true, es_proveedor: true },
+      { razon_social: "GENOIL", es_cliente: null, es_proveedor: true },
+    ]
+    const { conRol, otros } = partirPorRol(lista, "cliente")
+    const txt = `${conRol.map(p => p.razon_social).join(",")} | ${otros.map(p => p.razon_social).join(",")}`
+    chequear("Buscador de cliente", "Primero los clientes, abajo el resto del maestro, cada parte en su orden",
+      "PROVINVEST S.A.,MERCURE | ALCORTA,GENOIL", txt, txt === "PROVINVEST S.A.,MERCURE | ALCORTA,GENOIL", "A-FEAT-165")
+    chequear("Buscador de cliente", "No se pierde nadie: los que no son clientes se pueden elegir igual",
+      "4", String(conRol.length + otros.length), conRol.length + otros.length === lista.length, "A-FEAT-165")
   }
 
   // ══ ✏️ EDITAR UNA VENTA DE ARRENDAMIENTO (A-BUG-100) ════════════════════════════════════════

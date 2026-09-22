@@ -1229,6 +1229,14 @@ ahí se define el contrato entero: los datos de arriba y, abajo, la sección **C
 - Si un contrato no tiene cuotas, su tarjeta lo dice y ofrece **Cargar cuotas**.
 - Si el cliente no tiene CUIT, el modal lo avisa: elegilo de la lista, porque sin CUIT no se
   encuentra después su factura.
+- En el buscador de **Cliente** aparecen primero los **clientes** y abajo, separados, los **otros del
+  maestro**. Se puede elegir cualquiera: al guardar queda marcado como cliente.
+
+**Duplicar un contrato.** En la tarjeta de cada contrato, **Duplicar** abre un *Nuevo contrato* igual
+—campo, cliente, hectáreas, qq/ha— con la **campaña siguiente** y las cuotas corridas un año. Se
+revisa lo que cambie y se guarda. Si ese campo ya tiene contrato en esa campaña, la app pregunta antes.
+
+→ A-TEST-138
 
 **`Días de cobro del disponible`**: días corridos entre la fijación y el cobro cuando vendés
 disponible. **Es por cliente**: Sanpa 15, el resto 20.
