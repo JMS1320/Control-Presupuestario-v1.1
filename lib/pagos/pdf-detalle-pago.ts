@@ -228,23 +228,6 @@ export const generarPDFDetallePago = async (
       }
     })
 
-    /**
-     * ⚠️ **Los avisos del control SE VEN en el papel** — § `CLAUDE.md` 🧮 *nada se descarta en
-     * silencio*, y § 🚦 *un control que frena vs. uno que avisa*.
-     *
-     * Un pago parcial o de más **no frena** la emisión (es una decisión del usuario), pero tampoco
-     * se calla: si el detalle sale hacia el proveedor con una diferencia contra lo facturado, el
-     * papel lo dice. Callarlo sería elegir un número en silencio.
-     */
-    if (avisosDelControl.length > 0) {
-      const yAviso = (doc as any).lastAutoTable.finalY + 6
-      doc.setFontSize(8)
-      doc.setTextColor(150, 90, 0)
-      avisosDelControl.forEach((a, i) => doc.text(`⚠ ${a}`, 14, yAviso + i * 4))
-      doc.setTextColor(0, 0, 0)
-      doc.setFontSize(9)
-    }
-
     // ── Desglose de MEDIOS de pago (transferencia/anticipo + echeq + ...) ──────
     // Cuando un pago se reparte en varios medios (ej. anticipo por transferencia + echeq del saldo),
     // se muestra cada tramo + la retención SICORE; la suma debe dar el total de la(s) factura(s).
@@ -305,7 +288,19 @@ export const generarPDFDetallePago = async (
       })
       // Aviso si el desglose no cuadra con el total de la factura (tolerancia $1, la de `cuenta`).
       // A-BUG-149: los dos números salen de la cuenta compartida, no de sumas propias.
-      if (cuenta.desviado) {
+      /**
+       * 🐞 **A-BUG-190 — este cartel DUPLICABA al aviso del control.**
+       *
+       * Con un pago de más el papel decía dos veces lo mismo, en dos idiomas distintos: arriba
+       * *«Se cancela $4.480,00 MÁS que el total facturado»* y acá *«el desglose no coincide con el
+       * total de factura»*. Y el renglón **Pagado a cuenta** de la tabla ya lo mostraba por tercera
+       * vez. Pedido del usuario 2026-09-22: *«el 2do mensaje en rojo me parece que no corresponde a
+       * un detalle de pago»*.
+       *
+       * 📌 Queda **sólo como red**: si por algún camino no hubo control (sin líneas que comparar),
+       * el desvío se sigue diciendo. Lo que no hace es repetir lo que el control ya dijo mejor.
+       */
+      if (cuenta.desviado && avisosDelControl.length === 0) {
         const y3 = ((doc as any).lastAutoTable?.finalY ?? startY2) + 6
         doc.setFontSize(8)
         doc.setFont('helvetica', 'italic')
@@ -327,6 +322,42 @@ export const generarPDFDetallePago = async (
         doc.text(`ATENCION: el desglose (${fmt(cuenta.totalCancelado)}) no coincide con el total de factura (${fmt(cuenta.bruto)}).`, 15, y3)
         doc.setTextColor(0, 0, 0)
       }
+    }
+
+    /**
+     * ⚠️ **Los avisos del control SE VEN en el papel** — § `CLAUDE.md` 🧮 *nada se descarta en
+     * silencio*, y § 🚦 *un control que frena vs. uno que avisa*.
+     *
+     * Un pago parcial o de más **no frena** la emisión (es una decisión del usuario), pero tampoco
+     * se calla: si el detalle sale hacia el proveedor con una diferencia contra lo facturado, el
+     * papel lo dice. Callarlo sería elegir un número en silencio.
+     *
+     * 🐞 **A-BUG-190 — antes se dibujaba ENTRE las dos tablas y quedaba tapado** por el título
+     * «Desglose del pago», que se posiciona desde `lastAutoTable` y no sabía que había un renglón
+     * de texto en el medio. Textual del usuario: *«sale entre los 2 cuadros y tapado; debería estar
+     * en rojo debajo»*. Ahora va **al pie**, después del desglose, que además es donde se lee: el
+     * aviso explica la última fila de esa tabla (**Pagado a cuenta** / **Saldo pendiente**).
+     *
+     * 🛑 **Sin `⚠`** — ver A-BUG-150 abajo: el símbolo no existe en WinAnsi y rompe la línea entera
+     * letra por letra. **Estaba arreglado en el cartel de abajo y no acá**: el mismo defecto vivía
+     * en los dos lugares y se corrigió uno solo (§ `MODULO_CONCILIACION.md` 30.9.5).
+     */
+    if (avisosDelControl.length > 0) {
+      const yAviso = ((doc as any).lastAutoTable?.finalY ?? 56) + 6
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'italic')
+      doc.setTextColor(180, 60, 60)
+      let y = yAviso
+      for (const a of avisosDelControl) {
+        // Cortar a lo ancho de la hoja: un aviso largo se salia del margen derecho.
+        for (const linea of doc.splitTextToSize(`ATENCION: ${a}`, 180) as string[]) {
+          doc.text(linea, 15, y)
+          y += 4
+        }
+      }
+      doc.setTextColor(0, 0, 0)
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
     }
 
     if (opciones?.returnBase64) return doc.output('datauristring').split(',')[1] // base64 puro (para encolar mail)
