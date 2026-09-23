@@ -469,9 +469,18 @@ acumula por QUINCENA** — `netoPagosPreviosSinRetencion` compara `generarQuince
 contra la quincena del pago, y el chequeo de retención previa filtra por `sicore = quincena`. El
 caso de abajo no cambia (las tres facturas cayeron en la misma quincena), pero la regla sí.
 
-📌 **Y ahí queda una pregunta abierta**: la RG 830 fija el mínimo **por período mensual**, y el
-sistema lo reinicia **cada quincena**. Con pagos al mismo proveedor en las dos quincenas de un mes,
-el mínimo se otorgaría dos veces y se retendría de menos → [A-DEC-26](PENDIENTES.md#a-dec-26).
+🛑 **Pero el sistema está MAL y ya está confirmado** *(2026-09-22, [A-DEC-26](PENDIENTES.md#a-dec-26))*:
+la RG 830 fija el mínimo **por mes calendario y por sujeto retenido**, y el sistema lo reinicia **cada
+quincena**. **La quincena es el período de información y depósito, no la unidad del mínimo** — el
+cálculo trata las dos cosas como una.
+
+**Medido**: 2 proveedores reciben el mínimo dos veces en el mismo mes (MASSAGLIA 07/2026 y STRINGHINI
+05/2026, los dos de Servicios), y se retuvo **$2.686,80 de menos**. Uno cae en una quincena **ya
+declarada**, así que su corrección es una rectificativa. El arreglo es
+[A-BUG-193](PENDIENTES.md#a-bug-193).
+
+⚠️ **Sentido del error, que es el contrario del caso de abajo**: acá se retiene **de menos** y la
+empresa queda en falta con ARCA; en [A-DAT-55](PENDIENTES.md#a-dat-55) se le pagó de más al proveedor.
 
 Para Bienes eso da **2 % × $224.000 = $4.480,00**, y ese importe es una **firma reconocible**: cuando
 una transferencia difiere del registro en exactamente $4.480, no hay que buscar nada más.
