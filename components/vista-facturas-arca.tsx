@@ -3463,8 +3463,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         }
       }
 
-      // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
-      if (netoFactura <= minimoServicios) {
+      /**
+       * 🚪 **A-BUG-195 — el portón tiene que mirar si YA se retuvo en el mes.**
+       *
+       * El mínimo se consume una sola vez por período ([A-BUG-193](../PENDIENTES.md#a-bug-193)):
+       * si al proveedor **ya se le retuvo este mes**, una factura por debajo del mínimo **sí
+       * retiene**, sobre el neto completo. Cortar sólo por importe la dejaba afuera y se retenía
+       * de menos.
+       *
+       * ✅ **El Cash Flow ya lo hacía así** (`califica = yaRetuvo || hayNegativa || …`). Era otra
+       * vez un camino de dos: se arregló uno y el otro quedó vivo (§ `MODULO_CONCILIACION.md` 30.9.5).
+       *
+       * 📈 Y A-BUG-193 lo volvió más frecuente: con el período mensual hay **más** casos de «ya
+       * retuvo» que con el quincenal.
+       */
+      const yaRetuvoEnElMes = await verificarRetencionPrevia(factura.cuit, quincena)
+
+      // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo, salvo que el mínimo ya esté consumido
+      if (netoFactura <= minimoServicios && !yaRetuvoEnElMes) {
         console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
         // Ofrecer descuento pronto pago aunque no haya retención
         const aplicarDescuento = window.confirm(
