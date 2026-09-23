@@ -647,7 +647,7 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-FEAT-81 | 🔴 | Feat | **Editar el sueldo partiendo del BRUTO** — *"que la edición pueda partir del sueldo bruto (a + b), poder llenar cat A y que se calcule sola cat B"* | Nota 28/08 `@sueldos` |
 | A-FEAT-82 | 🔴 | **Alta** | **La venta de hacienda tiene que poder arrancar desde Productivo** — *"es lo más lógico que empiece desde acá"*. Y desde ahí **vincular con la venta del lote presupuestado, o crearla si no existe**. ⚠️ Es la punta del tema grande que el usuario planteó el 03/09: **un solo registro que se completa de a poco** (hoy digo "vendí 7 vacas", mañana el peso y el desbaste, después el precio y el rinde, después la FC y la actividad). Ver también: el modal **no trae los clientes de la base** y no deja crear uno | Nota 03/09 `@productivo @ingresos` |
 | A-FEAT-83 | 🔴 | Feat | **Notas sobre un animal identificado** — *"que se puedan poner notas a los individuos identificados por caravana u otro dato identificatorio"*. Cruza con [A-FEAT-75](#a-feat-75): el banderín ya marca cualquier fila, pero esto es una nota permanente del animal, no una marca para revisar | Nota 03/09 `@productivo` |
-| A-FEAT-84 | 🔴 | Feat | **Filtros y buscador en Hacienda → Movimientos**, y **un motivo por caravana en el cambio de categoría** — hoy *"debo hacer los movimientos de cambio de categoría de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"* | Notas 03/09 `@productivo` |
+| **A-FEAT-84** | 🟡 | Feat | ✅ **La mitad HECHA 2026-09-04, sin testear**: el cambio de categoría pasa de un cuadro de texto con guiones a **una fila por animal** (caravana · pelo · **razón**), tantas como cabezas se muevan. La razón es individual — una se descarta por machorra y la de al lado por diarrea. 🐛 Y se corrigió un bug: el sexo estaba fijo en `Hembra`, así que un cambio a Toro creaba machos marcados como hembras. 🔴 **Falta**: los filtros y el buscador. **Filtros y buscador en Hacienda → Movimientos**, y **un motivo por caravana en el cambio de categoría** — hoy *"debo hacer los movimientos de cambio de categoría de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"* | Notas 03/09 `@productivo` |
 | **A-FEAT-85** | ✅ | Feat | **El warning ya no depende de que exista la bandera en esa fila** — botón flotante 🚩 + **`Alt+R`** en TODA la app, con **captura de pantalla** y contexto automático. Más el **seguimiento**: la marca se abre desde Principal y se le va agregando lo que se averigua, sin pisar la sospecha original. ✅ HECHO 2026-09-04, probado con navegador (10 controles), **sin testear por el usuario** ([A-TEST-84](#a-feat-85)) | → [A-FEAT-85](#a-feat-85) `@general` |
 | A-TEST-84 | ✅ | Test | **TESTEADO 2026-09-04 por el usuario** — levantó una marca global con captura y le agregó seguimiento; en la base quedó con `registro_id` NULL, imagen y 1 entrada. **El warning global** (A-FEAT-85) — parado en cualquier pantalla **sin banderas**, `Alt+R` → el recuadro tiene que decir **esa** pantalla (no «Principal») · pegar una captura con `Ctrl+V` · que aparezca en Principal · **Abrir** y agregar algo → que se vea al toque y que **el motivo original siga ahí** · cerrar exige decir qué se hizo | → [A-FEAT-85](#a-feat-85) `@general` |
 | **A-DEC-14** | ✅ | Dec | **El vínculo venta↔factura vive SOLO en `ventas_facturas`** — se borró `productivo.stock_ventas.comprobante_id`, que era una segunda puerta al mismo hecho (nadie la escribía, 0 filas con valor). **No volver a agregar un campo de factura dentro de la venta.** Decidido y hecho 2026-09-04 | → [A-DEC-14](#a-dec-14) `@productivo @ingresos` |
@@ -658,6 +658,11 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-TEST-86 | 🔴 | Test | **La venta desde Movimientos** (A-FEAT-87) — en *Productivo → Movimientos*, tipo **venta**: tiene que aparecer el aviso verde, y al guardar decir **qué falta** y dónde completarlo. Después, que esa venta se vea en **Ingresos → Ganadería** y en el Cash Flow **sin volver a cargarla** | → [A-FEAT-87](#a-feat-87) `@productivo @ingresos` |
 | **A-FEAT-89** | 🟡 | Media | ✅ **HECHO 2026-09-04, sin testear** ([A-TEST-86](#a-feat-87)): en el modal de la venta se **adjudican las caravanas** de esa categoría (nunca de otra), con el kilo de cada una precargado de su última pesada y **editable**; los animales **sin caravana** se identifican con una observación; y el **pesaje del camión** (bruto − tara) da el neto. **Los tres orígenes del kilaje se muestran juntos con su diferencia** — el control gratis del mismo número por dos caminos. **Peso por animal en una venta** — *"hay casos como este que debo ponerle un peso a cada animal"* (7 vacas descarte, que no pesan lo mismo). Hoy la venta guarda **kilos totales** y deriva el promedio. Para hacienda con caravana el dato individual existe (`pesadas_terneros`); para adultos no hay dónde ponerlo | → [A-FEAT-87](#a-feat-87) `@productivo` |
 | A-DAT-20 | 🔴 | Dato | **2 categorías de hacienda sin centro de costo**: «Ternera» y «Ternero». Una venta de esas categorías **no sabe a qué actividad va** — sale con centro de costo vacío y queda sin ubicación en el presupuesto. Lo encontró el test del circuito. Las otras 13 lo tienen | — `@productivo` |
+| **A-DEC-15** | ✅ | Dec | **La clasificación comercial NO es nuestra categoría, y llega DESPUÉS** — nosotros decimos *Vaca CUT/Descarte*; el frigorífico dice **Gorda / Conserva / Manufactura**, con subprecios, y lo decide **al ver la res**. Por eso una venta **no se carga: se completa**. Decidido con el usuario 2026-09-04 | → [A-FEAT-90](#a-feat-90) `@productivo` |
+| A-FEAT-90 | 🟡 | **Alta** | ✅ **La CARGA hecha 2026-09-04, sin testear** ([A-TEST-87](#a-feat-90)): tabla `productivo.cargas`, las ventas cuelgan de ella y el pesaje del camión **vive ahí y sólo ahí** — se borraron `peso_bruto_camion`/`peso_tara_camion` de la venta. El control compara el neto del camión contra **la suma de todas las ventas de la carga**. 🔴 **Faltan los grupos de precio**, para el día del romaneo. **Grupos de precio dentro de la venta** (opción B, elegida por el usuario) + **la CARGA como cosa propia** (un camión, una fecha, un cliente, **una liquidación**, varias categorías). Se ataca **el día del romaneo** | → [A-FEAT-90](#a-feat-90) `@productivo @ingresos` |
+| A-TEST-87 | 🔴 | Test | **La carga del camión** (A-FEAT-90) — en las **dos** ventas del 03/09 elegir **la misma carga**, poner bruto y tara en una: la otra tiene que **traerlos sola**. Y el control tiene que comparar el neto contra **la suma de las dos** (≈6.301 kg), no contra una. Además: los kilos se **autocompletan** con la suma de los animales, y si los borrás **quedan borrados** | → [A-FEAT-90](#a-feat-90) `@productivo` |
+| **A-DEC-16** | ✅ | Dec | **El rinde depende de contra qué se divide, y el desbaste lo infla.** El rinde **objetivo** es `kg de res ÷ peso vivo lleno`; el que se habla en el mercado va sobre el peso ya desbastado, y como el desbaste **se negocia**, ese número no compara entre ventas. Y el desbaste sólo tiene sentido económico **vendiendo al vivo**: a la res es una convención. Definido con el usuario 2026-09-04 | → [A-FEAT-91](#a-feat-91) `@productivo` |
+| A-FEAT-91 | 🔴 | Media | **Las tres balanzas y el rinde comparable** — guardar peso de balanza propia, peso de camión y kg de res; **el camión manda** (más preciso) y ajusta los individuales **proporcionalmente, sin pisar los medidos**; y el rinde se calcula **de las dos formas**, con la categoría comercial y el régimen de alimentación al lado para que se pueda comparar. Se ataca **el día del romaneo**, junto con [A-FEAT-90](#a-feat-90) | → [A-FEAT-91](#a-feat-91) `@productivo` |
 | A-OP-11 | 🔴 | Baja | **`next-env.d.ts` se ensucia solo, para siempre** — `next dev` lo apunta a `.next/dev/types/` y `next build` a `.next/types/`, así que **se pisa cada vez que se cambia de comando**. Commitearlo no lo arregla. Con 2 desarrolladores va a dar conflicto seguido. El fix es ignorarlo, como se hizo con `tsconfig.tsbuildinfo` | — `@general` |
 | A-OP-12 | 🔴 | Media | **El guión de prueba con navegador vive fuera del repo** — se escribió el 2026-09-02 (Playwright manejando Chromium contra la app: abre, provoca el error, lee la pantalla, verifica en la base). Encontró 2 falsos negativos reales. Hoy está en una carpeta temporal y **se pierde**. Decidir si entra a `scripts/` (le suma Playwright como dependencia, que hereda Javier) o vive fuera documentado | — `@general` |
 | A-DOC-13 | 🔴 | Media | **El `README.md` describe la app de la PRIMERA versión** — dice que "procesa movimientos bancarios de MSA Galicia y genera reportes". No menciona ARCA, pagos, SICORE, productivo, presupuesto ni las 3 empresas. **Es la cara pública del repo y es lo primero que lee Javier al clonar.** Hay un relevamiento completo del alcance hecho el 2026-09-02 (12 áreas, 17 módulos, 11 ejes transversales) que puede ser su base | — `@general` |
@@ -677,6 +682,7 @@ mejoras — es el norte en términos administrativos"**. El criterio y las 5 pie
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
+| A-AUTO-03 | 🔴 | Media | **El mail de ARBA — el dato primero, el PDF después.** El aviso de vencimiento trae **CUIT, objeto, impuesto, cuota, importe y fecha** en el texto, y hoy **se tira entero**. Parsearlo da el vencimiento en Cash Flow + la alerta, sin que nadie cargue nada. ⚠️ **El PDF NO se puede bajar con GAS**: el botón dice *"Ingresar"*, o sea portal con login, y Apps Script no tiene navegador. Para el papel hay que usar la vía de `arca-api/` | → [A-AUTO-03](#a-auto-03) `@cashflow @egresos` |
 | A-AUTO-02 | 🔴 | Media | **Checklist de obligaciones administrativas — alerta ANTES, control DESPUÉS.** Pedido del usuario 2026-08-31: las obligaciones con plazo (vencimientos, presentaciones, cierres) tienen que estar en **un checklist priorizado** —las que son *sí o sí* separadas de las deseables— con **alerta al responsable antes** y **control de que se hizo después**. Hoy cada plazo vive en la cabeza de alguien. Es la pieza 3 del norte administrativo, generalizada | → [A-AUTO-02](#a-auto-02) `@general` |
 | A-AUTO-03 | 🔴 | Media | 🎙️ **EL AGENTE DEL PARTE DIARIO — propone, nunca dispone.** La parte con IA de [A-FEAT-123](#a-feat-123): audio → transcripción → labores candidatas → **bandeja** → OK del admin. 🔒 **El invariante es un PERMISO, no una buena intención**: el rol del agente **no tiene `UPDATE`** sobre órdenes, stock ni presupuesto — el peor daño posible es una fila fea en una bandeja. 🐾 **Huella obligatoria** (§ Importar un documento): audio + transcripción cruda + lo que propuso + lo que corrigió el humano; es lo único que deja ver si el agente **empeoró** al cambiar el modelo. 🔁 **Dos controles gratis** (pieza 4): jornadas del parte ↔ días de `sueldos.periodos`, y sanidad reportada ↔ consumo de `movimientos_insumos`. 📌 La matriz de mínimos con semáforo **es [A-AUTO-02](#a-auto-02) con vencimientos de campo**: un solo motor de alertas, dos fuentes | → [A-AUTO-03](#a-auto-03) `@productivo @sueldos` |
 | A-AUTO-01 | 🔴 | Media | **🥇 CASO MODELO — el circuito de la tarjeta, punta a punta**: el resumen lo carga **Ulises** (falta habilitarlo), el PDF da el **próximo cierre y vencimiento** (hoy se parsean y se tiran), eso dispara la **alerta** de que viene el próximo resumen, y el **mail del banco** llena o contrasta los montos. Registrado como modelo de cómo se anota una automatización | → [A-AUTO-01](#a-auto-01) `@egresos` |
@@ -9531,6 +9537,182 @@ era llegar hasta él desde el lado productivo.
 `stock_ventas` tiene los campos del día 1 (cabezas), del día 2 (peso, desbaste), del día 3 (precio,
 rinde) y del final (fecha de cobro, cuenta contable). **Un solo registro que se completa de a poco
 ya es posible: no hay que rediseñar, hay que llenar.**
+
+---
+
+## <a id="a-auto-03"></a>A-AUTO-03 — El mail de ARBA: el dato primero, el PDF después (2026-09-04)
+
+**La pregunta del usuario:** *"¿qué tan fácil es descargar un PDF de Gmail automáticamente con GAS?
+Es de los que dan link a descarga pero no está adjunto el archivo."*
+
+### La respuesta corta: depende de qué hay detrás del link
+
+| Caso | Qué es | Con GAS |
+|---|---|---|
+| 1 | link directo al PDF, sin login | **trivial** |
+| 2 | link con token en la URL que devuelve el PDF | **fácil** |
+| 3 | link a un **portal con login** | **imposible** |
+
+**ARBA es el 3.** El botón dice *"Ingresar"*, no *"Descargar"*: lleva al portal, que pide CIT y clave.
+Apps Script **no tiene navegador** — no ejecuta JavaScript, no mantiene sesión, no pasa un login. No
+es difícil: no puede. Para el papel hay que usar un navegador manejado por programa, que **ya existe
+en este proyecto**: `arca-api/modules/afip-login.js` + `download-comprobantes-complete.js`.
+
+### 🔑 Pero el dato ya está en el mail, y se tira entero
+Del aviso del 2026-09 (PAM):
+
+```
+CUIT ....... 20-04439022-2      Impuesto ... Inmobiliario Complementario, cuota 3
+Objeto ..... 20-04439022-2 Rural  Importe .... $963.879,90
+Vence ...... 8 de septiembre     Beneficio .. 10 % si está al día
+```
+
+Es exactamente la **pieza 2** del norte administrativo (`CLAUDE.md` § 🤖): *"¿qué estamos tirando?
+Datos que el sistema ya parsea y descarta — lo más barato que existe."*
+
+Y alcanza para **las dos mitades** de la regla de alertas:
+- **ANTES** → el vencimiento entra solo al Cash Flow, con monto y fecha, y dispara la alerta.
+- **DESPUÉS** → el importe permite el control de que efectivamente se pagó, contra el extracto.
+
+> **El PDF es el comprobante; el dato es lo que mueve el presupuesto.** Y el dato cuesta diez veces
+> menos.
+
+### Las 4 piezas
+| Pieza | Acá |
+|---|---|
+| **1 · Disparador** | el mail de ARBA, que llega solo |
+| **2 · Dato ya disponible** | CUIT, objeto, cuota, importe y vencimiento — hoy se descartan |
+| **3 · Alerta con destinatario** | antes del 8, con margen real — no el mismo día |
+| **4 · Control** | el importe del mail contra el pago en el extracto |
+
+### 🔑 La quinta pieza: el permiso
+Si el objetivo es que **Ulises** se ocupe de estos vencimientos, hay que **habilitarle el acceso**.
+Sin eso el circuito queda más prolijo y la carga la sigue haciendo JMS — que es el cuello de
+botella. Cruza con [A-SEC-03](#a-sec-03).
+
+### Orden recomendado
+1. **El dato** (GAS puro, fácil): parsear el mail → vencimiento + alerta.
+2. **El PDF** (vía navegador, más caro): sólo da el papel.
+
+---
+
+## <a id="a-dec-16"></a>A-DEC-16 / <a id="a-feat-91"></a>A-FEAT-91 — Las tres balanzas y el rinde comparable (2026-09-04)
+
+**El caso que lo disparó.** Primera carga con el modelo nuevo: 10 animales pesados en la balanza
+propia suman **6.301 kg**; el camión dio **6.500** (22.320 bruto − 15.820 tara). Diferencia **+199 kg,
+3,16 %**. Las 10 pesadas son del **mismo día** que la carga, así que el desvío **no lo explica el
+tiempo**: es la balanza o la tara. Queda como una medición limpia.
+
+### 1 · Las balanzas: el camión manda, pero no se pisa lo medido
+Las dos son del usuario; **la del camión es más precisa y manda cuando existe**. Como hay cálculos
+por cabeza, los pesos individuales se ajustan **proporcionalmente** al total del camión.
+
+⚠️ **Sin pisar los medidos** (acordado explícitamente). El peso de campo es una medición y el del
+camión es otra: adaptar uno al otro borra justo lo que interesa — **el desvío**. Se guardan los dos
+y se registra el factor. Con varias cargas encima, ese desvío repetido **es la calibración**: si
+siempre ronda +3 % es la balanza; si salta sin patrón son los días y el manejo.
+
+### 2 🔑 · El desbaste no significa lo mismo en los dos canales
+- **Vendiendo AL VIVO**: el desbaste es **económico y real**. El comprador dice cuánto desbaste
+  aplica y paga $/kg vivo sobre eso. Él estima qué rinde va a sacar; si sale más o menos, **lo gana
+  o lo pierde él**.
+- **Vendiendo A LA RES**: el desbaste es **una convención**. Lo que se paga son los kilos de carne
+  reales; el desbaste no cambia la plata.
+
+### 3 🔑 · Por eso hay DOS rindes, y sólo uno sirve para comparar
+
+| | Cómo se calcula | Para qué sirve |
+|---|---|---|
+| **Rinde objetivo** | `kg de res ÷ peso vivo lleno` (el del camión, sin tocar) | **Comparar entre ventas, categorías y años** |
+| **Rinde comercial** | `kg de res ÷ peso ya desbastado` | Hablar con el comprador — es el que se usa en el mercado |
+
+> **El comercial está inflado por un número que se negocia.** En palabras del usuario: *"si uno le
+> pone mucho desbaste, el rinde sobre desbastado es un montón"*. Dos ventas con desbastes distintos
+> **no son comparables** por ese número, aunque los animales hayan rendido igual.
+
+Se guardan **los dos**, y el que manda para analizar es el objetivo.
+
+### 4 · Sin contexto, un rinde no dice nada
+El dato útil no es *"rindió el 56 %"*, es:
+
+> *"**vaca gorda** saliendo de **pasturas** rindió tanto"*
+
+Hacen falta al lado: la **categoría comercial** (Gorda / Conserva / Manufactura — rinden distinto) y
+el **régimen de alimentación** (pastura, encierre, raón), que también lo mueve. Con eso anotado,
+cada venta suma a una serie que en un año vale más que cualquier tabla teórica.
+
+### Lo que hay que guardar, en una línea
+`peso balanza propia` · `peso camión` · `factor de ajuste` · `desbaste` (comercial) · `kg de res` ·
+`categoría comercial` · `régimen de alimentación`.
+
+**Cuándo:** el día del romaneo, con [A-FEAT-90](#a-feat-90). Antes no hay kg de res, y sin ellos no
+hay rinde de ningún tipo.
+
+---
+
+## <a id="a-dec-15"></a>A-DEC-15 / <a id="a-feat-90"></a>A-FEAT-90 — La venta no se carga, se completa (2026-09-04)
+
+**De dónde salió.** Cargando la venta real de 7 vacas + 3 toros a Arrebeef. El diseño hasta ese
+momento asumía **un precio y un rinde por venta**. El usuario lo corrigió:
+
+> *"Las vacas también habrá distintos precios porque hay distintas categorías: **Gorda, Conserva,
+> Manufactura**. Y hasta subprecios entre categorías."*
+
+### 🔑 La decisión de fondo (A-DEC-15)
+**Nuestra categoría NO es la categoría comercial, y la comercial llega después.** Nosotros decimos
+*Vaca CUT/Descarte*; ellos dicen Gorda / Conserva / Manufactura, y **lo deciden al ver la res
+colgada** — no al cargar el camión. La que fija la plata es **la de ellos**.
+
+Cuándo se sabe cada cosa, que es lo que ordena todo el diseño:
+
+| Pieza | Cuándo se sabe | Quién la define |
+|---|---|---|
+| Qué animales van | al cargar | el usuario |
+| Cuánto pesan vivos | al cargar | el usuario (balanza o campo) |
+| **Kilos de res y clasificación** | **con el romaneo, días después** | **el frigorífico** |
+| **Precio** | **con el romaneo** | **el frigorífico**, por clasificación |
+
+> **La venta no se carga: se completa.** Pedir todo junto al momento de la venta es pedir un dato
+> que todavía no existe — y lo que se completa con un dato inventado no se corrige nunca.
+
+### La forma elegida: **grupos de precio** (opción B)
+Se evaluaron tres y el usuario eligió la B:
+
+| | Qué es | Por qué no |
+|---|---|---|
+| **A** · precio por animal | lo que el romaneo entrega literal | mucha carga cuando son 100 novillos parejos |
+| **B** · **grupos de precio dentro de la venta** | *"3 vacas que comparten precio"*, cada grupo con sus kilos y su precio | **elegida** |
+| **C** · una venta por clasificación | simple con lo que ya hay | parte una carga que fue una sola y pesa el camión tres veces |
+
+**B incluye a A**: un animal solo es un grupo de uno. Cuando el detalle importa se agrupa de a uno;
+cuando no, de a diez.
+
+### Y arriba: la CARGA
+Lo que junta a los toros con las vacas **no es la venta: es el viaje**. Un camión, una fecha, un
+cliente, **una liquidación**. Adentro, los grupos de precio de la categoría que sea.
+
+Así el caso real deja de ser un problema: 7 vacas y 3 toros en una carga, que después el romaneo
+parte en — digamos — 3 Conserva, 4 Manufactura y los 3 toros aparte. **Cuatro grupos, un viaje, una
+factura.** El peso del camión vive en la carga y deja de estar duplicado en cada venta.
+
+⚠️ El vínculo venta↔factura ya soporta N:M, así que **dos ventas contra una liquidación ya
+funciona hoy**. Lo que falta es la agrupación física.
+
+### El matcheo del romaneo, y su trampa
+El usuario dará los **kg de media res × 2** por animal. De ahí se puede estimar el peso vivo
+(dividiendo por el rinde y sumando el desbaste) y asignar cada línea al animal más parecido.
+
+**Es una estimación, no un dato** — acordado con el usuario: *"salvo que nos den por caravana,
+siempre será nuestra mejor estimación"*. Dos vacas de 420 y 430 kg se cruzan sin que nadie lo note:
+en el total no cambia nada, en el **margen por animal** sí.
+
+Por eso va con **dos condiciones que no se negocian**: mostrar siempre **la diferencia de cada
+asignación**, y **poder corregirla a mano**. Nunca asignar en silencio.
+
+### Cuándo
+**El día del romaneo**, por decisión del usuario: *"lo dejaremos para hacerlo el día del trabajo de
+carga de eso"*. Hasta entonces la venta se completa con lo que hay — kilos de carga, desbaste, CZ —
+y el importe queda vacío si el destino compra a la res, que es lo correcto.
 
 ---
 

@@ -31,7 +31,7 @@
  * después no va a coincidir con la liquidación.
  */
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { Button } from "@/components/ui/button"
@@ -69,9 +69,18 @@ export interface MovimientoVenta {
 }
 
 interface Destino { id: string; nombre: string; compra_en: string }
+interface Carga { id: string; fecha: string; cliente_nombre: string | null; peso_bruto: number | null; peso_tara: number | null }
 interface Animal {
   id: string
   caravana: string
+  /**
+   * La observación del animal — y para muchos **es su única identificación**.
+   *
+   * Las vacas de descarte entran por un cambio de categoría con su razón (*"Vaca Dura que
+   * malparió. Robocop"*) y sin caravana. Sin mostrarla, la lista era una fila de «(sin número)»
+   * indistinguibles y no se podía elegir cuál se vendió. Lo reportó el usuario el 2026-09-04.
+   */
+  observaciones: string | null
   /** La última pesada registrada, si tiene. Precarga el kilo, no lo impone. */
   ultimoPeso: number | null
   fechaPeso: string | null
@@ -111,8 +120,31 @@ export function ModalCompletarVentaHacienda({
   const [elegidos, setElegidos] = useState<Record<string, { sel: boolean; kg: string }>>({})
   /** Animales sin caravana, identificados por una observación. No se les inventa una caravana. */
   const [sueltos, setSueltos] = useState<{ descripcion: string; kg: string }[]>([])
+  /**
+   * 🚛 La CARGA — el viaje del camión, que puede llevar varias ventas.
+   *
+   * El bruto y la tara **ya no viven en la venta**: el usuario cargó 7 vacas y 3 toros en el mismo
+   * camión, y con el pesaje en cada venta no había forma correcta de anotarlo — en las dos, el
+   * camión queda pesado dos veces; en una, la otra queda sin nada.
+   *
+   * Se usa **siempre**, incluso con una sola venta. Dejarlo en la venta "para cuando es una sola"
+   * sería tener dos lugares para el mismo peso y tener que acordarse de cuál usar.
+   */
+  const [cargaId, setCargaId] = useState("")
+  const [cargas, setCargas] = useState<Carga[]>([])
   const [brutoCamion, setBrutoCamion] = useState("")
   const [taraCamion, setTaraCamion] = useState("")
+  /** Los kilos de las OTRAS ventas de la misma carga, para contrastar contra el camión. */
+  const [kgOtrasVentas, setKgOtrasVentas] = useState(0)
+
+  /**
+   * Si el usuario tocó el campo de kilos, no se vuelve a autocompletar.
+   *
+   * El autocompletado anterior se re-aplicaba en cada cambio y devolvía el número después de que el
+   * usuario lo borraba (*"me carga kilos de manera errática"*). Ahora completa **hasta que lo tocás**
+   * — borrarlo cuenta como tocarlo, así que queda borrado.
+   */
+  const kgTocado = useRef(false)
 
   useEffect(() => {
     if (!abierto || !movimiento) return
@@ -123,6 +155,14 @@ export function ModalCompletarVentaHacienda({
     setPrecio(movimiento.precio_por_kg != null ? String(movimiento.precio_por_kg).replace(".", ",") : "")
     setDesbaste(""); setCz(""); setKgCarne(""); setDestinoId(""); setNotas("")
     setElegidos({}); setSueltos([]); setBrutoCamion(""); setTaraCamion("")
+    setCargaId(""); setKgOtrasVentas(0)
+    kgTocado.current = false
+
+    // Las cargas cercanas a la fecha del movimiento: es donde puede estar la de este camión.
+    supabase.schema("productivo").from("cargas")
+      .select("id, fecha, cliente_nombre, peso_bruto, peso_tara")
+      .order("fecha", { ascending: false }).limit(50)
+      .then(({ data }) => setCargas(data ?? []))
 
     /**
      * Los animales que se pueden adjudicar: **sólo los de la categoría de este movimiento**, y
@@ -132,7 +172,7 @@ export function ModalCompletarVentaHacienda({
     if (movimiento.categoria_id) {
       const prod = supabase.schema("productivo")
       prod.from("terneros")
-        .select("id, caravana_interna, caravana_oficial, activo, stock_venta_id")
+        .select("id, caravana_interna, caravana_oficial, observaciones, activo, stock_venta_id")
         .eq("categoria_id", movimiento.categoria_id)
         .then(async ({ data: ts }) => {
           const propios = (ts ?? []).filter(t =>
@@ -150,7 +190,8 @@ export function ModalCompletarVentaHacienda({
             const u = ultima.get(t.id)
             return {
               id: t.id,
-              caravana: t.caravana_interna || t.caravana_oficial || "(sin número)",
+              caravana: t.caravana_interna || t.caravana_oficial || "",
+              observaciones: t.observaciones ?? null,
               ultimoPeso: u?.peso ?? null,
               fechaPeso: u?.fecha ?? null,
             }
@@ -164,13 +205,25 @@ export function ModalCompletarVentaHacienda({
             }
           }
           setElegidos(yaEran)
+
+          /**
+           * Autocompletar los kilos con la suma de los animales — pedido del usuario:
+           * *"los kg totales de vaca, cuando me los pide, asumo que es la suma de individuos"*.
+           *
+           * Sólo si el campo está vacío y el usuario no lo tocó. Cargar el total a mano sigue
+           * valiendo (a veces no hay pesos individuales): por eso completa, no impone.
+           */
+          const suma = Object.values(yaEran).reduce((t, v) => t + (num(v.kg) ?? 0), 0)
+          if (suma > 0 && !kgTocado.current) {
+            setKgCarga(prev => prev.trim() ? prev : String(suma).replace(".", ","))
+          }
         })
     }
 
     // Si la venta ya existe, se traen SUS valores: la ventana edita la venta, no la duplica.
     if (movimiento.stock_venta_id) {
       supabase.schema("productivo").from("stock_ventas")
-        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, peso_bruto_camion, peso_tara_camion, animales_sueltos")
+        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, carga_id, animales_sueltos")
         .eq("id", movimiento.stock_venta_id).single()
         .then(({ data: v }) => {
           if (!v) return
@@ -184,8 +237,7 @@ export function ModalCompletarVentaHacienda({
             setCliente({ cuit: v.cliente_cuit ?? "", nombre: v.cliente_nombre ?? "" })
           }
           setNotas(v.notas ?? "")
-          if (v.peso_bruto_camion != null) setBrutoCamion(String(v.peso_bruto_camion).replace(".", ","))
-          if (v.peso_tara_camion != null) setTaraCamion(String(v.peso_tara_camion).replace(".", ","))
+          if (v.carga_id) setCargaId(v.carga_id)
           setSueltos((v.animales_sueltos ?? []).map((x: any) => ({
             descripcion: x.descripcion ?? "", kg: x.kg != null ? String(x.kg).replace(".", ",") : "",
           })))
@@ -213,16 +265,37 @@ export function ModalCompletarVentaHacienda({
   const netoCamion = num(brutoCamion) != null && num(taraCamion) != null
     ? num(brutoCamion)! - num(taraCamion)! : null
 
+  /*
+   * ⚠️ NO se precargan los kilos solos.
+   *
+   * Había un efecto que los rellenaba con el neto del camión o con la suma de los animales cada vez
+   * que alguno cambiaba. Resultado: el usuario borraba el campo y **el número volvía solo**, con
+   * valores que no había puesto. *"Me carga kilos de carga de manera errática por default."*
+   *
+   * Un default que se re-aplica después de que lo borraste no es un default: es una pelea. Los dos
+   * orígenes siguen a la vista con su botón **«usar»**, así el número lo pone el usuario cuando
+   * quiere y no la pantalla cuando se le ocurre.
+   */
+
   /**
-   * Precarga de los kilos: camión primero, si no la suma de los animales. **Sin pisar lo escrito.**
-   * El camión manda sobre la suma porque es la balanza contra la que se factura; la suma de los
-   * animales es el detalle de quién pesó qué.
+   * Al elegir una carga se traen su pesaje y **los kilos de sus OTRAS ventas**.
+   *
+   * Esos kilos son la mitad que falta del control: el camión pesa el conjunto, así que la
+   * comparación honesta es *neto del camión* contra *esta venta + las otras de la misma carga*.
+   * Contrastar el camión contra una sola venta daría siempre una diferencia enorme y falsa.
    */
   useEffect(() => {
-    if (kgCarga.trim()) return
-    const sugerido = netoCamion ?? (kgAnimales > 0 ? kgAnimales : null)
-    if (sugerido != null) setKgCarga(String(sugerido).replace(".", ","))
-  }, [netoCamion, kgAnimales]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!cargaId) { setKgOtrasVentas(0); return }
+    const c = cargas.find(x => x.id === cargaId)
+    setBrutoCamion(c?.peso_bruto != null ? String(c.peso_bruto).replace(".", ",") : "")
+    setTaraCamion(c?.peso_tara != null ? String(c.peso_tara).replace(".", ",") : "")
+    supabase.schema("productivo").from("stock_ventas")
+      .select("id, kg_totales").eq("carga_id", cargaId)
+      .then(({ data }) => {
+        const otras = (data ?? []).filter(v => v.id !== movimiento?.stock_venta_id)
+        setKgOtrasVentas(otras.reduce((t, v) => t + (Number(v.kg_totales) || 0), 0))
+      })
+  }, [cargaId, cargas]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const destino = destinos.find(d => d.id === destinoId)
   const alaRes = destino?.compra_en === "res"
@@ -256,6 +329,56 @@ export function ModalCompletarVentaHacienda({
     setGuardando(true)
     try {
       const prod = supabase.schema("productivo")
+
+      /**
+       * 🚛 La carga: se crea si no existe, y se le guarda el pesaje.
+       *
+       * El pesaje vive acá y **sólo acá**, así que da igual desde cuál de las ventas del camión se
+       * cargue: se escribe en el mismo lugar. Ése era el punto del usuario —*"tengo 2 lugares donde
+       * cargarlo y se debe aplicar al conjunto"*.
+       */
+      let cargaFinal = cargaId
+      if (cargaFinal) {
+        await prod.from("cargas").update({
+          peso_bruto: num(brutoCamion), peso_tara: num(taraCamion),
+          destino_id: destinoId || null,
+          cliente_cuit: cliente.cuit || null, cliente_nombre: cliente.nombre || null,
+        }).eq("id", cargaFinal)
+      } else if (num(brutoCamion) != null || num(taraCamion) != null) {
+        // Se pesó el camión y todavía no hay carga: se crea una, con esta venta adentro.
+        const { data: nueva, error: eC } = await prod.from("cargas").insert({
+          fecha: movimiento.fecha,
+          cliente_cuit: cliente.cuit || null, cliente_nombre: cliente.nombre || null,
+          destino_id: destinoId || null,
+          peso_bruto: num(brutoCamion), peso_tara: num(taraCamion),
+        }).select("id").single()
+        if (eC) throw eC
+        cargaFinal = nueva!.id
+      }
+
+      /**
+       * 👥 La contraparte va al MAESTRO — § Contrapartes de CLAUDE.md.
+       *
+       * El botón «Cargar nuevo» del selector sólo escribe los dos campos en pantalla: **no da de
+       * alta a nadie**. Por eso «Arrebeef» se podía tipear una vez y a la siguiente no aparecía en
+       * la lista — nunca había llegado a `proveedores`. Lo reportó el usuario el 2026-09-04.
+       *
+       * Se hace **upsert, nunca sólo UPDATE**: si la contraparte no existe, un UPDATE matchea 0
+       * filas, **no falla**, y el hueco queda invisible. Y si ya existe **no se le pisa la razón
+       * social** — sólo se le enciende el flag que falte.
+       */
+      if (cliente.cuit.trim()) {
+        const cuit = cliente.cuit.replace(/\D/g, "")
+        const { data: yaEsta } = await supabase
+          .from("proveedores").select("cuit, es_cliente").eq("cuit", cuit).maybeSingle()
+        if (!yaEsta) {
+          await supabase.from("proveedores").insert({
+            cuit, razon_social: cliente.nombre || cuit, es_cliente: true, es_proveedor: false,
+          })
+        } else if (!yaEsta.es_cliente) {
+          await supabase.from("proveedores").update({ es_cliente: true }).eq("cuit", cuit)
+        }
+      }
       const datosVenta = {
         categoria_id: movimiento.categoria_id,
         fecha_venta: movimiento.fecha,
@@ -271,8 +394,7 @@ export function ModalCompletarVentaHacienda({
         cliente_nombre: cliente.nombre || null,
         cliente_cuit: cliente.cuit || null,
         notas: notas || null,
-        peso_bruto_camion: num(brutoCamion),
-        peso_tara_camion: num(taraCamion),
+        carga_id: cargaFinal || null,
         animales_sueltos: sueltos
           .filter(x => x.descripcion.trim() || x.kg.trim())
           .map(x => ({ descripcion: x.descripcion.trim(), kg: num(x.kg) })),
@@ -391,6 +513,17 @@ export function ModalCompletarVentaHacienda({
               value={cliente}
               onChange={setCliente}
             />
+            {/*
+              Un nombre sin CUIT parece elegido y no lo está: viene como texto del movimiento viejo.
+              Y sin CUIT no hay match posible con la factura, que es el paso siguiente del circuito.
+            */}
+            {cliente.nombre && !cliente.cuit.trim() && (
+              <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-4 text-amber-800">
+                ⚠️ «{cliente.nombre}» viene como <b>texto</b>, no del maestro: le falta el CUIT.
+                Buscalo arriba, o tocá <b>«No aparece — cargar nuevo cliente»</b> y poné el CUIT.
+                Sin CUIT esta venta no se va a poder cruzar con su factura.
+              </p>
+            )}
           </div>
 
           <div>
@@ -411,8 +544,9 @@ export function ModalCompletarVentaHacienda({
 
           <div>
             <Label className="text-xs">Kilos de carga (vivos)</Label>
+            {/* Tocarlo apaga el autocompletado. Borrarlo cuenta como tocarlo: queda borrado. */}
             <Input className="mt-1" type="text" placeholder="0,00" value={kgCarga}
-              onChange={e => setKgCarga(e.target.value)} />
+              onChange={e => { kgTocado.current = true; setKgCarga(e.target.value) }} />
           </div>
 
           <div>
@@ -450,6 +584,12 @@ export function ModalCompletarVentaHacienda({
             <div className="flex items-center justify-between border-b bg-gray-50 px-3 py-1.5">
               <span className="text-xs font-medium">
                 🐮 Animales — {cabezas} de {movimiento.cantidad}
+                {kgAnimales > 0 && (
+                  <button type="button" className="ml-2 text-[10px] font-normal text-blue-600 hover:underline"
+                    onClick={() => setKgCarga(String(kgAnimales).replace(".", ","))}>
+                    usar sus kilos
+                  </button>
+                )}
                 {cabezas !== movimiento.cantidad && (
                   <span className="ml-2 text-amber-700">
                     ⚠ el movimiento dice {movimiento.cantidad}
@@ -476,8 +616,24 @@ export function ModalCompletarVentaHacienda({
                           },
                         }))}
                       />
-                      <span className="flex-1 font-mono">{a.caravana}</span>
-                      <span className="text-[10px] text-gray-400">
+                      {/*
+                        La caravana si la tiene; si no, la observación — que para las vacas de
+                        descarte ES su identificación. Sin esto la lista eran varios «(sin número)»
+                        indistinguibles y no se podía elegir cuál se vendió.
+                      */}
+                      <span className="min-w-0 flex-1">
+                        {a.caravana
+                          ? <>
+                              <span className="font-mono">{a.caravana}</span>
+                              {a.observaciones && (
+                                <span className="ml-2 text-[10px] text-gray-500">{a.observaciones}</span>
+                              )}
+                            </>
+                          : <span className="text-gray-700">
+                              {a.observaciones || <span className="italic text-gray-400">sin identificar</span>}
+                            </span>}
+                      </span>
+                      <span className="whitespace-nowrap text-[10px] text-gray-400">
                         {a.ultimoPeso != null ? `última: ${fmt(a.ultimoPeso)} kg` : "sin pesada"}
                       </span>
                       <Input
@@ -519,6 +675,29 @@ export function ModalCompletarVentaHacienda({
           </div>
         )}
 
+        {/* ── La carga: el viaje del camión ───────────────────────────────── */}
+        <div>
+          <Label className="text-xs">Carga (camión)</Label>
+          <select
+            className="mt-1 h-9 w-full rounded border px-2 text-sm"
+            value={cargaId}
+            onChange={e => setCargaId(e.target.value)}
+          >
+            <option value="">— nueva carga para esta venta —</option>
+            {cargas.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.fecha.split("-").reverse().join("/")} · {c.cliente_nombre ?? "sin cliente"}
+                {c.peso_bruto != null && c.peso_tara != null
+                  ? ` · neto ${fmt(Number(c.peso_bruto) - Number(c.peso_tara))} kg` : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[10px] leading-3 text-gray-500">
+            Si este camión llevó <b>varias ventas</b> —vacas y toros juntos, por ejemplo— elegí acá la
+            misma carga en las dos. El pesaje se guarda <b>una sola vez</b>, en la carga.
+          </p>
+        </div>
+
         {/* ── Pesaje del camión ───────────────────────────────────────────── */}
         <div className="grid grid-cols-3 gap-3">
           <div>
@@ -543,17 +722,27 @@ export function ModalCompletarVentaHacienda({
           </div>
         </div>
 
-        {/* El mismo número por dos caminos: si no coinciden, se muestra la diferencia. */}
+        {/*
+          El mismo número por dos caminos: si no coinciden, se muestra la diferencia.
+          ⚠️ Contra el camión se compara **esta venta + las otras de la misma carga**: el camión
+          pesa el conjunto, así que medirlo contra una sola venta daría una diferencia enorme y
+          falsa cada vez que el viaje lleva más de una.
+        */}
         {kg != null && (kgAnimales > 0 || netoCamion != null) && (() => {
           const difAnim = kgAnimales > 0 ? kg - kgAnimales : null
-          const difCam = netoCamion != null ? kg - netoCamion : null
+          const difCam = netoCamion != null ? (kg + kgOtrasVentas) - netoCamion : null
           const hayDif = (difAnim != null && Math.abs(difAnim) > 0.5) || (difCam != null && Math.abs(difCam) > 0.5)
           return (
             <div className={`rounded border px-3 py-1.5 text-[11px] ${hayDif ? "border-amber-300 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
               {hayDif ? "⚠️ " : "✓ "}
               Kilos de carga <b>{fmt(kg)}</b>
               {difAnim != null && <> · animales {fmt(kgAnimales)} <b>({difAnim >= 0 ? "+" : ""}{fmt(difAnim)})</b></>}
-              {difCam != null && <> · camión {fmt(netoCamion)} <b>({difCam >= 0 ? "+" : ""}{fmt(difCam)})</b></>}
+              {kgOtrasVentas > 0 && <> · otras ventas de la carga {fmt(kgOtrasVentas)}</>}
+              {difCam != null && (
+                <> · camión {fmt(netoCamion)} <b>({difCam >= 0 ? "+" : ""}{fmt(difCam)})</b>
+                  {kgOtrasVentas > 0 && <span className="opacity-70"> — comparando el total de la carga</span>}
+                </>
+              )}
               {!hayDif && " — cierran"}
             </div>
           )

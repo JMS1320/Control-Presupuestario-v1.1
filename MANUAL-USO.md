@@ -293,6 +293,93 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
 
+## 🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*
+
+**Para qué sirve.** Registrar una venta desde donde es más natural pensarla: *"vendí estas 7 vacas
+de descarte"*. No hace falta que salgan de un lote.
+
+> 🔑 **Un movimiento de venta ahora crea también la venta comercial.** Antes sólo daba de baja
+> los animales, y esos animales no entraban a facturación, cobro ni presupuesto.
+
+### Cómo se usa
+1. **Productivo → Hacienda → Ver Movimientos**.
+2. **+ Nuevo Movimiento**, tipo **Venta**. Aparece un aviso verde recordando que se va a crear la
+   venta. Cargá lo que tengas; lo que falte se completa después.
+3. En la grilla, cada venta muestra su estado a la derecha:
+   - **⚠ sin venta** (ámbar) — dio de baja animales pero **no entra al circuito comercial**
+   - **💰 venta** — ya la tiene
+4. Tocando ese botón se abre la venta entera para completarla.
+
+### Completar la venta
+Se carga **lo que se sabe al momento de la venta**: kilos vivos de carga, desbaste, CZ, cliente,
+destino y precio si ya se acordó. Lo demás llega después.
+
+**El cliente sale del maestro.** Si no está, tocá **«No aparece — cargar nuevo cliente»** y poné el
+CUIT. **Sin CUIT esa venta no se va a poder cruzar con su factura**, así que no lo saltees.
+
+**El destino define si el precio es a la res o al vivo** — Arrebeef compra a la res, Cañuelas al
+vivo. Por eso el precio dice *"$/kg res"* o *"$/kg vivo"* según cuál elijas.
+
+> ⚠️ **Si el destino compra a la res y todavía no llegó el romaneo, el importe queda vacío.** Está
+> bien: falta saber cuántos kilos de carne dieron. Es preferible a un número inventado con un rinde
+> estimado que después no va a coincidir con la liquidación.
+
+### Las caravanas
+Se listan **los animales de esa categoría** — una venta de vacas de descarte nunca te va a mostrar
+terneros de recría. Tildás los que se fueron.
+
+- El **kilo de cada uno** se precarga con su última pesada y **se puede pisar**: si el día de la
+  carga pesaste en el campo, ponés ese.
+- Los que **no tienen caravana** se muestran por su observación (*"Vaca Dura que malparió. Robocop"*)
+  — para las de descarte, esa razón **es** su identificación.
+- Y los que ni siquiera existen como individuo se agregan con **«+ agregar un animal sin caravana»**.
+
+### 🚛 La carga: el camión se pesa UNA vez
+Si el camión llevó **varias ventas** —vacas y toros juntos— no cargues el pesaje dos veces:
+
+1. En la primera venta dejá **«nueva carga»**, poné **bruto y tara**, guardá.
+2. En la segunda, **elegí esa misma carga** en el desplegable. El pesaje **se trae solo**.
+
+Abajo aparece el control con los tres orígenes del kilaje:
+
+```
+✓ Kilos de carga 3.640 · animales 3.640 (0) · otras ventas de la carga 2.661
+  · camión 6.500 (+199) — comparando el total de la carga
+```
+
+Verde si cierran, ámbar si no. **La diferencia contra el camión no es un error**: son dos balanzas
+distintas, y ese desvío repetido a lo largo de varias cargas es lo que después te dice cuál está
+descalibrada.
+
+⚠️ *Sin probar todavía → `A-TEST-86`, `A-TEST-87`*
+
+---
+
+## 🐄 Identificar animales de un cambio de categoría *(nuevo 2026-09-04)*
+
+**El problema que resuelve.** Cuando movés vacas al CUT y sólo escribís una observación
+—*"Vaca que dejó al ternero"*— ese texto queda **en el movimiento**, no en un animal. No aparece en
+la planilla ni se puede adjudicar a una venta.
+
+### Cómo se usa
+En **Productivo → Hacienda → Ver Movimientos**, cada fila de **Cambio de Categoría** muestra:
+
+- **⚠ falta identificar N** (ámbar) — hay cabezas sin individuo
+- **🐄 N identificados** (gris) — ya está
+
+Tocás el botón y se abre una grilla con **una fila por cabeza que falte**, y **la observación que ya
+escribiste viene precargada** como razón. Le agregás caravana y pelo si los tenés, y guardás. Si no
+tenés caravana, guardá igual: queda identificado por su razón.
+
+### Al cargar un cambio de categoría nuevo
+En el modal, tocá **«identificarlos uno por uno»** y se abren tantas filas como cabezas estés
+moviendo. **La razón va por animal**: una se descarta por machorra y la de al lado por diarrea, y
+ése es justo el dato por el que se lleva la planilla.
+
+⚠️ *Sin probar todavía → `A-TEST-86`*
+
+---
+
 ## 🐄 Ventas de hacienda — el circuito completo 🟡 *(nuevo 2026-08-05, sin testear)*
 
 **Dónde:** Ingresos → **Ganadería**. Separado por **actividad** y por **campaña**.

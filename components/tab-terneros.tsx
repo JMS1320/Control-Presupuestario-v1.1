@@ -1370,14 +1370,26 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                             ? <span className={inactivo ? 'text-red-400' : 'text-gray-500'}>{ganPaP.toFixed(2).replace(".", ",")}</span>
                             : <span className="text-gray-300">—</span>}
                         </TableCell>
-                        <TableCell className={`text-xs max-w-[160px] truncate ${inactivo ? 'text-red-400 line-through' : 'text-gray-500'}`}>
+                        {/*
+                          La observación se ve ENTERA, en varias líneas si hace falta.
+                          Estaba cortada a 160px con `truncate` y sin `title`, así que el texto
+                          sobrante no se podía leer de ninguna manera. Y en las vacas de descarte
+                          esa observación **es la identificación del animal** —"Vaca Dura que
+                          malparió. Robocop"—, no un comentario al margen. Lo pidió el usuario
+                          el 2026-09-04.
+                        */}
+                        <TableCell
+                          className={`text-xs max-w-[260px] whitespace-normal break-words leading-tight ${inactivo ? 'text-red-400 line-through' : 'text-gray-500'}`}
+                          title={t.observaciones ?? ''}
+                        >
                           {t.observaciones ?? ''}
                         </TableCell>
                         <TableCell className="text-xs">
                           {inactivo ? (
                             <span className="text-red-600 font-medium" title={t.motivo_baja ?? 'Mortandad'}>
                               💀 {t.fecha_baja ? formatFecha(t.fecha_baja) : 'Baja'}
-                              {t.motivo_baja && <span className="block text-[10px] text-red-400 truncate max-w-[100px]">{t.motivo_baja}</span>}
+                              {/* El motivo de baja tampoco se corta: es el porqué, y cortado no dice nada. */}
+                              {t.motivo_baja && <span className="block max-w-[140px] whitespace-normal break-words text-[10px] leading-tight text-red-400" title={t.motivo_baja}>{t.motivo_baja}</span>}
                             </span>
                           ) : (
                             <span className="text-green-600 text-[10px]">Activo</span>
