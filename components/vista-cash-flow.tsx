@@ -14,7 +14,7 @@ import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
-import { generarQuincenaSicore } from "@/lib/sicore/quincena"
+import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
@@ -1930,8 +1930,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
   const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
     try {
+      // 🐞 A-BUG-193 — busca en **las dos quincenas del MES**, no sólo en la del pago.
+      // El mínimo no imponible se consume una vez por mes (RG 830): si ya se retuvo en la 1ra
+      // quincena, en la 2da el mínimo **ya está consumido** y no corresponde darlo de nuevo.
       const { data } = await supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1)
+        .select('id').eq('cuit', cuit).in('sicore', quincenasDelMes(quincena)).limit(1)
       return !!(data && data.length > 0)
     } catch { return false }
   }
@@ -1949,7 +1952,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
       let suma = 0
       for (const c of (data ?? []) as any[]) {
-        if (!c.fecha_pago || generarQuincenaSicore(c.fecha_pago) !== quincena) continue
+        // 🐞 A-BUG-193 — el período del mínimo es el MES. Antes comparaba la quincena entera,
+        // así que lo pagado en la 1ra no consumía mínimo para la 2da y se otorgaba dos veces.
+        if (!c.fecha_pago || !mismoPeriodoDelMinimo(c.fecha_pago, quincena)) continue
         const tc = c.tc_pago ?? c.tipo_cambio ?? 1
         const neto = ((c.imp_neto_gravado || 0) + (c.imp_neto_no_gravado || 0) + (c.imp_op_exentas || 0)) * tc
         // ⚠️ El descuento pronto pago **baja el neto realmente pagado**, así que consume menos
@@ -2698,11 +2703,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Verificar retención previa en AMBAS tablas (facturas + anticipos)
   const verificarRetencionPreviaAnticipo = async (cuit: string, quincena: string): Promise<boolean> => {
+    // 🐞 A-BUG-193 — también acá **las dos quincenas del MES**, no sólo la del pago.
+    // 🧨 Y este camino es el que más importaba: **los dos casos medidos tienen el segundo pago como
+    //    ANTICIPO** (MASSAGLIA 30/07, STRINGHINI 29/05). Arreglar sólo el de facturas habría dejado
+    //    vivo justo el que produjo el error (§ MODULO_CONCILIACION 30.9.5).
+    const delMes = quincenasDelMes(quincena)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
       supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
+        .select('id').eq('cuit', cuit).in('sicore', delMes).limit(1),
       supabase.from('anticipos_proveedores')
-        .select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).limit(1)
+        .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).limit(1)
     ])
     return (d1 && d1.length > 0) || (d2 && d2.length > 0)
   }

@@ -48,6 +48,7 @@ import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
+import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -3360,7 +3361,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
-  // Verificar si ya se retuvo a este proveedor en esta quincena
+  // Verificar si ya se retuvo a este proveedor en el MES de esta quincena.
+  // 🐞 A-BUG-193 — el mínimo no imponible se consume una vez por mes (RG 830), así que si ya se
+  // retuvo en la otra quincena del mismo mes, acá **no** corresponde volver a darlo.
   const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
     try {
       const { data, error } = await supabase
@@ -3368,7 +3371,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .from('comprobantes_arca')
         .select('id')
         .eq('cuit', cuit)
-        .eq('sicore', quincena)
+        .in('sicore', quincenasDelMes(quincena))
         .limit(1)
       
       if (error) {
@@ -4379,9 +4382,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const cuit = anticipoSicoreEnProceso.cuit_proveedor
 
     // Verificar retención previa en ambas tablas
+    // 🐞 A-BUG-193 — las dos quincenas del MES (ver `verificarRetencionPrevia` arriba).
+    const delMes = quincenasDelMes(quincena)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
-      supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).neq('id', anticipoSicoreEnProceso.id).limit(1)
+      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).in('sicore', delMes).limit(1),
+      supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).neq('id', anticipoSicoreEnProceso.id).limit(1)
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
 

@@ -13,3 +13,39 @@ export function generarQuincenaSicore(fecha: string): string {
   const dia = parseInt(d ?? '01', 10) || 1
   return `${yy}-${mm} - ${dia <= 15 ? '1ra' : '2da'}`
 }
+
+/**
+ * 📅 **El PERÍODO DEL MÍNIMO es el MES, no la quincena** — [A-BUG-193](../../PENDIENTES.md#a-bug-193).
+ *
+ * La RG 830 fija el importe no sujeto a retención **por mes calendario y por sujeto retenido**: si
+ * hay varios pagos al mismo proveedor en el mismo mes, **se acumulan y el mínimo se resta una sola
+ * vez**. La quincena es el período de **información y depósito** del SICORE — otra cosa.
+ *
+ * 🧨 **El sistema las trataba como una sola** y reiniciaba el mínimo cada quincena. Medido sobre la
+ * base entera: **MASSAGLIA 07/2026 y STRINGHINI 05/2026** recibieron el mínimo de Servicios
+ * ($67.170) **dos veces en el mismo mes** — $2.686,80 retenidos de menos. Confirmado por el usuario
+ * ([A-DEC-26](../../PENDIENTES.md#a-dec-26)).
+ *
+ * 📌 **Por qué alcanza con el prefijo**: la quincena se escribe `"YY-MM - 1ra|2da"`, así que sus
+ * primeros 5 caracteres **son** el período mensual. No hay que reparsear fechas ni volver a la BD.
+ */
+export function periodoMensualDeQuincena(quincena: string): string {
+  return (quincena ?? '').slice(0, 5)
+}
+
+/** Las dos quincenas del mes al que pertenece `quincena`. Para buscar los pagos del período. */
+export function quincenasDelMes(quincena: string): string[] {
+  const p = periodoMensualDeQuincena(quincena)
+  return [`${p} - 1ra`, `${p} - 2da`]
+}
+
+/**
+ * ¿El pago de `fecha` cae en el mismo período del mínimo que `quincena`?
+ *
+ * ⚠️ **Compara MESES**, que es el cambio de A-BUG-193: antes se comparaba la quincena entera y por
+ * eso un pago de la 1ra no contaba para la 2da.
+ */
+export function mismoPeriodoDelMinimo(fecha: string, quincena: string): boolean {
+  if (!fecha || !quincena) return false
+  return periodoMensualDeQuincena(generarQuincenaSicore(fecha)) === periodoMensualDeQuincena(quincena)
+}
