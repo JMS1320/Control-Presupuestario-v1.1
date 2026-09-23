@@ -3638,7 +3638,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         quincena
       })
 
-      // PRIMERO: Verificar retención previa en quincena
+      // PRIMERO: ¿ya se retuvo a este proveedor en el MES? (A-BUG-193 — antes miraba sólo la quincena)
       const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
       console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
 
@@ -3646,7 +3646,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       let minimoAplicado = 0
 
       if (!yaRetuvo) {
-        // Primera retención: verificar si supera mínimo específico del tipo
+        // Primera retención DEL MES: verificar si supera el mínimo específico del tipo
         if (netoFactura <= tipo.minimo_no_imponible) {
           // No corresponde retención pero dar opción de aplicar descuento pronto pago
           setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
@@ -3658,15 +3658,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           setPasoSicore('calculo')
           return
         }
-        // Descontar mínimo no imponible para primera retención
+        // Descontar mínimo no imponible: es la primera retención del mes
         baseImponible = netoFactura - tipo.minimo_no_imponible
         minimoAplicado = tipo.minimo_no_imponible
-        console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
+        console.log('📋 SICORE: Primera retención del MES - descuenta mínimo')
       } else {
         // Retención adicional: retener sobre monto completo (sin aplicar mínimo)
         baseImponible = netoFactura
         minimoAplicado = 0
-        console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
+        console.log('📋 SICORE: Retención adicional del MES - sin descuento mínimo')
       }
 
       const retencionCalculada = baseImponible * tipo.porcentaje_retencion
@@ -4477,7 +4477,23 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // ── Registrar en sicore_retenciones ──
     const totalPagadoAnt = Math.round(((anticipoSicoreEnProceso.monto || 0) - descuentoAnt) * 100) / 100
-    const baseImpAnt = Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
+    /**
+     * 🐞 **A-BUG-194 — lo que se GRABA tiene que ser lo que se CALCULÓ.**
+     *
+     * Acá se recalculaba la base restando **siempre** el mínimo del régimen, ignorando
+     * `datosSicoreAnt`, que es donde vive el cálculo real: cuando ya se retuvo en el período, el
+     * modal **no** aplica mínimo (`minimoAplicado: 0`) y retiene sobre el neto completo.
+     *
+     * 🧨 **La retención se guardaba bien y la base no**, así que el registro quedaba
+     * contradiciéndose: `base × alícuota ≠ retención`. Y esa base es la que viaja al **TXT de
+     * ARCA**.
+     *
+     * 📌 **Hasta [A-BUG-193](../PENDIENTES.md#a-bug-193) esto no se notaba**, porque el mínimo se
+     * reiniciaba cada quincena y casi nunca había retención adicional: los dos números coincidían
+     * por accidente. **Arreglar el período habría destapado esto**, no al revés.
+     */
+    const baseImpAnt = datosSicoreAnt?.baseImponible ?? Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
+    const minimoAnt = datosSicoreAnt?.minimoAplicado ?? (tipoSicoreAnt.minimo_no_imponible || 0)
     await registrarEnSicoreRetenciones({
       origen: 'anticipo',
       quincena,
@@ -4491,7 +4507,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       neto_gravado_pagado: neto,
       total_pagado: totalPagadoAnt,
       descuento_aplicado: descuentoAnt,
-      minimo_no_imponible: tipoSicoreAnt.minimo_no_imponible,
+      minimo_no_imponible: minimoAnt,   // A-BUG-194: el del cálculo, no el del régimen
       base_imponible: baseImpAnt,
       retencion: Math.round(montoSicoreAnt * 100) / 100,
       pago: saldoFinal,
