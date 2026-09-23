@@ -3491,6 +3491,27 @@ apunte ahí rebota a producción en vez de golpear la otra app. Los valores que 
 ⚠️ **El control no cubre `inviteUserByEmail` ni `resetPasswordForEmail`**: esas no devuelven el
 link, sólo mandan el mail, así que no hay con qué comparar. Ahí la única red es la configuración.
 
+### Segundo caso real, 2026-09-23 — y lo que enseña sobre el fallback
+
+José entraba con Google desde **su propio preview de Vercel** —tiene el repo deployado en su cuenta,
+`control-presu-git-…-josemartinezsobrado-gmailcoms-projects.vercel.app`— y terminaba en
+`/no-access`. Google lo autenticaba bien (su identidad quedó tocada en la base), pero ese host no
+estaba en las Redirect URLs, así que Supabase lo mandaba al Site URL.
+
+⚠️ **Y el Site URL es producción, que corre código del 12/09/2025**: sin `/login`, sin
+`/auth/callback` (404), con todo redirigido a `/no-access`. O sea que **el fallback apunta a un
+sitio que no sabe atender un login** — cualquier destino no autorizado termina ahí y el síntoma es
+siempre el mismo cartel, que no dice nada del problema real. Mientras `main` no tenga este código,
+el fallback es un callejón.
+
+Se agregaron el host exacto y el comodín
+`https://control-presu-*-josemartinezsobrado-gmailcoms-projects.vercel.app/**`, y se verificó que
+las cinco direcciones anteriores siguen funcionando.
+
+**Lección para la próxima**: la allow-list no es "producción + local". Es **toda superficie desde la
+que alguien entra**, incluidas las cuentas de Vercel de otras personas. Cada una hay que agregarla,
+y no hay aviso cuando falta: sale `/no-access`.
+
 **SIN TESTEAR** → [A-TEST-97](#a-test-97)
 
 ---
