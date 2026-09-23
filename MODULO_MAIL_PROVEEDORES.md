@@ -338,3 +338,50 @@ pago, porque **`mails_pago` no guarda contra qué pago se generó**: `grupo_pago
 esto sería una consulta exacta en vez de una aproximación por fecha**. Mientras tanto, la lista
 puede tener falsos positivos si un detalle se generó mucho después del pago.
 → [A-FEAT-147](PENDIENTES.md#a-feat-147).
+
+## 8. 📄 EL PAPEL DEL DETALLE DE PAGO — qué se dice, dónde y con qué letras
+
+*Escrito 2026-09-22 después de leer el PDF real del pago de ALCORTA del 10/06 →
+[A-BUG-190](PENDIENTES.md#a-bug-190). Los tres defectos estaban en **un solo renglón**.*
+
+### 8.1 · Un aviso, una vez, y al pie
+
+El papel tenía **tres formas de decir lo mismo** cuando el pago no cerraba contra lo facturado:
+
+| Dónde | Qué decía |
+|---|---|
+| Entre las dos tablas | *«Se cancela $4.480,00 MÁS que el total facturado»* ← **el bueno** |
+| Última fila del desglose | **Pagado a cuenta · $4.480,00** ← correcto, es un dato |
+| Bajo el desglose, en rojo | *«el desglose ($4.335.098,06) no coincide con el total de factura ($4.330.618,06)»* ← **ruido** |
+
+> **El aviso del control va SOLO y va al PIE**, después del desglose. El cartel de descuadre queda
+> como red, para cuando no hubo control que comparar.
+
+**Por qué al pie y no arriba**, que es lo que parecía natural: el aviso **explica la última fila de
+esa tabla**. Y además arriba **no entraba**: el título *«Desglose del pago»* se posiciona desde
+`lastAutoTable`, que no sabe que alguien escribió un renglón suelto en el medio, así que **lo tapaba**.
+
+📌 Y el cartel de descuadre hablaba en el idioma equivocado: *«el desglose no coincide»* describe una
+suma; *«se cancela $4.480 más que lo facturado»* describe **lo que pasó con la plata**. Al proveedor
+le sirve el segundo (§ `CLAUDE.md` 🗣️ *el glosario es el de la app*).
+
+### 8.2 · 🛑 En este PDF sólo se escribe LATIN-1
+
+> **Nada de emoji ni de símbolos técnicos en `doc.text()`.** `⚠`, `✓`, `→` y compañía **no existen
+> en WinAnsiEncoding**, que es lo que usan las fuentes estándar de jsPDF, y meter uno **rompe la
+> codificación de la línea entera**: sale `& S e   c a n c e l a   $ 4 . 4 8 0 , 0 0 …`, letra por
+> letra. Se escribe `ATENCION:` en texto plano.
+
+🧨 **Y esto ya había pasado.** [A-BUG-150](PENDIENTES.md#a-bug-150) lo arregló en el cartel de
+descuadre… y **dejó vivo el gemelo** en el aviso del control, doce líneas más arriba del mismo
+archivo. Es el modo de falla de § 30.9.5 de `MODULO_CONCILIACION.md` —*se arregla un camino de los
+dos*— en su versión más barata de evitar: **los dos estaban en la misma pantalla del editor**.
+
+⚠️ **Y queda uno suelto**: `components/vista-facturas-arca.tsx` usa `⚠️` dentro de `doc.text()` en
+dos líneas del export de facturas. Mismo defecto, otro papel, sin tocar.
+
+### 8.3 · Un pago de más NO frena la emisión
+
+Vale la § 🚦 de `CLAUDE.md`: pagar de más o de menos es una **discrepancia** —tiene explicación de
+negocio— así que el papel **avisa y se emite igual**. Lo que frenaría es que las líneas no sumen el
+total que el propio comprobante imprime, porque eso sí es el sistema contradiciéndose.

@@ -570,6 +570,34 @@ saldo impago inexistente.
 (antes eran dos códigos distintos, ahora es uno solo), y chequeá que la última columna dé igual al
 **Total Factura**. Con un pago sin descuento, nada tiene que haber cambiado.
 
+### 💸 Cuando transferiste de MÁS (o de menos) que la factura
+
+*Caso real: ALCORTA 10/06/2026 — el banco debitó $4.165.672,09 y las tres facturas sumaban
+$4.161.192,09.*
+
+**Qué hacer:** en el Cash Flow, editá el **monto a pagar** de una de las facturas del grupo y poné lo
+que realmente saliste a transferir. El campo acepta un importe distinto al de la factura justamente
+para esto.
+
+**Qué pasa entonces, sin que toques nada más:**
+
+| | |
+|---|---|
+| El renglón de la transferencia del desglose | pasa a decir **lo realmente transferido** |
+| Aparece una última fila | **Pagado a cuenta $X** (o **Saldo pendiente** si pagaste de menos) |
+| Al pie, en rojo | *«ATENCION: Se cancela $X MÁS que el total facturado»* |
+| El movimiento del banco | ahora **cierra exacto** y se puede conciliar |
+
+🛑 **Mirá que no se te mueva la retención.** Si la quincena SICORE ya está cerrada, el certificado
+está emitido y ese número no se toca: el proveedor se toma el crédito por el importe certificado.
+
+📌 **El detalle se emite igual**: un pago de más no lo frena, sólo lo avisa — es una decisión tuya y
+el papel la deja escrita (§ `CLAUDE.md` 🚦).
+
+⚠️ **Esto es un arreglo de registro, no el destino final.** Lo transferido de más es un **saldo a
+favor** contra el proveedor y debería poder agruparse como tal junto a las facturas
+→ [A-FEAT-168](PENDIENTES.md#a-feat-168).
+
 ### Panel de revisión + envío (Cash Flow → "✉ Mails de detalle")
 - Lista la cola por estado (pendiente / borrador / enviado / error). Podés **editar** destinatario, asunto y cuerpo, togglear los adjuntos (detalle / retención) y **borrar**.
 - **Guardar** = solo persiste tus ediciones (no envía).

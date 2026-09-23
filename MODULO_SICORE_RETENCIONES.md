@@ -457,6 +457,51 @@ nunca a la más vieja.
 
 ---
 
+## 🔍 El mínimo consumido DOS VECES — y la firma que lo delata
+
+*Caso real verificado 2026-09-22 sobre el pago de ALCORTA del 10/06/2026 → [A-DAT-55](PENDIENTES.md#a-dat-55).*
+
+> **El mínimo no imponible se consume UNA sola vez por proveedor y por mes. Si se aplica dos veces,
+> la diferencia es siempre el mismo número: `alícuota × mínimo`.**
+
+Para Bienes eso da **2 % × $224.000 = $4.480,00**, y ese importe es una **firma reconocible**: cuando
+una transferencia difiere del registro en exactamente $4.480, no hay que buscar nada más.
+
+**El caso, con los números:**
+
+| Comprobante | Neto | Mínimo aplicado | Base | Retención |
+|---|---|---|---|---|
+| FC 10-6115 | $882.946,81 | **$224.000** (lo consume entero) | $658.946,81 | $13.178,94 |
+| FC 11-2734 | $976.320,00 | 0 | $976.320,00 | $19.526,40 |
+| FC 10-6152 | $1.633.768,56 *(neto tras el 5 % de descuento)* | 0 | $1.633.768,56 | $32.675,37 |
+| | | | **TOTAL** | **$65.380,71** |
+
+El detalle que se le envió al proveedor llevaba **$60.900,71**, porque la FC 6152 figuraba con
+$28.195,37 — el mínimo descontado por segunda vez. **Se transfirieron $4.480,00 de más.**
+
+### Las dos cosas que el caso enseña
+
+**1 · El sistema se corrigió solo, y dejó rastro.** El certificado `00002026000030` quedó **anulado**
+y el vigente es el `00002026000034`, ya con los $65.380,71. La tabla guarda las dos versiones, así
+que **se puede reconstruir qué se informó en cada momento** — que es exactamente para lo que sirve
+no borrar.
+
+**2 · 🛑 La retención certificada NO se toca para que cierre la resta.** Es la tentación obvia
+—bajarla a $60.900,71 y que el pago cuadre— y está mal por tres motivos: la quincena está cerrada, el
+proveedor se toma el crédito por el importe del certificado, y el TXT ya declarado dice ese número.
+
+> 🔑 **Quien pagó la diferencia fue la empresa.** Al proveedor se le certificó $65.380,71 y se le
+> descontó $60.900,71 de la transferencia: los $4.480 salieron del bolsillo propio y son un
+> **crédito contra el proveedor**, no un gasto. Van como saldo a favor, nunca adentro de la factura
+> → [A-FEAT-168](PENDIENTES.md#a-feat-168).
+
+### Cómo se detecta sin que nadie avise
+
+El cruce que lo encontró es el de la § 🔁 *el mismo número por dos caminos* de `CLAUDE.md`: **el
+extracto del banco contra el Cash Flow**, transferencia por transferencia. De cinco pagos a Alcorta,
+tres coincidían al centavo y dos no — y ninguna pantalla lo señalaba, porque **todas miran el estado
+del pago y ninguna compara el importe transferido contra el registrado**.
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **PDF comprobante retención**: Formato AFIP oficial por proveedor
