@@ -461,8 +461,17 @@ nunca a la más vieja.
 
 *Caso real verificado 2026-09-22 sobre el pago de ALCORTA del 10/06/2026 → [A-DAT-55](PENDIENTES.md#a-dat-55).*
 
-> **El mínimo no imponible se consume UNA sola vez por proveedor y por mes. Si se aplica dos veces,
-> la diferencia es siempre el mismo número: `alícuota × mínimo`.**
+> **El mínimo no imponible se consume UNA sola vez por proveedor y por QUINCENA. Si se aplica dos
+> veces, la diferencia es siempre el mismo número: `alícuota × mínimo`.**
+
+⚠️ **Corregido 2026-09-22, el mismo día que se escribió**: acá decía *«por mes»*. **El sistema lo
+acumula por QUINCENA** — `netoPagosPreviosSinRetencion` compara `generarQuincenaSicore(fecha_pago)`
+contra la quincena del pago, y el chequeo de retención previa filtra por `sicore = quincena`. El
+caso de abajo no cambia (las tres facturas cayeron en la misma quincena), pero la regla sí.
+
+📌 **Y ahí queda una pregunta abierta**: la RG 830 fija el mínimo **por período mensual**, y el
+sistema lo reinicia **cada quincena**. Con pagos al mismo proveedor en las dos quincenas de un mes,
+el mínimo se otorgaría dos veces y se retendría de menos → [A-DEC-26](PENDIENTES.md#a-dec-26).
 
 Para Bienes eso da **2 % × $224.000 = $4.480,00**, y ese importe es una **firma reconocible**: cuando
 una transferencia difiere del registro en exactamente $4.480, no hay que buscar nada más.
