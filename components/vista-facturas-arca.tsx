@@ -8613,7 +8613,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <div className="space-y-3">
               {datosSicoreCalculo.esRetencionAdicional && (
                 <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">
-                  ⚠️ Retención adicional en quincena - No se aplica mínimo no imponible
+                  ⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido
                 </div>
               )}
 

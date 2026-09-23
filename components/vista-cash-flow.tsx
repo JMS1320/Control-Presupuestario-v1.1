@@ -1939,7 +1939,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     } catch { return false }
   }
 
-  // Neto ya pagado en la quincena SIN retención (facturas bajo mínimo / NC negativas) → consumió parte del mínimo.
+  // Neto ya pagado en el MES SIN retención (facturas bajo mínimo / NC negativas) → consumió parte del mínimo.
   // Solo se usa cuando NO hubo retención previa (si la hubo, el mínimo ya está consumido → ver capa 1).
   // Filtra sicore vacío para no doble-contar los que sí retuvieron. Las NC entran negativas y restan.
   const netoPagosPreviosSinRetencion = async (cuit: string, quincena: string): Promise<number> => {
@@ -2079,7 +2079,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     // Caso normal: positivos.
-    // Capa 1: si YA hubo retención en la quincena → adicional (cualquier positivo califica, sin mínimo).
+    // Capa 1: si YA hubo retención en el MES → adicional (cualquier positivo califica, sin mínimo).
     // Capa 2: si NO hubo retención → ver pagos previos que consumieron parte del mínimo (usa el mínimo más bajo como gate).
     const yaRetuvoPos = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
     if (!yaRetuvoPos) {
@@ -2249,7 +2249,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const quincena = quincenaDePago(fila)
     if (!quincena) throw new Error('No se puede calcular SICORE sin fecha de pago')
 
-    // Capa 1: ¿ya hubo retención en la quincena? → mínimo ya consumido → adicional (sin mínimo).
+    // Capa 1: ¿ya hubo retención en el MES? → mínimo ya consumido → adicional (sin mínimo).
     const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
 
     let baseImponible = netoFacturaPesos
@@ -5021,7 +5021,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           {pasoSicoreAnticipo === 'pregunta' && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-blue-800 mb-3">Mínimos por categoría (primera retención en quincena):</p>
+                <p className="text-sm font-medium text-blue-800 mb-3">Mínimos por categoría (primera retención del mes):</p>
                 <div className="space-y-1">
                   {tiposSicore.map(t => (
                     <div key={t.id} className="flex justify-between text-sm">
@@ -5113,7 +5113,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <h3 className="font-semibold text-green-800 mb-3">{tipoSicoreAnticipo.emoji} {tipoSicoreAnticipo.tipo}</h3>
                 {datosSicoreAnticipo.esRetencionAdicional && (
                   <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded mb-3">
-                    ⚠️ Retención adicional en quincena — no se aplica mínimo no imponible
+                    ⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido
                   </div>
                 )}
                 <div className="space-y-1 text-sm">
@@ -5168,7 +5168,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           {pasoSicore === 'tipo' && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-1">
-                <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención quincena):</div>
+                <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención del mes):</div>
                 {tiposSicore.map(t => (
                   <div key={t.id} className="text-blue-700">
                     {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%
@@ -5223,7 +5223,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">💵 Factura USD · TC de pago: <strong>${fmt(tc)}</strong> · Montos en ARS</div>
               )}
               {datosSicoreCalculo.esRetencionAdicional && (
-                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">⚠️ Retención adicional en quincena - No se aplica mínimo no imponible</div>
+                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido</div>
               )}
 
               {/* Desglose Gravado / IVA / Total */}
@@ -5268,7 +5268,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
                   {(datosSicoreCalculo.netoPrevio ?? 0) > 0 && !datosSicoreCalculo.esRetencionAdicional && (
                     <div className="mt-1 pt-1 border-t border-gray-200 space-y-0.5">
-                      <div className="flex justify-between text-amber-700"><span>Pagos previos en la quincena (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
+                      <div className="flex justify-between text-amber-700"><span>Pagos previos en el mes (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
                       <div className="text-[11px] text-gray-500">Mínimo ${fmt(datosSicoreCalculo.minimoTipo ?? 0)} − previos → mínimo aplicado ${fmt(datosSicoreCalculo.minimoAplicado)}</div>
                       <label className="flex items-center gap-1 cursor-pointer text-[11px] text-gray-600">
                         <input type="checkbox" checked={!!datosSicoreCalculo.ignorarPrevios}
