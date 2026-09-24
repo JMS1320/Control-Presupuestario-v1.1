@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, Fragment } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -976,29 +977,41 @@ export function VistaSectorProductivo() {
             </TabsList>
 
             <TabsContent value="hacienda">
+<SoloLectura recurso="productivo.hacienda">
               <TabHacienda />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="evolucion">
+<SoloLectura recurso="productivo.evolucion">
               <TabEvolucionRodeo />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="cria">
+<SoloLectura recurso="productivo.cria">
               <TabTerneros modo="cria" />
               <CiclosCriaPanel />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="recria">
+<SoloLectura recurso="productivo.recria">
               {/* El ciclo va ARRIBA de los terneros: primero de dónde viene el rodeo y a qué
                   costo entró, después el detalle animal por animal. */}
               <div className="mb-4">
                 <PanelCicloRecria />
               </div>
               <TabTerneros />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="insumos">
+<SoloLectura recurso="productivo.insumos">
               <TabInsumos />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="lotes">
+<SoloLectura recurso="productivo.lotes">
               <TabLotesAgricolas />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -3409,14 +3422,20 @@ function TabInsumos() {
         </TabsList>
 
         <TabsContent value="stock">
+<SoloLectura recurso="productivo.stock">
           <SubTabStockInsumos />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
         <TabsContent value="ordenes">
+<SoloLectura recurso="productivo.ordenes">
           <SubTabOrdenesAplicacion />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
         <TabsContent value="compras">
+<SoloLectura recurso="productivo.compras">
           <SubTabNecesidadCompra />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
       </Tabs>
     </div>
   )

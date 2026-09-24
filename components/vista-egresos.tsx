@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
 import type { UserRole } from "@/lib/auth/roles"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -63,20 +64,28 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
 
             <div className="mt-6">
               <TabsContent value="facturas-msa" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-msa">
                 <VistaFacturasArca empresa="MSA" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="facturas-pam" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-pam">
                 <VistaFacturasArca empresa="PAM" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="facturas-ma" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-ma">
                 <VistaFacturasArca empresa="MA" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="templates" className="space-y-4">
+<SoloLectura recurso="egresos.templates">
                 <VistaTemplatesEgresos />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
             </div>
           </Tabs>
         </CardContent>

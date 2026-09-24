@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo, useRef } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -2921,6 +2922,7 @@ ${marca}` : marca
         </TabsList>
 
         <TabsContent value="movimientos" className="space-y-4">
+<SoloLectura recurso="extracto.movimientos">
           {/* Estadísticas */}
           <div className="grid grid-cols-5 gap-4">
             <Card>
@@ -4142,9 +4144,11 @@ ${marca}` : marca
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         <TabsContent value="importar" className="space-y-4">
+<SoloLectura recurso="extracto.importar">
           {(() => {
             // Configuración por cuenta. `alt` = importador alternativo (ej: tarjetas tienen PDF default + Excel manual).
             type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf' }
@@ -4521,9 +4525,11 @@ ${marca}` : marca
               </Card>
             )
           })()}
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         <TabsContent value="reportes" className="space-y-4">
+<SoloLectura recurso="extracto.reportes">
           <Card>
             <CardHeader>
               <CardTitle>Reportes de Conciliación</CardTitle>
@@ -4538,12 +4544,15 @@ ${marca}` : marca
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         {/* 🧪 A-FEAT-145 — el audit de consistencia contra el estandar por origen (§ 30.9.6). */}
         <TabsContent value="auditoria" className="space-y-4">
+<SoloLectura recurso="extracto.auditoria">
           <PanelAuditoriaConciliacion />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
       </Tabs>
 
       {/* Modal Configurador */}

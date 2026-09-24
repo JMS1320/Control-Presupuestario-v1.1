@@ -27,6 +27,7 @@ import {
   resolverReglas,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { exigirEscritura } from "@/lib/auth/guard-recurso"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,6 +45,13 @@ const CUENTAS: Record<string, { schema: string }> = {
 export async function POST(req: Request) {
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
+
+  // A-FEAT-169 etapa 4: además de la sesión, el NIVEL sobre el recurso. Frena el pedido aunque
+  // venga de la consola o de una pantalla vieja que no apagó sus botones.
+  const permiso = await exigirEscritura("extracto.parseo")
+  if (!permiso.ok) {
+    return NextResponse.json({ error: permiso.motivo }, { status: permiso.status })
+  }
 
   try {
     const body = await req.json().catch(() => ({}))

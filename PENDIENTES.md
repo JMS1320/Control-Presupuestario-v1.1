@@ -4014,7 +4014,43 @@ evitar — *«una columna de permisos que ninguna guarda chequea parece un permi
 **Lo que falta para que «Editar» muerda**: apagar los controles de guardar en cada pantalla (resto
 de la etapa 3), las 27 rutas de API (etapa 4) y la RLS por recurso (etapa 5, la única que obliga).
 
-**ETAPAS 1-2 HECHAS · 3 A MEDIAS · 4-5 PENDIENTES** → [A-TEST-146](#a-test-146)
+### Etapas 3 y 4 — HECHAS 2026-09-24
+
+**Etapa 3 · sólo-lectura en la pantalla.** `components/solo-lectura.tsx` envuelve el contenido de
+cada pestaña registrada (17 en total). Si el rol la tiene en `"lectura"`, pone un cartel y apaga
+los controles con un **`<fieldset disabled>`**.
+
+⚠️ **El `fieldset` es una decisión, no una comodidad.** Ir botón por botón en vistas de miles de
+líneas es whack-a-mole, y **el que se olvida no avisa**: queda un botón que guarda cuando no
+debería y se descubre el día que alguien lo aprieta. `fieldset[disabled]` es del navegador y
+alcanza a todo `input/button/select/textarea` de adentro — **incluidos los que se agreguen mañana
+sin que nadie se acuerde de esta feature**. Se eligió el mecanismo que falla cerrado.
+**Lo que NO cubre**: un `<div onClick>` no es control de formulario. Radix renderiza `<button>` de
+verdad, así que la mayoría queda cubierta, pero no es garantía.
+
+**Etapa 4 · el nivel en la API.** `lib/auth/guard-recurso.ts` → `exigirEscritura(recurso)`: valida
+sesión, rol, que la sección esté dada, que el padre no esté oculto, y que el nivel sea escritura.
+Frena el pedido aunque venga de la consola.
+
+🔑 **Pero el mapeo ruta→recurso es donde está el trabajo real, y se declaró en vez de adivinarse.**
+`lib/auth/rutas-recursos.ts` tiene una fila por cada una de las **27 rutas que escriben**: **2
+mapeadas** (`reparsear-extracto` → `extracto.parseo`, `lotes/generar` → `productivo.lotes`) y **25
+declaradas SIN mapear, cada una con su motivo**.
+
+⚠️ **Que sean sólo 2 no es pereza: adivinar es peor que no mapear.** `arca-asignar` toca
+comprobantes de **las tres empresas** y las pestañas son una por empresa — ponerle
+`egresos.facturas-msa` **le abriría PAM y MA a quien sólo tenía MSA**, y no fallaría nada. Es el
+`UPDATE` que no matchea (§ Contrapartes) otra vez: **un hueco declarado se ve en la lista; un mapeo
+equivocado no se ve en ningún lado.**
+
+🧮 **Control**: `npm run verificar:rutas` busca qué rutas escriben y exige que **todas** estén
+declaradas —con recurso o con motivo— y que los recursos a los que apuntan existan.
+
+⚠️ **Y lo que ninguna de las dos etapas cubre**: las **452 escrituras directas desde el navegador**
+(66 componentes). No pasan por `app/api`, así que el guard no las ve, y el `fieldset` sólo apaga
+botones. Eso lo frena **únicamente la RLS por recurso — etapa 5**.
+
+**ETAPAS 1-4 HECHAS · 5 PENDIENTE (la única que obliga)** → [A-TEST-146](#a-test-146)
 
 ---
 
