@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * 🐄 Identificar los animales de un cambio de categoría YA guardado — A-FEAT-84.
+ * 🐄 Identificar los animales de un cambio de categoría YA guardado — A-FEAT-1084. *(era A-FEAT-84)*
  *
  * ## Por qué existe
  * El usuario movió 5 vacas al CUT de a una, cada una con su observación —*"Vaca Dura que malparió.

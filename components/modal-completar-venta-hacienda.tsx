@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * 💰 Completar la venta de un movimiento de hacienda — A-FEAT-87.
+ * 💰 Completar la venta de un movimiento de hacienda — A-FEAT-1087. *(era A-FEAT-87; renumerado al integrar con la rama de Javier)*
  *
  * ## Por qué existe
  * Un movimiento de tipo **venta** da de baja los animales. Pero hasta el 2026-09-04 no creaba la
