@@ -29,7 +29,8 @@
     "probar:recorrido": "node --experimental-strip-types scripts/probar-recorrido.mts",
     "excel:arba": "node --experimental-strip-types scripts/excel-boletas-arba.mts",
     "ensayo:detalle": "npx --yes tsx scripts/ensayo-detalle-pago.mts",
-    "ui:escribe": "node scripts/ui-escribe.mjs"
+    "ui:escribe": "node scripts/ui-escribe.mjs",
+    "verificar:recursos": "npx tsx scripts/verificar-recursos-permisos.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

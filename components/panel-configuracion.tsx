@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
+import { recursosDe, SIN_RECURSOS } from "@/lib/auth/recursos"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -208,30 +209,72 @@ function PanelRoles() {
 
               {enEdicion ? (
                 <div className="space-y-3">
-                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {/*
+                    Cada sección abre lo que tiene adentro (A-FEAT-169). Antes era una grilla plana
+                    de 12 casillas y no se veía qué había dentro de cada una.
+                    ⚠️ Las casillas de adentro se muestran **deshabilitadas**: el permiso fino
+                    todavía no se guarda ni se aplica. Están para que se vea el alcance real de
+                    cada sección — mostrarlas como si funcionaran sería peor que no mostrarlas
+                    (`scripts/60`: «una columna de permisos que ninguna guarda chequea parece un
+                    permiso y no lo es»).
+                  */}
+                  <div className="space-y-1.5">
                     {todas.map(({ id, label, Icono }) => {
                       const puesta = borrador.has(id)
+                      const dentro = recursosDe(id)
                       return (
-                        <label
-                          key={id}
-                          className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors duration-150 ease-out ${
-                            puesta ? "border-emerald-300 bg-emerald-50" : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={puesta}
-                            onChange={(e) => {
-                              const s = new Set(borrador)
-                              if (e.target.checked) s.add(id)
-                              else s.delete(id)
-                              setBorrador(s)
-                            }}
-                            className="h-3.5 w-3.5"
-                          />
-                          <Icono className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                          {label}
-                        </label>
+                        <div key={id} className={`rounded-md border ${puesta ? "border-emerald-300 bg-emerald-50/60" : "bg-white"}`}>
+                          <label className="flex cursor-pointer items-center gap-2 px-2.5 py-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={puesta}
+                              onChange={(e) => {
+                                const s = new Set(borrador)
+                                if (e.target.checked) s.add(id)
+                                else s.delete(id)
+                                setBorrador(s)
+                              }}
+                              className="h-3.5 w-3.5"
+                            />
+                            <Icono className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                            <span className="font-medium">{label}</span>
+                            {dentro.length > 0 && (
+                              <span className="ml-auto text-[11px] text-muted-foreground">
+                                {dentro.length} {dentro.length === 1 ? "cosa adentro" : "cosas adentro"}
+                              </span>
+                            )}
+                          </label>
+
+                          {puesta && dentro.length > 0 && (
+                            <div className="border-t bg-white/70 px-2.5 py-2">
+                              <div className="grid gap-1 sm:grid-cols-2">
+                                {dentro.map((r) => (
+                                  <label
+                                    key={r.id}
+                                    title="Todavía no se puede permisar por separado — falta guardarlo y aplicarlo"
+                                    className="flex cursor-not-allowed items-center gap-2 rounded px-1.5 py-1 text-[11px] text-muted-foreground"
+                                  >
+                                    <input type="checkbox" checked disabled className="h-3 w-3" />
+                                    <span>{r.etiqueta}</span>
+                                    {r.tipo === "funcionalidad" && (
+                                      <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">acción</span>
+                                    )}
+                                  </label>
+                                ))}
+                              </div>
+                              <p className="mt-1.5 text-[10px] text-amber-700">
+                                Por ahora quien tiene la sección tiene todo esto. Poder tildarlas por
+                                separado es lo que falta.
+                              </p>
+                            </div>
+                          )}
+
+                          {puesta && dentro.length === 0 && SIN_RECURSOS[id] && (
+                            <div className="border-t bg-white/70 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                              {SIN_RECURSOS[id]}
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>

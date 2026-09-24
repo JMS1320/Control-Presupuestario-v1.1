@@ -3922,7 +3922,32 @@ Ausente = sin acceso. Lo más específico gana sobre lo general.
 vea lo suyo y no se equivoque; **no** para contener a alguien que no debería poder escribir. Eso hay
 que decirlo al entregar, no después.
 
-**SIN EMPEZAR** → [A-TEST-146](#a-test-146)
+### Etapa 1 — HECHA 2026-09-24
+
+`lib/auth/recursos.ts` (27 recursos) + `npm run verificar:recursos` + la pantalla de Roles
+mostrando lo que hay dentro de cada sección.
+
+**Lo que el relevamiento corrigió**, y vale anotarlo porque una lista mal armada acá se propaga a
+todo lo demás: en Extracto **las 12 pestañas no son hermanas**. Sólo 4 son navegación
+(`movimientos`, `importar`, `reportes`, `auditoria`); las otras 8 están dentro de **tres modales
+distintos** — las reglas (conciliación, contable-interno, parseo) y el asignador de un movimiento
+(template, ARCA, sueldo, grupo, venta). Por eso el registro distingue `pestana` de `funcionalidad`:
+una es un lugar donde se está, la otra es algo que se hace. Medirlo pidió contar anidamiento de
+`<Tabs>` y si estaban dentro de un `<Dialog>`; a ojo parecían 12 iguales.
+
+**Reparto real**: Egresos 4 · Extracto 4+8 · Productivo 9 · Cash Flow 2 · y **8 secciones sin nada
+adentro**, cada una con su motivo escrito en `SIN_RECURSOS` (el control exige que lo tengan: un
+hueco sin explicación no se distingue de un olvido).
+
+⚠️ **Ingresos queda afuera**: sus pestañas se generan por empresa y por vista, así que no existen
+en el código. Permisarlas pide resolverlas en tiempo de ejecución.
+
+⚠️ **Las casillas de adentro se muestran DESHABILITADAS.** El permiso fino todavía no se guarda ni
+se aplica — están para que se vea el alcance real de cada sección. Mostrarlas como si funcionaran
+sería exactamente lo que `scripts/60` decidió evitar: *«una columna de permisos que ninguna guarda
+chequea parece un permiso y no lo es»*.
+
+**ETAPA 1 HECHA, ETAPAS 2-5 PENDIENTES** → [A-TEST-146](#a-test-146)
 
 ---
 
