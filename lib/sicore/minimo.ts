@@ -3,7 +3,8 @@
  *
  * ## El problema que resuelve
  * RG 830 fija un mínimo por régimen y por período (Bienes $224.000, Servicios $67.170, …). El
- * mínimo se consume **una sola vez por proveedor y régimen en la quincena**, no una vez por
+ * mínimo se consume **una sola vez por proveedor y régimen en el MES** (RG 830 — corregido
+ * 2026-09-23, [A-BUG-193]: antes acá decía «en la quincena»), no una vez por
  * factura. Entonces tres facturas de $148.202,62 · $95.916,33 · $74.140,48 —ninguna llega sola al
  * mínimo de bienes— **sí retienen**, porque suman $318.259,43.
  *
@@ -38,12 +39,12 @@ export interface EntradaRetencion {
   /** Mínimo del régimen elegido. Sale de `tipos_sicore_config`, nunca de una constante. */
   minimoRegimen: number
   /**
-   * Neto ya pagado en la quincena al mismo proveedor **sin retener**: consumió parte del mínimo.
+   * Neto ya pagado en el MES al mismo proveedor **sin retener**: consumió parte del mínimo.
    * Es lo que hace que el acumulado funcione entre pagos de días distintos.
    */
   netoPrevio: number
   /**
-   * ¿Ya hubo una retención en la quincena para este proveedor? Entonces el mínimo está consumido
+   * ¿Ya hubo una retención en el MES para este proveedor? Entonces el mínimo está consumido
    * entero y esta factura retiene sobre el neto completo, sin mínimo.
    */
   yaRetuvo: boolean
@@ -64,7 +65,7 @@ export interface ResultadoRetencion {
 }
 
 export function calcularRetencion(e: EntradaRetencion): ResultadoRetencion {
-  // El mínimo ya se consumió en la quincena → cualquier positivo retiene, sin mínimo.
+  // El mínimo ya se consumió en el MES → cualquier positivo retiene, sin mínimo.
   if (e.yaRetuvo) {
     return {
       minimoAplicado: 0,

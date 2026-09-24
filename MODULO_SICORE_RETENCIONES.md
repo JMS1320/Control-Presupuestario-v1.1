@@ -469,15 +469,49 @@ acumula por QUINCENA** — `netoPagosPreviosSinRetencion` compara `generarQuince
 contra la quincena del pago, y el chequeo de retención previa filtra por `sicore = quincena`. El
 caso de abajo no cambia (las tres facturas cayeron en la misma quincena), pero la regla sí.
 
-🛑 **Pero el sistema está MAL y ya está confirmado** *(2026-09-22, [A-DEC-26](PENDIENTES.md#a-dec-26))*:
-la RG 830 fija el mínimo **por mes calendario y por sujeto retenido**, y el sistema lo reinicia **cada
-quincena**. **La quincena es el período de información y depósito, no la unidad del mínimo** — el
-cálculo trata las dos cosas como una.
+✅ **ARREGLADO 2026-09-23** ([A-BUG-193](PENDIENTES.md#a-bug-193)) — antes el sistema lo reiniciaba
+**cada quincena**, y eso estaba mal: la RG 830 fija el mínimo **por mes calendario y por sujeto
+retenido**. **La quincena es el período de información y depósito, no la unidad del mínimo** — el
+cálculo trataba las dos cosas como una.
 
-**Medido**: 2 proveedores reciben el mínimo dos veces en el mismo mes (MASSAGLIA 07/2026 y STRINGHINI
-05/2026, los dos de Servicios), y se retuvo **$2.686,80 de menos**. Uno cae en una quincena **ya
-declarada**, así que su corrección es una rectificativa. El arreglo es
-[A-BUG-193](PENDIENTES.md#a-bug-193).
+### Las TRES cosas que no hay que volver a mezclar
+
+| | Unidad | Qué lo usa |
+|---|---|---|
+| **El mínimo no imponible** | **MES** calendario… | el cálculo de la retención |
+| …**y por RÉGIMEN** | Bienes y Servicios tienen **cada uno el suyo** | ídem — [A-BUG-196](PENDIENTES.md#a-bug-196) |
+| **La declaración y el depósito** | **QUINCENA** | el TXT de ARCA, el cierre, el panel |
+
+> 🔑 **El mínimo es por mes Y por régimen.** En palabras del usuario (2026-09-23): *«un mínimo no
+> aplica para otro tipo de facturación»*. Bienes ($224.000) y Servicios ($67.170) son renglones
+> distintos del Anexo VIII: **retenerle a alguien por Bienes no consume su mínimo de Servicios.**
+>
+> 🧾 **Y esto también salió de un caso real de ALCORTA**: el 10/09/2026 se le retuvo por los dos
+> regímenes el mismo día, y el de Servicios quedó con **mínimo $0** — o sea que el mínimo de
+> Servicios de septiembre nunca se usó, y **se le retuvo de más**. Lo vio el usuario en su pantalla.
+
+📌 **Los dos errores del mismo día apuntan para lados opuestos**, y por eso ninguno se puede
+"arreglar de más": [A-BUG-193](PENDIENTES.md#a-bug-193) hacía retener **de menos** (mínimo repetido
+cada quincena) y [A-BUG-196](PENDIENTES.md#a-bug-196) hacía retener **de más** (un régimen comiéndose
+el mínimo del otro).
+
+🛑 **Por eso el export del TXT, el listado del panel y las validaciones de cierre siguen filtrando
+por quincena, y así tiene que quedar.** Sólo cambió el período del mínimo.
+
+### Cómo se resuelve, y por qué es barato
+
+La quincena se escribe `"YY-MM - 1ra|2da"`, así que **su prefijo ES el período mensual**. Tres
+funciones puras en `lib/sicore/quincena.ts` —`periodoMensualDeQuincena`, `quincenasDelMes` y
+`mismoPeriodoDelMinimo`— y no hay que reparsear fechas ni volver a la base.
+
+🧨 **Eran CUATRO caminos, no uno** — dos en Cash Flow y dos en Facturas ARCA. **Y el que más
+importaba era el de los anticipos**: los dos casos reales tienen el **segundo pago como anticipo**,
+así que arreglar sólo el de facturas habría dejado vivo justo el camino que produjo el error.
+
+**Lo medido antes del arreglo**: MASSAGLIA 07/2026 y STRINGHINI 05/2026 (los dos de Servicios)
+recibieron el mínimo dos veces y se retuvo **$2.686,80 de menos**. ⏳ **Eso no se corrige solo**:
+el arreglo vale de acá en adelante y lo viejo queda en [A-DAT-58](PENDIENTES.md#a-dat-58) — con el
+agravante de que el de Stringhini cae en una quincena **ya declarada**, o sea rectificativa.
 
 ⚠️ **Sentido del error, que es el contrario del caso de abajo**: acá se retiene **de menos** y la
 empresa queda en falta con ARCA; en [A-DAT-55](PENDIENTES.md#a-dat-55) se le pagó de más al proveedor.

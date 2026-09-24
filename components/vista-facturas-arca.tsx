@@ -48,6 +48,7 @@ import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
+import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -3363,23 +3364,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
-  // Verificar si ya se retuvo a este proveedor en esta quincena
-  const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
+  /**
+   * ¿Ya se le retuvo a este proveedor **en el mes**, por **este régimen**?
+   *
+   * **A-BUG-193** — el período del mínimo es el **mes**, no la quincena.
+   * **A-BUG-196** — y el mínimo es **por régimen**: el de Bienes no consume el de Servicios.
+   * Palabras del usuario: *«un mínimo no aplica para otro tipo de facturación»*.
+   *
+   * 📌 `tipoSicore` es **opcional**: los portones que deciden si abrir el modal corren **antes** de
+   * que se elija el régimen. Sin él responde lo de antes (¿retuvo por cualquiera?), que para abrir
+   * una puerta alcanza — el cálculo de adentro, que sí sabe el tipo, decide el monto.
+   */
+  const verificarRetencionPrevia = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
     try {
-      const { data, error } = await supabase
+      const q = supabase
         .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('cuit', cuit)
-        .eq('sicore', quincena)
-        .limit(1)
-      
+        .in('sicore', quincenasDelMes(quincena))
+      const { data, error } = await (tipoSicore ? q.eq('tipo_sicore', tipoSicore) : q).limit(1)
+
       if (error) {
         console.error('Error verificando retención previa:', error)
         return false
       }
-      
-      return (data && data.length > 0)
+
+      return !!(data && data.length > 0)
     } catch (error) {
       console.error('Error verificando retención previa:', error)
       return false
@@ -3463,8 +3476,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         }
       }
 
-      // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo
-      if (netoFactura <= minimoServicios) {
+      /**
+       * 🚪 **A-BUG-195 — el portón tiene que mirar si YA se retuvo en el mes.**
+       *
+       * El mínimo se consume una sola vez por período ([A-BUG-193](../PENDIENTES.md#a-bug-193)):
+       * si al proveedor **ya se le retuvo este mes**, una factura por debajo del mínimo **sí
+       * retiene**, sobre el neto completo. Cortar sólo por importe la dejaba afuera y se retenía
+       * de menos.
+       *
+       * ✅ **El Cash Flow ya lo hacía así** (`califica = yaRetuvo || hayNegativa || …`). Era otra
+       * vez un camino de dos: se arregló uno y el otro quedó vivo (§ `MODULO_CONCILIACION.md` 30.9.5).
+       *
+       * 📈 Y A-BUG-193 lo volvió más frecuente: con el período mensual hay **más** casos de «ya
+       * retuvo» que con el quincenal.
+       */
+      const yaRetuvoEnElMes = await verificarRetencionPrevia(factura.cuit, quincena)
+
+      // CASO NORMAL: Facturas positivas - aplicar filtro de mínimo, salvo que el mínimo ya esté consumido
+      if (netoFactura <= minimoServicios && !yaRetuvoEnElMes) {
         console.log('✅ SICORE: No corresponde (menor a mínimo servicios)')
         // Ofrecer descuento pronto pago aunque no haya retención
         const aplicarDescuento = window.confirm(
@@ -3638,15 +3667,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         quincena
       })
 
-      // PRIMERO: Verificar retención previa en quincena
-      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+      // PRIMERO: ¿ya se retuvo a este proveedor en el MES? (A-BUG-193 — antes miraba sólo la quincena)
+      // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena, tipo.tipo)
       console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
 
       let baseImponible = netoFactura
       let minimoAplicado = 0
 
       if (!yaRetuvo) {
-        // Primera retención: verificar si supera mínimo específico del tipo
+        // Primera retención DEL MES: verificar si supera el mínimo específico del tipo
         if (netoFactura <= tipo.minimo_no_imponible) {
           // No corresponde retención pero dar opción de aplicar descuento pronto pago
           setDatosSicoreCalculo({ netoFactura, minimoAplicado: 0, baseImponible: netoFactura, esRetencionAdicional: false, sinRetencion: true })
@@ -3658,15 +3688,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           setPasoSicore('calculo')
           return
         }
-        // Descontar mínimo no imponible para primera retención
+        // Descontar mínimo no imponible: es la primera retención del mes
         baseImponible = netoFactura - tipo.minimo_no_imponible
         minimoAplicado = tipo.minimo_no_imponible
-        console.log('📋 SICORE: Primera retención quincena - descuenta mínimo')
+        console.log('📋 SICORE: Primera retención del MES - descuenta mínimo')
       } else {
         // Retención adicional: retener sobre monto completo (sin aplicar mínimo)
         baseImponible = netoFactura
         minimoAplicado = 0
-        console.log('📋 SICORE: Retención adicional quincena - sin descuento mínimo')
+        console.log('📋 SICORE: Retención adicional del MES - sin descuento mínimo')
       }
 
       const retencionCalculada = baseImponible * tipo.porcentaje_retencion
@@ -4382,9 +4412,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const cuit = anticipoSicoreEnProceso.cuit_proveedor
 
     // Verificar retención previa en ambas tablas
+    // 🐞 A-BUG-193 — las dos quincenas del MES (ver `verificarRetencionPrevia` arriba).
+    const delMes = quincenasDelMes(quincena)
+    // 🐞 A-BUG-196 — y por **régimen**: el mínimo de Bienes no consume el de Servicios.
+    const qF = supabase.schema(schemaName).from('comprobantes_arca')
+      .select('id').eq('cuit', cuit).in('sicore', delMes)
+    const qA = supabase.from('anticipos_proveedores')
+      .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).neq('id', anticipoSicoreEnProceso.id)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
-      supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).neq('id', anticipoSicoreEnProceso.id).limit(1)
+      qF.eq('tipo_sicore', tipo.tipo).limit(1),
+      qA.eq('tipo_sicore', tipo.tipo).limit(1),
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
 
@@ -4475,7 +4512,23 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // ── Registrar en sicore_retenciones ──
     const totalPagadoAnt = Math.round(((anticipoSicoreEnProceso.monto || 0) - descuentoAnt) * 100) / 100
-    const baseImpAnt = Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
+    /**
+     * 🐞 **A-BUG-194 — lo que se GRABA tiene que ser lo que se CALCULÓ.**
+     *
+     * Acá se recalculaba la base restando **siempre** el mínimo del régimen, ignorando
+     * `datosSicoreAnt`, que es donde vive el cálculo real: cuando ya se retuvo en el período, el
+     * modal **no** aplica mínimo (`minimoAplicado: 0`) y retiene sobre el neto completo.
+     *
+     * 🧨 **La retención se guardaba bien y la base no**, así que el registro quedaba
+     * contradiciéndose: `base × alícuota ≠ retención`. Y esa base es la que viaja al **TXT de
+     * ARCA**.
+     *
+     * 📌 **Hasta [A-BUG-193](../PENDIENTES.md#a-bug-193) esto no se notaba**, porque el mínimo se
+     * reiniciaba cada quincena y casi nunca había retención adicional: los dos números coincidían
+     * por accidente. **Arreglar el período habría destapado esto**, no al revés.
+     */
+    const baseImpAnt = datosSicoreAnt?.baseImponible ?? Math.max(0, neto - (tipoSicoreAnt.minimo_no_imponible || 0))
+    const minimoAnt = datosSicoreAnt?.minimoAplicado ?? (tipoSicoreAnt.minimo_no_imponible || 0)
     await registrarEnSicoreRetenciones({
       origen: 'anticipo',
       quincena,
@@ -4489,7 +4542,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       neto_gravado_pagado: neto,
       total_pagado: totalPagadoAnt,
       descuento_aplicado: descuentoAnt,
-      minimo_no_imponible: tipoSicoreAnt.minimo_no_imponible,
+      minimo_no_imponible: minimoAnt,   // A-BUG-194: el del cálculo, no el del régimen
       base_imponible: baseImpAnt,
       retencion: Math.round(montoSicoreAnt * 100) / 100,
       pago: saldoFinal,
@@ -8579,7 +8632,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <div className="space-y-3">
               {datosSicoreCalculo.esRetencionAdicional && (
                 <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">
-                  ⚠️ Retención adicional en quincena - No se aplica mínimo no imponible
+                  ⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido
                 </div>
               )}
 

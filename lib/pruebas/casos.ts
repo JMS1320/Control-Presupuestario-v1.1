@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
+import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
@@ -291,6 +292,55 @@ export function correrCasos(): Resultado[] {
   chequear("SICORE", "La misma factura por Servicios sí retiene (otro mínimo)",
     "$574,93", `$${n2(porServicios[0].retencion)}`,
     cerca(porServicios[0].retencion, (95916.33 - 67170) * 0.02, 0.01), "A-BUG-137")
+
+  // ══ A-BUG-193: el período del mínimo es el MES, no la quincena ════════════════════════════
+  //
+  // La RG 830 fija el mínimo **por mes calendario y por sujeto retenido**. El sistema lo reiniciaba
+  // cada quincena, así que un proveedor con pagos en las dos quincenas del mismo mes recibía el
+  // mínimo DOS veces y se le retenía de menos.
+  //
+  // Los números son los REALES de MASSAGLIA ALDO ENRIQUE, julio 2026 (Servicios, 2 %): FC 2-481 el
+  // 03/07 y un anticipo el 30/07, los dos con neto $1.708.680,00 y los dos con mínimo aplicado.
+  const MIN_SERV = 67170
+  const ALIC_SERV = 0.02
+  const MASSA_NETO = 1708680.00
+
+  chequear("SICORE", "Las dos quincenas de un mes son el MISMO período del mínimo",
+    "sí", mismoPeriodoDelMinimo("2026-07-30", "26-07 - 1ra") ? "sí" : "no",
+    mismoPeriodoDelMinimo("2026-07-30", "26-07 - 1ra"), "A-BUG-193")
+
+  chequear("SICORE", "El mes siguiente NO comparte el mínimo",
+    "no", mismoPeriodoDelMinimo("2026-08-03", "26-07 - 2da") ? "sí" : "no",
+    !mismoPeriodoDelMinimo("2026-08-03", "26-07 - 2da"), "A-BUG-193")
+
+  chequear("SICORE", "Del período salen sus dos quincenas, sea cual sea la de entrada",
+    "26-07 - 1ra · 26-07 - 2da", quincenasDelMes("26-07 - 2da").join(" · "),
+    quincenasDelMes("26-07 - 2da").join(" · ") === "26-07 - 1ra · 26-07 - 2da", "A-BUG-193")
+
+  // 🔴 EL CASO DEL BUG, con los números de MASSAGLIA: el 2º pago del mes no lleva mínimo.
+  const massaPrimero = calcularRetencion({
+    neto: MASSA_NETO, minimoRegimen: MIN_SERV, netoPrevio: 0, yaRetuvo: false, alicuota: ALIC_SERV,
+  })
+  const massaSegundo = calcularRetencion({
+    neto: MASSA_NETO, minimoRegimen: MIN_SERV, netoPrevio: 0, yaRetuvo: true, alicuota: ALIC_SERV,
+  })
+  chequear("SICORE", "El 1er pago del mes consume el mínimo entero",
+    `$${n2(MIN_SERV)}`, `$${n2(massaPrimero.minimoAplicado)}`,
+    cerca(massaPrimero.minimoAplicado, MIN_SERV, 0.01), "A-BUG-193")
+
+  chequear("SICORE", "El 2º pago del MISMO mes ya no recibe mínimo",
+    "$0,00", `$${n2(massaSegundo.minimoAplicado)}`,
+    massaSegundo.minimoAplicado === 0, "A-BUG-193")
+
+  // Lo que se retenía de menos: 2 % del mínimo regalado por segunda vez.
+  const deMenos = r2(massaSegundo.retencion - massaPrimero.retencion)
+  chequear("SICORE", "Dar el mínimo dos veces cuesta exactamente alícuota × mínimo",
+    `$${n2(MIN_SERV * ALIC_SERV)}`, `$${n2(deMenos)}`,
+    cerca(deMenos, MIN_SERV * ALIC_SERV, 0.01), "A-BUG-193")
+
+  chequear("SICORE", "Massaglia julio: el mes cierra en $67.003,80, no en $65.660,40",
+    "$67.003,80", `$${n2(r2(massaPrimero.retencion + massaSegundo.retencion))}`,
+    cerca(massaPrimero.retencion + massaSegundo.retencion, 67003.80, 0.01), "A-BUG-193")
 
   // ── A-BUG-146 — filas repetidas antes del TXT que va a ARCA ─────────────────────────────────
   //
