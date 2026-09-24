@@ -343,6 +343,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
 | **A-BUG-199** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
 | **A-SEC-09** | 🟡 | 🔴 **Alta** | ✅ **13 de 37 migradas 2026-09-24.** **Las rutas de API salteaban la RLS**: usaban `service_role`, que la ignora por completo. El mismo día que se instaló la RLS, **37 de 41 rutas no la aplicaban** — y 25 pedían sólo «cualquier rol con sesión». Política nueva: **el cliente de la sesión es el default, `service_role` se declara**. Control: `npm run verificar:service-role`. ⏳ Quedan **17 de deuda declarada** (usan el cliente en helpers de módulo) | → [A-SEC-09](#a-sec-09) `@general` |
+| **A-SEC-10** | 🟡 | 🔴 **Alta** | ✅ **CORRIDO 2026-09-24** (`scripts/62`). **La RLS ahora lee la política**: hasta hoy `tiene_rol()` sólo preguntaba «¿tenés algún rol?», así que un `contable` pasaba la misma puerta que un `admin`. Ahora cada tabla tiene **dos** policies —`ver_segun_permiso` y `escribir_segun_permiso`— que resuelven el nivel contra `roles.permisos`. Es lo único que frena las **452 escrituras directas del navegador**. ⏳ **Falta el test que importa**: una cuenta con rol acotado que NO pueda escribir donde no debe | → [A-TEST-148](#a-test-148) `@general` |
 | **A-BUG-200** | ✅ | **Alta** | ✅ **ARREGLADO 2026-09-24.** **Los roles creados por el usuario no servían para nada.** `scripts/60` movió los roles a `public.roles` el 05/09 para que el admin creara los suyos, pero **el código nunca se enteró**: `getRole()` tenía `rol === "admin" || rol === "contable"` y devolvía `null` para cualquier otro. El 24/09 había **5 roles en la base** (`productivo`, `pruebas`, `socio`): asignar uno mandaba a la persona a `/no-access` con su fila de permisos intacta y sin que nada avisara. Y los dos desplegables de Usuarios ni los ofrecían. ⚠️ **Con la RLS de [A-SEC-07](#a-sec-07) puesta el desfasaje empeora**: `tiene_rol()` sólo pregunta «¿tenés algún rol?», así que esa persona **sí pasa la base** —lee y escribe las 95 tablas— mientras la app la rechaza. Puerta de adelante cerrada, puerta de atrás abierta | → [A-TEST-147](#a-test-147) `@general` |
 | **A-BUG-198** | 🟡 | **Alta** | **El QR del segundo factor no se deja escanear en modo oscuro** (reportado 2026-09-23: José lo escanea y el autenticador no agrega nada, sin error de ningún lado). El SVG de Supabase son módulos oscuros **sin fondo propio**, y la tarjeta es `dark:bg-slate-900` → negro sobre gris oscuro, sin contraste para una cámara. Tampoco tenía la **zona de silencio** que el estándar QR exige. **FIX APLICADO**: fondo blanco fijo + `p-4`, y los dos caminos sin cámara (link `otpauth://` y la clave a mano) salen a la vista en vez de vivir en un `<details>`. ⚠️ **Causa deducida leyendo el código, no reproducida** — inscribir un factor es tocar datos reales | → [A-TEST-144](#a-test-144) `@general` |
 
@@ -373,6 +374,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-TEST-145** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-199). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-145](#a-test-145) `@general` |
 | **A-TEST-146** | 🔴 | Test | **Permisos finos** (A-FEAT-169) — que una pestaña sin permiso **no aparezca** (no que aparezca vacía); que con permiso de lectura se vea pero **no se pueda guardar**; y el control que más importa: que el bloqueo esté **también en la API**, no sólo en la pantalla | → [A-TEST-146](#a-test-146) `@general` |
 | **A-TEST-147** | 🔴 | Test | **Los roles de la base funcionan** (A-BUG-200) — asignarle `productivo` a una cuenta y que **entre y vea sus 3 secciones**, no `/no-access` · que los 5 roles aparezcan en los dos desplegables de Usuarios · que un rol inventado se rechace diciendo cuáles hay | → [A-TEST-147](#a-test-147) `@general` |
+| **A-TEST-148** | 🔴 | 🔴 **Alta** | **La RLS por recurso frena de verdad** (A-SEC-10) — con una cuenta de rol **acotado**: que vea lo suyo · que **NO** pueda leer otra sección ni siquiera **desde la consola del navegador** (es la prueba que ninguna capa anterior pasaba) · que con «sólo ver» el `UPDATE` sea rechazado por la base. ⚠️ **No se puede probar con `admin`**: pasa todo | → [A-TEST-148](#a-test-148) `@general` |
 | **A-TEST-144** | 🔴 | Test | **El QR del 2FA se escanea** (A-BUG-198). Probar **en modo oscuro**, que es donde fallaba, y también con la clave a mano y con el link `otpauth://` desde el teléfono. Si con el fondo blanco anda, la causa queda confirmada; si no, hay que mirar el `otpauth://` que arma Supabase | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Seguridad
@@ -4052,6 +4054,63 @@ declaradas —con recurso o con motivo— y que los recursos a los que apuntan e
 botones. Eso lo frena **únicamente la RLS por recurso — etapa 5**.
 
 **ETAPAS 1-4 HECHAS · 5 PENDIENTE (la única que obliga)** → [A-TEST-146](#a-test-146)
+
+---
+
+## <a id="a-sec-10"></a>A-SEC-10 — La RLS ahora lee la política de permisos (2026-09-24)
+
+`scripts/62`, corrido con el usuario paso a paso. **Cierra la etapa 5 de [A-FEAT-169](#a-feat-169)**
+y es la pieza que convierte todo lo anterior en una barrera.
+
+### Qué faltaba
+
+[A-SEC-07](#a-sec-07) puso RLS en ~95 tablas, pero su candado `tiene_rol()` sólo preguntaba
+**«¿tenés ALGÚN rol?»**. La política vivía en `public.roles` y **la base no la leía**: un `contable`
+pasaba exactamente la misma puerta que un `admin`.
+
+Y eso importaba más que en cualquier otro sistema, porque **452 escrituras salen directo del
+navegador** (66 componentes): no pasan por ninguna ruta de API, así que ni el guard de
+[A-FEAT-169](#a-feat-169) ni el `<fieldset disabled>` las ven.
+
+### Cómo quedó
+
+- **`public.recurso_tablas`** — el mapeo, declarado: 45 tablas.
+- **`nivel_recurso` / `nivel_tabla` / `puede_ver` / `puede_escribir`** — resuelven el nivel contra
+  `roles.secciones` + `roles.permisos`.
+- **Dos policies por tabla** en lugar de una `FOR ALL`. Sin separarlas, «sólo lectura» **no puede
+  existir**: o entrás y escribís, o no entrás.
+
+### Las dos decisiones que más costaron
+
+**1 · A nivel de TABLA la ambigüedad por empresa desaparece.** `msa.comprobantes_arca` es
+inequívocamente Facturas MSA porque **el schema es la empresa**. Desde las rutas esto era imposible
+—una sola ruta toca las tres— y fue lo que dejó 25 rutas sin mapear en la etapa 4. **La misma
+pregunta tiene respuesta clara en una capa y ambigua en otra**: conviene elegir la capa.
+
+**2 · `productivo` se mapeó por SECCIÓN, no por pestaña.** De sus 40 tablas, pocas se atribuyen a
+una pestaña con certeza (¿`romaneos` es Hacienda o una venta? ¿`labores` es Órdenes o Lotes?).
+Por sección impide que un `contable` escriba en Productivo —el riesgo real— **sin inventar nada**.
+Lo no mapeado conserva el comportamiento anterior, así que nada se rompe por omisión.
+
+### Cómo se verificó
+
+Se cambió el orden del protocolo a propósito: **el PASO 3 se probó primero en UNA tabla**
+(`msa.comprobantes_arca`) antes de tocar las 95. Se eligió una **mapeada** porque prueba los cuatro
+eslabones de una vez — JWT, mapeo, resolución del nivel y policy. Las facturas siguieron
+viéndose → recién entonces el resto.
+
+Después: PASO 4 con cero filas en las tres consultas, `anon` sigue en 401, `service_role` sigue
+entrando.
+
+⚠️ **`security definer` es obligatorio** acá: `public.roles` está revocada a `authenticated` a
+propósito, así que sin él la policy no podría leer la tabla que la define. Va blindado con
+`search_path` fijo y **`REVOKE ... FROM PUBLIC`** — no `FROM anon`, que es lo que **no cerró**
+`tiene_rol()` esa misma mañana.
+
+### Lo que falta, y no es un detalle
+
+**Nada de esto está probado con un rol acotado.** Las dos cuentas son `admin` y pasan todo. El test
+real es [A-TEST-148](#a-test-148) y **no se puede hacer con las cuentas de hoy**.
 
 ---
 
