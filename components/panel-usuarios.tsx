@@ -149,7 +149,7 @@ export function PanelUsuarios({ miId }: { miId: string }) {
     const j = await r.json()
     if (!r.ok) { toast.error(j.error ?? "No se pudo generar"); return }
     setInvitacion({ email: j.email, link: j.link, advertencia: j.advertencia })
-    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-98).
+    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-199).
     if (j.advertencia) toast.error("El link apunta a otro sitio. Mirá el aviso de abajo.")
     else toast.success("Link nuevo generado.")
   }
@@ -219,7 +219,7 @@ export function PanelUsuarios({ miId }: { miId: string }) {
               pasáselo por un canal privado.
             </p>
             {/*
-              El control de A-BUG-98. Grande y rojo porque el link se ve perfecto: sin esto, el
+              El control de A-BUG-199. Grande y rojo porque el link se ve perfecto: sin esto, el
               admin lo copia, lo manda, y el error aparece recién del otro lado.
             */}
             {invitacion.advertencia && (

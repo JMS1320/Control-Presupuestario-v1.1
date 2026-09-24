@@ -52,7 +52,7 @@ export async function POST(
   }
 
   /**
-   * CONTROL (A-BUG-98): ¿el link apunta a donde lo pedimos?
+   * CONTROL (A-BUG-199): ¿el link apunta a donde lo pedimos?
    *
    * Supabase descarta en silencio el `redirectTo` que no esté en sus **Redirect URLs** y lo
    * cambia por el **Site URL** del proyecto. No devuelve error: devuelve un link perfecto que

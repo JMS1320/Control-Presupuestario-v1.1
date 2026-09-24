@@ -141,7 +141,7 @@ acá nunca más.
 ⚠️ **La primera cuenta admin no se crea acá** (esta pantalla ya exige ser admin): esa se hace una
 sola vez desde el dashboard de Supabase. Ver `MODULO_USUARIOS.md` § 0.
 
-### 🟡 A dónde lleva el link de alta *(sin testear — A-TEST-97)*
+### 🟡 A dónde lleva el link de alta *(sin testear — A-TEST-145)*
 
 **El link apunta al sitio desde el que lo creaste**: si lo generás en producción lleva a
 producción, si lo generás en local lleva a tu local, y si lo generás en un preview de Vercel lleva
@@ -160,13 +160,13 @@ Por eso «Copiar link» tiene un **control**: compara a dónde pidió ir contra 
 volvió. Si no coinciden, en vez del mensaje de éxito sale un **cartel rojo** que dice cuál fue el
 destino real y qué hay que agregar en Supabase. **Si ves ese cartel, no mandes el link**: arreglá
 la configuración primero (Authentication → URL Configuration; los valores exactos están en
-`PENDIENTES.md` § A-BUG-98).
+`PENDIENTES.md` § A-BUG-199).
 
 El control **no llega** a «Reenviar mail» ni al mail de la invitación: esos no devuelven el link,
 así que no hay con qué comparar. Si dudás, generá un «Copiar link» primero — si ese cierra, el
 mail también.
 
-### 🟡 Si el QR del segundo factor no lo toma el autenticador *(sin testear — A-TEST-98)*
+### 🟡 Si el QR del segundo factor no lo toma el autenticador *(sin testear — A-TEST-144)*
 
 El QR va sobre **fondo blanco a propósito**, aunque estés en modo oscuro: los módulos que manda
 Supabase no traen fondo, y sobre una tarjeta oscura la cámara no ve contraste — se ve un QR, pero

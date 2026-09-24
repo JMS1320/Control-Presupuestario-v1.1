@@ -341,8 +341,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) `@extracto` |
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
-| **A-BUG-98** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
-| **A-BUG-99** | 🟡 | **Alta** | **El QR del segundo factor no se deja escanear en modo oscuro** (reportado 2026-09-23: José lo escanea y el autenticador no agrega nada, sin error de ningún lado). El SVG de Supabase son módulos oscuros **sin fondo propio**, y la tarjeta es `dark:bg-slate-900` → negro sobre gris oscuro, sin contraste para una cámara. Tampoco tenía la **zona de silencio** que el estándar QR exige. **FIX APLICADO**: fondo blanco fijo + `p-4`, y los dos caminos sin cámara (link `otpauth://` y la clave a mano) salen a la vista en vez de vivir en un `<details>`. ⚠️ **Causa deducida leyendo el código, no reproducida** — inscribir un factor es tocar datos reales | → [A-TEST-98](#a-test-98) `@general` |
+| **A-BUG-199** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
+| **A-BUG-198** | 🟡 | **Alta** | **El QR del segundo factor no se deja escanear en modo oscuro** (reportado 2026-09-23: José lo escanea y el autenticador no agrega nada, sin error de ningún lado). El SVG de Supabase son módulos oscuros **sin fondo propio**, y la tarjeta es `dark:bg-slate-900` → negro sobre gris oscuro, sin contraste para una cámara. Tampoco tenía la **zona de silencio** que el estándar QR exige. **FIX APLICADO**: fondo blanco fijo + `p-4`, y los dos caminos sin cámara (link `otpauth://` y la clave a mano) salen a la vista en vez de vivir en un `<details>`. ⚠️ **Causa deducida leyendo el código, no reproducida** — inscribir un factor es tocar datos reales | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -368,8 +368,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-94 | 🔴 | Test | **Recuperar el segundo factor** (A-FEAT-86) — **desde `/perfil`**: con el 2FA puesto, «cambiar de dispositivo» → sale QR nuevo → el código viejo **deja de servir** y el nuevo entra · «quitar» → al volver a entrar te pide inscribirlo de nuevo (si sos admin) . **Desde Usuarios**: un admin resetea a otro, el otro entra y cae en el alta del 2FA. ⚠️⚠️ **Los candados, que son lo que hay que probar salteando la UI**: que **no** se pueda resetear el 2FA con una sesión `aal1` (pegarle al endpoint a mano estando trabado en el desafío → **403**) · que un `contable` **no** pueda pegarle a ese endpoint · y que **no puedas resetearte a vos mismo** desde Usuarios (para eso está `/perfil`, que sí exige `aal2`) | → [A-FEAT-86](#a-feat-86) `@general` |
 | A-TEST-95 | 🔴 | Test | **Invitar a alguien de punta a punta** (A-FEAT-87) — con una cuenta **de verdad, que no sea tuya**: invitar desde Configuración → Usuarios · ⚠️ **ver si el mail llega** (el mailer interno de Supabase limita a ~2/hora: si no llega, usar «Copiar link», que es el respaldo previsto) · abrir el link → tiene que caer en **Bienvenida**, no en el login ni en un error · **definir contraseña** y salir y entrar con ella · repetir con otra persona pero **vinculando Google** en vez de contraseña, y que entre con Google · y una tercera que haga **las dos** y entre indistinto. ⚠️ **Lo que más se rompe**: que el link **vencido o ya usado** dé un mensaje que se entienda y no una pantalla en blanco · que quien ya tiene contraseña **no** pueda usar `/bienvenida` de otro · y que al terminar vea **sus** secciones según el rol que le pusiste | → [A-FEAT-87](#a-feat-87) `@general` |
 | A-TEST-96 | 🔴 | Test | **Inicio configurable** (A-FEAT-88) — elegir widgets, reordenarlos, salir y volver: tienen que quedar · quitar todos y que la pantalla **diga qué hacer** en vez de quedar en blanco · que cada widget muestre **lo mismo** que la pantalla de la que salió (comparar número por número: si difieren, se duplicó la lógica en vez de compartirla) · que el **camino al detalle** de cada uno lleve a donde se verifica el número. ⚠️⚠️ **El candado, salteando la UI**: con una cuenta `contable`, escribir a mano un widget de una sección que su rol NO tiene (`updateUser({data:{preferencias:{widgets:['cashflow…']}}})`) y recargar → **no se tiene que ver**. Si aparece, la preferencia está decidiendo un permiso · y que un widget que falla **no rompa los demás** | → [A-FEAT-88](#a-feat-88) `@principal` |
-| **A-TEST-97** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-98). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-97](#a-test-97) `@general` |
-| **A-TEST-98** | 🔴 | Test | **El QR del 2FA se escanea** (A-BUG-99). Probar **en modo oscuro**, que es donde fallaba, y también con la clave a mano y con el link `otpauth://` desde el teléfono. Si con el fondo blanco anda, la causa queda confirmada; si no, hay que mirar el `otpauth://` que arma Supabase | → [A-TEST-98](#a-test-98) `@general` |
+| **A-TEST-145** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-199). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-145](#a-test-145) `@general` |
+| **A-TEST-144** | 🔴 | Test | **El QR del 2FA se escanea** (A-BUG-198). Probar **en modo oscuro**, que es donde fallaba, y también con la clave a mano y con el link `otpauth://` desde el teléfono. Si con el fondo blanco anda, la causa queda confirmada; si no, hay que mirar el `otpauth://` que arma Supabase | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Seguridad
 *👤 **Dueño desde 2026-09-02: Javier**, segundo desarrollador, en su propio clon y su propia rama
@@ -3827,14 +3827,14 @@ Modelo de edición acordado:
 
 ---
 
-## <a id="a-test-97"></a>A-TEST-97 — El link de alta apunta a donde se creó (A-BUG-98)
+## <a id="a-test-145"></a>A-TEST-145 — El link de alta apunta a donde se creó (A-BUG-199)
 
 **Cómo se prueba** → `MANUAL-USO.md` § «A dónde lleva el link de alta».
 
 | # | Paso | Tiene que pasar |
 |---|---|---|
 | 1 | ~~Ver el cartel rojo con la config rota~~ | ⛔ **Ya no se puede probar**: la config se arregló el 2026-09-18 y el estado que lo disparaba desapareció. **El control del cartel queda sin verificar** — la forma honesta de probarlo sería sacar una Redirect URL a propósito, y no vale la pena tocar la config de auth para eso |
-| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-98](#a-bug-98)) | ✅ **HECHO 2026-09-18**, verificado por sondeo |
+| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-199](#a-bug-199)) | ✅ **HECHO 2026-09-18**, verificado por sondeo |
 | 3 | Repetir «Copiar link» en producción | Sin cartel, y el link lleva a `control-presupuestario-v2.vercel.app/auth/confirm` |
 | 4 | Lo mismo desde **local (3001)** | El link lleva a `localhost:3001`, **no** a producción |
 | 5 | Lo mismo desde un **preview** de Vercel | El link lleva **al preview**, no a producción — es lo que arregla el cambio de precedencia en `url-base.ts` |
@@ -3846,7 +3846,7 @@ por hora del mailer de Supabase.
 
 ---
 
-## <a id="a-bug-98"></a>A-BUG-98 — Los links de invitación creados desde producción van a `localhost:3000` (2026-09-18)
+## <a id="a-bug-199"></a>A-BUG-199 — Los links de invitación creados desde producción van a `localhost:3000` (2026-09-18)
 
 **Hallado** al pedir el usuario que se verificara a dónde apunta el link que se genera al crear una
 cuenta. **No es un bug del código**: el código arma bien el destino y Supabase lo tira a la basura.
@@ -3950,7 +3950,7 @@ las cinco direcciones anteriores siguen funcionando.
 que alguien entra**, incluidas las cuentas de Vercel de otras personas. Cada una hay que agregarla,
 y no hay aviso cuando falta: sale `/no-access`.
 
-**SIN TESTEAR** → [A-TEST-97](#a-test-97)
+**SIN TESTEAR** → [A-TEST-145](#a-test-145)
 
 ---
 
