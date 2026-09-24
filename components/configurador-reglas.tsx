@@ -25,6 +25,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
 
   const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
   const [modalCopiarAbierto, setModalCopiarAbierto] = useState(false)
+  const [busquedaRegla, setBusquedaRegla] = useState('')   // 🔎 A-FEAT-136
   // Modal "crear template faltante" — disparado al activar regla o guardar regla con llena_template
   const [modalTemplateFaltante, setModalTemplateFaltante] = useState<{
     abierto: boolean
@@ -38,6 +39,27 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
   useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
+
+  /** Las de la cuenta elegida, ordenadas — el `orden` decide cuál gana cuando dos matchean. */
+  const reglasDeLaCuenta = useMemo(
+    () => reglas.filter(r => r.cuenta_bancaria_id === cuentaFiltro).sort((a, b) => a.orden - b.orden),
+    [reglas, cuentaFiltro])
+
+  /**
+   * 🔎 A-FEAT-136 — el filtro del buscador.
+   *
+   * ⚠️ **Se busca sobre las de la cuenta, no sobre todas.** Mostrar reglas de otra cuenta en esta
+   * lista sería peor que no encontrarlas: se editaría una que no se aplica acá. Cuando no hay
+   * resultados se dice explícitamente que puede estar en otra cuenta.
+   */
+  const reglasVisibles = useMemo(() => {
+    const q = busquedaRegla.trim().toLowerCase().replace(/^#/, '')
+    if (!q) return reglasDeLaCuenta
+    return reglasDeLaCuenta.filter(r =>
+      [r.texto_buscar, r.categ, r.detalle, r.centro_costo, r.codigo_contable, r.codigo_interno,
+       r.tipo, r.columna_busqueda, String(r.orden)]
+        .some(v => String(v ?? '').toLowerCase().includes(q)))
+  }, [reglasDeLaCuenta, busquedaRegla])
 
   /**
    * Códigos contable/interno ya usados — se sugieren al crear una regla para no ir generando
@@ -378,14 +400,31 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Reglas de Conciliación ({reglas.length})
+            Reglas de Conciliación ({reglasVisibles.length}{busquedaRegla.trim() ? ` de ${reglasDeLaCuenta.length}` : ''})
           </CardTitle>
+          {/* 🔎 A-FEAT-136 — buscador. Pedido del usuario 2026-09-12.
+              Son decenas por cuenta (él cargó 34 sólo en MA) y encontrarlas a ojo es lo que hace
+              que se cargue una regla nueva **que ya existía** — y dos reglas que matchean el mismo
+              texto se aplican por `orden`, así que la segunda no falla: queda muerta en silencio.
+              Busca en lo que uno recuerda de una regla: qué texto busca, qué categ pone, qué
+              detalle escribe, y su número de orden. */}
+          <input
+            type="text"
+            value={busquedaRegla}
+            onChange={(e) => setBusquedaRegla(e.target.value)}
+            placeholder="🔎 Buscar por texto, categoría, detalle, centro de costo o #orden…"
+            className="mt-2 w-full border rounded px-2 py-1.5 text-sm"
+          />
         </CardHeader>
         <CardContent>
+          {busquedaRegla.trim() && reglasVisibles.length === 0 && (
+            <p className="text-sm text-gray-500 py-3">
+              Ninguna regla de esta cuenta dice «{busquedaRegla.trim()}».
+              {' '}Ojo: el buscador mira <strong>sólo la cuenta elegida arriba</strong> — puede estar en otra.
+            </p>
+          )}
           <div className="space-y-2">
-            {reglas
-              .filter(r => r.cuenta_bancaria_id === cuentaFiltro)
-              .sort((a, b) => a.orden - b.orden)
+            {reglasVisibles
               .map((regla) => (
                 <div
                   key={regla.id}

@@ -25,6 +25,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
+import { mirarFoco } from "@/lib/recorrido/foco"
+import { comprimir } from "@/lib/captura-imagen"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,20 +35,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Loader2, NotebookPen, Camera, Check, X, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
+import { getRoleFromRoute } from "@/config/access-routes"
+import {
+  instalarCinta, mirarCinta, confirmarCorte, reiniciarCorte, type EventoDiagnostico,
+} from "@/lib/cinta-diagnostico"
 
-/** Ancho máximo de la captura guardada. Suficiente para leer un cartel, liviano para la fila. */
-const ANCHO_MAX = 1400
-const CALIDAD = 0.72
 
 interface Captura {
   orden: number
   texto: string
   ruta: string
   pantalla: string
+  /** El camino de solapas por debajo de `pantalla`: «Hacienda → Movimientos». */
+  subpantalla: string
   modal: string
   titulo_doc: string
   imagen: string
   user_agent: string
+  /** Los eventos técnicos previos a ESTA captura — A-FEAT-72. Ver `lib/cinta-diagnostico.ts`. */
+  diagnostico: EventoDiagnostico[]
 }
 
 /**
@@ -109,29 +116,45 @@ function contextoActual() {
   // El contexto real igual se relee al capturar (`ctxRef.current = contextoActual()`), así que
   // devolver vacío acá no pierde nada.
   if (typeof document === "undefined") {
-    return { ruta: "", pantalla: "", modal: "", titulo_doc: "", user_agent: "" }
+    return { ruta: "", pantalla: "", subpantalla: "", modal: "", titulo_doc: "", user_agent: "",
+      foco_tipo: null, foco_clave: null, foco_texto: null }
   }
-  const tab = document.querySelector('[role="tab"][data-state="active"]')
+  /**
+   * TODAS las solapas activas, no sólo la primera — mejora 2026-09-03.
+   *
+   * La app anida solapas: `Productivo → Hacienda → Movimientos`. Guardando sólo la de nivel 1
+   * quedaba «Productivo», y el usuario terminaba **escribiendo el resto a mano** en el texto de la
+   * nota (*"hacienda / movimientos"*) — justo el trabajo que esto viene a ahorrar.
+   *
+   * `pantalla` sigue siendo **sólo el nivel 1**, a propósito: es la clave por la que se agrupan las
+   * notas, y meterle el camino entero la volvería distinta en cada sub-solapa. El resto va aparte,
+   * en `subpantalla`.
+   */
+  const activas = Array.from(document.querySelectorAll('[role="tab"][data-state="active"]'))
+    .map(t => textoLimpio(t))
+    .filter(Boolean)
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
+  // 🎯 En QUÉ ítem estaba parado — lo único de esto que el DOM no puede decir. Lo declara la
+  // pantalla (ver `lib/recorrido/foco.ts`): sin el foco, una nota dejada sobre un hueco queda como
+  // «Presupuesto» y después hay que adivinar cuál era.
+  const f = mirarFoco()
   return {
+    foco_tipo: f?.tipo ?? null,
+    foco_clave: f?.clave ?? null,
+    foco_texto: f?.texto?.slice(0, 200) ?? null,
+    // ⚠️ `rutaActual()`, no la vieja `rutaSinLlave()`: **desde el login real la URL ya no lleva
+    //    llave**, así que recortar el primer segmento pasó a ser un bug (se comía parte de la
+    //    ruta de verdad). El renombre vino de `desarrollo` y es el correcto; lo que se conserva
+    //    de acá es el **foco** y la **subpantalla**, que son nuestros y no compiten.
     ruta: rutaActual(),
-    pantalla: textoLimpio(tab).slice(0, 120),
+    pantalla: (activas[0] ?? "").slice(0, 120),
+    subpantalla: activas.slice(1).join(" → ").slice(0, 200),
     modal: textoLimpio(dialogo).slice(0, 160),
     titulo_doc: document.title.slice(0, 160),
     user_agent: navigator.userAgent.slice(0, 200),
   }
 }
 
-/** Redimensiona y comprime para que la fila no pese de más. */
-async function comprimir(blob: Blob): Promise<string> {
-  const bitmap = await createImageBitmap(blob)
-  const escala = Math.min(1, ANCHO_MAX / bitmap.width)
-  const canvas = document.createElement("canvas")
-  canvas.width = Math.round(bitmap.width * escala)
-  canvas.height = Math.round(bitmap.height * escala)
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL("image/jpeg", CALIDAD)
-}
 
 export function NotasParaClaude() {
   const [grabando, setGrabando] = useState(false)
@@ -146,6 +169,31 @@ export function NotasParaClaude() {
   const [guardando, setGuardando] = useState(false)
   const [notas, setNotas] = useState<any[]>([])
   const ctxRef = useRef(contextoActual())
+
+  /** La cinta de diagnóstico congelada al abrir la captura, igual que `ctxRef` — A-FEAT-72. */
+  const diagRef = useRef<EventoDiagnostico[]>([])
+
+  /**
+   * Los eventos posteriores a la ÚLTIMA captura — A-FEAT-72.
+   *
+   * Sin esto se perdían, y justo en el caso más natural: hacés los pasos, algo explota, y vas
+   * derecho a Finalizar. El error que motivó la nota quedaba afuera porque el corte sólo ocurría
+   * al abrir una captura. Ahora se enganchan a la última captura, que es donde el usuario los
+   * hubiera puesto si se hubiera acordado de capturar una vez más.
+   */
+  const sueltosRef = useRef<EventoDiagnostico[]>([])
+
+  const abrirFinalizar = () => {
+    sueltosRef.current = mirarCinta()
+    setModalFinalizar(true)
+  }
+
+  /**
+   * La cinta se engancha acá porque este componente vive en el layout: está montado en toda la app,
+   * que es exactamente el alcance que necesita. `instalarCinta()` es idempotente, así que el doble
+   * montaje de StrictMode en desarrollo no la duplica.
+   */
+  useEffect(() => { instalarCinta() }, [])
 
   /** Pegar desde el portapapeles: es la vía principal para traer la captura. */
   const pegar = useCallback(async (e: ClipboardEvent) => {
@@ -172,6 +220,10 @@ export function NotasParaClaude() {
     // El contexto se congela ANTES de abrir el modal: si no, el modal se capturaría a sí mismo
     // como "el modal abierto" y perderíamos dónde estaba realmente el usuario.
     ctxRef.current = contextoActual()
+    // Y la cinta se mira en el mismo instante y por el mismo motivo: lo que interesa es lo que pasó
+    // ANTES de abrir la nota. El corte se confirma recién al agregar la captura, así cancelar no
+    // borra los eventos (ver `mirarCinta`).
+    diagRef.current = mirarCinta()
     setTexto("")
     setImagen("")
     setModalCaptura(true)
@@ -203,7 +255,11 @@ export function NotasParaClaude() {
 
   const agregarCaptura = () => {
     if (!texto.trim() && !imagen) { toast.error("Escribí algo o pegá una captura"); return }
-    setCapturas(cs => [...cs, { orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current }])
+    setCapturas(cs => [...cs, {
+      orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current,
+      diagnostico: diagRef.current,
+    }])
+    confirmarCorte(diagRef.current.length) // ya viajan en esta captura: la próxima arranca después
     setModalCaptura(false)
     if (!grabando) setGrabando(true)
     toast.success(`Captura ${capturas.length + 1} agregada`)
@@ -250,12 +306,22 @@ export function NotasParaClaude() {
       })
       if (error) throw error
 
+      // Los eventos posteriores a la última captura se enganchan a ella (ver `sueltosRef`).
+      const ultima = capturas.length - 1
       const { error: e2 } = await supabase.from("notas_capturas").insert(
-        capturas.map(c => ({ ...c, nota_id: notaId }))
+        capturas.map((c, i) => ({
+          ...c,
+          nota_id: notaId,
+          diagnostico: i === ultima && sueltosRef.current.length > 0
+            ? [...c.diagnostico, ...sueltosRef.current]
+            : c.diagnostico,
+        }))
       )
       if (e2) throw e2
 
       toast.success(`Nota guardada con ${capturas.length} captura(s). Claude la va a ver al abrir sesión.`)
+      reiniciarCorte() // lo de esta nota ya viajó: la próxima arranca limpia
+      sueltosRef.current = []
       setCapturas([]); setGrabando(false); setModalFinalizar(false); setTitulo("")
     } catch (e) {
       toast.error("No se pudo guardar: " + (e as Error).message)
@@ -284,6 +350,7 @@ export function NotasParaClaude() {
   const descartar = () => {
     if (capturas.length > 0 && !window.confirm(`¿Descartar la nota y sus ${capturas.length} captura(s)?`)) return
     setCapturas([]); setGrabando(false)
+    reiniciarCorte() // que la próxima nota no arrastre los eventos de ésta
   }
 
   return (
@@ -320,7 +387,7 @@ export function NotasParaClaude() {
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={abrirCaptura}>
             <Camera className="mr-1 h-3 w-3" /> Capturar
           </Button>
-          <Button size="sm" className="h-7 text-xs" onClick={() => setModalFinalizar(true)}>
+          <Button size="sm" className="h-7 text-xs" onClick={abrirFinalizar}>
             <Check className="mr-1 h-3 w-3" /> Finalizar
           </Button>
           <button onClick={descartar} title="Descartar" className="text-gray-400 hover:text-red-600">
@@ -375,10 +442,42 @@ export function NotasParaClaude() {
 
           <div className="rounded border bg-gray-50 px-2.5 py-2 text-[11px] leading-4 text-gray-500">
             <span className="font-medium text-gray-600">Se guarda solo:</span>{" "}
-            {[ctxRef.current.pantalla && `pantalla «${ctxRef.current.pantalla}»`,
-              ctxRef.current.modal && `modal «${ctxRef.current.modal}»`,
-              ctxRef.current.ruta].filter(Boolean).join(" · ")}
+            {[ctxRef.current.pantalla && `pantalla «${ctxRef.current.pantalla}${
+                ctxRef.current.subpantalla ? " → " + ctxRef.current.subpantalla : ""}»`,
+              ctxRef.current.modal && `modal «${ctxRef.current.modal}»`].filter(Boolean).join(" · ")}
           </div>
+
+          {/*
+            🔎 La cinta de diagnóstico — A-FEAT-72.
+
+            Se muestra y no se adjunta en silencio, por dos motivos. Uno: es el control de que la
+            cinta ANDA — sin esto no hay forma de saber si capturó algo hasta abrir la base
+            (§ CLAUDE.md «todo desarrollo termina con su control, y el control se ve»). Dos: el
+            usuario tiene que poder VER qué se manda, que es la única manera de creerle a la lista
+            blanca.
+          */}
+          {diagRef.current.length > 0 && (
+            <details className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4">
+              <summary className="cursor-pointer font-medium text-amber-800">
+                🔎 Se adjuntan {diagRef.current.length} evento(s) técnico(s) — tocá para verlos
+              </summary>
+              <ul className="mt-1.5 space-y-1 font-mono text-[10px] text-amber-900">
+                {diagRef.current.map((ev, i) => (
+                  <li key={i} className="border-t border-amber-200/70 pt-1">
+                    <span className="text-amber-600">{ev.hora}</span>{" "}
+                    <span className="font-semibold uppercase">{ev.tipo}</span>
+                    {ev.codigo && <span className="ml-1 rounded bg-amber-200 px-1">{ev.codigo}</span>}
+                    {ev.donde && <div className="text-amber-700">{ev.donde}</div>}
+                    <div className="whitespace-pre-wrap break-words">{ev.msg}</div>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 border-t border-amber-200 pt-1 text-[10px] text-amber-700">
+                Nunca viaja lo que escribiste en un campo, ni el contenido de las llamadas: sólo
+                mensajes de error, el archivo y línea, y el camino de la llamada que falló.
+              </p>
+            </details>
+          )}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setModalCaptura(false)}>Cancelar</Button>
@@ -400,6 +499,12 @@ export function NotasParaClaude() {
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Finalizar la nota</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-600">{capturas.length} captura(s) grabada(s).</p>
+          {sueltosRef.current.length > 0 && (
+            <p className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800">
+              🔎 Se suman <strong>{sueltosRef.current.length} evento(s) técnico(s)</strong> posteriores
+              a la última captura — se guardan junto con ella.
+            </p>
+          )}
           <div>
             <Label className="text-xs">Título (opcional)</Label>
             <Input className="mt-1" value={titulo} onChange={e => setTitulo(e.target.value)}

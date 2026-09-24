@@ -80,6 +80,18 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
     filtroRevisado?: 'todas' | 'revisadas' | 'no_revisadas'
+    /**
+     * 📝 Filtrar por **nota del usuario** (`nota_operador`), la que se deja con el 📝 de cada
+     * movimiento. Pedido del usuario 2026-09-11: *«poder filtrar por con mensaje de usuario
+     * —los que voy dejando en movimientos sin conciliar— y sin mensajes»*.
+     *
+     * 🔑 **Se filtra en la CONSULTA, no en pantalla.** El extracto trae hasta 2.000 filas con un
+     * límite configurable: filtrar después de traer daría *«3 con nota»* sobre las que entraron,
+     * no sobre las que hay — y ese número parece una respuesta cuando es un recorte.
+     */
+    filtroNota?: 'todas' | 'con_nota' | 'sin_nota'
+    /** 🔍 A-FEAT-134 — texto a buscar DENTRO de la nota del usuario. Se combina con `filtroNota`. */
+    busquedaNota?: string
   }) => {
     try {
       setLoading(true)
@@ -137,6 +149,38 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.eq('revisado', false)
       } else if (filtros?.filtroRevisado === 'revisadas') {
         query = query.eq('revisado', true)
+      }
+
+      // 📝 Filtro por nota del usuario (A-FEAT-130)
+      //
+      // ⚠️ «Sin nota» tiene que incluir **los NULL y los vacíos**: una nota borrada puede quedar
+      // como cadena vacía, y con `.is('nota_operador', null)` a secas esos movimientos no
+      // aparecerían **en ninguno de los dos filtros** — desaparecerían de la app sin que nada lo
+      // diga, que es el peor resultado posible para un filtro.
+      if (filtros?.filtroNota === 'con_nota') {
+        query = query.not('nota_operador', 'is', null).neq('nota_operador', '')
+      } else if (filtros?.filtroNota === 'sin_nota') {
+        query = query.or('nota_operador.is.null,nota_operador.eq.')
+      }
+
+      /**
+       * 🔍 **A-FEAT-134 — buscar DENTRO de la nota.** Pedido del usuario 2026-09-12:
+       * *«que pueda filtrar según anotado dentro. Filtro tipo excel»*.
+       *
+       * No reemplaza a `filtroNota` (con/sin), lo afina: buscar «FIMA» entre las notas es otra
+       * pregunta que «tiene nota». Los dos se combinan — la consulta los aplica juntos.
+       *
+       * 🔑 **Se filtra acá y no en pantalla**, por el mismo motivo que A-FEAT-130: con un
+       * límite de filas, buscar después de traer devolvería *«3 que dicen FIMA»* sobre las que
+       * entraron y no sobre las que hay — un recorte con cara de respuesta.
+       *
+       * ⚠️ Se escapan `%` `_` y `,`: el primero convertiría la búsqueda en «todo» y la coma
+       * **rompe el parser de PostgREST**, que la usa para separar argumentos.
+       */
+      const textoNota = (filtros?.busquedaNota || '').trim()
+      if (textoNota) {
+        const seguro = textoNota.replace(/[%_,]/g, ' ')
+        query = query.ilike('nota_operador', `%${seguro}%`)
       }
 
       // Ordenar por orden descendente — respeta el orden del extracto bancario original

@@ -11368,7 +11368,7 @@ CREATE INDEX idx_contratos_arr_empresa_camp ON contratos_arrendamiento(empresa, 
 
 CREATE TABLE public.cuotas_arrendamiento (
   id uuid PK, contrato_id uuid FK->contratos_arrendamiento ON DELETE CASCADE,
-  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,
+  numero_cuota int, qq_ha_cuota numeric(8,2) CHECK >0,   -- ⚠️ ampliada a numeric(12,6) el 2026-09-21 (A-BUG-183), ver § CAMBIOS POST
   fecha_cobro_estimada date, posicion_anio int, posicion_mes int CHECK 1..12,
   fecha_cobro_original date, posicion_orig_anio int, posicion_orig_mes int,  -- "volver a default"
   estado varchar(20) DEFAULT 'presupuestado'
@@ -12503,3 +12503,194 @@ CREATE TRIGGER trg_fecha_modificacion BEFORE UPDATE ON msa.comprobantes_arca
 ⚠️ **Las 383 filas viejas siguen con la fecha de creación**: el trigger sólo actúa de ahora en más.
 No se tocaron retroactivamente porque no hay dato real que poner — inventar una fecha sería peor
 que no tenerla.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-03/04 · Venta de hacienda desde Movimientos
+
+✅ **APLICADO.** Estructura **leída de la base** el 2026-09-04, no reconstruida de memoria.
+
+**El problema de fondo**: un movimiento de tipo `venta` daba de baja los animales y **ahí terminaba**.
+No creaba venta comercial, así que esos animales no entraban a facturación, cobro ni presupuesto.
+Diseño y motivos → `MODULO_HACIENDA.md` § 18.
+
+### 1 · La venta se despega del lote
+
+```sql
+ALTER TABLE productivo.stock_ventas ALTER COLUMN lote_id DROP NOT NULL;
+ALTER TABLE productivo.stock_ventas ADD COLUMN categoria_id uuid;      -- qué se vendió, sin lote
+ALTER TABLE productivo.stock_ventas ADD COLUMN kg_carne numeric;       -- romaneo (venta a la res)
+ALTER TABLE productivo.stock_ventas ADD COLUMN animales_sueltos jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE productivo.stock_ventas DROP COLUMN comprobante_id;        -- nunca se usó
+```
+
+⚠️ **`lote_id` nullable es el cambio de fondo**: antes vender exigía un lote, y las vacas de descarte
+no están en ninguno. `categoria_id` es lo que lo reemplaza como respuesta a *"¿qué se vendió?"*.
+
+`animales_sueltos` guarda los que **no existen como individuo** (`[{ razon, kg }]`) — ver § 18.4.
+
+### 2 · La CARGA — un pesaje de camión, varias ventas
+
+```sql
+CREATE TABLE productivo.cargas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  fecha date NOT NULL,
+  cliente_cuit text, cliente_nombre text, destino_id uuid,
+  peso_bruto numeric, peso_tara numeric,
+  flete numeric, notas text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE productivo.stock_ventas ADD COLUMN carga_id uuid;
+-- y se fueron las columnas que ponían el pesaje en la venta:
+ALTER TABLE productivo.stock_ventas DROP COLUMN peso_bruto_camion, DROP COLUMN peso_tara_camion;
+```
+
+🔴 **Una tabla nueva NO hereda los GRANTs del schema.** Se perdió una carga entera con
+`permission denied for table cargas` y `type-check` en verde:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON productivo.cargas TO anon, authenticated, service_role;
+```
+
+*Chequear esto en toda tabla nueva de un schema no-`public`: el error no aparece hasta que el usuario
+aprieta Guardar.*
+
+### 3 · El animal sabe de qué movimiento salió
+
+```sql
+ALTER TABLE productivo.terneros ADD COLUMN movimiento_alta_id uuid;
+```
+
+Sin esto no había forma de saber cuántas cabezas de un `cambio_categoria` ya estaban identificadas.
+El código cuenta por acá **y** por `categoria_id + fecha_alta` para los cargados antes de la columna.
+
+### 4 · `ventas_unificadas` — LEFT JOIN, no INNER
+
+La vista unía contra `lotes`, así que **una venta sin lote desaparecía de la vista** en vez de dar
+error: se cargaba bien y no aparecía en ningún lado. Recreada con `LEFT JOIN`.
+
+⚠️ Es el modo de falla que más caro sale: **el silencio miente** (`CLAUDE.md` § 🧮).
+
+### 5 · Notas y revisiones (A-FEAT-72 / 🚩)
+
+```sql
+ALTER TABLE public.notas_capturas ADD COLUMN diagnostico jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE public.notas_capturas ADD COLUMN subpantalla text;
+
+CREATE TABLE public.revisiones (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  schema_ref text, tabla_ref text, registro_id text,     -- ancla OPCIONAL (§ 18.5)
+  descripcion_ref text NOT NULL,                          -- lápida: texto congelado
+  motivo text NOT NULL,
+  tipo text NOT NULL DEFAULT 'revisar',
+  pantalla text, subpantalla text, ruta text, imagen text,
+  estado text NOT NULL DEFAULT 'abierta',
+  seguimiento jsonb NOT NULL DEFAULT '[]',                -- se APPENDEA, nunca se pisa
+  creado_por text, asignado_a text,
+  resolucion text, resuelto_por text, resuelto_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+🔑 **`registro_id` es nullable a propósito.** Pedido textual del usuario: *"no puedo quedar anclado a
+que exista el lugar en la fila… debo poder subir warnings de cosas que la app no puede registrar"*.
+
+🔐 **RLS: `anon` sólo INSERT.** Y `INSERT … RETURNING` necesita **también** `SELECT` — sin eso el
+guardado rompe con `type-check` en verde (mismo golpe que en A-SEC-04).
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-05 · ROMANEO (A-FEAT-94)
+
+✅ **APLICADO** (migración `romaneos_estructura`). Diseño y motivos → `MODULO_HACIENDA.md` § 19.
+
+**Tres tablas en `productivo`**: `romaneos` (cabecera + el PDF archivado), `romaneo_medias` (una
+fila **por media res**) y `romaneo_lineas` (la liquidación agrupada, que es lo que se factura).
+
+```sql
+CREATE TABLE productivo.romaneos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  carga_id uuid REFERENCES productivo.cargas(id) ON DELETE SET NULL,
+  frigorifico text, matricula text, cuit_frigorifico text,
+  vendedor text, consignatario text, origen_estab text,
+  tropa text, fecha_faena date, guia text, dta text,
+  cabezas_faenadas integer, muertos_corral integer DEFAULT 0, muertos_vagon integer DEFAULT 0,
+  kilos_vivos numeric, kilos_gancho numeric, rinde numeric, total_liquidado numeric,
+  archivo_file_id text, archivo_url text, archivo_nombre text,
+  origen text NOT NULL DEFAULT 'pdf',
+  controles jsonb NOT NULL DEFAULT '[]'::jsonb,
+  observaciones text, created_at timestamptz NOT NULL DEFAULT now()
+);
+-- + romaneo_medias (romaneo_id, garron, tipo, clase, dientes, contenido, peso_kg, precio_kg, ternero_id)
+-- + romaneo_lineas (romaneo_id, cabezas, tipo, clase, dientes, contenido, kg_faena, kg_vivo,
+--                   precio_kg, motivo, ajuste, importe, stock_venta_id)
+```
+
+🔑 **`carga_id`, no `venta_id`.** Un camión → un romaneo → **N ventas adentro** (el del 04/09 trae
+las 7 vacas y los 3 toros juntos). La carga ya existía y era justo la pieza que faltaba.
+
+🔑 **`controles jsonb` se guarda SIEMPRE**, incluso cuando el import no cerró. Si el usuario corrigió
+a mano, después hay que poder distinguir **qué venía mal del papel** de **qué puso él**.
+
+🔑 **`contenido` es texto sin interpretar** (`MCV/MCV`, `ES/ES`) hasta saber qué significan
+(`A-DAT-21`). Normalizarlo antes de entenderlo contamina la grilla de precios.
+
+⚠️ **GRANTs incluidos en la migración** — tercera vez que se aplica la lección: una tabla nueva no
+los hereda del schema, y el error no aparece hasta que el usuario aprieta Guardar.
+
+### Ampliación 2026-09-06 · el rinde REAL por grupo de precio (A-FEAT-96)
+
+```sql
+ALTER TABLE productivo.romaneo_lineas
+  ADD COLUMN kg_vivo_real numeric,
+  ADD COLUMN kg_vivo_real_origen text;   -- 'proporcional' | 'manual' | 'animales'
+```
+
+🔴 **Por qué hace falta una columna nueva en vez de usar la que ya venía.** La columna `kg_vivo`
+del romaneo **no es una pesada**: el frigorífico reparte el total entre los grupos **usando el rinde
+global**. Verificado sobre el romaneo del 04/09 — los 9 grupos dan `53,58 %` **todos**:
+
+```
+146 ÷ 272 = 53,68     261 ÷ 487 = 53,59     486 ÷ 907 = 53,58
+248 ÷ 463 = 53,56     234 ÷ 437 = 53,55     373 ÷ 696 = 53,59
+545 ÷ 1017 = 53,59    437 ÷ 816 = 53,55     624 ÷ 1165 = 53,56
+```
+
+Calcular el rinde por grupo con ese número es **circular**: devuelve siempre el rinde global, para
+cualquier grupo. `kg_vivo_real` guarda el kilaje de **nuestra** balanza, que es el único que hace
+que el rinde por grupo signifique algo.
+
+**Se conservan las dos**, no se pisa la del papel: son dos mediciones distintas y cuál es cuál
+importa. Misma regla que las tres balanzas de § 18.5.
+
+### Ampliación 2026-09-06 · el FLETE de la carga y su compromiso (A-FEAT-98)
+
+```sql
+ALTER TABLE productivo.cargas
+  ADD COLUMN flete_km numeric, ADD COLUMN flete_km_arranque numeric,
+  ADD COLUMN flete_precio_km numeric, ADD COLUMN flete_camino text,
+  ADD COLUMN flete_transportista_cuit text, ADD COLUMN flete_transportista_nombre text,
+  ADD COLUMN flete_fecha_pago date, ADD COLUMN flete_notas text,
+  ADD COLUMN flete_anticipo_id uuid;
+```
+
+🔑 **El flete es de la CARGA, no de la venta** — un camión, un flete, aunque lleve varias ventas.
+Misma razón que el romaneo (§ 19.4): repartirlo por venta antes de tiempo obliga a inventar un
+criterio de reparto que nadie pidió.
+
+🔑 **`flete_anticipo_id`** apunta a la fila de `anticipos_proveedores` que representa el compromiso
+de pago en el Cash Flow. Textual del usuario: *"como no llega factura ésa es nuestra vía"*. La fila
+vive allá, pero **se crea y se edita desde la carga**, que es la que tiene los campos del CZ. Guardar
+dos veces **actualiza** esa fila; no deja dos compromisos por el mismo viaje.
+
+🔑 **`flete_km_arranque` son km MÍNIMOS, no un extra.** Si el viaje es más corto se cobran igual.
+Sin ese campo, todo flete corto se subestima — y el error es sistemático, siempre para el mismo lado.
+
+### Ampliación 2026-09-21 · `qq_ha_cuota` con 6 decimales (A-BUG-183)
+
+```sql
+ALTER TABLE public.cuotas_arrendamiento ALTER COLUMN qq_ha_cuota TYPE numeric(12,6);
+```
+
+🔑 **Al fijar parcial, la cuota se parte en TONELADAS** y los qq/ha se derivan (`partirCuota` en
+`lib/arrendamientos/cuotas.ts`). Con 2 decimales las toneladas no podían quedar exactas: en Rojas
+(242 ha) 0,01 qq/ha = 0,242 tn, y fijar 100 de 212,96 tn dejaba 99,946 + 113,014. Sólo agranda la
+columna: ningún dato cambia al aplicarla. Se corrigió la única cuota partida que existía (Rojas
+26/27 #4/#5) con autorización del usuario y foto en `respaldos/a-bug-183-rojas-cuotas-4-5-antes.json`.

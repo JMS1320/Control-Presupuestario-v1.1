@@ -6,9 +6,10 @@
 // desglose (importe/retención/descuento/total) + Fecha de pago + línea del comprobante bancario.
 
 import { supabase } from '@/lib/supabase'
-import { generarPDFDetallePago } from './pdf-detalle-pago'
+import { generarPDFDetallePago, etiquetaComprobante } from './pdf-detalle-pago'
 import { generarCertificadoRetencion } from './certificado-retencion'
-import { obtenerMediosPagoFactura, type MedioPago } from './medios-pago'
+import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } from './medios-pago'
+import { calcularCuenta, armarDesglose, textoDesvio, textoCierre, type ItemPago } from './cuenta-detalle-pago'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf)
@@ -29,6 +30,8 @@ export interface EncolarMailParams {
   anticipoIds?: string[]
   /** Fallback opcional: registros SICORE ya cargados en pantalla (tab SICORE del modal). */
   registrosFallback?: Array<{ anulado?: boolean; cuit_emisor?: string }>
+  /** El usuario ya vio el desvío y lo confirmó: encolar igual (pago parcial o a cuenta a propósito). */
+  forzarDesvio?: boolean
 }
 
 export interface EncolarMailResult {
@@ -36,10 +39,13 @@ export interface EncolarMailResult {
   email: string
   conCertificado: boolean
   error?: string
+  /** No es una falla: la cuenta no cierra y hace falta que el usuario decida. Reintentar con
+   *  `forzarDesvio: true` si el desvío es a propósito. */
+  requiereConfirmacion?: boolean
 }
 
 export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarMailResult> {
-  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, anticipoIds, registrosFallback } = p
+  const { tipo, proveedor, cuit, items, schemaName, anticipo, facturaIds, anticipoIds, registrosFallback, forzarDesvio } = p
   try {
     // Medios de pago (transferencia + echeq + ...) para el desglose multimedio en el PDF del mail
     const ids = (facturaIds || []).filter(Boolean)
@@ -94,38 +100,41 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
 
     const m = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
     const fmtF = (f: string) => { if (!f) return '..............'; const d = new Date(f + 'T12:00:00'); return isNaN(d.getTime()) ? f : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}` }
-    const totalBruto = items.reduce((s, i) => s + (i.imp_total || 0), 0)
-    const totalRet = items.reduce((s, i) => s + ((i.monto_sicore as number) || 0), 0)
-    const totalDesc = items.reduce((s, i) => s + ((i.descuento_aplicado as number) || 0), 0)
-    const totalPagado = items.reduce((s, i) => s + (i.monto_a_abonar || 0), 0)
-    const fcs = items.map(i => i.comprobante).join(', ')
-    // El rótulo del bruto: un ANTICIPO no tiene facturas, así que decir "Importe facturas" en un
-    // mail que va al proveedor queda mal y confunde. Detectado al testear A-BUG-95 con Genoil.
-    const rotuloBruto = tipo === 'arca' ? 'Importe facturas' : 'Importe'
-    let cuenta: string
-    if (mediosPago.length > 0) {
-      // Desglose por medio real (transferencia + echeq + ...) + retención/descuento = total factura
-      cuenta = `\n${rotuloBruto}: ${m(totalBruto)}`
-      for (const md of mediosPago) cuenta += `\n${md.detalle || md.tipo}: ${m(md.monto)}`
-      if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
-      if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
-    } else {
-      cuenta = `\nTotal transferido: ${m(totalPagado)}`
-      if (totalRet > 0 || totalDesc > 0) {
-        cuenta = `\n${rotuloBruto}: ${m(totalBruto)}`
-        if (totalRet > 0) cuenta += `\nRetención Ganancias: -${m(totalRet)}`
-        if (totalDesc > 0) cuenta += `\nDescuento: -${m(totalDesc)}`
-        cuenta += `\nTotal transferido: ${m(totalPagado)}`
+    // Sin factura, el mail va sólo por el/los anticipo(s): también necesitan su desglose, porque un
+    // anticipo librado en echeq no se puede anunciar como transferencia (A-BUG-102).
+    if (mediosPago.length === 0 && (anticipoIds || []).length > 0) {
+      mediosPago = await obtenerMediosPagoAnticipo(schemaName, (anticipoIds || []).filter(Boolean))
+    }
+
+    // 🧮 La cuenta vive en `cuenta-detalle-pago.ts`, aparte y sin base de datos: ahí estaban los
+    // tres bugs (A-BUG-102/104/105) y enterrados acá adentro no se podían probar con números.
+    const c = calcularCuenta(items as ItemPago[], mediosPago, tipo as "arca" | "template")
+
+    // Qué se está pagando. Sólo la identificación del comprobante —la nota interna no sale de la
+    // empresa— y **sin los anticipos cuando hay factura**: un anticipo aplicado no es otra cosa que
+    // se pague, es un MEDIO de esa factura, y ya aparece como tal en el desglose.
+    const fcs = [...new Set(c.itemsBruto.map(i => etiquetaComprobante(i)))].join(', ')
+
+    // ⚠️ **Avisa, no bloquea.** Un pago parcial o a cuenta puede ser a propósito, y un bloqueo duro
+    // convertiría una decisión del usuario en un error del sistema. Pero tampoco sale en silencio.
+    if (c.desviado && !forzarDesvio) {
+      return {
+        ok: false, email: '', conCertificado: false, requiereConfirmacion: true,
+        error: textoDesvio(c, mediosPago, proveedor),
       }
     }
+
+    let cuenta = armarDesglose(c, mediosPago)
     cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
     const asunto = `Detalle de pago — ${proveedor}`
-    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}\n\nLes llegará el comprobante de transferencia desde go@bancogalicia.com.ar con asunto "Aviso de transferencia".\n\nSaludos.`
+    const cierre = textoCierre(mediosPago)
+
+    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
 
     const { error } = await supabase.from('mails_pago').insert({
       proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
       detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
-      adjuntar_detalle: (totalDesc > 0), // auto SOLO si hay descuento (editable en el panel)
+      adjuntar_detalle: (c.descuento > 0), // auto SOLO si hay descuento (editable en el panel)
       estado: 'pendiente',
     })
     if (error) return { ok: false, email, conCertificado: !!retB64, error: error.message }

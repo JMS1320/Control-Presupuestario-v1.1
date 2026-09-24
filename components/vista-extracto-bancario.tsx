@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +8,9 @@ import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, parseEmpresas, type Empresa }
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
+import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
+import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -42,7 +45,8 @@ import {
   DollarSign,
   Loader2,
   Info,
-  ChevronDown
+  ChevronDown,
+  ShieldCheck
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { ConfiguradorReglas } from "./configurador-reglas"
@@ -51,6 +55,11 @@ import { ConfiguradorReglasParseo } from "./configurador-reglas-parseo"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
+import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
+import { proveedorDelMovimiento } from "@/lib/conciliacion/proveedor-del-movimiento"
+import { detalleCompleto } from "@/lib/templates/identificador-cuota"
+import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
+import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
@@ -111,7 +120,24 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       else if (matchMontoCercano) score += 50
 
       // ── 2. CUIT ─────────────────────────────────────────────────────────────
-      if (cuitMatch) score += matchMonto ? 100 : 30   // 100 extra si también hay monto
+      /**
+       * 🐞 **A-BUG-170** — el CUIT sin monto valía **30**, y un importe parecido de un desconocido
+       * valía **50**. Al conciliar un pago de I.C.T. NET —con su CUIT viniendo en el extracto— las
+       * cuatro primeras sugerencias eran de **otros proveedores**; el correcto estaba abajo.
+       *
+       * 🔑 **Un importe parecido es una coincidencia; el CUIT es un hecho que manda el banco.**
+       * Cuando el movimiento lo trae, lo de esa contraparte va primero **aunque el monto no
+       * coincida** — la pregunta en ese momento es *«¿qué le debo a ICT NET?»*, no *«¿qué factura
+       * vale $35.497?»*.
+       *
+       * 📌 **Y el caso que lo destapó es donde más importa**: ese pago **no coincide con ninguna
+       * factura a propósito** — cubre comprobantes que el proveedor reclamaba como impagos. Ordenar
+       * por monto **nunca** lo iba a encontrar.
+       *
+       * Con 90: CUIT solo (90) > monto exacto ajeno (80) > monto parecido ajeno (50), y CUIT+monto
+       * sigue ganando a todo (180).
+       */
+      if (cuitMatch) score += matchMonto ? 100 : 90
 
       // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
       const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
@@ -147,8 +173,10 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       } else if (matchMonto && matchFecha) {
         badges.push({ texto: 'Monto + Fecha', color: 'bg-blue-100 text-blue-800' })
       } else if (matchMonto) {
-        const label = matchMontoCercano || diffAbs <= 2 ? 'Monto exacto' : 'Monto ≈'
-        badges.push({ texto: label, color: 'bg-purple-100 text-purple-700' })
+        // 🏷️ A-BUG-169 — decía 'Monto exacto' con hasta 5% de diferencia. Ahora exacto es
+        //    exacto, y si no lo es se muestra CUÁNTO se aparta. Ver `lib/conciliacion/etiqueta-monto`.
+        const et = etiquetaMonto(monto, montoFactura)
+        badges.push({ texto: et.texto, color: et.exacto ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600' })
       } else if (cuitMatch) {
         badges.push({ texto: 'CUIT (monto distinto)', color: 'bg-yellow-100 text-yellow-700' })
       }
@@ -243,6 +271,29 @@ export function VistaExtractoBancario() {
   const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
   const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
   const [filtroRevisado, setFiltroRevisado] = useState<'todas' | 'revisadas' | 'no_revisadas'>('todas')
+  /**
+   * 📝 Filtro por NOTA DEL USUARIO — A-FEAT-130.
+   * Pedido 2026-09-11: *«poder filtrar por con mensaje de usuario —los que voy dejando en
+   * movimientos bancarios sin conciliar— y sin mensajes de usuario»*.
+   */
+  const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
+  const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
+  /**
+   * 🧹 **A-FEAT-135** — qué hacer con las notas de lo que se acaba de conciliar.
+   *
+   * Empezó siendo un tilde en el panel de edición masiva y el usuario lo corrigió (2026-09-12):
+   * *«acá sí me debe preguntar si quiero borrar las notas de lo que quiero conciliar (…) pero si
+   * no hay notas no alerta»*.
+   *
+   * 🔑 **La diferencia no es de interfaz, es de momento.** Un tilde se marca **antes** de
+   * conciliar, cuando todavía no se sabe cuántos de los seleccionados tenían nota ni qué decían.
+   * La pregunta llega **después**, con el número real delante — y sólo si hay algo que decidir.
+   */
+  const [modalNotasConciliadas, setModalNotasConciliadas] = useState<{ isOpen: boolean; ids: string[] }>(
+    { isOpen: false, ids: [] })
+  /** 📝 A-FEAT-133 — la misma nota para todas las filas filtradas. */
+  const [modalNotaLote, setModalNotaLote] = useState<{ isOpen: boolean; texto: string; modo: 'agregar' | 'reemplazar' | 'borrar' }>(
+    { isOpen: false, texto: '', modo: 'agregar' })
   const [editandoNotaId, setEditandoNotaId] = useState<string | null>(null)
   const [editandoNotaVal, setEditandoNotaVal] = useState('')
 
@@ -295,8 +346,40 @@ export function VistaExtractoBancario() {
   // Estados modal Asignar Manualmente
   const [modalAsignar, setModalAsignar] = useState(false)
   const [movimientoAsignando, setMovimientoAsignando] = useState<any>(null)
-  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo'>('template')
+  const [tabAsignar, setTabAsignar] = useState<'arca' | 'template' | 'sueldo' | 'grupo' | 'venta'>('template')
+  /**
+   * 💰 **A-FEAT-167 — asignar un COBRO a su comprobante de venta.**
+   *
+   * ⚠️ **Acotado a UNO a UNO por decisión del usuario 2026-09-22**: un crédito puede cubrir varios
+   * comprobantes, o una venta facturarse en varios — *«no están del todo los pasos a dar»*. Esa
+   * parte queda afuera hasta definir el modelo. **Lo que sí está claro y desbloquea hoy es el caso
+   * simple**, que es el 99% de lo que hay pendiente.
+   */
+  const [ventasParaAsignar, setVentasParaAsignar] = useState<any[]>([])
+  const [ventaElegida, setVentaElegida] = useState<any>(null)
+  const [busquedaAsignarVenta, setBusquedaAsignarVenta] = useState('')
   const [busquedaAsignarArca, setBusquedaAsignarArca] = useState('')
+  /**
+   * 🔒 **A-FEAT-143 — el camino para vincular contra una factura YA CONCILIADA.**
+   *
+   * Pedido del usuario **con su restricción incluida**: *«nunca debe proponerse como lo primero, ya
+   * que todas las facturas conciliadas siempre se mostrarían. Debe haber una manera que requiera
+   * que conscientemente quieras hacerlo (…) de cierto “difícil” acceso, ya que es muy poco habitual
+   * y se trata de evitar»*.
+   *
+   * 🔑 **Por eso vive en un estado aparte y NO en la lista normal.** Las conciliadas ni se cargan
+   * hasta que se piden: así no hay forma de elegir una sin querer, y el motor no las ve nunca.
+   * Se apaga al cerrar el modal — no queda pegado para la próxima.
+   */
+  const [verConciliadas, setVerConciliadas] = useState(false)
+  const [arcaConciliadas, setArcaConciliadas] = useState<any[]>([])
+  const [motivoForzar, setMotivoForzar] = useState('')
+  /**
+   * 🔎 **A-FEAT-143** — contra QUÉ movimiento está conciliada la factura elegida.
+   * Se busca **al elegirla**, no al cargar la lista: son cientos de facturas y sólo importa la que
+   * se está por vincular.
+   */
+  const [movDeLaConciliada, setMovDeLaConciliada] = useState<{ cargando: boolean; encontrados: any[] } | null>(null)
   const [busquedaAsignarTemplate, setBusquedaAsignarTemplate] = useState('')
   const [busquedaAsignarSueldo, setBusquedaAsignarSueldo] = useState('')
   const [busquedaAsignarGrupo, setBusquedaAsignarGrupo] = useState('')
@@ -343,6 +426,108 @@ export function VistaExtractoBancario() {
   const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
+  /**
+   * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
+   * *«Debería hacerlo, son 1 en esencia»* (usuario, 2026-09-12). La lógica vive en
+   * `lib/conciliacion/propagar-detalle.ts`; acá sólo se avisa qué pasó.
+   *
+   * 🧮 Se avisa **siempre que haya vinculo**, también cuando sale bien: el usuario tiene que
+   * poder ver que el dato llegó al otro lado sin ir a mirarlo. Un cambio que se propaga en silencio
+   * se parece demasiado a uno que no se propagó — que es justo el bug que se está arreglando.
+   */
+  /**
+   * 📝 **A-FEAT-133 / A-FEAT-135 — la misma nota (o el borrado) en todo lo filtrado.**
+   *
+   * Opera sobre **lo que hay en pantalla**, no sobre una selección a mano: eso es lo que lo hace
+   * útil conciliando — el filtro ya expresa el criterio («todos los de FIMA hasta el 18/06») y
+   * repetir ese mismo razonamiento fila por fila es el trabajo que se viene a sacar.
+   *
+   * ⚠️ **Por eso el número se muestra ANTES.** El filtro puede traer más de lo que uno cree — que
+   * es exactamente [A-BUG-155] — y acá ese error se paga en N filas escritas.
+   *
+   * 🔑 **«Agregar» no pisa lo que ya había**: suma un renglón. Reemplazar y borrar son los que
+   * destruyen, y por eso son una elección explícita y no el default.
+   */
+  const aplicarNotaEnLote = async () => {
+    const { texto, modo } = modalNotaLote
+    const ids = movimientos.map(m => m.id)
+    if (ids.length === 0) return
+
+    const cli = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+    let tocados = 0
+    try {
+      if (modo === 'borrar' || modo === 'reemplazar') {
+        const valor = modo === 'borrar' ? null : texto.trim()
+        const { error } = await cli().from(tablaActiva).update({ nota_operador: valor }).in('id', ids)
+        if (error) throw error
+        actualizarLocal(ids, { nota_operador: valor })
+        tocados = ids.length
+      } else {
+        // Agregar: hay que leer cada una, así que va de a uno. Son las filas de la pantalla,
+        // no el extracto entero, así que el costo está acotado por el límite de la lista.
+        for (const id of ids) {
+          const m = movimientos.find(x => x.id === id) as any
+          const previo = (m?.nota_operador || '').trim()
+          const nuevo = previo ? `${previo}
+${texto.trim()}` : texto.trim()
+          const { error } = await cli().from(tablaActiva).update({ nota_operador: nuevo }).eq('id', id)
+          if (error) throw error
+          actualizarLocal(id, { nota_operador: nuevo })
+          tocados++
+        }
+      }
+      setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' })
+      toast.success(modo === 'borrar'
+        ? `${tocados} nota(s) borrada(s)`
+        : `Nota escrita en ${tocados} movimiento(s)`)
+    } catch (e: any) {
+      toast.error(`Se alcanzaron a tocar ${tocados} de ${ids.length}`, { description: e?.message || String(e) })
+      await recargar()
+    }
+  }
+
+  /**
+   * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
+   * *«Debería hacerlo, son 1 en esencia»* (usuario, 2026-09-12). La lógica vive en
+   * `lib/conciliacion/propagar-detalle.ts`.
+   *
+   * 🔇 **Cuando sale bien NO avisa, y es una corrección del usuario** (2026-09-12):
+   * *«no debe avisar ya que es lo esperado»*. Y sigue del mismo argumento que sostiene la feature:
+   * si el movimiento y la cuota **son 1 en esencia**, propagar no es un evento que merezca
+   * contarse — es lo que significa guardar. Un aviso por cada detalle tecleado es ruido, y el ruido
+   * entrena a despachar sin leer el aviso que sí importa.
+   *
+   * 🔴 **El error sí se muestra.** Ahí las dos mitades quedaron distintas y eso el usuario no tiene
+   * cómo verlo. La § 🧮 *nada se descarta en silencio* obliga a que no pase inadvertido **el
+   * fallo**, no el éxito — confundir las dos cosas es lo que llena una app de carteles.
+   */
+  /**
+   * 🧹 **A-FEAT-135** — borra las notas que el usuario decidió dejar ir.
+   *
+   * Cerrar el cartel sin apretar nada **conserva** las notas: el default de una acción destructiva
+   * no puede ser el silencio (§ `CLAUDE.md` 🛑 Datos).
+   */
+  const borrarNotasDeConciliados = async () => {
+    const ids = modalNotasConciliadas.ids
+    setModalNotasConciliadas({ isOpen: false, ids: [] })
+    if (ids.length === 0) return
+    const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+      .from(tablaActiva).update({ nota_operador: null }).in('id', ids)
+    if (error) {
+      toast.error('No se pudieron borrar las notas', { description: error.message })
+    } else {
+      actualizarLocal(ids, { nota_operador: null })
+      toast.success(`${ids.length} nota(s) borrada(s)`)
+    }
+  }
+
+  const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
+    const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
+    if (r.error) {
+      toast.error('El detalle se guardó en el extracto pero NO llegó al template', { description: r.error })
+    }
+  }
+
   // Set de categs de templates (para validación de categ en extracto)
   const [templateCategSet, setTemplateCategSet] = useState<Set<string>>(new Set())
   useEffect(() => {
@@ -381,6 +566,24 @@ export function VistaExtractoBancario() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es'))
   }, [movimientos])
 
+  /**
+   * 🏷️ **A-BUG-180 — acá hubo un arreglo MÍO que estaba mal, y se quitó.**
+   *
+   * Puse un efecto que, al aparecer categorías nuevas después de conciliar, **las sumaba solas al
+   * filtro**. Razonaba que *«una categoría que nunca existió no pudo haber sido descartada»*.
+   *
+   * 🧨 **El efecto era el contrario del que hacía falta:** el usuario filtra por una categoría para
+   * trabajar sobre ella, concilia, y el filtro **se ensancha solo** — que es exactamente lo que él
+   * describió como *«no responde al comando»*.
+   *
+   * 📌 **Y el síntoma original era correcto, no un bug:** si filtrás por `INVALIDA:` y conciliás,
+   * esos movimientos **dejan de ser `INVALIDA:`** y desaparecen de la vista. Eso es lo que tiene que
+   * pasar — el filtro dice la verdad sobre el dato nuevo.
+   *
+   * ✅ Verificado con `pruebas-ui/filtro-categ.spec.ts` (sólo lectura): tildar una categoría lleva
+   * la tabla de **100 filas a 1**. El filtro base anda.
+   */
+
   // Movimientos visibles (filtro client-side de categ multi-select + búsqueda sin tildes)
   /**
    * ⭐ FUENTE ÚNICA de "qué está filtrado".
@@ -410,10 +613,12 @@ export function VistaExtractoBancario() {
     if (busquedaDetalle.trim()) items.push(`detalle "${busquedaDetalle.trim()}"`)
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
+    if (filtroNota !== 'todas') items.push(filtroNota === 'con_nota' ? 'con nota mía' : 'sin nota mía')
+    if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
   }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
-      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroCategEspecial])
+      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -723,16 +928,60 @@ export function VistaExtractoBancario() {
     setSelectorAbierto(false)
   }
 
-  // Aplicar filtros
-  const aplicarFiltros = () => {
-    cargarMovimientos({
-      estado: filtroEstado,
-      busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros,
-      categEspecial: filtroCategEspecial || undefined,
-      filtroRevisado: filtroRevisado !== 'todas' ? filtroRevisado : undefined
-    })
-  }
+  /**
+   * El botón «Filtrar». También armaba su propio objeto y **tampoco pasaba fechas, montos ni
+   * detalle** (A-BUG-155): apretarlo después de poner un rango de fechas las descartaba en silencio.
+   */
+  /**
+   * 🔍 **A-BUG-162 — buscar tiene que mirar la cuenta ENTERA, no lo que quedó cargado.**
+   *
+   * Reportado por el usuario: *«tengo X movimientos a la vista cuando abro extracto; si en el
+   * buscador pongo, me busca sólo en ese rango (…) pienso que algo no existe»*.
+   *
+   * 🔑 **El daño no es no encontrar: es la conclusión falsa.** Un buscador que devuelve cero sobre
+   * un subconjunto, sin decir que era un subconjunto, **afirma que algo no existe**.
+   *
+   * ## Por qué se amplía la CARGA y no se busca en el servidor
+   * La búsqueda es client-side **a propósito**: así es insensible a tildes (`normalizarBusqueda`),
+   * que un `ilike` de PostgREST no da. Mandarla al servidor arreglaría el alcance y rompería eso.
+   * Entonces se ataca el otro lado: **al escribir, se trae la cuenta completa** y el filtro sigue
+   * donde estaba. La cuenta más grande tiene ~850 movimientos, así que traerla entera no se nota.
+   *
+   * 📌 **El límite inicial NO se toca** (decisión del usuario): entrar y ver lo reciente está bien.
+   * Lo que estaba mal era que **buscar heredara ese recorte en silencio**.
+   */
+  const yaSeCargoTodo = useRef(false)
+  useEffect(() => { yaSeCargoTodo.current = false }, [tablaActiva, schemaActivo])
+
+  /**
+   * 🔎 **Ampliado 2026-09-22 (A-BUG-162): también cuando se busca por CONTRAPARTE.**
+   *
+   * Lo vio el usuario: *«acabo de buscar por contraparte en extracto bancario y me buscó sobre los
+   * 200 movimientos de preset»*. **Tenía razón y es el mismo bug que yo había arreglado a medias**:
+   * cubrí el buscador de texto y dejé afuera el filtro de proveedor, que también filtra **en
+   * memoria** sobre lo que quedó cargado.
+   *
+   * 🔑 Es el modo de falla de § 30.9.5 otra vez —*se arregló un camino de los dos*— y van cinco en
+   * cuatro días. **Cualquier filtro client-side nuevo tiene que entrar en esta lista**, o repite el
+   * problema: devuelve cero sobre un subconjunto sin decir que era un subconjunto.
+   */
+  const hayQueBuscarSobreTodo = !!busqueda.trim() || !!filtroProveedor
+
+  useEffect(() => {
+    if (!hayQueBuscarSobreTodo || yaSeCargoTodo.current) return
+    // Si lo cargado ya es toda la cuenta, no hay nada que traer.
+    if (estadisticas.total > 0 && movimientos.length >= estadisticas.total) {
+      yaSeCargoTodo.current = true
+      return
+    }
+    const t = setTimeout(() => {
+      yaSeCargoTodo.current = true
+      cargarMovimientos({ ...construirFiltros(), limite: 5000 })
+    }, 350)   // el debounce evita una recarga por tecla
+    return () => clearTimeout(t)
+  }, [hayQueBuscarSobreTodo, estadisticas.total, movimientos.length])
+
+  const aplicarFiltros = () => cargarMovimientos(construirFiltros())
 
   // Formatear moneda
   const formatCurrency = (amount: number) => {
@@ -983,12 +1232,38 @@ export function VistaExtractoBancario() {
                 .eq('id', movimiento.template_cuota_id)
             }
 
-            // Pago sueldo ya vinculado
+            /**
+             * 🔗 **A-BUG-176 — si el pago es de un GRUPO, se concilian TODOS sus miembros.**
+             *
+             * El vínculo guarda **el primer miembro** del grupo, y eso es deliberado (A-BUG-41): un
+             * `grupo_pago_id` en `sueldo_pago_id` apuntaría a otra tabla, y desde el primer pago se
+             * llega al grupo. **Eso no se toca.**
+             *
+             * 🧨 Lo que faltaba es la otra mitad: marcar `conciliado` **sólo al primero** deja a los
+             * demás en `pendiente`, así que el mismo pago bancario aparece medio saldado — y los
+             * miembros restantes se vuelven a ofrecer para conciliar contra otra cosa.
+             *
+             * 📌 Caso real: los haberes de $2.699.370 son **3 pagos y 2 beneficiarios**
+             * (Sigot ×2 + Barreto). Sin esto quedarían conciliados $1.487.477 de los tres.
+             */
             if (movimiento.sueldo_pago_id) {
-              await supabase
+              const { data: pagoVinculado } = await supabase
                 .from('sueldos_pagos')
-                .update({ estado: 'conciliado' })
+                .select('id, grupo_pago_id')
                 .eq('id', movimiento.sueldo_pago_id)
+                .maybeSingle()
+
+              if (pagoVinculado?.grupo_pago_id) {
+                await supabase
+                  .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('grupo_pago_id', pagoVinculado.grupo_pago_id)
+              } else {
+                await supabase
+                  .from('sueldos_pagos')
+                  .update({ estado: 'conciliado' })
+                  .eq('id', movimiento.sueldo_pago_id)
+              }
             }
           }
         }
@@ -1039,6 +1314,50 @@ export function VistaExtractoBancario() {
           }
         }
 
+        /**
+         * 👤 **A-FEAT-132 — el proveedor sale del propio movimiento.**
+         *
+         * Pedido del usuario 2026-09-12: *«asigné el otro pago a CZ ganadería ok, pero no llenó
+         * proveedor y tiene por extracto bancario cómo tomarlo»*. El banco manda el CUIT de la
+         * contraparte en `leyendas_adicionales_2`, el motor automático ya lo usaba, y el camino
+         * manual —que es el que se usa **justo cuando el automático no alcanzó**— lo tiraba.
+         *
+         * 🔑 **Se llena sólo si está vacío** (§ `CLAUDE.md` 🎚️ Default del dato real, siempre
+         * editable): campo vacío = *«usá el real»*, campo lleno = *«acá mando yo»*. Pisar un nombre
+         * escrito a mano convertiría la ayuda en pérdida de datos.
+         *
+         * ⚠️ **Y si el CUIT no está en `proveedores`, se dice.** Ese silencio es exactamente el
+         * hueco que la § 👥 Contrapartes existe para tapar: un movimiento cuya contraparte no está
+         * en el maestro rompe pagos y cobros aguas abajo. Acá **no se da de alta** — una contraparte
+         * creada desde una pantalla de conciliación nace sin razón social real y sin saber si es
+         * cliente o proveedor.
+         */
+        const sinProveedorEnMaestro: string[] = []
+        let proveedoresLlenados = 0
+        for (const movimientoId of ids) {
+          const mov = movimientos.find(m => m.id === movimientoId) as any
+          if (!mov || (mov.proveedor_nombre || '').trim()) continue
+          // ⚠️ `proveedores` vive SIEMPRE en `public`, aunque el movimiento sea de `ma` o `pam`:
+          // la búsqueda va con `supabase` pelado y el update con el cliente del schema activo.
+          const prop = await proveedorDelMovimiento(supabase, mov)
+          if (!prop) continue
+          if (prop.nombre) {
+            const { error } = await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase).from(tablaActiva)
+              .update({ proveedor_nombre: prop.nombre }).eq('id', movimientoId)
+            if (!error) { actualizarLocal(movimientoId, { proveedor_nombre: prop.nombre }); proveedoresLlenados++ }
+          } else if (!sinProveedorEnMaestro.includes(prop.cuit)) {
+            sinProveedorEnMaestro.push(prop.cuit)
+          }
+        }
+        if (proveedoresLlenados > 0) {
+          toast.success(`Proveedor tomado del extracto en ${proveedoresLlenados} movimiento(s)`,
+            { description: 'Estaba vacío y el banco manda el CUIT. Los que ya tenían nombre no se tocaron.' })
+        }
+        if (sinProveedorEnMaestro.length > 0) {
+          toast.warning(`${sinProveedorEnMaestro.length} CUIT(s) del banco NO están en Proveedores`,
+            { description: sinProveedorEnMaestro.join(', ') + ' — conviene darlos de alta para que pagos y cobros los encuentren.' })
+        }
+
         // Actualizar localmente sin recargar — preserva filtros y contexto de trabajo
         const camposLocales: Record<string, any> = {}
         if (editData.categ?.trim()) camposLocales.categ = editData.categ.trim().toUpperCase()
@@ -1049,6 +1368,31 @@ export function VistaExtractoBancario() {
         if (editData.interno?.trim()) camposLocales.interno = editData.interno.trim()
         if (editData.detalle?.trim()) camposLocales.detalle = editData.detalle.trim()
         if (editData.estado === 'conciliado') camposLocales.motivo_revision = null
+
+        /**
+         * 🧹 **A-FEAT-135 — al conciliar, las notas se pueden ir (o quedarse).**
+         *
+         * Pedido del usuario 2026-09-12: *«sería bueno poder borrar las notas una vez que por
+         * ejemplo se concilian. Al conciliar con notas poder elegir borrarlas o que perduren»*.
+         *
+         * 🔑 **Una nota del operador es una pregunta abierta** — *«¿esto qué es?»*, *«falta el
+         * detalle»*. Cuando el movimiento se concilia, la mayoría **ya está contestada** y desde
+         * ahí sólo ensucia el filtro de [A-FEAT-130]. Pero **no todas**: algunas dicen algo que hay
+         * que recordar después. Por eso se elige, y por eso el default es **conservarlas**.
+         *
+         * ⚠️ Borrar es destructivo (§ 🛑 Datos): se dice cuántas se van antes de irse.
+         */
+        if (editData.estado === 'conciliado') {
+          const conNota = ids.filter(id => {
+            const m = movimientos.find(x => x.id === id) as any
+            return (m?.nota_operador || '').trim()
+          })
+          // 🔇 **Si no hay notas no pasa nada.** Corrección del usuario 2026-09-12:
+          // *«si no hay notas no alerta»*. Una pregunta que se hace siempre — incluso cuando no
+          // hay nada que decidir — se contesta sin leer, y el día que importe se contesta igual.
+          if (conNota.length > 0) setModalNotasConciliadas({ isOpen: true, ids: conNota })
+        }
+
         if (Object.keys(camposLocales).length > 0) actualizarLocal(ids, camposLocales)
       }
     } catch (error) {
@@ -1070,6 +1414,37 @@ export function VistaExtractoBancario() {
     } catch (e) {
       console.error('Error cargando códigos usados:', e)
     }
+  }
+
+  /**
+   * 🔒 **A-FEAT-143** — trae las facturas **ya conciliadas**, sólo cuando el usuario las pide.
+   *
+   * Consulta aparte a propósito: si viajaran con las demás habría que acordarse de filtrarlas en
+   * cada lugar que las use — sugerencias, lista, búsqueda — y **alcanza con olvidarse en uno**.
+   * Separadas, el default seguro es no hacer nada.
+   */
+  const cargarFacturasConciliadas = async () => {
+    const res = await Promise.all(EMPRESAS.map(async (empresa) => {
+      const { data } = await supabase
+        .schema(schemaDeEmpresa(empresa))
+        .from('comprobantes_arca')
+        .select('id, tipo_comprobante, numero_desde, denominacion_emisor, monto_a_abonar, fecha_estimada, cuit, fecha_emision, estado')
+        .eq('estado', 'conciliado')
+        .order('fecha_emision', { ascending: false })
+        .limit(1500)
+      return (data ?? []).map(f => ({ ...f, __empresa: empresa }))
+    }))
+    setArcaConciliadas(res.flat().map((f: any) => ({
+      id: f.id, tipo: 'ARCA' as const, empresa: f.__empresa,
+      origen_tabla: `${schemaDeEmpresa(f.__empresa)}.comprobantes_arca`,
+      tipo_comprobante: f.tipo_comprobante, numero_desde: f.numero_desde,
+      denominacion_emisor: f.denominacion_emisor, monto_a_abonar: f.monto_a_abonar,
+      fecha_estimada: f.fecha_estimada, cuit: f.cuit, fecha_emision: f.fecha_emision,
+      display_nombre: f.denominacion_emisor,
+      display_referencia: `${f.tipo_comprobante === 3 ? 'NC' : f.tipo_comprobante === 2 ? 'ND' : 'FC'} - ${f.numero_desde || ''}`,
+      display_monto: f.monto_a_abonar,
+      yaConciliada: true,
+    })))
   }
 
   const cargarFacturasDisponibles = async () => {
@@ -1191,7 +1566,49 @@ export function VistaExtractoBancario() {
     setBusquedaAsignarTemplate('')
     setBusquedaAsignarSueldo('')
     setBusquedaAsignarGrupo('')
-    setTabAsignar('template')
+    setVentaElegida(null)
+    setBusquedaAsignarVenta('')
+    setVentasParaAsignar([])
+
+    /**
+     * 💰 **Si el movimiento es un CRÉDITO, el modal abre directo en Ventas.**
+     *
+     * Pedido del usuario: *«si estoy conciliando ingresos me podría mostrar el panel directo en
+     * ventas»*. Un ingreso **nunca** se concilia contra un template de egreso ni contra una factura
+     * de compra, así que abrir en «Template» es hacerle cambiar de pestaña todas las veces.
+     */
+    const esIngreso = Number(movimiento.creditos) > 0
+    setTabAsignar(esIngreso ? 'venta' : 'template')
+
+    if (esIngreso) {
+      /**
+       * Los comprobantes de venta de las 3 empresas, con su **pago según condiciones** — que es lo
+       * que el banco acredita de verdad (§ `lib/ventas/cobro-esperado.ts`). Las retenciones viven
+       * en otra tabla, así que se traen y se suman por comprobante.
+       */
+      const res = await Promise.all(EMPRESAS.map(async (empresa) => {
+        const sch = schemaDeEmpresa(empresa)
+        const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante')
+          .order('fecha_liquidacion', { ascending: false })
+          .limit(500)
+        const ids = (comps ?? []).map((c: any) => c.id)
+        let retPorComp = new Map<string, number>()
+        if (ids.length) {
+          const { data: rets } = await supabase.schema(sch).from('retenciones_recibidas')
+            .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids)
+          for (const r of rets ?? []) {
+            const k = String((r as any).comprobante_venta_id)
+            retPorComp.set(k, (retPorComp.get(k) ?? 0) + (Number((r as any).monto) || 0))
+          }
+        }
+        return (comps ?? []).map((c: any) => {
+          const cobro = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
+          return { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+        })
+      }))
+      setVentasParaAsignar(res.flat())
+    }
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
     setCategManualAsignar('')
@@ -1272,7 +1689,23 @@ export function VistaExtractoBancario() {
         fecha: primera.fecha_estimada,
         cuit: cuitsUnicos.join(', '),
         nombre_proveedor: proveedoresUnicos.join(', '),
-        descripciones: cuotas.map((c: any) => c.descripcion || '').filter(Boolean).join(' + '),
+        /**
+         * 🔎 **A-BUG-164** — esto alimenta el BUSCADOR de grupos (más abajo:
+         * `normalizarBusqueda(g.descripciones).includes(busqueda)`), así que no es cosmético.
+         *
+         * 🧨 Antes leía `c.descripcion` a secas, y al repartir esa columna ([A-DAT-37]) la
+         * búsqueda de grupos de template **dejó de encontrar nada**: las cuotas ya no guardan ahí
+         * su etiqueta. Lo detectó el usuario preguntando *«¿no deberían tener descripción, ya que
+         * es como se llenan luego los datos en las conciliaciones?»* — **no un control**. Tercera
+         * vez en el mismo circuito que se verifica dónde se ESCRIBE y no quién LEE.
+         *
+         * 🔑 Ahora se compone igual que en el Cash Flow: **identificador generado + detalle**.
+         * Y el buscador queda **mejor que antes**, porque el identificador trae el nombre del
+         * template — que es por lo que uno busca — y antes sólo estaba si alguien lo había escrito.
+         */
+        descripciones: cuotas
+          .map((c: any) => detalleCompleto(c, c.egreso ?? {}, c.detalle))
+          .filter(Boolean).join(' + '),
       }
     })
 
@@ -1549,8 +1982,10 @@ export function VistaExtractoBancario() {
         // pisa con null cuando el CUIT no está en el maestro (punto 4).
         const nombreProvTpl = provTemplate?.razon_social || templateElegido.denominacion_emisor || null
         if (nombreProvTpl) updateTemplate.proveedor_nombre = nombreProvTpl
-        updateTemplate.detalle = movimientoAsignando.detalle?.trim()
-          || `${templateElegido.nombre_referencia || templateElegido.display_referencia || 'Template'}${nombreProvTpl ? ' — ' + nombreProvTpl : ''}`
+        // 📝 A-DAT-51 — ídem ARCA: el nombre del template ya va al comprobante y el proveedor a su
+        //    columna. Inventar un detalle con los dos era copiar las dos celdas de al lado.
+        //    ⚠️ Lo escrito a mano se sigue respetando (eso era A-BUG-05).
+        updateTemplate.detalle = movimientoAsignando.detalle?.trim() || null
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
@@ -1593,12 +2028,45 @@ export function VistaExtractoBancario() {
           estado: 'conciliado',
           comprobantes_pagados: arcaElegida.display_referencia || null
         }
+
+        /**
+         * 🔒 **A-FEAT-143 — la HUELLA de haber forzado contra una factura ya conciliada.**
+         *
+         * El motivo va a `nota_operador` con un prefijo fijo, y eso es una decisión, no comodidad:
+         * esa columna **ya es buscable** desde los filtros de notas del Extracto ([A-FEAT-134]), así
+         * que estos casos se pueden listar sin inventar una columna ni una pantalla.
+         *
+         * 🔑 **Sin huella, forzar es indistinguible de un error.** Dentro de seis meses, un
+         * movimiento vinculado a una factura que ya estaba paga parece un bug — y alguien lo va a
+         * "arreglar". Con el motivo escrito, se sabe que fue deliberado y **por qué**.
+         */
+        if ((arcaElegida as any).yaConciliada) {
+          const previa = (movimientoAsignando as any).nota_operador?.trim()
+          const marca = `🔒 Vinculada a una FC YA CONCILIADA (${arcaElegida.display_referencia}): ${motivoForzar.trim()}`
+          updateArca.nota_operador = previa ? `${previa}
+${marca}` : marca
+        }
         // No pisar con null lo que ya estaba: sin proveedor en el maestro se conserva lo que hubiera
         // (A-BUG-05 punto 4), y el detalle deja de borrarse en cada reasignación (punto 1).
         const nombreProv = provArca?.razon_social || arcaElegida.denominacion_emisor || null
         if (nombreProv) updateArca.proveedor_nombre = nombreProv
-        const detalleArca = `${arcaElegida.display_referencia || 'FC'} — ${nombreProv || 'sin proveedor'}`
-        updateArca.detalle = movimientoAsignando.detalle?.trim() || detalleArca
+        /**
+         * 📝 **A-DAT-51 — el detalle NO repite el comprobante ni el proveedor.**
+         *
+         * 🧨 Acá se armaba `«FC 424 — PAIS DIEGO LUIS»` y se escribía en `detalle`, cuando
+         * `comprobantes_pagados` **ya dice** `FC - 424` y `proveedor_nombre` **ya dice**
+         * `PAIS DIEGO LUIS`. Las dos columnas de al lado, copiadas.
+         *
+         * 🔴 **Y no era un dato viejo: lo escribía esta pantalla en CADA conciliación manual de
+         * ARCA.** Medido el 2026-09-20 sobre la 1ª quincena de julio: **11 de 11** movimientos con
+         * detalle repetido salieron de acá. Crecía un renglón por cada factura conciliada.
+         *
+         * 📏 § 30.9.6 D: *el detalle no repite el proveedor, ni la categoría, ni el comprobante; si
+         * lo que ibas a escribir ya está en otra columna, va vacío*.
+         *
+         * ✅ **Lo que el usuario escribió a mano se respeta siempre** — eso no cambia.
+         */
+        updateArca.detalle = movimientoAsignando.detalle?.trim() || null
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
@@ -1658,11 +2126,29 @@ export function VistaExtractoBancario() {
 
         const nombreEmpleado = sueldoElegido.empleado?.nombre || ''
         const tipoLabel = sueldoElegido.tipo === 'anticipo' ? 'Anticipo' : 'Pago Saldo'
-        const detalleSueldo = `${tipoLabel} ${nombreEmpleado} - ${sueldoElegido.descripcion || ''}`
+        // 📝 Acá vivía `detalleSueldo`. Se fue con A-DAT-51: repetía el empleado y el período, que
+        //    ya viajan en `proveedor_nombre` y en `comprobantes_pagados`.
         const mesesAbrev = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
         const periodoLabel = sueldoElegido.periodo
           ? `${mesesAbrev[(sueldoElegido.periodo.mes || 1) - 1]} ${sueldoElegido.periodo.anio}`
           : ''
+
+        /**
+         * 👥 Si este pago pertenece a un grupo, se traen sus hermanos para armar el reparto.
+         * Si no tiene grupo, `repartoDelGrupoSueldo` queda vacío y manda el nombre del empleado.
+         */
+        let repartoDelGrupoSueldo = ''
+        if (sueldoElegido.grupo_pago_id) {
+          const { data: hermanos } = await supabase
+            .from('sueldos_pagos')
+            .select('monto, empleado:sueldos_empleados(nombre)')
+            .eq('grupo_pago_id', sueldoElegido.grupo_pago_id)
+          if (hermanos && hermanos.length > 1) {
+            repartoDelGrupoSueldo = repartoDelGrupo(hermanos.map((h: any) => ({
+              nombre: h.empleado?.nombre ?? '', monto: parseFloat(h.monto) || 0,
+            })))
+          }
+        }
 
         // Buscar códigos contable/interno por empleado (Tipo C)
         const empleadoId = sueldoElegido.empleado_id || sueldoElegido.empleado?.id
@@ -1684,9 +2170,23 @@ export function VistaExtractoBancario() {
           sueldo_pago_id: sueldoElegido.id,
           categ: 'Sueldos',
           // `detalleSueldo` ya se calcula arriba y se descartaba escribiendo null (A-BUG-05 p.1)
-          detalle: movimientoAsignando.detalle?.trim() || detalleSueldo || null,
+          // 📝 A-DAT-51 — `detalleSueldo` era `«Anticipo <empleado> - <descripción>»`: el empleado
+          //    ya está en el proveedor y el período en el comprobante.
+          detalle: movimientoAsignando.detalle?.trim() || null,
           estado: 'conciliado',
-          proveedor_nombre: nombreEmpleado,
+          /**
+           * 👥 **A-FEAT-155 también acá: si el pago elegido pertenece a un GRUPO, el renglón nombra
+           * a todos con su reparto.**
+           *
+           * 🧨 Se probó en real el 2026-09-19 y salió mal: el usuario armó el grupo de haberes
+           * ($2.699.370 = Sigot ×2 + Barreto) y lo concilió **por este camino**, el de asignación
+           * individual — no por el de grupo, que era el único que tenía el reparto. Resultado: el
+           * movimiento decía **sólo «Wilson Barreto»**, escondiendo que a Sigot le fueron $1,6M.
+           *
+           * 🔑 Es el modo de falla de `MODULO_CONCILIACION.md` § 30.9.5 otra vez: **se arregló un
+           * camino de los dos**. Acá el pago sabe que tiene grupo, así que se mira siempre.
+           */
+          proveedor_nombre: repartoDelGrupoSueldo || nombreEmpleado,
           comprobantes_pagados: periodoLabel ? `${tipoLabel} ${periodoLabel}` : null,
           // (la limpieza de los otros vínculos ya viene de `vinculosLimpios()` arriba)
         }
@@ -1711,6 +2211,60 @@ export function VistaExtractoBancario() {
 
         // Actualizar localmente — preserva filtros y contexto de trabajo
         actualizarLocal(movimientoAsignando.id, updateSueldo)
+
+      } else if (tabAsignar === 'venta' && ventaElegida) {
+        /**
+         * 💰 **A-FEAT-167 — el cobro queda atado a su comprobante de venta.**
+         *
+         * ⚠️ **UNO a UNO.** Un crédito que cubre varios comprobantes queda afuera hasta que se
+         * defina el modelo (decisión del usuario 2026-09-22).
+         *
+         * 🔑 **Se marca `cobrado` el comprobante y `conciliado` el movimiento en la misma acción.**
+         * Dejar sólo uno de los dos es lo que produjo *«la misma plata en dos estados»* en sueldos
+         * ([A-DAT-50]) y en la factura de Provinvest, que figuraba cobrada con el extracto pendiente.
+         */
+        const cobro = ventaElegida.__cobro
+        const acreditado = Number(movimientoAsignando.creditos) || 0
+        const dif = diferenciaContraElBanco(acreditado, cobro)
+
+        const updateVenta: Record<string, any> = {
+          ...vinculosLimpios(),
+          estado: 'conciliado',
+          categ: categManualAsignar.trim() || movimientoAsignando.categ || null,
+          proveedor_nombre: ventaElegida.denominacion_cliente || null,
+          comprobantes_pagados: ventaElegida.nro_comprobante || null,
+          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D).
+          detalle: movimientoAsignando.detalle?.trim() || null,
+          comprobante_venta_id: ventaElegida.id,
+        }
+
+        /**
+         * ⚠️ **Si no coincide exacto, queda en `auditar` con el motivo** — no se calla la diferencia.
+         * En ventas lo más común es que falte cargar una retención, y eso hay que poder verlo.
+         */
+        if (!dif.exacto) {
+          updateVenta.estado = 'auditar'
+          updateVenta.motivo_revision = cobro.retenciones === 0
+            ? `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) y el comprobante no tiene retenciones cargadas`
+            : `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) contra el pago según condiciones`
+        }
+
+        const { error: errExt } = await dbCuenta()
+          .from(tablaActiva).update(updateVenta).eq('id', movimientoAsignando.id)
+        if (errExt) throw errExt
+
+        // El otro lado: el comprobante pasa a cobrado.
+        const { error: errVenta } = await supabase
+          .schema(ventaElegida.__schema)
+          .from('comprobantes_venta')
+          .update({ estado: 'cobrado' })
+          .eq('id', ventaElegida.id)
+        if (errVenta) throw errVenta
+
+        actualizarLocal(movimientoAsignando.id, updateVenta)
+        toast.success(dif.exacto
+          ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
+          : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
         // Buscar códigos contable/interno por template (si aplica)
@@ -1742,13 +2296,32 @@ export function VistaExtractoBancario() {
         const { data: provGrupo } = cuitGrupo ? await supabase
           .from('proveedores').select('razon_social').eq('cuit', cuitGrupo).maybeSingle() : { data: null }
 
-        const nombreProvGrupo = provGrupo?.razon_social || grupoElegido.nombre_proveedor || null
+        /**
+         * 👥 **A-FEAT-155 — con varios beneficiarios, el renglón dice cuánto a cada uno.**
+         *
+         * Pedido del usuario 2026-09-19 sobre el pago de haberes que el banco agrupó: *«si ve que se
+         * pagaron 2.700.000 a Sigot y Barreto, pensará cuánto a cada uno»*. Queda
+         * `Ruben Sigot 1,6M + Wilson Barreto 1,1M` — redondeado a 100K, **a título informativo**:
+         * para los cálculos el sistema entra al grupo y toma los importes exactos.
+         *
+         * 📌 Suma por nombre, porque en el caso real **Sigot aparece dos veces** y listarlo dos
+         * veces haría pensar que son dos personas.
+         */
+        const repartoSueldos = grupoElegido.tipo_grupo === 'sueldo'
+          ? repartoDelGrupo((grupoElegido.cuotas ?? []).map((p: any) => ({
+              nombre: p.empleado?.nombre ?? '', monto: parseFloat(p.monto) || 0,
+            })))
+          : ''
+
+        const nombreProvGrupo = repartoSueldos
+          || provGrupo?.razon_social || grupoElegido.nombre_proveedor || null
         const updateGrupo: Record<string, any> = {
           categ: grupoElegido.categ,
           // Se preserva lo que el usuario haya escrito; si no, se deriva del grupo. Antes iba
           // `null` fijo y borraba el detalle en cada reasignación (A-BUG-05 punto 1).
-          detalle: movimientoAsignando.detalle?.trim()
-            || `Grupo de ${grupoElegido.cuotas?.length ?? 0}${nombreProvGrupo ? ' — ' + nombreProvGrupo : ''}`,
+          // 📝 A-DAT-51 — «Grupo de 3 — <proveedor>» tampoco aporta: el comprobante ya lista los
+          //    tres y el proveedor ya está en su columna (con el reparto, si son varios).
+          detalle: movimientoAsignando.detalle?.trim() || null,
           estado: 'conciliado',
           proveedor_nombre: nombreProvGrupo,
           comprobantes_pagados: grupoElegido.tipo_grupo === 'arca'
@@ -1801,6 +2374,11 @@ export function VistaExtractoBancario() {
       }
 
       setModalAsignar(false)
+      // 🔒 A-FEAT-143 — el camino difícil se apaga SIEMPRE al cerrar. Si quedara pegado, la próxima
+      //    vez las conciliadas aparecerían solas y dejaría de ser una decisión consciente.
+      setVerConciliadas(false)
+      setMotivoForzar('')
+      setMovDeLaConciliada(null)
       // Lo que se soltó por el camino se dice. Un cambio que el usuario no pidió y no ve es el
       // modo de falla que originó A-BUG-42.
       if (avisosAsignacion.length > 0) alert(avisosAsignacion.join('\n\n'))
@@ -1981,15 +2559,36 @@ export function VistaExtractoBancario() {
     }
   }
 
-  // Aplicar filtros avanzados extracto bancario
-  const aplicarFiltrosAvanzados = () => {
+  /**
+   * 🧹 **TODOS los filtros activos, en un solo objeto** (A-BUG-155).
+   *
+   * ## El bug que resuelve
+   * Cada chip de la barra armaba **su propio** objeto —`{ estado, busqueda, limite }`— y lo mandaba
+   * a `cargarMovimientos`. Todo lo que no nombraba **se perdía**: fechas, montos, detalle,
+   * categorías, notas. Reportado por el usuario conciliando: *«pongo filtro hasta tal fecha y
+   * después pongo no conciliados, y me vuelve a mostrar todo»*.
+   *
+   * 🧨 **Y lo grave no es el click de más**: la lista vuelve a traer TODO, así que se puede estar
+   * mirando «los pendientes de todo el extracto» creyendo que son «los pendientes hasta el 18/06».
+   * Un filtro que se va solo **no avisa que se fue**.
+   *
+   * ## ⚠️ Los `overrides` NO son un lujo: son la trampa de React
+   * `setFiltroEstado('pendiente')` **no actualiza el estado en esta vuelta**. Si el chip llamara a
+   * `construirFiltros()` a secas después de setear, el objeto saldría con el valor **viejo** y la
+   * pantalla mostraría el filtro anterior — un bug peor que el original, porque el chip se vería
+   * apretado y la lista diría otra cosa.
+   *
+   * 👉 **El valor nuevo SIEMPRE va como override**, nunca se lee del estado recién seteado.
+   *
+   * 📌 Un `undefined` explícito en `overrides` **apaga** ese filtro (el spread lo pisa igual), que
+   * es lo que necesita un chip que funciona como interruptor.
+   */
+  const construirFiltros = (overrides: Record<string, any> = {}) => {
     const filtros: any = {
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros
+      limite: limiteRegistros,
     }
-
-    // Agregar filtros adicionales
     if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
@@ -1998,9 +2597,13 @@ export function VistaExtractoBancario() {
     // categ multi-select se aplica client-side via movimientosVisibles
     if (busquedaDetalle.trim()) filtros.detalle = busquedaDetalle.trim()
     if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
-
-    cargarMovimientos(filtros)
+    if (filtroNota !== 'todas') filtros.filtroNota = filtroNota
+    if (busquedaNota.trim()) filtros.busquedaNota = busquedaNota.trim()
+    return { ...filtros, ...overrides }
   }
+
+  // Aplicar filtros avanzados extracto bancario
+  const aplicarFiltrosAvanzados = () => cargarMovimientos(construirFiltros())
 
   // Limpiar filtros avanzados
   const limpiarFiltrosAvanzados = () => {
@@ -2017,7 +2620,16 @@ export function VistaExtractoBancario() {
     setSoloSinRevisar(false)
     setCategsFiltro(null)
     setCategFiltroBusqueda('')
+    /**
+     * ⚠️ Estos dos faltaban (A-BUG-155). Limpiaba doce filtros y dejaba los dos chips puestos:
+     * el chip se veía **activo** y la consulta ya no lo aplicaba. Es el mismo desacuerdo entre lo
+     * que la pantalla dice y lo que la lista muestra, por la puerta de al lado — y acá es peor,
+     * porque el control **parece** puesto.
+     */
+    setFiltroRevisado('todas')
+    setFiltroNota('todas')
 
+    // Reset completo: acá SÍ va el objeto mínimo — se limpió todo, no hay nada que preservar.
     cargarMovimientos({
       estado: 'Todos',
       limite: limiteRegistros
@@ -2278,7 +2890,7 @@ export function VistaExtractoBancario() {
 
       {/* Tabs del contenido */}
       <Tabs defaultValue="movimientos" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="movimientos" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Movimientos
@@ -2290,6 +2902,10 @@ export function VistaExtractoBancario() {
           <TabsTrigger value="reportes" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Reportes
+          </TabsTrigger>
+          <TabsTrigger value="auditoria" className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            Auditoría
           </TabsTrigger>
         </TabsList>
 
@@ -2416,7 +3032,31 @@ export function VistaExtractoBancario() {
                   Filtrar
                 </Button>
                 <Button
-                  onClick={() => setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)}
+                  onClick={() => {
+                    /**
+                     * 📅 **Al ABRIR el panel, mes y año ya puestos** — pedido del usuario
+                     * 2026-09-20: *«que por default ya sea mes 09 año 2026, porque es el mes y año
+                     * actual; yo hoy escribiría que quiero ir del 19 06 y ya estará completo 2026»*.
+                     *
+                     * Un `<input type="date">` no deja precargar sólo el mes y el año, así que se
+                     * cargan las dos fechas del mes actual: al tipear el día —y el mes si cambia—
+                     * el año ya está. Escribir `19/06` sobre `01/09/2026` deja `19/06/2026`.
+                     *
+                     * 🔑 **Se precarga al abrir el panel y no al entrar a la pantalla**, y eso es lo
+                     * que lo hace seguro: el panel tiene su botón *Aplicar*, así que tener fechas
+                     * escritas **no filtra nada** hasta que el usuario lo decide.
+                     *
+                     * 📌 Y sólo si están vacías: nunca pisa un rango que el usuario ya puso.
+                     */
+                    if (!mostrarFiltrosAvanzados && !fechaMovDesde && !fechaMovHasta) {
+                      const h = new Date()
+                      const p2 = (n: number) => String(n).padStart(2, '0')
+                      const y = h.getFullYear(), m = h.getMonth()
+                      setFechaMovDesde(`${y}-${p2(m + 1)}-01`)
+                      setFechaMovHasta(`${y}-${p2(m + 1)}-${p2(new Date(y, m + 1, 0).getDate())}`)
+                    }
+                    setMostrarFiltrosAvanzados(!mostrarFiltrosAvanzados)
+                  }}
                   variant={mostrarFiltrosAvanzados ? "default" : "outline"}
                   size="sm"
                 >
@@ -2460,7 +3100,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('pendiente')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'pendiente', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'pendiente' }))
                   }}
                 >
                   Pendientes ({estadisticas.pendientes})
@@ -2472,7 +3112,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('auditar')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'auditar', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'auditar' }))
                   }}
                 >
                   Auditar ({estadisticas.auditar})
@@ -2484,7 +3124,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroCategEspecial(filtroCategEspecial === 'invalida' ? null : 'invalida')
                     setFiltroEstado('Todos')
-                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'Todos', categEspecial: filtroCategEspecial === 'invalida' ? undefined : 'invalida' }))
                   }}
                 >
                   CATEG Inválida
@@ -2496,7 +3136,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroCategEspecial(filtroCategEspecial === 'sin_categ' ? null : 'sin_categ')
                     setFiltroEstado('Todos')
-                    cargarMovimientos({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'Todos', categEspecial: filtroCategEspecial === 'sin_categ' ? undefined : 'sin_categ' }))
                   }}
                 >
                   Sin CATEG ({estadisticas.sin_categ})
@@ -2508,7 +3148,7 @@ export function VistaExtractoBancario() {
                   onClick={() => {
                     setFiltroEstado('conciliado')
                     setFiltroCategEspecial(null)
-                    cargarMovimientos({ estado: 'conciliado', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                    cargarMovimientos(construirFiltros({ estado: 'conciliado' }))
                   }}
                 >
                   Conciliados ({estadisticas.conciliados})
@@ -2519,7 +3159,7 @@ export function VistaExtractoBancario() {
                   onChange={(e) => {
                     const nuevo = e.target.value as 'todas' | 'revisadas' | 'no_revisadas'
                     setFiltroRevisado(nuevo)
-                    cargarMovimientos({ estado: filtroEstado, busqueda: busqueda.trim() || undefined, limite: limiteRegistros, categEspecial: filtroCategEspecial || undefined, filtroRevisado: nuevo !== 'todas' ? nuevo : undefined })
+                    cargarMovimientos(construirFiltros({ filtroRevisado: nuevo !== 'todas' ? nuevo : undefined }))
                   }}
                   className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroRevisado !== 'todas' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-600 border-rose-300'}`}
                 >
@@ -2527,7 +3167,51 @@ export function VistaExtractoBancario() {
                   <option value="no_revisadas">No revisadas ({estadisticas.sin_revisar})</option>
                   <option value="revisadas">Revisadas</option>
                 </select>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas') && (
+                {/* 📝 A-FEAT-130 — filtrar por MIS notas.
+                    Se usa el mismo `select`-chip que el filtro de al lado y no dos botones sueltos:
+                    son vecinos y hacen lo mismo (recortar la lista por un atributo), así que tienen
+                    que leerse como una familia. Dos controles con la misma función y dos formas
+                    distintas obligan a aprender cada uno por separado. */}
+                <select
+                  value={filtroNota}
+                  onChange={(e) => {
+                    const nuevo = e.target.value as 'todas' | 'con_nota' | 'sin_nota'
+                    setFiltroNota(nuevo)
+                    cargarMovimientos(construirFiltros({ filtroNota: nuevo !== 'todas' ? nuevo : undefined }))
+                  }}
+                  title="Filtrar por las notas que dejaste con el 📝 en cada movimiento"
+                  className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroNota !== 'todas' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-700 border-amber-300'}`}
+                >
+                  <option value="todas">📝 Notas: todas</option>
+                  <option value="con_nota">📝 Con nota mía</option>
+                  <option value="sin_nota">💬 Sin nota</option>
+                </select>
+
+                {/* 🔍 A-FEAT-134 — buscar DENTRO de la nota. Va pegado al chip porque es su
+                    afinado: el chip dice «si tiene o no» y esto «qué dice». Se aplica al salir o con
+                    Enter y no en cada tecla: cada cambio es una consulta a la base. */}
+                <input
+                  type="text"
+                  value={busquedaNota}
+                  placeholder="🔍 en mis notas…"
+                  title="Buscar dentro del texto de tus notas (A-FEAT-134)"
+                  onChange={(e) => setBusquedaNota(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') cargarMovimientos(construirFiltros()) }}
+                  onBlur={() => cargarMovimientos(construirFiltros())}
+                  className={`h-7 text-xs px-2 w-36 rounded-md border ${busquedaNota.trim() ? 'bg-amber-50 border-amber-400 text-amber-800' : 'bg-white border-amber-300'}`}
+                />
+
+                {/* 📝 A-FEAT-133 — anotar de una vez a TODAS las filtradas. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2 text-amber-700 border-amber-300"
+                  onClick={() => setModalNotaLote({ isOpen: true, texto: '', modo: 'agregar' })}
+                  title="Dejar la misma nota en todos los movimientos que estas viendo (A-FEAT-133)"
+                >
+                  📝 Anotar los {movimientos.length}
+                </Button>
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas' || busquedaNota.trim()) && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2536,7 +3220,28 @@ export function VistaExtractoBancario() {
                       setFiltroEstado('Todos')
                       setFiltroCategEspecial(null)
                       setFiltroRevisado('todas')
-                      cargarMovimientos({ estado: 'Todos', busqueda: busqueda.trim() || undefined, limite: limiteRegistros })
+                      // Un «Limpiar» que deja un filtro puesto es peor que no tenerlo: la lista
+                      // queda recortada y el botón dice lo contrario.
+                      setFiltroNota('todas')
+                      setBusquedaNota('')   // A-FEAT-134: si queda puesta, «Limpiar» miente igual que antes
+                      /**
+                       * ⚠️ Acá los overrides van **al revés** que en los chips: hay que APAGAR
+                       * explícitamente lo que se acaba de limpiar.
+                       *
+                       * Es la misma trampa de React por el otro lado — `construirFiltros()` a secas
+                       * leería el estado **viejo** y volvería a aplicar justo los filtros que este
+                       * botón acaba de sacar. Quedaría un «Limpiar» que no limpia nada, que es
+                       * exactamente el bug que este arreglo vino a cerrar (A-BUG-155).
+                       *
+                       * 📌 Este botón sólo limpia los de ESTA barra. Las fechas, los montos y el
+                       * detalle son de «Avanzados» y tienen su propio limpiar — por eso se dejan.
+                       */
+                      cargarMovimientos(construirFiltros({
+                        estado: 'Todos',
+                        categEspecial: undefined,
+                        filtroRevisado: undefined,
+                        filtroNota: undefined,
+                      }))
                     }}
                   >
                     <X className="h-3 w-3 mr-1" />
@@ -2823,6 +3528,7 @@ export function VistaExtractoBancario() {
                         <SelectItem value="pendiente">Pendiente</SelectItem>
                       </SelectContent>
                     </Select>
+
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Contable</label>
@@ -3146,7 +3852,15 @@ export function VistaExtractoBancario() {
                             />
                           </TableHead>
                         )}
-                        <TableHead>Fecha</TableHead>
+                        {/*
+                          📅 **A-FEAT-156 también acá** — pedido del usuario 2026-09-20: *«lo que
+                          hiciste con Cash Flow de la columna de fecha siempre a la vista lo preciso
+                          también para extracto bancario»*. Con las columnas opcionales encendidas
+                          (detalle, proveedor, comprobantes, motivo…) la tabla se va lejos a la
+                          derecha y se pierde de qué fila se está leyendo.
+                          ⚠️ Lleva fondo propio: sin él se ve pasar el contenido por debajo.
+                        */}
+                        <TableHead className="sticky left-0 z-20 bg-gray-50">Fecha</TableHead>
                         <TableHead>Descripción</TableHead>
                         <TableHead className="text-right">Débitos</TableHead>
                         <TableHead className="text-right">Créditos</TableHead>
@@ -3184,7 +3898,7 @@ export function VistaExtractoBancario() {
                               />
                             </TableCell>
                           )}
-                          <TableCell className="font-mono text-sm">
+                          <TableCell className="font-mono text-sm sticky left-0 z-10 bg-white">
                             {new Date(movimiento.fecha + 'T12:00:00').toLocaleDateString('es-AR')}
                           </TableCell>
                           <TableCell className="max-w-xs truncate">
@@ -3235,6 +3949,7 @@ export function VistaExtractoBancario() {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
                                       actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
+                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
@@ -3244,6 +3959,7 @@ export function VistaExtractoBancario() {
                                       await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
                                         .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
                                       actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
+                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
                                     }
                                     setEditandoDetalleId(null)
                                   }}
@@ -3812,6 +4528,11 @@ export function VistaExtractoBancario() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* 🧪 A-FEAT-145 — el audit de consistencia contra el estandar por origen (§ 30.9.6). */}
+        <TabsContent value="auditoria" className="space-y-4">
+          <PanelAuditoriaConciliacion />
+        </TabsContent>
       </Tabs>
 
       {/* Modal Configurador */}
@@ -3936,7 +4657,100 @@ export function VistaExtractoBancario() {
       </Dialog>
 
       {/* Modal Asignar Manualmente */}
-      <Dialog open={modalAsignar} onOpenChange={setModalAsignar}>
+      {/* 🧹 A-FEAT-135 — se concilió algo que tenía notas: ¿se van o se quedan? */}
+      <Dialog open={modalNotasConciliadas.isOpen} onOpenChange={v => { if (!v) setModalNotasConciliadas({ isOpen: false, ids: [] }) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>🧹 {modalNotasConciliadas.ids.length} de los conciliados tenían nota tuya</DialogTitle>
+            <DialogDescription>
+              Una nota suele ser una pregunta abierta — <em>«¿esto qué es?»</em>, <em>«falta el detalle»</em>.
+              Al conciliar, muchas <strong>ya quedaron contestadas</strong> y desde ahí sólo ensucian el filtro.
+              Pero no todas.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 👁️ Las notas, a la vista antes de decidir. Preguntar «¿borro 12 notas?» sin mostrar
+              qué dicen es pedir una decisión a ciegas sobre algo que no se puede deshacer. */}
+          <div className="max-h-48 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2 text-xs space-y-1">
+            {modalNotasConciliadas.ids.map(id => {
+              const m = movimientos.find(x => x.id === id) as any
+              return (
+                <div key={id} className="flex gap-2">
+                  <span className="text-gray-400 shrink-0">{m?.fecha ? String(m.fecha).split('-').reverse().join('/') : ''}</span>
+                  <span className="text-gray-700 whitespace-pre-wrap">{(m?.nota_operador || '').trim()}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setModalNotasConciliadas({ isOpen: false, ids: [] })}>
+              Que queden
+            </Button>
+            <Button className="bg-red-600 hover:bg-red-700" onClick={borrarNotasDeConciliados}>
+              Borrar las {modalNotasConciliadas.ids.length}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 📝 A-FEAT-133 — la misma nota para todas las filas que estoy viendo. */}
+      <Dialog open={modalNotaLote.isOpen} onOpenChange={v => { if (!v) setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' }) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>📝 Anotar en los {movimientos.length} movimientos filtrados</DialogTitle>
+            <DialogDescription>
+              Conciliando, <strong>el filtro ya es el criterio</strong>: lo que te llevó a mirar estos
+              movimientos suele ser lo mismo que querés dejar escrito en cada uno.
+              {filtrosActivos.length > 0 ? <> Ahora mismo: <em>{filtrosActivos.join(' · ')}</em>.</> : null}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* 🧮 El número, antes de escribir. El filtro puede traer más de lo que uno cree — que
+              es justo lo que arregló A-BUG-155 — y acá eso se paga en N filas escritas. */}
+          <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Se va a escribir en <strong>{movimientos.length}</strong> movimiento(s) — los que ves en pantalla, no todo el extracto.
+          </div>
+
+          <div className="flex gap-2 text-xs">
+            {([['agregar', 'Agregar al final'], ['reemplazar', 'Reemplazar la nota'], ['borrar', '🧹 Borrar las notas']] as const).map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setModalNotaLote(x => ({ ...x, modo: m }))}
+                className={`px-2 py-1 rounded border ${modalNotaLote.modo === m ? 'bg-amber-600 text-white border-amber-600' : 'bg-white border-gray-300 text-gray-600'}`}
+              >{label}</button>
+            ))}
+          </div>
+
+          {modalNotaLote.modo !== 'borrar' ? (
+            <textarea
+              autoFocus
+              rows={3}
+              value={modalNotaLote.texto}
+              onChange={e => setModalNotaLote(x => ({ ...x, texto: e.target.value }))}
+              placeholder="Ej.: revisar contra el resumen de FIMA de julio"
+              className="w-full border rounded px-2 py-1 text-sm"
+            />
+          ) : (
+            <p className="text-sm text-red-700">
+              Se van a borrar las notas de los {movimientos.length} movimientos filtrados. <strong>No se puede deshacer.</strong>
+            </p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setModalNotaLote({ isOpen: false, texto: '', modo: 'agregar' })}>Cancelar</Button>
+            <Button
+              onClick={aplicarNotaEnLote}
+              disabled={modalNotaLote.modo !== 'borrar' && !modalNotaLote.texto.trim()}
+              className={modalNotaLote.modo === 'borrar' ? 'bg-red-600 hover:bg-red-700' : ''}
+            >
+              {modalNotaLote.modo === 'borrar' ? `Borrar ${movimientos.length} nota(s)` : `Anotar en ${movimientos.length}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modalAsignar} onOpenChange={(v) => { setModalAsignar(v); if (!v) { setVerConciliadas(false); setMotivoForzar(''); setMovDeLaConciliada(null) } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Asignar Manualmente</DialogTitle>
@@ -3958,7 +4772,92 @@ export function VistaExtractoBancario() {
               <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
               <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
               <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
+              {/* 💰 Sólo para ingresos: un débito nunca se concilia contra una venta. */}
+              {Number(movimientoAsignando?.creditos) > 0 && (
+                <TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger>
+              )}
             </TabsList>
+
+            {/* 💰 Tab VENTA — A-FEAT-167, acotado a UNO a UNO */}
+            <TabsContent value="venta" className="space-y-3 mt-3">
+              <Input
+                placeholder="Buscar por cliente, CUIT o número de comprobante..."
+                value={busquedaAsignarVenta}
+                onChange={e => setBusquedaAsignarVenta(e.target.value)}
+                autoFocus
+              />
+              <p className="text-[11px] text-gray-500">
+                Se compara contra el <b>pago según condiciones</b> (total − deducciones − retenciones
+                − IVA RG 2300), que es lo que acredita el banco. Los más cercanos al importe van primero.
+              </p>
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {(() => {
+                  const acreditado = Number(movimientoAsignando?.creditos) || 0
+                  const q = normalizarBusqueda(busquedaAsignarVenta)
+                  const cuitMov = String(movimientoAsignando?.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
+
+                  const lista = ventasParaAsignar
+                    .filter(v => {
+                      if (!q) return true
+                      return [v.denominacion_cliente, v.cuit_cliente, v.nro_comprobante]
+                        .some(c => normalizarBusqueda(String(c ?? '')).includes(q))
+                    })
+                    .map(v => {
+                      const d = diferenciaContraElBanco(acreditado, v.__cobro)
+                      // 🎯 El CUIT del banco pesa: es el dato más duro que tenemos del otro lado.
+                      const mismoCuit = !!cuitMov && String(v.cuit_cliente ?? '').replace(/\D/g, '') === cuitMov
+                      return { ...v, __dif: d, __mismoCuit: mismoCuit }
+                    })
+                    .sort((a, b) => {
+                      if (a.__mismoCuit !== b.__mismoCuit) return a.__mismoCuit ? -1 : 1
+                      return Math.abs(a.__dif.diferencia) - Math.abs(b.__dif.diferencia)
+                    })
+                    .slice(0, 60)
+
+                  if (lista.length === 0) {
+                    return <p className="text-xs text-gray-500 py-4 text-center">No hay comprobantes de venta cargados.</p>
+                  }
+
+                  return lista.map(v => {
+                    const elegido = ventaElegida?.id === v.id
+                    const d = v.__dif
+                    return (
+                      <button key={v.id} type="button"
+                        onClick={() => setVentaElegida(v)}
+                        className={`w-full text-left p-2 rounded border text-xs ${
+                          elegido ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+                        }`}>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="font-medium truncate">
+                            {v.nro_comprobante || '—'} · {v.denominacion_cliente || '—'}
+                          </span>
+                          <span className="text-gray-500 whitespace-nowrap">
+                            {v.fecha_liquidacion ? new Date(v.fecha_liquidacion + 'T12:00:00').toLocaleDateString('es-AR') : ''}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-baseline gap-x-3 mt-0.5">
+                          <span>Pago s/cond. <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          {v.__cobro.retenciones > 0 && (
+                            <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
+                          )}
+                          {v.__mismoCuit && <Badge variant="secondary" className="text-[10px]">mismo CUIT</Badge>}
+                          {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
+                          <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
+                            {d.exacto ? 'coincide exacto'
+                              : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
+                          </span>
+                        </div>
+                        {!d.exacto && Math.abs(d.porcentaje) > 1 && v.__cobro.retenciones === 0 && (
+                          <p className="text-[11px] text-amber-800 mt-0.5">
+                            ⚠️ No tiene retenciones cargadas — la diferencia puede ser eso.
+                          </p>
+                        )}
+                      </button>
+                    )
+                  })
+                })()}
+              </div>
+            </TabsContent>
 
             {/* Tab Template */}
             <TabsContent value="template" className="space-y-3 mt-3">
@@ -4204,13 +5103,21 @@ export function VistaExtractoBancario() {
 
                   // Con búsqueda activa: filtrar todo
                   if (busqueda) {
-                    return propuestas
-                      .filter(({ factura: f }) =>
-                        normalizarBusqueda(f.display_nombre).includes(busqueda) ||
-                        (f.cuit || '').includes(busqueda) ||
-                        String(f.display_monto).includes(busqueda)
-                      )
-                      .map(({ factura: f }) => (
+                    const coincide = (f: any) =>
+                      normalizarBusqueda(f.display_nombre).includes(busqueda) ||
+                      (f.cuit || '').includes(busqueda) ||
+                      String(f.display_monto).includes(busqueda)
+
+                    const pendientes = propuestas.filter(({ factura: f }) => coincide(f))
+                    /**
+                     * 🔒 **A-FEAT-143** — las YA CONCILIADAS sólo entran si se pidieron **y** se está
+                     * buscando. Nunca aparecen solas, nunca en Sugerencias, nunca para el motor.
+                     */
+                    const conciliadas = verConciliadas ? arcaConciliadas.filter(coincide) : []
+
+                    return (
+                      <>
+                      {pendientes.map(({ factura: f }) => (
                         <div
                           key={f.id}
                           onClick={() => setArcaElegida(arcaElegida?.id === f.id ? null : f)}
@@ -4223,7 +5130,77 @@ export function VistaExtractoBancario() {
                             {montoRow(f)}
                           </div>
                         </div>
-                      ))
+                      ))}
+
+                      {/* 🔒 A-FEAT-143 — el camino difícil, y a propósito.
+                          Un enlace gris al pie, no un chip arriba: hay que ir a buscarlo. Si no hay
+                          ninguna que coincida el enlace ni aparece — ofrecer un camino que no lleva
+                          a ningún lado es peor que no ofrecerlo. */}
+                      {!verConciliadas && (() => {
+                        const cuantas = arcaConciliadas.length
+                          ? arcaConciliadas.filter(coincide).length
+                          : null
+                        return (
+                          <div className="pt-2 mt-1 border-t text-center">
+                            {pendientes.length === 0 && (
+                              <p className="text-xs text-gray-400 mb-1">Sin resultados entre las pendientes.</p>
+                            )}
+                            <button
+                              onClick={async () => {
+                                if (arcaConciliadas.length === 0) await cargarFacturasConciliadas()
+                                setVerConciliadas(true)
+                              }}
+                              className="text-xs text-gray-500 hover:text-amber-700 underline"
+                            >
+                              🔒 Buscar también entre las YA CONCILIADAS{cuantas !== null ? ` (${cuantas})` : ''}
+                            </button>
+                          </div>
+                        )
+                      })()}
+
+                      {verConciliadas && conciliadas.length === 0 && (
+                        <p className="pt-2 mt-1 border-t text-center text-xs text-gray-400">
+                          Tampoco hay coincidencias entre las ya conciliadas.
+                        </p>
+                      )}
+
+                      {conciliadas.map((f: any) => (
+                        <div
+                          key={f.id}
+                          onClick={async () => {
+                            const quitar = arcaElegida?.id === f.id
+                            setArcaElegida(quitar ? null : f)
+                            setMovDeLaConciliada(null)
+                            if (quitar) return
+                            setMovDeLaConciliada({ cargando: true, encontrados: [] })
+                            const hallados: any[] = []
+                            for (const [tabla, esquema] of [['msa_galicia', null], ['pam_galicia', null], ['pam_galicia_cc', null], ['ma_galicia', 'ma']] as [string, string | null][]) {
+                              const cli = esquema ? supabase.schema(esquema as any) : supabase
+                              const { data } = await cli.from(tabla)
+                                .select('fecha, debitos, creditos, detalle')
+                                .eq('comprobante_arca_id', f.id).limit(5)
+                              ;(data ?? []).forEach((m: any) => hallados.push({ ...m, cuenta: tabla }))
+                            }
+                            setMovDeLaConciliada({ cargando: false, encontrados: hallados })
+                          }}
+                          className={`p-2.5 border rounded-lg cursor-pointer transition-colors ${
+                            arcaElegida?.id === f.id ? 'border-amber-500 bg-amber-50' : 'border-amber-300 bg-amber-50/40 hover:bg-amber-50'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-medium text-sm">{f.display_nombre}</div>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-amber-200 text-amber-900 shrink-0">
+                              YA CONCILIADA
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 flex gap-3 mt-0.5">
+                            <span>{f.cuit}</span>
+                            {fechasRow(f)}
+                            {montoRow(f)}
+                          </div>
+                        </div>
+                      ))}
+                      </>
+                    )
                   }
 
                   // Sin búsqueda: sugerencias primero, luego el resto
@@ -4508,11 +5485,67 @@ export function VistaExtractoBancario() {
             </div>
           </div>
 
+          {/* 🔒 A-FEAT-143 — el aviso y el motivo, sólo con una YA CONCILIADA elegida.
+              Va pegado al pie, donde se decide: un cartel arriba se lee al entrar y se olvida. */}
+          {tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && (
+            <div className="rounded border border-amber-400 bg-amber-50 p-3 text-sm">
+              <p className="font-medium text-amber-900">
+                ⚠️ {arcaElegida.display_referencia} ya está conciliada.
+              </p>
+
+              {/* 🔎 **Contra QUÉ**, para poder ir a mirarlo.
+                  Pedido del usuario al probarlo: *«sería bueno ver contra cuánto fue conciliada,
+                  así puedo identificar más fácilmente dónde ir»*. Decir sólo «ya está conciliada»
+                  obliga a salir a buscarlo a mano — justo el trabajo que se quiere evitar.
+                  Si no aparece, se dice: un «no se encontró» explícito es mejor que un silencio,
+                  que se lee como «no hay». */}
+              {movDeLaConciliada?.cargando && (
+                <p className="text-xs text-amber-700 mt-0.5">buscando contra qué movimiento…</p>
+              )}
+              {movDeLaConciliada && !movDeLaConciliada.cargando && (
+                movDeLaConciliada.encontrados.length > 0 ? (
+                  <ul className="mt-1 text-xs text-amber-900 space-y-0.5">
+                    {movDeLaConciliada.encontrados.map((m: any, i: number) => (
+                      <li key={i}>
+                        → <strong>{String(m.fecha).split('-').reverse().join('/')}</strong>{' · '}
+                        <span className="font-mono">
+                          ${Number(m.debitos || m.creditos || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}
+                        </span>
+                        {' · '}{m.cuenta}
+                        {m.detalle ? <span className="text-amber-700"> · {m.detalle}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-xs text-amber-700">
+                    No se encontró el movimiento contra el que se concilió — puede estar en una cuenta
+                    sin extracto importado.
+                  </p>
+                )
+              )}
+
+              <p className="text-xs text-amber-800 mt-0.5">
+                Vincularla de nuevo es poco habitual y no se deshace solo. Queda registrado en la nota
+                del movimiento, para que dentro de seis meses se sepa que fue a propósito.
+              </p>
+              <input
+                autoFocus
+                value={motivoForzar}
+                onChange={(e) => setMotivoForzar(e.target.value)}
+                placeholder="Por qué la vinculás igual (obligatorio)"
+                className="mt-2 w-full border border-amber-400 rounded px-2 py-1 text-sm"
+              />
+            </div>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalAsignar(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setModalAsignar(false); setVerConciliadas(false); setMotivoForzar(''); setMovDeLaConciliada(null) }}>Cancelar</Button>
             <Button
               onClick={ejecutarAsignacion}
-              disabled={guardandoAsignacion || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : !sueldoElegido)}
+              disabled={guardandoAsignacion
+                || (tabAsignar === 'template' ? !templateElegido : tabAsignar === 'arca' ? !arcaElegida : tabAsignar === 'grupo' ? !grupoElegido : tabAsignar === 'venta' ? !ventaElegida : !sueldoElegido)
+                /* 🔒 A-FEAT-143 — con una YA CONCILIADA elegida, sin motivo no se guarda. */
+                || (tabAsignar === 'arca' && (arcaElegida as any)?.yaConciliada && !motivoForzar.trim())}
             >
               {guardandoAsignacion ? 'Guardando...' : 'Confirmar'}
             </Button>

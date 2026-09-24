@@ -18,6 +18,9 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { altaContraparte } from "@/lib/proveedores/alta"
+import { ModalCompletarVentaHacienda, type MovimientoVenta } from "@/components/modal-completar-venta-hacienda"
+import { ModalIdentificarAnimales, type MovimientoAIdentificar } from "@/components/modal-identificar-animales"
 import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, usoDeRespaldo,
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -37,6 +40,8 @@ import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
 import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
+import { ModalRomaneo } from "@/components/modal-romaneo"
+import { ModalFleteCarga } from "@/components/modal-flete-carga"
 
 // ============================================================
 // TIPOS
@@ -1003,6 +1008,28 @@ function TabHacienda() {
   const [stock, setStock] = useState<StockHacienda[]>([])
   const [categorias, setCategorias] = useState<CategoriaHacienda[]>([])
   const [movimientos, setMovimientos] = useState<MovimientoHacienda[]>([])
+  /** El movimiento de venta que se está completando — A-FEAT-87. */
+  const [ventaAEditar, setVentaAEditar] = useState<MovimientoVenta | null>(null)
+
+  /**
+   * Los animales que se identifican al hacer un cambio de categoría — A-FEAT-84.
+   *
+   * Antes esto era **un cuadro de texto** donde había que escribir `caravana - pelo - motivo` por
+   * línea, separado con guiones. El usuario no lo usó, y se entiende: *"debo hacer los movimientos
+   * de a uno porque no me deja ponerle un motivo a cada caravana en la misma carga"*.
+   *
+   * Ahora es **una fila por animal**. La razón va por fila a propósito: una vaca se descarta por
+   * machorra y la de al lado por diarrea, y meterlas bajo una observación común pierde justo el
+   * dato por el que se lleva la planilla del CUT.
+   */
+  const [filasAnimales, setFilasAnimales] = useState<{ caravana: string; pelo: string; razon: string }[]>([])
+
+  /** El cambio de categoría al que se le están identificando los animales después — A-FEAT-84. */
+  const [movAIdentificar, setMovAIdentificar] = useState<MovimientoAIdentificar | null>(null)
+  /** Cuántos individuos tiene ya cada movimiento, para que el botón diga si falta o no. */
+  const [individuosPorMov, setIndividuosPorMov] = useState<{
+    porMov: Record<string, number>; porCatFecha: Record<string, number>
+  }>({ porMov: {}, porCatFecha: {} })
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [verMovimientos, setVerMovimientos] = useState(false)
@@ -1139,11 +1166,34 @@ function TabHacienda() {
     setLoading(true)
     setDetalleCUT(null) // Resetear cache detalle CUT al recargar
     try {
-      const [catRes, movRes] = await Promise.all([
+      const [catRes, movRes, indRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_hacienda').select('*').eq('activo', true).order('nombre'),
-        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false })
+        supabase.schema('productivo').from('movimientos_hacienda').select('*, categorias_hacienda(nombre)').order('fecha', { ascending: false }),
+        // Los individuos, UNA vez por pantalla: sirve para que cada fila sepa si ya está
+        // identificada sin disparar una consulta por fila.
+        supabase.schema('productivo').from('terneros').select('id, movimiento_alta_id, categoria_id, fecha_alta'),
       ])
       if (catRes.data) setCategorias(catRes.data)
+
+      /**
+       * Cuántos individuos tiene cada movimiento — A-FEAT-84.
+       *
+       * Dos caminos porque hay dos épocas: los creados desde el 2026-09-04 traen
+       * `movimiento_alta_id`; los anteriores no, y para ésos el vínculo se infiere por
+       * categoría + fecha de alta, que es como se guardaron. **Nunca se cuentan dos veces**: el
+       * segundo mapa sólo mira los que NO tienen el vínculo nuevo.
+       */
+      const porMov: Record<string, number> = {}
+      const porCatFecha: Record<string, number> = {}
+      for (const t of indRes.data ?? []) {
+        if (t.movimiento_alta_id) {
+          porMov[t.movimiento_alta_id] = (porMov[t.movimiento_alta_id] ?? 0) + 1
+        } else if (t.categoria_id && t.fecha_alta) {
+          const k = `${t.categoria_id}|${t.fecha_alta}`
+          porCatFecha[k] = (porCatFecha[k] ?? 0) + 1
+        }
+      }
+      setIndividuosPorMov({ porMov, porCatFecha })
       if (movRes.data) {
         setMovimientos(movRes.data)
         // Calcular stock desde movimientos
@@ -1183,6 +1233,7 @@ function TabHacienda() {
       peso_total_kg: '', precio_por_kg: '', monto_total: '', campo_origen: '',
       campo_destino: '', proveedor_cliente: '', cuit: '', caravanas: '', observaciones: ''
     })
+    setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
     setTernerosParaBaja([])
@@ -1232,7 +1283,8 @@ function TabHacienda() {
       // El descuadre queda visible en la planilla (§ cierre del CUT) hasta que se complete.
       const vaAlCUT = !!(catDestino?.nombre.toLowerCase().includes('cut')
         || catDestino?.nombre.toLowerCase().includes('descarte'))
-      const sinCaravanas = vaAlCUT && !nuevoMov.caravanas.trim() && ternerosSeleccionadosCambio.size === 0
+      const identificados = filasAnimales.filter(f => f.caravana.trim() || f.razon.trim() || f.pelo.trim())
+      const sinCaravanas = vaAlCUT && identificados.length === 0 && ternerosSeleccionadosCambio.size === 0
       if (sinCaravanas) {
         const seguir = confirm(
           `Vas a mover ${N} ${N === 1 ? 'cabeza' : 'cabezas'} a ${catDestino?.nombre} sin identificar cuáles.\n\n` +
@@ -1270,34 +1322,44 @@ function TabHacienda() {
         }
       }
 
-      // Caravanas (solo si destino es CUT/Descarte) → registrar en terneros
-      if (vaAlCUT && nuevoMov.caravanas.trim()) {
-        const lineas = nuevoMov.caravanas.split('\n').map(c => c.trim()).filter(Boolean)
-        if (lineas.length > 0) {
-          await supabase.schema('productivo').from('terneros').insert(
-            lineas.map(texto => {
-              // Parsear formato "caravana - pelo - motivo" o solo "caravana"
-              const partes = texto.split(/\s*-\s*/)
+      /**
+       * Los animales identificados se crean como individuos — A-FEAT-84.
+       *
+       * Viene **una fila por animal**, así que la razón es de cada uno y no una observación común:
+       * es el dato por el que se lleva la planilla del CUT.
+       *
+       * 🐛 Y se corrige de paso un bug: el sexo estaba fijo en `'Hembra'`. Para vacas acertaba de
+       * casualidad; un cambio de categoría a Toro o Novillo creaba machos marcados como hembras.
+       */
+      if (identificados.length > 0) {
+        const esMacho = /toro|torito|novillo/.test((catDestino?.nombre || '').toLowerCase())
+        {
+          const { error: eIns } = await supabase.schema('productivo').from('terneros').insert(
+            identificados.map(f => {
               return {
-                caravana_oficial: partes[0]?.trim() || texto,
-                pelo: partes[1]?.trim() || null,
-                observaciones: partes.slice(2).join(' - ').trim() || null,
-                sexo: 'Hembra',
+                caravana_oficial: f.caravana.trim() || null,
+                pelo: f.pelo.trim() || null,
+                observaciones: f.razon.trim() || nuevoMov.observaciones || null,
+                sexo: esMacho ? 'Macho' : 'Hembra',
                 categoria_id: catDestino!.id,
                 categoria_previa: catOrigen?.nombre || '',
                 // La fecha REAL de ingreso a la categoría, que es la del movimiento — nunca
                 // `created_at`, que es cuándo se cargó. La planilla filtra el detalle del CUT
                 // por este campo, y sin él el animal no aparecía en el reporte (A-BUG-47).
                 fecha_alta: nuevoMov.fecha,
+                movimiento_alta_id: movDestino?.id ?? null,
                 activo: true,
                 es_torito: false,
               }
             })
           )
+          // Si los individuos no se pudieron crear hay que decirlo: el movimiento igual se guardó,
+          // así que el descuadre entre cabezas e individuos existe y hay que saber por qué.
+          if (eIns) toast.error('El movimiento se guardó, pero no se pudieron crear los individuos: ' + eIns.message)
         }
       }
 
-      toast.success(`Cambio de categoría registrado${ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
+      toast.success(`Cambio de categoría registrado${identificados.length > 0 ? ` (${identificados.length} identificados)` : ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
       if (sinCaravanas) {
         toast.warning(
           `${N} ${N === 1 ? 'cabeza entró' : 'cabezas entraron'} a ${catDestino?.nombre} sin caravana. ` +
@@ -1331,8 +1393,66 @@ function TabHacienda() {
     if (nuevoMov.cuit) datos.cuit = nuevoMov.cuit
     if (nuevoMov.observaciones) datos.observaciones = nuevoMov.observaciones
 
+    /**
+     * 🔑 Si es una VENTA, se crea también la venta comercial — A-FEAT-87.
+     *
+     * Antes esta puerta daba de baja los animales **sin crear la venta**: quedaban fuera de
+     * facturación, de cobro y del presupuesto. Media verdad. Y es la puerta que al usuario le
+     * resulta más natural: *"muchas veces lo más lógico es ir a stock y decir vendí estas 7 vacas
+     * descarte"*.
+     *
+     * La regla que salió de ahí, y vale para toda la app: **cuando hay dos puntos de entrada a la
+     * misma tabla, el segundo no sirve si ofrece la mitad de los datos.** Acá se resuelve por la
+     * segunda vía de esa regla: **la venta queda creada** con lo que hay, para poder terminar de
+     * cargarla después en Ingresos → Ganadería. No se inventa nada que el usuario no puso.
+     *
+     * La venta se crea PRIMERO: si fallara, no queremos el movimiento huérfano que es justo el
+     * problema que esto viene a arreglar.
+     */
+    let ventaCreadaId: string | null = null
+    if (nuevoMov.tipo === 'venta') {
+      const { data: sv, error: eVenta } = await supabase.schema('productivo').from('stock_ventas')
+        .insert({
+          lote_id: null,                     // venta directa desde el stock, no desde un lote
+          categoria_id: nuevoMov.categoria_id,
+          fecha_venta: nuevoMov.fecha,
+          cantidad: N,
+          kg_totales: datos.peso_total_kg ?? null,
+          peso_kg: datos.peso_total_kg && N > 0 ? datos.peso_total_kg / N : null,
+          precio_kg: datos.precio_por_kg ?? null,
+          monto_neto: datos.monto_total ?? null,
+          cliente_nombre: nuevoMov.proveedor_cliente || null,
+          cliente_cuit: nuevoMov.cuit || null,
+          notas: ['Creada desde Productivo → Movimientos de hacienda.', nuevoMov.observaciones]
+            .filter(Boolean).join(' — '),
+        })
+        .select('id').single()
+      if (eVenta || !sv) {
+        toast.error('No se pudo registrar la venta: ' + (eVenta?.message ?? ''))
+        return
+      }
+      ventaCreadaId = sv.id
+      datos.stock_venta_id = sv.id          // el movimiento queda colgado de SU venta
+
+      // § Contrapartes: el comprador queda en el maestro, marcado como cliente (find-or-create).
+      // Faltaba acá; con el buscador que separa «otros del maestro» (A-FEAT-165) se hacía visible.
+      if (nuevoMov.cuit) {
+        const r = await altaContraparte(supabase, {
+          cuit: nuevoMov.cuit, razon_social: nuevoMov.proveedor_cliente || '', como: 'cliente',
+        })
+        if (!r.ok) toast.error('La venta se registró, pero el cliente no quedó en el maestro: ' + r.error)
+      }
+    }
+
     const { error } = await supabase.schema('productivo').from('movimientos_hacienda').insert(datos)
-    if (error) { toast.error('Error al guardar movimiento'); return }
+    if (error) {
+      // La venta ya se creo: se deshace para no dejar una venta sin su movimiento de stock.
+      if (ventaCreadaId) {
+        await supabase.schema('productivo').from('stock_ventas').delete().eq('id', ventaCreadaId)
+      }
+      toast.error('Error al guardar movimiento')
+      return
+    }
 
     // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja en terneros
     if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
@@ -1353,7 +1473,21 @@ function TabHacienda() {
         .in('id', ids)
     }
 
-    toast.success('Movimiento registrado')
+    if (ventaCreadaId) {
+      // Se dice QUÉ falta y DÓNDE, porque la venta nace incompleta a propósito.
+      const faltan = [
+        !datos.precio_por_kg && 'precio',
+        !datos.peso_total_kg && 'kilos',
+        !nuevoMov.cuit && 'CUIT del cliente',
+      ].filter(Boolean)
+      toast.success(
+        `Movimiento y venta registrados.${faltan.length ? ` Falta cargarle: ${faltan.join(', ')}.` : ''}` +
+        ' Se termina de completar en Ingresos → Ganadería.',
+        { duration: 9000 },
+      )
+    } else {
+      toast.success('Movimiento registrado')
+    }
     setMostrarModalMov(false)
     resetNuevoMov()
     cargarDatos()
@@ -1361,6 +1495,11 @@ function TabHacienda() {
 
   // ─── Planilla de Hacienda ─────────────────────────────────────────────
   const [mostrarModalPlanilla, setMostrarModalPlanilla] = useState(false)
+  // 📄 Romaneo del frigorífico (A-FEAT-94). Elige la carga adentro, así no depende
+  // de que la venta esté abierta: un romaneo es de la CARGA, no de una venta.
+  const [mostrarModalRomaneo, setMostrarModalRomaneo] = useState(false)
+  // 🚚 Flete de la carga (A-FEAT-98): el compromiso de pago se genera desde acá, no desde anticipos.
+  const [mostrarModalFlete, setMostrarModalFlete] = useState(false)
   const [planillaModo, setPlanillaModo] = useState<'mes' | 'rango'>('mes')
   const hoy = new Date()
   const [planillaMes, setPlanillaMes] = useState(String(hoy.getMonth())) // 0-11
@@ -2312,6 +2451,14 @@ function TabHacienda() {
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setMostrarModalRomaneo(true)}
+            title="Subir el PDF del romaneo del frigorífico y completar las ventas de esa carga">
+            📄 Romaneo
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setMostrarModalFlete(true)}
+            title="Cargar el flete de una carga y comprometer el pago en el Cash Flow">
+            🚚 Flete
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
             <Download className="mr-1 h-4 w-4" />
             Planilla
@@ -2426,6 +2573,7 @@ function TabHacienda() {
               <TableHead className="text-right">Monto Total</TableHead>
               <TableHead>Proveedor/Cliente</TableHead>
               <TableHead>Obs.</TableHead>
+              <TableHead className="text-right">Venta</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -2519,6 +2667,72 @@ function TabHacienda() {
                   <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
                   <TableCell>{celdaEditable('proveedor_cliente', m.proveedor_cliente || '-')}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
+                  {/*
+                    💰 La venta comercial de este movimiento — A-FEAT-87.
+                    Una venta SIN venta comercial es media verdad: los animales salieron del stock
+                    pero no entran a facturación, cobro ni presupuesto. Se avisa en ámbar en la fila
+                    misma, no sólo en un panel: el que mira esta grilla tiene que enterarse acá.
+                  */}
+                  <TableCell className="text-right">
+                    {m.tipo === 'venta' && (
+                      <button
+                        type="button"
+                        onClick={() => setVentaAEditar({
+                          id: m.id, fecha: m.fecha, cantidad: m.cantidad,
+                          categoria_id: (m as any).categoria_id ?? null,
+                          categoria_nombre: m.categorias_hacienda?.nombre,
+                          peso_total_kg: m.peso_total_kg ?? null,
+                          precio_por_kg: (m as any).precio_por_kg ?? null,
+                          monto_total: m.monto_total ?? null,
+                          proveedor_cliente: m.proveedor_cliente ?? null,
+                          cuit: (m as any).cuit ?? null,
+                          stock_venta_id: (m as any).stock_venta_id ?? null,
+                          observaciones: m.observaciones ?? null,
+                        })}
+                        className={`rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
+                          (m as any).stock_venta_id
+                            ? 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                            : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                        }`}
+                        title={(m as any).stock_venta_id
+                          ? 'Ver y editar la venta comercial'
+                          : 'Este movimiento NO tiene venta: no entra a facturación ni al presupuesto'}
+                      >
+                        {(m as any).stock_venta_id ? '💰 venta' : '⚠ sin venta'}
+                      </button>
+                    )}
+                    {/*
+                      🐄 Identificar los animales de un cambio de categoría YA guardado.
+                      Sólo en el renglón de ENTRADA (cantidad > 0): el de salida es la contracara del
+                      mismo movimiento y ofrecer el botón en los dos invitaría a cargarlos dos veces.
+                    */}
+                    {m.tipo === 'cambio_categoria' && m.cantidad > 0 && (() => {
+                      const ya = (individuosPorMov.porMov[m.id] ?? 0)
+                        + (individuosPorMov.porCatFecha[`${(m as any).categoria_id}|${m.fecha}`] ?? 0)
+                      const faltan = m.cantidad - ya
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setMovAIdentificar({
+                            id: m.id, fecha: m.fecha, cantidad: m.cantidad,
+                            categoria_id: (m as any).categoria_id ?? null,
+                            categoria_nombre: m.categorias_hacienda?.nombre,
+                            observaciones: m.observaciones ?? null,
+                          })}
+                          className={`rounded border px-1.5 py-0.5 text-[11px] whitespace-nowrap ${
+                            faltan > 0
+                              ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                          }`}
+                          title={faltan > 0
+                            ? `Faltan identificar ${faltan} de ${m.cantidad}: no figuran en la planilla ni se pueden adjudicar a una venta`
+                            : `Los ${ya} animales de este movimiento ya están identificados`}
+                        >
+                          {faltan > 0 ? `⚠ falta identificar ${faltan}` : `🐄 ${ya} identificad${ya === 1 ? 'o' : 'os'}`}
+                        </button>
+                      )
+                    })()}
+                  </TableCell>
                 </TableRow>
                 )
               })
@@ -2526,6 +2740,20 @@ function TabHacienda() {
           </TableBody>
         </Table>
       )}
+
+      <ModalCompletarVentaHacienda
+        movimiento={ventaAEditar}
+        abierto={!!ventaAEditar}
+        onCerrar={() => setVentaAEditar(null)}
+        onGuardado={cargarDatos}
+      />
+
+      <ModalIdentificarAnimales
+        movimiento={movAIdentificar}
+        abierto={!!movAIdentificar}
+        onCerrar={() => setMovAIdentificar(null)}
+        onGuardado={cargarDatos}
+      />
 
       {/* Modal Nuevo Movimiento Hacienda */}
       <Dialog open={mostrarModalMov} onOpenChange={setMostrarModalMov}>
@@ -2632,13 +2860,56 @@ function TabHacienda() {
                       <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
                     </div>
                     <div>
-                      <Label>Caravanas <span className="text-muted-foreground text-xs">(opcional — una por línea)</span></Label>
-                      <textarea
-                        className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-y"
-                        placeholder={"032 010012326425\n032 010012326426\n..."}
-                        value={nuevoMov.caravanas}
-                        onChange={e => setNuevoMov(p => ({ ...p, caravanas: e.target.value }))}
-                      />
+                      <div className="flex items-center justify-between">
+                        <Label>
+                          Animales que se mueven{' '}
+                          <span className="text-muted-foreground text-xs">
+                            ({filasAnimales.length} de {parseInt(nuevoMov.cantidad || '0') || 0})
+                          </span>
+                        </Label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-600 hover:underline"
+                          onClick={() => {
+                            // Abre tantas filas como cabezas se muevan: el caso normal es cargarlas
+                            // todas de una, y hacerlo de a una era justo la queja del usuario.
+                            const n = parseInt(nuevoMov.cantidad || '0') || 0
+                            const faltan = Math.max(0, n - filasAnimales.length)
+                            setFilasAnimales(prev => [
+                              ...prev,
+                              ...Array.from({ length: faltan || 1 }, () => ({ caravana: '', pelo: '', razon: '' })),
+                            ])
+                          }}
+                        >
+                          + {filasAnimales.length === 0 ? 'identificarlos uno por uno' : 'una fila más'}
+                        </button>
+                      </div>
+
+                      {filasAnimales.length > 0 && (
+                        <div className="mt-1 rounded border">
+                          <div className="grid grid-cols-[1fr_90px_1.4fr_28px] gap-1 border-b bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-600">
+                            <span>Caravana</span><span>Pelo</span><span>Razón</span><span />
+                          </div>
+                          <div className="max-h-52 overflow-auto">
+                            {filasAnimales.map((f, i) => (
+                              <div key={i} className="grid grid-cols-[1fr_90px_1.4fr_28px] items-center gap-1 border-b px-2 py-1 last:border-b-0">
+                                <Input className="h-7 text-xs" placeholder="B079" value={f.caravana}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, caravana: e.target.value } : x))} />
+                                <Input className="h-7 text-xs" placeholder="Negra" value={f.pelo}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, pelo: e.target.value } : x))} />
+                                <Input className="h-7 text-xs" placeholder="Machorra / Diarrea / Vacía tacto" value={f.razon}
+                                  onChange={e => setFilasAnimales(prev => prev.map((x, j) => j === i ? { ...x, razon: e.target.value } : x))} />
+                                <button type="button" className="text-gray-400 hover:text-red-600"
+                                  onClick={() => setFilasAnimales(prev => prev.filter((_, j) => j !== i))}>✕</button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="px-2 py-1 text-[10px] leading-3 text-muted-foreground">
+                            La <b>razón</b> va por animal a propósito: una se descarta por machorra y la de
+                            al lado por diarrea. Sin caravana igual se guarda — queda identificado por su razón.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -2799,16 +3070,29 @@ function TabHacienda() {
                     <Input value={nuevoMov.campo_destino} onChange={e => setNuevoMov(p => ({ ...p, campo_destino: e.target.value }))} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Proveedor/Cliente</Label>
-                    <Input value={nuevoMov.proveedor_cliente} onChange={e => setNuevoMov(p => ({ ...p, proveedor_cliente: e.target.value }))} />
+                {/* Se avisa ANTES de guardar qué va a pasar: esta pantalla ya no sólo da de baja
+                    animales, también crea la venta comercial. */}
+                {nuevoMov.tipo === 'venta' && (
+                  <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] leading-4 text-emerald-800">
+                    💰 <b>Esto crea también la venta</b>, no sólo la baja de stock — así entra a
+                    facturación, cobro y presupuesto. Cargá lo que tengas ahora (kilos, precio,
+                    cliente); lo que falte se completa en <b>Ingresos → Ganadería</b> sobre la misma
+                    venta, sin volver a cargarla.
                   </div>
-                  <div>
-                    <Label>CUIT</Label>
-                    <Input value={nuevoMov.cuit} onChange={e => setNuevoMov(p => ({ ...p, cuit: e.target.value }))} />
-                  </div>
-                </div>
+                )}
+
+                {/*
+                  La contraparte sale del MAESTRO, no de dos campos de texto — 2026-09-04.
+                  Escribiéndola a mano el CUIT quedaba vacío o mal tipeado, y es la clave con la que
+                  después se busca la factura: el circuito se cortaba acá. Lo pide además la
+                  § Contrapartes de CLAUDE.md. El combobox deja crearla si no existe.
+                */}
+                <ProveedorCombobox
+                  label={nuevoMov.tipo === 'venta' ? 'Cliente' : 'Proveedor/Cliente'}
+                  rol={nuevoMov.tipo === 'venta' ? 'cliente' : undefined}
+                  value={{ cuit: nuevoMov.cuit, nombre: nuevoMov.proveedor_cliente }}
+                  onChange={sel => setNuevoMov(p => ({ ...p, proveedor_cliente: sel.nombre, cuit: sel.cuit }))}
+                />
                 <div>
                   <Label>Observaciones</Label>
                   <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
@@ -2846,6 +3130,18 @@ function TabHacienda() {
       </Dialog>
 
       {/* Modal Planilla de Hacienda */}
+      <ModalRomaneo
+        abierto={mostrarModalRomaneo}
+        onCerrar={() => setMostrarModalRomaneo(false)}
+        onGuardado={() => { cargarDatos() }}
+      />
+
+      <ModalFleteCarga
+        abierto={mostrarModalFlete}
+        onCerrar={() => setMostrarModalFlete(false)}
+        onGuardado={() => { cargarDatos() }}
+      />
+
       <Dialog open={mostrarModalPlanilla} onOpenChange={(open) => { setMostrarModalPlanilla(open); if (!open) setPreviewPlanilla(null) }}>
         <DialogContent className={previewPlanilla ? 'sm:max-w-[95vw] max-h-[90vh] overflow-y-auto' : 'sm:max-w-md'}>
           <DialogHeader>

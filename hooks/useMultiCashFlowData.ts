@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
@@ -72,6 +73,27 @@ const extraerPrefijoComun = (nombres: string[]): string => {
 }
 
 // Interface unificada para Cash Flow (10 columnas finales)
+/**
+ * Las dos reglas de ARRASTRE de fechas: `fecha_vencimiento` y `fecha_pago` **mueven también
+ * `fecha_estimada`**, que es la columna con la que el Cash Flow ordena y proyecta.
+ *
+ * 🔴 **Vive acá, en un solo lugar, porque estaba en uno solo de los dos caminos** (A-BUG-142):
+ * `actualizarRegistro` (editar de a una) la aplicaba, y `actualizarBatch` (el botón PAGOS, en lote)
+ * mandaba el campo pelado. Resultado: pagar una factura sola dejaba la estimada al día, y pagar
+ * tres en lote las dejaba proyectadas en la fecha vieja — el mismo cambio, dos resultados según
+ * desde dónde se hiciera.
+ *
+ * Y no es cosmético: si la estimada no acompaña, **el Cash Flow sigue mostrando la plata saliendo
+ * el día que ya no es**.
+ */
+function conArrastreDeFechas(campo: string, valor: any): Record<string, any> {
+  const update: Record<string, any> = { [campo]: valor }
+  if ((campo === 'fecha_vencimiento' || campo === 'fecha_pago') && valor) {
+    update.fecha_estimada = valor
+  }
+  return update
+}
+
 export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
@@ -111,6 +133,15 @@ export interface CashFlowRow {
    * igual. El `as any` fue lo que dejó pasar el error.
    */
   tipo_comprobante?: number | null
+  /**
+   * Los que identifican al comprobante. Van a `sicore_retenciones` y de ahí al **certificado del
+   * proveedor** y a la DDJJ: sin ellos, el proveedor no sabe contra qué factura se le retuvo
+   * (A-BUG-148). Nulos en una fila **agrupada**, que no representa a una factura sola — ahí los
+   * repone `abrirGruposArca` al abrir el grupo en sus miembros.
+   */
+  punto_venta?: number | null
+  numero_desde?: number | null
+  fecha_emision?: string | null
   imp_neto_gravado?: number
   imp_neto_no_gravado?: number
   imp_op_exentas?: number
@@ -228,6 +259,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         tc_pago: f.tc_pago ?? null,
         comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
         tipo_comprobante: f.tipo_comprobante ?? null,
+        /**
+         * 🐞 A-BUG-148 — estos tres se usaban **sólo para armar el texto de `comprobante_display`**
+         * y no viajaban como campos. Consecuencia: la retención de una factura **suelta** se
+         * guardaba con `numero_desde`, `punto_venta` y `fecha_emision` en `null`, y ese número es
+         * el que identifica contra qué factura se retuvo — en el certificado del proveedor y en la
+         * DDJJ. Medido el 2026-09-11: **11 de 16 filas `directo`** sin número.
+         *
+         * 🔑 [A-BUG-138](../PENDIENTES.md#a-bug-138) ya lo había arreglado, pero **sólo para el
+         * camino de agrupación** (`abrirGruposArca` los relee de la base). Una fila que no es grupo
+         * pasa por ahí sin tocar, así que el arreglo nunca la alcanzó. Mismo patrón que A-BUG-142:
+         * **la regla vivía en un camino de dos.** Acá viven para los dos, porque es el origen.
+         */
+        punto_venta: f.punto_venta ?? null,
+        numero_desde: f.numero_desde ?? null,
+        fecha_emision: f.fecha_emision ?? null,
         grupo_pago_id: null,
       }
     })
@@ -282,10 +328,19 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         saldo_cta_cte: 0,
         estado: estadoDeGrupo(fs.map(f => f.estado)),
         sicore: null,
-        imp_neto_gravado: 0,
-        imp_neto_no_gravado: 0,
-        imp_op_exentas: 0,
+        // 🔴 Estos tres estaban en **0**, y eso apagaba SICORE para todo grupo (A-BUG-138): el
+        // portón calcula el neto con ellos, un neto 0 nunca llega al mínimo, y el grupo pasaba
+        // derecho a 'pagar' **sin preguntar nada**. Justo lo contrario de lo que dice el comentario
+        // de `tipo_comprobante` doce líneas más abajo — ahí se eligió a propósito el lado seguro
+        // (ante la duda, que pase por SICORE) y estos ceros lo anulaban en silencio.
+        imp_neto_gravado: Math.round(fs.reduce((s, f) => s + (f.imp_neto_gravado || 0), 0) * 100) / 100,
+        imp_neto_no_gravado: Math.round(fs.reduce((s, f) => s + (f.imp_neto_no_gravado || 0), 0) * 100) / 100,
+        imp_op_exentas: Math.round(fs.reduce((s, f) => s + (f.imp_op_exentas || 0), 0) * 100) / 100,
         imp_total: Math.round(fs.reduce((s, f) => s + (f.imp_total || 0), 0) * 100) / 100,
+        // 🔴 Faltaba, y no era cosmético: el DESCUENTO se reparte en proporción a gravado/IVA
+        // (`aplicarDescuentoSicoreCF`). Sin `iva`, un 5 % daba el 5 % del **neto** en vez del 5 % de
+        // la factura — menos descuento del pedido, y el proveedor cobraba de más (A-BUG-140).
+        iva: Math.round(fs.reduce((s, f) => s + (f.iva || 0), 0) * 100) / 100,
         monto_sicore: Math.round(fs.reduce((s, f) => s + (f.monto_sicore || 0), 0) * 100) / 100 || null,
         descuento_aplicado: Math.round(fs.reduce((s, f) => s + (f.descuento_aplicado || 0), 0) * 100) / 100 || null,
         monto_a_abonar: Math.round(fs.reduce((s, f) => s + (f.monto_a_abonar ?? f.imp_total ?? 0), 0) * 100) / 100,
@@ -331,14 +386,36 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: c.egreso?.nombre_quien_cobra || '',
         responsable: c.egreso?.responsable || '',
-        detalle: c.descripcion || c.egreso?.nombre_referencia || '',
-        detalle_usuario: c.descripcion || null,
+        /**
+         * 💪 **A-FEAT-137** — el mismo patrón que las facturas ARCA de este archivo:
+         * el identificador **se genera** y el detalle guarda sólo lo del usuario; se COMPONEN
+         * acá, al mostrar. Antes esto leía `c.descripcion` para las dos cosas, y por eso no había
+         * dónde poner el detalle que llega del Extracto al conciliar ([A-BUG-161](#a-bug-161)).
+         *
+         * 📌 Durante la migración ([A-DAT-37]) todavía hay filas con texto en `descripcion`:
+         * se sigue mostrando como detalle hasta que se muden, para no hacer desaparecer de la
+         * pantalla lo que el usuario ya tenía escrito.
+         */
+        detalle: detalleCompleto(c, c.egreso ?? {}, c.detalle ?? c.descripcion),
+        detalle_usuario: c.detalle ?? c.descripcion ?? null,
         debitos: esIngreso ? 0 : monto,
         creditos: esIngreso ? monto : 0,
         saldo_cta_cte: 0,
         estado: c.estado || 'pendiente',
         medio_pago: c.medio_pago || 'banco',
-        comprobante_display: c.egreso?.nombre_referencia || c.descripcion || null,
+        /**
+         * 🎯 **A-FEAT-138** — el Comprobante tiene que decir **CUÁL** obligación se saldó.
+         *
+         * Antes ponía `nombre_referencia` a secas, así que las 4 cuotas de *Red Vial Lote Puerto* y
+         * los 12 meses de *UATRE* **decían todos lo mismo**: el extracto no distinguía cuál era.
+         * Las facturas ya lo resuelven (`FC A - 00012345`) y los sueldos también
+         * (`Saldo Mayo 2026`, vía `comprobanteDeSueldo`) — las cuotas eran el único origen sin
+         * identidad propia.
+         *
+         * 🧨 La prueba de que hacía falta la escribió el usuario a mano: en el movimiento del
+         * 16/06 puso `«Lote Puerto Cuota 3.»` **en el Detalle**, tapando el agujero de esta columna.
+         */
+        comprobante_display: identificadorDeCuota(c, c.egreso ?? {}) || c.egreso?.nombre_referencia || null,
         grupo_pago_id: null,
       }
     })
@@ -378,7 +455,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         : ''
       const detallesCombinados = prefijoLimpio
         ? `${prefijoLimpio} ${responsable}${infoCuota} · ${sufijos.join(' · ')}`
-        : cs.map(c => c.descripcion || c.egreso?.nombre_referencia || '').join(' · ')
+        : cs.map(c => detalleCompleto(c, c.egreso ?? {}, c.detalle) || '').join(' · ')
 
       return {
         id: grupoId,
@@ -394,7 +471,17 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: primera.egreso?.cuit_quien_cobra || '',
         nombre_proveedor: primera.egreso?.nombre_quien_cobra || '',
         detalle: detallesCombinados,
-        detalle_usuario: cs.map(c => c.descripcion).filter(Boolean).join(' | ') || null,
+        /**
+         * 🐞 **Regresión mía, arreglada.** Al apuntar la fila individual a `c.detalle`
+         * ([A-FEAT-137]) **no miré la agrupada**, que siguió leyendo `c.descripcion` — vacía
+         * desde [A-DAT-37]. Los grupos de pago quedaron sin detalle de usuario.
+         *
+         * 🧨 **Y el proyecto ya tenía escrito este error con nombre**: *«arreglar la fila
+         * individual sin mirar la agrupada rompió otra cosa»* (cierre 2026-08-31). Cada origen de
+         * este archivo tiene **dos** caminos — suelto y agrupado — y tocar uno sin el otro los
+         * deja diciendo cosas distintas del mismo hecho.
+         */
+        detalle_usuario: cs.map(c => c.detalle).filter(Boolean).join(' | ') || null,
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -404,7 +491,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         estado: estadoDeGrupo(cs.map(c => c.estado)),
         fecha_pago: cs.map(c => c.fecha_pago).filter(Boolean).sort().at(-1) ?? null,
         medio_pago: primera.medio_pago || 'banco',
-        comprobante_display: [...new Set(cs.map(c => c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
+        comprobante_display: [...new Set(cs.map(c => identificadorDeCuota(c, c.egreso ?? {}) || c.egreso?.nombre_referencia || '').filter(Boolean))].join(' + ') || null,
         grupo_pago_id: grupoId,
         facturas_agrupadas: cs.length,
         ids_grupo: cs.map(c => c.id),
@@ -952,20 +1039,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       || filaOrigen?.origen_tabla === 'msa.grupos_pago'
     if (origen === 'SUELDO' && !esPagoDeSueldo) return false
     try {
-      // Preparar objeto de actualización
-      let updateData: any = { [campo]: valor }
-
-      // Regla automática: Si se actualiza fecha_vencimiento, actualizar fecha_estimada para coincidir
-      if (campo === 'fecha_vencimiento' && valor) {
-        updateData.fecha_estimada = valor
-        console.log(`🔄 Auto-actualización: fecha_vencimiento = ${valor} → fecha_estimada = ${valor}`)
-      }
-
-      // Regla automática: fecha_pago también arrastra a fecha_estimada (ordena el cash flow)
-      if (campo === 'fecha_pago' && valor) {
-        updateData.fecha_estimada = valor
-        console.log(`🔄 Auto-actualización: fecha_pago = ${valor} → fecha_estimada = ${valor}`)
-      }
+      // Preparar objeto de actualización, con las dos reglas de arrastre (ver `conArrastreDeFechas`)
+      let updateData: any = conArrastreDeFechas(campo, valor)
 
       if (origen === 'SUELDO' && esPagoDeSueldo) {
         // Un pago de sueldo tiene **una sola fecha** (`sueldos.pagos.fecha`), que es la fecha en
@@ -1174,7 +1249,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const { error, count } = await supabase
           .schema(schemaDeFila(fila))
           .from('comprobantes_arca')
-          .update({ [update.campo]: update.valor }, { count: 'exact' })
+          .update(conArrastreDeFechas(update.campo, update.valor), { count: 'exact' })
           .in('id', ids)
 
         if (error) throw error
@@ -1188,7 +1263,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const ids = (fila?.ids_grupo && fila.ids_grupo.length > 0) ? fila.ids_grupo : [update.id]
         const { error, count } = await supabase
           .from('cuotas_egresos_sin_factura')
-          .update({ [update.campo]: update.valor }, { count: 'exact' })
+          .update(conArrastreDeFechas(update.campo, update.valor), { count: 'exact' })
           .in('id', ids)
 
         if (error) throw error

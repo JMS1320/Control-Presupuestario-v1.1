@@ -1,18 +1,24 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
+import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
+import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
+import { PanelBoletasArba } from "@/components/panel-boletas-arba"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { calcularRetencion } from "@/lib/sicore/minimo"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
@@ -237,6 +243,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
   const [procesandoLote, setProcesandoLote] = useState(false)
+  /**
+   * ¿Está corriendo el «✅ Confirmar y pasar a Pagar» del modal de SICORE? (A-BUG-146)
+   *
+   * El botón no tenía guarda y el flujo es largo —`update` de la FC, fila en `sicore_retenciones`,
+   * avance de la cola—, así que un doble click lo corría **entero dos veces**. El 10/09 dejó dos
+   * filas idénticas para la FC 6337. Es un `useRef` y no un `useState` a propósito: el segundo
+   * click llega **antes** de que React repinte, así que un estado no alcanza para frenarlo.
+   */
+  const finalizandoSicoreCF = useRef(false)
   // Filtros de origen para modo PAGOS
   const [filtroOrigenPagos, setFiltroOrigenPagos] = useState<{
     arca: boolean
@@ -324,6 +339,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Estados modal SICORE anticipo
   const [tiposSicore, setTiposSicore] = useState<TipoSicore[]>([])
+
+  /**
+   * El **portón** del acumulado: el mínimo más bajo de los regímenes activos.
+   *
+   * Se usa sólo para decidir *si vale la pena preguntar*; el mínimo que manda es el del régimen que
+   * el usuario elige después (`tipo.minimo_no_imponible`). Por eso el portón tiene que ser el más
+   * bajo: uno más alto dejaría afuera facturas que sí retienen por servicios.
+   *
+   * ⚠️ **Salía de un `67170` escrito a mano en dos lugares.** Los mínimos los actualiza AFIP y viven
+   * en `tipos_sicore_config`; con el número clavado, el día que cambien el portón sigue usando el
+   * viejo **y no avisa** — un default silencioso, que es justo lo que no se hace acá.
+   */
+  const minimoGateSicore = () => {
+    const minimos = tiposSicore.map(t => Number(t.minimo_no_imponible)).filter(n => Number.isFinite(n) && n > 0)
+    return minimos.length > 0 ? Math.min(...minimos) : 67170
+  }
   const [mostrarModalSicoreAnticipo, setMostrarModalSicoreAnticipo] = useState(false)
   const [anticipoSicoreId, setAnticipoSicoreId] = useState<string | null>(null)
   const [anticipoSicoreCuit, setAnticipoSicoreCuit] = useState('')
@@ -643,6 +674,40 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setMostrarModalEcheqCF(true)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
+        return
+      }
+
+      // ── HOOK ECHEQ (ANTICIPOS) — A-BUG-103 ──────────────────────────────────
+      // El hook de arriba está atado a `origen === 'ARCA'`, pero el menú de ESTA MISMA ventana
+      // ofrece 📝 ECHEQ también para los anticipos (usa `ESTADOS_ANTICIPO`, que lo incluye).
+      // Sin esta rama la opción caía al `actualizarRegistro` genérico del final: escribía
+      // `estado_pago='echeq'` y NADA MÁS — no pedía banco, número ni fecha de débito, no tocaba
+      // `metodo_pago` y no creaba la fila en `msa.cheques`. **El echeq no existía como echeq.**
+      //
+      // Caso testigo (04/09/2026): IGLESIAS NORBERTO HUGO, $2.454.000. Quedó con
+      // `estado_pago='echeq'` contra `metodo_pago='transferencia'`, sin cheque, y el mail de
+      // Detalle de pago se lo anunció al proveedor como *"Transferencia"* prometiéndole el aviso
+      // de Galicia. Lo detectó el usuario por el síntoma exacto: *"no me pide nro de echeq, no me
+      // pide fecha de débito"*.
+      //
+      // La maquinaria correcta ya existía: `cambiarEstadoPagoAnticipo` intercepta 'echeq', abre el
+      // modal y cierra en `guardarChequeAnticipo`. Faltaba solamente enrutar hasta ella.
+      //
+      // ⚠️ **A propósito NO se pide `estado !== 'echeq'`** (la rama de ARCA sí lo hace). Un anticipo
+      // puede estar en `estado_pago='echeq'` y **no tener el cheque**: es exactamente el estado en
+      // que este bug dejó a los que ya se cargaron. Si se exigiera que no estuviera en echeq, el
+      // usuario no tendría **ninguna** forma de arreglarlos desde la app — la opción no volvería a
+      // abrir el modal nunca. Volver a elegir ECHEQ es seguro: `guardarChequeAnticipo` deduplica
+      // por `anticipo_id` y no inserta dos veces.
+      //
+      // (Sin blindaje por empresa: los anticipos viven en `public`, así que `schemaDeFila` los
+      // resuelve siempre como `msa` y el chequeo no podría fallar nunca. Un guard que no puede
+      // dispararse aparenta una protección que no existe.)
+      if (filaParaCambioEstado.origen === 'ANTICIPO' && nuevoEstado === 'echeq') {
+        const idAnticipo = filaParaCambioEstado.id
+        setFilaParaCambioEstado(null)
+        setGuardandoCambio(false)
+        await cambiarEstadoPagoAnticipo(idAnticipo, 'echeq')
         return
       }
 
@@ -1133,6 +1198,37 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const datosFiltradosPagos = datosOperativos
 
   /**
+   * 🧹 **A-BUG-177 — al filtrar, se suelta lo seleccionado que dejó de verse.**
+   *
+   * Reportado por el usuario 2026-09-19: *«permanecen seleccionadas cosas que no están siendo vistas
+   * luego del filtro, eso es peligroso»*.
+   *
+   * 🔑 **Y es peligroso de verdad, no incómodo**: las acciones de la barra de PAGOS operan sobre
+   * `filasSeleccionadas`, así que una fila que quedó marcada y ya no se ve **igual se paga, se
+   * agrupa o se exporta** — el usuario aprieta el botón mirando tres filas y toca cinco.
+   *
+   * 📌 **Y no se vuelve a marcar sola al desfiltrar**, que es la otra mitad de lo que pidió: si al
+   * volver a filtrar reapareciera seleccionada, el olvido volvería con ella. Se suelta y punto —
+   * volver a marcar es barato; pagar de más, no.
+   */
+  useEffect(() => {
+    setFilasSeleccionadas(prev => {
+      if (prev.size === 0) return prev
+      const visibles = new Set(datosFiltradosPagos.map(f => f.id))
+      const quedan = [...prev].filter(id => visibles.has(id))
+      return quedan.length === prev.size ? prev : new Set(quedan)
+    })
+  }, [datosFiltradosPagos])
+
+  /** 💰 Lo que suma lo seleccionado — pedido del usuario: ver el total antes de apretar Pagar. */
+  const totalSeleccionado = useMemo(() => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const debitos = filas.reduce((s, f) => s + (Number(f.debitos) || 0), 0)
+    const creditos = filas.reduce((s, f) => s + (Number(f.creditos) || 0), 0)
+    return { debitos, creditos, neto: debitos - creditos, cantidad: filas.length }
+  }, [datosOperativos, filasSeleccionadas])
+
+  /**
    * Si hay UNA sola fila seleccionada y es un grupo, el botón "Agrupar" pasa a ser "Desagrupar".
    *
    * Antes deshacer un grupo era una ✕ de 8 píxeles dentro de la celda Detalle, sin rótulo: estaba
@@ -1175,16 +1271,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const tareas = Array.from(grupos.entries()).map(async ([k, fs]) => {
       const [cuit, proveedor] = k.split('||')
       const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
+      // 📄 A-BUG-173 — si la fila es un GRUPO, se traen sus facturas para listar una por línea.
+      //    Sin esto el cuadro 1 muestra los 3 comprobantes en un renglón con el importe sumado.
+      const subsA = new Map<string, any[]>()
+      for (const f of fs) {
+        if (f.origen === 'ARCA' && f.facturas_agrupadas && f.ids_grupo?.length) {
+          subsA.set(f.id, await facturasDelGrupo(schemaDeFila(f), f.ids_grupo))
+        }
+      }
       const items = fs.map(f => {
         const fa = f as any
         return {
+          facturas: subsA.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
+          fecha_pago: f.fecha_pago,   // A-BUG-152
           imp_total: fa.imp_total ?? f.debitos ?? 0,
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
           monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          // 🐞 A-BUG-149 — faltaba, y por eso VER el PDF no daba lo mismo que encolarlo: sin
+          // `origen`, un ANTICIPO se suma al bruto como si fuera una factura (A-BUG-105).
+          // `encolarMailsSeleccionados` sí lo pasaba, **con el comentario del bug al lado**.
+          origen: f.origen,
         }
       })
       // Medios de pago reales (anticipo/echeq/transferencia) para el desglose multimedio — solo ARCA (MSA)
@@ -1223,16 +1333,26 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const [cuit, proveedor] = k.split('||')
       // 'arca' si CUALQUIER fila del grupo es ARCA (sino el cert SICORE se saltea al mezclar con transferencias/anticipos)
       const tipo = fs.some(f => f.origen === 'ARCA') ? 'arca' : 'template'
+      // 📄 A-BUG-173 — ídem acá: el mail encolado tiene que decir lo mismo que el PDF que se ve.
+      const subsB = new Map<string, any[]>()
+      for (const f of fs) {
+        if (f.origen === 'ARCA' && f.facturas_agrupadas && f.ids_grupo?.length) {
+          subsB.set(f.id, await facturasDelGrupo(schemaDeFila(f), f.ids_grupo))
+        }
+      }
       const items = fs.map(f => {
         const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
         return {
+          facturas: subsB.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
+          fecha_pago: f.fecha_pago,   // A-BUG-152
           imp_total: fa.imp_total ?? f.debitos ?? 0,
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
           monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          origen: f.origen,   // para que el mail no sume un ANTICIPO como si fuera factura (A-BUG-105)
         }
       })
       // factura_id para el certificado SICORE: si es grupo, las FC individuales; si no, el id de la fila.
@@ -1246,7 +1366,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // (en esas filas de `sicore_retenciones` el `factura_id` es NULL). Sin esto el certificado
       // no se adjuntaba nunca y el mail no mencionaba la retención — A-BUG-95.
       const anticipoIds = fs.filter(f => f.origen === 'ANTICIPO').map(f => f.id)
-      const r = await encolarMailDetalle({ tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds, anticipoIds })
+      const args = { tipo: tipo as 'arca' | 'template', proveedor, cuit, items, schemaName: schemaDeFila(fs[0]), facturaIds, anticipoIds }
+      let r = await encolarMailDetalle(args)
+      // La cuenta no cierra: NO es un error automático. Puede ser un pago parcial o a cuenta hecho
+      // a propósito, así que decide el usuario — con el número delante. Lo que no puede pasar es
+      // que salga en silencio (A-BUG-104).
+      if (r.requiereConfirmacion) {
+        if (window.confirm(`${r.error}\n\n¿Encolar el mail igual?`)) {
+          r = await encolarMailDetalle({ ...args, forzarDesvio: true })
+        } else { continue }
+      }
       if (!r.ok) err++
       else if (!r.email) sinMail++
       else ok++
@@ -1404,7 +1533,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // Antes se asumía la estimada, que casi nunca es la real porque el registro se hace el día en
     // que se paga. Y no es cosmético: la quincena de SICORE sale de esta fecha.
     if (cambiarEstadoLote && ESTADOS_QUE_PAGAN.includes(valorEstadoLote)) {
-      setModalFechaPago({ open: true, fecha: new Date().toISOString().split('T')[0] })
+      /**
+       * 🐞 **P-45 — si la fecha de pago YA es la que se iba a poner, no se pregunta.**
+       *
+       * El cartel arranca proponiendo **hoy**, así que cuando las filas ya tienen `fecha_pago` =
+       * hoy la pregunta es *«¿querés cambiar esta fecha por esta misma fecha?»*. Caso Longo, 18/08.
+       *
+       * 🔑 **La pregunta no se elimina, se saltea cuando no tiene nada que preguntar.** Existe por
+       * un motivo bueno (A-FEAT-22: la estimada casi nunca es la fecha real, y de ella sale la
+       * quincena de SICORE); lo que molesta no es que exista, es que aparezca cuando la respuesta
+       * ya está. Un cartel que se contesta solo enseña a despacharlo sin leer — y el día que
+       * pregunte algo distinto, se despacha igual.
+       */
+      const hoy = new Date().toISOString().split('T')[0]
+      const seleccionadas = Array.from(filasSeleccionadas)
+        .map(id => data.find(f => f.id === id))
+        .filter(Boolean) as CashFlowRow[]
+      // La decisión vive en `lib/pagos/preguntar-fecha-pago.ts`: ahí se prueba, y ahí está escrito
+      // que ante la duda SE PREGUNTA (no preguntar de menos escribe una fecha mala en SICORE).
+      if (hayQuePreguntarFechaPago(seleccionadas, hoy)) {
+        setModalFechaPago({ open: true, fecha: hoy })
+        return
+      }
+      // Ya la tienen: se sigue sin tocar la fecha, y se dice por qué no se preguntó.
+      toast.info(`${seleccionadas.length} registro(s) ya tienen fecha de pago ${hoy.split('-').reverse().join('/')}`,
+        { description: 'No se preguntó por la fecha porque ya es la que correspondía.' })
+      await ejecutarLote('ninguna', '')
       return
     }
 
@@ -1427,7 +1581,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setProcesandoLote(true)
 
     try {
-      const minimoSicore = 67170
+      const minimoSicore = minimoGateSicore()
       const calcularNetoLote = (f: CashFlowRow) => {
         const tc = f.tc_pago ?? f.tipo_cambio ?? 1
         return ((f.imp_neto_gravado || 0) + (f.imp_neto_no_gravado || 0) + (f.imp_op_exentas || 0)) * tc
@@ -1508,8 +1662,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           actualizaciones.push({ id: f.id, origen: f.origen, campo: 'estado', valor: valorEstadoLote })
         )
         // ARCA→pagar: decidir SICORE por PROVEEDOR (acumulado de quincena), no por factura individual.
+        // ⚠️ Las filas-GRUPO se abren antes en sus facturas: la retención se calcula, se registra y
+        // se descuenta **comprobante por comprobante** (A-BUG-138).
         const porCuit = new Map<string, CashFlowRow[]>()
-        todasFilas.filter(esArcaAPagar).forEach(f => {
+        const filasParaSicore = await abrirGruposArca(todasFilas.filter(esArcaAPagar))
+        filasParaSicore.forEach(f => {
           const k = f.cuit_proveedor || ''
           porCuit.set(k, [...(porCuit.get(k) || []), f])
         })
@@ -1600,7 +1757,31 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const extras = accion === 'sin_retencion'
         ? pendiente.facturas.map(f => ({ id: f.id, origen: 'ARCA' as CashFlowRow['origen'], campo: 'estado', valor: valorEstadoLote }))
         : []
-      const ok = await actualizarBatch([...pendiente.actualizaciones, ...extras])
+
+      /**
+       * 🐞 A-BUG-147 — al **retener**, la `fecha_pago` de las facturas que todavía van a pasar por
+       * la cola **NO se escribe acá**.
+       *
+       * Antes sí, y dejaba la mitad de un pago aplicada: la factura quedaba con fecha de pago y
+       * con la **`fecha_estimada` arrastrada** (§ `conArrastreDeFechas`), pero con el estado viejo,
+       * porque el estado se escribe recién al terminar su paso. Si el usuario cerraba la pestaña en
+       * el medio —o el navegador se caía— la factura quedaba con la plata proyectada **el día del
+       * intento en vez del día real**, sin nada que lo señalara. Encontrado el 2026-09-11 cuando
+       * `A-TEST-110` se cortó a mitad de camino y la FC de MERCURE quedó justo así.
+       *
+       * 🔑 Es el invariante de [A-BUG-20] llevado un paso más adentro: *«nada se escribe hasta que
+       * las preguntas estén contestadas»* valía para el portón, pero **la cola por factura son más
+       * preguntas**. Ahora cada factura escribe su fecha junto con su estado: **todo o nada**.
+       *
+       * ⚠️ Sólo se saca la fecha de las que van a la cola. El resto del lote —lo que no pasa por
+       * SICORE— se sigue escribiendo acá, porque para ésas no queda ninguna pregunta pendiente.
+       */
+      const idsEnCola = new Set(pendiente.facturas.map(f => f.id))
+      const actualizaciones = accion === 'retener'
+        ? pendiente.actualizaciones.filter(u => !(u.campo === 'fecha_pago' && idsEnCola.has(u.id)))
+        : pendiente.actualizaciones
+
+      const ok = await actualizarBatch([...actualizaciones, ...extras])
       if (!ok) return
 
       if (pendiente.sinFecha > 0) {
@@ -1761,7 +1942,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const netoPagosPreviosSinRetencion = async (cuit: string, quincena: string): Promise<number> => {
     try {
       const { data } = await supabase.schema('msa').from('comprobantes_arca')
-        .select('imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, tipo_cambio, tc_pago, fecha_pago')
+        .select('imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, imp_total, descuento_aplicado, tipo_cambio, tc_pago, fecha_pago')
         .eq('cuit', cuit)
         .is('sicore', null)
         .not('fecha_pago', 'is', null)
@@ -1770,7 +1951,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       for (const c of (data ?? []) as any[]) {
         if (!c.fecha_pago || generarQuincenaSicore(c.fecha_pago) !== quincena) continue
         const tc = c.tc_pago ?? c.tipo_cambio ?? 1
-        suma += ((c.imp_neto_gravado || 0) + (c.imp_neto_no_gravado || 0) + (c.imp_op_exentas || 0)) * tc
+        const neto = ((c.imp_neto_gravado || 0) + (c.imp_neto_no_gravado || 0) + (c.imp_op_exentas || 0)) * tc
+        // ⚠️ El descuento pronto pago **baja el neto realmente pagado**, así que consume menos
+        // mínimo. Sumando el neto de la factura sin descontarlo, la siguiente del proveedor veía el
+        // mínimo más consumido de lo que estaba y **retenía de más** (A-BUG-139). Se resta la parte
+        // neta del descuento, en la misma proporción neto/total que usa el desglose del modal.
+        const totalPesos = (c.imp_total || 0) * tc
+        const desc = (c.descuento_aplicado || 0)
+        const descNeto = desc > 0 && totalPesos > 0 ? desc * (neto / totalPesos) : 0
+        suma += neto - descNeto
       }
       return Math.round(suma * 100) / 100
     } catch { return 0 }
@@ -1817,7 +2006,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoFactura = netoGravado + netoNoGravado + opExentas
     // SICORE se calcula sobre lo pagado: convertir a pesos con TC de pago
     const netoFacturaPesos = netoFactura * tc
-    const minimoServicios = 67170
+    const minimoServicios = minimoGateSicore()
     const quincena = quincenaDePago(fila)
     if (!quincena) {
       // Sin fecha de pago no hay quincena, y sin quincena no puede haber retención.
@@ -1926,6 +2115,123 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setMostrarModalSicore(true)
   }
 
+  /**
+   * Abre las filas-GRUPO en las facturas que las componen, para el camino de SICORE.
+   *
+   * 🔴 **Por qué** (A-BUG-138): un grupo de pago se muestra como **una sola fila**, cuyo `id` es el
+   * del grupo y no el de ninguna factura. Si esa fila entrara a la cola de SICORE, la retención se
+   * registraría con un `factura_id` que no es una factura, y el `monto_a_abonar` con el descuento de
+   * la retención no se escribiría en ningún comprobante.
+   *
+   * Abriéndolo, el grupo pasa por **exactamente el mismo camino** que ya funciona desde las filas
+   * individuales: una retención por comprobante, cada una con su `monto_a_abonar`, y el TXT las
+   * junta después en un solo renglón porque agrupa por `cuit + régimen`.
+   *
+   * 📌 De paso trae `numero_desde`, `punto_venta` y `fecha_emision`, que la fila del Cash Flow no
+   * arrastra: por eso las retenciones salían con el número de comprobante vacío.
+   */
+  const abrirGruposArca = async (filas: CashFlowRow[]): Promise<CashFlowRow[]> => {
+    const salida: CashFlowRow[] = []
+    for (const f of filas) {
+      const ids = (f.facturas_agrupadas ?? 0) > 1 ? (f.ids_grupo ?? []) : []
+      if (ids.length === 0) { salida.push(f); continue }
+      const schema = schemaDeFila(f)
+      const { data: miembros, error } = await supabase.schema(schema).from('comprobantes_arca')
+        .select('id, estado, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, iva, imp_total, tipo_cambio, tc_pago, tipo_comprobante, punto_venta, numero_desde, fecha_emision, fecha_pago, fecha_vencimiento, fecha_estimada, cuit, denominacion_emisor, detalle')
+        .in('id', ids)
+      if (error || !miembros?.length) {
+        // No se pudo abrir: **no se inventa nada**. Va sin retención y se avisa, en vez de
+        // procesar una fila-grupo como si fuera una factura.
+        console.error('No se pudo abrir el grupo para SICORE:', f.grupo_pago_id, error)
+        toast.warning(`No se pudieron leer las facturas del grupo ${f.detalle?.slice(0, 30) ?? ''}: van sin retención`)
+        salida.push(f)
+        continue
+      }
+      for (const m of miembros as any[]) {
+        salida.push({
+          ...f,
+          id: m.id,
+          origen_tabla: `${schema}.comprobantes_arca`,
+          estado: m.estado,
+          imp_neto_gravado: m.imp_neto_gravado,
+          imp_neto_no_gravado: m.imp_neto_no_gravado,
+          imp_op_exentas: m.imp_op_exentas,
+          // Sin `iva` el descuento se calcula sobre el neto y no sobre la factura (A-BUG-140).
+          iva: m.iva,
+          imp_total: m.imp_total,
+          tipo_cambio: m.tipo_cambio,
+          tc_pago: m.tc_pago,
+          tipo_comprobante: m.tipo_comprobante,
+          punto_venta: m.punto_venta,
+          numero_desde: m.numero_desde,
+          fecha_emision: m.fecha_emision,
+          fecha_pago: m.fecha_pago,
+          fecha_vencimiento: m.fecha_vencimiento,
+          fecha_estimada: m.fecha_estimada,
+          cuit_proveedor: m.cuit ?? f.cuit_proveedor,
+          nombre_proveedor: m.denominacion_emisor ?? f.nombre_proveedor,
+          detalle: m.detalle ?? f.detalle,
+          // Ya no es una fila-grupo: se procesa como comprobante suelto (sigue perteneciendo al
+          // grupo, y por eso `grupo_pago_id` se conserva).
+          facturas_agrupadas: 1,
+          ids_grupo: undefined,
+        } as CashFlowRow)
+      }
+    }
+    return salida
+  }
+
+  /**
+   * La factura que NO llega al mínimo igual deja su fila en `sicore_retenciones`, con **retención 0**.
+   *
+   * 🔑 **Por qué, y es la parte que no se ve:** el TXT que va a AFIP agrupa por `cuit + régimen` y
+   * emite **UN renglón por certificado** (`generarTXTCierreV2`), sumando `pago`,
+   * `neto_gravado_pagado` y `retencion` de todas las filas del grupo. Si la factura que consumió el
+   * mínimo no deja fila, ese renglón sale **corto**: declara menos pago y menos base de las que
+   * realmente se pagaron, con la retención completa. En el caso Alcorta serían $205.768,75 en vez
+   * de $385.093,90.
+   *
+   * Y deja además un dato que hoy no existe en ninguna parte: **de qué régimen era un pago que no
+   * retuvo**. Sin eso, el acumulado del mínimo no puede distinguir bienes de servicios.
+   *
+   * ⚠️ **No estampa `comprobantes_arca.sicore`** — eso significa "esta factura tiene retención" y lo
+   * usa `verificarRetencionPreviaFactura`. Si se estampara acá, la siguiente factura del lote creería
+   * que el mínimo ya se consumió entero y retendría sobre el neto completo.
+   */
+  const registrarConsumoDeMinimoCF = async (
+    fila: CashFlowRow, tipo: TipoSicore, netoFacturaPesos: number, quincena: string, descuento = 0
+  ) => {
+    const tc = fila.tc_pago ?? fila.tipo_cambio ?? 1
+    const impTotalPesos = Math.round(((fila.imp_total || 0) * tc - descuento) * 100) / 100
+    // ⚠️ Sin `as any` a propósito (A-BUG-148): estos cuatro campos **ya están en `CashFlowRow`**.
+    // Cuando no estaban, el `as any` los dejaba pasar como `undefined` y la fila se guardaba sin
+    // número de comprobante **sin que nada fallara** — el mismo mecanismo que dejó pasar el guard
+    // muerto de `tipo_comprobante`. Tipado, un campo que falte lo dice el compilador.
+    await registrarEnSicoreRetenciones('msa', {
+      origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
+      quincena,
+      fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString().split('T')[0],
+      factura_id: fila.id,
+      fecha_emision: fila.fecha_emision ?? null,
+      tipo_comprobante: fila.tipo_comprobante ?? null,
+      punto_venta: fila.punto_venta ?? null,
+      numero_desde: fila.numero_desde ?? null,
+      cuit_emisor: fila.cuit_proveedor ?? null,
+      denominacion_emisor: fila.nombre_proveedor ?? null,
+      tipo_sicore: tipo.tipo,
+      alicuota: tipo.porcentaje_retencion,
+      neto_gravado_pagado: netoFacturaPesos,
+      total_pagado: impTotalPesos,
+      descuento_aplicado: descuento,
+      // Lo que esta factura consumió del mínimo. La suma de los `minimo_no_imponible` del grupo
+      // tiene que dar **exactamente el mínimo del régimen, una sola vez**: ése es el control.
+      minimo_no_imponible: netoFacturaPesos,
+      base_imponible: 0,
+      retencion: 0,
+      pago: impTotalPesos,
+    })
+  }
+
   // Calcular retención según tipo seleccionado. ignorarPrevios = override (no restar pagos previos del mínimo).
   const calcularRetencionSicoreCF = async (fila: CashFlowRow, tipo: TipoSicore, ignorarPrevios = false) => {
     // SICORE se calcula sobre lo pagado: usar TC de pago para convertir a pesos
@@ -1948,14 +2254,52 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (!yaRetuvo) {
       // Capa 2: pagos previos (sin retención) que consumieron parte del mínimo (override = ignorarlos).
       netoPrevio = await netoPagosPreviosSinRetencion(fila.cuit_proveedor, quincena) // real, para mostrar
-      const minimoDisponible = Math.max(0, tipo.minimo_no_imponible - (ignorarPrevios ? 0 : netoPrevio))
-      if (netoFacturaPesos <= minimoDisponible) {
-        alert(`No corresponde retención para ${tipo.tipo}.\nNeto: $${netoFacturaPesos.toLocaleString('es-AR')}\nMínimo disponible: $${minimoDisponible.toLocaleString('es-AR')}${netoPrevio > 0 ? ` (mínimo $${tipo.minimo_no_imponible.toLocaleString('es-AR')} − $${netoPrevio.toLocaleString('es-AR')} ya pagados)` : ''}`)
-        setMostrarModalSicore(false)
+      // 📐 La cuenta vive en `lib/sicore/minimo.ts`, no acá: mezclada con el estado del modal y con
+      // las lecturas a Supabase **no se podía probar**. Ahora tiene casos (`npm run probar`).
+      const reparto = calcularRetencion({
+        neto: netoFacturaPesos,
+        minimoRegimen: tipo.minimo_no_imponible,
+        netoPrevio: ignorarPrevios ? 0 : netoPrevio,
+        yaRetuvo: false,
+        alicuota: tipo.porcentaje_retencion,
+      })
+      if (!reparto.retiene) {
+        // 🔴 NO es el final del camino: esta factura CONSUME parte del mínimo y **la cola tiene que
+        // seguir**. Acá había un `alert()` + `return` que mataba la cola entera: con tres facturas
+        // que superan el mínimo sólo SUMADAS, la primera cortaba y las otras dos no se procesaban
+        // nunca — aunque el portón del lote las hubiera dado por calificadas. Caso Alcorta 10/09
+        // (A-BUG-137): tres FC de bienes por $318.259,43 contra un mínimo de $224.000, y no retenía
+        // ni un peso porque ninguna llegaba **sola** al mínimo.
+        //
+        // Al pasar a 'pagar' sin retención, la factura queda contada por
+        // `netoPagosPreviosSinRetencion` (estado 'pagar' + `sicore` en NULL), así que la siguiente
+        // de la cola ve el mínimo ya consumido. Ahí es donde el acumulado empieza a funcionar
+        // también dentro de un mismo lote, y no sólo entre pagos de días distintos.
+        //
+        // ⚠️ **Y no se sigue de largo: se abre el paso de descuento igual.** La primera versión
+        // continuaba sola, y entonces la única factura del grupo que no retiene era también la única
+        // a la que **no se le podía cargar el descuento pronto pago** — con el modal cerrándose en la
+        // cara. El descuento no depende de que haya retención (A-BUG-139).
+        //
+        // El régimen elegido se conserva (`setTipoSeleccionado(tipo)`): es el que va a llevar la
+        // fila de consumo, y sin él no se sabría si el mínimo consumido era de bienes o de servicios.
+        setFacturaEnProceso(fila)
+        setTipoSeleccionado(tipo)
+        setMontoRetencion(0)
+        setDescuentoAdicional(0)
+        setDescuentoDesglose(null)
+        setDescuentoInputValor('')
+        setDatosSicoreCalculo({
+          netoFactura: netoFacturaPesos, minimoAplicado: reparto.minimoAplicado, baseImponible: 0,
+          esRetencionAdicional: false, sinRetencion: true, netoPrevio,
+          minimoTipo: tipo.minimo_no_imponible, ignorarPrevios,
+        })
+        setPasoSicore('calculo')
+        setMostrarModalSicore(true)
         return
       }
-      baseImponible = netoFacturaPesos - minimoDisponible
-      minimoAplicado = minimoDisponible
+      baseImponible = reparto.baseImponible
+      minimoAplicado = reparto.minimoAplicado
     }
 
     const retencionCalculada = Math.round(baseImponible * tipo.porcentaje_retencion * 100) / 100
@@ -2000,7 +2344,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setMontoRetencion(r2(baseAjustada * tipoSeleccionado.porcentaje_retencion))
       setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
     } else {
-      setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado })
+      // El MÍNIMO CONSUMIDO también baja con el descuento: lo que consume es el neto **realmente
+      // pagado**. Sin esto el modal mostraba «Monto no imponible: $148.202,62» (el neto de antes del
+      // descuento) mientras se guardaba $140.792,49 — el número correcto, pero no el que se veía.
+      //
+      // Es cosmético en la plata y **no lo es en la confianza**: un número a la vista que no coincide
+      // con el que se usa hace dudar de todos los demás, que sí estaban bien (A-BUG-143).
+      // Sólo se toca cuando había un mínimo consumido: en el camino de «descuento sin retención»
+      // vale 0 y tiene que seguir en 0.
+      setDatosSicoreCalculo({
+        ...datosSicoreCalculo,
+        netoFactura: netoAjustado,
+        ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoAjustado } : {}),
+      })
     }
   }
 
@@ -2013,6 +2369,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       calcularRetencionSicoreCF(facturaEnProceso, tipoSeleccionado) // restaura cálculo original
     } else {
       setMontoRetencion(0)
+      // Sacar el descuento tiene que **deshacer** el neto ajustado, no dejarlo puesto: si no, se
+      // registraba como mínimo consumido un neto con un descuento que ya no existe.
+      if (datosSicoreCalculo) {
+        const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
+        const netoOriginal = Math.round(
+          ((facturaEnProceso.imp_neto_gravado || 0) + (facturaEnProceso.imp_neto_no_gravado || 0)
+            + (facturaEnProceso.imp_op_exentas || 0)) * tc * 100
+        ) / 100
+        setDatosSicoreCalculo({
+          ...datosSicoreCalculo,
+          netoFactura: netoOriginal,
+          ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoOriginal } : {}),
+        })
+      }
     }
   }
 
@@ -2022,7 +2392,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // Permitir finalizar sin retención si hay descuento (paridad con el Modal).
     // Pagar SIN retención y SIN descuento no pasa por acá: tiene su propio botón
     // "Seguir sin retención", que no estampa la quincena en la factura. Ver el modal.
-    if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0) return
+    //
+    // La factura que **consume mínimo** sí pasa por acá aunque no retenga y aunque no lleve
+    // descuento: tiene que dejar su fila en `sicore_retenciones` y seguir la cola (A-BUG-139).
+    const esConsumoDeMinimo = datosSicoreCalculo?.sinRetencion === true && !!tipoSeleccionado
+    if (!tipoSeleccionado && montoRetencion === 0 && descuentoAdicional === 0 && !esConsumoDeMinimo) return
+
+    // Guarda de re-entrada (A-BUG-146): el segundo click no vuelve a correr el flujo.
+    if (finalizandoSicoreCF.current) return
+    finalizandoSicoreCF.current = true
 
     try {
       // SICORE se calcula sobre lo pagado: usar TC de pago
@@ -2037,28 +2415,59 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString().split('T')[0]
       const quincena = generarQuincenaSicore(fechaSicore)
 
+      // 0. La FECHA DE PAGO de esta factura (A-BUG-147). Se escribe acá y no en el lote, para que
+      //    la factura no pueda quedar con fecha y sin estado si el usuario abandona la cola.
+      //    Va por `actualizarRegistro` para que aplique el **arrastre a `fecha_estimada`** en un
+      //    solo lugar (§ `conArrastreDeFechas`) en vez de repetir la regla acá.
+      //    Sólo si la fila la trae: es exactamente la condición que tenía el lote (`if (fp && …)`).
+      if (facturaEnProceso.fecha_pago) {
+        await actualizarRegistro(guardadoPendienteCF.filaId, 'fecha_pago', facturaEnProceso.fecha_pago, 'ARCA')
+      }
+
       // 1. Cambiar estado a 'pagar' en BD
       await actualizarRegistro(guardadoPendienteCF.filaId, 'estado', guardadoPendienteCF.nuevoEstado, 'ARCA')
 
       // 2. Estampar datos SICORE en la FC (compat con v1) + descuento en la propia FC (paridad con el Modal)
+      //
+      // 🔑 **`sicore` se estampa SÓLO si hubo retención de verdad.** Esa columna es la que lee
+      // `verificarRetencionPreviaFactura` para decidir que el mínimo del proveedor ya se consumió
+      // entero. Estamparla en una factura que no retuvo —porque no llegaba al mínimo, o porque sólo
+      // llevaba descuento— hacía que **la siguiente del proveedor retuviera sobre el neto completo,
+      // sin mínimo**. El descuento y el monto a abonar sí se guardan siempre.
       await supabase.schema('msa').from('comprobantes_arca')
-        .update({ monto_a_abonar: montoAAbona, sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado?.tipo ?? null, descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null })
+        .update({
+          monto_a_abonar: montoAAbona,
+          descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
+          ...(montoRetencion > 0
+            ? { sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado?.tipo ?? null }
+            : { sicore: null, monto_sicore: null, tipo_sicore: null }),
+        })
         .eq('id', guardadoPendienteCF.filaId)
+
+      // 3a. Sin retención pero CONSUMIENDO mínimo: deja su fila igual, con el neto **ya descontado**.
+      //     Sin esto, el renglón del certificado sale corto en pago y en base (ver el comentario de
+      //     `registrarConsumoDeMinimoCF`). El neto ajustado lo dejó `aplicarDescuentoSicoreCF`.
+      if (esConsumoDeMinimo && tipoSeleccionado) {
+        await registrarConsumoDeMinimoCF(
+          facturaEnProceso, tipoSeleccionado,
+          datosSicoreCalculo?.netoFactura ?? 0, quincena, descuentoAdicional
+        )
+      }
 
       // 3. Registrar en SICORE v2 (sicore_retenciones) SOLO si hay retención real (paridad con el Modal).
       //    "Sin retención + descuento" no genera registro SICORE (solo estampa el descuento en la FC).
       if (tipoSeleccionado && montoRetencion > 0) {
         const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
-        const fa = facturaEnProceso as any
+        // Sin `as any` (A-BUG-148) — ver el motivo en `registrarConsumoDeMinimoCF`.
         await registrarEnSicoreRetenciones('msa', {
           origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
           quincena,
           fecha_pago: fechaSicore,
           factura_id: guardadoPendienteCF.filaId,
-          fecha_emision: fa.fecha_emision ?? null,
-          tipo_comprobante: fa.tipo_comprobante ?? null,
-          punto_venta: fa.punto_venta ?? null,
-          numero_desde: fa.numero_desde ?? null,
+          fecha_emision: facturaEnProceso.fecha_emision ?? null,
+          tipo_comprobante: facturaEnProceso.tipo_comprobante ?? null,
+          punto_venta: facturaEnProceso.punto_venta ?? null,
+          numero_desde: facturaEnProceso.numero_desde ?? null,
           cuit_emisor: facturaEnProceso.cuit_proveedor ?? null,
           denominacion_emisor: facturaEnProceso.nombre_proveedor ?? null,
           tipo_sicore: tipoSeleccionado.tipo,
@@ -2121,7 +2530,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
     } catch (error) {
       toast.error('Error finalizando SICORE: ' + (error as Error).message)
+    } finally {
+      // En `finally` y no al final del `try`: si algo falla a mitad de camino, el botón tiene que
+      // volver a servir — si no, el modal queda muerto y hay que recargar la página.
+      finalizandoSicoreCF.current = false
     }
+  }
+
+  /**
+   * El botón «Seguir sin retención» del modal.
+   *
+   * Si la factura venía **consumiendo mínimo**, deja igual su fila en `sicore_retenciones` antes de
+   * continuar: sin ella el renglón del certificado declara menos pago y menos base de los que
+   * realmente se pagaron. Para el resto de los casos es lo de siempre.
+   */
+  const seguirSinRetencionCF = async () => {
+    if (datosSicoreCalculo?.sinRetencion && tipoSeleccionado && facturaEnProceso) {
+      const q = quincenaDePago(facturaEnProceso)
+      if (q) {
+        await registrarConsumoDeMinimoCF(
+          facturaEnProceso, tipoSeleccionado, datosSicoreCalculo.netoFactura ?? 0, q, 0
+        )
+      }
+    }
+    await cancelarSicoreCF(true)
   }
 
   // Cancelar SICORE desde Cash Flow
@@ -2142,6 +2574,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setColaLoteSicore([])
       echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null; echeqFilaCF.current = null
     } else if (pending && continuarSinSicore) {
+      // La fecha de pago, junto con el estado (A-BUG-147) — ver el motivo en `resolverSicoreLote`.
+      // Ésta es la otra salida que COMPLETA la factura («Seguir sin retención»), así que también
+      // le toca escribirla; el lote ya no lo hace.
+      const filaCola = facturaEnProceso?.id === pending.filaId ? facturaEnProceso : null
+      if (filaCola?.fecha_pago) {
+        await actualizarRegistro(pending.filaId, 'fecha_pago', filaCola.fecha_pago, 'ARCA')
+      }
       // Guardar el cambio de estado sin SICORE
       await actualizarRegistro(pending.filaId, 'estado', pending.nuevoEstado, 'ARCA')
       // ECHEQ sin retención (single o lote): estampar método/fecha de cobro + registrar el cheque por el total (imp_total ARS).
@@ -2330,7 +2769,42 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   // Cerrar y limpiar modal SICORE anticipo
+  // «No, continuar sin retención» — A-BUG-106.
+  //
+  // Antes este botón llamaba a `cerrarModalSicoreAnticipo`, que sólo cierra y limpia el estado del
+  // modal. Es decir: decir "sin retención" **abandonaba la operación entera en silencio** — el
+  // echeq no se creaba, el anticipo no cambiaba de estado, y no había ningún aviso de que lo que
+  // pediste no se hizo. Acá se continúa de verdad, sin retención.
+  const continuarSinRetencionAnticipo = async () => {
+    const ant = echeqAnticipoCF.current
+    const datosEcheq = echeqPendienteCF.current
+    const idAnt = anticipoSicoreId
+    try {
+      if (ant && datosEcheq) {
+        // Sin retención el echeq se libra por el monto completo: no hay nada que descontar.
+        await finalizarEcheqAnticipo(ant, (ant.monto as number) || 0, null)
+        toast.success('Anticipo → echeq (sin retención)')
+      } else if (idAnt) {
+        // Camino sin echeq: el usuario venía de «pagar». También quedaba sin efecto.
+        const { error } = await supabase.from('anticipos_proveedores')
+          .update({ estado_pago: 'pagar' }).eq('id', idAnt)
+        if (error) { toast.error('Error: ' + error.message); return }
+        toast.success('Anticipo → pagar (sin retención)')
+      }
+    } finally {
+      cerrarModalSicoreAnticipo()
+    }
+    await cargarAnticiposExistentes()
+    await cargarDatos()
+  }
+
   const cerrarModalSicoreAnticipo = () => {
+    // Cancelar (cruz o «Cancelar») **suelta el echeq pendiente**: si no se limpian estos refs, un
+    // echeq abandonado queda colgado y se aplica a la SIGUIENTE operación de anticipo, con el banco
+    // y las fechas del anterior. El usuario pidió expresamente que cancelar aborte todo desde el
+    // origen — verificado que ya no deja cheque ni retención, esto cierra el último hilo suelto.
+    echeqPendienteCF.current = null
+    echeqAnticipoCF.current = null
     setMostrarModalSicoreAnticipo(false)
     setAnticipoSicoreId(null)
     setAnticipoSicoreCuit('')
@@ -2548,12 +3022,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   const cambiarEstadoPagoAnticipo = async (anticipoId: string, nuevoEstado: string, esEcheq = false) => {
-    // Obtener el anticipo completo para saber si tiene SICORE
-    const anticipo = anticiposExistentes.find(a => a.id === anticipoId)
+    // Obtener el anticipo completo para saber si tiene SICORE.
+    // Fallback a la BD (A-BUG-103): esta función también se llama desde el menú de la FILA del
+    // Cash Flow, y esa fila puede existir sin que el anticipo esté cargado en `anticiposExistentes`
+    // (se llenan por caminos distintos). Antes, en ese caso, se hacía `return` a secas: el usuario
+    // elegía ECHEQ, no pasaba absolutamente nada y no había ni un aviso. El silencio miente.
+    let anticipo = anticiposExistentes.find(a => a.id === anticipoId)
+    if (!anticipo) {
+      const { data } = await supabase.from('anticipos_proveedores')
+        .select('*').eq('id', anticipoId).maybeSingle()
+      if (data) anticipo = data as typeof anticipo
+    }
 
-    // Intercept ECHEQ desde la UI → abrir modal (banco/número/fechas); el resto lo hace confirmarEcheqCF.
+    // Intercept ECHEQ desde la UI → abrir modal (banco/números/fechas); el resto lo hace confirmarEcheqCF.
     if (nuevoEstado === 'echeq' && !esEcheq) {
-      if (!anticipo) return
+      if (!anticipo) { toast.error('No se encontró el anticipo: no se puede registrar el echeq'); return }
       echeqAnticipoCF.current = anticipo
       echeqFilaCF.current = null
       setEcheqOrigenCF('anticipo')
@@ -2581,7 +3064,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setAnticipoSicoreId(anticipo.id)
         setAnticipoSicoreCuit(anticipo.cuit_proveedor)
         setAnticipoSicoreFecha(esEcheq && echeqPendienteCF.current ? echeqPendienteCF.current.fechaEmision : anticipo.fecha_pago)
-        setPasoSicoreAnticipo('tipo')
+        // Arranca en 'pregunta', no en 'tipo' (A-BUG-106). Abriendo en 'tipo' el usuario caía en la
+        // lista de categorías, cuyas únicas salidas son «← Volver» y la cruz: **no había forma de
+        // decir que este pago NO lleva retención**, aunque el paso 'pregunta' tiene ese botón desde
+        // siempre. Reportado por el usuario al cargar el echeq de IGLESIAS, donde la retención ya
+        // estaba calculada y registrada contra la factura.
+        setPasoSicoreAnticipo('pregunta')
         setMostrarModalSicoreAnticipo(true)
         return  // no recargar todavía
       }
@@ -2966,6 +3454,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
               </Button>
+              {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
+                  CUOTA de esta pantalla.
+                  🐞 Estaba adentro del bloque `modoPagos` y el usuario no lo encontró: entrar a
+                  PAGOS es un paso que nada en la pantalla anuncia. Y ahí no correspondía — los
+                  botones de ese bloque operan sobre las filas SELECCIONADAS y se deshabilitan sin
+                  selección; importar boletas no depende de ninguna selección. */}
+              <PanelBoletasArba />
               {/* Botón Pago Manual - Templates Abiertos */}
               <Button
                 variant="outline"
@@ -3035,24 +3530,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                 {/* Filtros de fecha */}
+                {/*
+                  📅 A-FEAT-161 — el rango compartido. Con «Este mes» / «Mes anterior» ya no hay que
+                  tipear el año, que era el pedido: *«yo hoy escribiría 19 06 y ya estará completo
+                  2026»*. **No autollena al montar**: este panel filtra en vivo, así que precargar
+                  un mes escondería el resto sin que nadie lo haya pedido.
+                */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">📅 Rango de Fechas</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="date"
-                      placeholder="Desde"
-                      value={fechaDesde}
-                      onChange={(e) => setFechaDesde(e.target.value)}
-                      className="text-xs"
-                    />
-                    <Input
-                      type="date"
-                      placeholder="Hasta"
-                      value={fechaHasta}
-                      onChange={(e) => setFechaHasta(e.target.value)}
-                      className="text-xs"
-                    />
-                  </div>
+                  <RangoDeFechas
+                    desde={fechaDesde}
+                    hasta={fechaHasta}
+                    onCambiar={(d, h) => { setFechaDesde(d); setFechaHasta(h) }}
+                  />
                 </div>
                 
                 {/* Búsqueda de proveedor */}
@@ -3232,8 +3722,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-blue-800">
-                    💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}
+                  {/*
+                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
+                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
+                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
+                    justo lo que uno quiere notar antes de pagar.
+                  */}
+                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
+                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
+                    {totalSeleccionado.cantidad > 0 && (
+                      <span className="text-sm font-normal">
+                        {totalSeleccionado.debitos > 0 && (
+                          <span className="text-red-700 font-semibold tabular-nums">
+                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {totalSeleccionado.creditos > 0 && (
+                          <span className="text-green-700 font-semibold tabular-nums ml-3">
+                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </h4>
                   <div className="flex items-center gap-2">
                     <Button
@@ -3455,10 +3965,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       </th>
                     )}
                     
+                    {/*
+                      📅 **A-FEAT-156 — la FECHA Estimada queda fija al ir hacia la derecha.**
+                      Pedido del usuario 2026-09-19: *«en la vista del Cash Flow debo siempre ver la
+                      fecha estimada aunque me vaya para la derecha»*. Sin eso, al llegar a las
+                      columnas del final no se sabe de qué fila se está leyendo — y la grilla ordena
+                      justamente por esa fecha.
+                      ⚠️ Lleva `bg-*` propio: una celda `sticky` sin fondo deja ver lo que pasa por
+                      debajo. Y el `z` del encabezado tiene que ser mayor que el de la celda, o el
+                      `thead sticky` se lo come al scrollear en vertical.
+                    */}
                     {columnasDefinicion.map((col) => (
                       <th 
                         key={col.key} 
-                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width}`}
+                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width} ${
+                          col.key === 'fecha_estimada' ? 'sticky left-0 z-20 bg-gray-50' : ''
+                        }`}
                       >
                         {col.label}
                       </th>
@@ -3503,7 +4025,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         
                         {/* Columnas de datos */}
                         {columnasDefinicion.map((col) => (
-                          <td key={col.key} className="p-3 text-sm">
+                          <td key={col.key}
+                            className={`p-3 text-sm ${
+                              col.key === 'fecha_estimada' ? 'sticky left-0 z-10 bg-white' : ''
+                            }`}
+                          >
                             {renderizarCelda(fila, col)}
                           </td>
                         ))}
@@ -4499,7 +5025,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => setPasoSicoreAnticipo('tipo')}>
                   ✅ Sí, aplicar retención
                 </Button>
-                <Button variant="outline" className="flex-1" onClick={cerrarModalSicoreAnticipo}>
+                <Button variant="outline" className="flex-1" onClick={continuarSinRetencionAnticipo}>
                   No, continuar sin retención
                 </Button>
               </div>
@@ -4623,6 +5149,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               {facturaEnProceso ? `${facturaEnProceso.nombre_proveedor} · CUIT ${facturaEnProceso.cuit_proveedor}` : ''}
             </DialogDescription>
           </DialogHeader>
+
+          {/* 🧪 Lo que quedó pendiente de probar DE ESTE PROCESO (A-FEAT-129). Va en el paso del
+              tipo y no en el del cálculo: acá el usuario todavía está decidiendo, en el otro está
+              por confirmar un importe y no hay que distraerlo. Si no hay nada, no ocupa lugar. */}
+          {pasoSicore === 'tipo' && <TestsDelProceso proceso="cashflow/sicore" pantalla="cashflow" />}
 
           {pasoSicore === 'tipo' && (
             <div className="space-y-4">
@@ -4779,7 +5310,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     Es la salida que antes estaba escondida en el "Cancelar" de un confirm. */}
                 {datosSicoreCalculo?.sinRetencion && (
                   <Button variant="outline" className="border-amber-500 text-amber-700 hover:bg-amber-50"
-                    onClick={() => cancelarSicoreCF(true)}>
+                    onClick={seguirSinRetencionCF}>
                     Seguir sin retención
                   </Button>
                 )}

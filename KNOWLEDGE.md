@@ -1791,3 +1791,631 @@ exactamente lo que ya pasó con `categoriaPrecio()` (§ buscar antes de escribir
 **Al extraer, no arreglar.** Los bloques se movieron de `vista-principal` **sin tocarles la
 lógica**. Si algo cambia de número después de un refactor que también "mejoró" cosas, no hay forma
 de saber cuál de las dos lo causó.
+## Leer un PDF: la posición es dato, el texto plano no alcanza `#parseo #2026-09-06`
+
+Al importar el romaneo de un frigorífico, extraer los literales de texto del PDF y aplicarles un
+regex **no funciona**: el subseteo de fuentes **parte los números**. `511` sale como `5`, `1`, `1`,
+y no hay forma de distinguir eso de tres valores distintos.
+
+**La solución es reconstruir con las coordenadas** del operador de texto (`Tm`/`Td`), agrupar en
+filas por Y y ordenar celdas por X. Ahí los números se vuelven a pegar solos, porque lo que estaba
+partido está pegado *en la página*.
+
+Tres cosas que se aprendieron haciéndolo, y que valen para cualquier PDF:
+
+- **Agrupar por (PÁGINA, Y), nunca sólo por Y.** Dos hojas repiten las mismas coordenadas y las
+  filas de una se mezclan con las de la otra. *(Lo señaló el usuario antes de que ocurriera.)*
+- **Agrupar por cercanía, no por redondeo.** Con `round(y/2)` dos piezas de la misma línea visual
+  caen en bins distintos si están a una unidad del borde, y la fila se parte en silencio.
+- **Buscar el valor de un campo por cercanía a su etiqueta**, no con un regex sobre el texto
+  aplanado. Etiqueta y valor suelen estar en líneas distintas y varias etiquetas comparten línea:
+  `Etiqueta:\s*(\d+)` agarra el número **de la etiqueta de al lado**.
+
+---
+
+## El subtotal que se cuela y duplica el total `#parseo #control #2026-09-06`
+
+Dos veces el mismo día, en dos fuentes distintas:
+
+- En el romaneo, las filas de **SUBTOTAL** vienen con la categoría vacía y separadores `-------`.
+- En la tabla del Mercado Agroganadero, la fila **`Totales`** del pie es el mercado entero otra vez:
+  sin filtrarla, las cabezas daban **35.210 en vez de 17.605**.
+
+**Una tabla impresa mezcla renglones de datos con renglones de resumen, y los dos tienen columnas
+numéricas.** El parser no los distingue por la forma: hay que reconocerlos —nombre, celdas vacías,
+guiones— y saltearlos.
+
+🔑 **Y el síntoma es traicionero: el total queda exactamente al doble.** Un número redondo y
+plausible que no dispara ninguna alarma.
+
+---
+
+## Un reparto proporcional nunca produce un ratio diferencial `#control #2026-09-06`
+
+Al buscar el rinde por grupo de precio, el kilo vivo se precargó como *proporcional al kilo de carne
+sobre el total*. El resultado daba el mismo rinde para todos los grupos, y no es un bug: es
+aritmética.
+
+```
+rinde = kg_carne / (total × kg_carne/total_grupo) = total_grupo / total
+```
+
+El `kg_carne` **se simplifica** y queda una constante.
+
+Es el mismo defecto que tenía la fuente que estábamos criticando: el frigorífico reparte su columna
+de kilo vivo usando el rinde global, y por eso sus 9 grupos daban `53,58 %` los nueve.
+
+> 🔑 **Si el numerador está adentro del denominador, el cociente no puede diferenciar nada.** Antes
+> de calcular un ratio por grupo, mirar de dónde salió el denominador: si se derivó del numerador,
+> el resultado ya está decidido.
+
+⚠️ **Lo detectó el usuario, no el código ni un test** — *"en algún lugar estás mal pero no sé
+exactamente dónde"*. Ningún control lo habría agarrado: los números cerraban perfecto.
+
+
+## Las PARTIDAS del inmobiliario (extraídas de las boletas 2026) `#arba #referencia #2026-09-06`
+
+Salieron de los PDFs que dejó el usuario, no de tipearlas. Formato ARBA: `partido-partida-dv`.
+
+| Lote | Partida | Anual 2026 |
+|---|---|---:|
+| Anexo | `099-008368-1` | 251.072,90 |
+| Casco | `099-006595-0` | 4.489.797,90 |
+| Cholo 1 | `099-010611-8` | 73.818,50 |
+| Cholo 2 | `099-012766-2` | 73.358,50 |
+| El Relincho | `099-025089-8` | 576.624,40 |
+| Entre Rios | `099-025551-2` | 104.985,30 |
+| Lima | `038-040142-8` | *(cuotas)* |
+| Ombu | `099-016666-8` | 1.737.255,00 |
+| Porteria Nuevo | `099-015877-0` | 209.174,30 |
+| Porteria Viejo | `099-015879-7` | 209.175,40 |
+| Quinta Rosello 1 | `099-001854-5` | *(cuotas)* |
+| Quinta Rosello 2 | `099-001846-4` | *(cuotas)* |
+| Rojas | `090-016369-0` | 7.856.195,20 |
+| Sanchez | `099-015880-0` | 215.065,20 |
+| Tango Leboso | `099-015881-9` | 134.928,60 |
+| Tango Parra 1 | `099-015883-5` | 134.928,60 |
+| Tango Parra 2 | `099-015885-1` | 246.700,10 |
+| Tapera 1 | `099-015882-7` | 133.665,70 |
+| Tapera 2 | `099-015884-3` | 129.293,70 |
+| Tapera 3 | `099-015886-0` | 128.050,30 |
+
+⚠️ **Rojas es el único de partido `090`** — los demás son `099`. No es un error de lectura: está en
+la boleta. Y **Lima es `038`**.
+
+⏳ Sin partida: **Lote Puerto** (su PDF es un comprobante de pago) y los dos **Complementarios** (el
+complementario grava al contribuyente, no a una parcela: no tiene partida).
+
+---
+
+## Leer un PDF de ARBA: el texto son glyph IDs, no letras `#parseo #arba #2026-09-06`
+
+Las boletas de ARBA traen el contenido como **hexadecimales de glifo** dentro de una fuente
+subseteada:
+
+```
+BT /F4 16 Tf 1 0 0 -1 78 64 Tm <002D> Tj 4 0 Td <0051> Tj
+```
+
+Un extractor que busca literales entre paréntesis devuelve **cero**: no hay ninguno. Hay que:
+
+1. buscar en cada objeto Font su `/ToUnicode N 0 R`,
+2. descomprimir ese stream y parsear su CMap (`beginbfchar` / `beginbfrange`),
+3. seguir los `Tf` del contenido para saber **qué fuente está activa** en cada momento,
+4. y recién ahí traducir los `<hhhh>`.
+
+🔑 **El paso 3 es el que se olvida.** Un documento usa varias fuentes y **el mismo glyph ID significa
+cosas distintas en cada una**. Un mapa global «que funciona» es una bomba de tiempo: acierta mientras
+las fuentes coincidan y falla en silencio cuando dejan de coincidir.
+
+*Sirve para cualquier PDF generado por sistema —no sólo ARBA— y es distinto del caso del romaneo,
+que sí traía literales pero partidos por kerning.*
+
+
+## Probar contra la base real: qué se evaluó y qué se descartó `#testing #bd #2026-09-06`
+
+**El problema.** No hay entorno de prueba: la app local, la preview y producción usan el **mismo**
+Supabase. Un test que escribe, escribe en los datos del usuario. Ya pasó una vez —un test automatizado
+inventó $5.443.200 sobre un movimiento real **y reportó OK**— y de ahí sale la regla de `CLAUDE.md`.
+
+El usuario lo planteó con el estándar correcto: *«no tiene que entender; tiene que revertir con 100 %
+de seguridad»*. Es el criterio justo, y descarta más opciones de las que parece.
+
+### ❌ Liquibase — no ataca este problema
+
+Liquibase versiona **estructura** y sabe revertir **los changesets que él mismo aplicó**. Cuando un
+test aprieta un botón y **la app** escribe una fila por PostgREST, Liquibase **no se entera de que
+eso pasó**: no está en su changelog, no hay nada que revertir. Y aun en sus propios changesets, el
+rollback de un `UPDATE` **lo escribe uno a mano** guardando el valor viejo.
+
+> 🔑 Daría exactamente la falsa seguridad que se quería evitar: una herramienta que parece garantizar
+> el revert, sobre cambios que no ve.
+
+**Y para lo que sí hace, ya está cubierto:** Supabase registra cada migración en
+`supabase_migrations.schema_migrations`, ordenada y con su SQL. Sumar Liquibase sería una **segunda
+fuente de verdad** para lo mismo.
+
+### ❌ Contar filas antes y después — mitigación, no garantía
+
+Se evaluó que el test cuente las filas de las tablas que toca y falle si no coinciden. Sirve para
+**detectar**, pero **si el test se muere antes de llegar al control, la basura queda**. No cumple el
+estándar de «100 % de seguridad» que puso el usuario, y decir que sí sería mentirle.
+
+### ✅ Una base descartable (branch de Supabase) — la respuesta correcta, con su costo
+
+Es lo que el usuario estaba describiendo: se prueba en una copia y se tira. Reversión total sin
+entender nada.
+
+⚠️ **Pero la branch se crea desde las migraciones: trae la estructura y NO los datos.** Un test sobre
+una base vacía no prueba lo mismo — hay que sembrar la carga, las pesadas, los templates. Ése es el
+trabajo real, no crear la branch.
+
+### ✅ Lo elegido para empezar: que el test NO escriba
+
+No es conformarse con menos. **Los cuatro bugs del 2026-09-06 eran de lógica pura** —el factor por
+tipo, las 9 cabezas, el denominador mezclado, el match por dientes— y **ninguno necesitaba escribir
+una fila**. Un test que no escribe no puede dejar basura, y eso es más fuerte que cualquier limpieza.
+
+📌 **La branch queda como la decisión pendiente para cuando haya que probar el camino de escritura**
+(confirmar una venta, aplicar una boleta) → `A-DEC-18`.
+
+---
+
+## Un test que corre donde NO corre el usuario prueba otra cosa `#testing #2026-09-06`
+
+El parser del romaneo se verificó en Node contra el PDF real: 9 líneas, $18.750.900, perfecto. En el
+navegador del usuario devolvió **cero**, sin un solo error.
+
+> 🔑 **Playwright y Puppeteer corren en la máquina del desarrollador.** Habrían pasado ese bug por
+> alto exactamente como lo pasé yo. Un test que corre **dentro del navegador del usuario, con su
+> sesión** es el único que ve las diferencias de entorno.
+
+Y `elemento.click()` dispara el mismo evento que un dedo: para manejar la UI **no hace falta un
+emulador**. El emulador sirve para otra cosa —un humo antes de pushear— no para reproducir lo que le
+pasa al usuario.
+
+⚠️ Lo que un test automatizado **no** hace, corra donde corra: verificar que un número **tenga
+sentido**. Puede afirmar que 1.748 es 1.748; no que 1.748 sea plausible para 7 vacas.
+
+
+## Reconstruir en tres iteraciones algo que ya estaba escrito `#metodo #documentacion #2026-09-12`
+
+Al separar el identificador del detalle en las cuotas de template ([A-FEAT-137]), hice tres
+intentos: escribí en una columna muerta, después en una que pisaba la etiqueta, y recién al tercero
+llegué al diseño bueno.
+
+**Las tres decisiones que fui reconstruyendo estaban documentadas.** `MODULO_CONCILIACION.md`
+§ 30.2 y § 30.3 decían, textual, que el `detalle_usuario` de un template salía de `c.descripcion` y
+su `comprobante_display` de `nombre_referencia`. **No las leí antes de tocar el código.**
+
+> 🔑 **El costo no fue el trabajo repetido — fue cambiar un diseño documentado sin saber que lo
+> era.** Un cambio consciente contra una decisión escrita es una decisión nueva, que se discute y se
+> fecha. Uno inconsciente es un accidente que después nadie puede reconstruir.
+
+Es exactamente el modo de falla que previene § `CLAUDE.md` 🧭 *Regla de contexto*: **primero las
+dimensiones, después el código**. Y la trampa es que **sí había leído código** — buenísimo código,
+con sus comentarios — y eso da la sensación de haber investigado. No es lo mismo: el código dice
+**qué hace**; la dimensión dice **qué se decidió y por qué**.
+
+### La otra mitad: dejar la doc vieja también miente
+Al cambiar el diseño, § 30.2 y § 30.3 pasaron a describir algo que ya no existe. **Una dimensión
+desactualizada es peor que una ausente**: la ausente manda a mirar el código, la vieja manda a
+confiar. Se actualizaron en el momento, con la marca `⚠️ cambió 2026-09-12` y el puntero al ID — así
+el que la lea dentro de seis meses ve **que hubo un cambio**, no sólo el estado final.
+
+---
+
+## Tratar un ÉXITO como si fuera un fallo — dos formas, el mismo día `#control #api #2026-09-12`
+
+Corrigiendo 497 movimientos ([A-DAT-38](PENDIENTES.md#a-dat-38)) el script se rompió **dos veces**, y
+las dos por la misma confusión de fondo: **algo salió bien y el código lo leyó como que salió mal.**
+
+### 1 · `r.json()` sobre un `INSERT` que responde 201 **sin cuerpo**
+```
+SyntaxError: Unexpected end of JSON input
+```
+PostgREST responde un `INSERT` con **201 y cuerpo vacío** salvo que se le pida
+`Prefer: return=representation`. El helper hacía `r.json()` para todo lo que no fuera 204, así que
+**reventó después de escribir**. Desde afuera se veía como *«se cortó a la mitad»* — y quedaron 200
+filas insertadas que parecían basura de un fallo, cuando eran trabajo hecho.
+
+> 🔑 **Un 2xx sin cuerpo es éxito, no un error de formato.** Se lee `await r.text()` y se parsea
+> **sólo si hay algo**.
+
+### 2 · El control, otra vez, contando sobre un universo recortado
+El control dijo *«no cierra por 9»* con los 497 perfectamente bien corregidos. Los 9 eran los que el
+propio script **salteaba a propósito** (los que A-BUG-156 creía rotos y resultaron **pagos agrupados**): tenían detalle, seguían
+teniéndolo, y el esperado no los incluía porque el `continue` ocurría antes de contarlos.
+
+**Es la segunda vez en el mismo día** — la primera fue en [A-DAT-37](PENDIENTES.md#a-dat-37), con el
+`limit` que PostgREST recorta. Distinta causa, misma forma:
+
+> 🧨 **Cuando un control compara un «antes» con un «después», las dos puntas tienen que medir el
+> MISMO universo.** Todo lo que la lógica saltea con un `continue` sigue existiendo en la base, y el
+> esperado tiene que contarlo — o el control reclama como sobrante algo que nunca tuvo que tocar.
+
+### Por qué esto importa más que los dos bugs
+Un control que grita en falso **entrena a ignorarlo**, y después no sirve el día que tiene razón. La
+reacción correcta ante un rojo no es creerle ni ignorarlo: es **verificar contra la fuente** — las
+dos veces alcanzó una consulta SQL de cuatro líneas — y después arreglar al que estaba mal, que las
+dos veces fue el control.
+
+---
+
+## Un `limit` alto NO garantiza traer todo: PostgREST corta en 1.000 `#bd #control #2026-09-12`
+
+Migrando 548 filas ([A-DAT-37](PENDIENTES.md#a-dat-37)), el control del final reportó
+**«no cierra por -25»** con la migración **perfectamente bien hecha**. Verificado contra la base:
+0 filas con `descripcion`, 128 con `detalle`, exactamente lo esperado.
+
+El control traía las filas así:
+
+```
+cuotas_egresos_sin_factura?select=id,descripcion,detalle&limit=5000
+```
+
+Hay **1.045** cuotas y `limit=5000`, así que parecía cubierto. **PostgREST devolvió 1.000**: el
+`max-rows` del servidor manda sobre el `limit` del pedido, y **no avisa** — la respuesta es un 200
+con menos filas.
+
+> 🔑 **El `limit` es un pedido, no una garantía.** Cuando el número importa, se cuenta **en el
+> servidor**, no trayendo filas:
+> ```
+> HEAD /rest/v1/tabla?select=id&<filtros>     con  Prefer: count=exact
+> → content-range: 0-999/1045                 ← el total real va DESPUÉS de la barra
+> ```
+
+### Y la lección de arriba, que es la que cuesta
+**Un control que grita de más enseña a ignorarlo**, y entonces deja de servir justo el día que
+tiene razón. Ya hay precedente en este proyecto (§ *Un control que grita de más, o que falla sin
+que haya nada roto*). La reacción correcta ante un control en rojo **no es** ni creerle ni
+ignorarlo: es **verificar contra la fuente** y después arreglar al que estaba mal — que esa vez fue
+el control.
+
+⚠️ Y el otro defecto del mismo control, más común de lo que parece: **el esperado se calculaba
+sobre el universo que la consulta había filtrado**, no sobre el total. Las filas que ya tenían
+`detalle` sin `descripcion` nunca entraron al cálculo. Cuando se cuenta un «antes y después», las
+dos puntas tienen que medir **el mismo universo**.
+
+---
+
+## Elegir el destino por el NOMBRE de la columna y no por dónde se ve el dato `#bd #metodo #2026-09-12`
+
+Al hacer que el detalle del Extracto viajara a la cuota conciliada
+([A-BUG-158](PENDIENTES.md#a-bug-158)), escribí en `cuotas_egresos_sin_factura.detalle` **porque se
+llama igual** que la columna del extracto. Esa columna está muerta: de **1.045 cuotas tenía UNA** —
+la que acababa de escribir yo—, ninguna pantalla la muestra y ningún código la lee.
+
+**Lo encontró el usuario en dos minutos**, editando el detalle y mirando Templates.
+
+### Por qué sobrevivió a todo
+| Control | Por qué no lo vio |
+|---|---|
+| `type-check` | la columna **existe**; el tipo está bien |
+| `npm run probar` | la lógica es pura y correcta: el destino es un detalle de IO |
+| Mi verificación **en la base** | consulté **la columna a la que había escrito**. Dio lo que esperaba |
+
+> 🔑 **Un `UPDATE` a una columna que existe pero nadie lee no falla nunca.** Es el mismo silencio del
+> `UPDATE` que matchea 0 filas (§ 👥 Contrapartes) y del `.eq()` sobre un campo que no existe: la
+> base contesta *«listo»* y no hay a quién reclamarle.
+
+### La regla que sale de acá
+**El destino de un dato se elige por dónde se VE, no por cómo se llama la columna.** Antes de
+escribir en una columna que no se conocía, dos preguntas de un minuto:
+
+```sql
+-- 1. ¿La usa alguien?  Si da 0 o 1, es una columna muerta.
+SELECT count(*) FILTER (WHERE col IS NOT NULL AND col <> '') FROM tabla;
+```
+```bash
+# 2. ¿La lee alguien?  Si no aparece en ninguna pantalla, escribir ahí es escribir en el vacío.
+grep -rn "\.col" --include=*.tsx components/ hooks/
+```
+
+### Y la parte que más duele: la respuesta ya estaba escrita
+No hacía falta deducir nada. `crearCuotaEnTemplate` —el motor, cuando una regla tiene
+`llena_template`— inserta `descripcion: regla.detalle || movimiento.descripcion`. **El sistema ya
+mapeaba `extracto.detalle` → `cuota.descripcion`**, y el Cash Flow lee de ahí. Buscar *cómo lo
+resuelve el código que ya existe* habría dado la respuesta antes de escribir la primera línea
+(§ `CLAUDE.md` 🔎 Buscar antes de escribir) — y es doblemente irónico, porque **la feature entera
+trataba de que el dato apareciera donde el usuario lo ve**.
+
+---
+
+## Un vínculo sin FK no es un vínculo: es una convención `#bd #conciliacion #2026-09-12`
+
+Salió de mapear qué había que proteger antes de escribir el editor de campañas
+([A-FEAT-131](PENDIENTES.md#a-feat-131)), y el número apareció en la primera consulta:
+**de 491 movimientos bancarios conciliados contra una cuota de template, 9 apuntan a cuotas que ya no
+existen.**
+
+`template_cuota_id` está en **12 tablas** y **en ninguna es foreign key**. Así que cuando la cuota se
+va, no pasa nada: no hay error, no hay cascade, no hay `NOT NULL` violado. El movimiento sigue
+diciendo `conciliado` y no cierra contra nada.
+
+**La parte que hay que retener no es el bug: es cómo se descubrió.** Nadie lo reportó y no se ve
+desde ninguna pantalla — porque *la pantalla muestra el estado, no el vínculo*. Apareció con una
+consulta de dos líneas que nadie había corrido nunca:
+
+```sql
+SELECT count(*) FILTER (WHERE q.id IS NULL) AS huerfanos
+FROM public.msa_galicia m LEFT JOIN public.cuotas_egresos_sin_factura q ON q.id = m.template_cuota_id
+WHERE m.template_cuota_id IS NOT NULL;
+```
+
+> 🔑 **Donde haya un link lógico, hay un control gratis esperando: contar los que apuntan a la nada.**
+> Es la § 🧮 *Todo desarrollo termina con su control* aplicada al esquema, y vale para los otros links
+> sin FK de este proyecto — `comprobante_arca_id`, `sueldo_pago_id`, `anticipo_id`.
+
+### Tres cosas que casi se creen y son falsas
+
+**1 · «No hay FK porque cruzan schemas».** Lo decía `ARQUITECTURA-BD.md` § 6.2, y para éste **no es
+cierto**: `public.msa_galicia` → `public.cuotas_egresos_sin_factura` es el mismo schema. El motivo
+explicaba las cajas y las tarjetas, y se aplicó de más a las cuatro tablas de `public` — que son
+justo **las que tienen 488 de los 491 vínculos**. Una razón correcta para un caso se convirtió en
+coartada para todos.
+
+**2 · «Lo habrá roto la app».** No: hoy no hay **un solo `.delete()`** sobre
+`cuotas_egresos_sin_factura` en el repositorio. Entró por SQL a mano o por código que ya no está — lo
+cual es peor, porque significa que el camino sigue abierto y no está en ningún archivo donde mirarlo.
+
+**3 · «`ON DELETE SET NULL` es lo prudente».** Es lo **peor** acá. Borraría el único rastro de contra
+qué estaba conciliado el movimiento — exactamente el daño que se quiere evitar, hecho prolijamente.
+Va `RESTRICT`: que la base **se niegue**.
+
+### Cómo se lee la causa
+Los 9 tienen **`template_id` válido y `template_cuota_id` muerto**: el padre vive, el hijo no. Eso no
+es un borrado suelto, es **una regeneración** — borrar la tanda y recrearla. Los UUID nuevos no son
+los viejos.
+
+📌 Por eso el editor nuevo **no emite ni un `DELETE`**: quitar una cuota la desactiva. La regla no
+salió de una preferencia estética; salió de contar los muertos.
+
+---
+
+## Leer el artefacto que SALE de la empresa — la capa que faltaba `#testing #control #2026-09-11`
+
+Bajar el PDF del Detalle de Pago **y leerlo** encontró **cuatro bugs en una tarde**, dos de los
+cuales ninguna otra capa podía ver:
+
+| | Qué decía el papel |
+|---|---|
+| `A-BUG-145` | tres transferencias anunciadas, y el banco mandó **una** |
+| `A-BUG-149` | el PDF tenía **aritmética propia**, distinta de la del cuerpo del mail |
+| `A-BUG-150` | la línea de alerta salía `& E l   d e s g l o s e …`, letra por letra |
+| `A-BUG-151` | un grupo nombraba **una sola factura** con el importe de las tres |
+
+> 🔑 **Los casos prueban la función, el ensayo prueba los datos, la UI prueba la pantalla — y el
+> PDF no lo miraba ninguno.** Era el único artefacto que el proveedor recibe de verdad, y el único
+> que nadie había abierto nunca.
+
+**Cómo se lee sin instalar nada**: Playwright captura la descarga (`page.waitForEvent('download')`
+→ `saveAs`) y `PyPDF2` —ya está en la máquina— saca el texto. Comparar ese texto contra el del PDF
+que se adjunta al mail es lo que prueba el invariante *«ver y encolar dan lo mismo»*.
+
+📌 **Y hacen falta DOS casos, no uno.** Con ALCORTA solo, `A-BUG-152` parecía correcto: ahí
+`fecha_pago` y `fecha_estimada` coinciden. Recién con IGLESIAS —donde difieren— el papel se
+contradijo solo. **Un caso puede coincidir por casualidad; dos ya no.**
+
+---
+
+## El permiso tiene que estar en la CONFIGURACIÓN, no en un comentario `#testing #datos #2026-09-11`
+
+`sicore-doble-click.spec.ts` es el único test que completa un pago real. Su docstring decía, con
+todas las letras, que el permiso **no se hereda** y que sólo se corre pidiéndolo. Quedó en
+`pruebas-ui/` sin distintivo, y **una corrida de `npm run ui` lo ejecutó**: pasó una factura a
+`pagar`, le estampó la quincena de SICORE, le creó la fila de retención **y de paso encoló dos
+mails a proveedores**, porque también corrió el spec de encolar.
+
+> 🔑 **Un aviso escrito para humanos no frena a una herramienta.** El runner no lee docstrings.
+
+Es exactamente lo que advertía `CLAUDE.md` § ✅ «Terminé» significa que ya lo probé —*«el día que
+alguien agregue uno que escriba, esa orden lo autoriza sin preguntar»*— y pasó **el mismo día que
+se escribió el primero**.
+
+**Cómo quedó**: los que escriben se llaman `*.escribe.spec.ts`, `playwright.config.ts` los excluye
+por `testIgnore`, y entran sólo con `npm run ui:escribe`, que además avisa por consola. Verificado:
+la suite pasó de 13 a 10 casos.
+
+📌 **Y el alcance del daño lo dio el inventario, no el reporte.** Fui a borrar las 2 filas de cola
+que sabía que había creado y encontré **4**. Contar antes de limpiar es lo que evitó dejar dos
+mails de proveedor listos para salir.
+
+---
+
+## Un control que grita de más, o que falla sin que haya nada roto `#control #2026-09-11`
+
+Dos formas de arruinar un control, las dos aparecieron el mismo día:
+
+**1 · Gritar de más.** El control nuevo de «A-TEST sin proceso» listaba **98** ítems metiendo a las
+suites `npm run probar*` —que las corre Claude y no tienen pantalla donde aparecer— y a las de GAS
+y API. Acotado a lo que el usuario corre en una pantalla, da **81**, que son reales. *Una lista que
+no se puede accionar deja de leerse justo cuando tiene algo importante.*
+
+**2 · Fallar sin que haya nada roto.** El test del filtro de notas comparaba *«con nota + sin nota =
+total»*. Es cierto **sin límite de filas**; con el tope de 200 falla siempre, sin que el filtro
+tenga nada malo. Se cambió por la propiedad que **sí** vale con cualquier límite: que ningún
+movimiento esté en los dos lados.
+
+> 🔑 **Un rojo que no significa nada enseña a ignorar los rojos** — y para cuando aparezca uno de
+> verdad, ya nadie mira.
+
+📌 El mismo día, un tercer caso de la familia: el control de `A-TEST-109` (Σ mínimos = $224.000)
+estuvo **dando mal por una fila duplicada**, no por un reparto mal hecho. Un control roto no es
+neutro: **ocupa el lugar del que sí avisa**.
+
+---
+
+## `as any` es lo que deja pasar el dato que falta `#tipos #2026-09-11`
+
+Dos veces el mismo día, en los dos sentidos:
+
+- **A-BUG-148** — `registrarEnSicoreRetenciones` recibía `fila as any` y leía
+  `fa.numero_desde`. El campo **no existía en `CashFlowRow`**, así que llegaba `undefined` y la
+  retención se guardaba sin número de comprobante. **11 de 16 filas.** Al tipar los campos y sacar
+  el `as any`, `type-check` bajó de **113 a 110**: los tres errores de ese archivo eran justamente
+  eso. *El compilador lo venía señalando.*
+- **Y al conectar el upsert de contrapartes**, escribí `cliente.razon_social` sobre un objeto que es
+  `{ cuit, nombre }`. **El compilador lo frenó.** Con `as any` habría pasado `undefined` y el
+  cliente se habría creado con el CUIT por nombre, en silencio.
+
+> 🔑 La diferencia entre los dos casos es **sólo el `as any`**. El error era el mismo.
+
+---
+
+## Playwright — instalado, y qué SÍ y qué NO agarra `#testing #herramientas #2026-09-10`
+
+Instalado el **2026-09-10**. La § de arriba (06/09) decía que *«habría pasado ese bug por alto»* y
+**sigue siendo cierta**: no ve las diferencias de entorno del navegador del usuario. Pero encontró
+otra clase de bug **en su primera corrida**, y por eso se queda.
+
+```bash
+npm run ui          # corre los casos (headless)
+npm run ui:ver      # con el navegador a la vista
+npm run ui:reporte  # abre el reporte de la última corrida
+```
+
+- Los casos viven en **`pruebas-ui/`**. Hoy son **4**.
+- Tarda **~1,3 min** y **necesita `npm run dev` levantado** — que es **recurso exclusivo** cuando hay
+  otra terminal (§ 🔀 Trabajo en paralelo, regla 3).
+- Se corre **antes de entregar**, no en cada cambio.
+
+### Lo que agarró y ninguna otra capa iba a agarrar
+
+**`A-BUG-144`**: apretó *«↩ Al tablero»* y el tablero no apareció — con el bug **ya declarado
+cerrado** (`A-BUG-131`). El panel se **desmontaba** al recalcular y el estado moría con él.
+
+> 🔑 **Es la capa del ESTADO DE LA UI**: lo que pasa entre un click y el siguiente render. Un cálculo
+> puro no lo tiene, un ensayo contra la base no lo ve, y leer el código lo esconde — porque el código
+> de las dos mitades está bien y lo que falla es el orden.
+
+### Y lo que sigue sin cubrir, dicho en voz alta
+
+| No lo ve | Quién sí |
+|---|---|
+| diferencias del navegador del usuario | probar en su navegador (§ de arriba) |
+| que un número sea **plausible** | el usuario |
+| que la **pregunta** esté bien hecha | leer el `MODULO_<X>.md` antes de escribir |
+| que **guardar** funcione (hoy ningún test escribe) | **nadie** → `A-DEC-18` / `A-DEC-22` |
+
+📌 El encuadre completo de las tres capas y su techo → `PENDIENTES.md` § **A-DEC-22**.
+
+---
+
+## Dueño de cada partida — el mail NO lo dice `#arba #referencia #2026-09-08`
+
+> 🔴 **El CUIT del mail dice DÓNDE LLEGÓ la boleta, no de quién es.** En la corrida del 08/09 el
+> mail de PAM trajo 13 partidas y **sólo 5 eran de PAM**.
+
+El dato lo dio el usuario en cómo armó `- Comunicacion JMS Claude - Archivos/boletas inmobiliario/`:
+**la carpeta dice de quién ES**, y el sufijo **«MSA - viene PAM»** dice **dónde LLEGA**. Palabras
+suyas: *«Tango es de MSA pero pasa eso que a veces viene de PAM por error y duplicada. Pasa con
+otras»*.
+
+✅ **El dueño está en `egresos_sin_factura.responsable`** (`MSA` · `PAM` · `MA`). Cargado y correcto:
+MSA 10 partidas, PAM 8, MA 1, más un complementario por empresa.
+
+⚠️ **Corrección de un error mío (2026-09-08)**: había mirado `centro_costo` y escrito acá que el
+dato no existía. `centro_costo` es **el campo** —Nazarenas · Lima · Rojas · Quinta Roselló— y
+*Nazarenas* mezcla MSA y PAM, así que no sirve para el dueño; pero `responsable` sí, y estaba.
+**Buscar en una columna y concluir que el dato no existe es distinto de haber buscado.**
+
+### El mapa (confirmado contra `responsable`)
+
+| Dueño | Campo | Partida | Nota |
+|---|---|---|---|
+| **MSA** | Anexo | `099-008368-1` | |
+| **MSA** | Cholo 1 | `099-010611-8` | |
+| **MSA** | Cholo 2 | `099-012766-2` | |
+| **MSA** | Portería Nuevo | `099-015877-0` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Portería Viejo | `099-015879-7` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Rojas | `090-016369-0` | |
+| **MSA** | Sánchez | `099-015880-0` | |
+| **MSA** | Tango Prim Leboso | `099-015881-9` | 🔁 llegó también en el mail de PAM |
+| **MSA** | Tango Parra 1 | `099-015883-5` | 📁 carpeta *«MSA - viene PAM»* · 🔁 duplicada |
+| **MSA** | Tango Parra 2 | `099-015885-1` | 📁 carpeta *«MSA - viene PAM»* · 🔁 duplicada |
+| **PAM** | Casco | `099-006595-0` | |
+| **PAM** | Entre Ríos | `099-025551-2` | |
+| **PAM** | Ombú | `099-016666-8` | |
+| **PAM** | Tapera 1 | `099-015882-7` | |
+| **PAM** | Tapera 2 | `099-015884-3` | |
+| **PAM** | Tapera 3 | `099-015886-0` | ✗ **no llegó el 08/09** |
+| **MA** | Lima | `038-040142-8` | |
+| **PAM** | Quinta Roselló 1 | `099-001854-5` | ⚠️ la carpeta la pone en **ERM**, el registro en **PAM** · ✗ **no llegó el 08/09** |
+| **PAM** | Quinta Roselló 2 | `099-001846-4` | ⚠️ idem: carpeta ERM, registro PAM |
+| **ERM** | El Relincho | `099-025089-8` | ⚠️ **sin template** (`A-DAT-26`) — ERM no está en `CLAUDE.md` |
+| **?** | — | `099-001274-1` | ⚠️ **sin template**, $510.316,10, llegó en el mail de PAM |
+
+🔑 **Todas las repetidas del 08/09 son de MSA y todas se repiten en el mail de PAM.** No es azar:
+es el patrón que el usuario venía describiendo.
+
+---
+
+## Anatomía del mail de boletas de ARBA `#arba #referencia #2026-09-06`
+
+Leído de los mails reales del usuario. **Las tres empresas llegan a `sanmanuel.sp@gmail.com`.**
+
+| | |
+|---|---|
+| **Remitente** | `ARBA <boletaelectronica@arba.gov.ar>` |
+| **Asunto** | `Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural Cuota 3` · idem `Complementario` |
+| **Empresa** | por el **CUIT del contribuyente** en el cuerpo, no por la casilla |
+| **Impuesto y cuota** | **están en el asunto** |
+
+### 🔑 Un mail trae VARIAS boletas
+El cuerpo tiene una **tabla**, una fila por partida, con `Objeto Imponible · Importe $ · Descargar
+boleta (Ingresar) · Pagá con Cuenta DNI (QR)`. Ejemplo real, MSA cuota 3:
+
+```
+099-015881-9    40.934,10      Ingresar
+099-010611-8    22.394,70      Ingresar
+099-008368-1    76.169,40      Ingresar
+099-012766-2    22.255,20      Ingresar
+```
+
+El **complementario** trae **una sola fila**, y su objeto imponible es **el CUIT**
+(`20-04439022-2 - Rural`), no una partida: grava al contribuyente, no a la parcela.
+
+### ✅ Cómo se lee la tabla (`A-FEAT-107`, hecho 2026-09-07)
+> **El cuerpo del mail trae `partida · importe · link`.** Es un **segundo camino al mismo número**,
+> independiente del PDF — la *pieza 4* del norte administrativo, gratis: si el importe del mail y el
+> del PDF no coinciden, algo se leyó mal, y se sabe **sin abrir nada**.
+>
+> Y para el complementario, que **no tiene partida en el PDF**, el cuerpo del mail es la **única**
+> vía de saber a qué corresponde.
+
+Lo hace `filasDelMail_()` en `gas-buscar-pdf/BoletasArba.gs` (GAS **v0.11.0**). Tres decisiones que
+conviene no revertir sin leer esto:
+
+**1 · Se parsea el TEXTO, no el HTML.** Un parser atado a `<tr>`/`<td>` se rompe el día que ARBA
+cambie la maquetación — que es exactamente cómo nació `A-BUG-119`. Se sacan las etiquetas y se lee
+el texto resultante. Los casos lo prueban con **la misma tabla maquetada de tres formas** (tabla,
+divs, texto suelto con `<br>`): si el parser dependiera del markup, dos de las tres fallarían.
+
+**2 · Una fila es «un objeto imponible y el primer importe que le sigue»**, y el objeto siguiente la
+cierra. No depende de cuántas celdas haya ni de su orden.
+
+**3 · Los dos objetos imponibles no se pisan**, y eso es lo que permite distinguirlos sin contexto:
+
+| | Forma | Qué grava |
+|---|---|---|
+| **Partida** | `099-015881-9` — `3-6-1` dígitos | la parcela (inmobiliario) |
+| **CUIT** | `20-04439022-2` — `2-8-1` dígitos | el contribuyente (complementario) |
+
+⚠️ **El CUIT del encabezado no es una fila.** Todo mail dice de qué empresa es, así que hay un CUIT
+suelto antes de la tabla. Se distingue porque **no tiene importe detrás**, y se devuelve aparte en
+`contribuyente` — que además resuelve la identificación de empresa de `A-DAT-27`.
+
+**El cruce PDF ↔ fila** va por **partida**: ARBA nombra el archivo `Deuda-Inmobiliario-0990158819-R.pdf`,
+así que se comparan los dígitos pelados. El complementario, que no la trae en el nombre, se aparea
+por posición **sólo cuando la tabla tiene una sola fila** — que es su caso.
+
+🔎 **Sin verificar contra un mail real todavía**: el HTML de ARBA no está en el repo. Por eso
+`bajarBoletasArba` devuelve `tablas` (lo leído, mail por mail) y `descuadres` (cuando la cantidad de
+filas no coincide con la de links), y `testArbaContar()` los muestra **sin bajar nada** → `A-TEST-101`.
+
+### ⚠️ Lo que se rompía antes de saber esto
+ARBA nombra los PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, período NO**. Y como un
+mail trae varias boletas, numerarlas por su posición hacía que el nombre **dependiera del orden de
+la tabla**. Las dos cosas juntas: la boleta de la cuota siguiente se salteaba como *«ya estaba»*, y
+un reordenamiento de ARBA bastaba para re-bajar todo con otro nombre. → `A-BUG-120`.

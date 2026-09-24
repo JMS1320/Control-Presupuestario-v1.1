@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.9.16'  // 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.16.0'  // 0.16.0 = A-BUG-129: CACHE DE DRIVE. Cada 'existe este archivo?' es un viaje a Google, y se hacian DOS POR LINK: 62 viajes para 31 boletas, 20-30 segundos de puro preguntar -- mas caro que bajar los PDFs, que era lo que parecia el problema. Ahora los nombres de cada carpeta se leen UNA vez por corrida. Y recien con eso tiene sentido darle mas tiempo: la ruta pasa de 45s a 55s. | 0.15.0 = A-BUG-128: PRIMERO EL NOMBRE, DESPUES LA DESCARGA. Se bajaba el PDF entero y recien al final se preguntaba si ya estaba, asi que cada re-corrida volvia a traer todo lo ya archivado para tirarlo -- con 31 boletas y 35s de presupuesto, cada pasada avanzaba ~10 y pagaba de nuevo las anteriores. El nombre sale de la TABLA DEL MAIL, no del archivo, asi que se puede saber antes de bajar. Mismo error que A-BUG-125, en el otro extremo del bucle. | 0.14.1 = la carpeta replica EXACTAMENTE como archiva el usuario, incluido el 'MSA - viene PAM': si la boleta es de una empresa pero llego en el mail de otra, la carpeta lo dice. Yo las habia fundido en una sola (el dueño) y me corrigio: son dos situaciones distintas al momento de pagar. Una boleta que llega por los dos lados queda en las dos carpetas, y asi la duplicacion se ve en el Drive y no solo en el informe. | 0.14.0 = los archivos se nombran con LA CONVENCION DEL USUARIO ('2026 - Inmob - Cuota 3 - Tango Parra 1.pdf') y se guardan en una SUBCARPETA POR RESPONSABLE (MSA / PAM / MA / _Sin asignar). El GAS no puede saber ni el nombre del campo ni el dueño -- viven en egresos_sin_factura -- asi que el mapa partida -> {nombre, responsable} viaja en el pedido desde la app. El dedup pasa a mirar la subcarpeta y no la raiz. | 0.13.0 = A-BUG-126 y A-BUG-127, los dos vistos en la corrida real del 08/09. 126: ARBA envuelve TODOS los links del mail en su rastreador lt.php -- tambien los del pie -- asi que se bajaban 4 de mas por mail (~25 descargas al pedo, y por eso se acababa el tiempo). Ahora se toman solo los anclados en 'Ingresar', y de paso la cantidad de links COINCIDE con la de filas de la tabla. 127: ARBA no siempre manda el nombre del archivo, y el nombre de emergencia numeraba POR POSICION dentro del mail ('ARBA 2026-C3 - 1.pdf'), asi que el 1 de un mail y el 1 de otro colisionaban y la segunda boleta se salteaba como 'ya estaba' -- el defecto de A-BUG-120 entrando por la puerta de al lado. Ahora el nombre lleva la partida (o el CUIT), y distingue complementario y aviso de debito. | 0.12.0 = A-BUG-125: 'Ver que hay' ya NO baja ningun PDF -- bajaba todos igual y recien despues miraba si tenia que guardarlos, asi que el paso que existe para mirar antes de tocar nada era tan caro como hacerlo de verdad, y moria por timeout. Ahora informa desde la TABLA del cuerpo del mail, que es gratis y dice mas. Ademas: la bajada real tiene presupuesto de tiempo y devuelve 'quedaron N' en vez de morir muda (volver a correrla continua, el dedup es por nombre), y la ventana de dias se pasa desde la pantalla. | 0.11.0 = A-FEAT-107: lee la TABLA del cuerpo del mail (objeto imponible + importe) y se la adjunta a cada PDF bajado. Es un SEGUNDO camino al mismo numero, independiente del PDF; y para el complementario -que no trae partida en el nombre del archivo- es la unica via de saber a que corresponde. Avisa cuando la cantidad de filas no coincide con la de links. | 0.10.2 = avisa cuando la busqueda llega al tope de 50 conversaciones: sin eso 'baje 40' sobre 40 encontradas y sobre 200 que habia es la misma frase y significan cosas distintas | 0.10.1 = FIX del nombre de archivo: ARBA nombra sus PDFs con la partida pero SIN el periodo (Deuda-Inmobiliario-0990158819-R.pdf), asi que el dedup por nombre salteaba la boleta de la cuota siguiente creyendo que ya estaba -- una boleta distinta, perdida en silencio. Ahora el nombre lleva la FECHA DEL MAIL adelante, y el indice desempata cuando un mail trae dos boletas de la misma partida | 0.10.0 = acción 'boletas_arba': baja del mail las boletas de ARBA siguiendo el link (que NO pide login: es un rastreador que redirige a un PDF público) y las archiva en Drive con dedup por nombre. Con solo_contar:true informa sin guardar nada. ⚠️ NO toca los templates: el importe de la boleta se guarda al lado y el usuario decide cuál aplicar | 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -66,6 +66,18 @@ function doPost(e) {
     // Acción 'auditar': releva la carpeta de un período contra las facturas esperadas y sale.
     if (body.accion === 'auditar') {
       return auditarPeriodo(body)
+    }
+
+    // Acción 'boletas_arba': baja del mail las boletas de ARBA y las archiva (A-FEAT-95).
+    // Con `solo_contar: true` informa qué encontraría SIN guardar nada — el equivalente al
+    // «Contar (no vincula)» de las facturas, que ya demostró que separar mirar de escribir
+    // evita el susto de una corrida que hace cosas que no se esperaban.
+    if (body.accion === 'boletas_arba') {
+      return responseJson(bajarBoletasArba(body.solo_contar === true, {
+        dias: body.dias, presupuesto_ms: body.presupuesto_ms,
+        // El mapa partida → { nombre, responsable } lo manda la app: el GAS no lo puede saber.
+        partidas: body.partidas, empresa_por_cuit: body.empresa_por_cuit,
+      }), 200)
     }
 
     // Acción 'confirmar': mueve un PDF de _Revisar a la carpeta del mes + lo renombra al estándar.
@@ -697,16 +709,60 @@ function enviarResumenMail(body) {
   if (resultados.length === 0) {
     html += '<p>No se descargó ni quedó a revisar ninguna factura en esta corrida.</p>'
   } else {
+    // v0.9.18 — TRES pilas, no dos.
+    // Antes todo lo que no era 'ok' caía en "a revisar", mezclando dos cosas que se resuelven
+    // distinto: una factura que LLEGÓ pero no validó (hay que mirarla) y una que NO LLEGÓ (hay que
+    // reclamarla). Con las dos en la misma lista, el mail decía qué pasó pero no qué hacer.
     const porEmpresa = {}
     resultados.forEach(function (r) {
       const emp = r.empresa || '—'
-      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [] }
-      ;(r.status === 'ok' ? porEmpresa[emp].descargadas : porEmpresa[emp].revisar).push(r)
+      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [], faltan: [] }
+      const pila = r.status === 'ok' ? 'descargadas' : (r.status === 'revisar' ? 'revisar' : 'faltan')
+      porEmpresa[emp][pila].push(r)
     })
     Object.keys(porEmpresa).sort().forEach(function (emp) {
       const g = porEmpresa[emp]
-      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), ' + g.revisar.length + ' a revisar</h3>'
-      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar']].forEach(function (par) {
+      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), '
+        + g.revisar.length + ' a revisar, ' + g.faltan.length + ' no encontrada(s)</h3>'
+
+      // ❌ No encontradas, AGRUPADAS POR MOTIVO: el motivo es lo que decide qué hacer con cada una.
+      if (g.faltan.length) {
+        const porMotivo = {}
+        g.faltan.forEach(function (r) {
+          const k = (r.observaciones || 'Sin motivo registrado').slice(0, 120)
+          if (!porMotivo[k]) porMotivo[k] = []
+          porMotivo[k].push(r)
+        })
+        html += '<p><b>❌ No encontradas (' + g.faltan.length + '):</b></p>'
+        Object.keys(porMotivo).forEach(function (motivo) {
+          html += '<p style="margin:6px 0 2px"><small><b>' + esc(motivo) + '</b> — ' + porMotivo[motivo].length + '</small></p><ul style="margin-top:0">'
+          porMotivo[motivo].forEach(function (r) {
+            html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '') + '</li>'
+          })
+          html += '</ul>'
+        })
+
+        // 🔧 "Para que no se repita": un proveedor que falla VARIAS veces en una sola corrida no es
+        // mala suerte, es un dato mal cargado (mail que falta, patrón de asunto que cambió). Es el
+        // renglón más valioso del reporte: no dice qué hacer HOY, dice qué arreglar UNA VEZ.
+        const porProv = {}
+        g.faltan.forEach(function (r) {
+          const pv = r.proveedor || '—'
+          porProv[pv] = (porProv[pv] || 0) + 1
+        })
+        const repetidos = Object.keys(porProv).filter(function (k) { return porProv[k] > 1 })
+        if (repetidos.length) {
+          html += '<p style="background:#fff8e1;border-left:3px solid #f0ad4e;padding:6px 10px;margin:8px 0">'
+            + '<b>🔧 Para que no se repita</b> — estos proveedores fallaron más de una vez en esta corrida. '
+            + 'Suele ser el mail sin cargar en su ficha, o el asunto que cambió:<br>'
+          repetidos.sort().forEach(function (k) {
+            html += '• ' + esc(k) + ' <small style="color:#888">(' + porProv[k] + ' facturas)</small><br>'
+          })
+          html += '</p>'
+        }
+      }
+
+      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar (llegaron, no validaron)']].forEach(function (par) {
         const lista = g[par[0]]
         if (lista.length === 0) return
         html += '<p><b>' + par[1] + ':</b></p><ul>'
@@ -886,16 +942,41 @@ function enviarMailAudit(body, matched, huerfanos, sin_pdf) {
       html += '</ul>'
     }
     if (sin_pdf.length) {
-      html += '<h3>⚠️ Facturas sin PDF en la carpeta</h3><ul>'
-      sin_pdf.forEach(function (s) { html += '<li>' + esc(s.numero) + ' — ' + esc(s.denominacion || '') + ' (fc=' + esc(s.fc || '') + ')</li>' })
-      html += '</ul>'
+      // Agrupadas por MOTIVO (v0.9.17): una lista plana de N faltantes parece N pendientes, cuando
+      // en realidad las de Portal se bajan del sitio y las marcadas "No" no se tocan. En el caso
+      // real de MSA 07/2026, de 17 faltantes sólo 8 eran trabajo pendiente de verdad.
+      html += '<h3>⚠️ Facturas sin PDF en la carpeta (' + sin_pdf.length + ')</h3>'
+      const porMotivo = {}
+      sin_pdf.forEach(function (s) {
+        const k = s.motivo || ('fc=' + (s.fc || '?'))
+        if (!porMotivo[k]) porMotivo[k] = []
+        porMotivo[k].push(s)
+      })
+      Object.keys(porMotivo).forEach(function (motivo) {
+        html += '<p style="margin:8px 0 2px"><b>' + esc(motivo) + '</b> — ' + porMotivo[motivo].length + '</p><ul style="margin-top:0">'
+        porMotivo[motivo].forEach(function (s) {
+          html += '<li>' + esc(s.numero) + ' — ' + esc(s.denominacion || '') + '</li>'
+        })
+        html += '</ul>'
+      })
     }
     if (huerfanos.length) {
       html += '<h3>❓ PDFs sin factura (huérfanos)</h3>'
       html += '<p style="font-size:11px;color:#888">OCR: caracteres leídos por archivo. <b>0 = no se pudo extraer texto</b> (PDF imagen o servicio Drive mal configurado).</p><ul>'
       huerfanos.forEach(function (h) {
         const diag = (typeof h.chars === 'number') ? ' <small style="color:#888">(OCR: ' + h.chars + ' chars' + (h.ocr_error ? ', error: ' + esc(h.ocr_error) : '') + ')</small>' : ''
-        html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a>' + diag + '</li>'
+        // Candidata sugerida (v0.9.17): sin esto el mail dice QUÉ quedó suelto pero no contra qué
+        // podría ir, y hay que abrir la app igual para poder hacer algo. La sugerencia sale del
+        // NOMBRE y la fecha del archivo — no del contenido —, por eso se marca como "a confirmar".
+        let sug = ''
+        if (h.sugerencia) {
+          sug = '<br><small>⭐ posible: <b>' + esc(h.sugerencia) + '</b>'
+            + (h.sugerencias_n > 1 ? ' <span style="color:#888">(y ' + (h.sugerencias_n - 1) + ' más)</span>' : '')
+            + ' <span style="color:#888">— por nombre y fecha, confirmar en la app</span></small>'
+        } else {
+          sug = '<br><small style="color:#888">sin candidata por nombre — vincular a mano</small>'
+        }
+        html += '<li><a href="' + h.url + '">' + esc(h.archivo) + '</a>' + diag + sug + '</li>'
       })
       html += '</ul>'
     }

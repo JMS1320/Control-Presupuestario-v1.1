@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
+import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -43,6 +44,7 @@ import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
+import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -366,10 +368,37 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+
+  /**
+   * De qué botón salió el listado de "PDFs sin vincular".
+   *
+   * Importa porque el mismo panel significa dos cosas MUY distintas: si salió de «Contar», los
+   * archivos están sin vincular porque **nadie los miró todavía**; si salió de «Vincular PDFs»,
+   * están sin vincular porque **el contenido no matcheó**. El texto decía siempre lo segundo, y
+   * eso hizo que un inventario normal se leyera como una falla del sistema (2026-09-03).
+   */
+  const [origenListado, setOrigenListado] = useState<'contar' | 'ocr' | null>(null)
+
+  /**
+   * 🚩 Marcas «para revisar» de las facturas de este período.
+   *
+   * Se cargan UNA vez por pantalla y no por fila: una grilla de 40 facturas dispararía 40 consultas
+   * para pintar 40 banderitas que casi siempre están apagadas.
+   */
+  const { porRegistro: revisionesFactura, recargar: recargarRevisiones } = useRevisionesDe(schemaName, 'comprobantes_arca')
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
   const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
+  /**
+   * Qué huérfano está mostrando su vista previa (clave = url del PDF) — 2026-09-03.
+   *
+   * Pedido del usuario: *"ya que tenemos posibilidad de ver imágenes, que cuando están las
+   * proposiciones se pueda ver la foto del pdf propuesto"*. Antes había que abrir el archivo en otra
+   * pestaña, mirarlo, volver y recién ahí elegir — con 20 archivos eso son 40 cambios de pestaña.
+   * Se ve acá mismo, al lado del desplegable donde elegís la factura.
+   */
+  const [previewHuerfano, setPreviewHuerfano] = useState<string | null>(null)
   // Debug de conciliación: cada archivo de la carpeta + su file_id + a qué factura está vinculado.
   const [detalleConciliacion, setDetalleConciliacion] = useState<{ archivo: string; file_id: string; factura: string | null }[]>([])
   // Renombrar huérfano: url del PDF en edición + valor del nombre nuevo + flag guardando.
@@ -405,7 +434,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
     const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
     const arch = norm(nombreArchivo)
-    const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+    // Candidatas = TODA factura sin PDF, incluidas las de Portal (2026-09-03).
+    // Las `fc=No` ya entraban (`categoriaArchivo` sólo aparta las de Portal), y las de Portal se
+    // sumaron porque nada impide que alguien haya bajado esa factura del sitio y la haya dejado en
+    // la carpeta: excluirlas hacía que el archivo correcto no apareciera nunca como sugerencia.
+    const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
     const conScore = faltantes.map(f => {
       const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
       const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
@@ -430,14 +463,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Desvincula el PDF de una factura (para re-asignar uno mal puesto). NO borra el archivo de Drive,
   // solo limpia el link → el archivo vuelve a quedar disponible como huérfano en la próxima conciliación.
   const desvincularPdf = async (factura: FacturaArca) => {
-    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar (corré "Conciliar saldos").`)) return
+    if (!confirm(`¿Desvincular el PDF de ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nEl archivo NO se borra de Drive; queda disponible para re-asignar: corré «Vincular sólo los que faltan».`)) return
     try {
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
         .update({ pdf_drive_url: null, pdf_estado: null, pdf_observaciones: 'Desvinculado manualmente para re-asignar' })
         .eq('id', factura.id)
       if (error) { toast.error('No se pudo desvincular: ' + error.message); return }
       await cargarFacturasPeriodo(periodoConsulta)
-      toast.success('PDF desvinculado. Corré "Conciliar saldos" para re-asignarlo.')
+      toast.success('PDF desvinculado. Corré «Vincular sólo los que faltan» para re-asignarlo.')
     } catch (e) {
       toast.error('Error al desvincular: ' + (e as Error).message)
     }
@@ -2021,6 +2054,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
+    setOrigenListado('ocr')
     setHuerfanosSupervision([])
     const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
     const skip = new Set<string>()
@@ -2034,12 +2068,42 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       for (let guard = 0; guard < 500; guard++) {
         tanda++
         toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
-        const r = await fetch('/api/gas/auditar-periodo', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: 4 }),
-        })
-        const data = await r.json()
-        if (!data.ok) { toast.error('Supervisión: ' + (data.error || 'error'), { id: tId }); return }
+        /**
+         * Una tanda, con reintento en tanda chica.
+         *
+         * Se mantiene en 4 archivos porque **así venía funcionando**; no se baja a 1 "por las
+         * dudas", que cuadruplicaría las vueltas para todos. Pero si una tanda falla, se reintenta
+         * UNA vez con 1 solo archivo: si con 1 pasa, el problema era el volumen de la tanda; si con
+         * 1 también falla, el problema es otro y el mensaje lo va a decir.
+         */
+        const pedirTanda = async (cuantos: number) => {
+          const r = await fetch('/api/gas/auditar-periodo', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ empresa, anio, mes, skip_file_ids: [...skip], max_files: cuantos }),
+          })
+          // El cuerpo se lee como texto: ante un error de plataforma no viene JSON, y un
+          // `Unexpected token <` taparía el motivo real.
+          const txt = await r.text()
+          try {
+            return JSON.parse(txt)
+          } catch {
+            return { ok: false, error: `HTTP ${r.status} — la respuesta no es JSON: ${txt.slice(0, 160)}` }
+          }
+        }
+
+        let data = await pedirTanda(4)
+        if (!data.ok) {
+          toast.loading('La tanda falló; reintento con 1 archivo…', { id: tId })
+          const reintento = await pedirTanda(1)
+          if (reintento.ok) {
+            toast.loading('Con 1 archivo por vuelta sí anda — sigo así (más lento)', { id: tId })
+            data = reintento
+          } else {
+            toast.error(`Supervisión: ${reintento.error || 'error'}`, { id: tId, duration: 30000 })
+            console.error('[supervisión OCR] tanda de 4:', data.error, '| tanda de 1:', reintento.error)
+            return
+          }
+        }
         if (data.existe === false) { toast.warning(data.observaciones || 'La carpeta del período no existe', { id: tId }); return }
         links += data.links_agregados || 0
         for (const m of (data.matched || [])) { matchedAcc.push(m); if (m.file_id) skip.add(m.file_id) }
@@ -2052,16 +2116,122 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         const f = facturasPeriodo.find(x => x.id === m.factura_id)
         return { ...m, numero: f ? `${f.punto_venta}-${f.numero_desde}` : '', proveedor: f?.denominacion_emisor || '', monto: f?.imp_total ?? null }
       })
+      /**
+       * Enriquecer las DOS listas que quedan abiertas, para que el mail sirva para ACTUAR y no sólo
+       * para informar (pedido del usuario, 2026-09-03: *"que nombre las que hay en pdf pero no se
+       * vincularon, y las que quedaron sin vincular. puede ser con sugerencias. así sería un buen
+       * audit"*).
+       *
+       * - A cada **huérfano** se le pega su candidata ⭐, con la MISMA función que usa el panel
+       *   (`sugerirFacturasHuerfano`) — no una segunda lógica que después se desincronice.
+       * - A cada **factura sin PDF** se le pega el MOTIVO, que es lo que decide qué hacer con ella:
+       *   una de Portal se baja del sitio, una de mail se busca, y una marcada «No» no se toca.
+       *   Sin el motivo, la lista de 17 parecía 17 pendientes cuando en realidad eran 8.
+       */
+      // El resumen lo arma `armarResumenMail`, el mismo que usa el botón "Enviar estado
+      // actualizado": dos armadores distintos se desincronizan y el mail termina dependiendo de
+      // cuál botón tocaste.
+      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
+      await cargarFacturasPeriodo(periodoConsulta)
+
       // Cierre: log + mail con el acumulado
       await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: { matched: matchedMail, huerfanos: huerfanosAcc, sin_pdf: sinPdf } }),
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: armarResumenMail(huerfanosAcc) }),
       })
       await cargarFacturasPeriodo(periodoConsulta) // refresca íconos/chips con los links nuevos
-      setHuerfanosSupervision(huerfanosAcc.map(h => ({ archivo: h.archivo, url: h.url, chars: h.chars })))
       toast.success(`Supervisión lista: ${links} PDF vinculados · ${matchedAcc.length} con archivo · ${huerfanosAcc.length} huérfano(s). Mail enviado.`, { id: tId })
     } catch (e) {
       toast.error('Error en supervisión: ' + (e as Error).message, { id: tId })
+    } finally {
+      setSupervisandoArchivo(false)
+    }
+  }
+
+  /**
+   * El motivo por el que una factura no tiene PDF. Es lo que decide QUE HACER con ella, y por eso
+   * el mail las agrupa asi: de 17 faltantes, 7 se bajan del portal y 2 no se buscan -- el trabajo
+   * real eran 8. Sin el motivo, una lista de 17 parece 17 pendientes.
+   */
+  const motivoSinPdf = (fc?: string | null) => {
+    const v = String(fc || '').trim().toLowerCase()
+    if (v === 'portal') return 'Se baja del portal del proveedor — no llega por mail'
+    if (v === 'no') return 'Marcada para NO buscar — revisar si sigue valiendo'
+    return 'Debería llegar por mail — correr el buscador de PDFs'
+  }
+
+  /**
+   * Arma el resumen que viaja al mail, SIEMPRE desde el estado actual de la pantalla.
+   *
+   * Esta factorizado para que la corrida automatica y el boton "Enviar estado actualizado" manden
+   * exactamente lo mismo: dos armadores distintos se desincronizan y el mail empieza a depender de
+   * cual boton tocaste.
+   */
+  const armarResumenMail = (huerfanos: { archivo: string; url: string; chars?: number }[]) => {
+    const conPdf = facturasPeriodo.filter(f => f.pdf_drive_url)
+    const sinPdf = facturasPeriodo.filter(f => !f.pdf_drive_url)
+    return {
+      matched: conPdf.map(f => ({
+        archivo: '', drive_url: f.pdf_drive_url,
+        numero: `${f.punto_venta}-${f.numero_desde}`,
+        proveedor: f.denominacion_emisor || '', monto: f.imp_total ?? null,
+      })),
+      sin_pdf: sinPdf.map(f => ({
+        factura_id: f.id, denominacion: f.denominacion_emisor,
+        numero: `${f.punto_venta}-${f.numero_desde}`, fc: f.fc, motivo: motivoSinPdf(f.fc),
+      })),
+      huerfanos: huerfanos.map(h => {
+        const cand = sugerirFacturasHuerfano(h.archivo || '')
+        const c = cand[0]
+        return {
+          ...h,
+          sugerencia: c ? `${c.denominacion_emisor} · ${c.punto_venta}-${c.numero_desde} · ${formatearFecha(c.fecha_emision)}` : null,
+          sugerencias_n: cand.length,
+        }
+      }),
+    }
+  }
+
+  /**
+   * Reenviar el reporte con el estado de AHORA — pedido del usuario (2026-09-04).
+   *
+   * El mail automatico sale al terminar la corrida, y apenas vinculas una factura a mano **queda
+   * viejo**, igual que el registro archivado en la carpeta. La alternativa obvia —esperar a que el
+   * usuario termine de vincular— la descarto el propio usuario: si no vincula nada, o cierra la
+   * pantalla, el mail no saldria nunca y se perderia hasta la constancia de que la corrida se hizo.
+   *
+   * Entonces son las dos cosas: el automatico queda como constancia, y este boton manda el estado
+   * al dia cuando vos decis que terminaste. Relee la carpeta (rapido, sin OCR) para que los
+   * huerfanos sean los de verdad y no los que quedaron en pantalla.
+   */
+  const enviarEstadoActualizado = async () => {
+    if (!periodoConsulta || supervisandoArchivo) return
+    const [mesStr, anioStr] = periodoConsulta.split('/')
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    if (!mes || !anio) { toast.error('Período inválido'); return }
+    setSupervisandoArchivo(true)
+    const tId = toast.loading('Recalculando el estado y enviando el reporte…')
+    try {
+      await cargarFacturasPeriodo(periodoConsulta)  // los links de lo vinculado a mano
+      const r = await fetch('/api/gas/conciliar-archivo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes }),
+      })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo releer la carpeta: ' + (d.error || 'error'), { id: tId }); return }
+      const huerfanos = (d.huerfanos || []).map((h: any) => ({ archivo: h.archivo, url: h.url }))
+      setHuerfanosSupervision(huerfanos)
+      setOrigenListado('contar')
+
+      const env = await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa, anio, mes, finalizar: true, resumen: armarResumenMail(huerfanos) }),
+      })
+      const je = await env.json()
+      if (!je.ok) { toast.error('El reporte no se envió: ' + (je.error || 'error'), { id: tId }); return }
+      toast.success('Reporte actualizado enviado, con el estado de ahora.', { id: tId })
+    } catch (e) {
+      toast.error('Error: ' + (e as Error).message, { id: tId })
     } finally {
       setSupervisandoArchivo(false)
     }
@@ -2075,6 +2245,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const mes = parseInt(mesStr), anio = parseInt(anioStr)
     if (!mes || !anio) { toast.error('Período inválido'); return }
     setSupervisandoArchivo(true)
+    setOrigenListado('contar')
     setHuerfanosSupervision([])
     setDetalleConciliacion([])
     const tId = toast.loading('Conciliando saldos del archivo…')
@@ -4747,7 +4918,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     tiposSicore?.forEach((t: any) => { regimenesMap[t.tipo] = t.codigo_regimen || '000' })
 
     // Defensivo: filtrar anulados (no deberían venir, pero protegemos por si)
-    const registrosVigentes = registros.filter((r: any) => !r.anulado)
+    const registrosAnuladosFuera = registros.filter((r: any) => !r.anulado)
+
+    // ── Dedup de filas repetidas (A-BUG-146) ──────────────────────────────────────────────────
+    //
+    // 🐞 La FC 10-6337 de ALCORTA quedó con dos filas vigentes idénticas (doble click en
+    // «Confirmar»). Como este agrupador **suma fila por fila** (`pago`, `neto_gravado_pagado`), el
+    // renglón del certificado salía con **$170.358,89 de pago y $140.792,49 de base de más** — y
+    // eso es lo que se le declara a ARCA.
+    //
+    // 🔑 **Hacen falta los dos arreglos.** La causa se tapó en `registrarEnSicoreRetenciones`, pero
+    // eso sólo evita filas NUEVAS: **las que ya están en la base siguen ahí**, y el TXT las leería
+    // igual. Por eso esta red, que además protege contra cualquier otra vía de duplicado.
+    //
+    // La clave incluye los importes a propósito: dos pagos parciales legítimos de la misma factura
+    // en la misma quincena tienen distinto `total_pagado` y **no se colapsan**. El detalle y los
+    // casos viven en `lib/sicore/dedup.ts` — acá no, porque adentro del componente no se prueba.
+    const { vigentes: registrosVigentes, descartados } = deduplicarFilasSicore(registrosAnuladosFuera)
+    // ⚠️ Nada se descarta en silencio (§ CLAUDE.md 🧮): si hubo duplicados, se dicen cuáles.
+    if (descartados.length > 0) {
+      console.warn(`🔁 TXT SICORE: ${descartados.length} fila(s) duplicada(s) descartada(s) del cálculo`,
+        descartados.map((r: any) => ({ id: r.id, factura_id: r.factura_id, comp: r.numero_desde, pago: r.pago })))
+      toast.warning(
+        `${descartados.length} fila(s) duplicada(s) de SICORE quedaron fuera del TXT`,
+        { description: 'El renglón se calculó sin ellas. Revisá A-BUG-146: siguen en la base y hay que limpiarlas.' }
+      )
+    }
 
     // Agrupar por cuit_emisor + tipo_sicore, guardando los IDs de cada grupo
     const grupos: Record<string, any> = {}
@@ -4771,9 +4967,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       grupos[key].ids.push(r.id)
     }
 
-    const gruposOrdenados = Object.values(grupos).sort((a: any, b: any) =>
+    // Un grupo cuya retención suma 0 NO es un certificado: es una factura que consumió parte del
+    // mínimo y se pagó sin retener. Deja fila en `sicore_retenciones` para que el renglón del
+    // certificado declare el pago y la base completos (ver `registrarConsumoDeMinimoCF` en el Cash
+    // Flow), pero **no se le manda un renglón a AFIP con retención 0,00**.
+    const gruposConRetencion = (Object.values(grupos) as any[]).filter(g => (Number(g.retencion) || 0) > 0)
+
+    const gruposOrdenados = gruposConRetencion.sort((a: any, b: any) =>
       a.cuit_emisor.localeCompare(b.cuit_emisor)
     )
+
+    // Las filas que sí forman parte de un certificado. El guard de idempotencia se mide sobre
+    // éstas: las de retención 0 nunca reciben número, y mirándolas a todas `yaAsignados` daría
+    // siempre `false` y **renumeraría una quincena ya cerrada**.
+    const idsConCertificado = new Set(gruposOrdenados.flatMap((g: any) => g.ids as string[]))
 
     // Parsear quincena "26-03 - 1ra" → yy=26, mm=03, q=1
     const partes = quincena.split(' - ')
@@ -4783,7 +4990,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Verificar si esta quincena ya fue cerrada (guard idempotencia)
     // Si todos los registros ya tienen nro_comprobante asignado → reutilizar sin recalcular
-    const yaAsignados = registrosVigentes.every((r: any) => r.nro_comprobante != null)
+    const yaAsignados = registrosVigentes
+      .filter((r: any) => idsConCertificado.has(r.id))
+      .every((r: any) => r.nro_comprobante != null)
 
     const padLeft  = (s: string, n: number) => s.padStart(n, ' ')
     const padRight = (s: string, n: number) => s.padEnd(n, ' ')
@@ -5726,6 +5935,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       comprobante: `FC ${f.tipo_comprobante}-${String((f.punto_venta as number) || 0).padStart(5, '0')}-${String((f.numero_desde as number) || 0).padStart(8, '0')}`,
       fecha: (f.fecha_emision as string) || '',
       fecha_estimada: (f.fecha_estimada as string) || (f.fecha_vencimiento as string) || null,
+      fecha_pago: (f.fecha_pago as string) || null,   // A-BUG-152
       imp_total: ((f.imp_total as number) || 0) * tc,
       monto_sicore: f.monto_sicore as number | null,
       descuento_aplicado: f.descuento_aplicado as number | null,
@@ -5973,33 +6183,46 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   size="sm"
                   onClick={conciliarSaldos}
                   disabled={supervisandoArchivo}
-                  title="Rápido, sin OCR: lista la carpeta y muestra el balance (archivos sin vincular vs facturas sin PDF)"
+                  title="SOLO CUENTA, no vincula nada: lista los archivos de la carpeta y los cruza contra los PDF ya vinculados. No abre ningún archivo, así que es instantáneo. Para vincular usá «Vincular PDFs»."
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  📊 Conciliar saldos
+                  📊 Contar (no vincula)
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(false)}
                   disabled={supervisandoArchivo}
-                  title="Releva TODA la carpeta del período con OCR: vincula los PDF que matcheen por contenido (corre en 2do plano)"
+                  title="ABRE cada PDF de la carpeta, le lee CUIT, número y monto, y lo VINCULA a su factura cuando los tres coinciden. Es el que hace el trabajo. Va de a 4 archivos por vuelta y corre en 2do plano; al terminar manda un mail con lo vinculado y lo que faltó."
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {supervisandoArchivo ? 'Procesando…' : '🗂️ Supervisar (OCR)'}
+                  {supervisandoArchivo ? 'Vinculando…' : '🔗 Vincular PDFs (lee el contenido)'}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(true)}
                   disabled={supervisandoArchivo}
-                  title="Re-supervisa SOLO los PDF que aún no están vinculados (salta los ya vinculados → más rápido)"
+                  title="Lo mismo que «Vincular PDFs», pero saltea los que ya están vinculados. Sirve para re-correr sin repetir trabajo; con 0 vinculados hace exactamente lo mismo."
                   className="flex items-center gap-2"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  Solo sin adjudicar
+                  🔗 Vincular sólo los que faltan
+                </Button>
+                {/* El mail automático sale al terminar la corrida y queda viejo apenas se vincula
+                    algo a mano. Esto lo manda con el estado de AHORA, cuando el usuario dice que
+                    terminó — sin tener que adivinar cuándo es eso. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={enviarEstadoActualizado}
+                  disabled={supervisandoArchivo}
+                  title="Vuelve a leer la carpeta y manda el reporte por mail con el estado de ahora, incluido lo que vinculaste a mano. Tocalo cuando terminaste."
+                  className="flex items-center gap-2"
+                >
+                  📧 Enviar estado actualizado
                 </Button>
                 <Button
                   variant="outline"
@@ -6113,6 +6336,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <TableHead>Total IVA</TableHead>
                     <TableHead>Imp. Total</TableHead>
                     <TableHead>Estado DDJJ</TableHead>
+                    {/* 🚩 Al final y PEGADA al borde derecho.
+                        Va a la derecha porque el usuario pidió no cargar la parte izquierda, que es
+                        la que se lee. Pero va **fija** (`sticky`) porque esta tabla scrollea
+                        horizontal: sin eso la bandera queda más allá del borde y hay que ir a
+                        buscarla scrolleando, que es lo contrario de "marco y sigo". */}
+                    <TableHead
+                      className="w-10 sticky right-0 z-20 bg-white text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)]"
+                      title="Marcar para revisar"
+                    >🚩</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -6226,6 +6458,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           {factura.ddjj_iva}
                         </Badge>
                       </TableCell>
+                      <TableCell className={`sticky right-0 z-10 text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)] ${esUSD ? 'bg-amber-50' : 'bg-white'}`}>
+                        <BotonRevision
+                          schema={schemaName}
+                          tabla="comprobantes_arca"
+                          registroId={factura.id}
+                          descripcion={`${factura.denominacion_emisor || 's/proveedor'} · ${factura.punto_venta}-${factura.numero_desde} · ${formatearFecha(factura.fecha_emision)} · $${(Number(factura.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
+                          abierta={revisionesFactura[String(factura.id)]}
+                          onCambio={recargarRevisiones}
+                        />
+                      </TableCell>
                     </TableRow>
                   )
                   })}
@@ -6307,16 +6549,25 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         <Card>
           <CardHeader>
             <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
-            <p data-ayuda className="text-sm text-muted-foreground">
-              Archivos en la carpeta del período que la supervisión no pudo asociar a una factura
-              (típicamente fotos: el OCR no leyó el contenido). El nombre suele tener el proveedor.
-            </p>
+            {origenListado === 'contar' ? (
+              <p className="text-sm text-amber-700">
+                ⚠️ Estos archivos <strong>todavía no se intentaron vincular</strong>: «Contar» no abre
+                ningún PDF. Para vincularlos corré <strong>«🔗 Vincular PDFs»</strong>.
+                La sugerencia ⭐ sale del <em>nombre y la fecha</em> del archivo, no de su contenido.
+              </p>
+            ) : (
+              <p data-ayuda className="text-sm text-muted-foreground">
+                Archivos que se leyeron pero <strong>no matchearon</strong> ninguna factura — hace falta
+                que coincidan CUIT, número y monto (típicamente fotos: el OCR no leyó el contenido).
+                El nombre suele tener el proveedor.
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
               {huerfanosSupervision.map((h, i) => {
                 const candidatos = sugerirFacturasHuerfano(h.archivo)
-                const faltantes = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta')
+                const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
                 const sugeridosIds = new Set(candidatos.map(c => c.id))
                 const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id ?? ''
                 const sel = faltantes.find(f => f.id === selId)
@@ -6347,6 +6598,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           onClick={() => { setEditNombreUrl(h.url); setEditNombreVal(h.archivo) }}>
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
+                        <button
+                          type="button"
+                          title="Ver el archivo acá mismo, sin cambiar de pestaña"
+                          className={`text-xs rounded border px-1.5 py-0.5 ${previewHuerfano === h.url ? 'bg-blue-50 border-blue-300 text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
+                          onClick={() => setPreviewHuerfano(previewHuerfano === h.url ? null : h.url)}
+                        >
+                          {previewHuerfano === h.url ? '👁 ocultar' : '👁 ver'}
+                        </button>
                       </>
                     )}
                     {typeof h.chars === 'number' && (
@@ -6376,6 +6635,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         </Button>
                       </>
                     )}
+                    {/*
+                      Vista previa del archivo, acá mismo. Se usa el visor de Drive por file_id
+                      (`/preview`), que muestra igual un PDF que una foto — que es justo lo que hace
+                      falta, porque los huérfanos suelen ser fotos. Sólo se monta el iframe del que
+                      está abierto: montar 20 visores de Drive a la vez haría inusable la pantalla.
+                    */}
+                    {previewHuerfano === h.url && (() => {
+                      const fid = extraerFileIdDrive(h.url)
+                      return (
+                        <div className="w-full mt-1.5">
+                          {fid ? (
+                            <>
+                              <iframe
+                                src={`https://drive.google.com/file/d/${fid}/preview`}
+                                className="w-full h-[420px] rounded border bg-gray-50"
+                                title={`Vista previa de ${h.archivo}`}
+                                loading="lazy"
+                              />
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                Compará el <b>CUIT</b>, el <b>número</b> y el <b>monto</b> con la factura elegida
+                                arriba — son los tres datos que la vinculación automática exige.
+                                {sel && <> Elegida: <b>{sel.denominacion_emisor} · {sel.punto_venta}-{sel.numero_desde} · ${(Number(sel.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></>}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-amber-700">
+                              No se pudo sacar el identificador del archivo de su link.{' '}
+                              <a href={h.url} target="_blank" rel="noreferrer" className="underline">Abrirlo en Drive</a>
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </li>
                 )
               })}

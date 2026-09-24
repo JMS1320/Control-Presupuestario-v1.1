@@ -2971,3 +2971,109 @@ f96fa6c - Fix: Corregir mapeo campos BD → Excel/PDF
 3. **[Si falla]** Debug específico campo por campo con queries BD
 
 **🎯 Usuario debe probar inmediatamente**: Excel + PDF generación para verificar IVA Total y Otros Tributos muestran valores reales vs ceros.
+
+
+---
+
+## 🗃️ RESCATADO DE UN CAJÓN (`git stash`) — recuperado el 2026-09-04
+
+> **De dónde salió.** Estaba en un `stash` del **2026-02-01**, sobre `main`, sin commitear. Un stash
+> no es un commit: no está en ninguna rama, no se sube a GitHub y **no lo ve nadie** — vive sólo en
+> esa máquina. Estuvo siete meses invisible y se hubiera perdido con la carpeta.
+>
+> **Se verificó antes de archivarlo:** los tres `ALTER TABLE` que abajo figuran como *"pendiente
+> ejecutar"* **ya están hechos** en la base (`egresos_sin_factura.grupo_impuesto_id` y
+> `cuenta_agrupadora` como `varchar(50)`, y `año` como `varchar(10)`). O sea: **el trabajo se hizo,
+> lo único que faltaba era este registro.** Se archiva tal cual, sin editar.
+>
+> ⚠️ *Lección operativa: lo que queda en un stash no existe para el proyecto. Si vale, se commitea;
+> si no vale, se tira.*
+
+## 📆 2026-02-01 - Sesión: Definiciones Completas Carga Templates
+### 🎯 **Objetivo de la sesión:**
+Definir completamente los cambios estructurales y reglas de negocio para la carga masiva de templates desde CSV.
+### ✅ **Logros del día:**
+1. **Análisis CSV actualizado "Templates para evaluacion.csv"**
+   - 127 templates con 24 columnas
+   - 48 grupos de impuesto identificados (todos correctos: 1 activo + 1 desactivado)
+   - Nuevas columnas: `Cuenta Agrupadora`, `Grupo Impuesto id`, `Estado`
+2. **Definiciones estructurales completas acordadas**
+3. **Definiciones de lógica de importación acordadas**
+4. **Decisiones arquitectura documentadas**
+---
+### 🔧 **CAMBIOS ESTRUCTURALES BD (PENDIENTE EJECUTAR):**
+```sql
+-- 1. Campo para vincular pares Anual/Cuota
+ALTER TABLE egresos_sin_factura
+ADD COLUMN grupo_impuesto_id VARCHAR(50) DEFAULT NULL;
+-- 2. Campo para agrupación en reportes
+ALTER TABLE egresos_sin_factura
+ADD COLUMN cuenta_agrupadora VARCHAR(50) DEFAULT NULL;
+-- 3. Año/Campaña flexible (permite "2026" y "25/26")
+ALTER TABLE egresos_sin_factura
+ALTER COLUMN año TYPE VARCHAR(10);
+-- 4. Consistencia en templates_master
+ALTER TABLE templates_master
+ALTER COLUMN año TYPE VARCHAR(10);
+```
+---
+### 📥 **LÓGICA IMPORTADOR TEMPLATES:**
+| Regla | Condición | Resultado |
+|-------|-----------|-----------|
+| Fecha corte | Configurable (ej: 01/02/2026) | Define histórico vs operativo |
+| Cuota histórica | fecha < corte | estado='conciliado', monto=0 |
+| Cuota operativa | fecha >= corte | estado='pendiente' o 'debito' |
+| Columna Estado CSV | "Debito" | estado='debito' (débito automático) |
+| Columna Estado CSV | vacío | estado='pendiente' |
+**Justificación monto=0 histórico:** Si no se completa la carga histórica real, no quedan datos incorrectos en reportes.
+---
+### ⚙️ **REGLAS DE NEGOCIO (CÓDIGO):**
+| Regla | Implementación |
+|-------|----------------|
+| Conversión Anual↔Cuotas | Solo permitida si template tiene `grupo_impuesto_id` |
+| Exclusión mutua grupos | Activar uno → desactiva el otro (modal confirmación) |
+| Templates sin grupo | NO pueden usar conversión Anual↔Cuotas |
+---
+### 🏗️ **DECISIONES ARQUITECTURA:**
+| Decisión | Descripción |
+|----------|-------------|
+| Templates = Cuentas contables | Templates funcionan como plan de cuentas para egresos sin factura. NO duplicar en tabla `cuentas_contables` |
+| Jerarquía templates | Nombre → CATEG → Cuenta Agrupadora (3 niveles) |
+| Reportes desde extracto | Se hacen JOINs a tablas maestras para obtener agrupaciones |
+| Enfoque persona | Templates de sueldo por empleado (persona), no por puesto |
+---
+### 📊 **48 GRUPOS DE IMPUESTO IDENTIFICADOS:**
+**Inmobiliario (19):** Casco, Tapera 1-3, Ombu, Entre Rios, Lima, Lote Puerto, Porteria Viejo/Nuevo, Quinta Rosello 1-2, Rojas, Sanchez, Tango Parra 1-2, Tango Prim Leboso, Anexo, Cholo 1-2, Complementario MSA/PAM
+**Red Vial (19):** Mismas parcelas que Inmobiliario
+**Automotores (4):** Toyota 2015, Tiguan 2012, Gol 2012, Voyage
+**ABL (2):** Libertad, Cochera Posadas
+**Complementario (4):** Incluidos en Inmobiliario
+---
+### ⏸️ **TEMAS PARA MÁS ADELANTE:**
+| Tema | Descripción | Por qué después |
+|------|-------------|-----------------|
+| Pagos agrupados | Varios templates → 1 pago bancario | Se resuelve con templates adicionales si hace falta |
+| Adelantos sueldo | Pagos parciales que restan del mensual | Frecuentes pero no bloquean estructura actual |
+| Carga histórica | Completar montos reales de cuotas conciliadas | Proceso separado post-carga inicial |
+---
+### 📋 **PRÓXIMOS PASOS:**
+1. **[ ] Crear branch** `feature/templates-carga-masiva`
+2. **[ ] Ejecutar migración BD** (4 ALTER TABLE)
+3. **[ ] Desarrollar importador CSV** con lógica de fecha corte
+4. **[ ] Modificar conversión Anual↔Cuotas** para validar grupo
+5. **[ ] Testing con CSV completo**
+6. **[ ] Carga producción**
+---
+| **Objetivo activo** | 🔧 Carga Masiva Templates (migración BD + importador) |
+| **Estado BD** | ⏳ Pendiente 4 ALTER TABLE para templates |
+| **Fecha actualización** | 2026-02-01 |
+| 0 | Migración BD templates (4 cambios) | ⏳ Pendiente |
+| 1 | Importador CSV con lógica fecha corte | ⏳ Pendiente |
+| 2 | Modificar conversión Anual↔Cuotas | ⏳ Pendiente |
+| 3 | Verificar SICORE en Vista Pagos | 🔄 Testing pendiente |
+### ✅ **COMPLETADOS HOY (2026-02-01):**
+- ✅ Análisis CSV "Templates para evaluacion.csv" (127 templates, 48 grupos)
+- ✅ Definiciones estructurales BD acordadas
+- ✅ Lógica importador definida (fecha corte, histórico monto=0)
+- ✅ Decisiones arquitectura (templates = cuentas contables)
+- ✅ Reglas de negocio (conversión solo con grupo)

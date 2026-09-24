@@ -1,0 +1,37 @@
+[
+  {
+    "sueldo_pago_id": "38e98ea5-4a10-4768-84b3-ee50ffd4057a",
+    "estado_anterior": "conciliado",
+    "fecha": "2026-06-30",
+    "monto": 1400000,
+    "contra": "Trf Inmed Proveed 30/06 $1.400.000"
+  },
+  {
+    "sueldo_pago_id": "2c5cbd32-2510-484e-957c-6e900b8d49d7",
+    "estado_anterior": "conciliado",
+    "fecha": "2026-06-30",
+    "monto": 588333,
+    "contra": "Trf Inmed Proveed 30/06 $588.333"
+  },
+  {
+    "sueldo_pago_id": "97e7b363-9b11-4243-8fb0-662ac8e15f0c",
+    "estado_anterior": "conciliado",
+    "fecha": "2026-06-30",
+    "monto": 1086893,
+    "contra": "Haberes 30/06 $2.699.370 (1 de 3)"
+  },
+  {
+    "sueldo_pago_id": "1576cda7-8f73-4e6f-a6c8-75d9c603f837",
+    "estado_anterior": "conciliado",
+    "fecha": "2026-06-30",
+    "monto": 1487477,
+    "contra": "Haberes 30/06 $2.699.370 (2 de 3)"
+  },
+  {
+    "sueldo_pago_id": "f11283ad-9483-4ddf-b857-997738c8e0b8",
+    "estado_anterior": "conciliado",
+    "fecha": "2026-06-30",
+    "monto": 125000,
+    "contra": "Haberes 30/06 $2.699.370 (3 de 3)"
+  }
+]

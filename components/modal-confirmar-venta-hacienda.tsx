@@ -20,6 +20,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { altaContraparte } from "@/lib/proveedores/alta"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, AlertTriangle, CheckCircle2, Upload, ClipboardPaste } from "lucide-react"
@@ -118,6 +120,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
   const [flete, setFlete] = useState("")
   const [plazo, setPlazo] = useState("")
   const [cliente, setCliente] = useState("")
+  const [clienteCuit, setClienteCuit] = useState("")
   const [notas, setNotas] = useState("")
   const [comercial, setComercial] = useState<SeleccionComercial>({
     destinoId: "", intermediarioId: "", rutaId: "", categoria: "", vehiculo: "", precioRes: "",
@@ -139,6 +142,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
       setFlete(editar.flete ? fmtNumeroAR(editar.flete, 0) : "")
       setPlazo(editar.plazoCobro ?? "")
       setCliente(editar.clienteNombre ?? "")
+      setClienteCuit((editar as any).clienteCuit ?? "")
       setNotas(editar.notas ?? "")
       setPegado(""); setEntradas([])
       return
@@ -287,9 +291,11 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
         flete: nFlete || null,
         plazo_cobro: plazo || null,
         cliente_nombre: cliente || null,
+        cliente_cuit: clienteCuit || null,
         notas: notas || null,
       }).eq("id", editar.id)
       if (error) { alert("Error al guardar: " + error.message); return }
+      await registrarCliente()
 
       // El movimiento de stock refleja el monto: si la venta cambia, tiene que cambiar con ella.
       await p.from("movimientos_hacienda").update({
@@ -300,6 +306,17 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
 
       onConfirmado(); onCerrar()
     } finally { setGuardando(false) }
+  }
+
+  // § Contrapartes (CLAUDE.md): el cliente de la venta tiene que quedar en el maestro, y marcado
+  // como cliente. Faltaba acá — y con el buscador que separa «otros del maestro» (A-FEAT-165) se
+  // vuelve visible: elegir a un proveedor como comprador no lo marcaba nunca. Find-or-create: si ya
+  // existe no se pisa nada, a lo sumo se le prende `es_cliente`. La venta ya está guardada: si esto
+  // falla se avisa y no se deshace nada.
+  const registrarCliente = async () => {
+    if (!clienteCuit) return
+    const r = await altaContraparte(supabase, { cuit: clienteCuit, razon_social: cliente || "", como: "cliente" })
+    if (!r.ok) alert("La venta se guardó, pero el cliente no quedó en el maestro: " + r.error)
   }
 
   const confirmar = async () => {
@@ -324,6 +341,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
         destino_id: comercial.destinoId || null,
         intermediario_id: comercial.intermediarioId || null,
         cliente_nombre: cliente || null,
+        cliente_cuit: clienteCuit || null,
         empresa: lote.empresa,
         notas: [
           notas.trim(),
@@ -331,6 +349,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
         ].filter(Boolean).join(" — "),
       }).select("id").single()
       if (e1 || !venta) { alert("Error al registrar la venta: " + (e1?.message ?? "")); return }
+      await registrarCliente()
 
       // 2 · El movimiento de stock. Se GENERA desde la venta: si se cargara a mano habría dos
       //     fuentes de verdad sobre la misma salida de animales.
@@ -430,10 +449,20 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
               <input type="text" className="h-7 w-28 rounded border px-1 text-[11px]"
                 value={plazo} placeholder="30/60/90" onChange={e => setPlazo(e.target.value)} />
             </Campo>
-            <Campo label="Cliente">
-              <input type="text" className="h-7 w-full rounded border px-1 text-[11px]"
-                value={cliente} onChange={e => setCliente(e.target.value)} />
-            </Campo>
+            {/*
+              El cliente sale del MAESTRO, no de un campo de texto — 2026-09-04.
+              Escribirlo a mano dejaba `cliente_cuit` vacío, y **sin CUIT no hay match posible con
+              la factura**: el circuito se cortaba justo ahí. Además lo pide la § Contrapartes de
+              CLAUDE.md. El combobox permite crear el cliente si no existe.
+            */}
+            <div className="col-span-2">
+              <ProveedorCombobox
+                label="Cliente"
+                rol="cliente"
+                value={{ cuit: clienteCuit, nombre: cliente }}
+                onChange={sel => { setCliente(sel.nombre); setClienteCuit(sel.cuit) }}
+              />
+            </div>
           </div>
 
           {/* Siempre tiene que haber dónde escribir: lo que no entra en un campo es justo lo que

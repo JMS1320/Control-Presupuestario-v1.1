@@ -233,3 +233,155 @@ Saludos,
 
 **📅 Última actualización:** 2026-02-26
 **Estado**: Diseño completo. Solo prerequisito técnico pendiente de verificación por usuario.
+
+## 7. 📨 QUÉ DETALLES DE PAGO FALTAN MANDAR *(medido 2026-09-13/16)*
+
+*Pedido del usuario: **«quisiera ver cuáles tengo pendientes de mandar a Alcorta y otros — todos los
+que tuvieron ret. gan. y/o descuento»**.*
+
+### 7.1 · ⚠️ Lo primero: qué SABE y qué NO sabe la app
+
+> **`enviado_at` en `NULL` no significa «no se mandó». Significa que la app no se enteró.**
+
+*Aclaración del usuario, y corrige el diagnóstico entero:* **«los mails la app no sabe si los envié,
+pero sí envié varios»**. El circuito deja el **borrador en Gmail** y ahí termina su conocimiento: el
+envío lo hace una persona, fuera de la app.
+
+Por eso el estado se lee en **tres escalones, y sólo los dos primeros son hechos**:
+
+| | Qué significa | ¿Es un hecho? |
+|---|---|---|
+| **No hay fila en `mails_pago`** | nunca se generó el detalle: **no hay nada que mandar** | ✅ sí |
+| **Hay fila con `gmail_draft_id`** | el borrador se creó en Gmail | ✅ sí |
+| **¿Se envió?** | **no se sabe** | ❌ no |
+
+🛑 **Cualquier panel que lea `enviado_at` va a mentir** hasta que se cierre el circuito
+→ [A-FEAT-147](PENDIENTES.md#a-feat-147) y [A-FEAT-151](PENDIENTES.md#a-feat-151).
+
+📌 **La regla provisoria del usuario** —*«si se pidió que se genere en Gmail, se debe suponer que se
+mandó»*— hoy daría **los 22 borradores por enviados**. Sirve como aproximación, pero en pantalla va
+**como supuesto, no como hecho**.
+
+### 7.2 · El estado de la cola al 2026-09-16
+
+**22 mails, todos en `borrador`, los 22 con `gmail_draft_id` y ninguno con error.**
+
+⚠️ **Y hay duplicados**: 22 mails para **11 asuntos distintos** —
+`Detalle de pago — MASSAGLIA ALDO ENRIQUE` aparece **4 veces**. Encolar dos veces no se bloquea.
+🔑 **Ese es el motivo por el que buscar el envío POR ASUNTO no sirve**: el asunto no identifica al
+mail. El `gmail_draft_id` sí, y ya está guardado en los 22.
+
+### 7.3 · 🔴 Lo que falta: 38 pagos nunca llegaron a borrador
+
+Cruzando los pagos que tuvieron **retención y/o descuento** (`msa.sicore_retenciones`) contra la cola:
+
+| | Pagos | Proveedores | Pagado | Retención | Descuento |
+|---|---|---|---|---|---|
+| ✅ Con borrador | 11 | 7 | $43,40 M | $664.077,41 | $27.419,93 |
+| 🔴 **Sin borrador** | **38** | **23** | **$69,56 M** | **$1.031.181,05** | **$556.558,97** |
+
+🔑 **Son detalles que el proveedor nunca vio**, y son justamente los pagos donde más falta hacen: un
+pago con retención o descuento **llega al proveedor por menos de lo facturado**, y sin el detalle no
+tiene cómo saber por qué.
+
+⚠️ **Y NO es deuda acumulada por olvido.** *(Aclaración del usuario, 2026-09-13.)* La feature **es
+nueva**: se empezó a usar y **se frenó con Alcorta por errores de diseño del PDF**
+([A-BUG-173](PENDIENTES.md#a-bug-173), corregido). La mayoría de esos 38 son **anteriores a que el
+circuito existiera**.
+
+### 7.4 · ALCORTA — el caso testigo, el que frenó todo
+
+| Pago | FC | Total pagado | Retención | Descuento | Borrador |
+|---|---|---|---|---|---|
+| **10/09/2026** | 4 | $2.056.814,20 | $29.516,93 | $19.254,70 | 🔴 no — **desbloqueado el 13/09** |
+| 10/08/2026 | 1 | $520.978,69 | $4.131,22 | $27.419,93 | ✅ sí |
+| **10/06/2026** | 3 | $4.226.572,80 | $65.380,71 | $104.045,26 | 🔴 no |
+| **11/05/2026** | 3 | $1.165.327,95 | $14.781,62 | $61.333,05 | 🔴 no |
+| **10/04/2026** | 3 | $1.316.776,31 | $17.284,90 | $42.288,56 | 🔴 no |
+| **10/03/2026** | 5 | $1.055.469,10 | $13.705,08 | $55.551,01 | 🔴 no |
+
+**5 de 6 sin borrador — $9,82 M**, con **$140.668,54** de retención y **$282.472,58** de descuento
+que el proveedor nunca vio detallados.
+
+### 7.5 · Los otros 22 proveedores, por antigüedad
+
+Los más pesados de cada tanda (la lista entera sale del cruce de § 7.3):
+
+| Pago | Proveedor | Pagado | Retención | Descuento |
+|---|---|---|---|---|
+| 10/09/26 | MASSAGLIA ALDO ENRIQUE | $2.067.502,80 | $32.830,20 | — |
+| **04/09/26** | **IGLESIAS NORBERTO HUGO** | $3.554.000,00 | $57.400,40 | — |
+| 10/08/26 | BIOFARMA S A | $2.646.270,00 | $39.260,00 | — |
+| 05/08/26 | HIDRAULICA CURRA | $615.890,00 | $8.836,60 | — |
+| 03/07/26 | MORAGUES JORGE HUGO | $2.646.696,00 | $46.560,60 | — |
+| 29/06/26 | FUNDACION VIDAS SADIV | $739.583,48 | $10.881,12 | — |
+| 08/06/26 | **GARMENDIA SANTIAGO** | $6.334.539,97 | $100.223,14 | — |
+| 08/06/26 | ARROYO TALA SH | $2.121.865,20 | $33.924,80 | — |
+| 26/05/26 | ARROYO TALA SH | $2.113.423,00 | $33.772,00 | — |
+| 30/04/26 | STRINGHINI DAMIAN | $3.028.252,50 | $53.466,60 | — |
+| 20/04/26 | Biscayart | $3.042.557,10 | $45.810,20 | — |
+| **07/04/26** | **RIGO MATIAS Y RAUL** | $2.315.963,60 | $36.936,99 | **$121.892,82** |
+| **26/03/26** | **FERRETERIA SARMIENTO** | $862.430,20 | $9.812,63 | **$152.193,57** |
+| **05/03/26** | **SJC ENERGY STORE** | $6.580.000,00 | $87.916,03 | — |
+| 04/03/26 | TRANSPORTE FABIAN BLANCO | $1.053.426,00 | $2.008,58 | — |
+
+*(Completan la lista: La Mercure ×3, Massaglia ×3 más, Stringhini ×2 más, García Eugenio, Almacén
+Veterinario, Hernández Cristóbal, Agro Centros, Grupo Campo, Degraf, Rigo 05/03.)*
+
+### 7.6 · ⚠️ Cómo se midió, y qué tiene de flojo
+
+El cruce empareja **proveedor normalizado + una ventana de fechas de −2 a +4 días** alrededor del
+pago, porque **`mails_pago` no guarda contra qué pago se generó**: `grupo_pago_id` y
+`comprobante_arca_id` están en `∅` en las 22 filas.
+
+🔑 **Ese es el hueco de fondo**, y vale más que la lista: **si el mail guardara su vínculo al pago,
+esto sería una consulta exacta en vez de una aproximación por fecha**. Mientras tanto, la lista
+puede tener falsos positivos si un detalle se generó mucho después del pago.
+→ [A-FEAT-147](PENDIENTES.md#a-feat-147).
+
+## 8. 📄 EL PAPEL DEL DETALLE DE PAGO — qué se dice, dónde y con qué letras
+
+*Escrito 2026-09-22 después de leer el PDF real del pago de ALCORTA del 10/06 →
+[A-BUG-190](PENDIENTES.md#a-bug-190). Los tres defectos estaban en **un solo renglón**.*
+
+### 8.1 · Un aviso, una vez, y al pie
+
+El papel tenía **tres formas de decir lo mismo** cuando el pago no cerraba contra lo facturado:
+
+| Dónde | Qué decía |
+|---|---|
+| Entre las dos tablas | *«Se cancela $4.480,00 MÁS que el total facturado»* ← **el bueno** |
+| Última fila del desglose | **Pagado a cuenta · $4.480,00** ← correcto, es un dato |
+| Bajo el desglose, en rojo | *«el desglose ($4.335.098,06) no coincide con el total de factura ($4.330.618,06)»* ← **ruido** |
+
+> **El aviso del control va SOLO y va al PIE**, después del desglose. El cartel de descuadre queda
+> como red, para cuando no hubo control que comparar.
+
+**Por qué al pie y no arriba**, que es lo que parecía natural: el aviso **explica la última fila de
+esa tabla**. Y además arriba **no entraba**: el título *«Desglose del pago»* se posiciona desde
+`lastAutoTable`, que no sabe que alguien escribió un renglón suelto en el medio, así que **lo tapaba**.
+
+📌 Y el cartel de descuadre hablaba en el idioma equivocado: *«el desglose no coincide»* describe una
+suma; *«se cancela $4.480 más que lo facturado»* describe **lo que pasó con la plata**. Al proveedor
+le sirve el segundo (§ `CLAUDE.md` 🗣️ *el glosario es el de la app*).
+
+### 8.2 · 🛑 En este PDF sólo se escribe LATIN-1
+
+> **Nada de emoji ni de símbolos técnicos en `doc.text()`.** `⚠`, `✓`, `→` y compañía **no existen
+> en WinAnsiEncoding**, que es lo que usan las fuentes estándar de jsPDF, y meter uno **rompe la
+> codificación de la línea entera**: sale `& S e   c a n c e l a   $ 4 . 4 8 0 , 0 0 …`, letra por
+> letra. Se escribe `ATENCION:` en texto plano.
+
+🧨 **Y esto ya había pasado.** [A-BUG-150](PENDIENTES.md#a-bug-150) lo arregló en el cartel de
+descuadre… y **dejó vivo el gemelo** en el aviso del control, doce líneas más arriba del mismo
+archivo. Es el modo de falla de § 30.9.5 de `MODULO_CONCILIACION.md` —*se arregla un camino de los
+dos*— en su versión más barata de evitar: **los dos estaban en la misma pantalla del editor**.
+
+⚠️ **Y queda uno suelto**: `components/vista-facturas-arca.tsx` usa `⚠️` dentro de `doc.text()` en
+dos líneas del export de facturas. Mismo defecto, otro papel, sin tocar.
+
+### 8.3 · Un pago de más NO frena la emisión
+
+Vale la § 🚦 de `CLAUDE.md`: pagar de más o de menos es una **discrepancia** —tiene explicación de
+negocio— así que el papel **avisa y se emite igual**. Lo que frenaría es que las líneas no sumen el
+total que el propio comprobante imprime, porque eso sí es el sistema contradiciéndose.
