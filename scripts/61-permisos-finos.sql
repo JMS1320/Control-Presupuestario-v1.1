@@ -33,13 +33,20 @@ comment on column public.roles.permisos is
 
 -- Que no entren niveles inventados: una clave con un valor que nadie interpreta se comporta como
 -- "sin excepción" y el permiso queda abierto sin que nadie lo note.
+--
+-- ⚠️ Va por función y no con un `not exists (...)` adentro del CHECK: **Postgres no admite
+--    subconsultas en un CHECK** («cannot use subquery in check constraint»). Una función
+--    `immutable` sí está permitida, y además deja el criterio en un solo lugar.
+create or replace function public.roles_permisos_validos(p jsonb) returns boolean
+language sql immutable as $fn$
+  -- `bool_and` sobre cero filas devuelve NULL, y `{}` tiene que ser válido: de ahí el coalesce.
+  select coalesce(bool_and(v in ('ninguno', 'lectura', 'escritura')), true)
+  from jsonb_each_text(p) as e(k, v)
+$fn$;
+
 alter table public.roles drop constraint if exists roles_permisos_niveles;
-alter table public.roles add constraint roles_permisos_niveles check (
-  not exists (
-    select 1 from jsonb_each_text(permisos) as e(k, v)
-    where v not in ('ninguno', 'lectura', 'escritura')
-  )
-);
+alter table public.roles add constraint roles_permisos_niveles
+  check (public.roles_permisos_validos(permisos));
 
 -- ── Control ──────────────────────────────────────────────────────────────────────────────────
 -- Tiene que devolver 2 filas, las dos con permisos = {} (nadie cambia de permisos hoy).
@@ -48,3 +55,4 @@ select id, secciones, permisos, es_sistema from public.roles order by id;
 -- ── REVERT ───────────────────────────────────────────────────────────────────────────────────
 -- alter table public.roles drop constraint if exists roles_permisos_niveles;
 -- alter table public.roles drop column if exists permisos;
+-- drop function if exists public.roles_permisos_validos(jsonb);
