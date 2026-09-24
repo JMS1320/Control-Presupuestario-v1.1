@@ -478,6 +478,37 @@ el rastro de que existió.*
 Sin eso su push falla y termina en un **fork** — otro repositorio, invisible desde acá, que nadie
 mira hasta que es tarde.
 
+### 🤝 El canal ENTRE DESARROLLADORES — se lee al abrir, como los pendientes (REGLA)
+*Creada 2026-09-24, después de que un merge destapara **38 IDs chocados** que llevaban tres semanas
+invisibles. Pedido del usuario: **«hay que dejar en claro que siempre se debe leer ese archivo, para
+que tanto Javier como yo estemos informados de lo que hace el otro»**.*
+
+> **`ENTRE-DESARROLLADORES.md` se lee al abrir sesión y se escribe antes de tocar territorio ajeno.**
+> Es el **único canal que viaja por git** entre los dos clones.
+
+⚠️ **Y ésta es la razón de que exista**: el tablero `.claude/SESION-PARALELA.md` **está fuera de
+git**. Sirve entre terminales de una misma máquina; **al otro clon no le llega nada**. Durante
+semanas se escribieron avisos ahí creyendo que alguien los leía.
+
+**Qué obliga:**
+- **Leerlo al abrir**, junto con las notas del usuario. Si hay una entrada dirigida a este lado, se
+  atiende antes de empezar.
+- **Escribir ANTES, no después**, cuando se va a tocar algo del otro: su módulo, un ID suyo, la
+  estructura de la BD, RLS, roles o permisos. *(La BD es **una sola**: eso ya lo dice la § 👥
+  Segundo desarrollador, y acá está el lugar donde se avisa.)*
+- **Es un BUZÓN, no una bitácora**: una entrada se borra cuando el destinatario la leyó y actuó. Lo
+  que tenga valor permanente **se absorbe a su dimensión** y no queda ahí.
+
+🛑 **Lo que NO va**: el reporte de todo lo que uno hace —para eso están los commits y
+`PENDIENTES.md`—, los pendientes (se **apuntan**, no se copian) y las reglas (van acá).
+*Motivo: un archivo que sólo crece no se lee, y un canal que no se lee es **peor** que no tener
+canal: genera la ilusión de haber avisado.*
+
+📌 **Excepción a la regla de cierre de las 8 dimensiones**: este archivo vive en la raíz y **no es
+una de las 8**. Se autorizó explícitamente (usuario, 2026-09-24) porque no es documentación del
+sistema sino **coordinación entre personas** — el mismo estatus operativo que el tablero, pero
+versionado, que es lo que le faltaba.
+
 ### 🔀 Trabajo en paralelo — 2 terminales sobre el mismo directorio (REGLA)
 *Agregada 2026-08-18, al abrir una segunda terminal (conciliación + panel de pendientes a la vez).
 Acordada **entre las dos terminales**, y escrita acá —y no en el tablero— porque `.claude/` no va al
@@ -758,8 +789,9 @@ resuelto o contradecir una decisión vieja sin enterarse.*
 - **4 vs 7** — Manual es *cómo lo opera el usuario*; Módulo es *cómo está pensado por dentro*.
 - **5 vs 7** — Knowledge es *transversal*; Módulo es *de un módulo solo*.
 
-**Fuera de las 8, sólo dos archivos declarados:** `CLAUDE.md` (las reglas) y **`README.md`**
-(cara pública del repo). La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
+**Fuera de las 8, sólo TRES archivos declarados:** `CLAUDE.md` (las reglas), **`README.md`**
+(cara pública del repo) y **`ENTRE-DESARROLLADORES.md`** (el canal con el otro clon — autorizado
+por el usuario 2026-09-24; ver § 🤝). La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
 
 #### ➡️ Dirección única: la doc no cita a la memoria (REGLA)
 > **La memoria puede citar a la documentación. La documentación NO puede citar a la memoria.**
@@ -1237,4 +1269,5 @@ npm run build                        # build
 | Diseño y decisiones de UN módulo | `MODULO_<NOMBRE>.md` (ver [A-DOC-02](PENDIENTES.md#a-doc-02) — renombrado pendiente) |
 | Errores preexistentes (baseline) | `ERRORES_CONOCIDOS.md` |
 | Historial de sesiones (referencia) | `CLAUDE_HISTORICO.md` |
+| Avisos del/para el otro desarrollador | `ENTRE-DESARROLLADORES.md` |
 | Contexto entre sesiones | memoria (`MEMORY.md` index) |
