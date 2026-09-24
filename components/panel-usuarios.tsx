@@ -31,10 +31,28 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   const [cargando, setCargando] = useState(true)
   const [email, setEmail] = useState("")
   const [rol, setRol] = useState<string>("contable")
+  /**
+   * 🐞 **A-BUG-198 — los roles del desplegable salen de la TABLA.**
+   * Acá estaban escritos a mano `contable` y `admin`, así que `productivo` y `socio` —que ya
+   * existían en `public.roles` y se podían editar desde Configuración → Roles— **no se le podían
+   * asignar a nadie**. Y el arreglo de la API sola no alcanzaba: si la pantalla no los ofrece, el
+   * usuario no tiene cómo elegirlos.
+   */
+  const [rolesDisponibles, setRolesDisponibles] = useState<
+    { id: string; descripcion: string; exige_2fa: boolean }[]
+  >([])
   const [creando, setCreando] = useState(false)
   const [invitacion, setInvitacion] = useState<
     { email: string; link: string; advertencia?: string | null } | null
   >(null)
+
+  // Los roles, de la misma fuente que usa Configuración → Roles.
+  useEffect(() => {
+    fetch("/api/admin/roles")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d?.roles)) setRolesDisponibles(d.roles) })
+      .catch(() => {})   // si falla, quedan los de abajo: nunca un desplegable vacío
+  }, [])
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -201,8 +219,15 @@ export function PanelUsuarios({ miId }: { miId: string }) {
             <Select value={rol} onValueChange={setRol}>
               <SelectTrigger id="rol-nuevo"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="contable">Contable — sólo Egresos</SelectItem>
-                <SelectItem value="admin">Admin — todo (exige 2FA)</SelectItem>
+                {(rolesDisponibles.length > 0
+                  ? rolesDisponibles
+                  : [{ id: "contable", descripcion: "sólo Egresos", exige_2fa: false },
+                     { id: "admin", descripcion: "todo", exige_2fa: true }]
+                ).map(r => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.id}{r.descripcion ? ` — ${r.descripcion}` : ""}{r.exige_2fa ? " (exige 2FA)" : ""}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -281,8 +306,12 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                             <SelectValue placeholder="sin rol" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="contable">contable</SelectItem>
-                            <SelectItem value="admin">admin</SelectItem>
+                            {(rolesDisponibles.length > 0
+                              ? rolesDisponibles.map(r => r.id)
+                              : ["contable", "admin"]
+                            ).map(id => (
+                              <SelectItem key={id} value={id}>{id}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       )}

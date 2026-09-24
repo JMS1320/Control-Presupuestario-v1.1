@@ -414,6 +414,9 @@ algo futuro en evaluación y se pushea eso»**.*
   paralelo, regla 2). Las dos únicas salidas:
   1. **`git worktree add <dir> <rama>`** — un directorio propio con su rama. Es la única separación
      real, y la que corresponde cuando la segunda terminal va a tocar **código**.
+     ⚠️ **Sólo si las dos escriben AL MISMO TIEMPO** *(precisión del usuario 2026-09-21)*. Si se
+     alternan, **no se sale de la carpeta del proyecto**: la carpeta es de quien trabaja y se
+     devuelve como estaba (§ Trabajo en paralelo, **regla 15**).
   2. **Aislar sólo por commit** cuando el trabajo es documentación: se commitea en la rama que está
      montada y se mueve la rama propia con **`git branch -f <mi-rama> HEAD`** (no necesita checkout)
      y se pushea ésa. Los commits quedan además en la rama del otro; **no es limpio, pero no es
@@ -477,6 +480,37 @@ el rastro de que existió.*
 **3 · Acceso al repo.** Javier necesita permiso de escritura en `JMS1320/Control-Presupuestario-v1.1`.
 Sin eso su push falla y termina en un **fork** — otro repositorio, invisible desde acá, que nadie
 mira hasta que es tarde.
+
+### 🤝 El canal ENTRE DESARROLLADORES — se lee al abrir, como los pendientes (REGLA)
+*Creada 2026-09-24, después de que un merge destapara **38 IDs chocados** que llevaban tres semanas
+invisibles. Pedido del usuario: **«hay que dejar en claro que siempre se debe leer ese archivo, para
+que tanto Javier como yo estemos informados de lo que hace el otro»**.*
+
+> **`ENTRE-DESARROLLADORES.md` se lee al abrir sesión y se escribe antes de tocar territorio ajeno.**
+> Es el **único canal que viaja por git** entre los dos clones.
+
+⚠️ **Y ésta es la razón de que exista**: el tablero `.claude/SESION-PARALELA.md` **está fuera de
+git**. Sirve entre terminales de una misma máquina; **al otro clon no le llega nada**. Durante
+semanas se escribieron avisos ahí creyendo que alguien los leía.
+
+**Qué obliga:**
+- **Leerlo al abrir**, junto con las notas del usuario. Si hay una entrada dirigida a este lado, se
+  atiende antes de empezar.
+- **Escribir ANTES, no después**, cuando se va a tocar algo del otro: su módulo, un ID suyo, la
+  estructura de la BD, RLS, roles o permisos. *(La BD es **una sola**: eso ya lo dice la § 👥
+  Segundo desarrollador, y acá está el lugar donde se avisa.)*
+- **Es un BUZÓN, no una bitácora**: una entrada se borra cuando el destinatario la leyó y actuó. Lo
+  que tenga valor permanente **se absorbe a su dimensión** y no queda ahí.
+
+🛑 **Lo que NO va**: el reporte de todo lo que uno hace —para eso están los commits y
+`PENDIENTES.md`—, los pendientes (se **apuntan**, no se copian) y las reglas (van acá).
+*Motivo: un archivo que sólo crece no se lee, y un canal que no se lee es **peor** que no tener
+canal: genera la ilusión de haber avisado.*
+
+📌 **Excepción a la regla de cierre de las 8 dimensiones**: este archivo vive en la raíz y **no es
+una de las 8**. Se autorizó explícitamente (usuario, 2026-09-24) porque no es documentación del
+sistema sino **coordinación entre personas** — el mismo estatus operativo que el tablero, pero
+versionado, que es lo que le faltaba.
 
 ### 🔀 Trabajo en paralelo — 2 terminales sobre el mismo directorio (REGLA)
 *Agregada 2026-08-18, al abrir una segunda terminal (conciliación + panel de pendientes a la vez).
@@ -689,6 +723,28 @@ tablero sobre qué rama trabaja, y corre `git branch --show-current` **antes de 
 árbol no está en la rama declarada: **no se commitea, se avisa.** Y **no se resuelve con
 `git checkout`**, que la regla 2 prohíbe — se acuerda entre las dos.
 
+**15 · Si las terminales se ALTERNAN (no corren a la vez), la carpeta es de quien trabaja — y se
+devuelve.** *(Aclarado por el usuario 2026-09-21: «la idea de 2 terminales no es trabajar al mismo
+tiempo, sino que cada cual tenga un contexto específico».)*
+
+- **No se sale de la carpeta del proyecto.** El usuario rechazó el `git worktree` en una carpeta
+  hermana: *«¿por qué querés salir de la carpeta del proyecto?»*. Con alternancia no hace falta —
+  hace falta sólo cuando las dos escriben código **a la vez**.
+- **La terminal que trabaja cambia la rama y la deja como la encontró** (o avisa que la dejó en la
+  suya, y por qué). Se anota en el tablero.
+- 🛑 **Al retomar, si la carpeta está en OTRA rama: parar y avisar, no cambiarla.** Puede haber
+  trabajo en curso de la otra terminal. *(Pasó el 2026-09-24: volví y la carpeta estaba en
+  `jms/roles-desde-la-base` con todo commiteado y pusheado. No la toqué.)*
+- 🔑 **Y lo que de verdad evita el choque de IDs: mergear TEMPRANO a la rama común.** Mientras la
+  rama del tema no se suma a `jms/dia-a-dia`, la otra terminal consulta el archivo viejo y reclama
+  números que ya están usados. *Evidencia: [A-OP-16](PENDIENTES.md#a-op-16) — **39 IDs chocados**
+  destapados por un merge del 2026-09-23. Los de esta tanda no chocaron porque se mergearon el mismo
+  día.*
+- ⚠️ **Un comando que la herramienta informa como RECHAZADO puede haberse ejecutado igual.** Pasó el
+  2026-09-22: un `commit + push` figuró rechazado y estaba hecho; al reintentar quedaron **3 filas
+  duplicadas** en `PENDIENTES.md`. Ante un «rechazado» sobre algo que escribe, **mirar `git log` y el
+  archivo antes de reintentar**.
+
 *Motivo: pasó el 2026-09-05. T2 creó una rama nueva y dejó el árbol ahí; T1 siguió commiteando
 durante toda su tanda **creyendo que estaba en la suya**, y su commit terminó en la rama de T2. Nadie
 lo vio hasta que un `push` a la rama equivocada devolvió «Everything up-to-date» y no cerraba con
@@ -758,8 +814,9 @@ resuelto o contradecir una decisión vieja sin enterarse.*
 - **4 vs 7** — Manual es *cómo lo opera el usuario*; Módulo es *cómo está pensado por dentro*.
 - **5 vs 7** — Knowledge es *transversal*; Módulo es *de un módulo solo*.
 
-**Fuera de las 8, sólo dos archivos declarados:** `CLAUDE.md` (las reglas) y **`README.md`**
-(cara pública del repo). La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
+**Fuera de las 8, sólo TRES archivos declarados:** `CLAUDE.md` (las reglas), **`README.md`**
+(cara pública del repo) y **`ENTRE-DESARROLLADORES.md`** (el canal con el otro clon — autorizado
+por el usuario 2026-09-24; ver § 🤝). La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
 
 #### ➡️ Dirección única: la doc no cita a la memoria (REGLA)
 > **La memoria puede citar a la documentación. La documentación NO puede citar a la memoria.**
@@ -812,6 +869,45 @@ controle que no quedó nada desparramado).
   limpieza revertía otra — quedó una venta inventada de $5.443.200 sobre el movimiento real de 3
   toros del usuario. Se detectó revisando la tabla, no por un error: **el test dijo OK**.*
 - Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
+
+### 🗺️ EL GRAFO DEL CÓDIGO — se consulta SIEMPRE, antes de grepear (REGLA)
+*Pedida por el usuario 2026-09-24, el día que se instaló: **«usamos este MCP siempre, para que
+recuerdes que lo debés usar y nunca trabajar sin esta herramienta»**.*
+
+> **Antes de tocar código, la pregunta «¿quién más usa esto?» va al GRAFO, no a `grep`.**
+> 📍 **Acá:** el MCP **`codebase-memory-mcp`**, indexado sobre este repo. Corre local, no sale nada
+> de la máquina, y **el índice se actualiza solo** cuando cambian los archivos.
+
+**Cuándo es obligatorio**, y no es «cuando convenga»:
+- Antes de **cambiar la firma o el comportamiento de una función** → `search_graph` con
+  `include_connected` dice quién la llama.
+- Antes de dar por **completo** un arreglo → `trace_path`, para ver si hay otro camino.
+- Al **entrar a un módulo que no se tocó hace tiempo** → `get_architecture`.
+
+🧨 **El motivo es EL modo de falla de este proyecto.** *«Se arregló un camino de los dos»*
+(§ `MODULO_CONCILIACION.md` 30.9.5) se repitió **cinco veces el 2026-09-23**: cada `grep` encontraba
+uno y había otro — las 4 funciones de retención previa, el `agruparPagos` duplicado, el símbolo `⚠`
+roto en el archivo gemelo doce líneas más abajo. **El usuario lo cortó preguntando si me había
+fijado bien, y la respuesta honesta era que no.**
+
+✅ **Y el día que se instaló quedó demostrado**: la misma pregunta que había costado **tres intentos
+y dos correcciones** devolvió **los cuatro caminos en una sola consulta** — más un quinto llamador
+(`ejecutarLote`) que no estaba en mi lista.
+
+🛑 **LA TRAMPA, y es la que puede hacer daño: el grafo es de la RAMA MONTADA.**
+Con varias ramas en paralelo —y acá siempre las hay— **lo que vive sólo en otra rama NO aparece**.
+Un resultado vacío significa *«no está en esta rama»*, **nunca** *«no existe»*. Antes de afirmar que
+algo no existe: mirar en qué rama está el árbol, y si hace falta buscarlo con
+`git log -S` / `git show <rama>:<archivo>`, que sí cruzan ramas.
+*Y pasó en el momento de escribir esta regla: el ancla que buscaba vivía en otra rama.*
+
+📌 **`grep` no se jubila, cambia de trabajo**: el grafo sabe de **símbolos y llamadas**; `grep` sigue
+siendo el bueno para **literales** — un texto de pantalla, un mensaje de error, un comentario, una
+columna dentro de un string. Las dos veces que hizo falta encontrar un cartel repetido, lo encontró
+`grep`.
+
+👤 **Javier no lo necesita.** El índice vive en esta máquina y la configuración (`.mcp.json`) está
+gitignoreada: **no va al repo y no le cambia nada**. Si él lo quiere, lo instala por su cuenta.
 
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
 *Agregada 2026-08-03, después de que Claude duplicara **tres veces en una sola sesión** algo que
@@ -1189,6 +1285,7 @@ npm run build                        # build
 ## 🧭 Navegación rápida
 | Necesito… | Voy a… |
 |-----------|--------|
+| **Quién llama a esta función / qué se rompe si la toco** | el **grafo** (`codebase-memory-mcp`), nunca `grep` — ver § 🗺️ |
 | Qué falta / bugs / TODOs | `PENDIENTES.md` |
 | Estructura de datos (tablas, columnas, permisos) | `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md` |
 | Cómo reconstruir la BD | `RECONSTRUCCION_SUPABASE_2026-01-07.md` |
@@ -1197,4 +1294,5 @@ npm run build                        # build
 | Diseño y decisiones de UN módulo | `MODULO_<NOMBRE>.md` (ver [A-DOC-02](PENDIENTES.md#a-doc-02) — renombrado pendiente) |
 | Errores preexistentes (baseline) | `ERRORES_CONOCIDOS.md` |
 | Historial de sesiones (referencia) | `CLAUDE_HISTORICO.md` |
+| Avisos del/para el otro desarrollador | `ENTRE-DESARROLLADORES.md` |
 | Contexto entre sesiones | memoria (`MEMORY.md` index) |

@@ -649,7 +649,49 @@ referencia; el estado real y lo que falta están en el **§ 0**.
 
 ### Agregar nuevos usuarios/roles
 
-Hoy se hace en `config/access-routes.ts`. Con RLS implementado, el sistema de roles de la URL sigue igual para determinar qué tabs ve cada usuario. RLS agrega la capa de seguridad de escritura independientemente.
+> ⚠️ **CORREGIDO 2026-09-24.** Acá decía: *«hoy se hace en `config/access-routes.ts`; el sistema de
+> roles de la URL sigue igual para determinar qué tabs ve cada usuario»*. **Eso ya no es cierto**
+> desde el login real (2026-09-03): **la URL no da acceso** y los roles viven en `public.roles`.
+> Se deja escrito lo viejo porque explica de dónde viene la estructura, no cómo funciona hoy.
+
+**Hoy, un rol es una fila de `public.roles`**: `id` · `descripcion` · `secciones` (las 12 del menú)
+· `exige_2fa` · `es_sistema`.
+
+| Qué | Dónde | Estado |
+|---|---|---|
+| **Ver y editar** los permisos de un rol | Configuración → Roles | ✅ anda |
+| **Asignar** un rol a alguien | Configuración → Usuarios | ✅ desde [A-BUG-198](PENDIENTES.md#a-bug-198) |
+| **Crear** un rol nuevo | ✋ a mano en la base | ⏳ [A-FEAT-171](PENDIENTES.md#a-feat-171) |
+
+🧨 **El bug que esto tuvo, y vale recordarlo porque es un patrón**: la tabla tenía **cuatro** roles y
+el alta de usuarios validaba contra `const ROLES = ["admin", "contable"]` escrito a mano. Entonces
+`productivo` y `socio` **existían, se podían configurar desde la pantalla, y al asignarlos daba «Rol
+inválido»**. Era invisible desde los dos lados: quien mira la tabla los ve, quien mira la lista ve
+otra cosa — **crear un rol parecía funcionar hasta el momento de usarlo**.
+
+🔑 **Y eran DOS lugares**, no uno: la API y los **dos desplegables** de la pantalla. Arreglar sólo la
+API no servía: si el desplegable no lo ofrece, no hay cómo elegirlo. Los dos leen ahora de
+`leerRoles()`, la misma función de Configuración → Roles, **así que no pueden divergir**.
+
+### 🧪 El rol `pruebas` — el banco de ensayo de permisos
+
+*Creado 2026-09-24 a pedido del usuario, y su forma de trabajo explica el diseño:* **hace un usuario
+con otro mail suyo, le da el rol, entra, mira qué ve — y recién entonces se lo da a la persona real.**
+
+- **Arranca SIN secciones, a propósito.** Un rol de ensayo que nace con permisos es peligroso: si
+  algún día se asigna sin ajustar, el error es *«ve de más»*. Naciendo vacío el peor caso es *«no ve
+  nada»*, que se nota al instante y no expone nada.
+- **`exige_2fa: false`** para poder entrar y salir probando. 📌 **Por eso mismo no sirve para probar
+  el camino del 2FA** — para eso está `admin`.
+- **`es_sistema: false`** para que se pueda editar desde la pantalla, que es todo el punto.
+
+⚠️ **Cuándo NO usarlo:** para ver cómo se comporta un rol **que ya existe**, se le asigna **ese rol**
+al usuario de prueba — no un clon dentro de `pruebas`. Un clon **envejece sin avisar**: si después
+cambia el rol real, se probó otra cosa. `pruebas` es para **diseñar uno nuevo**.
+
+🛑 **Y el límite del ensayo:** el usuario de prueba **es un usuario real**. El rol separa lo que
+**ve**, no lo que **toca**: si se le da una sección donde se escribe, lo que se cargue ahí queda en
+la base de verdad.
 
 ### Tercer código de acceso (consulta pura)
 

@@ -14,7 +14,7 @@ import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { agruparPagos } from "@/lib/pagos/agrupar"
 import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
-import { generarQuincenaSicore } from "@/lib/sicore/quincena"
+import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
@@ -1928,15 +1928,34 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Quincena SICORE: usa el helper único de lib/sicore/quincena (E4 — centralizado)
 
   // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
-  const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
+  /**
+   * ¿Ya se le retuvo a este proveedor **en el mes**, por **este régimen**?
+   *
+   * - **A-BUG-193** — mira **las dos quincenas del MES**: el mínimo se consume una vez por mes.
+   * - **A-BUG-196** — y filtra por **régimen**, porque *«un mínimo no aplica para otro tipo de
+   *   facturación»* (usuario, 2026-09-23). Bienes ($224.000) y Servicios ($67.170) son renglones
+   *   distintos del Anexo VIII de la RG 830: cada uno tiene **su propio mínimo mensual**.
+   *
+   * 📌 `tipoSicore` es **opcional a propósito**: los «portones» —los que deciden si abrir el
+   * modal— corren **antes** de que el usuario elija el régimen y no lo tienen. Sin él responde
+   * lo de antes (¿retuvo por cualquier régimen?), que para abrir una puerta alcanza: el cálculo
+   * de adentro, que sí sabe el tipo, es el que decide el monto.
+   */
+  const verificarRetencionPreviaFactura = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
     try {
-      const { data } = await supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1)
+      // 🐞 A-BUG-193 — busca en **las dos quincenas del MES**, no sólo en la del pago.
+      // El mínimo no imponible se consume una vez por mes (RG 830): si ya se retuvo en la 1ra
+      // quincena, en la 2da el mínimo **ya está consumido** y no corresponde darlo de nuevo.
+      const q = supabase.schema('msa').from('comprobantes_arca')
+        .select('id').eq('cuit', cuit).in('sicore', quincenasDelMes(quincena))
+      const { data } = await (tipoSicore ? q.eq('tipo_sicore', tipoSicore) : q).limit(1)
       return !!(data && data.length > 0)
     } catch { return false }
   }
 
-  // Neto ya pagado en la quincena SIN retención (facturas bajo mínimo / NC negativas) → consumió parte del mínimo.
+  // Neto ya pagado en el MES SIN retención (facturas bajo mínimo / NC negativas) → consumió parte del mínimo.
   // Solo se usa cuando NO hubo retención previa (si la hubo, el mínimo ya está consumido → ver capa 1).
   // Filtra sicore vacío para no doble-contar los que sí retuvieron. Las NC entran negativas y restan.
   const netoPagosPreviosSinRetencion = async (cuit: string, quincena: string): Promise<number> => {
@@ -1949,7 +1968,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         .in('estado', ['pagar', 'pagado', 'echeq', 'conciliado'])
       let suma = 0
       for (const c of (data ?? []) as any[]) {
-        if (!c.fecha_pago || generarQuincenaSicore(c.fecha_pago) !== quincena) continue
+        // 🐞 A-BUG-193 — el período del mínimo es el MES. Antes comparaba la quincena entera,
+        // así que lo pagado en la 1ra no consumía mínimo para la 2da y se otorgaba dos veces.
+        if (!c.fecha_pago || !mismoPeriodoDelMinimo(c.fecha_pago, quincena)) continue
         const tc = c.tc_pago ?? c.tipo_cambio ?? 1
         const neto = ((c.imp_neto_gravado || 0) + (c.imp_neto_no_gravado || 0) + (c.imp_op_exentas || 0)) * tc
         // ⚠️ El descuento pronto pago **baja el neto realmente pagado**, así que consume menos
@@ -2074,7 +2095,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     // Caso normal: positivos.
-    // Capa 1: si YA hubo retención en la quincena → adicional (cualquier positivo califica, sin mínimo).
+    // Capa 1: si YA hubo retención en el MES → adicional (cualquier positivo califica, sin mínimo).
     // Capa 2: si NO hubo retención → ver pagos previos que consumieron parte del mínimo (usa el mínimo más bajo como gate).
     const yaRetuvoPos = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
     if (!yaRetuvoPos) {
@@ -2244,8 +2265,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const quincena = quincenaDePago(fila)
     if (!quincena) throw new Error('No se puede calcular SICORE sin fecha de pago')
 
-    // Capa 1: ¿ya hubo retención en la quincena? → mínimo ya consumido → adicional (sin mínimo).
-    const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+    // Capa 1: ¿ya hubo retención en el MES? → mínimo ya consumido → adicional (sin mínimo).
+    // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+    const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena, tipo.tipo)
 
     let baseImponible = netoFacturaPesos
     let minimoAplicado = 0
@@ -2697,12 +2719,23 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   // Verificar retención previa en AMBAS tablas (facturas + anticipos)
-  const verificarRetencionPreviaAnticipo = async (cuit: string, quincena: string): Promise<boolean> => {
+  /** Igual que la de facturas, pero mirando **las dos tablas** (facturas + anticipos). */
+  const verificarRetencionPreviaAnticipo = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
+    // 🐞 A-BUG-193 — también acá **las dos quincenas del MES**, no sólo la del pago.
+    // 🧨 Y este camino es el que más importaba: **los dos casos medidos tienen el segundo pago como
+    //    ANTICIPO** (MASSAGLIA 30/07, STRINGHINI 29/05). Arreglar sólo el de facturas habría dejado
+    //    vivo justo el que produjo el error (§ MODULO_CONCILIACION 30.9.5).
+    const delMes = quincenasDelMes(quincena)
+    // 🐞 A-BUG-196 — y por **régimen**: el mínimo de Bienes no consume el de Servicios.
+    const qF = supabase.schema('msa').from('comprobantes_arca')
+      .select('id').eq('cuit', cuit).in('sicore', delMes)
+    const qA = supabase.from('anticipos_proveedores')
+      .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).eq('sicore', quincena).limit(1),
-      supabase.from('anticipos_proveedores')
-        .select('id').eq('cuit_proveedor', cuit).eq('sicore', quincena).limit(1)
+      (tipoSicore ? qF.eq('tipo_sicore', tipoSicore) : qF).limit(1),
+      (tipoSicore ? qA.eq('tipo_sicore', tipoSicore) : qA).limit(1),
     ])
     return (d1 && d1.length > 0) || (d2 && d2.length > 0)
   }
@@ -2718,7 +2751,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
-    const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena)
+    // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+    const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena, tipo.tipo)
 
     let baseImponible = netoBase
     let minimoAplicado = 0
@@ -5011,7 +5045,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           {pasoSicoreAnticipo === 'pregunta' && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm font-medium text-blue-800 mb-3">Mínimos por categoría (primera retención en quincena):</p>
+                <p className="text-sm font-medium text-blue-800 mb-3">Mínimos por categoría (primera retención del mes):</p>
                 <div className="space-y-1">
                   {tiposSicore.map(t => (
                     <div key={t.id} className="flex justify-between text-sm">
@@ -5103,7 +5137,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <h3 className="font-semibold text-green-800 mb-3">{tipoSicoreAnticipo.emoji} {tipoSicoreAnticipo.tipo}</h3>
                 {datosSicoreAnticipo.esRetencionAdicional && (
                   <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded mb-3">
-                    ⚠️ Retención adicional en quincena — no se aplica mínimo no imponible
+                    ⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido
                   </div>
                 )}
                 <div className="space-y-1 text-sm">
@@ -5158,7 +5192,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           {pasoSicore === 'tipo' && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-1">
-                <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención quincena):</div>
+                <div className="font-medium text-blue-800">Mínimos por tipo de operación (primera retención del mes):</div>
                 {tiposSicore.map(t => (
                   <div key={t.id} className="text-blue-700">
                     {t.emoji} {t.tipo}: ${t.minimo_no_imponible.toLocaleString('es-AR')} · {(t.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%
@@ -5213,7 +5247,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">💵 Factura USD · TC de pago: <strong>${fmt(tc)}</strong> · Montos en ARS</div>
               )}
               {datosSicoreCalculo.esRetencionAdicional && (
-                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">⚠️ Retención adicional en quincena - No se aplica mínimo no imponible</div>
+                <div className="bg-yellow-100 text-yellow-800 text-xs p-2 rounded">⚠️ Retención adicional en el mes — el mínimo no imponible ya está consumido</div>
               )}
 
               {/* Desglose Gravado / IVA / Total */}
@@ -5258,7 +5292,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
                   {(datosSicoreCalculo.netoPrevio ?? 0) > 0 && !datosSicoreCalculo.esRetencionAdicional && (
                     <div className="mt-1 pt-1 border-t border-gray-200 space-y-0.5">
-                      <div className="flex justify-between text-amber-700"><span>Pagos previos en la quincena (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
+                      <div className="flex justify-between text-amber-700"><span>Pagos previos en el mes (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
                       <div className="text-[11px] text-gray-500">Mínimo ${fmt(datosSicoreCalculo.minimoTipo ?? 0)} − previos → mínimo aplicado ${fmt(datosSicoreCalculo.minimoAplicado)}</div>
                       <label className="flex items-center gap-1 cursor-pointer text-[11px] text-gray-600">
                         <input type="checkbox" checked={!!datosSicoreCalculo.ignorarPrevios}
