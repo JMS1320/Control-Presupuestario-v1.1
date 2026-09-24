@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -105,6 +106,9 @@ function parseFecha(val: any, texto?: string): FechaDetectada | null {
 // ─── POST /api/import-pesadas?accion=confirmar (JSON con decisiones)  ────────
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   const url = new URL(request.url)
   const accion = url.searchParams.get('accion') ?? 'analizar'
 

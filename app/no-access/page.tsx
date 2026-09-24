@@ -13,10 +13,10 @@ export default function NoAccessPage() {
         </CardHeader>
         <CardContent className="text-center space-y-4">
           <p className="text-gray-600">
-            La URL que has intentado acceder no es válida o ha sido revocada.
+            Tu cuenta todavía no tiene un rol asignado en el sistema.
           </p>
           <p className="text-sm text-gray-500">
-            Si crees que esto es un error, contacta al administrador del sistema.
+            Pedile al administrador que te habilite el acceso.
           </p>
         </CardContent>
       </Card>

@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Empresa } from '@/lib/gas-pdf/types'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
@@ -38,6 +39,9 @@ function periodoArchivo(factura: any): { anio: number; mes: number } {
 }
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const url = process.env.GAS_BUSCAR_PDF_URL
     const token = process.env.GAS_AUTH_TOKEN

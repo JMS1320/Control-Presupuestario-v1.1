@@ -39,6 +39,11 @@ body {
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
+
+    /* Curvas de animación. Las built-in de CSS (`ease-out`) son demasiado débiles para UI.
+       Fuente única: si algo anima, sale de acá y no inventa su propia curva. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -91,4 +96,140 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/**
+ * Entrada de contenido que aparece después de un fetch o de un toggle.
+ *
+ * Se usa en las alertas de la pantalla Principal y en los paneles desplegables del Presupuesto:
+ * todos son `{condicion && <Panel/>}`, así que hoy aparecen de golpe y empujan la página.
+ *
+ * Por qué `@starting-style` y NO `animate-in` de tailwindcss-animate: `animate-in` son keyframes,
+ * y un keyframe reinicia desde cero cada vez que se dispara. Los paneles se togglean rápido y
+ * repetido, y una transición retargetea desde donde quedó en vez de saltar al principio.
+ *
+ * La SALIDA es instantánea a propósito: con `{cond && <X/>}` el componente se desmonta y no hay
+ * nada que animar. Es asimétrico, y está bien — salir rápido de un panel que ya no querés ver no
+ * molesta; entrar de golpe sí.
+ *
+ * Va fuera de `@layer`: `@layer utilities` es la directiva de Tailwind, no la de CSS, y mete el
+ * contenido en su propia capa. Un `@starting-style` ahí adentro es pedir problemas.
+ */
+.entrada-suave {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .entrada-suave {
+    opacity: 0;
+    /* Entra desde arriba: como empuja el contenido hacia abajo, bajar hasta su lugar es
+       coherente con lo que le hace al resto de la página. */
+    transform: translateY(-8px);
+  }
+}
+
+/* Menos movimiento, no cero: se conserva el fade —que es lo que comunica «llegó algo nuevo»—
+   y se saca el desplazamiento. */
+@media (prefers-reduced-motion: reduce) {
+  .entrada-suave {
+    transition: opacity 200ms var(--ease-out);
+  }
+
+  @starting-style {
+    .entrada-suave {
+      transform: none;
+    }
+  }
+}
+
+/**
+ * ── Materiales y tipografía (criterio Apple, 2026-09-05) ────────────────────────────────────
+ */
+
+/**
+ * Barra superior translúcida y fija.
+ *
+ * No es decoración: esta app tiene pantallas larguísimas (la Principal scrollea mucho, las tablas
+ * más). Con la barra estática, al bajar **desaparecen el botón del menú y el botón Salir** — o sea
+ * las dos respuestas a "¿a dónde puedo ir?" y "¿cómo salgo?". Fijarla las mantiene siempre a mano.
+ *
+ * Es una capa translúcida con el contenido pasando por debajo, no una franja opaca que se come
+ * alto de pantalla: en una app de tablas el alto es caro.
+ */
+.chrome-superior {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgb(249 250 251 / 0.72);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+
+/**
+ * Borde de scroll en vez de una línea de 1px: donde el contenido se mete abajo de la barra, se
+ * desvanece con un degradado corto. Una línea dura marca un límite que en realidad no existe.
+ */
+.chrome-superior::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  height: 12px;
+  background: linear-gradient(to bottom, rgb(249 250 251 / 0.9), rgb(249 250 251 / 0));
+  pointer-events: none;
+}
+
+/* Sin transparencia: se vuelve sólida y se apaga el blur — no se deja un vidrio a medias. */
+@media (prefers-reduced-transparency: reduce) {
+  .chrome-superior {
+    background: rgb(249 250 251);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* Más contraste: fondo sólido y un borde definido, que es lo que este modo pide. */
+@media (prefers-contrast: more) {
+  .chrome-superior {
+    background: rgb(249 250 251);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: 1px solid rgb(75 85 99);
+  }
+  .chrome-superior::after {
+    display: none;
+  }
+}
+
+/**
+ * Título de pantalla.
+ *
+ * El tracking es **específico del tamaño**: un texto grande con el tracking del cuerpo se lee
+ * despegado, por eso va en negativo al crecer. El leading va al revés que el tamaño: ajustado
+ * arriba, holgado en el cuerpo. Y la jerarquía se hace con **peso**, no sólo con tamaño — pesa
+ * más sin ocupar más lugar, que en una pantalla densa importa.
+ *
+ * En `rem` y no en px para que respete el tamaño de letra que el usuario tenga configurado.
+ */
+.titulo-pantalla {
+  font-size: 1.75rem;
+  line-height: 1.15;
+  letter-spacing: -0.021em;
+  font-weight: 600;
+}
+
+/**
+ * Explicaciones apagables (A-FEAT-84).
+ *
+ * La clase la pone `LayoutApp` en su elemento raíz, según la preferencia de cada usuario. Se apaga
+ * con **una regla de CSS y no con un `if` en cada componente** a propósito: hay que marcar decenas
+ * de textos en pantallas enormes, y pasarles un flag a todos significaría enhebrar un contexto por
+ * medio sistema y volver a renderizar todo al tocar el interruptor. Acá el marcado es una etiqueta
+ * suelta (`data-ayuda`), que no obliga a nada al componente que la lleva.
+ *
+ * ⚠️ Sólo va sobre texto **didáctico**: lo que dice siempre lo mismo, con la base llena o vacía.
+ * Los controles y las alertas de datos no llevan la marca y no se apagan — ver `components/ayuda.tsx`.
+ */
+.sin-explicaciones [data-ayuda] {
+  display: none;
 }

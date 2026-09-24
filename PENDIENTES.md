@@ -340,6 +340,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-03 | 🔴 | Media | Modo Admin facturas — modificar campos no funciona | → [A-BUG-03](#a-bug-03) `@egresos` |
 | A-BUG-11 | 🔴 | Alta | Tarjetas: seleccionar tarjeta no cambiaba la vista — ✅ FIX APLICADO (tabla_bd vs id + hook recarga por schema), falta testear | → [A-TEST-05](#a-test-05) `@extracto` |
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
+| A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
+| **A-BUG-98** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
 
 ### Testing — módulos recientes
 | ID | Estado | Ítem | Detalle |
@@ -350,6 +352,22 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-04 | 🔴 | SICORE estado_quincena + anulación | → [A-TEST-04](#a-test-04) `@egresos` |
 | A-TEST-05 | 🔴 | Tarjetas — probar PDF real | → [A-TEST-05](#a-test-05) `@extracto` |
 | A-TEST-06 | 🟡 | Refactor fechas FASE TEMPLATES (`fecha_pago` separado de venc) — testear en preview ANTES de fase ARCA | → [A-TEST-06](#a-test-06) `@egresos @cashflow` |
+| A-TEST-82 | 🔴 | **Motion base de la UI** (A-FEAT-74) — que el pulsado de los botones se sienta y **no moleste** tras un día de uso · que las 3 alertas de Principal entren suave y **no** salten · que los 12 paneles del Presupuesto entren bien **al toglearlos rápido y repetido** · ⚠️ **el caso que más dudo**: al volver a una pestaña, los paneles que quedaron abiertos **vuelven a animar** (Radix remonta el contenido) — ver si molesta · con *Reducir movimiento* del SO: queda el fade, se va el desplazamiento | → [A-FEAT-74](#a-feat-74) `@general` |
+| A-TEST-83 | 🔴 | **Menú lateral** (A-FEAT-75) — que las 12 secciones abran bien y que el menú **se cierre al elegir** · que los contadores del menú muestren los mismos números que antes · **que el `contable` vea sólo Egresos** (es el caso que no probé: el filtro es `shouldShowTab`, pero no tengo cuenta contable) · ⚠️ **el control clave**: dejar una **nota** en 2 o 3 pantallas distintas y verificar en la BD que `pantalla` viene con el nombre correcto y no vacía — es lo que se rompía al sacar el `TabsList` · que `Cmd+B` abra y cierre · en pantalla chica, que se comporte como sheet · y lo subjetivo: si **2 clicks por navegación** cansa después de un día real de uso | → [A-FEAT-75](#a-feat-75) `@general` |
+| A-TEST-84 | 🔴 | **Chrome fijo + tipografía** (A-FEAT-76) — scrollear una pantalla larga y que el botón del menú y **Salir** queden siempre visibles y **legibles sobre el contenido que pasa por debajo** (es lo que puede fallar: si una tabla clara pasa por atrás, el texto de la barra puede perder contraste) · que el degradado del borde no se note como una franja · con **Reducir transparencia** del SO, que la barra se vuelva sólida · con **Aumentar contraste**, que aparezca el borde definido · que «Principal» se lea bien y que no se extrañe el subtítulo que se sacó · con el tamaño de letra del sistema agrandado, que el título no rompa el layout | → [A-FEAT-76](#a-feat-76) `@principal` |
+| A-TEST-85 | 🔴 | **Avatar de sesión** (A-FEAT-77) — que las iniciales sean las correctas · ⚠️ **el control que importa: que «Salir» siga cerrando sesión de verdad** (se cambió de botón a ítem de menú y el submit ahora es programático) · que el `contable` **no** vea la opción Usuarios · que se vea con qué cuenta estás entrado sin tener que abrir el menú… o decidir que no hace falta · cargar un `avatar_url` a mano en Supabase y ver que aparezca la foto redonda en vez de las iniciales | → [A-FEAT-77](#a-feat-77) `@general` |
+| A-TEST-86 | 🔴 | **`/perfil` y el marco compartido** (A-FEAT-78) — ⚠️ **el control principal: que `/usuarios` siga funcionando entera** (crear cuenta, reenviar mail, copiar link, cambiar rol, revocar), porque se le cambió el layout de alrededor · que el menú **navegue** desde `/usuarios` y `/perfil` a la sección elegida · que un `?seccion=` inventado (`/?seccion=cualquiera`) caiga en Principal y no en blanco · **guardar nombre y foto en `/perfil`** y que el avatar de la barra tome los datos nuevos · que el estado del 2FA sea el real · que un `contable` pueda entrar a `/perfil` pero **no** a `/usuarios` · y que **las notas sigan guardando la pantalla** en la principal, que es lo que el refactor podría haber roto | → [A-FEAT-78](#a-feat-78) `@general` |
+| A-TEST-87 | 🟡 | **Subir foto de perfil** (A-FEAT-79) — ✅ **YA PROBADO 2026-09-05**: bucket creado · un PNG subido **por la pantalla** y visible en el avatar de la barra · **dos subidas seguidas** con la misma ruta y el CDN sirviendo la nueva (SHA distinto — el `?v=` cumple) · validaciones contra el endpoint: sin archivo **400**, PDF **415**, PNG de 3 MB **413**. 🔴 **Falta**: subir un **JPG** (sólo se probó PNG) · elegir **el mismo archivo dos veces** (el input se limpia a propósito para que el 2º intento dispare) · que un `contable` pueda subir la suya · el caso feo: **que la foto de un usuario no se pise con la de otro** · y que la foto se siga viendo **en producción**, donde la CSP la sirve Vercel | → [A-FEAT-79](#a-feat-79) `@general` |
+| A-TEST-88 | 🔴 | **Pantalla de Configuración** (A-FEAT-80) — ⚠️ **otra vez el control principal: que Usuarios siga funcionando entera** (crear cuenta, reenviar mail, copiar link, cambiar rol, revocar) — se le cambió el contenedor por segunda vez en el día · que `/usuarios` redirija y no dé 404 · que las 3 secciones abran · que lo que dice **Roles** coincida con lo que un `contable` ve de verdad al entrar (es lo que la pantalla promete) · que los CUIT de **Aplicación** sean los correctos · que un `contable` **no** pueda entrar a `/configuracion` ni vea la opción en su menú | → [A-FEAT-80](#a-feat-80) `@general` |
+| A-TEST-89 | 🔴 | **Roles y Permisos** (A-FEAT-81) — que el contador de cuentas por rol dé bien (hoy: 2 admin, **0 contable** — verificar que diga «sin cuentas» y no «…») · ⚠️ **el control de fondo: entrar con una cuenta `contable` y contrastar** que ve exactamente lo que la matriz de Permisos dice, ni más ni menos — si no coincide, la pantalla miente y es peor que no tenerla · verificar **una por una** las 6 filas de la tabla de administración abriendo el archivo que cada una indica, porque **esas están escritas a mano** | → [A-FEAT-81](#a-feat-81) `@general` |
+| A-TEST-90 | 🟡 | **Permisos de roles editables** (A-FEAT-82) — ✅ **PROBADO 2026-09-05** (tabla creada por el usuario): la app **lee de la base** (`desdeLaBase: true`, admin 12 / contable 1) · **guardado por la pantalla**: se agregó Cash Flow a `contable`, toast OK, contador 1→2, y **releído de la base persistió** · **candado 1 (UI)**: `admin` sin botón de editar · **candado 2 (endpoint)**, salteando la UI con un PATCH a mano: admin **403**, sección inventada **400**, rol inexistente **404** · ↩️ **la prueba se revirtió**: `contable` volvió a `['egresos']` y `admin` quedó intacto con sus 12. 🔴 **FALTA**, y son los dos que no puedo hacer yo: **(1) candado 3 — el trigger**, que necesita un `UPDATE` directo en la BD (`update public.roles set secciones=array['egresos'] where id='admin'` debe **fallar**); es la puerta que importa, porque el endpoint usa `service_role` y saltea la RLS. **(2) Todo lo que necesita una cuenta `contable` real**: que vea exactamente las secciones asignadas, que **no** entre por `/?seccion=sueldos` a mano, y qué pasa con un rol sin ninguna sección | → [A-FEAT-82](#a-feat-82) `@general` |
+| A-TEST-91 | 🔴 | **Foto de perfil en un solo campo + preferencias personales** (A-FEAT-83) — **la foto, por las cuatro vías**: elegir archivo · **arrastrar** desde el escritorio · **arrastrar desde otra pestaña** (eso trae un link, no un archivo) · **Ctrl+V** de una captura y Ctrl+V de un link · y **pegar el link a mano** + «Usar». ⚠️ **El link tiene que quedar guardado en NUESTRO Storage** — mirar la URL después de guardar: si quedó apuntando al dominio ajeno, la CSP la bloquea y el avatar se ve como iniciales sin ningún error. Probar también un link **de la página** en vez de la imagen (tiene que decir «es de una página»), uno de **más de 2 MB**, y uno **inventado**. · **Quitar** la foto y que vuelvan las iniciales · que la barra de arriba tome la foto nueva. **Preferencias**: sección al entrar (elegir una, salir, volver a entrar y caer ahí) · que `?seccion=` **le gane** a la preferencia · menú abierto al arrancar · apagar los contadores y que **no se pida** `/api/pendientes` · preguntar antes de salir. ⚠️ **El control de la sección huérfana**: elegir una sección, sacársela al rol desde Configuración → Permisos, y que el perfil avise en ámbar en vez de quedar en blanco | → [A-FEAT-83](#a-feat-83) `@general` |
+| A-TEST-92 | 🔴 | **Explicaciones apagables** (A-FEAT-84) — Perfil → **Mostrar las explicaciones**, apagarlo, y recorrer las 4 pantallas marcadas (**Perfil · Configuración · Facturas ARCA · Sector Productivo**). ⚠️⚠️ **El test que importa es el que busca lo que NO tiene que desaparecer**, porque ese error es silencioso: con las explicaciones apagadas **tienen que seguir viéndose** el aviso de la foto que no carga · el de la sección de inicio huérfana · el «Falta crear la tabla de roles» · el «sin ninguna sección, quien tenga este rol no ve nada» · el estado del 2FA · «Esta acción NO se puede deshacer» · los avisos de SICORE y de quincena distinta. Si alguno se fue, está mal marcado. · Que **el interruptor no se apague a sí mismo** (su propia explicación queda) · que se note en el **menú de Configuración** (las bajadas de cada ítem, sólo visibles en pantalla grande) · y que **no quede ninguna caja vacía** donde antes había un recuadro con texto | → [A-FEAT-84](#a-feat-84) `@general` |
+| A-TEST-93 | 🔴 | Test | **Entrar con Google** (A-FEAT-85) — **camino A (el admin invita)**: invitar, poner la clave, entrar con clave · **cerrar sesión y entrar con Google con ESE MISMO mail** → tiene que ser **la misma cuenta** (mismo rol, y el TOTP ya inscripto no se pide de nuevo desde cero), no una cuenta nueva. **Camino B (se anota solo)**: entrar con Google con un mail que no existe → cuenta creada **sin rol** → `/no-access` · aparece en Configuración → Usuarios con «sin rol» · el admin le asigna uno · vuelve a entrar y ya ve sus secciones. ⚠️⚠️ **El test que importa es el candado de la base** ([A-SEC-07](#a-sec-07)), y hay que hacerlo **a mano, salteando la UI**: con la sesión de una cuenta **sin rol**, pegarle a PostgREST con la `anon_key` + esa cookie → tiene que devolver **0 filas**, no la tabla. Si devuelve datos, el `/no-access` es sólo un cartel. · **Admin con Google sigue exigiendo 2FA** · que el nombre y la foto propios **no los pise Google** al volver a entrar (ver A-FEAT-85: van en claves propias) · que la foto de Google se vea (baja a nuestro Storage; si quedó apuntando a `googleusercontent.com`, la CSP la bloquea en silencio) · `volver_a` después del OAuth · «Recordarme» con Google | → [A-FEAT-85](#a-feat-85) `@general` |
+| A-TEST-94 | 🔴 | Test | **Recuperar el segundo factor** (A-FEAT-86) — **desde `/perfil`**: con el 2FA puesto, «cambiar de dispositivo» → sale QR nuevo → el código viejo **deja de servir** y el nuevo entra · «quitar» → al volver a entrar te pide inscribirlo de nuevo (si sos admin) . **Desde Usuarios**: un admin resetea a otro, el otro entra y cae en el alta del 2FA. ⚠️⚠️ **Los candados, que son lo que hay que probar salteando la UI**: que **no** se pueda resetear el 2FA con una sesión `aal1` (pegarle al endpoint a mano estando trabado en el desafío → **403**) · que un `contable` **no** pueda pegarle a ese endpoint · y que **no puedas resetearte a vos mismo** desde Usuarios (para eso está `/perfil`, que sí exige `aal2`) | → [A-FEAT-86](#a-feat-86) `@general` |
+| A-TEST-95 | 🔴 | Test | **Invitar a alguien de punta a punta** (A-FEAT-87) — con una cuenta **de verdad, que no sea tuya**: invitar desde Configuración → Usuarios · ⚠️ **ver si el mail llega** (el mailer interno de Supabase limita a ~2/hora: si no llega, usar «Copiar link», que es el respaldo previsto) · abrir el link → tiene que caer en **Bienvenida**, no en el login ni en un error · **definir contraseña** y salir y entrar con ella · repetir con otra persona pero **vinculando Google** en vez de contraseña, y que entre con Google · y una tercera que haga **las dos** y entre indistinto. ⚠️ **Lo que más se rompe**: que el link **vencido o ya usado** dé un mensaje que se entienda y no una pantalla en blanco · que quien ya tiene contraseña **no** pueda usar `/bienvenida` de otro · y que al terminar vea **sus** secciones según el rol que le pusiste | → [A-FEAT-87](#a-feat-87) `@general` |
+| A-TEST-96 | 🔴 | Test | **Inicio configurable** (A-FEAT-88) — elegir widgets, reordenarlos, salir y volver: tienen que quedar · quitar todos y que la pantalla **diga qué hacer** en vez de quedar en blanco · que cada widget muestre **lo mismo** que la pantalla de la que salió (comparar número por número: si difieren, se duplicó la lógica en vez de compartirla) · que el **camino al detalle** de cada uno lleve a donde se verifica el número. ⚠️⚠️ **El candado, salteando la UI**: con una cuenta `contable`, escribir a mano un widget de una sección que su rol NO tiene (`updateUser({data:{preferencias:{widgets:['cashflow…']}}})`) y recargar → **no se tiene que ver**. Si aparece, la preferencia está decidiendo un permiso · y que un widget que falla **no rompa los demás** | → [A-FEAT-88](#a-feat-88) `@principal` |
+| **A-TEST-97** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-98). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-97](#a-test-97) `@general` |
 
 ### Seguridad
 *👤 **Dueño desde 2026-09-02: Javier**, segundo desarrollador, en su propio clon y su propia rama
@@ -361,6 +379,16 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
+| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2. **2026-09-03:** los P2 (9) *RLS real* y (10) *auth Supabase real* quedaron **escritos y listos para correr** en `scripts/57-rls-login-cerrar-anon.sql` (revoca TODO a `anon`, no sólo la escritura) — **la BD todavía no se tocó**. Ver [A-SEC-03](#a-sec-03) | → [A-SEC-01](#a-sec-01) `@general` |
+| **A-SEC-07** | 🔴 | **Alta** | **La policy de `scripts/57` le abre la base a cualquier sesión, tenga rol o no.** Decía `USING (auth.uid() IS NOT NULL)`: una cuenta sin rol —a la que la app manda a `/no-access`— igual llega a PostgREST con su cookie y la `anon_key` del bundle, y **lee y escribe las 72 tablas**. Hoy se disimula porque las cuentas sólo nacen de una invitación del admin; con el auto-registro de [A-FEAT-85](#a-feat-85) pasa a ser una puerta abierta. Hallado 2026-09-07. ✅ **Corregido en el script**: `public.tiene_rol()`, que lee `app_metadata.role` del JWT (que el propio usuario no puede escribir). 🔴 **La BD sigue sin tocarse** — se corre junto con el resto de `scripts/57` | → [A-SEC-07](#a-sec-07) `@general` |
+| **A-SEC-08** | 🔴 | Media | **Faltan códigos de recuperación del 2FA — con un solo admin no hay red.** [A-FEAT-86](#a-feat-86) cubre los dos casos normales, pero los dos dependen de algo: el de `/perfil` exige estar adentro, y el de Usuarios exige **otro** admin con `aal2`. Si queda **un solo admin** y pierde el autenticador, no hay salida desde la app: hay que tocar la base con `service_role`, que es exactamente lo que pasó el 2026-09-07. Fix de fondo: **al inscribir el TOTP, generar N códigos de un solo uso**, mostrarlos una vez y guardarlos **hasheados**; usar uno vale como segundo factor (algo que tenés) y dispara la reinscripción. ⚠️ Supabase no los trae: hay que implementarlos | → [A-SEC-08](#a-sec-08) `@general` |
+| **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). **2026-09-03:** con el login real la URL dejó de tener llave, así que el rol pasó a salir de la **sesión** y la ruta se guarda **entera** (recortar el primer segmento pasó a ser un bug). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
+| A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
+| A-FEAT-72 | 🔴 | Feat | **Cinta de diagnóstico en las notas** — los últimos ~50 eventos (error + `archivo:línea`, llamada que falló con su código PostgREST) viajan con la nota. Convierte *"me da un error"* en un caso resuelto. ⚠️ **Se construye con lista blanca**, no borrando secretos | → [A-FEAT-72](#a-feat-72) `@general` |
+| **A-SEC-03** | 🟡 | **Alta** | **Login real + módulo Usuarios activo.** 🔄 **CAMBIO DE RUMBO 2026-09-03**: en vez del *sign-in silencioso* con cuenta compartida que decía el plan de abril, se hizo **página de login, cuentas individuales, 2FA obligatorio para admin y `anon` sin permisos** — motivos en `MODULO_USUARIOS.md` § 0. ✅ **Código hecho** (rama `feature/login`, build OK, **sin commitear**): middleware, `/login`, 2FA, signout, la app en la raíz, las rutas viejas ya no dan acceso, 6 lecturas del rol desde la URL migradas a la sesión, **pantalla `/usuarios`** (alta con link de invitación, cambio de rol, revocación) y **barra de sesión con botón Salir**. 🔴 **Falta**: crear cuentas · settings de Auth (MFA/HIBP) · correr `scripts/57` (RLS) y `scripts/58` (roles) · **testear todo** ([A-TEST-81](#a-sec-03)). El bug de `VistaEgresos` que este ítem daba por abierto **ya estaba arreglado** | → [A-SEC-03](#a-sec-03) `@general` |
+| **A-TEST-81** | 🔴 | Test | **El login, de punta a punta** — entrar como admin (con 2FA) y como contable · que el contable siga viendo sólo Egresos · que el admin **no** haya perdido permisos al desaparecer la ruta-password (DDJJ IVA, quincena SICORE, botón Revertir, secciones de Vista de Pagos) · que las ~103 pantallas escriban con RLS puesta · logout · `volver_a` · cuenta sin rol → `/no-access` · **y la pantalla `/usuarios`**: crear cuenta + usar el link de invitación · cambiar rol · revocar · que el contable **no** pueda entrar a `/usuarios` ni a `/api/admin/*` · que **no** te dejes cambiar tu propio rol | → [A-SEC-03](#a-sec-03) `@general` |
+| **A-SEC-05** | 🔴 | Media | **CSP con `unsafe-inline` y `unsafe-eval`** — el `Content-Security-Policy` del `middleware.ts` los necesita porque Next inyecta su bootstrap inline. Con eso puesto, el CSP **no frena un XSS**, que es justo para lo que sirve. Fix: CSP por **nonce** (generar el nonce en el middleware y pasarlo a Next). Se difirió para no mezclarlo con el login | → [A-SEC-05](#a-sec-05) `@general` |
+| **A-SEC-06** | 🟡 | **Alta** | **Las 29 API routes usan `service_role` → saltean RLS por diseño.** Su única defensa es el middleware: si un día cambia el `matcher`, quedan abiertas de par en par, y con `service_role` no hay red abajo. Además hoy una llamada sin sesión devuelve **307 al login** en vez de **401**, que rompe cualquier cliente. ✅ **Parcial 2026-09-03**: `/api/*` ya devuelve **401 JSON** en vez de 307, y las routes nuevas de `/api/admin/*` validan sesión + rol + `aal2` por su cuenta (`lib/auth/guard-admin.ts`). ✅ **HECHO 2026-09-21**: las 35 routes restantes (41 handlers) validan sesión + rol con `exigirSesion()` (`lib/auth/guard-sesion.ts`); `tsc` sin regresiones (113 → 113). 🟡 Queda **testear** desde la app con sesión y sin sesión → A-TEST-81. Fix: que **cada route valide la sesión** | → [A-SEC-06](#a-sec-06) `@general` |
 | A-TEST-82 | ✅ | Test | **TESTEADO 2026-09-04 por el usuario** (botones y conteo OK). ⚠️ Sin ejercitar: el **mensaje de error** de la supervisión — no volvió a fallar. **Archivo digital, tanda 2026-09-03** — 4 cosas: (1) los 3 botones renombrados se entienden sin explicación · (2) el panel «PDFs sin vincular» avisa en ámbar cuando venís de «Contar» · (3) si una tanda falla, **se ve el motivo escrito** y reintenta con 1 archivo · (4) **el mail de supervisión** trae faltantes agrupadas por motivo y huérfanos con su ⭐. ⚠️ (4) requiere **re-desplegar el Apps Script (v0.9.17)** | → [A-FEAT-74](#a-feat-74) `@egresos` |
 | **A-FEAT-74** | ✅ | Feat | **El mail de supervisión sirve para ACTUAR, no sólo para informar** — faltantes agrupadas por **motivo** (Portal / no se busca / debería llegar por mail) y huérfanos con su **candidata ⭐**. ✅ HECHO 2026-09-03, sin testear ([A-TEST-82](#a-feat-74)) | → [A-FEAT-74](#a-feat-74) `@egresos` |
 | **A-FEAT-75** | ✅ | Feat | **🚩 Marcar cualquier fila «para revisar»** — el banderín se cuelga del **registro**, no de una lista de tareas, así el hallazgo no se pierde donde sea que aparezca. Se ve en **Principal → Para revisar** y en la fila misma. Cerrar **exige decir qué se hizo**. ✅ HECHO 2026-09-04, sin testear ([A-TEST-83](#a-feat-75)) | → [A-FEAT-75](#a-feat-75) `@general @egresos` |
@@ -550,6 +578,9 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-FEAT-169 | 🔵 | Media | 🗑️ **Desactivar la VISTA DE PAGOS de Egresos — ANÁLISIS HECHO 2026-09-23, listo para desarrollar.** 🔎 **Qué es**: el botón verde *«💰 Vista de Pagos»* de **Egresos → Facturas ARCA**, al lado de SICORE. Abre un modal de **2.512 líneas** (`vista-facturas-arca.tsx` 9177-11688). 📏 **Cuánto se puede sacar, medido**: el botón y su `onClick` (~130 líneas), el modal entero (**2.512**), su modal de TC (12264-12300), `guardarTcPagoPagos` (3337-3350), **10 estados exclusivos** (`facturasPagos`, `templatesPagos`, `sueldosPagos`, `anticiposPagos`, `cuentasContablesPagos`, `filtroOrigenPagos`, `filtrosPagos`, `filtroBusquedaPagos`, `filtroSoloNCPagos`, `cargandoPagos`) más los 3 del TC, y **2 ramas muertas** `if (mostrarModalPagos)` (3843 y 4257) que sólo refrescan la lista del propio modal. **≈2.700 líneas.** 🔑 **Verificado uno por uno: los 10 estados tienen CERO usos fuera del modal.** 🎯 **Y la pregunta del usuario —*«salvo que sea código único que usa Cash Flow»*— tiene respuesta: NO lo es.** El modal tiene **su propia `agruparPagos` y `desagruparPago` locales** (9460 y 9506), mientras **Cash Flow usa las del lib** (`lib/pagos/agrupar.ts`). **Son dos implementaciones distintas**: borrar el modal se lleva la copia y no toca la de Cash Flow. 🛑 **`lib/pagos/agrupar.ts` NO se toca.** ✅ **Lo que hace la Vista de Pagos y ya existe en Cash Flow**: agrupar/desagrupar, el **TC de pago** (`vista-cash-flow` 471-489) y el filtro por origen. ⚠️ **Lo que hay que mirar ANTES de borrar**: las ediciones **inline** del modal (cuenta contable, detalle, fecha de pago) y el **filtro de sólo NC** — confirmar con el usuario que no le falten en Cash Flow. 🛑 **NO SE BORRA HASTA PROBAR UNA FC EN DÓLARES — decisión del usuario 2026-09-23**: *«hay un tema con los pagos de FC en dólares que usan TC que no he tenido casos pero el funcionamiento debe estar contemplado. Si no, tal vez sea mejor dejar documentado para primero probar con una FC en dólares, y si anda borramos todo; y si no anda tendremos el funcionamiento de la Vista Pagos desde Egresos para contrastar»*. 🔑 **La pantalla vieja vale como REFERENCIA DE CONTRASTE**, y eso es un motivo para no apurar el borrado: una vez borrada, si el TC falla en Cash Flow no queda contra qué comparar. 📊 **COMPARACIÓN FUNCIONAL HECHA 2026-09-23** — qué de la Vista de Pagos ya existe en Cash Flow: ✅ **agrupar y desagrupar** (Cash Flow usa `lib/pagos/agrupar.ts`; el modal tiene copia propia) · ✅ **TC de pago de facturas USD**: Cash Flow **sí lo intercepta** al pasar a `pagar` (el «HOOK TC PAGO USD», `vista-cash-flow` 714-727) y después sigue con SICORE — hasta está comentado que el orden es a propósito · ✅ **edición inline** de cuenta contable, detalle y fecha de pago · ✅ **filtro por origen**. ⚠️ **La única diferencia REAL encontrada en dólares**: la Vista de Pagos procesa **varias facturas USD en COLA** (`colaUSDSinTC`, pide TC una tras otra); **Cash Flow cambia de estado de a UNA fila** (`filaParaCambioEstado` es singular), así que no necesita cola — **pero eso hay que confirmarlo pagando de verdad**. ❓ **Lo único que no encontré en Cash Flow**: el filtro de **sólo notas de crédito**. Preguntarle al usuario si lo usa. 🌿 **Va en RAMA APARTE**, pedido suyo: *«lo único que debemos ver es de hacerlo en una rama aparte por las dudas»*. 📌 **Motivo del usuario**: *«ya no lo uso hace mucho… agrupar siempre lo hago desde Cash Flow»*, y quiere **sacar el código, no sólo el botón** | → [A-FEAT-33](#a-feat-33) `@egresos` |
 | A-FEAT-168 | 🔵 | 🔴 **Alta** | 💳 **AGRUPAR UN ANTICIPO/SALDO A FAVOR JUNTO CON LAS FACTURAS.** Propuesto por el usuario 2026-09-22 sobre un caso real: *«¿yo podría crear el anticipo y luego agruparlo junto con las facturas agrupadas? Quedaría un grupo de 3 FC más 1 anticipo. ¿Eso no se puede?»*. 🔑 **Tiene razón y es el mismo patrón que ya se resolvió para SUELDOS** ([A-FEAT-33](#a-feat-33)): el banco debita **una sola línea** y el sistema tiene N filas; sin poder agruparlas, ninguna fila vale lo que el banco debitó y **el movimiento no concilia nunca**. 🛑 **Hoy NO se puede, por dos motivos concretos**: (1) el botón Agrupar acepta sólo `ARCA`, `TEMPLATE` y `SUELDO` — un anticipo queda fuera; (2) **`public.anticipos_proveedores` no tiene columna `grupo_pago_id`**, así que aunque se habilitara el botón **no hay dónde guardar el vínculo**. ⚠️ Cambio de ESTRUCTURA: se avisa antes de aplicarlo (la BD es una sola). 📌 Y al agrupar, el **monto del grupo** y el **Detalle de Pago** tienen que incluir la línea del anticipo, o el PDF vuelve a mostrar menos de lo transferido. 🧾 **Caso testigo que lo originó**: [A-DAT-55](#a-dat-55) — Alcorta 10/06/2026, $4.480,00 transferidos de más. 💡 **Alternativa descartada**: vincular el movimiento a *grupo + anticipo* por doble vínculo (la auditoría ya lo considera legítimo para `ARCA`+`anticipo`), pero **el Extracto no tiene forma manual de sumar un anticipo** y el motor sólo los arma cuando la descripción del banco dice «anticipo». Agrupar es más limpio: deja **una sola fila** que vale exactamente lo que el banco debitó | → [A-FEAT-33](#a-feat-33) [A-DAT-55](#a-dat-55) `@cashflow/agrupar @extracto/conciliacion` |
 | A-DAT-55 | 🔵 | Media | 💸 **Alcorta 10/06/2026: se transfirieron $4.480,00 DE MÁS y el movimiento no puede conciliar.** Lo trajo el usuario 2026-09-22 cruzando el extracto de Galicia contra el Cash Flow: *«hay 2 que marcan diferencias»*. 🔑 **La causa es el MÍNIMO NO IMPONIBLE de Ganancias aplicado DOS VECES.** SICORE Bienes tiene un mínimo de **$224.000** que se consume **una sola vez por proveedor y por quincena** *(así lo acumula el sistema; ver [A-DEC-26](#a-dec-26))*; en el detalle que se envió se aplicó entero en la FC 6115 (que lo consumió todo) **y otra vez** en la FC 6152. Como la alícuota es 2 %, el efecto es exactamente **2 % × $224.000 = $4.480,00**. ✅ **El sistema HOY está bien**: certificado **00002026000034** (vigente) con retención total **$65.380,71** y las tres bases correctas (6115 con mínimo $224.000 → $13.178,94 · 2734 sin mínimo → $19.526,40 · 6152 sin mínimo, neto post-descuento $1.633.768,56 → $32.675,37). El certificado **00002026000030** quedó **anulado** y era el que tenía la 6152 en $28.195,37. 🧨 **El desfase es de la TRANSFERENCIA, no del registro**: banco **$4.165.672,09** vs. aplicado a comprobantes **$4.161.192,09**. ⚠️ **Y la retención NO se puede bajar para que cierre la resta**: está certificada y la quincena `26-06 - 1ra` está cerrada — Alcorta se toma el crédito por los $65.380,71 completos, así que **los $4.480 los puso MSA**. 📌 **Los $4.480 son un CRÉDITO contra el proveedor, no un gasto**: meterlos dentro del grupo dejaría una factura cancelada por más de lo que vale e inflaría el gasto del período. 🎯 **Destino**: saldo a favor de $4.480 con fecha 10/06, agrupado con las 3 FC → [A-FEAT-168](#a-feat-168), y se descuenta del próximo pago. ⏳ **Pendiente de avisar a Alcorta** con el detalle corregido | → [A-FEAT-168](#a-feat-168) `@cashflow/detalle-pago @extracto/conciliacion` |
+| A-TEST-143 | 🔵 | 🔴 **Alta** | 🔐 **Entrar con tu LOGIN después del merge a `desarrollo`** (2026-09-23). **Qué probar vos:** en la preview de **`desarrollo`**, entrá con tu usuario de Google y verificá que **(1)** te deje pasar; **(2)** el **menú lateral** muestre las secciones que te tocan; **(3)** una pantalla que ESCRIBA —conciliar un movimiento, cambiar un estado— **funcione**: las 35 rutas de API ahora **exigen sesión**, y si algo quedó sin cookie va a devolver 401 en vez de guardar; **(4)** el botón de **notas** y la **marca** 🚩 sigan apareciendo — van montados en toda la app y el merge los movió adentro del layout nuevo. 👥 **Y después habilitá a Ulises**: es el punto de todo esto. 🔴 **Adversario**: sin loguearte, la app **no** tiene que dejarte operar. ⚠️ **Si algo falla, avisá antes de seguir** — `main` sigue en el 02/08 y no se toca hasta que esto ande | → [A-SEC-06](#a-sec-06) `@principal` |
+| A-OP-15 | 🔵 | Media | 📏 **El BASELINE de `type-check` hay que volver a medirlo: el número viejo estaba RECORTADO.** Descubierto 2026-09-23 al mergear a `desarrollo`. 🔑 **Qué pasaba**: `npx tsc --noEmit` devolvía **2** errores, los dos en `.next/dev/types/validator.ts` — un archivo **generado** que el `npm run dev` deja **truncado a medio escribir** (el síntoma ya está descrito en `CLAUDE.md` § Trabajo en paralelo, regla 3). Un error de sintaxis ahí **corta el chequeo antes de tiempo** y el resto del código **ni se analiza**. 🧮 **Borrando ese archivo generado, el conteo real de `desarrollo` da 279.** ⚠️ **Entonces el «110» que veníamos usando como baseline pudo haber sido un número recortado** — y un control que compara contra un baseline falso **no detecta lo que tiene que detectar** (§ `CLAUDE.md` 🧮). ✅ **Lo que sí se verificó en el merge**: los 3 archivos con conflicto quedaron **sin un solo error propio**, y los 279 caen en archivos viejos (`vista-facturas-arca` 57, `vista-sector-productivo` 51, `panel-margen` 17…), o sea **preexistentes de las dos ramas**. 🔧 **Qué hacer**: borrar el generado antes de medir (o excluir `.next`), fijar el baseline nuevo y anotarlo en `ERRORES_CONOCIDOS.md` | → [A-OP-07](#a-op-07) `@principal` |
+| A-OP-16 | 🔴 | 🔴 **Alta** | 💥 **CUATRO IDs chocados entre las dos ramas — lo destapó el merge del 2026-09-23, y NO se renumeró nada todavía.** `A-BUG-97` · `A-BUG-98` · `A-TEST-82` · `A-TEST-83`: cada uno nombra **dos pendientes distintos**, uno de JMS y otro de Javier. 📅 **Quién llegó primero, fechado por el commit que escribió la fila** — `A-BUG-97`: Javier 05/09 · JMS 11/09 → **el último es JMS**. `A-BUG-98`: JMS 04/09 · Javier 18/09 → **último Javier**. `A-TEST-82` y `A-TEST-83`: JMS 04/09 · Javier 05/09 → **último Javier**. 🛑 **Por qué NO lo resolví solo**: la regla 12 dice *renumerar al que llegó último*, y en 3 de los 4 ese es **Javier**. Renumerar IDs ajenos toca su documentación, sus commits y su trabajo en curso — es justo lo que la § 👥 manda **acordar con el otro**, no decidir de un lado. **Se le avisa y se acuerda.** 🔑 **Y la lección de fondo**: la regla 12 dice que el espacio de IDs *«es la única de las 13 que SÍ cruza clones»*, y acá quedó demostrado: **dos personas inventaron el mismo ID sin tocar la misma línea, y git no vio nada raro hasta el merge — tres semanas después.** El control lo agarró al primer intento después de integrar; **antes no podía verlo nadie** | → [A-OP-15](#a-op-15) `@principal` |
 | A-BUG-189 | 🟢 | Media | 🔎 **Buscar por CONTRAPARTE también miraba sólo lo cargado.** ✅ **HECHO 2026-09-22.** Lo vio el usuario: *«acabo de buscar por contraparte en extracto bancario y me buscó sobre los 200 movimientos de preset»*. 🔑 **Es [A-BUG-162](#a-bug-162) a medias**: cubrí el buscador de **texto** y dejé afuera el filtro de **proveedor**, que también filtra en memoria sobre lo que quedó cargado. Ahora los dos disparan la carga completa de la cuenta. 🧨 **Es § 30.9.5 por quinta vez en cuatro días** — *se arregló un camino de los dos*. 📌 Queda escrito en el código: **cualquier filtro client-side nuevo tiene que entrar en esa lista**, o repite el problema de siempre — devolver cero sobre un subconjunto **sin decir que era un subconjunto** | → [A-BUG-162](#a-bug-162) `@extracto` |
 | A-FEAT-150 | 🔵 | 🔴 **Alta** | 📒 **EL EXPORT CONTABLE DE CAMPAÑA — y el usuario pidió que se le RECUERDE en cada sesión.** Textual 2026-09-13: *«debemos ir preparando el export contable de campaña. Ya hay pendiente de desarrollarlo, pero preciso que me lo recuerdes siempre»*. 🔔 **Por eso está también en `MEMORY.md` § REVISAR AL ABRIR SESIÓN**: no es un pendiente más, es lo que hay que traer a la mesa cada vez. ⏱️ **Tiene fecha y no la pone nadie**: balance **25/26**, corte **30/06/2026**, al contador el **01/10/2026**. 🧭 Es la bajada concreta de [A-FEAT-09](#a-feat-09) — *que los papeles de trabajo sean un export del sistema* — recortada a **una campaña**, que es la unidad con la que trabaja el usuario. 🔑 **Por qué «ir preparando» y no «desarrollar»**: cada cosa que se ordena en el camino (el estándar por origen, el audit, la imputación por `nro_cuenta`, los templates con su `tipo`) **es material de ese export**. Si se deja para el final, el export se convierte en un proyecto; si se prepara al pasar, termina siendo un botón. 📌 **Lo que ya juega a favor**: [A-FEAT-145](#a-feat-145) mide qué tan parejo está el dato, [A-DAT-48](#a-dat-48) pone la cuenta contable por número, y [A-DEC-12](#a-dec-12) define qué costos activan — sin esa decisión el export sale con una valuación parcial | → [A-FEAT-09](#a-feat-09) [A-DEC-12](#a-dec-12) `@egresos @productivo @transversal` |
 | A-FEAT-151 | 🔵 | Media | 📨 **Cerrar el circuito del mail: saber si SE ENVIÓ, sin depender de que alguien avise.** Planteado por el usuario 2026-09-13 con dos ideas: *«una opción es agregar mejora de que GAS vea si se enviaron esos mails, viendo por asunto. Otra es que si yo los borro sin decirle que genere el borrador, eso se toma que no se envió»*. 🔴 **La búsqueda POR ASUNTO no sirve, y está medido**: hay **22 mails y sólo 11 asuntos distintos** — `Detalle de pago — MASSAGLIA ALDO ENRIQUE` aparece **4 veces**. Buscando por asunto no se puede saber *cuál* se mandó. ✅ **Lo que sí sirve: el `gmail_draft_id`, que es único y ya está guardado en los 22.** 🔑 **Y da un control gratis, del tipo «el mismo dato por dos caminos»**: en Gmail, **al enviar un borrador el draft DEJA DE EXISTIR**. Entonces GAS pregunta por ese id — *sigue ahí* = no se envió · *no está* = se envió (o se borró a mano, que se distingue buscando el mensaje en Enviados). ⚖️ **La regla provisoria que propone el usuario** —*«si se pidió que se genere en Gmail, se debe suponer que se mandó»*— **hoy daría los 22 por enviados**, y el hueco quedaría sólo en los pagos que **nunca llegaron a borrador**. Es una aproximación razonable **mientras no esté GAS**, pero hay que marcarla como supuesto en la pantalla, no como hecho | → [A-FEAT-147](#a-feat-147) `@egresos/detalle-pago` |
@@ -1006,6 +1037,21 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 | B-FEAT-17 | 🔴 | Media | **Precios de mercado desde web (entresurcosycorralesya.com)** — traer Prom.Kilo / Kilo+ / Kilo− / Bulto por categoría-rango (URL parametrizable `?desde=&hasta=`) para poblar los precios del análisis de engorde según nuestros kilajes/categorías. **La tabla se carga por JS** (no viene en el HTML). **ENDPOINT ENCONTRADO (2026-07-09):** `https://www.entresurcosycorralesya.com/ajax-modulo-ternero.php?desde=YYYY-MM-DD&hasta=YYYY-MM-DD` → devuelve la tabla HTML completa (15 filas, 8 cols: Categoría, Cantidad, Prom.Kilo, Kilo+, Kilo−, Prom.Bulto, Bulto+, Bulto−). Server-side, sin CORS issue vía API route. **HECHO (2026-07-09):** `app/api/precios-mercado/route.ts` (param `sexo=macho/hembra` → ternero/ternera, excluye Holando, parsea límites de peso). En el análisis: panel "Traer precios" + botón `mkt` por segmento/etapa que autopobla. **Matemática acordada:** base = **Kilo+ (máx) del rango asignado a su extremo liviano (pesoLo), interpolado** por kg NETO (post-desbaste) × (1+prima% calidad, editable default 0). Sexo derivado de la Fuente. Resalta el rango usado. **Ojo:** el sitio publica con demora → días recientes vienen VACÍOS (default de fechas ya termina 3 días atrás; mensaje claro si no hay datos). El usuario reportó que el sitio no abría ni desde Chrome (2026-07-09) → verificar si es caída temporal del sitio. `@productivo` |
 | B-FEAT-16 | 🔴 | Media | **Import pesadas SIN dedup** — `productivo.pesadas_terneros` solo tiene PK en `id` (NO unique por `ternero_id+fecha`, verificado 2026-07-09). Re-importar un animal sobre una fecha ya cargada **duplica** la pesada en silencio. Columnas del historial = por fecha (mismo día → misma columna). Evaluar: unique constraint `(ternero_id, fecha)` o chequeo previo en el import. (2026-07-09) `@productivo @importar` |
 | B-FEAT-13 | 🔴 | Media | **Organización de mails propaganda** (2º módulo de mail, junto al de FC). **Fase 1 REVISIÓN** = entender qué remitentes van a qué etiqueta/carpeta → herramienta **YA hecha**: `gas-buscar-pdf/ReporteEtiquetas.gs` (CSV label·remitente·count). **Fase 2 AUTO-MOVER** (sin desarrollar): replicar el movimiento manual (de:X → etiqueta Y + sacar de Recibidos). Luego se **desactiva la revisión** y queda solo el auto-mover. Reportes pueden ir a `sanmanuel.sp`. (2026-06-27) `@general` |
+| A-FEAT-74 | 🟡 | Baja | **Motion base de la UI** — la app no tenía vocabulario de movimiento propio: sólo los defaults de shadcn. ✅ **HECHO 2026-09-05, sin testear ([A-TEST-82](#a-test-82))**, rama `home-dashboard`. **(1)** Tokens `--ease-out` / `--ease-in-out` en `globals.css` + `ease-out` de Tailwind apuntando al token (⚠️ `ease-[var(--ease-out)]` como valor arbitrario **Tailwind lo descarta sin avisar** — verificado en el CSS compilado). **(2)** Feedback de pulsado en `ui/button.tsx` (`active:scale-[0.97]`, 150 ms): ningún botón confirmaba el click, y muchos disparan operaciones lentas. **(3)** Clase `.entrada-suave` (transición + `starting-style` de CSS, 200 ms) en las 3 alertas de Principal y en los 12 paneles desplegables — hoy aparecen de golpe y reacomodan la página. **Salida instantánea a propósito** (se desmontan con `{cond && <X/>}`). ⛔ **Rechazado a propósito**: animar el cambio de pestaña (navegación central, se usa decenas de veces por día) y el fade del `loading → tabla` (`TabsContent` desmonta, así que dispararía en cada cambio de solapa) `@general` |
+| A-FEAT-75 | 🟡 | Media | **Menú lateral en vez de la barra de 12 solapas.** ✅ **HECHO 2026-09-05, sin testear ([A-TEST-83](#a-test-83))**, rama `home-dashboard`. **El motivo es un bug medido**: `grid-cols-12` daba 106 px por celda y **7 de las 12 solapas desbordaban** (Extracto Bancario necesitaba 130 px), así que los contadores de pendientes quedaban **encima de la etiqueta vecina** (`E18xtracto`, `P2roductivo`, `91Importar`). Se reusó `components/ui/sidebar.tsx` (763 líneas de shadcn que **ya estaban en el repo sin que las usara nadie**, junto con los tokens `--sidebar-*` de globals.css): `SidebarTrigger`, `SidebarMenuBadge`, persistencia en cookie, `Cmd+B` y sheet en mobile, todo gratis. Modo **`offcanvas`** elegido por el usuario **sabiendo los 2 costos**: cada navegación pasa a ser 2 clicks y los contadores no se ven sin abrir el menú (la alternativa evaluada era colapsar a íconos). ⚠️ **El `TabsList` quedó montado con `sr-only`, NO se borró**: `notas-para-claude.tsx:114` averigua la pantalla con `[role=tab][data-state=active]` y sin eso toda nota se guardaba con `pantalla` vacía (P-34 dejaba de agrupar). Las 12 solapas salieron de 12 bloques repetidos a la constante `SOLAPAS` `@general` |
+| A-FEAT-76 | 🟡 | Baja | **Chrome fijo translúcido + tipografía de títulos** (criterio Apple). ✅ **HECHO 2026-09-05, sin testear ([A-TEST-84](#a-test-84))**, rama `home-dashboard`. **(1)** La barra con el botón del menú y **Salir** pasó a `sticky` translúcida (`backdrop-filter`, contenido pasando por debajo, borde de scroll en degradado en vez de línea de 1px). **El motivo es funcional**: las pantallas de esta app son larguísimas y al scrollear desaparecían las dos respuestas a *¿a dónde puedo ir?* y *¿cómo salgo?*. Incluye variantes para `prefers-reduced-transparency` y `prefers-contrast: more`. **(2)** Clase `.titulo-pantalla`: tracking negativo (−0.021em) y leading ajustado, porque el tracking es **específico del tamaño** y un título grande con el del cuerpo se lee despegado; jerarquía por **peso** (600) para no gastar más alto. En `rem`, respeta el tamaño de letra del usuario. **(3)** El header de Principal decía «Control Presupuestario / Panel principal del sistema» — el nombre de la app (que ya está en el menú) más un subtítulo vacío, ~90 px del lugar más caro de la pantalla. Ahora dice **«Principal»**. ⏳ **NO se tocó** la jerarquía visual de las 3 tarjetas de alerta, que tienen peso parejo siendo de urgencia distinta: es criterio de producto, no de diseño → se le da ID cuando el usuario defina el orden de gravedad `@principal @general` |
+| A-FEAT-77 | 🟡 | Baja | **Avatar de sesión con menú desplegable.** ✅ **HECHO 2026-09-05, sin testear ([A-TEST-85](#a-test-85))**, rama `home-dashboard`. La esquina tenía 4 elementos compitiendo (mail entero · rol · link Usuarios · botón Salir) por algo que se mira una vez por día; ahora es **un avatar** y el resto vive en el menú. Foto desde `user_metadata.avatar_url` si está cargada, **iniciales** si no (nombre si existe, si no las 2 primeras letras del mail). ⚠️ **El rol NO se lee de `user_metadata`** —el propio usuario puede editarlo— sino de la prop, que viene de la sesión validada en el servidor. ⚠️ **El logout sigue siendo `<form method="post">`**: el ítem del menú dispara `requestSubmit()` sobre un form que vive FUERA del menú (adentro se desmonta al cerrarse y el submit se pierde). Con GET, un `<img src="/auth/signout">` en cualquier página te desloguearía. ⏳ **Falta**: no existen `/perfil` ni `/configuracion`, así que el menú **no** los ofrece — no se ponen links muertos. Y **no hay forma de cargar la foto** desde la app: hoy `avatar_url` sólo se puede setear por fuera `@general` |
+| A-FEAT-78 | 🟡 | Media | **Pantalla `/perfil` + el marco de la app deja de ser exclusivo de la principal.** ✅ **HECHO 2026-09-05, sin testear ([A-TEST-86](#a-test-86))**, rama `home-dashboard`. **El problema de fondo**: el menú lateral y la barra de sesión vivían **adentro de `dashboard.tsx`**, así que `/usuarios` era una isla sin menú ni sesión de la que sólo se salía con un link «← Volver al sistema». Se extrajo todo a **`components/layout-app.tsx`** (`LayoutApp`), que ahora usan la principal, `/usuarios` y `/perfil`. **Para que el menú funcione fuera de la principal**, la sección viaja por la URL: desde otra ruta navega a `/?seccion=<id>`, y `app/page.tsx` lo lee en el servidor y lo pasa como prop (sin Suspense). El valor se **valida contra las solapas reales** — un `?seccion=` inventado no puede dejar la app en blanco. Efecto lateral bueno: **deep links** a cualquier sección. El `Toaster` subió al marco, así que las 3 rutas pueden avisar. **`/perfil`**: nombre, foto (URL), mail y rol de sólo lectura, y estado del 2FA con acceso a activarlo. Escribe con `auth.updateUser()` sobre **tu propio** usuario — sin endpoint de admin. ⏳ **Falta**: no se puede **subir** un archivo de foto, sólo pegar una URL (necesita un bucket de storage que no existe) → A-FEAT nuevo cuando se decida. ⚠️ **`NotasParaClaude` NO se subió al marco a propósito**: detecta la pantalla con `[role=tab][data-state=active]`, que sólo existe en la principal — en `/usuarios` y `/perfil` toda nota quedaría con `pantalla` vacía `@general` |
+| A-FEAT-79 | 🟡 | Media | **Subir la foto de perfil desde la computadora.** ✅ **HECHO 2026-09-05 y FUNCIONANDO** — el bucket se creó con autorización del usuario (`scripts/59-crear-bucket-avatares.mts`, idempotente). Probado de punta a punta: se subió un PNG por la pantalla y se ve en el avatar. ⚠️ **Destapó un bug que se iba silencioso**: la CSP no dejaba mostrar la imagen (`img-src` sin el dominio de Supabase) — corregido en `middleware.ts`. Test → [A-TEST-87](#a-test-87). **Por qué un bucket y no la imagen en `user_metadata`**: eso viaja **dentro del JWT**, que viaja en una cookie — una imagen en base64 revienta el límite de ~4 KB y **rompe la sesión**. No es prolijidad, no funciona. **Seguridad**: bucket `avatares` público **sólo para lectura** (es lo que permite que el `<img>` la muestre) y **sin políticas de escritura**, así que con la anon key no se puede subir nada; la escritura pasa sólo por `/api/perfil/avatar`, que usa `service_role` y valida tipo, tamaño y sesión. ⚠️ **La ruta la arma el servidor con el `user.id` del JWT, nunca el cliente** — si viniera del navegador, un `../otro-usuario/avatar` le pisaría la foto a otro. Límites: 2 MB · JPG/PNG/WEBP/GIF, declarados en el endpoint **y** en el bucket. Se guarda siempre en la misma ruta (sin huérfanos) y la caché del CDN se evita con `?v=` `@general` |
+| A-FEAT-80 | 🟡 | Media | **Pantalla `/configuracion` con menú propio.** ✅ **HECHO 2026-09-05, sin testear ([A-TEST-88](#a-test-88))**, rama `home-dashboard`. En el menú del avatar «Usuarios» se reemplazó por **«Configuración»**, y Usuarios pasó a ser una sección adentro. **Motivo**: si cada cosa administrable entrara al menú del avatar, quedaría una lista larga de cosas que se tocan una vez cada tanto. Tres secciones, **las tres con contenido real, ninguna de relleno**: **Usuarios** (el panel de siempre, sin tocar su lógica) · **Roles**, de sólo lectura — qué ve cada rol y si le exige 2FA, **derivado de `seccionesDe()`, la misma función que aplica el permiso de verdad**, así que no puede quedar desactualizado respecto de lo que pasa · **Aplicación**, con las 3 empresas y sus CUIT leídos de `lib/empresas.ts` (de donde los toman los encabezados de los reportes; el Libro IVA de PAM y MA ya salió una vez con los datos de MSA). ⚠️ **`/usuarios` NO se borró: redirige** a `/configuracion?panel=usuarios` — estaba linkeada y puede estar en favoritos; una ruta que desaparece devuelve un 404 sin explicar a dónde se fue. El sub-panel viaja en `?panel=` y **se valida** contra los reales `@general` |
+| A-FEAT-81 | 🟡 | Baja | **Configuración → Roles rehecho + sección Permisos.** ✅ **HECHO 2026-09-05, sin testear ([A-TEST-89](#a-test-89))**, rama `home-dashboard`. Las cards de rol eran texto plano; ahora traen **cuántas cuentas** tiene cada rol (lo que convierte una etiqueta en algo concreto), los dos números que lo definen —secciones y 2FA— como cifras grandes, y las secciones **con los mismos íconos del menú lateral** para reconocerlas sin leer. **Sección Permisos nueva**: matriz sección × rol, y una segunda tabla de administración. ⚠️ **Las dos tablas NO son equivalentes y la pantalla lo dice**: la de secciones sale de `seccionesDe()` —la función que aplica el permiso— así que no se puede desincronizar; la de administración **está escrita a mano** porque esos permisos viven repartidos en guardas de páginas y endpoints, y por eso cada fila muestra **en qué archivo se aplica**, para poder verificarla `@general` |
+| A-FEAT-82 | 🟠 | Media | ⭐ **Permisos de los roles editables desde la app.** ⚠️ **CÓDIGO HECHO 2026-09-05, FALTA CORRER `scripts/60-roles-permisos.sql`** (es DDL: no se puede desde acá). Mientras tanto **la app funciona igual que siempre** con el reparto del código como paracaídas, y la pantalla lo dice en un aviso — no finge ser editable. Test → [A-TEST-90](#a-test-90). **Qué se hizo**: tabla `public.roles` (secciones por rol + `exige_2fa`), `lib/auth/permisos.ts`, `GET/PATCH /api/admin/roles`, y las 3 páginas leen las secciones de la base en vez de `seccionesDe()`. **Decisiones tomadas, con su motivo**: **(1)** `admin` es rol de **sistema y no se edita** — si se le pudieran sacar secciones, alguien deja el sistema **sin nadie que pueda administrarlo**; protegido en la UI, en el endpoint **y en un trigger**, porque la ruta usa `service_role` y saltea la RLS. **(2)** Permisos **por sección**, no por acción: ⚠️ **NO se agregó una columna de acciones «para el futuro»** — un permiso que ninguna guarda chequea parece un permiso y no lo es. **(3)** Se lee de la base en el servidor en cada carga (no del JWT), así un permiso revocado vale **al recargar** y no en el próximo login. 🐛 **Cerró un agujero de paso**: `?seccion=` se validaba sólo contra las solapas existentes, así que un `contable` entraba a `/?seccion=sueldos` **a mano** y veía Sueldos; ahora se valida contra las permitidas. ⏳ **Falta**: **crear roles nuevos** — el nombre del rol está en el tipo de 12 componentes `@general` |
+| A-FEAT-83 | 🟠 | Media | ⭐ **La foto de perfil en un solo campo, y preferencias personales.** **CÓDIGO HECHO 2026-09-05, SIN TESTEAR** → [A-TEST-91](#a-test-91). Manual → `MANUAL-USO.md` § Tu perfil. **(1) La foto**: antes eran **dos controles separados y en dos lugares** de la tarjeta —un botón «Subir una imagen» arriba y, cinco campos más abajo, un input «…o pegar la dirección»— **y encima se comportaban distinto**: el botón guardaba solo, el input necesitaba «Guardar cambios». Ahora es **un solo campo** que acepta las cuatro vías (link · elegir · arrastrar · Ctrl+V) y las cuatro guardan igual, al toque. **(2) 🐛 De paso se arregló que «pegar un link» no funcionaba**: la CSP de `middleware.ts` sólo permite imágenes de `'self'` y de Supabase, así que un link ajeno lo bloqueaba el navegador **en silencio** — se guardaba bien, no daba ningún error, y el avatar mostraba las iniciales. Ahora **el servidor descarga la imagen** y la guarda como propia (`lib/red/traer-imagen-remota.ts`, con guarda anti-SSRF: no se conecta a direcciones internas, revalida cada redirección y corta por tamaño). **(3) Preferencias personales** en `user_metadata.preferencias`: sección al entrar, menú abierto, contadores de pendientes, preguntar antes de salir. ⚠️ **Ninguna preferencia puede decidir permisos** —`user_metadata` lo edita el propio dueño de la cuenta—: la sección elegida se valida igual contra las permitidas del rol. **(4) Los dos controles visibles** (§ 🧮): si la foto guardada no se puede mostrar, se avisa en vez de caer a iniciales en silencio; y si la sección elegida dejó de verse, se dice, en vez de dejar el selector en blanco `@general` |
+| A-FEAT-84 | 🟠 | Media | ⭐ **Las explicaciones de las pantallas se pueden apagar.** **CÓDIGO HECHO 2026-09-05, SIN TESTEAR** → [A-TEST-92](#a-test-92). Pedido del usuario: *«hay varios lugares donde se le explican las cosas al usuario»*. Es la 5ª preferencia personal, encima de las 4 de [A-FEAT-83](#a-feat-83) — **por usuario y no global**, por el caso Ulises: él es nuevo y necesita las explicaciones, JMS hizo el sistema y le sobran; un interruptor global se las apagaría a los dos (§ quinta pieza: el PERMISO). ⚠️ **La decisión que sostiene todo**: se apaga **sólo lo didáctico** —lo que diría lo mismo con la base vacía—; **los controles y las alertas de datos no llevan marca y no se apagan nunca** (§ 🧮: *un control que nadie ve no es un control*). **Cómo**: marca `data-ayuda` + una sola regla de CSS en `globals.css`, encendida por una clase que pone `LayoutApp` — **no un flag pasado por contexto**, que obligaría a enhebrar medio sistema y a re-renderizar todo al tocar el interruptor. Componente `components/ayuda.tsx` con el criterio escrito. **Marcadas 23 explicaciones en 4 pantallas**: Perfil (7) · Configuración (6) · Facturas ARCA (6) · Sector Productivo (4). 📌 **Hallazgo al medir**: la impresión de que «hay explicaciones por todos lados» es cierta pero están **concentradas en las pantallas nuevas**; en las operativas grandes, la letra chica es casi toda **datos y labels**, no explicación — de las 158 cajas `bg-blue-50` del sistema, casi ninguna es didáctica. ⏳ **Falta**: marcar el resto del sistema, que se hace **al pasar** por cada pantalla (§ auditoría permanente), no en una barrida aparte — barrer todo de una arriesga marcar un control por error, y ese error no se ve `@general` |
+| A-FEAT-85 | 🟠 | Media | ⭐ **Entrar con Google, conviviendo con la contraseña.** Pedido del usuario 2026-09-07: *«tengo que poder crear usuarios que se puedan loguear con esa cuenta o que creen cuentas con la cuenta de google … deberían convivir ambas opciones»*. **Las dos vías sobre la MISMA cuenta**: Supabase vincula identidades por email verificado, así que quedan un solo `user.id`, un solo rol y un solo TOTP. Habilita además el **auto-registro**: quien se anota solo queda **sin rol** y el admin lo habilita desde Configuración → Usuarios (pantalla que ya lo soportaba). ⚠️ **Depende de [A-SEC-07](#a-sec-07)**: sin ese candado, abrir el registro le regala la base entera a cualquier cuenta de Google. **+ 2026-09-17**: el alta de `/usuarios` marca el mail como confirmado, que es lo que permite que quien fue invitado entre después con Google **y caiga en su misma cuenta** (sin eso, Supabase le crea una aparte sin rol). Además la pantalla avisa en ámbar cuántas cuentas se anotaron solas y están esperando rol. ⚠️ Las cuentas invitadas **antes** de esa fecha siguen sin confirmar hasta que usen su link: la lista las marca. **CÓDIGO HECHO, SIN TESTEAR** → [A-TEST-93](#a-test-93) | → [A-FEAT-85](#a-feat-85) `@general` |
+| A-FEAT-86 | 🟠 | **Alta** | ⭐ **Poder recuperar el segundo factor sin tocar la base.** Pedido del usuario 2026-09-07 tras quedarse afuera: tenía el TOTP inscripto y **la llave no estaba en ninguna app**, y la única salida fue borrar el factor con `service_role`. Se implementan las **dos vías legítimas**, las que conservan los dos factores: **(1) desde `/perfil`** — con sesión `aal2`, cambiar de dispositivo o quitar el 2FA (es el caso «cambié de teléfono»); **(2) desde Configuración → Usuarios** — que **otro admin** resetee el de un compañero, aportando él la autorización. ⚠️ **Lo que NO se hace, y el motivo importa más que la feature**: un botón «no tengo el autenticador» **en la pantalla del desafío**. Ahí la sesión es `aal1`, así que el botón convierte 2 factores en 1 y deja el camino del atacante **más corto** que el del usuario legítimo — ver [A-SEC-08](#a-sec-08). **CÓDIGO HECHO 2026-09-17, SIN TESTEAR** → [A-TEST-94](#a-test-94) | → [A-FEAT-86](#a-feat-86) `@general` |
+| A-FEAT-87 | 🟠 | **Alta** | ⭐ **La invitación termina en una pantalla donde elegís cómo vas a entrar.** Pedido del usuario 2026-09-17: *«que le llegue un link y que pueda crear su usuario ya sea con una cuenta de usuario y contraseña o usando Google»*. **El hueco que había**: el link de invitación apuntaba a `/login` y **no existía ninguna pantalla para definir la contraseña** — `updateUser({password})` no aparecía en toda la app. El manual describía un paso que nadie había construido, así que quien abría el link entraba una vez y **se quedaba sin forma de volver**. Se agrega `/auth/confirm` (canjea el link, tolerando las dos formas en que puede volver: `token_hash` y `code`) y **`/bienvenida`**, donde la persona define contraseña, o se vincula con Google, o las dos. **CÓDIGO HECHO 2026-09-17, SIN TESTEAR** → [A-TEST-95](#a-test-95) | → [A-FEAT-87](#a-feat-87) `@general` |
+| A-FEAT-88 | 🟠 | Media | ⭐ **Pantalla de inicio configurable con widgets.** Pedido del usuario 2026-09-17: *«una página donde haya widgets de cada una de las páginas y funcionalidades para que el usuario pueda configurar su página de inicio»*. ⚠️ **No se inventa el contenido: se suelta.** `components/vista-principal.tsx` (443 líneas) **ya es una home fija** con último IPC, alertas SICORE, facturas de venta a cobrar y retenciones sin vincular — están soldadas a la pantalla. Se extraen a un **registro de widgets**, y qué ve cada uno sale de la preferencia `widgets`. **Tres reglas que le dan forma**: (1) **ninguna preferencia decide un permiso** — la lista vive en `user_metadata`, que el propio usuario escribe, así que se valida contra las secciones del rol igual que `seccionInicio`; (2) **cada widget es un número condensado y por eso lleva su camino al detalle** (§ 🧮 todo desarrollo termina con su control: es la pantalla con más números de conclusión y menos contexto de todo el sistema); (3) **carga independiente**, para que un widget lento no tape a los otros. Alcance 1ª pasada acordado: **sólo lo que ya existe**, cero consultas nuevas; los demás se suman **al pasar** por cada pantalla (§ auditoría permanente) | → [A-FEAT-88](#a-feat-88) `@principal` |
 
 ### Testing pendiente (commits de mayo, sin testear)
 | ID | Estado | Ítem |
@@ -2666,11 +2712,58 @@ a la tercera semana se ignora entero. La separación *sí o sí* / deseable es l
   más parecida a esto que hay en el sistema: sirve de modelo.
 - El circuito de mail de `gas-buscar-pdf` ya sabe mandar mails de resumen a un destinatario.
 
+### 📌 Precisiones del usuario — 2026-09-03
+
+**Son avisos de NEGOCIO, no de sistema.** Preguntado si "avisar a los usuarios sobre updates"
+significaba *cambios del sistema* (salió una función nueva) o *cosas del negocio* (vence algo,
+llegó un resumen, hay algo para revisar), el usuario respondió: **cosas de negocio**. Se descarta
+mezclar las dos cosas — son sistemas distintos y juntarlos convierte el aviso en ruido, que es
+como muere un checklist (ver el ⚠️ de la prioridad, arriba).
+
+**El destinatario explícito ya es posible.** Hasta el 2026-09-03 no había usuarios, había URLs:
+"avisar al responsable" era literalmente irrealizable. Con [A-SEC-03](#a-sec-03) hay cuentas
+individuales con email y rol, o sea que la pieza 3 del norte **recién ahora tiene de dónde
+agarrarse**. Es la dependencia dura de este ítem.
+
+### Tres definiciones de diseño (2026-09-03, discutidas con el usuario)
+
+1. **El mail es un canal, no el sistema.** El corazón es una **tabla de notificaciones + la
+   campanita en la app** (el placeholder de `C-10` ya existe). El mail es para cuando la persona
+   no está adentro. Motivo: si se arranca por el mail, quedan avisos que **nadie puede marcar
+   como leídos ni auditar** — y sin eso no hay "control después", que es la mitad del pedido.
+2. **El mail NO lleva los montos.** [A-SEC-01](#a-sec-01) identifica como sensible *"los montos,
+   CUITs y números de toda la operación"*. El aviso dice *"hay 3 vencimientos esta semana, entrá
+   a verlos"* + link: cumple igual sin repartir datos por casillas ajenas. Mismo criterio que ya
+   se aplicó al sacar los montos de los logs del GAS.
+3. **El margen es parte del diseño**, no un detalle de implementación — *una alerta el día del
+   vencimiento es un acta*.
+
+### 📧 Envío de mail — decidido: SMTP de Gmail, NO servidor propio
+
+El usuario preguntó si convenía **montar un SMTP propio opensource** (Postal, Stalwart, Maddy).
+**Se descartó**, y conviene dejar el motivo escrito para no volver a discutirlo:
+
+- **El volumen no lo justifica**: 3 usuarios × 1 aviso diario ≈ **3 mails/día**. Gmail SMTP admite
+  **500/día** — es el 0,6 % del límite.
+- **La entregabilidad empeora, no mejora**: una IP nueva de VPS arranca con reputación cero y cae
+  en spam aunque estén bien SPF/DKIM/DMARC/rDNS. Y esto incluye el mail de **invitación y de
+  recuperar contraseña**: si cae en spam, **la persona no puede entrar**. Es poner el canal más
+  frágil en la puerta de acceso.
+- **Suma una máquina que mantener**, fuera de Vercel, en el camino crítico del acceso.
+- **Si algún día crece** → transaccional (Resend / Brevo / SES), no servidor propio.
+- Alternativa registrada por si se quiere control total sin SMTP: el **Send Email Hook** de
+  Supabase (beta) permite que los mails de auth los mande código propio — se podría reusar el GAS
+  que ya envía desde `sanmanuel.sp@gmail.com`. Suma una pieza beta al camino del acceso.
+
+**Pendiente concreto:** configurar Gmail SMTP en *Authentication → Emails → SMTP Settings* y, una
+vez puesto, cambiar `generateLink` por `inviteUserByEmail` en `app/api/admin/usuarios/route.ts`
+(hoy el link de invitación se copia y se pasa a mano — ver `MODULO_USUARIOS.md` § 0).
+
 ### A definir con el usuario
 - **Qué obligaciones entran** y con qué prioridad. Es criterio suyo, no del sistema.
 - **Los responsables**: hoy hay 2 personas (JMS y Ulises) y el permiso de Ulises está limitado
   (cruza con [A-SEC-03](#a-sec-03) y con [A-AUTO-01](#a-auto-01) paso 1).
-- **El canal** de la alerta: mail, pantalla al abrir la app, o las dos.
+- ~~**El canal** de la alerta~~ → definido arriba: **app (fuente de verdad) + mail (aviso)**.
 
 ---
 
@@ -2950,7 +3043,34 @@ de Vista de Pagos).
 2. **No tener que acordarse** de agregar la restricción en cada feature.
 3. Dar acceso **de a poco (opt-in)**, no bloquear de a poco (opt-out).
 
-### El plan ya está decidido — falta ejecutarlo
+### 🔄 CAMBIO DE RUMBO 2026-09-03 — se hizo, con variante
+
+El usuario pidió *"una página de login que cumpla con OWASP"*. Eso **contradice** el plan de abril
+en dos puntos (era **sign-in silencioso** con **una cuenta compartida**), así que se avisó antes de
+tocar nada y se decidió el cambio. **Los motivos completos están en `MODULO_USUARIOS.md` § 0** —
+resumidos: cuentas individuales son lo único que da **audit log por usuario** y permite **revocar a
+una persona**; habilitan la **quinta pieza del norte administrativo (el PERMISO)**, o sea delegarle
+la tarjeta a Ulises ([A-AUTO-01](#a-auto-01)); y como **todos** se loguean, `anon` ya no tiene uso
+legítimo → se le revoca **todo**, no sólo la escritura, que es lo que este dossier y A-SEC-01
+identifican como *lo que mueve la aguja*.
+
+**Estado: código hecho y compilando, NADA testeado, BD sin tocar.** Detalle fino en
+`MODULO_USUARIOS.md` § 0. Lo que falta, en orden:
+
+1. Crear las cuentas en Supabase (Authentication → Users) — **las contraseñas las pone cada
+   persona**.
+2. Habilitar en Auth: **MFA TOTP**, **contraseñas filtradas (HIBP)**, largo mínimo.
+3. `scripts/57-rls-login-cerrar-anon.sql` — **paso a paso**, con foto previa y revert listo
+   (protocolo de [A-SEC-01](#a-sec-01)).
+4. `scripts/58-asignar-roles-usuarios.sql` — **toca datos** (`auth.users`): se pregunta antes.
+5. **[A-TEST-81](#a-sec-03)** — testear de punta a punta.
+
+⚠️ **El riesgo silencioso de esta tanda**: al desaparecer la ruta-password, los 6 lugares que
+leían `window.location` para saber si eras admin habrían devuelto `false` y **el admin habría
+perdido permisos sin un solo error en pantalla**. Ya están migrados al prop de sesión, pero es
+exactamente lo que A-TEST-81 tiene que verificar.
+
+### El plan original de abril (referencia)
 `MODULO_USUARIOS.md` compara 4 opciones (wrapper del cliente, guard por función, hook
 `useSupabase()`, RLS minimalista) y **selecciona la Opción A — RLS Minimalista con Supabase Auth**.
 Los 9 pasos están escritos ahí: instalar `@supabase/ssr` · crear usuario admin en Supabase Auth ·
@@ -2968,6 +3088,131 @@ abril.
 son independientes.
 
 ---
+
+## <a id="a-sec-05"></a>A-SEC-05 — CSP por nonce (hoy con `unsafe-inline`)
+
+**Abierto 2026-09-03**, al implementar el login ([A-SEC-03](#a-sec-03)).
+
+El `middleware.ts` manda `Content-Security-Policy`, pero `script-src` incluye `'unsafe-inline'` y
+`'unsafe-eval'` porque Next inyecta su bootstrap inline y sin eso la app no arranca.
+
+**Dónde duele:** el CSP existe para que, si alguien logra inyectar un `<script>` (XSS), el browser
+se niegue a ejecutarlo. Con `unsafe-inline` puesto **el browser lo ejecuta igual**: la cabecera
+está pero no protege de lo único que tenía que proteger. El resto del CSP (`frame-ancestors`,
+`form-action`, `object-src`, `connect-src` acotado a Supabase) **sí** sirve.
+
+**Fix de fondo:** generar un nonce por request en el middleware, pasarlo a Next y reemplazar
+`'unsafe-inline'` por `'nonce-<valor>'`. **Mitigación:** ninguna — o hay nonce o no hay CSP de
+scripts. Se difirió a propósito para no mezclarlo con el login.
+
+---
+
+## <a id="a-sec-06"></a>A-SEC-06 — Las API routes saltean la RLS
+
+**Abierto 2026-09-03**, al implementar el login ([A-SEC-03](#a-sec-03)).
+
+**29 de las 35 routes** de `app/api/` usan `service_role` (`lib/supabase-admin.ts` o
+`SUPABASE_SERVICE_ROLE_KEY` directo). `service_role` **ignora RLS por diseño**: la protección que
+[A-SEC-01](#a-sec-01) y A-SEC-03 ponen en la base **no las alcanza**.
+
+**Dónde duele:** hoy lo único que las cubre es el `matcher` del `middleware.ts`. Es una sola línea
+de config, y el día que alguien agregue una exclusión para servir un asset, la route queda expuesta
+**con permisos de superusuario de la base**. Es la definición de punto único de falla.
+
+**Segundo problema, más chico pero rompe cosas:** una llamada sin sesión hoy recibe un **307 al
+login** en vez de un **401**. Un cliente que espera JSON recibe HTML.
+
+**Fix de fondo:** que cada route valide la sesión por su cuenta (`getUser()`) antes de usar
+`service_role`, y devuelva 401. Defensa en profundidad: el middleware queda como primera barrera,
+no como la única.
+
+**✅ Hecho 2026-09-21** (commit `A-SEC-06` en `desarrollo`): nuevo `lib/auth/guard-sesion.ts` con
+`exigirSesion()` — `getUser()` (valida el JWT) + exige `app_metadata.role` (una cuenta sin rol
+recibe 403, igual que la app la manda a `/no-access`) — y `respuestaSinAcceso()` (401/403 JSON,
+nunca redirect). Inyectado como **primera línea** de los 41 handlers de las 35 routes que no tenían
+guard. Se verificó que **todas** se llaman desde el navegador con cookie (GAS no llama de vuelta a
+la API), así que ninguna necesita token compartido. `/api/admin/*` sigue con `exigirAdmin()` y
+`/api/perfil/avatar` ya validaba. `tsc`: 113 errores antes y después.
+
+**🟡 Falta testear** ([A-TEST-81](#a-sec-03)): con sesión → todo igual; sin cookie →
+`401 {ok:false}`; con cuenta sin rol → `403`. Y que ninguna pantalla haya quedado esperando otro
+formato de error.
+
+---
+
+## <a id="a-sec-07"></a>A-SEC-07 — La policy de RLS le abre la base a cualquier sesión (2026-09-07)
+
+**Hallado** al evaluar el login con Google ([A-FEAT-85](#a-feat-85)), leyendo
+`scripts/57-rls-login-cerrar-anon.sql` para ver si se podía dejar el registro abierto.
+
+### Qué decía
+
+```sql
+CREATE POLICY "solo_usuarios_logueados" ON %I.%I
+  FOR ALL TO authenticated
+  USING (auth.uid() IS NOT NULL)
+```
+
+`auth.uid() IS NOT NULL` significa **«hay sesión»**, no **«esta persona tiene acceso»**. Son dos
+cosas distintas y el sistema ya las distinguía en la app: una cuenta creada pero todavía sin rol
+va a `/no-access` (`app/page.tsx:32`). **La base no hacía esa distinción.**
+
+### Por qué el `/no-access` no alcanza
+
+Es una pantalla, no un permiso. Quien tenga sesión —aunque la app le muestre el cartel— tiene una
+cookie válida, y la `anon_key` viaja en el bundle JS **por diseño**. Con esas dos cosas le pega
+directo a PostgREST y lee y escribe las **72 tablas**: montos, CUITs, sueldos, todo. El cartel
+cierra la puerta de adelante; ésta es la de atrás.
+
+### Por qué hasta ahora no se notaba, y por qué ahora sí
+
+Las cuentas sólo nacían de un `inviteUserByEmail` que corre un admin, y el admin le pone el rol en
+el mismo movimiento. O sea: **no había cuentas sin rol**, salvo por descuido. El agujero existía
+pero no tenía por dónde entrar.
+
+Con el auto-registro de [A-FEAT-85](#a-feat-85) sí lo tiene: cualquiera con una cuenta de Google
+se crea la suya. Por eso este ítem **bloquea** a aquél — pero existe igual aunque Google no se
+haga nunca, porque hoy alcanza con que quede una cuenta sin rol por olvido.
+
+### El fix — ✅ ya escrito en el script, 🔴 la BD sin tocar
+
+La condición pasa de *tener sesión* a **tener rol**, en una función sola que llaman las 72
+policies:
+
+```sql
+CREATE OR REPLACE FUNCTION public.tiene_rol() RETURNS boolean
+LANGUAGE sql STABLE AS $fn$
+  SELECT coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') <> ''
+$fn$;
+```
+
+**`app_metadata` y no `user_metadata`**, por la misma razón de siempre: `user_metadata` lo escribe
+el propio usuario con un `auth.updateUser()`, así que un candado apoyado ahí lo abre el que está
+afuera. Es la regla de `lib/auth/roles.ts` bajada a la base.
+
+Que sea **una función y no la condición repetida 72 veces** es lo que hace que cambiar el criterio
+de acceso de todo el sistema sea cambiar tres líneas.
+
+⏱️ **Contrapartida conocida:** el rol viaja en el JWT, así que quitárselo a alguien tarda hasta que
+el token se renueve (≤ 1 h). Si algún día hace falta revocación instantánea, la función pasa a leer
+de una tabla — se cambia en un solo lugar. Con 3 usuarios, el claim alcanza.
+
+### Control (§ 🧮 todo desarrollo termina con su control)
+
+`scripts/57` § PASO 3 tiene ahora una consulta más, que **debe devolver cero filas**: lista las
+tablas cuya policy no menciona `tiene_rol`. Si alguna quedó con la condición vieja, aparece ahí en
+vez de descubrirse el día que alguien la use.
+
+Y el test de verdad es el de [A-TEST-93](#a-test-93), que se hace **salteando la UI**: con la
+sesión de una cuenta sin rol, pegarle a PostgREST tiene que devolver **0 filas**, no la tabla.
+
+### Cómo se corre
+
+Junto con el resto de `scripts/57`, con el protocolo de [A-SEC-01](#a-sec-01): paso a paso, con la
+foto previa y el revert listo. **Toca la BD → se hace con el usuario presente.**
+
+---
+
 
 ## <a id="a-doc-10"></a>A-DOC-10 — Otras 19 fugas doc → memoria
 
@@ -3586,6 +3831,112 @@ Modelo de edición acordado:
 - **`pago` (SU PAGO) → cta cte**: el pago de la tarjeta concilia contra el débito en cuenta corriente. No implementado (hoy se rotula "pago → cta cte").
 - **Caso agrupado FC−NC**: ej MEDICUS 807.028,07 = FC 850.818,25 − NC 43.790,18. No auto-matchea por monto único → manual.
 - **37 facturas MSA en `conciliado` sin link a ningún movimiento** ($4.7M) — NO son del bug de tarjeta (no matchean montos de tarjeta). Revisar aparte (históricas / cancelaciones FC-NC / echeq / externas).
+
+---
+
+## <a id="a-test-97"></a>A-TEST-97 — El link de alta apunta a donde se creó (A-BUG-98)
+
+**Cómo se prueba** → `MANUAL-USO.md` § «A dónde lleva el link de alta».
+
+| # | Paso | Tiene que pasar |
+|---|---|---|
+| 1 | ~~Ver el cartel rojo con la config rota~~ | ⛔ **Ya no se puede probar**: la config se arregló el 2026-09-18 y el estado que lo disparaba desapareció. **El control del cartel queda sin verificar** — la forma honesta de probarlo sería sacar una Redirect URL a propósito, y no vale la pena tocar la config de auth para eso |
+| 2 | Arreglar Site URL + Redirect URLs (valores en [A-BUG-98](#a-bug-98)) | ✅ **HECHO 2026-09-18**, verificado por sondeo |
+| 3 | Repetir «Copiar link» en producción | Sin cartel, y el link lleva a `control-presupuestario-v2.vercel.app/auth/confirm` |
+| 4 | Lo mismo desde **local (3001)** | El link lleva a `localhost:3001`, **no** a producción |
+| 5 | Lo mismo desde un **preview** de Vercel | El link lleva **al preview**, no a producción — es lo que arregla el cambio de precedencia en `url-base.ts` |
+| 6 | **Crear un usuario nuevo de verdad** y abrir el mail | El link del mail cae en `/bienvenida` del sitio correcto |
+| 7 | **Login con Google desde producción** | Vuelve a producción y no a `localhost:3000` (mismo origen del bug) |
+
+⚠️ El paso 5 **no se puede probar sin un deploy de preview**; y el 6 consume uno de los ~2 mails
+por hora del mailer de Supabase.
+
+---
+
+## <a id="a-bug-98"></a>A-BUG-98 — Los links de invitación creados desde producción van a `localhost:3000` (2026-09-18)
+
+**Hallado** al pedir el usuario que se verificara a dónde apunta el link que se genera al crear una
+cuenta. **No es un bug del código**: el código arma bien el destino y Supabase lo tira a la basura.
+
+### El mecanismo — un fallo que no devuelve error
+
+Supabase (GoTrue) **valida el `redirectTo` contra la lista de Redirect URLs del proyecto**. Si no
+coincide con ninguna, **no falla**: lo descarta y lo reemplaza por el **Site URL**. La llamada
+devuelve `error: null`, el mail sale, el link se ve perfecto — y lleva a otro lado.
+
+Es exactamente el modo de falla que `CLAUDE.md` marca dos veces: el `UPDATE` que matchea 0 filas y
+no falla (§ Contrapartes), y la categoría ausente que se asume por default (§ Templates). **El
+silencio miente.**
+
+### Lo verificado, 2026-09-18
+
+Sondeando `GET /auth/v1/verify` con un token inválido y distintos `redirect_to` — es una lectura,
+no crea nada, y GoTrue valida el destino **antes** que el token, así que el `Location` de la
+respuesta dice si la dirección está permitida y cuál es el fallback:
+
+| Destino pedido | Resultado |
+|---|---|
+| `https://control-presupuestario-v2.vercel.app/auth/confirm` | ❌ rechazado |
+| `https://control-presupuestario-v2.vercel.app/` | ❌ rechazado |
+| `https://control-presupuestario-v2.vercel.app/auth/callback` | ❌ rechazado |
+| `https://control-presupuestario-v2-git-<rama>.vercel.app/…` (preview) | ❌ rechazado |
+| `http://localhost:3001/…` | ✅ aceptado |
+| `http://localhost:3000/…` | ✅ aceptado |
+
+Y todos los rechazados caen en el mismo lugar: **`http://localhost:3000`**, que es el Site URL del
+proyecto.
+
+⚠️ **`localhost:3000` no es ni siquiera esta app**: es **otra aplicación del usuario** (lo aclaró
+él mismo el 2026-09-17, cuando este proyecto se levantó en el 3001). O sea que el link de una
+invitación termina golpeando un sistema ajeno.
+
+### El alcance es más ancho que las invitaciones
+
+La misma lista gobierna **todo** destino de vuelta de Auth. Como el host de producción está
+ausente por completo —no es un problema del path ni del query string—, desde producción **también**
+quedan rotos:
+
+- el **login con Google** (`/auth/callback`, `components/boton-google.tsx` → [A-FEAT-85](#a-feat-85));
+- el **«Reenviar mail»** y el **«Copiar link»** de Usuarios ([A-FEAT-85](#a-feat-85));
+- cualquier recuperación de contraseña.
+
+Hoy no se nota **porque producción corre código viejo y nadie invitó desde ahí todavía**. Se va a
+notar el día del merge a `main`, que es el peor día para descubrirlo.
+
+### El fix — tiene dos mitades y sólo una es mía
+
+**1 · Configuración de Supabase (la que resuelve el problema). La hizo el usuario el
+2026-09-18** ✅, en Authentication → URL Configuration. Verificado con el mismo sondeo: las cinco
+direcciones que usa la app (prod, preview, local 3001; `/auth/confirm` y `/auth/callback`) ahora se
+respetan, el Site URL pasó a ser producción, y `http://localhost:3000` quedó **fuera** — lo que
+apunte ahí rebota a producción en vez de golpear la otra app. Los valores que quedaron:
+
+- **Site URL** → `https://control-presupuestario-v2.vercel.app`
+  *(es el fallback de todo lo que no matchee: tiene que ser un lugar válido, no `localhost`)*
+- **Redirect URLs** → las cuatro:
+  - `https://control-presupuestario-v2.vercel.app/**`
+  - `https://control-presupuestario-v2-*.vercel.app/**` ← los previews
+  - `http://localhost:3001/**`
+  - `http://localhost:3000/**` sólo si se quiere conservar; **conviene sacarla**, porque ahí
+    corre otra app y es la que hoy recibe los tokens.
+
+**2 · Código (hecho 2026-09-18).** Dos cosas, ninguna sustituye a la anterior:
+
+- **`lib/auth/url-base.ts`** — en un **preview de Vercel, el host del deploy gana sobre
+  `NEXT_PUBLIC_SITE_URL`**. Motivo: al agregar una variable en Vercel se marcan los **tres**
+  entornos por defecto, así que con la regla al revés un admin que invita desde un preview
+  mandaría un link a **producción**, que en ese momento corre otro código. El pedido del usuario
+  fue que el link caiga **donde se creó**.
+- **El control** (§ 🧮 de `CLAUDE.md`, y de los baratos: el mismo dato por dos caminos).
+  `generateLink` devuelve el link ya armado, así que el destino que Supabase **aceptó** viaja en su
+  query string. `destinoDescartado()` lo compara con el que pedimos; si no coinciden, el endpoint
+  `/api/admin/usuarios/[id]/link` devuelve `advertencia` y `components/panel-usuarios.tsx` la
+  muestra **en rojo**, sin toast de éxito. Convierte un fallo mudo en un cartel.
+
+⚠️ **El control no cubre `inviteUserByEmail` ni `resetPasswordForEmail`**: esas no devuelven el
+link, sólo mandan el mail, así que no hay con qué comparar. Ahí la única red es la configuración.
+
+**SIN TESTEAR** → [A-TEST-97](#a-test-97)
 
 ---
 

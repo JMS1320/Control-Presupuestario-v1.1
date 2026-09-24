@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { altaContraparte } from '@/lib/proveedores/alta'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
@@ -38,6 +39,9 @@ const CAMPOS_PERMITIDOS = [
 ]
 
 export async function GET(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const url = new URL(request.url)
     const cuit = url.searchParams.get('cuit')
@@ -89,6 +93,9 @@ export async function GET(request: Request) {
  * todas las vías (ficha, anticipos, y las que falten: ventas y venta de hacienda).
  */
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = await request.json()
     const resultado = await altaContraparte(supabaseAdmin, {
@@ -106,6 +113,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = await request.json()
     const { proveedor_id, cuit, ...campos } = body

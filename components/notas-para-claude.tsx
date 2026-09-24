@@ -57,29 +57,33 @@ interface Captura {
 }
 
 /**
- * 🔐 La ruta **sin el primer segmento** — A-SEC-04.
+ * 🔐 La ruta donde se dejó la nota — A-SEC-04.
  *
- * En esta app el primer segmento **ES la contraseña** (`config/access-routes.ts`: `/adminjms1320`
- * da admin). Guardar `location.pathname` entero metía esa llave, en claro, en `notas_capturas` —
- * una tabla que `anon` lee entera ([A-SEC-01](PENDIENTES.md#a-sec-01)). Cualquiera que llegara a la
- * API se llevaba el acceso de admin sin adivinar nada.
+ * **Historia:** el primer segmento de la URL ERA la contraseña (`/adminjms1320` daba admin), así
+ * que guardar `location.pathname` entero metía esa llave, en claro, en una tabla que `anon` leía
+ * entera. Por eso esta función existía para recortarlo.
  *
- * La nota necesita saber **dónde** estabas, no **con qué llave entraste**: `/adminjms1320/x/y` se
- * guarda como `/x/y`, y el usuario se guarda como **rol** (`admin` / `contable`), no como la ruta.
+ * **Desde el login real (2026-09-03)** la URL ya no lleva ninguna llave: el acceso sale de la
+ * sesión. Guardar la ruta completa volvió a ser inocuo, y recortar el primer segmento pasó a ser
+ * un bug — se comía una parte real de la ruta.
  *
- * ⚠️ Quedan filas viejas con el valor completo — se limpian aparte (son datos: se pregunta antes).
+ * ⚠️ Quedan filas viejas con la llave adentro — se limpian aparte (son datos: se pregunta antes).
  */
-function rutaSinLlave(): string {
+function rutaActual(): string {
   if (typeof window === "undefined") return ""
-  const resto = window.location.pathname.split("/").filter(Boolean).slice(1)
-  return "/" + resto.join("/") + window.location.search
+  return window.location.pathname + window.location.search
 }
 
-/** El ROL de quien deja la nota, nunca su ruta de acceso. Ver `rutaSinLlave()`. */
-function rolActual(): string | null {
-  if (typeof window === "undefined") return null
-  const primero = window.location.pathname.split("/").filter(Boolean)[0] ?? ""
-  return getRoleFromRoute(primero)
+/**
+ * El ROL de quien deja la nota. Sale de la SESIÓN, nunca de la URL.
+ *
+ * Es async porque el rol vive en el JWT (`app_metadata.role`) y hay que pedirle el usuario a
+ * Supabase. Antes se deducía del primer segmento de la ruta, que ya no existe.
+ */
+async function rolActual(): Promise<string | null> {
+  const { data } = await supabase.auth.getUser()
+  const rol = data.user?.app_metadata?.role
+  return rol === "admin" || rol === "contable" ? rol : null
 }
 
 /**
@@ -138,7 +142,11 @@ function contextoActual() {
     foco_tipo: f?.tipo ?? null,
     foco_clave: f?.clave ?? null,
     foco_texto: f?.texto?.slice(0, 200) ?? null,
-    ruta: rutaSinLlave(),
+    // ⚠️ `rutaActual()`, no la vieja `rutaSinLlave()`: **desde el login real la URL ya no lleva
+    //    llave**, así que recortar el primer segmento pasó a ser un bug (se comía parte de la
+    //    ruta de verdad). El renombre vino de `desarrollo` y es el correcto; lo que se conserva
+    //    de acá es el **foco** y la **subpantalla**, que son nuestros y no compiten.
+    ruta: rutaActual(),
     pantalla: (activas[0] ?? "").slice(0, 120),
     subpantalla: activas.slice(1).join(" → ").slice(0, 200),
     modal: textoLimpio(dialogo).slice(0, 160),
@@ -294,7 +302,7 @@ export function NotasParaClaude() {
         titulo: titulo.trim() || capturas[0].texto.slice(0, 80) || "Sin título",
         estado: "finalizada",
         finalizada_at: new Date().toISOString(),
-        usuario: rolActual(), // el ROL, no la ruta — A-SEC-04
+        usuario: await rolActual(), // el ROL, desde la sesión — A-SEC-04
       })
       if (error) throw error
 

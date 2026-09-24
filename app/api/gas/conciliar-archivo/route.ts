@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Empresa } from '@/lib/gas-pdf/types'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
@@ -33,6 +34,9 @@ function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): strin
 const fileIdDe = (u?: string | null) => { const m = String(u || '').match(/[-\w]{25,}/); return m ? m[0] : null }
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const url = process.env.GAS_BUSCAR_PDF_URL
     const token = process.env.GAS_AUTH_TOKEN

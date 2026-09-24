@@ -26,6 +26,7 @@ import {
   lineasDeFirma,
   resolverReglas,
 } from "@/lib/extractos/parseo-movimiento"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,6 +42,9 @@ const CUENTAS: Record<string, { schema: string }> = {
 }
 
 export async function POST(req: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = await req.json().catch(() => ({}))
     const cuenta = String(body.cuenta ?? "")
@@ -156,6 +160,9 @@ export async function POST(req: Request) {
  * Devuelve qué tipos de movimiento hay y cuáles no tienen regla propia. Lo usa la alerta.
  */
 export async function GET(req: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const cuenta = new URL(req.url).searchParams.get("cuenta") ?? ""
     const cfg = CUENTAS[cuenta]

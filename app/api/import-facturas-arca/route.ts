@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -354,6 +355,9 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
  * POST /api/import-facturas-arca
  */
 export async function POST(req: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     // Obtener datos del formulario enviado desde la pantalla
     const formData = await req.formData()

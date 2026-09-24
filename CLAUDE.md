@@ -684,6 +684,18 @@ lugar donde la pérdida es **definitiva**.
 segunda se llevó puesto el cierre de la primera. En el repo eso lo hubiera atajado git; acá no hay
 nada. **Es la pérdida silenciosa de la regla 1, en el único sitio sin marcha atrás.***
 
+**14 · La RAMA también se declara — y se verifica antes de cada commit.** Cada terminal anota en el
+tablero sobre qué rama trabaja, y corre `git branch --show-current` **antes de commitear**. Si el
+árbol no está en la rama declarada: **no se commitea, se avisa.** Y **no se resuelve con
+`git checkout`**, que la regla 2 prohíbe — se acuerda entre las dos.
+
+*Motivo: pasó el 2026-09-05. T2 creó una rama nueva y dejó el árbol ahí; T1 siguió commiteando
+durante toda su tanda **creyendo que estaba en la suya**, y su commit terminó en la rama de T2. Nadie
+lo vio hasta que un `push` a la rama equivocada devolvió «Everything up-to-date» y no cerraba con
+tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a la rama**, y la única
+variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
+está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
+dónde caen los commits**.*
 ### 📁 La carpeta de comunicación — se mira sin que lo pidan (REGLA)
 *Pedido del usuario 2026-09-06: **«recordá usarla siempre y ya no hace falta que yo te diga que ahí
 lo dejé»**.*
@@ -1146,8 +1158,17 @@ npm run build                        # build
 ---
 
 ## 🔐 Accesos y roles
-- Rutas-como-password (`config/access-routes.ts`): **`adminjms1320`** (admin, ve todo) · **`ulises`** (contable, solo Egresos: ARCA + Templates).
-- Sin login real: es UX + validación de URL. **No protege la API** (ver A-SEC-01 en PENDIENTES — `anon` puede borrar todo).
+- **Login real** con Supabase Auth (`/login`), cuentas **individuales**, **2FA TOTP obligatorio
+  para `admin`**. El rol vive en **`app_metadata.role`** del JWT — **nunca** en `user_metadata`,
+  que lo puede editar el propio usuario. Roles: **`admin`** (ve todo) · **`contable`** (sólo
+  Egresos: ARCA + Templates).
+- Para autorizar se usa **`auth.getUser()`**, nunca `getSession()` (el segundo le cree a la cookie
+  sin validarla).
+- ⚠️ **Las rutas-como-password (`/adminjms1320`, `/ulises`) ya NO dan acceso** — redirigen al
+  login. `config/access-routes.ts` quedó sin consumidores.
+- 🚧 **Estado 2026-09-03: código hecho, sin testear, BD sin tocar.** Hasta correr `scripts/57`
+  (RLS + revoke a `anon`) **la API sigue sin protección**: `anon` puede borrar todo (A-SEC-01).
+  Diseño → `MODULO_USUARIOS.md` § 0 · pendientes → `PENDIENTES.md` [A-SEC-03](PENDIENTES.md#a-sec-03).
 
 ---
 

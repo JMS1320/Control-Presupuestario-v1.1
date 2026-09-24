@@ -13,12 +13,16 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { PANTALLAS } from '@/lib/pendientes/parse'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
 const PRIORIDADES = ['urgente', 'secundario', 'test'] as const
 
 export async function GET(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   const rol = new URL(request.url).searchParams.get('rol')
   if (rol !== 'admin') return NextResponse.json({ error: 'Sólo admin' }, { status: 403 })
 
@@ -33,6 +37,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const b = await request.json()
     const titulo = String(b.titulo ?? '').trim()

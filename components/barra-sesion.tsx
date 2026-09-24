@@ -1,0 +1,180 @@
+"use client"
+
+import Link from "next/link"
+import { useEffect, useRef, useState } from "react"
+import { supabase } from "@/lib/supabase"
+import { leerIdentidad } from "@/lib/auth/identidad"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { LogOut, Settings, User } from "lucide-react"
+
+/**
+ * Iniciales para el avatar cuando no hay foto.
+ *
+ * Prioriza el nombre si está cargado (dos palabras → dos iniciales) y si no cae al mail, que es
+ * el único dato que siempre existe. `javiergc89@gmail.com` → «JA».
+ */
+function iniciales(nombre: string | null, email: string | null): string {
+  const limpio = nombre?.trim()
+  if (limpio) {
+    const partes = limpio.split(/\s+/).filter(Boolean)
+    if (partes.length >= 2) return (partes[0]![0]! + partes[1]![0]!).toUpperCase()
+    if (partes[0]) return partes[0].slice(0, 2).toUpperCase()
+  }
+  const local = email?.split("@")[0]
+  return local ? local.slice(0, 2).toUpperCase() : "?"
+}
+
+/**
+ * Avatar de sesión con su menú: quién sos, tu rol, y por dónde salir.
+ *
+ * Antes era una línea de texto con el mail entero, el rol, un link «Usuarios» y un botón «Salir»
+ * — cuatro elementos compitiendo en la esquina por algo que se mira una vez por día. Ahora es un
+ * solo avatar y el resto vive en el menú.
+ *
+ * La foto sale de `user_metadata.foto` (la propia, ya en nuestro Storage) si está cargada, y si
+ * no van las iniciales. La de Google **no** se muestra acá: la bloquea el CSP → `identidad.ts`.
+ * ⚠️ El **rol NO se lee de `user_metadata`** (el propio usuario puede editarlo): viene por prop,
+ * desde la sesión validada en el servidor.
+ *
+ * El logout sigue siendo un `<form method="post">` y no un link, a propósito: si fuera GET,
+ * cualquier `<img src="/auth/signout">` incrustada en una página te desloguearía (CSRF de logout).
+ * Por eso el ítem del menú dispara el submit del form en vez de navegar.
+ */
+export function BarraSesion({
+  userRole,
+  confirmarSalida = false,
+}: {
+  userRole: "admin" | "contable"
+  /** Preferencia personal: preguntar antes de cerrar la sesión (A-FEAT-83). */
+  confirmarSalida?: boolean
+}) {
+  const [email, setEmail] = useState<string | null>(null)
+  const [nombre, setNombre] = useState<string | null>(null)
+  const [foto, setFoto] = useState<string | null>(null)
+  const [preguntando, setPreguntando] = useState(false)
+  const formSalir = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      const u = data.user
+      setEmail(u?.email ?? null)
+      // Cosméticos, no de seguridad: acá `user_metadata` es el lugar correcto. La lectura sale
+      // de `leerIdentidad` para que sea LA MISMA que la del perfil — si cada pantalla eligiera
+      // su clave, la barra mostraría la foto de Google y el perfil la propia (lo mismo que ya
+      // pasó con `categoriaPrecio()`: dos lecturas paralelas del mismo dato no coinciden nunca).
+      const identidad = leerIdentidad(u)
+      setNombre(identidad.nombre || null)
+      setFoto(identidad.foto || null)
+    })
+  }, [])
+
+  return (
+    <div className="flex items-center justify-end">
+      {/* Fuera del menú: si viviera adentro, se desmonta al cerrarse y el submit se pierde. */}
+      <form ref={formSalir} action="/auth/signout" method="post" className="hidden" />
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="rounded-full ring-offset-background transition-[box-shadow,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.97] motion-reduce:active:scale-100"
+            aria-label="Tu cuenta"
+          >
+            <Avatar className="h-9 w-9">
+              {foto && <AvatarImage src={foto} alt="" />}
+              <AvatarFallback className="bg-slate-200 text-xs font-semibold text-slate-700">
+                {iniciales(nombre, email)}
+              </AvatarFallback>
+            </Avatar>
+          </button>
+        </DropdownMenuTrigger>
+
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="font-normal">
+            {/* El mail completo se mantiene: es lo que identifica con qué cuenta estás entrado
+                cuando hay más de una. Antes ocupaba la barra; acá no le molesta a nadie. */}
+            <div className="truncate text-sm font-medium">{nombre ?? email ?? "…"}</div>
+            {nombre && <div className="truncate text-xs text-muted-foreground">{email}</div>}
+            <div className="mt-1 text-xs text-muted-foreground">
+              Rol: <span className="font-medium text-foreground">{userRole}</span>
+            </div>
+          </DropdownMenuLabel>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild>
+            <Link href="/perfil" className="cursor-pointer">
+              <User className="mr-2 h-4 w-4" />
+              Tu perfil
+            </Link>
+          </DropdownMenuItem>
+
+          {userRole === "admin" && (
+            /* Antes era «Usuarios» a secas. Ahora Usuarios es una sección adentro de
+               Configuración, junto con Roles y los datos de la aplicación: si cada cosa
+               administrable entrara acá, este menú sería una lista larga de cosas que se tocan
+               una vez cada tanto. */
+            <DropdownMenuItem asChild>
+              <Link href="/configuracion" className="cursor-pointer">
+                <Settings className="mr-2 h-4 w-4" />
+                Configuración
+              </Link>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() =>
+              confirmarSalida ? setPreguntando(true) : formSalir.current?.requestSubmit()
+            }
+            className="cursor-pointer text-red-600 focus:bg-red-50 focus:text-red-700"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Salir
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Sólo si el usuario lo pidió en su perfil. «Salir» comparte menú con «Tu perfil» y con
+          «Configuración», así que en un click distraído se cierra la sesión y hay que volver a
+          entrar con clave y código de 6 dígitos — que es todo el costo del error. */}
+      <AlertDialog open={preguntando} onOpenChange={setPreguntando}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Cerrar la sesión?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a tener que volver a entrar con tu mail y tu contraseña
+              {userRole === "admin" && ", y con el código de 6 dígitos"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Quedarme</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => formSalir.current?.requestSubmit()}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Salir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}

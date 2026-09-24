@@ -1,19 +1,15 @@
-import { getRoleFromRoute } from '@/config/access-routes'
-import { redirect } from 'next/navigation'
-import ControlPresupuestario from '@/dashboard'
+import { redirect } from "next/navigation"
 
-interface Props {
-  params: Promise<{ accessRoute: string }>
-}
-
-export default async function AccessPage({ params }: Props) {
-  const { accessRoute } = await params
-  const userRole = getRoleFromRoute(accessRoute)
-
-  // Si la ruta no existe en la configuración, redirigir a error
-  if (!userRole) {
-    redirect('/no-access')
-  }
-
-  return <ControlPresupuestario userRole={userRole as 'admin' | 'contable'} />
+/**
+ * Las viejas rutas-como-password (`/adminjms1320`, `/ulises`) ya NO dan acceso.
+ *
+ * Reemplazo total decidido con el usuario 2026-09-03: la URL dejó de ser la contraseña. Se deja
+ * este redirect en vez de borrar la ruta para que los favoritos viejos no den 404 — caen en la
+ * raíz, y si no hay sesión el middleware los manda al login.
+ *
+ * ⚠️ No se lee `accessRoute` a propósito: cualquier valor va al mismo lugar. Si volviera a
+ * mapearse a un rol, volvería el agujero que cerró A-SEC-04.
+ */
+export default function AccessPage() {
+  redirect("/")
 }

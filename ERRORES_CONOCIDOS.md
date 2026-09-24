@@ -130,6 +130,7 @@ es cosmético hoy, pero cada uno es un aviso apagado de más.
 | Estado | Firma (archivo:línea + mensaje corto) | Comando | 1ª vez | Última vez | Veces | Notas |
 |--------|----------------------------------------|---------|--------|------------|-------|-------|
 | 🆕 | **`tsc --noEmit` → 119 errores TS preexistentes en 18 archivos** | `npx tsc --noEmit` | 2026-06-21 | 2026-06-21 | 1 | NO bloquean build: `next.config` tiene `typescript.ignoreBuildErrors=true`. Ver desglose abajo. Ninguno en código tocado en A-FEAT-01. |
+| ✅ | **`TypeError: localStorage.getItem is not a function`** — 4 inicializadores de `useState` leyendo `localStorage` **durante el render del servidor**, sin guarda `typeof window`: `vista-facturas-arca.tsx:814,806` y `vista-templates-egresos.tsx:186,203` | `npm run dev` → GET `/ulises` | 2026-09-03 | 2026-09-03 | 1 | **500 en las 2 pantallas del rol contable.** Preexistente, pero **bloqueaba el login** de [A-SEC-03](PENDIENTES.md#a-sec-03) (al entrar, el contable renderiza justo esas dos) → se arregló en esa tanda en vez de diferirse. Guarda de 1 línea en cada uno. Barrido de todo `components/` + `app/`: **0 casos restantes**. Detalle de Node 25: define un `localStorage` global inservible sin `--localstorage-file`, por eso el mensaje es *is not a function* y no *is not defined* |
 
 ### Desglose del baseline TS (2026-06-21) — capturado, sin investigar
 

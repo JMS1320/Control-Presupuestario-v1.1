@@ -10,10 +10,14 @@
 import { NextResponse } from 'next/server'
 import type { PreviewLoteInput } from '@/lib/lotes-galicia/types'
 import { computarPreview } from '@/lib/lotes-galicia/preview-core'
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = (await request.json()) as PreviewLoteInput
     const { empresa, items } = body

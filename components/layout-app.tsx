@@ -1,0 +1,250 @@
+"use client"
+
+import { useRouter } from "next/navigation"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  useSidebar,
+} from "@/components/ui/sidebar"
+import { Button } from "@/components/ui/button"
+import { BarraSesion } from "@/components/barra-sesion"
+import { Toaster } from "@/components/ui/sonner"
+import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
+import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
+import {
+  Menu, Home, BarChart3, Users, FileText, Receipt, ArrowUpRight,
+  TrendingUp, Banknote, Tractor, Landmark, PieChart, Upload,
+} from "lucide-react"
+
+/**
+ * Las 12 secciones, en un solo lugar.
+ *
+ * El `id` es el mismo `value` de la solapa en `dashboard.tsx` y la misma clave con la que
+ * `usePendientesPorPantalla` cuenta los pendientes — no inventar nombres nuevos acá.
+ */
+export const SOLAPAS = [
+  { id: "principal",    label: "Principal",           Icono: Home },
+  { id: "dashboard",    label: "Dashboard",           Icono: BarChart3 },
+  { id: "distribucion", label: "Distribución Socios", Icono: Users },
+  { id: "reporte",      label: "Reporte Detallado",   Icono: FileText },
+  { id: "egresos",      label: "Egresos",             Icono: Receipt },
+  { id: "ingresos",     label: "Ingresos",            Icono: ArrowUpRight },
+  { id: "cashflow",     label: "Cash Flow",           Icono: TrendingUp },
+  { id: "extracto",     label: "Extracto Bancario",   Icono: Banknote },
+  { id: "productivo",   label: "Productivo",          Icono: Tractor },
+  { id: "sueldos",      label: "Sueldos",             Icono: Landmark },
+  { id: "presupuesto",  label: "Presupuesto",         Icono: PieChart },
+  { id: "importar",     label: "Importar Excel",      Icono: Upload },
+] as const
+
+export type IdSeccion = (typeof SOLAPAS)[number]["id"]
+
+/**
+ * Qué secciones ve cada rol — **el reparto de respaldo, escrito en el código**.
+ *
+ * Desde A-FEAT-82 esto sale de la tabla `public.roles` y se pasa por prop. Esta función queda
+ * como paracaídas para cuando la tabla todavía no existe, y como fuente del listado completo
+ * (`seccionesDe("admin")` son las 12 con su label e ícono).
+ */
+export function seccionesDe(userRole: "admin" | "contable") {
+  return SOLAPAS.filter((s) => userRole === "admin" || s.id === "egresos")
+}
+
+/** Las solapas correspondientes a una lista de ids, en el orden del menú. */
+export function seccionesPorIds(ids: string[]) {
+  const set = new Set(ids)
+  return SOLAPAS.filter((s) => set.has(s.id))
+}
+
+/**
+ * El botón que abre el menú.
+ *
+ * No se usa `SidebarTrigger` de shadcn porque trae `<PanelLeft/>` hardcodeado adentro y los
+ * children en JSX no se pueden pisar desde props. Las tres líneas son el ícono que la gente
+ * reconoce como "menú"; el de panel sugiere otra cosa.
+ *
+ * Componente aparte porque `useSidebar()` sólo funciona dentro del `SidebarProvider`.
+ */
+function BotonMenu({ className }: { className?: string }) {
+  const { toggleSidebar } = useSidebar()
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={`h-9 w-9 shrink-0 ${className ?? ""}`}
+      onClick={toggleSidebar}
+    >
+      <Menu />
+      <span className="sr-only">Abrir el menú</span>
+    </Button>
+  )
+}
+
+/**
+ * El mismo botón, en el chrome del contenido: sólo aparece con el menú **cerrado**.
+ *
+ * Abierto, el ☰ quedaba flotando en el contenido, al lado de un menú con el que no tenía ninguna
+ * relación visual. Un control se pone al lado de lo que afecta.
+ *
+ * ⚠️ El estado se lee distinto según el dispositivo: en mobile el menú es un panel aparte y su
+ * apertura vive en `openMobile`, no en `open`.
+ */
+function BotonMenuChrome() {
+  const { open, openMobile, isMobile } = useSidebar()
+  // `justify-start pl-0` por el mismo motivo que en el header del menú: centrado en su botón de
+  // 36 px, el ícono cae 10 px a la derecha del borde donde arranca el contenido (el título, las
+  // tarjetas). Lo que se alinea a ojo es el ícono, no la caja invisible que lo contiene.
+  return (isMobile ? openMobile : open) ? null : <BotonMenu className="justify-start pl-0" />
+}
+
+function MenuLateral({
+  userRole,
+  secciones,
+  activa,
+  contadores,
+  onElegir,
+}: {
+  userRole: "admin" | "contable"
+  secciones: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
+  activa?: string
+  /** Preferencia personal: mostrar los globitos de pendientes. */
+  contadores: boolean
+  onElegir: (id: string) => void
+}) {
+  const { setOpen, setOpenMobile, isMobile } = useSidebar()
+  // Sólo admin: el endpoint lo exige y el contable no trabaja los pendientes de desarrollo.
+  // Y sólo si el usuario los quiere: apagados no se pide nada, no se pide y se esconde.
+  const pendientes = usePendientesPorPantalla(userRole === "admin" && contadores)
+
+  const elegir = (id: string) => {
+    onElegir(id)
+    // Se cierra al elegir: un menú que tapa el contenido y queda abierto estorba.
+    if (isMobile) setOpenMobile(false)
+    else setOpen(false)
+  }
+
+  return (
+    <Sidebar collapsible="offcanvas">
+      {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
+          ayuda a elegir una sección — las de abajo se explican solas. */}
+      {/* Sólo el botón: el título decía «Control Presupuestario», que es el nombre de la app y no
+          ayuda a elegir una sección — las de abajo se explican solas.
+          El `justify-start pl-2` NO es cosmético: sin eso el ícono queda centrado en un botón de
+          36 px y cae a 18 px del borde, mientras los ítems caen a 8 — 10 px de desalineación que
+          se ve. Con esto los dos quedan a 16. */}
+      <SidebarHeader className="px-2 py-3">
+        <BotonMenu className="justify-start pl-2" />
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarMenu className="px-2">
+          {secciones.map(({ id, label, Icono }) => {
+            const c = pendientes[id]
+            // Color proporcional a los urgentes, no binario, para que el rojo señale dónde está el
+            // bulto de verdad y no se encienda en todas las secciones a la vez.
+            const color = !c || c.total === 0 ? null
+              : c.urgentes >= 5 ? "bg-red-100 text-red-700"
+              : c.urgentes > 0 ? "bg-amber-100 text-amber-700"
+              : "bg-gray-200 text-gray-600"
+            return (
+              <SidebarMenuItem key={id}>
+                <SidebarMenuButton isActive={activa === id} onClick={() => elegir(id)}>
+                  <Icono className="h-4 w-4" />
+                  <span>{label}</span>
+                </SidebarMenuButton>
+                {color && c && (
+                  <SidebarMenuBadge
+                    data-nota-ignorar
+                    title={`${c.total} pendiente(s)${c.urgentes ? ` · ${c.urgentes} urgente(s)` : ""} — se ven en Principal → Pendientes`}
+                    className={`rounded-full ${color}`}
+                  >
+                    {c.total}
+                  </SidebarMenuBadge>
+                )}
+              </SidebarMenuItem>
+            )
+          })}
+        </SidebarMenu>
+      </SidebarContent>
+    </Sidebar>
+  )
+}
+
+/**
+ * El marco de la app: menú lateral + barra superior con el avatar.
+ *
+ * Existe porque antes esto vivía **adentro de `dashboard.tsx`**, así que `/usuarios` —y cualquier
+ * ruta nueva— quedaban sin menú y sin sesión, como islas desde las que sólo se salía con un link
+ * «← Volver al sistema».
+ *
+ * Dos modos, según quién maneja la navegación:
+ * - **Con `onElegirSeccion`** (la pantalla principal): elegir una sección cambia la solapa en el
+ *   lugar, sin recargar.
+ * - **Sin `onElegirSeccion`** (`/usuarios`, `/perfil`): elegir navega a `/?seccion=<id>`. Por eso
+ *   la sección viaja en la URL — es lo que hace que el menú funcione desde cualquier ruta.
+ */
+export function LayoutApp({
+  userRole,
+  secciones,
+  seccionActiva,
+  preferencias,
+  onElegirSeccion,
+  children,
+}: {
+  userRole: "admin" | "contable"
+  /** Ids de las secciones que ve este usuario, leídos de `public.roles`. Sin esto, el reparto
+   *  del código — el paracaídas de cuando la tabla todavía no se creó. */
+  secciones?: string[]
+  seccionActiva?: string
+  /** Preferencias personales del usuario (A-FEAT-83). Sin ellas, el comportamiento de siempre. */
+  preferencias?: Preferencias
+  onElegirSeccion?: (id: string) => void
+  children: React.ReactNode
+}) {
+  const router = useRouter()
+  const visibles = secciones ? seccionesPorIds(secciones) : seccionesDe(userRole)
+  const elegir = onElegirSeccion ?? ((id: string) => router.push(`/?seccion=${id}`))
+  const prefs = preferencias ?? PREFERENCIAS_DEFAULT
+
+  return (
+    /* La preferencia de explicaciones se aplica acá, en el marco, y no en cada componente: es una
+       clase que enciende una sola regla de CSS sobre `[data-ayuda]` (ver `globals.css`). Todas las
+       pantallas de la app pasan por este layout, así que alcanza con ponerla una vez. */
+    <SidebarProvider
+      defaultOpen={prefs.menuAbierto}
+      className={prefs.explicaciones ? undefined : "sin-explicaciones"}
+    >
+      <MenuLateral
+        userRole={userRole}
+        secciones={visibles}
+        activa={seccionActiva}
+        contadores={prefs.contadoresPendientes}
+        onElegir={elegir}
+      />
+      <SidebarInset className="bg-gray-50">
+        {/* Chrome fijo y translúcido: el menú y la sesión tienen que seguir a mano después de
+            scrollear media pantalla de tabla. El contenido pasa por debajo. */}
+        <div className="chrome-superior">
+          <div className="mx-auto flex w-full max-w-7xl items-center gap-3 px-4 py-3">
+            <BotonMenuChrome />
+            <div className="min-w-0 flex-1">
+              <BarraSesion userRole={userRole} confirmarSalida={prefs.confirmarSalida} />
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 pt-6">{children}</div>
+        {/* A nivel marco: los toasts sobreviven el cambio de sección y existen en todas las rutas.
+            Va último por prolijidad (es `position: fixed`, el orden en el DOM no lo afecta).
+            📌 Se probó moverlo y sacarlo del todo buscando el aviso de hidratación del menú del
+            avatar: NO es el causante — ver A-BUG-97, para no repetir la prueba. */}
+        <Toaster richColors closeButton position="top-right" />
+      </SidebarInset>
+    </SidebarProvider>
+  )
+}

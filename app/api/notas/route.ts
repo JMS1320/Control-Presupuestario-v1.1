@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 /**
  * 🔐 Lectura de las notas — DEL LADO DEL SERVIDOR, a propósito (A-SEC-04).
@@ -21,6 +22,9 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
  * a la tabla entera.
  */
 export async function GET() {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const { data, error } = await supabaseAdmin
       .from("notas_para_claude")

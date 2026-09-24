@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,6 +14,9 @@ const supabase = createClient(
  * Para desasignar: pasar nro_cuenta: null, cuenta_asignada: null
  */
 export async function PATCH(request: Request) {
+  const sesion = await exigirSesion()
+  if (!sesion.ok) return respuestaSinAcceso(sesion)
+
   try {
     const body = await request.json()
     const { ids, nro_cuenta, cuenta_asignada } = body as {

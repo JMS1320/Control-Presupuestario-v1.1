@@ -70,7 +70,7 @@ export function AlertaParseoPendiente() {
   const totalSinDesglosar = pendientes.reduce((s, p) => s + p.sinDesglosar, 0)
 
   return (
-    <Card className="border-sky-300 bg-sky-50">
+    <Card className="entrada-suave border-sky-300 bg-sky-50">
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <FileWarning className="h-5 w-5 shrink-0 mt-0.5 text-sky-700" />
