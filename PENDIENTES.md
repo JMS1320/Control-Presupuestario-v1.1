@@ -4109,6 +4109,17 @@ propósito, así que sin él la policy no podría leer la tabla que la define. V
 
 ### Lo que falta, y no es un detalle
 
+### Extracto mapeado, 2026-09-24 (`scripts/64`)
+
+Ninguna tabla de Extracto estaba mapeada, así que un rol con sólo Productivo **podía escribir en el
+extracto bancario**. Se mapearon **12** a nivel sección: los movimientos de cada cuenta, las tres
+cajas, las tres tarjetas y las dos de configuración de reglas. Total: **57 tablas**.
+
+🔑 **`msa.cheques` quedó AFUERA, y el motivo es el aprendizaje**: la escribe `vista-facturas-arca`,
+o sea **Egresos**. Mapearla a Extracto habría roto las facturas. Es el mismo error que destapó
+`scripts/63`, pero esta vez se evitó **midiendo quién escribe cada tabla antes de mapearla** — que
+pasa a ser el paso obligatorio antes de tocar `recurso_tablas`.
+
 ### 🔻 «Una tabla, un recurso» era falso — y ya había roto Presupuesto (2026-09-24)
 
 Apareció al querer mapear las tablas de Extracto: antes de proponerlo se midió **quién más las
