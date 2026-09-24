@@ -131,6 +131,56 @@ function generarQuincenaSicore(fecha: string): string {
 
 ---
 
+
+## 🧠 LA RETENCIÓN ES DE LA ORDEN DE PAGO, NO DE LA FACTURA *(concepto, 2026-09-13)*
+
+*Enunciado por el usuario al revisar el PDF del Detalle de Pago: **«la retención SICORE se practica
+sobre la orden de pago total. El por factura es como el sistema calcula para llegar, pero eso es
+subjetivo: se podría haber empezado por otra factura a calcular y serían distintos parciales para el
+mismo total»**.*
+
+> **La retención existe UNA sola vez, a nivel de la orden de pago. El reparto por factura es un
+> artefacto del cálculo, no un hecho.**
+
+### Por qué el parcial por factura no es real
+
+El cálculo de ganancias es **no lineal**: hay un **mínimo no imponible** que se consume una vez y una
+escala que se aplica sobre el acumulado. Entonces, cuando una orden de pago cubre varias facturas:
+
+- la **suma** de los netos y el mínimo superado **determinan el total**, y ese total es único;
+- pero **el orden en que se recorren las facturas cambia cuál de ellas "consume" el mínimo**, y por
+  lo tanto cambia cuánto le toca a cada una.
+
+🔑 **Mismo total, parciales distintos, según por dónde se empiece.** Un número que depende del orden
+de iteración no es un dato del negocio: es un residuo del algoritmo.
+
+### Las tres consecuencias, y las tres obligan
+
+**1 · El TXT de ARCA declara una retención GLOBAL, nunca parciales.** Es la prueba de que el
+organismo tampoco reconoce el reparto: lo que se informa es un certificado por orden de pago.
+
+**2 · El certificado también es uno solo.** No hay «certificado de la factura 6347».
+
+**3 · 🛑 Y por eso NO se muestra retención por factura en ningún lado.** Mostrarla invita a sumarla,
+a cuadrarla contra la factura y a discutir un número que no significa nada. El lugar de la retención
+es el **total de la orden de pago**, y ahí sí es exacta.
+
+### El descuento SÍ es por factura
+
+No confundirlos aunque viajen juntos en la misma pantalla:
+
+| | De quién es | ¿Se puede listar por factura? |
+|---|---|---|
+| **Descuento** | de **cada factura** — es una condición comercial de ese comprobante | ✅ **sí**, y conviene |
+| **Retención de ganancias** | de la **orden de pago** | 🛑 **no**: el parcial es subjetivo |
+
+📌 Y el motivo por el que el descuento sí: es **lineal**. Sumar los descuentos de las facturas da el
+descuento total, en cualquier orden. La retención no tiene esa propiedad.
+
+### Dónde impacta esto hoy
+
+→ [A-BUG-173](PENDIENTES.md#a-bug-173): el cuadro 1 del PDF del Detalle de Pago mostraba
+`Retención Ganancias` factura por factura. Sale.
 ## 🧮 Lógica descuento proporcional
 
 Cuando el usuario ingresa un descuento (% o monto fijo):
@@ -165,6 +215,72 @@ setMontoRetencion(baseAjustada * tipo.porcentaje_retencion)
 **Query anticipos** usa columna `fecha_pago` (no `fecha`).
 
 ---
+
+## 🔁 Idempotencia: una fila por comprobante, y el TXT deduplica *(2026-09-11)*
+
+**Dos defensas, y hacen falta las dos.**
+
+### 1 · Al escribir — `lib/sicore/registrar-retencion.ts`
+
+Antes **insertaba a ciegas**. El 10/09 la FC 10-6337 de ALCORTA quedó con **dos filas vigentes
+idénticas**, creadas con **0,69 s de diferencia**: el botón «✅ Confirmar y pasar a Pagar» no tenía
+guarda de re-entrada y un doble click corrió el flujo entero dos veces.
+
+Ahora sale **sin escribir** si ya existe una fila no anulada con el mismo comprobante + quincena +
+tipo **y los mismos importes**.
+
+⚠️ **Los importes entran en la comparación a propósito**: dos pagos parciales legítimos de la misma
+factura en la misma quincena tienen distinto `total_pagado` y **no se colapsan**.
+
+🔑 **Va en la capa compartida y no en el botón**: el botón es uno de varios llamadores. Es la
+lección de `A-BUG-142` — *la regla vivía en un camino de dos*.
+
+### 2 · Al exportar — `lib/sicore/dedup.ts`
+
+`generarTXTCierreV2` agrupa por `cuit_emisor||tipo_sicore` **sumando fila por fila**, así que una
+duplicada se sumaba. Medido sobre el caso real:
+
+| | Pago declarado | Base declarada | Retención |
+|---|---:|---:|---:|
+| con la duplicada | **$534.631,16** | **$443.138,95** | $1.566,93 |
+| correcto | $364.272,27 | $302.346,46 | $1.566,93 |
+
+🧨 **La retención sale bien en los dos casos.** Lo que queda mal es **lo declarado** — por eso
+ningún control de plata lo agarraba: el dinero retenido es correcto y el error está en el renglón
+de la DDJJ.
+
+🔑 **Sin esta segunda defensa el arreglo no sirve para el caso real**: la primera evita filas
+*nuevas*, pero las que ya están en la base se sumarían igual. Y **nada se descarta en silencio**: si
+descarta alguna, lo dice por toast.
+
+### 3 · El disparador — la guarda del botón
+
+«Confirmar y pasar a Pagar» usa un `useRef` (no `useState`): el segundo click llega **antes de que
+React repinte**. Se libera en `finally`, para que un error no deje el modal muerto.
+
+## 📆 La fecha de pago se escribe con el ESTADO, no antes *(2026-09-11)*
+
+`resolverSicoreLote('retener')` ya **no** escribe la `fecha_pago` de las facturas que van a la cola.
+La escribe cada factura al completar su paso, junto con su estado.
+
+**Por qué**: abandonar la cola —cerrar la pestaña, un corte— dejaba la factura con fecha de pago y
+con la `fecha_estimada` arrastrada, **pero con el estado viejo**. El Cash Flow proyectaba la plata
+saliendo el día del intento y nada lo señalaba (`A-BUG-147`).
+
+🔑 Es el invariante de `A-BUG-20` un paso más adentro: *«nada se escribe hasta que las preguntas
+estén contestadas»* valía para el portón, pero **la cola por factura son más preguntas**.
+
+📌 De paso arregla la salida «Cancelar», que restauraba el estado y **dejaba la fecha escrita igual**.
+
+## 🔢 El número de comprobante llega al certificado *(2026-09-11)*
+
+`numero_desde`, `punto_venta` y `fecha_emision` se usaban **sólo para armar el texto de la fila** del
+Cash Flow y no viajaban como campos, así que la retención de una factura **suelta** se guardaba sin
+número: **11 de 16 filas `origen='directo'`**. `A-BUG-138` lo había arreglado **sólo para el camino
+de agrupación**. Ahora viven en el origen (`useMultiCashFlowData`) y sirven para los dos.
+
+⚠️ **Las 11 filas viejas siguen sin número**: el arreglo es hacia adelante. Si hay que reimprimir
+alguna de esas quincenas, se completan a mano.
 
 ## 📁 Archivos del módulo
 
@@ -340,6 +456,69 @@ nunca a la más vieja.
 > [A-BUG-48](PENDIENTES.md#a-bug-48).
 
 ---
+
+## 🔍 El mínimo consumido DOS VECES — y la firma que lo delata
+
+*Caso real verificado 2026-09-22 sobre el pago de ALCORTA del 10/06/2026 → [A-DAT-55](PENDIENTES.md#a-dat-55).*
+
+> **El mínimo no imponible se consume UNA sola vez por proveedor y por QUINCENA. Si se aplica dos
+> veces, la diferencia es siempre el mismo número: `alícuota × mínimo`.**
+
+⚠️ **Corregido 2026-09-22, el mismo día que se escribió**: acá decía *«por mes»*. **El sistema lo
+acumula por QUINCENA** — `netoPagosPreviosSinRetencion` compara `generarQuincenaSicore(fecha_pago)`
+contra la quincena del pago, y el chequeo de retención previa filtra por `sicore = quincena`. El
+caso de abajo no cambia (las tres facturas cayeron en la misma quincena), pero la regla sí.
+
+🛑 **Pero el sistema está MAL y ya está confirmado** *(2026-09-22, [A-DEC-26](PENDIENTES.md#a-dec-26))*:
+la RG 830 fija el mínimo **por mes calendario y por sujeto retenido**, y el sistema lo reinicia **cada
+quincena**. **La quincena es el período de información y depósito, no la unidad del mínimo** — el
+cálculo trata las dos cosas como una.
+
+**Medido**: 2 proveedores reciben el mínimo dos veces en el mismo mes (MASSAGLIA 07/2026 y STRINGHINI
+05/2026, los dos de Servicios), y se retuvo **$2.686,80 de menos**. Uno cae en una quincena **ya
+declarada**, así que su corrección es una rectificativa. El arreglo es
+[A-BUG-193](PENDIENTES.md#a-bug-193).
+
+⚠️ **Sentido del error, que es el contrario del caso de abajo**: acá se retiene **de menos** y la
+empresa queda en falta con ARCA; en [A-DAT-55](PENDIENTES.md#a-dat-55) se le pagó de más al proveedor.
+
+Para Bienes eso da **2 % × $224.000 = $4.480,00**, y ese importe es una **firma reconocible**: cuando
+una transferencia difiere del registro en exactamente $4.480, no hay que buscar nada más.
+
+**El caso, con los números:**
+
+| Comprobante | Neto | Mínimo aplicado | Base | Retención |
+|---|---|---|---|---|
+| FC 10-6115 | $882.946,81 | **$224.000** (lo consume entero) | $658.946,81 | $13.178,94 |
+| FC 11-2734 | $976.320,00 | 0 | $976.320,00 | $19.526,40 |
+| FC 10-6152 | $1.633.768,56 *(neto tras el 5 % de descuento)* | 0 | $1.633.768,56 | $32.675,37 |
+| | | | **TOTAL** | **$65.380,71** |
+
+El detalle que se le envió al proveedor llevaba **$60.900,71**, porque la FC 6152 figuraba con
+$28.195,37 — el mínimo descontado por segunda vez. **Se transfirieron $4.480,00 de más.**
+
+### Las dos cosas que el caso enseña
+
+**1 · El sistema se corrigió solo, y dejó rastro.** El certificado `00002026000030` quedó **anulado**
+y el vigente es el `00002026000034`, ya con los $65.380,71. La tabla guarda las dos versiones, así
+que **se puede reconstruir qué se informó en cada momento** — que es exactamente para lo que sirve
+no borrar.
+
+**2 · 🛑 La retención certificada NO se toca para que cierre la resta.** Es la tentación obvia
+—bajarla a $60.900,71 y que el pago cuadre— y está mal por tres motivos: la quincena está cerrada, el
+proveedor se toma el crédito por el importe del certificado, y el TXT ya declarado dice ese número.
+
+> 🔑 **Quien pagó la diferencia fue la empresa.** Al proveedor se le certificó $65.380,71 y se le
+> descontó $60.900,71 de la transferencia: los $4.480 salieron del bolsillo propio y son un
+> **crédito contra el proveedor**, no un gasto. Van como saldo a favor, nunca adentro de la factura
+> → [A-FEAT-168](PENDIENTES.md#a-feat-168).
+
+### Cómo se detecta sin que nadie avise
+
+El cruce que lo encontró es el de la § 🔁 *el mismo número por dos caminos* de `CLAUDE.md`: **el
+extracto del banco contra el Cash Flow**, transferencia por transferencia. De cinco pagos a Alcorta,
+tres coincidían al centavo y dos no — y ninguna pantalla lo señalaba, porque **todas miran el estado
+del pago y ninguna compara el importe transferido contra el registrado**.
 
 ## ⚠️ Pendientes / Evolución futura
 

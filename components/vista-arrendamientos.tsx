@@ -6,9 +6,10 @@
 // Fijar PARCIAL parte la cuota: una cuota se fija entera o se parte.
 // Ver DISEÑO_PRESUPUESTO.md § INGRESOS — Arrendamientos agrícolas.
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +23,13 @@ import {
   validarGuardarrailQq,
   type PrecioGrano, type TipoCambio,
 } from "@/lib/arrendamientos/calculo"
+import {
+  copiarEsquemaCuotas, validarCuotas, planificarCuotas, aplicarPlanCuotas, filaDesdeGuardada, partirCuota, DECIMALES_QQ,
+  camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
+  type FilaCuota, type CuotaGuardada,
+} from "@/lib/arrendamientos/cuotas"
+import { altaContraparte } from "@/lib/proveedores/alta"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
 
@@ -63,11 +71,19 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
   const [tcs, setTcs] = useState<TipoCambio[]>([])
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({})
 
-  const [modalContrato, setModalContrato] = useState<Partial<Contrato> | null>(null)
-  const [modalFijar, setModalFijar] = useState<{ cuota: Cuota; contrato: Contrato } | null>(null)
+  const [modalContrato, setModalContrato] = useState<DatosModalContrato | null>(null)
+  // Con `venta` es EDITAR una venta ya hecha (A-BUG-100); sin ella, fijar una nueva.
+  const [modalFijar, setModalFijar] = useState<{ cuota: Cuota; contrato: Contrato; venta?: Venta } | null>(null)
   const [modalTC, setModalTC] = useState<Venta | null>(null)
 
+  // ⚠️ Cada carga lleva un número y sólo la ÚLTIMA escribe en pantalla. Sin esto, al pasar de MSA a
+  // PAM mientras MSA todavía cargaba, la respuesta de MSA (más lenta: tiene ventas) llegaba después
+  // y pisaba la lista: la solapa decía PAM y abajo estaban los contratos de MSA, editables y
+  // fijables. Lo agarró la prueba de pantalla de A-BUG-101 (2026-09-21).
+  const cargaVigente = useRef(0)
+
   const cargar = useCallback(async () => {
+    const miCarga = ++cargaVigente.current
     setCargando(true)
     try {
       let q = supabase
@@ -90,12 +106,13 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
         ? await supabase.from("ventas_arrendamiento").select("*").in("cuota_id", cuotaIds)
         : { data: [] as any[] }
 
+      if (miCarga !== cargaVigente.current) return   // llegó tarde: ya se pidió otra empresa
       setContratos((cs || []) as Contrato[])
       setCuotas((qs || []) as Cuota[])
       setVentas((vs || []) as Venta[])
       setPrecios((ps || []) as PrecioGrano[])
       setTcs((ts || []) as TipoCambio[])
-    } finally { setCargando(false) }
+    } finally { if (miCarga === cargaVigente.current) setCargando(false) }
   }, [empresa])
 
   useEffect(() => { cargar() }, [cargar])
@@ -103,8 +120,11 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
   const cuotasDe = (contratoId: string) => cuotas.filter(q => q.contrato_id === contratoId)
   const ventasDe = (cuotaId: string) => ventas.filter(v => v.cuota_id === cuotaId)
 
-  // ── Guardar contrato ────────────────────────────────────────────────────────
-  const guardarContrato = async (c: Partial<Contrato>) => {
+  // ── Guardar contrato (con sus cuotas — A-BUG-101) ───────────────────────────
+  // Devuelve el error para mostrarlo en el modal, o null si salió todo.
+  const guardarContrato = async (
+    c: Partial<Contrato>, filas: FilaCuota[], originales: CuotaGuardada[],
+  ): Promise<string | null> => {
     const payload = {
       empresa: c.empresa || "MSA",
       campania: c.campania,
@@ -116,12 +136,46 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
       dias_cobro_disponible: c.dias_cobro_disponible ?? 20,
       updated_at: new Date().toISOString(),
     }
-    const { error } = c.id
-      ? await supabase.from("contratos_arrendamiento").update(payload).eq("id", c.id)
-      : await supabase.from("contratos_arrendamiento").insert(payload)
-    if (error) { alert("Error: " + error.message); return }
-    setModalContrato(null)
+    const { data: guardado, error } = c.id
+      ? await supabase.from("contratos_arrendamiento").update(payload).eq("id", c.id).select("id").single()
+      : await supabase.from("contratos_arrendamiento").insert(payload).select("id").single()
+    if (error || !guardado) return "No se pudo guardar el contrato: " + (error?.message ?? "sin respuesta")
+
+    const errCuotas = await aplicarPlanCuotas(supabase, guardado.id, planificarCuotas(originales, filas))
+
+    // § Contrapartes: el cliente del contrato tiene que quedar en el maestro (find-or-create).
+    // Si esto falla el contrato ya está guardado: se avisa y no se deshace nada.
+    let aviso: string | null = null
+    if (c.cliente_cuit) {
+      const alta = await altaContraparte(supabase, {
+        cuit: c.cliente_cuit, razon_social: c.cliente_nombre || "", como: "cliente",
+      })
+      if (!alta.ok) aviso = `El contrato se guardó, pero el cliente no quedó en el maestro: ${alta.error}`
+    }
+
     await cargar()
+    if (errCuotas) return `El contrato se guardó, pero las cuotas no: ${errCuotas}`
+    if (aviso) alert(aviso)
+    setModalContrato(null)
+    return null
+  }
+
+  // Duplicar a otra campaña (A-FEAT-166): abre Nuevo contrato ya lleno, con la campaña siguiente y
+  // las cuotas corridas un año. No guarda nada hasta que el usuario aprieta Guardar.
+  const duplicarContrato = (c: Contrato) => {
+    const campania = campaniaSiguiente(c.campania)
+    const yaExiste = contratos.some(x => x.empresa === c.empresa && x.centro_costo === c.centro_costo && x.campania === campania)
+    if (yaExiste && !confirm(`Ya hay un contrato de ${c.centro_costo} ${campania} en ${c.empresa}. ¿Duplicar igual?`)) return
+    setModalContrato({
+      empresa: c.empresa, campania, centro_costo: c.centro_costo,
+      cliente_cuit: c.cliente_cuit, cliente_nombre: c.cliente_nombre,
+      has: c.has, qq_ha_total: c.qq_ha_total, grano: c.grano,
+      dias_cobro_disponible: c.dias_cobro_disponible,
+      _copiaDe: {
+        etiqueta: `${c.centro_costo} ${c.campania}`, campania: c.campania,
+        cuotas: cuotasDe(c.id) as unknown as CuotaGuardada[],
+      },
+    })
   }
 
   const bajaContrato = async (id: string) => {
@@ -176,13 +230,25 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                 </button>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => setModalContrato(c)}>Editar</Button>
+                  <Button variant="ghost" size="sm" title="Nuevo contrato igual a éste, en la campaña siguiente"
+                    onClick={() => duplicarContrato(c)}>
+                    Duplicar
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => bajaContrato(c.id)}>
                     <Trash2 className="h-3.5 w-3.5 text-gray-400" />
                   </Button>
                 </div>
               </CardTitle>
 
-              {!guard.ok && (
+              {qs.length === 0 ? (
+                <p className="flex items-center gap-1 text-xs text-amber-700">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Este contrato no tiene cuotas: no proyecta ingresos ni se puede fijar.
+                  <button className="ml-1 font-medium underline" onClick={() => setModalContrato(c)}>
+                    Cargar cuotas
+                  </button>
+                </p>
+              ) : !guard.ok && (
                 <p className="flex items-center gap-1 text-xs text-amber-700">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Las cuotas suman {fmtAR(guard.suma)} qq/ha y el contrato dice {fmtAR(Number(c.qq_ha_total))}
@@ -237,10 +303,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                               {MESES[q.posicion_mes - 1]} {String(q.posicion_anio).slice(-2)}
                             </td>
                             <td className="px-3 py-2 text-right text-emerald-700">
-                              {vendido > 0 ? fmtAR(vendido, 2) : "—"}
+                              {vendido > 0 ? fmtAR(vendido, 3) : "—"}
                             </td>
                             <td className="px-3 py-2 text-right text-amber-700">
-                              {disp > 0.001 ? fmtAR(disp, 2) : "—"}
+                              {disp > 0.001 ? fmtAR(disp, 3) : "—"}
                             </td>
                             <td className="px-3 py-2">
                               <Badge variant="outline" className="text-[10px]">{est}</Badge>
@@ -277,13 +343,19 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                                     {ev === "cerrada" ? "cerrada" : ev === "sin_tc" ? "falta TC" : "falta precio"}
                                   </Badge>
                                 </td>
-                                <td className="px-3 py-1.5 text-right">
+                                <td className="px-3 py-1.5 text-right whitespace-nowrap">
                                   {ev === "sin_tc" && (
                                     <Button size="sm" variant="ghost" className="h-6 text-xs"
                                       onClick={() => setModalTC(v)}>
                                       Fijar TC
                                     </Button>
                                   )}
+                                  {/* Siempre, abierta o cerrada (A-BUG-100): una venta cerrada con un
+                                      TC puesto por error no tenía forma de corregirse. */}
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs"
+                                    onClick={() => setModalFijar({ cuota: q, contrato: c, venta: v })}>
+                                    Editar
+                                  </Button>
                                 </td>
                               </tr>
                             )
@@ -303,7 +375,12 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
         <span className="text-amber-500">*</span> monto en pesos estimado: falta fijar el TC.
       </p>
 
-      <ModalContrato datos={modalContrato} onCerrar={() => setModalContrato(null)} onGuardar={guardarContrato} />
+      <ModalContrato
+        datos={modalContrato}
+        cuotas={modalContrato?.id ? (cuotasDe(modalContrato.id) as unknown as CuotaGuardada[]) : []}
+        vendidoPorCuota={Object.fromEntries(
+          (modalContrato?.id ? cuotasDe(modalContrato.id) : []).map(q => [q.id, tonsFijadas(ventasDe(q.id))]))}
+        onCerrar={() => setModalContrato(null)} onGuardar={guardarContrato} />
       <ModalFijar datos={modalFijar} ventas={ventas} precios={precios} tcs={tcs}
         onCerrar={() => setModalFijar(null)} onListo={cargar} />
       <ModalFijarTC venta={modalTC} tcs={tcs} onCerrar={() => setModalTC(null)} onListo={cargar} />
@@ -311,39 +388,171 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
   )
 }
 
-// ── Modal contrato ────────────────────────────────────────────────────────────
+// ── Modal contrato (con sus cuotas — A-BUG-101) ───────────────────────────────
+// Crear y editar son el MISMO modal: el contrato se define entero de una vez, cuotas incluidas.
+// Cada contrato es independiente — cantidad de cuotas, qq/ha y fechas son libres. "Copiar cuotas
+// de…" trae el esquema de otro contrato como punto de partida, corrido a esta campaña.
 
-function ModalContrato({ datos, onCerrar, onGuardar }: {
-  datos: Partial<Contrato> | null
+/** Lo que abre el modal: un contrato, y si es una copia (A-FEAT-166), de dónde salen las cuotas. */
+type DatosModalContrato = Partial<Contrato> & {
+  _copiaDe?: { etiqueta: string; campania: string; cuotas: CuotaGuardada[] }
+}
+
+/** Fila del editor mientras se tipea: los qq van como texto es-AR. */
+interface FilaEdit {
+  id?: string
+  qq: string
+  fecha: string
+  posMes: number
+  posAnio: string
+  /** La posición la puso el usuario: deja de seguir a la fecha de cobro. */
+  posManual: boolean
+}
+
+interface FuenteCopia {
+  id: string; empresa: string; campania: string; centro_costo: string; cliente_nombre: string
+  cuotas: CuotaGuardada[]
+}
+
+const mesDe = (fecha: string) => Number(fecha.slice(5, 7)) || 0
+const anioDe = (fecha: string) => fecha.slice(0, 4)
+
+function aFilaEdit(c: FilaCuota): FilaEdit {
+  return {
+    id: c.id,
+    // Todos los decimales que tenga (hasta 6): una cuota partida tiene qq/ha como 4,667769, y
+    // mostrarla con 2 la redondearía al guardar — volviendo a meter el error de A-BUG-183.
+    qq: Number(c.qq_ha_cuota).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: DECIMALES_QQ }),
+    fecha: c.fecha_cobro,
+    posMes: c.posicion_mes,
+    posAnio: String(c.posicion_anio),
+    posManual: mesDe(c.fecha_cobro) !== c.posicion_mes || anioDe(c.fecha_cobro) !== String(c.posicion_anio),
+  }
+}
+
+function aFilaCuota(e: FilaEdit): FilaCuota {
+  return {
+    id: e.id,
+    qq_ha_cuota: parseAR(e.qq),
+    fecha_cobro: e.fecha,
+    posicion_anio: Number(e.posAnio) || 0,
+    posicion_mes: e.posMes,
+  }
+}
+
+function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: {
+  datos: DatosModalContrato | null
+  /** Cuotas guardadas del contrato (vacío si es nuevo). */
+  cuotas: CuotaGuardada[]
+  /** Toneladas ya vendidas (fijadas) de cada cuota, por id. */
+  vendidoPorCuota: Record<string, number>
   onCerrar: () => void
-  onGuardar: (c: Partial<Contrato>) => Promise<void>
+  onGuardar: (c: Partial<Contrato>, filas: FilaCuota[], originales: CuotaGuardada[]) => Promise<string | null>
 }) {
   const [f, setF] = useState<any>({})
+  const [filas, setFilas] = useState<FilaEdit[]>([])
+  const [fuentes, setFuentes] = useState<FuenteCopia[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  // Las cuotas guardadas se congelan al abrir: la prop se recalcula en cada render del padre.
+  const [originales, setOriginales] = useState<CuotaGuardada[]>([])
+
   useEffect(() => {
     if (!datos) return
+    const { _copiaDe, ...contrato } = datos
     setF({
-      ...datos,
+      ...contrato,
       has: datos.has != null ? fmtAR(Number(datos.has)) : "",
       qq_ha_total: datos.qq_ha_total != null ? fmtAR(Number(datos.qq_ha_total)) : "",
     })
+    const orden = [...cuotas].sort((a, b) => a.numero_cuota - b.numero_cuota)
+    setOriginales(orden)
+    setFilas(orden.map(c => aFilaEdit(filaDesdeGuardada(c))))
+    // Duplicado: las cuotas del contrato original, corridas a la campaña nueva
+    if (datos._copiaDe) {
+      setFilas(copiarEsquemaCuotas(datos._copiaDe.cuotas, datos._copiaDe.campania, datos.campania || datos._copiaDe.campania)
+        .map(aFilaEdit))
+    }
+    setError(null)
+
+    // Contratos de los que se puede copiar el esquema: de CUALQUIER empresa (el de MSA sirve de
+    // ejemplo para PAM y MA), menos éste, y sólo los que tienen cuotas.
+    ;(async () => {
+      const { data: cs } = await supabase.from("contratos_arrendamiento")
+        .select("id, empresa, campania, centro_costo, cliente_nombre").eq("activo", true)
+      const otros = (cs || []).filter((c: any) => c.id !== datos.id)
+      if (!otros.length) { setFuentes([]); return }
+      const { data: qs } = await supabase.from("cuotas_arrendamiento")
+        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes")
+        .in("contrato_id", otros.map((c: any) => c.id))
+      setFuentes(otros
+        .map((c: any) => ({ ...c, cuotas: (qs || []).filter((q: any) => q.contrato_id === c.id) }))
+        .filter((c: FuenteCopia) => c.cuotas.length > 0))
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datos])
 
   if (!datos) return null
 
-  const submit = () => {
-    if (!f.campania || !f.centro_costo || !f.cliente_nombre || !f.has || !f.qq_ha_total) {
-      alert("Campaña, campo, cliente, hectáreas y qq/ha son obligatorios")
-      return
+  const has = parseAR(f.has || "0")
+  const qqTotal = parseAR(f.qq_ha_total || "0")
+  const tons = has * qqTotal / 10
+  const filasCuota = filas.map(aFilaCuota)
+  const val = validarCuotas(filasCuota, has, qqTotal, vendidoPorCuota, originales.map(o => o.id))
+
+  const cambiarFila = (i: number, cambio: Partial<FilaEdit>) => setFilas(prev => prev.map((r, j) => {
+    if (j !== i) return r
+    const n = { ...r, ...cambio }
+    // Default del dato real: la posición sigue al mes de cobro hasta que el usuario la pise.
+    if (cambio.fecha !== undefined && !r.posManual && cambio.fecha) {
+      n.posMes = mesDe(cambio.fecha); n.posAnio = anioDe(cambio.fecha)
     }
-    onGuardar({ ...f, has: parseAR(f.has), qq_ha_total: parseAR(f.qq_ha_total) })
+    return n
+  }))
+
+  const agregarFila = () => setFilas(prev => {
+    const ult = prev[prev.length - 1]
+    return [...prev, {
+      qq: "", fecha: ult?.fecha ?? "", posMes: ult?.posMes ?? 1,
+      posAnio: ult?.posAnio ?? String(new Date().getFullYear()), posManual: ult?.posManual ?? false,
+    }]
+  })
+
+  const copiarDe = (id: string) => {
+    const fuente = fuentes.find(x => x.id === id)
+    if (!fuente) return
+    if (filas.length && !confirm("Esto reemplaza las cuotas que tiene el contrato en pantalla. ¿Seguir?")) return
+    setFilas(copiarEsquemaCuotas(fuente.cuotas, fuente.campania, f.campania || fuente.campania).map(aFilaEdit))
   }
 
-  const tons = parseAR(f.has || "0") * parseAR(f.qq_ha_total || "0") / 10
+  const submit = async () => {
+    setError(null)
+    if (!f.campania || !f.centro_costo || !f.cliente_nombre || !f.has || !f.qq_ha_total) {
+      return setError("Campaña, campo, cliente, hectáreas y qq/ha son obligatorios")
+    }
+    if (val.frenos.length) return setError("Hay cuotas que corregir antes de guardar (ver arriba)")
+    setGuardando(true)
+    try {
+      const err = await onGuardar({ ...f, has, qq_ha_total: qqTotal }, filasCuota, originales)
+      if (err) setError(err)
+    } finally { setGuardando(false) }
+  }
 
   return (
     <Dialog open onOpenChange={o => { if (!o) onCerrar() }}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>{datos.id ? "Editar contrato" : "Nuevo contrato"}</DialogTitle></DialogHeader>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader><DialogTitle>
+          {datos.id ? "Editar contrato" : "Nuevo contrato"}
+          {datos._copiaDe && <span className="ml-2 text-sm font-normal text-gray-500">copia de {datos._copiaDe.etiqueta}</span>}
+        </DialogTitle></DialogHeader>
+        {datos._copiaDe && (
+          <p className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            Es una copia de <strong>{datos._copiaDe.etiqueta}</strong>, con la campaña siguiente y las cuotas corridas un
+            año. Revisá lo que cambie en el contrato nuevo — nada se guarda hasta que apretás <strong>Guardar</strong>.
+          </p>
+        )}
+        {/* Los A-TEST de este proceso, a la vista donde se corre (§ 🧪 CLAUDE.md, A-FEAT-129) */}
+        <TestsDelProceso proceso="ingresos/contrato-arrendamiento" pantalla="ingresos" />
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-gray-500">Empresa</label>
@@ -365,15 +574,20 @@ function ModalContrato({ datos, onCerrar, onGuardar }: {
             <label className="text-xs text-gray-500">Campo (centro de costo)</label>
             <CentroCostoCombobox value={f.centro_costo || ""} onValueChange={v => setF({ ...f, centro_costo: v })} />
           </div>
-          <div>
-            <label className="text-xs text-gray-500">Cliente</label>
-            <Input className="h-8" placeholder="Sanpa / Provinvest" value={f.cliente_nombre || ""}
-              onChange={e => setF({ ...f, cliente_nombre: e.target.value })} />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500">CUIT (opcional)</label>
-            <Input className="h-8" value={f.cliente_cuit || ""}
-              onChange={e => setF({ ...f, cliente_cuit: e.target.value })} />
+          {/* El cliente sale del maestro (2026-09-04): escrito a mano el CUIT quedaba vacío o mal
+              tipeado, y es la clave con la que después se busca la factura. */}
+          <div className="col-span-2">
+            <ProveedorCombobox
+              label="Cliente"
+              rol="cliente"
+              value={{ cuit: f.cliente_cuit || "", nombre: f.cliente_nombre || "" }}
+              onChange={sel => setF({ ...f, cliente_nombre: sel.nombre, cliente_cuit: sel.cuit })}
+            />
+            {f.cliente_nombre && !f.cliente_cuit && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Falta el CUIT del cliente: sin él no se va a encontrar su factura. Elegilo de la lista.
+              </p>
+            )}
           </div>
           <div>
             <label className="text-xs text-gray-500">Hectáreas</label>
@@ -397,9 +611,129 @@ function ModalContrato({ datos, onCerrar, onGuardar }: {
             Total: <strong>{fmtAR(tons, 3)} tn</strong> (has × qq/ha ÷ 10)
           </p>
         </div>
+
+        {/* ── Cuotas ── */}
+        <div className="mt-2 space-y-2 border-t pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-gray-700">Cuotas</h4>
+            {fuentes.length > 0 && (
+              <Select value="" onValueChange={copiarDe}>
+                <SelectTrigger className="h-8 w-auto min-w-[220px] text-xs">
+                  <SelectValue placeholder="Copiar cuotas de otro contrato…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fuentes.map(x => (
+                    <SelectItem key={x.id} value={x.id} className="text-xs">
+                      {x.empresa} · {x.centro_costo} {x.campania} · {x.cliente_nombre} ({x.cuotas.length} cuotas)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {filas.length === 0 ? (
+            <p className="rounded bg-gray-50 px-3 py-3 text-center text-xs text-gray-500">
+              Sin cuotas. Agregalas una por una o copiá el esquema de otro contrato y ajustalo.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-gray-500">
+                  <tr>
+                    <th className="px-1 py-1 text-left">#</th>
+                    <th className="px-1 py-1 text-right">qq/ha</th>
+                    <th className="px-1 py-1 text-right">Tons</th>
+                    <th className="px-1 py-1 text-right">%</th>
+                    <th className="px-1 py-1 text-left">Fecha de cobro</th>
+                    <th className="px-1 py-1 text-left">Posición</th>
+                    <th className="px-1 py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((r, i) => {
+                    const vendido = r.id ? vendidoPorCuota[r.id] ?? 0 : 0
+                    const qq = parseAR(r.qq)
+                    return (
+                      <tr key={r.id ?? `nueva-${i}`} className="border-t">
+                        <td className="px-1 py-1 text-gray-500">{i + 1}</td>
+                        <td className="px-1 py-1">
+                          <Input className="h-7 w-20 text-right" placeholder="0,00" value={r.qq}
+                            onChange={e => cambiarFila(i, { qq: e.target.value })} />
+                        </td>
+                        <td className="px-1 py-1 text-right text-gray-600">{fmtAR(tonsCuota(has, qq), 2)}</td>
+                        <td className="px-1 py-1 text-right text-gray-400">
+                          {qqTotal > 0 ? fmtAR(pctCuota(qq, qqTotal) * 100, 1) + "%" : "—"}
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input type="date" className="h-7 w-36" value={r.fecha}
+                            onChange={e => cambiarFila(i, { fecha: e.target.value })} />
+                        </td>
+                        <td className="px-1 py-1">
+                          <div className="flex items-center gap-1">
+                            <Select value={String(r.posMes)}
+                              onValueChange={v => cambiarFila(i, { posMes: Number(v), posManual: true })}>
+                              <SelectTrigger className="h-7 w-20 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {MESES.map((m, k) => <SelectItem key={m} value={String(k + 1)}>{m}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Input className="h-7 w-16 text-xs" value={r.posAnio}
+                              onChange={e => cambiarFila(i, { posAnio: e.target.value, posManual: true })} />
+                            <span className="text-[10px] text-gray-400"
+                              title="La posición es el mes del precio del grano (Matba). Por default sigue a la fecha de cobro.">
+                              {r.posManual ? "a mano" : "= cobro"}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-1 py-1 text-right">
+                          {vendido > 0 ? (
+                            <span className="text-[10px] text-emerald-700" title="Tiene una venta fijada: no se puede borrar">
+                              vendido {fmtAR(vendido, 2)} tn
+                            </span>
+                          ) : (
+                            <Button variant="ghost" size="sm" className="h-7 px-2"
+                              onClick={() => setFilas(prev => prev.filter((_, j) => j !== i))}>
+                              <Trash2 className="h-3.5 w-3.5 text-gray-400" />
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <Button variant="outline" size="sm" onClick={agregarFila}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Agregar cuota
+          </Button>
+
+          {/* Control: frena lo que rompería ventas; avisa lo que el contrato puede explicar */}
+          {val.frenos.map((m, k) => (
+            <p key={`f${k}`} className="rounded bg-red-50 px-3 py-1.5 text-xs text-red-700">🛑 {m}</p>
+          ))}
+          {val.avisos.map((m, k) => (
+            <p key={`a${k}`} className="flex items-center gap-1 text-xs text-amber-700">
+              <AlertTriangle className="h-3.5 w-3.5" /> {m}. Es sólo un aviso.
+            </p>
+          ))}
+          {filas.length > 0 && !val.avisos.length && !val.frenos.length && (
+            <p className="text-xs text-emerald-700">✓ Las cuotas suman los {fmtAR(qqTotal)} qq/ha del contrato</p>
+          )}
+          <p className="text-[11px] text-gray-400">
+            Las cuotas ya cobradas se registran después con <strong>Fijar</strong>, con su fecha y precio reales.
+          </p>
+        </div>
+
+        {error && <p className="rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
-          <Button onClick={submit}>Guardar</Button>
+          <Button onClick={submit} disabled={guardando || val.frenos.length > 0}>
+            {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Guardar"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -409,7 +743,7 @@ function ModalContrato({ datos, onCerrar, onGuardar }: {
 // ── Modal FIJAR (= vender) ────────────────────────────────────────────────────
 
 function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
-  datos: { cuota: Cuota; contrato: Contrato } | null
+  datos: { cuota: Cuota; contrato: Contrato; venta?: Venta } | null
   ventas: Venta[]
   precios: PrecioGrano[]
   tcs: TipoCambio[]
@@ -420,12 +754,17 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const [modo, setModo] = useState<"matba" | "pizarra">("matba")
   const [precio, setPrecio] = useState("")
   const [tc, setTc] = useState("")
+  const [tcSugerido, setTcSugerido] = useState<number | null>(null)
   const [fechaCobro, setFechaCobro] = useState("")
   // La fecha de fijación ES la fecha de la venta, y desde ahí se cuentan los días
   // de cobro del disponible. No siempre es hoy.
   const [fechaFijacion, setFechaFijacion] = useState("")
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** La fecha de cobro se muestra como dato (de la cuota o de la venta) hasta que se pide cambiarla. */
+  const [cambiarCobro, setCambiarCobro] = useState(false)
+  /** Lo facturado de la venta que se edita: si cambia el monto, hay que revisar ese vínculo. */
+  const [facturado, setFacturado] = useState(0)
 
   const hoy = new Date().toISOString().slice(0, 10)
 
@@ -436,11 +775,36 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
     const disp = Math.max(0, tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota)) - tonsFijadas(vs))
     const p = resolverPrecio(precios, contrato.grano, cuota.posicion_anio, cuota.posicion_mes)
     const t = resolverTC(tcs, cuota.posicion_anio, cuota.posicion_mes)
+    setCambiarCobro(false)
+    setError(null)
+    setTcSugerido(t.tc || null)
 
-    setTons(fmtAR(disp, 2))
+    // ── Editar una venta ya hecha: arranca con lo que tiene guardado ──
+    const v = datos.venta
+    if (v) {
+      setTons(fmtAR(Number(v.tons), 3))
+      setModo(v.modo)
+      setPrecio(fmtAR(Number(v.modo === "pizarra" ? v.precio_pesos : v.precio_usd) || 0))
+      setTc(v.tc ? fmtAR(Number(v.tc)) : "")
+      setFechaCobro(v.fecha_cobro || cuota.fecha_cobro_estimada)
+      setFechaFijacion(v.fecha_fijacion_precio || hoy)
+      setFacturado(0)
+      supabase.from("ventas_facturas").select("monto_asignado")
+        .eq("venta_tipo", "arrendamiento").eq("venta_id", v.id).eq("vinculado", true)
+        .then(({ data }) => setFacturado((data || []).reduce((a: number, r: any) => a + (Number(r.monto_asignado) || 0), 0)))
+      return
+    }
+
+    // 3 decimales (A-BUG-184): con 2, 66,154 tn se proponía 66,15 y la fijación salía PARCIAL por
+    // 0,004 tn, dejando una cuota de saldo basura si el usuario no lo notaba.
+    setTons(fmtAR(disp, 3))
     setModo("matba")
     setPrecio(p.precio_usd ? fmtAR(p.precio_usd) : "")
-    setTc(t.tc ? fmtAR(t.tc) : "")
+    // El TC arranca VACÍO (A-FEAT-164, decidido por el usuario): proponer el del presupuesto hacía
+    // fácil fijarlo sin querer, y una venta con TC queda cerrada (así nació A-BUG-100). El del
+    // presupuesto se ofrece al lado, para ponerlo con un clic si corresponde.
+    setTc("")
+    setTcSugerido(t.tc || null)
     setFechaCobro(cuota.fecha_cobro_estimada)
     setFechaFijacion(new Date().toISOString().slice(0, 10))
     setError(null)
@@ -448,12 +812,18 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
 
   if (!datos) return null
   const { cuota, contrato } = datos
+  const venta = datos.venta
+  const editando = !!venta
 
   const vs = ventas.filter(v => v.cuota_id === cuota.id)
   const tonsTotal = tonsCuota(Number(contrato.has), Number(cuota.qq_ha_cuota))
-  const disponible = Math.max(0, tonsTotal - tonsFijadas(vs))
+  // Al editar, el tope es la cuota menos las OTRAS ventas (la propia se está reemplazando)
+  const disponible = editando
+    ? tonsMaximasEdicion(tonsTotal, tonsFijadas(vs.filter(v => v.id !== venta!.id)))
+    : Math.max(0, tonsTotal - tonsFijadas(vs))
   const tonsAFijar = parseAR(tons)
-  const esParcial = tonsAFijar > 0 && tonsAFijar < disponible - 0.001
+  // Editar no parte la cuota: si se bajan las tn, lo que sobra queda disponible en la misma cuota
+  const esParcial = !editando && tonsAFijar > 0 && tonsAFijar < disponible - 0.001
   const saldo = Math.max(0, disponible - tonsAFijar)
 
   // En pizarra el cobro sale de la FECHA DE FIJACIÓN + los días del contrato
@@ -469,7 +839,9 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   const confirmar = async () => {
     setError(null)
     if (tonsAFijar <= 0) return setError("Indicá cuántas toneladas fijás")
-    if (tonsAFijar > disponible + 0.001) return setError(`Sólo hay ${fmtAR(disponible, 2)} tn disponibles`)
+    if (tonsAFijar > disponible + 0.001) return setError(editando
+      ? `La cuota tiene lugar para ${fmtAR(disponible, 3)} tn en esta venta`
+      : `Sólo hay ${fmtAR(disponible, 3)} tn disponibles`)
     if (!precio.trim()) return setError("Falta el precio")
     if (!fechaFijacion) return setError("Falta la fecha de fijación (es la fecha de la venta)")
 
@@ -480,8 +852,9 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
       // Fijar PARCIAL parte la cuota: la original queda con lo que se vende y el saldo
       // pasa a una cuota nueva, que después se puede mover y valorizar por su cuenta.
       if (esParcial) {
-        const qqSaldo = (saldo * 10) / Number(contrato.has)
-        const qqRestante = Number(cuota.qq_ha_cuota) - qqSaldo
+        // Mandan las TONELADAS (A-BUG-183): la original se queda con lo ya vendido + lo de ahora.
+        const { qqOriginal: qqRestante, qqSaldo } =
+          partirCuota(Number(contrato.has), Number(cuota.qq_ha_cuota), tonsTotal - saldo)
 
         const { data: maxQ } = await supabase
           .from("cuotas_arrendamiento").select("numero_cuota")
@@ -490,7 +863,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
         const { error: e1 } = await supabase.from("cuotas_arrendamiento").insert({
           contrato_id: contrato.id,
           numero_cuota: ((maxQ?.numero_cuota as number) ?? 0) + 1,
-          qq_ha_cuota: Number(qqSaldo.toFixed(4)),
+          qq_ha_cuota: qqSaldo,
           fecha_cobro_estimada: cuota.fecha_cobro_estimada,
           posicion_anio: cuota.posicion_anio,
           posicion_mes: cuota.posicion_mes,
@@ -499,35 +872,27 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
           posicion_orig_mes: cuota.posicion_mes,
           estado: "presupuestado",
           cuota_padre_id: cuota.id,
-          notas: `Saldo de la cuota #${cuota.numero_cuota} al fijar ${fmtAR(tonsAFijar, 2)} tn`,
+          notas: `Saldo de la cuota #${cuota.numero_cuota} al fijar ${fmtAR(tonsAFijar, 3)} tn`,
         })
         if (e1) throw new Error(e1.message)
 
         const { error: e2 } = await supabase.from("cuotas_arrendamiento")
-          .update({ qq_ha_cuota: Number(qqRestante.toFixed(4)), updated_at: new Date().toISOString() })
+          .update({ qq_ha_cuota: qqRestante, updated_at: new Date().toISOString() })
           .eq("id", cuota.id)
         if (e2) throw new Error(e2.message)
       }
 
-      const tcNum = tc.trim() ? parseAR(tc) : null
-      const precioNum = parseAR(precio)
-      const monto = modo === "pizarra"
-        ? tonsAFijar * precioNum
-        : (tcNum ? tonsAFijar * precioNum * tcNum : null)
-
-      const { error: e3 } = await supabase.from("ventas_arrendamiento").insert({
-        cuota_id: cuotaDestino,
-        tons: tonsAFijar,
-        modo,
-        fecha_fijacion_precio: fechaFijacion || hoy,
-        precio_usd: modo === "matba" ? precioNum : null,
-        precio_pesos: modo === "pizarra" ? precioNum : null,
-        // El TC es un momento aparte: si no lo fijás ahora queda pendiente
-        fecha_fijacion_tc: modo === "matba" && tcNum ? (fechaFijacion || hoy) : null,
-        tc: modo === "matba" ? tcNum : null,
-        monto_pesos: monto,
-        fecha_cobro: fechaCobroEfectiva,
+      // El TC es un momento aparte: vacío = queda pendiente («falta TC»), también al editar.
+      const campos = camposDeVenta({
+        tons: tonsAFijar, modo, precio: parseAR(precio), tc: tc.trim() ? parseAR(tc) : null,
+        fechaFijacion: fechaFijacion || hoy,
+        tcAnterior: venta?.tc ?? null, fechaTcAnterior: venta?.fecha_fijacion_tc ?? null,
       })
+      const fila = { ...campos, fecha_fijacion_precio: fechaFijacion || hoy, fecha_cobro: fechaCobroEfectiva }
+
+      const { error: e3 } = editando
+        ? await supabase.from("ventas_arrendamiento").update(fila).eq("id", venta!.id)
+        : await supabase.from("ventas_arrendamiento").insert({ ...fila, cuota_id: cuotaDestino })
       if (e3) throw new Error(e3.message)
 
       await onListo()
@@ -544,13 +909,15 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            Fijar — {contrato.centro_costo} cuota #{cuota.numero_cuota}
+            {editando ? "Editar venta" : "Fijar"} — {contrato.centro_costo} cuota #{cuota.numero_cuota}
           </DialogTitle>
         </DialogHeader>
 
+        {/* Los A-TEST de este proceso, a la vista donde se corre (§ 🧪 CLAUDE.md) */}
+        <TestsDelProceso proceso="ingresos/fijar-arrendamiento" pantalla="ingresos" />
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
-            Disponible: <strong>{fmtAR(disponible, 2)} tn</strong> de {fmtAR(tonsTotal, 2)} tn ·
+            {editando ? "Máximo para esta venta" : "Disponible"}: <strong>{fmtAR(disponible, 3)} tn</strong> de {fmtAR(tonsTotal, 3)} tn ·
             posición {MESES[cuota.posicion_mes - 1]} {cuota.posicion_anio}
           </p>
 
@@ -561,7 +928,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
                 onChange={e => setFechaFijacion(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Toneladas a fijar</label>
+              <label className="text-xs text-gray-500">{editando ? "Toneladas" : "Toneladas a fijar"}</label>
               <Input className="h-8 text-right" value={tons} onChange={e => setTons(e.target.value)} />
             </div>
             <div>
@@ -590,6 +957,15 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
                   value={tc} onChange={e => setTc(e.target.value)} />
                 <p className="mt-1 text-[10px] text-gray-400">
                   Precio y TC son momentos distintos
+                  {tcSugerido && !tc.trim() && (
+                    <>
+                      {" · "}
+                      <button type="button" className="underline"
+                        onClick={() => setTc(fmtAR(tcSugerido))}>
+                        usar el del presupuesto ({fmtAR(tcSugerido)})
+                      </button>
+                    </>
+                  )}
                 </p>
               </div>
             ) : (
@@ -604,9 +980,21 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
 
             {modo === "matba" && (
               <div className="col-span-2">
-                <label className="text-xs text-gray-500">Fecha de cobro</label>
-                <Input type="date" className="h-8" value={fechaCobro}
-                  onChange={e => setFechaCobro(e.target.value)} />
+                {/* A-FEAT-164: la fecha de cobro ya viene de la cuota; mostrarla como campo a
+                    completar dejaba la duda de si estaba bien. Se ve como dato y se cambia si hace falta. */}
+                {cambiarCobro ? (
+                  <>
+                    <label className="text-xs text-gray-500">Fecha de cobro</label>
+                    <Input type="date" className="h-8" value={fechaCobro}
+                      onChange={e => setFechaCobro(e.target.value)} />
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-600">
+                    Cobro: <strong>{fechaCobro ? new Date(fechaCobro + "T00:00:00").toLocaleDateString("es-AR") : "—"}</strong>{" "}
+                    <span className="text-gray-400">({editando ? "de la venta" : "de la cuota"})</span>{" · "}
+                    <button type="button" className="underline" onClick={() => setCambiarCobro(true)}>cambiar</button>
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -630,12 +1018,21 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
             )}
           </div>
 
+          {/* Aviso, no freno: la factura puede haberse emitido por otro monto a propósito */}
+          {editando && facturado > 0 && Math.abs(montoPreview - facturado) > 0.01 && (
+            <p className="flex items-start gap-1 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              Esta venta tiene factura vinculada por {fmtPesos(facturado)}. Si cambiás el monto,
+              revisá ese vínculo.
+            </p>
+          )}
+
           {error && <p className="rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
             <Button onClick={confirmar} disabled={guardando}>
-              {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fijar (vender)"}
+              {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : editando ? "Guardar cambios" : "Fijar (vender)"}
             </Button>
           </div>
         </div>

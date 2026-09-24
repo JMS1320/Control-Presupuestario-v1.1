@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
@@ -39,6 +39,10 @@ import { LayoutApp, SOLAPAS } from "@/components/layout-app"
 import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import { NotasParaClaude } from "@/components/notas-para-claude"
 import { BarraSesion } from "@/components/barra-sesion"
+import { Toaster } from "@/components/ui/sonner"
+import { EVENTO_IR } from "@/lib/recorrido/recorrido"
+import { BarraRecorrido } from "@/components/barra-recorrido"
+import { MarcaFlotante } from "@/components/boton-revision"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
@@ -135,12 +139,34 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   /** Cambiar de sección tampoco puede saltarse el permiso. */
   const irA = (id: string) => { if (permitidas.has(id)) setTab(id) }
 
+  /**
+   * 🧭 La solapa activa, **CONTROLADA** — antes era `defaultValue` y no había forma de cambiarla
+   * por código. Sin esto, el tablero de huecos podía decir dónde se resuelve algo pero no llevarte.
+   *
+   * ⚠️ Se inicializa con `useState(getDefaultTab)` —la función, no su resultado—: pasarle
+   * `getDefaultTab()` la llamaría en cada render, y aunque hoy devuelva siempre lo mismo, ata el
+   * estado a algo que este componente no controla.
+   */
+  const [solapa, setSolapa] = useState<string>(getDefaultTab)
+  useEffect(() => {
+    const ir = (e: Event) => {
+      const destino = (e as CustomEvent<string>).detail
+      if (typeof destino === "string" && destino) setSolapa(destino)
+    }
+    window.addEventListener(EVENTO_IR, ir)
+    return () => window.removeEventListener(EVENTO_IR, ir)
+  }, [])
+
   return (
     <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
+      <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo
           entre pestañas, porque una nota es una grabación de varias capturas, no un evento. */}
       <NotasParaClaude />
+      {/* 🚩 y 🧭 — instrumentos globales: van montados en toda la app. */}
+      <MarcaFlotante />
+      <BarraRecorrido />
         <Tabs value={tab} onValueChange={irA} className="w-full">
           {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
               pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si

@@ -18,6 +18,7 @@ import { Loader2, ChevronDown, ChevronRight, Save, Eraser, Copy, AlertTriangle, 
 import { supabase } from "@/lib/supabase"
 import { parseEmpresas } from "@/lib/empresas"
 import { toast } from "sonner"
+import { EditorCampanaTemplate } from "@/components/editor-campana-template"
 
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -82,6 +83,7 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
   const [marcarEstimados, setMarcarEstimados] = useState(true)   // pre-carga: montos ≠0 terminan en …123 (código interno "es estimado")
   // Detalle por fila (fase 2 punto 4): editar las cuotas individuales (permite varias por mes)
   const [detalleId, setDetalleId] = useState<string | null>(null)
+  const [editandoCampana, setEditandoCampana] = useState<string | null>(null)   // A-FEAT-131
   const [detalleItems, setDetalleItems] = useState<ItemCuota[]>([])
   /** Templates que YA tienen su versión de esta campaña — no se ofrecen para generar de nuevo. */
   const [yaGenerados, setYaGenerados] = useState<{ id: string; nombre: string; responsable: string; porVinculo: boolean }[]>([])
@@ -485,17 +487,14 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
             fecha_vencimiento: f.esVencimiento ? fecha : null,   // fechas de la fila = vencimiento (checkbox)
             monto: it.monto,
             estado: 'pendiente',
-            // Fórmula de descripción reproducida con el período nuevo (etiqueta del extracto al conciliar)
-            // El responsable NO se agrega si el nombre ya lo tiene: "Tarjeta Visa Business MSA"
-            // salía como "Tarjeta Visa Business MSA **MSA** - Agosto 2026". Pasa en 20 de los
-            // templates activos, que llevan la empresa en el propio nombre.
-            descripcion: (() => {
-              const nombre = String(t.nombre_referencia ?? '').trim()
-              const resp = String(t.responsable ?? '').trim()
-              const yaLoTiene = resp !== '' && nombre.toUpperCase().includes(resp.toUpperCase())
-              const encabezado = yaLoTiene || resp === '' ? nombre : `${nombre} ${resp}`
-              return `${encabezado} - ${MESES_LARGO[mesNum - 1]} ${anioNum}`.replace(/\s+/g, ' ').trim()
-            })(),
+            // 🪪 A-FEAT-138 — la etiqueta YA NO se guarda acá. La genera `identificadorDeCuota()`
+            // con la misma regla que vivía en este bloque (incluido el «no repetir el responsable
+            // si el nombre ya lo tiene», que afecta a 20 templates activos).
+            //
+            // 🔑 Guardarla era el problema de fondo: la campaña escribía 12 filas con el nombre de
+            // HOY, y al renombrar el template quedaban congeladas. Y además ocupaba `descripcion`,
+            // que es donde el usuario y el motor querían escribir otra cosa — de ahí salieron las
+            // 548 filas con tres contenidos distintos mezclados (A-DAT-37).
             cuenta_contable: t.codigo_contable ?? null,
             centro_costo: t.centro_costo ?? null,
             categ: t.categ ?? null,
@@ -813,12 +812,18 @@ No se va a ofrecer en las próximas campañas hasta que lo vuelvas a subir.`)) o
                             (por nombre)
                           </span>
                         )}
+                        {/* ✏️ A-FEAT-131 — acá decía «editar sus cuotas todavía no se hace desde acá».
+                            Ya se hace: abre el template con sus cuotas, conservando los vínculos. */}
+                        <button
+                          onClick={() => setEditandoCampana(t.id)}
+                          className="text-[11px] text-blue-600 hover:underline"
+                          title="Ver el template, sus cuotas y editarlas — los vínculos conciliados se conservan"
+                        >
+                          ✏️ editar
+                        </button>
                       </li>
                     ))}
                   </ul>
-                  <p className="px-4 pb-3 text-xs text-gray-500">
-                    Editar sus cuotas todavía no se hace desde acá — se editan en Templates.
-                  </p>
                 </details>
               )}
 
@@ -893,6 +898,15 @@ No se va a ofrecer en las próximas campañas hasta que lo vuelvas a subir.`)) o
           )}
         </div>
       </div>
+
+      {/* ✏️ A-FEAT-131 — editar una campaña YA generada: el template, sus cuotas y sus datos. */}
+      {editandoCampana && (
+        <EditorCampanaTemplate
+          templateId={editandoCampana}
+          onClose={() => setEditandoCampana(null)}
+          onGuardado={() => cargar()}
+        />
+      )}
 
       {/* Modal Detalle de cuotas por fila (fase 2 punto 4) */}
       {detalleId && (() => {

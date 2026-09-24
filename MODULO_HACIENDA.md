@@ -1606,3 +1606,300 @@ El norte administrativo dice automatizar la **búsqueda**, no la **decisión**.
 **La señal más valiosa es la tercera**, y es la que un buscador por proveedor no tiene: que el precio
 derivado caiga cerca de la mediana de las otras entregas del mismo insumo. Ese cálculo **ya existe**.
 → [A-FEAT-73](PENDIENTES.md#a-feat-73).
+
+---
+
+## 18 · 💰 El movimiento de venta se conecta al circuito comercial (2026-09-03/04)
+
+Estructura → `RECONSTRUCCION_SUPABASE_2026-01-07.md` § 2026-09-03/04. Cómo se opera →
+`MANUAL-USO.md`. Acá van **las decisiones y por qué**.
+
+### 18.1 · El agujero: vender no era vender
+
+🔴 **Un movimiento de tipo `venta` daba de baja los animales y ahí terminaba.** No creaba venta
+comercial. Los animales salían del stock productivo y **no entraban a facturación, cobro ni
+presupuesto**: desaparecían.
+
+Contra el norte (§ 🧭 de `CLAUDE.md`), es el caso puro del **vínculo que debería existir y no
+existía** — y no era un hueco teórico: había 2 movimientos de venta cargados así.
+
+Ahora el movimiento **crea la venta**, y la grilla muestra cuáles quedaron sin ella (⚠ ámbar). El
+estado es **visible**, no un dato interno: si no se ve, nadie lo arregla.
+
+### 18.2 · Por qué la venta se despega del lote
+
+`stock_ventas.lote_id` era `NOT NULL`. Pero **las vacas de descarte no están en ningún lote**: se
+descartan de a una, por su propia razón. Exigir el lote obligaba a inventar uno.
+
+🎯 Lo que reemplaza al lote como respuesta a *"¿qué se vendió?"* es **`categoria_id`**. El lote sigue
+existiendo cuando la venta sale de uno — pero dejó de ser la única manera de vender.
+
+### 18.3 · 🔑 El destino decide si el precio es a la RES o al VIVO
+
+No es una preferencia de captura: **son dos negocios distintos**. Arrebeef compra a la res, Cañuelas
+al vivo, y el mismo animal vale distinto en cada uno.
+
+| | Arrebeef (**a la res**) | Cañuelas (**al vivo**) |
+|---|---|---|
+| Base | kg de **carne** (romaneo) | kg **netos** de desbaste |
+| Cuándo se sabe | **días después**, con la liquidación | el día de la carga |
+
+```ts
+const bruto = p == null ? null
+  : alaRes ? (carne != null ? carne * p : null)
+  : (neto  != null ? neto  * p : null)
+```
+
+🔴 **Y si falta el romaneo, el importe queda VACÍO, con el motivo escrito.** No se estima con un
+rinde supuesto:
+
+```ts
+const porQueNoHayImporte = p == null ? "falta el precio"
+  : alaRes && carne == null ? `${destino?.nombre} compra a la res: falta el kilaje de carne del romaneo`
+  : kg == null ? "faltan los kilos de carga" : null
+```
+
+*Motivo: un importe estimado entra al Cash Flow como si fuera real, y cuando llega la liquidación
+nadie se acuerda de que ese número era un supuesto. Un vacío que dice por qué está vacío se completa;
+un número inventado no se corrige nunca.* Es la § 🧮 aplicada — **nada se descarta en silencio**.
+
+### 18.4 · Tres formas de que un animal esté en una venta
+
+| | Cuándo | Dónde vive |
+|---|---|---|
+| **Con caravana** | el animal existe y tiene número | `terneros`, adjudicado |
+| **Sin caravana, con razón** | existe como individuo, identificado por su descarte | `terneros`, `observaciones` |
+| **Suelto** | no existe como individuo y no vale la pena crearlo | `stock_ventas.animales_sueltos` (jsonb) |
+
+🔑 **La razón de descarte *es* la identificación.** *"Vaca Dura que malparió. Robocop"* identifica ese
+animal mejor que un número que nunca se le puso. Exigir caravana para poder vender habría dejado
+afuera justo a las vacas que se venden por descarte — que son casi todas.
+
+⚠️ **Y ahí estaba el bug que originó `ModalIdentificarAnimales`**: esa razón se guardaba en el
+**movimiento**, no en un animal. El texto existía y no servía para nada — no figuraba en la planilla
+ni se podía adjudicar. El descuadre del CUT (17 entradas vs 12 individuos, 11 salidas vs 4 bajas)
+era exactamente eso.
+
+**Corolario de diseño:** *si un dato descriptivo se guarda en la operación en vez de en la cosa
+descrita, existe pero no participa de nada.*
+
+### 18.5 · La CARGA: el camión se pesa una vez, la venta son varias
+
+El pesaje del camión **no es un atributo de la venta**: un camión llevó 7 vacas y 3 toros —dos ventas
+distintas, dos precios distintos— y **un solo bruto y una sola tara**. Con las columnas en la venta,
+ese pesaje había que cargarlo dos veces y las dos copias podían discrepar.
+
+Por eso `productivo.cargas` es una entidad propia y la venta la referencia. La consecuencia importante
+es que **el control tiene que ser a nivel carga, no a nivel venta**.
+
+#### 🧮 El control: tres orígenes del mismo kilaje
+
+```
+Kilos de carga 3.640 · animales 3.640 (0) · otras ventas de la carga 2.661 · camión 6.500 (+199)
+```
+
+Es la **pieza 4 del norte administrativo** en estado puro (*el mismo número por dos caminos*), acá por
+tres: lo declarado, la suma de los animales pesados en el campo, y el camión.
+
+🔑 **La diferencia contra el camión NO es un error a corregir: es un DATO a registrar.** Son dos
+balanzas nuestras — la del camión es la más precisa, pero **no pisa** a la del campo. El caso real
+dio **6.301 contra 6.500 = +199 kg (3,16 %)**, y ese desvío repetido a lo largo de varias cargas es
+lo que después dice cuál balanza está descalibrada.
+
+*Palabras del usuario: «las 2 balanzas son nuestras pero la de camión manda por ser más precisa…
+pero sin pisar».* Un control que corrige en silencio destruye la única evidencia que tenía.
+
+⚠️ **Falta separar el desbaste del error de balanza**: hoy el +199 mezcla las dos cosas. Se resuelve
+cuando llegue el romaneo → `A-FEAT-91`.
+
+### 18.6 · Lo que queda abierto
+
+| | |
+|---|---|
+| `A-FEAT-90` | **grupos de precio** dentro de una venta (Gorda / Conserva / Manufactura a precios distintos) |
+| `A-FEAT-91` | las **tres balanzas** comparables + rinde real contra el romaneo |
+| `A-TEST-86/87` | nada de esto está testeado |
+
+---
+
+## 19 · 📄 El ROMANEO — leído del real (2026-09-05)
+
+Fuente: el romaneo de **ARRE BEEF** por la venta del 04/09/2026 (7 vacas + 3 toros). Todo lo de
+esta § está **verificado contra el papel**, no supuesto. Propuesta de implementación →
+`PENDIENTES.md` § A-FEAT-90/91/94.
+
+### 19.1 · Qué trae, y las tres identidades que cierran
+
+**Cabecera:** frigorífico (ARRE BEEF, mat. 2082, CUIT 30-66627755-0) · vendedor · consignatario ·
+**tropa 182152** · faena 04/09/2026 · **guía 9465418** · **DTA 0325145749** · cabezas faenadas 10 ·
+muertos (corral/vagón) 0 · **kilos vivos 6.260** · **kilos gancho 3.354** · **rinde 53,58 %**.
+
+**Dos cuerpos, y ahí está el control gratis** (pieza 4 del norte administrativo):
+
+| Cuerpo | Qué es | Filas |
+|---|---|---|
+| **Detalle** | una fila por **media res**: garrón, clase, tipo, dientes, contenido, **peso**, precio | 20 = 10 animales × 2 |
+| **Liquidación** | agrupado por *tipo + clase + dientes + contenido*, con su precio e importe | 9 |
+
+🧮 **Verificado**: las 20 medias suman **3.354 kg**, las 9 líneas suman **3.354 kg**, los vivos
+asignados suman **6.260**, y `3.354 ÷ 6.260 = 53,58 %`. Cada línea cumple `importe = kg × precio`, y
+los 9 importes suman **$18.750.900,00** exacto.
+
+⚠️ **El garrón aparece dos veces y no es un duplicado**: son las dos medias reses del mismo animal
+(garrón 507 → 123 + 125 = 248 kg). Contar filas para saber cuántos animales hay **da el doble**.
+
+### 19.2 · 🔑 El precio NO es uno solo — es una grilla
+
+Lo que el usuario anticipó (*"habrá distintos precios porque hay distintas categorías: Gorda,
+Conserva, Manufactura"*) está en el papel, y la clave es más fina de lo previsto:
+
+| Tipo | Clase | Dientes | Cont. | $/kg | Motivo |
+|---|---|---|---|---:|---|
+| VA | E | 0 | MCV/MCV | 4.800 | `E0` |
+| VA | D | 0 | MCV/MCV | 5.500 | `D0` |
+| VA | C | 0 | ES/ES | 5.800 | `C0` |
+| VA | D | **1** | MCV/MCV | 5.800 | `D1` |
+| VA | B | **2** | ES/ES | 6.600 | |
+| VA | C | **2** | ES/ES | 6.600 | |
+| TO | A/B | 0/1 | MCV/MCV | **5.200** | `TORO` |
+
+🔑 **Los dientes mueven el precio tanto como la clase**: una **D con 1 diente vale más (5.800) que
+una C con 0 (5.800 igual) y que una D con 0 (5.500)**. Y **los toros van a precio único** sin
+importar clase ni dientes.
+
+> ⚠️ **`MCV/MCV` y `ES/ES` todavía no sabemos qué son** — probablemente la categoría comercial /
+> sanitaria. **Preguntar antes de modelarlos**: adivinar acá contamina la grilla de precios.
+> El campo `Motivo` parece ser la **regla de precio aplicada** (`clase`+`dientes`), y es el dato que
+> permite auditar por qué salió ese precio. → `A-DAT-21`.
+
+### 19.3 · 🚨 LAS TRES BALANZAS, con el número real
+
+Es la continuación directa de § 18.5, y ahora hay tres pesadas del mismo camión:
+
+| Origen | Kilos | vs frigorífico |
+|---|---:|---:|
+| **Campo** (suma de los animales) | 6.301 | +41 kg · **+0,65 %** |
+| **Camión** (bruto − tara) | 6.500 | +240 kg · **+3,83 %** |
+| **Frigorífico** (romaneo) | **6.260** | — |
+
+🔴 **Y acá el dato deja de ser obvio.** El desbaste de transporte normal ronda el 2–4 %:
+
+- Si se lo mide **contra el camión**, da **3,83 %** → un desbaste perfectamente normal.
+- Si se lo mide **contra el campo**, da **0,65 %** → un desbaste implausiblemente bajo.
+
+**Entonces no es cierto que "el camión lee de más"**, que fue la lectura inicial cuando sólo había
+dos balanzas: es igual de consistente que **la del campo lea de menos**. Con una sola carga **no se
+puede saber**, y por eso lo que hay que registrar es **la serie**, no el veredicto.
+
+📌 **Sigue valiendo la regla de § 18.5: se guardan las tres y no se pisa ninguna.** Esta carga es la
+prueba de por qué — el promedio de varias cargas es lo único que va a separar *desbaste* de
+*descalibración*, y pisar cualquiera de las tres destruye la evidencia antes de tenerla.
+
+### 19.4 · Cómo engancha con lo que ya existe
+
+El romaneo **es de la CARGA, no de una venta**: un solo camión, un solo romaneo, y adentro las dos
+ventas (vacas y toros). Esa entidad **ya existe** (`productivo.cargas`, § 18.5) y era justo la pieza
+que faltaba para poder recibirlo.
+
+```
+carga  ──1:1──  romaneo  ──1:N──  medias reses (20)
+                    └────1:N──  líneas de liquidación (9)  ──agrupa por tipo──▶  stock_ventas
+```
+
+Y cierra el hueco que § 18.3 dejó abierto a propósito: cuando el destino compra **a la res**, el
+importe quedaba vacío *"falta el kilaje de carne del romaneo"*. **Ese kilaje llega acá**:
+
+| Venta | Cabezas | `kg_carne` | Importe |
+|---|---:|---:|---:|
+| Vacas | 7 | **1.748** | $10.399.700 |
+| Toros | 3 | **1.606** | $8.351.200 |
+| | **10** | **3.354** | **$18.750.900** |
+
+`stock_ventas.kg_carne` ya existe (§ 18.1): el romaneo lo completa y el importe se calcula solo.
+
+
+### 19.5 · 🚨 El rinde por grupo: por qué el papel no puede darlo (2026-09-06)
+
+*«El dato más importante para nosotros es cuánto desbastó cada precio y cuánto rindió cada precio»*
+(usuario). Al ir a calcularlo apareció que **el romaneo no lo puede dar solo**:
+
+```
+146 ÷ 272 = 53,68     261 ÷ 487 = 53,59     486 ÷ 907 = 53,58
+248 ÷ 463 = 53,56     234 ÷ 437 = 53,55     373 ÷ 696 = 53,59
+545 ÷ 1017 = 53,59    437 ÷ 816 = 53,55     624 ÷ 1165 = 53,56
+```
+
+Los nueve grupos dan **53,58 %**. No es casualidad: la columna *Vivo* **no es una pesada** — el
+frigorífico reparte el total entre los grupos **usando el rinde global**. Calcular el rinde por grupo
+con ese número es **circular**.
+
+> ⚠️ **Y yo repetí el mismo error.** Denuncié la circularidad y acto seguido precargué el vivo del
+> grupo como *proporcional al kilo de carne sobre el total de la venta*, que se simplifica igual:
+> `kg_carne / (total × kg_carne/total_tipo) = total_tipo / total`. Constante para todos los grupos.
+> **Lo detectó el usuario**, no el código: *"en algún lugar estás mal pero no sé exactamente dónde"*.
+> Un reparto proporcional **nunca** puede producir un rinde diferencial: es aritmética, no un bug.
+
+### 19.6 · La adjudicación cabeza por cabeza — el método del usuario
+
+El romaneo no trae caravana: identifica por **garrón**. Lo único común entre las dos listas es **el
+orden por peso**. Entonces se ordenan las dos y se aparean por posición — *al más pesado nuestro, la
+res más pesada*. Y nuestros pesos se escalan antes por `neto del camión ÷ suma nuestra`, que es
+*«el peso real que tomamos»*.
+
+📌 **El orden no cambia con el ajuste** (es un factor constante): el ajuste importa para el **rinde**,
+no para el apareo.
+
+**Resultado sobre la carga del 03/09** (los 10 pesos individuales estaban guardados y suman exacto):
+
+| | Rindes |
+|---|---|
+| **Vacas** | 45,02 · 45,19 · 46,06 · 46,14 · 46,44 · 47,20 · 52,42 % |
+| **Toros** | 56,03 · 58,44 · 60,73 % |
+
+| Grupo | Cab | Rinde real |
+|---|---:|---:|
+| TO $5.200 | 3 | **58,51 %** |
+| VA $4.800 | 1 | 52,42 % |
+| VA $6.600 | 2 | 46,41 % |
+| VA $5.800 | 3 | 46,20 % |
+| VA $5.500 | 1 | **45,02 %** |
+
+**Los toros rinden ~58,5 % y las vacas 45-47 %.** Es real y esperable, y el `53,58 %` plano del
+papel lo escondía entero.
+
+### 19.7 · 🔴 El desbaste por hora INVIERTE la conclusión de las tres balanzas
+
+Con las horas que aportó el usuario (12:00 en el campo, 09:00 del día siguiente en Arrebeef =
+**21 horas**), el desbaste deja de ser un porcentaje suelto:
+
+| Contra | Desbaste | Por hora |
+|---|---:|---:|
+| Balanza del **campo** (6.301) | 0,65 % | **0,031 %/h** |
+| Balanza del **camión** (6.500) | 3,69 % | **0,176 %/h** |
+
+El desbaste normal de hacienda ronda **0,15-0,20 %/h** el primer día. El del camión cae justo ahí;
+el del campo es **seis veces más bajo de lo físicamente posible**.
+
+> 🔴 **Entonces no es que el camión lea de más: es que nuestra balanza del campo lee de MENOS**,
+> alrededor de un 3 %. Es **lo contrario** de lo que se había leído en § 18.5 con sólo dos balanzas.
+> Y no queda en esta venta: si se confirma, **afecta todo lo que pese esa balanza** — rindes,
+> aumentos diarios, el costeo de recría entero.
+
+📌 **Esto es exactamente por lo que la regla era «guardar las tres, sin pisar ninguna».** Si se
+hubiera corregido una balanza contra otra, esta evidencia **no existiría**. Y sigue haciendo falta
+**la serie**: una sola carga no separa desbaste de descalibración.
+
+### 19.8 · Qué diferencia de verdad a un canal de otro
+
+Al diseñar la comparación contra Cañuelas y el matarife zonal (`A-FEAT-99`) se propusieron tres ejes
+extra. El usuario **descartó dos con razón**:
+
+| Eje | Veredicto |
+|---|---|
+| **Plazo de cobro** | ✅ **Sí diferencia.** Arrebeef **21 días** · matarife **contra camión** · Cañuelas **21 días de remate**. Editables |
+| Decomisos / muertos | ❌ No diferencia: *«si se murió en un destino también se morirá en otro»*. Raras excepciones |
+| Riesgo de tipificación | ❌ No diferencia: *«la tipificación es estándar de los frigoríficos, la ponen ellos»* |
+
+🔑 **Y el rinde es sólo de Arrebeef**: *«el resto siempre es a kg vivo»*. Las otras opciones no llevan
+rinde ni romaneo — se comparan sobre el kilo vivo, con su flete, su comisión/CZ, el desbaste acordado
+y el precio que pagarían.

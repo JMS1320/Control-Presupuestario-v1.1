@@ -458,6 +458,93 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
 
+## 🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*
+
+**Para qué sirve.** Registrar una venta desde donde es más natural pensarla: *"vendí estas 7 vacas
+de descarte"*. No hace falta que salgan de un lote.
+
+> 🔑 **Un movimiento de venta ahora crea también la venta comercial.** Antes sólo daba de baja
+> los animales, y esos animales no entraban a facturación, cobro ni presupuesto.
+
+### Cómo se usa
+1. **Productivo → Hacienda → Ver Movimientos**.
+2. **+ Nuevo Movimiento**, tipo **Venta**. Aparece un aviso verde recordando que se va a crear la
+   venta. Cargá lo que tengas; lo que falte se completa después.
+3. En la grilla, cada venta muestra su estado a la derecha:
+   - **⚠ sin venta** (ámbar) — dio de baja animales pero **no entra al circuito comercial**
+   - **💰 venta** — ya la tiene
+4. Tocando ese botón se abre la venta entera para completarla.
+
+### Completar la venta
+Se carga **lo que se sabe al momento de la venta**: kilos vivos de carga, desbaste, CZ, cliente,
+destino y precio si ya se acordó. Lo demás llega después.
+
+**El cliente sale del maestro.** Si no está, tocá **«No aparece — cargar nuevo cliente»** y poné el
+CUIT. **Sin CUIT esa venta no se va a poder cruzar con su factura**, así que no lo saltees.
+
+**El destino define si el precio es a la res o al vivo** — Arrebeef compra a la res, Cañuelas al
+vivo. Por eso el precio dice *"$/kg res"* o *"$/kg vivo"* según cuál elijas.
+
+> ⚠️ **Si el destino compra a la res y todavía no llegó el romaneo, el importe queda vacío.** Está
+> bien: falta saber cuántos kilos de carne dieron. Es preferible a un número inventado con un rinde
+> estimado que después no va a coincidir con la liquidación.
+
+### Las caravanas
+Se listan **los animales de esa categoría** — una venta de vacas de descarte nunca te va a mostrar
+terneros de recría. Tildás los que se fueron.
+
+- El **kilo de cada uno** se precarga con su última pesada y **se puede pisar**: si el día de la
+  carga pesaste en el campo, ponés ese.
+- Los que **no tienen caravana** se muestran por su observación (*"Vaca Dura que malparió. Robocop"*)
+  — para las de descarte, esa razón **es** su identificación.
+- Y los que ni siquiera existen como individuo se agregan con **«+ agregar un animal sin caravana»**.
+
+### 🚛 La carga: el camión se pesa UNA vez
+Si el camión llevó **varias ventas** —vacas y toros juntos— no cargues el pesaje dos veces:
+
+1. En la primera venta dejá **«nueva carga»**, poné **bruto y tara**, guardá.
+2. En la segunda, **elegí esa misma carga** en el desplegable. El pesaje **se trae solo**.
+
+Abajo aparece el control con los tres orígenes del kilaje:
+
+```
+✓ Kilos de carga 3.640 · animales 3.640 (0) · otras ventas de la carga 2.661
+  · camión 6.500 (+199) — comparando el total de la carga
+```
+
+Verde si cierran, ámbar si no. **La diferencia contra el camión no es un error**: son dos balanzas
+distintas, y ese desvío repetido a lo largo de varias cargas es lo que después te dice cuál está
+descalibrada.
+
+⚠️ *Sin probar todavía → `A-TEST-86`, `A-TEST-87`*
+
+---
+
+## 🐄 Identificar animales de un cambio de categoría *(nuevo 2026-09-04)*
+
+**El problema que resuelve.** Cuando movés vacas al CUT y sólo escribís una observación
+—*"Vaca que dejó al ternero"*— ese texto queda **en el movimiento**, no en un animal. No aparece en
+la planilla ni se puede adjudicar a una venta.
+
+### Cómo se usa
+En **Productivo → Hacienda → Ver Movimientos**, cada fila de **Cambio de Categoría** muestra:
+
+- **⚠ falta identificar N** (ámbar) — hay cabezas sin individuo
+- **🐄 N identificados** (gris) — ya está
+
+Tocás el botón y se abre una grilla con **una fila por cabeza que falte**, y **la observación que ya
+escribiste viene precargada** como razón. Le agregás caravana y pelo si los tenés, y guardás. Si no
+tenés caravana, guardá igual: queda identificado por su razón.
+
+### Al cargar un cambio de categoría nuevo
+En el modal, tocá **«identificarlos uno por uno»** y se abren tantas filas como cabezas estés
+moviendo. **La razón va por animal**: una se descarta por machorra y la de al lado por diarrea, y
+ése es justo el dato por el que se lleva la planilla.
+
+⚠️ *Sin probar todavía → `A-TEST-86`*
+
+---
+
 ## 🐄 Ventas de hacienda — el circuito completo 🟡 *(nuevo 2026-08-05, sin testear)*
 
 **Dónde:** Ingresos → **Ganadería**. Separado por **actividad** y por **campaña**.
@@ -595,6 +682,121 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
 
 ---
 
+## 📄 Cargar el ROMANEO del frigorífico *(nuevo 2026-09-06)*
+
+**Productivo → Hacienda → 📄 Romaneo**
+
+1. Elegí **de qué carga** es. Un camión = un romaneo, aunque haya llevado varias ventas.
+2. Subí el PDF.
+3. Mirá **los controles** de arriba: comparan lo que suma el papel contra lo que suman sus propias
+   filas. Verde cierra; rojo muestra **los dos números**.
+4. Corregí la **cabecera** si hace falta — viene precargada.
+5. En **«Cómo queda contra lo que ya está cargado»** confirmá a qué venta va cada grupo. Viene
+   propuesto por cantidad de cabezas. Debajo de cada uno vas a ver el valor viejo y el nuevo:
+   `kg carne: vacío → 1.748 kg`.
+6. **Confirmar y completar las ventas.**
+
+> **Si algún control no cierra, se puede guardar igual.** No es un bloqueo: es un aviso. Corregís
+> los valores a mano y seguís.
+
+### Rinde por grupo de precio
+Un **grupo es un precio dentro de un tipo**: vaca y toro al mismo precio son grupos distintos, y
+dentro de vaca puede haber dos o tres precios = dos o tres grupos. El precio lo determina la
+clasificación del frigorífico (clase + dientes), que abre **una categoría nuestra en varias**.
+
+⚠️ **El kilo vivo que trae el romaneo no sirve para calcular rinde por grupo.** El frigorífico lo
+reparte usando el rinde global, así que todos los grupos darían el mismo número. Por eso la columna
+**«kg vivo (nuestro)»** viene precargada con el kilaje de la venta —la balanza del campo— repartido
+por kilo de carne, **y se puede pisar**: poné lo que pesaste de verdad y el rinde se recalcula.
+
+---
+
+## 🚚 Cargar el FLETE de una carga *(nuevo 2026-09-06)*
+
+**Productivo → Hacienda → 🚚 Flete**
+
+El flete es **de la carga**, no de cada venta: un camión, un flete.
+
+1. Elegí la carga.
+2. Cargá el seteo: **camino elegido, km del recorrido, arranque y $/km**.
+   - El **arranque** son los **km mínimos que se cobran igual** aunque el viaje sea más corto. Si
+     ponés menos km que el arranque, el total usa el arranque y te lo dice.
+3. Si lo acordaste **a monto cerrado**, escribilo en «Total» y ese manda.
+4. Poné el **transportista** y la **fecha estimada de pago**.
+5. **Guardar y comprometer el pago.**
+
+Eso crea el compromiso en el **Cash Flow** como anticipo — que es la vía cuando no llega factura — y
+da de alta al transportista en el maestro de proveedores.
+
+> Si volvés a guardar, el compromiso **se actualiza**: no queda un segundo pago por el mismo viaje.
+
+### Desbaste y rinde
+Al cargar el romaneo se piden **dos horas**: cuándo pesaste en el campo y cuándo pesó el vivo el
+frigorífico (esa **no viene en el romaneo**: hay que pedírsela). Con las dos, el desbaste sale como
+**% por hora**, que es lo único comparable entre canales — con el matarife zonal el desbaste **se
+acuerda de antemano**, y para acordarlo bien hay que conocer el real.
+
+En **Cabeza por cabeza** cada res se aparea con un animal tuyo **por orden de peso**: al más pesado
+tuyo, la res más pesada. Si un garrón aparece con **una sola media res** (recuadro ámbar), el PDF
+perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apareo queda corrido.
+
+⚠️ *Sin probar todavía → `A-TEST-90` (romaneo), `A-TEST-91` (flete)*
+
+---
+
+## 💳 Pagar un anticipo con ECHEQ, y qué verifica el mail *(nuevo 2026-09-05)*
+
+### Cargar el echeq de un anticipo
+1. En **Cash Flow**, sobre la fila del anticipo: **Shift+Click** en la columna de débitos.
+2. Elegí **📝 ECHEQ**.
+3. Se abre el modal pidiendo **banco, número, fecha de emisión y fecha de cobro**.
+   ⚠️ **La fecha de cobro es la que importa**: de ahí sale cuándo el Cash Flow descuenta esa plata.
+   Sin ella, el pago queda proyectado en el día equivocado.
+4. Después pregunta por la retención:
+   - **«Sí, aplicar retención»** si SICORE va contra este anticipo;
+   - **«No, continuar sin retención»** si ya está calculada contra la factura, o si no corresponde.
+
+> Si el modal del paso 3 **no aparece**, no sigas cargando: el echeq no va a quedar registrado como
+> tal, y sin él ni el Cash Flow ni el mail al proveedor pueden nombrarlo.
+
+Volver a elegir ECHEQ sobre un anticipo que ya lo tiene **no duplica nada** — sirve justamente para
+completar uno que quedó a medias.
+
+### Lo que verifica el mail antes de encolarse
+El cuerpo termina en **Total cancelado**:
+
+```
+Importe facturas: $3.554.000,00
+ECHEQ Banco Galicia 31841751 (cobro 20/09/2026): $2.454.000,00
+Transferencia: $1.042.599,60
+Retención Ganancias: -$57.400,40
+Total cancelado: $3.554.000,00
+```
+
+**La retención se muestra en negativo pero SUMA al total cancelado**: el proveedor no la cobra, pero
+le cancela deuda igual, porque va a AFIP a su nombre.
+
+🧮 **Si la cuenta no cierra, pregunta antes de encolar** y dice cuánto y para qué lado:
+
+| Aviso | Puede ser |
+|---|---|
+| *«Queda un saldo de $X»* | un pago parcial a propósito · **o** falta registrar un medio (un echeq sin cargar, una transferencia sin vincular) |
+| *«Se pagó $X de más»* | un pago a cuenta · **o** algo contado dos veces |
+
+Vos decidís si va igual. Lo que no puede pasar es que salga sin que lo veas.
+
+> 📌 **Al proveedor no le llega ninguna nota interna.** El mail y el PDF muestran sólo la
+> identificación del comprobante (*"FC 816 - IGLESIAS NORBERTO HUGO"*), nunca el detalle del trabajo
+> ni los estados internos.
+
+### Borrar mails encolados
+En **✉ Mails de detalle**, botón **🗑 Vaciar la cola**. Borra sólo los que están en **pendiente**;
+los que ya son **borrador** viven en Gmail y se borran desde ahí.
+
+⚠️ *Sin probar todavía → `A-TEST-88`, `A-TEST-89`*
+
+---
+
 ## ✉ Módulo: Mail de "Detalle de pago" al proveedor ✅ (funcionando)
 
 Manda al proveedor un mail con el **Detalle de pago** en PDF adjunto (+ **certificado de retención** si hubo SICORE). **Un mail por PAGO** (una FC o un grupo de N facturas → un solo mail). Es un template autollenado y **editable**. NO se mezcla con el aviso de transferencia del banco (ese llega aparte desde `go@bancogalicia.com.ar` con asunto "Aviso de transferencia").
@@ -620,6 +822,34 @@ saldo impago inexistente.
 (antes eran dos códigos distintos, ahora es uno solo), y chequeá que la última columna dé igual al
 **Total Factura**. Con un pago sin descuento, nada tiene que haber cambiado.
 
+### 💸 Cuando transferiste de MÁS (o de menos) que la factura
+
+*Caso real: ALCORTA 10/06/2026 — el banco debitó $4.165.672,09 y las tres facturas sumaban
+$4.161.192,09.*
+
+**Qué hacer:** en el Cash Flow, editá el **monto a pagar** de una de las facturas del grupo y poné lo
+que realmente saliste a transferir. El campo acepta un importe distinto al de la factura justamente
+para esto.
+
+**Qué pasa entonces, sin que toques nada más:**
+
+| | |
+|---|---|
+| El renglón de la transferencia del desglose | pasa a decir **lo realmente transferido** |
+| Aparece una última fila | **Pagado a cuenta $X** (o **Saldo pendiente** si pagaste de menos) |
+| Al pie, en rojo | *«ATENCION: Se cancela $X MÁS que el total facturado»* |
+| El movimiento del banco | ahora **cierra exacto** y se puede conciliar |
+
+🛑 **Mirá que no se te mueva la retención.** Si la quincena SICORE ya está cerrada, el certificado
+está emitido y ese número no se toca: el proveedor se toma el crédito por el importe certificado.
+
+📌 **El detalle se emite igual**: un pago de más no lo frena, sólo lo avisa — es una decisión tuya y
+el papel la deja escrita (§ `CLAUDE.md` 🚦).
+
+⚠️ **Esto es un arreglo de registro, no el destino final.** Lo transferido de más es un **saldo a
+favor** contra el proveedor y debería poder agruparse como tal junto a las facturas
+→ [A-FEAT-168](PENDIENTES.md#a-feat-168).
+
 ### Panel de revisión + envío (Cash Flow → "✉ Mails de detalle")
 - Lista la cola por estado (pendiente / borrador / enviado / error). Podés **editar** destinatario, asunto y cuerpo, togglear los adjuntos (detalle / retención) y **borrar**.
 - **Guardar** = solo persiste tus ediciones (no envía).
@@ -641,6 +871,67 @@ saldo impago inexistente.
 
 ---
 
+## 🚩 Marcar algo para revisar — desde cualquier pantalla
+
+**Para qué sirve.** Estás haciendo otra cosa y ves algo que no cierra: una imputación rara, un monto
+que no cuadra. No hace falta que lo arregles en el momento ni que te lo anotes aparte: **lo marcás y
+seguís**. Después aparece todo junto en Principal.
+
+### Dos formas de levantar una marca
+
+**1 · Desde cualquier lado — `Alt + R` o el botón 🚩 flotante.** Está en **toda la app**, siempre.
+Sirve para lo que **no es de una fila**: *"la declaración de marzo no cuadra"*, *"falta cargar algo
+de este período"*. Guarda solo dónde estabas — pantalla y solapa — y podés **pegar una captura**
+con `Win+Shift+S` y `Ctrl+V`.
+
+**2 · Desde una fila**, cuando esa pantalla tiene la banderita al costado. Ahí la marca queda pegada
+a **ese** registro, y la fila se ve marcada para el que entre después.
+
+> Las dos terminan en el mismo lugar. La de fila es más precisa; la global **anda siempre**, aunque
+> esa pantalla todavía no tenga banderita.
+
+### Cómo se usa
+1. En la fila que te llamó la atención, **al final de todo, en el margen derecho**, hay una
+   **🚩 gris**. Tocala.
+2. Se abre una ventanita que **ya sabe de qué fila hablás** — te muestra el proveedor, el número y el
+   monto sin que escribas nada. Vos sólo escribís **qué viste**.
+3. **Marcar**. Listo, diez segundos. La banderita de esa fila queda **ámbar**, así el que entre
+   después se entera ahí mismo.
+
+### Dónde se ven
+**Principal → 🚩 Para revisar.** Están todas las abiertas, con tu comentario, de qué fila eran y
+cuándo las marcaste.
+
+### Ir siguiendo la tarea
+
+Una marca **no nace con el diagnóstico, nace con la sospecha**. Por eso se puede abrir y agregarle lo
+que vayas averiguando:
+
+1. En **Principal → Para revisar**, tocá la marca (o el botón **Abrir**).
+2. Veés el motivo original, la captura si hay, y todo lo que se fue agregando con su fecha.
+3. Escribís en **Agregar** y listo.
+
+**Se agrega, no reemplaza.** La observación original queda como estaba — a veces resulta equivocada,
+y eso también sirve saberlo.
+
+### Cómo se cierra
+Tocás **Cerrar** y **escribís qué se hizo**. Es obligatorio: sin eso, *«resuelta»* termina
+significando *«la miré y me pareció que estaba bien»*, que no es lo mismo que *«la corregí»*.
+
+Si al mirarla resulta que no era un problema, está el botón **No era un problema** — que también pide
+que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda dentro de tres meses.
+
+> 📍 **Hoy está en las facturas del subdiario.** Se va a ir poniendo en otras pantallas a medida que
+> haga falta: ponerla en una grilla nueva es un trabajo de minutos.
+
+> 👥 **Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
+> a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
+> aparezca a él.
+
+✅ *Probado el 2026-09-04: el banderín de fila, el warning global con `Alt+R`, la captura y el seguimiento.*
+
+---
+
 ## 📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)
 
 **Dónde:** Egresos → Facturas → botón **Subdiarios** → "Consultar período" → elegís período → sale el **resumen en 2 bloques** (+ el detalle de cada factura debajo).
@@ -652,6 +943,111 @@ saldo impago inexistente.
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
+
+### 🗂️ Archivo digital — vincular cada factura con su PDF ✅ *(reescrito 2026-09-03)*
+
+**Dónde:** Egresos → Facturas → **Subdiarios** → *Consultar período* → elegís el período. Arriba, a la
+derecha del título **📋 Facturas del Período**, están los tres botones.
+
+**Para qué sirve.** Que cada factura del subdiario tenga **su PDF colgado**, para no buscarlo nunca
+más en el mail. Los archivos viven en Drive, ordenados por empresa, campaña y mes; la app guarda el
+link en la factura.
+
+#### Los tres botones — y cuál usar
+
+| Botón | Qué hace | Cuándo lo usás |
+|---|---|---|
+| **📊 Contar (no vincula)** | Cuenta nomás. Lista los archivos de la carpeta y los cruza contra los links que ya existen. **No abre ningún archivo y no vincula nada.** Es instantáneo | Para ver rápido cómo viene el mes |
+| **🔗 Vincular PDFs (lee el contenido)** | **El que hace el trabajo.** Abre cada archivo, le lee adentro el CUIT, el número y el monto, y lo vincula a su factura cuando los tres coinciden | Cuando querés que se vinculen. Es el normal |
+| **🔗 Vincular sólo los que faltan** | Lo mismo, pero saltea los que ya están vinculados | Para re-correr sin repetir trabajo |
+
+> ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
+> vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
+> se reportó como un bug del sistema que no existía.
+
+**Mientras corre** vas a ver un cartel *«Vinculando… (tanda N, X archivos revisados)»*. Trabaja de a
+**4 archivos por vuelta** y sigue aunque cambies de pantalla. Si una tanda falla, **reintenta sola con
+1 archivo** y te avisa; si tampoco anda, te muestra el motivo escrito.
+
+#### 🔑 Cómo decide que un PDF es de una factura — leelo una vez
+
+Esto es lo que más se malinterpreta, así que va sin vueltas:
+
+> **La vinculación automática NO mira el nombre del archivo. Mira lo que dice adentro.**
+
+Para vincular exige **las tres cosas, todas**:
+
+| | Qué busca dentro del archivo |
+|---|---|
+| **1 · CUIT** | los dígitos del CUIT del emisor |
+| **2 · Número** | el número de comprobante (acepta 5 formatos: `00002-00002021`, `2-2021`, etc.) |
+| **3 · Monto** | el importe total, con tolerancia de **$1** (en valor absoluto, porque las NC vienen en negativo) |
+
+Si falla **una sola**, no vincula y el archivo queda como huérfano. Es estricto a propósito: un
+vínculo equivocado es peor que uno que falta. El chequeo del monto se agregó justamente porque sin él
+un archivo de nota de crédito se enganchaba a una factura por compartir el CUIT.
+
+**Sí funciona con fotos.** El archivo se transcribe con reconocimiento de texto antes de compararlo,
+así que una foto de una factura se lee igual que un PDF. *(Verificado el 2026-09-03 en MSA 07/2026:
+vinculó **20 de 20**, incluidas dos fotos `.jpeg`.)*
+
+**El nombre del archivo sirve para otra cosa:** para la sugerencia ⭐ del panel de abajo, que es para
+vincular **a mano**. Nunca para vincular solo.
+
+#### El panel «🖼️ PDFs sin vincular» — acá vinculás a mano
+
+Aparece cuando quedan archivos sin asociar. Cada fila trae el archivo, una **⭐ sugerencia** (por
+nombre y fecha) y el botón **Vincular**. También podés ✏️ renombrar el archivo si está mal nombrado.
+
+**👁 Ver — mirá el archivo sin salir de la pantalla.** Al lado de cada nombre hay un botón **👁 ver**
+que abre el archivo ahí mismo, debajo de la fila. Sirve igual para un PDF que para una foto. Al lado
+te recuerda qué comparar: **CUIT, número y monto** contra la factura que elegiste en el desplegable —
+que son los tres datos que la vinculación automática exige.
+
+**La ⭐ propone entre TODAS las facturas sin PDF del período**, incluidas las marcadas `fc=No` y las
+de `Portal`. El criterio es el nombre y la fecha del archivo, así que **confirmalo mirando**: es una
+pista, no una certeza.
+
+⚠️ **Fijate de dónde salió la lista**, porque el mismo panel significa dos cosas opuestas:
+- si venís de **«Contar»** → esos archivos **todavía no se intentaron vincular** (te lo avisa en ámbar);
+- si venís de **«Vincular PDFs»** → se leyeron y **no matchearon**: falló el CUIT, el número o el monto.
+
+#### Cuando una factura no tiene PDF
+
+Eso **no** se arregla con estos botones: no hay archivo en la carpeta para vincular. Mirá la columna
+**FC** de la factura, que dice de dónde tiene que salir:
+
+| FC dice | Qué significa | Qué hacés |
+|---|---|---|
+| **Portal** | La factura se baja del sitio del proveedor. Nunca llega por mail | Entrás al portal y la bajás a mano |
+| **Sí** | Debería llegar por mail | Corrés el **buscador de PDFs** (otro circuito), o la pedís |
+| **No** | Se decidió que ésta no se busca | Revisás si esa decisión sigue valiendo |
+
+*Ejemplo real, MSA 07/2026: de 37 facturas quedaron 20 vinculadas y 17 sin PDF — pero de esas 17,
+**7 eran de Portal** (Autopistas, Corredores Viales, DIRECTV) y **2 estaban marcadas para no
+buscar**. O sea que las que realmente faltaban por mail eran **8**, no 17.*
+
+#### El mail de supervisión
+
+**Lo manda «Vincular PDFs» al terminar. «Contar» no manda nada** — es un vistazo en pantalla, y un
+mail por cada conteo sería ruido. Si contaste y no te llegó mail, está bien.
+
+Trae tres cosas: **✅ vinculadas** (con proveedor, número, monto y link), **⚠️ sin PDF agrupadas por
+motivo** — así ves cuáles son trabajo de verdad — y **❓ huérfanos con su candidata ⭐**.
+
+#### 📧 Enviar estado actualizado
+
+**El mail automático queda viejo apenas vinculás algo a mano.** Por eso hay un cuarto botón:
+**📧 Enviar estado actualizado**. Vuelve a leer la carpeta y manda el reporte con el estado de
+**ahora**, incluido lo que vinculaste vos.
+
+Tocalo **cuando terminaste** de acomodar el mes. Puede ser al toque, mañana, o después de cerrar y
+volver a abrir la pantalla: no depende de que la app adivine cuándo terminaste.
+
+*(Por eso son dos mails y no uno: el automático es la constancia de que la corrida se hizo — sale
+siempre, aunque después no toques nada — y éste es la foto final.)*
+
+---
 
 ### 📋 Pendientes de desarrollo — verlos desde la app 🟡 (2026-08-19, sin testear)
 
@@ -982,6 +1378,39 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 ### Alta de empleado
 - Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.
 
+## 👷 Sueldos → los pagos del mes, por empleado *(2026-09-11)*
+
+La lista de **Pagos registrados** viene **agrupada por empleado y cerrada**. De cada uno ves, sin
+abrir nada:
+
+```
+▸  Ruben Sigot     4 pagos    $ 2.238.085,80
+```
+
+- **Apretá el renglón** para desplegar sus pagos; apretalo de nuevo para cerrarlo.
+- Podés tener varios abiertos a la vez.
+- Los importes van **con centavos**, para poder cotejarlos contra el extracto y el recibo.
+
+### Editar un pago
+
+El lápiz abre el pago **con sus datos reales**, incluido el **Medio de Pago**. Si era «Caja Sigot»,
+abre en «Caja Sigot» — antes se cambiaba solo a «Banco» y te lo guardaba así.
+
+### Elegir la cuenta destino
+
+El desplegable de **Cuenta destino** ahora dice de **quién** es cada cuenta:
+
+```
+Lucresia · …4347
+Galicia · …0456
+Santander · sigotruben0531
+```
+
+Antes veías dos CBUs crudos sin forma de distinguirlos. Si una cuenta no tiene banco cargado, se
+muestra el identificador entero.
+
+⚠️ Sin probar por vos todavía → `A-TEST-114` (probá **guardar** un pago de caja y que siga en caja).
+
 ## 🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)
 
 **Dónde:** Egresos → Templates → botón **"Renovar campaña"**.
@@ -1064,6 +1493,31 @@ Se reparte en **cuotas**, cada una con **fecha de cobro** y **posición de fijac
 La suma de qq de las cuotas debería dar el arrendamiento total. Si no da, la app **avisa
 pero no bloquea**.
 
+**Cargar el contrato con sus cuotas.** **Nuevo contrato** y **Editar** abren el mismo modal, y
+ahí se define el contrato entero: los datos de arriba y, abajo, la sección **Cuotas**.
+
+- **Agregar cuota**: qq/ha, fecha de cobro y posición. La posición arranca igual al mes de
+  cobro (dice *= cobro*); si la cambiás, queda *a mano*.
+- **Copiar cuotas de otro contrato…**: trae el esquema de cualquier contrato —de cualquier
+  empresa— **corrido a la campaña** del que estás editando. Es un punto de partida: después
+  ajustás cantidad de cuotas, qq/ha y fechas como diga este contrato. Ej.: PAM Nazarenas 25/26
+  copia de MSA Nazarenas 26/27 y las fechas quedan un año antes.
+- Una cuota que **ya tiene una venta** no se puede borrar (dice *vendido*), ni dejarse con menos
+  toneladas que las vendidas: el botón **Guardar** se desactiva y dice por qué.
+- Las cuotas **ya cobradas** se cargan igual y después se registran con **Fijar**, con su fecha
+  y precio reales.
+- Si un contrato no tiene cuotas, su tarjeta lo dice y ofrece **Cargar cuotas**.
+- Si el cliente no tiene CUIT, el modal lo avisa: elegilo de la lista, porque sin CUIT no se
+  encuentra después su factura.
+- En el buscador de **Cliente** aparecen primero los **clientes** y abajo, separados, los **otros del
+  maestro**. Se puede elegir cualquiera: al guardar queda marcado como cliente.
+
+**Duplicar un contrato.** En la tarjeta de cada contrato, **Duplicar** abre un *Nuevo contrato* igual
+—campo, cliente, hectáreas, qq/ha— con la **campaña siguiente** y las cuotas corridas un año. Se
+revisa lo que cambie y se guarda. Si ese campo ya tiene contrato en esa campaña, la app pregunta antes.
+
+→ A-TEST-138
+
 **`Días de cobro del disponible`**: días corridos entre la fijación y el cobro cuando vendés
 disponible. **Es por cliente**: Sanpa 15, el resto 20.
 
@@ -1083,9 +1537,27 @@ Botón **Fijar** en cada cuota que tenga disponible. Se elige:
 después: la venta queda registrada, el monto en USD ya es cierto y el de pesos queda
 **estimado** (marcado con `*`) hasta que uses **Fijar TC**.
 
+El **TC arranca vacío**. Si querés usar el del presupuesto, al lado del campo está
+**usar el del presupuesto (…)** y lo pone con un clic.
+
+Las **toneladas a fijar** arrancan con todo el disponible, con sus 3 decimales (ej. 66,154).
+
+La **fecha de cobro** en Matba viene de la cuota y se ve como dato: *Cobro: 10/05/2027 (de la
+cuota) · cambiar*. Tocá **cambiar** sólo si el cobro va a ser otro día.
+
+**Editar una venta.** Cada venta tiene **Editar**, esté abierta o cerrada. Abre el mismo modal
+con lo que tiene guardado y se cambia cualquier dato. **Si le borrás el TC**, la venta vuelve a
+*falta TC* y reaparece **Fijar TC**. Si la venta ya tiene factura vinculada y el monto cambia, la
+app avisa para que revises ese vínculo, pero deja guardar.
+
+→ A-TEST-137
+
 **Fijación parcial**: si fijás menos toneladas que las disponibles, la app **parte la cuota**.
 La original queda con lo vendido y el saldo pasa a una **cuota nueva** marcada `(saldo)`, que
-después movés y valorizás por su cuenta. Una cuota se fija entera o se parte.
+después movés y valorizás por su cuenta. Una cuota se fija entera o se parte. Las toneladas de
+las dos partes quedan **exactas**: fijar 100 de 212,96 tn deja 100 + 112,96.
+
+→ A-TEST-134
 
 ### 3. Mover y valorizar (simulación financiera)
 
@@ -1435,7 +1907,113 @@ base, pero **el camino del navegador no se probó corriendo la app**.*
    **de ese** modal, no *«Nueva nota para Claude»*. Si dice eso último, el contexto se está
    capturando tarde.
 
+### 🔎 La cinta de diagnóstico ✅ *(nuevo 2026-09-02, testeado en navegador)*
+
+> Diseño y motivos → `PENDIENTES.md` § A-FEAT-72.
+
+**Qué hace.** Cuando algo falla, el renglón que **resuelve** el bug no se ve en la captura: es algo
+como `23503 · violates foreign key constraint "anticipos_proveedores_factura_id_fkey"`. Ahora la app
+se acuerda de los **últimos 50 eventos técnicos** y los adjunta a la nota sola.
+
+**Cómo se usa: no se usa.** No hay que prender nada ni acordarse de nada. Se usa la app, algo se
+rompe, `Alt + N`. Si hubo eventos, la ventanita de la nota muestra un renglón amarillo:
+
+> 🔎 **Se adjuntan 3 evento(s) técnico(s) — tocá para verlos**
+
+Tocalo y vas a ver exactamente qué se manda. Está a la vista a propósito: es la única forma de que
+puedas controlar que no viaja nada que no querés.
+
+⚠️ **No refresques la página antes de dejar la nota.** El refresh borra la cinta — que es justo lo
+que querés que Claude lea. Si ya refrescaste, la nota sirve igual, pero sin los eventos.
+
+#### ¿Hay que "guardar" la cinta? No: es automática
+
+**La cinta graba sola desde que abrís la página**, hayas empezado una nota o no. No se prende, no se
+apaga y no se guarda a mano. Por eso funciona el caso real: algo se rompe *antes* de que se te ocurra
+reportarlo, y cuando apretás `Alt + N` el error ya estaba anotado. Guarda los **últimos 50 eventos**;
+del 51 en adelante tira el más viejo.
+
+Lo que es "por captura" no es la grabación sino **el reparto**: cada captura se lleva los eventos que
+pasaron *desde la captura anterior*. No se repiten ni se pierden entre una y otra.
+
+```
+abrís la página
+   │  ← la cinta arranca sola
+   ├── error A
+   ├── error B
+   ├─ Alt+N → CAPTURA 1 ......... se lleva A y B
+   ├── error C
+   ├─ Capturar → CAPTURA 2 ...... se lleva sólo C
+   ├── error D
+   └─ Finalizar ................. D se engancha a la CAPTURA 2
+```
+
+**Las dos formas de trabajar sirven y no perdés nada:**
+- **Capturando en cada paso** → cada error queda pegado *al paso donde ocurrió*. Es lo que convierte
+  *«no anda»* en *«en el paso 3 saltó esto»*. Para un bug con varios pasos, es lo que conviene.
+- **Sólo al principio y al final** → los eventos igual se guardan, todos juntos en la última captura.
+  Los tenés, pero mezclados: no se sabe cuál pasó en qué momento.
+
+*(El error D del diagrama antes se perdía: el reparto ocurría al abrir una captura, no al Finalizar,
+así que lo que explotaba justo antes de finalizar quedaba afuera — el caso más natural de todos.
+Corregido el 2026-09-03; el modal de Finalizar ahora avisa cuántos eventos sueltos se suman.)*
+
+**Qué NO va a resolver** (para que no te frustre): sirve para lo que **tira error**. Un número mal
+calculado que no falla —como el Cash Flow que proyectaba $181 M— no deja rastro en la cinta; ése sale
+de los datos. Y para las mejoras (*"quiero decimales acá"*) no aporta nada.
+
+#### 🧪 Cómo probarlo <a id="a-test-81"></a>
+> ✅ **Ya se probó automáticamente el 2026-09-02**, manejando un navegador real contra la app: la
+> cinta engancha, el renglón aparece, los eventos llegan a la base y el secreto no se filtra por
+> ninguna de las tres vías (query, header, cuerpo). Estos pasos quedan por si querés verlo con tus
+> propios ojos, o para volver a probarlo si algo cambia.
+
+1. **Que capture algo.** Provocá un error de la app sin cortarte internet: **F12** → solapa
+   **Network** → cambiá `No throttling` por **`Offline`**, tocá cualquier cosa que traiga datos, y
+   volvelo a `No throttling`. Después `Alt + N`. (Sólo esa pestaña queda aislada.)
+   → Tiene que aparecer el renglón amarillo con al menos 1 evento. Si no aparece, la cinta no se
+   enganchó y hay que avisar.
+2. **Que se entienda.** Desplegalo. Cada renglón tiene **hora**, **tipo** (`ERROR` / `WARN` / `RED` /
+   `DB`), a veces un **código** (`23503`, `409`) y **dónde** (`app/egresos/page.js:120` o
+   `POST /anticipos_proveedores`).
+3. 🔒 **El control que más importa — que NO se filtre nada.** Escribí algo reconocible en cualquier
+   campo de la app (por ejemplo `PRUEBA-SECRETA-123` en un buscador o en un monto), provocá el error,
+   y mirá la lista de eventos.
+   → **Esa palabra no puede aparecer por ningún lado.** Si aparece, pará y avisá: se rompió la lista
+   blanca, que es lo único que hace que esto sea seguro.
+4. **Que llegue.** Finalizá la nota. Después avisame y verifico en la base que
+   `notas_capturas.diagnostico` tenga los eventos.
+5. **Que no se repita.** Con una nota grabando, hacé **2 capturas** con un error en el medio.
+   → El error tiene que aparecer en **una sola** de las dos, no en las dos.
+
 ---
+
+## 🧪 «Lo que hay que mirar en esta corrida» — el cartel de pruebas *(2026-09-11)*
+
+Cuando abrís un proceso que tiene algo pendiente de probar, arriba del modal aparece:
+
+> 🧪 **N cosas para mirar en esta corrida**
+> *Son pruebas pendientes de este mismo proceso. Podés ignorarlas: el pago sigue igual.*
+
+**Está en dos lugares por ahora:**
+
+| Dónde | Cuándo aparece |
+|---|---|
+| Cash Flow → modal de **retención SICORE** | al elegir el tipo de operación |
+| Sueldos → modal de **registrar o editar un pago** | al abrirlo |
+
+### Cómo se usa
+
+1. **Apretá «ver ▼»** para desplegarlo. Cada ítem trae su número (`A-TEST-111`) y qué hay que mirar.
+   El texto viene recortado a dos líneas: **tocalo para verlo entero**.
+2. Cuando lo probaste, apretá **✅ Anduvo** o **🔴 Falló**. El ítem **desaparece de la lista** y queda
+   anotado para Claude.
+3. Si algo falla y querés contarlo con más detalle o con una captura, usá **📝 Notas**.
+
+**Si no querés mirarlo, ignoralo**: arranca cerrado y el proceso sigue exactamente igual.
+
+📌 Lo que respondas va a los **comentarios del pendiente**, que Claude lee al abrir sesión. Es el
+mismo canal que ya usabas desde el panel de Pendientes.
 
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
@@ -1545,6 +2123,22 @@ porque los grupos viejos llegaban a `conciliado` por el motor de conciliación, 
    ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
+
+## 📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*
+
+Al pasar facturas a un estado que paga, la app pregunta **con qué fecha se pagaron** — porque de esa
+fecha sale la **quincena de SICORE**, y la estimada casi nunca es la real.
+
+**Lo que cambió**: si las facturas que marcaste **ya tienen fecha de pago de hoy**, no te pregunta
+nada. Avisa *«N registro(s) ya tienen fecha de pago …»* y sigue.
+
+Te va a seguir preguntando si:
+- alguna **no tiene** fecha de pago,
+- alguna tiene **otra** fecha.
+
+📌 Basta que **una** del lote no la tenga para que pregunte por todas: un lote se confirma junto.
+
+⚠️ Sin probar por vos todavía → `A-TEST-115`.
 
 ## 🧩 Reglas de parseo — desglosar el texto del banco 🟡 *(nuevo 2026-08-09, sin testear)*
 
@@ -1802,6 +2396,26 @@ En la primera corrida real aparecieron tres cosas mal. Al probar, mirar puntualm
    filas de la lista.
 
 ---
+
+## 📝 Extracto → filtrar por TUS notas *(2026-09-11)*
+
+En la barra de **Filtros rápidos**, al lado del filtro de revisadas, hay uno nuevo:
+
+```
+📝 Notas: todas   ·   📝 Con nota mía   ·   💬 Sin nota
+```
+
+Filtra por las notas que dejás con el **📝 de cada movimiento** (el ícono se ve gris cuando no hay
+nota y en color cuando sí).
+
+- **Con nota mía** → sólo los movimientos donde dejaste algo escrito.
+- **Sin nota** → el resto. Incluye los que tuvieron una nota y la borraste.
+- Se combina con los demás filtros (estado, fechas, contraparte…), y **«Limpiar» también lo apaga**.
+
+📌 El filtro se aplica **al traer los datos**, no sobre lo que está en pantalla: el número que ves es
+de todo el extracto, no de las filas que entraron por el límite.
+
+⚠️ Sin probar por vos todavía → `A-TEST-117`.
 
 ## 🏦 Conciliar sueldos que el motor no encuentra ✅ *(testeado OK 2026-08-19)*
 
@@ -2210,6 +2824,248 @@ El panel *Cuentas contables → Cómo se completan los templates* te marca cuál
 bancario, en las reglas de conciliación y en el plan de cuentas: renombrar en un solo lado
 desconecta las otras tres. Si hace falta cambiar un nombre, avisame y se hace de una vez en
 todos lados.
+
+---
+
+## 🧾 La cuenta corriente de un proveedor o cliente
+
+*En la **ficha** de cualquier contraparte, arriba de las listas de facturas y pagos.*
+
+Es **una sola lista ordenada por fecha** con el saldo acumulado al costado: cada factura suma, cada
+pago resta, y el número de la derecha te dice cómo van las cosas en ese momento.
+
+Arriba de todo, el estado en una línea: **«Le debo $X»**, **«Saldo a favor $X»** o **«Al día»**.
+
+### ⚠️ Los pagos en ámbar
+Un pago pintado de ámbar es uno que **no dice contra qué comprobante fue**. Son los que dejan saldo
+sin que nadie lo note — típicamente cuando le pagaste algo que no tenés facturado, o de más.
+
+El aviso de arriba te dice cuántos hay.
+
+### Si la contraparte compra Y vende
+Las facturas de **venta restan** de lo que le debés. Así ves el neto real, que es lo que importa
+cuando se compensan entre sí en vez de pagarse.
+
+### 🔑 No se guarda, se arma
+El saldo se calcula cada vez que abrís la ficha. Por eso **nunca queda viejo**: si entra una factura
+nueva o se concilia un pago, la próxima vez ya está al día sin que nadie recalcule nada.
+
+⚠️ Lo que la ficha **no ve** lo avisa ella misma: pagos por caja o por cheque que no pasaron por el
+extracto.
+
+⚠️ Sin probar todavía → A-TEST-130
+
+---
+
+## 📐 Cómo se registra un movimiento — qué va en cada columna
+
+*Vale para todo lo que se concilia: banco, caja, tarjeta, echeq. **El detalle es el detalle para
+todo**, no uno distinto por cada medio.*
+
+Cada columna contesta **una** pregunta, y ninguna repite a otra:
+
+| Columna | Qué contesta | Ejemplo |
+|---|---|---|
+| **Proveedor** | quién cobró | `Municipalidad SP` |
+| **CATEG** | qué tipo de gasto es | `Impuesto Red Vial` |
+| **Comprobante** | **cuál** obligación se saldó | `Red Vial Lote Puerto - Junio 2026` |
+| **Detalle** | lo que **no** se deduce de las otras tres | `incluye ajuste retroactivo` |
+
+### 🔑 Detalle vacío está bien
+Si las otras tres ya lo dijeron, **no hay nada que escribir**. Un Detalle que repite la CATEG no
+agrega información: agrega ruido.
+
+### Lo que escribe el sistema y lo que escribíis vos
+- El **Comprobante** lo arma el sistema y **se actualiza solo**. Si renombrás un template, todas sus
+  cuotas cambian sin que toques nada. En la grilla de Templates lo ves **en gris e itálica**, y por
+  eso no se edita.
+- El **Detalle** es tuyo. Lo escribís en el Extracto o en la cuota, y **viaja entre los dos**.
+
+⚠️ **Lo que vos escribiste nunca se pisa.** Cuando conciliás, el detalle de la cuota **completa** el
+del movimiento sólo si estaba vacío.
+
+⚠️ Sin probar todavía → A-TEST-127
+
+---
+
+## 📝 Extracto → trabajar con tus notas
+
+*La nota es el 📝 de cada movimiento: lo que dejás escrito mientras conciliás.*
+
+### Buscar adentro de las notas
+Al lado del chip `📝 Notas`, el campo **🔍 en mis notas…** busca **dentro del texto**. Escribí y
+apretá Enter (o salí del campo).
+
+Los dos se combinan y se suman a todo lo demás: fechas, estado, contraparte. El rótulo de filtros
+activos de arriba te dice todo lo que está puesto, y **«Limpiar» apaga también esta búsqueda**.
+
+### Anotar en todas las que estás viendo
+El botón **📝 Anotar los N** deja la misma nota en **todos los movimientos que tenés en pantalla** —
+no en una selección a mano. Por eso conviene filtrar primero: el filtro ya es el criterio.
+
+El cartel te dice **en cuántos va a escribir** antes de hacerlo. Tres modos:
+
+| Modo | Qué hace |
+|---|---|
+| **Agregar al final** | suma un renglón. **No pisa** lo que la nota ya decía |
+| **Reemplazar la nota** | deja sólo el texto nuevo |
+| **🧹 Borrar las notas** | las vacía. No se puede deshacer |
+
+### Que las notas se vayan al conciliar
+En la **edición masiva**, cuando ponés el estado en `conciliado`, aparece un tilde:
+**🧹 Borrar mis notas de los que se concilien**.
+
+Viene **apagado**: por defecto la nota se conserva. Tildalo cuando la nota era una pregunta que la
+conciliación ya contestó; dejalo apagado cuando dice algo que vas a querer leer después.
+
+---
+
+## 👤 Extracto → el proveedor sale del banco
+
+Cuando asignás una categoría por **edición masiva**, si el movimiento **no tiene proveedor** y el
+banco mandó el CUIT de quien cobró, se completa solo y te avisa cuántos llenó.
+
+- Los que **ya tenían** un nombre escrito **no se tocan**.
+- Si el CUIT **no está en Proveedores**, sale un aviso naranja con los CUIT. Conviene darlos de alta:
+  de ese maestro salen el CBU, los mails y el mensaje de transferencia.
+
+---
+
+## 🔁 Extracto → el detalle llega al template
+
+Si editás el **Detalle** de un movimiento que está conciliado contra una cuota de template, el mismo
+texto se escribe en la cuota, y te lo confirma. Son el mismo hecho visto de dos lados.
+
+Si el movimiento no está conciliado, se guarda y no pasa nada más.
+
+---
+
+## 🪪 Templates → Descripción y Detalle son dos cosas distintas
+
+En *Egresos sin Factura → Cuotas* hay dos columnas de texto, y **no son lo mismo**:
+
+| Columna | Qué va ahí |
+|---|---|
+| **Descripción** | **qué cuota es**: `UATRE MSA - Septiembre 2026`. La arma el sistema |
+| **Detalle** | **lo tuyo**: `1.740 Kg Maíz Castillo a 193.000 la ton (ya descontado 20% por gorgojos)` |
+
+Las dos se editan con **Ctrl+click**.
+
+### Dónde se junta todo
+En el **Cash Flow** las ves compuestas en un solo renglón:
+
+```
+con detalle:  UATRE MSA - Septiembre 2026 · 1.740 Kg Maíz Castillo a 193.000 la ton
+sin detalle:  UATRE MSA - Septiembre 2026
+```
+
+Por eso **no hace falta copiar el identificador al detalle**: si el detalle está vacío, igual ves
+la etiqueta. Y si el template cambia de nombre o de período, la etiqueta se actualiza sola — lo que
+escribiste vos no se toca.
+
+### Y el detalle que viene del Extracto
+Cuando editás el **Detalle** de un movimiento conciliado en el Extracto Bancario, ese texto llega a
+la columna **Detalle** de la cuota. La **Descripción** no se toca.
+
+⚠️ Sin probar todavía → A-TEST-126
+
+---
+
+## 📅 Templates → poner una cuota en pagado
+
+Al cambiar el **Estado** de una cuota a `pagar`, `preparado`, `pagado`, `conciliado` o `debito`, se
+abre un cartel preguntando **con qué fecha se pagó**, proponiendo hoy.
+
+**De esa fecha sale la quincena de SICORE**, así que conviene que sea la real y no la estimada.
+
+- Si pasás varias cuotas juntas con la edición masiva, pregunta **una sola vez** para el lote.
+- Si la cuota **ya tiene** esa misma fecha, no pregunta.
+- Con `pendiente`, `programado`, `crédito` o `anterior` **no pregunta**: no hay pago.
+
+---
+
+## ⌨️ Editar una celda: Ctrl+click, en cualquier grilla
+
+**Ctrl+click sobre una celda la pone en edición.** Vale igual en Cash Flow, en Templates y en el
+Extracto — ya no hace falta prender ningún modo antes.
+
+El **Modo Edición** sigue existiendo y sirve para otra cosa: pinta cuáles son las celdas editables y
+habilita la selección de varias filas para editarlas juntas.
+
+⚠️ La excepción es **Ctrl+Shift+click sobre el monto** en Templates, que convierte el template de
+Anual a Cuotas y viceversa: eso **sí** pide el Modo Edición, porque reescribe el plan entero.
+
+---
+
+## 🔎 Reglas de conciliación → encontrar una
+
+Arriba de la lista hay un buscador. Busca por **texto que la regla busca, categoría, detalle, centro
+de costo, códigos, tipo y número de orden** (podés escribir `#35`).
+
+Mira **sólo la cuenta elegida arriba**. Si no encuentra nada te lo recuerda, porque la regla puede
+estar cargada en otra cuenta.
+
+📌 Conviene buscar **antes de crear una regla nueva**: si ya hay una que matchea el mismo texto, gana
+la de orden más bajo y la nueva queda sin efecto sin avisar.
+
+⚠️ Sin probar todavía → A-TEST-120 a A-TEST-125
+
+---
+
+## ✏️ Templates → editar una campaña (ver el template y sus cuotas juntos)
+
+*Sirve para lo que la grilla no deja hacer: **agregarle una cuota a un plan**, cambiarle las fechas o
+los montos a varias, o corregir los datos del template — todo en la misma pantalla.*
+
+### Cómo se abre
+Dos caminos, el mismo editor:
+
+- **Egresos → Egresos sin Factura → Cuotas** — al lado del nombre del template, en cualquiera de sus
+  filas, hay un **✏️**. Da igual cuál fila: abre el template entero.
+- **Renovar campaña → «Ya generados en …»** — el **✏️ editar** de cada template de la lista.
+
+### Qué muestra
+Arriba, **los datos del template**: nombre, proveedor, quién cobra, CUIT, categoría, centro de costo,
+responsable y si está activo. Se editan escribiendo encima.
+
+Abajo, **todas sus cuotas**, ordenadas por fecha, con su número, su fecha, su monto y su estado.
+
+Al final del todo dice cuántos **movimientos bancarios conciliados** dependen de estas cuotas.
+
+### El candado verde 🔗
+Una cuota con un **🔗 verde** al lado del estado está **conciliada contra un movimiento bancario**.
+
+> **Podés editarla igual.** Lo único que el editor no hace nunca es **borrar** una cuota: cuando
+> apretás *Quitar*, la cuota se **desactiva** y el vínculo con el banco queda intacto. Así, si más
+> adelante hay que revisar contra qué se pagó algo, el rastro sigue estando.
+
+### Agregar cuotas
+**Agregar cuota** suma una fila al final, copiando el monto de la última y poniéndole una fecha tres
+meses después — casi siempre es lo que querés, y si no, lo cambiás. Los números se reordenan solos
+por fecha cuando guardás.
+
+### Los avisos mientras escribís
+Apenas cambiás una fecha o un monto, si hay algo para mirar aparece **debajo de esa misma fila**:
+
+| | Qué te está diciendo |
+|---|---|
+| 🔴 rojo | esa cuota **está conciliada** y con el valor nuevo **ya no coincide** con el movimiento del banco. El vínculo no se pierde, pero el movimiento va a seguir diciendo «conciliado» sin cerrar contra nada |
+| 🟠 naranja | con ese valor **coincide con otra salida bancaria que ya es de otra cuota**. Ojo: puede que estés corrigiendo la cuota equivocada |
+| 🔵 azul | con ese valor **coincide con una salida que todavía no está conciliada**. Suele ser buena noticia: es justo lo que estabas buscando |
+
+Un aviso rojo **no te frena**: el botón pasa a decir *«Guardar igual (hay avisos en rojo)»*. A veces
+el que está mal es el dato viejo y justamente lo venías a corregir.
+
+### Antes de guardar
+Arriba del botón aparece **la lista de lo que va a pasar**: qué cuota cambia, cuál se crea, cuál se
+desactiva. Las que cambian dicen **«mismo id — el vínculo se conserva»**.
+
+**Cancelar no guarda nada**, ni siquiera lo que ya habías escrito.
+
+⚠️ Si el editor no pudo revisar alguna cuenta bancaria, lo dice arriba en naranja. Significa que los
+avisos pueden estar incompletos — no que no haya vínculos.
+
+⚠️ Sin probar todavía → A-TEST-119
 
 ---
 

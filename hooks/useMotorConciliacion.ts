@@ -4,9 +4,16 @@ import { useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
+import {
+  extraerCuitBancario as extraerCuitDelMovimiento,
+  buscarNombreProveedor as buscarNombreEnMaestro,
+} from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
+import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
+import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
+import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -191,6 +198,27 @@ export function useMotorConciliacion() {
     }
   }
 
+  /**
+   * 🎯 **A-FEAT-138** — el `detalle` de una regla sólo se copia si **dice algo que la CATEG no dice**.
+   *
+   * Medido el 2026-09-12: de **68 reglas activas, 60 tienen `detalle` idéntico a `categ`**. Copiarlas
+   * deja el movimiento así:
+   * ```
+   * CATEG:   Comision Transferencias
+   * Detalle: Comision Transferencias   ← no aporta nada
+   * ```
+   * Es la misma duplicación que [A-FEAT-31] ya había sacado cuando el motor derivaba
+   * `detalle = «<comprobante> — <proveedor>»`. **Detalle vacío no es un hueco**: es que las otras
+   * columnas ya lo dijeron.
+   *
+   * 📌 Las **8** reglas cuyo detalle sí aporta lo siguen escribiendo — para eso existe el campo.
+   */
+  const detalleQueAporta = (detalle: string | null | undefined, categ: string | null | undefined): string | null => {
+    const d = (detalle ?? '').trim()
+    if (!d) return null
+    return d.toLowerCase() === (categ ?? '').trim().toLowerCase() ? null : d
+  }
+
   // Función para evaluar si una regla hace match con un movimiento
   const evaluarRegla = (movimiento: MovimientoBancario, regla: ReglaConciliacion): boolean => {
     try {
@@ -244,31 +272,15 @@ export function useMotorConciliacion() {
   const normalizarCuit = (cuit: string | null | undefined): string =>
     (cuit || '').replace(/[-.\s]/g, '')
 
-  // Extraer CUIT válido de leyendas_adicionales_2 (si existe)
-  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null => {
-    // El tipo dice leyendas_adicionales2 pero BD devuelve leyendas_adicionales_2
-    const mov = movimiento as any
-    const valor = (mov.leyendas_adicionales_2 || mov.leyendas_adicionales2 || '').trim()
-    if (!valor) return null
-    // CUIT argentino: exactamente 11 dígitos, prefijo válido
-    if (!/^\d{11}$/.test(valor)) return null
-    const prefijo = parseInt(valor.substring(0, 2))
-    if ([20, 23, 24, 27, 30, 33, 34].includes(prefijo)) return valor
-    return null
-  }
+  // 👤 A-FEAT-132 — las dos salieron de acá a `lib/conciliacion/proveedor-del-movimiento.ts`.
+  // Vivían encerradas en este hook, así que el único que podía usarlas era el motor automático;
+  // el camino MANUAL —el que se usa justo cuando el automático no alcanzó— no tenía cómo, y el
+  // CUIT que el banco ya manda se tiraba. Acá quedan los adaptadores para no tocar los llamadores.
+  const extraerCuitBancario = (movimiento: MovimientoBancario): string | null =>
+    extraerCuitDelMovimiento(movimiento)
 
-  // Buscar nombre del proveedor en BBDD proveedores por CUIT
-  const buscarNombreProveedor = async (cuit: string | null | undefined): Promise<string | null> => {
-    if (!cuit) return null
-    const cuitLimpio = cuit.replace(/[-\s]/g, '')
-    if (!cuitLimpio) return null
-    const { data } = await supabase
-      .from('proveedores')
-      .select('razon_social')
-      .eq('cuit', cuitLimpio)
-      .maybeSingle()
-    return data?.razon_social || null
-  }
+  const buscarNombreProveedor = (cuit: string | null | undefined): Promise<string | null> =>
+    buscarNombreEnMaestro(supabase, cuit)
 
   /**
    * Busca match en el Cash Flow.
@@ -302,6 +314,30 @@ export function useMotorConciliacion() {
     for (const pool of pools) {
       const resultado = buscarEnPool(movimiento, pool)
       if (resultado) return resultado
+    }
+
+    /**
+     * 🎯 **A-FEAT-158 — último intento: importe exacto aunque la fecha estimada esté lejos.**
+     *
+     * Caso real: movimiento del 29/06 por **$1.465.100** y la factura de CACERES por el mismo
+     * importe con `fecha_estimada` **11/07** — **12 días**, y la tolerancia de arriba es 5. Quedaban
+     * los dos sueltos: el movimiento sin vincular y la factura paga por otro lado.
+     *
+     * 🔑 `fecha_estimada` es **una estimación** —cuándo se pensaba pagar—, no un hecho. El importe
+     * exacto sí lo es. Descartar por una estimación equivocada esconde un vínculo que existe.
+     *
+     * ⚠️ **Nunca concilia derecho: siempre `auditar`.** El importe solo no alcanza para dar por
+     * cierto un vínculo; alcanza para **traerlo a la vista**. Y con dos candidatos del mismo importe
+     * no propone ninguno — elegir sería adivinar.
+     */
+    const porImporte = matchPorImporteExacto(movimiento as any, base as any)
+    if (porImporte) {
+      return {
+        match: true,
+        cashFlowRow: porImporte.candidato,
+        requiere_revision: true,
+        motivo_revision: porImporte.motivo,
+      }
     }
 
     return { match: false }
@@ -762,10 +798,25 @@ export function useMotorConciliacion() {
               const provNombreRegla = await buscarNombreProveedor(cuitRegla)
 
               // Actualizar extracto con categ/detalle/estado y códigos de la regla
+              //
+              // 🏷️ **A-BUG-160** — acá faltaba `regla.detalle` y el renglón escribía `null`.
+              // El comentario de arriba ya decía «categ/**detalle**/estado de la regla» y la línea
+              // de `categ` sí tiene su fallback: es un olvido de una sola línea, con **74 reglas
+              // activas que tienen el detalle cargado** y no lo llenaban nunca.
+              //
+              // 🧨 Lo encontró el usuario conciliando un lote de FIMA (2026-09-12):
+              // *«se conciliaron bien, pero el tema es que no llenó detalle, y en la configuración
+              // creo que está puesto como debe llenar detalle»*. Tenía razón — las dos reglas de
+              // FIMA dicen `Rescate FIMA` / `Suscripcion FIMA`, y los 12 movimientos conciliados
+              // desde junio quedaron con `detalle = NULL`.
+              //
+              // 🔑 **Y el orden importa**: lo que el usuario ya escribió a mano **nunca se pisa**
+              // — es la misma precedencia del camino de Cash Flow de arriba. Una regla que
+              // sobrescribe una anotación manual convierte la automatización en pérdida de datos.
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || null,
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleQueAporta(regla.detalle, regla.categ),
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
@@ -790,9 +841,56 @@ export function useMotorConciliacion() {
                   if (codigosTab2F2.contable) extraRegla.contable = codigosTab2F2.contable
                   if (codigosTab2F2.interno) extraRegla.interno = codigosTab2F2.interno
 
+                  /**
+                   * 🧲 **A-BUG-175 — recién acá se sabe a qué template quedó vinculado, así que
+                   * recién acá se puede heredar de él.**
+                   *
+                   * El UPDATE de arriba dejó el proveedor que salía del **CUIT bancario**, que en
+                   * un impuesto al débito o una comisión **no existe**. Ahora que hay template, se
+                   * aplica la precedencia que fijó el usuario: *lo que escribió a mano* manda sobre
+                   * *lo que dice el origen*, y el origen manda sobre *lo que informa el banco*.
+                   *
+                   * 📌 Se pasa `movimiento.proveedor_nombre` —el valor **previo** a conciliar— como
+                   * «lo del usuario», y `provNombreRegla` como «lo del banco». Si no fuera así, el
+                   * proveedor recién escrito por el CUIT se tomaría por manual y bloquearía al
+                   * template, que es justo lo que este bug venía haciendo.
+                   */
+                  const herencia = heredarDelOrigen(
+                    { proveedor_nombre: (movimiento as any).proveedor_nombre,
+                      comprobantes_pagados: (movimiento as any).comprobantes_pagados,
+                      centro_de_costo: (movimiento as any).centro_de_costo },
+                    cuotaResult.template,
+                    identificadorDeCuota(
+                      { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
+                      cuotaResult.template ?? {}),
+                    provNombreRegla,
+                  )
+
+                  /**
+                   * 🪪 **A-FEAT-154 — el CUIT del banco contra el del origen.**
+                   *
+                   * Si los dos tienen valor y **no coinciden**, el movimiento se concilia igual pero
+                   * queda en `auditar`: puede haber una razón real (una cesión, un pago a nombre de
+                   * otro), así que **advierte y no bloquea** (§ `CLAUDE.md` 🚦).
+                   *
+                   * 🔑 **Si alguno está en blanco, no opina** — los gastos bancarios no traen CUIT,
+                   * y un control que los mandara a `auditar` terminaría apagado.
+                   */
+                  const cuitBanco = extraerCuitBancario(movimiento)
+                  const cuitOrigen = cuotaResult.template?.cuit_quien_cobra
+                  const hayDiscrepancia = cuitsDiscrepan(cuitBanco, cuitOrigen)
+
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,
+                    ...(hayDiscrepancia ? {
+                      estado: 'auditar',
+                      motivo_revision: motivoCuitDistinto(String(cuitBanco), String(cuitOrigen)),
+                    } : {}),
+                    proveedor_nombre: herencia.proveedor_nombre,
+                    comprobantes_pagados: herencia.comprobantes_pagados,
+                    // El centro de costo de la regla sigue teniendo prioridad si la regla lo trae.
+                    centro_de_costo: regla.centro_costo || herencia.centro_de_costo,
                     ...extraRegla
                   })
                 }
@@ -835,12 +933,20 @@ export function useMotorConciliacion() {
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
     movimiento: MovimientoBancario
-  ): Promise<{ templateId: string; cuotaId: string; responsable?: string | null } | null> => {
+  ): Promise<{
+    templateId: string; cuotaId: string; responsable?: string | null
+    /** 🧲 A-BUG-175 — lo que el movimiento hereda: proveedor, comprobante y centro de costo. */
+    template?: TemplateOrigen | null
+    fechaCuota?: string | null
+  } | null> => {
     try {
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
-        .select('id, responsable, solo_conciliacion')
+        // 🧲 A-BUG-175 — se traen también las columnas que el movimiento HEREDA. Antes el select
+        //    pedía sólo `id, responsable, solo_conciliacion`, así que el motor vinculaba el
+        //    movimiento a su template y no tenía de dónde copiar el proveedor ni el comprobante.
+        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra')
         .eq('categ', regla.categ)
         .eq('activo', true)
 
@@ -890,7 +996,17 @@ export function useMotorConciliacion() {
           monto,
           estado: 'conciliado',
           tipo_movimiento: tipoMovimiento,
-          descripcion: regla.detalle || movimiento.descripcion
+          /**
+           * 🪪 **A-FEAT-138** — esto escribía en `descripcion`, y es de dónde salieron **326** de
+           * las 548 filas mezcladas (A-DAT-37): el `detalle` de la regla ocupando la columna del
+           * identificador. Ahora va a **`detalle`**, que es su lugar.
+           *
+           * ⚠️ **Y sólo si APORTA algo.** De 68 reglas activas, **60 tienen el `detalle` idéntico a
+           * la `categ`**: copiarlo deja la cuota diciendo `«Comision Transferencias»` en un renglón
+           * cuya CATEG ya dice eso. Es la duplicación que prohíbe § 30.1 de `MODULO_CONCILIACION.md`.
+           * **Vacío es la respuesta correcta** cuando no hay nada que agregar.
+           */
+          detalle: detalleQueAporta(regla.detalle, regla.categ) || movimiento.descripcion || null
         })
         .select('id')
         .single()
@@ -904,7 +1020,11 @@ export function useMotorConciliacion() {
       return {
         templateId: template.id,
         cuotaId: cuota.id,
-        responsable: (template as any).responsable ?? null
+        responsable: (template as any).responsable ?? null,
+        // 🧲 A-BUG-175 — el template entero y la fecha de la cuota viajan de vuelta: son lo que el
+        //    movimiento necesita para heredar proveedor, comprobante y centro de costo.
+        template: template as TemplateOrigen,
+        fechaCuota: (cuota as any)?.fecha_estimada ?? movimiento.fecha ?? null,
       }
 
     } catch (err) {

@@ -159,6 +159,138 @@ esté como esté"*. Sólo-manual duplica un dato que ya existe y los números de
 sólo-automático te traba cuando el dato falta o cuando querés probar otra cosa. Caso testigo:
 los escenarios de margen → [A-FEAT-25](PENDIENTES.md#a-feat-25).
 
+### 🚦 LOS CUATRO ESTADOS — y el permiso para cambiar de tema (REGLA)
+*Pedida por el usuario 2026-09-06, después de que Claude pasara del romaneo al parser de boletas
+por su cuenta: **«ignoraste la regla de pedirme permiso, sobre todo cambiar de test»**.*
+
+> **Se trabaja de a UN tema, en el orden que fija el usuario, y se le informa en cuál de los cuatro
+> estados está. Cambiar de tema requiere que él lo diga.**
+
+| Estado | Qué significa | Qué se espera |
+|---|---|---|
+| 🔵 **Listo para desarrollar** | el tema está entendido y priorizado; falta escribirlo | que Claude arranque |
+| 🟡 **Terminé desarrollo, listo para probar** | está escrito, **pero Claude todavía no lo probó** | que Claude corra los casos |
+| 🟢 **Terminé mis pruebas, aguarda test manual** | `npm run probar*` en verde y los casos escritos | **el usuario prueba** |
+| ✅ **Probado y cerrado** | el usuario confirmó | pasar al siguiente de la lista |
+
+🛑 **Al usuario NO se le pide que pruebe hasta el estado 🟢.** Antes de eso, «probá» significa
+«probá lo que yo no probé», y ya pasó: los cuatro bugs del 2026-09-06 estaban en algo entregado
+como listo.
+
+🛑 **Y el tema no cambia por iniciativa de Claude.** Ni siquiera para algo mejor, ni «de paso». Si
+aparece un hallazgo que abre otro frente, **se registra en `PENDIENTES.md` y se sigue con el tema en
+curso** — el usuario decide cuándo se toma.
+
+*Motivo: el usuario está probando en paralelo. Si Claude salta de tema, lo que él tiene delante deja
+de coincidir con lo que Claude está tocando, y las dos mitades del trabajo dejan de sumar.*
+
+📌 **Al cerrar un tema, ofrecer la lista** de lo que sigue con su estado, para que el orden lo elija él.
+
+### 🗣️ CÓMO SE PRESENTA LA INFORMACIÓN — primero el qué, nunca el cómo (REGLA)
+*Pedida por el usuario 2026-09-12, después de una tanda donde cada respuesta abría con nombres de
+archivo y líneas de código: **«lo primero quiero que me haga entender rápido lo que se hizo, lo que
+se propone, o las preguntas antes de poder empezar. Sintético y sin recurrir a código para explicar.
+Preciso a nivel conceptual, mejor usando nuestro glosario de la app»**.*
+
+> **Toda respuesta abre con lo que el usuario necesita para decidir, en el lenguaje de la app. El
+> código, los archivos y las líneas vienen después — o no vienen.**
+
+**Las tres cosas que van primero, y sólo una aplica por vez:**
+
+| | Cuándo | Qué se dice |
+|---|---|---|
+| **Lo que se hizo** | ya está hecho | qué cambió para él, no qué archivo se tocó |
+| **Lo que se propone** | hay que decidir | la opción recomendada y qué implica |
+| **La pregunta** | no se puede arrancar sin la respuesta | la pregunta sola, sin el análisis que llevó a ella |
+
+**El glosario es el de la app, no el del repo.** Se dice *cuota*, *template*, *movimiento*,
+*conciliar*, *comprobante*, *detalle*, *campaña* — no `cuotas_egresos_sin_factura`,
+`comprobante_display` ni `useMultiCashFlowData`. Si un concepto no tiene nombre en la app, ése es el
+hallazgo: hay que ponerle uno.
+
+**Y el orden es el de una minuta, no el de una investigación:**
+1. **Qué pasa / qué se hizo** — una o dos líneas.
+2. **Qué impacto tiene** — en la plata, en el trabajo del usuario, o en el riesgo. Si no tiene
+   ninguno, decirlo también.
+3. **Qué se propone**, con recomendación. No un menú de opciones equivalentes.
+4. **Qué hace falta de él** — una decisión, un dato, o nada.
+5. *(recién acá, si sirve)* el detalle técnico.
+
+⚠️ **Un hallazgo no es una respuesta.** Contar el recorrido —*«busqué acá, encontré esto, después
+miré allá»*— es narrar la investigación en vez de entregar la conclusión. El recorrido va al final o
+al commit, no arriba.
+
+⚠️ **Y no se abre con una disculpa ni con el error propio.** Si hubo un error, se dice **qué
+significa para él** y después qué fue. Al revés, el usuario tiene que leer todo el mea culpa antes
+de enterarse de si tiene que hacer algo.
+
+**Motivo:** el usuario decide con esto. Una respuesta que empieza en `hooks/useMultiCashFlowData.ts`
+lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
+precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
+
+#### 🔄 Un HITO se documenta corrigiendo lo viejo, no agregando al lado (REGLA)
+*Pedida por el usuario 2026-09-12: **«cuando se documentan este tipo de hitos, ¿se mira que no haya
+info histórica contradictoria que pueda confundir en próximas tomas de contexto?»**. No se miraba —
+y ese mismo día quedaron **ocho lugares** afirmando algo que ya se sabía falso.*
+
+> **Antes de dar por cerrado un hito, buscar qué dice HOY la documentación sobre ese mismo tema y
+> corregirlo. Un hallazgo nuevo que convive con el viejo no aclara: confunde.**
+
+- **Se busca por concepto, no por ID**: `grep` del número, del nombre de la columna, del síntoma.
+  Lo mismo suele estar dicho en tres dimensiones distintas con tres redacciones.
+- **Lo viejo NO se borra si enseña algo**: se marca **`❌ FALSA ALARMA`** o **`⚠️ cambió <fecha>`**
+  arriba, con el diagnóstico correcto primero y el recorrido debajo. Así el que lo lea ve **que hubo
+  una corrección**, que es información que borrar destruye.
+- **Y se corrige en el momento del hito**, no después: para cuando alguien lo note, la afirmación
+  falsa ya viajó a la memoria, a un cierre de sesión y a la próxima toma de contexto.
+
+**Motivo, con el caso:** [A-BUG-156](PENDIENTES.md#a-bug-156) concluyó que había *«9 vínculos
+conciliados apuntando a cuotas que ya no existen»*. **Eran pagos agrupados** — el vínculo guardaba el
+grupo, no la cuota, y el control no lo sabía. La afirmación falsa llegó a **`PENDIENTES`,
+`ARQUITECTURA-BD`, `KNOWLEDGE` y la memoria** en el mismo día. Sin esta regla, la sesión siguiente
+abre creyendo que hay datos rotos y sale a repararlos.
+
+⚠️ **Y el corolario que la hace barata:** el momento de escribir el hito es el único en que se tiene
+todo el tema en la cabeza. Corregir lo contradictorio cuesta **minutos** ahí, y una sesión entera
+tres semanas después.
+
+### 📋 Dónde vive el testing del usuario
+**En la guía de pruebas**, no desparramado en la app. El usuario tiene que poder **correr todo desde
+un solo lugar**, sin buscar botones. Lo que hay adentro de la app son herramientas (el 🧪 Probar);
+**la secuencia** de lo que él tiene que hacer va en la guía, y se actualiza cuando el desarrollo
+cambia (§ 📋 Guía de pruebas).
+
+### 📄 Importar un documento: plástico, editable y con HUELLA (REGLA)
+*Enunciada por el usuario 2026-09-06, sobre el importador de romaneos pero **para todo el tipo de
+proceso**: boletas de ARBA, facturas, extractos, cualquier papel que entre.*
+
+> **«Que sea plástico y cubra gran nivel de errores. En un caso especial tendrás que cargar varias
+> cosas —corregir— pero las cuentas las hace bien, y siempre será menos trabajo. Y a medida que
+> surgen los errores, que vayan dejando la huella para ir corrigiendo el sistema: poder auditar
+> siempre los errores y que cada vez funcione mejor.»**
+
+Es la § 🏚️ *Default del dato real, siempre editable* aplicada a leer documentos, y agrega una
+pieza que aquella no tenía: **la huella**. Cuatro condiciones, y las cuatro obligan:
+
+**1 · Nunca rechaza.** Un importador que se planta el día que el emisor mueve una columna deja al
+usuario **sin herramienta** justo cuando la necesita. Devuelve lo que pudo leer y marca qué falló.
+
+**2 · Todo lo que se lee se puede corregir** — y en particular **lo que alimenta la plata**. Que la
+cabecera sea editable y los importes no es exactamente al revés de lo que hace falta.
+
+**3 · Las cuentas se hacen bien igual.** Con un dato corregido a mano, el total tiene que recalcularse
+solo. **Corregir no puede obligar a rehacer.** Si el usuario tiene que arreglar el dato *y además* la
+suma, el importador no le ahorró nada.
+
+**4 · Cada corrección deja HUELLA**: se guarda **lo que leyó el parser junto a lo que puso el
+usuario**. Sin las dos puntas la huella no sirve — saber que un campo se corrigió no dice nada;
+saber que se leyó `185` y el usuario puso `373` dice dónde falla y cuánto.
+📍 **Acá:** `productivo.romaneos.correcciones` y `public.boletas_arba.correcciones`.
+
+**Motivo, y es el que ordena las prioridades:** sin la huella, cada error se arregla **una vez** —
+cuando el usuario lo ve y avisa. Con la huella, el importador **mejora con el uso**: se puede
+preguntar qué campo se corrige más, en qué emisor, y si un cambio al parser mejoró o empeoró.
+
 ---
 
 ### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
@@ -237,11 +369,114 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 ### 🔧 Git
 > **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
 > merge lo autoriza el usuario **después** de confirmar el testing.
-> **📍 Acá:** la rama de trabajo es **`desarrollo`** y la de producción **`main`**, con auto-deploy
-> de Vercel (por eso mergear = publicar).
+> **📍 Acá:** la rama de trabajo de JMS es **`jms/dia-a-dia`**, la de integración **`desarrollo`** y
+> la de producción **`main`**, con auto-deploy de Vercel (por eso mergear a `main` = publicar).
 
-- **Pushear SIEMPRE a `desarrollo`** (nunca commitear directo a `main`). `main` = auto-deploy Vercel.
-- Merge `desarrollo → main` solo cuando el usuario confirme testing OK.
+⚠️ **Cambio de rumbo 2026-09-02** — hasta esa fecha la regla decía *"pushear siempre a `desarrollo`"*.
+**Ya no.** Desde que hay un segundo desarrollador (Javier, en seguridad y logueo), cada uno tiene su
+rama y `desarrollo` pasó a ser **rama de integración**: se mergea a ella, no se escribe en ella.
+
+```
+jms/dia-a-dia ─┐
+               ├─→ desarrollo ─→ main  (auto-deploy Vercel = producción)
+javier/…      ─┘   (integración)
+```
+
+- **Pushear SIEMPRE a `jms/dia-a-dia`.** Nunca commitear directo a `desarrollo` ni a `main`.
+  Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **`jms/dia-a-dia`**.
+- Los **dos** merges los autoriza el usuario: `jms/dia-a-dia → desarrollo` y `desarrollo → main`
+  (este último sólo con el testing confirmado, como siempre).
+- La rama de Javier la crea y la nombra **él**. Al 2026-09-02 todavía no existe en el remoto.
+  No adivinar el nombre: `git for-each-ref refs/remotes/origin` lo dice, pero **sólo después de que
+  él la pushee** — una rama local en su máquina es invisible acá.
+
+
+### 🌿 UNA RAMA POR TEMA — y decir DÓNDE se está parado antes de escribir (REGLA)
+*Pedida por el usuario 2026-09-09, después de que yo escribiera tres dossiers de un tema nuevo
+directamente sobre `jms/arba`, que era la rama del tema de la otra terminal: **«creo que hay que
+poner una regla que claramente evalúe dónde se mueve. pensé que era medio básico. debemos trabajar
+en una rama nueva y si no hacemos nada queda solo como algo evaluado registrado en pendientes como
+algo futuro en evaluación y se pushea eso»**.*
+
+> **Antes de la primera escritura de un tema —código o documentación— se dice en qué rama se está y
+> en cuál se debería estar. Tema nuevo, rama nueva.**
+
+- **Se declara, no se asume**: `git branch --show-current` y decirlo en voz alta *antes* del primer
+  `Edit`. Si la rama actual es de otro tema, **se crea la del tema nuevo** y se dice el nombre.
+- **Una rama por tema, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
+  el 2026-09-04 y no obligó a nadie — ver el motivo abajo.)*
+- 🧊 **Un tema que se EVALÚA y no se construye también termina en una rama, y se pushea.** No hacer
+  el desarrollo **no es no dejar nada**: queda el ítem en `PENDIENTES.md` con su ID, en estado *futuro
+  en evaluación*, en su rama y **pusheado**. Ese es el entregable de una evaluación — sin push vive
+  en una sola máquina y no lo ve nadie.
+- ⚠️ **La rama es del WORKING TREE, no de la terminal.** Con 2 terminales sobre el mismo directorio
+  **no puede cada una tener la suya**: `checkout` es global y además está prohibido (§ Trabajo en
+  paralelo, regla 2). Las dos únicas salidas:
+  1. **`git worktree add <dir> <rama>`** — un directorio propio con su rama. Es la única separación
+     real, y la que corresponde cuando la segunda terminal va a tocar **código**.
+  2. **Aislar sólo por commit** cuando el trabajo es documentación: se commitea en la rama que está
+     montada y se mueve la rama propia con **`git branch -f <mi-rama> HEAD`** (no necesita checkout)
+     y se pushea ésa. Los commits quedan además en la rama del otro; **no es limpio, pero no es
+     destructivo**, y al mergear git los deduplica por hash.
+
+**Motivo, y es el que más rinde de todos:** *"una rama por tema"* **ya estaba decidido desde el
+2026-09-04 — pero vivía en `memory/`, no acá.** Por eso no obligó: yo leí el proyecto entero, tomé
+contexto del tablero y de las 8 dimensiones, y escribí igual sobre la rama ajena. **Una decisión que
+no está en su dimensión no es una regla, es un recuerdo** (§ ➡️ Dirección única: la doc manda sobre
+la memoria). Si algo se decide dos veces, la primera vez se guardó en el lugar equivocado.
+### 👥 Segundo desarrollador en OTRO clon — qué protege git y qué no (REGLA)
+*Agregada 2026-09-02, al sumarse Javier (seguridad y logueo) con su propio clon y su propia rama.*
+
+> ⚠️ **No confundir con la § siguiente.** Son dos situaciones opuestas y la confusión es cara:
+> **2 terminales sobre el MISMO working tree → git no protege nada** (mismo árbol, mismo índice; la
+> última escritura gana en silencio). **2 clones distintos → git sí protege el código**: cada uno
+> tiene su árbol, su índice y su rama, y lo que se pisa aparece como conflicto de merge, a la vista.
+> Las 13 reglas de la § siguiente **no aplican** a Javier. Aplican entre terminales de esta máquina.
+
+**Pero quedan dos recursos compartidos que git no cubre**, y son los que hay que vigilar:
+
+**1 · La BD de Supabase es UNA SOLA.** Local, previews de Vercel y producción apuntan al mismo
+proyecto. **Las ramas separan el código, no el dato.** Y esto pega fuerte justo acá, porque el
+trabajo de Javier es RLS, roles y logueo: si él pone RLS a una tabla, la app del otro se rompe al
+instante aunque su rama no tenga un solo cambio suyo — y el `type-check` sigue en verde, porque no
+es un problema de tipos.
+*Motivo: ya pasó el 2026-08-31, con una sola persona. Poner RLS a las notas rompió el guardado
+(`INSERT…RETURNING` necesita `SELECT`) sin que nada lo señalara → [A-SEC-04](PENDIENTES.md#a-sec-04).*
+→ **Todo cambio de estructura, RLS, rol o permiso se avisa al otro ANTES de aplicarlo**, aunque sea
+en la propia rama. Y sigue rigiendo la § 🛑 Datos: los **datos** se preguntan sí o sí.
+
+**2 · El espacio de IDs de `PENDIENTES.md`.** Es la **regla 12** de la § siguiente, y es la única de
+las 13 que **sí** cruza clones: dos personas pueden inventar `A-BUG-95` sin tocar la misma línea, y
+git no ve nada raro hasta el merge. Vale igual: **pedir el número → escribir la fila y commitear →
+recién entonces trabajar**, y un chequeo de ID **vence** si entre consultar y escribir hubo una pausa.
+
+**4 · 🛑 LAS RAMAS DE OTRO NO SE BORRAN. NUNCA, Y NO LAS BORRA CLAUDE.**
+*Pedido del usuario 2026-09-12, al ir a limpiar las ramas ya mergeadas: **«lo de Javier nunca debes
+borrarlo tú, eso está en su territorio»**.*
+
+> **Claude borra sólo las ramas que creó Claude en esta máquina.** Una rama de otro desarrollador no
+> se borra ni aunque figure como mergeada.
+
+- **La regla § 🌿 «se borra al mergear» vale para las propias**, no para las ajenas. Que una rama
+  esté contenida en otra dice que sus commits están a salvo — **no dice que el dueño haya terminado
+  con ella**: puede estar usándola de base, puede tener trabajo local sin pushear que cuelga de ahí,
+  puede tener su preview de Vercel abierto para mostrarle algo a alguien.
+- ⚠️ **Y acá git NO protege.** `git branch -d` se niega si la rama local no está mergeada, pero
+  `git push origin --delete` **borra sin preguntar nada**. La red de seguridad que existe para el
+  código no existe para esto.
+- Si conviene limpiarla, **se le dice al dueño y la borra él**. Al 2026-09-12 las de Javier son
+  `feature/login-google`, `feature/perfil-imagen-preferencias` y `home-dashboard` — pero **el
+  criterio no es la lista, es de quién es**: ante la duda sobre una rama que Claude no creó, no se
+  borra.
+
+*Motivo: es el mismo principio que la regla 6 de la § siguiente (nada destructivo sobre lo ajeno),
+que estaba escrita sólo para archivos. Una rama es trabajo de alguien igual que un archivo, y
+borrarla del remoto es más difícil de deshacer que recuperar un archivo — del otro lado no queda ni
+el rastro de que existió.*
+
+**3 · Acceso al repo.** Javier necesita permiso de escritura en `JMS1320/Control-Presupuestario-v1.1`.
+Sin eso su push falla y termina en un **fork** — otro repositorio, invisible desde acá, que nadie
+mira hasta que es tarde.
 
 ### 🔀 Trabajo en paralelo — 2 terminales sobre el mismo directorio (REGLA)
 *Agregada 2026-08-18, al abrir una segunda terminal (conciliación + panel de pendientes a la vez).
@@ -277,6 +512,11 @@ lo pierde la otra.*
 `type-check` (escriben `.next/` y `tsconfig.tsbuildinfo`), `git commit` (el índice es uno solo),
 y **MCP en write / cambios de BD** (además, con el usuario presente — § Datos).
 *Motivo: dos builds simultáneos se corrompen entre sí y el error no dice por qué.*
+⚠️ **Y el síntoma es traicionero** *(visto 2026-09-10)*: el `npm run dev` de una terminal dejó
+`.next/dev/types/validator.ts` —archivo **generado**— **truncado a medio escribir**, y
+`npm run type-check:diff` lo reportó como error **empeorado** en la otra terminal, que no lo había
+tocado. Ante un error en un archivo generado que nadie editó, **mirar si la otra terminal estaba
+buildeando** antes de salir a buscar la causa en el código propio.
 
 **4 · Archivos compartidos de alto tráfico** (`PENDIENTES.md`, éste, `MEMORY.md`, `MANUAL-USO.md`,
 `KNOWLEDGE.md`): los toca cualquier trabajo, así que no se pueden tomar para toda la sesión.
@@ -349,6 +589,35 @@ al final, no al principio.
 reglas nacieron en el tablero y casi se pierden: hubo que mudarlas. Si el aprendizaje de cada sesión
 se queda en `.claude/`, la próxima empieza de cero y se vuelve a negociar todo. **Que la próxima sea
 corta depende de que ésta suba lo que aprendió.***
+
+#### ⚡ El cierre puede NO LLEGAR NUNCA — y por eso no se acumula nada para el final
+*Agregado 2026-09-11, después de que un **corte de luz** matara las dos terminales a la vez
+(10/09, 19:57 y 20:35). Ninguna de las dos alcanzó a cerrar.*
+
+> **El protocolo de cierre es una buena práctica; que no haya nada esperándolo es la regla.**
+
+**Qué sobrevivió y qué no**, que es todo el argumento:
+
+| | Resultado |
+|---|---|
+| Lo **commiteado** (código, `PENDIENTES.md` con cada bug y su dossier) | ✅ **intacto** — cero commits sin pushear en 5 ramas |
+| El **tablero** (`.claude/`) | ⚠️ quedó vivo, con lo tomado por las dos y sin liberar |
+| La **memoria** (`memory/`) | ❌ **no existía** — dos días sin cierre, hubo que reconstruirlos leyendo los `.jsonl` |
+| Una **decisión entregada y no registrada** (las 3 capas de test) | ❌ murió en la transcripción; se rescató por casualidad, al ir a buscar otra cosa |
+
+- **Lo que se salvó, se salvó por la regla 4 y la 12 en su versión dura**: *el que edita commitea
+  enseguida*, y *el ID se reclama escribiendo la fila*. Las dos terminales las cumplieron todo el
+  día, y por eso el corte costó **cero trabajo**.
+- **Lo que se perdió fue lo que esperaba al cierre.** Ninguna de las dos cosas era grande: un
+  cierre de memoria y una fila en `PENDIENTES`. Pero *«lo registro al final»* es una apuesta a que
+  va a haber un final.
+- 📌 **Corolario para una decisión entregada**: una propuesta que el usuario todavía no contestó
+  **ya es un pendiente** — va a `PENDIENTES.md` con su ID **cuando se entrega**, no cuando se
+  responde. Si se responde, se actualiza la fila; si no, sobrevive igual.
+
+*Se puede reconstruir desde `~/.claude/projects/<proyecto>/*.jsonl`, que guarda la sesión entera —
+pero es arqueología, cuesta caro y depende de acordarse de que la sesión existió.*
+
 
 **12 · El espacio de IDs de `PENDIENTES.md` es un recurso compartido: se mira ANTES, no después.**
 *(Regla nacida de un choque real, 2026-08-27.)* Antes de escribir un ID nuevo se busca el máximo **en
@@ -427,6 +696,19 @@ tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a 
 variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
 está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
 dónde caen los commits**.*
+### 📁 La carpeta de comunicación — se mira sin que lo pidan (REGLA)
+*Pedido del usuario 2026-09-06: **«recordá usarla siempre y ya no hace falta que yo te diga que ahí
+lo dejé»**.*
+
+> **`- Comunicacion JMS Claude - Archivos/` es el canal por default para pasar archivos.** El usuario
+> deja ahí lo que hace falta — PDFs, planillas, capturas — y **no avisa**.
+
+- Al arrancar un tema que necesite un archivo, **mirar la carpeta primero**. Preguntar por algo que
+  ya está ahí es el mismo error que preguntar algo que está en el repo (§ 🧭 Regla de contexto).
+- Está **fuera de git** (empieza con `- `, y esos archivos están ignorados): es un buzón, no
+  documentación. Lo que salga de ahí y valga la pena **se absorbe a su dimensión**.
+- Motivo: el 2026-09-06 el usuario dejó ahí las 63 boletas del inmobiliario **después de que yo le
+  pidiera que tipeara las 21 partidas a mano**. Estaban todas adentro de los PDFs.
 
 ### 🧭 REGLA DE CONTEXTO — nunca se parte de cero (OBLIGATORIO)
 El contexto varía: a veces venimos hace rato, a veces se cerró la terminal, a veces hay que
@@ -522,6 +804,13 @@ controle que no quedó nada desparramado).
   antes de borrar. En GAS/Drive están **prohibidos** `setTrashed`, `removeFolder`, `emptyTrash`
   y todo patrón "replace/overwrite" de carpeta. Motivo: un "sobrescribir carpeta" ya le borró un
   backup entero al usuario (2026-06-26).
+- **Un test automatizado que escribe en la BD escribe en la BD REAL.** No hay entorno de prueba: la
+  app local, la preview y producción usan el mismo Supabase. Entonces un test que crea o edita filas
+  tiene que (1) **apuntar a un registro elegido por id**, nunca a *"el primero que aparezca"*, y
+  (2) **restaurar exactamente ese registro** al terminar, con una foto tomada antes.
+  *Motivo (2026-09-04): un test de la venta de hacienda clickeaba la primera fila marcada y la
+  limpieza revertía otra — quedó una venta inventada de $5.443.200 sobre el movimiento real de 3
+  toros del usuario. Se detectó revisando la tabla, no por un error: **el test dijo OK**.*
 - Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
 
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
@@ -597,6 +886,36 @@ ese lugar afecte a todo lo que lo usa.
   casos que la causan**: el número global avisa que algo pasa, **la lista es la que deja arreglarlo**.
 - ⚠️ **Nada se descarta en silencio.** Si algo no se pudo verificar, se muestra que no se pudo.
 
+#### 🚦 Un control que FRENA vs. uno que AVISA — no son lo mismo (REGLA)
+*Precisión del usuario 2026-09-13, sobre el PDF del Detalle de Pago. Yo proponía no generar el
+documento si los números no cerraban. **Negativo**: «me debe advertir si no da el control, pero es
+posible que yo tenga que pagar más o menos por algún motivo. Pero si se ve un bug de inconsistencia
+de la app, sí debe avisar y no permitir usar — digamos, si está plasmando números mal de cuentas o
+algo así, más allá de que yo cancele parcialmente o más de la factura».*
+
+> **Sólo frena lo que delata un error DE LA APP. Una diferencia que puede explicar el negocio se
+> advierte y se sigue.**
+
+La distinción es objetiva y se decide por **contra qué se compara**:
+
+| | Qué compara | Qué significa una diferencia | Acción |
+|---|---|---|---|
+| **Integridad** | el resultado **contra sí mismo** — las partes suman el todo que el propio sistema imprime | el sistema **se contradice**: es un bug | 🛑 **frena** |
+| **Discrepancia** | el resultado contra **el hecho del negocio** (lo que se pagó, lo que se cobró) | puede tener una explicación que sólo el usuario conoce | ⚠️ **avisa y deja seguir** |
+
+Ejemplo del caso que la originó: que las líneas de un comprobante **no sumen el total que ese mismo
+comprobante muestra** es integridad — no hay explicación posible, el papel miente. Que lo pagado no
+coincida con lo facturado es discrepancia: **puede ser un pago parcial, o de más**, y frenar ahí le
+saca la herramienta justo cuando la necesita.
+
+🔑 **El costo de equivocarse es asimétrico y por eso la regla existe:** frenar de más convierte el
+control en un obstáculo y termina en que alguien lo saltee o lo apague; frenar de menos deja salir
+un número falso. Por eso **frena sólo la contradicción interna**, que es el único caso donde se está
+seguro de que el error es del sistema.
+
+📌 Y el aviso que no frena **igual tiene que verse** — es la § de arriba: si se muestra la diferencia
+y el usuario decide seguir, eso es una decisión suya. Si no se muestra, es un descarte en silencio.
+
 **Motivo — los tres casos que la originaron, todos del mismo día:**
 `Total − Neto − Exento − IVA − Otros Trib. − sin crédito = 0` destapó $0,01 de redondeo repartido en
 4 facturas de ARCA (§ A-TEST-27). Un cartel que mostraba `78.262.800 − 31.305.120 = 40.306.014`
@@ -610,18 +929,173 @@ como sin test; segundo, como test está en manual de uso".*
 
 Al terminar de implementar algo, **antes de decir que está hecho**:
 
-1. **`PENDIENTES.md`** → fila `TEST` con su ID y estado **sin testear**. Es el *qué falta probar*.
-2. **`MANUAL-USO.md`** → sección con **cómo se usa y cómo se prueba**, con el título marcado
-   **🟡 (sin testear)**. Es el *cómo se prueba*.
+1. **`PENDIENTES.md`** → fila `TEST` con su ID, estado **sin testear**, **y los pasos para
+   probarlo**. Es el *qué falta probar* **y el cómo probarlo**.
+2. **`MANUAL-USO.md`** → sección con **cómo se usa**, y nada más. Al pie, un puntero de una línea:
+   `⚠️ Sin probar todavía → A-TEST-NN`.
 
-Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se saca el 🟡 del manual.
+Cuando el usuario confirma el test: ✅ en `PENDIENTES` y se borra el puntero del manual.
 
-**Motivo:** hasta ahora la lista de test vivía en el chat. Un ítem que dice *"probar la muestra del
-cálculo"* no sirve tres días después, porque el usuario ya no se acuerda de dónde estaba ni qué
-tenía que ver. El manual convierte el pendiente en algo ejecutable **sin volver a preguntar**.
+#### ✅ «Terminé» significa que YA lo probé (REGLA, 2026-09-06)
 
-Y tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se usa lo que se acaba de
-hacer**, que es cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
+*Pregunta del usuario que dejó el hueco a la vista: **«los test siempre pudiste haberlos hecho vos
+pero no fueron parte del desarrollo?»**. Sí podía. Y mayormente no los hice.*
+
+> **Antes de decirle al usuario que algo está listo para probar, correr `npm run probar`.** Si lo
+> que se tocó no tiene caso, **escribirlo primero**.
+
+`type-check` y `build` **sólo prueban que compila**. Los cuatro bugs del 2026-09-06 —el factor de
+balanza que daba 6.501 kg, las 9 cabezas en vez de 10, el denominador mezclado, el match por
+dientes— **pasaron los dos** y los encontró el usuario mirando la base.
+
+🛑 **Y el permiso, que es la condición que hace segura a esta regla** *(agregado por el usuario
+el mismo día: «es la condición necesaria»)*:
+
+> **Un test que toca la BD NO se corre sin pedirle permiso al usuario, cada vez.** El permiso de una
+> corrida **no vale para la siguiente**.
+
+Sin esto, la regla de arriba —*«correr `npm run probar` antes de decir que está listo»*— es una
+**orden permanente de ejecutar la suite**. Hoy los casos no escriben nada, pero **el día que alguien
+agregue uno que escriba, esa orden lo autoriza sin preguntar**. El permiso es lo único que sobrevive
+a que la suite cambie.
+
+- **Sin BD** (lógica pura, como `lib/pruebas/casos.ts` hoy): se corre libremente. Es la compuerta.
+- **Con BD, aunque sea sólo leer**: se avisa qué va a mirar.
+- **Con escritura**: se pide permiso **explicando qué registro y cómo se restaura**, y se espera el
+  sí. Vale la § 🛑 Datos entera — apuntar por id, foto antes, restaurar después.
+
+*Motivo, con nombre propio: el test que inventó $5.443.200 sobre el movimiento real de 3 toros
+**reportó OK**. No hacía falta permiso para correrlo, y por eso se corrió.*
+
+- Los casos viven en **`lib/pruebas/casos.ts`**, con los **datos fijos en el archivo**: un caso que
+  lee de la BD cambia de resultado porque alguien editó un registro, y ahí empieza a mentir.
+- **Cero escritura** mientras no esté resuelto [A-DEC-18](PENDIENTES.md#a-dec-18). Un test que no
+  escribe no puede dejar basura, y eso es más fuerte que cualquier limpieza posterior.
+- Un caso nuevo tiene que **fallar con el código viejo**. Si pasa igual antes y después del arreglo
+  **aparenta cobertura**, que es peor que no tenerla — pasó el mismo día que se escribieron.
+
+📌 **El botón 🧪 Probar de la app usa el MISMO archivo.** No es otra suite: es la misma, disparada
+por el usuario. Si divergieran, uno de los dos empezaría a mentir.
+
+*Motivo, en una línea: el usuario no necesita un botón para probar lo que yo pude haber probado
+antes. Necesita que «terminé» quiera decir algo.*
+
+#### ⚠️ Corrección 2026-09-03 — el testing SALE del manual
+*Hasta hoy esta regla decía que el manual llevara **"cómo se usa y cómo se prueba"**, con el título
+marcado 🟡. Se cumplió al pie de la letra durante un mes y el resultado fue un manual de 3.499
+líneas con **26 bloques de testing y 69 marcas 🟡** entre las instrucciones. El usuario lo detectó
+al pedir un manual de usuario de verdad: **"la app ordenada en dos o tres índices, diciéndote qué
+podés hacer y cómo hacerlo"**.*
+
+> **Manual y test NO son lo mismo, y mezclarlos arruina el manual.**
+
+| | Manual — *cómo se usa* | Test — *cómo se prueba* |
+|---|---|---|
+| Recorre | el camino normal | el camino **adversario** |
+| Se ordena por | lo que el usuario quiere lograr | lo que puede fallar |
+| Dice | qué va a pasar | qué **no tiene que** pasar |
+| Lo lee | cualquiera, siempre | el usuario, una vez |
+
+El caso que lo dejó claro: el manual de la cinta de diagnóstico decía *"escribí `PRUEBA-SECRETA-123`
+en cualquier campo, provocá un error y verificá que no aparezca"*. **Eso no es usar la app** — ningún
+usuario lo va a hacer nunca. Lo mismo *"apagá el wifi"* o *"abrí las herramientas del navegador"*: son
+maniobras para romperla a propósito, que es lo contrario de un manual.
+
+**Lo único que se superpone es cómo llegar** (*"andá a Egresos → Subdiarios"*), y eso ya está en el
+manual: **el test lo apunta en vez de repetirlo**, y agrega sólo los pasos adversarios. Así no se
+duplica en ninguna de las dos direcciones.
+
+**Y el estado va como PUNTERO, no como copia.** El 🟡 en el título envejece: se prueba algo, nadie
+saca la marca, y el manual miente. Una línea `→ A-TEST-NN` deja la verdad en `PENDIENTES`, que es su
+dimensión, y el manual sólo la señala.
+
+#### 🧪 Un A-TEST nace con SU PROCESO — para que aparezca donde se prueba (REGLA)
+*Pedida por el usuario 2026-09-11: **«¿podés poner los tests a la vista siempre? que me proponga al
+editar un pago si quiero probar esto. siempre dejarlo anotado en la app así voy testeando en
+procesos reales»**.*
+
+> **Todo `A-TEST` que se prueba usando la app se escribe con la marca de su PROCESO**
+> (`@pantalla/proceso`), no sólo la de su pantalla.
+
+Con esa marca, el pendiente **le aparece al usuario en el modal donde corre ese proceso**
+([A-FEAT-129](PENDIENTES.md#a-feat-129)) — en vez de esperar a que alguien abra `PENDIENTES.md`.
+
+- **La sintaxis ya existía**: es el sub-nivel de la marca de pantalla. `@sueldos/pago`,
+  `@cashflow/sicore`, `@cashflow/detalle-pago`.
+- **Se responde desde ahí**: ✅ anduvo / 🔴 falló van a `pendientes_comentarios`, que es el canal 2
+  de los tres del usuario — el que Claude mira al abrir sesión.
+- **Y el control lo verifica**: `npx tsx scripts/verificar-parser-pendientes.mts` lista los
+  `A-TEST` abiertos, con pantalla y no automáticos, que **no** tienen proceso. **Avisa y no rompe**:
+  hay tests que no cuelgan de un circuito y forzarlos a inventar uno manda el aviso a la pantalla
+  equivocada. *(⚠️ corregido 2026-09-21: acá decía `npm run verificar-pendientes`, que no existe.)*
+
+⚠️ **Un proceso mal elegido es peor que ninguno.** Si no está claro a qué circuito pertenece, se
+deja sin marca y lo agarra el control — no se inventa una para que el control se calle.
+
+##### ✅ Y SIEMPRE al terminar un desarrollo — el ciclo completo *(ampliada por el usuario 2026-09-21)*
+*Después de probar A-TEST-133 desde el cartel dentro del modal del contrato: **«me gustó lo de que
+figure la nota para el test. Sería ideal ponerlo siempre al terminar un desarrollo»**.*
+
+> **Se desarrolla → queda el `A-TEST` pendiente → aparece en la PRÓXIMA ejecución del proceso → el
+> usuario responde ahí mismo.**
+
+- **Siempre, no cuando se acuerda**: si el proceso ya tiene su cartel (`<TestsDelProceso>`), alcanza
+  con la marca; **si no lo tiene, se le pone** como parte del desarrollo. Una marca sin cartel en la
+  pantalla no le aparece a nadie.
+- **Tres respuestas, no dos**: ✅ anduvo · 🟡 **anduvo en parte** · 🔴 falló — y **siempre con lugar
+  para escribir una nota**. Con sólo sí/no, lo que anduvo a medias se contesta mal para cualquiera de
+  los dos lados. → [A-FEAT-163](PENDIENTES.md#a-feat-163) *(hecho 2026-09-22)*.
+- **Y el texto del cartel se escribe para él**, no para Claude: qué hacer y qué tiene que ver, en el
+  lenguaje de la app (§ 🗣️). **Se escribe después de «Qué probar vos:»** dentro del `A-TEST`: el
+  cartel muestra sólo esa parte y pliega el resto (casos, IDs, adversarios) como detalle técnico. *Motivo: el primer cartel real (A-TEST-133) era el dossier entero con IDs
+  y adversarios — «menciona muchas cosas que tal vez no entiendo».*
+
+**Motivo, y es el que convierte esto en regla y no en una buena costumbre:** el usuario fijó que
+**prueba usando la app, no en sesiones de test** — *«lo mejor siempre es que yo lo testeo la próxima
+vuelta, sino me lleva mucho tiempo»*. Con ese criterio, **un test que no está en el lugar donde se
+corre el proceso no se va a probar nunca**: no es que se pruebe más tarde, es que no se prueba.
+
+#### 📋 Después de una tanda sin supervisión: la GUÍA DE PRUEBAS (REGLA)
+*Pedido del usuario 2026-09-06: **«siempre después de desarrollar mucho sin mi supervisión, dejame
+los manuales para el test — deben guiarme, apretá acá, etc. Si hubo modificaciones,
+actualizármelo»**.*
+
+Cuando se desarrolla varias cosas seguidas sin que el usuario vaya probando, **no alcanza con dejar
+los `A-TEST-NN` en `PENDIENTES`**: hay que dejarle **una guía operable de todas juntas**.
+
+- **Escrita para ejecutar, no para entender**: dónde apretar, en qué orden, y **qué número exacto
+  tiene que salir**. Un paso que dice *"verificar que funcione"* no sirve.
+- **Con los adversarios de cada una** — lo que tiene que fallar bien.
+- **Marcando lo que hay que hacer ANTES de mirar el resto.** Si un dato mal cargado invalida todo lo
+  que sigue, va en rojo y arriba.
+- **Y se ACTUALIZA** cuando el desarrollo cambia. Una guía que quedó vieja es peor que ninguna:
+  manda a probar algo que ya no existe.
+
+📌 La guía **no reemplaza a `PENDIENTES`**: los pasos siguen viviendo en cada `A-TEST-NN`, que es su
+dimensión. La guía es la vista operable de todos juntos, para una tanda.
+
+#### 📖 Qué es el MANUAL, entonces
+*Definido por el usuario 2026-09-03:*
+
+> **Al terminar la app, tiene que existir un manual de usuario: la app ordenada en dos o tres
+> índices, que te diga qué podés hacer y cómo hacerlo.**
+
+- Se escribe **en lenguaje de usuario**: nombres de botones y pantallas como se ven, no nombres de
+  archivos, funciones ni tablas. Si hace falta explicar por dentro, va a `MODULO_<X>.md`.
+- Los índices previstos son tres, porque responden preguntas distintas: **por pantalla** (*estoy acá,
+  qué puedo hacer*), **por tarea** (*quiero cobrar una factura, a dónde voy*) y **por rol** (*qué le
+  toca a cada persona* — que además muestra qué se puede delegar).
+- ⏳ **El manual viejo todavía está mezclado**: mudar los 26 bloques de testing y poner los índices
+  es trabajo pendiente. Esta regla rige para todo lo que se escriba **de ahora en adelante**, para no
+  seguir acumulando.
+
+**Motivo (sigue vigente, con el destino corregido):** la lista de test vivía en el chat. Un ítem que
+dice *"probar la muestra del cálculo"* no sirve tres días después, porque el usuario ya no se acuerda
+de dónde estaba ni qué tenía que ver. Escribir los pasos lo vuelve **ejecutable sin volver a
+preguntar** — eso no cambió; lo que cambió es que esos pasos van a `PENDIENTES`, no al manual.
+
+Y la regla tiene un efecto lateral que vale por sí solo: **obliga a escribir cómo se usa lo que se
+acaba de hacer**, cuando todavía está fresco. Si no se puede explicar en el manual, probablemente la
 pantalla no esté clara.
 
 ---
@@ -676,8 +1150,9 @@ maestro no debe tener nombres de tabla de este proyecto.
 ## ⚡ Comandos de desarrollo
 ```bash
 npm run dev                          # desarrollo
-npm run build && npm run type-check  # build + tipos
-npm test                             # tests
+npm run type-check:diff              # ¿rompió algo? (baseline de errores preexistentes)
+npm run probar                       # ⚠️ los CASOS — correr antes de decir "terminé, probá"
+npm run build                        # build
 ```
 
 ---

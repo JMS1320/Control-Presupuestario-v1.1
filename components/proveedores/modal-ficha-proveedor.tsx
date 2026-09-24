@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { armarCuentaCorriente, leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
@@ -460,6 +461,64 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                     </div>
                   ))}
                 </div>
+
+                {/* 🧾 A-FEAT-141 — LA CUENTA CORRIENTE.
+                    Va ARRIBA de las dos listas a propósito: es la respuesta («¿cómo estamos?»), y
+                    las listas de abajo son el detalle que la sostiene. Al revés obliga a sumar a
+                    ojo para llegar a lo que uno vino a saber. */}
+                {(() => {
+                  const cc = armarCuentaCorriente(ficha.facturas as any, ficha.pagos as any)
+                  if (cc.asientos.length === 0) return null
+                  const aFavor = cc.saldo < -0.005
+                  return (
+                    <Bloque titulo="Cuenta corriente" total={cc.asientos.length} mostradas={cc.asientos.length}>
+                      <div className={`mb-2 rounded border p-2 text-sm ${aFavor ? 'border-emerald-300 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+                        <span className="font-semibold">{leyendaSaldo(cc.saldo)}</span>
+                        <span className="text-xs text-gray-500">
+                          {' '}· compras {pesos(cc.totalComprado)} · pagos {pesos(cc.totalPagado)}
+                          {cc.totalVendido > 0 ? ` · ventas ${pesos(cc.totalVendido)}` : ''}
+                        </span>
+                        {/* 🔴 El pago que no dice contra qué fue es el que genera saldo sin que nadie
+                            lo note. Se nombra acá arriba, no escondido en una fila de la tabla. */}
+                        {cc.pagosSinReferencia > 0 && (
+                          <p className="mt-1 text-xs text-amber-700">
+                            ⚠️ {cc.pagosSinReferencia} pago(s) no dicen contra qué comprobante fueron —
+                            son los que dejan saldo sin avisar.
+                          </p>
+                        )}
+                      </div>
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b text-left text-gray-500">
+                            <th className="px-2 py-1">Fecha</th>
+                            <th className="px-2 py-1">Concepto</th>
+                            <th className="px-2 py-1 text-right">Importe</th>
+                            <th className="px-2 py-1 text-right">Saldo</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cc.asientos.map(a => (
+                            <tr key={`${a.tipo}-${a.id}`} className={`border-b last:border-0 ${a.sinReferencia ? 'bg-amber-50' : ''}`}>
+                              <td className="whitespace-nowrap px-2 py-1 text-gray-500">
+                                {a.fecha ? a.fecha.split('-').reverse().join('/') : '—'}
+                              </td>
+                              <td className="max-w-[260px] truncate px-2 py-1" title={a.concepto}>
+                                {a.sinReferencia && <span className="mr-1 text-amber-600">⚠️</span>}
+                                {a.concepto}
+                              </td>
+                              <td className={`whitespace-nowrap px-2 py-1 text-right font-mono ${a.importe < 0 ? 'text-emerald-700' : ''}`}>
+                                {pesos(a.importe)}
+                              </td>
+                              <td className={`whitespace-nowrap px-2 py-1 text-right font-mono font-medium ${a.saldo < 0 ? 'text-emerald-700' : ''}`}>
+                                {pesos(a.saldo)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </Bloque>
+                  )
+                })()}
 
                 {/* Facturas */}
                 <Bloque titulo="Últimas facturas" total={ficha.facturasTotales} mostradas={ficha.facturas.length}>

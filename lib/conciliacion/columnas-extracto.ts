@@ -88,6 +88,44 @@ export interface ColumnasExtracto {
  * @param detalleExistente   lo que el movimiento ya tenía escrito — **nunca se pisa** con nada
  *                           derivado: si el usuario escribió algo, manda
  */
+/**
+ * 🎭 **A-DAT-54 — un detalle que PARECE del usuario pero lo generó un proceso.**
+ *
+ * 🧨 Lo destapó el usuario el 2026-09-20: *«me parece que el bug permanece, veo detalles con todo el
+ * campo lleno con los datos de proveedor y fc»*. Y tenía razón, pero **el problema no estaba en la
+ * conciliación**: el texto `«FC 482 - MASSAGLIA ALDO ENRIQUE»` está guardado **en la propia
+ * factura** (`comprobantes_arca.detalle`) — **480 de 530**.
+ *
+ * 🔑 **Por eso sobrevivió a arreglar los cuatro caminos de la pantalla de asignar**: el motor hace
+ * lo correcto —respeta lo que parece escrito a mano— sólo que *eso no lo escribió una persona*.
+ * **Es un derivado guardado que después se toma por dato propio**, el mismo patrón que § 30.9.
+ *
+ * Detecta el patrón `<abrev> <número> - <emisor>` para no propagarlo. **Ante la duda devuelve
+ * `false`**: borrar lo que alguien escribió es peor que arrastrar una repetición.
+ */
+export function pareceDetalleAutogenerado(
+  detalle: string | null | undefined,
+  emisor: string | null | undefined,
+  numero?: string | number | null,
+): boolean {
+  const d = (detalle ?? '').trim()
+  const e = (emisor ?? '').trim()
+  if (!d || !e) return false
+
+  const norm = (x: string) => x.toLowerCase().replace(/\s+/g, ' ').trim()
+  // Tiene que TERMINAR con el nombre del emisor: si el emisor está en el medio, hay texto propio
+  // después y eso hay que conservarlo.
+  if (!norm(d).endsWith(norm(e))) return false
+
+  const antes = d.slice(0, d.length - e.length).trim().replace(/[-–—·|]+$/, '').trim()
+  // Lo que queda adelante tiene que ser sólo la etiqueta del comprobante: `FC 482`, `T82 12800`.
+  // `FC 482`, `NC 15`, `T82 12800` — la abreviatura puede traer dígitos pegados (`T82`).
+  if (!/^[A-Za-z]{1,3}\d{0,4}(\s+\d+)?$/.test(antes)) return false
+  // Y si se sabe el número, que sea ése.
+  if (numero != null && String(numero).trim() && !antes.includes(String(numero).trim())) return false
+  return true
+}
+
 export function columnasDelExtracto(
   fila: FilaCashFlowMinima,
   nombreDesdeMaestro: string | null,
@@ -98,6 +136,11 @@ export function columnasDelExtracto(
     // fila — que para un sueldo es el del empleado, y los empleados no van en `proveedores`.
     proveedor_nombre: nombreDesdeMaestro || fila.nombre_proveedor || null,
     comprobantes_pagados: fila.comprobante_display || null,
-    detalle: detalleExistente?.trim() || fila.detalle_usuario?.trim() || null,
+    // ⚠️ El `detalle_usuario` de una factura suele ser un **derivado guardado** (A-DAT-54): no se
+    //    copia si repite el comprobante y el emisor.
+    detalle: detalleExistente?.trim()
+      || (pareceDetalleAutogenerado(fila.detalle_usuario, fila.nombre_proveedor)
+            ? null
+            : fila.detalle_usuario?.trim() || null),
   }
 }

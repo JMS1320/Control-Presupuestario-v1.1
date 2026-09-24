@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { cobroEsperado } from "@/lib/ventas/cobro-esperado"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -51,24 +52,27 @@ const esFactura = (t: number | null | undefined) =>
 // facturas y liquidaciones. Neto equivalente: subtotal_neto (granos) o imp_neto_gravado (factura).
 // retRecibidas = suma de retenciones_recibidas imputadas aparte (sobre todo facturas).
 function calcular(l: LiquidacionMsa, retRecibidas = 0) {
-  // Neto (base antes de IVA): liquidación usa subtotal_neto; factura = gravado + no gravado + exento
+  /**
+   * 💰 **El cálculo se mudó a `lib/ventas/cobro-esperado.ts` (A-FEAT-167).**
+   *
+   * El motor de conciliación necesita **el mismo número** para poder matchear un crédito del banco.
+   * Con dos copias, el día que alguien toque una **la pantalla y el motor dejan de coincidir** y
+   * nadie se entera — que es exactamente lo que dice el comentario de `resolverPrecioHacienda`
+   * (§ `CLAUDE.md` ♻️ Centralizar, no duplicar).
+   *
+   * Acá queda sólo la forma que espera la tabla; los nombres viejos se mantienen para no tocar el
+   * render.
+   */
+  const c = cobroEsperado(l as any, retRecibidas)
   const neto = Number(l.subtotal_neto)
     || ((Number(l.imp_neto_gravado) || 0) + (Number(l.imp_neto_no_gravado) || 0) + (Number(l.imp_op_exentas) || 0))
-  const ivaV = Number(l.iva) || 0
-  const comNeto = Number(l.comision_neto) || 0
-  const comIva = Number(l.comision_iva) || 0
-  const almNeto = Number(l.almacenaje_neto) || 0
-  const almIva = Number(l.almacenaje_iva) || 0
-  const ri = Number(l.ret_iva) || 0
-  const rii = Number(l.ret_iibb) || 0
-  const totalOp = Number(l.imp_total) || (neto + ivaV) // absoluto; fallback al calculado
-  const totalDed = comNeto + comIva + almNeto + almIva
-  const retenciones = ri + rii + (Number(retRecibidas) || 0) // en la liq + imputadas aparte
-  const importeNeto = totalOp - totalDed - retenciones
-  const ivaTotal = ivaV - comIva - almIva
-  const ivaRg2300 = ivaTotal - ri
-  const pagoCond = importeNeto - ivaRg2300
-  return { neto, totalOp, retenciones, importeNeto, pagoCond }
+  return {
+    neto,
+    totalOp: c.totalOperacion,
+    retenciones: c.retenciones,
+    importeNeto: c.importeNeto,
+    pagoCond: c.pagoCondiciones,
+  }
 }
 
 export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: Props) {
@@ -112,26 +116,45 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
       }
       setRetMap(rMap)
 
-      // Conteo de ventas por liquidación — el circuito de granos es sólo de MSA
-      if (!esMsa) { setVentasPorLiq(new Map()); return }
-      const { data: pivot2 } = await supabase
-        .schema('msa')
-        .from('ventas_comprobantes')
-        .select('venta_id, comprobante_id')
-      const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
-      const { data: ventas2 } = ventaIds.size > 0 ? await supabase
-        .schema('msa')
-        .from('ventas')
-        .select('id, denominacion_cliente')
-        .in('id', Array.from(ventaIds)) : { data: [] }
-      const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
+      // Ventas vinculadas a cada comprobante (A-BUG-185).
+      // 🔑 Los vínculos de ventas de ARRENDAMIENTO y de HACIENDA viven en `public.ventas_facturas`
+      // (polimórfica, con `empresa`). Esta columna leía sólo `msa.ventas_comprobantes` —el circuito
+      // viejo de granos, vacío— y por eso decía «sin vincular» con la FC 00010-00000021 de Sanpa
+      // vinculada desde el 18/08. Se leen las dos fuentes; la vieja sólo existe en MSA.
       const map = new Map<string, { count: number, clientes: string[] }>()
-      for (const row of (pivot2 || []) as any[]) {
-        const nom = ventasMap.get(row.venta_id) || '?'
-        const cur = map.get(row.comprobante_id) || { count: 0, clientes: [] }
+      const sumar = (compId: string, nombre: string) => {
+        const cur = map.get(compId) || { count: 0, clientes: [] }
         cur.count += 1
-        if (!cur.clientes.includes(nom)) cur.clientes.push(nom)
-        map.set(row.comprobante_id, cur)
+        if (!cur.clientes.includes(nombre)) cur.clientes.push(nombre)
+        map.set(compId, cur)
+      }
+
+      const empresaMay = String(empresa || 'MSA').toUpperCase()
+      const { data: vinc } = compIds.length > 0 ? await supabase
+        .from('ventas_facturas')
+        .select('venta_id, comprobante_id')
+        .eq('vinculado', true).eq('empresa', empresaMay).in('comprobante_id', compIds)
+        : { data: [] as any[] }
+      const idsVenta = Array.from(new Set((vinc || []).map((v: any) => v.venta_id)))
+      const { data: ventasU } = idsVenta.length > 0 ? await supabase
+        .from('ventas_unificadas').select('venta_id, centro_costo, cliente_nombre').in('venta_id', idsVenta)
+        : { data: [] as any[] }
+      const nombreU = new Map((ventasU || []).map((v: any) => [v.venta_id, `${v.centro_costo} · ${v.cliente_nombre}`]))
+      for (const row of (vinc || []) as any[]) sumar(row.comprobante_id, nombreU.get(row.venta_id) || '?')
+
+      if (esMsa) {
+        const { data: pivot2 } = await supabase
+          .schema('msa')
+          .from('ventas_comprobantes')
+          .select('venta_id, comprobante_id')
+        const ventaIds = new Set((pivot2 || []).map((p: any) => p.venta_id))
+        const { data: ventas2 } = ventaIds.size > 0 ? await supabase
+          .schema('msa')
+          .from('ventas')
+          .select('id, denominacion_cliente')
+          .in('id', Array.from(ventaIds)) : { data: [] }
+        const ventasMap = new Map((ventas2 || []).map((v: any) => [v.id, v.denominacion_cliente]))
+        for (const row of (pivot2 || []) as any[]) sumar(row.comprobante_id, ventasMap.get(row.venta_id) || '?')
       }
       setVentasPorLiq(map)
     } catch (err) {
@@ -190,6 +213,12 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
         .delete()
         .eq('id', l.id)
       if (error) throw error
+      // `ventas_facturas` no tiene FK al comprobante (es polimórfica, una tabla por empresa), así
+      // que nada lo borra solo: sin esto el vínculo quedaba apuntando a un comprobante inexistente y
+      // la venta seguía contando como facturada. El cartel de arriba ya lo prometía.
+      const { error: eVinc } = await supabase.from('ventas_facturas').delete()
+        .eq('comprobante_id', l.id).eq('empresa', String(empresa || 'MSA').toUpperCase())
+      if (eVinc) toast.error('La liquidación se borró, pero sus vínculos no: ' + eVinc.message)
       toast.success('Liquidación eliminada')
       await cargar()
     } catch (err) {

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Search, X, Plus, Check } from "lucide-react"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { partirPorRol } from "@/lib/contrapartes/orden-por-rol"
 
 interface Proveedor {
   cuit: string
@@ -15,6 +16,8 @@ interface Proveedor {
   nombre_fantasia: string | null
   /** De qué maestro salió. Sólo se llena cuando el combobox incluye empleados. */
   origen?: 'proveedor' | 'empleado'
+  es_cliente?: boolean | null
+  es_proveedor?: boolean | null
 }
 
 export interface ProveedorSeleccionado {
@@ -37,9 +40,16 @@ interface Props {
    * compra a su nombre, § Contrapartes en CLAUDE.md).
    */
   incluirEmpleados?: boolean
+  /**
+   * Qué se está eligiendo (A-FEAT-165). Con `"cliente"` la lista muestra **primero los que ya son
+   * clientes** y abajo, separado, el resto del maestro — que se puede elegir igual. Sin esto, la lista
+   * es la de siempre (todo junto, por nombre). Pedido del usuario: el buscador de «Cliente» le
+   * mostraba proveedores mezclados.
+   */
+  rol?: 'cliente' | 'proveedor'
 }
 
-export function ProveedorCombobox({ value, onChange, label = "Proveedor", required, disabled, incluirEmpleados = false }: Props) {
+export function ProveedorCombobox({ value, onChange, label = "Proveedor", required, disabled, incluirEmpleados = false, rol }: Props) {
   const [proveedores, setProveedores] = useState<Proveedor[]>([])
   const [loading, setLoading] = useState(false)
   const [busqueda, setBusqueda] = useState("")
@@ -55,7 +65,7 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
       setLoading(true)
       const { data } = await supabase
         .from("proveedores")
-        .select("cuit, razon_social, nombre_fantasia")
+        .select("cuit, razon_social, nombre_fantasia, es_cliente, es_proveedor")
         .eq("activo", true)
         .order("razon_social")
 
@@ -101,17 +111,18 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
     return () => document.removeEventListener("mousedown", onClickAfuera)
   }, [abierto])
 
-  // Resultados filtrados
-  const resultados = useMemo(() => {
-    if (!busqueda.trim()) return proveedores.slice(0, 30)
+  // Resultados filtrados. Con `rol`, primero los que ya lo tienen y después el resto (A-FEAT-165).
+  const { resultados, otros } = useMemo(() => {
     const q = normalizarBusqueda(busqueda)
-    return proveedores
-      .filter(p => {
-        const texto = normalizarBusqueda(`${p.razon_social} ${p.nombre_fantasia || ""} ${p.cuit}`)
-        return texto.includes(q)
-      })
-      .slice(0, 50)
-  }, [proveedores, busqueda])
+    const coinciden = busqueda.trim()
+      ? proveedores.filter(p => normalizarBusqueda(`${p.razon_social} ${p.nombre_fantasia || ""} ${p.cuit}`).includes(q))
+      : proveedores
+    const tope = busqueda.trim() ? 50 : 30
+    if (!rol) return { resultados: coinciden.slice(0, tope), otros: [] as Proveedor[] }
+    const { conRol, otros } = partirPorRol(coinciden, rol)
+    const principales = conRol.slice(0, tope)
+    return { resultados: principales, otros: otros.slice(0, Math.max(10, tope - principales.length)) }
+  }, [proveedores, busqueda, rol])
 
   const tieneSeleccion = !!(value.cuit && value.nombre)
   const labelLower = label.toLowerCase()
@@ -193,7 +204,7 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
         />
         {abierto && !loading && (
           <div className="absolute z-50 mt-1 w-full bg-white border rounded-md shadow-lg max-h-72 overflow-y-auto">
-            {resultados.length === 0 ? (
+            {resultados.length === 0 && otros.length === 0 ? (
               <div className="p-3 text-sm text-gray-500 text-center space-y-2">
                 <div>Sin resultados</div>
                 <Button type="button" variant="link" size="sm" onClick={() => setModoNuevo(true)}>
@@ -202,7 +213,18 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
               </div>
             ) : (
               <>
-                {resultados.map((p, i) => (
+                {rol && (
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-b">
+                    {rol === 'cliente' ? 'Clientes' : 'Proveedores'}{resultados.length === 0 ? ' — ninguno coincide' : ''}
+                  </div>
+                )}
+                {[...resultados, ...(rol ? [null] : []), ...otros].map((p, i) => p === null ? (
+                  otros.length > 0 ? (
+                    <div key="sep" className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-50 border-y">
+                      Otros del maestro — no están marcados como {rol}
+                    </div>
+                  ) : null
+                ) : (
                   <button
                     // Un empleado puede no tener CUIT cargado, así que el CUIT solo no alcanza como key.
                     key={`${p.origen ?? 'p'}-${p.cuit || p.razon_social}-${i}`}

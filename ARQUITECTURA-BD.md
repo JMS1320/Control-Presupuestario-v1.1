@@ -67,7 +67,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `tipos_cambio` | ✅ | — | TC mensual presupuestado/real. Dato **macro multiempresa**. Carga manual. (2026-07-26) |
 | `precios_granos` | ✅ | — | Precio por posición (grano, año, mes) en USD/ton. Macro multiempresa. Si falta un mes, la app arrastra el siguiente cargado. (2026-07-26) |
 | `contratos_arrendamiento` | ✅ | 4 | Contratos de arrendamiento agrícola cobrados en qq/ha. Columna `empresa` (MSA/PAM/MA) — **no se separa por schema**. `centro_costo` = FK lógica a `centros_costo.nombre`. (2026-07-26) |
-| `cuotas_arrendamiento` | ✅ | 14 | Cuotas de cobro del contrato (fecha + posición de fijación). Estado **se DERIVA** (fijaciones + fecha), la columna es sólo un hint. `precio_usd_override` / `precio_pesos_override` pisan el precio de la posición (pesos gana y no aplica TC). `cuota_padre_id` = split al fijar parcial. `dias_cobro_disponible` en el contrato (Sanpa 15, resto 20). (2026-07-26) |
+| `cuotas_arrendamiento` | ✅ | 14 | Cuotas de cobro del contrato (fecha + posición de fijación). Estado **se DERIVA** (fijaciones + fecha), la columna es sólo un hint. `precio_usd_override` / `precio_pesos_override` pisan el precio de la posición (pesos gana y no aplica TC). `cuota_padre_id` = split al fijar parcial — **se parte en toneladas**, y por eso `qq_ha_cuota` es `numeric(12,6)` desde 2026-09-21 (A-BUG-183). `dias_cobro_disponible` en el contrato (Sanpa 15, resto 20). (2026-07-26) |
 | `ventas_arrendamiento` | ✅ | — | **VENTAS de arrendamiento — la fijación ES la venta.** Total o parcial. Precio y TC se fijan en **momentos distintos** (`fecha_fijacion_precio` / `fecha_fijacion_tc`); hasta que están los dos el monto ARS es estimado. Modo `pizarra` cierra en un acto, en ARS, sin TC. `comprobante_id` = FK lógica a `{schema}.comprobantes_venta`. (2026-07-26) |
 | `ventas_facturas` | ✅ | — | Decisión "¿esta factura es de esta venta?". Polimórfica (`venta_tipo` + `venta_id`) porque `msa.ventas_comprobantes` tiene FK a `msa.ventas`. `vinculado=false` = el usuario dijo que NO (se guarda igual para no repreguntar). `monto_asignado` habilita **facturación parcial**. (2026-07-26) |
 | **vista** `ventas_unificadas` | — | — | Los tres tipos de venta en el formato común que consumen Cash Flow y el motor (fecha, cliente, monto, cuenta contable, centro de costo) + `facturado` + `falta_tc`. Hoy sólo arrendamiento; granos y ganadería con UNION ALL cuando existan. (2026-07-26) |
@@ -358,8 +358,50 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 ```
 
 ### 6.2 Links lógicos (SIN FK — los llena el motor/UI)
-- Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`. No hay constraint porque cruzan schemas.
+- Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`.
+
+  ⚠️ **El motivo escrito acá era «porque cruzan schemas», y para `template_cuota_id` NO es cierto**
+  (medido 2026-09-12 → [A-BUG-156](PENDIENTES.md#a-bug-156)). `public.msa_galicia.template_cuota_id`
+  apunta a `public.cuotas_egresos_sin_factura`: **mismo schema, FK perfectamente posible.** Lo mismo
+  para `pam_galicia` y `pam_galicia_cc`. El cross-schema explica las cajas y las tarjetas (`msa.*`,
+  `pam.*`, `ma.*`), no las cuatro tablas de `public` — que son **las que tienen 488 de los 491
+  vínculos vivos**.
+
+  ⚠️ **La columna guarda DOS cosas distintas** (verificado 2026-09-12): si el pago saldó **una**
+  obligación, guarda esa cuota; si fue un **pago agrupado**, guarda el **`grupo_pago_id`**. Por eso
+  un control que pregunte sólo *«¿este id existe entre las cuotas?»* reporta los agrupados como
+  rotos — **pasó, y dio 9 falsos positivos**.
+
+  ✅ **Chequeo integral 2026-09-12: CERO vínculos rotos** en las 4 tablas con volumen —
+  cuotas/grupos 506 · templates 506 · facturas ARCA 108 · anticipos 8.
+
+  🔑 **Un vínculo sin FK no es un vínculo: es una convención.** El día que se ponga la constraint,
+  va **`ON DELETE RESTRICT`** y no `SET NULL` — `SET NULL` borraría el único rastro de contra qué
+  estaba conciliado el movimiento, que es exactamente el daño que se quiere evitar.
+
+  📌 **Las 12 tablas que tienen `template_cuota_id`**: `public.msa_galicia`, `public.pam_galicia`,
+  `public.pam_galicia_cc`, `ma.ma_galicia`, `ma.tarjeta_visa`, `msa.caja_ams`, `msa.caja_general`,
+  `msa.caja_sigot`, `msa.tarjeta_visa_business`, `pam.tarjeta_visa`. Quien toque cuotas tiene que
+  mirarlas **todas** — mirar sólo `msa_galicia` deja afuera justo las de PAM y MA.
 - **`pendientes_comentarios.pendiente_id` → un ID de `PENDIENTES.md`** (`'A-BUG-27'`). Es el único link que **no apunta a la BD sino a un archivo**: los pendientes viven en un `.md` versionado, no en una tabla. Ver § 6c.
+
+
+### 6.2-bis Tablas de RESPALDO de correcciones de datos (2026-09-12)
+
+Dos tablas nuevas, creadas al corregir datos viejos con permiso del usuario. **No son de la app**:
+ningún código las lee. Existen para que una corrección masiva **se pueda deshacer sin depender de
+que alguien se acuerde de cómo estaba** (§ `CLAUDE.md` 🛑 Datos: foto antes, restaurar después).
+
+| Tabla | Qué guarda | De dónde salió |
+|---|---|---|
+| `public.respaldo_a_dat_35` | `tabla`, `id`, `fecha`, `descripcion`, `detalle_antes`, `detalle_nuevo` de los **141** movimientos a los que se les rellenó el detalle | [A-DAT-35](PENDIENTES.md#a-dat-35) |
+| `public.respaldo_reglas_borradas` | la fila completa de las **6** reglas de conciliación inalcanzables que se borraron, + `motivo` | [A-DAT-36](PENDIENTES.md#a-dat-36) |
+
+🔑 **Revertir cualquiera de las dos es un `UPDATE`/`INSERT` desde su respaldo**, y eso es todo el
+punto: una corrección masiva sin foto previa no es reversible, es definitiva — y las definitivas
+sobre datos del usuario no se hacen.
+
+⚠️ **No se borran por prolijidad.** Pesan nada y son la única prueba de qué había antes.
 
 ### 6b-bis. RLS de las notas — el único caso de `anon` sólo-INSERT (2026-08-31)
 
@@ -467,6 +509,82 @@ Para que el nombre no confunda:
 
 ⚠️ **En cuenta corriente esta columna sigue significando otra cosa** (el `"Imputado"` del banco).
 El CBU es convención **sólo de las cuentas de Caja de Ahorro**.
+
+## 6d. Venta de hacienda: la CARGA y el ROMANEO (2026-09-03/06)
+
+Estructura completa y sus ALTERs → `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+Diseño y motivos → `MODULO_HACIENDA.md` §§ 18-19. Acá va **dónde vive cada dato**.
+
+### El eje: la CARGA
+🔑 **Un camión es una carga, y de ella cuelga todo lo del viaje** — no de la venta. Una carga
+puede llevar **varias ventas** (el 03/09 llevó 7 vacas y 3 toros, que son dos ventas distintas).
+
+```
+productivo.cargas ─┬─ 1:N ─ stock_ventas   (carga_id)
+                   ├─ 1:1 ─ romaneos       (carga_id)
+                   └─ 1:1 ─ anticipos_proveedores  (flete_anticipo_id) → el flete en el Cash Flow
+```
+
+| Dato | Vive en | Por qué ahí |
+|---|---|---|
+| Pesaje del camión (`peso_bruto`, `peso_tara`) | `cargas` | el camión se pesa **una vez**, aunque lleve N ventas |
+| Flete + su seteo (`flete_km`, `flete_km_arranque`, `flete_precio_km`, `flete_camino`) | `cargas` | un camión, un flete |
+| Horas de las dos pesadas (`pesada_campo_at`, `pesada_destino_at`) | `cargas` | son del **viaje** |
+| Kilos que recibió el destino (`kg_vivo_destino`) | `cargas` | tercera balanza |
+| Plazo de cobro (`plazo_cobro_dias`) | `cargas` | es del negocio con ese comprador |
+
+### Las tres tablas del romaneo
+
+| Tabla | Grano | Ojo |
+|---|---|---|
+| `romaneos` | 1 por carga | `controles jsonb` guarda **qué cerró y qué no al importar**, aunque después se corrija a mano |
+| `romaneo_medias` | 1 por **MEDIA RES** | ⚠️ el garrón se repite **2 veces por animal**: contar filas da el doble de cabezas |
+| `romaneo_lineas` | 1 por **grupo de precio** | es lo que factura el frigorífico; `stock_venta_id` dice a qué venta se imputó |
+
+### 🔴 Las dos columnas de kilo vivo que NO son lo mismo
+
+```
+romaneo_lineas.kg_vivo        ← lo que ASIGNA el frigorífico
+romaneo_lineas.kg_vivo_real   ← el nuestro, de las cabezas adjudicadas
+```
+
+**`kg_vivo` no es una pesada.** El frigorífico reparte el total entre los grupos **usando el rinde
+global**, así que todo rinde calculado con esa columna devuelve el rinde global — para cualquier
+grupo. Verificado: los 9 grupos del romaneo del 04/09 dan `53,58 %` los nueve.
+
+`kg_vivo_real` sale de nuestras pesadas, y `kg_vivo_real_origen` dice de dónde
+(`animales` | `manual` | `proporcional`). **Se guardan las dos y ninguna pisa a la otra**: son
+mediciones distintas y cuál es cuál importa.
+
+### Lo que se completa al cargar el romaneo
+`stock_ventas.kg_carne`, `monto_neto` y `precio_kg`. Es lo que cierra el caso «el destino compra a
+la res»: sin romaneo el importe queda **vacío a propósito** (`MODULO_HACIENDA` § 18.3).
+
+---
+
+## 6e. `public.boletas_arba` — el importe llega por DOS caminos (2026-09-07)
+
+La boleta del inmobiliario se lee de **dos fuentes independientes**, y la tabla las guarda
+**separadas a propósito**: fundirlas en una sola columna perdería justamente el control.
+
+| Columna | De dónde sale |
+|---|---|
+| `importe` | del **PDF** (`lib/arba/parsear-boleta.ts` — glyph IDs con el CMap `/ToUnicode`) |
+| `importe_mail` | de la **tabla del cuerpo del mail** (`filasDelMail_` en el GAS, `A-FEAT-107`) |
+| `objeto_mail` | el objeto imponible según el mail: la **partida**, o el **CUIT** en el complementario |
+| `correcciones` | 🐾 la **huella**: `{campo: {leido, puesto}}` — sólo los que el usuario cambió |
+
+🔁 **Si `importe` e `importe_mail` no coinciden, algo se leyó mal** — y se sabe sin abrir el archivo.
+El panel lo muestra y **no elige ninguno**: decide el usuario.
+
+🔑 **`objeto_mail` no es redundante con `partida`.** El parser del PDF encuentra la partida en 27 de
+63 boletas; el mail la trae siempre. Y en el **complementario** el PDF no la trae **nunca**, porque
+esa boleta grava al contribuyente y no a la parcela: su objeto imponible **es el CUIT**.
+
+⚠️ **La boleta nunca pisa un template sola.** Aplicar escribe **sólo** `cuotas_egresos_sin_factura.monto`
+de la cuota elegida, y es un acto explícito del usuario, fila por fila.
+
+---
 
 ## 7. Referencias
 

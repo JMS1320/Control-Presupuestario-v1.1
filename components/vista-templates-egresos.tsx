@@ -28,6 +28,9 @@ import useInlineEditor, { CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 import { GeneradorRenovacionCampana } from "./generador-renovacion-campana"
+import { EditorCampanaTemplate } from "@/components/editor-campana-template"
+import { hayQuePreguntarFechaPago, esEstadoQuePaga } from "@/lib/pagos/preguntar-fecha-pago"
+import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
 
@@ -40,6 +43,7 @@ interface CuotaEgresoSinFactura {
   monto: number
   descripcion: string | null
   estado: string
+  detalle?: string | null       // A-FEAT-137 — lo que escribe el usuario
   created_at: string
   updated_at: string
   egreso?: {
@@ -68,7 +72,13 @@ const COLUMNAS_CONFIG = {
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto: { label: "Monto", visible: true, width: "130px" },
+  // 💪 A-FEAT-137 — las dos, y son cosas distintas:
+  //   descripcion = el IDENTIFICADOR (hoy guardado; se va a generar — ver A-DAT-37)
+  //   detalle     = lo que escribe el usuario, y lo que llega del Extracto al conciliar
+  // Hasta A-FEAT-137 `detalle` existía en la tabla y **no se mostraba en ninguna pantalla**: por eso
+  // un dato propagado ahí se guardaba bien y era invisible (A-BUG-161).
   descripcion: { label: "Descripción", visible: true, width: "200px" },
+  detalle: { label: "Detalle", visible: true, width: "220px" },
   estado: { label: "Estado", visible: true, width: "100px" },
   // Campos del egreso padre
   categ: { label: "CATEG", visible: true, width: "120px" },
@@ -95,6 +105,14 @@ export function VistaTemplatesEgresos() {
   const [error, setError] = useState<string | null>(null)
   const [mostrarWizard, setMostrarWizard] = useState(false)
   const [mostrarGenerador, setMostrarGenerador] = useState(false)
+  const [editandoCampana, setEditandoCampana] = useState<string | null>(null)   // A-FEAT-131
+  /**
+   * 📅 A-BUG-157 — el cartel de la fecha de pago, que en Templates no existía.
+   * `cuotaIds` puede traer una (celda) o muchas (edición masiva): el lote se confirma junto.
+   */
+  const [modalFechaPagoTpl, setModalFechaPagoTpl] = useState<{
+    isOpen: boolean; fecha: string; cuotaIds: string[]; nuevoEstado: string
+  }>({ isOpen: false, fecha: '', cuotaIds: [], nuevoEstado: '' })
   
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
@@ -282,6 +300,20 @@ export function VistaTemplatesEgresos() {
     try {
       const cuotasIds = Array.from(cuotasSeleccionadasMasiva)
       const LOTE_SIZE = 20
+
+      // 📅 A-BUG-157 — el otro camino por el que se llega a «pagado» sin fecha.
+      // El lote se confirma junto: basta que UNA no tenga la fecha para preguntar por todas
+      // (así lo decide `hayQuePreguntarFechaPago`, y está escrito ahí por qué).
+      if (esEstadoQuePaga(nuevoEstadoMasivo)) {
+        const hoy = new Date().toISOString().split('T')[0]
+        const filas = cuotasIds.map(id => ({
+          fecha_pago: (cuotasOriginales.find(c => c.id === id) as any)?.fecha_pago,
+        }))
+        if (hayQuePreguntarFechaPago(filas, hoy)) {
+          setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: cuotasIds, nuevoEstado: nuevoEstadoMasivo })
+          return   // continúa desde el modal
+        }
+      }
 
       console.log('🔄 Ejecutando edición masiva cuotas templates:', {
         cuotas: cuotasIds.length,
@@ -532,7 +564,10 @@ export function VistaTemplatesEgresos() {
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
-    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'descripcion', 'estado',
+    // 🪪 `descripcion` salió de la lista (A-FEAT-138): es **derivada**, se genera del template
+    // y el período. Editarla guardaría un valor que al día siguiente contradice al que se muestra.
+    // Lo que el usuario escribe va a `detalle`, que está al lado.
+    'fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'monto', 'detalle', 'estado',
     'categ', 'centro_costo', 'responsable', 'nombre_quien_cobra', 'cuit_quien_cobra'
   ]
 
@@ -592,7 +627,22 @@ export function VistaTemplatesEgresos() {
     }
     
     // Ctrl+Click normal = Edición inline
-    if (!event.ctrlKey || !modoEdicion) return
+    //
+    // ⌨️ **A-BUG-159** — acá decía `|| !modoEdicion`, así que en Templates había que prender
+    // primero el botón **Modo Edición** y en Cash Flow no (`vista-cash-flow.tsx` pide
+    // `!event.ctrlKey || !esEditable`, sin modo). Reportado por el usuario 2026-09-12:
+    // *«en templates para editar debo apretar editar, no anda ctrl+click como sí funciona en cash
+    // flow. Debemos ir homogeneizando: ctrl+click es la forma de editar en general»*.
+    //
+    // 🔑 **Queda como criterio de la app, no como arreglo de esta pantalla**: `Ctrl+click` edita
+    // una celda en cualquier grilla, sin modo previo. Una app donde cada grilla se edita distinto
+    // obliga a recordar en cuál estás parado — trabajo que no produce nada.
+    //
+    // 📌 El **Modo Edición** sigue existiendo y sigue sirviendo: pinta las celdas editables y
+    // habilita la selección masiva. Lo que deja de hacer es **ser requisito** para editar una.
+    // Y `Ctrl+Shift+click` (la conversión Anual↔Cuotas, arriba) **sí lo sigue pidiendo**: eso
+    // reescribe el plan entero del template, no una celda.
+    if (!event.ctrlKey) return
     
     event.preventDefault()
     event.stopPropagation()
@@ -728,8 +778,57 @@ export function VistaTemplatesEgresos() {
       }
     }
 
+    /**
+     * 📅 **A-BUG-157 — pasar a un estado que PAGA pregunta la fecha de pago.**
+     *
+     * Reportado por el usuario 2026-09-12: *«recién puse pagado a un template de red vial lote
+     * puerto y no me pidió fecha de pago; de hecho quedó sin fecha de pago»*. El cartel existía
+     * desde [A-FEAT-22] pero **sólo en Cash Flow** — acá no había nada.
+     *
+     * 🧨 **Y el daño no se ve en esta pantalla**: de `fecha_pago` sale la quincena de SICORE.
+     * Una cuota pagada sin fecha no reclama nada; simplemente no aparece donde tendría que estar.
+     *
+     * Las dos decisiones —qué estados pagan y cuándo hay algo que preguntar— viven en
+     * `lib/pagos/preguntar-fecha-pago.ts`, que es la misma que usa Cash Flow. No se re-implementa
+     * el criterio acá: un criterio copiado se desincroniza en el primero que se toca.
+     */
+    if (celdaEnEdicion.columna === 'estado' && esEstadoQuePaga(nuevoValor)) {
+      const cuota = cuotasOriginales.find(c => c.id === celdaEnEdicion.cuotaId)
+      const hoy = new Date().toISOString().split('T')[0]
+      if (hayQuePreguntarFechaPago([{ fecha_pago: (cuota as any)?.fecha_pago }], hoy)) {
+        setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: [celdaEnEdicion.cuotaId], nuevoEstado: nuevoValor })
+        setCeldaEnEdicion(null)
+        return   // el guardado continúa desde el modal — mismo patrón que `modalPropagacion`
+      }
+    }
+
     // Para otros campos, continuar con el guardado normal
     await ejecutarGuardadoRealTemplates(celdaEnEdicion, nuevoValor)
+  }
+
+  /**
+   * Confirma el cartel de A-BUG-157: escribe **el estado y la fecha juntos**.
+   *
+   * 🔑 Los dos en el mismo `UPDATE` a propósito. Si se escribieran por separado y el segundo
+   * fallara, quedaría exactamente el estado que originó el bug: pagada y sin fecha.
+   */
+  const confirmarFechaPagoTpl = async () => {
+    const { cuotaIds, fecha, nuevoEstado } = modalFechaPagoTpl
+    try {
+      const { error } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .update({ estado: nuevoEstado, fecha_pago: fecha || null, updated_at: new Date().toISOString() })
+        .in('id', cuotaIds)
+      if (error) throw error
+
+      setModalFechaPagoTpl({ isOpen: false, fecha: '', cuotaIds: [], nuevoEstado: '' })
+      setCuotasSeleccionadasMasiva(new Set())
+      setNuevoEstadoMasivo('')
+      setModoEdicionMasiva(false)
+      await cargarCuotas()
+    } catch (e: any) {
+      alert('Error guardando la fecha de pago: ' + (e?.message || String(e)))
+    }
   }
 
   const ejecutarGuardadoRealTemplates = async (datosEdicion: {cuotaId: string, columna: string, valor: any}, nuevoValor: string) => {
@@ -941,7 +1040,8 @@ export function VistaTemplatesEgresos() {
           fecha_estimada: nuevaCuota.fecha,
           fecha_vencimiento: nuevaCuota.fecha,
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
-          descripcion: descripcionFinal,
+          // 🪪 A-FEAT-138 — lo que el usuario escribe va a `detalle`; la etiqueta se genera.
+          detalle: descripcionFinal,
           estado: 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
           medio_pago: medioPagoManual
@@ -1030,8 +1130,24 @@ export function VistaTemplatesEgresos() {
     let valor: any
 
     // Obtener valor según la columna
-    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
+    if (['fecha_estimada', 'fecha_vencimiento', 'fecha_pago', 'mes', 'monto', 'descripcion', 'detalle', 'estado', 'created_at', 'updated_at', 'egreso_id'].includes(columna)) {
       valor = cuota[columna as keyof CuotaEgresoSinFactura]
+    } else if (columna === 'descripcion') {
+      /**
+       * 🪪 **A-FEAT-138** — la Descripción se GENERA, no se lee.
+       *
+       * Desde que la etiqueta dejó de guardarse (A-DAT-37), esta celda leía una columna vacía y
+       * mostraba `-`. **Y eso era un hueco de verdad**, señalado por el usuario: *«¿no sirve igual
+       * para ubicarme cuando veo los templates?»*. Sí sirve — por eso se compone acá, igual que ya
+       * se hacía en el Cash Flow y en el Extracto. Faltaba **esta** pantalla, que es donde él mira.
+       *
+       * 🔑 Generada es **mejor** que guardada: si se renombra el template o cambia el
+       * responsable, las 12 cuotas se actualizan solas. Guardada, quedaban con el nombre viejo.
+       *
+       * ⚠️ Si alguna fila todavía tiene texto guardado (quedaron 0, pero puede volver a pasar si
+       * algo lo escribe), **gana lo guardado**: mostrar lo generado encima ocultaría un dato real.
+       */
+      valor = (cuota as any).descripcion || identificadorDeCuota(cuota as any, (cuota.egreso ?? {}) as any)
     } else if (columna === 'categ') {
       // Para multi-cuenta: mostrar categ de la cuota si existe, si no la del template
       valor = (cuota as any).categ || cuota.egreso?.categ
@@ -1268,8 +1384,35 @@ export function VistaTemplatesEgresos() {
           )
         
         case 'nombre_referencia':
-        case 'nombre_quien_cobra':
+          // ✏️ A-FEAT-131 — desde acá se abre el template entero: sus datos y TODAS sus cuotas.
+          // La tabla es de cuotas sueltas, así que para agregar una sexta cuota a un plan de cuatro
+          // no había dónde: el modal de «agregar cuota» filtra `tipo_template = 'abierto'` y este
+          // template es `fijo`. Ese era el hueco.
+          return (
+            <div className="max-w-xs truncate flex items-center gap-1" title={valor as string}>
+              <span className="truncate">{valor as string}</span>
+              {cuota.egreso_id && (
+                <button
+                  onClick={e => { e.stopPropagation(); setEditandoCampana(cuota.egreso_id!) }}
+                  className="shrink-0 text-blue-600 hover:text-blue-800 text-xs"
+                  title="Editar la campaña: el template, sus cuotas y sus datos (los vínculos conciliados se conservan)"
+                >
+                  ✏️
+                </button>
+              )}
+            </div>
+          )
+
         case 'descripcion':
+          // Gris e itálica: se lee de un vistazo que la pone el sistema, no una persona.
+          return (
+            <div className="max-w-xs truncate text-gray-500 italic" title={`${valor} · generado del template y el período`}>
+              {valor as string}
+            </div>
+          )
+
+        case 'nombre_quien_cobra':
+        case 'detalle':
           return (
             <div className="max-w-xs truncate" title={valor as string}>
               {valor as string}
@@ -1953,6 +2096,43 @@ export function VistaTemplatesEgresos() {
 
       {mostrarGenerador && (
         <GeneradorRenovacionCampana onClose={() => { setMostrarGenerador(false); cargarCuotas() }} />
+      )}
+
+      {/* 📅 A-BUG-157 — la fecha de pago, al pasar a un estado que paga. */}
+      <Dialog open={modalFechaPagoTpl.isOpen} onOpenChange={v => { if (!v) setModalFechaPagoTpl({ isOpen: false, fecha: '', cuotaIds: [], nuevoEstado: '' }) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>📅 ¿Con qué fecha se pagó?</DialogTitle>
+            <DialogDescription>
+              {modalFechaPagoTpl.cuotaIds.length === 1
+                ? <>La cuota pasa a <strong>{modalFechaPagoTpl.nuevoEstado}</strong>.</>
+                : <><strong>{modalFechaPagoTpl.cuotaIds.length}</strong> cuotas pasan a <strong>{modalFechaPagoTpl.nuevoEstado}</strong>.</>}
+              {' '}De esta fecha sale la quincena de SICORE, así que conviene que sea la real y no la estimada.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="date"
+            value={modalFechaPagoTpl.fecha}
+            onChange={e => setModalFechaPagoTpl(m => ({ ...m, fecha: e.target.value }))}
+          />
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setModalFechaPagoTpl({ isOpen: false, fecha: '', cuotaIds: [], nuevoEstado: '' })}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmarFechaPagoTpl} disabled={!modalFechaPagoTpl.fecha}>
+              Registrar con esta fecha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✏️ A-FEAT-131 — editar la campaña del template de esta fila. */}
+      {editandoCampana && (
+        <EditorCampanaTemplate
+          templateId={editandoCampana}
+          onClose={() => setEditandoCampana(null)}
+          onGuardado={() => cargarCuotas()}
+        />
       )}
 
       {/* Modal Conversión Masiva Anual → Cuotas */}
