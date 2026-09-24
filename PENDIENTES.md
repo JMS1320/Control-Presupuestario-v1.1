@@ -3994,7 +3994,27 @@ script pendiente degrada **una función**, no la tabla entera. Y `leerRoles()` d
 "tabla" | "columna_permisos"`, con un cartel distinto para cada caso — el de la columna dice que
 los permisos por sección **sí** andan y que lo único pendiente es el grano fino.
 
-**ETAPAS 1-2 HECHAS · 3-5 PENDIENTES** → [A-TEST-146](#a-test-146)
+### Etapa 3 (a medias) — Ver y Editar por separado, 2026-09-24
+
+Pedido del usuario: *«tiene que tener un checkbox para ver y otro para editar. Y estos mismos datos
+debería poder verlos en la pantalla de permisos»*. Las dos cosas hechas:
+
+- **Dos casillas por recurso** en Roles. Destildar **Ver** arrastra Editar — no se puede editar lo
+  que no se ve, y dejar las dos libres permitiría guardar un permiso que no significa nada.
+- **La pantalla de Permisos muestra lo mismo**: cada sección abre sus recursos, con tres estados
+  (`edita` verde · `ve` ámbar · sin acceso). Sale de la misma fuente que el editor, así que no se
+  pueden desincronizar.
+
+⚠️ **Y acá está lo que hay que decir, no callar**: **«Ver» se aplica hoy** (la pestaña no se
+dibuja). **«Editar» se guarda y se puede consultar** (`usePuedeEditar`), pero **todavía casi
+ninguna pantalla lo consulta y la base no lo frena**. Por eso el editor muestra un aviso ámbar en
+cuanto ponés algo en «sólo ver»: sin ese cartel esto sería exactamente lo que `scripts/60` decidió
+evitar — *«una columna de permisos que ninguna guarda chequea parece un permiso y no lo es»*.
+
+**Lo que falta para que «Editar» muerda**: apagar los controles de guardar en cada pantalla (resto
+de la etapa 3), las 27 rutas de API (etapa 4) y la RLS por recurso (etapa 5, la única que obliga).
+
+**ETAPAS 1-2 HECHAS · 3 A MEDIAS · 4-5 PENDIENTES** → [A-TEST-146](#a-test-146)
 
 ---
 

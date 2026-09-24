@@ -120,12 +120,23 @@ export async function leerRoles(): Promise<ResultadoRoles> {
  * sorprende. El control `npm run verificar:recursos` es el que avisa de lo no registrado.
  */
 export async function recursosOcultosDe(rol: string | null): Promise<string[]> {
-  if (!rol) return []
-  const { roles } = await leerRoles()
-  const permisos = roles.find((r) => r.id === rol)?.permisos ?? {}
-  return Object.entries(permisos)
+  const niveles = await nivelesDe(rol)
+  return Object.entries(niveles)
     .filter(([, nivel]) => nivel === "ninguno")
     .map(([recurso]) => recurso)
+}
+
+/**
+ * EL MAPA DE EXCEPCIONES de un rol: `{ "productivo.insumos": "lectura" }`.
+ *
+ * Sólo trae lo que tiene excepción. Lo que no figura hereda de la sección, que hoy significa
+ * "escritura" — el comportamiento de siempre. Ver `recursosOcultosDe` para por qué se guardan las
+ * excepciones y no los permisos.
+ */
+export async function nivelesDe(rol: string | null): Promise<Record<string, Nivel>> {
+  if (!rol) return {}
+  const { roles } = await leerRoles()
+  return roles.find((r) => r.id === rol)?.permisos ?? {}
 }
 
 /** Las secciones que ve un rol. Si el rol no existe en la tabla, no ve nada. */

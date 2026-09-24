@@ -33,8 +33,8 @@ export async function PATCH(request: Request) {
   const id = typeof body?.id === "string" ? body.id : null
   const secciones = Array.isArray(body?.secciones) ? body.secciones : null
   const exige2FA = typeof body?.exige_2fa === "boolean" ? body.exige_2fa : null
-  // Los recursos que este rol NO puede ver, dentro de las secciones que sí tiene (A-FEAT-169).
-  const ocultos: unknown = body?.ocultos
+  // Las excepciones finas: `{ "productivo.insumos": "lectura" }` (A-FEAT-169).
+  const permisosPedidos: unknown = body?.permisos
 
   if (!id || !secciones) {
     return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
@@ -52,21 +52,27 @@ export async function PATCH(request: Request) {
    * se guardaría para siempre sin que nada lo lea — y como el default es "se ve", una excepción
    * mal escrita **no oculta nada y parece que sí**. Es peor que un error: es un permiso falso.
    */
+  const NIVELES = new Set(["ninguno", "lectura", "escritura"])
   const permisos: Record<string, string> = {}
-  if (ocultos !== undefined) {
-    if (!Array.isArray(ocultos)) {
+  if (permisosPedidos !== undefined) {
+    if (typeof permisosPedidos !== "object" || permisosPedidos === null || Array.isArray(permisosPedidos)) {
       return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
     }
     const conocidos = new Set(RECURSOS.map((r) => r.id))
-    const malos = ocultos.filter((r: unknown) => typeof r !== "string" || !conocidos.has(r))
-    if (malos.length > 0) {
-      return NextResponse.json({ error: `Recurso desconocido: ${malos.join(", ")}` }, { status: 400 })
-    }
-    // Una excepción sobre una sección que el rol no tiene no hace nada, pero ensucia: al volver a
-    // dar la sección reaparecería una restricción que nadie recuerda haber puesto.
     const conSeccion = new Set(secciones as string[])
-    for (const r of ocultos as string[]) {
-      if (conSeccion.has(r.split(".")[0])) permisos[r] = "ninguno"
+
+    for (const [recurso, nivel] of Object.entries(permisosPedidos as Record<string, unknown>)) {
+      if (!conocidos.has(recurso)) {
+        return NextResponse.json({ error: `Recurso desconocido: ${recurso}` }, { status: 400 })
+      }
+      if (typeof nivel !== "string" || !NIVELES.has(nivel)) {
+        return NextResponse.json({ error: `Nivel desconocido en ${recurso}: ${String(nivel)}` }, { status: 400 })
+      }
+      // `escritura` es el default heredado: guardarlo sería ruido que hay que mantener al día.
+      if (nivel === "escritura") continue
+      // Una excepción sobre una sección que el rol no tiene no hace nada, pero ensucia: al volver
+      // a dar la sección reaparecería una restricción que nadie recuerda haber puesto.
+      if (conSeccion.has(recurso.split(".")[0])) permisos[recurso] = nivel
     }
   }
 
@@ -85,7 +91,7 @@ export async function PATCH(request: Request) {
     .from("roles")
     .update({
       secciones,
-      ...(ocultos === undefined ? {} : { permisos }),
+      ...(permisosPedidos === undefined ? {} : { permisos }),
       ...(exige2FA === null ? {} : { exige_2fa: exige2FA }),
       actualizado: new Date().toISOString(),
     })

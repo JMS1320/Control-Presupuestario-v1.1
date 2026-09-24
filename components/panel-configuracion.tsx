@@ -3,13 +3,13 @@
 import { useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
-import { recursosDe, SIN_RECURSOS } from "@/lib/auth/recursos"
+import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { DATOS_FISCALES, EMPRESAS, cuitFormateado } from "@/lib/empresas"
-import { Users, ShieldCheck, Building2, KeyRound, Check, Minus } from "lucide-react"
+import { Users, ShieldCheck, Building2, KeyRound, Check, Minus, Eye } from "lucide-react"
 import { useEffect } from "react"
 
 const PANELES = [
@@ -129,15 +129,23 @@ function PanelRoles() {
 
   const [editando, setEditando] = useState<string | null>(null)
   const [borrador, setBorrador] = useState<Set<string>>(new Set())
-  // Los recursos DESTILDADOS dentro de las secciones que sí tiene. Se guarda la excepción y no el
-  // permiso, así lo que todavía no está registrado se sigue viendo (ver `recursosOcultosDe`).
-  const [ocultos, setOcultos] = useState<Set<string>>(new Set())
+  // Las EXCEPCIONES por recurso. Lo que no figura hereda de la sección = escritura, así lo que
+  // todavía no está registrado se sigue viendo y editando (ver `nivelesDe`).
+  const [niveles, setNiveles] = useState<Record<string, "ninguno" | "lectura" | "escritura">>({})
+  const nivelDe = (id: string) => niveles[id] ?? "escritura"
+  const ponerNivel = (id: string, n: "ninguno" | "lectura" | "escritura") =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      if (n === "escritura") delete sig[id]
+      else sig[id] = n
+      return sig
+    })
   const [guardando, setGuardando] = useState(false)
 
   function empezar(r: RolDB) {
     setEditando(r.id)
     setBorrador(new Set(r.secciones))
-    setOcultos(new Set(Object.entries(r.permisos ?? {}).filter(([, n]) => n === "ninguno").map(([k]) => k)))
+    setNiveles({ ...((r.permisos ?? {}) as Record<string, "ninguno" | "lectura" | "escritura">) })
   }
 
   async function guardar(id: string) {
@@ -145,7 +153,7 @@ function PanelRoles() {
     const res = await fetch("/api/admin/roles", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, secciones: [...borrador], ocultos: [...ocultos] }),
+      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles }),
     })
     const json = await res.json().catch(() => ({}))
     setGuardando(false)
@@ -275,43 +283,80 @@ function PanelRoles() {
 
                           {puesta && dentro.length > 0 && (
                             <div className="border-t bg-white/70 px-2.5 py-2">
-                              <div className="grid gap-1 sm:grid-cols-2">
+                              <div className="mb-1 flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                                <span className="flex-1" />
+                                <span className="w-9 text-center">Ver</span>
+                                <span className="w-12 text-center">Editar</span>
+                              </div>
+                              <div className="space-y-0.5">
                                 {dentro.map((r) => {
-                                  // Si el padre está oculto, el hijo tampoco se ve: destildar
-                                  // Insumos y dejar Stock tildado diría algo que no es cierto.
-                                  const tapadoPorElPadre = Boolean(r.padre && ocultos.has(r.padre))
-                                  const visible = !ocultos.has(r.id) && !tapadoPorElPadre
+                                  // Si el padre está oculto, el hijo tampoco: destildar Insumos y
+                                  // dejar Stock tildado diría algo que no es cierto.
+                                  const tapado = Boolean(r.padre && nivelDe(r.padre) === "ninguno")
+                                  const nivel = tapado ? "ninguno" : nivelDe(r.id)
+                                  const ve = nivel !== "ninguno"
+                                  const edita = nivel === "escritura"
                                   return (
-                                    <label
+                                    <div
                                       key={r.id}
-                                      title={tapadoPorElPadre ? "Está dentro de algo que destildaste" : undefined}
+                                      title={tapado ? "Está dentro de algo que destildaste" : undefined}
                                       className={`flex items-center gap-2 rounded px-1.5 py-1 text-[11px] ${
                                         r.padre ? "ml-5 border-l pl-2" : ""
-                                      } ${tapadoPorElPadre ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${
-                                        visible ? "" : "text-muted-foreground line-through"
-                                      }`}
+                                      } ${tapado ? "opacity-50" : ""} ${ve ? "" : "text-muted-foreground line-through"}`}
                                     >
-                                      <input
-                                        type="checkbox"
-                                        checked={visible}
-                                        disabled={tapadoPorElPadre}
-                                        onChange={(e) => {
-                                          const n = new Set(ocultos)
-                                          if (e.target.checked) n.delete(r.id)
-                                          else n.add(r.id)
-                                          setOcultos(n)
-                                        }}
-                                        className="h-3 w-3"
-                                      />
-                                      <span>{r.etiqueta}</span>
-                                      {r.tipo === "funcionalidad" && (
-                                        <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">acción</span>
-                                      )}
-                                    </label>
+                                      <span className="flex-1">
+                                        {r.etiqueta}
+                                        {r.tipo === "funcionalidad" && (
+                                          <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
+                                            acción
+                                          </span>
+                                        )}
+                                      </span>
+
+                                      <span className="flex w-9 justify-center">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Ver ${r.etiqueta}`}
+                                          checked={ve}
+                                          disabled={tapado}
+                                          // Sacar "ver" arrastra "editar": no se puede editar lo que
+                                          // no se ve, y dejar las dos casillas libres permitiría
+                                          // guardar un permiso que no significa nada.
+                                          onChange={(e) => ponerNivel(r.id, e.target.checked ? "escritura" : "ninguno")}
+                                          className="h-3 w-3"
+                                        />
+                                      </span>
+                                      <span className="flex w-12 justify-center">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Editar ${r.etiqueta}`}
+                                          checked={edita}
+                                          disabled={tapado || !ve}
+                                          onChange={(e) => ponerNivel(r.id, e.target.checked ? "escritura" : "lectura")}
+                                          className="h-3 w-3"
+                                        />
+                                      </span>
+                                    </div>
                                   )
                                 })}
                               </div>
-                              {dentro.some((r) => ocultos.has(r.id)) && (
+
+                              {/*
+                                ⚠️ El aviso NO es opcional. «Ver» se aplica hoy: la pestaña no se
+                                dibuja. «Editar» se guarda y se puede consultar (`usePuedeEditar`),
+                                pero todavía casi ninguna pantalla lo consulta y **la base no lo
+                                frena** — con la misma sesión se escribe desde la consola.
+                                Callarlo convertiría esto en lo que `scripts/60` decidió evitar:
+                                algo que parece un permiso y no lo es.
+                              */}
+                              {dentro.some((r) => nivelDe(r.id) === "lectura") && (
+                                <p className="mt-1.5 rounded border border-amber-200 bg-amber-50 p-1.5 text-[10px] text-amber-800">
+                                  <strong>Ojo:</strong> «sólo ver» se guarda pero <strong>todavía no
+                                  impide escribir</strong>. Sirve para ordenar el trabajo, no para
+                                  contener a alguien. Lo que sí se aplica ya es destildar «Ver».
+                                </p>
+                              )}
+                              {dentro.some((r) => nivelDe(r.id) === "ninguno") && (
                                 <p className="mt-1.5 text-[10px] text-muted-foreground">
                                   Lo destildado no se le va a mostrar. Sigue pudiendo entrar a la sección.
                                 </p>
@@ -412,6 +457,19 @@ function PanelPermisos() {
     (rolesDB ?? []).map((r) => [r.id, new Set(r.secciones)])
   ) as Record<string, Set<string>>
 
+  // Las excepciones finas, para poder mostrar la misma info que el editor (A-FEAT-169).
+  const nivelesPorRol = Object.fromEntries(
+    (rolesDB ?? []).map((r) => [r.id, (r.permisos ?? {}) as Record<string, string>])
+  ) as Record<string, Record<string, string>>
+
+  /** El nivel efectivo de un recurso para un rol: sin excepción, hereda de la sección. */
+  const nivelEfectivo = (rol: string, recurso: Recurso): "ninguno" | "lectura" | "escritura" => {
+    if (!seccionesPorRol[rol]?.has(recurso.seccion)) return "ninguno"
+    // Si el padre está oculto, el hijo también — igual que en el editor.
+    if (recurso.padre && nivelesPorRol[rol]?.[recurso.padre] === "ninguno") return "ninguno"
+    return (nivelesPorRol[rol]?.[recurso.id] as "ninguno" | "lectura" | "escritura") ?? "escritura"
+  }
+
   const todasLasSecciones = seccionesDe("admin")
 
   // ⚠️ Estas SÍ están escritas a mano: dependen de `esAdmin()`, que sigue siendo el rol `admin`
@@ -426,6 +484,22 @@ function PanelPermisos() {
     { label: "Ver y editar su propio perfil", puede: () => true, donde: "app/perfil/page.tsx" },
     { label: "Subir su foto", puede: () => true, donde: "app/api/perfil/avatar/route.ts" },
   ]
+
+  /** Tres estados, no dos: «no lo ve», «lo ve», «lo ve y lo edita». */
+  const CeldaNivel = ({ nivel }: { nivel: "ninguno" | "lectura" | "escritura" }) =>
+    nivel === "escritura" ? (
+      <span title="Ve y edita" className="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-100 px-2 text-[10px] font-medium text-emerald-800">
+        <Check className="h-3 w-3" /> edita
+      </span>
+    ) : nivel === "lectura" ? (
+      <span title="Sólo ve — todavía no se impide escribir" className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-100 px-2 text-[10px] font-medium text-amber-800">
+        <Eye className="h-3 w-3" /> ve
+      </span>
+    ) : (
+      <span title="No lo ve" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100">
+        <Minus className="h-3.5 w-3.5 text-slate-400" />
+      </span>
+    )
 
   const Celda = ({ si }: { si: boolean }) =>
     si ? (
@@ -456,7 +530,7 @@ function PanelPermisos() {
                 </tr>
               </thead>
               <tbody>
-                {todasLasSecciones.map(({ id, label, Icono }) => (
+                {todasLasSecciones.flatMap(({ id, label, Icono }) => [
                   <tr key={id} className="border-b last:border-0">
                     <td className="py-2 pr-4">
                       <span className="inline-flex items-center gap-2">
@@ -469,8 +543,30 @@ function PanelPermisos() {
                         <Celda si={Boolean(seccionesPorRol[r]?.has(id))} />
                       </td>
                     ))}
-                  </tr>
-                ))}
+                  </tr>,
+                  /*
+                    Y debajo de cada sección, lo que hay ADENTRO — el mismo dato que se edita en
+                    Roles, leído de la misma fuente. Pedido del usuario 2026-09-24: «estos mismos
+                    datos debería poder verlos en la pantalla de permisos».
+                  */
+                  ...recursosDe(id).map((rec) => (
+                    <tr key={rec.id} className="border-b bg-slate-50/50 last:border-0">
+                      <td className="py-1.5 pr-4 pl-6 text-xs text-muted-foreground">
+                        <span className={rec.padre ? "ml-4 border-l pl-2" : ""}>
+                          ↳ {rec.etiqueta}
+                          {rec.tipo === "funcionalidad" && (
+                            <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">acción</span>
+                          )}
+                        </span>
+                      </td>
+                      {roles.map((r) => (
+                        <td key={r} className="px-3 py-1.5 text-center">
+                          <CeldaNivel nivel={nivelEfectivo(r, rec)} />
+                        </td>
+                      ))}
+                    </tr>
+                  )),
+                ])}
               </tbody>
             </table>
           </div>
