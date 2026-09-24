@@ -185,13 +185,39 @@ function PanelRoles() {
   // todavía no está registrado se sigue viendo y editando (ver `nivelesDe`).
   const [niveles, setNiveles] = useState<Record<string, "ninguno" | "lectura" | "escritura">>({})
   const nivelDe = (id: string) => niveles[id] ?? "escritura"
-  /** Todos los recursos de una sección de una, para no ir de a uno cuando hay 9. */
-  const ponerVarios = (ids: string[], n: "ninguno" | "lectura" | "escritura") =>
+  /**
+   * ⚠️ **Cada columna toca SÓLO su dimensión.** Antes las dos maestras ponían `"escritura"`, así
+   * que marcar «Ver todos» también marcaba todos los «Editar» — lo reportó el usuario.
+   *
+   * Los tres niveles no son dos casillas independientes, son una escalera
+   * (`ninguno` → `lectura` → `escritura`), y cada maestra mueve un solo escalón:
+   *
+   *   · **Ver ON**  → lo que estaba en `ninguno` pasa a `lectura`. Lo que ya editaba, **no se
+   *     degrada**: marcar «ver» no puede quitarle permisos a nadie.
+   *   · **Ver OFF** → todo a `ninguno`. Único caso en que arrastra la otra columna, y es
+   *     inevitable: no se puede editar lo que no se ve.
+   *   · **Editar ON**  → todo a `escritura` (que implica ver).
+   *   · **Editar OFF** → lo que editaba baja a `lectura`. Lo que no se veía **sigue sin verse**:
+   *     destildar «editar» no puede conceder visibilidad.
+   *
+   * Y el ON de «Ver» da `lectura` y no `escritura` a propósito: al conceder, lo mínimo.
+   */
+  const verTodos = (ids: string[], valor: boolean) =>
     setNiveles((prev) => {
       const sig = { ...prev }
       for (const id of ids) {
-        if (n === "escritura") delete sig[id]
-        else sig[id] = n
+        if (!valor) sig[id] = "ninguno"
+        else if ((prev[id] ?? "escritura") === "ninguno") sig[id] = "lectura"
+      }
+      return sig
+    })
+
+  const editarTodos = (ids: string[], valor: boolean) =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      for (const id of ids) {
+        if (valor) delete sig[id] // sin excepción = hereda de la sección = escritura
+        else if ((prev[id] ?? "escritura") === "escritura") sig[id] = "lectura"
       }
       return sig
     })
@@ -368,7 +394,7 @@ function PanelRoles() {
                                         etiqueta={`Ver: seleccionar todos en ${label}`}
                                         marcados={ven}
                                         total={ids.length}
-                                        onCambio={(v) => ponerVarios(ids, v ? "escritura" : "ninguno")}
+                                        onCambio={(v) => verTodos(ids, v)}
                                       />
                                     </span>
                                     <span className="flex w-12 justify-center">
@@ -380,7 +406,7 @@ function PanelRoles() {
                                         // «editar» depende de «ver», en vez de que se destilde
                                         // solo y parezca un error de la pantalla.
                                         deshabilitada={ven === 0}
-                                        onCambio={(v) => ponerVarios(ids, v ? "escritura" : "lectura")}
+                                        onCambio={(v) => editarTodos(ids, v)}
                                       />
                                     </span>
                                   </div>
@@ -431,10 +457,19 @@ function PanelRoles() {
                                           aria-label={`Ver ${r.etiqueta}`}
                                           checked={ve}
                                           disabled={tapado}
-                                          // Sacar "ver" arrastra "editar": no se puede editar lo que
-                                          // no se ve, y dejar las dos casillas libres permitiría
-                                          // guardar un permiso que no significa nada.
-                                          onChange={(e) => ponerNivel(r.id, e.target.checked ? "escritura" : "ninguno")}
+                                          // Mismo criterio que la maestra: marcar «ver» concede lo
+                                          // mínimo (lectura), no escritura. Destildarlo sí arrastra
+                                          // «editar», que es lo único inevitable.
+                                          onChange={(e) =>
+                                            ponerNivel(
+                                              r.id,
+                                              e.target.checked
+                                                ? nivel === "ninguno"
+                                                  ? "lectura"
+                                                  : nivel
+                                                : "ninguno"
+                                            )
+                                          }
                                           className="h-3 w-3"
                                         />
                                       </span>
