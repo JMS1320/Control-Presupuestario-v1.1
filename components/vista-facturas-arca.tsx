@@ -3361,25 +3361,35 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
-  // Verificar si ya se retuvo a este proveedor en el MES de esta quincena.
-  // 🐞 A-BUG-193 — el mínimo no imponible se consume una vez por mes (RG 830), así que si ya se
-  // retuvo en la otra quincena del mismo mes, acá **no** corresponde volver a darlo.
-  const verificarRetencionPrevia = async (cuit: string, quincena: string): Promise<boolean> => {
+  /**
+   * ¿Ya se le retuvo a este proveedor **en el mes**, por **este régimen**?
+   *
+   * **A-BUG-193** — el período del mínimo es el **mes**, no la quincena.
+   * **A-BUG-196** — y el mínimo es **por régimen**: el de Bienes no consume el de Servicios.
+   * Palabras del usuario: *«un mínimo no aplica para otro tipo de facturación»*.
+   *
+   * 📌 `tipoSicore` es **opcional**: los portones que deciden si abrir el modal corren **antes** de
+   * que se elija el régimen. Sin él responde lo de antes (¿retuvo por cualquiera?), que para abrir
+   * una puerta alcanza — el cálculo de adentro, que sí sabe el tipo, decide el monto.
+   */
+  const verificarRetencionPrevia = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
     try {
-      const { data, error } = await supabase
+      const q = supabase
         .schema(schemaName)
         .from('comprobantes_arca')
         .select('id')
         .eq('cuit', cuit)
         .in('sicore', quincenasDelMes(quincena))
-        .limit(1)
-      
+      const { data, error } = await (tipoSicore ? q.eq('tipo_sicore', tipoSicore) : q).limit(1)
+
       if (error) {
         console.error('Error verificando retención previa:', error)
         return false
       }
-      
-      return (data && data.length > 0)
+
+      return !!(data && data.length > 0)
     } catch (error) {
       console.error('Error verificando retención previa:', error)
       return false
@@ -3655,7 +3665,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       })
 
       // PRIMERO: ¿ya se retuvo a este proveedor en el MES? (A-BUG-193 — antes miraba sólo la quincena)
-      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena)
+      // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+      const yaRetuvo = await verificarRetencionPrevia(factura.cuit, quincena, tipo.tipo)
       console.log('🔍 SICORE: Verificación previa', { yaRetuvo, cuit: factura.cuit, quincena })
 
       let baseImponible = netoFactura
@@ -4400,9 +4411,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     // Verificar retención previa en ambas tablas
     // 🐞 A-BUG-193 — las dos quincenas del MES (ver `verificarRetencionPrevia` arriba).
     const delMes = quincenasDelMes(quincena)
+    // 🐞 A-BUG-196 — y por **régimen**: el mínimo de Bienes no consume el de Servicios.
+    const qF = supabase.schema(schemaName).from('comprobantes_arca')
+      .select('id').eq('cuit', cuit).in('sicore', delMes)
+    const qA = supabase.from('anticipos_proveedores')
+      .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).neq('id', anticipoSicoreEnProceso.id)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema(schemaName).from('comprobantes_arca').select('id').eq('cuit', cuit).in('sicore', delMes).limit(1),
-      supabase.from('anticipos_proveedores').select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).neq('id', anticipoSicoreEnProceso.id).limit(1)
+      qF.eq('tipo_sicore', tipo.tipo).limit(1),
+      qA.eq('tipo_sicore', tipo.tipo).limit(1),
     ])
     const yaRetuvo = (d1 && d1.length > 0) || (d2 && d2.length > 0)
 

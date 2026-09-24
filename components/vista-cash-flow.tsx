@@ -1928,13 +1928,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Quincena SICORE: usa el helper único de lib/sicore/quincena (E4 — centralizado)
 
   // Verificar retención previa (solo facturas ARCA, para el flujo de facturas)
-  const verificarRetencionPreviaFactura = async (cuit: string, quincena: string): Promise<boolean> => {
+  /**
+   * ¿Ya se le retuvo a este proveedor **en el mes**, por **este régimen**?
+   *
+   * - **A-BUG-193** — mira **las dos quincenas del MES**: el mínimo se consume una vez por mes.
+   * - **A-BUG-196** — y filtra por **régimen**, porque *«un mínimo no aplica para otro tipo de
+   *   facturación»* (usuario, 2026-09-23). Bienes ($224.000) y Servicios ($67.170) son renglones
+   *   distintos del Anexo VIII de la RG 830: cada uno tiene **su propio mínimo mensual**.
+   *
+   * 📌 `tipoSicore` es **opcional a propósito**: los «portones» —los que deciden si abrir el
+   * modal— corren **antes** de que el usuario elija el régimen y no lo tienen. Sin él responde
+   * lo de antes (¿retuvo por cualquier régimen?), que para abrir una puerta alcanza: el cálculo
+   * de adentro, que sí sabe el tipo, es el que decide el monto.
+   */
+  const verificarRetencionPreviaFactura = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
     try {
       // 🐞 A-BUG-193 — busca en **las dos quincenas del MES**, no sólo en la del pago.
       // El mínimo no imponible se consume una vez por mes (RG 830): si ya se retuvo en la 1ra
       // quincena, en la 2da el mínimo **ya está consumido** y no corresponde darlo de nuevo.
-      const { data } = await supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).in('sicore', quincenasDelMes(quincena)).limit(1)
+      const q = supabase.schema('msa').from('comprobantes_arca')
+        .select('id').eq('cuit', cuit).in('sicore', quincenasDelMes(quincena))
+      const { data } = await (tipoSicore ? q.eq('tipo_sicore', tipoSicore) : q).limit(1)
       return !!(data && data.length > 0)
     } catch { return false }
   }
@@ -2250,7 +2266,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (!quincena) throw new Error('No se puede calcular SICORE sin fecha de pago')
 
     // Capa 1: ¿ya hubo retención en el MES? → mínimo ya consumido → adicional (sin mínimo).
-    const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena)
+    // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+    const yaRetuvo = await verificarRetencionPreviaFactura(fila.cuit_proveedor, quincena, tipo.tipo)
 
     let baseImponible = netoFacturaPesos
     let minimoAplicado = 0
@@ -2702,17 +2719,23 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   // Verificar retención previa en AMBAS tablas (facturas + anticipos)
-  const verificarRetencionPreviaAnticipo = async (cuit: string, quincena: string): Promise<boolean> => {
+  /** Igual que la de facturas, pero mirando **las dos tablas** (facturas + anticipos). */
+  const verificarRetencionPreviaAnticipo = async (
+    cuit: string, quincena: string, tipoSicore?: string,
+  ): Promise<boolean> => {
     // 🐞 A-BUG-193 — también acá **las dos quincenas del MES**, no sólo la del pago.
     // 🧨 Y este camino es el que más importaba: **los dos casos medidos tienen el segundo pago como
     //    ANTICIPO** (MASSAGLIA 30/07, STRINGHINI 29/05). Arreglar sólo el de facturas habría dejado
     //    vivo justo el que produjo el error (§ MODULO_CONCILIACION 30.9.5).
     const delMes = quincenasDelMes(quincena)
+    // 🐞 A-BUG-196 — y por **régimen**: el mínimo de Bienes no consume el de Servicios.
+    const qF = supabase.schema('msa').from('comprobantes_arca')
+      .select('id').eq('cuit', cuit).in('sicore', delMes)
+    const qA = supabase.from('anticipos_proveedores')
+      .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes)
     const [{ data: d1 }, { data: d2 }] = await Promise.all([
-      supabase.schema('msa').from('comprobantes_arca')
-        .select('id').eq('cuit', cuit).in('sicore', delMes).limit(1),
-      supabase.from('anticipos_proveedores')
-        .select('id').eq('cuit_proveedor', cuit).in('sicore', delMes).limit(1)
+      (tipoSicore ? qF.eq('tipo_sicore', tipoSicore) : qF).limit(1),
+      (tipoSicore ? qA.eq('tipo_sicore', tipoSicore) : qA).limit(1),
     ])
     return (d1 && d1.length > 0) || (d2 && d2.length > 0)
   }
@@ -2728,7 +2751,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
-    const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena)
+    // A-BUG-196: por régimen — acá el usuario ya eligió cuál.
+    const yaRetuvo = await verificarRetencionPreviaAnticipo(anticipoSicoreCuit, quincena, tipo.tipo)
 
     let baseImponible = netoBase
     let minimoAplicado = 0

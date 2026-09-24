@@ -474,12 +474,26 @@ caso de abajo no cambia (las tres facturas cayeron en la misma quincena), pero l
 retenido**. **La quincena es el período de información y depósito, no la unidad del mínimo** — el
 cálculo trataba las dos cosas como una.
 
-### Las dos cosas que NO hay que volver a mezclar
+### Las TRES cosas que no hay que volver a mezclar
 
-| | Período | Qué lo usa |
+| | Unidad | Qué lo usa |
 |---|---|---|
-| **El mínimo no imponible** | **MES** calendario | el cálculo de la retención |
+| **El mínimo no imponible** | **MES** calendario… | el cálculo de la retención |
+| …**y por RÉGIMEN** | Bienes y Servicios tienen **cada uno el suyo** | ídem — [A-BUG-196](PENDIENTES.md#a-bug-196) |
 | **La declaración y el depósito** | **QUINCENA** | el TXT de ARCA, el cierre, el panel |
+
+> 🔑 **El mínimo es por mes Y por régimen.** En palabras del usuario (2026-09-23): *«un mínimo no
+> aplica para otro tipo de facturación»*. Bienes ($224.000) y Servicios ($67.170) son renglones
+> distintos del Anexo VIII: **retenerle a alguien por Bienes no consume su mínimo de Servicios.**
+>
+> 🧾 **Y esto también salió de un caso real de ALCORTA**: el 10/09/2026 se le retuvo por los dos
+> regímenes el mismo día, y el de Servicios quedó con **mínimo $0** — o sea que el mínimo de
+> Servicios de septiembre nunca se usó, y **se le retuvo de más**. Lo vio el usuario en su pantalla.
+
+📌 **Los dos errores del mismo día apuntan para lados opuestos**, y por eso ninguno se puede
+"arreglar de más": [A-BUG-193](PENDIENTES.md#a-bug-193) hacía retener **de menos** (mínimo repetido
+cada quincena) y [A-BUG-196](PENDIENTES.md#a-bug-196) hacía retener **de más** (un régimen comiéndose
+el mínimo del otro).
 
 🛑 **Por eso el export del TXT, el listado del panel y las validaciones de cierre siguen filtrando
 por quincena, y así tiene que quedar.** Sólo cambió el período del mínimo.
