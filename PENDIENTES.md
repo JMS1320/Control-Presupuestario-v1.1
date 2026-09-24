@@ -4109,6 +4109,32 @@ propósito, así que sin él la policy no podría leer la tabla que la define. V
 
 ### Lo que falta, y no es un detalle
 
+### 🔻 ROTURA EN VIVO: `puede_ver` sin `security definer` (2026-09-24)
+
+`scripts/63` hizo que `puede_ver` consultara `recurso_tablas` y **se olvidó el `security definer`**.
+Esa tabla está revocada a `authenticated` a propósito, así que la policy fallaba al leerla:
+
+> `403 · permission denied for table recurso_tablas`
+
+**Ningún usuario logueado podía leer casi ninguna tabla desde el navegador.** La app parecía andar
+porque el menú y los contadores usan rutas con `service_role`, que saltea la RLS — **la parte rota
+era justo la que no se ve al abrir la pantalla**. Arreglado con `scripts/65`.
+
+⚠️ **Por qué no se detectó antes, que vale más que el fix.** `scripts/63` se verificó con `anon`
+(401 ✅) y con `service_role` (200 ✅). **Ninguno de los dos pasa por esa policy**: `anon` no llega y
+`service_role` la saltea. Se probaron los dos caminos que no podían fallar y no el único que
+importaba.
+
+📌 **Regla que deja: una policy de RLS sólo se prueba con una sesión de usuario.** Verificar con
+`anon` y `service_role` da una falsa sensación de cobertura — las dos dan el resultado esperado
+mientras la app está rota.
+
+Apareció al pedir el usuario *«¿puedes usar Claude en Chrome y validarlo vos?»*. Con el JWT real de
+su sesión, el primer barrido de 15 tablas dio 403 en 13. Después del fix: **16 de 16 en 200**, y las
+7 secciones con datos (Egresos 434 comprobantes · Extracto 849 movimientos · Productivo 217
+terneros · Sueldos 117 pagos). Eso cierra de paso el control «recorrer la app logueado», que no se
+podía hacer desde la línea de comandos.
+
 ### Extracto mapeado, 2026-09-24 (`scripts/64`)
 
 Ninguna tabla de Extracto estaba mapeada, así que un rol con sólo Productivo **podía escribir en el
