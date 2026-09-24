@@ -89,10 +89,14 @@ export const RECURSOS: Recurso[] = [
   { id: "productivo.cria",      seccion: "productivo", etiqueta: "Cría",                tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.recria",    seccion: "productivo", etiqueta: "Recría / Engorde",    tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.insumos",   seccion: "productivo", etiqueta: "Insumos",             tipo: "pestana", archivo: PRODUCTIVO },
-  { id: "productivo.lotes",     seccion: "productivo", etiqueta: "Lotes Agrícolas",     tipo: "pestana", archivo: PRODUCTIVO },
+  // ⚠️ Estas tres van INMEDIATAMENTE después de Insumos, que es su padre. Antes quedaban
+  //    después de «Lotes Agrícolas» y la indentación las hacía parecer hijas de Lotes —
+  //    el usuario preguntó por qué no podía tildarlas, y la respuesta (porque Insumos está
+  //    destildado) era invisible desde donde estaban dibujadas.
   { id: "productivo.stock",     seccion: "productivo", etiqueta: "Stock y Movimientos", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.ordenes",   seccion: "productivo", etiqueta: "Órdenes de Aplicación", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.compras",   seccion: "productivo", etiqueta: "Necesidad de Compra", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
+  { id: "productivo.lotes",     seccion: "productivo", etiqueta: "Lotes Agrícolas",     tipo: "pestana", archivo: PRODUCTIVO },
 
   // ── Cash Flow ────────────────────────────────────────────────────────────────────────────
   { id: "cashflow.nuevo",      seccion: "cashflow", etiqueta: "Cargar anticipo",     tipo: "funcionalidad", archivo: CASHFLOW },

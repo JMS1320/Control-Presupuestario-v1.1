@@ -417,13 +417,22 @@ function PanelRoles() {
                                   // Si el padre está oculto, el hijo tampoco: destildar Insumos y
                                   // dejar Stock tildado diría algo que no es cierto.
                                   const tapado = Boolean(r.padre && nivelDe(r.padre) === "ninguno")
+                                  // El nombre del padre, para poder DECIR por qué está bloqueada.
+                                  // «Está dentro de algo que destildaste» obliga a adivinar cuál.
+                                  const padre = r.padre ? dentro.find((x) => x.id === r.padre) : undefined
                                   const nivel = tapado ? "ninguno" : nivelDe(r.id)
                                   const ve = nivel !== "ninguno"
                                   const edita = nivel === "escritura"
                                   return (
                                     <div
                                       key={r.id}
-                                      title={tapado ? "Está dentro de algo que destildaste" : undefined}
+                                      title={
+                                        tapado
+                                          ? `Está dentro de «${padre?.etiqueta ?? "otra pestaña"}», que está destildada`
+                                          : padre
+                                            ? `Dentro de ${padre.etiqueta}`
+                                            : undefined
+                                      }
                                       className={`flex items-center gap-2 rounded px-1.5 py-1 text-[11px] ${
                                         r.padre ? "ml-5 border-l pl-2" : ""
                                       } ${tapado ? "opacity-50" : ""} ${ve ? "" : "text-muted-foreground line-through"}`}
@@ -441,6 +450,11 @@ function PanelRoles() {
                                           todos lados una contención que hoy existe sólo donde hay
                                           tablas mapeadas (A-SEC-10).
                                         */}
+                                        {padre && (
+                                          <span className="ml-1.5 text-[10px] text-muted-foreground">
+                                            (dentro de {padre.etiqueta})
+                                          </span>
+                                        )}
                                         {aplicados.includes(r.id) && (
                                           <span
                                             title="La base lo aplica: con «sólo ver», el intento de escribir se rechaza aunque venga de la consola"
