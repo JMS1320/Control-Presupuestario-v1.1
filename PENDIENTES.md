@@ -3848,6 +3848,84 @@ por hora del mailer de Supabase.
 
 ---
 
+## <a id="a-feat-169"></a>A-FEAT-169 — Permisos finos: por pestaña y por lectura/escritura (2026-09-24)
+
+**Pedido del usuario**: *"granularizar los permisos dentro de las páginas. Si la página tiene tabs
+o sub-tabs que se pueda poner permisos a ellas también. Agregar permisos de lectura y escritura
+específicos para cada tab o funcionalidad dentro de cada página."*
+
+### Por qué importa, más allá de la feature
+
+Es la **quinta pieza** del norte administrativo (`CLAUDE.md` § El PERMISO): automatizar no es sólo
+que el sistema haga más, es **que la tarea pueda pasar a otra persona**. Hoy el permiso es la
+piedra en el camino: como se reparte por solapa entera y siempre con edición, dar acceso a una
+tarea chica obliga a abrir todo lo demás. Por eso Ulises sigue sin poder cargar lo suyo y la carga
+la sigue haciendo el dueño — *la automatización le ahorraría trabajo a quien no es el cuello de
+botella*.
+
+### Lo que hay hoy
+
+`public.roles` (creada por `scripts/60`) con `secciones text[]`, leída por `seccionesDelRol()` en
+`lib/auth/permisos.ts` y consumida por `app/page.tsx`, `/perfil` y `/configuracion`. Se edita desde
+Configuración → Roles. **Dos limitaciones**, las dos pedidas por el usuario:
+
+1. **Grano de solapa**: quien ve Productivo ve sus 9 pestañas; quien ve Extracto, las 12.
+2. **No existe sólo-lectura**: ver una solapa es poder editarla.
+
+### ⚠️ El hallazgo que cambia el diseño
+
+**452 escrituras salen directo del navegador** (`.insert/.update/.upsert/.delete` en 66 componentes
+de `components/`), contra 27 archivos en `app/api`. O sea que la app escribe mayormente con la
+**anon key desde el cliente**.
+
+Consecuencia dura: **un modo lectura hecho sólo en la UI es cosmético**. Deshabilitar el botón no
+impide nada — la consola del navegador tiene la misma sesión y la misma clave. Quien quiera
+escribir, escribe.
+
+Y la RLS que cerraría eso ([A-SEC-07](#a-sec-07), `scripts/57`) **todavía no se corrió**.
+
+### Diseño — tres capas, y la tercera es la única que obliga
+
+**1 · Registro de recursos** — `lib/auth/recursos.ts`: una fila por sección y por pestaña
+(`id`, `seccion`, `etiqueta`). Hoy las pestañas viven sueltas dentro de cada `vista-*.tsx`.
+🧮 **Su control**: un script que extrae los `TabsTrigger value=` de cada vista y los compara con el
+registro. Si aparece una pestaña nueva y nadie la registró, queda **sin permiso asignable** y nadie
+se entera — el modo de falla es exactamente el de § Templates: se asume un default y no avisa.
+
+**2 · Modelo de datos** — columna `permisos jsonb` en `public.roles`, claves planas:
+`{"extracto": "escritura", "extracto.conciliacion": "lectura", "productivo.hacienda": "escritura"}`.
+Ausente = sin acceso. Lo más específico gana sobre lo general.
+**Migración, no reemplazo** (§ Datos): se rellena desde `secciones` con `"escritura"` en todas, así
+**el día 1 nadie cambia de permisos**; `secciones` queda un tiempo como paracaídas, igual que el
+`FALLBACK` que ya existe.
+
+**3 · Aplicación** — en tres lugares, y sólo el último es una barrera:
+   - **UI**: la pestaña sin permiso **no se muestra** (no aparece vacía: una pestaña que existe y no
+     sirve es peor que una que no está); con `lectura`, los controles de guardar se deshabilitan.
+   - **API**: las 27 rutas que escriben validan contra el permiso. Hoy varias ya validan sesión
+     ([A-SEC-06](#a-sec-06)), falta el nivel.
+   - **RLS**: lo único que frena las 452 escrituras directas. Requiere traducir *"pestaña X en
+     lectura"* a *"este rol no hace UPDATE en estas tablas"* — y esa traducción es el corazón del
+     trabajo, no un detalle de implementación.
+
+### Etapas propuestas
+
+| # | Qué | Sirve para |
+|---|---|---|
+| 1 | Registro de recursos + su control | Saber qué se puede permisar. Sin esto lo demás no tiene sobre qué operar |
+| 2 | `permisos jsonb` + migración desde `secciones` + Configuración → Roles editando el árbol | Ya permite **ocultar pestañas**, que es la mitad del pedido y la que desbloquea delegar |
+| 3 | Sólo-lectura en la UI | Mitad cosmética, mitad real: evita el error honesto, no al que quiere saltarlo |
+| 4 | Validación en las 27 rutas de API | Primera barrera de verdad |
+| 5 | RLS por rol — **depende de [A-SEC-07](#a-sec-07)** | La única que obliga de verdad |
+
+⚠️ **Etapas 1-3 sin la 5 son un permiso por confianza, no por seguridad.** Sirven para que cada uno
+vea lo suyo y no se equivoque; **no** para contener a alguien que no debería poder escribir. Eso hay
+que decirlo al entregar, no después.
+
+**SIN EMPEZAR** → [A-TEST-146](#a-test-146)
+
+---
+
 ## <a id="a-bug-199"></a>A-BUG-199 — Los links de invitación creados desde producción van a `localhost:3000` (2026-09-18)
 
 **Hallado** al pedir el usuario que se verificara a dónde apunta el link que se genera al crear una
