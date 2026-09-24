@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
 import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { DATOS_FISCALES, EMPRESAS, cuitFormateado } from "@/lib/empresas"
 import { Users, ShieldCheck, Building2, KeyRound, Check, Minus, Eye } from "lucide-react"
-import { useEffect } from "react"
 
 const PANELES = [
   { id: "usuarios",   label: "Usuarios",   Icono: Users,       ayuda: "Cuentas, roles y acceso" },
@@ -123,6 +122,47 @@ function useRoles() {
  * alguien deja el sistema sin nadie que pueda administrarlo. No alcanza con esconder los
  * checkboxes — el endpoint y un trigger de la base lo rechazan igual.
  */
+/**
+ * Una casilla de "todos" con TRES estados, no dos.
+ *
+ * El tercero —el guión de indeterminado— no es un lujo: con 9 recursos en Productivo, una casilla
+ * que se ve vacía cuando hay 4 tildados **miente**, y al tocarla la persona espera marcar los 5
+ * que faltan y termina borrando los 4 que había. `indeterminate` sólo se puede poner por DOM, de
+ * ahí el ref.
+ */
+function CasillaMaestra({
+  etiqueta,
+  marcados,
+  total,
+  onCambio,
+}: {
+  etiqueta: string
+  marcados: number
+  total: number
+  onCambio: (valor: boolean) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const todos = total > 0 && marcados === total
+  const algunos = marcados > 0 && marcados < total
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = algunos
+  }, [algunos])
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={etiqueta}
+      title={algunos ? `${marcados} de ${total}` : etiqueta}
+      checked={todos}
+      // Desde "algunos" se marca todo: es lo que se espera al tocar un encabezado a medias.
+      onChange={() => onCambio(!todos)}
+      className="h-3 w-3"
+    />
+  )
+}
+
 function PanelRoles() {
   const { roles, desdeLaBase, falta, cuentas, recargar } = useRoles()
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
@@ -133,6 +173,17 @@ function PanelRoles() {
   // todavía no está registrado se sigue viendo y editando (ver `nivelesDe`).
   const [niveles, setNiveles] = useState<Record<string, "ninguno" | "lectura" | "escritura">>({})
   const nivelDe = (id: string) => niveles[id] ?? "escritura"
+  /** Todos los recursos de una sección de una, para no ir de a uno cuando hay 9. */
+  const ponerVarios = (ids: string[], n: "ninguno" | "lectura" | "escritura") =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      for (const id of ids) {
+        if (n === "escritura") delete sig[id]
+        else sig[id] = n
+      }
+      return sig
+    })
+
   const ponerNivel = (id: string, n: "ninguno" | "lectura" | "escritura") =>
     setNiveles((prev) => {
       const sig = { ...prev }
@@ -283,7 +334,39 @@ function PanelRoles() {
 
                           {puesta && dentro.length > 0 && (
                             <div className="border-t bg-white/70 px-2.5 py-2">
-                              <div className="mb-1 flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                              {(() => {
+                                // Las casillas maestras de la sección. Cuentan sobre TODOS sus
+                                // recursos —incluidos los hijos— porque eso es lo que la persona
+                                // ve y lo que espera que pase al tildar el encabezado.
+                                const ids = dentro.map((r) => r.id)
+                                const ven = ids.filter((i) => nivelDe(i) !== "ninguno").length
+                                const editan = ids.filter((i) => nivelDe(i) === "escritura").length
+                                return (
+                                  <div className="mb-1 flex items-center gap-2 border-b pb-1 text-[10px] font-medium text-muted-foreground">
+                                    <span className="flex-1">Todo {label}</span>
+                                    <span className="flex w-9 justify-center">
+                                      <CasillaMaestra
+                                        etiqueta={`Ver todo en ${label}`}
+                                        marcados={ven}
+                                        total={ids.length}
+                                        onCambio={(v) => ponerVarios(ids, v ? "escritura" : "ninguno")}
+                                      />
+                                    </span>
+                                    <span className="flex w-12 justify-center">
+                                      <CasillaMaestra
+                                        etiqueta={`Editar todo en ${label}`}
+                                        marcados={editan}
+                                        total={ids.length}
+                                        // Tildar «editar todo» tiene que traer «ver» con él: no se
+                                        // puede editar lo que no se ve, y si no, tildarlo no haría
+                                        // nada visible en las filas ocultas.
+                                        onCambio={(v) => ponerVarios(ids, v ? "escritura" : "lectura")}
+                                      />
+                                    </span>
+                                  </div>
+                                )
+                              })()}
+                              <div className="mb-1 flex items-center gap-2 text-[10px] text-muted-foreground">
                                 <span className="flex-1" />
                                 <span className="w-9 text-center">Ver</span>
                                 <span className="w-12 text-center">Editar</span>
