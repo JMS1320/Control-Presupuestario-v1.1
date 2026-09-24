@@ -455,14 +455,28 @@ function PanelRoles() {
                                             (dentro de {padre.etiqueta})
                                           </span>
                                         )}
-                                        {aplicados.includes(r.id) && (
+                                        {/*
+                                          Tres grados, no dos. Decir «no mapeada» de una pestaña de
+                                          Productivo era FALSO —sus 40 tablas están mapeadas— pero a
+                                          nivel SECCIÓN, así que la base protege Productivo entero y
+                                          no distingue una pestaña de otra. Mezclar los dos casos
+                                          hacía que el cartel mintiera sobre la mitad de ellos.
+                                        */}
+                                        {aplicados.includes(r.id) ? (
                                           <span
-                                            title="La base lo aplica: con «sólo ver», el intento de escribir se rechaza aunque venga de la consola"
+                                            title="La base lo aplica a ESTA pestaña: con «sólo ver», el intento de escribir se rechaza aunque venga de la consola"
                                             className="ml-1.5 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800"
                                           >
                                             🔒 base
                                           </span>
-                                        )}
+                                        ) : aplicados.includes(r.seccion) ? (
+                                          <span
+                                            title={`La base protege la sección entera, pero sus tablas están mapeadas a «${r.seccion}» y no a cada pestaña: acá adentro no distingue una de otra`}
+                                            className="ml-1.5 rounded bg-sky-100 px-1 text-[10px] text-sky-800"
+                                          >
+                                            🔒 sección
+                                          </span>
+                                        ) : null}
                                       </span>
 
                                       <span className="flex w-9 justify-center">
@@ -516,7 +530,24 @@ function PanelRoles() {
                                 // donde hay tablas mapeadas, y sigue siendo cierto donde no.
                                 const enLectura = dentro.filter((r) => nivelDe(r.id) === "lectura")
                                 if (enLectura.length === 0) return null
-                                const sinBase = enLectura.filter((r) => !aplicados.includes(r.id))
+                                const porSeccion = enLectura.filter(
+                                  (r) => !aplicados.includes(r.id) && aplicados.includes(r.seccion)
+                                )
+                                const sinBase = enLectura.filter(
+                                  (r) => !aplicados.includes(r.id) && !aplicados.includes(r.seccion)
+                                )
+                                if (sinBase.length === 0 && porSeccion.length > 0) {
+                                  return (
+                                    <p className="mt-1.5 rounded border border-sky-200 bg-sky-50 p-1.5 text-[10px] text-sky-800">
+                                      🔒 <strong>La base protege la sección entera</strong>, pero sus
+                                      tablas están mapeadas a «{porSeccion[0].seccion}» y no a cada
+                                      pestaña: nadie de otro rol escribe acá adentro, pero{" "}
+                                      <strong>entre estas pestañas la base no distingue</strong>. El
+                                      «sólo ver» de {porSeccion.map((r) => r.etiqueta).join(", ")} lo
+                                      aplica la pantalla.
+                                    </p>
+                                  )
+                                }
                                 if (sinBase.length === 0) {
                                   return (
                                     <p className="mt-1.5 rounded border border-emerald-200 bg-emerald-50 p-1.5 text-[10px] text-emerald-800">
