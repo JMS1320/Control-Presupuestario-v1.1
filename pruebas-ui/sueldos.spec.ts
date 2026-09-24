@@ -114,7 +114,7 @@ test('🏦 A-FEAT-79 · el selector de cuenta dice de QUIÉN es, no sólo el nú
   await page.keyboard.press('Escape')
 })
 
-test('🐞 A-BUG-97 · abrir un pago de CAJA no lo cambia a «banco»', async ({ page }) => {
+test('🐞 A-BUG-197 · abrir un pago de CAJA no lo cambia a «banco»', async ({ page }) => {
   test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
 
   await irAlInicio(page)
