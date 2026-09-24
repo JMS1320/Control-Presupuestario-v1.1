@@ -341,6 +341,7 @@ En las tablas de movimiento, al conciliar se llenan (según contra qué se conci
 | **Policies** | **Dos por tabla**: `ver_segun_permiso` (`FOR SELECT`) y `escribir_segun_permiso` (`FOR ALL`). Antes era una sola `FOR ALL`, que no distingue — y sin distinguir, «sólo lectura» no puede existir |
 | **El candado** | `public.puede_ver(schema, tabla)` / `puede_escribir(...)` → `nivel_tabla()` → `nivel_recurso()`, que resuelve contra `roles.secciones` + `roles.permisos` |
 | **El mapeo** | `public.recurso_tablas`: 45 tablas. `msa/pam/ma.comprobantes_arca` a la pestaña de SU empresa (el schema ES la empresa); `productivo.*` a la **sección**, porque sus pestañas no se atribuyen tabla por tabla con certeza |
+| **Leer vs. escribir** | ⚠️ El mapeo gobierna **sólo la escritura** (`scripts/63`). Las tablas se leen desde varias secciones —`caja_general` desde Extracto, Sueldos y Cash Flow; `actividades` desde Productivo y el panel de margen— así que restringir la lectura por el mapeo rompía pantallas. Para leer alcanza con tener rol, salvo que la fila tenga `restringe_lectura = true` |
 | **Sin mapeo** | Conserva el comportamiento anterior: alcanza con tener rol. Un hueco declarado se ve en la tabla; un mapeo equivocado no se ve en ningún lado |
 
 Detalle y motivos → `PENDIENTES.md` [A-SEC-10](PENDIENTES.md#a-sec-10).

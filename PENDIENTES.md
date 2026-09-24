@@ -4109,6 +4109,31 @@ propósito, así que sin él la policy no podría leer la tabla que la define. V
 
 ### Lo que falta, y no es un detalle
 
+### 🔻 «Una tabla, un recurso» era falso — y ya había roto Presupuesto (2026-09-24)
+
+Apareció al querer mapear las tablas de Extracto: antes de proponerlo se midió **quién más las
+lee**, y el resultado invalidó el modelo de `scripts/62`.
+
+| Tabla | Mapeada a | Pero también la leen |
+|---|---|---|
+| `actividades`, `actividad_insumos` | `productivo` | los configuradores y el **panel de margen** (Presupuesto) |
+| `movimientos_hacienda`, `categorias_hacienda` | `productivo` | ídem |
+| `caja_general` | *(iba a Extracto)* | **Sueldos** y **Cash Flow** |
+| `cuotas_egresos_sin_factura` | *(iba a Egresos)* | **27 archivos** |
+
+Como la policy aplicaba el mapeo **tanto a leer como a escribir**, desde el mismo 24/09 **alguien con
+Presupuesto pero sin Productivo encontraba el panel de margen roto**.
+
+🔑 **Y esto es lo que hay que recordar del episodio**: el defecto era invisible porque **las dos
+cuentas son `admin`**. Se habría descubierto el primer día que existiera un rol acotado — es decir,
+al crear la cuenta de prueba, y el síntoma habría sido «se rompió todo» en vez de «falta un
+permiso». Un sistema de permisos **no se puede probar con el rol que tiene todos los permisos**.
+
+**Corrección** (`scripts/63`): **una tabla se ESCRIBE desde un lado y se LEE desde varios.** El mapeo
+gobierna la escritura, que es donde está el riesgo; la lectura alcanza con tener rol, salvo que la
+tabla se marque `restringe_lectura`. Esa columna arranca en `false` en las 45 — marcarla rompe las
+pantallas de otras secciones que la lean, así que se hace de a una y midiendo.
+
 ### 🔻 El cartel quedó viejo el mismo día (2026-09-24)
 
 Lo vio el usuario: la pantalla seguía diciendo *«sólo ver se guarda pero todavía no impide
