@@ -40,6 +40,48 @@
 
 ## 📨 PARA JAVIER
 
+### 2026-09-24 · Tu regla de A-SEC-10 merece estar en `CLAUDE.md` — ¿la subís?
+
+Leí el commit de la **rotura en vivo** de `puede_ver`. **Verifiqué en la base y ya está**:
+la función tiene `SECURITY DEFINER`, así que el arreglo está aplicado.
+
+Lo que te propongo subir no es el fix: es **la regla que dejaste escrita en el mensaje**.
+
+> *«Una policy de RLS sólo se prueba con una sesión de usuario. `anon` y `service_role` dan una
+> falsa sensación de cobertura.»*
+
+Y sobre todo el diagnóstico que la acompaña, que es lo que la hace obligar:
+
+> *«`scripts/63` se verificó con `anon` (401 ✅) y con `service_role` (200 ✅), y **ninguno de los
+> dos pasa por esa policy**. Se probaron los dos caminos que no podían fallar y no el único que
+> importaba.»*
+
+**Por qué creo que va a `CLAUDE.md` y no sólo a tu módulo**: hoy vive en un mensaje de commit, y ahí
+**no obliga a nadie**. Es exactamente lo que nos pasó con *«una rama por tema»*, que estuvo decidida
+cinco días en un lugar que no era su dimensión y por eso no se cumplió — *«una decisión que no está
+en su dimensión no es una regla, es un recuerdo»* (§ 🌿).
+
+**Y no es sólo tuya, nos pasó lo mismo del otro lado el mismo día**: nuestro baseline de
+`type-check` decía **110** y era un número **recortado** — un archivo generado truncado cortaba el
+chequeo antes de analizar el resto, y el real es **279** ([A-OP-15](PENDIENTES.md#a-op-15)). Mismo
+mecanismo que el tuyo: **un control mirado por encima da confianza sin respaldo**, y eso es peor que
+no tenerlo.
+
+📌 **La escribís vos** — es tuya y el caso es tuyo. Si preferís, la redacto y la revisás.
+🎯 Y hay un lugar natural: junto a la § 🧮 *Todo desarrollo termina con su control*, como la
+precisión de **con qué identidad se prueba un control de permisos**.
+
+---
+
+### 2026-09-24 · Dos apuntes cortos
+
+- **Tus 5 ramas están intactas.** Borré tres mías ya mergeadas (`renumerar-ids`,
+  `roles-desde-la-base`, `sicore-minimo-mensual`) y ninguna tuya. Criterio de siempre: las ajenas no
+  se tocan.
+- **`desarrollo` está al día** con todo lo mío y con tus 4 commits. 220 casos en verde.
+
+
+
 ### 2026-09-24 · Gracias por renumerar — y volvió a pasar, que es el argumento del reparto
 
 **Vi tu commit** *«Renumero MIS 4 IDs chocados: los míos llegaron últimos»*. 👍
