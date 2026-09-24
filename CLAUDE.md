@@ -414,6 +414,9 @@ algo futuro en evaluación y se pushea eso»**.*
   paralelo, regla 2). Las dos únicas salidas:
   1. **`git worktree add <dir> <rama>`** — un directorio propio con su rama. Es la única separación
      real, y la que corresponde cuando la segunda terminal va a tocar **código**.
+     ⚠️ **Sólo si las dos escriben AL MISMO TIEMPO** *(precisión del usuario 2026-09-21)*. Si se
+     alternan, **no se sale de la carpeta del proyecto**: la carpeta es de quien trabaja y se
+     devuelve como estaba (§ Trabajo en paralelo, **regla 15**).
   2. **Aislar sólo por commit** cuando el trabajo es documentación: se commitea en la rama que está
      montada y se mueve la rama propia con **`git branch -f <mi-rama> HEAD`** (no necesita checkout)
      y se pushea ésa. Los commits quedan además en la rama del otro; **no es limpio, pero no es
@@ -688,6 +691,28 @@ nada. **Es la pérdida silenciosa de la regla 1, en el único sitio sin marcha a
 tablero sobre qué rama trabaja, y corre `git branch --show-current` **antes de commitear**. Si el
 árbol no está en la rama declarada: **no se commitea, se avisa.** Y **no se resuelve con
 `git checkout`**, que la regla 2 prohíbe — se acuerda entre las dos.
+
+**15 · Si las terminales se ALTERNAN (no corren a la vez), la carpeta es de quien trabaja — y se
+devuelve.** *(Aclarado por el usuario 2026-09-21: «la idea de 2 terminales no es trabajar al mismo
+tiempo, sino que cada cual tenga un contexto específico».)*
+
+- **No se sale de la carpeta del proyecto.** El usuario rechazó el `git worktree` en una carpeta
+  hermana: *«¿por qué querés salir de la carpeta del proyecto?»*. Con alternancia no hace falta —
+  hace falta sólo cuando las dos escriben código **a la vez**.
+- **La terminal que trabaja cambia la rama y la deja como la encontró** (o avisa que la dejó en la
+  suya, y por qué). Se anota en el tablero.
+- 🛑 **Al retomar, si la carpeta está en OTRA rama: parar y avisar, no cambiarla.** Puede haber
+  trabajo en curso de la otra terminal. *(Pasó el 2026-09-24: volví y la carpeta estaba en
+  `jms/roles-desde-la-base` con todo commiteado y pusheado. No la toqué.)*
+- 🔑 **Y lo que de verdad evita el choque de IDs: mergear TEMPRANO a la rama común.** Mientras la
+  rama del tema no se suma a `jms/dia-a-dia`, la otra terminal consulta el archivo viejo y reclama
+  números que ya están usados. *Evidencia: [A-OP-16](PENDIENTES.md#a-op-16) — **39 IDs chocados**
+  destapados por un merge del 2026-09-23. Los de esta tanda no chocaron porque se mergearon el mismo
+  día.*
+- ⚠️ **Un comando que la herramienta informa como RECHAZADO puede haberse ejecutado igual.** Pasó el
+  2026-09-22: un `commit + push` figuró rechazado y estaba hecho; al reintentar quedaron **3 filas
+  duplicadas** en `PENDIENTES.md`. Ante un «rechazado» sobre algo que escribe, **mirar `git log` y el
+  archivo antes de reintentar**.
 
 *Motivo: pasó el 2026-09-05. T2 creó una rama nueva y dejó el árbol ahí; T1 siguió commiteando
 durante toda su tanda **creyendo que estaba en la suya**, y su commit terminó en la rama de T2. Nadie
