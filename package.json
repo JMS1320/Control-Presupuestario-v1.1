@@ -31,7 +31,8 @@
     "ensayo:detalle": "npx --yes tsx scripts/ensayo-detalle-pago.mts",
     "ui:escribe": "node scripts/ui-escribe.mjs",
     "verificar:recursos": "npx tsx scripts/verificar-recursos-permisos.mts",
-    "verificar:rutas": "npx tsx scripts/verificar-rutas-permisos.mts"
+    "verificar:rutas": "npx tsx scripts/verificar-rutas-permisos.mts",
+    "verificar:service-role": "npx tsx scripts/verificar-service-role.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

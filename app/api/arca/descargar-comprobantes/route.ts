@@ -25,7 +25,7 @@
 
 import { NextResponse } from 'next/server'
 import { descargarComprobantesArca, type Empresa, type Tipo } from '@/lib/arca'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 // Runtime nodejs (NO edge) — tough-cookie y axios necesitan APIs de Node
@@ -33,11 +33,14 @@ export const runtime = 'nodejs'
 export const maxDuration = 60   // segundos — el flujo completo tarda ~10-20s
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const db = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
   let logId: string | undefined
-  const supabase = supabaseAdmin
+  const supabase = db
 
   try {
     const body = await request.json()

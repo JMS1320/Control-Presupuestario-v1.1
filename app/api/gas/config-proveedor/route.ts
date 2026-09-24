@@ -16,7 +16,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { altaContraparte } from '@/lib/proveedores/alta'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -39,6 +39,9 @@ const CAMPOS_PERMITIDOS = [
 ]
 
 export async function GET(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -48,7 +51,7 @@ export async function GET(request: Request) {
 
     // Si se pasa cuit, devuelve solo ese proveedor con estadísticas
     if (cuit) {
-      const { data: prov, error: errProv } = await supabaseAdmin
+      const { data: prov, error: errProv } = await supabase
         .from('proveedores')
         .select('id, cuit, razon_social, nombre_fantasia, email_facturacion, fc_modo, patron_asunto, dias_busqueda, carpeta_drive_id, gas_habilitado, pdf_ultimo_intento, activo')
         .eq('cuit', cuit)
@@ -57,17 +60,17 @@ export async function GET(request: Request) {
       if (errProv) return NextResponse.json({ ok: false, error: errProv.message }, { status: 500 })
 
       // Estadísticas FC de este proveedor (en los 3 schemas)
-      const stats = await statsPorCuit(cuit)
+      const stats = await statsPorCuit(supabase, cuit)
 
       return NextResponse.json({ ok: true, proveedor: prov, stats })
     }
 
     // Sin cuit: devuelve lista de proveedores con cantidad de facturas
     // Estrategia: agregar SOLO proveedores que tengan facturas en alguno de los schemas
-    const cuitsConFC = await cuitsActivos()
+    const cuitsConFC = await cuitsActivos(supabase)
     if (cuitsConFC.size === 0) return NextResponse.json({ ok: true, proveedores: [] })
 
-    const { data: provs, error } = await supabaseAdmin
+    const { data: provs, error } = await supabase
       .from('proveedores')
       .select('id, cuit, razon_social, email_facturacion, fc_modo, patron_asunto, dias_busqueda, gas_habilitado, pdf_ultimo_intento')
       .in('cuit', Array.from(cuitsConFC))
@@ -77,7 +80,7 @@ export async function GET(request: Request) {
 
     // Agregar contadores por estado fc
     const proveedoresConStats = await Promise.all((provs || []).map(async (p) => {
-      const stats = await statsPorCuit(p.cuit)
+      const stats = await statsPorCuit(supabase, p.cuit)
       return { ...p, stats }
     }))
 
@@ -93,12 +96,15 @@ export async function GET(request: Request) {
  * todas las vías (ficha, anticipos, y las que falten: ventas y venta de hacienda).
  */
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
   try {
     const body = await request.json()
-    const resultado = await altaContraparte(supabaseAdmin, {
+    const resultado = await altaContraparte(supabase, {
       cuit: body.cuit,
       razon_social: body.razon_social,
       como: body.como === 'cliente' ? 'cliente' : 'proveedor',
@@ -113,6 +119,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -127,7 +136,7 @@ export async function PATCH(request: Request) {
     }
     updateData.updated_at = new Date().toISOString()
 
-    let q = supabaseAdmin.from('proveedores').update(updateData)
+    let q = supabase.from('proveedores').update(updateData)
     if (proveedor_id) q = q.eq('id', proveedor_id)
     else if (cuit) q = q.eq('cuit', cuit)
     else return NextResponse.json({ ok: false, error: 'Falta proveedor_id o cuit' }, { status: 400 })
@@ -144,19 +153,23 @@ export async function PATCH(request: Request) {
 
 // ─────────── helpers ───────────
 
-async function cuitsActivos(): Promise<Set<string>> {
+// Reciben el cliente por parámetro: desde que la ruta usa la sesión (A-SEC-01) ya no hay un
+// cliente global del que tomarlo, y pasarlo explícito deja claro con qué permisos consultan.
+type ClienteSupabase = Awaited<ReturnType<typeof clienteUsuario>>
+
+async function cuitsActivos(supabase: ClienteSupabase): Promise<Set<string>> {
   const cuits = new Set<string>()
   for (const schema of ['msa', 'pam', 'ma'] as const) {
-    const { data } = await supabaseAdmin.schema(schema).from('comprobantes_arca').select('cuit')
+    const { data } = await supabase.schema(schema).from('comprobantes_arca').select('cuit')
     ;(data || []).forEach((r: any) => r.cuit && cuits.add(r.cuit))
   }
   return cuits
 }
 
-async function statsPorCuit(cuit: string): Promise<{ total: number; por_estado: Record<string, number> }> {
+async function statsPorCuit(supabase: ClienteSupabase, cuit: string): Promise<{ total: number; por_estado: Record<string, number> }> {
   const stats = { total: 0, por_estado: {} as Record<string, number> }
   for (const schema of ['msa', 'pam', 'ma'] as const) {
-    const { data } = await supabaseAdmin.schema(schema).from('comprobantes_arca').select('fc').eq('cuit', cuit)
+    const { data } = await supabase.schema(schema).from('comprobantes_arca').select('fc').eq('cuit', cuit)
     ;(data || []).forEach((r: any) => {
       stats.total++
       const k = r.fc || '(null)'

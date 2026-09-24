@@ -24,7 +24,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
@@ -64,6 +64,9 @@ export interface PagoFicha {
 }
 
 export async function GET(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -73,7 +76,7 @@ export async function GET(request: Request) {
 
     // ── Sin cuit: la lista del buscador ─────────────────────────────────────
     if (!cuitParam) {
-      const { data, error } = await supabaseAdmin
+      const { data, error } = await supabase
         .from('proveedores')
         .select('id, cuit, razon_social, nombre_fantasia, es_cliente, es_proveedor, activo')
         .order('razon_social')
@@ -85,7 +88,7 @@ export async function GET(request: Request) {
     if (!cuit) return NextResponse.json({ ok: false, error: 'CUIT vacío' }, { status: 400 })
 
     // ── El maestro ──────────────────────────────────────────────────────────
-    const { data: proveedor, error: errProv } = await supabaseAdmin
+    const { data: proveedor, error: errProv } = await supabase
       .from('proveedores').select('*').eq('cuit', cuit).maybeSingle()
     if (errProv) return NextResponse.json({ ok: false, error: errProv.message }, { status: 500 })
     if (!proveedor) {
@@ -97,7 +100,7 @@ export async function GET(request: Request) {
     const idsFacturas: string[] = []
 
     for (const empresa of EMPRESAS) {
-      const { data } = await supabaseAdmin.schema(empresa).from('comprobantes_arca')
+      const { data } = await supabase.schema(empresa).from('comprobantes_arca')
         .select('id, fecha_emision, tipo_comprobante_desc, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fc, detalle')
         .eq('cuit', cuit)
         .order('fecha_emision', { ascending: false })
@@ -119,7 +122,7 @@ export async function GET(request: Request) {
     }
 
     // ── Facturas de venta (sólo MSA tiene el módulo de ventas) ──────────────
-    const { data: ventas } = await supabaseAdmin.schema('msa').from('comprobantes_venta')
+    const { data: ventas } = await supabase.schema('msa').from('comprobantes_venta')
       .select('id, fecha_liquidacion, nro_comprobante, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fecha_cobro_estimada, grano, tipo_operacion')
       .eq('cuit_cliente', cuit)
       .order('fecha_liquidacion', { ascending: false })
@@ -141,19 +144,19 @@ export async function GET(request: Request) {
     facturas.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
 
     // ── Cuotas de templates de este proveedor (cobra sin factura) ───────────
-    const { data: egresos } = await supabaseAdmin
+    const { data: egresos } = await supabase
       .from('egresos_sin_factura').select('id').eq('cuit_quien_cobra', cuit)
     const idsEgresos = ((egresos || []) as any[]).map(e => e.id)
 
     let idsCuotas: string[] = []
     if (idsEgresos.length > 0) {
-      const { data: cuotas } = await supabaseAdmin
+      const { data: cuotas } = await supabase
         .from('cuotas_egresos_sin_factura').select('id').in('egreso_id', idsEgresos)
       idsCuotas = ((cuotas || []) as any[]).map(c => c.id)
     }
 
     // ── Anticipos: son un pago en sí mismos, no hace falta el extracto ──────
-    const { data: anticipos } = await supabaseAdmin
+    const { data: anticipos } = await supabase
       .from('anticipos_proveedores')
       .select('id, fecha_pago, monto, monto_restante, descripcion, estado, estado_pago, metodo_pago')
       .eq('cuit_proveedor', cuit)
@@ -175,13 +178,13 @@ export async function GET(request: Request) {
     for (const tabla of EXTRACTOS) {
       for (const [columna, ids, via] of vinculos) {
         if (ids.length === 0) continue
-        const { data } = await supabaseAdmin.from(tabla).select(COLS).in(columna, ids)
+        const { data } = await supabase.from(tabla).select(COLS).in(columna, ids)
         agregar(data, tabla, via)
       }
       // Repaso por nombre: movimientos con el proveedor cargado pero sin vínculo.
       // Van al final para que el vínculo real gane cuando el movimiento ya entró.
       if (proveedor.razon_social) {
-        const { data } = await supabaseAdmin.from(tabla).select(COLS)
+        const { data } = await supabase.from(tabla).select(COLS)
           .eq('proveedor_nombre', proveedor.razon_social)
         agregar(data, tabla, 'nombre')
       }

@@ -342,6 +342,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
 | **A-BUG-199** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
+| **A-SEC-09** | 🟡 | 🔴 **Alta** | ✅ **13 de 37 migradas 2026-09-24.** **Las rutas de API salteaban la RLS**: usaban `service_role`, que la ignora por completo. El mismo día que se instaló la RLS, **37 de 41 rutas no la aplicaban** — y 25 pedían sólo «cualquier rol con sesión». Política nueva: **el cliente de la sesión es el default, `service_role` se declara**. Control: `npm run verificar:service-role`. ⏳ Quedan **17 de deuda declarada** (usan el cliente en helpers de módulo) | → [A-SEC-09](#a-sec-09) `@general` |
 | **A-BUG-200** | ✅ | **Alta** | ✅ **ARREGLADO 2026-09-24.** **Los roles creados por el usuario no servían para nada.** `scripts/60` movió los roles a `public.roles` el 05/09 para que el admin creara los suyos, pero **el código nunca se enteró**: `getRole()` tenía `rol === "admin" || rol === "contable"` y devolvía `null` para cualquier otro. El 24/09 había **5 roles en la base** (`productivo`, `pruebas`, `socio`): asignar uno mandaba a la persona a `/no-access` con su fila de permisos intacta y sin que nada avisara. Y los dos desplegables de Usuarios ni los ofrecían. ⚠️ **Con la RLS de [A-SEC-07](#a-sec-07) puesta el desfasaje empeora**: `tiene_rol()` sólo pregunta «¿tenés algún rol?», así que esa persona **sí pasa la base** —lee y escribe las 95 tablas— mientras la app la rechaza. Puerta de adelante cerrada, puerta de atrás abierta | → [A-TEST-147](#a-test-147) `@general` |
 | **A-BUG-198** | 🟡 | **Alta** | **El QR del segundo factor no se deja escanear en modo oscuro** (reportado 2026-09-23: José lo escanea y el autenticador no agrega nada, sin error de ningún lado). El SVG de Supabase son módulos oscuros **sin fondo propio**, y la tarjeta es `dark:bg-slate-900` → negro sobre gris oscuro, sin contraste para una cámara. Tampoco tenía la **zona de silencio** que el estándar QR exige. **FIX APLICADO**: fondo blanco fijo + `p-4`, y los dos caminos sin cámara (link `otpauth://` y la clave a mano) salen a la vista en vez de vivir en un `<details>`. ⚠️ **Causa deducida leyendo el código, no reproducida** — inscribir un factor es tocar datos reales | → [A-TEST-144](#a-test-144) `@general` |
 
@@ -4051,6 +4052,59 @@ declaradas —con recurso o con motivo— y que los recursos a los que apuntan e
 botones. Eso lo frena **únicamente la RLS por recurso — etapa 5**.
 
 **ETAPAS 1-4 HECHAS · 5 PENDIENTE (la única que obliga)** → [A-TEST-146](#a-test-146)
+
+---
+
+## <a id="a-sec-09"></a>A-SEC-09 — Las rutas de API salteaban la RLS: 37 de 41 usaban `service_role` (2026-09-24)
+
+**Hallado** al preguntar el usuario *«quiero estar alineado con buenas prácticas de seguridad de
+roles y permisos, ¿qué sugerís?»*. Antes de recomendar nada se midió, y el número reordenó la
+respuesta.
+
+### El problema
+
+`service_role` **saltea la RLS por completo**. El mismo día en que [A-SEC-07](#a-sec-07) instaló la
+RLS en ~95 tablas, **37 de 41 rutas la salteaban**. O sea que la RLS protegía las 452 escrituras
+directas del navegador **y no protegía ni una ruta de API**: cada ruta era una puerta de acceso
+total, limitada sólo por el guard escrito a mano — y **25 de ellas decían apenas «cualquier rol con
+sesión»**, así que un `contable` podía llamar a `import-pesadas` o `sueldos/cuenta-empleado` con un
+`fetch` desde la consola.
+
+### La política, en una línea
+
+> **El cliente de la sesión es el default; `service_role` es la excepción y se declara.**
+
+Con el cliente de la sesión, **la RLS gobierna también la API** y una ruta nueva **nace protegida**.
+Con `service_role`, cada ruta nueva es una decisión de seguridad que alguien puede olvidar — y
+olvidarla no falla, sólo abre.
+
+🔑 **Y esto es lo que lo vuelve la pieza más rentable de todo el trabajo de permisos**: hace
+innecesario mapear ruta por ruta. Las 25 rutas sin mapear de [A-FEAT-169](#a-feat-169) quedan
+gobernadas por la política de la base sin que nadie decida nada sobre ellas.
+
+### Hecho
+
+**13 rutas migradas** a `clienteUsuario()` (`lib/supabase-usuario.ts`): las de GAS, importadores de
+cuenta, lotes, pendientes, proveedores, sueldos. **37 → 24.**
+
+**Las 3 razones legítimas** para seguir usando `service_role`, verificadas: `auth.admin.*` (crear e
+invitar cuentas), `public.roles` (revocada a `authenticated` a propósito por `scripts/60`, para que
+nadie edite sus propios permisos) y Storage.
+
+🧮 **Control**: `npm run verificar:service-role` exige que **toda** ruta que use `service_role` esté
+declarada con su motivo. Ya atajó un error propio: la migración había dejado el cliente de sesión
+**llamándose `supabaseAdmin`** — engañoso, y además invisible para el control.
+
+### Lo que queda
+
+**17 rutas de deuda declarada**: definen el cliente a nivel de módulo y lo usan en helpers, así que
+migrarlas pide refactor por archivo. Están listadas una por una en el control, no escondidas.
+
+⚠️ **Y el paso que le da sentido a todo esto**: hoy la RLS sólo pregunta *«¿tenés algún rol?»*
+(`tiene_rol()`), así que migrar una ruta la sujeta a una política que todavía no distingue entre
+roles. **Migrar es gratis hoy y protege recién cuando la RLS lea `roles.permisos`** — etapa 5 de
+[A-FEAT-169](#a-feat-169). Ese orden es a propósito: primero el punto de control único, después la
+política fina; al revés habría que volver a tocar las 41 rutas.
 
 ---
 

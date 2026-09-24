@@ -8,12 +8,15 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 
 export async function GET(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -23,7 +26,7 @@ export async function GET(request: Request) {
     const facturaId = url.searchParams.get('factura_id')
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 500)
 
-    let q = supabaseAdmin.from('arca_pdf_busqueda_log')
+    let q = supabase.from('arca_pdf_busqueda_log')
       .select('*')
       .order('fecha_hora', { ascending: false })
       .limit(limit)

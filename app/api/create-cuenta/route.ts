@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/lib/supabase-admin"
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -19,7 +22,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 })
     }
 
-    const { error } = await supabaseAdmin.from("cuentas_contables").insert([{ categ, cuenta_contable, tipo }])
+    const { error } = await supabase.from("cuentas_contables").insert([{ categ, cuenta_contable, tipo }])
 
     if (error) {
       return NextResponse.json({ error: `Error al crear cuenta: ${error.message}` }, { status: 500 })

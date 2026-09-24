@@ -8,7 +8,7 @@
  * Env: GAS_BUSCAR_PDF_URL, GAS_AUTH_TOKEN, GAS_FOLDER_ID_{MSA,PAM,MA}.
  */
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -87,6 +87,9 @@ function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): strin
 interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -124,7 +127,7 @@ export async function POST(request: Request) {
     }
 
     // Facturas del período contable
-    const { data: facturas, error } = await supabaseAdmin
+    const { data: facturas, error } = await supabase
       .schema(schema)
       .from('comprobantes_arca')
       .select('id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total')
@@ -165,7 +168,7 @@ export async function POST(request: Request) {
     const matchedSueltos: { archivo: string; url: string; file_id: string }[] = []
     for (const m of audit.matched || []) {
       if (!yaCubiertas.has(m.factura_id)) {
-        await supabaseAdmin.schema(schema).from('comprobantes_arca')
+        await supabase.schema(schema).from('comprobantes_arca')
           .update({ pdf_drive_url: m.drive_url, pdf_estado: 'descargado' })
           .eq('id', m.factura_id)
         yaCubiertas.add(m.factura_id)
