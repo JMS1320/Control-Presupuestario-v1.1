@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo, useRef } from "react"
+import { usePuedeVer } from "@/components/contexto-permisos"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -196,6 +197,8 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
 // ────────────────────────────────────────────────────────────────────────────
 
 export function VistaExtractoBancario() {
+  // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  const puedeVer = usePuedeVer()
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
@@ -2891,22 +2894,30 @@ ${marca}` : marca
       {/* Tabs del contenido */}
       <Tabs defaultValue="movimientos" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="movimientos" className="flex items-center gap-2">
+          {puedeVer("extracto.movimientos") && (
+<TabsTrigger value="movimientos" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Movimientos
           </TabsTrigger>
-          <TabsTrigger value="importar" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.importar") && (
+<TabsTrigger value="importar" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Importar
           </TabsTrigger>
-          <TabsTrigger value="reportes" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.reportes") && (
+<TabsTrigger value="reportes" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Reportes
           </TabsTrigger>
-          <TabsTrigger value="auditoria" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.auditoria") && (
+<TabsTrigger value="auditoria" className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />
             Auditoría
           </TabsTrigger>
+)}
         </TabsList>
 
         <TabsContent value="movimientos" className="space-y-4">

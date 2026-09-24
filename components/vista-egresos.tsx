@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Receipt, FileText, Building2 } from "lucide-react"
@@ -8,6 +9,8 @@ import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
 
 export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
+  // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("facturas-msa")
 
   return (
@@ -31,22 +34,30 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'con
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
+              {puedeVer("egresos.facturas-msa") && (
+<TabsTrigger value="facturas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Facturas MSA
               </TabsTrigger>
-              <TabsTrigger value="facturas-pam" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.facturas-pam") && (
+<TabsTrigger value="facturas-pam" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas PAM
               </TabsTrigger>
-              <TabsTrigger value="facturas-ma" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.facturas-ma") && (
+<TabsTrigger value="facturas-ma" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas MA
               </TabsTrigger>
-              <TabsTrigger value="templates" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.templates") && (
+<TabsTrigger value="templates" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Egresos sin Factura
               </TabsTrigger>
+)}
             </TabsList>
 
             <div className="mt-6">

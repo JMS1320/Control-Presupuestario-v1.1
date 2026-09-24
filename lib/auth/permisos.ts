@@ -6,12 +6,20 @@ export const SECCIONES_IDS = [
   "cashflow", "extracto", "productivo", "sueldos", "presupuesto", "importar",
 ] as const
 
+/** Los niveles que existen. `"lectura"` está declarado pero todavía NO lo aplica nadie (etapa 3). */
+export type Nivel = "ninguno" | "lectura" | "escritura"
+
 export type Rol = {
   id: string
   descripcion: string
   secciones: string[]
   exige_2fa: boolean
   es_sistema: boolean
+  /**
+   * EXCEPCIONES dentro de las secciones (A-FEAT-169, `scripts/61`). `{}` = todo lo de adentro.
+   * Clave = id de `lib/auth/recursos.ts`; hoy el único valor que se escribe es `"ninguno"`.
+   */
+  permisos: Record<string, Nivel>
 }
 
 /**
@@ -30,6 +38,7 @@ const FALLBACK: Record<string, Rol> = {
     secciones: [...SECCIONES_IDS],
     exige_2fa: true,
     es_sistema: true,
+    permisos: {},
   },
   contable: {
     id: "contable",
@@ -37,6 +46,7 @@ const FALLBACK: Record<string, Rol> = {
     secciones: ["egresos"],
     exige_2fa: false,
     es_sistema: false,
+    permisos: {},
   },
 }
 
@@ -49,14 +59,36 @@ export type ResultadoRoles = { roles: Rol[]; desdeLaBase: boolean }
 export async function leerRoles(): Promise<ResultadoRoles> {
   const { data, error } = await supabaseAdmin
     .from("roles")
-    .select("id, descripcion, secciones, exige_2fa, es_sistema")
+    .select("id, descripcion, secciones, exige_2fa, es_sistema, permisos")
     .order("es_sistema", { ascending: false })
     .order("id")
 
   if (error || !data || data.length === 0) {
     return { roles: Object.values(FALLBACK), desdeLaBase: false }
   }
-  return { roles: data as Rol[], desdeLaBase: true }
+  // `permisos` puede faltar si todavía no se corrió `scripts/61`: se normaliza a {} (sin
+  // excepciones), que es el comportamiento anterior. Igual que el FALLBACK: se falla al reparto
+  // que ya había, nunca a "no ve nada" ni a "ve todo".
+  const roles = (data as Rol[]).map((r) => ({ ...r, permisos: r.permisos ?? {} }))
+  return { roles, desdeLaBase: true }
+}
+
+/**
+ * LOS RECURSOS QUE UN ROL **NO** PUEDE VER, dentro de las secciones que sí tiene.
+ *
+ * Se devuelve la lista de ocultos y no la de permitidos por una razón concreta: los permitidos
+ * dependen del registro `recursos.ts`, así que una pestaña **nueva y sin registrar** quedaría
+ * fuera de la lista y desaparecería de la pantalla sin que nadie la haya prohibido. Con la lista
+ * de ocultos, lo no declarado **se ve** — que es como funciona hoy y el único default que no
+ * sorprende. El control `npm run verificar:recursos` es el que avisa de lo no registrado.
+ */
+export async function recursosOcultosDe(rol: string | null): Promise<string[]> {
+  if (!rol) return []
+  const { roles } = await leerRoles()
+  const permisos = roles.find((r) => r.id === rol)?.permisos ?? {}
+  return Object.entries(permisos)
+    .filter(([, nivel]) => nivel === "ninguno")
+    .map(([recurso]) => recurso)
 }
 
 /** Las secciones que ve un rol. Si el rol no existe en la tabla, no ve nada. */

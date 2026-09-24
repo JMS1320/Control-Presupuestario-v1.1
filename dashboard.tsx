@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { ProveedorPermisos } from "./components/contexto-permisos"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
@@ -53,9 +54,11 @@ interface ControlPresupuestarioProps {
   preferencias?: Preferencias
   /** Ids de las secciones que ve este usuario, de `public.roles`. */
   secciones?: string[]
+  /** Recursos que este rol NO ve, dentro de las secciones que sí tiene (A-FEAT-169). */
+  recursosOcultos?: string[]
 }
 
-export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias, recursosOcultos = [] }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -158,6 +161,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   }, [])
 
   return (
+    <ProveedorPermisos ocultos={recursosOcultos}>
     <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
@@ -526,5 +530,6 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
           </CardContent>
           </Card>
     </LayoutApp>
+    </ProveedorPermisos>
   )
 }

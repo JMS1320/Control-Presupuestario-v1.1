@@ -75,6 +75,7 @@ type RolDB = {
   id: string
   descripcion: string
   secciones: string[]
+  permisos?: Record<string, string>
   exige_2fa: boolean
   es_sistema: boolean
 }
@@ -124,11 +125,15 @@ function PanelRoles() {
 
   const [editando, setEditando] = useState<string | null>(null)
   const [borrador, setBorrador] = useState<Set<string>>(new Set())
+  // Los recursos DESTILDADOS dentro de las secciones que sí tiene. Se guarda la excepción y no el
+  // permiso, así lo que todavía no está registrado se sigue viendo (ver `recursosOcultosDe`).
+  const [ocultos, setOcultos] = useState<Set<string>>(new Set())
   const [guardando, setGuardando] = useState(false)
 
   function empezar(r: RolDB) {
     setEditando(r.id)
     setBorrador(new Set(r.secciones))
+    setOcultos(new Set(Object.entries(r.permisos ?? {}).filter(([, n]) => n === "ninguno").map(([k]) => k)))
   }
 
   async function guardar(id: string) {
@@ -136,7 +141,7 @@ function PanelRoles() {
     const res = await fetch("/api/admin/roles", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, secciones: [...borrador] }),
+      body: JSON.stringify({ id, secciones: [...borrador], ocultos: [...ocultos] }),
     })
     const json = await res.json().catch(() => ({}))
     setGuardando(false)
@@ -248,24 +253,46 @@ function PanelRoles() {
                           {puesta && dentro.length > 0 && (
                             <div className="border-t bg-white/70 px-2.5 py-2">
                               <div className="grid gap-1 sm:grid-cols-2">
-                                {dentro.map((r) => (
-                                  <label
-                                    key={r.id}
-                                    title="Todavía no se puede permisar por separado — falta guardarlo y aplicarlo"
-                                    className="flex cursor-not-allowed items-center gap-2 rounded px-1.5 py-1 text-[11px] text-muted-foreground"
-                                  >
-                                    <input type="checkbox" checked disabled className="h-3 w-3" />
-                                    <span>{r.etiqueta}</span>
-                                    {r.tipo === "funcionalidad" && (
-                                      <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">acción</span>
-                                    )}
-                                  </label>
-                                ))}
+                                {dentro.map((r) => {
+                                  // Si el padre está oculto, el hijo tampoco se ve: destildar
+                                  // Insumos y dejar Stock tildado diría algo que no es cierto.
+                                  const tapadoPorElPadre = Boolean(r.padre && ocultos.has(r.padre))
+                                  const visible = !ocultos.has(r.id) && !tapadoPorElPadre
+                                  return (
+                                    <label
+                                      key={r.id}
+                                      title={tapadoPorElPadre ? "Está dentro de algo que destildaste" : undefined}
+                                      className={`flex items-center gap-2 rounded px-1.5 py-1 text-[11px] ${
+                                        r.padre ? "ml-5 border-l pl-2" : ""
+                                      } ${tapadoPorElPadre ? "cursor-not-allowed opacity-50" : "cursor-pointer"} ${
+                                        visible ? "" : "text-muted-foreground line-through"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={visible}
+                                        disabled={tapadoPorElPadre}
+                                        onChange={(e) => {
+                                          const n = new Set(ocultos)
+                                          if (e.target.checked) n.delete(r.id)
+                                          else n.add(r.id)
+                                          setOcultos(n)
+                                        }}
+                                        className="h-3 w-3"
+                                      />
+                                      <span>{r.etiqueta}</span>
+                                      {r.tipo === "funcionalidad" && (
+                                        <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-500">acción</span>
+                                      )}
+                                    </label>
+                                  )
+                                })}
                               </div>
-                              <p className="mt-1.5 text-[10px] text-amber-700">
-                                Por ahora quien tiene la sección tiene todo esto. Poder tildarlas por
-                                separado es lo que falta.
-                              </p>
+                              {dentro.some((r) => ocultos.has(r.id)) && (
+                                <p className="mt-1.5 text-[10px] text-muted-foreground">
+                                  Lo destildado no se le va a mostrar. Sigue pudiendo entrar a la sección.
+                                </p>
+                              )}
                             </div>
                           )}
 

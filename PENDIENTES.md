@@ -3947,7 +3947,34 @@ se aplica — están para que se vea el alcance real de cada sección. Mostrarla
 sería exactamente lo que `scripts/60` decidió evitar: *«una columna de permisos que ninguna guarda
 chequea parece un permiso y no lo es»*.
 
-**ETAPA 1 HECHA, ETAPAS 2-5 PENDIENTES** → [A-TEST-146](#a-test-146)
+### Etapa 2 — HECHA 2026-09-24 (falta correr `scripts/61`)
+
+Se puede **destildar una pestaña sin sacarle la sección**, se guarda, y la pestaña **no se dibuja**.
+
+**El modelo guarda EXCEPCIONES, no permisos.** `roles.permisos jsonb` arranca en `{}` = "todo lo
+que hay dentro de tus secciones", que es exactamente el comportamiento de hoy — por eso
+**`scripts/61` no migra ni una fila** y el día 1 nadie cambia de permisos. La alternativa (listar
+lo permitido) obligaba a mantener `secciones` y la lista sincronizadas para siempre.
+
+Y tiene una segunda virtud, que es la que decidió el diseño: **lo que todavía nadie registró se
+sigue viendo**. Con lista de permitidos, una pestaña nueva sin registrar desaparecería de la
+pantalla sin que nadie la haya prohibido, y en silencio.
+
+**Piezas**: `scripts/61` (columna + `CHECK` que rechaza niveles inventados) · `recursosOcultosDe()`
+en `permisos.ts` · `ocultos[]` en el `PATCH` de `/api/admin/roles` (valida contra el registro y
+descarta excepciones de secciones que el rol no tiene) · `components/contexto-permisos.tsx` —
+por contexto y no por props, porque las pestañas viven dentro de vistas de miles de líneas.
+
+🔎 **Lo que destapó aplicarlo**: `stock`, `ordenes` y `compras` **NO son hermanas de Hacienda: son
+sub-pestañas de Insumos**, y viven en otro componente del mismo archivo. La medición de
+anidamiento de la etapa 1 no lo vio, porque ese componente se declara aparte y su `<Tabs>` abre
+después de que cerró el de arriba. El registro ahora tiene `padre`, y la pantalla las muestra
+indentadas y bloqueadas si el padre está destildado.
+
+⚠️ **Sigue sin ser seguridad.** Esconder una pestaña en el navegador no impide nada: con la misma
+sesión se escribe desde la consola. La barrera real es la RLS por recurso — etapa 5.
+
+**ETAPAS 1-2 HECHAS · 3-5 PENDIENTES** → [A-TEST-146](#a-test-146)
 
 ---
 

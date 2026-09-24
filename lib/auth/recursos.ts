@@ -28,6 +28,13 @@ export type Recurso = {
   seccion: string
   etiqueta: string
   tipo: TipoRecurso
+  /**
+   * El recurso del que cuelga, si es una **sub-pestaña**. Ej.: Stock vive dentro de Insumos, no
+   * al lado de Hacienda. Se descubrió al aplicar los permisos: las tres sub-pestañas estaban en
+   * otro componente del archivo, y una medición de anidamiento por texto no lo veía porque ese
+   * componente se declara aparte y su `<Tabs>` abre después de que cerró el de arriba.
+   */
+  padre?: string
   /** Dónde vive en el código. Lo usa el control para saber dónde buscar. */
   archivo: string
 }
@@ -83,9 +90,9 @@ export const RECURSOS: Recurso[] = [
   { id: "productivo.recria",    seccion: "productivo", etiqueta: "Recría / Engorde",    tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.insumos",   seccion: "productivo", etiqueta: "Insumos",             tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.lotes",     seccion: "productivo", etiqueta: "Lotes Agrícolas",     tipo: "pestana", archivo: PRODUCTIVO },
-  { id: "productivo.stock",     seccion: "productivo", etiqueta: "Stock y Movimientos", tipo: "pestana", archivo: PRODUCTIVO },
-  { id: "productivo.ordenes",   seccion: "productivo", etiqueta: "Órdenes de Aplicación", tipo: "pestana", archivo: PRODUCTIVO },
-  { id: "productivo.compras",   seccion: "productivo", etiqueta: "Necesidad de Compra", tipo: "pestana", archivo: PRODUCTIVO },
+  { id: "productivo.stock",     seccion: "productivo", etiqueta: "Stock y Movimientos", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
+  { id: "productivo.ordenes",   seccion: "productivo", etiqueta: "Órdenes de Aplicación", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
+  { id: "productivo.compras",   seccion: "productivo", etiqueta: "Necesidad de Compra", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
 
   // ── Cash Flow ────────────────────────────────────────────────────────────────────────────
   { id: "cashflow.nuevo",      seccion: "cashflow", etiqueta: "Cargar anticipo",     tipo: "funcionalidad", archivo: CASHFLOW },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
 import { leerRoles, SECCIONES_IDS } from "@/lib/auth/permisos"
+import { RECURSOS } from "@/lib/auth/recursos"
 
 /** GET — los roles con sus permisos. */
 export async function GET() {
@@ -32,6 +33,8 @@ export async function PATCH(request: Request) {
   const id = typeof body?.id === "string" ? body.id : null
   const secciones = Array.isArray(body?.secciones) ? body.secciones : null
   const exige2FA = typeof body?.exige_2fa === "boolean" ? body.exige_2fa : null
+  // Los recursos que este rol NO puede ver, dentro de las secciones que sí tiene (A-FEAT-169).
+  const ocultos: unknown = body?.ocultos
 
   if (!id || !secciones) {
     return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
@@ -42,6 +45,29 @@ export async function PATCH(request: Request) {
   const desconocidas = secciones.filter((s: unknown) => typeof s !== "string" || !validas.has(s))
   if (desconocidas.length > 0) {
     return NextResponse.json({ error: `Sección desconocida: ${desconocidas.join(", ")}` }, { status: 400 })
+  }
+
+  /**
+   * Las excepciones finas. Mismo criterio que arriba y por el mismo motivo: un recurso inventado
+   * se guardaría para siempre sin que nada lo lea — y como el default es "se ve", una excepción
+   * mal escrita **no oculta nada y parece que sí**. Es peor que un error: es un permiso falso.
+   */
+  const permisos: Record<string, string> = {}
+  if (ocultos !== undefined) {
+    if (!Array.isArray(ocultos)) {
+      return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
+    }
+    const conocidos = new Set(RECURSOS.map((r) => r.id))
+    const malos = ocultos.filter((r: unknown) => typeof r !== "string" || !conocidos.has(r))
+    if (malos.length > 0) {
+      return NextResponse.json({ error: `Recurso desconocido: ${malos.join(", ")}` }, { status: 400 })
+    }
+    // Una excepción sobre una sección que el rol no tiene no hace nada, pero ensucia: al volver a
+    // dar la sección reaparecería una restricción que nadie recuerda haber puesto.
+    const conSeccion = new Set(secciones as string[])
+    for (const r of ocultos as string[]) {
+      if (conSeccion.has(r.split(".")[0])) permisos[r] = "ninguno"
+    }
   }
 
   const { data: actual } = await supabaseAdmin
@@ -59,6 +85,7 @@ export async function PATCH(request: Request) {
     .from("roles")
     .update({
       secciones,
+      ...(ocultos === undefined ? {} : { permisos }),
       ...(exige2FA === null ? {} : { exige_2fa: exige2FA }),
       actualizado: new Date().toISOString(),
     })
@@ -67,7 +94,13 @@ export async function PATCH(request: Request) {
   if (error) {
     const falta = /relation .* does not exist|schema cache/i.test(error.message)
     return NextResponse.json(
-      { error: falta ? "Falta crear la tabla de roles (scripts/60-roles-permisos.sql)." : "No se pudo guardar." },
+      {
+        error: falta
+          ? "Falta crear la tabla de roles (scripts/60-roles-permisos.sql)."
+          : /permisos/i.test(error.message)
+            ? "Falta la columna de permisos finos: corré scripts/61-permisos-finos.sql."
+            : "No se pudo guardar.",
+      },
       { status: falta ? 503 : 500 }
     )
   }

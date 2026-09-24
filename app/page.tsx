@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import ControlPresupuestario from "@/dashboard"
 import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
-import { seccionesDelRol } from "@/lib/auth/permisos"
+import { seccionesDelRol, recursosOcultosDe } from "@/lib/auth/permisos"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 
 /**
@@ -33,6 +33,8 @@ export default async function Page({
 
   // Qué ve este usuario sale de `public.roles`, no del código (A-FEAT-82).
   const secciones = await seccionesDelRol(rol)
+  // Lo que este rol NO ve dentro de las secciones que sí tiene (A-FEAT-169).
+  const ocultos = await recursosOcultosDe(rol)
   const preferencias = leerPreferencias(user)
 
   // El `?seccion=` manda sobre la preferencia: si alguien navegó a una sección concreta, es a esa
@@ -44,6 +46,7 @@ export default async function Page({
       userRole={rol}
       seccionInicial={inicial}
       secciones={secciones}
+      recursosOcultos={ocultos}
       preferencias={preferencias}
     />
   )
