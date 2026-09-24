@@ -850,6 +850,52 @@ el papel la deja escrita (§ `CLAUDE.md` 🚦).
 favor** contra el proveedor y debería poder agruparse como tal junto a las facturas
 → [A-FEAT-168](PENDIENTES.md#a-feat-168).
 
+## 👥 Roles y usuarios — quién ve qué
+
+**Dónde:** Configuración → **Roles** (qué ve cada rol) y Configuración → **Usuarios** (quién tiene
+cada rol).
+
+### Los roles que hay hoy
+
+| Rol | Ve |
+|---|---|
+| `admin` | las 12 secciones · **exige 2FA** · no se puede editar (es de sistema) |
+| `socio` | todo salvo Importar |
+| `productivo` | Principal, Dashboard y Productivo |
+| `contable` | sólo Egresos |
+| `pruebas` | **ninguna** — es el banco de ensayo, ver abajo |
+
+### Cambiar lo que ve un rol
+Configuración → Roles → tildás las secciones → guardar. Cambia **para todos** los que lo tengan, y
+**en el acto**.
+
+🛑 **`admin` no se puede tocar**: si se le pudieran sacar secciones, alguien podría dejar el sistema
+sin nadie que lo administre.
+
+### Darle un rol a alguien
+Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
+se le cambia desde el desplegable de su fila.
+
+### 🧪 Probar un permiso ANTES de dárselo a alguien
+
+El método, que es el que usa JMS:
+
+1. Creás **un usuario con otro mail tuyo**.
+2. Le das el rol **`pruebas`**.
+3. En Configuración → Roles le ponés a `pruebas` las secciones que querés ensayar.
+4. **Entrás con ese usuario** y mirás qué ve.
+5. Cuando está como querés, se lo das a la persona real.
+
+📌 **Para ver cómo se comporta un rol que YA existe** (`productivo`, `socio`), asignale **ese rol** al
+usuario de prueba — no lo copies dentro de `pruebas`. Una copia envejece: si después cambia el rol
+real, probaste otra cosa.
+
+⚠️ **Dos límites del ensayo:**
+- **`pruebas` no pide 2FA** (a propósito, para entrar y salir rápido), así que **no sirve para probar
+  ese camino**.
+- **El usuario de prueba es real.** El rol separa lo que **ve**, no lo que **toca**: si le das una
+  sección donde se escribe, lo que cargues ahí queda en la base de verdad.
+
 ### Panel de revisión + envío (Cash Flow → "✉ Mails de detalle")
 - Lista la cola por estado (pendiente / borrador / enviado / error). Podés **editar** destinatario, asunto y cuerpo, togglear los adjuntos (detalle / retención) y **borrar**.
 - **Guardar** = solo persiste tus ediciones (no envía).
