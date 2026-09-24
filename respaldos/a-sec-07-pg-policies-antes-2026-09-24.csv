@@ -1,0 +1,77 @@
+schemaname,tablename,policyname,cmd,qual,with_check
+ma,comprobantes_arca,allow_all_ma_comprobantes_arca,ALL,true,true
+ma,comprobantes_venta,allow_all_ma_comp_venta,ALL,true,true
+ma,ma_galicia,allow_all_ma_galicia,ALL,true,true
+msa,comprobantes_arca,Allow all operations on comprobantes_arca,ALL,true,true
+msa,comprobantes_venta,allow_all_liquidaciones,ALL,true,true
+msa,sicore_retenciones,sicore_retenciones_all,ALL,true,true
+msa,ventas,allow_all_ventas,ALL,true,true
+msa,ventas_comprobantes,allow_all_ventas_liq,ALL,true,true
+pam,comprobantes_venta,allow_all_comprobantes_venta_pam,ALL,true,true
+productivo,actividad_insumo_ajustes,actividad_insumo_ajustes_all,ALL,true,true
+productivo,actividad_insumos,actividad_insumos_all,ALL,true,true
+productivo,actividades,actividades_all,ALL,true,true
+productivo,categorias_hacienda,Allow all on categorias_hacienda,ALL,true,true
+productivo,categorias_insumo,Allow all on categorias_insumo,ALL,true,true
+productivo,ciclos_cria,ciclos_cria_all,ALL,true,true
+productivo,ciclos_recria,ciclos_recria_all,ALL,true,true
+productivo,consumo_declarado_insumo,consumo_declarado_insumo_all,ALL,true,true
+productivo,destino_rutas,destino_rutas_all,ALL,true,true
+productivo,destinos_venta,destinos_venta_all,ALL,true,true
+productivo,detalle_descarte,detalle_descarte_all,ALL,true,true
+productivo,entrega_factura,entrega_factura_all,ALL,true,true
+productivo,intermediarios_venta,intermediarios_venta_all,ALL,true,true
+productivo,labores,labores_all,ALL,true,true
+productivo,lineas_orden_agricola,Allow all,ALL,true,true
+productivo,lineas_orden_agricola_labores,Allow all,ALL,true,true
+productivo,lineas_orden_aplicacion,Acceso completo lineas_orden_aplicacion,ALL,true,true
+productivo,lineas_orden_labores,lineas_orden_labores_all,ALL,true,true
+productivo,lote_tramos,lote_tramos_all,ALL,true,true
+productivo,lotes_agricolas,Allow all on lotes_agricolas,ALL,true,true
+productivo,mediciones_insumo,mediciones_insumo_all,ALL,true,true
+productivo,movimientos_hacienda,Allow all on movimientos_hacienda,ALL,true,true
+productivo,movimientos_insumos,Allow all on movimientos_insumos,ALL,true,true
+productivo,normas_desbaste,normas_desbaste_all,ALL,true,true
+productivo,normas_rinde,normas_rinde_all,ALL,true,true
+productivo,ordenes_agricolas,Allow all,ALL,true,true
+productivo,ordenes_aplicacion,Acceso completo ordenes_aplicacion,ALL,true,true
+productivo,ordenes_aplicacion_rodeos,Acceso completo ordenes_aplicacion_rodeos,ALL,true,true
+productivo,stock_ciclos,allow_all_stock_ciclos,ALL,true,true
+productivo,stock_hacienda,Allow all on stock_hacienda,ALL,true,true
+productivo,stock_insumos,Allow all on stock_insumos,ALL,true,true
+productivo,stock_lotes,allow_all_stock_lotes,ALL,true,true
+productivo,stock_ventas,allow_all_stock_ventas,ALL,true,true
+productivo,stock_ventas,stock_ventas_all,ALL,true,true
+productivo,tarifas_flete,tarifas_flete_all,ALL,true,true
+public,arca_descargas_log,allow_all_arca_log,ALL,true,true
+public,centros_costo,allow_all_centros_costo,ALL,true,true
+public,config_parseo_extracto,Allow all config_parseo_extracto,ALL,true,true
+public,contratos_arrendamiento,allow_all_contratos_arrendamiento,ALL,true,true
+public,cuentas_contables,Allow all operations on cuentas_contables,ALL,true,true
+public,cuotas_arrendamiento,allow_all_cuotas_arrendamiento,ALL,true,true
+public,cuotas_egresos_sin_factura,Allow all operations on cuotas_egresos_sin_factura,ALL,true,true
+public,distribucion_socios,Allow all operations distribucion_socios,ALL,true,true
+public,egresos_sin_factura,Allow all operations on egresos_sin_factura,ALL,true,true
+public,indices_ipc,Allow all operations on indices_ipc,ALL,true,true
+public,msa_galicia,Allow all operations msa_galicia,ALL,true,true
+public,notas_capturas,capturas_anon_insert,INSERT,null,true
+public,notas_para_claude,notas_anon_insert,INSERT,null,true
+public,pam_galicia,Allow all operations pam_galicia,ALL,true,true
+public,pendientes_comentarios,pendientes_comentarios_all,ALL,true,true
+public,pendientes_propuestos,pendientes_propuestos_all,ALL,true,true
+public,precios_granos,allow_all_precios_granos,ALL,true,true
+public,precios_hacienda,allow_all_precios_hacienda,ALL,true,true
+public,presupuesto_config,presupuesto_config_all,ALL,true,true
+public,presupuesto_cuenta_config,presupuesto_cuenta_config_all,ALL,true,true
+public,presupuesto_ganaderia,allow_all_presupuesto_ganaderia,ALL,true,true
+public,presupuesto_template_config,presupuesto_template_config_all,ALL,true,true
+public,proveedores,allow_all_proveedores,ALL,true,true
+public,reglas_conciliacion,Allow all operations on reglas_conciliacion,ALL,true,true
+public,reglas_contable_interno,Allow all operations on reglas_contable_interno,ALL,true,true
+public,revisiones,revisiones_anon_insert,INSERT,null,true
+public,templates_master,Allow all operations on templates_master,ALL,true,true
+public,tipos_cambio,allow_all_tipos_cambio,ALL,true,true
+public,tipos_comprobante_afip,Allow all operations on tipos_comprobante_afip,ALL,true,true
+public,tipos_sicore_config,Allow all operations on tipos_sicore_config,ALL,true,true
+public,ventas_arrendamiento,allow_all_fijaciones_arrendamiento,ALL,true,true
+public,ventas_facturas,allow_all_ventas_facturas,ALL,true,true

@@ -5,8 +5,20 @@
 --
 -- QUÉ HACE
 --   Hoy `anon` = `authenticated` = `service_role` tienen SELECT/INSERT/UPDATE/DELETE/TRUNCATE
---   sobre los 72 objetos, y las 41 policies RLS son todas `allow all` (auditoría 2026-06-23,
---   ARQUITECTURA-BD.md §5). Con la `anon_key` en el bundle JS, cualquiera borra todo con curl.
+--   sobre TODOS los objetos, y las policies RLS son `allow all`. Con la `anon_key` en el bundle
+--   JS, cualquiera borra todo con curl.
+--
+--   📸 FOTO REAL 2026-09-24 (`respaldos/a-sec-07-*-antes-2026-09-24.csv`) — el script decía 72
+--   objetos y 41 policies, que era la auditoría del 2026-06-23. Medido de nuevo antes de correrlo:
+--     · **100 objetos**: productivo 40 · public 37 · msa 13 · ma 5 · pam 5 · **sueldos 0**
+--     · **76 policies**: productivo 35 · public 32 · msa 5 · ma 3 · pam 1
+--     · los 100 objetos tienen `anon` en la ACL · 64 ya tienen RLS activa
+--     · 73 policies son `allow all`; las 3 restantes son `*_anon_insert` sobre `notas_capturas`,
+--       `notas_para_claude` y `revisiones` — el feature de notas, que insertaba SIN sesión. Se
+--       borran a propósito: con login real, quien escribe una nota está adentro de la app, y las
+--       cubre la policy nueva. Las rutas `/api/notas` y `/api/revisiones` usan `service_role`, así
+--       que no dependen de esto; sí escriben directo desde el navegador `barra-recorrido.tsx` y
+--       `boton-revision.tsx`, y ésos quedan cubiertos.
 --
 --   Como AHORA TODOS SE LOGUEAN (reemplazo total de las rutas-como-password, 2026-09-03),
 --   `anon` ya no necesita NADA: sólo tiene que poder llegar al login. Revocarle todo es lo que
@@ -43,10 +55,15 @@ ORDER BY 1,2,3;
 --   Reversible al 100% con un GRANT (ver revert). No es DDL: sólo toca ACLs, no filas.
 --   Una query bloqueada falla ANTES de tocar datos.
 -- -------------------------------------------------------------------------------------
+-- ⚠️ El schema se saca del catálogo y NO de un array fijo: `sueldos` figura en la lista original
+--    pero NO EXISTE en la base (foto 2026-09-24). `REVOKE ... IN SCHEMA` sobre un schema que no
+--    existe lanza excepción, y dentro de un DO eso **aborta el bloque entero** — o sea que el
+--    PASO 1 no habría revocado nada y el error no dice cuál de los seis fue.
 DO $$
 DECLARE s text;
 BEGIN
-  FOREACH s IN ARRAY ARRAY['public','msa','pam','ma','productivo','sueldos'] LOOP
+  FOR s IN SELECT nspname FROM pg_namespace
+           WHERE nspname IN ('public','msa','pam','ma','productivo','sueldos') LOOP
     EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM anon', s);
     EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM anon', s);
     EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM anon', s);
@@ -99,6 +116,13 @@ BEGIN
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('public','msa','pam','ma','productivo','sueldos')
       AND c.relkind = 'r'
+      -- ⚠️ `public.roles` QUEDA AFUERA a propósito. `scripts/60` la dejó con RLS y SIN policies,
+      --    y revocada a `anon` **y a `authenticated`**: se lee sólo desde el servidor con
+      --    `service_role`, que es lo que la protege de que un rol cualquiera se edite sus propios
+      --    permisos. Darle la policy general no la abre hoy (sin GRANT no alcanza), pero deja una
+      --    puerta que se abre sola el día que alguien otorgue permisos a `authenticated` — y ese
+      --    día nadie se va a acordar de esta línea. Mejor que no exista.
+      AND NOT (n.nspname = 'public' AND c.relname = 'roles')
   LOOP
     -- 1) limpiar las permisivas viejas
     EXECUTE format(
@@ -151,7 +175,8 @@ WHERE n.nspname IN ('public','msa','pam','ma','productivo','sueldos')
 -- DO $$
 -- DECLARE s text; r record;
 -- BEGIN
---   FOREACH s IN ARRAY ARRAY['public','msa','pam','ma','productivo','sueldos'] LOOP
+--   FOR s IN SELECT nspname FROM pg_namespace
+--            WHERE nspname IN ('public','msa','pam','ma','productivo','sueldos') LOOP
 --     EXECUTE format('GRANT USAGE ON SCHEMA %I TO anon', s);
 --     EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA %I TO anon', s);
 --     EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA %I TO anon', s);
