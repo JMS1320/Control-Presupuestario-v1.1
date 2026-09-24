@@ -42,7 +42,7 @@ function hostReenviado(request: Request): string | null {
  * Supabase **no falla** cuando el `redirectTo` que le pasamos no está en su lista de Redirect URLs:
  * lo descarta y lo reemplaza por el **Site URL** del proyecto, sin avisar ni por error ni por log.
  * El link sale, el mail se manda, y la persona termina en otro lado — el 2026-09-18 el Site URL
- * era `http://localhost:3000`, que ni siquiera es esta app (A-BUG-98).
+ * era `http://localhost:3000`, que ni siquiera es esta app (A-BUG-199).
  *
  * Por suerte `generateLink` devuelve el link ya armado, así que el destino que Supabase **aceptó**
  * viaja en su query string. Comparar los dos cuesta nada y convierte un fallo mudo en un cartel.

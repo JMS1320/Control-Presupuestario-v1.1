@@ -32,7 +32,7 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   const [email, setEmail] = useState("")
   const [rol, setRol] = useState<string>("contable")
   /**
-   * 🐞 **A-BUG-198 — los roles del desplegable salen de la TABLA.**
+   * 🐞 **A-BUG-1198 — los roles del desplegable salen de la TABLA.**
    * Acá estaban escritos a mano `contable` y `admin`, así que `productivo` y `socio` —que ya
    * existían en `public.roles` y se podían editar desde Configuración → Roles— **no se le podían
    * asignar a nadie**. Y el arreglo de la API sola no alcanzaba: si la pantalla no los ofrece, el
@@ -167,7 +167,7 @@ export function PanelUsuarios({ miId }: { miId: string }) {
     const j = await r.json()
     if (!r.ok) { toast.error(j.error ?? "No se pudo generar"); return }
     setInvitacion({ email: j.email, link: j.link, advertencia: j.advertencia })
-    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-98).
+    // Si el control no cerró, el link existe pero no sirve: decirlo acá y no felicitar (A-BUG-199).
     if (j.advertencia) toast.error("El link apunta a otro sitio. Mirá el aviso de abajo.")
     else toast.success("Link nuevo generado.")
   }
@@ -244,7 +244,7 @@ export function PanelUsuarios({ miId }: { miId: string }) {
               pasáselo por un canal privado.
             </p>
             {/*
-              El control de A-BUG-98. Grande y rojo porque el link se ve perfecto: sin esto, el
+              El control de A-BUG-199. Grande y rojo porque el link se ve perfecto: sin esto, el
               admin lo copia, lo manda, y el error aparece recién del otro lado.
             */}
             {invitacion.advertencia && (

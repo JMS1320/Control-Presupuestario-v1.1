@@ -660,7 +660,7 @@ referencia; el estado real y lo que falta están en el **§ 0**.
 | Qué | Dónde | Estado |
 |---|---|---|
 | **Ver y editar** los permisos de un rol | Configuración → Roles | ✅ anda |
-| **Asignar** un rol a alguien | Configuración → Usuarios | ✅ desde [A-BUG-198](PENDIENTES.md#a-bug-198) |
+| **Asignar** un rol a alguien | Configuración → Usuarios | ✅ desde [A-BUG-1198](PENDIENTES.md#a-bug-1198) |
 | **Crear** un rol nuevo | ✋ a mano en la base | ⏳ [A-FEAT-171](PENDIENTES.md#a-feat-171) |
 
 🧨 **El bug que esto tuvo, y vale recordarlo porque es un patrón**: la tabla tenía **cuatro** roles y

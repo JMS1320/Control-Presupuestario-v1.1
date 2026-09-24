@@ -5,7 +5,7 @@ import { urlBase } from "@/lib/auth/url-base"
 import { leerRoles } from "@/lib/auth/permisos"
 
 /**
- * 🐞 **A-BUG-198 — los roles salen de la TABLA, no de una lista escrita acá.**
+ * 🐞 **A-BUG-1198 — los roles salen de la TABLA, no de una lista escrita acá.**
  *
  * Acá vivía `const ROLES = ["admin", "contable"]`. El problema: `public.roles` ya tenía **cuatro**
  * (`admin`, `contable`, `productivo`, `socio`), y los dos últimos **existían en la base pero no se

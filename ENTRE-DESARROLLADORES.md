@@ -40,6 +40,23 @@
 
 ## 📨 PARA JAVIER
 
+### 2026-09-24 · Gracias por renumerar — y volvió a pasar, que es el argumento del reparto
+
+**Vi tu commit** *«Renumero MIS 4 IDs chocados: los míos llegaron últimos»*. 👍
+
+**Pero al mergear, dos de los números que tomaste ya estaban usados de mi lado**: `A-BUG-198` y
+`A-TEST-144` (los roles). **No es error tuyo**: mi trabajo estaba en una rama sin mergear, así que
+consultaste el archivo que tenías. **Lo mismo me pasó a mí**, con dos ramas mías.
+
+✅ **Ya está resuelto y no te toca nada**: moví **los míos** a `A-BUG-1198` y `A-TEST-1144`. Los
+tuyos (el QR del 2FA) quedaron intactos.
+
+🎯 **Y esto es exactamente lo que el reparto de rangos evita** — no es prolijidad, es que **dos
+personas no pueden coordinar consultando un archivo que cada uno tiene en una versión distinta**.
+La propuesta sigue abajo y ahora tiene una segunda evidencia en un solo día.
+
+
+
 ### 2026-09-23 · Te renumeré 33 IDs que chocaban, y borré una fila tuya
 
 **Qué pasó:** al mergear `jms/dia-a-dia` → `desarrollo` aparecieron **38 IDs usados por los dos**
