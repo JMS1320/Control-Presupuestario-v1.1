@@ -3974,6 +3974,24 @@ indentadas y bloqueadas si el padre está destildado.
 ⚠️ **Sigue sin ser seguridad.** Esconder una pestaña en el navegador no impide nada: con la misma
 sesión se escribe desde la consola. La barrera real es la RLS por recurso — etapa 5.
 
+### 🔻 Un error mío que vale más que la feature (2026-09-24)
+
+Al agregar `permisos` al `select` de `leerRoles()` **sin haber corrido `scripts/61`**, la lectura
+de roles empezó a fallar entera —un `select` con una columna inexistente no devuelve las otras
+columnas: falla— y la app cayó al FALLBACK mostrando **«Falta crear la tabla de roles en la
+base»**.
+
+**Era falso.** La tabla estaba y tenía sus 2 filas. Faltaba una columna. Y el cartel mandaba a
+correr `scripts/60`, que no arreglaba nada, mientras el problema real quedaba invisible.
+
+Es el modo de falla de § Contrapartes y § Templates otra vez: **el paracaídas funcionó, y al
+funcionar tapó la causa**. Un fallback que no distingue qué falta es un fallback que miente.
+
+**Arreglado**: `leerRoles()` pide `permisos` y, si falla, **reintenta sin esa columna**. Así un
+script pendiente degrada **una función**, no la tabla entera. Y `leerRoles()` devuelve `falta:
+"tabla" | "columna_permisos"`, con un cartel distinto para cada caso — el de la columna dice que
+los permisos por sección **sí** andan y que lo único pendiente es el grano fino.
+
 **ETAPAS 1-2 HECHAS · 3-5 PENDIENTES** → [A-TEST-146](#a-test-146)
 
 ---

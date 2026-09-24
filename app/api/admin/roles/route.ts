@@ -9,10 +9,10 @@ export async function GET() {
   const guard = await exigirAdmin()
   if (!guard.ok) return NextResponse.json({ error: guard.motivo }, { status: guard.status })
 
-  const { roles, desdeLaBase } = await leerRoles()
+  const { roles, desdeLaBase, falta } = await leerRoles()
   // `desdeLaBase: false` avisa a la pantalla que está mostrando el paracaídas y que editar no va
   // a servir de nada hasta correr scripts/60. Es preferible a una pantalla que parece editable.
-  return NextResponse.json({ roles, desdeLaBase })
+  return NextResponse.json({ roles, desdeLaBase, falta })
 }
 
 /**

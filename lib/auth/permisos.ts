@@ -50,27 +50,64 @@ const FALLBACK: Record<string, Rol> = {
   },
 }
 
-export type ResultadoRoles = { roles: Rol[]; desdeLaBase: boolean }
+export type ResultadoRoles = {
+  roles: Rol[]
+  desdeLaBase: boolean
+  /** Qué falta, cuando falta algo. La pantalla necesita distinguirlo para no decir una mentira. */
+  falta?: "tabla" | "columna_permisos"
+}
 
 /**
  * Los roles con sus permisos. Se lee con `service_role` porque la tabla tiene RLS sin políticas:
  * no se entra con la anon key.
  */
 export async function leerRoles(): Promise<ResultadoRoles> {
-  const { data, error } = await supabaseAdmin
+  const COLUMNAS = "id, descripcion, secciones, exige_2fa, es_sistema"
+
+  /**
+   * ⚠️ Se pide `permisos` aparte y con reintento, y el motivo vale la pena:
+   *
+   * Un `select` con una columna que no existe **falla entero**. Cuando se agregó `permisos`
+   * (A-FEAT-169, `scripts/61`) sin correr todavía el script, la lectura de roles empezó a fallar
+   * y la app cayó al FALLBACK diciendo **«falta crear la tabla de roles»** — que era falso: la
+   * tabla estaba, faltaba una columna. El cartel mandaba a correr `scripts/60`, que no arreglaba
+   * nada, y el estado real quedaba invisible.
+   *
+   * Reintentar sin la columna nueva hace que **un script pendiente degrade una función, no la
+   * tabla entera**, y que el cartel diga cuál de los dos falta.
+   */
+  let falta: ResultadoRoles["falta"]
+  let filas: Rol[] | null = null
+
+  const conPermisos = await supabaseAdmin
     .from("roles")
-    .select("id, descripcion, secciones, exige_2fa, es_sistema, permisos")
+    .select(`${COLUMNAS}, permisos`)
     .order("es_sistema", { ascending: false })
     .order("id")
 
-  if (error || !data || data.length === 0) {
-    return { roles: Object.values(FALLBACK), desdeLaBase: false }
+  if (!conPermisos.error) {
+    filas = conPermisos.data as Rol[]
+  } else {
+    const sinPermisos = await supabaseAdmin
+      .from("roles")
+      .select(COLUMNAS)
+      .order("es_sistema", { ascending: false })
+      .order("id")
+    if (!sinPermisos.error && sinPermisos.data) {
+      filas = sinPermisos.data as Rol[]
+      falta = "columna_permisos"
+    }
   }
+
+  if (!filas || filas.length === 0) {
+    return { roles: Object.values(FALLBACK), desdeLaBase: false, falta: "tabla" }
+  }
+  const data = filas
   // `permisos` puede faltar si todavía no se corrió `scripts/61`: se normaliza a {} (sin
   // excepciones), que es el comportamiento anterior. Igual que el FALLBACK: se falla al reparto
   // que ya había, nunca a "no ve nada" ni a "ve todo".
-  const roles = (data as Rol[]).map((r) => ({ ...r, permisos: r.permisos ?? {} }))
-  return { roles, desdeLaBase: true }
+  const roles = data.map((r) => ({ ...r, permisos: r.permisos ?? {} }))
+  return { roles, desdeLaBase: true, falta }
 }
 
 /**

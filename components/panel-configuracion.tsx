@@ -84,6 +84,9 @@ type RolDB = {
 function useRoles() {
   const [roles, setRoles] = useState<RolDB[] | null>(null)
   const [desdeLaBase, setDesdeLaBase] = useState(true)
+  // Qué falta exactamente. Un cartel que culpa a la pieza equivocada manda a correr el script que
+  // no arregla nada, y el problema real queda invisible.
+  const [falta, setFalta] = useState<"tabla" | "columna_permisos" | undefined>()
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
 
   const recargar = () =>
@@ -93,6 +96,7 @@ function useRoles() {
         if (!j) return
         setRoles(j.roles)
         setDesdeLaBase(j.desdeLaBase)
+        setFalta(j.falta)
       })
       .catch(() => {})
 
@@ -109,7 +113,7 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, cuentas, recargar }
+  return { roles, desdeLaBase, falta, cuentas, recargar }
 }
 
 /**
@@ -120,7 +124,7 @@ function useRoles() {
  * checkboxes — el endpoint y un trigger de la base lo rechazan igual.
  */
 function PanelRoles() {
-  const { roles, desdeLaBase, cuentas, recargar } = useRoles()
+  const { roles, desdeLaBase, falta, cuentas, recargar } = useRoles()
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
   const [editando, setEditando] = useState<string | null>(null)
@@ -168,6 +172,25 @@ function PanelRoles() {
               Se está mostrando el reparto que estaba escrito en el código, así que la app funciona
               igual que siempre — pero <strong>editar todavía no va a guardar nada</strong>. Se
               habilita corriendo <code>scripts/60-roles-permisos.sql</code>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/*
+        Caso distinto del de arriba y por eso cartel aparte: la tabla ESTÁ y los roles se leen
+        bien; lo único que falta es la columna de permisos finos. Antes este caso se mostraba
+        como «falta la tabla» —porque un select con una columna inexistente falla entero— y
+        mandaba a correr scripts/60, que no arreglaba nada.
+      */}
+      {desdeLaBase && falta === "columna_permisos" && (
+        <Card className="entrada-suave border-sky-300 bg-sky-50">
+          <CardContent className="space-y-1 p-4 text-sm">
+            <p className="font-medium text-sky-900">Los permisos por sección funcionan. Falta el grano fino.</p>
+            <p className="text-sky-900/80">
+              Podés ver qué hay dentro de cada sección, pero <strong>destildar algo de adentro
+              todavía no se guarda</strong>: falta la columna. Se habilita corriendo{" "}
+              <code>scripts/61-permisos-finos.sql</code>.
             </p>
           </CardContent>
         </Card>
