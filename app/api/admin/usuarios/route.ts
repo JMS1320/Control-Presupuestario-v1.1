@@ -2,10 +2,15 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
 import { urlBase } from "@/lib/auth/url-base"
+import { leerRoles } from "@/lib/auth/permisos"
 
-/** Roles que se pueden asignar. Cualquier otra cosa se rechaza. */
-const ROLES = ["admin", "contable"] as const
-type Rol = (typeof ROLES)[number]
+/**
+ * ⚠️ Los roles válidos salen de `public.roles`, **no de una lista acá**.
+ *
+ * Estaban escritos a mano (`["admin","contable"]`) y para el 2026-09-24 la base ya tenía cinco:
+ * el alta rechazaba con «Rol inválido» tres roles que el propio usuario había creado.
+ */
+type Rol = string
 
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -76,8 +81,12 @@ export async function POST(request: Request) {
   if (!EMAIL_OK.test(email)) {
     return NextResponse.json({ error: "Email inválido." }, { status: 400 })
   }
-  if (!ROLES.includes(rol)) {
-    return NextResponse.json({ error: "Rol inválido." }, { status: 400 })
+  const { roles: rolesValidos } = await leerRoles()
+  if (!rolesValidos.some((r) => r.id === rol)) {
+    return NextResponse.json(
+      { error: `Ese rol no existe. Los que hay: ${rolesValidos.map((r) => r.id).join(", ")}.` },
+      { status: 400 }
+    )
   }
 
   const origen = urlBase(request)

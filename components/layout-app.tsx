@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import type { UserRole } from "@/lib/auth/roles"
 import {
   Sidebar,
   SidebarContent,
@@ -53,7 +54,7 @@ export type IdSeccion = (typeof SOLAPAS)[number]["id"]
  * como paracaídas para cuando la tabla todavía no existe, y como fuente del listado completo
  * (`seccionesDe("admin")` son las 12 con su label e ícono).
  */
-export function seccionesDe(userRole: "admin" | "contable") {
+export function seccionesDe(userRole: UserRole) {
   return SOLAPAS.filter((s) => userRole === "admin" || s.id === "egresos")
 }
 
@@ -111,7 +112,7 @@ function MenuLateral({
   contadores,
   onElegir,
 }: {
-  userRole: "admin" | "contable"
+  userRole: UserRole
   secciones: readonly { id: string; label: string; Icono: React.ComponentType<{ className?: string }> }[]
   activa?: string
   /** Preferencia personal: mostrar los globitos de pendientes. */
@@ -197,7 +198,7 @@ export function LayoutApp({
   onElegirSeccion,
   children,
 }: {
-  userRole: "admin" | "contable"
+  userRole: UserRole
   /** Ids de las secciones que ve este usuario, leídos de `public.roles`. Sin esto, el reparto
    *  del código — el paracaídas de cuando la tabla todavía no se creó. */
   secciones?: string[]

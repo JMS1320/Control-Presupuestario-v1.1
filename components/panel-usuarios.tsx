@@ -32,6 +32,20 @@ export function PanelUsuarios({ miId }: { miId: string }) {
   const [email, setEmail] = useState("")
   const [rol, setRol] = useState<string>("contable")
   const [creando, setCreando] = useState(false)
+  /**
+   * Los roles salen de la base, no de una lista acá (A-FEAT-169). Estaban escritos a mano y el
+   * 2026-09-24 la base tenía cinco: los tres que el usuario había creado no aparecían en ningún
+   * desplegable, así que no se le podían asignar a nadie.
+   */
+  const [rolesDisponibles, setRolesDisponibles] = useState<{ id: string; descripcion: string }[]>([])
+
+  useEffect(() => {
+    fetch("/api/admin/roles")
+      .then((r) => r.json())
+      .then((j) => setRolesDisponibles(j?.roles ?? []))
+      .catch(() => {})
+  }, [])
+
   const [invitacion, setInvitacion] = useState<
     { email: string; link: string; advertencia?: string | null } | null
   >(null)
@@ -201,8 +215,12 @@ export function PanelUsuarios({ miId }: { miId: string }) {
             <Select value={rol} onValueChange={setRol}>
               <SelectTrigger id="rol-nuevo"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="contable">Contable — sólo Egresos</SelectItem>
-                <SelectItem value="admin">Admin — todo (exige 2FA)</SelectItem>
+                {rolesDisponibles.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.id}
+                    {r.descripcion ? ` — ${r.descripcion.split(".")[0]}` : ""}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -281,8 +299,9 @@ export function PanelUsuarios({ miId }: { miId: string }) {
                             <SelectValue placeholder="sin rol" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="contable">contable</SelectItem>
-                            <SelectItem value="admin">admin</SelectItem>
+                            {rolesDisponibles.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>{r.id}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       )}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,7 +14,7 @@ import { ModalVentaMsa, type VentaMsa } from "./modal-venta-msa"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 interface Props {
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
 }
 
 const fmtAR = (n: number, dec = 2) =>

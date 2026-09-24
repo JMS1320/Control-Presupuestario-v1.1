@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -25,7 +26,7 @@ import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subd
 interface Props {
   /** PAM incluida para cuando exista `pam.comprobantes_venta` (hoy la tabla no está creada). */
   empresa: 'MSA' | 'PAM' | 'MA'
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
 }
 
 const fmtAR = (n: number, dec = 2) =>

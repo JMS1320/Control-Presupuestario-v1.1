@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,7 +9,7 @@ import { Receipt, FileText, Building2 } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
 
-export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
+export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
   const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("facturas-msa")

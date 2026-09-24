@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TrendingUp, Receipt, FileText, BookOpen, Landmark, Wheat, Beef } from "lucide-react"
@@ -41,7 +42,7 @@ const VISTAS: { id: Vista; label: string; icono: typeof Wheat; soloMsa?: boolean
 const vistasDe = (empresa: Empresa) =>
   VISTAS.filter(v => empresa === 'MSA' || !v.soloMsa)
 
-export function VistaIngresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
+export function VistaIngresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   const [empresa, setEmpresa] = useState<Empresa>('MSA')
   const [vista, setVista] = useState<Vista>('arrendamientos')
 

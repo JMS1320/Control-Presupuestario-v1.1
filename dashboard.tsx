@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { ProveedorPermisos } from "./components/contexto-permisos"
+import type { UserRole } from "@/lib/auth/roles"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
@@ -47,7 +48,7 @@ import { MarcaFlotante } from "@/components/boton-revision"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
   /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
   seccionInicial?: string
   /** Preferencias personales del usuario (A-FEAT-83): menú abierto, contadores, salida. */

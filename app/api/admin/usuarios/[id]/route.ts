@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server"
+import { leerRoles } from "@/lib/auth/permisos"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
 
-const ROLES = ["admin", "contable"] as const
+// Los roles válidos salen de `public.roles` (ver el alta). Nada hardcodeado.
 
 /**
  * PATCH — cambiar el rol y/o el bloqueo de una cuenta.
@@ -41,8 +42,12 @@ export async function PATCH(
   const cambios: Record<string, unknown> = {}
 
   if (body.rol !== undefined) {
-    if (!ROLES.includes(body.rol as (typeof ROLES)[number])) {
-      return NextResponse.json({ error: "Rol inválido." }, { status: 400 })
+    const { roles: rolesValidos } = await leerRoles()
+    if (!rolesValidos.some((r) => r.id === body.rol)) {
+      return NextResponse.json(
+        { error: `Ese rol no existe. Los que hay: ${rolesValidos.map((r) => r.id).join(", ")}.` },
+        { status: 400 }
+      )
     }
     cambios.app_metadata = { role: body.rol }
   }

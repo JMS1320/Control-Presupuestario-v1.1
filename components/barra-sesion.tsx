@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import type { UserRole } from "@/lib/auth/roles"
 import { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { leerIdentidad } from "@/lib/auth/identidad"
@@ -62,7 +63,7 @@ export function BarraSesion({
   userRole,
   confirmarSalida = false,
 }: {
-  userRole: "admin" | "contable"
+  userRole: UserRole
   /** Preferencia personal: preguntar antes de cerrar la sesión (A-FEAT-83). */
   confirmarSalida?: boolean
 }) {
