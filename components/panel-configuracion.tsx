@@ -134,11 +134,13 @@ function CasillaMaestra({
   etiqueta,
   marcados,
   total,
+  deshabilitada = false,
   onCambio,
 }: {
   etiqueta: string
   marcados: number
   total: number
+  deshabilitada?: boolean
   onCambio: (valor: boolean) => void
 }) {
   const ref = useRef<HTMLInputElement>(null)
@@ -154,11 +156,18 @@ function CasillaMaestra({
       ref={ref}
       type="checkbox"
       aria-label={etiqueta}
-      title={algunos ? `${marcados} de ${total}` : etiqueta}
+      title={
+        deshabilitada
+          ? "Primero hay que poder ver algo: no se puede editar lo que no se ve"
+          : algunos
+            ? `${marcados} de ${total} — tocá para marcar todos`
+            : etiqueta
+      }
       checked={todos}
+      disabled={deshabilitada}
       // Desde "algunos" se marca todo: es lo que se espera al tocar un encabezado a medias.
       onChange={() => onCambio(!todos)}
-      className="h-3 w-3"
+      className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-40"
     />
   )
 }
@@ -334,19 +343,26 @@ function PanelRoles() {
 
                           {puesta && dentro.length > 0 && (
                             <div className="border-t bg-white/70 px-2.5 py-2">
+                              {/*
+                                Orden: primero los títulos de columna, DESPUÉS las maestras. Al
+                                revés (como estaba) no se veía a qué columna pertenecía cada
+                                casilla — lo reportó el usuario 2026-09-24.
+                              */}
+                              <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                                <span className="flex-1" />
+                                <span className="w-9 text-center">Ver</span>
+                                <span className="w-12 text-center">Editar</span>
+                              </div>
                               {(() => {
-                                // Las casillas maestras de la sección. Cuentan sobre TODOS sus
-                                // recursos —incluidos los hijos— porque eso es lo que la persona
-                                // ve y lo que espera que pase al tildar el encabezado.
                                 const ids = dentro.map((r) => r.id)
                                 const ven = ids.filter((i) => nivelDe(i) !== "ninguno").length
                                 const editan = ids.filter((i) => nivelDe(i) === "escritura").length
                                 return (
-                                  <div className="mb-1 flex items-center gap-2 border-b pb-1 text-[10px] font-medium text-muted-foreground">
-                                    <span className="flex-1">Todo {label}</span>
+                                  <div className="mb-1 flex items-center gap-2 border-b pb-1.5 text-[10px] text-muted-foreground">
+                                    <span className="flex-1 italic">Seleccionar todos</span>
                                     <span className="flex w-9 justify-center">
                                       <CasillaMaestra
-                                        etiqueta={`Ver todo en ${label}`}
+                                        etiqueta={`Ver: seleccionar todos en ${label}`}
                                         marcados={ven}
                                         total={ids.length}
                                         onCambio={(v) => ponerVarios(ids, v ? "escritura" : "ninguno")}
@@ -354,23 +370,19 @@ function PanelRoles() {
                                     </span>
                                     <span className="flex w-12 justify-center">
                                       <CasillaMaestra
-                                        etiqueta={`Editar todo en ${label}`}
+                                        etiqueta={`Editar: seleccionar todos en ${label}`}
                                         marcados={editan}
                                         total={ids.length}
-                                        // Tildar «editar todo» tiene que traer «ver» con él: no se
-                                        // puede editar lo que no se ve, y si no, tildarlo no haría
-                                        // nada visible en las filas ocultas.
+                                        // Deshabilitada cuando no hay nada visible: así se VE que
+                                        // «editar» depende de «ver», en vez de que se destilde
+                                        // solo y parezca un error de la pantalla.
+                                        deshabilitada={ven === 0}
                                         onCambio={(v) => ponerVarios(ids, v ? "escritura" : "lectura")}
                                       />
                                     </span>
                                   </div>
                                 )
                               })()}
-                              <div className="mb-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                                <span className="flex-1" />
-                                <span className="w-9 text-center">Ver</span>
-                                <span className="w-12 text-center">Editar</span>
-                              </div>
                               <div className="space-y-0.5">
                                 {dentro.map((r) => {
                                   // Si el padre está oculto, el hijo tampoco: destildar Insumos y
