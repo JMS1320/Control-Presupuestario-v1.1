@@ -328,12 +328,57 @@ En las tablas de movimiento, al conciliar se llenan (según contra qué se conci
 
 ---
 
-## 5. Permisos y RLS  🔒  (auditado 2026-06-23)
+## 5. Permisos y RLS  🔒
+
+> ✅ **CERRADO el 2026-09-24** corriendo `scripts/57` con el usuario, paso a paso. Lo de abajo,
+> bajo «Cómo estaba», es **el estado anterior** — se conserva porque explica por qué existía
+> A-SEC-01 y qué se rompería si alguien revierte.
+
+### Cómo quedó (2026-09-24)
+
+| | |
+|---|---|
+| **`anon`** | **sin ningún permiso** en los 5 schemas. `REVOKE ALL` sobre tablas, secuencias y funciones + `REVOKE USAGE` del schema, y `ALTER DEFAULT PRIVILEGES` para que las tablas nuevas tampoco nazcan abiertas |
+| **`authenticated`** | conserva sus grants, pero ahora la RLS filtra: **una sola policy por tabla**, `solo_usuarios_habilitados`, `FOR ALL` con `USING (public.tiene_rol()) WITH CHECK (public.tiene_rol())` |
+| **`service_role`** | sin cambios — saltea RLS. Es lo que usan las 27 rutas de `app/api` |
+| **El candado** | `public.tiene_rol()`: `auth.jwt() -> 'app_metadata' ->> 'role' <> ''`. **Tener rol, no sólo tener sesión** (A-SEC-07). Cambiar el criterio de acceso de todo el sistema es cambiar esas tres líneas |
+
+**Verificado** — PASO 3 del script dio cero filas en las tres consultas (ninguna tabla sin RLS,
+ninguna policy vieja, ningún permiso de `anon`), y desde fuera: `anon` da **401** en lectura y en
+escritura (`permission denied for table proveedores`), `service_role` entra normal.
+
+📸 El estado previo quedó en `respaldos/a-sec-07-pg-class-antes-2026-09-24.csv` y
+`a-sec-07-pg-policies-antes-2026-09-24.csv`.
+
+### Dos excepciones, las dos a propósito
+
+- **`public.roles` queda fuera del reparto.** `scripts/60` la dejó con RLS y **sin** policies, y
+  revocada a `anon` *y* a `authenticated`: se lee sólo desde el servidor con `service_role`. Es lo
+  que impide que un rol cualquiera se edite sus propios permisos. Darle la policy general no la
+  abriría hoy (sin GRANT no alcanza), pero dejaría una puerta que se abre sola el día que alguien
+  otorgue permisos a `authenticated`.
+- **Las 3 policies `*_anon_insert`** de `notas_capturas`, `notas_para_claude` y `revisiones` (§ 6b-bis)
+  **se borraron**. Existían para que el feature de notas insertara sin sesión; con login real quien
+  escribe una nota está autenticado, y lo cubre la policy nueva.
+
+### ⚠️ Lo que NO cierra — el hueco conocido
+
+`REVOKE ALL ON FUNCTION ... FROM anon` **no cierra ninguna función**: en Postgres el `EXECUTE` se
+otorga a **`PUBLIC`** por defecto, y revocárselo a `anon` no toca ese otorgamiento. Comprobado el
+2026-09-24: `anon` sigue pudiendo ejecutar `public.tiene_rol()` (devuelve `false`, así que en esa
+función puntual no importa).
+
+Importa si existe alguna función **`SECURITY DEFINER`**, que corre con los permisos de su dueño y
+saltearía todo lo anterior. **Pendiente de auditar** → [A-SEC-01](PENDIENTES.md#a-sec-01). El cierre
+sería `REVOKE ALL ON FUNCTION ... FROM PUBLIC`, no `FROM anon`.
+
+### Cómo estaba (auditoría 2026-06-23) — el motivo de A-SEC-01
+
 
 **No hay protección a nivel de datos.** Relevamiento concreto:
 
-1. **Grants idénticos para los 3 roles**: `anon`, `authenticated` y `service_role` tienen **`SELECT, INSERT, UPDATE, DELETE, TRUNCATE`** sobre **los 72 objetos** (66 tablas + 6 vistas). La `anon_key` está en el bundle JS (por diseño de Supabase).
-2. **Las 41 policies RLS son TODAS "allow all"** (permisivas, `cmd=ALL`, `qual=true`) → **la RLS no filtra nada**. Da igual RLS on u off.
+1. **Grants idénticos para los 3 roles**: `anon`, `authenticated` y `service_role` tienen **`SELECT, INSERT, UPDATE, DELETE, TRUNCATE`** sobre **los 72 objetos** (66 tablas + 6 vistas). ⚠️ **Remedido 2026-09-24: eran 100 objetos, no 72** — productivo 40 · public 37 · msa 13 · ma 5 · pam 5, y el schema `sueldos` ya no existe. La `anon_key` está en el bundle JS (por diseño de Supabase).
+2. **Las 41 policies RLS son TODAS "allow all"** *(remedido 2026-09-24: eran **76**, de las cuales 73 `allow all` y 3 `anon_insert`)* (permisivas, `cmd=ALL`, `qual=true`) → **la RLS no filtra nada**. Da igual RLS on u off.
 3. **Tablas sin RLS** (sin siquiera policy): `pam_galicia_cc`, `anticipos_facturas`, `anticipos_proveedores`, `lotes_transferencias`, `arca_pdf_busqueda_log`, `reglas_ctas_import_arca`, todas las `caja_*`, `cheques`, `grupos_pago`, `comprobantes_historico` (msa/pam), `pam.comprobantes_arca`, todas las `tarjeta_*`, `productivo.terneros`, `productivo.pesadas_terneros`, **todo el schema `sueldos`**.
 
 **Consecuencia:** cualquiera con la `anon_key` (extraíble del frontend) + `curl` puede **leer, modificar, borrar o truncar cualquier tabla**. El único "control" actual es la ofuscación de rutas URL en el frontend (`adminjms1320`/`ulises`), que **no protege la API**. → Hallazgo crítico **A-SEC-01** en `PENDIENTES.md` (hardening pendiente).
