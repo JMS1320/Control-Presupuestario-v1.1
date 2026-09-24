@@ -573,7 +573,7 @@ export function TabSueldos() {
     setAntDesc(pago.descripcion ?? '')
     setAntEstado((pago as any).estado ?? 'pagar')
     /**
-     * 🐞 **A-BUG-97 — el medio de pago se carga del PAGO, no se deja el anterior.**
+     * 🐞 **A-BUG-197 — el medio de pago se carga del PAGO, no se deja el anterior.** *(era A-BUG-97; renumerado al integrar con la rama de Javier)*
      *
      * Esta función seteaba todos los campos del formulario **menos éste**, así que `antMedioPago`
      * conservaba lo último que hubiera (o su valor inicial, `'banco'`) y al guardar **pisaba** el
