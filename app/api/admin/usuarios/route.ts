@@ -2,10 +2,27 @@ import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
 import { urlBase } from "@/lib/auth/url-base"
+import { leerRoles } from "@/lib/auth/permisos"
 
-/** Roles que se pueden asignar. Cualquier otra cosa se rechaza. */
-const ROLES = ["admin", "contable"] as const
-type Rol = (typeof ROLES)[number]
+/**
+ * 🐞 **A-BUG-198 — los roles salen de la TABLA, no de una lista escrita acá.**
+ *
+ * Acá vivía `const ROLES = ["admin", "contable"]`. El problema: `public.roles` ya tenía **cuatro**
+ * (`admin`, `contable`, `productivo`, `socio`), y los dos últimos **existían en la base pero no se
+ * le podían asignar a nadie** — la pantalla de Configuración → Roles los mostraba y los dejaba
+ * editar, y el alta los rechazaba con «Rol inválido».
+ *
+ * 🔑 **Y era invisible desde los dos lados**: quien mira la tabla los ve; quien mira esta lista ve
+ * otra cosa. Crear un rol nuevo parecía funcionar hasta el momento de usarlo.
+ *
+ * 📌 `leerRoles()` es la **misma** función que usa la pantalla de roles, así que las dos no pueden
+ * divergir. Trae su propio paracaídas: si la tabla todavía no existe devuelve el reparto anterior,
+ * y el alta sigue funcionando como antes en vez de quedarse sin ningún rol válido.
+ */
+async function rolesAsignables(): Promise<string[]> {
+  const { roles } = await leerRoles()
+  return roles.map(r => r.id)
+}
 
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -71,13 +88,19 @@ export async function POST(request: Request) {
   }
 
   const email = String(body.email ?? "").trim().toLowerCase()
-  const rol = String(body.rol ?? "") as Rol
+  const rol = String(body.rol ?? "")
 
   if (!EMAIL_OK.test(email)) {
     return NextResponse.json({ error: "Email inválido." }, { status: 400 })
   }
-  if (!ROLES.includes(rol)) {
-    return NextResponse.json({ error: "Rol inválido." }, { status: 400 })
+  const asignables = await rolesAsignables()
+  if (!asignables.includes(rol)) {
+    // El mensaje dice CUÁLES valen: «Rol inválido» a secas obliga a adivinar, y con los roles
+    // saliendo de una tabla la lista cambia sin que nadie toque este archivo.
+    return NextResponse.json(
+      { error: `Rol inválido. Los que existen hoy son: ${asignables.join(", ")}.` },
+      { status: 400 },
+    )
   }
 
   const origen = urlBase(request)
