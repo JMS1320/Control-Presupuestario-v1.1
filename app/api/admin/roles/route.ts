@@ -10,9 +10,20 @@ export async function GET() {
   if (!guard.ok) return NextResponse.json({ error: guard.motivo }, { status: guard.status })
 
   const { roles, desdeLaBase, falta } = await leerRoles()
+
+  /**
+   * Qué recursos tienen tablas mapeadas en `public.recurso_tablas` — o sea, para cuáles la BASE
+   * aplica el permiso y no sólo la pantalla (A-SEC-10).
+   *
+   * La pantalla lo necesita para no mentir: decir «sólo ver» donde la base no lo aplica es
+   * prometer una contención que no existe, y decir lo contrario donde sí la aplica asusta de más.
+   * Es el mismo dato por el otro camino: lo único que sabe la verdad es el mapeo.
+   */
+  const { data: mapeo } = await supabaseAdmin.from("recurso_tablas").select("recurso")
+  const recursosAplicados = [...new Set((mapeo ?? []).map((m) => m.recurso as string))]
   // `desdeLaBase: false` avisa a la pantalla que está mostrando el paracaídas y que editar no va
   // a servir de nada hasta correr scripts/60. Es preferible a una pantalla que parece editable.
-  return NextResponse.json({ roles, desdeLaBase, falta })
+  return NextResponse.json({ roles, desdeLaBase, falta, recursosAplicados })
 }
 
 /**

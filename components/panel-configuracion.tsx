@@ -86,6 +86,8 @@ function useRoles() {
   // Qué falta exactamente. Un cartel que culpa a la pieza equivocada manda a correr el script que
   // no arregla nada, y el problema real queda invisible.
   const [falta, setFalta] = useState<"tabla" | "columna_permisos" | undefined>()
+  // Los recursos que la BASE aplica (tienen tablas mapeadas). Ver el comentario en la ruta.
+  const [aplicados, setAplicados] = useState<string[]>([])
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
 
   const recargar = () =>
@@ -96,6 +98,7 @@ function useRoles() {
         setRoles(j.roles)
         setDesdeLaBase(j.desdeLaBase)
         setFalta(j.falta)
+        setAplicados(j.recursosAplicados ?? [])
       })
       .catch(() => {})
 
@@ -112,7 +115,7 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, falta, cuentas, recargar }
+  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar }
 }
 
 /**
@@ -173,7 +176,7 @@ function CasillaMaestra({
 }
 
 function PanelRoles() {
-  const { roles, desdeLaBase, falta, cuentas, recargar } = useRoles()
+  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar } = useRoles()
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
   const [editando, setEditando] = useState<string | null>(null)
@@ -406,6 +409,20 @@ function PanelRoles() {
                                             acción
                                           </span>
                                         )}
+                                        {/*
+                                          El candado distingue lo que la BASE aplica de lo que es
+                                          sólo la pantalla. Sin esta marca, «sólo ver» prometía en
+                                          todos lados una contención que hoy existe sólo donde hay
+                                          tablas mapeadas (A-SEC-10).
+                                        */}
+                                        {aplicados.includes(r.id) && (
+                                          <span
+                                            title="La base lo aplica: con «sólo ver», el intento de escribir se rechaza aunque venga de la consola"
+                                            className="ml-1.5 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800"
+                                          >
+                                            🔒 base
+                                          </span>
+                                        )}
                                       </span>
 
                                       <span className="flex w-9 justify-center">
@@ -444,13 +461,30 @@ function PanelRoles() {
                                 Callarlo convertiría esto en lo que `scripts/60` decidió evitar:
                                 algo que parece un permiso y no lo es.
                               */}
-                              {dentro.some((r) => nivelDe(r.id) === "lectura") && (
-                                <p className="mt-1.5 rounded border border-amber-200 bg-amber-50 p-1.5 text-[10px] text-amber-800">
-                                  <strong>Ojo:</strong> «sólo ver» se guarda pero <strong>todavía no
-                                  impide escribir</strong>. Sirve para ordenar el trabajo, no para
-                                  contener a alguien. Lo que sí se aplica ya es destildar «Ver».
-                                </p>
-                              )}
+                              {(() => {
+                                // El cartel dice la verdad POR CASO. El anterior afirmaba que
+                                // «sólo ver» no impedía escribir; desde `scripts/62` eso es falso
+                                // donde hay tablas mapeadas, y sigue siendo cierto donde no.
+                                const enLectura = dentro.filter((r) => nivelDe(r.id) === "lectura")
+                                if (enLectura.length === 0) return null
+                                const sinBase = enLectura.filter((r) => !aplicados.includes(r.id))
+                                if (sinBase.length === 0) {
+                                  return (
+                                    <p className="mt-1.5 rounded border border-emerald-200 bg-emerald-50 p-1.5 text-[10px] text-emerald-800">
+                                      🔒 <strong>La base lo aplica.</strong> Con «sólo ver», el intento
+                                      de guardar se rechaza — aunque lo haga desde la consola del navegador.
+                                    </p>
+                                  )
+                                }
+                                return (
+                                  <p className="mt-1.5 rounded border border-amber-200 bg-amber-50 p-1.5 text-[10px] text-amber-800">
+                                    <strong>Ojo:</strong> en {sinBase.map((r) => r.etiqueta).join(", ")}{" "}
+                                    el «sólo ver» lo aplica <strong>sólo la pantalla</strong>: sus tablas
+                                    todavía no están mapeadas en la base, así que ordena el trabajo pero
+                                    no contiene a alguien decidido. Las que tienen 🔒 sí las frena la base.
+                                  </p>
+                                )
+                              })()}
                               {dentro.some((r) => nivelDe(r.id) === "ninguno") && (
                                 <p className="mt-1.5 text-[10px] text-muted-foreground">
                                   Lo destildado no se le va a mostrar. Sigue pudiendo entrar a la sección.
