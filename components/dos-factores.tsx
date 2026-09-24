@@ -98,6 +98,9 @@ export function AltaTOTP() {
   const destino = destinoSeguro(useSearchParams().get("next"))
   const [qr, setQr] = useState<string | null>(null)
   const [secreto, setSecreto] = useState<string | null>(null)
+  // El `otpauth://` crudo. Sirve para quien está mirando esta pantalla DESDE el teléfono: tocarlo
+  // abre el autenticador y agrega la cuenta sin cámara de por medio.
+  const [uri, setUri] = useState<string | null>(null)
   const [factorId, setFactorId] = useState<string | null>(null)
   const [codigo, setCodigo] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -139,6 +142,7 @@ export function AltaTOTP() {
       }
       setQr(data.totp.qr_code)
       setSecreto(data.totp.secret)
+      setUri(data.totp.uri)
       setFactorId(data.id)
     })()
     return () => {
@@ -177,18 +181,47 @@ export function AltaTOTP() {
         te muestre.
       </p>
 
+      {/*
+        ⚠️ **Fondo blanco FIJO y margen alrededor — no es decoración, es lo que lo hace escaneable.**
+        El SVG que devuelve Supabase son módulos oscuros SIN fondo propio. Servido sobre la tarjeta
+        (`dark:bg-slate-900`), en modo oscuro queda negro sobre gris oscuro: a ojo se ve un QR, pero
+        para una cámara no hay contraste y la app de autenticación no lo agrega. Le pasó a un usuario
+        el 2026-09-23 y el síntoma no dice nada — no hay error, simplemente no pasa nada.
+        El `p-4` es la **zona de silencio** que el estándar QR exige: sin margen claro alrededor,
+        muchos lectores tampoco enganchan.
+      */}
       {qr ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={qr} alt="Código QR para el segundo factor" className="mx-auto h-48 w-48" />
+        <div className="mx-auto w-fit rounded-lg bg-white p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qr} alt="Código QR para el segundo factor" className="h-48 w-48" />
+        </div>
       ) : (
-        <div className="mx-auto h-48 w-48 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+        <div className="mx-auto h-56 w-56 animate-pulse rounded-lg bg-slate-200 dark:bg-slate-800" />
+      )}
+
+      {/*
+        Los dos caminos que NO usan la cámara. Van a la vista y no escondidos en un <details>:
+        cuando el QR falla, la persona ya está trabada, y un desplegable que hay que descubrir es
+        justo lo que no encuentra.
+      */}
+      {uri && (
+        <a
+          href={uri}
+          className="block text-center text-sm underline underline-offset-2 sm:hidden"
+        >
+          Abrir directamente en mi app de autenticación
+        </a>
       )}
 
       {secreto && (
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer">No puedo escanear el QR</summary>
-          <p className="mt-2 break-all font-mono">{secreto}</p>
-        </details>
+        <div className="rounded border bg-slate-50 p-3 text-xs dark:bg-slate-800/50">
+          <p className="mb-1 font-medium">¿No lo toma el escáner? Cargalo a mano</p>
+          <p className="mb-2 text-muted-foreground">
+            En tu app: «Agregar cuenta» → «Ingresar clave de configuración», tipo{" "}
+            <strong>por tiempo</strong>. El nombre de cuenta lo elegís vos.
+          </p>
+          <p className="break-all font-mono text-sm tracking-wider">{secreto}</p>
+        </div>
       )}
 
       <form onSubmit={confirmar} className="space-y-4">

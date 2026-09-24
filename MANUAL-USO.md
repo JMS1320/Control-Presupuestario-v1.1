@@ -166,6 +166,22 @@ El control **no llega** a «Reenviar mail» ni al mail de la invitación: esos n
 así que no hay con qué comparar. Si dudás, generá un «Copiar link» primero — si ese cierra, el
 mail también.
 
+### 🟡 Si el QR del segundo factor no lo toma el autenticador *(sin testear — A-TEST-98)*
+
+El QR va sobre **fondo blanco a propósito**, aunque estés en modo oscuro: los módulos que manda
+Supabase no traen fondo, y sobre una tarjeta oscura la cámara no ve contraste — se ve un QR, pero
+no lo agrega y no aparece ningún error.
+
+Si aun así no engancha, hay **dos caminos sin cámara**, los dos a la vista en esa misma pantalla:
+
+- **Desde el teléfono**: el link «Abrir directamente en mi app de autenticación» — la agrega sin
+  escanear nada.
+- **A mano**: la clave que aparece abajo. En tu app, «Agregar cuenta» → «Ingresar clave de
+  configuración», tipo **por tiempo**. El nombre de cuenta lo elegís vos.
+
+Después escribís los 6 dígitos y listo. Si el código da incorrecto, casi siempre es la **hora del
+teléfono**: ponela en automático.
+
 ### Cerrar sesión
 Desde el botón de salir. (No se cierra sola por abrir un link: el logout es sólo por POST, a
 propósito, para que nadie pueda desloguearte con una imagen escondida en una página.)
