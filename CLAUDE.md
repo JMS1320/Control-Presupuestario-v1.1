@@ -813,6 +813,45 @@ controle que no quedó nada desparramado).
   toros del usuario. Se detectó revisando la tabla, no por un error: **el test dijo OK**.*
 - Motivo: el usuario perdió confianza cuando se le tocó un dato sin avisar; los datos son su fuente de verdad para testear.
 
+### 🗺️ EL GRAFO DEL CÓDIGO — se consulta SIEMPRE, antes de grepear (REGLA)
+*Pedida por el usuario 2026-09-24, el día que se instaló: **«usamos este MCP siempre, para que
+recuerdes que lo debés usar y nunca trabajar sin esta herramienta»**.*
+
+> **Antes de tocar código, la pregunta «¿quién más usa esto?» va al GRAFO, no a `grep`.**
+> 📍 **Acá:** el MCP **`codebase-memory-mcp`**, indexado sobre este repo. Corre local, no sale nada
+> de la máquina, y **el índice se actualiza solo** cuando cambian los archivos.
+
+**Cuándo es obligatorio**, y no es «cuando convenga»:
+- Antes de **cambiar la firma o el comportamiento de una función** → `search_graph` con
+  `include_connected` dice quién la llama.
+- Antes de dar por **completo** un arreglo → `trace_path`, para ver si hay otro camino.
+- Al **entrar a un módulo que no se tocó hace tiempo** → `get_architecture`.
+
+🧨 **El motivo es EL modo de falla de este proyecto.** *«Se arregló un camino de los dos»*
+(§ `MODULO_CONCILIACION.md` 30.9.5) se repitió **cinco veces el 2026-09-23**: cada `grep` encontraba
+uno y había otro — las 4 funciones de retención previa, el `agruparPagos` duplicado, el símbolo `⚠`
+roto en el archivo gemelo doce líneas más abajo. **El usuario lo cortó preguntando si me había
+fijado bien, y la respuesta honesta era que no.**
+
+✅ **Y el día que se instaló quedó demostrado**: la misma pregunta que había costado **tres intentos
+y dos correcciones** devolvió **los cuatro caminos en una sola consulta** — más un quinto llamador
+(`ejecutarLote`) que no estaba en mi lista.
+
+🛑 **LA TRAMPA, y es la que puede hacer daño: el grafo es de la RAMA MONTADA.**
+Con varias ramas en paralelo —y acá siempre las hay— **lo que vive sólo en otra rama NO aparece**.
+Un resultado vacío significa *«no está en esta rama»*, **nunca** *«no existe»*. Antes de afirmar que
+algo no existe: mirar en qué rama está el árbol, y si hace falta buscarlo con
+`git log -S` / `git show <rama>:<archivo>`, que sí cruzan ramas.
+*Y pasó en el momento de escribir esta regla: el ancla que buscaba vivía en otra rama.*
+
+📌 **`grep` no se jubila, cambia de trabajo**: el grafo sabe de **símbolos y llamadas**; `grep` sigue
+siendo el bueno para **literales** — un texto de pantalla, un mensaje de error, un comentario, una
+columna dentro de un string. Las dos veces que hizo falta encontrar un cartel repetido, lo encontró
+`grep`.
+
+👤 **Javier no lo necesita.** El índice vive en esta máquina y la configuración (`.mcp.json`) está
+gitignoreada: **no va al repo y no le cambia nada**. Si él lo quiere, lo instala por su cuenta.
+
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
 *Agregada 2026-08-03, después de que Claude duplicara **tres veces en una sola sesión** algo que
 ya existía. Las tres las detectó el usuario, no Claude.*
@@ -1189,6 +1228,7 @@ npm run build                        # build
 ## 🧭 Navegación rápida
 | Necesito… | Voy a… |
 |-----------|--------|
+| **Quién llama a esta función / qué se rompe si la toco** | el **grafo** (`codebase-memory-mcp`), nunca `grep` — ver § 🗺️ |
 | Qué falta / bugs / TODOs | `PENDIENTES.md` |
 | Estructura de datos (tablas, columnas, permisos) | `ARQUITECTURA-BD.md` + `ESTRUCTURA_BD_COLUMNAS.md` |
 | Cómo reconstruir la BD | `RECONSTRUCCION_SUPABASE_2026-01-07.md` |
