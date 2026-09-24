@@ -4109,6 +4109,24 @@ propósito, así que sin él la policy no podría leer la tabla que la define. V
 
 ### Lo que falta, y no es un detalle
 
+### 🔻 El cartel quedó viejo el mismo día (2026-09-24)
+
+Lo vio el usuario: la pantalla seguía diciendo *«sólo ver se guarda pero todavía no impide
+escribir»* — un cartel de la etapa 3 que `scripts/62` volvió **falso unas horas después**.
+
+Es un modo de falla propio de la documentación dentro del producto: **el cartel honesto de ayer es
+la mentira de hoy**, y nadie lo revisa porque no falla nada.
+
+**Y arreglarlo no era borrarlo**, porque la verdad quedó más fina: depende del mapeo.
+`egresos.facturas-*` está mapeado **por pestaña**, así que ahí la base sí frena; `productivo` está
+mapeado **por sección**, así que poner «sólo ver» en una de sus pestañas **no lo aplica la base** —
+sus tablas resuelven contra la clave de sección, que la pantalla nunca escribe.
+
+**Solución**: que la pantalla lo sepa. `/api/admin/roles` devuelve `recursosAplicados` (los recursos
+con tablas mapeadas), cada fila muestra **🔒 base** cuando corresponde, y el cartel **nombra las
+pestañas** donde el «sólo ver» es sólo visual. El mismo dato por el otro camino: lo único que sabe
+la verdad es el mapeo.
+
 **Nada de esto está probado con un rol acotado.** Las dos cuentas son `admin` y pasan todo. El test
 real es [A-TEST-148](#a-test-148) y **no se puede hacer con las cuentas de hoy**.
 
