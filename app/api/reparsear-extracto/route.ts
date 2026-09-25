@@ -25,6 +25,8 @@ import {
   firmaDeMovimiento,
   lineasDeFirma,
   resolverReglas,
+  GRUPO_FORMA_NUEVA,
+  GRUPO_CHOQUE,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -180,7 +182,10 @@ export async function POST(req: Request) {
 
 /**
  * GET /api/reparsear-extracto?cuenta=… — sólo el diagnóstico, sin tocar nada.
- * Devuelve qué tipos de movimiento hay y cuáles no tienen regla propia. Lo usa la alerta.
+ *
+ * Devuelve qué tipos hay, con qué formas, y **cuántos movimientos están hoy sin parsear** —
+ * distinguiendo las cuatro causas, porque cada una se arregla distinto. Lo usa la alerta de
+ * Principal y el configurador de reglas.
  */
 export async function GET(req: Request) {
   const sesion = await exigirSesion()
@@ -194,7 +199,17 @@ export async function GET(req: Request) {
     const db = cfg.schema === "public" ? supabase : supabase.schema(cfg.schema)
     const mapaReglas = await cargarReglasParseo(supabase, cuenta)
 
-    const { data, error } = await db.from(cuenta).select("concepto, grupo_de_conceptos")
+    /**
+     * ⚠️ **Se leen también las columnas del desglose, y no por curiosidad.**
+     *
+     * Hasta el 2026-09-25 esto pedía sólo `concepto` y preguntaba *«¿el tipo tiene regla?»*.
+     * Con eso, **MA daba 0 y la alerta no aparecía nunca** aunque sus 96 movimientos estuvieran
+     * guardados en blanco: las 42 reglas se habían escrito **después** de importar y el re-parseo
+     * no se corrió jamás. La regla existía; el desglose no. Ver PENDIENTES § A-BUG-1199.
+     */
+    const { data, error } = await db
+      .from(cuenta)
+      .select("concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
     // Un ejemplo por tipo **y por forma**, tenga regla o no.
@@ -207,7 +222,17 @@ export async function GET(req: Request) {
       n: number; conRegla: boolean
       formas: Map<string, { n: number; ejemplo: string }>
     }>()
-    let sinDesglosar = 0
+
+    /**
+     * 🧮 **Las CUATRO causas por las que un movimiento puede estar sin parsear.**
+     *
+     * Se cuentan separadas porque cada una se resuelve distinto, y porque juntas mienten: decir
+     * *«12 sin parsear»* sin decir por qué manda a escribir reglas que ya están escritas.
+     */
+    let sinRegla = 0            // el tipo no tiene ninguna regla → escribir la regla
+    let formaNueva = 0          // el tipo tiene reglas por forma, pero no de ESTA forma
+    let choque = 0              // dos reglas reclaman la misma columna → hay una mal escrita
+    let desglosePendiente = 0   // hay regla y cierra, pero lo guardado no coincide → falta RE-PARSEAR
 
     for (const m of (data ?? []) as any[]) {
       const tipo = tipoDeMovimiento(m.concepto)
@@ -222,7 +247,18 @@ export async function GET(req: Request) {
       const f = t.formas.get(firma)
       t.formas.set(firma, { n: (f?.n ?? 0) + 1, ejemplo: f?.ejemplo ?? String(m.concepto) })
 
-      if (!conRegla) sinDesglosar++
+      if (!conRegla) { sinRegla++; continue }
+
+      const parsed = parsearMovimiento(String(m.concepto), mapaReglas)
+      if (parsed.grupo_de_conceptos === GRUPO_FORMA_NUEVA) { formaNueva++; continue }
+      if (parsed.grupo_de_conceptos === GRUPO_CHOQUE) { choque++; continue }
+
+      // Sólo se comparan los campos que el parseo produce: `observaciones_cliente` y `concepto`
+      // son del usuario y del banco, y compararlos daría una diferencia falsa en cada fila.
+      const distinto = Object.entries(parsed).some(
+        ([campo, valor]) => String(valor ?? "") !== String(m[campo] ?? "")
+      )
+      if (distinto) desglosePendiente++
     }
 
     const tipos = [...porTipo.entries()]
@@ -256,19 +292,19 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => b.movimientos - a.movimientos)
 
-    // Movimientos que quedan sin parsear por ser de una forma no contemplada. Se cuentan aparte
-    // de `sinDesglosar` porque son otra cosa: acá el tipo SÍ tiene reglas, la forma no.
-    const formasNuevas = tipos.reduce(
-      (acc, t) => acc + t.formatos.filter(f => !f.cubierto).reduce((n, f) => n + f.movimientos, 0),
-      0
-    )
+    const sinParsear = sinRegla + formaNueva + choque + desglosePendiente
 
     return NextResponse.json({
       ok: true,
       cuenta,
       totalMovimientos: data?.length ?? 0,
-      sinDesglosar,
-      formasNuevas,
+      /** 🔑 El número que dispara la alerta: todo lo que hoy NO está desglosado, por cualquier causa. */
+      sinParsear,
+      /** Las cuatro causas, separadas. Cada una tiene su propio arreglo. */
+      causas: { sinRegla, formaNueva, choque, desglosePendiente },
+      /** Compat: era `sinDesglosar` = los que no tienen regla del tipo. */
+      sinDesglosar: sinRegla,
+      formasNuevas: formaNueva,
       /** Todos los tipos presentes, con ejemplo. Lo usa el configurador. */
       tipos,
       /** Sólo los que no tienen regla. Lo usa la alerta de Principal — no cambiar la forma. */
