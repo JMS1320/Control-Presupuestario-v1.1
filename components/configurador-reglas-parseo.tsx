@@ -192,6 +192,41 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     [reglasDe]
   )
 
+  /**
+   * 🧮 **El estado de la cuenta, de un vistazo — A-FEAT-1177.**
+   *
+   * Tres números, y cada uno manda a una acción distinta. Mezclarlos fue el error de la primera
+   * versión del aviso de Principal: un total solo no dice qué hacer.
+   *
+   * ⚠️ **`malHoy` es lo que pasaría al re-parsear, no lo que pasa ahora.** Los movimientos están
+   * en blanco: el daño no existe todavía, y por eso conviene arreglar las reglas ANTES.
+   *
+   * 🛑 **VA ACÁ ARRIBA Y NO SE BAJA.** Más abajo hay un `return` temprano —el de las cuentas
+   * corrientes, que no usan reglas— y un hook después de un return condicional **rompe la pantalla
+   * entera**: React cuenta 8 hooks en una cuenta y 9 en la otra, y al cambiar de cuenta tira
+   * *«rendered more hooks than during the previous render»*. Así se cayó Reglas de parseo el
+   * 2026-09-25 (A-BUG-1201). `type-check` y `build` pasan igual: no es un error de tipos.
+   */
+  const resumen = useMemo(() => {
+    let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0
+    const porTipo: { tipo: string; movimientos: number; hallazgos: number }[] = []
+    for (const t of tipos) {
+      let malDelTipo = 0
+      for (const f of t.subtipos) {
+        const rs = reglasDeSubtipo(t.tipo, f.firma)
+        if (rs.length === 0) { sinReglas += f.movimientos; continue }
+        const a = auditarSubtipo(f.texto, rs as never)
+        lineasParaElUsuario += a.decideElUsuario.length
+        reglasPeligrosas += t.subtipos.length > 1 ? a.reglasQueCuentanSinSubtipo : 0
+        if (a.hallazgos.length > 0) { malHoy += f.movimientos; malDelTipo += f.movimientos }
+        else listos += f.movimientos
+      }
+      if (malDelTipo > 0) porTipo.push({ tipo: t.tipo, movimientos: malDelTipo, hallazgos: 0 })
+    }
+    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas,
+             porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
+  }, [tipos, reglasDeSubtipo])
+
   /** Abre el editor de UN subtipo: propone lo que sabemos y pre-carga lo que ya existe. */
   const abrirSubtipo = (t: TipoInfo, subtipo: Subtipo) => {
     const existentes = reglasDeSubtipo(t.tipo, subtipo.firma)
@@ -332,35 +367,6 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   ).sort((a, b) => b.f.movimientos - a.f.movimientos)
 
   const totalSubtipos = tipos.reduce((n, t) => n + t.subtipos.length, 0)
-
-  /**
-   * 🧮 **El estado de la cuenta, de un vistazo — A-FEAT-1177.**
-   *
-   * Tres números, y cada uno manda a una acción distinta. Mezclarlos fue el error de la primera
-   * versión del aviso de Principal: un total solo no dice qué hacer.
-   *
-   * ⚠️ **`malHoy` es lo que pasaría al re-parsear, no lo que pasa ahora.** Los movimientos están
-   * en blanco: el daño no existe todavía, y por eso conviene arreglar las reglas ANTES.
-   */
-  const resumen = useMemo(() => {
-    let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0
-    const porTipo: { tipo: string; movimientos: number; hallazgos: number }[] = []
-    for (const t of tipos) {
-      let malDelTipo = 0
-      for (const f of t.subtipos) {
-        const rs = reglasDeSubtipo(t.tipo, f.firma)
-        if (rs.length === 0) { sinReglas += f.movimientos; continue }
-        const a = auditarSubtipo(f.texto, rs as never)
-        lineasParaElUsuario += a.decideElUsuario.length
-        reglasPeligrosas += t.subtipos.length > 1 ? a.reglasQueCuentanSinSubtipo : 0
-        if (a.hallazgos.length > 0) { malHoy += f.movimientos; malDelTipo += f.movimientos }
-        else listos += f.movimientos
-      }
-      if (malDelTipo > 0) porTipo.push({ tipo: t.tipo, movimientos: malDelTipo, hallazgos: 0 })
-    }
-    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas,
-             porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
-  }, [tipos, reglasDeSubtipo])
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
