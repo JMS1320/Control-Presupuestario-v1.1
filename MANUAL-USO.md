@@ -2202,24 +2202,29 @@ Te va a seguir preguntando si:
 
 ⚠️ Sin probar por vos todavía → `A-TEST-115`.
 
-## 🧩 Reglas de parseo — desglosar el texto del banco 🟡 *(nuevo 2026-08-09, sin testear)*
+## 🧩 Reglas de parseo — desglosar el texto del banco
 
-> Diseño, propuesta automática y los huecos abiertos → `PENDIENTES.md` § Parseo de extractos.
+> **Diseño y por qué está pensado así** -> `MODULO_PARSEO_EXTRACTOS.md` · **qué falta probar** ->
+> `PENDIENTES.md`.
+>
+> ⚠️ **Actualizado 2026-09-25.** Hasta esa fecha esto hablaba de *«formas»*: ahora se llaman
+> **SUBTIPOS**. Y la pantalla cambió bastante — cartel de estado, check de revisado y un botón que
+> deja listo solo lo que la app reconoce.
 
 ### Qué son y por qué existen
 En **Caja de Ahorro** el banco no manda columnas: manda todo apilado dentro de una sola celda.
 
 ```
-TRANSFERENCIA A TERCEROS      ← el tipo
-MARTINEZ PLACIDO ANDRES       ← el nombre
-20287492546                   ← el CUIT
-VARIOS                        ← el concepto
-BANCO DE GALICIA…
+TRANSFERENCIA A TERCEROS      <- el tipo
+MARTINEZ PLACIDO ANDRES       <- el nombre
+20287492546                   <- el CUIT
+VARIOS                        <- el concepto
+BANCO DE GALICIA...           <- la entidad destino
 ```
 
 Las **reglas de parseo** reparten ese bloque en columnas. Sin ellas el movimiento entra igual —el
-texto completo **nunca se pierde**, queda entero en `concepto`— pero no se puede buscar por CUIT ni
-por beneficiario, y la conciliación no encuentra la contraparte.
+texto completo **nunca se pierde**, queda entero— pero no se puede buscar por CUIT ni por
+beneficiario, y la conciliación no encuentra la contraparte.
 
 ⚠️ **No son las reglas de conciliación.** Son otra tabla y otro momento: éstas corren **al importar**
 y reparten texto; las de conciliación corren después y asignan cuenta contable.
@@ -2228,97 +2233,115 @@ y reparten texto; las de conciliación corren después y asignan cuenta contable
 Si elegís una CC, la pantalla te lo dice.
 
 ### Dónde está
-**Extracto Bancario → botón Configuración → solapa «Reglas de Parseo (import)»**.
-La cuenta se elige en el selector de arriba del modal, el mismo que usan las otras dos solapas.
+**Extracto Bancario -> botón Configuración -> solapa «Reglas de Parseo (import)»**.
+La cuenta se elige en el selector de arriba del modal.
 
-### Cómo se usa
-1. Arriba aparecen los **tipos sin regla**, ordenados por cantidad de movimientos: el primero es el
-   que más rinde. Cada uno muestra un movimiento real con las líneas numeradas.
-2. Tocá **«Configurar N líneas»**. Se abre una tabla con **una fila por línea**:
+---
 
-   | # | Lo que dice el banco | Cómo se extrae | Va a la columna | Quedaría |
-   |---|---|---|---|---|
-   | 1 | COMPRA DEBITO `tipo` | Línea N | descripcion | COMPRA DEBITO |
-   | 2 | DIA TIENDA 670 `nombre` | Línea N | leyendas_1 | DIA TIENDA 670 |
-   | 3 | 4517XXXXXXXXXX11 `tarjeta` | — | — sin asignar — | — |
+### 1 · El cartel de arriba: en qué estado está la cuenta
+Lo primero que ves. Te dice, en movimientos:
 
-3. **Lo que el banco escribe siempre igual ya viene propuesto**: el CUIT, el nombre que está antes
-   del CUIT, el tipo de la línea 1, el número de operación. Lo que no reconoce lo deja
-   **sin asignar** y te dice por qué. Todo es editable.
-4. La última columna, **«Quedaría»**, muestra lo que esa regla extrae **de ese movimiento**. Es la
-   verificación: si dice *vacío* en rojo, la regla no sirve.
-5. Elegí el **grupo de conceptos** (es del tipo entero, no de cada línea) y **Guardar**. El botón
-   dice cuántas reglas crea, cambia y borra.
+| | Qué significa | Qué hacer |
+|---|---|---|
+| 🔴 **con choque de columnas** | dos líneas guardadas en el mismo lugar -> **esos movimientos no se parsean** | arreglarlo sí o sí |
+| 🟠 **la app propone otra cosa** | discrepa con una regla vieja | mirarlo y decidir |
+| ✅ **ya cierran** | nada que hacer | — |
+| ⚪ **sin reglas todavía** | nunca se configuró ese subtipo | configurarlo |
+| 🟠 **líneas que decidís vos** | la app no sabe qué son | es tu trabajo, y el único |
 
-### 🔀 Cada forma se configura por separado
-Un mismo tipo puede llegar escrito de maneras distintas. La tarjeta lo avisa con un chip
-**«N formas»** y las muestra todas, con cuántos movimientos tiene cada una.
+Y **por dónde empezar**: los tipos ordenados por cuántos movimientos arregla cada uno.
 
-Dentro del editor eso cambia la columna **«Quedaría»**: en vez de un valor, muestra **uno por
-forma**, y si la regla trae cosas de distinta naturaleza según la forma, la fila se pinta en ámbar:
+### 2 · El botón «Dejar listo lo que la app reconoce»
+Escribe de una todas las reglas que la app puede deducir sola, y **respeta lo que vos ya
+configuraste**. No toca ninguna línea que nadie sepa qué es — ésas quedan para vos.
 
-```
-línea 5 → nro_terminal      6L·12   4517XXXXXXXXXX11
-                            6L· 4   VARIOS
-                            5L· 7   BANCO DE GALICIA Y BUENOS AIRES SAU
-                            ⚠ Trae cosas distintas según la forma.
-```
+Te dice **antes** cuántas reglas va a escribir, cuántas viejas reemplaza y cuántas líneas te van a
+quedar. **Los movimientos no cambian** hasta que corras Re-parsear.
 
-**Cada forma es su propia tarjeta**, con su ejemplo real, cuántos movimientos tiene y sus reglas.
-Se configuran por separado y no se pisan entre sí. Las tarjetas de un mismo tipo van agrupadas
-debajo de su nombre, y el **grupo de conceptos es del tipo entero** — se edita una vez y vale para
-todas sus formas.
+### 3 · El check «revisado»
+A la izquierda de cada subtipo. Tildalo cuando lo diste por bueno: se pone verde, **se pliega** y
+suma al contador **«N de M revisados»** de arriba.
+
+🔑 **Si después cambiás una regla de ese subtipo, la marca se borra sola.** Un *«ya lo vi»* viejo
+taparía justo lo que hay que mirar.
+*(Un subtipo sin reglas no se puede marcar: todavía es trabajo pendiente.)*
+
+### 4 · Configurar un subtipo
+**Editar** abre una tabla con **una fila por línea** del movimiento, y tres colores:
+
+| | Qué significa | Qué hacés |
+|---|---|---|
+| sin color | la app lo reconoce **seguro** | nada |
+| 🟠 ámbar | hay una **propuesta** | mirala y confirmala |
+| 🔴 rojo | la app **no sabe** qué es | lo decidís vos |
+
+- Elegís **qué ES el dato** (CUIT, CBU, concepto, tarjeta...). **La columna la pone la app** y te la
+  muestra abajo, sin dejarte cambiarla: si el mismo dato fuera a distinta columna según el tipo, el
+  motor de conciliación encontraría la mitad. El botón **ℹ️ Ver dónde se guarda cada dato** muestra
+  la convención entera.
+- **«Sin asignar» es una decisión válida.** Un dato creíble en la columna equivocada es peor que un
+  dato ausente.
+- La última columna, **«Quedaría»**, muestra lo que esa regla extrae de ese movimiento: es la
+  verificación.
+- El **grupo de conceptos** es del tipo entero, no de cada subtipo.
+
+🛑 **Lo que vos guardaste manda siempre.** Si la app piensa distinto te lo dice al lado —*«la app
+diría Concepto»*— y lo aplicás sólo si querés. **Nunca te lo cambia sola.**
+
+---
+
+### 🔀 Cada subtipo se configura por separado
+Un mismo tipo llega escrito de maneras distintas. Cada una es un **subtipo**, y la tarjeta lo avisa
+con un chip **«N subtipos»**.
+
+**No alcanza con contar líneas**: `DEB. AUTOM. DE SERV.` tiene dos subtipos **de 5 líneas**, que se
+distinguen por lo que hay en la línea 4. Por eso el subtipo se calcula con la **clase de dato de
+cada línea** (CUIT, CBU, tarjeta, número, texto), no sólo con la cantidad.
 
 Así, `TRANSFERENCIA A TERCEROS` se ve como tres bloques: el de 6 líneas con 12 movimientos, el de
-6 líneas con 4, y el de 5 líneas con 7. Cada uno se configura mirando su propio texto.
+6 líneas con 4, y el de 5 líneas con 7. **Entre los dos primeros, la tarjeta y el concepto están
+dados vuelta** — de ahí que cada uno se configure mirando su propio texto.
 
-⚠️ **Terminá el tipo entero de una sentada.** Las reglas viejas —las que ya estaban antes de este
-cambio— valen para todas las formas. En cuanto guardás una forma, quedan atadas **sólo a ésa** y las
-otras se quedan sin reglas hasta que las configures. El editor te lo avisa antes de guardar.
+⚠️ **Terminá el tipo entero de una sentada.** Las reglas viejas valen para todos los subtipos; en
+cuanto guardás uno, quedan atadas **sólo a ése** y los otros se quedan sin reglas hasta que los
+configures. El editor te lo avisa antes de guardar.
 
-### 🛑 Una forma sin reglas NO se parsea
-Si un tipo tiene reglas atadas a formas y llega un movimiento de **otra** forma, el sistema
-**no lo desglosa**: lo deja marcado con el grupo **«Forma nueva»**.
+### 🛑 Dos casos en los que el movimiento NO se parsea
+Y en los dos es **a propósito**: vale más un movimiento sin desglosar y señalado que uno desglosado
+mal, que se ve igual que uno bueno y nadie revisa.
 
-Es a propósito. Vale más un movimiento sin desglosar y señalado que uno desglosado con las reglas de
-otra forma — que se vería correcto y estaría mal. Así, cuando el banco empieza a mandar algo nuevo,
-**se ve**. El texto original nunca se pierde: se le escriben las reglas de esa forma y se corre
-**Re-parsear**.
+- **Choque de columnas** — dos líneas guardadas en el mismo lugar. La pantalla te dice **cuál es la
+  columna y qué dos líneas la reclaman**. Se arregla mandando una a otra columna o dejándola sin
+  asignar.
+- **Subtipo nuevo** — el tipo tiene reglas por subtipo y llegó uno que ninguna cubre. Aparece
+  marcado y basta con configurarlo.
 
-En la pantalla, esa forma aparece marcada **«sin reglas — no se desglosa»**, y arriba de todo hay
-un recuadro celeste con todas las formas que están en esa situación, ordenadas por cantidad.
-
-**No alcanza con contar líneas**: dos movimientos de 6 líneas pueden ser formas distintas si tienen
-las líneas cambiadas de lugar. Por eso la forma se calcula con la **clase de dato de cada línea**
-(CUIT, CBU, tarjeta, número, texto), no sólo con la cantidad.
+El texto original nunca se pierde: se escriben las reglas y se corre **Re-parsear**.
 
 ### 🗂️ Dónde va cada dato
-Las columnas se eligen por **lo que guardan**, no por su nombre técnico:
+Las columnas se eligen por **lo que guardan**:
 
 | En la pantalla | Qué guarda |
 |---|---|
 | El tipo de movimiento | la primera línea |
 | Nombre / comercio | la contraparte |
 | **CUIT** | de acá lo lee el motor de conciliación |
-| Concepto | `VARIOS`, `HONORARIOS`… |
-| Banco de la contraparte | `BANCO DE GALICIA…` |
-| Nº de operación / autorización | `OP:…`, `A837` |
-| Terminal / identificador | números largos del banco |
+| Concepto | `VARIOS`, `CONSUMO`, `CUOTA ACA`... |
+| Banco o red | `BANCO DE GALICIA...`, `RIOP`, `PERSONAL PAY`, `LINK` |
+| Nº de operación / autorización | `OP:...`, `A837` |
+| Terminal / identificador | terminal, sucursal o la tarjeta |
 | **CBU** | los 22 dígitos |
 
-Es la misma convención que usa MSA. Y hay modos que **buscan** el dato en vez de contar líneas:
-*Busca el CUIT*, *Busca el CBU*, *Busca la tarjeta*, *Antes/Después del CUIT*. Ésos sobreviven a que
-el banco cambie el orden.
+Y hay modos que **buscan** el dato en vez de contar líneas: *Busca el CUIT*, *Busca el CBU*,
+*Busca la tarjeta*, *Antes/Después del CUIT*. Ésos sobreviven a que el banco cambie el orden.
 
-> 🔎 Detalle técnico, por si alguna vez mirás la base: el CBU se guarda en la columna
-> `tipo_de_movimiento`. El nombre no corresponde y **es a propósito** — era la única columna libre
-> de las 37, y se decidió no crear una nueva. Está documentado en `ARQUITECTURA-BD.md` § 6b.
+> 🔎 Por si alguna vez mirás la base: el CBU se guarda en la columna `tipo_de_movimiento`. El nombre
+> no corresponde y **es a propósito** — era la única columna libre de las 37. Está en
+> `ARQUITECTURA-BD.md`.
 
 ### 🔑 Dos cosas que conviene saber
-- **«Busca el CUIT» le gana a «Línea N».** Los modos que buscan (`Busca el CUIT`, `Antes del CUIT`,
-  `Después del CUIT`) siguen funcionando aunque el banco corra las líneas. Contar posiciones no.
-  Ya pasó: `TRANSFERENCIA A TERCEROS` llega con 5 o con 6 líneas y el CUIT cambia de lugar
-  (→ `PENDIENTES.md` § A-BUG-17).
+- **«Busca el CUIT» le gana a «Línea N»** cuando el dato tiene huella propia: sigue funcionando
+  aunque el banco corra las líneas. Contar posiciones, no.
 - **Guardar una regla NO cambia lo ya importado.** Para eso está **Re-parsear**.
 
 ### Re-parsear — aplicar las reglas a lo que ya está cargado
@@ -2327,44 +2350,16 @@ Botón **«Re-parsear»** en Extracto Bancario, sólo en cuentas de Caja de Ahor
 1. Corre **en seco** primero: te dice cuántos movimientos cambiarían y **no toca nada**.
 2. Si el resultado convence, **Aplicar**.
 
+🔎 **Corre sobre lo que tenés filtrado**, igual que Conciliar: si hay 15 movimientos en pantalla por
+un filtro, toca esos 15. Sin filtro toma la cuenta entera, y te dice cuál de las dos cosas va a
+hacer antes de escribir.
+
 **No hace falta volver a importar nunca**: lee el texto original que el importador guardó. Y sólo
 escribe las columnas del desglose — la cuenta contable, el detalle y el estado de conciliación
 **no se tocan**.
 
-### 🧪 Cómo probarlo <a id="a-test-26"></a>
-1. **Extracto Bancario → Configuración → Reglas de Parseo**, con **MSA Galicia CC** elegida: tiene
-   que decir *"Esta cuenta no usa reglas de parseo"*.
-2. Cambiá a **MA Galicia CA**. Deberías ver los tipos sin regla arriba y los ya configurados abajo,
-   cada uno con su movimiento real al lado de lo que extrae cada regla.
-3. Abrí un tipo ya configurado (ej. `COMPRA DEBITO`): las filas tienen que venir **pre-cargadas con
-   lo que ya guardaste**, no con la propuesta.
-4. Abrí `TRANSFERENCIAS CASH PROVEEDORES` (sin regla, 1 mov.). Verificá que **propone solo**:
-   línea 3 reconocida como **CUIT** → `leyendas_2` con modo *Busca el CUIT*, y línea 2 como
-   **nombre** → `leyendas_1`.
-5. ⚠️ **El paso que caza el error caro**: en cualquier fila, cambiá «Va a la columna» a
-   **leyendas_2 — CUIT** con un modo que **no** sea *Busca el CUIT*. Tiene que aparecer el aviso
-   ámbar. Si no aparece, la protección contra meter el CBU en la columna del CUIT no está activa.
-6. Poné una fila en **«— sin asignar —»**: la columna *Quedaría* pasa a `—` y el contador del botón
-   Guardar tiene que reflejar una baja.
-7. **Re-parsear en seco** sobre MA y leer el resumen antes de aplicar.
-8. ⚠️ **El paso de las formas múltiples**: abrí `TRANSFERENCIA A TERCEROS` (23 mov.). Tiene que
-   avisar **«3 formas»** — 12 y 4 de seis líneas, 7 de cinco. En la fila de la línea 5, la columna
-   *Quedaría* tiene que mostrar los tres valores distintos y pintarse en ámbar. Si muestra uno solo,
-   la detección de formas no está corriendo.
-9. `DEB. AUTOM. DE SERV.` tiene **2 formas, las dos de 5 líneas** (una con `0226 - 0226` en la línea
-   4). Sirve para verificar que la forma no se calcula sólo contando líneas.
-10. **Reglas por forma**: abrí una forma de `TRANSFERENCIA A TERCEROS`. Antes de guardar tiene que
-    avisarte que las reglas actuales valen para las 3 y que van a quedar atadas sólo a ésta.
-    Guardá, y verificá que las **otras dos** formas pasaron a *«sin reglas — no se desglosa»*.
-11. ⚠️ **El paso que verifica lo más delicado**: con una forma sin reglas, corré *Re-parsear en
-    seco*. Esos movimientos tienen que quedar con grupo **«Forma nueva»** — **no** desglosados con
-    las reglas de otra forma. Es la garantía de que una forma nueva del banco se ve en vez de
-    entrar mal.
-12. **El CBU**: en una forma que lo traiga, la línea de 22 dígitos tiene que venir propuesta como
-    **CBU** con el modo *Busca el CBU*. Y la línea que empieza con `BANCO` como
-    **Banco de la contraparte**.
-
----
+⚠️ Sin probar todavía -> A-TEST-1145 · A-TEST-1146 · A-TEST-1147 · A-TEST-1148 · A-TEST-1149 ·
+A-TEST-1150 · A-TEST-1151
 
 ## 🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*
 

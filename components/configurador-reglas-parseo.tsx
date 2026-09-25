@@ -599,7 +599,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
             : (audit?.choques.length ?? 0) > 0
               ? <Badge variant="outline" className="border-red-400 bg-white text-[10px] text-red-800">
-                  choque de columnas — una línea se pierde
+                  choque de columnas — estos movimientos no se parsean
                 </Badge>
               : mal.length > 0
                 ? <Badge variant="outline" className="border-amber-400 bg-white text-[10px] text-amber-800">
@@ -719,13 +719,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         {(audit?.choques.length ?? 0) > 0 && (
           <div className="border-t border-red-300 bg-red-50 px-2.5 py-2">
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-800">
-              Dos líneas guardadas en la misma columna — al parsear una se pierde
+              Dos líneas guardadas en la misma columna — estos movimientos NO se parsean
             </p>
             {audit!.choques.map(c => (
               <p key={c.campo} className="text-[11px] leading-5 text-gray-800">
                 <span className="font-mono">{etiquetaCampo(c.campo)}</span> la reclaman las líneas{" "}
                 <strong className="text-red-700">{c.lineas.map(n => `L${n}`).join(" y ")}</strong>
-                {" "}— hay que mandar una a otra columna o dejarla sin asignar.
+                {" "}— mientras estén las dos, <strong>el movimiento no se parsea</strong>. Hay que
+                mandar una a otra columna o dejarla sin asignar.
               </p>
             ))}
           </div>
@@ -781,7 +782,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 <CardTitle className="flex items-center gap-2 text-sm text-red-900">
                   <FileWarning className="h-4 w-4" />
                   {resumen.conChoque > 0
-                    ? <><strong>{resumen.conChoque}</strong> movimiento{resumen.conChoque === 1 ? "" : "s"} tienen dos líneas guardadas en la misma columna — una se pierde</>
+                    ? <><strong>{resumen.conChoque}</strong> movimiento{resumen.conChoque === 1 ? "" : "s"} no se parsean: tienen dos líneas guardadas en la misma columna</>
                     : resumen.malHoy > 0
                       ? <>En <strong>{resumen.malHoy}</strong> movimiento{resumen.malHoy === 1 ? "" : "s"} la app propone otra columna que la guardada</>
                       : <>Faltan decisiones tuyas en {resumen.lineasParaElUsuario} línea{resumen.lineasParaElUsuario === 1 ? "" : "s"}</>}
@@ -789,8 +790,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 <p className="text-xs text-gray-700">
                   <strong>Lo guardado manda siempre.</strong> Lo que la app propone distinto es una
                   sugerencia y se aplica sólo si vos querés. Lo único que hay que arreglar sí o sí
-                  es el <strong>choque</strong>: dos líneas en la misma columna no pueden convivir,
-                  al parsear una se pierde.
+                  es el <strong>choque</strong>: cuando dos líneas reclaman la misma columna el
+                  movimiento <strong>no se parsea</strong> — entero, a propósito, para que se vea.
                 </p>
               </CardHeader>
               <CardContent className="space-y-2.5">

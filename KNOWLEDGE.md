@@ -147,6 +147,48 @@ implementó la vinculación de anticipos de cobro con tipos y build OK, y el bot
 porque dos condiciones filtraban por `tipo === 'pago'`. Compilar ≠ estar disponible: hay que llegar
 hasta el botón. Ver `PENDIENTES.md` § A-TEST-32.
 
+## ⚠️ El baseline de `type-check` miente si falta un `npm install` `#tipos #entorno #2026-09-25`
+
+**El conteo de errores de `tsc` NO es una medida del código si el árbol no compila.** Medido el
+2026-09-25 quitando y poniendo un solo paquete:
+
+| | Errores |
+|---|---|
+| sin `@supabase/ssr` instalado | **278** |
+| con el paquete | **110** ← el real |
+
+`@supabase/ssr` entró en `package.json` con el login de Javier (merge del 23/09) y el install nunca
+se corrió. Sin él no resuelven `lib/supabase.ts`, `lib/supabase-server.ts` ni `middleware.ts`, y
+**el error se propaga a todo lo que los importa**.
+
+🧨 **El costo no fue el número: la app no arrancaba en dev** (`Can't resolve '@supabase/ssr'`) y
+todas las pantallas daban *«This page couldn't load»*.
+
+⚠️ **Y el `npm install` de este repo pide `--legacy-peer-deps`**, por un choque viejo de
+`react-day-picker` con `date-fns@4` que no tiene que ver con nada de esto.
+
+🔑 **La lección, que ya había costado antes**: un número que sale de una herramienta se repite sin
+preguntarse qué está midiendo. La ficha [A-OP-15] **nació de esa lección y volvió a caer en ella**
+— su segunda medición también se hizo con el entorno roto. **Un baseline se mide con el proyecto
+compilando.** → [A-OP-18].
+
+## 🪝 `npm run verificar-hooks` — el control que `type-check` no puede hacer `#react #control #2026-09-25`
+
+**Un hook después de un `return` condicional rompe la pantalla entera** —React cuenta 8 hooks en una
+rama y 9 en la otra— y **`type-check` y `build` pasan los dos**: no es un error de tipos ni de
+compilación. **El repo no tiene eslint configurado**, así que `react-hooks/rules-of-hooks` no lo
+mira nadie. Lo encontró el usuario, con la pantalla caída ([A-BUG-1201]).
+
+```bash
+npm run verificar-hooks    # recorre las 254 pantallas; avisa, no rompe
+```
+
+🧨 **Y las tres primeras versiones del control daban «todo bien» estando ciegas**: (1) miraba el
+archivo entero → 851 hallazgos; (2) no reconocía los hooks propios como función nueva → 10 falsos
+positivos; (3) pedía el `return` en la misma línea del `if`, así que **no vio el caso real**.
+
+🔑 **Un control se prueba contra el código que tenía que agarrar, no contra el arreglado.**
+
 ## ⚠️ **REGLA IMPORTANTE NUEVA ETAPA:**
 **Al retomar objetivos**: Siempre reconfirmar qué está "terminado" vs "pendiente" para evitar complicaciones. El estado puede haber cambiado desde última documentación.
 

@@ -678,7 +678,14 @@ export interface HallazgoSubtipo {
   cayoEn: string | null
 }
 
-/** Dos o más líneas peleando la misma columna. **Esto no es opinión: una se pierde.** */
+/**
+ * Dos o más líneas peleando la misma columna.
+ *
+ * 🛑 **No es opinión, y no se resuelve eligiendo una: el movimiento NO SE PARSEA.** Es lo que
+ * decidió el usuario el 2026-09-24 —*«que directamente no se parsee, así sigue dando alerta y yo
+ * veo qué hacer»*— y lo que hace `parsearMovimiento` (ver `GRUPO_CHOQUE`). Quedarse con una de
+ * las dos dejaría un dato creíble en la columna equivocada, que es el peor desenlace.
+ */
 export interface ChoqueSubtipo {
   campo: string
   lineas: number[]
@@ -694,8 +701,9 @@ export interface AuditoriaSubtipo {
   hallazgos: HallazgoSubtipo[]
   /**
    * 🔴 **Choques: esto SÍ está roto y frena.** Dos líneas guardadas en la misma columna: al
-   * parsear **gana una y la otra se pierde**, sin aviso. No hay explicación de negocio posible
-   * para que dos datos distintos vayan al mismo lugar — es la § 🚦 *integridad*, que frena.
+   * parsear **el movimiento entero queda SIN PARSEAR** (`GRUPO_CHOQUE`), no es que gane una. No
+   * hay explicación de negocio posible para que dos datos distintos vayan al mismo lugar — es la
+   * § 🚦 *integridad*, que frena.
    */
   choques: ChoqueSubtipo[]
   /** Líneas que la app NO sabe qué son y que no tienen regla. Es su trabajo, y ninguno más. */

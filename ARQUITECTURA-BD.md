@@ -59,7 +59,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `reglas_conciliacion` | ✅ | 75 | Reglas del motor (texto→categ/template, por cuenta bancaria). |
 | `reglas_contable_interno` | ✅ | — | Reglas contable/interno (por template/responsable). |
 | `reglas_ctas_import_arca` | ❌ | — | Reglas CUIT→cuenta contable al importar ARCA. |
-| `config_parseo_extracto` | ✅ | — | Config de parseo de extractos por cuenta bancaria. |
+| `config_parseo_extracto` | ✅ | — | Config de parseo de extractos por cuenta bancaria. Ver § detalle abajo. |
 | `anticipos_proveedores` | ❌ | 27 | Anticipos a proveedores (pueden vincularse a FC). |
 | `anticipos_facturas` | ❌ | — | N:N anticipo↔factura aplicada. |
 | `distribucion_socios` | ✅ | — | Config distribución por socio (dashboard). |
@@ -465,6 +465,35 @@ las **mismas columnas**, pero se llenan de dos maneras distintas:
 - **Caja de ahorro** (`pam_galicia`, `ma.ma_galicia`): el banco manda **una sola celda** (`Movimiento`)
   y las reglas de `config_parseo_extracto` la reparten. El Excel de CA sólo trae
   `Fecha · Movimiento · Débito · Crédito · Saldo · Comentarios`.
+
+### `config_parseo_extracto` — las reglas que reparten el texto
+
+Una fila = **una línea del movimiento → una columna**. Columnas propias:
+
+| Columna | Qué guarda |
+|---|---|
+| `cuenta_bancaria_id` | `pam_galicia` \| `ma_galicia` — sólo Caja de Ahorro |
+| `tipo_movimiento` | **en MAYÚSCULA**: el match contra el texto del banco es exacto |
+| `campo_destino` | la columna del extracto donde termina el dato |
+| `tipo_regla` | **cómo** se extrae — ver el CHECK abajo |
+| `numero_linea` | sólo para `tipo_regla = 'linea'` |
+| `firma_forma` | 🔑 **el SUBTIPO al que aplica.** `null` = regla vieja, vale para todos |
+| `grupo_de_conceptos` | es del **tipo** entero, no del subtipo |
+| `revisado_en` | 🆕 **2026-09-25** — cuándo el usuario dio por bueno ese subtipo. Se limpia al editar la regla |
+| `orden`, `activo` | — |
+
+**`tipo_regla` — los 7 valores que acepta el CHECK** *(ampliado 2026-09-25, [A-BUG-1204]: faltaban
+`cbu` y `tarjeta`, que el motor implementaba y la pantalla ofrecía desde antes — guardarlas daba
+`violates check constraint`)*:
+
+`linea` · `cuit` · `pre_cuit` · `post_cuit` · `nro_operacion` · **`cbu`** · **`tarjeta`**
+
+⚠️ **`firma_forma` se llama así por historia; el concepto se llama SUBTIPO** desde 2026-09-25
+([A-DEC-29]). La columna **no se renombró**: es estructura compartida con el otro clon.
+
+🔑 **Una regla que cuenta renglones (`linea`) y no dice de qué subtipo es, se aplica a TODOS** — y
+acierta en uno solo. Fue la causa de [A-BUG-1200]: 40 de 96 movimientos de MA habrían quedado con
+datos en la columna equivocada. **Diseño y decisiones → `MODULO_PARSEO_EXTRACTOS.md`.**
 
 ### Convención de columnas — medida sobre los datos reales
 Sale de mirar los 849 movimientos de MSA y los 76 de PAM CC, que son los que el banco llenó solo.

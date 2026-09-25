@@ -1248,6 +1248,7 @@ maestro no debe tener nombres de tabla de este proyecto.
 npm run dev                          # desarrollo
 npm run type-check:diff              # ¿rompió algo? (baseline de errores preexistentes)
 npm run probar                       # ⚠️ los CASOS — correr antes de decir "terminé, probá"
+npm run verificar-hooks              # ningún hook después de un return (type-check NO lo ve)
 npm run build                        # build
 ```
 
@@ -1292,6 +1293,7 @@ npm run build                        # build
 | Conocimiento / configs / descartado | `KNOWLEDGE.md` |
 | Cómo se USA la app / flujo de trabajo | `MANUAL-USO.md` |
 | Diseño y decisiones de UN módulo | `MODULO_<NOMBRE>.md` (ver [A-DOC-02](PENDIENTES.md#a-doc-02) — renombrado pendiente) |
+| Cómo se desglosa el extracto de Caja de Ahorro (subtipos, convención) | `MODULO_PARSEO_EXTRACTOS.md` |
 | Errores preexistentes (baseline) | `ERRORES_CONOCIDOS.md` |
 | Historial de sesiones (referencia) | `CLAUDE_HISTORICO.md` |
 | Avisos del/para el otro desarrollador | `ENTRE-DESARROLLADORES.md` |
