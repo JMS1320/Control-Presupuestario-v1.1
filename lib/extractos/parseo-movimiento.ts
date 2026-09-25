@@ -316,6 +316,47 @@ export interface LineaPropuesta {
   motivo: string
 }
 
+/**
+ * 📋 **LA ESTRUCTURA — qué reconoce la app y dónde lo guarda.**
+ *
+ * Es la **misma lista que usa `proponerMapeo`**, expuesta para que la pantalla la muestre. Vive acá
+ * y no en el componente **a propósito**: si la tabla que ve el usuario se escribiera aparte,
+ * el día que cambie una columna quedarían dos verdades y la pantalla mentiría (§ `CLAUDE.md` ♻️).
+ *
+ * 📍 La convención está documentada en `ARQUITECTURA-BD.md` § Convención de columnas, y sale de
+ * medir los 849 movimientos de MSA que el banco llenó solo. **Vale igual para MA y PAM CA**, que
+ * tienen el mismo formato.
+ */
+export const ESTRUCTURA_DATOS: {
+  dato: string; ejemplo: string; columna: string; clave?: boolean; nota?: string
+}[] = [
+  { dato: "Tipo de movimiento", ejemplo: "COMPRA DEBITO", columna: "descripcion",
+    nota: "Siempre la primera línea" },
+  { dato: "Nombre / beneficiario / comercio", ejemplo: "WILSON SEVERIANO BARRETO", columna: "leyendas_adicionales_1",
+    nota: "La línea justo antes del CUIT" },
+  { dato: "CUIT de la contraparte", ejemplo: "33716360429", columna: "leyendas_adicionales_2", clave: true,
+    nota: "11 dígitos. De acá lo lee el motor de conciliación — si no hay CUIT, queda VACÍA" },
+  { dato: "Concepto", ejemplo: "VARIOS", columna: "leyendas_adicionales_3",
+    nota: "La línea justo después del CUIT" },
+  { dato: "Banco de la contraparte", ejemplo: "BANCO SANTANDER RIO S.A.", columna: "leyendas_adicionales_4" },
+  { dato: "CBU destino", ejemplo: "0070999030004012345678", columna: COLUMNA_CBU,
+    nota: "22 dígitos. La columna se llama «tipo_de_movimiento» por historia, pero guarda el CBU" },
+  { dato: "Nº de operación", ejemplo: "60616565", columna: "numero_de_comprobante" },
+  { dato: "Código de autorización", ejemplo: "A837", columna: "numero_de_comprobante",
+    nota: "⚠️ Comparte columna con el nº de operación: si un movimiento trajera los dos, uno pisa al otro" },
+  { dato: "Identificador largo del banco", ejemplo: "82652900", columna: "numero_de_terminal" },
+  { dato: "Tarjeta enmascarada", ejemplo: "4517XXXXXXXXXX11", columna: "",
+    nota: "⚠️ TODAVÍA SIN COLUMNA PROPIA — hay que decidirla, o cada tipo la manda a un lado distinto" },
+  { dato: "No reconocido", ejemplo: "—", columna: "",
+    nota: "Se deja sin asignar a propósito: un dato creíble en la columna equivocada es peor que uno ausente" },
+]
+
+/** 🛑 Las dos columnas que el parseo NO puede tocar. */
+export const COLUMNAS_INTOCABLES: { columna: string; porque: string }[] = [
+  { columna: "concepto", porque: "Guarda el TEXTO CRUDO entero del banco. Es lo que hace posible volver a parsear sin re-importar el Excel." },
+  { columna: "observaciones_cliente", porque: "Son TUS comentarios, los que escribís en la columna «Comentarios» del Excel. En un gasto sin factura es la única anotación de qué fue." },
+]
+
 const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
 const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
 

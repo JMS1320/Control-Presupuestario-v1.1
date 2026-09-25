@@ -29,10 +29,10 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Plus, Trash2, FileWarning, Check, Pencil } from "lucide-react"
+import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -155,6 +155,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
   // Editor de UNA forma de un tipo
   const [editando, setEditando] = useState<{ tipo: TipoInfo; forma: Formato } | null>(null)
+  const [verEstructura, setVerEstructura] = useState(false)
   const [filas, setFilas] = useState<Fila[]>([])
   const [fGrupo, setFGrupo] = useState("")
   const [grupoOriginal, setGrupoOriginal] = useState("")
@@ -449,6 +450,16 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-emerald-600" />
                 {tipos.length} tipo(s) · {totalFormas} forma(s) · {reglas.length} regla(s)
+                {/* 📋 La estructura, a un clic. Va acá —y no arriba ni abajo de la lista— porque la
+                    duda aparece mirando un tipo: «esto dónde termina guardado». */}
+                <button
+                  type="button"
+                  onClick={() => setVerEstructura(true)}
+                  className="ml-auto flex items-center gap-1.5 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-normal text-sky-800 hover:bg-sky-100"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                  Ver dónde se guarda cada dato
+                </button>
               </CardTitle>
               <p className="text-xs text-gray-600">
                 Cada forma se configura por separado, con su ejemplo real al lado de lo que produce.
@@ -649,6 +660,65 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
               Guardar {plan.total > 0 ? `(${plan.total})` : ""}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 📋 LA ESTRUCTURA — qué reconoce la app y dónde lo guarda.
+          Las filas salen de `ESTRUCTURA_DATOS`, la misma lista que usa el reconocedor: si mañana
+          cambia una columna, esta tabla cambia sola en vez de quedar mintiendo. */}
+      <Dialog open={verEstructura} onOpenChange={setVerEstructura}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Dónde se guarda cada dato</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-gray-600">
+            El extracto del Galicia no es texto libre: <strong>el mismo dato aparece siempre de la
+            misma forma</strong>. Por eso la app lo reconoce sola y ya sabe a qué columna va — no es
+            una elección. Vale igual para <strong>MA</strong> y <strong>PAM Caja de Ahorro</strong>,
+            que tienen el mismo formato.
+          </p>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase tracking-wide text-gray-500">
+                  <th className="py-2 pr-3 font-medium">Tipo de dato</th>
+                  <th className="py-2 pr-3 font-medium">Ejemplo</th>
+                  <th className="py-2 font-medium">Columna</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ESTRUCTURA_DATOS.map(e => (
+                  <tr key={e.dato} className="border-b align-top last:border-0">
+                    <td className="py-2.5 pr-3">
+                      <span className={e.clave ? "font-semibold text-gray-900" : "text-gray-800"}>
+                        {e.dato}{e.clave ? " 🔑" : ""}
+                      </span>
+                      {e.nota && <p className="mt-0.5 text-xs leading-snug text-gray-500">{e.nota}</p>}
+                    </td>
+                    <td className="py-2.5 pr-3 font-mono text-xs text-gray-600">{e.ejemplo}</td>
+                    <td className="py-2.5">
+                      {e.columna
+                        ? <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-800">{e.columna}</code>
+                        : <span className="text-xs italic text-amber-700">sin asignar</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-md border border-red-200 bg-red-50 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-800">
+              Dos columnas que el parseo nunca toca
+            </p>
+            {COLUMNAS_INTOCABLES.map(c => (
+              <p key={c.columna} className="mb-1.5 text-xs leading-snug text-red-900 last:mb-0">
+                <code className="font-mono">{c.columna}</code> — {c.porque}
+              </p>
+            ))}
           </div>
         </DialogContent>
       </Dialog>
