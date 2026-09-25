@@ -665,72 +665,116 @@ export const CAMPOS_DEL_PARSEO = [
 // encuentra. Punto.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Un problema concreto de un subtipo: una línea que no termina donde debería. */
+/** Una línea sobre la que la app opina distinto de lo que está guardado. */
 export interface HallazgoSubtipo {
   /** Número de línea como lo ve el usuario (1 = la primera). */
   linea: number
   texto: string
-  /** Qué es la línea, en lenguaje de la app: «CUIT de la contraparte», «CBU destino»… */
+  /** Qué dice la app que es, en lenguaje de la app. */
   es: string
-  /** Columna a la que debería ir según la convención. */
+  /** Columna que propone la app. */
   debeIr: string
-  /** Columna donde la mandan las reglas de hoy. `null` = no se guarda en ningún lado. */
+  /** Columna donde está guardado hoy. `null` = no se guarda en ningún lado. */
   cayoEn: string | null
 }
 
-/** El estado de un subtipo: qué resuelve la app sola y qué necesita al usuario. */
+/** Dos o más líneas peleando la misma columna. **Esto no es opinión: una se pierde.** */
+export interface ChoqueSubtipo {
+  campo: string
+  lineas: number[]
+}
+
+/** El estado de un subtipo: qué cierra, qué se discute y qué está roto. */
 export interface AuditoriaSubtipo {
-  /** Líneas que hoy terminan en la columna equivocada o se pierden. Las arregla re-guardando. */
+  /**
+   * 🟠 **Discrepancias, no errores.** La app reconoce la línea con certeza y lo guardado dice
+   * otra cosa. **Puede tener razón cualquiera de los dos** — la app no conoce el negocio, y él sí.
+   * Por eso se muestran para decidir, y **nada se cambia solo** (§ `CLAUDE.md` 🎚️).
+   */
   hallazgos: HallazgoSubtipo[]
-  /** Líneas que la app NO sabe qué son. **Esto es lo único que no se puede resolver por código.** */
+  /**
+   * 🔴 **Choques: esto SÍ está roto y frena.** Dos líneas guardadas en la misma columna: al
+   * parsear **gana una y la otra se pierde**, sin aviso. No hay explicación de negocio posible
+   * para que dos datos distintos vayan al mismo lugar — es la § 🚦 *integridad*, que frena.
+   */
+  choques: ChoqueSubtipo[]
+  /** Líneas que la app NO sabe qué son y que no tienen regla. Es su trabajo, y ninguno más. */
   decideElUsuario: number[]
-  /** Líneas que la app reconoce con certeza y ya están bien guardadas. */
+  /** Líneas guardadas y sin discusión. */
   resueltas: number
   /**
-   * Reglas que **cuentan renglones y no dicen de qué subtipo son**. Son las peligrosas: se
-   * aplican a todos los subtipos del tipo, y aciertan en uno solo. Es la causa de A-BUG-1200.
+   * Reglas que **cuentan renglones y no dicen de qué subtipo son**. Se aplican a todos los
+   * subtipos del tipo y aciertan en uno solo — la causa de A-BUG-1200.
    */
   reglasQueCuentanSinSubtipo: number
 }
 
 export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): AuditoriaSubtipo {
-  // Dónde termina cada dato con las reglas de hoy
-  const guardado: Record<string, string> = {}
-  for (const r of reglas) {
-    if (!r.campo_destino) continue
-    const v = aplicarRegla(lineas, r)
-    if (v !== "" && !guardado[r.campo_destino]) guardado[r.campo_destino] = v
-  }
-
   // El modo `cuit` guarda el número sin el prefijo `CU `/`NO ` del Galicia: hay que normalizar
-  // los dos lados o el CUIT bien guardado se reporta como error. (Pasó al medir: 3 falsos.)
+  // los dos lados o el CUIT bien guardado se reporta como diferencia. (Pasó al medir: 3 falsos.)
   const norm = (s: string) => String(s ?? "").replace(/^(CU|NO)\s+/i, "").trim()
 
   const propuesta = proponerMapeo(lineas)
   const hallazgos: HallazgoSubtipo[] = []
   const decideElUsuario: number[] = []
+  const porCampo = new Map<string, number[]>()
   let resueltas = 0
 
   propuesta.forEach((p, i) => {
-    if (!p.seguro || !p.campo) { decideElUsuario.push(i + 1); return }
-    if (norm(guardado[p.campo]) === norm(lineas[i])) { resueltas++; return }
-    const cayoEn = Object.entries(guardado).find(([, v]) => norm(v) === norm(lineas[i]))?.[0] ?? null
-    hallazgos.push({
-      linea: i + 1,
-      texto: lineas[i],
-      es: DESTINO_POR_CONTENIDO[p.contenido]?.label ?? p.contenido,
-      debeIr: p.campo,
-      cayoEn,
+    // La regla que apunta a ESTA línea, según cómo extrae
+    const suya = reglas.find(r => {
+      if (!r.campo_destino) return false
+      return norm(aplicarRegla(lineas, r)) === norm(lineas[i])
     })
+
+    if (suya?.campo_destino) {
+      porCampo.set(suya.campo_destino, [...(porCampo.get(suya.campo_destino) ?? []), i + 1])
+      /**
+       * 🔕 **Una regla atada a su subtipo es una decisión del usuario: no se vuelve a discutir.**
+       *
+       * Sólo se señala la discrepancia cuando la regla es **vieja y genérica** (`firma_forma`
+       * vacío): ésas nadie las eligió mirando este subtipo, son las que arrastran el desorden de
+       * A-BUG-1200. Sin este corte, la app le marcaba en ámbar —para siempre— algo que él acababa
+       * de decidir y guardar, y eso es ruido que entrena a ignorar los avisos.
+       */
+      const laDecidioEl = !!suya.firma_forma
+      if (!laDecidioEl && p.seguro && p.campo && p.campo !== suya.campo_destino) {
+        hallazgos.push({
+          linea: i + 1, texto: lineas[i],
+          es: DESTINO_POR_CONTENIDO[p.contenido]?.label ?? p.contenido,
+          debeIr: p.campo, cayoEn: suya.campo_destino,
+        })
+      } else {
+        resueltas++
+      }
+      return
+    }
+
+    // Sin regla: o la app sabe y falta guardarlo, o no sabe y lo decide él
+    if (p.seguro && p.campo) {
+      hallazgos.push({
+        linea: i + 1, texto: lineas[i],
+        es: DESTINO_POR_CONTENIDO[p.contenido]?.label ?? p.contenido,
+        debeIr: p.campo, cayoEn: null,
+      })
+    } else {
+      decideElUsuario.push(i + 1)
+    }
   })
+
+  const choques = [...porCampo.entries()]
+    .filter(([, ls]) => ls.length > 1)
+    .map(([campo, ls]) => ({ campo, lineas: ls }))
 
   return {
     hallazgos,
+    choques,
     decideElUsuario,
     resueltas,
     reglasQueCuentanSinSubtipo: reglas.filter(r => r.tipo_regla === "linea" && !r.firma_forma).length,
   }
 }
+
 
 /**
  * De la columna de vuelta a **qué es el dato**. Sirve para no perder una decisión vieja del
@@ -760,47 +804,43 @@ export function contenidoDeCampo(campo: string | null | undefined, modo?: string
 /**
  * Cómo se abre en el editor una línea que **ya tiene una regla guardada**.
  *
- * 🛑 **La columna sale SIEMPRE de la convención, nunca de la regla vieja.** Antes se copiaba
- * `campo_destino` tal cual, y el 2026-09-25 el usuario vio la contradicción: el desplegable decía
- * **«CBU destino»** y en la misma fila, abajo, **«va a `numero_de_comprobante`»** (A-BUG-1202).
- * Las dos cosas no pueden discrepar — es lo que A-FEAT-1174 vino a cerrar: *se elige QUÉ ES el
- * dato; dónde va lo decide la convención*.
+ * 🛑 **LO GUARDADO ES LA VERDAD. La app opina, y su opinión no pisa nada.**
  *
- * De la regla vieja se conserva lo que sí es una decisión del usuario: el **modo**, y —cuando la
- * app no reconoce la línea— **qué dijo él que era**, deducido de la columna donde la mandó.
+ * Costó tres vueltas llegar acá, las tres encontradas por el usuario el 2026-09-25:
+ * 1. se copiaba la columna vieja y el desplegable la contradecía ([A-BUG-1202]);
+ * 2. se hizo ganar a la propuesta, y **una corazonada le pisó una decisión** ([A-BUG-1205]);
+ * 3. se hizo ganar sólo a la propuesta *segura*, y **le siguió pisando decisiones** — porque la
+ *    app está segura de que `0000055193` es un concepto, y él había decidido que era el código de
+ *    autorización. Guardaba bien y la pantalla se lo revertía ([A-BUG-1207]).
+ *
+ * 🔑 **El modelo correcto es el más simple, y ya estaba escrito en `CLAUDE.md` § 🎚️**: *campo
+ * lleno = acá mando yo*. Una regla guardada **es** el valor. Cuando la app piensa otra cosa, eso
+ * es una **sugerencia** que se muestra al lado y se aplica con un click — nunca sola.
+ *
+ * 📌 Lo que la app sí aporta siempre: **cómo se llama** lo que él eligió, cuando la columna no
+ * alcanza para saberlo (`numero_de_comprobante` es nº de operación *y* código de autorización, y
+ * las desempata el modo).
  */
 export function resolverFilaExistente(
   propuesta: { contenido: string; campo: string; modo: string; seguro: boolean },
   regla: { campo_destino: string | null; tipo_regla: string }
-): { contenido: string; campo: string; modo: string; seguro: boolean; seMueve: boolean; deColumna: string } {
-  /**
-   * 🛑 **La propuesta de la app sólo gana cuando está SEGURA. Si no, manda lo que decidió él.**
-   *
-   * Es la § 🎚️ *Default del dato real, siempre editable* de `CLAUDE.md`: **campo lleno = acá
-   * mando yo**. Antes acá decía `propuesta.contenido || …`, y con eso **una corazonada de la app
-   * le pisaba una decisión explícita del usuario** (A-BUG-1205, 2026-09-25): él puso que
-   * `D.A. AL VTO` era el **código de autorización**, se guardó bien en la base, y la pantalla se
-   * la seguía mostrando como *«Nombre / comercio»* porque la app «proponía» eso.
-   *
-   * 🔑 **Y el corte es el mismo que ven los tres colores**: lo `seguro` (un CUIT son 11 dígitos,
-   * un CBU 22) no es una opinión y corrige a una regla vieja mal puesta — que es lo que arregló
-   * A-BUG-1202. Lo **no seguro** es una sugerencia, y una sugerencia no pisa a una decisión.
-   */
-  const contenido = (propuesta.seguro && propuesta.contenido)
-    || contenidoDeCampo(regla.campo_destino, regla.tipo_regla)
-    || propuesta.contenido
-  const destino = DESTINO_POR_CONTENIDO[contenido]
-  const campo = destino?.campo ?? ""
-  const seMueve = !!campo && !!regla.campo_destino && campo !== regla.campo_destino
+): {
+  contenido: string; campo: string; modo: string; seguro: boolean
+  /** Lo que diría la app si mandara ella. `null` = está de acuerdo, o no sabe. */
+  sugerencia: { contenido: string; campo: string; modo: string } | null
+} {
+  const campo = regla.campo_destino ?? ""
+  const contenido = contenidoDeCampo(campo, regla.tipo_regla) || propuesta.contenido
+  const disiente = propuesta.seguro && !!propuesta.campo && propuesta.campo !== campo
   return {
     contenido,
     campo,
-    // Si el dato cambia de columna, el modo viejo puede no servir: contar la línea 3 no es lo
-    // mismo que buscar el CBU esté donde esté.
-    modo: seMueve ? (destino?.modo ?? regla.tipo_regla) : regla.tipo_regla,
-    // Si lo que manda es la decisión guardada, no es «propuesta a confirmar»: ya la confirmó él.
-    seguro: propuesta.seguro || !!regla.campo_destino,
-    seMueve,
-    deColumna: regla.campo_destino ?? "",
+    modo: regla.tipo_regla,
+    // Es una decisión guardada: no es «propuesta a confirmar».
+    seguro: true,
+    sugerencia: disiente
+      ? { contenido: propuesta.contenido, campo: propuesta.campo, modo: propuesta.modo }
+      : null,
   }
 }
+

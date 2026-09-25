@@ -124,6 +124,8 @@ interface TipoInfo {
 /** Una fila del editor: la línea + a dónde la manda el usuario. */
 interface Fila extends LineaPropuesta {
   reglaExistente: Regla | null
+  /** Lo que diría la app si mandara ella. Se ofrece con un botón; nunca se aplica sola. */
+  sugerencia?: { contenido: string; campo: string; modo: string } | null
 }
 
 /**
@@ -208,7 +210,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
    * 2026-09-25 (A-BUG-1201). `type-check` y `build` pasan igual: no es un error de tipos.
    */
   const resumen = useMemo(() => {
-    let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0
+    let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0, conChoque = 0
     const porTipo: { tipo: string; movimientos: number; hallazgos: number }[] = []
     for (const t of tipos) {
       let malDelTipo = 0
@@ -218,12 +220,13 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         const a = auditarSubtipo(f.texto, rs as never)
         lineasParaElUsuario += a.decideElUsuario.length
         reglasPeligrosas += t.subtipos.length > 1 ? a.reglasQueCuentanSinSubtipo : 0
+        if (a.choques.length > 0) conChoque += f.movimientos
         if (a.hallazgos.length > 0) { malHoy += f.movimientos; malDelTipo += f.movimientos }
-        else listos += f.movimientos
+        else if (a.choques.length === 0) listos += f.movimientos
       }
       if (malDelTipo > 0) porTipo.push({ tipo: t.tipo, movimientos: malDelTipo, hallazgos: 0 })
     }
-    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas,
+    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas, conChoque,
              porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
   }, [tipos, reglasDeSubtipo])
 
@@ -377,9 +380,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         modo: r.modo,
         reglaExistente: ya,
         seguro: r.seguro,
-        motivo: r.seMueve
-          ? `⚠ Hoy va a «${etiquetaCampo(r.deColumna)}», que no es donde va este dato. Al guardar pasa a «${etiquetaCampo(r.campo)}».`
-          : p.contenido ? "Ya estaba configurado así" : "Lo decidiste vos antes",
+        sugerencia: r.sugerencia,
+        motivo: r.sugerencia
+          ? `La app diría «${DESTINO_POR_CONTENIDO[r.sugerencia.contenido]?.label ?? r.sugerencia.contenido}». Lo tuyo manda: esto queda como está salvo que lo cambies.`
+          : "Lo decidiste vos antes",
       }
     })
     setFilas(filasNuevas)
@@ -533,7 +537,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     const audit: AuditoriaSubtipo | null = sinReglas ? null : auditarSubtipo(f.texto, rs as never)
     const mal = audit?.hallazgos ?? []
     return (
-      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : mal.length > 0 ? "border-red-300 bg-red-50/30" : ""}`}>
+      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : (audit?.choques.length ?? 0) > 0 ? "border-red-300 bg-red-50/30" : mal.length > 0 ? "border-amber-300 bg-amber-50/30" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
           <span className="text-xs font-medium text-gray-700">
             Subtipo de {f.lineas} líneas
@@ -541,11 +545,15 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
           {sinReglas
             ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
-            : mal.length > 0
+            : (audit?.choques.length ?? 0) > 0
               ? <Badge variant="outline" className="border-red-400 bg-white text-[10px] text-red-800">
-                  {mal.length} dato{mal.length === 1 ? "" : "s"} en la columna equivocada
+                  choque de columnas — una línea se pierde
                 </Badge>
-              : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"} · cierra</Badge>}
+              : mal.length > 0
+                ? <Badge variant="outline" className="border-amber-400 bg-white text-[10px] text-amber-800">
+                    la app propone otra columna en {mal.length}
+                  </Badge>
+                : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"} · cierra</Badge>}
           {(audit?.decideElUsuario.length ?? 0) > 0 && (
             <Badge variant="outline" className="border-amber-400 bg-white text-[10px] text-amber-800"
               title="La app no sabe qué son estas líneas. Es lo único que no se puede resolver por código.">
@@ -619,8 +627,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                     const prop = proponerMapeo(f.texto)[i]
                     const ya = rs.find(r => lineaDeRegla(r, f.texto) === i)
                     const d = ya ? resolverFilaExistente(prop, ya) : null
-                    const campo = d?.campo || prop.campo
-                    const seMueve = !!d?.seMueve
+                    // Lo GUARDADO es lo que se muestra. La app, si disiente, va al lado.
+                    const campo = d?.campo || (prop.seguro ? prop.campo : "")
+                    const sug = d?.sugerencia ?? null
                     if (!campo) return (
                       <tr key={i}>
                         <td className="pr-2 align-top italic text-gray-400">no se guarda</td>
@@ -628,12 +637,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                       </tr>
                     )
                     return (
-                      <tr key={i} className={seMueve ? "bg-amber-50" : ""}>
+                      <tr key={i} className={sug ? "bg-amber-50" : ""}>
                         <td className="pr-2 align-top text-gray-500">
                           {etiquetaCampo(campo)}
-                          {seMueve && (
+                          {sug && (
                             <span className="ml-1 text-[10px] text-amber-700">
-                              (hoy en <s>{etiquetaCampo(d!.deColumna)}</s>)
+                              (la app diría {DESTINO_POR_CONTENIDO[sug.contenido]?.label ?? sug.contenido})
                             </span>
                           )}
                         </td>
@@ -647,11 +656,27 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           </div>
         </div>
 
-        {/* ── Qué está mal, línea por línea. Es la lista de trabajo del usuario ────────── */}
-        {mal.length > 0 && (
-          <div className="border-t border-red-200 bg-red-50/60 px-2.5 py-2">
+        {/* ── 🔴 El choque va PRIMERO: es lo único objetivamente roto (§ 🚦 integridad) ── */}
+        {(audit?.choques.length ?? 0) > 0 && (
+          <div className="border-t border-red-300 bg-red-50 px-2.5 py-2">
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-800">
-              Falta guardar: con las reglas de hoy estas líneas terminan en otro lado
+              Dos líneas guardadas en la misma columna — al parsear una se pierde
+            </p>
+            {audit!.choques.map(c => (
+              <p key={c.campo} className="text-[11px] leading-5 text-gray-800">
+                <span className="font-mono">{etiquetaCampo(c.campo)}</span> la reclaman las líneas{" "}
+                <strong className="text-red-700">{c.lineas.map(n => `L${n}`).join(" y ")}</strong>
+                {" "}— hay que mandar una a otra columna o dejarla sin asignar.
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/* ── 🟠 Discrepancias: la app opina distinto. No son errores, son decisiones ────── */}
+        {mal.length > 0 && (
+          <div className="border-t border-amber-200 bg-amber-50/60 px-2.5 py-2">
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-amber-800">
+              La app propone otra columna para estas líneas — lo guardado sigue mandando
             </p>
             <table className="w-full text-[11px] leading-5">
               <tbody>
@@ -660,18 +685,19 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                     <td className="w-8 pr-1 align-top font-mono text-gray-500">L{h.linea}</td>
                     <td className="pr-2 align-top font-mono text-gray-800">{h.texto}</td>
                     <td className="align-top text-gray-700">
-                      es <strong>{h.es}</strong> · va a <span className="font-mono">{etiquetaCampo(h.debeIr)}</span>
+                      la app dice que es <strong>{h.es}</strong> y la pondría en{" "}
+                      <span className="font-mono">{etiquetaCampo(h.debeIr)}</span>
                       {h.cayoEn
-                        ? <> — hoy cae en <span className="font-mono text-red-700">{etiquetaCampo(h.cayoEn)}</span></>
-                        : <> — hoy <span className="text-red-700">no se guarda</span></>}
+                        ? <> — hoy está en <span className="font-mono text-amber-800">{etiquetaCampo(h.cayoEn)}</span></>
+                        : <> — hoy <span className="text-amber-800">no se guarda</span></>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <p className="mt-1 text-[10px] text-gray-600">
-              Se arregla con <strong>Editar</strong>: la propuesta ya viene con la columna correcta,
-              sólo hay que guardar.
+              Si la app tiene razón, se aplica con <strong>Editar</strong>. Si tenés razón vos,
+              <strong> no hay nada que hacer</strong>: lo guardado es lo que se usa.
             </p>
           </div>
         )}
@@ -695,19 +721,28 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-red-900">
                   <FileWarning className="h-4 w-4" />
-                  {resumen.malHoy > 0
-                    ? <>Si re-parseás ahora, <strong>{resumen.malHoy}</strong> movimiento{resumen.malHoy === 1 ? "" : "s"} quedarían con datos en la columna equivocada</>
-                    : <>Faltan decisiones tuyas en {resumen.lineasParaElUsuario} línea{resumen.lineasParaElUsuario === 1 ? "" : "s"}</>}
+                  {resumen.conChoque > 0
+                    ? <><strong>{resumen.conChoque}</strong> movimiento{resumen.conChoque === 1 ? "" : "s"} tienen dos líneas guardadas en la misma columna — una se pierde</>
+                    : resumen.malHoy > 0
+                      ? <>En <strong>{resumen.malHoy}</strong> movimiento{resumen.malHoy === 1 ? "" : "s"} la app propone otra columna que la guardada</>
+                      : <>Faltan decisiones tuyas en {resumen.lineasParaElUsuario} línea{resumen.lineasParaElUsuario === 1 ? "" : "s"}</>}
                 </CardTitle>
                 <p className="text-xs text-gray-700">
-                  Hoy no está roto: estos movimientos están sin desglosar. El problema aparece
-                  <strong> recién al re-parsear</strong>, así que conviene dejar las reglas listas antes.
+                  <strong>Lo guardado manda siempre.</strong> Lo que la app propone distinto es una
+                  sugerencia y se aplica sólo si vos querés. Lo único que hay que arreglar sí o sí
+                  es el <strong>choque</strong>: dos líneas en la misma columna no pueden convivir,
+                  al parsear una se pierde.
                 </p>
               </CardHeader>
               <CardContent className="space-y-2.5">
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded border border-red-300 bg-white px-2 py-1">
-                    🔴 <strong>{resumen.malHoy}</strong> irían mal
+                  {resumen.conChoque > 0 && (
+                    <span className="rounded border border-red-300 bg-white px-2 py-1">
+                      🔴 <strong>{resumen.conChoque}</strong> con choque de columnas
+                    </span>
+                  )}
+                  <span className="rounded border border-amber-300 bg-white px-2 py-1">
+                    🟠 <strong>{resumen.malHoy}</strong> la app propone otra cosa
                   </span>
                   <span className="rounded border border-emerald-300 bg-white px-2 py-1">
                     ✅ <strong>{resumen.listos}</strong> ya cierran bien

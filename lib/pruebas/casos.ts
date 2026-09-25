@@ -435,6 +435,34 @@ export function correrCasos(): Resultado[] {
       "sin hallazgo en L2", a.hallazgos.some(h => h.linea === 2) ? "lo reportó mal" : "sin hallazgo en L2",
       !a.hallazgos.some(h => h.linea === 2), "A-FEAT-1177")
 
+    /**
+     * 🔴 **El choque: dos líneas guardadas en la misma columna.** Es el caso real del débito de
+     * AySA — la línea 3 (`CONSUMO`) y la 4 (`004105544412`) quedaron las dos en Concepto, así que
+     * **al parsear una se pierde**. Es lo único que la app puede afirmar que está roto, porque no
+     * hay explicación de negocio posible (§ `CLAUDE.md` 🚦 integridad).
+     */
+    const aysa = ["DEB. AUTOM. DE SERV.", "AGUA Y SANE-AYSA", "CONSUMO", "004105544412", "0000055193"]
+    const conChoque = auditarSubtipo(aysa, [
+      { campo_destino: "descripcion",            tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "D", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 2, grupo_de_conceptos: "D", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_3", tipo_regla: "linea", numero_linea: 3, grupo_de_conceptos: "D", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_3", tipo_regla: "linea", numero_linea: 4, grupo_de_conceptos: "D", firma_forma: "x" },
+      { campo_destino: "numero_de_comprobante",  tipo_regla: "linea", numero_linea: 5, grupo_de_conceptos: "D", firma_forma: "x" },
+    ] as never)
+    chequear("Parseo", "Dos líneas en la misma columna se detectan como choque",
+      "1 choque en leyendas_adicionales_3",
+      `${conChoque.choques.length} choque(s)` + (conChoque.choques[0] ? ` en ${conChoque.choques[0].campo}` : ""),
+      conChoque.choques.length === 1 && conChoque.choques[0].campo === "leyendas_adicionales_3", "A-BUG-1208")
+
+    chequear("Parseo", "Y dice CUÁLES son las dos líneas que chocan",
+      "L3 y L4", (conChoque.choques[0]?.lineas ?? []).map(n => `L${n}`).join(" y "),
+      JSON.stringify(conChoque.choques[0]?.lineas) === "[3,4]", "A-BUG-1208")
+
+    chequear("Parseo", "Lo que el usuario decidió NO figura como discrepancia",
+      "sin discrepancia en L5",
+      conChoque.hallazgos.some(h => h.linea === 5) ? "la marca como error" : "sin discrepancia en L5",
+      !conChoque.hallazgos.some(h => h.linea === 5), "A-BUG-1207")
+
     chequear("Parseo", "Las reglas que cuentan renglones sin subtipo se cuentan",
       "3", String(a.reglasQueCuentanSinSubtipo), a.reglasQueCuentanSinSubtipo === 3, "A-BUG-1200")
 
@@ -468,57 +496,33 @@ export function correrCasos(): Resultado[] {
     ])[2]
     const r = resolverFilaExistente(lineaCbu, { campo_destino: "numero_de_comprobante", tipo_regla: "linea" })
 
-    chequear("Parseo", "Al abrir el editor, el CBU va a la columna del CBU y no a la de la regla vieja",
-      "tipo_de_movimiento", r.campo, r.campo === "tipo_de_movimiento", "A-BUG-1202")
+    chequear("Parseo", "Al abrir el editor manda lo GUARDADO, no lo que propone la app",
+      "numero_de_comprobante", r.campo, r.campo === "numero_de_comprobante", "A-BUG-1207")
 
-    chequear("Parseo", "Y avisa que el dato se mueve de columna al guardar",
-      "se mueve desde numero_de_comprobante",
-      r.seMueve ? `se mueve desde ${r.deColumna}` : "no avisa",
-      r.seMueve && r.deColumna === "numero_de_comprobante", "A-BUG-1202")
+    chequear("Parseo", "Y la app queda como sugerencia, al lado",
+      "sugiere tipo_de_movimiento", r.sugerencia ? `sugiere ${r.sugerencia.campo}` : "no sugiere nada",
+      r.sugerencia?.campo === "tipo_de_movimiento", "A-BUG-1207")
 
-    chequear("Parseo", "Al moverse toma el modo que busca el dato, no el que cuenta la línea",
-      "cbu", r.modo, r.modo === "cbu", "A-BUG-1202")
-
-    // Una regla que YA está bien no se toca ni avisa nada
+    // Una regla que ya coincide con la app no genera sugerencia
     const ok = resolverFilaExistente(lineaCbu, { campo_destino: "tipo_de_movimiento", tipo_regla: "cbu" })
-    chequear("Parseo", "Una regla que ya está bien no se marca como movida",
-      "no se mueve", ok.seMueve ? "se mueve" : "no se mueve", !ok.seMueve, "A-BUG-1202")
-
-    // Lo que la app NO reconoce conserva la decisión vieja del usuario, deducida de la columna
-    const desconocida = { contenido: "", campo: "", modo: "linea", seguro: false }
-    const rec = resolverFilaExistente(desconocida, { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea" })
-    chequear("Parseo", "Una línea que la app no reconoce recupera lo que el usuario había decidido",
-      "nombre", rec.contenido, rec.contenido === "nombre", "A-BUG-1202")
+    chequear("Parseo", "Si lo guardado y la app coinciden, no hay nada que sugerir",
+      "sin sugerencia", ok.sugerencia ? "sugiere algo" : "sin sugerencia", !ok.sugerencia, "A-BUG-1207")
 
     /**
-     * 🛑 **Una sugerencia no pisa una decisión — A-BUG-1205.**
-     *
-     * Caso real: `D.A. AL VTO` (Pago tarjeta Visa). La app propone «nombre/comercio» **sin
-     * certeza**; el usuario decidió que es el **código de autorización**, lo guardó, y la pantalla
-     * se lo seguía mostrando como nombre. Su decisión tiene que ganar.
+     * 🛑 El caso que costó tres vueltas: la app está SEGURA de que `0000055193` es un concepto, y
+     * el usuario decidió que es el código de autorización. **Gana él.**
      */
-    const propNombre = proponerMapeo(["PAGO TARJETA VISA", "D.A. AL VTO"])[1]
-    chequear("Parseo", "La app propone «nombre» para D.A. AL VTO, pero sin certeza",
-      "nombre / no seguro", `${propNombre.contenido} / ${propNombre.seguro ? "seguro" : "no seguro"}`,
-      propNombre.contenido === "nombre" && !propNombre.seguro, "A-BUG-1205")
+    const propNum = proponerMapeo(["DEB. AUTOM. DE SERV.", "AGUA Y SANE-AYSA", "CONSUMO", "004105544412", "0000055193"])[4]
+    chequear("Parseo", "La app está segura de que 0000055193 es un concepto",
+      "concepto / seguro", `${propNum.contenido} / ${propNum.seguro ? "seguro" : "no seguro"}`,
+      propNum.contenido === "concepto" && propNum.seguro, "A-BUG-1207")
 
-    const decidido = resolverFilaExistente(propNombre, { campo_destino: "numero_de_comprobante", tipo_regla: "linea" })
-    chequear("Parseo", "Lo que el usuario decidió gana a una propuesta insegura",
-      "numero_de_comprobante", decidido.campo, decidido.campo === "numero_de_comprobante", "A-BUG-1205")
+    const suyo = resolverFilaExistente(propNum, { campo_destino: "numero_de_comprobante", tipo_regla: "linea" })
+    chequear("Parseo", "Aun estando SEGURA, la app no pisa lo que decidió el usuario",
+      "numero_de_comprobante", suyo.campo, suyo.campo === "numero_de_comprobante", "A-BUG-1207")
 
-    chequear("Parseo", "Y se muestra como «código de autorización», no como «nº de operación»",
-      "autorizacion", decidido.contenido, decidido.contenido === "autorizacion", "A-BUG-1205")
-
-    chequear("Parseo", "Una decisión guardada no queda marcada como «propuesta a confirmar»",
-      "seguro", decidido.seguro ? "seguro" : "a confirmar", decidido.seguro, "A-BUG-1205")
-
-    chequear("Parseo", "Y no avisa que se mueve, porque no se mueve a ningún lado",
-      "no se mueve", decidido.seMueve ? "se mueve" : "no se mueve", !decidido.seMueve, "A-BUG-1205")
-
-    // Pero lo SEGURO sigue corrigiendo una regla mal puesta: es A-BUG-1202, que no se rompe
-    const cbuSeguro = resolverFilaExistente(lineaCbu, { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea" })
-    chequear("Parseo", "Lo que la app reconoce CON certeza sí corrige una regla mal puesta",
-      "tipo_de_movimiento", cbuSeguro.campo, cbuSeguro.campo === "tipo_de_movimiento", "A-BUG-1205")
+    chequear("Parseo", "Y se muestra con el nombre que él eligió",
+      "autorizacion", suyo.contenido, suyo.contenido === "autorizacion", "A-BUG-1207")
 
     chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
       "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")
