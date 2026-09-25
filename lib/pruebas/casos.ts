@@ -74,6 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { parsearMovimiento, proponerMapeo, splitMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -341,6 +342,58 @@ export function correrCasos(): Resultado[] {
   chequear("SICORE", "Massaglia julio: el mes cierra en $67.003,80, no en $65.660,40",
     "$67.003,80", `$${n2(r2(massaPrimero.retencion + massaSegundo.retencion))}`,
     cerca(massaPrimero.retencion + massaSegundo.retencion, 67003.80, 0.01), "A-BUG-193")
+
+  // ══ PARSEO: dos reglas al mismo destino dejan la columna VACÍA ════════════════════════════
+  //
+  // Pedido del usuario 2026-09-24. Antes ganaba la última en silencio y quedaba un dato creíble
+  // en la columna equivocada — el peor desenlace, porque nadie lo revisa.
+  const CRUDO_CHOQUE = ["TRANSFERENCIA A TERCEROS", "JUAN PEREZ", "30712345678", "VARIOS"].join(String.fromCharCode(10))
+  const REGLAS_CHOQUE = {
+    "TRANSFERENCIA A TERCEROS": [
+      { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 2, grupo_de_conceptos: "G", firma_forma: null },
+      { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 4, grupo_de_conceptos: "G", firma_forma: null },
+    ],
+  } as never
+
+  const choque = parsearMovimiento(CRUDO_CHOQUE, REGLAS_CHOQUE)
+  chequear("Parseo", "Dos reglas a la misma columna la dejan VACÍA, no se pisan",
+    "(vacío)", choque["leyendas_adicionales_1"] === "" ? "(vacío)" : choque["leyendas_adicionales_1"],
+    choque["leyendas_adicionales_1"] === "", "A-FEAT-1174")
+
+  const SIN_CHOQUE = {
+    "TRANSFERENCIA A TERCEROS": [
+      { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 2, grupo_de_conceptos: "G", firma_forma: null },
+      { campo_destino: "leyendas_adicionales_3", tipo_regla: "linea", numero_linea: 4, grupo_de_conceptos: "G", firma_forma: null },
+    ],
+  } as never
+  const ok = parsearMovimiento(CRUDO_CHOQUE, SIN_CHOQUE)
+  chequear("Parseo", "Sin choque, cada regla escribe lo suyo",
+    "JUAN PEREZ · VARIOS", `${ok["leyendas_adicionales_1"]} · ${ok["leyendas_adicionales_3"]}`,
+    ok["leyendas_adicionales_1"] === "JUAN PEREZ" && ok["leyendas_adicionales_3"] === "VARIOS", "A-FEAT-1174")
+
+  // ── El reconocedor: los 6 detectores nuevos, con los textos reales de MA ──────────────────
+  const reconoce = (texto: string) => {
+    const p = proponerMapeo(["PAGO DE SERVICIOS", texto])
+    return p[1]
+  }
+  for (const [texto, esperado, campo] of [
+    ["Terminal: 0500", "identificador", "numero_de_terminal"],
+    ["Sucursal: 0360", "nombre", "leyendas_adicionales_1"],
+    ["LINK", "banco", "leyendas_adicionales_4"],
+    ["007001005392", "concepto", "leyendas_adicionales_3"],
+    ["Enero 2026", "concepto", "leyendas_adicionales_3"],
+  ] as const) {
+    const r = reconoce(texto)
+    chequear("Parseo", `«${texto}» se reconoce como ${esperado}`,
+      `${esperado} → ${campo}`, `${r.contenido || "(nada)"} → ${r.campo || "(sin columna)"}`,
+      r.contenido === esperado && r.campo === campo, "A-FEAT-1174")
+  }
+
+  // La tarjeta ya tiene columna: era el hueco de A-FEAT-16.
+  const tar = reconoce("4517XXXXXXXXXX11")
+  chequear("Parseo", "La tarjeta va al instrumento, ya no queda sin columna",
+    "numero_de_terminal", tar.campo || "(sin columna)", tar.campo === "numero_de_terminal", "A-FEAT-16")
+
 
   // ── A-BUG-146 — filas repetidas antes del TXT que va a ARCA ─────────────────────────────────
   //

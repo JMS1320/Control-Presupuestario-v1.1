@@ -556,6 +556,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             </div>
           )}
 
+          {filas.filter(f => !f.contenido).length > 0 && (
+            <p className="rounded border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-900">
+              🔴 <strong>{filas.filter(f => !f.contenido).length} línea(s) que la app no supo
+              reconocer</strong> — están en rojo abajo. Es lo único que te toca decidir; el resto ya
+              viene resuelto.
+            </p>
+          )}
+
           <p className="text-xs text-gray-600">
             Una fila por línea. Lo que el banco escribe siempre igual —el CUIT, el CBU, el nombre
             antes del CUIT, el banco— ya viene propuesto; el resto decidilo vos.
@@ -583,13 +591,20 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                       })
                     : ""
                   const alerta = f.campo === "leyendas_adicionales_2" && f.modo !== "cuit"
+                  // 🔴 Lo que la app NO supo reconocer va en ROJO, no en gris: en gris se lee
+                  //    como «listo» y es justo lo contrario — es lo único que te toca decidir.
                   return (
-                    <tr key={i} className={`border-t align-top ${f.campo ? "" : "bg-gray-50/60"}`}>
+                    <tr key={i} className={`border-t align-top ${f.contenido ? "" : "bg-red-50"}`}>
                       <td className="px-2 py-2 font-mono text-gray-400">{f.numero}</td>
                       <td className="px-2 py-2">
                         <div className="font-mono text-[11px] text-gray-800">{f.texto}</div>
                         <div className="mt-1 flex items-center gap-1.5">
                           {rot && <span className={`rounded px-1 text-[10px] leading-4 ${rot.clase}`}>{rot.txt}</span>}
+                          {!f.contenido && (
+                            <span className="rounded bg-red-600 px-1.5 text-[10px] font-medium leading-4 text-white">
+                              no sé qué es — decidilo vos
+                            </span>
+                          )}
                           {!f.seguro && f.contenido && <span className="text-[10px] text-gray-400">sugerido</span>}
                         </div>
                         <p className="mt-0.5 text-[10px] leading-4 text-gray-400">{f.motivo}</p>

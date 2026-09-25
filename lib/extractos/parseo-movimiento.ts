@@ -155,9 +155,30 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
 
   resultado["grupo_de_conceptos"] = reglas.length > 0 ? reglas[0].grupo_de_conceptos : GRUPO_SIN_REGLA
 
+  /**
+   * 🛑 **Si dos reglas apuntan a la MISMA columna, esa columna queda VACÍA.**
+   *
+   * Pedido del usuario 2026-09-24: *«en caso de que durante el parseo dos datos quieran ir al mismo
+   * lugar —que pensamos que es imposible— sería bueno que el dato quede sin parsear por ese choque»*.
+   *
+   * 🔑 **Es un control de INTEGRIDAD, y por eso frena en vez de avisar** (§ `CLAUDE.md` 🚦): que dos
+   * datos distintos reclamen el mismo destino no tiene explicación de negocio posible — es una regla
+   * mal escrita. Antes **ganaba la última en silencio**, que es el peor de los desenlaces: queda un
+   * dato creíble en la columna equivocada y nadie lo revisa.
+   *
+   * 📌 Vaciar **no pierde nada**: el texto crudo sigue entero en `concepto`, así que arreglada la
+   * regla, un re-parseo lo recupera.
+   */
+  const porCampo = new Map<string, string[]>()
   for (const regla of reglas) {
     if (!regla.campo_destino) continue
-    resultado[regla.campo_destino] = aplicarRegla(lineas, regla)
+    const valor = aplicarRegla(lineas, regla)
+    const previos = porCampo.get(regla.campo_destino) ?? []
+    porCampo.set(regla.campo_destino, [...previos, valor])
+  }
+  for (const [campo, valores] of porCampo) {
+    const distintos = [...new Set(valores.filter(v => v !== ""))]
+    resultado[campo] = distintos.length > 1 ? "" : (distintos[0] ?? "")
   }
 
   // La descripción siempre tiene al menos el tipo
