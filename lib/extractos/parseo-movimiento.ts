@@ -731,3 +731,45 @@ export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): Auditor
     reglasQueCuentanSinSubtipo: reglas.filter(r => r.tipo_regla === "linea" && !r.firma_forma).length,
   }
 }
+
+/**
+ * De la columna de vuelta a **qué es el dato**. Sirve para no perder una decisión vieja del
+ * usuario cuando la app no sabe reconocer la línea. Si una columna admite dos contenidos (el
+ * número de comprobante guarda operación *o* autorización), devuelve el primero: van al mismo lado.
+ */
+export function contenidoDeCampo(campo: string | null | undefined): string {
+  if (!campo) return ""
+  return Object.entries(DESTINO_POR_CONTENIDO).find(([, d]) => d.campo === campo)?.[0] ?? ""
+}
+
+/**
+ * Cómo se abre en el editor una línea que **ya tiene una regla guardada**.
+ *
+ * 🛑 **La columna sale SIEMPRE de la convención, nunca de la regla vieja.** Antes se copiaba
+ * `campo_destino` tal cual, y el 2026-09-25 el usuario vio la contradicción: el desplegable decía
+ * **«CBU destino»** y en la misma fila, abajo, **«va a `numero_de_comprobante`»** (A-BUG-1202).
+ * Las dos cosas no pueden discrepar — es lo que A-FEAT-1174 vino a cerrar: *se elige QUÉ ES el
+ * dato; dónde va lo decide la convención*.
+ *
+ * De la regla vieja se conserva lo que sí es una decisión del usuario: el **modo**, y —cuando la
+ * app no reconoce la línea— **qué dijo él que era**, deducido de la columna donde la mandó.
+ */
+export function resolverFilaExistente(
+  propuesta: { contenido: string; campo: string; modo: string; seguro: boolean },
+  regla: { campo_destino: string | null; tipo_regla: string }
+): { contenido: string; campo: string; modo: string; seguro: boolean; seMueve: boolean; deColumna: string } {
+  const contenido = propuesta.contenido || contenidoDeCampo(regla.campo_destino)
+  const destino = DESTINO_POR_CONTENIDO[contenido]
+  const campo = destino?.campo ?? ""
+  const seMueve = !!campo && !!regla.campo_destino && campo !== regla.campo_destino
+  return {
+    contenido,
+    campo,
+    // Si el dato cambia de columna, el modo viejo puede no servir: contar la línea 3 no es lo
+    // mismo que buscar el CBU esté donde esté.
+    modo: seMueve ? (destino?.modo ?? regla.tipo_regla) : regla.tipo_regla,
+    seguro: propuesta.contenido ? propuesta.seguro : true,
+    seMueve,
+    deColumna: regla.campo_destino ?? "",
+  }
+}

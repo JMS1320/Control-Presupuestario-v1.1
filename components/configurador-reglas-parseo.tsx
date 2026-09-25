@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -232,11 +232,32 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     const existentes = reglasDeSubtipo(t.tipo, subtipo.firma)
     const filasNuevas: Fila[] = proponerMapeo(subtipo.texto).map((p, i) => {
       const ya = existentes.find(r => lineaDeRegla(r, subtipo.texto) === i)
-      return ya
-        // Lo ya guardado manda sobre la propuesta: si el usuario decidió algo, se respeta.
-        ? { ...p, campo: ya.campo_destino ?? "", modo: ya.tipo_regla, reglaExistente: ya,
-            seguro: true, motivo: "Ya estaba configurado así" }
-        : { ...p, reglaExistente: null }
+      if (!ya) return { ...p, reglaExistente: null }
+
+      /**
+       * 🛑 **La columna SIEMPRE sale de la convención, nunca de la regla vieja.**
+       *
+       * Antes acá decía `campo: ya.campo_destino`, y eso producía la contradicción que vio el
+       * usuario el 2026-09-25: el desplegable decía **«CBU destino»** y abajo, en la misma fila,
+       * **«va a `numero_de_comprobante`»**. Las dos cosas no pueden discrepar — es exactamente lo
+       * que A-FEAT-1174 vino a cerrar: *se elige QUÉ ES el dato; dónde va lo decide la convención*.
+       *
+       * 📌 De la regla vieja se conserva lo que sí es una decisión suya: **el modo**, y —cuando la
+       * app no supo reconocer la línea— **qué dijo él que era**, deducido de la columna donde la
+       * había mandado. Lo que no se conserva es una columna que contradice la convención.
+       */
+      const r = resolverFilaExistente(p, ya)
+      return {
+        ...p,
+        contenido: r.contenido as ContenidoLinea,
+        campo: r.campo,
+        modo: r.modo,
+        reglaExistente: ya,
+        seguro: r.seguro,
+        motivo: r.seMueve
+          ? `⚠ Hoy va a «${etiquetaCampo(r.deColumna)}», que no es donde va este dato. Al guardar pasa a «${etiquetaCampo(r.campo)}».`
+          : p.contenido ? "Ya estaba configurado así" : "Lo decidiste vos antes",
+      }
     })
     setFilas(filasNuevas)
     const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos ?? ""

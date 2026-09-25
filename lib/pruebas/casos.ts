@@ -74,7 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -452,6 +452,46 @@ export function correrCasos(): Resultado[] {
       "0 hallazgos · 0 reglas sueltas",
       `${b.hallazgos.length} hallazgos · ${b.reglasQueCuentanSinSubtipo} reglas sueltas`,
       b.hallazgos.length === 0 && b.reglasQueCuentanSinSubtipo === 0, "A-FEAT-1177")
+  }
+
+  /**
+   * 🎛️ **Abrir el editor no puede contradecirse a sí mismo — A-BUG-1202.**
+   *
+   * El caso es el que vio el usuario: la regla vieja manda la línea del CBU a
+   * `numero_de_comprobante`. Al abrir el editor, el desplegable decía «CBU destino» y abajo, en
+   * la MISMA fila, «va a numero_de_comprobante». La columna tiene que salir de la convención.
+   */
+  {
+    const lineaCbu = proponerMapeo([
+      "TRANSFERENCIA A TERCEROS", "NO  27300503905", "0140363103650054482399",
+      "LINK", "4517XXXXXXXXXX11", "VARIOS",
+    ])[2]
+    const r = resolverFilaExistente(lineaCbu, { campo_destino: "numero_de_comprobante", tipo_regla: "linea" })
+
+    chequear("Parseo", "Al abrir el editor, el CBU va a la columna del CBU y no a la de la regla vieja",
+      "tipo_de_movimiento", r.campo, r.campo === "tipo_de_movimiento", "A-BUG-1202")
+
+    chequear("Parseo", "Y avisa que el dato se mueve de columna al guardar",
+      "se mueve desde numero_de_comprobante",
+      r.seMueve ? `se mueve desde ${r.deColumna}` : "no avisa",
+      r.seMueve && r.deColumna === "numero_de_comprobante", "A-BUG-1202")
+
+    chequear("Parseo", "Al moverse toma el modo que busca el dato, no el que cuenta la línea",
+      "cbu", r.modo, r.modo === "cbu", "A-BUG-1202")
+
+    // Una regla que YA está bien no se toca ni avisa nada
+    const ok = resolverFilaExistente(lineaCbu, { campo_destino: "tipo_de_movimiento", tipo_regla: "cbu" })
+    chequear("Parseo", "Una regla que ya está bien no se marca como movida",
+      "no se mueve", ok.seMueve ? "se mueve" : "no se mueve", !ok.seMueve, "A-BUG-1202")
+
+    // Lo que la app NO reconoce conserva la decisión vieja del usuario, deducida de la columna
+    const desconocida = { contenido: "", campo: "", modo: "linea", seguro: false }
+    const rec = resolverFilaExistente(desconocida, { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea" })
+    chequear("Parseo", "Una línea que la app no reconoce recupera lo que el usuario había decidido",
+      "nombre", rec.contenido, rec.contenido === "nombre", "A-BUG-1202")
+
+    chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
+      "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")
   }
 
   // La tarjeta ya tiene columna: era el hueco de A-FEAT-16.
