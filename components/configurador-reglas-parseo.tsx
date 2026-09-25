@@ -11,9 +11,9 @@
  *   | `reglas_conciliacion`      | al conciliar | asigna cuenta contable por texto           |
  *   | `reglas_contable_interno`  | al conciliar | asigna contable / interno                  |
  *
- * **La unidad de trabajo es la FORMA, no el tipo.** Un mismo tipo de movimiento llega escrito de
+ * **La unidad de trabajo es el SUBTIPO, no el tipo.** Un mismo tipo de movimiento llega escrito de
  * maneras distintas —`TRANSFERENCIA A TERCEROS` viene en 3— y las reglas que cuentan líneas sólo
- * valen dentro de una forma. Cada forma se configura por separado, con su propio ejemplo real.
+ * valen dentro de un subtipo. Cada subtipo se configura por separado, con su propio ejemplo real.
  *
  * Lo que ya sabemos no se pregunta: el CUIT se reconoce solo y va a su columna, el nombre está
  * antes del CUIT, el CBU son 22 dígitos, el banco empieza con «BANCO». Todo propuesto y
@@ -100,16 +100,16 @@ interface Regla {
   grupo_de_conceptos: string | null
   orden: number | null
   activo: boolean
-  /** Forma a la que aplica. `null` = a todas (reglas viejas, previas a la columna). */
+  /** Subtipo a la que aplica. `null` = a todas (reglas viejas, previas a la columna). */
   firma_forma?: string | null
 }
 
-interface Formato {
+interface Subtipo {
   firma: string
   lineas: number
   movimientos: number
   texto: string[]
-  /** `false` = el tipo tiene reglas por forma y ninguna es de ésta → NO se parsea. */
+  /** `false` = el tipo tiene reglas por subtipo y ninguna es de ésta → NO se parsea. */
   cubierto: boolean
 }
 
@@ -118,7 +118,7 @@ interface TipoInfo {
   movimientos: number
   conRegla: boolean
   lineas: string[]
-  formatos: Formato[]
+  subtipos: Subtipo[]
 }
 
 /** Una fila del editor: la línea + a dónde la manda el usuario. */
@@ -153,8 +153,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const [tipos, setTipos] = useState<TipoInfo[]>([])
   const [cargando, setCargando] = useState(true)
 
-  // Editor de UNA forma de un tipo
-  const [editando, setEditando] = useState<{ tipo: TipoInfo; forma: Formato } | null>(null)
+  // Editor de UN subtipo de un tipo
+  const [editando, setEditando] = useState<{ tipo: TipoInfo; subtipo: Subtipo } | null>(null)
   const [verEstructura, setVerEstructura] = useState(false)
   const [filas, setFilas] = useState<Fila[]>([])
   const [fGrupo, setFGrupo] = useState("")
@@ -185,18 +185,18 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     [reglas]
   )
 
-  /** Las reglas que aplican a una forma: las suyas, más las viejas sin firma. */
-  const reglasDeForma = useCallback(
+  /** Las reglas que aplican a un subtipo: las suyas, más las viejas sin firma. */
+  const reglasDeSubtipo = useCallback(
     (tipo: string, firma: string) =>
       reglasDe(tipo).filter(r => !r.firma_forma || r.firma_forma === firma),
     [reglasDe]
   )
 
-  /** Abre el editor de UNA forma: propone lo que sabemos y pre-carga lo que ya existe. */
-  const abrirForma = (t: TipoInfo, forma: Formato) => {
-    const existentes = reglasDeForma(t.tipo, forma.firma)
-    const filasNuevas: Fila[] = proponerMapeo(forma.texto).map((p, i) => {
-      const ya = existentes.find(r => lineaDeRegla(r, forma.texto) === i)
+  /** Abre el editor de UN subtipo: propone lo que sabemos y pre-carga lo que ya existe. */
+  const abrirSubtipo = (t: TipoInfo, subtipo: Subtipo) => {
+    const existentes = reglasDeSubtipo(t.tipo, subtipo.firma)
+    const filasNuevas: Fila[] = proponerMapeo(subtipo.texto).map((p, i) => {
+      const ya = existentes.find(r => lineaDeRegla(r, subtipo.texto) === i)
       return ya
         // Lo ya guardado manda sobre la propuesta: si el usuario decidió algo, se respeta.
         ? { ...p, campo: ya.campo_destino ?? "", modo: ya.tipo_regla, reglaExistente: ya,
@@ -207,21 +207,21 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos ?? ""
     setFGrupo(grupo)
     setGrupoOriginal(grupo)
-    setEditando({ tipo: t, forma })
+    setEditando({ tipo: t, subtipo })
   }
 
   const cambiarFila = (i: number, cambio: Partial<Fila>) =>
     setFilas(fs => fs.map((x, j) => (j === i ? { ...x, ...cambio } : x)))
 
-  /** Reglas de esta forma que no se pudieron ubicar en ninguna línea: no se tocan. */
+  /** Reglas de este subtipo que no se pudieron ubicar en ninguna línea: no se tocan. */
   const huerfanas = useMemo(() => {
     if (!editando) return []
     const ubicadas = new Set(filas.map(f => f.reglaExistente?.id).filter(Boolean))
-    return reglasDeForma(editando.tipo.tipo, editando.forma.firma).filter(r => !ubicadas.has(r.id))
-  }, [editando, filas, reglasDeForma])
+    return reglasDeSubtipo(editando.tipo.tipo, editando.subtipo.firma).filter(r => !ubicadas.has(r.id))
+  }, [editando, filas, reglasDeSubtipo])
 
   const plan = useMemo(() => {
-    const firma = editando?.forma.firma ?? ""
+    const firma = editando?.subtipo.firma ?? ""
     const alta = filas.filter(f => f.campo && !f.reglaExistente).length
     const cambio = filas.filter(f => f.campo && f.reglaExistente && (
       f.reglaExistente.campo_destino !== f.campo ||
@@ -238,7 +238,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     setGuardando(true)
     try {
       const tipo = editando.tipo.tipo.toUpperCase()
-      const firma = editando.forma.firma
+      const firma = editando.subtipo.firma
       const grupo = fGrupo.trim() || null
       let orden = 0
 
@@ -260,7 +260,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           tipo_regla: f.modo,
           numero_linea: f.modo === "linea" ? f.numero : null,
           grupo_de_conceptos: grupo,
-          // Toda regla queda atada a SU forma. Si mañana el banco manda una forma distinta, no
+          // Toda regla queda atada a SU subtipo. Si mañana el banco manda un subtipo distinto, no
           // se parsea y se ve — en vez de desglosarse con las reglas de otra.
           firma_forma: firma,
           orden,
@@ -272,7 +272,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         if (error) throw error
       }
 
-      // El grupo de conceptos es del TIPO, no de la forma: se alinea en todas sus reglas. Si no,
+      // El grupo de conceptos es del TIPO, no de el subtipo: se alinea en todas sus reglas. Si no,
       // el mismo tipo tendría dos grupos y el parseo tomaría el de la primera regla cargada.
       const otras = reglasDe(tipo).filter(r => !filas.some(f => f.reglaExistente?.id === r.id))
       if (otras.length > 0) {
@@ -281,7 +281,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       }
 
       toast.success(
-        `${tipo} · forma de ${editando.forma.lineas} líneas: ${plan.alta} nueva(s), ` +
+        `${tipo} · subtipo de ${editando.subtipo.lineas} líneas: ${plan.alta} nueva(s), ` +
         `${plan.cambio} cambiada(s), ${plan.baja} borrada(s) — corré «Re-parsear» para aplicarlo`
       )
       setEditando(null)
@@ -293,12 +293,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     }
   }
 
-  const borrarReglasDeForma = async (t: TipoInfo, forma: Formato) => {
-    const rs = reglasDe(t.tipo).filter(r => r.firma_forma === forma.firma)
+  const borrarReglasDeSubtipo = async (t: TipoInfo, subtipo: Subtipo) => {
+    const rs = reglasDe(t.tipo).filter(r => r.firma_forma === subtipo.firma)
     if (rs.length === 0) return
     if (!window.confirm(
-      `¿Eliminar las ${rs.length} reglas de la forma de ${forma.lineas} líneas de ${t.tipo}?\n\n` +
-      `Sus ${forma.movimientos} movimiento(s) dejarán de desglosarse. Lo ya importado no cambia ` +
+      `¿Eliminar las ${rs.length} reglas de el subtipo de ${subtipo.lineas} líneas de ${t.tipo}?\n\n` +
+      `Sus ${subtipo.movimientos} movimiento(s) dejarán de desglosarse. Lo ya importado no cambia ` +
       `hasta que corras Re-parsear.`
     )) return
     const { error } = await supabase.from("config_parseo_extracto").delete().in("id", rs.map(r => r.id))
@@ -326,12 +326,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     )
   }
 
-  // Una entrada por FORMA, que es la unidad real de configuración
+  // Una entrada por SUBTIPO, que es la unidad real de configuración
   const formasPendientes = tipos.flatMap(t =>
-    t.formatos.filter(f => reglasDeForma(t.tipo, f.firma).length === 0).map(f => ({ t, f }))
+    t.subtipos.filter(f => reglasDeSubtipo(t.tipo, f.firma).length === 0).map(f => ({ t, f }))
   ).sort((a, b) => b.f.movimientos - a.f.movimientos)
 
-  const totalFormas = tipos.reduce((n, t) => n + t.formatos.length, 0)
+  const totalSubtipos = tipos.reduce((n, t) => n + t.subtipos.length, 0)
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
@@ -346,29 +346,29 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     </div>
   )
 
-  /** Una forma: su ejemplo real a la izquierda y lo que producen sus reglas a la derecha. */
-  const BloqueForma = ({ t, f }: { t: TipoInfo; f: Formato }) => {
-    const rs = reglasDeForma(t.tipo, f.firma)
+  /** Un subtipo: su ejemplo real a la izquierda y lo que producen sus reglas a la derecha. */
+  const BloqueSubtipo = ({ t, f }: { t: TipoInfo; f: Subtipo }) => {
+    const rs = reglasDeSubtipo(t.tipo, f.firma)
     const sinReglas = rs.length === 0
     return (
       <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
           <span className="text-xs font-medium text-gray-700">
-            Forma de {f.lineas} líneas
+            Subtipo de {f.lineas} líneas
           </span>
           <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
           {sinReglas
             ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
             : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"}</Badge>}
           <Button size="sm" variant={sinReglas ? "outline" : "ghost"} className="ml-auto h-7 text-xs"
-            onClick={() => abrirForma(t, f)}>
+            onClick={() => abrirSubtipo(t, f)}>
             {sinReglas
               ? <><Plus className="mr-1 h-3 w-3" /> Configurar {f.lineas} líneas</>
               : <><Pencil className="mr-1 h-3 w-3" /> Editar</>}
           </Button>
           {rs.some(r => r.firma_forma === f.firma) && (
-            <button className="text-red-500 hover:text-red-700" title="Eliminar las reglas de esta forma"
-              onClick={() => borrarReglasDeForma(t, f)}>
+            <button className="text-red-500 hover:text-red-700" title="Eliminar las reglas de este subtipo"
+              onClick={() => borrarReglasDeSubtipo(t, f)}>
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
@@ -424,7 +424,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-sky-900">
                   <FileWarning className="h-4 w-4" />
-                  {formasPendientes.length} forma{formasPendientes.length === 1 ? "" : "s"} sin reglas
+                  {formasPendientes.length} subtipo{formasPendientes.length === 1 ? "" : "s"} sin reglas
                 </CardTitle>
                 <p className="text-xs text-gray-600">
                   Sus movimientos entran con el texto completo pero sin desglosar. Ordenadas por
@@ -434,7 +434,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardContent>
                 <div className="flex flex-wrap gap-1.5">
                   {formasPendientes.map(({ t, f }) => (
-                    <button key={t.tipo + f.firma} onClick={() => abrirForma(t, f)}
+                    <button key={t.tipo + f.firma} onClick={() => abrirSubtipo(t, f)}
                       className="rounded border border-sky-300 bg-white px-2 py-1 text-left text-[11px] hover:border-sky-500">
                       <span className="font-mono font-medium text-gray-800">{t.tipo}</span>
                       <span className="ml-1.5 text-gray-500">{f.lineas} líneas · {f.movimientos} mov.</span>
@@ -449,7 +449,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-emerald-600" />
-                {tipos.length} tipo(s) · {totalFormas} forma(s) · {reglas.length} regla(s)
+                {tipos.length} tipo(s) · {totalSubtipos} subtipo(s) · {reglas.length} regla(s)
                 {/* 📋 La estructura, a un clic. Va acá —y no arriba ni abajo de la lista— porque la
                     duda aparece mirando un tipo: «esto dónde termina guardado». */}
                 <button
@@ -462,7 +462,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 </button>
               </CardTitle>
               <p className="text-xs text-gray-600">
-                Cada forma se configura por separado, con su ejemplo real al lado de lo que produce.
+                Cada subtipo se configura por separado, con su ejemplo real al lado de lo que produce.
                 El <strong>grupo de conceptos</strong> es del tipo entero.
               </p>
             </CardHeader>
@@ -480,15 +480,15 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                         <div className="mb-1.5 flex flex-wrap items-center gap-2">
                           <span className="font-mono text-sm font-medium text-gray-900">{t.tipo}</span>
                           <Badge variant="outline" className="text-[10px]">{t.movimientos} mov.</Badge>
-                          {t.formatos.length > 1 && (
+                          {t.subtipos.length > 1 && (
                             <Badge variant="outline" className="border-amber-400 bg-amber-50 text-[10px] text-amber-800">
-                              {t.formatos.length} formas
+                              {t.subtipos.length} subtipos
                             </Badge>
                           )}
                           {grupo && <Badge variant="outline" className="text-[10px]">{grupo}</Badge>}
                         </div>
                         <div className="space-y-2 border-l-2 border-gray-200 pl-2.5">
-                          {t.formatos.map(f => <BloqueForma key={f.firma} t={t} f={f} />)}
+                          {t.subtipos.map(f => <BloqueSubtipo key={f.firma} t={t} f={f} />)}
                         </div>
                       </div>
                     )
@@ -519,7 +519,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         </>
       )}
 
-      {/* ── Editor de una forma: una fila por línea del movimiento ───────────── */}
+      {/* ── Editor de un subtipo: una fila por línea del movimiento ───────────── */}
       <Dialog open={!!editando} onOpenChange={v => !v && setEditando(null)}>
         <DialogContent className="max-h-[88vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
@@ -528,28 +528,28 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <div className="-mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600">
             <Badge variant="outline" className="text-[10px]">
-              forma de {editando?.forma.lineas} líneas · {editando?.forma.movimientos} mov.
+              subtipo de {editando?.subtipo.lineas} líneas · {editando?.subtipo.movimientos} mov.
             </Badge>
-            {(editando?.tipo.formatos.length ?? 0) > 1 && (
+            {(editando?.tipo.subtipos.length ?? 0) > 1 && (
               <span className="text-[11px] text-amber-700">
-                Este tipo tiene {editando?.tipo.formatos.length} formas — estas reglas valen sólo para ésta.
+                Este tipo tiene {editando?.tipo.subtipos.length} subtipos — estas reglas valen sólo para éste.
               </span>
             )}
           </div>
 
-          {/* Las reglas viejas (sin forma) valían para TODAS. Al guardarlas acá quedan atadas a
-              ésta, y las otras formas se quedan sin nada. Es correcto, pero tiene que avisarse
+          {/* Las reglas viejas (sin subtipo) valían para TODAS. Al guardarlas acá quedan atadas a
+              éste, y los otros subtipos se quedan sin nada. Es correcto, pero tiene que avisarse
               ANTES de guardar: si no, el usuario ve desaparecer el desglose de movimientos que
               no tocó y no sabe por qué. */}
-          {(editando?.tipo.formatos.length ?? 0) > 1 &&
+          {(editando?.tipo.subtipos.length ?? 0) > 1 &&
            filas.some(f => f.reglaExistente && !f.reglaExistente.firma_forma) && (
             <div className="rounded border border-amber-400 bg-amber-50 px-2.5 py-2">
               <p className="text-xs font-medium text-amber-900">
-                ⚠ Ojo: hay reglas que hoy valen para las {editando?.tipo.formatos.length} formas
+                ⚠ Ojo: hay reglas que hoy valen para los {editando?.tipo.subtipos.length} subtipos
               </p>
               <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
-                Al guardar quedan atadas <strong>sólo a esta forma</strong>. Las otras
-                {" "}{(editando?.tipo.formatos.length ?? 1) - 1} se quedan sin reglas y sus movimientos
+                Al guardar quedan atadas <strong>sólo a este subtipo</strong>. Los otros
+                {" "}{(editando?.tipo.subtipos.length ?? 1) - 1} se quedan sin reglas y sus movimientos
                 dejan de desglosarse hasta que las configures. Conviene <strong>terminar el tipo
                 entero</strong> de una sentada.
               </p>
@@ -662,7 +662,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           {huerfanas.length > 0 && (
             <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-              {huerfanas.length} regla(s) de esta forma apuntan a líneas que este movimiento no tiene.
+              {huerfanas.length} regla(s) de este subtipo apuntan a líneas que este movimiento no tiene.
               <strong> No se tocan</strong> al guardar.
             </p>
           )}
@@ -707,7 +707,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <p className="text-sm text-gray-600">
             El extracto del Galicia no es texto libre: <strong>el mismo dato aparece siempre de la
-            misma forma</strong>. Por eso la app lo reconoce sola y ya sabe a qué columna va — no es
+            mismo subtipo</strong>. Por eso la app lo reconoce sola y ya sabe a qué columna va — no es
             una elección. Vale igual para <strong>MA</strong> y <strong>PAM Caja de Ahorro</strong>,
             que tienen el mismo formato.
           </p>

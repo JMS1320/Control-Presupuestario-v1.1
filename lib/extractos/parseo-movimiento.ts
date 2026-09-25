@@ -15,7 +15,7 @@
  *
  * ⚠️ **Esta lógica es UNA SOLA a propósito.** La usan el importador (al entrar el Excel) y el
  * re-parseo (sobre lo ya guardado en `concepto`). Si fueran dos copias podrían divergir, y un
- * movimiento quedaría desglosado distinto según por dónde entró — sin forma de notarlo mirando
+ * movimiento quedaría desglosado distinto según por dónde entró — sin subtipo de notarlo mirando
  * la grilla. Compartir el código es lo que vuelve verificable al re-parseo: correrlo sobre algo
  * ya importado tiene que dar exactamente lo mismo.
  */
@@ -28,8 +28,14 @@ export interface ReglaParseo {
   numero_linea: number | null
   grupo_de_conceptos: string
   /**
-   * Forma del movimiento a la que aplica (ver `firmaDeMovimiento`).
-   * `null` / ausente = vale para **todas** las formas del tipo.
+   * Subtipo del movimiento a la que aplica (ver `firmaDeMovimiento`).
+   * `null` / ausente = vale para **todas** los subtipos del tipo.
+   */
+  /**
+   * ⚠️ **La columna de la BD se llama `firma_forma` por historia.** El concepto se llama
+   * **SUBTIPO** desde el 2026-09-25 (*«mejor ponerle subtipos que formas, es más preciso»*, y la
+   * app lo muestra así). La columna NO se renombró: es estructura compartida con el otro clon y
+   * el nombre viejo no confunde a nadie mientras esté dicho acá.
    */
   firma_forma?: string | null
 }
@@ -41,13 +47,13 @@ export type MapaReglas = Record<string, ReglaParseo[]>
 export const GRUPO_SIN_REGLA = "Otros"
 
 /**
- * Grupo que se asigna cuando el tipo TIENE reglas por forma pero **ninguna es de esta forma**.
+ * Grupo que se asigna cuando el tipo TIENE reglas por subtipo pero **ninguna es de este subtipo**.
  *
  * Decisión del usuario (2026-08-10): en ese caso **no se parsea**. Preferimos un movimiento sin
- * desglosar y señalado a uno desglosado con las reglas de otra forma — que se vería correcto y
- * estaría mal. Además así una forma nueva del banco **se ve**, en vez de pasar de largo.
+ * desglosar y señalado a uno desglosado con las reglas de otro subtipo — que se vería correcto y
+ * estaría mal. Además así un subtipo nuevo del banco **se ve**, en vez de pasar de largo.
  */
-export const GRUPO_FORMA_NUEVA = "Forma nueva"
+export const GRUPO_SUBTIPO_NUEVO = "Subtipo nuevo"
 
 /**
  * Grupo que se asigna cuando **dos reglas reclaman la misma columna**.
@@ -55,7 +61,7 @@ export const GRUPO_FORMA_NUEVA = "Forma nueva"
  * Decisión del usuario (2026-09-24): *«que directamente no se parsee, así sigue dando alerta y yo
  * veo qué hacer»*. **No alcanzaba con vaciar esa columna**: un movimiento a medio desglosar se ve
  * casi bien y nadie vuelve. Sin desglosar y señalado, en cambio, **queda a la vista** hasta que
- * alguien lo mire — igual que una forma nueva.
+ * alguien lo mire — igual que un subtipo nuevo.
  *
  * 📌 Y no se pierde nada: el texto crudo sigue entero en `concepto`, así que arreglada la regla un
  * re-parseo lo resuelve.
@@ -184,12 +190,12 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
   const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
   const resultado: Record<string, string> = {}
 
-  const { reglas, formaNueva } = resolverReglas(lineas, mapaReglas)
+  const { reglas, subtipoNuevo } = resolverReglas(lineas, mapaReglas)
 
-  if (formaNueva) {
+  if (subtipoNuevo) {
     // No se parsea a propósito. El texto crudo sigue entero en `concepto`, así que un re-parseo
-    // posterior lo resuelve apenas se escriba la regla de esta forma.
-    resultado["grupo_de_conceptos"] = GRUPO_FORMA_NUEVA
+    // posterior lo resuelve apenas se escriba la regla de este subtipo.
+    resultado["grupo_de_conceptos"] = GRUPO_SUBTIPO_NUEVO
     resultado["descripcion"] = tipoLinea1 || raw.substring(0, 100)
     return resultado
   }
@@ -242,24 +248,24 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
 }
 
 /**
- * Qué reglas se aplican a este movimiento, y si su forma es desconocida.
+ * Qué reglas se aplican a este movimiento, y si su subtipo es desconocida.
  *
  * Las reglas de un tipo son de dos clases:
- * - **genéricas** (`firma_forma` vacío): valen para todas las formas. Son las de los modos que
+ * - **genéricas** (`firma_forma` vacío): valen para todos los subtipos. Son las de los modos que
  *   buscan — el CUIT y el nombre están donde estén.
- * - **por forma**: valen sólo para esa forma. Son las que cuentan líneas, porque contar sólo
- *   tiene sentido dentro de una forma.
+ * - **por subtipo**: valen sólo para esa subtipo. Son las que cuentan líneas, porque contar sólo
+ *   tiene sentido dentro de un subtipo.
  *
- * Se aplican las genéricas y encima las de la forma, así que ante el mismo `campo_destino` **manda
+ * Se aplican las genéricas y encima las de el subtipo, así que ante el mismo `campo_destino` **manda
  * la específica**.
  *
- * ⚠️ **Y si el tipo tiene reglas por forma pero ninguna es de ESTA forma → no se parsea**
- * (`formaNueva`). Ver `GRUPO_FORMA_NUEVA`.
+ * ⚠️ **Y si el tipo tiene reglas por subtipo pero ninguna es de ESTE subtipo → no se parsea**
+ * (`subtipoNuevo`). Ver `GRUPO_SUBTIPO_NUEVO`.
  */
 export function resolverReglas(
   lineas: string[],
   mapaReglas: MapaReglas,
-): { reglas: ReglaParseo[]; formaNueva: boolean } {
+): { reglas: ReglaParseo[]; subtipoNuevo: boolean } {
   const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
   // El match del tipo es EXACTO (ignorando mayúsculas). Por eso `COMPRA DEBITO` no encuentra
   // la regla de `COMPRA CON DEBITO`: para el sistema son dos tipos distintos.
@@ -272,16 +278,16 @@ export function resolverReglas(
   const tieneReglasPorForma = delTipo.some((r) => !!r.firma_forma)
 
   if (tieneReglasPorForma && propias.length === 0) {
-    return { reglas: [], formaNueva: true }
+    return { reglas: [], subtipoNuevo: true }
   }
-  return { reglas: [...genericas, ...propias], formaNueva: false }
+  return { reglas: [...genericas, ...propias], subtipoNuevo: false }
 }
 
-/** ¿Este movimiento quedó sin parsear por ser de una forma no contemplada? */
-export function esFormaNueva(raw: string | null | undefined, mapaReglas: MapaReglas): boolean {
+/** ¿Este movimiento quedó sin parsear por ser de un subtipo no contemplada? */
+export function esSubtipoNuevo(raw: string | null | undefined, mapaReglas: MapaReglas): boolean {
   const lineas = splitMovimiento(String(raw ?? ""))
   if (lineas.length === 0) return false
-  return resolverReglas(lineas, mapaReglas).formaNueva
+  return resolverReglas(lineas, mapaReglas).subtipoNuevo
 }
 
 /** El tipo de movimiento de un texto crudo: su primera línea, normalizada. */
@@ -336,7 +342,7 @@ export async function cargarReglasParseo(
 // PROPUESTA DE MAPEO — qué es cada línea y a qué columna va
 //
 // El extracto del Galicia no es texto libre: el mismo tipo de dato aparece siempre de la misma
-// forma. Un CUIT son 11 dígitos con prefijo `CU`/`NO`; un CBU son 22; el nombre del beneficiario
+// subtipo. Un CUIT son 11 dígitos con prefijo `CU`/`NO`; un CBU son 22; el nombre del beneficiario
 // va justo antes del CUIT. Eso ya lo sabemos, así que **no tiene por qué preguntarse**.
 //
 // La convención de columnas, que es la que respetan las 49 reglas ya cargadas:
@@ -498,20 +504,20 @@ const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
 const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
 
 // ────────────────────────────────────────────────────────────────────────────
-// FIRMA DE FORMA — qué hace que dos movimientos sean "el mismo tipo"
+// FIRMA DE SUBTIPO — qué hace que dos movimientos sean "el mismo tipo"
 //
 // Hasta 2026-08-10 el tipo era **sólo la primera línea**. Alcanzaba hasta que apareció
-// `TRANSFERENCIA A TERCEROS`, que llega de dos formas: 16 movimientos de 6 líneas con el CUIT en
+// `TRANSFERENCIA A TERCEROS`, que llega de dos subtipos: 16 movimientos de 6 líneas con el CUIT en
 // la 2, y 7 de 5 líneas con el CUIT en la 3 y con nombre. Mostrados como un tipo homogéneo, las
-// reglas por número de línea se escribieron para la forma que estaba a la vista y fallan en la
+// reglas por número de línea se escribieron para el subtipo que estaba a la vista y fallan en la
 // otra — sin decir nada (ver PENDIENTES § A-BUG-17).
 //
 // La firma es **cantidad de líneas + qué clase de dato hay en cada una**. Dos movimientos con la
-// misma cantidad de líneas pueden ser formas distintas si en uno la línea 3 es un CUIT y en el
+// misma cantidad de líneas pueden ser subtipos distintos si en uno la línea 3 es un CUIT y en el
 // otro un texto, así que contar líneas solo no alcanza.
 // ────────────────────────────────────────────────────────────────────────────
 
-/** La clase de dato de una línea, para comparar formas. */
+/** La clase de dato de una línea, para comparar subtipos. */
 export function claseDeLinea(l: string, indice: number): string {
   if (indice === 0) return "tipo"
   if (esCuit(l)) return "cuit"
@@ -521,7 +527,7 @@ export function claseDeLinea(l: string, indice: number): string {
   return "texto"
 }
 
-/** Firma de la forma del movimiento. Dos movimientos con la misma firma son intercambiables. */
+/** Firma de el subtipo del movimiento. Dos movimientos con la misma firma son intercambiables. */
 export function firmaDeMovimiento(lineas: string[]): string {
   return `${lineas.length}:${lineas.map(claseDeLinea).join(",")}`
 }
@@ -558,7 +564,7 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
 
     if (esCbu(texto))
       return { ...base, contenido: "cbu" as const, campo: COLUMNA_CBU, modo: "cbu",
-        seguro: true, motivo: "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier forma" }
+        seguro: true, motivo: "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier subtipo" }
 
     if (esBanco(texto))
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",

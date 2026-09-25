@@ -31,7 +31,7 @@ const CUENTAS_CON_PARSEO: { id: string; nombre: string; empresa: Empresa }[] = [
 
 interface Causas {
   sinRegla: number
-  formaNueva: number
+  subtipoNuevo: number
   choque: number
   desglosePendiente: number
 }
@@ -64,9 +64,9 @@ const QUE_HACER: { clave: keyof Causas; titulo: string; accion: string; color: s
     color: "border-amber-200 bg-amber-50 text-amber-900",
   },
   {
-    clave: "formaNueva",
-    titulo: "forma nueva",
-    accion: "el tipo tiene reglas, pero el movimiento llegó con otra cantidad de líneas: falta cargar esa forma.",
+    clave: "subtipoNuevo",
+    titulo: "subtipo nuevo",
+    accion: "el tipo tiene reglas, pero el movimiento llegó con otras líneas y ninguna es de ese subtipo: falta cargar ese subtipo.",
     color: "border-violet-200 bg-violet-50 text-violet-900",
   },
   {
@@ -92,7 +92,7 @@ export function AlertaParseoPendiente() {
         return {
           ...c,
           sinParsear: j.sinParsear,
-          causas: j.causas ?? { sinRegla: 0, formaNueva: 0, choque: 0, desglosePendiente: 0 },
+          causas: j.causas ?? { sinRegla: 0, subtipoNuevo: 0, choque: 0, desglosePendiente: 0 },
           total: j.totalMovimientos,
           tipos: j.tiposSinRegla ?? [],
         }

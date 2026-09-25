@@ -25,7 +25,7 @@ import {
   firmaDeMovimiento,
   lineasDeFirma,
   resolverReglas,
-  GRUPO_FORMA_NUEVA,
+  GRUPO_SUBTIPO_NUEVO,
   GRUPO_CHOQUE,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
@@ -183,7 +183,7 @@ export async function POST(req: Request) {
 /**
  * GET /api/reparsear-extracto?cuenta=… — sólo el diagnóstico, sin tocar nada.
  *
- * Devuelve qué tipos hay, con qué formas, y **cuántos movimientos están hoy sin parsear** —
+ * Devuelve qué tipos hay, con qué subtipos, y **cuántos movimientos están hoy sin parsear** —
  * distinguiendo las cuatro causas, porque cada una se arregla distinto. Lo usa la alerta de
  * Principal y el configurador de reglas.
  */
@@ -212,15 +212,15 @@ export async function GET(req: Request) {
       .select("concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    // Un ejemplo por tipo **y por forma**, tenga regla o no.
+    // Un ejemplo por tipo **y por subtipo**, tenga regla o no.
     //
     // ⚠️ Antes se guardaba el PRIMER movimiento de cada tipo y se lo mostraba como si fuera
-    // representativo. No lo es: un tipo puede llegar con formas distintas, y una regla escrita
+    // representativo. No lo es: un tipo puede llegar con subtipos distintos, y una regla escrita
     // mirando una de ellas falla en las otras sin avisar (PENDIENTES § A-BUG-17). Ahora se
-    // agrupa además por firma, así la pantalla puede mostrar TODAS las formas.
+    // agrupa además por firma, así la pantalla puede mostrar TODAS los subtipos.
     const porTipo = new Map<string, {
       n: number; conRegla: boolean
-      formas: Map<string, { n: number; ejemplo: string }>
+      subtipos: Map<string, { n: number; ejemplo: string }>
     }>()
 
     /**
@@ -230,7 +230,7 @@ export async function GET(req: Request) {
      * *«12 sin parsear»* sin decir por qué manda a escribir reglas que ya están escritas.
      */
     let sinRegla = 0            // el tipo no tiene ninguna regla → escribir la regla
-    let formaNueva = 0          // el tipo tiene reglas por forma, pero no de ESTA forma
+    let subtipoNuevo = 0          // el tipo tiene reglas por subtipo, pero no de ESTE subtipo
     let choque = 0              // dos reglas reclaman la misma columna → hay una mal escrita
     let desglosePendiente = 0   // hay regla y cierra, pero lo guardado no coincide → falta RE-PARSEAR
 
@@ -238,19 +238,19 @@ export async function GET(req: Request) {
       const tipo = tipoDeMovimiento(m.concepto)
       if (!tipo) continue
       const conRegla = tieneReglaPropia(m.concepto, mapaReglas)
-      if (!porTipo.has(tipo)) porTipo.set(tipo, { n: 0, conRegla, formas: new Map() })
+      if (!porTipo.has(tipo)) porTipo.set(tipo, { n: 0, conRegla, subtipos: new Map() })
       const t = porTipo.get(tipo)!
       t.n++
 
       const lineas = splitMovimiento(String(m.concepto))
       const firma = firmaDeMovimiento(lineas)
-      const f = t.formas.get(firma)
-      t.formas.set(firma, { n: (f?.n ?? 0) + 1, ejemplo: f?.ejemplo ?? String(m.concepto) })
+      const f = t.subtipos.get(firma)
+      t.subtipos.set(firma, { n: (f?.n ?? 0) + 1, ejemplo: f?.ejemplo ?? String(m.concepto) })
 
       if (!conRegla) { sinRegla++; continue }
 
       const parsed = parsearMovimiento(String(m.concepto), mapaReglas)
-      if (parsed.grupo_de_conceptos === GRUPO_FORMA_NUEVA) { formaNueva++; continue }
+      if (parsed.grupo_de_conceptos === GRUPO_SUBTIPO_NUEVO) { subtipoNuevo++; continue }
       if (parsed.grupo_de_conceptos === GRUPO_CHOQUE) { choque++; continue }
 
       // Sólo se comparan los campos que el parseo produce: `observaciones_cliente` y `concepto`
@@ -263,19 +263,19 @@ export async function GET(req: Request) {
 
     const tipos = [...porTipo.entries()]
       .map(([tipo, v]) => {
-        // Las formas van ordenadas por cantidad: la mayoritaria manda como ejemplo por defecto
-        const formatos = [...v.formas.entries()]
+        // Los subtipos van ordenados por cantidad: la mayoritaria manda como ejemplo por defecto
+        const subtipos = [...v.subtipos.entries()]
           .map(([firma, f]) => {
             const texto = splitMovimiento(f.ejemplo)
-            // `cubierto: false` = el tipo tiene reglas por forma pero ninguna es de ésta, así que
-            // sus movimientos NO se parsean. Es la señal de "apareció una forma nueva".
-            const { formaNueva } = resolverReglas(texto, mapaReglas)
+            // `cubierto: false` = el tipo tiene reglas por subtipo pero ninguna es de ésta, así que
+            // sus movimientos NO se parsean. Es la señal de "apareció un subtipo nuevo".
+            const { subtipoNuevo } = resolverReglas(texto, mapaReglas)
             return {
               firma,
               lineas: lineasDeFirma(firma),
               movimientos: f.n,
               texto,
-              cubierto: !formaNueva,
+              cubierto: !subtipoNuevo,
             }
           })
           .sort((a, b) => b.movimientos - a.movimientos)
@@ -284,15 +284,15 @@ export async function GET(req: Request) {
           tipo,
           movimientos: v.n,
           conRegla: v.conRegla,
-          /** Ejemplo de la forma mayoritaria. Se mantiene el nombre para no romper consumidores. */
-          lineas: formatos[0]?.texto ?? [],
-          /** Todas las formas del tipo. `length > 1` = ojo con las reglas por número de línea. */
-          formatos,
+          /** Ejemplo de el subtipo mayoritario. Se mantiene el nombre para no romper consumidores. */
+          lineas: subtipos[0]?.texto ?? [],
+          /** Todas los subtipos del tipo. `length > 1` = ojo con las reglas por número de línea. */
+          subtipos,
         }
       })
       .sort((a, b) => b.movimientos - a.movimientos)
 
-    const sinParsear = sinRegla + formaNueva + choque + desglosePendiente
+    const sinParsear = sinRegla + subtipoNuevo + choque + desglosePendiente
 
     return NextResponse.json({
       ok: true,
@@ -301,13 +301,13 @@ export async function GET(req: Request) {
       /** 🔑 El número que dispara la alerta: todo lo que hoy NO está desglosado, por cualquier causa. */
       sinParsear,
       /** Las cuatro causas, separadas. Cada una tiene su propio arreglo. */
-      causas: { sinRegla, formaNueva, choque, desglosePendiente },
+      causas: { sinRegla, subtipoNuevo, choque, desglosePendiente },
       /** Compat: era `sinDesglosar` = los que no tienen regla del tipo. */
       sinDesglosar: sinRegla,
-      formasNuevas: formaNueva,
+      subtiposNuevos: subtipoNuevo,
       /** Todos los tipos presentes, con ejemplo. Lo usa el configurador. */
       tipos,
-      /** Sólo los que no tienen regla. Lo usa la alerta de Principal — no cambiar la forma. */
+      /** Sólo los que no tienen regla. Lo usa la alerta de Principal — no cambiar el subtipo. */
       tiposSinRegla: tipos.filter(t => !t.conRegla).map(({ tipo, movimientos, lineas }) => ({ tipo, movimientos, lineas })),
     })
   } catch (err) {
