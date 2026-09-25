@@ -356,9 +356,10 @@ export function correrCasos(): Resultado[] {
   } as never
 
   const choque = parsearMovimiento(CRUDO_CHOQUE, REGLAS_CHOQUE)
-  chequear("Parseo", "Dos reglas a la misma columna la dejan VACÍA, no se pisan",
-    "(vacío)", choque["leyendas_adicionales_1"] === "" ? "(vacío)" : choque["leyendas_adicionales_1"],
-    choque["leyendas_adicionales_1"] === "", "A-FEAT-1174")
+  chequear("Parseo", "Con reglas en conflicto el movimiento NO se parsea y queda señalado",
+    "Reglas en conflicto", choque["grupo_de_conceptos"] ?? "(nada)",
+    choque["grupo_de_conceptos"] === "Reglas en conflicto"
+      && choque["leyendas_adicionales_1"] === undefined, "A-FEAT-1174")
 
   const SIN_CHOQUE = {
     "TRANSFERENCIA A TERCEROS": [

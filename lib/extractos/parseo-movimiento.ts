@@ -49,6 +49,19 @@ export const GRUPO_SIN_REGLA = "Otros"
  */
 export const GRUPO_FORMA_NUEVA = "Forma nueva"
 
+/**
+ * Grupo que se asigna cuando **dos reglas reclaman la misma columna**.
+ *
+ * Decisión del usuario (2026-09-24): *«que directamente no se parsee, así sigue dando alerta y yo
+ * veo qué hacer»*. **No alcanzaba con vaciar esa columna**: un movimiento a medio desglosar se ve
+ * casi bien y nadie vuelve. Sin desglosar y señalado, en cambio, **queda a la vista** hasta que
+ * alguien lo mire — igual que una forma nueva.
+ *
+ * 📌 Y no se pierde nada: el texto crudo sigue entero en `concepto`, así que arreglada la regla un
+ * re-parseo lo resuelve.
+ */
+export const GRUPO_CHOQUE = "Reglas en conflicto"
+
 /** Divide el texto multilínea en líneas limpias, descartando las vacías. */
 export function splitMovimiento(raw: string): string[] {
   return raw
@@ -173,12 +186,23 @@ export function parsearMovimiento(raw: string, mapaReglas: MapaReglas): Record<s
   for (const regla of reglas) {
     if (!regla.campo_destino) continue
     const valor = aplicarRegla(lineas, regla)
-    const previos = porCampo.get(regla.campo_destino) ?? []
-    porCampo.set(regla.campo_destino, [...previos, valor])
+    porCampo.set(regla.campo_destino, [...(porCampo.get(regla.campo_destino) ?? []), valor])
   }
+
+  // 🛑 Un choque no deja el movimiento a medias: lo deja SIN PARSEAR y señalado, para que se vea.
+  const enConflicto = [...porCampo.entries()]
+    .filter(([, vs]) => new Set(vs.filter(v => v !== "")).size > 1)
+    .map(([campo]) => campo)
+
+  if (enConflicto.length > 0) {
+    return {
+      grupo_de_conceptos: GRUPO_CHOQUE,
+      descripcion: tipoLinea1 || raw.substring(0, 100),
+    }
+  }
+
   for (const [campo, valores] of porCampo) {
-    const distintos = [...new Set(valores.filter(v => v !== ""))]
-    resultado[campo] = distintos.length > 1 ? "" : (distintos[0] ?? "")
+    resultado[campo] = valores.find(v => v !== "") ?? ""
   }
 
   // La descripción siempre tiene al menos el tipo
