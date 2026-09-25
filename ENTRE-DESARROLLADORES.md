@@ -40,6 +40,25 @@
 
 ## 📨 PARA JAVIER
 
+### 🗄️ Cambio de ESTRUCTURA en `config_parseo_extracto` — 2026-09-25
+
+**Qué**: ampliar el `CHECK` de la columna `tipo_regla` con dos valores más: **`cbu`** y
+**`tarjeta`**. El SQL está en `scripts/61-tipo-regla-permitir-cbu-y-tarjeta.sql`.
+
+**Por qué**: el motor de parseo implementa siete modos y la pantalla los ofrece los siete, pero el
+`CHECK` sólo acepta cinco — se escribió antes de que existieran esos dos y nunca se amplió. Hoy,
+elegir «Busca el CBU» y guardar devuelve `violates check constraint`.
+
+**Impacto para vos**: ninguno que se vea. Es **aditivo** — no toca filas, no invalida reglas
+existentes, y se revierte volviendo a la lista de cinco. La tabla es del módulo de extractos, no
+del de seguridad.
+
+**Estado**: ⏳ **sin aplicar**. Lo corre JMS desde el SQL Editor. Se avisa acá **antes**, como pide
+`CLAUDE.md` § 👥 — la base es una sola para local, previews y producción.
+
+*(Borrar esta entrada cuando la leas.)*
+
+
 ### 2026-09-24 · Tu regla de A-SEC-10 merece estar en `CLAUDE.md` — ¿la subís?
 
 Leí el commit de la **rotura en vivo** de `puede_ver`. **Verifiqué en la base y ya está**:
