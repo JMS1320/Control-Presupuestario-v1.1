@@ -227,6 +227,107 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
              porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
   }, [tipos, reglasDeSubtipo])
 
+  /**
+   * 🤖 **Lo que la app reconoce sola YA TIENE que quedar puesto — A-FEAT-1178.**
+   *
+   * Pedido del usuario 2026-09-25: *«si la app ya reconoce bien, ¿por qué no lo dejás preseteado
+   * así? Lo que yo debo hacer a mano es lo que no se puede reconocer de entrada»*. Tiene razón:
+   * confirmar fila por fila algo que el sistema ya sabe no es auditar, es tipear.
+   *
+   * 🔑 **Qué escribe y qué NO**:
+   * - las líneas que la app reconoce **con certeza** (CUIT, CBU, tarjeta, banco, tipo) → se
+   *   escriben con la columna de la convención;
+   * - las que **ya tenían una regla** —aunque la app no las reconozca— → se conservan tal como
+   *   las decidió él, sólo que atadas a su subtipo (es `resolverFilaExistente`, la misma del editor);
+   * - las que **nadie sabe qué son y no tienen regla** → **no se tocan**. Ésas son su trabajo.
+   *
+   * ⚠️ **Toca la BD, así que no corre solo**: es un botón, con el detalle de lo que va a hacer
+   * antes de hacerlo (§ `CLAUDE.md` 🛑 Datos).
+   */
+  const planPreseteo = useMemo(() => {
+    const filas: { tipo: string; firma: string; linea: number; campo: string; modo: string; existente: Regla | null }[] = []
+    let paraElUsuario = 0
+    const tiposTocados = new Set<string>()
+
+    for (const t of tipos) {
+      for (const f of t.subtipos) {
+        const rs = reglasDeSubtipo(t.tipo, f.firma)
+        const propuesta = proponerMapeo(f.texto)
+        propuesta.forEach((prop, i) => {
+          const ya = rs.find(r => lineaDeRegla(r, f.texto) === i) ?? null
+          const d = ya ? resolverFilaExistente(prop, ya) : null
+          const campo = d?.campo || (prop.seguro ? prop.campo : "")
+          const modo = d?.modo || prop.modo
+          if (!campo) { if (!ya) paraElUsuario++; return }
+          // Sólo cuenta como trabajo si algo cambia
+          const igual = ya && ya.campo_destino === campo && ya.tipo_regla === modo && ya.firma_forma === f.firma
+          if (igual) return
+          filas.push({ tipo: t.tipo.toUpperCase(), firma: f.firma, linea: i + 1, campo, modo, existente: ya })
+          tiposTocados.add(t.tipo.toUpperCase())
+        })
+      }
+    }
+    // Las reglas viejas SIN subtipo de esos tipos se van: si quedaran, seguirían aplicándose a
+    // todos los subtipos, que es exactamente la causa de A-BUG-1200.
+    const genericasABorrar = reglas.filter(r => !r.firma_forma && tiposTocados.has(r.tipo_movimiento.toUpperCase()))
+    return { filas, paraElUsuario, tipos: tiposTocados.size, genericasABorrar }
+  }, [tipos, reglas, reglasDeSubtipo])
+
+  const [preseteando, setPreseteando] = useState(false)
+
+  const presetear = async () => {
+    const { filas, genericasABorrar } = planPreseteo
+    if (filas.length === 0) return
+    if (!confirm(
+      `Dejar listo lo que la app reconoce
+
+` +
+      `• ${filas.length} regla(s) en ${planPreseteo.tipos} tipo(s)
+` +
+      `• se reemplazan ${genericasABorrar.length} regla(s) vieja(s) que hoy valen para todos los subtipos
+` +
+      `• quedan ${planPreseteo.paraElUsuario} línea(s) para que decidas vos
+
+` +
+      `No se toca ninguna línea que la app no reconozca y que vos no hayas configurado ya. ` +
+      `Los movimientos no cambian hasta que corras Re-parsear.`
+    )) return
+
+    setPreseteando(true)
+    try {
+      for (const f of filas) {
+        const grupo = reglasDe(f.tipo)[0]?.grupo_de_conceptos ?? null
+        const fila = {
+          cuenta_bancaria_id: cuenta,
+          tipo_movimiento: f.tipo,
+          campo_destino: f.campo,
+          tipo_regla: f.modo,
+          numero_linea: f.modo === "linea" ? f.linea : null,
+          grupo_de_conceptos: grupo,
+          firma_forma: f.firma,
+          orden: f.linea * 10,
+          activo: true,
+        }
+        const { error } = f.existente
+          ? await supabase.from("config_parseo_extracto").update(fila).eq("id", f.existente.id)
+          : await supabase.from("config_parseo_extracto").insert(fila)
+        if (error) throw error
+      }
+      // Recién al final, cuando ya está escrito lo nuevo: si fallara antes, no se pierde nada.
+      const huerfanas = genericasABorrar.filter(r => !filas.some(f => f.existente?.id === r.id))
+      if (huerfanas.length > 0) {
+        const { error } = await supabase.from("config_parseo_extracto").delete().in("id", huerfanas.map(r => r.id))
+        if (error) throw error
+      }
+      toast.success(`${filas.length} regla(s) listas. Corré «Re-parsear» para aplicarlo a los movimientos.`)
+      cargar()
+    } catch (e) {
+      toast.error("Error: " + (e as Error).message)
+    } finally {
+      setPreseteando(false)
+    }
+  }
+
   /** Abre el editor de UN subtipo: propone lo que sabemos y pre-carga lo que ya existe. */
   const abrirSubtipo = (t: TipoInfo, subtipo: Subtipo) => {
     const existentes = reglasDeSubtipo(t.tipo, subtipo.firma)
@@ -449,25 +550,49 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             <Ejemplo lineas={f.texto} />
           </div>
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Lo que queda guardado</p>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Dónde va a quedar cada línea</p>
             {sinReglas ? (
               <p className="py-2 text-[11px] italic text-gray-400">
                 Nada: estos movimientos entran con el texto completo, sin desglosar.
               </p>
             ) : (
+              /**
+               * 🎯 **Una fila por LÍNEA del movimiento, y la columna es la de DESTINO.**
+               *
+               * Antes esto listaba las reglas guardadas y mostraba la columna vieja. Resultado: de
+               * afuera se leía *«el CBU queda en Nº de operación»* y adentro del editor *«el CBU va
+               * a la columna del CBU»* — **las dos pantallas contestando distinto la misma
+               * pregunta**. Lo marcó el usuario el 2026-09-25 (A-BUG-1203): *«lo que debería pasar
+               * en la visualización previa a la edición es que ya muestre dónde lo va a guardar»*.
+               *
+               * Ahora las dos dicen **dónde va a quedar**, y lo que hoy está en otro lado se marca
+               * al lado, tachado. La pregunta *«¿dónde va este dato?»* tiene una sola respuesta.
+               */
               <table className="w-full text-[11px] leading-5">
                 <tbody>
-                  {rs.map(r => {
-                    const valor = aplicarRegla(f.texto, {
-                      campo_destino: r.campo_destino, tipo_regla: r.tipo_regla,
-                      numero_linea: r.numero_linea, grupo_de_conceptos: "",
-                    })
+                  {f.texto.map((linea, i) => {
+                    const prop = proponerMapeo(f.texto)[i]
+                    const ya = rs.find(r => lineaDeRegla(r, f.texto) === i)
+                    const d = ya ? resolverFilaExistente(prop, ya) : null
+                    const campo = d?.campo || prop.campo
+                    const seMueve = !!d?.seMueve
+                    if (!campo) return (
+                      <tr key={i}>
+                        <td className="pr-2 align-top italic text-gray-400">no se guarda</td>
+                        <td className="align-top font-mono text-gray-400">{linea}</td>
+                      </tr>
+                    )
                     return (
-                      <tr key={r.id}>
-                        <td className="pr-2 align-top text-gray-500">{etiquetaCampo(r.campo_destino)}</td>
-                        <td className="align-top font-mono font-medium text-gray-800">
-                          {valor || <span className="font-sans font-normal italic text-red-500">vacío</span>}
+                      <tr key={i} className={seMueve ? "bg-amber-50" : ""}>
+                        <td className="pr-2 align-top text-gray-500">
+                          {etiquetaCampo(campo)}
+                          {seMueve && (
+                            <span className="ml-1 text-[10px] text-amber-700">
+                              (hoy en <s>{etiquetaCampo(d!.deColumna)}</s>)
+                            </span>
+                          )}
                         </td>
+                        <td className="align-top font-mono font-medium text-gray-800">{linea}</td>
                       </tr>
                     )
                   })}
@@ -481,7 +606,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         {mal.length > 0 && (
           <div className="border-t border-red-200 bg-red-50/60 px-2.5 py-2">
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-800">
-              Con las reglas de hoy, estas líneas no terminan donde van
+              Falta guardar: con las reglas de hoy estas líneas terminan en otro lado
             </p>
             <table className="w-full text-[11px] leading-5">
               <tbody>
@@ -567,6 +692,29 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                         </span>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* 🤖 El botón que hace el trabajo que no hace falta que haga él — A-FEAT-1178 */}
+                {planPreseteo.filas.length > 0 && (
+                  <div className="rounded border border-emerald-300 bg-white px-2.5 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" className="h-7 text-xs" disabled={preseteando} onClick={presetear}>
+                        {preseteando
+                          ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Dejando listo…</>
+                          : <><Check className="mr-1 h-3 w-3" /> Dejar listo lo que la app reconoce</>}
+                      </Button>
+                      <span className="text-[11px] text-gray-700">
+                        <strong>{planPreseteo.filas.length}</strong> regla(s) en{" "}
+                        <strong>{planPreseteo.tipos}</strong> tipo(s) — y después quedan{" "}
+                        <strong>{planPreseteo.paraElUsuario}</strong> línea(s) para vos.
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-gray-500">
+                      Escribe sólo lo que la app reconoce con certeza y lo que vos ya habías
+                      configurado. <strong>No toca</strong> ninguna línea que nadie sepa qué es.
+                      Los movimientos no cambian hasta que corras <strong>Re-parsear</strong>.
+                    </p>
                   </div>
                 )}
 
