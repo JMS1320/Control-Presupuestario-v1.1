@@ -152,6 +152,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   // La cuenta la elige el selector del modal, que es único para las tres solapas.
   const cuenta = cuentaBancariaId ?? ""
   const esCajaDeAhorro = CUENTAS_CA.some(c => c.id === cuenta)
+  const cuentaActual = CUENTAS_CA.find(c => c.id === cuenta)
+  /** La otra cuenta de Caja de Ahorro — de ahí se pueden copiar reglas (mismo formato de banco). */
+  const otraCA = CUENTAS_CA.filter(c => c.id !== cuenta)
 
   const [reglas, setReglas] = useState<Regla[]>([])
   const [tipos, setTipos] = useState<TipoInfo[]>([])
@@ -385,6 +388,106 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       .in("id", rs.map(r => r.id))
     if (error) { toast.error("Error: " + error.message); return }
     cargar()
+  }
+
+  /**
+   * 📋 **Copiar las reglas de la OTRA cuenta de Caja de Ahorro — A-FEAT-1181.**
+   *
+   * Pedido del usuario 2026-09-25: *«los tipos y reglas de MA deben servir para PAM ya que es el
+   * mismo formato de extracto»*. Es cierto —las dos son Galicia CA y el banco escribe igual— pero
+   * **el mismo formato no significa los mismos movimientos**, y eso hay que decirlo antes de
+   * copiar, no después.
+   *
+   * 📏 **Medido el 2026-09-25**: las reglas de MA cubren **4 de los 9 subtipos de PAM** (12 de sus
+   * 25 movimientos). Los otros 5 son tipos que en MA no existen —`REINTEGRO PROMOCION GALICIA`,
+   * `IVA`, `COM. CAJA DE SEGURIDAD`, `PAGO CON TRANSFERENCIA`— y hay que hacerlos a mano igual.
+   *
+   * 🛑 **No pisa nada.** Si el destino ya tiene reglas para ese tipo y ese subtipo, se saltea y lo
+   * informa. Copiar encima del trabajo hecho es exactamente lo que no se hace (§ 🛑 Datos).
+   *
+   * 📌 Lo copiado entra **sin la marca de revisado**: son reglas de otra cuenta, las tiene que
+   * mirar igual.
+   */
+  const [copiando, setCopiando] = useState(false)
+
+  const copiarDesde = async (origen: { id: string; nombre: string }) => {
+    setCopiando(true)
+    try {
+      const [{ data: reglasOrigen }, diag] = await Promise.all([
+        supabase.from("config_parseo_extracto").select("*")
+          .eq("cuenta_bancaria_id", origen.id).eq("activo", true),
+        fetch(`/api/reparsear-extracto?cuenta=${cuenta}`).then(r => r.json()).catch(() => null),
+      ])
+      const deOrigen = (reglasOrigen ?? []) as Regla[]
+      // Sólo las atadas a un subtipo: una regla genérica se aplicaría a todos los del destino,
+      // que es la causa de A-BUG-1200 y no hay por qué importarla.
+      const candidatas = deOrigen.filter(r => r.firma_forma)
+      if (candidatas.length === 0) {
+        toast.error(`${origen.nombre} no tiene reglas atadas a un subtipo para copiar.`)
+        return
+      }
+
+      // Lo que el destino YA tiene, por tipo+subtipo: eso no se toca
+      const yaTiene = new Set(reglas.filter(r => r.firma_forma)
+        .map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
+      const aCopiar = candidatas.filter(r => !yaTiene.has(`${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
+      const salteadas = candidatas.length - aCopiar.length
+
+      // Cuántos subtipos del destino quedarían cubiertos — el número que importa
+      const subtiposDestino: { tipo: string; firma: string; movimientos: number }[] =
+        (diag?.tipos ?? []).flatMap((t: TipoInfo) =>
+          t.subtipos.map(f => ({ tipo: t.tipo.toUpperCase(), firma: f.firma, movimientos: f.movimientos })))
+      const claves = new Set([...yaTiene, ...aCopiar.map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`)])
+      const cubiertos = subtiposDestino.filter(x => claves.has(`${x.tipo}||${x.firma}`))
+      const faltan = subtiposDestino.filter(x => !claves.has(`${x.tipo}||${x.firma}`))
+
+      if (aCopiar.length === 0) {
+        toast.info(`Nada para copiar: ${cuentaActual?.nombre} ya tiene reglas propias para todos los subtipos de ${origen.nombre}.`)
+        return
+      }
+      const aviso = [
+        `Copiar reglas de ${origen.nombre}`,
+        "",
+        `• ${aCopiar.length} regla(s) se copian`,
+        ...(salteadas > 0 ? [`• ${salteadas} se saltean: ya tenés reglas propias para esos subtipos`] : []),
+        "",
+        `Después de copiar, de los ${subtiposDestino.length} subtipos de esta cuenta:`,
+        `• ${cubiertos.length} quedan con reglas`,
+        `• ${faltan.length} siguen sin nada y hay que hacerlos a mano`,
+        ...faltan.slice(0, 6).map(f => `     ${f.tipo}`),
+        ...(faltan.length > 6 ? [`     y ${faltan.length - 6} más`] : []),
+        "",
+        "No se pisa nada de lo que ya configuraste.",
+        "Los movimientos no cambian hasta correr Re-parsear.",
+      ].join("\n")
+      if (!confirm(aviso)) return
+
+      const filas = aCopiar.map(r => ({
+        cuenta_bancaria_id: cuenta,
+        tipo_movimiento: r.tipo_movimiento.toUpperCase(),
+        campo_destino: r.campo_destino,
+        tipo_regla: r.tipo_regla,
+        numero_linea: r.numero_linea,
+        grupo_de_conceptos: r.grupo_de_conceptos,
+        firma_forma: r.firma_forma,
+        orden: r.orden,
+        activo: true,
+        // Son reglas de otra cuenta: las tiene que revisar igual.
+        revisado_en: null,
+      }))
+      const { error } = await supabase.from("config_parseo_extracto").insert(filas)
+      if (error) throw error
+      toast.success(
+        `${filas.length} regla(s) copiadas de ${origen.nombre}. ` +
+        (faltan.length > 0 ? `Quedan ${faltan.length} subtipo(s) para hacer a mano. ` : "") +
+        `Corré «Re-parsear» para aplicarlo.`
+      )
+      cargar()
+    } catch (e) {
+      toast.error("Error: " + (e as Error).message)
+    } finally {
+      setCopiando(false)
+    }
   }
 
   /** Abre el editor de UN subtipo: propone lo que sabemos y pre-carga lo que ya existe. */
@@ -924,6 +1027,24 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 Cada subtipo se configura por separado, con su ejemplo real al lado de lo que produce.
                 El <strong>grupo de conceptos</strong> es del tipo entero.
               </p>
+              {/* 📋 Copiar de la otra CA — mismo banco, mismo formato (A-FEAT-1181) */}
+              {otraCA.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {otraCA.map(o => (
+                    <Button key={o.id} size="sm" variant="outline" className="h-7 text-xs"
+                      disabled={copiando} onClick={() => copiarDesde(o)}>
+                      {copiando
+                        ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Copiando…</>
+                        : <>📋 Copiar reglas de {o.nombre}</>}
+                    </Button>
+                  ))}
+                  <span className="text-[11px] text-gray-500">
+                    Las dos son Galicia Caja de Ahorro y el banco escribe igual. Te dice antes
+                    cuántos subtipos quedan cubiertos y cuáles no — <strong>no pisa</strong> lo que
+                    ya configuraste.
+                  </span>
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {tipos.length === 0 ? (
