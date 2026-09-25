@@ -74,7 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
-import { parsearMovimiento, proponerMapeo, splitMovimiento } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -395,6 +395,63 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", `«${texto}» se reconoce como ${esperado}`,
       `${esperado} → ${campo}`, `${r.contenido || "(nada)"} → ${r.campo || "(sin columna)"}`,
       r.contenido === esperado && r.campo === campo, "A-FEAT-1174")
+  }
+
+  /**
+   * 🧮 **La auditoría de un subtipo — A-FEAT-1177.**
+   *
+   * El caso es REAL y es el que costó caro: las reglas viejas de `TRANSFERENCIA A TERCEROS`
+   * mandan la línea 3 al número de comprobante, y en el subtipo de 6 líneas la línea 3 es **el
+   * CBU**. El control tiene que verlo. Con el código anterior a A-FEAT-1177 no lo veía nadie:
+   * la función no existía y el número salía de un script que se corrió una vez.
+   */
+  {
+    const seisLineas = [
+      "TRANSFERENCIA A TERCEROS", "NO  27300503905", "0140363103650054482399",
+      "LINK", "4517XXXXXXXXXX11", "VARIOS",
+    ]
+    // Las 4 reglas que MA tiene cargadas hoy para este tipo, tal cual están en la BD
+    const reglasViejas = [
+      { campo_destino: "descripcion",            tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "Transferencias" },
+      { campo_destino: "leyendas_adicionales_2", tipo_regla: "cuit",  numero_linea: null, grupo_de_conceptos: "Transferencias" },
+      { campo_destino: "numero_de_comprobante",  tipo_regla: "linea", numero_linea: 3, grupo_de_conceptos: "Transferencias" },
+      { campo_destino: "numero_de_terminal",     tipo_regla: "linea", numero_linea: 5, grupo_de_conceptos: "Transferencias" },
+    ]
+    const a = auditarSubtipo(seisLineas, reglasViejas as never)
+
+    const cbu = a.hallazgos.find(h => h.linea === 3)
+    chequear("Parseo", "El CBU que cae en el nº de comprobante se detecta",
+      "hallazgo en L3 → numero_de_comprobante", cbu ? `hallazgo en L3 → ${cbu.cayoEn}` : "no lo vio",
+      cbu?.cayoEn === "numero_de_comprobante", "A-FEAT-1177")
+
+    const banco = a.hallazgos.find(h => h.linea === 4)
+    chequear("Parseo", "El banco que no se guarda en ningún lado se detecta",
+      "hallazgo en L4 sin columna", banco ? `hallazgo en L4, cayó en ${banco.cayoEn ?? "ninguna"}` : "no lo vio",
+      !!banco && banco.cayoEn === null, "A-FEAT-1177")
+
+    // El CUIT SÍ está bien: el modo `cuit` lo guarda sin el prefijo «NO ». Comparar contra la
+    // línea cruda lo reportaba como error — 3 falsos positivos en la primera medición.
+    chequear("Parseo", "El CUIT con prefijo «NO » NO se reporta como error",
+      "sin hallazgo en L2", a.hallazgos.some(h => h.linea === 2) ? "lo reportó mal" : "sin hallazgo en L2",
+      !a.hallazgos.some(h => h.linea === 2), "A-FEAT-1177")
+
+    chequear("Parseo", "Las reglas que cuentan renglones sin subtipo se cuentan",
+      "3", String(a.reglasQueCuentanSinSubtipo), a.reglasQueCuentanSinSubtipo === 3, "A-BUG-1200")
+
+    // Con las reglas bien puestas, el mismo subtipo no tiene que dar ningún hallazgo
+    const reglasBien = [
+      { campo_destino: "descripcion",            tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "T", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_2", tipo_regla: "cuit",  numero_linea: null, grupo_de_conceptos: "T", firma_forma: "x" },
+      { campo_destino: "tipo_de_movimiento",     tipo_regla: "cbu",   numero_linea: null, grupo_de_conceptos: "T", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_4", tipo_regla: "linea", numero_linea: 4, grupo_de_conceptos: "T", firma_forma: "x" },
+      { campo_destino: "numero_de_terminal",     tipo_regla: "linea", numero_linea: 5, grupo_de_conceptos: "T", firma_forma: "x" },
+      { campo_destino: "leyendas_adicionales_3", tipo_regla: "linea", numero_linea: 6, grupo_de_conceptos: "T", firma_forma: "x" },
+    ]
+    const b = auditarSubtipo(seisLineas, reglasBien as never)
+    chequear("Parseo", "Con las reglas bien puestas el subtipo no da hallazgos",
+      "0 hallazgos · 0 reglas sueltas",
+      `${b.hallazgos.length} hallazgos · ${b.reglasQueCuentanSinSubtipo} reglas sueltas`,
+      b.hallazgos.length === 0 && b.reglasQueCuentanSinSubtipo === 0, "A-FEAT-1177")
   }
 
   // La tarjeta ya tiene columna: era el hueco de A-FEAT-16.

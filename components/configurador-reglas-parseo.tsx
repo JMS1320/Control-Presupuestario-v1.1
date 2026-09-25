@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta, type ContenidoLinea, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -327,11 +327,40 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   }
 
   // Una entrada por SUBTIPO, que es la unidad real de configuración
-  const formasPendientes = tipos.flatMap(t =>
+  const subtiposPendientes = tipos.flatMap(t =>
     t.subtipos.filter(f => reglasDeSubtipo(t.tipo, f.firma).length === 0).map(f => ({ t, f }))
   ).sort((a, b) => b.f.movimientos - a.f.movimientos)
 
   const totalSubtipos = tipos.reduce((n, t) => n + t.subtipos.length, 0)
+
+  /**
+   * 🧮 **El estado de la cuenta, de un vistazo — A-FEAT-1177.**
+   *
+   * Tres números, y cada uno manda a una acción distinta. Mezclarlos fue el error de la primera
+   * versión del aviso de Principal: un total solo no dice qué hacer.
+   *
+   * ⚠️ **`malHoy` es lo que pasaría al re-parsear, no lo que pasa ahora.** Los movimientos están
+   * en blanco: el daño no existe todavía, y por eso conviene arreglar las reglas ANTES.
+   */
+  const resumen = useMemo(() => {
+    let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0
+    const porTipo: { tipo: string; movimientos: number; hallazgos: number }[] = []
+    for (const t of tipos) {
+      let malDelTipo = 0
+      for (const f of t.subtipos) {
+        const rs = reglasDeSubtipo(t.tipo, f.firma)
+        if (rs.length === 0) { sinReglas += f.movimientos; continue }
+        const a = auditarSubtipo(f.texto, rs as never)
+        lineasParaElUsuario += a.decideElUsuario.length
+        reglasPeligrosas += t.subtipos.length > 1 ? a.reglasQueCuentanSinSubtipo : 0
+        if (a.hallazgos.length > 0) { malHoy += f.movimientos; malDelTipo += f.movimientos }
+        else listos += f.movimientos
+      }
+      if (malDelTipo > 0) porTipo.push({ tipo: t.tipo, movimientos: malDelTipo, hallazgos: 0 })
+    }
+    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas,
+             porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
+  }, [tipos, reglasDeSubtipo])
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
@@ -350,8 +379,11 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const BloqueSubtipo = ({ t, f }: { t: TipoInfo; f: Subtipo }) => {
     const rs = reglasDeSubtipo(t.tipo, f.firma)
     const sinReglas = rs.length === 0
+    // 🧮 A-FEAT-1177: qué hacen HOY las reglas con cada línea de este subtipo
+    const audit: AuditoriaSubtipo | null = sinReglas ? null : auditarSubtipo(f.texto, rs as never)
+    const mal = audit?.hallazgos ?? []
     return (
-      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : ""}`}>
+      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : mal.length > 0 ? "border-red-300 bg-red-50/30" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
           <span className="text-xs font-medium text-gray-700">
             Subtipo de {f.lineas} líneas
@@ -359,7 +391,17 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
           {sinReglas
             ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
-            : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"}</Badge>}
+            : mal.length > 0
+              ? <Badge variant="outline" className="border-red-400 bg-white text-[10px] text-red-800">
+                  {mal.length} dato{mal.length === 1 ? "" : "s"} en la columna equivocada
+                </Badge>
+              : <Badge variant="outline" className="border-emerald-400 bg-white text-[10px] text-emerald-800">{rs.length} regla{rs.length === 1 ? "" : "s"} · cierra</Badge>}
+          {(audit?.decideElUsuario.length ?? 0) > 0 && (
+            <Badge variant="outline" className="border-amber-400 bg-white text-[10px] text-amber-800"
+              title="La app no sabe qué son estas líneas. Es lo único que no se puede resolver por código.">
+              {audit!.decideElUsuario.length} línea{audit!.decideElUsuario.length === 1 ? "" : "s"} las decidís vos
+            </Badge>
+          )}
           <Button size="sm" variant={sinReglas ? "outline" : "ghost"} className="ml-auto h-7 text-xs"
             onClick={() => abrirSubtipo(t, f)}>
             {sinReglas
@@ -407,6 +449,35 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             )}
           </div>
         </div>
+
+        {/* ── Qué está mal, línea por línea. Es la lista de trabajo del usuario ────────── */}
+        {mal.length > 0 && (
+          <div className="border-t border-red-200 bg-red-50/60 px-2.5 py-2">
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-red-800">
+              Con las reglas de hoy, estas líneas no terminan donde van
+            </p>
+            <table className="w-full text-[11px] leading-5">
+              <tbody>
+                {mal.map(h => (
+                  <tr key={h.linea}>
+                    <td className="w-8 pr-1 align-top font-mono text-gray-500">L{h.linea}</td>
+                    <td className="pr-2 align-top font-mono text-gray-800">{h.texto}</td>
+                    <td className="align-top text-gray-700">
+                      es <strong>{h.es}</strong> · va a <span className="font-mono">{etiquetaCampo(h.debeIr)}</span>
+                      {h.cayoEn
+                        ? <> — hoy cae en <span className="font-mono text-red-700">{etiquetaCampo(h.cayoEn)}</span></>
+                        : <> — hoy <span className="text-red-700">no se guarda</span></>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-1 text-[10px] text-gray-600">
+              Se arregla con <strong>Editar</strong>: la propuesta ya viene con la columna correcta,
+              sólo hay que guardar.
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -419,12 +490,77 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         </div>
       ) : (
         <>
-          {formasPendientes.length > 0 && (
+          {/* ── 🧮 El control, arriba de todo y visible — A-FEAT-1177 ──────────────
+              Antes esto era un número que salía de un script y no lo veía nadie. La § 🧮 de
+              CLAUDE.md pide lo contrario: si no cierra, alerta grande. */}
+          {(resumen.malHoy > 0 || resumen.lineasParaElUsuario > 0) && (
+            <Card className={resumen.malHoy > 0 ? "border-red-300 bg-red-50" : "border-amber-300 bg-amber-50"}>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm text-red-900">
+                  <FileWarning className="h-4 w-4" />
+                  {resumen.malHoy > 0
+                    ? <>Si re-parseás ahora, <strong>{resumen.malHoy}</strong> movimiento{resumen.malHoy === 1 ? "" : "s"} quedarían con datos en la columna equivocada</>
+                    : <>Faltan decisiones tuyas en {resumen.lineasParaElUsuario} línea{resumen.lineasParaElUsuario === 1 ? "" : "s"}</>}
+                </CardTitle>
+                <p className="text-xs text-gray-700">
+                  Hoy no está roto: estos movimientos están sin desglosar. El problema aparece
+                  <strong> recién al re-parsear</strong>, así que conviene dejar las reglas listas antes.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="rounded border border-red-300 bg-white px-2 py-1">
+                    🔴 <strong>{resumen.malHoy}</strong> irían mal
+                  </span>
+                  <span className="rounded border border-emerald-300 bg-white px-2 py-1">
+                    ✅ <strong>{resumen.listos}</strong> ya cierran bien
+                  </span>
+                  {resumen.sinReglas > 0 && (
+                    <span className="rounded border border-sky-300 bg-white px-2 py-1">
+                      ⚪ <strong>{resumen.sinReglas}</strong> sin reglas todavía
+                    </span>
+                  )}
+                  {resumen.lineasParaElUsuario > 0 && (
+                    <span className="rounded border border-amber-400 bg-white px-2 py-1">
+                      🟠 <strong>{resumen.lineasParaElUsuario}</strong> línea(s) las decidís vos
+                    </span>
+                  )}
+                </div>
+
+                {resumen.porTipo.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">
+                      Por dónde empezar — ordenado por cuántos movimientos arregla
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {resumen.porTipo.map(x => (
+                        <span key={x.tipo} className="rounded border border-red-200 bg-white px-1.5 py-0.5 text-[11px]">
+                          <span className="font-mono text-gray-800">{x.tipo}</span>
+                          <strong className="ml-1 text-red-700">{x.movimientos}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {resumen.reglasPeligrosas > 0 && (
+                  <p className="rounded border border-red-200 bg-white px-2 py-1.5 text-[11px] leading-4 text-gray-700">
+                    ⚠️ <strong>{resumen.reglasPeligrosas} regla(s) cuentan renglones sin decir de qué
+                    subtipo son</strong>, en tipos que tienen más de uno. Una regla así acierta en un
+                    subtipo y se equivoca en los demás — es la causa de casi todo lo de arriba. Se
+                    arregla abriendo cada subtipo y guardando: quedan atadas a él.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {subtiposPendientes.length > 0 && (
             <Card className="border-sky-300 bg-sky-50">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-sky-900">
                   <FileWarning className="h-4 w-4" />
-                  {formasPendientes.length} subtipo{formasPendientes.length === 1 ? "" : "s"} sin reglas
+                  {subtiposPendientes.length} subtipo{subtiposPendientes.length === 1 ? "" : "s"} sin reglas
                 </CardTitle>
                 <p className="text-xs text-gray-600">
                   Sus movimientos entran con el texto completo pero sin desglosar. Ordenadas por
@@ -433,7 +569,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-1.5">
-                  {formasPendientes.map(({ t, f }) => (
+                  {subtiposPendientes.map(({ t, f }) => (
                     <button key={t.tipo + f.firma} onClick={() => abrirSubtipo(t, f)}
                       className="rounded border border-sky-300 bg-white px-2 py-1 text-left text-[11px] hover:border-sky-500">
                       <span className="font-mono font-medium text-gray-800">{t.tipo}</span>
@@ -566,9 +702,22 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <p className="text-xs text-gray-600">
             Una fila por línea. Lo que el banco escribe siempre igual —el CUIT, el CBU, el nombre
-            antes del CUIT, el banco— ya viene propuesto; el resto decidilo vos.
-            <strong> Sin asignar</strong> también es una decisión válida.
+            antes del CUIT, el banco— ya viene resuelto. <strong>Tu trabajo son las filas de
+            color</strong>, y <strong>Sin asignar</strong> también es una decisión válida.
           </p>
+
+          {/* Leyenda de los tres estados: sin esto, «rojo» y «ámbar» se leen como lo mismo. */}
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="flex items-center gap-1.5 rounded border px-2 py-1">
+              <span className="h-2.5 w-2.5 rounded-sm border bg-white" /> resuelto — la app lo reconoce seguro
+            </span>
+            <span className="flex items-center gap-1.5 rounded border border-amber-300 px-2 py-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> propuesta — mirala y confirmala
+            </span>
+            <span className="flex items-center gap-1.5 rounded border border-red-300 px-2 py-1">
+              <span className="h-2.5 w-2.5 rounded-sm bg-red-600" /> no sé qué es — lo decidís vos
+            </span>
+          </div>
 
           <div className="overflow-x-auto rounded border">
             <table className="w-full text-xs">
@@ -594,7 +743,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                   // 🔴 Lo que la app NO supo reconocer va en ROJO, no en gris: en gris se lee
                   //    como «listo» y es justo lo contrario — es lo único que te toca decidir.
                   return (
-                    <tr key={i} className={`border-t align-top ${f.contenido ? "" : "bg-red-50"}`}>
+                    <tr key={i} className={`border-t align-top ${!f.contenido ? "bg-red-50" : !f.seguro ? "bg-amber-50/60" : ""}`}>
                       <td className="px-2 py-2 font-mono text-gray-400">{f.numero}</td>
                       <td className="px-2 py-2">
                         <div className="font-mono text-[11px] text-gray-800">{f.texto}</div>
@@ -605,7 +754,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                               no sé qué es — decidilo vos
                             </span>
                           )}
-                          {!f.seguro && f.contenido && <span className="text-[10px] text-gray-400">sugerido</span>}
+                          {/* 🟠 Tres estados, no dos. «Sugerido» en gris chiquito se leía como
+                              «listo»; es lo que el usuario tiene que CONFIRMAR, que es distinto de
+                              lo que tiene que inventar (rojo) y de lo que ya está (sin marca). */}
+                          {!f.seguro && f.contenido && (
+                            <span className="rounded bg-amber-500 px-1.5 text-[10px] font-medium leading-4 text-white">
+                              propuesta — confirmala
+                            </span>
+                          )}
                         </div>
                         <p className="mt-0.5 text-[10px] leading-4 text-gray-400">{f.motivo}</p>
                       </td>

@@ -644,3 +644,90 @@ export const CAMPOS_DEL_PARSEO = [
   "leyendas_adicionales_3",
   "leyendas_adicionales_4",
 ] as const
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDITORÍA DE UN SUBTIPO — A-FEAT-1177
+//
+// 🧮 **El control que faltaba, y por qué está acá y no en la pantalla.**
+//
+// El 2026-09-25 se midió que **40 de los 96 movimientos de MA quedarían con datos en la columna
+// equivocada** si se re-parseaba con las reglas cargadas ([A-BUG-1200](../../PENDIENTES.md)). El
+// número salió de un script que corrió una vez y **no lo veía nadie** — que es justamente lo que
+// la § 🧮 de `CLAUDE.md` prohíbe: *un control que nadie ve no es un control*.
+//
+// Vive en el motor para que la pantalla, la API y cualquier script digan **el mismo número**. Si
+// la pantalla tuviera su propia cuenta, el día que cambie una regla empiezan a diferir y no hay
+// forma de saber cuál miente.
+//
+// 🔑 **Qué compara, y es objetivo**: lo que la línea **ES** (`proponerMapeo`, que sólo opina
+// cuando está seguro) contra **dónde la mandan las reglas de hoy**. No es una opinión de estilo:
+// si la línea es un CBU y termina en el número de comprobante, la conciliación por CBU no lo
+// encuentra. Punto.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un problema concreto de un subtipo: una línea que no termina donde debería. */
+export interface HallazgoSubtipo {
+  /** Número de línea como lo ve el usuario (1 = la primera). */
+  linea: number
+  texto: string
+  /** Qué es la línea, en lenguaje de la app: «CUIT de la contraparte», «CBU destino»… */
+  es: string
+  /** Columna a la que debería ir según la convención. */
+  debeIr: string
+  /** Columna donde la mandan las reglas de hoy. `null` = no se guarda en ningún lado. */
+  cayoEn: string | null
+}
+
+/** El estado de un subtipo: qué resuelve la app sola y qué necesita al usuario. */
+export interface AuditoriaSubtipo {
+  /** Líneas que hoy terminan en la columna equivocada o se pierden. Las arregla re-guardando. */
+  hallazgos: HallazgoSubtipo[]
+  /** Líneas que la app NO sabe qué son. **Esto es lo único que no se puede resolver por código.** */
+  decideElUsuario: number[]
+  /** Líneas que la app reconoce con certeza y ya están bien guardadas. */
+  resueltas: number
+  /**
+   * Reglas que **cuentan renglones y no dicen de qué subtipo son**. Son las peligrosas: se
+   * aplican a todos los subtipos del tipo, y aciertan en uno solo. Es la causa de A-BUG-1200.
+   */
+  reglasQueCuentanSinSubtipo: number
+}
+
+export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): AuditoriaSubtipo {
+  // Dónde termina cada dato con las reglas de hoy
+  const guardado: Record<string, string> = {}
+  for (const r of reglas) {
+    if (!r.campo_destino) continue
+    const v = aplicarRegla(lineas, r)
+    if (v !== "" && !guardado[r.campo_destino]) guardado[r.campo_destino] = v
+  }
+
+  // El modo `cuit` guarda el número sin el prefijo `CU `/`NO ` del Galicia: hay que normalizar
+  // los dos lados o el CUIT bien guardado se reporta como error. (Pasó al medir: 3 falsos.)
+  const norm = (s: string) => String(s ?? "").replace(/^(CU|NO)\s+/i, "").trim()
+
+  const propuesta = proponerMapeo(lineas)
+  const hallazgos: HallazgoSubtipo[] = []
+  const decideElUsuario: number[] = []
+  let resueltas = 0
+
+  propuesta.forEach((p, i) => {
+    if (!p.seguro || !p.campo) { decideElUsuario.push(i + 1); return }
+    if (norm(guardado[p.campo]) === norm(lineas[i])) { resueltas++; return }
+    const cayoEn = Object.entries(guardado).find(([, v]) => norm(v) === norm(lineas[i]))?.[0] ?? null
+    hallazgos.push({
+      linea: i + 1,
+      texto: lineas[i],
+      es: DESTINO_POR_CONTENIDO[p.contenido]?.label ?? p.contenido,
+      debeIr: p.campo,
+      cayoEn,
+    })
+  })
+
+  return {
+    hallazgos,
+    decideElUsuario,
+    resueltas,
+    reglasQueCuentanSinSubtipo: reglas.filter(r => r.tipo_regla === "linea" && !r.firma_forma).length,
+  }
+}
