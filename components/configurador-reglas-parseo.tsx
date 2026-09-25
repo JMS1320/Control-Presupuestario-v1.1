@@ -102,6 +102,8 @@ interface Regla {
   activo: boolean
   /** Subtipo a la que aplica. `null` = a todas (reglas viejas, previas a la columna). */
   firma_forma?: string | null
+  /** Cuándo el usuario dio por bueno este subtipo. `null` = sin revisar. */
+  revisado_en?: string | null
 }
 
 interface Subtipo {
@@ -211,11 +213,15 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
    */
   const resumen = useMemo(() => {
     let malHoy = 0, listos = 0, sinReglas = 0, lineasParaElUsuario = 0, reglasPeligrosas = 0, conChoque = 0
+    let revisados = 0, totalSub = 0
     const porTipo: { tipo: string; movimientos: number; hallazgos: number }[] = []
     for (const t of tipos) {
       let malDelTipo = 0
       for (const f of t.subtipos) {
+        totalSub++
         const rs = reglasDeSubtipo(t.tipo, f.firma)
+        const propias = rs.filter(r => r.firma_forma === f.firma)
+        if (propias.length > 0 && propias.every(r => r.revisado_en)) revisados++
         if (rs.length === 0) { sinReglas += f.movimientos; continue }
         const a = auditarSubtipo(f.texto, rs as never)
         lineasParaElUsuario += a.decideElUsuario.length
@@ -226,7 +232,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       }
       if (malDelTipo > 0) porTipo.push({ tipo: t.tipo, movimientos: malDelTipo, hallazgos: 0 })
     }
-    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas, conChoque,
+    return { malHoy, listos, sinReglas, lineasParaElUsuario, reglasPeligrosas, conChoque, revisados, totalSub,
              porTipo: porTipo.sort((a, b) => b.movimientos - a.movimientos) }
   }, [tipos, reglasDeSubtipo])
 
@@ -332,6 +338,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           firma_forma: f.firma,
           orden: f.linea * 10,
           activo: true,
+          revisado_en: null,
         }
         const { error } = f.existente
           ? await supabase.from("config_parseo_extracto").update(fila).eq("id", f.existente.id)
@@ -351,6 +358,33 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     } finally {
       setPreseteando(false)
     }
+  }
+
+  /**
+   * ✅ **«Ya lo miré y está bien» — A-FEAT-1180.**
+   *
+   * Pedido del usuario 2026-09-25: *«¿me agregás un check para dejar marcados los que ya doy por
+   * buenos así no los vuelvo a revisar?»*. Con 15 subtipos y varias vueltas, sin esto no hay
+   * forma de saber qué falta mirar.
+   *
+   * 🔑 **La marca se cae sola cuando el subtipo cambia**: al guardar una regla se limpia
+   * (`guardar` escribe `revisado_en: null`). Un «ya lo vi» viejo que sobrevive a un cambio es
+   * peor que no tener marca — tapa justo lo que había que mirar.
+   *
+   * 📌 Vive en las reglas del subtipo, no en una tabla aparte: **un subtipo sin reglas no se puede
+   * dar por bueno**, porque todavía es trabajo pendiente.
+   */
+  const marcarRevisado = async (t: TipoInfo, f: Subtipo, revisado: boolean) => {
+    const rs = reglasDeSubtipo(t.tipo, f.firma).filter(r => r.firma_forma === f.firma)
+    if (rs.length === 0) {
+      toast.error("Primero hay que configurar este subtipo: sin reglas propias no se puede dar por bueno.")
+      return
+    }
+    const { error } = await supabase.from("config_parseo_extracto")
+      .update({ revisado_en: revisado ? new Date().toISOString() : null })
+      .in("id", rs.map(r => r.id))
+    if (error) { toast.error("Error: " + error.message); return }
+    cargar()
   }
 
   /** Abre el editor de UN subtipo: propone lo que sabemos y pre-carga lo que ya existe. */
@@ -448,6 +482,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           firma_forma: firma,
           orden,
           activo: true,
+          // Cambió algo: el «ya lo vi» de antes ya no vale para esto.
+          revisado_en: null,
         }
         const { error } = f.reglaExistente
           ? await supabase.from("config_parseo_extracto").update(fila).eq("id", f.reglaExistente.id)
@@ -536,9 +572,25 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     // 🧮 A-FEAT-1177: qué hacen HOY las reglas con cada línea de este subtipo
     const audit: AuditoriaSubtipo | null = sinReglas ? null : auditarSubtipo(f.texto, rs as never)
     const mal = audit?.hallazgos ?? []
+    // Revisado = TODAS las reglas propias de este subtipo tienen la marca
+    const propias = rs.filter(r => r.firma_forma === f.firma)
+    const revisado = propias.length > 0 && propias.every(r => r.revisado_en)
     return (
-      <div className={`rounded border ${sinReglas ? "border-sky-300 bg-sky-50/40" : (audit?.choques.length ?? 0) > 0 ? "border-red-300 bg-red-50/30" : mal.length > 0 ? "border-amber-300 bg-amber-50/30" : ""}`}>
+      <div className={`rounded border ${revisado ? "border-emerald-200 bg-emerald-50/30" : sinReglas ? "border-sky-300 bg-sky-50/40" : (audit?.choques.length ?? 0) > 0 ? "border-red-300 bg-red-50/30" : mal.length > 0 ? "border-amber-300 bg-amber-50/30" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
+          {/* ✅ «Ya lo miré» — se cae solo si después cambian las reglas de este subtipo */}
+          <label className="flex cursor-pointer items-center gap-1.5" title={
+            revisado
+              ? "Dado por bueno. Si cambiás una regla de este subtipo, la marca se borra sola."
+              : "Marcalo cuando lo hayas revisado y esté bien, para no volver a mirarlo."}>
+            <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-600"
+              id={`revisado-${t.tipo}-${f.firma}`}
+              checked={revisado} disabled={sinReglas}
+              onChange={e => marcarRevisado(t, f, e.target.checked)} />
+            <span className={`text-[11px] ${revisado ? "font-medium text-emerald-700" : "text-gray-500"}`}>
+              {revisado ? "revisado" : "sin revisar"}
+            </span>
+          </label>
           <span className="text-xs font-medium text-gray-700">
             Subtipo de {f.lineas} líneas
           </span>
@@ -574,6 +626,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           )}
         </div>
 
+        {revisado ? (
+          <p className="px-2.5 py-1.5 text-[11px] italic text-emerald-800">
+            Dado por bueno. Destildalo si querés volver a verlo — y si cambiás una regla, la marca
+            se borra sola.
+          </p>
+        ) : (
         <div className="grid gap-2.5 p-2.5 md:grid-cols-2">
           <div>
             <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Un movimiento real</p>
@@ -655,6 +713,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             )}
           </div>
         </div>
+        )}
 
         {/* ── 🔴 El choque va PRIMERO: es lo único objetivamente roto (§ 🚦 integridad) ── */}
         {(audit?.choques.length ?? 0) > 0 && (
@@ -841,6 +900,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-emerald-600" />
                 {tipos.length} tipo(s) · {totalSubtipos} subtipo(s) · {reglas.length} regla(s)
+                {resumen.totalSub > 0 && (
+                  <span className={`rounded border px-1.5 py-0.5 text-[11px] font-normal ${
+                    resumen.revisados === resumen.totalSub
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                      : "border-gray-300 bg-gray-50 text-gray-600"}`}>
+                    ✅ {resumen.revisados} de {resumen.totalSub} revisados
+                  </span>
+                )}
                 {/* 📋 La estructura, a un clic. Va acá —y no arriba ni abajo de la lista— porque la
                     duda aparece mirando un tipo: «esto dónde termina guardado». */}
                 <button
