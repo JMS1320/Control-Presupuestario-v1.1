@@ -50,6 +50,20 @@ export async function POST(req: Request) {
     const cuenta = String(body.cuenta ?? "")
     const aplicar = body.aplicar === true
     const tipoFiltro = body.tipo ? String(body.tipo).toUpperCase() : null
+    /**
+     * 🧪 **A-FEAT-1172 — re-parsear sólo lo que el usuario tiene delante.**
+     *
+     * Pedido suyo: *«si tengo filtrados 15 movimientos en pantalla y le doy a parsear, que me
+     * parsee esos 15 únicamente»*. Sin esto, ensayar una regla obliga a correrla sobre la cuenta
+     * entera — y entonces no se puede ensayar nada.
+     *
+     * ⚠️ **La pantalla sólo manda ids cuando hay un filtro puesto.** Sin filtro manda `null` y se
+     * toma la cuenta completa, **a propósito**: el Extracto carga por páginas, así que «todo lo
+     * visible» sin filtro sería sólo lo cargado, y el re-parseo tocaría menos de lo que dice.
+     * Es el bug de A-BUG-189 (el buscador miraba sólo lo cargado) aplicado a una escritura.
+     */
+    const idsFiltro: string[] | null =
+      Array.isArray(body.ids) && body.ids.length > 0 ? body.ids.map(String) : null
 
     const cfg = CUENTAS[cuenta]
     if (!cfg) {
@@ -62,12 +76,15 @@ export async function POST(req: Request) {
     const db = cfg.schema === "public" ? supabase : supabase.schema(cfg.schema)
     const mapaReglas = await cargarReglasParseo(supabase, cuenta)
 
-    const { data: movs, error } = await db
+    const consulta = db
       .from(cuenta)
       .select("id, fecha, concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, observaciones_cliente, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
       .not("concepto", "is", null)
       .neq("concepto", "")
       .order("fecha", { ascending: true })
+    const { data: movs, error } = idsFiltro
+      ? await consulta.in("id", idsFiltro)
+      : await consulta
 
     if (error) {
       return NextResponse.json({ error: `Error leyendo ${cuenta}: ${error.message}` }, { status: 500 })
@@ -106,6 +123,9 @@ export async function POST(req: Request) {
       }
     }
 
+    // Sobre qué universo corrió: la pantalla lo muestra para que no haya dudas de qué se tocó.
+    const universo = idsFiltro ? `los ${movs?.length ?? 0} movimientos filtrados` : `la cuenta entera`
+
     // Resumen por tipo, lo que más se necesita para decidir qué regla escribir
     const tipos = [...porTipo.entries()]
       .map(([tipo, v]) => ({ tipo, movimientos: v.total, conRegla: v.conRegla }))
@@ -116,8 +136,10 @@ export async function POST(req: Request) {
         ok: true,
         modo: "seco",
         message: cambios.length === 0
-          ? "Nada que cambiar: el desglose guardado ya coincide con lo que dan las reglas actuales."
+          ? `Nada que cambiar en ${universo}: el desglose guardado ya coincide con lo que dan las reglas actuales.`
           : `${cambios.length} movimiento(s) cambiarían. Nada se modificó todavía.`,
+        universo,
+        soloFiltrados: idsFiltro !== null,
         totalMovimientos: movs?.length ?? 0,
         cambios: cambios.slice(0, 50),
         cambiosTotales: cambios.length,
@@ -141,7 +163,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: fallos.length === 0,
       modo: "aplicado",
-      message: `${aplicados} movimiento(s) re-parseados`
+      universo,
+      message: `${aplicados} movimiento(s) re-parseados sobre ${universo}`
         + (fallos.length > 0 ? ` · ${fallos.length} fallaron` : "")
         + ".",
       totalMovimientos: movs?.length ?? 0,

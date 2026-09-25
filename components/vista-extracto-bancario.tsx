@@ -731,14 +731,34 @@ ${texto.trim()}` : texto.trim()
   const [reparseando, setReparseando] = useState(false)
   const CUENTAS_CON_PARSEO = ['pam_galicia', 'ma_galicia']
 
+  /**
+   * 🧪 **A-FEAT-1172 — si hay un filtro puesto, se re-parsea SÓLO lo que se está viendo.**
+   *
+   * Pedido del usuario: *«si tengo filtrados 15 movimientos en pantalla y le doy a parsear, que me
+   * parsee esos 15 únicamente»*. Es lo que vuelve **ensayable** una regla: sin esto, probar un
+   * cambio obliga a correrlo sobre la cuenta entera.
+   *
+   * ⚠️ **Sin filtro NO se mandan ids, a propósito.** El Extracto carga por páginas, así que «todo
+   * lo visible» sin filtro es sólo **lo cargado** — mandarlo haría que el re-parseo **tocara menos
+   * de lo que dice**. Es A-BUG-189 (el buscador miraba sólo lo cargado) aplicado a una escritura,
+   * que es peor: ahí no se notaba, acá dejaría movimientos sin re-parsear creyendo que se hicieron
+   * todos.
+   */
   const reparsearExtracto = async () => {
     if (!cuentaSeleccionada) { setSelectorAbierto(true); return }
     setReparseando(true)
     try {
+      // `hayFiltros` sale de `filtrosActivos`, la fuente única — así un filtro nuevo no hay
+      // que acordarse de sumarlo acá también (§ CLAUDE.md ♻️ Centralizar, no duplicar).
+      const ids = hayFiltros ? movimientosVisibles.map(m => m.id) : null
+      if (hayFiltros && ids!.length === 0) {
+        alert('El filtro no deja ningún movimiento a la vista. Quitá el filtro o ajustalo.')
+        return
+      }
       const r = await fetch('/api/reparsear-extracto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuenta: cuentaSeleccionada }),
+        body: JSON.stringify({ cuenta: cuentaSeleccionada, ...(ids ? { ids } : {}) }),
       })
       const seco = await r.json()
       if (!seco.ok) { alert('Error: ' + (seco.error ?? 'desconocido')); return }
@@ -769,7 +789,7 @@ ${texto.trim()}` : texto.trim()
       const r2 = await fetch('/api/reparsear-extracto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true }),
+        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true, ...(ids ? { ids } : {}) }),
       })
       const res = await r2.json()
       alert(res.message ?? 'Listo')
