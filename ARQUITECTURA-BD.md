@@ -477,10 +477,19 @@ Sale de mirar los 849 movimientos de MSA y los 76 de PAM CC, que son los que el 
 | `leyendas_adicionales_2` | **CUIT** 🔑 | 219 CUITs en MSA — de acá lo lee el motor |
 | `leyendas_adicionales_3` | **concepto** | `VARIOS`, `HONORARIOS` |
 | `leyendas_adicionales_4` | **banco** | `BANCO DE GALICIA…`, `BANCO SANTANDER RIO S.A.` |
-| `numero_de_comprobante` | nº de operación | numérico, 358 en MSA |
-| `numero_de_terminal` | terminal / identificador | `LINK0011100D5` |
+| `numero_de_comprobante` | nº de operación **o** código de autorización | `60616565`, `A837` |
+| `numero_de_terminal` | **el INSTRUMENTO**: terminal, sucursal o **la tarjeta** con la que se pagó | `Terminal: 0500`, `4517XXXXXXXXXX11` |
 | `observaciones_cliente` | **comentarios del usuario** | en CA viene de la columna **«Comentarios»** del Excel |
 | `grupo_de_conceptos` | etiqueta del tipo | alimenta el dashboard |
+
+> ✅ **Convención cerrada 2026-09-24**, después de medir los 462 renglones de MA y PAM CA:
+> - **`numero_de_comprobante`** lleva el nº de operación **o** el código de autorización. **Medido:
+>   nunca coexisten** en ninguno de los 21 tipos — es el mismo dato con dos nombres según el canal.
+> - **`numero_de_terminal`** pasa a ser **el instrumento**: la terminal del cajero, la sucursal, o
+>   **la tarjeta** con la que se pagó. Tampoco coexisten. *(La tarjeta tiene sólo **2 valores
+>   distintos** en 51 movimientos: es el medio de pago propio, no un dato de la contraparte.)*
+> - 🔑 **Y el destino dejó de ser editable**: en la pantalla se elige **qué es el dato** y la columna
+>   sale sola. Así el mismo dato no puede caer en dos columnas según el tipo de movimiento.
 
 ### 🔑 Las dos que NO se pueden tocar
 - **`concepto` — en Caja de Ahorro guarda el TEXTO CRUDO ENTERO del banco** (96/96 en MA, 25/25 en

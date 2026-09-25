@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, type LineaPropuesta, type ContenidoLinea, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -602,11 +602,28 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                         </select>
                       </td>
                       <td className="px-2 py-2">
+                        {/* 🎛️ Se elige QUÉ ES el dato, no dónde va. La columna sale del mapa
+                            `DESTINO_POR_CONTENIDO` y se muestra abajo, sin poder editarse: si cada
+                            tipo pudiera mandar el mismo dato a otra columna, volvería el desorden
+                            que esto vino a cerrar (pedido del usuario 2026-09-24). */}
                         <select className="w-full rounded border bg-white px-1.5 py-1 text-[11px]"
-                          value={f.campo} onChange={e => cambiarFila(i, { campo: e.target.value })}>
+                          value={f.contenido || ""}
+                          onChange={e => {
+                            const clave = e.target.value as ContenidoLinea
+                            const d = DESTINO_POR_CONTENIDO[clave]
+                            cambiarFila(i, d
+                              ? { contenido: clave, campo: d.campo, modo: d.modo }
+                              : { contenido: "" as ContenidoLinea, campo: "" })
+                          }}>
                           <option value="">— sin asignar —</option>
-                          {CAMPOS_DESTINO.map(c => <option key={c.valor} value={c.valor}>{c.label}</option>)}
+                          {Object.entries(DESTINO_POR_CONTENIDO).map(([k, d]) =>
+                            <option key={k} value={k}>{d.label}</option>)}
                         </select>
+                        <p className="mt-1 text-[10px] leading-4 text-gray-500">
+                          {f.campo
+                            ? <>va a <code className="rounded bg-gray-100 px-1 font-mono">{f.campo}</code></>
+                            : <span className="italic">no se guarda</span>}
+                        </p>
                         {alerta && (
                           <p className="mt-1 text-[10px] leading-4 text-amber-700">
                             ⚠ Es la columna del CUIT y el motor compara exacto. Con «Busca el CUIT»

@@ -327,6 +327,31 @@ export interface LineaPropuesta {
  * medir los 849 movimientos de MSA que el banco llenó solo. **Vale igual para MA y PAM CA**, que
  * tienen el mismo formato.
  */
+/**
+ * 🎛️ **QUÉ ES EL DATO → DÓNDE VA.** La tabla que convierte una cosa en la otra.
+ *
+ * Pedido del usuario 2026-09-24, y es un cambio de fondo en cómo se configura:
+ * *«yo audito que el reconocimiento esté ok, pero no le digo dónde guardar. Ya está establecido
+ * dónde va cada uno. Editar uno sería editar todos, si no no hay coherencia.»*
+ *
+ * 🔑 **El destino deja de ser una elección y pasa a ser una consecuencia.** El usuario corrige
+ * *«esto no es un identificador, es el concepto»* y la columna se acomoda sola. Así el mismo dato
+ * **no puede** terminar en dos columnas distintas según el tipo de movimiento — que es el desorden
+ * que esto vino a cerrar.
+ */
+export const DESTINO_POR_CONTENIDO: Record<string, { campo: string; modo: string; label: string }> = {
+  tipo:          { campo: "descripcion",            modo: "linea",         label: "Tipo de movimiento" },
+  nombre:        { campo: "leyendas_adicionales_1", modo: "linea",         label: "Nombre / comercio" },
+  cuit:          { campo: "leyendas_adicionales_2", modo: "cuit",          label: "CUIT de la contraparte" },
+  concepto:      { campo: "leyendas_adicionales_3", modo: "linea",         label: "Concepto — qué se pagó" },
+  banco:         { campo: "leyendas_adicionales_4", modo: "linea",         label: "Banco o red (LINK, MODO…)" },
+  cbu:           { campo: COLUMNA_CBU,              modo: "cbu",           label: "CBU destino" },
+  operacion:     { campo: "numero_de_comprobante",  modo: "nro_operacion", label: "Nº de operación" },
+  autorizacion:  { campo: "numero_de_comprobante",  modo: "linea",         label: "Código de autorización" },
+  identificador: { campo: "numero_de_terminal",     modo: "linea",         label: "Terminal / sucursal del banco" },
+  tarjeta:       { campo: "numero_de_terminal",     modo: "linea",         label: "Tarjeta con la que se pagó" },
+}
+
 export const ESTRUCTURA_DATOS: {
   dato: string; ejemplo: string; columna: string; clave?: boolean; nota?: string
 }[] = [
@@ -343,10 +368,11 @@ export const ESTRUCTURA_DATOS: {
     nota: "22 dígitos. La columna se llama «tipo_de_movimiento» por historia, pero guarda el CBU" },
   { dato: "Nº de operación", ejemplo: "60616565", columna: "numero_de_comprobante" },
   { dato: "Código de autorización", ejemplo: "A837", columna: "numero_de_comprobante",
-    nota: "⚠️ Comparte columna con el nº de operación: si un movimiento trajera los dos, uno pisa al otro" },
-  { dato: "Identificador largo del banco", ejemplo: "82652900", columna: "numero_de_terminal" },
-  { dato: "Tarjeta enmascarada", ejemplo: "4517XXXXXXXXXX11", columna: "",
-    nota: "⚠️ TODAVÍA SIN COLUMNA PROPIA — hay que decidirla, o cada tipo la manda a un lado distinto" },
+    nota: "Comparte columna con el nº de operación, y está bien: medido sobre los 21 tipos, NUNCA vienen los dos juntos. Es el mismo dato con dos nombres según el canal" },
+  { dato: "Terminal o sucursal del banco", ejemplo: "Terminal: 0500", columna: "numero_de_terminal",
+    nota: "El instrumento: por dónde pasó la plata" },
+  { dato: "Tarjeta con la que se pagó", ejemplo: "4517XXXXXXXXXX11", columna: "numero_de_terminal",
+    nota: "Misma columna que la terminal — nunca vienen las dos. Son sólo 2 tarjetas en 51 movimientos: es TU instrumento, no del comercio" },
   { dato: "No reconocido", ejemplo: "—", columna: "",
     nota: "Se deja sin asignar a propósito: un dato creíble en la columna equivocada es peor que uno ausente" },
 ]
@@ -356,6 +382,41 @@ export const COLUMNAS_INTOCABLES: { columna: string; porque: string }[] = [
   { columna: "concepto", porque: "Guarda el TEXTO CRUDO entero del banco. Es lo que hace posible volver a parsear sin re-importar el Excel." },
   { columna: "observaciones_cliente", porque: "Son TUS comentarios, los que escribís en la columna «Comentarios» del Excel. En un gasto sin factura es la única anotación de qué fue." },
 ]
+
+/**
+ * 🎯 **Detectores agregados 2026-09-24, medidos sobre los 462 renglones de MA y PAM CA.**
+ *
+ * Antes quedaban **58 sin reconocer y 144 dudosos**. Cada uno de estos sale de un caso real que
+ * obligaba al usuario a corregir a mano, y el pedido fue explícito: *«que la propuesta de la app
+ * sea lo mejor posible y yo no tenga que cambiar muchas cosas»*.
+ */
+
+/** `Terminal: 0500` — 12 renglones. Es literalmente la terminal, con el rótulo adelante. */
+const esTerminalRotulada = (l: string) => /^terminal\s*:/i.test(l.trim())
+
+/** `Sucursal: 0360` — 12 renglones. Dónde se hizo la operación, no un nombre de contraparte. */
+const esSucursal = (l: string) => /^sucursal\s*:/i.test(l.trim())
+
+/**
+ * `LINK` — 36 renglones, el caso más grande. Es la **red** por la que viajó la transferencia.
+ * Va con el banco porque responde lo mismo: por qué canal salió del otro lado.
+ */
+const esRed = (l: string) => /^(LINK|BANELCO|MODO|DEBIN|COELSA|INTERBANKING)$/i.test(l.trim())
+
+/**
+ * `004105544412`, `007001005392` — 11 renglones. **Empiezan con cero**, y eso los delata: un
+ * identificador del banco no se rellena con ceros a la izquierda, un **número de servicio o
+ * partida sí** (la partida de AGIP, el nº de cliente de AySA). Es *qué* se pagó → el concepto.
+ */
+const esNumeroDeServicio = (l: string) => /^0\d{7,}$/.test(l.trim())
+
+/** `CONSUMO`, `TRANSF.PROPIAS` — una sola palabra en mayúsculas y sin dígitos: es el concepto. */
+const esConceptoSuelto = (l: string) =>
+  /^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ.\/\s-]{2,24}$/.test(l.trim()) && !/\d/.test(l) && l.trim().split(/\s+/).length <= 2
+
+/** `Enero 2026` — 9 renglones. El período que se liquida, no un nombre. */
+const esPeriodo = (l: string) =>
+  /^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-zé]*\.?\s+\d{4}$/i.test(l.trim())
 
 const esAutorizacion = (l: string) => /^[A-Z]\d{3,4}$/.test(l.trim())
 const esIdentificador = (l: string) => /^\d{8,}$/.test(l.trim()) && !esCbu(l) && !/^\d{11}$/.test(l.trim())
@@ -427,9 +488,29 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
         seguro: true, motivo: "Es el banco de la contraparte — misma columna que usa MSA" }
 
+    if (esRed(texto))
+      return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
+        seguro: true, motivo: "Es la red por la que viajó la transferencia (LINK, MODO…) — va con el banco de la contraparte" }
+
+    if (esTerminalRotulada(texto))
+      return { ...base, contenido: "identificador" as const, campo: "numero_de_terminal", modo: "linea",
+        seguro: true, motivo: "Dice «Terminal»: es el cajero donde se operó" }
+
+    if (esSucursal(texto))
+      return { ...base, contenido: "nombre" as const, campo: "leyendas_adicionales_1", modo: "linea",
+        seguro: true, motivo: "Dice «Sucursal»: dónde se hizo la operación. Va donde MSA la guarda" }
+
+    if (esPeriodo(texto))
+      return { ...base, contenido: "concepto" as const, campo: "leyendas_adicionales_3", modo: "linea",
+        seguro: true, motivo: "Es el período que se liquida, no un nombre" }
+
+    if (esNumeroDeServicio(texto))
+      return { ...base, contenido: "concepto" as const, campo: "leyendas_adicionales_3", modo: "linea",
+        seguro: true, motivo: "Empieza con cero: es un número de servicio o partida (qué se pagó), no un identificador del banco" }
+
     if (esTarjeta(texto))
-      return { ...base, contenido: "tarjeta" as const, campo: "", modo: "linea",
-        seguro: true, motivo: "Tarjeta enmascarada. No hay columna propia; elegí una si te sirve" }
+      return { ...base, contenido: "tarjeta" as const, campo: "numero_de_terminal", modo: "linea",
+        seguro: true, motivo: "Tarjeta con la que se pagó. Va al instrumento — la misma columna que la terminal del cajero: nunca vienen las dos" }
 
     const op = operacionEnLinea(texto)
     if (op.hay)
@@ -458,6 +539,10 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
     if (esIdentificador(texto))
       return { ...base, contenido: "identificador" as const, campo: "numero_de_terminal", modo: "linea",
         seguro: false, motivo: "Número largo del banco" }
+
+    if (esConceptoSuelto(texto))
+      return { ...base, contenido: "concepto" as const, campo: "leyendas_adicionales_3", modo: "linea",
+        seguro: false, motivo: "Una o dos palabras sin números: suele ser el concepto (CONSUMO, VARIOS…)" }
 
     return { ...base, contenido: "" as const, campo: "", modo: "linea",
       seguro: false, motivo: "No lo reconocimos — decidilo vos" }
