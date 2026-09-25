@@ -89,8 +89,36 @@ export function extraerCuit(lineas: string[]): string {
 export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
 /** ¿La línea es una tarjeta enmascarada? `4517XXXXXXXXXX11`. */
 export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
-/** ¿La línea nombra un banco? Todas empiezan con BANCO en los extractos del Galicia. */
-export const esBanco = (l: string) => /^BANCO\b/i.test(l.trim())
+/**
+ * ¿La línea nombra la **entidad destino** de la transferencia?
+ *
+ * Son tres escrituras distintas del mismo dato, y las tres van a la misma columna:
+ *
+ * | Cómo llega | Ejemplos medidos en MA |
+ * |---|---|
+ * | nombre completo del banco | `BANCO DE GALICIA Y BUENOS AIRES SAU` |
+ * | **código de 4 letras** del Galicia | `FNCS` (BBVA Argentina) · `RIOP` (Santander Río) |
+ * | **billetera virtual** | `PERSONAL PAY` · `MERCADO LIBRE SRL` |
+ *
+ * 🔑 **Confirmado por el usuario 2026-09-25**, después de mirar los 12 movimientos: *«Personal Pay
+ * es la billetera virtual de la empresa Personal, Mercado Libre también, FNCS es BBVA Argentina,
+ * RIOP es Santander Río. Serían siempre el banco destino entonces.»*
+ *
+ * 📌 **El código sigue al BANCO, no a la contraparte** — y eso se ve en RIOP: dos personas
+ * distintas, dos CBU distintos, los dos empiezan en `072` y los dos dicen `RIOP`.
+ *
+ * ⚠️ **La lista de códigos va a quedar corta**: hay uno por banco y acá sólo aparecieron dos. El
+ * arreglo de fondo es leer la entidad del **prefijo del CBU** (sus 3 primeros dígitos), que además
+ * deja el mismo dato llegando por dos caminos → [A-FEAT-1176]. Hasta entonces, lo que no esté en
+ * la lista cae como «no sé qué es», que es la falla correcta: pregunta en vez de adivinar.
+ */
+export const esBanco = (l: string) => {
+  const t = l.trim().toUpperCase()
+  if (/^BANCO\b/.test(t)) return true
+  if (/^(FNCS|RIOP)$/.test(t)) return true                       // códigos del Galicia
+  if (/^(PERSONAL PAY|MERCADO LIBRE)\b/.test(t)) return true     // billeteras virtuales
+  return false
+}
 
 /** Aplica una regla a las líneas del movimiento y devuelve el valor extraído. */
 export function aplicarRegla(lineas: string[], regla: ReglaParseo): string {
@@ -408,7 +436,10 @@ export const ESTRUCTURA_DATOS: {
     nota: "11 dígitos. De acá lo lee el motor de conciliación — si no hay CUIT, queda VACÍA" },
   { dato: "Concepto", ejemplo: "VARIOS", columna: "leyendas_adicionales_3",
     nota: "La línea justo después del CUIT" },
-  { dato: "Banco de la contraparte", ejemplo: "BANCO SANTANDER RIO S.A.", columna: "leyendas_adicionales_4" },
+  { dato: "Entidad destino", ejemplo: "BANCO SANTANDER RIO S.A. · RIOP · PERSONAL PAY", columna: "leyendas_adicionales_4",
+    nota: "El banco de la contraparte, escrito entero o con el código de 4 letras del Galicia (FNCS = BBVA, RIOP = Santander Río), o la billetera virtual" },
+  { dato: "Red por la que salió", ejemplo: "LINK", columna: "leyendas_adicionales_4",
+    nota: "Va en la MISMA columna que la entidad: cuando el banco manda LINK no manda además el banco, y los dos contestan por dónde salió" },
   { dato: "CBU destino", ejemplo: "0070999030004012345678", columna: COLUMNA_CBU,
     nota: "22 dígitos. La columna se llama «tipo_de_movimiento» por historia, pero guarda el CBU" },
   { dato: "Nº de operación", ejemplo: "60616565", columna: "numero_de_comprobante" },
@@ -531,11 +562,11 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
 
     if (esBanco(texto))
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
-        seguro: true, motivo: "Es el banco de la contraparte — misma columna que usa MSA" }
+        seguro: true, motivo: "Es la entidad destino: el banco, su código del Galicia (FNCS = BBVA, RIOP = Santander Río) o una billetera (Personal Pay, Mercado Libre)" }
 
     if (esRed(texto))
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
-        seguro: true, motivo: "Es la red por la que viajó la transferencia (LINK, MODO…) — va con el banco de la contraparte" }
+        seguro: true, motivo: "Es la RED por la que salió (LINK, MODO…), no un banco. Va en la misma columna porque cuando el banco manda la red no manda además la entidad" }
 
     if (esTerminalRotulada(texto))
       return { ...base, contenido: "identificador" as const, campo: "numero_de_terminal", modo: "linea",

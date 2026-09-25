@@ -383,6 +383,13 @@ export function correrCasos(): Resultado[] {
     ["LINK", "banco", "leyendas_adicionales_4"],
     ["007001005392", "concepto", "leyendas_adicionales_3"],
     ["Enero 2026", "concepto", "leyendas_adicionales_3"],
+    // Las cuatro entidades destino que el reconocedor no conocía — A-FEAT-1175.
+    // Confirmadas por el usuario mirando los 12 movimientos reales de MA:
+    // FNCS = BBVA Argentina · RIOP = Santander Río · las otras dos son billeteras.
+    ["FNCS", "banco", "leyendas_adicionales_4"],
+    ["RIOP", "banco", "leyendas_adicionales_4"],
+    ["PERSONAL PAY", "banco", "leyendas_adicionales_4"],
+    ["MERCADO LIBRE SRL", "banco", "leyendas_adicionales_4"],
   ] as const) {
     const r = reconoce(texto)
     chequear("Parseo", `«${texto}» se reconoce como ${esperado}`,
