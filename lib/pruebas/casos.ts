@@ -490,6 +490,36 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Una línea que la app no reconoce recupera lo que el usuario había decidido",
       "nombre", rec.contenido, rec.contenido === "nombre", "A-BUG-1202")
 
+    /**
+     * 🛑 **Una sugerencia no pisa una decisión — A-BUG-1205.**
+     *
+     * Caso real: `D.A. AL VTO` (Pago tarjeta Visa). La app propone «nombre/comercio» **sin
+     * certeza**; el usuario decidió que es el **código de autorización**, lo guardó, y la pantalla
+     * se lo seguía mostrando como nombre. Su decisión tiene que ganar.
+     */
+    const propNombre = proponerMapeo(["PAGO TARJETA VISA", "D.A. AL VTO"])[1]
+    chequear("Parseo", "La app propone «nombre» para D.A. AL VTO, pero sin certeza",
+      "nombre / no seguro", `${propNombre.contenido} / ${propNombre.seguro ? "seguro" : "no seguro"}`,
+      propNombre.contenido === "nombre" && !propNombre.seguro, "A-BUG-1205")
+
+    const decidido = resolverFilaExistente(propNombre, { campo_destino: "numero_de_comprobante", tipo_regla: "linea" })
+    chequear("Parseo", "Lo que el usuario decidió gana a una propuesta insegura",
+      "numero_de_comprobante", decidido.campo, decidido.campo === "numero_de_comprobante", "A-BUG-1205")
+
+    chequear("Parseo", "Y se muestra como «código de autorización», no como «nº de operación»",
+      "autorizacion", decidido.contenido, decidido.contenido === "autorizacion", "A-BUG-1205")
+
+    chequear("Parseo", "Una decisión guardada no queda marcada como «propuesta a confirmar»",
+      "seguro", decidido.seguro ? "seguro" : "a confirmar", decidido.seguro, "A-BUG-1205")
+
+    chequear("Parseo", "Y no avisa que se mueve, porque no se mueve a ningún lado",
+      "no se mueve", decidido.seMueve ? "se mueve" : "no se mueve", !decidido.seMueve, "A-BUG-1205")
+
+    // Pero lo SEGURO sigue corrigiendo una regla mal puesta: es A-BUG-1202, que no se rompe
+    const cbuSeguro = resolverFilaExistente(lineaCbu, { campo_destino: "leyendas_adicionales_1", tipo_regla: "linea" })
+    chequear("Parseo", "Lo que la app reconoce CON certeza sí corrige una regla mal puesta",
+      "tipo_de_movimiento", cbuSeguro.campo, cbuSeguro.campo === "tipo_de_movimiento", "A-BUG-1205")
+
     chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
       "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")
   }

@@ -737,9 +737,24 @@ export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): Auditor
  * usuario cuando la app no sabe reconocer la línea. Si una columna admite dos contenidos (el
  * número de comprobante guarda operación *o* autorización), devuelve el primero: van al mismo lado.
  */
-export function contenidoDeCampo(campo: string | null | undefined): string {
+export function contenidoDeCampo(campo: string | null | undefined, modo?: string): string {
   if (!campo) return ""
-  return Object.entries(DESTINO_POR_CONTENIDO).find(([, d]) => d.campo === campo)?.[0] ?? ""
+  const candidatos = Object.entries(DESTINO_POR_CONTENIDO).filter(([, d]) => d.campo === campo)
+  if (candidatos.length === 0) return ""
+  /**
+   * ⚠️ **Cuando dos contenidos comparten columna, desempata el MODO.**
+   *
+   * `numero_de_comprobante` guarda dos cosas distintas: el **nº de operación** (que se busca con
+   * el modo `nro_operacion`) y el **código de autorización** (que se toma de una línea, modo
+   * `linea`). Sin mirar el modo, la regla del usuario que decía *«código de autorización»* se
+   * mostraba como *«Nº de operación»* — el dato terminaba en el mismo lugar, pero el cartel decía
+   * otra cosa que la que él había elegido.
+   */
+  if (modo) {
+    const exacto = candidatos.find(([, d]) => d.modo === modo)
+    if (exacto) return exacto[0]
+  }
+  return candidatos[0][0]
 }
 
 /**
@@ -758,7 +773,22 @@ export function resolverFilaExistente(
   propuesta: { contenido: string; campo: string; modo: string; seguro: boolean },
   regla: { campo_destino: string | null; tipo_regla: string }
 ): { contenido: string; campo: string; modo: string; seguro: boolean; seMueve: boolean; deColumna: string } {
-  const contenido = propuesta.contenido || contenidoDeCampo(regla.campo_destino)
+  /**
+   * 🛑 **La propuesta de la app sólo gana cuando está SEGURA. Si no, manda lo que decidió él.**
+   *
+   * Es la § 🎚️ *Default del dato real, siempre editable* de `CLAUDE.md`: **campo lleno = acá
+   * mando yo**. Antes acá decía `propuesta.contenido || …`, y con eso **una corazonada de la app
+   * le pisaba una decisión explícita del usuario** (A-BUG-1205, 2026-09-25): él puso que
+   * `D.A. AL VTO` era el **código de autorización**, se guardó bien en la base, y la pantalla se
+   * la seguía mostrando como *«Nombre / comercio»* porque la app «proponía» eso.
+   *
+   * 🔑 **Y el corte es el mismo que ven los tres colores**: lo `seguro` (un CUIT son 11 dígitos,
+   * un CBU 22) no es una opinión y corrige a una regla vieja mal puesta — que es lo que arregló
+   * A-BUG-1202. Lo **no seguro** es una sugerencia, y una sugerencia no pisa a una decisión.
+   */
+  const contenido = (propuesta.seguro && propuesta.contenido)
+    || contenidoDeCampo(regla.campo_destino, regla.tipo_regla)
+    || propuesta.contenido
   const destino = DESTINO_POR_CONTENIDO[contenido]
   const campo = destino?.campo ?? ""
   const seMueve = !!campo && !!regla.campo_destino && campo !== regla.campo_destino
@@ -768,7 +798,8 @@ export function resolverFilaExistente(
     // Si el dato cambia de columna, el modo viejo puede no servir: contar la línea 3 no es lo
     // mismo que buscar el CBU esté donde esté.
     modo: seMueve ? (destino?.modo ?? regla.tipo_regla) : regla.tipo_regla,
-    seguro: propuesta.contenido ? propuesta.seguro : true,
+    // Si lo que manda es la decisión guardada, no es «propuesta a confirmar»: ya la confirmó él.
+    seguro: propuesta.seguro || !!regla.campo_destino,
     seMueve,
     deColumna: regla.campo_destino ?? "",
   }

@@ -253,16 +253,38 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       for (const f of t.subtipos) {
         const rs = reglasDeSubtipo(t.tipo, f.firma)
         const propuesta = proponerMapeo(f.texto)
+        const campoTomado = new Set<string>()
         propuesta.forEach((prop, i) => {
           const ya = rs.find(r => lineaDeRegla(r, f.texto) === i) ?? null
           const d = ya ? resolverFilaExistente(prop, ya) : null
           const campo = d?.campo || (prop.seguro ? prop.campo : "")
           const modo = d?.modo || prop.modo
           if (!campo) { if (!ya) paraElUsuario++; return }
-          // Sólo cuenta como trabajo si algo cambia
-          const igual = ya && ya.campo_destino === campo && ya.tipo_regla === modo && ya.firma_forma === f.firma
+
+          /**
+           * 🛑 **Dos líneas no pueden reclamar la misma columna.** Si pasa, la segunda se deja
+           * para él: escribir las dos daría un choque y el movimiento **no se parsearía**
+           * (`GRUPO_CHOQUE`). Pasa de verdad en `DEB. AUTOM. DE SERV.` de AySA, donde los dos
+           * números del final —el de cliente y el del servicio— se reconocen los dos como concepto.
+           */
+          if (campoTomado.has(campo)) { paraElUsuario++; return }
+          campoTomado.add(campo)
+
+          /**
+           * 🛑 **Una regla vieja SIN subtipo no se puede reciclar para más de uno.**
+           *
+           * Era el bug A-BUG-1206 (2026-09-25): las reglas genéricas de un tipo aparecen en `rs`
+           * de **todos** sus subtipos, así que el bucle las actualizaba una vez por subtipo y
+           * **ganaba el último**. `DEB. AUTOM. DE SERV.` tiene dos subtipos y sus 4 reglas
+           * terminaron todas atadas al segundo: **el primero quedó sin ninguna.**
+           *
+           * Se recicla la fila **sólo si ya era de este subtipo**; si era genérica, se inserta una
+           * nueva y la genérica se borra al final, que es lo que corresponde.
+           */
+          const reciclable = ya && ya.firma_forma === f.firma ? ya : null
+          const igual = reciclable && reciclable.campo_destino === campo && reciclable.tipo_regla === modo
           if (igual) return
-          filas.push({ tipo: t.tipo.toUpperCase(), firma: f.firma, linea: i + 1, campo, modo, existente: ya })
+          filas.push({ tipo: t.tipo.toUpperCase(), firma: f.firma, linea: i + 1, campo, modo, existente: reciclable })
           tiposTocados.add(t.tipo.toUpperCase())
         })
       }
@@ -552,9 +574,32 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           <div>
             <p className="mb-1 text-[10px] uppercase tracking-wide text-gray-400">Dónde va a quedar cada línea</p>
             {sinReglas ? (
-              <p className="py-2 text-[11px] italic text-gray-400">
-                Nada: estos movimientos entran con el texto completo, sin desglosar.
-              </p>
+              /**
+               * 🔎 **Sin reglas NO es sin información.** Antes acá decía sólo *«Nada»*, y el
+               * usuario lo marcó el 2026-09-25: *«hay dos subtipos prácticamente iguales, a uno me
+               * propone todo bien y al otro no me propone nada — parece que el sistema podría
+               * identificar perfectamente los dos»*. Podía: lo que faltaba era **mostrarlo**.
+               */
+              <table className="w-full text-[11px] leading-5">
+                <tbody>
+                  {proponerMapeo(f.texto).map((prop, i) => (
+                    <tr key={i}>
+                      <td className="pr-2 align-top text-gray-500">
+                        {prop.campo
+                          ? <>{etiquetaCampo(prop.campo)}{!prop.seguro && <span className="ml-1 text-[10px] text-amber-700">(propuesta)</span>}</>
+                          : <span className="italic text-red-500">no sé qué es</span>}
+                      </td>
+                      <td className="align-top font-mono text-gray-500">{f.texto[i]}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={2} className="pt-1 text-[10px] italic leading-4 text-sky-800">
+                      Todavía no está guardado: hoy estos movimientos entran sin desglosar. Se
+                      guarda con <strong>Configurar</strong>, o de una vez con el botón de arriba.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             ) : (
               /**
                * 🎯 **Una fila por LÍNEA del movimiento, y la columna es la de DESTINO.**
