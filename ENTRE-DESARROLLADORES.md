@@ -53,8 +53,9 @@ elegir «Busca el CBU» y guardar devuelve `violates check constraint`.
 existentes, y se revierte volviendo a la lista de cinco. La tabla es del módulo de extractos, no
 del de seguridad.
 
-**Estado**: ⏳ **sin aplicar**. Lo corre JMS desde el SQL Editor. Se avisa acá **antes**, como pide
-`CLAUDE.md` § 👥 — la base es una sola para local, previews y producción.
+**Estado**: ✅ **aplicado el 2026-09-25**, autorizado por JMS. Verificado leyendo el `CHECK` de
+vuelta: acepta los 7 modos. Se avisó acá **antes** de aplicarlo, como pide `CLAUDE.md` § 👥 — la
+base es una sola para local, previews y producción.
 
 *(Borrar esta entrada cuando la leas.)*
 
