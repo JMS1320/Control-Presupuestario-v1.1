@@ -694,8 +694,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               {revisado ? "revisado" : "sin revisar"}
             </span>
           </label>
+          {/* La palabra «subtipo» sólo aparece donde significa algo: un tipo que llega de dos
+              maneras. Con una sola, decirlo confunde más de lo que aclara. */}
           <span className="text-xs font-medium text-gray-700">
-            Subtipo de {f.lineas} líneas
+            {t.subtipos.length > 1 ? `Subtipo de ${f.lineas} líneas` : `${f.lineas} líneas`}
           </span>
           <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
           {sinReglas
@@ -1003,7 +1005,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-sm">
                 <Check className="h-4 w-4 text-emerald-600" />
-                {tipos.length} tipo(s) · {totalSubtipos} subtipo(s) · {reglas.length} regla(s)
+                {/* Sólo los TIPOS. El total de subtipos confundía —9 tipos · 9 subtipos se lee
+                    como si hubiera dos niveles, cuando significa que ninguno tiene más de uno— y
+                    el total de reglas no le dice nada a nadie (usuario, 2026-09-25). */}
+                {tipos.length} tipo(s) de movimiento
                 {resumen.totalSub > 0 && (
                   <span className={`rounded border px-1.5 py-0.5 text-[11px] font-normal ${
                     resumen.revisados === resumen.totalSub
@@ -1024,8 +1029,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 </button>
               </CardTitle>
               <p className="text-xs text-gray-600">
-                Cada subtipo se configura por separado, con su ejemplo real al lado de lo que produce.
-                El <strong>grupo de conceptos</strong> es del tipo entero.
+                Cada tipo se configura con su ejemplo real al lado de lo que produce. Si un tipo
+                llega escrito de <strong>dos maneras distintas</strong>, aparece dividido en
+                subtipos ahí adentro. El <strong>grupo de conceptos</strong> es del tipo entero.
               </p>
               {/* 📋 Copiar de la otra CA — mismo banco, mismo formato (A-FEAT-1181) */}
               {otraCA.length > 0 && (
