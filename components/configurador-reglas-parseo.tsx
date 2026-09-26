@@ -159,7 +159,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const [reglas, setReglas] = useState<Regla[]>([])
   /** Las reglas de la OTRA cuenta de Caja de Ahorro, para ofrecer equivalencias tipo por tipo. */
   const [reglasOtra, setReglasOtra] = useState<Regla[]>([])
-  const [equiv, setEquiv] = useState<{ t: TipoInfo; f: Subtipo; origen: { id: string; nombre: string }; reglas: Regla[] } | null>(null)
+  const [equiv, setEquiv] = useState<{ t: TipoInfo; f: Subtipo; origen: { id: string; nombre: string }; reglas: Regla[]; igual: boolean } | null>(null)
   const [tipos, setTipos] = useState<TipoInfo[]>([])
   const [cargando, setCargando] = useState(true)
 
@@ -442,8 +442,26 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     // Todas revisadas, o no se ofrece
     if (!suyas.every(r => r.revisado_en)) return null
     const id = suyas[0].cuenta_bancaria_id
-    return { origen: CUENTAS_CA.find(c => c.id === id) ?? { id, nombre: id }, reglas: suyas }
-  }, [reglasOtra])
+
+    /**
+     * ✓ **Si ya es igual, no se ofrece traer: se dice que ya coincide.**
+     *
+     * Precisión del usuario 2026-09-25: *«si ya es equivalente a la de MA no me debe ofrecer
+     * traerla, sino que me debería decir que ya es equivalente»*. Un botón que no cambia nada es
+     * ruido, y peor: invita a apretarlo para descubrir que no hacía falta.
+     *
+     * **Iguales** = las mismas reglas: mismo modo, mismo renglón y misma columna. El `id`, el
+     * `orden` y la marca de revisado no cuentan — son de cada cuenta.
+     */
+    const huella = (rs: Regla[]) => rs
+      .map(r => `${r.tipo_regla}|${r.numero_linea ?? ""}|${r.campo_destino ?? ""}`)
+      .sort().join(" · ")
+    const propias = reglas.filter(r =>
+      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() && r.firma_forma === firma)
+    const igual = propias.length > 0 && huella(propias) === huella(suyas)
+
+    return { origen: CUENTAS_CA.find(c => c.id === id) ?? { id, nombre: id }, reglas: suyas, igual }
+  }, [reglasOtra, reglas])
 
   /** Trae las reglas de UN subtipo desde la otra cuenta. Reemplaza las de acá para ese subtipo. */
   const traerEquivalencia = async () => {
@@ -645,8 +663,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   ).sort((a, b) => b.f.movimientos - a.f.movimientos)
 
   const totalSubtipos = tipos.reduce((n, t) => n + t.subtipos.length, 0)
-  const conEquivalencia = tipos.reduce(
-    (n, t) => n + t.subtipos.filter(f => equivalenciaDe(t.tipo, f.firma)).length, 0)
+  const equivalencias = tipos.flatMap(t => t.subtipos.map(f => equivalenciaDe(t.tipo, f.firma))).filter(Boolean)
+  const conEquivalencia = equivalencias.length
+  const yaIguales = equivalencias.filter(e => e!.igual).length
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
@@ -715,10 +734,16 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             if (!eq) return null
             return (
               <button type="button"
-                className="rounded border border-sky-400 bg-sky-50 px-1.5 text-[10px] leading-5 text-sky-800 hover:bg-sky-100"
-                title={`Este mismo tipo y esta misma forma ya están configurados y revisados en ${eq.origen.nombre}`}
-                onClick={() => setEquiv({ t, f, origen: eq.origen, reglas: eq.reglas })}>
-                ↔️ equivale a {eq.origen.nombre} — ver y traer
+                className={`rounded border px-1.5 text-[10px] leading-5 ${eq.igual
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  : "border-sky-400 bg-sky-50 text-sky-800 hover:bg-sky-100"}`}
+                title={eq.igual
+                  ? `Ya está configurado igual que en ${eq.origen.nombre}. Tocá para ver la comparación.`
+                  : `Este mismo tipo y esta misma forma ya están configurados y revisados en ${eq.origen.nombre}`}
+                onClick={() => setEquiv({ t, f, origen: eq.origen, reglas: eq.reglas, igual: eq.igual })}>
+                {eq.igual
+                  ? `✓ igual que ${eq.origen.nombre}`
+                  : `↔️ equivale a ${eq.origen.nombre} — ver y traer`}
               </button>
             )
           })()}
@@ -1042,9 +1067,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                   de cada uno: un botón que trae todo junto no deja comparar (A-FEAT-1181). */}
               {conEquivalencia > 0 && (
                 <p className="mt-1.5 text-[11px] text-sky-800">
-                  ↔️ <strong>{conEquivalencia}</strong> de estos tipos tienen un equivalente ya
-                  revisado en {otraCA.map(o => o.nombre).join(" / ")} — lo dice cada uno, y se trae
-                  de a uno después de ver la comparación.
+                  ↔️ <strong>{conEquivalencia}</strong> de estos tipos tienen un equivalente revisado
+                  en {otraCA.map(o => o.nombre).join(" / ")}
+                  {yaIguales > 0 && <>, y <strong>{yaIguales}</strong> ya están configurados igual</>}
+                  {conEquivalencia - yaIguales > 0
+                    ? <> — los otros {conEquivalencia - yaIguales} se pueden traer de a uno, después de ver la comparación.</>
+                    : <> — no hay nada que traer.</>}
                 </p>
               )}
             </CardHeader>
@@ -1316,6 +1344,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 está <strong>revisado</strong>. Abajo, línea por línea: qué hace cada regla sobre
                 <strong> un movimiento real de esta cuenta</strong>.
               </p>
+              {equiv.igual && (
+                <p className="rounded border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] leading-4 text-emerald-900">
+                  ✓ <strong>Ya está configurado igual que en {equiv.origen.nombre}</strong> — mismas
+                  columnas y mismo modo en cada línea. <strong>No hay nada que traer.</strong>
+                </p>
+              )}
 
               <div className="overflow-x-auto rounded border">
                 <table className="w-full text-[11px]">
@@ -1350,20 +1384,26 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 </table>
               </div>
 
-              <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-900">
-                ⚠️ Al traer, las reglas de <strong>este subtipo</strong> en esta cuenta se
-                <strong> reemplazan</strong> por las de {equiv.origen.nombre}. No se toca ningún
-                otro tipo, y <strong>los movimientos no cambian</strong> hasta correr Re-parsear.
-                Vienen <strong>sin la marca de revisado</strong>: son de otra cuenta.
-              </p>
+              {!equiv.igual && (
+                <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-900">
+                  ⚠️ Al traer, las reglas de <strong>este subtipo</strong> en esta cuenta se
+                  <strong> reemplazan</strong> por las de {equiv.origen.nombre}. No se toca ningún
+                  otro tipo, y <strong>los movimientos no cambian</strong> hasta correr Re-parsear.
+                  Vienen <strong>sin la marca de revisado</strong>: son de otra cuenta.
+                </p>
+              )}
 
               <div className="flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => setEquiv(null)}>Cancelar</Button>
-                <Button size="sm" disabled={copiando} onClick={traerEquivalencia}>
-                  {copiando
-                    ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Trayendo…</>
-                    : <>Traer las {equiv.reglas.length} reglas</>}
+                <Button variant={equiv.igual ? "default" : "outline"} size="sm" onClick={() => setEquiv(null)}>
+                  {equiv.igual ? "Cerrar" : "Cancelar"}
                 </Button>
+                {!equiv.igual && (
+                  <Button size="sm" disabled={copiando} onClick={traerEquivalencia}>
+                    {copiando
+                      ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Trayendo…</>
+                      : <>Traer las {equiv.reglas.length} reglas</>}
+                  </Button>
+                )}
               </div>
             </div>
           )}
