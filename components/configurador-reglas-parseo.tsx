@@ -157,6 +157,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const otraCA = CUENTAS_CA.filter(c => c.id !== cuenta)
 
   const [reglas, setReglas] = useState<Regla[]>([])
+  /** Las reglas de la OTRA cuenta de Caja de Ahorro, para ofrecer equivalencias tipo por tipo. */
+  const [reglasOtra, setReglasOtra] = useState<Regla[]>([])
+  const [equiv, setEquiv] = useState<{ t: TipoInfo; f: Subtipo; origen: { id: string; nombre: string }; reglas: Regla[] } | null>(null)
   const [tipos, setTipos] = useState<TipoInfo[]>([])
   const [cargando, setCargando] = useState(true)
 
@@ -172,13 +175,18 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     if (!esCajaDeAhorro) { setReglas([]); setTipos([]); setCargando(false); return }
     setCargando(true)
     try {
-      const [{ data }, diag] = await Promise.all([
+      const otras = CUENTAS_CA.filter(c => c.id !== cuenta).map(c => c.id)
+      const [{ data }, diag, { data: dOtra }] = await Promise.all([
         supabase.from("config_parseo_extracto").select("*")
           .eq("cuenta_bancaria_id", cuenta)
           .order("tipo_movimiento").order("orden"),
         fetch(`/api/reparsear-extracto?cuenta=${cuenta}`).then(r => r.json()).catch(() => null),
+        otras.length
+          ? supabase.from("config_parseo_extracto").select("*").in("cuenta_bancaria_id", otras).eq("activo", true)
+          : Promise.resolve({ data: [] as unknown[] }),
       ])
       setReglas((data ?? []) as Regla[])
+      setReglasOtra((dOtra ?? []) as Regla[])
       setTipos(diag?.ok ? (diag.tipos ?? []) : [])
     } finally {
       setCargando(false)
@@ -410,87 +418,42 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
    */
   const [copiando, setCopiando] = useState(false)
 
-  const copiarDesde = async (origen: { id: string; nombre: string }) => {
+  /**
+   * ↔️ **La equivalencia se ve en el TIPO, no en un botón global — A-FEAT-1181.**
+   *
+   * Pedido del usuario 2026-09-25, después de que la primera versión fuera un botón que traía
+   * todo junto: *«si tengo un tipo de PAM que es equivalente a uno de MA, el mismo tipo me dice:
+   * tiene equivalencia en MA. Me permite ver la comparación y yo importo tipo por tipo»*.
+   *
+   * 🔑 **Y sólo cuenta como equivalencia si allá está REVISADO** —regla suya—: traer lo que el
+   * usuario todavía no miró es propagar trabajo a medio hacer a otra cuenta.
+   *
+   * 📌 **Equivalencia = mismo tipo Y mismo subtipo.** No se propaga nada que acá no exista: eso
+   * fabricaría reglas huérfanas, que es el problema que él mismo señaló en PAM (A-DAT-60).
+   */
+  const equivalenciaDe = useCallback((tipo: string, firma: string) => {
+    const suyas = reglasOtra.filter(r =>
+      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() &&
+      r.firma_forma === firma)
+    if (suyas.length === 0) return null
+    // Todas revisadas, o no se ofrece
+    if (!suyas.every(r => r.revisado_en)) return null
+    const id = suyas[0].cuenta_bancaria_id
+    return { origen: CUENTAS_CA.find(c => c.id === id) ?? { id, nombre: id }, reglas: suyas }
+  }, [reglasOtra])
+
+  /** Trae las reglas de UN subtipo desde la otra cuenta. Reemplaza las de acá para ese subtipo. */
+  const traerEquivalencia = async () => {
+    if (!equiv) return
     setCopiando(true)
     try {
-      const [{ data: reglasOrigen }, diag] = await Promise.all([
-        supabase.from("config_parseo_extracto").select("*")
-          .eq("cuenta_bancaria_id", origen.id).eq("activo", true),
-        fetch(`/api/reparsear-extracto?cuenta=${cuenta}`).then(r => r.json()).catch(() => null),
-      ])
-      const deOrigen = (reglasOrigen ?? []) as Regla[]
-
-      /**
-       * 🎯 **No se propaga nada: se buscan EQUIVALENCIAS.** Precisión del usuario 2026-09-25:
-       * *«no propagaría los tipos de MA a PAM ya que no corresponden. Lo único sería un buscador
-       * de equivalencias… que compare y diga: esto es idéntico a uno de MA, y proponga traer el
-       * preset»*. Tenía razón y la primera versión estaba mal: copiaba **todas** las reglas del
-       * origen, incluidas las de tipos que el destino **no tiene**, que es fabricar exactamente
-       * las reglas huérfanas que él estaba señalando.
-       *
-       * **Sólo se copia lo que es idéntico**: mismo tipo **y** mismo subtipo, presentes en los
-       * movimientos reales del destino.
-       */
-      const subtiposDestino: { tipo: string; firma: string; movimientos: number }[] =
-        (diag?.tipos ?? []).flatMap((t: TipoInfo) =>
-          t.subtipos.map(f => ({ tipo: t.tipo.toUpperCase(), firma: f.firma, movimientos: f.movimientos })))
-      const existeEnDestino = new Set(subtiposDestino.map(x => `${x.tipo}||${x.firma}`))
-
-      /**
-       * ✅ **Y sólo de lo que el usuario dio por REVISADO en el origen.** Pedido suyo el mismo día:
-       * *«sólo debe proponer de tipos checkeados, si no lo están no los debe proponer»*. Copiar
-       * reglas que él todavía no miró es propagar trabajo a medio hacer a otra cuenta.
-       */
-      const revisadosEnOrigen = new Set(
-        deOrigen.filter(r => r.firma_forma && r.revisado_en)
-          .map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
-
-      const candidatas = deOrigen.filter(r => {
-        if (!r.firma_forma) return false   // una genérica se aplicaría a todos: nunca se importa
-        const k = `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`
-        return existeEnDestino.has(k) && revisadosEnOrigen.has(k)
-      })
-      if (candidatas.length === 0) {
-        toast.error(
-          `No hay equivalencias para traer de ${origen.nombre}: ningún tipo y subtipo coincide ` +
-          `con los movimientos de esta cuenta, o los que coinciden todavía no están marcados como revisados allá.`
-        )
-        return
+      const propias = reglasDeSubtipo(equiv.t.tipo, equiv.f.firma).filter(r => r.firma_forma === equiv.f.firma)
+      // Las de acá se reemplazan: traer y dejar las viejas daría dos reglas por línea
+      if (propias.length > 0) {
+        const { error } = await supabase.from("config_parseo_extracto").delete().in("id", propias.map(r => r.id))
+        if (error) throw error
       }
-
-      // Lo que el destino YA tiene, por tipo+subtipo: eso no se toca
-      const yaTiene = new Set(reglas.filter(r => r.firma_forma)
-        .map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
-      const aCopiar = candidatas.filter(r => !yaTiene.has(`${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
-      const salteadas = candidatas.length - aCopiar.length
-
-      const claves = new Set([...yaTiene, ...aCopiar.map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`)])
-      const cubiertos = subtiposDestino.filter(x => claves.has(`${x.tipo}||${x.firma}`))
-      const faltan = subtiposDestino.filter(x => !claves.has(`${x.tipo}||${x.firma}`))
-
-      if (aCopiar.length === 0) {
-        toast.info(`Nada para copiar: ${cuentaActual?.nombre} ya tiene reglas propias para todos los subtipos de ${origen.nombre}.`)
-        return
-      }
-      const aviso = [
-        `Traer equivalencias de ${origen.nombre}`,
-        "",
-        `• ${aCopiar.length} regla(s) de tipos y subtipos IDÉNTICOS a los de esta cuenta`,
-        ...(salteadas > 0 ? [`• ${salteadas} se saltean: ya tenés reglas propias para esos subtipos`] : []),
-        "",
-        `Después de copiar, de los ${subtiposDestino.length} subtipos de esta cuenta:`,
-        `• ${cubiertos.length} quedan con reglas`,
-        `• ${faltan.length} siguen sin nada y hay que hacerlos a mano`,
-        ...faltan.slice(0, 6).map(f => `     ${f.tipo}`),
-        ...(faltan.length > 6 ? [`     y ${faltan.length - 6} más`] : []),
-        "",
-        "Sólo se trae lo que allá está marcado como revisado.",
-        "No se pisa nada de lo que ya configuraste.",
-        "Los movimientos no cambian hasta correr Re-parsear.",
-      ].join("\n")
-      if (!confirm(aviso)) return
-
-      const filas = aCopiar.map(r => ({
+      const filas = equiv.reglas.map(r => ({
         cuenta_bancaria_id: cuenta,
         tipo_movimiento: r.tipo_movimiento.toUpperCase(),
         campo_destino: r.campo_destino,
@@ -500,16 +463,13 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         firma_forma: r.firma_forma,
         orden: r.orden,
         activo: true,
-        // Son reglas de otra cuenta: las tiene que revisar igual.
+        // Vienen de otra cuenta: las tiene que revisar acá igual.
         revisado_en: null,
       }))
       const { error } = await supabase.from("config_parseo_extracto").insert(filas)
       if (error) throw error
-      toast.success(
-        `${filas.length} regla(s) copiadas de ${origen.nombre}. ` +
-        (faltan.length > 0 ? `Quedan ${faltan.length} subtipo(s) para hacer a mano. ` : "") +
-        `Corré «Re-parsear» para aplicarlo.`
-      )
+      toast.success(`${filas.length} regla(s) traídas de ${equiv.origen.nombre}. Revisalas y corré «Re-parsear».`)
+      setEquiv(null)
       cargar()
     } catch (e) {
       toast.error("Error: " + (e as Error).message)
@@ -682,6 +642,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   ).sort((a, b) => b.f.movimientos - a.f.movimientos)
 
   const totalSubtipos = tipos.reduce((n, t) => n + t.subtipos.length, 0)
+  const conEquivalencia = tipos.reduce(
+    (n, t) => n + t.subtipos.filter(f => equivalenciaDe(t.tipo, f.firma)).length, 0)
   const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
   const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
 
@@ -745,6 +707,18 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               {audit!.decideElUsuario.length} línea{audit!.decideElUsuario.length === 1 ? "" : "s"} las decidís vos
             </Badge>
           )}
+          {(() => {
+            const eq = equivalenciaDe(t.tipo, f.firma)
+            if (!eq) return null
+            return (
+              <button type="button"
+                className="rounded border border-sky-400 bg-sky-50 px-1.5 text-[10px] leading-5 text-sky-800 hover:bg-sky-100"
+                title={`Este mismo tipo y esta misma forma ya están configurados y revisados en ${eq.origen.nombre}`}
+                onClick={() => setEquiv({ t, f, origen: eq.origen, reglas: eq.reglas })}>
+                ↔️ equivale a {eq.origen.nombre} — ver y traer
+              </button>
+            )
+          })()}
           <Button size="sm" variant={sinReglas ? "outline" : "ghost"} className="ml-auto h-7 text-xs"
             onClick={() => abrirSubtipo(t, f)}>
             {sinReglas
@@ -1061,23 +1035,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                 llega escrito de <strong>dos maneras distintas</strong>, aparece dividido en
                 subtipos ahí adentro. El <strong>grupo de conceptos</strong> es del tipo entero.
               </p>
-              {/* 📋 Copiar de la otra CA — mismo banco, mismo formato (A-FEAT-1181) */}
-              {otraCA.length > 0 && (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {otraCA.map(o => (
-                    <Button key={o.id} size="sm" variant="outline" className="h-7 text-xs"
-                      disabled={copiando} onClick={() => copiarDesde(o)}>
-                      {copiando
-                        ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Buscando…</>
-                        : <>📋 Traer equivalencias de {o.nombre}</>}
-                    </Button>
-                  ))}
-                  <span className="text-[11px] text-gray-500">
-                    Busca tipos <strong>idénticos</strong> —mismo tipo y misma forma— que allá ya
-                    estén <strong>revisados</strong>, y trae sus reglas. No propaga nada que acá no
-                    exista, y <strong>no pisa</strong> lo que ya configuraste.
-                  </span>
-                </div>
+              {/* ↔️ Cuántos tipos de acá tienen equivalencia allá. El traer es por tipo, adentro
+                  de cada uno: un botón que trae todo junto no deja comparar (A-FEAT-1181). */}
+              {conEquivalencia > 0 && (
+                <p className="mt-1.5 text-[11px] text-sky-800">
+                  ↔️ <strong>{conEquivalencia}</strong> de estos tipos tienen un equivalente ya
+                  revisado en {otraCA.map(o => o.nombre).join(" / ")} — lo dice cada uno, y se trae
+                  de a uno después de ver la comparación.
+                </p>
               )}
             </CardHeader>
             <CardContent>
@@ -1333,6 +1298,75 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       {/* 📋 LA ESTRUCTURA — qué reconoce la app y dónde lo guarda.
           Las filas salen de `ESTRUCTURA_DATOS`, la misma lista que usa el reconocedor: si mañana
           cambia una columna, esta tabla cambia sola en vez de quedar mintiendo. */}
+      {/* ↔️ La comparación, antes de traer nada. Sin esto «traer» es un salto de fe. */}
+      <Dialog open={!!equiv} onOpenChange={o => !o && setEquiv(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-sm">
+              <span className="font-mono">{equiv?.t.tipo}</span> — comparar con {equiv?.origen.nombre}
+            </DialogTitle>
+          </DialogHeader>
+          {equiv && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-600">
+                Es el <strong>mismo tipo y la misma forma</strong> ({equiv.f.lineas} líneas), y allá
+                está <strong>revisado</strong>. Abajo, línea por línea: qué hace cada regla sobre
+                <strong> un movimiento real de esta cuenta</strong>.
+              </p>
+
+              <div className="overflow-x-auto rounded border">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium">#</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Lo que dice el banco acá</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Hoy en esta cuenta</th>
+                      <th className="px-2 py-1.5 text-left font-medium">{equiv.origen.nombre}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equiv.f.texto.map((linea, i) => {
+                      const aca = reglasDeSubtipo(equiv.t.tipo, equiv.f.firma)
+                        .find(r => lineaDeRegla(r, equiv.f.texto) === i)
+                      const alla = equiv.reglas.find(r => lineaDeRegla(r, equiv.f.texto) === i)
+                      const distinto = (aca?.campo_destino ?? "") !== (alla?.campo_destino ?? "")
+                      return (
+                        <tr key={i} className={`border-t align-top ${distinto ? "bg-amber-50" : ""}`}>
+                          <td className="px-2 py-1.5 font-mono text-gray-400">{i + 1}</td>
+                          <td className="px-2 py-1.5 font-mono text-gray-800">{linea}</td>
+                          <td className="px-2 py-1.5 text-gray-600">
+                            {aca ? etiquetaCampo(aca.campo_destino) : <span className="italic text-gray-400">nada</span>}
+                          </td>
+                          <td className="px-2 py-1.5 font-medium text-sky-800">
+                            {alla ? etiquetaCampo(alla.campo_destino) : <span className="italic font-normal text-gray-400">nada</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-900">
+                ⚠️ Al traer, las reglas de <strong>este subtipo</strong> en esta cuenta se
+                <strong> reemplazan</strong> por las de {equiv.origen.nombre}. No se toca ningún
+                otro tipo, y <strong>los movimientos no cambian</strong> hasta correr Re-parsear.
+                Vienen <strong>sin la marca de revisado</strong>: son de otra cuenta.
+              </p>
+
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setEquiv(null)}>Cancelar</Button>
+                <Button size="sm" disabled={copiando} onClick={traerEquivalencia}>
+                  {copiando
+                    ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Trayendo…</>
+                    : <>Traer las {equiv.reglas.length} reglas</>}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={verEstructura} onOpenChange={setVerEstructura}>
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
