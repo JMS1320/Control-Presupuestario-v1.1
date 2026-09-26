@@ -74,7 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -536,6 +536,37 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Y un grupo escrito se respeta tal cual, sin espacios de más",
       "Transferencias", grupoParaGuardar("  Transferencias  "),
       grupoParaGuardar("  Transferencias  ") === "Transferencias", "A-BUG-1209")
+
+    /**
+     * 🏦 **El grupo sale del vocabulario del Galicia, no de uno propio — A-DEC-31.**
+     *
+     * Los casos usan tipos que el banco **ya clasifica en MSA**, así que si alguien cambia el mapa
+     * a ojo, esto falla. `COMPRA DEBITO` va a Extracciones y no a Pagos **porque así lo pone el
+     * banco**, aunque suene al revés.
+     */
+    for (const [tipo, esperado] of [
+      ["COMPRA DEBITO", "000905 - Extracciones"],
+      ["DEB. AUTOM. DE SERV.", "000083 - Pagos"],
+      ["TRANSFERENCIAS CASH PROVEEDORES", "000907 - Transferencias"],
+      ["SERVICIO PAGO A PROVEEDORES", "000909 - Pago Proveedores"],
+      ["SUSCRIPCION FIMA", "000916 - Inversiones"],
+      ["COM. CAJA DE SEGURIDAD", "000808 - Comisiones"],
+      ["IVA", "000901 - Impuestos"],
+      ["INTERES CAPITALIZADO", "000814 - Intereses"],
+      ["REINTEGRO PROMOCION GALICIA", "000903 - Créditos Varios"],
+    ] as const) {
+      chequear("Parseo", `«${tipo}» va al grupo que usa el banco`,
+        esperado, grupoSugeridoParaTipo(tipo), grupoSugeridoParaTipo(tipo) === esperado, "A-DEC-31")
+    }
+
+    chequear("Parseo", "Un tipo que nadie conoce NO se adivina: queda vacío para que lo elija el usuario",
+      "(vacío)", grupoSugeridoParaTipo("VENTA DE PATOS") || "(vacío)",
+      grupoSugeridoParaTipo("VENTA DE PATOS") === "", "A-DEC-31")
+
+    chequear("Parseo", "Todo lo que sugiere está en la lista cerrada del banco",
+      "todos", "todos",
+      ["COMPRA DEBITO", "IVA", "CHEQUE 48 HS", "COMISION POR TRANSFERENCIA", "EXTRACCION CAJERO"]
+        .every(t => GRUPOS_GALICIA.includes(grupoSugeridoParaTipo(t) as never)), "A-DEC-31")
 
     chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
       "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")

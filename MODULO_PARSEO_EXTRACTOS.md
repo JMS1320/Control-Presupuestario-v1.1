@@ -118,6 +118,47 @@ mismo dato llegando por dos caminos**, que es un control gratis.
 
 ---
 
+## 🏷️ El GRUPO DE CONCEPTOS — el vocabulario es del banco
+
+> **No se inventa: se copia.** En **cuenta corriente el Galicia ya manda el grupo** en su Excel, con
+> su código propio (`000907 - Transferencias`). En Caja de Ahorro no lo manda —viene todo en una
+> celda— y hay que ponerlo a mano. **Usando la misma lista, el mismo hecho tiene el mismo grupo en
+> las dos clases de cuenta.**
+
+🧨 **El problema que resolvió**: era texto libre y terminó con **20 valores para 10 conceptos**
+(`Servicios` y `Servicios Pago`, `Tarjetas` y `Tarjeta Debito`). Una compra con débito era
+«Tarjeta Debito» en MA y `000905 - Extracciones` en MSA: **el mismo movimiento con dos nombres**.
+
+**La lista cerrada** (`GRUPOS_GALICIA`, en el motor):
+
+```
+000083 - Pagos          000905 - Extracciones      000912 - Debitos Cheques
+000808 - Comisiones     000907 - Transferencias    000916 - Inversiones
+000814 - Intereses      000908 - Haberes
+000901 - Impuestos      000909 - Pago Proveedores
+000903 - Créditos Varios
+```
+
+📌 **El mapeo tipo → grupo sale de lo que el banco hace en MSA**, con el mismo nombre de tipo. Por
+eso `COMPRA DEBITO` va a **Extracciones** y no a Pagos, y `TRANSFERENCIAS CASH PROVEEDORES` a
+**Transferencias** y no a Pago Proveedores — aunque las dos suenen al revés.
+
+**Tres reglas:**
+1. **Desplegable cerrado**, no texto libre.
+2. **Obligatorio**: sin grupo no se guarda. *(Hubo un default `Otros` durante unas horas; el usuario
+   lo rechazó: «si está vacío debe pedir ser llenado».)*
+3. La app **propone** el grupo mirando el tipo, y **si no lo conoce lo deja vacío**. Un grupo mal
+   puesto es peor que uno vacío, porque el vacío se ve.
+
+🧨 **Y lo que hay que saber: hoy no lo lee nadie.** El parseo lo escribe en el movimiento y ninguna
+pantalla ni el motor de conciliación lo consultan. Es la pieza que espera [A-FEAT-17] — *«si ya se
+sabe qué es cada movimiento, sabemos mucho de cómo conciliar»*.
+
+🔓 **Queda abierto**: el usuario lo aprobó como punto de partida —*«de última, cuando tenga tiempo
+de pensarlo, lo cambiamos»*—, y por eso la lista vive en un solo lugar.
+
+---
+
 ## ⚖️ LO GUARDADO MANDA — el modelo, y costó tres vueltas llegar
 
 > **Una regla guardada ES el valor. La app opina al lado; su opinión no pisa nada.**

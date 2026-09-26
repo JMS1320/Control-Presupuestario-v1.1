@@ -868,3 +868,103 @@ export function resolverFilaExistente(
 export function grupoParaGuardar(texto: string | null | undefined): string {
   return String(texto ?? "").trim() || GRUPO_SIN_REGLA
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EL GRUPO DE CONCEPTOS — el vocabulario del Galicia, no uno propio
+//
+// 🔑 **No se inventa: se copia.** En **cuenta corriente el banco ya manda el grupo** en su Excel,
+// con su propio código (`000907 - Transferencias`). En Caja de Ahorro no lo manda —viene todo en
+// una celda— y hay que ponerlo a mano. Usar la misma lista hace que **el mismo hecho tenga el
+// mismo grupo en las dos clases de cuenta**: hoy una compra con débito es «Tarjeta Debito» en MA
+// y `000905 - Extracciones` en MSA — el mismo movimiento con dos nombres, imposible de sumar.
+//
+// 📌 Decidido con el usuario 2026-09-25, después de medir qué usa MSA ([A-DEC-31]). Él mismo lo
+// dejó abierto: *«de última, cuando tenga tiempo de pensarlo, lo cambiamos»* — por eso vive acá,
+// en un solo lugar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Los grupos que el Galicia usa en el extracto de cuenta corriente. Lista cerrada. */
+export const GRUPOS_GALICIA = [
+  "000083 - Pagos",
+  "000808 - Comisiones",
+  "000814 - Intereses",
+  "000901 - Impuestos",
+  "000903 - Créditos Varios",
+  "000905 - Extracciones",
+  "000907 - Transferencias",
+  "000908 - Haberes",
+  "000909 - Pago Proveedores",
+  "000912 - Debitos Cheques",
+  "000916 - Inversiones",
+] as const
+
+/**
+ * Qué grupo le corresponde a un tipo de movimiento.
+ *
+ * 🔑 **Los que están acá salen de lo que el banco hace en MSA**, con el mismo nombre de tipo. No
+ * es criterio nuestro: `COMPRA DEBITO` va a **Extracciones** y no a Pagos porque **así lo clasifica
+ * el Galicia**, aunque suene contraintuitivo.
+ */
+const GRUPO_POR_TIPO: Record<string, string> = {
+  // 000083 — Pagos  (literal en MSA: «Deb. Autom. De Serv.», «Pago De Servicios», «Pago Visa Empresa»)
+  "DEB. AUTOM. DE SERV.": "000083 - Pagos",
+  "PAGO DE SERVICIOS": "000083 - Pagos",
+  "PAGO TARJETA VISA": "000083 - Pagos",
+  "DEBITO AUTOMATICO GALICIA RURAL": "000083 - Pagos",
+  // 000905 — Extracciones  (literal: «Compra Debito», «Extraccion En Autoservicio»)
+  "COMPRA DEBITO": "000905 - Extracciones",
+  "COMPRA CON DEBITO": "000905 - Extracciones",
+  "COMPRA CASH BACK": "000905 - Extracciones",
+  "EXTRACCION EN AUTOSERVICIO": "000905 - Extracciones",
+  "EXTRACCION CAJERO": "000905 - Extracciones",
+  "EXTRACCION": "000905 - Extracciones",
+  // 000907 — Transferencias  (literal: «Transferencias Cash Proveedores», «Transferencia De Terceros»)
+  "TRANSFERENCIA A TERCEROS": "000907 - Transferencias",
+  "TRANSFERENCIAS CASH PROVEEDORES": "000907 - Transferencias",
+  "TRANSFERENCIA DE CUENTA PROPIA": "000907 - Transferencias",
+  "PAGO CON TRANSFERENCIA": "000907 - Transferencias",
+  "TRANSFERENCIA RECIBIDA": "000907 - Transferencias",
+  "ACREDITACION TRANSFERENCIA": "000907 - Transferencias",
+  // 000909 — Pago Proveedores  (literal: «Servicio Pago A Proveedores»)
+  "SERVICIO PAGO A PROVEEDORES": "000909 - Pago Proveedores",
+  // 000916 — Inversiones  (literal: «Suscripcion Fima», «Rescate Fima»)
+  "SUSCRIPCION FIMA": "000916 - Inversiones",
+  "RESCATE FIMA": "000916 - Inversiones",
+  // 000814 — Intereses
+  "INTERES CAPITALIZADO": "000814 - Intereses",
+  "INTERESES SOBRE SALDOS DEUDORES": "000814 - Intereses",
+  "ACREDITACION INTERESES": "000814 - Intereses",
+  // 000901 — Impuestos  (literal: «Iva», «Ing. Brutos S/ Cred», «Percep. Iva»)
+  "IVA": "000901 - Impuestos",
+  "IVA SOBRE COMISIONES": "000901 - Impuestos",
+  "INGRESOS BRUTOS": "000901 - Impuestos",
+  "PERCEPCION IIBB": "000901 - Impuestos",
+  "IMPUESTO A LOS CREDITOS Y DEBITOS": "000901 - Impuestos",
+  // 000808 — Comisiones  (literal: «Com. Caja De Seguridad»)
+  "COM. CAJA DE SEGURIDAD": "000808 - Comisiones",
+  "COMISION POR TRANSFERENCIA": "000808 - Comisiones",
+  // 000903 — Créditos Varios  (los reintegros entran plata y no son ninguna de las otras familias)
+  "REINTEGRO PROMOCION GALICIA": "000903 - Créditos Varios",
+  "REINTEGRO PROMOCION GALICIA MODO": "000903 - Créditos Varios",
+  // 000908 — Haberes
+  "ACREDITACION SUELDO": "000908 - Haberes",
+}
+
+/**
+ * El grupo que la app propone para un tipo. **`""` = no sabe, y entonces lo elige el usuario.**
+ *
+ * Primero busca el tipo exacto; si no está, mira cómo empieza. Nunca adivina más allá de eso:
+ * un grupo mal puesto es peor que uno vacío, porque el vacío se ve y el otro no.
+ */
+export function grupoSugeridoParaTipo(tipo: string | null | undefined): string {
+  const t = String(tipo ?? "").trim().toUpperCase()
+  if (!t) return ""
+  if (GRUPO_POR_TIPO[t]) return GRUPO_POR_TIPO[t]
+  if (/^(CHEQUE|ECHEQ)/.test(t)) return "000912 - Debitos Cheques"
+  if (/^(COMISION|COM\.)/.test(t)) return "000808 - Comisiones"
+  if (/^(IMPUESTO|IVA|ING\.? BRUTOS|PERCEP)/.test(t)) return "000901 - Impuestos"
+  if (/^EXTRACCION/.test(t)) return "000905 - Extracciones"
+  if (/^TRANSFER/.test(t)) return "000907 - Transferencias"
+  if (/^INTERES/.test(t)) return "000814 - Intereses"
+  return ""
+}

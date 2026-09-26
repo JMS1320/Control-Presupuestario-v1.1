@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -341,7 +341,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     setPreseteando(true)
     try {
       for (const f of filas) {
-        const grupo = grupoParaGuardar(reglasDe(f.tipo)[0]?.grupo_de_conceptos)
+        const grupo = grupoParaGuardar(
+          reglasDe(f.tipo)[0]?.grupo_de_conceptos || grupoSugeridoParaTipo(f.tipo))
         const fila = {
           cuenta_bancaria_id: cuenta,
           tipo_movimiento: f.tipo,
@@ -533,7 +534,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       }
     })
     setFilas(filasNuevas)
-    const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos ?? ""
+    // Si el tipo todavía no tiene grupo, se propone el que usa el banco para ese mismo tipo.
+    const grupo = reglasDe(t.tipo)[0]?.grupo_de_conceptos || grupoSugeridoParaTipo(t.tipo)
     setFGrupo(grupo)
     setGrupoOriginal(grupo)
     setEditando({ tipo: t, subtipo })
@@ -1300,20 +1302,36 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[220px] flex-1">
-              <Label className="text-xs">Grupo de conceptos <span className="text-gray-400">— del tipo entero</span></Label>
-              <Input className="mt-1" value={fGrupo} onChange={e => setFGrupo(e.target.value)}
-                list="grupos-conceptos-usados" placeholder="Ej: Transferencias" id="grupo-de-conceptos" />
-              <datalist id="grupos-conceptos-usados">
-                {/* Los que ya se usan en esta cuenta, y los de la otra: son los mismos conceptos */}
-                {[...new Set([...reglas, ...reglasOtra].map(r => r.grupo_de_conceptos).filter(Boolean))]
-                  .sort().map(g => <option key={g as string} value={g as string} />)}
-              </datalist>
-              {!fGrupo.trim() && (
-                <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
-                  Si lo dejás vacío se guarda como <strong>Otros</strong> — el mismo grupo que le
-                  toca a un movimiento sin regla.
+              <Label className="text-xs">
+                Grupo de conceptos <span className="text-gray-400">— del tipo entero</span>
+                <span className="ml-1 text-red-600">*</span>
+              </Label>
+              {/* 🔒 Lista CERRADA con el vocabulario del propio Galicia (§ MODULO_PARSEO_EXTRACTOS).
+                  Era texto libre y terminó con 20 valores para 10 conceptos — «Servicios» y
+                  «Servicios Pago», «Tarjetas» y «Tarjeta Debito». Y obligatorio: antes se guardaba
+                  «Otros» solo, que es tapar el problema (usuario, 2026-09-25). */}
+              <select id="grupo-de-conceptos"
+                className={`mt-1 w-full rounded border bg-white px-2 py-1.5 text-xs ${
+                  fGrupo.trim() ? "" : "border-red-400"}`}
+                value={fGrupo} onChange={e => setFGrupo(e.target.value)}>
+                <option value="">— elegí el grupo —</option>
+                {GRUPOS_GALICIA.map(g => <option key={g} value={g}>{g}</option>)}
+                {/* Si el tipo ya tenía un valor viejo fuera de la lista, se muestra para no perderlo */}
+                {fGrupo.trim() && !GRUPOS_GALICIA.includes(fGrupo as never) && (
+                  <option value={fGrupo}>{fGrupo} (valor viejo)</option>
+                )}
+              </select>
+              {!fGrupo.trim() ? (
+                <p className="mt-0.5 text-[10px] leading-4 text-red-700">
+                  Hace falta para guardar. Es la familia del movimiento, con el mismo código que usa
+                  el banco en las cuentas corrientes.
                 </p>
-              )}
+              ) : !GRUPOS_GALICIA.includes(fGrupo as never) ? (
+                <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
+                  ⚠️ <strong>{fGrupo}</strong> no es de la lista del banco. Conviene pasarlo a uno de
+                  los códigos para que coincida con MSA.
+                </p>
+              ) : null}
             </div>
             <p className="flex-1 text-[11px] leading-4 text-gray-500">
               {plan.total === 0
@@ -1326,7 +1344,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={() => setEditando(null)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando || plan.total === 0}>
+            <Button onClick={guardar} disabled={guardando || plan.total === 0 || !fGrupo.trim()}>
               {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
               Guardar {plan.total > 0 ? `(${plan.total})` : ""}
             </Button>
