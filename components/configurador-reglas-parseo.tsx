@@ -1013,11 +1013,15 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm text-sky-900">
                   <FileWarning className="h-4 w-4" />
-                  {subtiposPendientes.length} subtipo{subtiposPendientes.length === 1 ? "" : "s"} sin reglas
+                  {/* «Tipos» cuando cada uno aporta su única forma — que es el caso normal.
+                      Decir «subtipos» ahí confunde (usuario, 2026-09-25). */}
+                  {subtiposPendientes.length}{" "}
+                  {subtiposPendientes.some(({ t }) => t.subtipos.length > 1) ? "subtipo" : "tipo"}
+                  {subtiposPendientes.length === 1 ? "" : "s"} sin reglas
                 </CardTitle>
                 <p className="text-xs text-gray-600">
-                  Sus movimientos entran con el texto completo pero sin desglosar. Ordenadas por
-                  cantidad: la primera es la que más rinde escribir.
+                  Sus movimientos entran con el texto completo pero sin desglosar. Ordenados por
+                  cantidad: el primero es el que más rinde escribir.
                 </p>
               </CardHeader>
               <CardContent>

@@ -2712,11 +2712,21 @@ ${marca}` : marca
               variant="outline"
               onClick={reparsearExtracto}
               disabled={reparseando}
-              title="Aplica las reglas de desglose sobre lo ya importado, sin volver a subir el Excel"
-              className="flex items-center gap-2 border-sky-500 text-sky-700 hover:bg-sky-50"
+              title={hayFiltros
+                ? `Se re-parseará sólo lo filtrado — ${filtrosActivos.join(' · ')}`
+                : 'Se re-parseará la cuenta entera. Aplica las reglas sobre lo ya importado, sin volver a subir el Excel'}
+              className={`flex items-center gap-2 ${hayFiltros
+                ? 'border-amber-500 text-amber-700 hover:bg-amber-50'
+                : 'border-sky-500 text-sky-700 hover:bg-sky-50'}`}
             >
+              {/* El botón dice el ALCANCE, igual que el de conciliar: «Re-parsear» a secas no
+                  distingue entre tocar 15 movimientos y tocar la cuenta entera (usuario, 2026-09-25). */}
               <RotateCcw className={`h-4 w-4 ${reparseando ? 'animate-spin' : ''}`} />
-              {reparseando ? 'Re-parseando...' : 'Re-parsear'}
+              {reparseando
+                ? 'Re-parseando...'
+                : hayFiltros
+                  ? `Re-parsear ${movimientos.length} filtrado${movimientos.length === 1 ? '' : 's'}`
+                  : 'Re-parsear la cuenta'}
             </Button>
           )}
 
