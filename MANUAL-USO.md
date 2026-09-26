@@ -7,6 +7,134 @@
 
 ---
 
+## 🗂️ ÍNDICE
+
+> **Cómo leerlo:** las secciones están agrupadas por **dónde se trabaja**. Cada entrada es el
+> título tal cual aparece más abajo — si el link no salta, buscá el título con Ctrl+F.
+>
+> **Los estados del título**: ✅ probado · 🟡 en uso pero sin probar o con cambio propuesto ·
+> ⏸️ decisión pendiente. Un 🟡 **no** significa que no funcione: significa que nadie confirmó que sí.
+
+### Por dónde se trabaja
+
+#### 🧭 Moverse por la app
+- [🔐 Módulo: Entrar al sistema (login) 🟡](#módulo-entrar-al-sistema-login)
+- [🚩 Marcar algo para revisar — desde cualquier pantalla](#marcar-algo-para-revisar-desde-cualquier-pantalla)
+- [📝 Notas para Claude 🟡 *(nuevo 2026-08-11, sin testear)*](#notas-para-claude-nuevo-2026-08-11-sin-testear)
+- [🧪 «Lo que hay que mirar en esta corrida» — el cartel de pruebas *(2026-09-11)*](#lo-que-hay-que-mirar-en-esta-corrida-el-cartel-de-pruebas-2026-09-11)
+- [⌨️ Editar una celda: Ctrl+click, en cualquier grilla](#editar-una-celda-ctrlclick-en-cualquier-grilla)
+- [✨ Toda la app → **Movimiento de la interfaz** 🟡 (sin testear)](#toda-la-app-movimiento-de-la-interfaz-sin-testear)
+- [🧭 Toda la app → **Menú lateral** (reemplaza la barra de solapas) 🟡 (sin testear)](#toda-la-app-menú-lateral-reemplaza-la-barra-de-solapas-sin-testear)
+- [🍎 Toda la app → **Barra superior fija y títulos de pantalla** 🟡 (sin testear)](#toda-la-app-barra-superior-fija-y-títulos-de-pantalla-sin-testear)
+- [👤 Toda la app → **Avatar de sesión** 🟡 (sin testear)](#toda-la-app-avatar-de-sesión-sin-testear)
+- [🏠 **Tu pantalla de inicio** — armala como quieras 🟡 (2026-09-17, sin testear)](#tu-pantalla-de-inicio-armala-como-quieras-2026-09-17-sin-testear)
+- [🪪 **Tu perfil** — y el menú en todas las pantallas 🟡 (sin testear)](#tu-perfil-y-el-menú-en-todas-las-pantallas-sin-testear)
+
+#### ⚙️ Configuración, usuarios y permisos
+- [👥 Roles y usuarios — quién ve qué](#roles-y-usuarios-quién-ve-qué)
+- [⚙️ **Configuración** 🟡 (sin testear)](#configuración-sin-testear)
+- [🔑 Configuración → **Editar los permisos de un rol** 🟡 (sin testear)](#configuración-editar-los-permisos-de-un-rol-sin-testear)
+
+#### 💸 Egresos: facturas, templates y pagos
+- [💸 Módulo: Pagos / Egresos](#módulo-pagos-egresos)
+- [💳 Pagar un anticipo con ECHEQ, y qué verifica el mail *(nuevo 2026-09-05)*](#pagar-un-anticipo-con-echeq-y-qué-verifica-el-mail-nuevo-2026-09-05)
+- [✉ Módulo: Mail de "Detalle de pago" al proveedor ✅ (funcionando)](#módulo-mail-de-detalle-de-pago-al-proveedor-funcionando)
+- [📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)](#módulo-subdiario-iva-compras-egresos-facturas-subdiarios)
+- [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
+- [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
+- [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
+- [🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*](#renovar-campaña-por-tandas-nuevo-2026-08-22-sin-testear)
+- [🏢 Ficha de proveedor 🟡 *(nuevo 2026-08-07, sin testear)*](#ficha-de-proveedor-nuevo-2026-08-07-sin-testear)
+- [🏷️ Al crear un template: la categoría](#al-crear-un-template-la-categoría)
+- [🧾 La cuenta corriente de un proveedor o cliente](#la-cuenta-corriente-de-un-proveedor-o-cliente)
+- [🪪 Templates → Descripción y Detalle son dos cosas distintas](#templates-descripción-y-detalle-son-dos-cosas-distintas)
+- [📅 Templates → poner una cuota en pagado](#templates-poner-una-cuota-en-pagado)
+- [✏️ Templates → editar una campaña (ver el template y sus cuotas juntos)](#templates-editar-una-campaña-ver-el-template-y-sus-cuotas-juntos)
+- [🧾 Templates → activar y desactivar](#templates-activar-y-desactivar)
+
+#### 🏦 Banco: importar, parsear y conciliar
+- [🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*](#aviso-extractos-bancarios-sin-cargar-nuevo-2026-08-09-sin-testear)
+- [🧩 Reglas de parseo — dejar lista una cuenta de Caja de Ahorro](#reglas-de-parseo-dejar-lista-una-cuenta-de-caja-de-ahorro)
+- [🏦 Resultado de la corrida + filtro de contraparte ✅ *(testeado OK 2026-08-19)*](#resultado-de-la-corrida-filtro-de-contraparte-testeado-ok-2026-08-19)
+- [📝 Extracto → filtrar por TUS notas *(2026-09-11)*](#extracto-filtrar-por-tus-notas-2026-09-11)
+- [🏦 Conciliar sueldos que el motor no encuentra ✅ *(testeado OK 2026-08-19)*](#conciliar-sueldos-que-el-motor-no-encuentra-testeado-ok-2026-08-19)
+- [🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*](#conciliación-multiempresa-nuevo-2026-08-08-sin-testear)
+- [🏢 Cash Flow multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*](#cash-flow-multiempresa-nuevo-2026-08-08-sin-testear)
+- [📐 Cómo se registra un movimiento — qué va en cada columna](#cómo-se-registra-un-movimiento-qué-va-en-cada-columna)
+- [📝 Extracto → trabajar con tus notas](#extracto-trabajar-con-tus-notas)
+- [👤 Extracto → el proveedor sale del banco](#extracto-el-proveedor-sale-del-banco)
+- [🔁 Extracto → el detalle llega al template](#extracto-el-detalle-llega-al-template)
+- [🔎 Reglas de conciliación → encontrar una](#reglas-de-conciliación-encontrar-una)
+
+#### 🌾 Ingresos: ventas y arrendamientos
+- [🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*](#vender-desde-productivo-movimientos-nuevo-2026-09-04)
+- [🐄 Ventas de hacienda — el circuito completo 🟡 *(nuevo 2026-08-05, sin testear)*](#ventas-de-hacienda-el-circuito-completo-nuevo-2026-08-05-sin-testear)
+- [📄 Cargar el ROMANEO del frigorífico *(nuevo 2026-09-06)*](#cargar-el-romaneo-del-frigorífico-nuevo-2026-09-06)
+- [🚚 Cargar el FLETE de una carga *(nuevo 2026-09-06)*](#cargar-el-flete-de-una-carga-nuevo-2026-09-06)
+- [🌾 Módulo: Arrendamientos agrícolas (Ingresos → Ventas) 🟡 (nuevo, sin testear)](#módulo-arrendamientos-agrícolas-ingresos-ventas-nuevo-sin-testear)
+- [🐄 Módulo: Ganadería — venta de destete (Ingresos → Ganadería) 🟡 (nuevo, sin testear)](#módulo-ganadería-venta-de-destete-ingresos-ganadería-nuevo-sin-testear)
+
+#### 👷 Sueldos
+- [👷 Módulo: Sueldos 🟡 (lock de mes sin testear)](#módulo-sueldos-lock-de-mes-sin-testear)
+- [👷 Sueldos → los pagos del mes, por empleado *(2026-09-11)*](#sueldos-los-pagos-del-mes-por-empleado-2026-09-11)
+
+#### 🐄 Productivo: hacienda, lotes e insumos
+- [🐄 Módulo: Análisis productivo-económico (engorde) 🟡 (nuevo, sin testear)](#módulo-análisis-productivo-económico-engorde-nuevo-sin-testear)
+- [🐄 Identificar animales de un cambio de categoría *(nuevo 2026-09-04)*](#identificar-animales-de-un-cambio-de-categoría-nuevo-2026-09-04)
+- [🏷️ Productivo → Terneros → exportar caravanas (para declarar) ✅](#productivo-terneros-exportar-caravanas-para-declarar)
+- [🐄 Productivo → Hacienda → Planilla de Hacienda 🟡 *(reescrita 2026-08-21, sin testear)*](#productivo-hacienda-planilla-de-hacienda-reescrita-2026-08-21-sin-testear)
+- [🐮 Módulo: Evolución del rodeo (Productivo → Evolución Rodeo) 🟡 (nuevo, sin testear)](#módulo-evolución-del-rodeo-productivo-evolución-rodeo-nuevo-sin-testear)
+- [🐄 Productivo → Evolución Rodeo → Lotes → **Actividades del lote (tramos)** 🟡 (sin testear)](#productivo-evolución-rodeo-lotes-actividades-del-lote-tramos-sin-testear)
+- [🌽 Productivo → Insumos → Stock → **Mediciones** 🟡 (sin testear)](#productivo-insumos-stock-mediciones-sin-testear)
+- [🔁 Productivo → Recría → **Recría ➜ Cría (reposición)** 🟡 (sin testear)](#productivo-recría-recría-cría-reposición-sin-testear)
+- [🔀 Un lote que NO se vende: pasa a otra actividad 🟡 (sin testear)](#un-lote-que-no-se-vende-pasa-a-otra-actividad-sin-testear)
+- [🥣 Mediciones → **Lo que se le dio a cada actividad** 🟡 (sin testear)](#mediciones-lo-que-se-le-dio-a-cada-actividad-sin-testear)
+- [🐮 Mediciones → **Quién se lo comió** 🟡 (sin testear)](#mediciones-quién-se-lo-comió-sin-testear)
+- [🔗 Productivo → Insumos → Stock → **Facturas** 🟡 (sin testear)](#productivo-insumos-stock-facturas-sin-testear)
+- [🌽 PUESTA A PUNTO de un ciclo de recría — el orden de carga 🟡 (sin testear)](#puesta-a-punto-de-un-ciclo-de-recría-el-orden-de-carga-sin-testear)
+- [📥 Productivo → Insumos → **Cargar una compra con su respaldo** 🟡 (sin testear)](#productivo-insumos-cargar-una-compra-con-su-respaldo-sin-testear)
+- [🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)](#productivo-insumos-facturas-el-respaldo-parcial-y-sus-controles-sin-testear)
+
+#### 📊 Presupuesto
+- [📈 Presupuesto → Subas de proveedores 🟡 *(nuevo 2026-07-30, sin testear)*](#presupuesto-subas-de-proveedores-nuevo-2026-07-30-sin-testear)
+- [📒 Presupuesto → Cuentas contables 🟡 *(nuevo 2026-07-30, sin testear)*](#presupuesto-cuentas-contables-nuevo-2026-07-30-sin-testear)
+- [📊 Presupuesto → leer la grilla](#presupuesto-leer-la-grilla)
+- [🌾 Presupuesto → Actividades y costos 🟡 *(nuevo 2026-07-30, sin testear)*](#presupuesto-actividades-y-costos-nuevo-2026-07-30-sin-testear)
+- [🗺️ Presupuesto → Campos y hectáreas 🟡 *(nuevo 2026-08-02, sin testear)*](#presupuesto-campos-y-hectáreas-nuevo-2026-08-02-sin-testear)
+- [🧮 Presupuesto → Variables de costo 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-variables-de-costo-nuevo-2026-08-03-sin-testear)
+- [🏗️ Presupuesto → Inversiones 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-inversiones-nuevo-2026-08-03-sin-testear)
+- [🔍 Presupuesto → Control de cobertura 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-control-de-cobertura-nuevo-2026-08-03-sin-testear)
+- [👷 Presupuesto → Sueldos del presupuesto 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-sueldos-del-presupuesto-nuevo-2026-08-03-sin-testear)
+- [💰 Presupuesto → De dónde arranca el saldo 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-de-dónde-arranca-el-saldo-nuevo-2026-08-03-sin-testear)
+- [⚠️ Cupo anual — forma de presupuestar SIN VALIDAR](#cupo-anual-forma-de-presupuestar-sin-validar)
+- [📊 Presupuesto → Descargar para los socios 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-descargar-para-los-socios-nuevo-2026-08-03-sin-testear)
+- [⚖️ Presupuesto → Margen por actividad 🟡 *(nuevo 2026-08-03, sin testear)*](#presupuesto-margen-por-actividad-nuevo-2026-08-03-sin-testear)
+- [⚖️ Margen → **Existencias y apertura por grupo** 🟡 (sin testear)](#margen-existencias-y-apertura-por-grupo-sin-testear)
+- [💰 Presupuesto → Margen → **El costo de alimentación medido** 🟡 (sin testear)](#presupuesto-margen-el-costo-de-alimentación-medido-sin-testear)
+
+### Por tarea — las más frecuentes
+
+| Quiero… | Ir a |
+|---|---|
+| Entrar por primera vez, o no me deja entrar | [Entrar al sistema](#módulo-entrar-al-sistema-login) |
+| Subir el extracto del banco y que se entienda | [Reglas de parseo](#reglas-de-parseo-dejar-lista-una-cuenta-de-caja-de-ahorro) |
+| Conciliar los movimientos del banco | [Resultado de la corrida](#resultado-de-la-corrida-filtro-de-contraparte-testeado-ok-2026-08-19) |
+| Pagar un lote de facturas | [Cash Flow → PAGOS](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear) |
+| Mandarle el detalle de pago a un proveedor | [Mail de «Detalle de pago»](#módulo-mail-de-detalle-de-pago-al-proveedor-funcionando) |
+| Armar los templates de la campaña nueva | [Renovar campaña](#módulo-templates-egresos-renovar-campaña-v1-sin-testear) |
+| Cargar una venta de hacienda | [Ventas de hacienda](#ventas-de-hacienda-el-circuito-completo-nuevo-2026-08-05-sin-testear) |
+| Ver cómo viene el presupuesto | [Presupuesto → leer la grilla](#presupuesto-leer-la-grilla) |
+| Dejarle una nota a Claude sobre un bug | [Notas para Claude](#notas-para-claude-nuevo-2026-08-11-sin-testear) |
+| Darle acceso a alguien, o cambiarle lo que ve | [Roles y usuarios](#roles-y-usuarios-quién-ve-qué) |
+
+### Por rol — qué le toca a cada uno
+
+⏳ **Todavía no está.** Hace falta cruzar los permisos de cada rol con las secciones de este manual,
+y eso se decide con el usuario — ver `PENDIENTES.md`. Mientras tanto, la sección
+[Roles y usuarios](#roles-y-usuarios-quién-ve-qué) dice qué ve cada rol en la app.
+
+---
+
 ## 🔐 Módulo: Entrar al sistema (login) 🟡
 
 > **Estado 2026-09-03: implementado pero TODAVÍA NO ACTIVO** — faltan crear las cuentas y correr
