@@ -74,7 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -523,6 +523,19 @@ export function correrCasos(): Resultado[] {
 
     chequear("Parseo", "Y se muestra con el nombre que él eligió",
       "autorizacion", suyo.contenido, suyo.contenido === "autorizacion", "A-BUG-1207")
+
+    /**
+     * 🛑 **El grupo de conceptos nunca se guarda vacío — A-BUG-1209.** La columna es `NOT NULL` y
+     * mandarle `null` rompe el guardado. Le pasó al usuario configurando un tipo de PAM que
+     * todavía no tenía grupo.
+     */
+    for (const vacio of ["", "   ", null, undefined]) {
+      chequear("Parseo", `El grupo de conceptos vacío (${JSON.stringify(vacio)}) se guarda como «Otros»`,
+        "Otros", grupoParaGuardar(vacio), grupoParaGuardar(vacio) === "Otros", "A-BUG-1209")
+    }
+    chequear("Parseo", "Y un grupo escrito se respeta tal cual, sin espacios de más",
+      "Transferencias", grupoParaGuardar("  Transferencias  "),
+      grupoParaGuardar("  Transferencias  ") === "Transferencias", "A-BUG-1209")
 
     chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
       "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")

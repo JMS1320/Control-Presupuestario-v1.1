@@ -852,3 +852,19 @@ export function resolverFilaExistente(
   }
 }
 
+
+/**
+ * Qué grupo de conceptos se guarda cuando el usuario deja el campo vacío.
+ *
+ * 🛑 **Nunca `null` ni `""`.** La columna es `NOT NULL` en la base, y mandarle `null` rompe el
+ * guardado con *«null value in column "grupo_de_conceptos" violates not-null constraint»* — es lo
+ * que le pasó al usuario el 2026-09-25 al configurar un tipo de PAM que todavía no tenía grupo
+ * ([A-BUG-1209]).
+ *
+ * 📌 El default es **`Otros`**, que es exactamente lo que el parser le pone a un movimiento sin
+ * regla (`GRUPO_SIN_REGLA`). Así un tipo sin clasificar queda igual que uno sin configurar, en vez
+ * de inventar una categoría nueva o dejar un vacío que después nadie entiende.
+ */
+export function grupoParaGuardar(texto: string | null | undefined): string {
+  return String(texto ?? "").trim() || GRUPO_SIN_REGLA
+}

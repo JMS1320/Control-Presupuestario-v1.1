@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -341,7 +341,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     setPreseteando(true)
     try {
       for (const f of filas) {
-        const grupo = reglasDe(f.tipo)[0]?.grupo_de_conceptos ?? null
+        const grupo = grupoParaGuardar(reglasDe(f.tipo)[0]?.grupo_de_conceptos)
         const fila = {
           cuenta_bancaria_id: cuenta,
           tipo_movimiento: f.tipo,
@@ -480,7 +480,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         campo_destino: r.campo_destino,
         tipo_regla: r.tipo_regla,
         numero_linea: r.numero_linea,
-        grupo_de_conceptos: r.grupo_de_conceptos,
+        grupo_de_conceptos: grupoParaGuardar(r.grupo_de_conceptos),
         firma_forma: r.firma_forma,
         orden: r.orden,
         activo: true,
@@ -568,7 +568,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     try {
       const tipo = editando.tipo.tipo.toUpperCase()
       const firma = editando.subtipo.firma
-      const grupo = fGrupo.trim() || null
+      // La columna es NOT NULL: nunca se manda null (A-BUG-1209)
+      const grupo = grupoParaGuardar(fGrupo)
       let orden = 0
 
       for (const f of filas) {
@@ -1301,11 +1302,18 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             <div className="min-w-[220px] flex-1">
               <Label className="text-xs">Grupo de conceptos <span className="text-gray-400">— del tipo entero</span></Label>
               <Input className="mt-1" value={fGrupo} onChange={e => setFGrupo(e.target.value)}
-                list="grupos-conceptos-usados" placeholder="Ej: Transferencias" />
+                list="grupos-conceptos-usados" placeholder="Ej: Transferencias" id="grupo-de-conceptos" />
               <datalist id="grupos-conceptos-usados">
-                {[...new Set(reglas.map(r => r.grupo_de_conceptos).filter(Boolean))].map(g =>
-                  <option key={g as string} value={g as string} />)}
+                {/* Los que ya se usan en esta cuenta, y los de la otra: son los mismos conceptos */}
+                {[...new Set([...reglas, ...reglasOtra].map(r => r.grupo_de_conceptos).filter(Boolean))]
+                  .sort().map(g => <option key={g as string} value={g as string} />)}
               </datalist>
+              {!fGrupo.trim() && (
+                <p className="mt-0.5 text-[10px] leading-4 text-amber-700">
+                  Si lo dejás vacío se guarda como <strong>Otros</strong> — el mismo grupo que le
+                  toca a un movimiento sin regla.
+                </p>
+              )}
             </div>
             <p className="flex-1 text-[11px] leading-4 text-gray-500">
               {plan.total === 0
