@@ -419,11 +419,42 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         fetch(`/api/reparsear-extracto?cuenta=${cuenta}`).then(r => r.json()).catch(() => null),
       ])
       const deOrigen = (reglasOrigen ?? []) as Regla[]
-      // Sólo las atadas a un subtipo: una regla genérica se aplicaría a todos los del destino,
-      // que es la causa de A-BUG-1200 y no hay por qué importarla.
-      const candidatas = deOrigen.filter(r => r.firma_forma)
+
+      /**
+       * 🎯 **No se propaga nada: se buscan EQUIVALENCIAS.** Precisión del usuario 2026-09-25:
+       * *«no propagaría los tipos de MA a PAM ya que no corresponden. Lo único sería un buscador
+       * de equivalencias… que compare y diga: esto es idéntico a uno de MA, y proponga traer el
+       * preset»*. Tenía razón y la primera versión estaba mal: copiaba **todas** las reglas del
+       * origen, incluidas las de tipos que el destino **no tiene**, que es fabricar exactamente
+       * las reglas huérfanas que él estaba señalando.
+       *
+       * **Sólo se copia lo que es idéntico**: mismo tipo **y** mismo subtipo, presentes en los
+       * movimientos reales del destino.
+       */
+      const subtiposDestino: { tipo: string; firma: string; movimientos: number }[] =
+        (diag?.tipos ?? []).flatMap((t: TipoInfo) =>
+          t.subtipos.map(f => ({ tipo: t.tipo.toUpperCase(), firma: f.firma, movimientos: f.movimientos })))
+      const existeEnDestino = new Set(subtiposDestino.map(x => `${x.tipo}||${x.firma}`))
+
+      /**
+       * ✅ **Y sólo de lo que el usuario dio por REVISADO en el origen.** Pedido suyo el mismo día:
+       * *«sólo debe proponer de tipos checkeados, si no lo están no los debe proponer»*. Copiar
+       * reglas que él todavía no miró es propagar trabajo a medio hacer a otra cuenta.
+       */
+      const revisadosEnOrigen = new Set(
+        deOrigen.filter(r => r.firma_forma && r.revisado_en)
+          .map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
+
+      const candidatas = deOrigen.filter(r => {
+        if (!r.firma_forma) return false   // una genérica se aplicaría a todos: nunca se importa
+        const k = `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`
+        return existeEnDestino.has(k) && revisadosEnOrigen.has(k)
+      })
       if (candidatas.length === 0) {
-        toast.error(`${origen.nombre} no tiene reglas atadas a un subtipo para copiar.`)
+        toast.error(
+          `No hay equivalencias para traer de ${origen.nombre}: ningún tipo y subtipo coincide ` +
+          `con los movimientos de esta cuenta, o los que coinciden todavía no están marcados como revisados allá.`
+        )
         return
       }
 
@@ -433,10 +464,6 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       const aCopiar = candidatas.filter(r => !yaTiene.has(`${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`))
       const salteadas = candidatas.length - aCopiar.length
 
-      // Cuántos subtipos del destino quedarían cubiertos — el número que importa
-      const subtiposDestino: { tipo: string; firma: string; movimientos: number }[] =
-        (diag?.tipos ?? []).flatMap((t: TipoInfo) =>
-          t.subtipos.map(f => ({ tipo: t.tipo.toUpperCase(), firma: f.firma, movimientos: f.movimientos })))
       const claves = new Set([...yaTiene, ...aCopiar.map(r => `${r.tipo_movimiento.toUpperCase()}||${r.firma_forma}`)])
       const cubiertos = subtiposDestino.filter(x => claves.has(`${x.tipo}||${x.firma}`))
       const faltan = subtiposDestino.filter(x => !claves.has(`${x.tipo}||${x.firma}`))
@@ -446,9 +473,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         return
       }
       const aviso = [
-        `Copiar reglas de ${origen.nombre}`,
+        `Traer equivalencias de ${origen.nombre}`,
         "",
-        `• ${aCopiar.length} regla(s) se copian`,
+        `• ${aCopiar.length} regla(s) de tipos y subtipos IDÉNTICOS a los de esta cuenta`,
         ...(salteadas > 0 ? [`• ${salteadas} se saltean: ya tenés reglas propias para esos subtipos`] : []),
         "",
         `Después de copiar, de los ${subtiposDestino.length} subtipos de esta cuenta:`,
@@ -457,6 +484,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         ...faltan.slice(0, 6).map(f => `     ${f.tipo}`),
         ...(faltan.length > 6 ? [`     y ${faltan.length - 6} más`] : []),
         "",
+        "Sólo se trae lo que allá está marcado como revisado.",
         "No se pisa nada de lo que ya configuraste.",
         "Los movimientos no cambian hasta correr Re-parsear.",
       ].join("\n")
@@ -1040,14 +1068,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                     <Button key={o.id} size="sm" variant="outline" className="h-7 text-xs"
                       disabled={copiando} onClick={() => copiarDesde(o)}>
                       {copiando
-                        ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Copiando…</>
-                        : <>📋 Copiar reglas de {o.nombre}</>}
+                        ? <><Loader2 className="mr-1 h-3 w-3 animate-spin" /> Buscando…</>
+                        : <>📋 Traer equivalencias de {o.nombre}</>}
                     </Button>
                   ))}
                   <span className="text-[11px] text-gray-500">
-                    Las dos son Galicia Caja de Ahorro y el banco escribe igual. Te dice antes
-                    cuántos subtipos quedan cubiertos y cuáles no — <strong>no pisa</strong> lo que
-                    ya configuraste.
+                    Busca tipos <strong>idénticos</strong> —mismo tipo y misma forma— que allá ya
+                    estén <strong>revisados</strong>, y trae sus reglas. No propaga nada que acá no
+                    exista, y <strong>no pisa</strong> lo que ya configuraste.
                   </span>
                 </div>
               )}
