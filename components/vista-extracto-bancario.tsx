@@ -312,8 +312,21 @@ export function VistaExtractoBancario() {
     { key: 'template_id',         label: 'Template ID',      defaultVisible: false },
     { key: 'template_cuota_id',   label: 'Cuota ID',         defaultVisible: false },
     { key: 'comprobante_arca_id', label: 'Factura ARCA ID',  defaultVisible: false },
-    { key: 'leyenda1',             label: 'Leyenda Adic. 1',  defaultVisible: false },
-    { key: 'leyenda2',             label: 'Leyenda Adic. 2',  defaultVisible: false },
+    /**
+     * 🧩 **Las columnas del DESGLOSE.** Se llaman por lo que guardan, no por el nombre técnico de
+     * la columna — es la convención de `MODULO_PARSEO_EXTRACTOS.md`.
+     *
+     * ⚠️ Faltaban cinco: sólo estaban las dos primeras leyendas, así que **el concepto, el banco,
+     * el CBU, el nº de operación y la terminal no se podían mostrar**. Configurar el parseo y no
+     * poder ver el resultado en la grilla es no poder verificarlo (usuario, 2026-09-25).
+     */
+    { key: 'leyenda1',             label: 'Nombre / comercio', defaultVisible: false },
+    { key: 'leyenda2',             label: 'CUIT contraparte',  defaultVisible: false },
+    { key: 'leyenda3',             label: 'Concepto',          defaultVisible: false },
+    { key: 'leyenda4',             label: 'Banco o red',       defaultVisible: false },
+    { key: 'cbu',                  label: 'CBU destino',       defaultVisible: false },
+    { key: 'nro_comprobante',      label: 'Nº operación / autoriz.', defaultVisible: false },
+    { key: 'nro_terminal',         label: 'Terminal / tarjeta', defaultVisible: false },
     { key: 'origen',              label: 'Origen',           defaultVisible: false },
     { key: 'control',             label: 'Control',          defaultVisible: false },
     { key: 'orden',               label: 'Orden',            defaultVisible: false },
@@ -2722,10 +2735,14 @@ ${marca}` : marca
               {/* El botón dice el ALCANCE, igual que el de conciliar: «Re-parsear» a secas no
                   distingue entre tocar 15 movimientos y tocar la cuenta entera (usuario, 2026-09-25). */}
               <RotateCcw className={`h-4 w-4 ${reparseando ? 'animate-spin' : ''}`} />
+              {/* ⚠️ `movimientosVisibles`, NO `movimientos`: es la lista sobre la que REALMENTE
+                  corre el re-parseo. `movimientos` es lo traído de la base y todavía no tiene
+                  aplicados los filtros del cliente (categoría, buscador), así que el botón decía
+                  59 y tocaba 20. Lo vio el usuario el 2026-09-25 comparándolo con el de conciliar. */}
               {reparseando
                 ? 'Re-parseando...'
                 : hayFiltros
-                  ? `Re-parsear ${movimientos.length} filtrado${movimientos.length === 1 ? '' : 's'}`
+                  ? `Re-parsear ${movimientosVisibles.length} filtrado${movimientosVisibles.length === 1 ? '' : 's'}`
                   : 'Re-parsear la cuenta'}
             </Button>
           )}
@@ -3908,8 +3925,13 @@ ${marca}` : marca
                         {col('template_id') && <TableHead>Template</TableHead>}
                         {col('template_cuota_id') && <TableHead>Cuota</TableHead>}
                         {col('comprobante_arca_id') && <TableHead>Factura ARCA</TableHead>}
-                        {col('leyenda1') && <TableHead>Leyenda Adic. 1</TableHead>}
-                        {col('leyenda2') && <TableHead>Leyenda Adic. 2</TableHead>}
+                        {col('leyenda1') && <TableHead>Nombre / comercio</TableHead>}
+                        {col('leyenda2') && <TableHead>CUIT contraparte</TableHead>}
+                        {col('leyenda3') && <TableHead>Concepto</TableHead>}
+                        {col('leyenda4') && <TableHead>Banco o red</TableHead>}
+                        {col('cbu') && <TableHead>CBU destino</TableHead>}
+                        {col('nro_comprobante') && <TableHead>Nº operación / autoriz.</TableHead>}
+                        {col('nro_terminal') && <TableHead>Terminal / tarjeta</TableHead>}
                         {col('origen') && <TableHead>Origen</TableHead>}
                         {col('control') && <TableHead className="text-right">Control</TableHead>}
                         {col('orden') && <TableHead className="text-right">Orden</TableHead>}
@@ -4058,6 +4080,21 @@ ${marca}` : marca
                           )}
                           {col('leyenda2') && (
                             <TableCell className="text-sm truncate max-w-xs">{movimiento.leyendas_adicionales_2 || '-'}</TableCell>
+                          )}
+                          {col('leyenda3') && (
+                            <TableCell className="text-sm truncate max-w-xs">{(movimiento as any).leyendas_adicionales_3 || '-'}</TableCell>
+                          )}
+                          {col('leyenda4') && (
+                            <TableCell className="text-sm truncate max-w-xs">{(movimiento as any).leyendas_adicionales_4 || '-'}</TableCell>
+                          )}
+                          {col('cbu') && (
+                            <TableCell className="font-mono text-xs">{(movimiento as any).tipo_de_movimiento || '-'}</TableCell>
+                          )}
+                          {col('nro_comprobante') && (
+                            <TableCell className="font-mono text-xs">{movimiento.numero_de_comprobante || '-'}</TableCell>
+                          )}
+                          {col('nro_terminal') && (
+                            <TableCell className="font-mono text-xs">{(movimiento as any).numero_de_terminal || '-'}</TableCell>
                           )}
                           {col('origen') && (
                             <TableCell className="text-sm">{movimiento.origen || '-'}</TableCell>
