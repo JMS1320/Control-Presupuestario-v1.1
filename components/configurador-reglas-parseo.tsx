@@ -177,8 +177,11 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     try {
       const otras = CUENTAS_CA.filter(c => c.id !== cuenta).map(c => c.id)
       const [{ data }, diag, { data: dOtra }] = await Promise.all([
+        // `activo` es el filtro del motor: lo inactivo no se aplica y tampoco se muestra.
+        // Así una regla dada de baja desaparece de la pantalla sin borrarse (A-DAT-60).
         supabase.from("config_parseo_extracto").select("*")
           .eq("cuenta_bancaria_id", cuenta)
+          .eq("activo", true)
           .order("tipo_movimiento").order("orden"),
         fetch(`/api/reparsear-extracto?cuenta=${cuenta}`).then(r => r.json()).catch(() => null),
         otras.length
