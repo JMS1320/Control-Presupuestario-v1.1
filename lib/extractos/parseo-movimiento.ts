@@ -968,3 +968,32 @@ export function grupoSugeridoParaTipo(tipo: string | null | undefined): string {
   if (/^INTERES/.test(t)) return "000814 - Intereses"
   return ""
 }
+
+/**
+ * La clave con la que el importador reconoce que un movimiento **ya estaba cargado**.
+ *
+ * 🛑 **Se arma con el TEXTO CRUDO del banco, nunca con el desglose.**
+ *
+ * Antes la clave era `descripcion | débitos | créditos`, y `descripcion` **la produce el parseo**:
+ * sin reglas guarda los primeros 100 caracteres del texto, con reglas guarda el tipo. Entonces
+ * **cambiar una regla cambiaba la clave**, el duplicado dejaba de reconocerse y el mismo
+ * movimiento podía entrar dos veces ([A-BUG-1210], 2026-09-25).
+ *
+ * 💥 El caso concreto estaba por pasar: los 96 movimientos de MA se re-parsearon ese día, así que
+ * la `descripcion` de todos cambió. El próximo Excel que repitiera el último día cargado habría
+ * duplicado esas filas.
+ *
+ * 🔑 **El texto crudo es lo único que no depende del estado de las reglas** — es el mismo principio
+ * que hace posible re-parsear sin volver a importar.
+ *
+ * 📌 Los saltos de línea se normalizan porque el Excel y la base no los escriben igual (`\r\n` vs
+ * `\n`): sin eso, el mismo movimiento daría dos claves distintas según de dónde venga.
+ */
+export function claveDedupMovimiento(
+  textoCrudo: string | null | undefined,
+  debitos: number,
+  creditos: number
+): string {
+  const texto = splitMovimiento(String(textoCrudo ?? "")).join(" | ")
+  return `${texto}|${debitos}|${creditos}`
+}

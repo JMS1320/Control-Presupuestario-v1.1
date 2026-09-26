@@ -74,7 +74,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -567,6 +567,37 @@ export function correrCasos(): Resultado[] {
       "todos", "todos",
       ["COMPRA DEBITO", "IVA", "CHEQUE 48 HS", "COMISION POR TRANSFERENCIA", "EXTRACCION CAJERO"]
         .every(t => GRUPOS_GALICIA.includes(grupoSugeridoParaTipo(t) as never)), "A-DEC-31")
+
+    /**
+     * 🔁 **El importador reconoce un duplicado por el TEXTO CRUDO — A-BUG-1210.**
+     *
+     * El caso real: los 96 movimientos de MA se re-parsearon el 2026-09-25, así que su
+     * `descripcion` cambió. Con la clave vieja, el próximo Excel que repitiera el último día
+     * habría duplicado esas filas. Con la nueva, la clave no se mueve.
+     */
+    {
+      // Como lo manda el Excel del banco (CRLF) y como suele quedar en la base (LF)
+      const delBanco = ["COMPRA DEBITO", " RES LIBERTAD", " 4517XXXXXXXXXX11", " A732"].join("\r\n")
+      const mismoOtroFormato = ["COMPRA DEBITO", " RES LIBERTAD", " 4517XXXXXXXXXX11", " A732"].join("\n")
+
+      chequear("Parseo", "El mismo movimiento da la misma clave aunque cambien los saltos de línea",
+        "iguales",
+        claveDedupMovimiento(delBanco, 5000, 0) === claveDedupMovimiento(mismoOtroFormato, 5000, 0) ? "iguales" : "distintas",
+        claveDedupMovimiento(delBanco, 5000, 0) === claveDedupMovimiento(mismoOtroFormato, 5000, 0),
+        "A-BUG-1210")
+
+      chequear("Parseo", "Dos movimientos distintos del mismo día NO comparten clave",
+        "distintas",
+        claveDedupMovimiento(delBanco, 5000, 0) === claveDedupMovimiento(delBanco, 7000, 0) ? "iguales" : "distintas",
+        claveDedupMovimiento(delBanco, 5000, 0) !== claveDedupMovimiento(delBanco, 7000, 0),
+        "A-BUG-1210")
+
+      // Lo que rompía antes: la descripción cambia con las reglas, el texto crudo no
+      chequear("Parseo", "La clave NO depende de cómo esté parseado el movimiento",
+        "contiene el texto del banco",
+        claveDedupMovimiento(delBanco, 5000, 0).includes("RES LIBERTAD") ? "contiene el texto del banco" : "no lo contiene",
+        claveDedupMovimiento(delBanco, 5000, 0).includes("RES LIBERTAD"), "A-BUG-1210")
+    }
 
     chequear("Parseo", "La columna del CBU se lee de vuelta como CBU",
       "cbu", contenidoDeCampo("tipo_de_movimiento"), contenidoDeCampo("tipo_de_movimiento") === "cbu", "A-BUG-1202")

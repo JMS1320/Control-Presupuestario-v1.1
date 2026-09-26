@@ -4,6 +4,7 @@ import * as XLSX from "xlsx"
 import {
   parsearMovimiento,
   cargarReglasParseo,
+  claveDedupMovimiento,
   type MapaReglas,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
@@ -209,15 +210,21 @@ export async function POST(req: Request) {
     let nextOrden = ultimaFila?.orden ? Number(ultimaFila.orden) + 1 : 1
     let controlAnterior = ultimaFila?.control ?? 0
 
-    // Movimientos ya existentes en la última fecha (para deduplicar)
+    /**
+     * Movimientos ya cargados en la última fecha, para no repetirlos.
+     *
+     * 🛑 **La clave sale del TEXTO CRUDO (`concepto`), no del desglose.** Antes usaba
+     * `descripcion`, que la produce el parseo: cambiar una regla cambiaba la clave, el duplicado
+     * dejaba de reconocerse y el mismo movimiento podía entrar dos veces ([A-BUG-1210]).
+     */
     const movimientosUltimaFecha = new Set<string>()
     if (ultimaFecha) {
       const { data: existentes } = await clientCA
         .from(cuentaBancariaId)
-        .select("descripcion, debitos, creditos")
+        .select("concepto, debitos, creditos")
         .eq("fecha", ultimaFecha)
       existentes?.forEach((m: any) => {
-        movimientosUltimaFecha.add(`${m.descripcion}|${m.debitos}|${m.creditos}`)
+        movimientosUltimaFecha.add(claveDedupMovimiento(m.concepto, m.debitos, m.creditos))
       })
     }
 
@@ -317,10 +324,8 @@ export async function POST(req: Request) {
       const creditos = Math.abs(creditoRaw)
 
       if (ultimaFecha && fecha === ultimaFecha) {
-        // Parsear descripción para la clave de dedup
-        const parsedTemp = parsearMovimiento(rawMovimiento, mapaReglas)
-        const descTemp = parsedTemp["descripcion"] ?? rawMovimiento.substring(0, 100)
-        const clave = `${descTemp}|${debitos}|${creditos}`
+        // La misma clave que se armó con lo ya guardado: texto crudo del banco + importes
+        const clave = claveDedupMovimiento(rawMovimiento, debitos, creditos)
         if (movimientosUltimaFecha.has(clave)) {
           descartar(index, fecha, row, "ya estaba cargado (duplicado del mismo día)")
           continue
