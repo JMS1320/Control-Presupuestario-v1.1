@@ -59,6 +59,11 @@ import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
+import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
+import {
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados,
+  type AsientoLibroDiario,
+} from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import {
@@ -2122,6 +2127,152 @@ export function correrCasos(): Resultado[] {
         ? "iguales" : "distintos",
       estadoArchivoDigital({ origen: "ARCA", fc: "No" }) !== estadoArchivoDigital({ origen: "TEMPLATE" }),
       "A-FEAT-1185")
+  }
+
+  /**
+   * 📅 **EL CORTE DEL EJERCICIO ES EL SUBDIARIO — A-FEAT-1184.**
+   *
+   * La regla la dio el usuario el 2026-09-28: *«gasto es los 12 subdiarios y no las fechas de las
+   * facturas»*. Los casos usan **movimientos reales de la base**, escritos acá como constantes:
+   * el subdiario de enero 2026 tiene una factura del 17/09/2025, y el de julio 2026 una del
+   * 23/06/2026 — que es justamente una a provisionar.
+   *
+   * 🔑 **Por qué estos casos valen**: con un corte por `fecha_emision` —que es lo que parecía
+   * obvio y lo que yo tenía escrito antes de que él me corrigiera— **los cuatro primeros dan mal**.
+   */
+  {
+    const ej = armarEjercicio(2026, 6) // MSA 25/26
+
+    chequear("Balance · ejercicio", "🔑 El ejercicio son 12 subdiarios, de julio a junio",
+      "2025-07 … 2026-06 (12)",
+      `${claveSubdiario(ej.subdiarios[0].anio, ej.subdiarios[0].mes)} … ${claveSubdiario(ej.subdiarios[11].anio, ej.subdiarios[11].mes)} (${ej.subdiarios.length})`,
+      ej.subdiarios.length === 12 &&
+      claveSubdiario(ej.subdiarios[0].anio, ej.subdiarios[0].mes) === "2025-07" &&
+      claveSubdiario(ej.subdiarios[11].anio, ej.subdiarios[11].mes) === "2026-06", "A-FEAT-1184")
+
+    chequear("Balance · ejercicio", "El cierre de MSA es el 30/06 y se etiqueta 25/26",
+      "2026-06-30 · 25/26", `${ej.fechaCierre} · ${ej.etiqueta}`,
+      ej.fechaCierre === "2026-06-30" && ej.etiqueta === "25/26", "A-FEAT-1184")
+
+    // PAM y MA cierran el 31/12: el ejercicio es calendario y se nombra por su unico año.
+    const cal = armarEjercicio(2025, 12)
+    chequear("Balance · ejercicio", "PAM/MA cierran el 31/12: enero a diciembre",
+      "2025-01 … 2025-12 · 2025",
+      `${claveSubdiario(cal.subdiarios[0].anio, cal.subdiarios[0].mes)} … ${claveSubdiario(cal.subdiarios[11].anio, cal.subdiarios[11].mes)} · ${cal.etiqueta}`,
+      claveSubdiario(cal.subdiarios[0].anio, cal.subdiarios[0].mes) === "2025-01" &&
+      claveSubdiario(cal.subdiarios[11].anio, cal.subdiarios[11].mes) === "2025-12" &&
+      cal.etiqueta === "2025", "A-FEAT-1184")
+
+    // 🔴 EL CASO QUE ROMPE EL CORTE POR FECHA: factura de septiembre 2025 que entro al subdiario
+    //    de enero 2026. Es del ejercicio por el subdiario, y tambien lo seria por fecha — pero
+    //    lo que decide es el subdiario.
+    chequear("Balance · ejercicio", "🔑 Factura del 17/09/2025 que entró al subdiario de enero 2026: ES del ejercicio",
+      "sí", esDelEjercicio(2026, 1, ej) ? "sí" : "no",
+      esDelEjercicio(2026, 1, ej) === true, "A-FEAT-1184")
+
+    // 🔴 LA PROVISION: fecha del ejercicio, subdiario posterior. Con un corte por fecha, esta
+    //    factura se contaria como gasto del ejercicio — y esta MAL: no entro.
+    chequear("Balance · ejercicio", "🔑 Factura del 23/06/2026 que entró al subdiario de julio 2026 es PROVISIÓN",
+      "provisión", esProvision("2026-06-23", 2026, 7, ej) ? "provisión" : "no",
+      esProvision("2026-06-23", 2026, 7, ej) === true, "A-FEAT-1184")
+
+    chequear("Balance · ejercicio", "Y esa misma factura NO está en el ejercicio",
+      "fuera", esDelEjercicio(2026, 7, ej) ? "dentro" : "fuera",
+      esDelEjercicio(2026, 7, ej) === false, "A-FEAT-1184")
+
+    // Una factura POSTERIOR al cierre que entro despues no es provision: es del ejercicio siguiente.
+    chequear("Balance · ejercicio", "Una factura del 15/07/2026 en el subdiario de julio NO es provisión",
+      "no", esProvision("2026-07-15", 2026, 7, ej) ? "sí" : "no",
+      esProvision("2026-07-15", 2026, 7, ej) === false, "A-FEAT-1184")
+
+    // Sin subdiario no se inventa nada: no es provision, va al monton de "sin clasificar".
+    chequear("Balance · ejercicio", "⚠️ Sin subdiario no se adivina: no cuenta como provisión",
+      "no", esProvision("2026-05-10", null, null, ej) ? "sí" : "no",
+      esProvision("2026-05-10", null, null, ej) === false, "A-FEAT-1184")
+
+    // Un mes faltante no se nota en el total: por eso se detecta.
+    const faltan = subdiariosVacios(ej, [{ anio: 2025, mes: 7 }, { anio: 2025, mes: 8 }])
+    chequear("Balance · ejercicio", "Detecta los subdiarios del ejercicio que quedaron vacíos",
+      "10 vacíos", `${faltan.length} vacíos`, faltan.length === 10, "A-FEAT-1184")
+  }
+
+  /**
+   * 📖 **EL LIBRO DIARIO Y SU CONTROL POR MASAS — A-FEAT-1184 / A-DAT-61.**
+   *
+   * El caso de diciembre es **real**: el usuario cargó ese mes dos veces sin querer, y los números
+   * son los medidos el 2026-09-28. Es el control que **frena**, porque sumar las dos fuentes
+   * infla el total del ejercicio sin que se note.
+   */
+  {
+    const ej = armarEjercicio(2026, 6)
+    const comp = (over: Partial<AsientoLibroDiario>): AsientoLibroDiario => ({
+      id: Math.random().toString(36).slice(2), fuente: "arca", subdiario: "2026-01",
+      fecha: "2026-01-10", tipo: 1, punto_venta: 1, numero: 1, cuit: "30617786016",
+      denominacion: "PROVEEDOR SA", neto_gravado: 100, no_gravado: 0, exento: 0,
+      otros_tributos: 0, iva: 21, total: 121, cuenta_contable: "", nro_cuenta: "",
+      centro_costo: "", ...over,
+    })
+
+    // Diciembre cargado por las dos fuentes: historico 2 comprobantes, ARCA 1.
+    const conDiciembreDoble = [
+      comp({ fuente: "historico", subdiario: "2025-12", numero: 10, total: 121 }),
+      comp({ fuente: "historico", subdiario: "2025-12", numero: 11, total: 121 }),
+      comp({ fuente: "arca", subdiario: "2025-12", numero: 12, total: 121 }),
+      comp({ fuente: "arca", subdiario: "2026-01", numero: 20 }),
+    ]
+    const dup = detectarSubdiariosDuplicados(conDiciembreDoble)
+    chequear("Balance · libro diario", "🛑 Detecta el subdiario cargado en DOS fuentes",
+      "2025-12", dup.map(d => d.subdiario).join(",") || "ninguno",
+      dup.length === 1 && dup[0].subdiario === "2025-12", "A-DAT-61")
+
+    chequear("Balance · libro diario", "Y dice cuánto suma cada fuente, para poder elegir",
+      "historico 242 · arca 121",
+      dup[0]?.porFuente.map(f => `${f.fuente} ${f.total}`).join(" · ") || "-",
+      dup[0]?.porFuente.find(f => f.fuente === "historico")?.total === 242 &&
+      dup[0]?.porFuente.find(f => f.fuente === "arca")?.total === 121, "A-DAT-61")
+
+    const libro = armarLibroDiario(conDiciembreDoble, [], ej)
+    chequear("Balance · libro diario", "🛑 Con un mes duplicado, el papel NO se puede entregar",
+      "frena", libro.controles.sePuedeEntregar ? "deja pasar" : "frena",
+      libro.controles.sePuedeEntregar === false, "A-DAT-61")
+
+    chequear("Balance · libro diario", "Y el motivo se dice en castellano, no en códigos",
+      "menciona el subdiario",
+      libro.controles.motivos.join(" ").includes("2025-12") ? "menciona el subdiario" : "no lo menciona",
+      libro.controles.motivos.join(" ").includes("2025-12"), "A-DAT-61")
+
+    // Un mismo comprobante dos veces (misma identidad) tambien frena.
+    const repetido = [comp({ numero: 77 }), comp({ numero: 77, fuente: "historico", subdiario: "2026-01" })]
+    chequear("Balance · libro diario", "Detecta el mismo comprobante cargado dos veces",
+      "1 choque", `${detectarChoques(repetido).length} choque(s)`,
+      detectarChoques(repetido).length === 1, "A-FEAT-1184")
+
+    // 📌 Sin numero no hay identidad: no se inventan choques.
+    const sinNumero = [comp({ numero: null }), comp({ numero: null })]
+    chequear("Balance · libro diario", "⚠️ Sin número de comprobante no se inventa un choque",
+      "0 choques", `${detectarChoques(sinNumero).length} choque(s)`,
+      detectarChoques(sinNumero).length === 0, "A-FEAT-1184")
+
+    // Un libro limpio se puede entregar.
+    const limpio = armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [], ej)
+    chequear("Balance · libro diario", "Un libro sin choques ni duplicados SÍ se entrega",
+      "se entrega", limpio.controles.sePuedeEntregar ? "se entrega" : "frena",
+      limpio.controles.sePuedeEntregar === true, "A-FEAT-1184")
+
+    // La provision sale sola, sin que nadie marque nada.
+    const conProvision = armarLibroDiario([
+      comp({ subdiario: "2026-01", numero: 1 }),
+      comp({ subdiario: "2026-07", numero: 2, fecha: "2026-06-23" }),
+    ], [], ej)
+    chequear("Balance · libro diario", "🔑 La provisión se calcula sola: 1 del ejercicio, 1 provisión",
+      "1 y 1", `${conProvision.compras.length} y ${conProvision.provisiones.length}`,
+      conProvision.compras.length === 1 && conProvision.provisiones.length === 1, "A-FEAT-1184")
+
+    // Nada se descarta en silencio: sin subdiario va a su propio monton.
+    const conHuerfano = armarLibroDiario([comp({ subdiario: "" })], [], ej)
+    chequear("Balance · libro diario", "⚠️ Un comprobante sin subdiario no se pierde: queda aparte",
+      "1 sin subdiario", `${conHuerfano.sinSubdiario.length} sin subdiario`,
+      conHuerfano.sinSubdiario.length === 1, "A-FEAT-1184")
   }
   return r
 }

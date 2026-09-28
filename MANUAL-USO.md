@@ -42,6 +42,7 @@
 - [📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)](#módulo-subdiario-iva-compras-egresos-facturas-subdiarios)
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
+- [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
 - [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
 - [🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*](#renovar-campaña-por-tandas-nuevo-2026-08-22-sin-testear)
@@ -2349,6 +2350,50 @@ porque los grupos viejos llegaban a `conciliado` por el motor de conciliación, 
    ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
+
+## 📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*
+
+Arma el **libro diario del ejercicio** y lo baja en Excel para el contador. Está en **Reportes**,
+abajo de todo.
+
+**Cómo se usa:**
+
+1. Elegí la **empresa**. MSA cierra el **30/06**; PAM y MA el **31/12** — la app ya lo sabe y arma
+   el ejercicio que corresponde a cada una.
+2. Poné el **año de cierre**. Para el balance 25/26 de MSA es **2026**.
+3. **Armar el libro.** Abajo te dice el ejercicio, los totales y si cierra o no.
+4. **Bajar el Excel.**
+
+### 🔑 Lo único que hay que entender
+
+**El período no se corta por la fecha de las facturas, sino por el subdiario en el que entraron.**
+Una factura de mayo que entró al subdiario de julio **no es de este ejercicio**: la app la pone sola
+en la solapa de **provisión**. No hay que marcar nada a mano.
+
+### Qué trae el Excel
+
+| Solapa | Qué tiene |
+|---|---|
+| **Control** | va primera a propósito: si el libro se puede entregar, los totales de compras y ventas, y el detalle de todo lo que está mal |
+| **Compras** · **Ventas** | los comprobantes de los 12 subdiarios, con su origen |
+| **05 Provisión** | los que son del ejercicio por fecha pero entraron después |
+| **Sin subdiario** | los que no tienen período asignado. **Si tiene filas, hay que imputarlos** |
+
+### 🚦 Cuándo te frena y cuándo sólo te avisa
+
+**Te frena** —dice *«todavía no se puede entregar»*— sólo cuando el sistema **se contradice a sí
+mismo**: un mes cargado en dos fuentes, un comprobante repetido, o las partes de una factura que no
+suman su propio total. Ahí el número sería falso y no hay explicación posible.
+
+**Te avisa y sigue** cuando puede haber una explicación que sólo vos sabés — por ejemplo un subdiario
+sin ningún comprobante, que puede ser un mes sin movimiento.
+
+📌 **El Excel se baja igual aunque no cierre**, y en ese caso el archivo se llama con `_REVISAR` al
+final. Es a propósito: si algo está mal, lo primero que hace falta es poder mirarlo.
+
+⚠️ Esta pantalla **sólo lee**. No modifica ni un dato.
+
+⚠️ Sin probar todavía → A-TEST-1156
 
 ## 📎 Cash Flow → ver la factura *(2026-09-28)*
 

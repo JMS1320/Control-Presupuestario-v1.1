@@ -12,6 +12,7 @@ import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
+import { PapelesDeBalance } from "./components/papeles-de-balance"
 import { VistaIngresos } from "./components/vista-ingresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
@@ -352,6 +353,11 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             />
 
             <ReporteDetallado año={año} semestre={semestre} mostrarDecimales={mostrarDecimales} />
+
+            {/* 📒 Papeles de trabajo del balance (A-FEAT-1184). Va acá y no en Egresos porque
+                cruza compras y ventas, y porque es un reporte para afuera — el destinatario es
+                el contador, no el trabajo del día. */}
+            <PapelesDeBalance />
           </TabsContent>
 
           {/* EGRESOS */}
