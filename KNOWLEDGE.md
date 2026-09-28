@@ -2483,3 +2483,43 @@ ARBA nombra los PDFs `Deuda-Inmobiliario-0990158819-R.pdf`: **partida sí, perí
 mail trae varias boletas, numerarlas por su posición hacía que el nombre **dependiera del orden de
 la tabla**. Las dos cosas juntas: la boleta de la cuota siguiente se salteaba como *«ya estaba»*, y
 un reordenamiento de ARBA bastaba para re-bajar todo con otro nombre. → `A-BUG-120`.
+
+## `GAS_MAILS_PAGO_URL` — la variable del disparo de borradores, y su escalera de diagnóstico `#gas #mail #env #vercel #2026-09-28`
+
+**Qué es:** la URL del Apps Script de *mails de pago* desplegado como Web App (`…/exec`). La lee
+`app/api/gas/mails-pago/route.ts` para disparar la creación de borradores.
+
+**Dónde vive:** `.env.local` (local, gitignoreado) **y** Vercel → *Settings → Environment Variables*,
+con scope **Production Y Preview**. Nunca en el repo.
+
+### ⚠️ Las tres trampas, en el orden en que muerden
+
+**1 · En local, agregar la variable NO alcanza: hay que reiniciar el `npm run dev`.** Next lee el
+entorno **al arrancar**, no en cada request. Un dev server que venía corriendo desde antes no la ve
+nunca, y el archivo está perfecto — que es lo que hace perder tiempo.
+
+**2 · En Vercel, guardar la variable NO alcanza: hay que REDESPLEGAR.** Las variables se inyectan
+**al construir**, así que un deployment que ya existe sigue sin verla. *Deployments → ⋯ → Redeploy*,
+**destildando «Use existing Build Cache»**. Un `push` a la rama también sirve: fuerza un build nuevo.
+
+**3 · `Production` no incluye `Preview`.** El diálogo de Vercel viene con `Production` seleccionado
+y las previews de rama son **otro ambiente**. Guardada sólo en Production, la preview falla igual.
+
+### 🩺 Qué dice cada error, que es lo que ahorra el tiempo
+
+| Cartel | Qué significa |
+|---|---|
+| **«Error disparando el GAS: Failed to fetch»** | 🔴 **es CÓDIGO VIEJO** — esa rama todavía llama al GAS desde el navegador. No tiene nada que ver con la variable. Ver `A-BUG-1216` |
+| **«Falta GAS_MAILS_PAGO_URL…»** | el código nuevo anda; la variable no llega. El propio cartel distingue **local** (reiniciar dev) de **Vercel** (redesplegar) |
+| **«El GAS devolvió la pantalla de login de Google»** | la variable llegó bien. El despliegue del Apps Script quedó restringido → ponerlo en «Cualquier usuario» |
+| **«El GAS respondió HTTP …»** | la variable llegó bien y el problema está del lado del script |
+
+📌 **La escalera es la utilidad**: pasar de un cartel al siguiente **es progreso**, aunque siga
+fallando. Antes del arreglo había un solo mensaje para todo (*Failed to fetch*) y no se podía saber
+en qué escalón estaba el problema.
+
+🔑 **Y por qué la URL es un secreto**: quien la tenga puede disparar el GAS y crear borradores en la
+casilla. Por eso va como **Secret** en Vercel y fuera del repo — antes vivía en
+`localStorage.gas_mails_url` del navegador de cada uno, que además la dejaba envejecer sin arreglo
+posible (Apps Script cambia la `/exec` en **cada re-deploy**).
+
