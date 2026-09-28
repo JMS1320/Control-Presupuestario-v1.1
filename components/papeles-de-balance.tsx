@@ -163,6 +163,35 @@ export function PapelesDeBalance() {
                 <ul className="list-disc pl-5">
                   {c.motivos.map((m, i) => <li key={i}>{m}</li>)}
                 </ul>
+
+                {/* 🔑 Saber que un mes está duplicado no alcanza para decidir: hay que saber si una
+                    fuente CONTIENE a la otra. Eso se dice acá, sin tener que abrir el Excel. */}
+                {c.subdiariosDuplicados.map(d => (
+                  <div key={d.subdiario} className="text-xs bg-white/60 border border-red-200 rounded p-2 mt-1">
+                    <div className="font-semibold">{d.subdiario}</div>
+                    <div>
+                      {d.porFuente.map(p =>
+                        `${p.fuente === "historico" ? "sistema anterior" : p.fuente === "arca" ? "ARCA" : p.fuente}: ${p.comprobantes} por $${fmt(p.total)}`,
+                      ).join(" · ")}
+                    </div>
+                    <div className="mt-1">
+                      {d.enComun} está(n) en las dos.{" "}
+                      {d.soloEn.length === 0
+                        ? "Son idénticas: quedate con una."
+                        : d.soloEn.length === 1
+                          ? `Sólo «${d.soloEn[0].fuente === "historico" ? "sistema anterior" : "ARCA"}» tiene ${d.soloEn[0].asientos.length} que la otra no, así que la contiene: quedate con ésa.`
+                          : "Cada una tiene lo suyo: hay que fusionarlas, no elegir."}
+                    </div>
+                    {d.soloEn.map(u => (
+                      <ul key={u.fuente} className="list-disc pl-5 mt-1">
+                        {u.asientos.map((a, i) => (
+                          <li key={i}>{a.fecha} · {a.denominacion} · ${fmt(a.total)}</li>
+                        ))}
+                      </ul>
+                    ))}
+                  </div>
+                ))}
+
                 <p className="text-xs">
                   El Excel se baja igual, para poder ver dónde está el problema.
                 </p>
@@ -182,7 +211,12 @@ export function PapelesDeBalance() {
 
             <div className="text-xs text-muted-foreground space-y-0.5">
               <div>Provisión (del ejercicio, entraron después): <strong>{libro.provisiones.length}</strong></div>
-              <div>Sin subdiario (no se sabe a qué período van): <strong>{libro.sinSubdiario.length}</strong></div>
+              <div>
+                Sin subdiario: <strong>{libro.sinSubdiario.length}</strong>
+                {libro.sinSubdiario.length > 0 && (c.sinSubdiarioQueAfectan.length === 0
+                  ? <span> — todos posteriores al cierre, no tocan este balance</span>
+                  : <span className="text-amber-700"> — <strong>{c.sinSubdiarioQueAfectan.length}</strong> con fecha del ejercicio: ésos sí hay que imputar</span>)}
+              </div>
               {c.vacios.length > 0 && (
                 <div className="text-amber-700">
                   Subdiarios sin ningún comprobante: {c.vacios.map(nombreSubdiario).join(", ")}

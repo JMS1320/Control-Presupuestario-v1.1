@@ -84,16 +84,34 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
   f.push([])
 
   if (c.subdiariosDuplicados.length > 0) {
+    const nombreFuente = (x: string) =>
+      x === "historico" ? "sistema anterior" : x === "arca" ? "ARCA" : x
+
     f.push(["SUBDIARIOS CARGADOS EN MÁS DE UNA FUENTE — sumarlos contaría doble"])
     f.push(["Subdiario", "Fuente", "Comprobantes", "Total", "Diferencia"])
     for (const d of c.subdiariosDuplicados) {
       d.porFuente.forEach((p, i) => f.push([
-        i === 0 ? d.subdiario : "",
-        p.fuente === "historico" ? "sistema anterior" : p.fuente === "arca" ? "ARCA" : p.fuente,
+        i === 0 ? d.subdiario : "", nombreFuente(p.fuente),
         p.comprobantes, money(p.total), i === 0 ? money(d.diferencia) : "",
       ]))
+
+      // 🔑 Lo que de verdad deja DECIDIR: si una fuente contiene a la otra, la elección es obvia.
+      f.push(["", `${d.enComun} comprobante(s) están en las dos: son el mismo cargado dos veces.`])
+      if (d.soloEn.length === 0) {
+        f.push(["", "Ninguna fuente tiene nada que la otra no tenga: son idénticas, quedate con una."])
+      } else if (d.soloEn.length === 1) {
+        const u = d.soloEn[0]
+        f.push(["", `Sólo «${nombreFuente(u.fuente)}» tiene ${u.asientos.length} comprobante(s) que la otra no.`])
+        f.push(["", `Entonces «${nombreFuente(u.fuente)}» CONTIENE a la otra: quedate con ésa y descartá la otra.`])
+      } else {
+        f.push(["", "Cada fuente tiene comprobantes que la otra no: hay que fusionarlas, no elegir una."])
+      }
+      for (const u of d.soloEn) {
+        f.push(["", `Sólo en ${nombreFuente(u.fuente)}:`, "Fecha", "Proveedor", "Tipo", "Importe"])
+        u.asientos.forEach(a => f.push(["", "", a.fecha ?? "", a.denominacion, a.tipo ?? "sin código", money(a.total)]))
+      }
+      f.push([])
     }
-    f.push([])
   }
 
   if (c.choques.length > 0) {
@@ -124,7 +142,10 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
   f.push(["", "Compras", `${libro.compras.length} comprobante(s) de los 12 subdiarios`])
   f.push(["", "Ventas", `${libro.ventas.length} comprobante(s) de los 12 subdiarios`])
   f.push(["", "05 Provisión", `${libro.provisiones.length} — son del ejercicio por fecha pero entraron después`])
-  f.push(["", "Sin subdiario", `${libro.sinSubdiario.length} — no se sabe a qué período van; hay que imputarlos`])
+  f.push(["", "Sin subdiario", `${libro.sinSubdiario.length} en total, de los cuales ${c.sinSubdiarioQueAfectan.length} tienen fecha del ejercicio o anterior`])
+  if (libro.sinSubdiario.length > 0 && c.sinSubdiarioQueAfectan.length === 0) {
+    f.push(["", "", "Los sin subdiario son todos POSTERIORES al cierre: son del mes en curso y no tocan este balance."])
+  }
   f.push([])
   f.push(["NO ESTÁ EN ESTE ARCHIVO, y va aparte como siempre: gastos bancarios e impuestos,"])
   f.push(["inmobiliario / red vial / automotor, retiros y aportes. Son los templates, que no"])

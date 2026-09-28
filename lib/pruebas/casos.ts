@@ -61,7 +61,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -2274,5 +2274,143 @@ export function correrCasos(): Resultado[] {
       "1 sin subdiario", `${conHuerfano.sinSubdiario.length} sin subdiario`,
       conHuerfano.sinSubdiario.length === 1, "A-FEAT-1184")
   }
+  /**
+   * 🔤 **El tipo de comprobante del HISTÓRICO es texto libre — A-FEAT-1184.**
+   *
+   * Encontrado el 2026-09-28 comparando diciembre: `comprobantes_historico` guarda
+   * `"1 - Factura A"` donde ARCA guarda `1`. Sin normalizar, `Number()` da **NaN** y pasan dos
+   * cosas, las dos silenciosas: ninguna Fac C se reconoce como *sin crédito fiscal* (el control de
+   * cuadratura da mal) y el mismo comprobante en las dos fuentes **no se detecta como choque**,
+   * que es justo lo que hace falta para resolver diciembre.
+   *
+   * 📌 Las nueve variantes son las **reales** de los 273 comprobantes del histórico de MSA.
+   */
+  {
+    chequear("Balance · tipo de comprobante", "🔑 «1 - Factura A» es el tipo 1, no NaN",
+      "1", String(tipoDesdeTexto("1 - Factura A")),
+      tipoDesdeTexto("1 - Factura A") === 1, "A-FEAT-1184")
+
+    chequear("Balance · tipo de comprobante", "🔴 «11 - Factura C» es 11 — de esto depende «sin crédito fiscal»",
+      "11", String(tipoDesdeTexto("11 - Factura C")),
+      tipoDesdeTexto("11 - Factura C") === 11, "A-FEAT-1184")
+
+    chequear("Balance · tipo de comprobante", "«3 - Nota de Crédito A» es 3",
+      "3", String(tipoDesdeTexto("3 - Nota de Crédito A")),
+      tipoDesdeTexto("3 - Nota de Crédito A") === 3, "A-FEAT-1184")
+
+    // Los tickets se escribieron de tres formas distintas y NINGUNA trae el codigo.
+    const tickets = ["Ticket Factura A", "Ticket factura A", "Tique Factura A"].map(tipoDesdeTexto)
+    chequear("Balance · tipo de comprobante", "Las 3 grafías de ticket dan el mismo tipo 81",
+      "81 81 81", tickets.join(" "),
+      tickets.every(x => x === 81), "A-FEAT-1184")
+
+    chequear("Balance · tipo de comprobante", "«81 - Tique Factura A Controladores Fiscales» también es 81",
+      "81", String(tipoDesdeTexto("81 - Tique Factura A Controladores Fiscales")),
+      tipoDesdeTexto("81 - Tique Factura A Controladores Fiscales") === 81, "A-FEAT-1184")
+
+    // ⚠️ Una poliza NO es comprobante de ARCA: se carga a mano y por eso puede faltar (A-AUTO-05).
+    chequear("Balance · tipo de comprobante", "⚠️ «Poliza Seguro» no tiene código de ARCA: devuelve nulo, no se inventa",
+      "nulo", tipoDesdeTexto("Poliza Seguro") === null ? "nulo" : String(tipoDesdeTexto("Poliza Seguro")),
+      tipoDesdeTexto("Poliza Seguro") === null, "A-AUTO-05")
+
+    // ARCA ya manda numero: tiene que pasar derecho.
+    chequear("Balance · tipo de comprobante", "Un número de ARCA pasa tal cual",
+      "11", String(tipoDesdeTexto(11)),
+      tipoDesdeTexto(11) === 11, "A-FEAT-1184")
+
+    chequear("Balance · tipo de comprobante", "Vacío o nulo devuelve nulo",
+      "nulo nulo",
+      [tipoDesdeTexto(null), tipoDesdeTexto("")].map(x => x === null ? "nulo" : String(x)).join(" "),
+      tipoDesdeTexto(null) === null && tipoDesdeTexto("") === null, "A-FEAT-1184")
+
+    // 🛑 El caso que prueba que el arreglo SIRVE: la misma factura en las dos fuentes, una con el
+    //    texto del historico y otra con el numero de ARCA, tiene que dar UN choque.
+    const base = {
+      id: "x", subdiario: "2025-12", fecha: "2025-12-04", punto_venta: 2, numero: 1984,
+      cuit: "30714279315", denominacion: "LA MERCURE S.R.L.", neto_gravado: 0, no_gravado: 0,
+      exento: 0, otros_tributos: 0, iva: 0, total: 2430800, cuenta_contable: "",
+      nro_cuenta: "", centro_costo: "",
+    }
+    const mismaFactura = [
+      { ...base, fuente: "historico" as const, tipo: tipoDesdeTexto("1 - Factura A") },
+      { ...base, fuente: "arca" as const, tipo: tipoDesdeTexto(1) },
+    ]
+    chequear("Balance · tipo de comprobante", "🛑 La misma factura en las 2 fuentes AHORA se detecta",
+      "1 choque", `${detectarChoques(mismaFactura).length} choque(s)`,
+      detectarChoques(mismaFactura).length === 1, "A-DAT-61")
+  }
+
+  /**
+   * 🔑 **CUÁL FUENTE VALE: no alcanza con saber que un mes está duplicado — A-DAT-61.**
+   *
+   * Saber que diciembre está en las dos tablas no deja decidir nada. Lo que deja decidir es si
+   * **una fuente CONTIENE a la otra**: si la contiene, se elige la más completa y listo; si cada
+   * una tiene lo suyo, hay que fusionarlas, que es otro trabajo.
+   *
+   * 📌 El caso de abajo reproduce **el de diciembre 2025 real** (medido 2026-09-28): los 40 de
+   * ARCA están **todos** en el histórico, que tiene **4 más** — una NC de Federación Patronal y
+   * 3 tickets — por \$86.613, que es exactamente la diferencia entre los dos totales.
+   */
+  {
+    const base = {
+      subdiario: "2025-12", fecha: "2025-12-04", punto_venta: 2, cuit: "30714279315",
+      denominacion: "PROVEEDOR", neto_gravado: 0, no_gravado: 0, exento: 0,
+      otros_tributos: 0, iva: 0, cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+    }
+    const comun = (numero: number, total: number) => ([
+      { ...base, id: `h${numero}`, fuente: "historico" as const, tipo: 1, numero, total },
+      { ...base, id: `a${numero}`, fuente: "arca" as const, tipo: 1, numero, total },
+    ])
+    // Los 4 que SOLO tiene el historico, con sus importes reales.
+    const soloHistorico = [
+      { ...base, id: "x1", fuente: "historico" as const, tipo: 3, numero: 34160783,
+        denominacion: "FEDERACION PATRONAL SEGUROS S.A.U", fecha: "2025-12-29", total: -138118 },
+      { ...base, id: "x2", fuente: "historico" as const, tipo: 81, numero: 32309,
+        denominacion: "PAN AMERICAN ENERGY S.L.", fecha: "2025-12-10", total: 69447 },
+      { ...base, id: "x3", fuente: "historico" as const, tipo: 81, numero: 17645,
+        denominacion: "PAN AMERICAN ENERGY S.L.", fecha: "2025-12-02", total: 73264 },
+      { ...base, id: "x4", fuente: "historico" as const, tipo: 81, numero: 36430,
+        denominacion: "PARADOR SAN PEDRO", fecha: "2025-10-02", total: 82020 },
+    ]
+    const diciembre = [...comun(1984, 1000), ...comun(1985, 2000), ...soloHistorico]
+    const d = detectarSubdiariosDuplicados(diciembre)[0]
+
+    chequear("Balance · cuál fuente vale", "Dice cuántos comprobantes son el MISMO cargado dos veces",
+      "2 en común", `${d.enComun} en común`, d.enComun === 2, "A-DAT-61")
+
+    chequear("Balance · cuál fuente vale", "🔑 Sólo una fuente tiene cosas propias → la otra está contenida",
+      "1 fuente con propios", `${d.soloEn.length} fuente(s) con propios`,
+      d.soloEn.length === 1 && d.soloEn[0].fuente === "historico", "A-DAT-61")
+
+    chequear("Balance · cuál fuente vale", "Y lista los 4 que hay que mirar, con nombre e importe",
+      "4 · FEDERACION PATRONAL SEGUROS S.A.U",
+      `${d.soloEn[0]?.asientos.length} · ${d.soloEn[0]?.asientos[0]?.denominacion}`,
+      d.soloEn[0]?.asientos.length === 4 &&
+      d.soloEn[0]?.asientos[0]?.denominacion === "FEDERACION PATRONAL SEGUROS S.A.U", "A-DAT-61")
+
+    // 🔑 El control que lo ata todo: lo que sobra TIENE que explicar la diferencia entre totales.
+    const sobra = d.soloEn[0].asientos.reduce((s, a) => s + a.total, 0)
+    chequear("Balance · cuál fuente vale", "🧮 Lo que sobra explica EXACTAMENTE la diferencia de totales",
+      `${Math.round(d.diferencia)}`, `${Math.round(sobra)}`,
+      Math.abs(sobra - d.diferencia) < 0.01, "A-DAT-61")
+
+    // Si las dos fuentes tienen lo suyo, NO se puede elegir: hay que fusionar, y se dice.
+    const cruzado = [
+      ...comun(10, 500),
+      { ...base, id: "s1", fuente: "historico" as const, tipo: 1, numero: 11, total: 100 },
+      { ...base, id: "s2", fuente: "arca" as const, tipo: 1, numero: 12, total: 100 },
+    ]
+    chequear("Balance · cuál fuente vale", "⚠️ Si cada fuente tiene lo suyo, avisa que hay que FUSIONAR",
+      "2 fuentes con propios",
+      `${detectarSubdiariosDuplicados(cruzado)[0].soloEn.length} fuente(s) con propios`,
+      detectarSubdiariosDuplicados(cruzado)[0].soloEn.length === 2, "A-DAT-61")
+
+    // Fuentes identicas: no hay nada que elegir por contenido.
+    chequear("Balance · cuál fuente vale", "Si son idénticas, ninguna tiene nada propio",
+      "0 fuentes con propios",
+      `${detectarSubdiariosDuplicados(comun(5, 900))[0].soloEn.length} fuente(s) con propios`,
+      detectarSubdiariosDuplicados(comun(5, 900))[0].soloEn.length === 0, "A-DAT-61")
+  }
+
   return r
 }
