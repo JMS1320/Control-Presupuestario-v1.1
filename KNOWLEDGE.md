@@ -2505,6 +2505,12 @@ nunca, y el archivo está perfecto — que es lo que hace perder tiempo.
 **3 · `Production` no incluye `Preview`.** El diálogo de Vercel viene con `Production` seleccionado
 y las previews de rama son **otro ambiente**. Guardada sólo en Production, la preview falla igual.
 
+⚠️ **Y puede no tomar el cambio de scope a la primera** *(visto 2026-09-28: «no sé por qué no me
+había tomado preview, ahora sí»)*. **Verificar en la fila de la variable que diga literalmente
+`Production and Preview`** antes de dar por hecho que quedó. Y mirar el **`Updated`** de esa fila:
+si el último deployment es **anterior** a esa hora, ese build salió con el scope viejo y hay que
+disparar otro. Es el error más caro de los tres, porque todo *parece* estar bien.
+
 ### 🩺 Qué dice cada error, que es lo que ahorra el tiempo
 
 | Cartel | Qué significa |
