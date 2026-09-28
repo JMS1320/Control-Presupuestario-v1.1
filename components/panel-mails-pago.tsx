@@ -77,7 +77,7 @@ export function PanelMailsPago() {
    * 🔑 Ahora el error llega **explicado** y el éxito se **afirma**, no se supone. La URL vive en
    * `GAS_MAILS_PAGO_URL`, del lado del servidor. Ver `app/api/gas/mails-pago/route.ts`.
    */
-  const dispararGas = async (id?: string): Promise<boolean> => {
+  const dispararGas = async (id?: string): Promise<{ ok: boolean; respuesta?: string }> => {
     try {
       const r = await fetch("/api/gas/mails-pago", {
         method: "POST",
@@ -87,28 +87,67 @@ export function PanelMailsPago() {
       const data = await r.json().catch(() => null)
       if (!r.ok || !data?.ok) {
         toast.error(data?.error || `El GAS falló (HTTP ${r.status})`)
-        return false
+        return { ok: false }
       }
-      return true
+      return { ok: true, respuesta: typeof data.respuesta === "string" ? data.respuesta : undefined }
     } catch (e) {
       toast.error("No se pudo llamar a la app: " + (e as Error).message)
-      return false
+      return { ok: false }
     }
   }
+
+  /**
+   * 🧮 **EL CONTROL: que el GAS conteste OK no prueba que haya hecho el borrador.**
+   *
+   * Pasó de verdad el 2026-09-28: el GAS respondió `200`, la app cantó *«Borrador preparado»* y el
+   * mail **seguía `pendiente` en la cola**, sin borrador en Gmail. El fix de [A-BUG-1216] había
+   * sacado el `no-cors` —así que ya se leía la respuesta— pero seguía **suponiendo** que un 200
+   * significaba trabajo hecho.
+   *
+   * 🔑 **El mismo dato por dos caminos** (§ 🤖 pieza 4 de `CLAUDE.md`): el GAS dice qué hizo, y la
+   * **cola** dice qué pasó. Si el GAS contesta bien y el estado sigue en `pendiente`, **hay que
+   * mostrar la diferencia, no elegir el lado optimista**.
+   *
+   * 📌 Y de paso deja de ser necesario adivinar: se muestra **lo que el GAS contestó textualmente**,
+   * que es el dato que separa «no encontró el mail» de «no pudo leer la base».
+   */
+  const verificarQuedoHecho = async (ids: string[], respuestaGas?: string) => {
+    const { data, error } = await supabase
+      .from("mails_pago").select("id,estado").in("id", ids)
+    if (error) {
+      toast.warning("El GAS respondió, pero no pude verificar la cola: " + error.message)
+      return
+    }
+    const siguenPendientes = (data || []).filter(m => m.estado === "pendiente")
+    if (siguenPendientes.length === 0) {
+      toast.success(ids.length === 1
+        ? "Borrador preparado — revisalo en Gmail."
+        : `${ids.length} borrador(es) preparado(s) — revisalos en Gmail.`)
+      return
+    }
+    toast.error(
+      `El GAS contestó pero ${siguenPendientes.length} de ${ids.length} sigue(n) PENDIENTE: no se creó el borrador. ` +
+      (respuestaGas ? `El GAS dijo: ${respuestaGas.slice(0, 220)}` : "El GAS no dijo nada."),
+      { duration: 20000 },
+    )
+  }
+
   const enviarBorrador = async (m: MailPago) => {
     if (!(await guardar(m, true))) return // persiste tus ediciones primero
-    if (!(await dispararGas(m.id))) return
-    toast.success("Borrador preparado — revisalo en Gmail.")
-    setTimeout(cargar, 3000)
+    const r = await dispararGas(m.id)
+    if (!r.ok) return
+    await verificarQuedoHecho([m.id], r.respuesta)
+    cargar()
   }
   const enviarTodos = async () => {
     const pend = mails.filter(m => m.estado === "pendiente")
     if (pend.length === 0) { toast.info("No hay mails pendientes."); return }
     if (!confirm(`¿Preparar borradores de los ${pend.length} mails pendientes?`)) return
     await Promise.all(pend.map(m => guardar(m, true))) // persiste ediciones de todos
-    if (!(await dispararGas())) return
-    toast.success(`${pend.length} borrador(es) preparado(s) — revisalos en Gmail.`)
-    setTimeout(cargar, 4000)
+    const r = await dispararGas()
+    if (!r.ok) return
+    await verificarQuedoHecho(pend.map(m => m.id), r.respuesta)
+    cargar()
   }
   const borrar = async (m: MailPago) => {
     if (!confirm(`¿Borrar el mail encolado para ${m.proveedor || "?"}?`)) return
