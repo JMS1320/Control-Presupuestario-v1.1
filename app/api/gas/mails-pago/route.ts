@@ -38,10 +38,23 @@ const TOPE_GAS_MS = 50_000
 export async function POST(request: Request) {
   const base = process.env.GAS_MAILS_PAGO_URL
   if (!base) {
+    /**
+     * ⚠️ **Falta la variable — pero el arreglo NO es el mismo en local que en Vercel**, y decir
+     * sólo *«no está configurada»* deja al usuario adivinando cuál de las dos cosas hacer.
+     *
+     * Pasó apenas se entregó el fix (2026-09-28): el cartel era correcto y **aun así no ayudaba**,
+     * porque la causa más común en local es que el `npm run dev` **venía corriendo desde antes** de
+     * que la variable existiera — Next lee el entorno al arrancar, no en cada request.
+     */
+    const enVercel = !!process.env.VERCEL
     return NextResponse.json({
       ok: false,
-      error: "GAS_MAILS_PAGO_URL no está configurada. Es la URL del Apps Script de mails de pago " +
-             "desplegado como Web App (Apps Script → Implementar → Aplicación web → URL /exec).",
+      error: enVercel
+        ? "Falta GAS_MAILS_PAGO_URL en Vercel. Cargala en Settings → Environment Variables " +
+          "(para Production y Preview) y volvé a desplegar: las variables se toman en el build."
+        : "Falta GAS_MAILS_PAGO_URL en el servidor local. Si ya está en .env.local, el motivo es " +
+          "que el «npm run dev» venía corriendo desde antes: paralo y arrancalo de nuevo, porque " +
+          "Next lee las variables al arrancar.",
     }, { status: 500 })
   }
 
