@@ -410,6 +410,58 @@ Resultado: ítem con estado='echeq', registro en msa.cheques
 
 ---
 
+## 11 bis. El aviso de Principal — echeq en fecha de cobro (2026-09-28)
+
+> **Componente**: `components/alerta-echeqs-en-fecha.tsx` · se muestra en `vista-principal.tsx`
+> junto a las otras alertas. → `PENDIENTES.md` [A-FEAT-1182]
+
+### Por qué existe
+
+**El estado del cheque estaba desde siempre y no lo usaba nadie.** Medido el 28/09: los **9 cheques
+en `vigente`**, y **8 ya habían pasado su fecha de cobro** — el más viejo por **164 días**,
+**$11,8 M** de los que nadie sabía si habían salido de la cuenta.
+
+No faltaba un campo ni una pantalla: la pantalla de gestión (§ 8) ya pinta en rojo los vencidos. Lo
+que faltaba era que **apareciera sin ir a buscarlo**.
+
+### Qué muestra y qué hace
+
+- Los cheques con `estado = 'vigente'` y `fecha_cobro <= hoy`, **ordenados del más viejo al más
+  nuevo** y con el total en pesos. Rojo si alguno pasó los 30 días.
+- En cada fila, **«Ya lo vi debitado»** → pide **qué día salió** y escribe
+  `estado = 'cobrado'` + `fecha_estado`.
+
+### 🛑 Las dos cadenas, y por qué no se mezclan
+
+*Pedido explícito del usuario: «si yo le pongo que están cobrados deben desaparecer aunque no estén
+conciliados».*
+
+| | Qué afirma | Quién lo pone | Cuándo |
+|---|---|---|---|
+| `cobrado` (estado del cheque) | **lo vi debitado en el banco** | el usuario | en dos segundos, al verlo |
+| conciliado (del movimiento) | el movimiento quedó **vinculado al comprobante** | el proceso de conciliación | después, con el extracto |
+
+🔑 **La cadena del cheque TERMINA en `cobrado`** (o `rechazado`). **No existe un estado «conciliado»
+del cheque**: eso vive en el movimiento bancario contra el comprobante, que es otro circuito.
+
+Por eso el aviso mira **el estado del cheque** y no el de conciliación: así lo que él ya vio salir
+**desaparece de la vista sin mentir** sobre lo que falta hacer. Y el cartel lo dice al pie, para que
+nadie confunda una cosa con la otra.
+
+### 🎚️ La fecha no se asume
+
+El default al marcar es **la fecha de cobro del cheque** —el dato real— y **se puede cambiar**.
+Textual del usuario: *«que pase a cobrado está ok pero no necesariamente con fecha de hoy»*. Es
+`CLAUDE.md` § 🎚️ *default del dato real, siempre editable*.
+
+### ⏳ La otra mitad, que falta
+
+Por § 🔔 *alertas antes, controles después*: un cheque marcado **cobrado** que **a los 30 días sigue
+sin conciliarse** debería aparecer en otra lista. Si no, *«lo vi»* termina reemplazando a *«está
+registrado»*, que no es lo mismo. Es una consulta, no una pantalla.
+
+---
+
 ## 12. Pendientes / mejoras identificadas
 
 | Feature | Prioridad | Descripción |

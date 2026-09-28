@@ -147,6 +147,28 @@ implementó la vinculación de anticipos de cobro con tipos y build OK, y el bot
 porque dos condiciones filtraban por `tipo === 'pago'`. Compilar ≠ estar disponible: hay que llegar
 hasta el botón. Ver `PENDIENTES.md` § A-TEST-32.
 
+## 🔍 El estado de la infraestructura se CONSULTA, no se lee de la ficha `#seguridad #metodo #2026-09-28`
+
+**Tres veces en la misma tanda** un número que estaba anotado resultó falso, y las tres se descubrió
+**yendo a mirar el dato**:
+
+| Lo que decía la anotación | Lo que daba la consulta |
+|---|---|
+| `A-SEC-01`: *«la BD todavía no se tocó»* | **`anon` con cero permisos y RLS en las 125 tablas** — cerrado hacía semanas |
+| `A-OP-15`: *«el baseline de type-check es 279»* | **110** — los 279 eran un paquete sin instalar |
+| `A-SEC-09`: *«los roles pueden leer de más»* | también **escriben**: 68 tablas sin declarar quedan abiertas |
+
+🔑 **La diferencia con el código es la que importa.** Una afirmación sobre el código envejece y se
+nota: alguien lo lee y no coincide. Una afirmación sobre **infraestructura** —permisos, RLS, qué se
+corrió— **no la contradice nadie**: se lee como verdad durante meses, y las decisiones se toman
+encima.
+
+🧨 **Y el hallazgo más grande de los tres apareció por casualidad**: mirando si un botón nuevo iba a
+poder escribir en su tabla. **No se estaba auditando seguridad.**
+
+**Qué hacer, sin ceremonia**: antes de repetir una afirmación sobre permisos, RLS, o si un script se
+corrió, **correr la consulta**. Son 30 segundos y evita construir sobre una foto vieja.
+
 ## ⚠️ El baseline de `type-check` miente si falta un `npm install` `#tipos #entorno #2026-09-25`
 
 **El conteo de errores de `tsc` NO es una medida del código si el árbol no compila.** Medido el

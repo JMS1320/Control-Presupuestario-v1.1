@@ -367,6 +367,75 @@ desde la URL, que es lo que se corrigió ahora.
 
 ---
 
+## 0 bis. AUDITORÍA 2026-09-26/28 — qué quedó cerrado y qué no
+
+📄 **Reporte para el usuario**: https://claude.ai/artifact/5cSjj5T1RQR3A7w4CEw5Av
+
+> ⚠️ **Todo lo de acá se midió consultando la base**, no leyendo lo que decían las fichas. Hizo
+> falta: `A-SEC-01` afirmaba *«la BD todavía no se tocó»* **y era falso desde hacía semanas**.
+
+### ✅ Cerrado — verificado en la base
+
+| | Estado real al 2026-09-26 |
+|---|---|
+| `anon` (visitante sin sesión) | **cero permisos** sobre las 125 tablas |
+| RLS | **activa en las 125**, en los 6 esquemas |
+| Policies | llaman a `puede_ver` / `puede_escribir`, que leen el rol de **`app_metadata`** — que el propio usuario **no puede escribir** |
+| Rutas-password | ya no dan acceso: redirigen al login |
+
+### 🚨 El hueco grande: el DEFAULT está al revés
+
+**`nivel_tabla(schema, tabla)`** busca la tabla en `public.recurso_tablas` y, **si no la encuentra**,
+devuelve `'escritura'` con sólo tener un rol:
+
+```sql
+coalesce(
+  (select public.nivel_recurso(rt.recurso) from public.recurso_tablas rt where ...),
+  case when coalesce(auth.jwt() -> 'app_metadata' ->> 'role','') <> ''
+       then 'escritura' else 'ninguno' end     -- ← el default
+)
+```
+
+📏 **Medido el 2026-09-28**: **125 tablas, 57 registradas → 68 SIN registrar**, y ésas quedan
+**escribibles por cualquier usuario con sesión y rol** (`contable`, `productivo`, `socio`,
+`pruebas`). Entre ellas **`msa.cheques`**.
+
+👁️ **Y la lectura tampoco distingue rol**: `puede_ver` sólo exige tener alguno, salvo en las tablas
+marcadas `restringe_lectura` — y **de las 57 registradas, ninguna lo está**.
+
+🧨 **Por qué importa más de lo que parece**: una tabla nueva **nace abierta** y nadie se entera. No
+hay que olvidarse de cerrarla: hay que acordarse de declararla, que es lo que siempre falla.
+
+**El arreglo, y el orden no es negociable** ([A-SEC-09](../PENDIENTES.md)):
+1. **registrar las 68** — clasificación, no programación, y no cambia ningún comportamiento;
+2. **recién entonces** dar vuelta el `coalesce` a `'ninguno'` — una línea; **al revés se cae media app**;
+3. marcar `restringe_lectura` en las sensibles (sueldos, cheques, proveedores).
+
+*Lo que lo contiene hoy: hay que tener cuenta, y las cuentas sólo nacen de una invitación del admin.
+El riesgo es **hacia adentro**, y crece el día que exista auto-registro ([A-FEAT-85](../PENDIENTES.md)).*
+
+### 🔑 La clave fiscal de ARCA → [A-SEC-10](../PENDIENTES.md)
+
+Lo mostró **Javier**: se puede inspeccionar la app y ver la clave. **Verificado qué NO pasa**: no
+está en el código, no está en ninguna `NEXT_PUBLIC_*`, no se guarda en la BD, y no queda en
+`arca_descargas_log` (que sólo anota empresa, tipo, fechas y estado).
+
+**Lo que sí**: se tipea en la pantalla, vive en el estado de React y viaja en el cuerpo del POST.
+**Quien tenga esa sesión delante la ve.** No es *«está publicada»*, es *«quien está adentro la ve»* —
+pero una clave fiscal no debería poder verse nunca.
+
+**Tres caminos**: cifrarla en el servidor ligada al usuario · **certificado digital de ARCA** (el
+destino correcto: vive en el servidor y se revoca) · y **ya mismo, sin tocar la app**, un usuario de
+ARCA con permiso **sólo de consulta**.
+
+### ⏳ Lo que sigue abierto
+
+`A-SEC-09` (las 68 tablas) · `A-SEC-10` (clave ARCA) · `A-SEC-11` (el log toma el rol del cliente) ·
+`A-SEC-08` (sin códigos de recuperación del 2FA) · `A-SEC-05` (CSP) · `A-SEC-04` (15 notas viejas) ·
+**`A-TEST-81`** — probar el login de punta a punta, que es lo que valida todos los cierres de arriba.
+
+---
+
 ## 1. ESTADO ACTUAL DEL SISTEMA (abril-2026 — ver § 0)
 
 ### Roles existentes

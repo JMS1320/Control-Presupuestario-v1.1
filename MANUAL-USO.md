@@ -53,6 +53,7 @@
 - [🧾 Templates → activar y desactivar](#templates-activar-y-desactivar)
 
 #### 🏦 Banco: importar, parsear y conciliar
+- [📅 Aviso: echeq en fecha de cobro](#aviso-echeq-en-fecha-de-cobro)
 - [🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*](#aviso-extractos-bancarios-sin-cargar-nuevo-2026-08-09-sin-testear)
 - [🧩 Reglas de parseo — dejar lista una cuenta de Caja de Ahorro](#reglas-de-parseo-dejar-lista-una-cuenta-de-caja-de-ahorro)
 - [🏦 Resultado de la corrida + filtro de contraparte ✅ *(testeado OK 2026-08-19)*](#resultado-de-la-corrida-filtro-de-contraparte-testeado-ok-2026-08-19)
@@ -124,6 +125,7 @@
 | Armar los templates de la campaña nueva | [Renovar campaña](#módulo-templates-egresos-renovar-campaña-v1-sin-testear) |
 | Cargar una venta de hacienda | [Ventas de hacienda](#ventas-de-hacienda-el-circuito-completo-nuevo-2026-08-05-sin-testear) |
 | Ver cómo viene el presupuesto | [Presupuesto → leer la grilla](#presupuesto-leer-la-grilla) |
+| Marcar que un echeq ya salió del banco | [Aviso: echeq en fecha de cobro](#aviso-echeq-en-fecha-de-cobro) |
 | Dejarle una nota a Claude sobre un bug | [Notas para Claude](#notas-para-claude-nuevo-2026-08-11-sin-testear) |
 | Darle acceso a alguien, o cambiarle lo que ve | [Roles y usuarios](#roles-y-usuarios-quién-ve-qué) |
 
@@ -1975,6 +1977,39 @@ caravanas. Es a propósito — si no las tenés a mano, es peor no registrar el 
    carpeta una vez, y el primero va del *15/02 al 28/02*.
 
 ---
+
+## 📅 Aviso: echeq en fecha de cobro
+
+> Aparece solo en **Principal**, junto a las otras alertas. Si no hay ninguno pendiente, no aparece.
+
+### Qué te dice
+Los **echeq que ya pasaron su fecha de cobro y siguen figurando como vigentes** — o sea, nadie
+confirmó todavía que hayan salido de la cuenta. Van **del más viejo al más nuevo**, con el total en
+pesos, y los que pasaron los 30 días llevan un chip con cuántos días hace.
+
+### Qué hacés
+Cuando ves el débito en el banco, tocá **«Ya lo vi debitado»**. Te va a preguntar **qué día salió**:
+
+- viene puesta la **fecha de cobro del cheque**, que es lo más probable;
+- **cambiala** si salió otro día — no tiene por qué ser hoy.
+
+Confirmás y el echeq **desaparece del cartel**.
+
+### 🛑 Lo importante: marcarlo NO lo concilia
+Son dos cosas distintas y conviene tenerlas separadas:
+
+| | Qué estás diciendo |
+|---|---|
+| **Cobrado** | *lo vi salir del banco* |
+| **Conciliado** | el movimiento del banco quedó **vinculado a la factura** |
+
+Marcar cobrado **te lo saca de la vista** sin tocar la conciliación, que sigue su camino. Es a
+propósito: sirve para que el cartel muestre sólo lo que de verdad no sabés.
+
+📌 **La vida de un echeq termina en «cobrado»** (o «rechazado»). No existe un echeq «conciliado»:
+eso pasa del lado del movimiento bancario.
+
+⚠️ Sin probar todavía → A-TEST-1153
 
 ## 🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*
 

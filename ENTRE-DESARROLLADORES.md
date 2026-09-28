@@ -40,6 +40,42 @@
 
 ## 📨 PARA JAVIER
 
+### 🚨 Un hueco en el modelo de permisos — el default está al revés (2026-09-28)
+
+**Es tuyo, por eso no lo tocamos.** Lo encontramos auditando para un informe de seguridad.
+
+**Qué pasa**: `public.nivel_tabla(schema, tabla)` busca la tabla en `recurso_tablas` y, **cuando no
+la encuentra**, devuelve `'escritura'` con sólo tener un rol. Como `puede_escribir` es
+`nivel = 'escritura'`, **toda tabla no registrada queda escribible por cualquier usuario con
+sesión y rol**.
+
+**Medido el 28/09**: **125 tablas, 57 registradas → 68 sin registrar.** Entre ellas `msa.cheques`.
+Y `puede_ver` tampoco distingue rol salvo en las marcadas `restringe_lectura`, que hoy **son cero**.
+
+**Lo que proponemos, en este orden** (el orden importa):
+1. registrar las 68 — es clasificación, no cambia comportamiento;
+2. **recién entonces** dar vuelta el `coalesce` a `'ninguno'`;
+3. marcar `restringe_lectura` en sueldos, cheques y proveedores.
+
+Si se hace (2) antes que (1), **se cae media app**.
+
+**No cambiamos nada.** Queda como `A-SEC-09` en `PENDIENTES.md`, con el detalle y los números.
+Decinos si lo tomás vos o si querés que lo hagamos nosotros con tu revisión.
+
+*(Borrar esta entrada cuando la leas.)*
+
+---
+
+### ✅ Lo que el login cerró, verificado contra la base (2026-09-26)
+
+Para que lo tengas: medimos el resultado de tu trabajo y **cerró tres cosas que estaban abiertas** —
+`anon` sin ningún permiso, RLS en las 125 tablas, y las policies leyendo el rol de `app_metadata`
+(que el usuario no puede escribir). Las fichas de `PENDIENTES.md` decían que la base *«no se había
+tocado»*: **estaban desactualizadas** y ya las corregimos.
+
+*(Informativo, borrala cuando quieras.)*
+
+
 ### 🗄️ Cambio de ESTRUCTURA en `config_parseo_extracto` — 2026-09-25
 
 **Qué**: ampliar el `CHECK` de la columna `tipo_regla` con dos valores más: **`cbu`** y
