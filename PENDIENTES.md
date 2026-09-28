@@ -2723,6 +2723,105 @@ Varias pasaron por Google Sheets y volvieron: hay fórmulas **convertidas en val
 **enlazan a otros archivos** (`[1]Stock hacienda`), que es un punto ciego. Razón más para que el
 papel lo produzca el sistema.
 
+## 📦 Estudio 2026-09-28 (2ª parte) — LOS PAPELES DE STOCK, leídos
+
+*Los 6 que en el reporte figuraban como «🟡 sin estudiar». Ahora sí abiertos, con sus fórmulas.
+Veredicto corto: **traen los criterios escritos, cada uno con su propio control — y HOY NO SE
+PUEDEN PRODUCIR**, porque el dato productivo está a medias.*
+
+### 🐄 `02 - HACIENDA` — el más completo, y el que más enseña
+
+Tres bloques, y los tres tienen valor para la app:
+
+**2.1) El movimiento del rodeo.** Columnas: apertura (real / DDJJ) · nacimientos · muertes ·
+reclasificación + / − · compras · ventas · **stock cierre** · SENASA · dif · real de campo.
+La identidad es `cierre = apertura + nacimientos + muertes + reclas± + compras + ventas`.
+
+🧮 **Y tiene TRES controles propios**, que son justo los que hay que copiar:
+
+| Control | En el papel 2025 |
+|---|---|
+| `RECLAS+ + RECLAS− = 0` — reclasificar no crea ni destruye animales | 197 − 197 = **0** ✓ |
+| `SENASA − cierre = 0` | 321 − 321 = **0** ✓ |
+| `real de campo − cierre = 0` | 321 − 321 = **0** ✓ |
+
+*Apertura 325 · nacimientos 175 · muertes −5 · ventas −174 → **cierre 321**.*
+
+**2.2) La valuación, y acá está lo valioso: los criterios están ESCRITOS en cada renglón.**
+No hay que adivinarlos ni preguntárselos:
+
+| Categoría | Criterio textual del usuario | Cálculo 2025 |
+|---|---|---|
+| VACAS al parir | *vaca con gtía de preñez **medio** × 90 %* | 1.370.000 × 90 % = **1.233.000**/cab |
+| Vqll 1ª parición | *vaca con gtía de preñez **nueva** × 90 %* | 1.900.000 × 90 % = **1.710.000**/cab |
+| CUT | *vaca regular **máximo** × 80 %* | 2.750 × 80 % = 2.200 $/kg × 450 kg |
+| TOROS | *novillo regular +490 × 1000 kg × 70 %* | 3.100 × 70 % = 2.170 $/kg × 1000 kg |
+| TORITOS 1 año | *MEJ especial × 1,5* | 3.400 × 1,5 = 5.100 $/kg × 300 kg |
+| Vaquillona reposición | *Vaq 250-290 kg a precio **máximo*** | 3.600 $/kg × 250 kg |
+| Ternero venta | *10 % más que la hembra* | 3.960 $/kg × 250 kg |
+
+**Total: 321 cabezas, $405.560.000**, con su equivalente en dólares al TC promedio comprador/vendedor
+del BNA al 28/06 (`(1196+1205)/2`).
+
+📌 **Es valuación a MERCADO, no a costo** — y eso choca de frente con [A-DEC-12](#a-dec-12), que
+pregunta qué costos activan. El papel del contador usa mercado; la app calcula costo. **Son dos
+números distintos y hay que saber cuál va al balance.**
+
+**2.3) Comparativo contra 2024**, separando **rodeo de cría** (220 cab, $308.090.000) de
+**recría y venta** (101 cab, $97.470.000), y termina con `CONTROL = 0`.
+⚠️ Con una nota del usuario que vale registrar: *«DIFIERE CON BALANCE PERO TOMO REAL DE CAMPO»*.
+
+### 🌾 `1 - GRANOS` — y su control que NO cierra, a la vista
+
+Valuación: `toneladas × precio × % calidad − % CZ` → pesos y dólares. Soja AFA: 6,93 tn →
+**$2.045.386**.
+
+Pero al lado tiene **su propio cuadre de kilos**, y es el ejemplo perfecto de la § 🧮:
+
+```
+stock inicio (DDJJ 2024)   305.133
++ cosecha                  232.150
+− ventas del ejercicio     308.741
+− venta extra              219.230
+= saldo                      9.312
+− stock según empresa       -6.926
+= DIFERENCIA                 2.386   ← no cierra, y él lo deja escrito
+```
+
+🔑 **No lo esconde ni lo fuerza a cero.** Es exactamente lo que la app tiene que hacer.
+
+### 🧪 `2 - STOCK INSUMOS AGRICOLAS` — contados pero SIN VALUAR
+
+Estructura: `categoría · producto · cantidad · unidad · USS por kg/L · valor total`. Están todos
+los agroquímicos con su cantidad… **pero a muchísimos les falta el precio**, así que su valor total
+da **0**. El inventario está; la valuación no.
+
+### 🛠️ Los otros tres
+`3 - SEMENTERAS` · `5 - FORRAJEROS` · `6 - GAS OIL`, en el mismo archivo y con la misma forma.
+
+---
+
+### 🔴 Veredicto de factibilidad — medido contra la base, no supuesto
+
+| Tabla | Filas hoy | Qué significa |
+|---|---:|---|
+| `productivo.stock_hacienda` | **0** | **vacía**: no hay foto de existencias |
+| `productivo.movimientos_hacienda` | 47 | insuficiente para un rodeo de 325 cabezas en 12 meses |
+| `productivo.categorias_hacienda` | 15 | ✅ las categorías del papel **sí existen** |
+| `productivo.stock_insumos` | 32 | alcanza para el inventario, **no para valuarlo** |
+| `productivo.stock_lotes` (granos) | 9 | poco |
+
+**Conclusión honesta: los papeles de stock NO salen del sistema para el 01/10.** No es falta de
+código: es que el dato productivo del ejercicio no está cargado. Lo que **sí** aporta este estudio
+es que **ya no hay que preguntarle los criterios al usuario** — están todos escritos arriba, y con
+eso la valuación se puede programar el día que el dato exista.
+
+📌 **Y una decisión que esto destapa y no estaba planteada así**: el contador valúa la hacienda a
+**mercado**; [A-DEC-12](#a-dec-12) viene discutiendo qué **costos** activan. Antes de programar
+nada hay que saber **cuál de los dos números va al balance** — si es mercado, A-DEC-12 no bloquea
+el balance (sí el margen por actividad, que es otra cosa).
+
+---
 ### 🔴 Lo que falta del usuario — y bloquea
 
 *⚠️ Reescrito 2026-09-28: la lista original abría con el mapa de cuentas como bloqueante y
