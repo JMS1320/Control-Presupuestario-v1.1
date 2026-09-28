@@ -217,3 +217,33 @@ más de tu módulo. Va en la rama `jms/roles-desde-la-base`.
 ## 📨 PARA JMS
 
 *(vacío)*
+
+## 🔐 Para Javier — el hardening dejó afuera un consumidor EXTERNO (2026-09-28)
+
+**No hay que deshacer nada.** Es un aviso: hay un consumidor de la base que no es la app y que
+quedó sin acceso, y conviene que lo sepas porque el patrón se puede repetir.
+
+**Qué pasó:** el Apps Script que crea los borradores de *Detalle de pago*
+(`gas-mail-detalle/EnviarMailsDetalle.gs`) lee `public.mails_pago` **por REST con la clave anon**.
+Desde que `anon` quedó sin permisos, devuelve:
+
+```
+Supabase 401 · 42501 · permission denied for table mails_pago
+```
+
+**Por qué no lo agarró nada:** el script vive **fuera del repo** (en Apps Script), así que ni el
+`type-check` ni los controles lo ven. Y Apps Script responde **HTTP 200 aunque el script reviente**,
+con una página de error HTML — así que desde la app parecía que había funcionado. Es literalmente el
+caso que `CLAUDE.md` § 👥 describe: *«si él pone RLS a una tabla, la app del otro se rompe al
+instante y el type-check sigue en verde»*. Precedente: `A-SEC-04`.
+
+**Qué se hizo de este lado:** la ruta `/api/gas/mails-pago` ahora **verifica contra la cola** y
+**extrae el error real** de la página de Apps Script, así que esto ya no pasa desapercibido
+(`A-BUG-1217`). La app sigue andando normal: usa `authenticated`, que sí tiene permisos.
+
+**Qué falta, y NO toca la seguridad:** que el Apps Script use la **service role key** en vez de la
+anon. Lo hace JMS en el script; **no se re-abre `anon`**.
+
+❓ **Lo único que necesitamos de vos**: si hay **otros consumidores externos** apuntando a la base
+con la anon key —otro GAS, un n8n, un script suelto—, decilo, porque están rotos igual y **callados**.
+Es el único hueco que el hardening no puede ver solo.
