@@ -308,6 +308,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
 | A-FEAT-09 | 🔵 | **Alta (fecha)** | 📒 **Papeles de trabajo del balance = export del sistema.** **ARRANCA 2026-09-28** en la rama **`jms/export-balance`** (sale de `jms/dia-a-dia`, que ya tiene todo lo del parseo). 🎯 **Alcance fijado por el usuario**: **MSA al 30/06/2026** (cierre del período contable); **PAM y MA al 31/12** de cada año. **El objetivo final es un PREBALANCE EN VIVO**, no sólo el export — que es la bajada del norte: *lo registrado a la fecha + el presupuesto de lo que falta*. 📥 **Paso 1 — estudiar los papeles del balance ANTERIOR**, hechos a mano por él: los deja en `- Comunicacion JMS Claude - Archivos/` y **hay que leer las FÓRMULAS, no sólo los valores** — ahí está el concepto de cada dato. 📄 **Paso 2 — el reporte**, con esta estructura por cada dato: **qué dato es (con su índice) · cómo se obtiene a nivel EMPRESARIAL · cómo lo sabe la APP · si sale hoy o no · qué puede hacer que salga mal**. *Ejemplo del usuario, que fija el criterio: «facturas pendientes de pago» = las impagas al 30/6; la app lo sabe por el **estado**, y **si dice pagada se toma como pagada aunque no esté conciliada**.* 🧮 **Paso 3 — lo que calcula el contador** y nosotros también tenemos que poder calcular, para estimar **impuesto a las ganancias a pagar**. Él pasa esos datos. ⚙️ **No se arranca de cero**: ya existen `lib/excel-export.ts`, el export del Libro IVA (compras y ventas, 1 clic PDF+Excel), `lib/subdiarios/subtotales.ts` y el export del presupuesto. | → [A-FEAT-09](#a-feat-09) `@reporte` |
+| A-FEAT-1183 | 🔵 | 🔴 **Alta — bloquea a [A-FEAT-09](#a-feat-09)** | 🗺️ **EL MAPA DE CUENTAS app → balance, y su control por masas.** Nace del estudio de los papeles del balance 2025 (2026-09-28): el contador usa **93 cuentas** con su propia numeración (`4.1.1/01/03`) y la app **143** con la suya (`410801`), más desagregada. **Hace falta una tabla de equivalencias: para cada cuenta de la app, a qué cuenta del balance suma.** ~143 filas, **una sola vez**, y es **el cuello de botella real de todo A-FEAT-09** — sin esto ningún export sirve. ⚠️ **Y no es un agrupamiento limpio** (precisión del usuario el mismo día): el contador *«a veces puede llegar a tomar del libro diario cosas parciales»*, así que la equivalencia **no siempre es «cuenta del balance = A + B + C»**. Por eso el mapa se construye **como propuesta, no como verdad**, y donde hubo corte parcial **se muestra la diferencia** en vez de forzar un total inexistente (§ 🎚️). 🧮 **El control, que es lo que el usuario aportó y lo que faltaba**: *«lo que es compras y ventas total vs total siempre debería dar eso sí, lo otro es la conformación»* → **masa contra masa FRENA** (es contradicción interna), **conformación distinta AVISA** (puede ser criterio del contador) — § 🚦 de `CLAUDE.md`. 📌 **Por eso arranca por compras y ventas**: son las dos únicas masas con total verificable, y las que la app ya tiene completas con los comprobantes de ARCA. 🔴 **Lo aporta el usuario** (es criterio contable, no código); Claude prepara la planilla con lo que pueda proponer ya resuelto | → [A-FEAT-09](#a-feat-09) [C-24](#c-24) `@reporte` |
 | A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) `@reporte` |
 | A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) `@presupuesto` |
 | A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) `@reporte` |
@@ -2502,14 +2503,21 @@ cuenta: no hay Diario, no hay Mayor, no hay asientos. Y el plan de cuentas lo co
 Es un **plan de cuentas de resultados, sin patrimoniales**. Con eso se llega a material de Estado de
 Resultados; **un Estado de Situación Patrimonial no sale**, porque las cuentas no existen.
 
-### 💡 Y por eso el alcance hay que leerlo bien — ⏸️ ESPERA CONFIRMACIÓN DEL USUARIO
+### 💡 Y por eso el alcance hay que leerlo bien — ✅ **CONFIRMADO 2026-09-28**
+
+*⚠️ Decía **«⏸️ ESPERA CONFIRMACIÓN DEL USUARIO»** hasta el 2026-09-28. **Ya está confirmado**, con
+evidencia y no con respuesta: el usuario entregó tanto sus papeles de trabajo como **el borrador del
+balance que armó el contador con ellos** (§ Estudio 2026-09-28, más abajo). La sospecha de esta § era
+correcta.*
 
 A-FEAT-09 no dice *"que la app haga el balance"*: dice **"que los papeles de trabajo sean un export
 del sistema"**. Los papeles son **los respaldos que se le dan al contador**, y el balance lo arma él.
 **No hace falta convertir esto en un sistema de partida doble antes del 01/10.**
 
-> ❓ **Pregunta abierta al usuario:** *¿el contador pide papeles de trabajo, o espera el balance
-> armado?* De eso depende si el montón 🔴 hay que tocarlo este ejercicio.
+> ✅ **Pregunta ya respondida:** *¿el contador pide papeles de trabajo, o espera el balance armado?*
+> → **Papeles de trabajo.** El contador arma el balance, con **sus propias 93 cuentas** y su ajuste
+> por inflación. **El montón 🔴 no hay que tocarlo este ejercicio** — salvo el mapa de cuentas, que
+> es lo que hace utilizables los papeles → [A-FEAT-1183](#a-feat-1183).
 
 ### Los cuatro montones
 
@@ -2551,6 +2559,101 @@ aguinaldo, impuestos).
 **El filtro por ejercicio (1/7–30/6).** Chico, no toca a ninguna otra terminal, y sin eso ningún
 papel se recorta bien. Después, los papeles de a uno **a medida que el usuario arma el balance** —
 que es como ya estaba decidido más arriba.
+
+---
+
+## 📒 Estudio 2026-09-28 — los papeles del balance ANTERIOR, leídos
+
+*Rama `jms/export-balance`. El usuario dejó en `- Comunicacion JMS Claude - Archivos/Balance/` sus
+**12 planillas de trabajo** (`- Enviados/`) y **lo que el contador produjo con ellas** (`- Balance/`:
+borrador del balance + provisión de ganancias + el balance escaneado). Se leyeron con
+`scripts/leer-papeles-balance.mts` y `scripts/volcar-hoja-balance.mts`, **con las fórmulas**, no sólo
+los valores. Reporte para el usuario → https://claude.ai/artifact/CaegW9LfDev9pQVyBzZnYb*
+
+### ✅ Queda RESPONDIDA la pregunta abierta del 2026-08-31
+
+> La § de arriba preguntaba: *«¿el contador pide papeles de trabajo, o espera el balance armado?»*
+> **Respuesta, con evidencia: papeles de trabajo.** El contador arma el balance — está su borrador,
+> con sus propias 93 cuentas y su ajuste por inflación. **Lo que hay que exportar son los respaldos.**
+> Eso confirma que **no hace falta partida doble antes del 01/10**, que es lo que la § de arriba
+> sospechaba y no podía afirmar.
+
+### El índice ya existe: está en los nombres de las hojas
+
+`02 - HACIENDA` · `03 - CUENTAS A COBRAR` · `04 - CUENTAS A PAGAR` · `04.1 Cheques dados` ·
+`05 - PROVISION FC` · `1 - GRANOS` · `2 - STOCK INSUMOS AGRICOLAS` · `3 - SEMENTERAS` ·
+`5 - FORRAJEROS` · `6 - GAS OIL`. Más los sin numerar: **bancos y caja** (saldos + FCI + USD),
+**retiros y aportes**, **inmobiliario / red vial / automotor**, **gastos bancarios e impuestos por
+mes**, **libro diario**.
+
+### El destino: 93 cuentas, 4 capítulos, y un control que da CERO
+
+`Borrador - Balance hist y axi 2025.xlsx` → `Sheet1`. Columnas
+`Capítulo | Cuenta | Denominación | HIST | AXI`; **ACTIVO 33 · PASIVO 7 · PATRIMONIO NETO 6 ·
+RESULTADOS 41**; subtotales por capítulo y una fila final `=+D95+D52+D44+D35` que **da 0,00 exacto
+en las dos columnas**. 🧮 **Ese cero es el control del export** (§ 🧮 de `CLAUDE.md`): si no cierra,
+el papel no se entrega.
+
+### <a id="a-feat-1183"></a>🔴 El hallazgo estructural: dos planes de cuentas, y el mapa NO siempre cierra por cuenta — A-FEAT-1183
+
+El contador numera `4.1.1/01/03` y agrupa; la app numera `410801` y **desagrega más**
+(143 cuentas contra 93). El detalle va **para el lado correcto** —de varias de la app a una del
+balance se suma—, pero:
+
+> ⚠️ **Precisión del usuario, 2026-09-28** (y cambia el diseño del mapa): *«el contador tiene cuentas
+> contables macro que no son las nuestras, pero las agrupa por lo general. y a veces puede que no
+> haga agrupaciones totales de cuenta A es cuenta cliente B + C. sino que puede llegar a tomar del
+> libro diario cosas parciales. pero lo que es compras y ventas total vs total siempre debería dar
+> eso sí, lo otro es la conformación».*
+
+**Consecuencia de diseño:** el mapa se construye **como propuesta, no como verdad**. Donde el
+contador cortó parcial, **el export muestra la diferencia** en vez de forzar un total que no existe
+(§ 🎚️ *default del dato real, siempre editable*).
+
+**Y de ahí sale el control, que es el que hacía falta** (§ 🚦 *frena vs. avisa*):
+
+| | Qué compara | Diferencia significa | Acción |
+|---|---|---|---|
+| **Compras total ↔ compras total** | masa contra masa | el sistema se contradice | 🛑 **frena** |
+| **Ventas total ↔ ventas total** | masa contra masa | ídem | 🛑 **frena** |
+| **Conformación** (cómo se reparte adentro) | cuenta contra cuenta | criterio del contador que el sistema no conoce | ⚠️ **avisa y sigue** |
+
+📌 **Por eso el mapa arranca por compras y ventas**: son las dos únicas masas donde el total es
+verificable, y son justo las que la app tiene completas (comprobantes de ARCA).
+
+### Dos papeles que ya encajan solos
+
+- **`04.1 Cheques dados` = `$6.064.989,95`**, y ese número **es exactamente** la cuenta
+  `1.1.1/02/03 Cheques pend. de débito` del balance. La app ya tiene esos cheques con estado y fecha
+  de débito — es el aviso de Principal de [A-FEAT-1182](#a-feat-1182).
+- **`04 - CUENTAS A PAGAR`** tiene, columna por columna, el layout de *Mis Comprobantes* de ARCA
+  (tipo, punto de venta, número, CUIT emisor, denominación, neto gravado, no gravado, exento, otros
+  tributos, IVA, total). **Es la misma tabla que la app ya guarda**: el papel es un filtro y una suma.
+
+### Lo que NO sale hoy
+
+**Bienes de uso y amortizaciones** (12 cuentas del activo, sin módulo) · **ajuste por inflación**
+(necesita índice por período y fecha de origen de cada partida) · **provisión de ganancias** (la
+calcula el contador; el usuario tiene que pasar el criterio). Coincide con el montón 🔴 del
+relevamiento de arriba: sigue vigente.
+
+### ⚠️ Y un riesgo de las planillas mismas
+
+Varias pasaron por Google Sheets y volvieron: hay fórmulas **convertidas en valor fijo**
+(`__xludf.DUMMYFUNCTION`). Muestran el número correcto pero **ya no recalculan**. Algunas además
+**enlazan a otros archivos** (`[1]Stock hacienda`), que es un punto ciego. Razón más para que el
+papel lo produzca el sistema.
+
+### 🔴 Lo que falta del usuario — y bloquea
+
+1. **El mapa de cuentas app → balance** (~143 filas, una vez). Es el cuello de botella real.
+2. **Dónde el contador toma parcial del libro diario** — no hace falta la lista completa: el export
+   muestra la diferencia y los casos se identifican solos.
+3. **Qué hizo a mano** donde el papel y el balance no coinciden. **Caso ya detectado:** anticipos a
+   proveedores dice `6.228.000,07` en su hoja y `31.728.000,07` en el balance. **No se toca** hasta
+   que lo explique.
+4. **Los cálculos del contador** para ganancias.
+5. **¿Hay papeles del `01` que este año no se enviaron?** La numeración lo sugiere.
 
 ---
 
