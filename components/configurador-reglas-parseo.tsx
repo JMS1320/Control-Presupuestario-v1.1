@@ -11,9 +11,12 @@
  *   | `reglas_conciliacion`      | al conciliar | asigna cuenta contable por texto           |
  *   | `reglas_contable_interno`  | al conciliar | asigna contable / interno                  |
  *
- * **La unidad de trabajo es el SUBTIPO, no el tipo.** Un mismo tipo de movimiento llega escrito de
- * maneras distintas —`TRANSFERENCIA A TERCEROS` viene en 3— y las reglas que cuentan líneas sólo
- * valen dentro de un subtipo. Cada subtipo se configura por separado, con su propio ejemplo real.
+ * **La unidad de trabajo es el TIPO de movimiento.** Se parte en **subtipos** sólo cuando el banco
+ * lo manda escrito de **más de una manera** — `TRANSFERENCIA A TERCEROS` viene en 3, y las reglas
+ * que cuentan líneas sólo valen dentro de uno. En PAM **ningún tipo se parte**; en MA, 3 de 12.
+ *
+ * 🗣️ Por eso la palabra «subtipo» aparece **sólo donde significa algo** (usuario, 2026-09-26:
+ * *«no hablamos de subtipo si no lo hay»*).
  *
  * Lo que ya sabemos no se pregunta: el CUIT se reconoce solo y va a su columna, el nombre está
  * antes del CUIT, el CBU son 22 dígitos, el banco empieza con «BANCO». Todo propuesto y
@@ -544,12 +547,27 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const cambiarFila = (i: number, cambio: Partial<Fila>) =>
     setFilas(fs => fs.map((x, j) => (j === i ? { ...x, ...cambio } : x)))
 
-  /** Reglas de este subtipo que no se pudieron ubicar en ninguna línea: no se tocan. */
+  /**
+   * Reglas que aplican a este subtipo y que **no se pudieron ubicar en ninguna línea**.
+   *
+   * 🧨 **Las VIEJAS de acá son las que rompen.** Una regla sin subtipo cuyo modo no se puede
+   * ubicar —`nro_operacion`, por ejemplo— **no la toca el guardado** y sigue aplicándose al tipo
+   * entero. Cuando la nueva del subtipo apunta a la misma columna con otro valor, hay **choque** y
+   * el movimiento **no se parsea**.
+   *
+   * 📍 Pasó de verdad ([A-BUG-1213], 2026-09-25): en PAM, las dos cuotas de METROGAS de
+   * `DEB. AUTOM. DE SERV.` quedaron sin parsear. La regla vieja buscaba `OP:` y devolvía
+   * `99O31012026F`; la nueva tomaba la línea 4 entera, `OP:99O31012026F`. Dos valores distintos
+   * para `numero_de_comprobante`.
+   */
   const huerfanas = useMemo(() => {
     if (!editando) return []
     const ubicadas = new Set(filas.map(f => f.reglaExistente?.id).filter(Boolean))
     return reglasDeSubtipo(editando.tipo.tipo, editando.subtipo.firma).filter(r => !ubicadas.has(r.id))
   }, [editando, filas, reglasDeSubtipo])
+
+  /** De las de arriba, las que **no tienen subtipo**: ésas se dan de baja al guardar. */
+  const huerfanasViejas = useMemo(() => huerfanas.filter(r => !r.firma_forma), [huerfanas])
 
   const plan = useMemo(() => {
     const firma = editando?.subtipo.firma ?? ""
@@ -614,9 +632,28 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           .update({ grupo_de_conceptos: grupo }).in("id", otras.map(r => r.id))
       }
 
+      /**
+       * 🧹 **Las reglas VIEJAS que no se pudieron ubicar se dan de baja.**
+       *
+       * Si quedaran, se seguirían aplicando al tipo entero y chocarían con las que se acaban de
+       * guardar — y **un choque deja el movimiento sin parsear** ([A-BUG-1213]). Es lo mismo que
+       * ya pasa con las viejas que **sí** se ubican: al guardar quedan atadas a este subtipo.
+       *
+       * 🛑 **Baja, no borrado**: `activo = false` se revierte con un UPDATE y no destruye nada.
+       */
+      if (huerfanasViejas.length > 0) {
+        const { error } = await supabase.from("config_parseo_extracto")
+          .update({ activo: false }).in("id", huerfanasViejas.map(r => r.id))
+        if (error) throw error
+      }
+
       toast.success(
         `${tipo} · subtipo de ${editando.subtipo.lineas} líneas: ${plan.alta} nueva(s), ` +
-        `${plan.cambio} cambiada(s), ${plan.baja} borrada(s) — corré «Re-parsear» para aplicarlo`
+        `${plan.cambio} cambiada(s), ${plan.baja} borrada(s)` +
+        (huerfanasViejas.length > 0
+          ? ` · ${huerfanasViejas.length} regla(s) vieja(s) dadas de baja para que no choquen`
+          : "") +
+        ` — corré «Re-parsear» para aplicarlo`
       )
       setEditando(null)
       cargar()
@@ -1298,9 +1335,16 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           </div>
 
           {huerfanas.length > 0 && (
-            <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-              {huerfanas.length} regla(s) de este subtipo apuntan a líneas que este movimiento no tiene.
-              <strong> No se tocan</strong> al guardar.
+            <p className="rounded border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800">
+              {huerfanas.length} regla(s) apuntan a líneas que este movimiento no tiene.
+              {huerfanasViejas.length > 0 ? (
+                <> De ésas, <strong>{huerfanasViejas.length} son viejas y sin subtipo</strong>: al
+                guardar <strong>se dan de baja</strong>, porque si no seguirían aplicándose a todo el
+                tipo y chocarían con éstas — y un choque deja el movimiento sin parsear. Se revierte
+                volviéndolas a activar.</>
+              ) : (
+                <> <strong>No se tocan</strong> al guardar: son de otro subtipo.</>
+              )}
             </p>
           )}
 

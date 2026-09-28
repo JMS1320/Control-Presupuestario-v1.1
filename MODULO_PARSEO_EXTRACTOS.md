@@ -34,7 +34,19 @@ importar el Excel.**
 
 ---
 
-## 🧬 El SUBTIPO — la unidad de trabajo
+## 🧬 El TIPO es la unidad. El SUBTIPO aparece sólo cuando hace falta
+
+> 🗣️ **Cómo se habla de esto** *(corrección del usuario, 2026-09-26: «no hablamos de subtipo si no
+> lo hay»)*: **la unidad de trabajo es el TIPO de movimiento.** Un tipo se parte en **subtipos**
+> sólo cuando el banco lo manda escrito de **más de una manera**.
+>
+> 📊 **En números**: **PAM tiene 9 tipos y ninguno con más de una forma** — ahí la palabra
+> «subtipo» no significa nada y no se usa. **MA tiene 12 tipos y 16 subtipos**, porque **3 de esos
+> 12** llegan de varias maneras. *(La pantalla hace lo mismo: dice «5 líneas» cuando hay una sola
+> forma, y «Subtipo de 5 líneas» sólo cuando hay más.)*
+>
+> ⚠️ Un contador que diga *«9 tipos · 9 subtipos»* **no informa nada**: los dos números iguales
+> significan que ningún tipo se parte. Por eso la pantalla muestra sólo los tipos.
 
 Un mismo tipo de movimiento llega escrito de maneras distintas. Cada una es un **subtipo**, y su
 huella es **cuántos renglones trae y de qué clase es cada uno**:
