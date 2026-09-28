@@ -5,6 +5,7 @@ import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
+import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
 import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -59,6 +60,14 @@ const columnasDefinicion = [
   { key: 'cuit_proveedor', label: 'CUIT Proveedor', type: 'text', width: 'w-32', editable: false }, // Solo lectura (viene de fuente)
   { key: 'nombre_proveedor', label: 'Nombre Proveedor', type: 'text', width: 'w-48', editable: false }, // Solo lectura (viene de fuente)
   { key: 'detalle', label: 'Detalle', type: 'text', width: 'w-64', editable: true },
+  /**
+   * 📎 La factura, para poder abrirla desde acá igual que en el subdiario (A-FEAT-1185).
+   * Pedido del usuario: *«en caso de no estar debe ser claro que no está y no que salte un bug»* —
+   * por eso distingue **falta** (debería tener y no tiene) de **no le corresponde** (template,
+   * anticipo, sueldo, venta). La regla vive en `lib/facturas/archivo-digital.ts`, compartida con
+   * el subdiario. No se edita: es un reflejo del archivo digital.
+   */
+  { key: 'pdf_drive_url', label: '📎', type: 'archivo', width: 'w-10', align: 'text-center', editable: false },
   { key: 'debitos', label: 'Débitos', type: 'currency', width: 'w-32', align: 'text-right', editable: true },
   { key: 'creditos', label: 'Créditos', type: 'currency', width: 'w-32', align: 'text-right', editable: true },
   { key: 'saldo_cta_cte', label: 'SALDO CTA CTE', type: 'currency', width: 'w-36', align: 'text-right', editable: false } // Calculado
@@ -3144,8 +3153,45 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       )
     }
 
+    /**
+     * 📎 El archivo digital de la factura (A-FEAT-1185). Va **antes** del camino de edición porque
+     * no se edita nunca: es un reflejo de si el PDF está archivado.
+     *
+     * 🚦 Los cinco estados y por qué importan están en `lib/facturas/archivo-digital.ts`. Lo que
+     * resuelve el pedido del usuario es que **`falta` (❌ rojo) y `sin-factura` (– gris) se ven
+     * distinto**: una cuota de template no tiene factura *por diseño* y marcarla en rojo sería
+     * inventarle un problema.
+     */
+    if (columna.type === 'archivo') {
+      const estado = estadoArchivoDigital(fila)
+      const { icono, clase, titulo } = PRESENTACION_ARCHIVO[estado]
+      const cuantas = fila.facturas_agrupadas ?? 1
+      return (
+        <div className={`${columna.width} text-center`}>
+          {estado === 'con' ? (
+            <a
+              href={fila.pdf_drive_url!}
+              target="_blank"
+              rel="noreferrer"
+              title={titulo}
+              className={clase}
+              // La grilla abre la edición al hacer click en la celda: sin esto, abrir la factura
+              // además dispararía el editor de la fila.
+              onClick={e => e.stopPropagation()}
+            >
+              {icono}
+            </a>
+          ) : (
+            <span className={clase} title={estado === 'grupo' ? `${titulo} (son ${cuantas})` : titulo}>
+              {icono}
+            </span>
+          )}
+        </div>
+      )
+    }
+
     // Verificar si esta celda está siendo editada por el hook
-    const esCeldaHookEnEdicion = hookEditor.celdaEnEdicion?.filaId === fila.id && 
+    const esCeldaHookEnEdicion = hookEditor.celdaEnEdicion?.filaId === fila.id &&
                                  hookEditor.celdaEnEdicion?.columna === columna.key
     
     // Si esta celda está en edición del hook, mostrar input del hook

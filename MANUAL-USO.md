@@ -42,6 +42,7 @@
 - [📒 Módulo: Subdiario IVA Compras (Egresos → Facturas → Subdiarios)](#módulo-subdiario-iva-compras-egresos-facturas-subdiarios)
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
+- [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
 - [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
 - [🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*](#renovar-campaña-por-tandas-nuevo-2026-08-22-sin-testear)
 - [🏢 Ficha de proveedor 🟡 *(nuevo 2026-08-07, sin testear)*](#ficha-de-proveedor-nuevo-2026-08-07-sin-testear)
@@ -2348,6 +2349,29 @@ porque los grupos viejos llegaban a `conciliado` por el motor de conciliación, 
    ni desde la fila ni desde el lote. A los monotributistas no se les retiene.
 
 ---
+
+## 📎 Cash Flow → ver la factura *(2026-09-28)*
+
+En el Cash Flow hay una **columna con un clip 📎**, entre *Detalle* y *Débitos*. Sirve para abrir la
+factura sin salir de la pantalla, igual que en el subdiario.
+
+**Qué te vas a encontrar en esa columna:**
+
+| Lo que ves | Qué significa | Qué hacer |
+|---|---|---|
+| **📎 verde** | la factura está archivada | clickealo: abre el PDF en otra pestaña |
+| **🌐 gris** | la factura es de **Portal**, así que no llega por mail | nada — si la necesitás, la bajás del portal del proveedor |
+| **❌ roja** | esta factura **debería** tener el PDF archivado y no lo tiene | buscarlo (Subdiarios tiene la supervisión del archivo digital) |
+| **– gris claro** | esta fila **no viene de una factura**: es un template, un anticipo, un sueldo o una venta | nada, es lo normal |
+| **⧉ azul** | es un **pago agrupado**: hay varias facturas juntas | abrí el grupo para ver cada una |
+
+📌 **La diferencia entre la ❌ roja y el – gris es la que importa.** Las dos quieren decir "acá no
+hay factura para abrir", pero la roja es **un hueco que hay que completar** y el guión es **lo
+esperable**: una cuota de un impuesto o de un seguro nunca va a tener factura de ARCA.
+
+💡 Clickear el clip **no abre el editor de la celda**: abre la factura y nada más.
+
+⚠️ Sin probar todavía → A-TEST-1154
 
 ## 📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*
 

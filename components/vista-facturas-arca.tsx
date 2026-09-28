@@ -21,6 +21,7 @@ import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { encolarMailDetalle as encolarMailDetalleLib } from "@/lib/pagos/encolar-mail-detalle"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
+import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -365,8 +366,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [filtroArchivoPdf, setFiltroArchivoPdf] = useState<Set<'con' | 'falta' | 'portal'>>(new Set())
   // Categoría de archivo digital de una factura (para íconos, chips y filtro del subdiario).
   // 'con' = tiene PDF · 'portal' = sin PDF pero es de Portal (esperable) · 'falta' = sin PDF y debería tenerlo.
+  //
+  // 📌 La regla vive en `lib/facturas/archivo-digital.ts` desde A-FEAT-1185, porque el Cash Flow
+  // ahora muestra lo mismo y no puede haber dos criterios (§ ♻️). Acá **sólo pueden salir estos
+  // tres**: el helper devuelve además `sin-factura` y `grupo`, y ninguno aplica en el subdiario —
+  // todas sus filas SON facturas sueltas, así que no manda `origen` ni `facturas_agrupadas`.
   const categoriaArchivo = (f: FacturaArca): 'con' | 'falta' | 'portal' =>
-    f.pdf_drive_url ? 'con' : (f.fc === 'Portal' ? 'portal' : 'falta')
+    estadoArchivoDigital(f) as 'con' | 'falta' | 'portal'
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
 

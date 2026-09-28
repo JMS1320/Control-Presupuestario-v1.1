@@ -58,6 +58,7 @@ import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
+import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import {
@@ -2053,5 +2054,74 @@ export function correrCasos(): Resultado[] {
     "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
     diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
 
+
+  /**
+   * 📎 **El archivo digital de una factura, visto desde el Cash Flow — A-FEAT-1185.**
+   *
+   * El pedido del usuario fue *«en caso de no estar debe ser claro que no está y no que salte un
+   * bug»*, y lo que lo hace posible es **el orden en que se preguntan las cosas**: primero si la
+   * fila viene de una factura, y sólo después si tiene PDF.
+   *
+   * 🔑 **Por eso hay caso, y por eso falla con el código anterior.** Antes de A-FEAT-1185 la regla
+   * era `pdf_drive_url ? 'con' : (fc === 'Portal' ? 'portal' : 'falta')` — sin mirar el origen. Con
+   * esa versión, **una cuota de template caía en `falta`** y salía con la cruz roja, que es
+   * exactamente el falso error que había que evitar. El primer caso de abajo lo agarra.
+   */
+  {
+    // Una cuota de template: NUNCA va a tener factura de ARCA. No es un hueco, es por diseño.
+    chequear("Archivo de factura", "🔑 Una cuota de template NO se marca como faltante",
+      "sin-factura",
+      estadoArchivoDigital({ origen: "TEMPLATE" }),
+      estadoArchivoDigital({ origen: "TEMPLATE" }) === "sin-factura", "A-FEAT-1185")
+
+    // Los otros tres orígenes que tampoco nacen de una factura.
+    const otros = (["ANTICIPO", "SUELDO", "VENTA"] as const)
+      .map(o => estadoArchivoDigital({ origen: o }))
+    chequear("Archivo de factura", "Anticipo, sueldo y venta tampoco son faltantes",
+      "sin-factura ×3", otros.join(" "),
+      otros.every(e => e === "sin-factura"), "A-FEAT-1185")
+
+    // Una factura de ARCA con su PDF archivado: se puede abrir.
+    chequear("Archivo de factura", "Factura con PDF archivado se puede ver",
+      "con",
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: "https://drive.google.com/file/d/abc" }),
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: "https://drive.google.com/file/d/abc" }) === "con",
+      "A-FEAT-1185")
+
+    // Una factura de ARCA sin PDF y que NO es de Portal: acá sí falta algo.
+    chequear("Archivo de factura", "🔴 Factura de ARCA sin PDF sí es un faltante",
+      "falta",
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: null, fc: "No" }),
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: null, fc: "No" }) === "falta", "A-FEAT-1185")
+
+    // De Portal: no llega por mail, así que no tener PDF es lo esperable.
+    chequear("Archivo de factura", "Una de Portal sin PDF es esperable, no un error",
+      "portal",
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: null, fc: "Portal" }),
+      estadoArchivoDigital({ origen: "ARCA", pdf_drive_url: null, fc: "Portal" }) === "portal", "A-FEAT-1185")
+
+    // Un pago agrupado: son varias facturas, no hay un PDF único que ofrecer.
+    chequear("Archivo de factura", "Un pago agrupado no ofrece un PDF suelto",
+      "grupo",
+      estadoArchivoDigital({ origen: "ARCA", facturas_agrupadas: 3, pdf_drive_url: "https://x/1" }),
+      estadoArchivoDigital({ origen: "ARCA", facturas_agrupadas: 3, pdf_drive_url: "https://x/1" }) === "grupo",
+      "A-FEAT-1185")
+
+    // 📌 El subdiario no manda `origen` porque todas sus filas SON facturas. Si eso se rompiera,
+    //    la pantalla que ya funcionaba empezaría a mostrar guiones grises en vez de sus íconos.
+    chequear("Archivo de factura", "Sin `origen` se asume factura — el subdiario no cambia",
+      "con",
+      estadoArchivoDigital({ pdf_drive_url: "https://drive.google.com/file/d/abc" }),
+      estadoArchivoDigital({ pdf_drive_url: "https://drive.google.com/file/d/abc" }) === "con",
+      "A-FEAT-1185")
+
+    // 🛑 La frontera del pedido: `falta` y `sin-factura` NO pueden dar lo mismo.
+    chequear("Archivo de factura", "🛑 «falta» y «no le corresponde» son estados distintos",
+      "distintos",
+      estadoArchivoDigital({ origen: "ARCA", fc: "No" }) === estadoArchivoDigital({ origen: "TEMPLATE" })
+        ? "iguales" : "distintos",
+      estadoArchivoDigital({ origen: "ARCA", fc: "No" }) !== estadoArchivoDigital({ origen: "TEMPLATE" }),
+      "A-FEAT-1185")
+  }
   return r
 }

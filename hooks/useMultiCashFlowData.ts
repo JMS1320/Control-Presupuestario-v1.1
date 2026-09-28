@@ -166,6 +166,14 @@ export interface CashFlowRow {
   detalle_usuario?: string | null
   // Empleado (solo para sueldos)
   empleado_id?: string | null
+  /**
+   * El archivo digital de la factura, para poder **verla desde el Cash Flow** igual que en el
+   * subdiario (A-FEAT-1185). Sólo vienen en filas de origen `ARCA`; en el resto quedan nulos y
+   * `estadoArchivoDigital()` las clasifica como `sin-factura` — que NO es lo mismo que faltante.
+   * Ver `lib/facturas/archivo-digital.ts`.
+   */
+  pdf_drive_url?: string | null
+  fc?: string | null
 }
 
 // Filtros para Cash Flow
@@ -259,6 +267,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         tc_pago: f.tc_pago ?? null,
         comprobante_display: `${tipoComprobanteAbrev(f.tipo_comprobante)} - ${f.numero_desde || ''}`,
         tipo_comprobante: f.tipo_comprobante ?? null,
+        // Para ver la factura desde el Cash Flow (A-FEAT-1185). El `select` ya traía las dos
+        // columnas; sólo faltaba que viajaran en la fila.
+        pdf_drive_url: f.pdf_drive_url ?? null,
+        fc: f.fc ?? null,
         /**
          * 🐞 A-BUG-148 — estos tres se usaban **sólo para armar el texto de `comprobante_display`**
          * y no viajaban como campos. Consecuencia: la retención de una factura **suelta** se
