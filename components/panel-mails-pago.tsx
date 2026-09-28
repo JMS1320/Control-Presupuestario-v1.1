@@ -65,35 +65,50 @@ export function PanelMailsPago() {
     return true
   }
 
-  // URL del GAS desplegado como Web App (se pide una vez y queda en el navegador)
-  const getGasUrl = (): string | null => {
-    let u = localStorage.getItem("gas_mails_url")
-    if (!u) {
-      u = prompt("Pegá la URL del GAS desplegado como Web App (Apps Script → Deploy → Web app → URL):") || ""
-      if (u) localStorage.setItem("gas_mails_url", u)
+  /**
+   * Dispara el GAS **por nuestra propia ruta** (A-BUG-1216).
+   *
+   * 🐞 **Antes esto llamaba al GAS directo desde el navegador**, con la URL que el usuario había
+   * pegado a mano —guardada en `localStorage.gas_mails_url`— y con `mode: "no-cors"`. Dos cosas
+   * malas: la URL **envejecía sin arreglo posible** (Apps Script la cambia en cada re-deploy y la
+   * pantalla sólo preguntaba si estaba vacía), y sobre todo **la respuesta era opaca**: el éxito se
+   * cantaba con sólo que el request saliera, así que *«anduvo pero no hay borrador»* era invisible.
+   *
+   * 🔑 Ahora el error llega **explicado** y el éxito se **afirma**, no se supone. La URL vive en
+   * `GAS_MAILS_PAGO_URL`, del lado del servidor. Ver `app/api/gas/mails-pago/route.ts`.
+   */
+  const dispararGas = async (id?: string): Promise<boolean> => {
+    try {
+      const r = await fetch("/api/gas/mails-pago", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(id ? { id } : {}),
+      })
+      const data = await r.json().catch(() => null)
+      if (!r.ok || !data?.ok) {
+        toast.error(data?.error || `El GAS falló (HTTP ${r.status})`)
+        return false
+      }
+      return true
+    } catch (e) {
+      toast.error("No se pudo llamar a la app: " + (e as Error).message)
+      return false
     }
-    return u || null
   }
   const enviarBorrador = async (m: MailPago) => {
     if (!(await guardar(m, true))) return // persiste tus ediciones primero
-    const url = getGasUrl(); if (!url) return
-    try {
-      await fetch(`${url}?id=${m.id}`, { method: "GET", mode: "no-cors" })
-      toast.success("Preparando borrador… revisá Gmail. El estado se actualiza en unos segundos.")
-      setTimeout(cargar, 3000)
-    } catch (e) { toast.error("Error disparando el GAS: " + (e as Error).message) }
+    if (!(await dispararGas(m.id))) return
+    toast.success("Borrador preparado — revisalo en Gmail.")
+    setTimeout(cargar, 3000)
   }
   const enviarTodos = async () => {
     const pend = mails.filter(m => m.estado === "pendiente")
     if (pend.length === 0) { toast.info("No hay mails pendientes."); return }
     if (!confirm(`¿Preparar borradores de los ${pend.length} mails pendientes?`)) return
-    const url = getGasUrl(); if (!url) return
     await Promise.all(pend.map(m => guardar(m, true))) // persiste ediciones de todos
-    try {
-      await fetch(url, { method: "GET", mode: "no-cors" })
-      toast.success(`Preparando ${pend.length} borradores… revisá Gmail. El estado se actualiza en unos segundos.`)
-      setTimeout(cargar, 4000)
-    } catch (e) { toast.error("Error disparando el GAS: " + (e as Error).message) }
+    if (!(await dispararGas())) return
+    toast.success(`${pend.length} borrador(es) preparado(s) — revisalos en Gmail.`)
+    setTimeout(cargar, 4000)
   }
   const borrar = async (m: MailPago) => {
     if (!confirm(`¿Borrar el mail encolado para ${m.proveedor || "?"}?`)) return
