@@ -65,6 +65,7 @@ import {
 import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
+import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
@@ -3206,6 +3207,78 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · por cuenta", "Sin nada que imputar, el resumen lo dice y no divide por cero",
       "0 · 0%", `${sano.sinImputar.comprobantes} · ${sano.sinImputar.porcentaje}%`,
       sano.sinImputar.comprobantes === 0 && sano.sinImputar.porcentaje === 0, "A-FEAT-1187")
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 💳 CUENTAS A PAGAR / A COBRAR AL CIERRE — papeles 03 y 04 (A-FEAT-1187).
+  //    El punto: manda CUÁNDO SE PAGÓ, no el estado de hoy.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const CIERRE = "2026-06-30"
+    const comp = (
+      estado: string, fechaPago: string | null, total: number, quien = "Proveedor",
+    ): ComprobanteConPago => ({
+      estado, fechaPago,
+      origenFecha: fechaPago ? "movimiento bancario" : "sin dato",
+      asiento: {
+        id: `${quien}-${total}-${estado}`, fuente: "arca", subdiario: "2026-05",
+        fecha: "2026-05-10", tipo: 1, punto_venta: 1, numero: 1,
+        cuit: "30000000007", denominacion: quien,
+        neto_gravado: 0, no_gravado: 0, exento: 0, otros_tributos: 0, iva: 0, total,
+        cuenta_contable: "Aguadas", nro_cuenta: "", centro_costo: "",
+      },
+    })
+
+    // 🔑 EL CASO QUE JUSTIFICA TODO: una factura que HOY dice «conciliado», pero que se pagó
+    //    DESPUÉS del cierre. Al 30/06 era deuda, así que va al papel.
+    const despues = armarCuentasAlCierre([comp("conciliado", "2026-08-15", 1_000_000)], CIERRE)
+    chequear("Balance · cuentas", "🔑 Conciliada pero PAGADA DESPUÉS del cierre: SÍ es cuenta a pagar",
+      "1 fila · 1000000", `${despues.filas.length} fila · ${despues.total}`,
+      despues.filas.length === 1 && despues.total === 1_000_000, "A-FEAT-1187")
+
+    const antes = armarCuentasAlCierre([comp("conciliado", "2026-06-15", 1_000_000)], CIERRE)
+    chequear("Balance · cuentas", "Pagada ANTES del cierre: no es deuda",
+      "0 filas", `${antes.filas.length} filas`, antes.filas.length === 0, "A-FEAT-1187")
+
+    // 🎯 El borde exacto: pagada EL DÍA del cierre está paga.
+    const elDia = armarCuentasAlCierre([comp("conciliado", "2026-06-30", 500)], CIERRE)
+    chequear("Balance · cuentas", "🔑 Pagada EL DÍA del cierre cuenta como pagada",
+      "0 filas", `${elDia.filas.length} filas`, elDia.filas.length === 0, "A-FEAT-1187")
+
+    // 🎯 Sin fecha, manda el estado — pero sólo para un lado.
+    const pendiente = armarCuentasAlCierre([comp("pendiente", null, 300_000)], CIERRE)
+    chequear("Balance · cuentas", "Pendiente y sin fecha: es deuda",
+      "1 fila · no se pagó nunca",
+      `${pendiente.filas.length} fila · ${pendiente.filas[0]?.motivo}`,
+      pendiente.filas[0]?.motivo === "no se pagó nunca", "A-FEAT-1187")
+
+    // 🔑 EL HUECO HONESTO: dice conciliado y no hay NINGUNA fecha. No se puede decidir.
+    const sinFecha = armarCuentasAlCierre([comp("conciliado", null, 6_000_000)], CIERRE)
+    chequear("Balance · cuentas", "🔑 Conciliada SIN fecha: no se inventa — va a la lista aparte",
+      "0 en el papel · 1 sin dato · 6000000",
+      `${sinFecha.filas.length} en el papel · ${sinFecha.sinDatoDePago.length} sin dato · ${sinFecha.totalSinDato}`,
+      sinFecha.filas.length === 0 && sinFecha.sinDatoDePago.length === 1 &&
+      sinFecha.totalSinDato === 6_000_000, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO — «anterior» es de OTRO ejercicio: no se duplica la deuda entre balances.
+    const anterior = armarCuentasAlCierre([comp("anterior", null, 9_000_000)], CIERRE)
+    chequear("Balance · cuentas", "🔑 Un comprobante «anterior» NO es deuda de este ejercicio",
+      "0 en el papel · 0 sin dato",
+      `${anterior.filas.length} en el papel · ${anterior.sinDatoDePago.length} sin dato`,
+      anterior.filas.length === 0 && anterior.sinDatoDePago.length === 0, "A-FEAT-1187")
+
+    // Y se cuenta cuántos entraron por «pagado después», que es el caso que el criterio ingenuo perdía.
+    const mezcla = armarCuentasAlCierre([
+      comp("conciliado", "2026-07-01", 100, "Zeta"),
+      comp("conciliado", "2026-09-01", 200, "Alfa"),
+      comp("pendiente", null, 300, "Beta"),
+      comp("conciliado", "2026-01-01", 900, "Ya pagada"),
+    ], CIERRE)
+    chequear("Balance · cuentas", "Cuenta los pagados después del cierre y ordena por proveedor",
+      "2 después · Alfa, Beta, Zeta · total 600",
+      `${mezcla.pagadosDespues} después · ${mezcla.filas.map(f => f.asiento.denominacion).join(", ")} · total ${mezcla.total}`,
+      mezcla.pagadosDespues === 2 && mezcla.total === 600 &&
+      mezcla.filas[0].asiento.denominacion === "Alfa", "A-FEAT-1187")
   }
 
   return r

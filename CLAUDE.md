@@ -901,6 +901,9 @@ algo no existe: mirar en qué rama está el árbol, y si hace falta buscarlo con
 `git log -S` / `git show <rama>:<archivo>`, que sí cruzan ramas.
 *Y pasó en el momento de escribir esta regla: el ancla que buscaba vivía en otra rama.*
 
+🛑 **Y el grafo NO ve el flujo del DATO** — qué tabla escribe cada cosa es un string, no un
+símbolo. Eso va por la BD: § 🔁 *La propagación del dato*, acá abajo.
+
 📌 **`grep` no se jubila, cambia de trabajo**: el grafo sabe de **símbolos y llamadas**; `grep` sigue
 siendo el bueno para **literales** — un texto de pantalla, un mensaje de error, un comentario, una
 columna dentro de un string. Las dos veces que hizo falta encontrar un cartel repetido, lo encontró
@@ -908,6 +911,62 @@ columna dentro de un string. Las dos veces que hizo falta encontrar un cartel re
 
 👤 **Javier no lo necesita.** El índice vive en esta máquina y la configuración (`.mcp.json`) está
 gitignoreada: **no va al repo y no le cambia nada**. Si él lo quiere, lo instala por su cuenta.
+
+### 🔁 LA PROPAGACIÓN DEL DATO — si se escribe acá, ¿qué más hay que escribir? (REGLA)
+*Pedida por el usuario 2026-09-29, después de que yo diera por revisada una cadena que no había
+trazado: **«el flujo de la info, cuando se modifica acá y debe modificarse allá, es una información
+básica nuestra y de muchísima importancia»**.*
+
+> **Antes de tocar cualquier escritura de datos —y SIEMPRE al entrar a un sector viejo— se
+> pregunta a dónde MÁS viaja ese dato, y se contesta con evidencia, no de memoria.**
+
+**Las tres preguntas, y se responden las tres:**
+
+| | La pregunta | Cómo se contesta |
+|---|---|---|
+| **1 · ¿A dónde va?** | qué otras tablas guardan una copia o un vínculo de este dato | la **columna de vínculo** (`comprobante_arca_id`, `template_cuota_id`, `sueldo_pago_id`) buscada **en la BD**, no en el código |
+| **2 · ¿Por cuántos caminos se escribe?** | cuántas pantallas o rutas hacen esta misma escritura | `grep` del nombre de la columna junto a `update`/`insert`. **Casi nunca es uno solo** |
+| **3 · ¿Y al DESHACER?** | si se borra o se desasigna, ¿se deshace allá también? | leerlo. Es el que siempre falta |
+
+🧨 **El caso que la originó, con sus números** ([A-BUG-1221](PENDIENTES.md#a-bug-1221)): imputar una
+cuenta contable a una factura la propaga al movimiento bancario. Andaba —137 de 137 coincidían—,
+pero la lista de tablas estaba **escrita a mano en dos archivos** y nombraba **3 de las 10** que
+llevan el vínculo. `msa.tarjeta_visa_business` ya tenía **7 movimientos** que nunca la recibieron. Y
+**quitar** la cuenta no propagaba nada: el movimiento quedaba imputado a una cuenta que la factura
+ya no tenía.
+
+#### 🛑 Y esto el GRAFO **no lo ve** — no es que esté mal indexado, es por construcción
+
+La § 🗺️ de arriba manda usar el grafo antes de `grep`, y sigue valiendo **para símbolos y
+llamadas**. Pero el grafo indexa *código*, no *datos*, y acá la diferencia es total:
+
+- **Una tabla es un string, no un símbolo.** `.from('msa_galicia')` no crea ninguna arista: para el
+  grafo es texto adentro de una llamada.
+- **Y la mitad de las veces ni siquiera es un string.** En este repo hay **141** `.from('tabla')`
+  literales y **más de 70** `.from(variable)` — entre ellos `.from(tabla)` **32 veces**, que es
+  justo el patrón del bug de arriba: un `for` sobre una lista de nombres.
+- **Medido el 2026-09-29**: el índice tiene 10 nodos `Table` (todos de archivos `.sql`, con
+  `msa_galicia` repetida 6 veces) y **178 aristas `WRITES` de las cuales CERO apuntan a una tabla**.
+- **Y no se le puede enseñar**: `ingest_traces` responde textualmente *«graph edge creation is not
+  implemented»*.
+
+👉 **Entonces la fuente de verdad de la propagación es la BD, no el índice.** La pregunta *«¿qué
+otras tablas llevan esta columna?»* se le hace a `information_schema.columns` con el MCP de
+Supabase en read-only, y devuelve la respuesta completa en una consulta:
+
+```sql
+select table_schema, table_name from information_schema.columns
+where column_name = 'comprobante_arca_id' order by 1,2;
+```
+
+📌 **Lo que sí conviene construir** es el mapa de propagación como **control** —una lista de tablas
+en `lib/`, importada por todos los caminos, y un chequeo que avise cuando aparece una tabla con el
+vínculo que nadie escribe— en vez de esperar que el índice lo adivine.
+→ [A-FEAT-1194](PENDIENTES.md#a-feat-1194).
+
+⚠️ **Y la regla del grafo se corrige acá, no en otro lado** (§ 🔄 *un hito se documenta corrigiendo
+lo viejo*): un resultado vacío del grafo sobre una tabla **no significa que nadie la escriba**.
+Significa que el grafo no mira ahí.
 
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
 *Agregada 2026-08-03, después de que Claude duplicara **tres veces en una sola sesión** algo que

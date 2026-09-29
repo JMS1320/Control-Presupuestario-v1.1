@@ -16,6 +16,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { esNotaCredito as esNotaCreditoArca } from "@/lib/pagos/notas-credito"
+import { tomarEncargoCancelacionNC, type EncargoCancelacionNC } from "@/lib/pagos/encargo-cancelacion-nc"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -6766,6 +6768,89 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     </div>
   )
 
+
+  /**
+   * 💰 Abre la **Vista de Pagos** con sus cuatro fuentes cargadas.
+   *
+   * Se sacó del `onClick` del botón el 2026-09-29 para poder llamarla también desde un **encargo**
+   * del Cash Flow (A-FEAT-1192): el aviso de notas de crédito deja dicho qué proveedor y esta
+   * pantalla abre **su** modal de cancelación, el de siempre. La lógica de cancelar no se copió a
+   * ningún lado — ver `lib/pagos/encargo-cancelacion-nc.ts`.
+   *
+   * @param encargo si viene, además de abrir la vista se abre el modal de cancelación de ese CUIT
+   */
+  const abrirVistaPagos = async (encargo?: EncargoCancelacionNC | null) => {
+      setCargandoPagos(true)
+      setMostrarModalPagos(true)
+      setFiltroOrigenPagos({ arca: true, template: true, anticipo: true, sueldo: true })
+      setFacturasSeleccionadasPagos(new Set())
+      setTemplatesSeleccionadosPagos(new Set())
+      setSueldosSeleccionadosPagos(new Set())
+
+      // Cargar en paralelo las 4 fuentes + cuentas contables
+      // Si el rol es contable, solo se ven los marcados como visible_contable=true
+      const filtroVisible = (q: any) => esContable ? q.eq('visible_contable', true) : q
+      const [arcaResult, templatesResult, anticiposResult, sueldosResult, cuentasResult] = await Promise.all([
+        filtroVisible(supabase.schema(schemaName).from('comprobantes_arca').select('*')
+          .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq']))
+          .order('fecha_vencimiento', { ascending: true }),
+        filtroVisible(supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
+          .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
+          .eq('egreso.activo', true))
+          .order('fecha_vencimiento', { ascending: true }),
+        filtroVisible(supabase.from('anticipos_proveedores').select('*')
+          .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
+          .neq('estado', 'conciliado'))
+          .order('fecha_pago', { ascending: true }),
+        filtroVisible(supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
+          .in('estado', ['pendiente', 'pagar', 'preparado'])
+          .gte('fecha', '2026-01-01'))
+          .order('fecha', { ascending: true }),
+        supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
+          .eq('imputable', true)
+          .order('nombre_totalizadora').order('nro_cuenta')
+      ])
+
+      if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
+      if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
+      if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
+      if (!sueldosResult.error && sueldosResult.data) setSueldosPagos(sueldosResult.data)
+      if (!cuentasResult.error && cuentasResult.data) setCuentasContablesPagos(cuentasResult.data)
+
+    setCargandoPagos(false)
+
+    if (!encargo) return
+    /**
+     * 🔗 El encargo del Cash Flow. Se arma con lo que ACABA de traerse de la base, no con lo que
+     * el aviso había visto: entre el click y la llegada alguien pudo pagar una factura.
+     *
+     * ⚠️ Si no queda ninguna de las dos puntas, **se avisa y no se abre nada**. Un modal vacío
+     * haría pensar que la app se rompió, cuando lo que pasó es que el dato cambió.
+     */
+    const delProveedor = (arcaResult.data ?? []).filter((f: FacturaArca) => f.cuit === encargo.cuit)
+    const ncs = delProveedor.filter((f: FacturaArca) => esNotaCreditoArca(f.tipo_comprobante))
+    const fcs = delProveedor.filter((f: FacturaArca) => !esNotaCreditoArca(f.tipo_comprobante))
+    if (ncs.length === 0 || fcs.length === 0) {
+      toast.info(`Ya no quedan notas de crédito para aplicar en ${encargo.proveedor}.`)
+      return
+    }
+    setModalCancelacionNC({
+      tipo: 'fc_con_nc',
+      facturas: fcs,
+      disponibles: ncs,
+      // Vienen todas tildadas, como cuando el flujo normal lo propone: es lo más frecuente.
+      seleccionadas: new Set(ncs.map((n: FacturaArca) => n.id)),
+      restoCambioEstado: [],
+    })
+  }
+
+  /** El encargo del Cash Flow, una sola vez al entrar. Si no hay, no pasa nada. */
+  useEffect(() => {
+    const encargo = tomarEncargoCancelacionNC()
+    if (encargo) void abrirVistaPagos(encargo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   return (
     <div className="space-y-6">
       {/* Encabezado */}
@@ -7017,46 +7102,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           <Button
             variant="outline"
             className="bg-green-50 hover:bg-green-100 border-green-300"
-            onClick={async () => {
-              setCargandoPagos(true)
-              setMostrarModalPagos(true)
-              setFiltroOrigenPagos({ arca: true, template: true, anticipo: true, sueldo: true })
-              setFacturasSeleccionadasPagos(new Set())
-              setTemplatesSeleccionadosPagos(new Set())
-              setSueldosSeleccionadosPagos(new Set())
-
-              // Cargar en paralelo las 4 fuentes + cuentas contables
-              // Si el rol es contable, solo se ven los marcados como visible_contable=true
-              const filtroVisible = (q: any) => esContable ? q.eq('visible_contable', true) : q
-              const [arcaResult, templatesResult, anticiposResult, sueldosResult, cuentasResult] = await Promise.all([
-                filtroVisible(supabase.schema(schemaName).from('comprobantes_arca').select('*')
-                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq']))
-                  .order('fecha_vencimiento', { ascending: true }),
-                filtroVisible(supabase.from('cuotas_egresos_sin_factura').select(`*, grupo_pago_id, egreso:egresos_sin_factura!inner(*)`)
-                  .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
-                  .eq('egreso.activo', true))
-                  .order('fecha_vencimiento', { ascending: true }),
-                filtroVisible(supabase.from('anticipos_proveedores').select('*')
-                  .in('estado_pago', ['pendiente', 'pagar', 'preparado', 'echeq'])
-                  .neq('estado', 'conciliado'))
-                  .order('fecha_pago', { ascending: true }),
-                filtroVisible(supabase.from('sueldos_pagos').select('*, empleado:sueldos_empleados(id, nombre, cuit_empleado)')
-                  .in('estado', ['pendiente', 'pagar', 'preparado'])
-                  .gte('fecha', '2026-01-01'))
-                  .order('fecha', { ascending: true }),
-                supabase.from('cuentas_contables').select('nro_cuenta, cuenta_contable, nombre_totalizadora')
-                  .eq('imputable', true)
-                  .order('nombre_totalizadora').order('nro_cuenta')
-              ])
-
-              if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
-              if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
-              if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
-              if (!sueldosResult.error && sueldosResult.data) setSueldosPagos(sueldosResult.data)
-              if (!cuentasResult.error && cuentasResult.data) setCuentasContablesPagos(cuentasResult.data)
-
-              setCargandoPagos(false)
-            }}
+            onClick={() => abrirVistaPagos()}
           >
             💰 Pagos
           </Button>

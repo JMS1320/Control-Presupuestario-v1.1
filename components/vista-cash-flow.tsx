@@ -4046,9 +4046,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 {/* Header */}
                 <thead className="bg-gray-50 border-b sticky top-0 z-10">
                   <tr>
-                    {/* Columna checkbox solo en modo PAGOS */}
+                    {/*
+                      ☑️ **El SELECTOR también queda fijo al ir hacia la derecha** (2026-09-29).
+                      Pedido del usuario: *«el botón selector en Cash Flow no debe desaparecer si voy
+                      hacia la derecha. Debe permanecer siempre accesible como la fecha»*.
+                      El motivo es el mismo que el de la fecha y todavía más directo: en modo Pagos se
+                      trabaja mirando las columnas del final —importes, medio de pago— y ahí había que
+                      volver al principio para poder tildar la fila.
+                    */}
                     {modoPagos && (
-                      <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                      <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
                         Sel.
                       </th>
                     )}
@@ -4067,7 +4074,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       <th 
                         key={col.key} 
                         className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width} ${
-                          col.key === 'fecha_estimada' ? 'sticky left-0 z-20 bg-gray-50' : ''
+                          // Con el selector puesto, la fecha arranca DESPUÉS de él (w-16 = 4rem),
+                          // o las dos columnas fijas se superponen en el borde izquierdo.
+                          col.key === 'fecha_estimada'
+                            ? `sticky z-20 bg-gray-50 ${modoPagos ? 'left-16' : 'left-0'}`
+                            : ''
                         }`}
                       >
                         {col.label}
@@ -4091,6 +4102,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   ) : (
                     (modoPagos ? datosFiltradosPagos : datosOperativos).map((fila, index) => {
                       const esUSD = fila.origen === 'ARCA' && (fila.moneda === 'USD' || (fila.tipo_cambio ?? 1) > 1.01)
+                      /**
+                       * 🎨 **El fondo de la fila, calculado una vez** (2026-09-29).
+                       *
+                       * Lo necesitan la fila **y las celdas pegadas** (selector y fecha): una celda
+                       * `sticky` sin fondo propio deja ver pasar por debajo el resto de la tabla.
+                       *
+                       * ⚠️ **No sirve `bg-inherit`**: las filas impares usan `bg-gray-25`, que **no
+                       * existe** en Tailwind — o sea que son transparentes, y heredar transparencia es
+                       * heredar el problema. Por eso se pasa la clase concreta.
+                       */
+                      const fondoFila =
+                        filasSeleccionadas.has(fila.id) ? 'bg-blue-50' :
+                        fila.estado === 'echeq' ? 'bg-emerald-100' :
+                        esUSD ? 'bg-amber-50' : 'bg-white'
                       return (
                       <tr
                         key={fila.id}
@@ -4101,9 +4126,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                         }`}
                       >
-                        {/* Checkbox solo en modo PAGOS */}
+                        {/* Checkbox solo en modo PAGOS — fijo, ver la nota del encabezado */}
                         {modoPagos && (
-                          <td className="p-3 text-center">
+                          <td className={`p-3 text-center sticky left-0 z-10 ${fondoFila}`}>
                             <Checkbox
                               checked={filasSeleccionadas.has(fila.id)}
                               onCheckedChange={() => toggleFilaSeleccionada(fila.id)}
@@ -4115,7 +4140,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         {columnasDefinicion.map((col) => (
                           <td key={col.key}
                             className={`p-3 text-sm ${
-                              col.key === 'fecha_estimada' ? 'sticky left-0 z-10 bg-white' : ''
+                              /**
+                               * ⚠️ El fondo sale de `fondoFila`, no de un `bg-white` fijo: la grilla
+                               * (y en ámbar las de USD). Con el blanco fijo, la columna pegada se veía
+                               * blanca sobre una fila de color — justo al scrollear, que es
+                               * cuando esta columna existe para ser mirada.
+                               */
+                              col.key === 'fecha_estimada'
+                                ? `sticky z-10 ${fondoFila} ${modoPagos ? 'left-16' : 'left-0'}`
+                                : ''
                             }`}
                           >
                             {renderizarCelda(fila, col)}

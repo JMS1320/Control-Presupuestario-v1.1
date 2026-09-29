@@ -9,15 +9,19 @@
  *
  * ## Qué hace y qué NO
  *
- * **Avisa.** Nada más. No aplica la nota de crédito, no cambia estados y no toca la base.
- * La aplicación sigue viviendo en **Egresos → Facturas → Pagos**, que ya la sabe hacer en los dos
- * sentidos, y este cartel dice cómo llegar ahí.
+ * **Avisa y lleva a cancelarlas.** No aplica la nota de crédito acá ni toca la base: el botón
+ * **«Cancelarlas»** te deja en **Egresos → Facturas → Pagos** con **el modal de cancelación ya
+ * abierto** para ese proveedor — el mismo que usabas, con las notas de crédito ya buscadas.
  *
- * 🛑 **Por qué no la aplica desde acá**, aunque sería más cómodo: el flujo de cancelación está
- * adentro de un componente de 12.615 líneas, enganchado a su propio estado y al cambio de estado a
- * *Pagar*. Copiarlo acá dejaría **dos lugares** que cancelan notas de crédito, y el día que cambie
- * el criterio uno de los dos va a quedar viejo sin que nada lo señale. Es § 🗺️ *«se arregló un
- * camino de los dos»*. Se avisa acá y se ejecuta allá, una sola vez.
+ * ⚠️ **La primera versión sólo avisaba, y el usuario la marcó 🟡 el 2026-09-29**: *«anduvo en parte,
+ * porque no hubo botón para cancelarlas unas con otras como lo teníamos desarrollado»*. Tenía razón:
+ * **un aviso que no deja actuar deja el trabajo a mitad** — te dice que hay $2 M mal y después te
+ * manda a buscar la pantalla vos.
+ *
+ * 🛑 **Pero la cancelación NO se copió acá**, que era el riesgo: el botón deja un encargo en
+ * `sessionStorage` y navega; **la pantalla de Pagos abre SU modal de siempre**. Si el criterio
+ * cambia, cambia en un solo lugar. Dos pantallas que cancelan notas de crédito es § 🗺️ *«se arregló
+ * un camino de los dos»* esperando a pasar.
  *
  * ## Por qué es un cartel y no un panel que se abre
  *
@@ -52,6 +56,7 @@ import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { detectarProveedoresConNC, type ComprobanteParaNC } from "@/lib/pagos/notas-credito"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { dejarEncargoCancelacionNC } from "@/lib/pagos/encargo-cancelacion-nc"
 
 /** Lo que necesita de una fila del Cash Flow. Se tipa al mínimo a propósito: así no se acopla. */
 export interface FilaParaAviso {
@@ -144,16 +149,25 @@ export function AvisoNotasCredito({ filas }: { filas: FilaParaAviso[] }) {
                   )}
                 </span>
               </div>
-              <div className="mt-1 text-[11px] leading-relaxed text-gray-600">
-                {p.notasCredito.map(nc => nc.display).filter(Boolean).join(" · ")}
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] leading-relaxed text-gray-600">
+                  {p.notasCredito.map(nc => nc.display).filter(Boolean).join(" · ")}
+                </span>
+                <Button
+                  size="sm"
+                  className="bg-amber-600 hover:bg-amber-700"
+                  onClick={() => dejarEncargoCancelacionNC(p.cuit, p.proveedor)}
+                >
+                  Cancelarlas
+                </Button>
               </div>
             </div>
           ))}
           <p className="text-[11px] leading-relaxed text-amber-900">
-            <strong>Para aplicarlas:</strong> Egresos → Facturas → pestaña <strong>Pagos</strong>,
-            seleccioná las facturas del proveedor y pasalas a <strong>Pagar</strong>. Ahí te ofrece
-            aplicar las notas de crédito y elegís cuáles. Este aviso sólo te dice que están; la
-            aplicación la hace esa pantalla, que es la que ya la sabe hacer.
+            <strong>«Cancelarlas»</strong> te lleva a Egresos → Facturas → <strong>Pagos</strong> con
+            el modal de cancelación <strong>ya abierto</strong> para ese proveedor: elegís cuáles
+            aplicar y confirmás. Es el mismo modal de siempre — este aviso no cancela nada por su
+            cuenta, sólo te deja parado ahí.
           </p>
           {/* El test aparece donde se corre el proceso (§ 🧪 un A-TEST nace con su proceso). */}
           <TestsDelProceso proceso="cashflow/notas-credito" pantalla="cashflow" />
