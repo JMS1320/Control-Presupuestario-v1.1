@@ -25,6 +25,9 @@ import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
+import {
+  formatearHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
+} from "./formato-excel"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -158,10 +161,107 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
   return f
 }
 
-const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][]) => {
+/**
+ * Agrega una hoja, y **con su formato**: anchos y formato de número por columna.
+ *
+ * 📌 El formato es parte del entregable, no un adorno — se lo pidió el usuario pensando en quién
+ * lo va a leer: *«que sea lo más amigable para el contador»*. Sin `columnas` la hoja entra sin
+ * formato, que es lo correcto para las hojas de texto (Control).
+ */
+const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
+  const ws = XLSX.utils.aoa_to_sheet(filas)
+  if (columnas) formatearHoja(ws, columnas)
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), nombre.slice(0, 31))
+  XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
+
+/**
+ * Las columnas de un listado de asientos (Compras, Ventas, Provisión, Sin subdiario).
+ * Una sola definición para las cuatro: si se vieran distinto, el lector tendría que reaprender
+ * la tabla en cada solapa.
+ */
+/** Templates, fila por cuota. */
+const COLS_TEMPLATES: Columna[] = [
+  { ancho: 11 },                    // Fecha
+  { ancho: 34 },                    // Concepto
+  { ancho: 30 },                    // Proveedor
+  { ancho: 26 },                    // Categoría
+  { ancho: 24 },                    // Cuenta contable
+  { ancho: 12 },                    // Nro cuenta
+  { ancho: 18 },                    // Centro de costo
+  { ancho: 14 },                    // Responsable
+  { ancho: 12 },                    // Estado
+  { ancho: 16, z: MONEDA },         // Débito
+  { ancho: 16, z: MONEDA },         // Crédito
+]
+
+/** Hacienda: cabezas enteras, coeficientes con dos decimales, importes en Contabilidad. */
+const COLS_HACIENDA: Columna[] = [
+  { ancho: 26 },                    // Categoría
+  { ancho: 9, z: ENTERO },          // Cabezas
+  { ancho: 46 },                    // Criterio
+  { ancho: 15, z: MONEDA },         // Precio de referencia
+  { ancho: 44 },                    // Origen del precio
+  { ancho: 8, z: COEFICIENTE },     // Factor
+  { ancho: 9, z: ENTERO },          // Kg/cab
+  { ancho: 17, z: MONEDA },         // $ por cabeza
+  { ancho: 18, z: MONEDA },         // Valor total
+]
+
+/** Los precios de referencia de los dos mercados. */
+const COLS_PRECIOS: Columna[] = [
+  { ancho: 26 }, { ancho: 16 }, { ancho: 12 },
+  { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
+  { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
+]
+
+/** Stock de insumos. */
+const COLS_INSUMOS: Columna[] = [
+  { ancho: 22 },                    // Categoría
+  { ancho: 46 },                    // Producto
+  { ancho: 12, z: "#,##0.00" },     // Cantidad
+  { ancho: 9 },                     // Unidad
+  { ancho: 15, z: MONEDA },         // Precio unitario
+  { ancho: 16, z: MONEDA },         // Valor total
+  { ancho: 34 },                    // Observaciones
+]
+
+/** Granos: dos columnas, y las toneladas con tres decimales porque el cuadre se juega ahí. */
+const COLS_GRANOS: Columna[] = [
+  { ancho: 40 }, { ancho: 18, z: TONELADAS }, { ancho: 54 },
+]
+
+/** Sementeras. */
+const COLS_SEMENTERAS: Columna[] = [
+  { ancho: 11 },                    // Fecha
+  { ancho: 34 },                    // Lote
+  { ancho: 8, z: "#,##0.00" },      // Ha
+  { ancho: 30 },                    // Insumo
+  { ancho: 12, z: "#,##0.00" },     // Cantidad
+  { ancho: 9 },                     // Unidad
+  { ancho: 15, z: MONEDA },         // Precio unitario
+  { ancho: 16, z: MONEDA },         // Costo
+]
+
+const COLS_ASIENTOS: Columna[] = [
+  { ancho: 10 },                    // Subdiario
+  { ancho: 11 },                    // Fecha
+  { ancho: 6, z: ENTERO },          // Tipo
+  { ancho: 8, z: ENTERO },          // Pto Vta
+  { ancho: 11, z: ENTERO },         // Número
+  { ancho: 13 },                    // CUIT
+  { ancho: 42 },                    // Denominación
+  { ancho: 15, z: MONEDA },         // Neto Gravado
+  { ancho: 14, z: MONEDA },         // No Gravado
+  { ancho: 13, z: MONEDA },         // Exentas
+  { ancho: 14, z: MONEDA },         // Otros Tributos
+  { ancho: 13, z: MONEDA },         // IVA
+  { ancho: 16, z: MONEDA },         // Total
+  { ancho: 26 },                    // Cuenta contable
+  { ancho: 12 },                    // Nro cuenta
+  { ancho: 18 },                    // Centro de costo
+  { ancho: 17 },                    // Origen del dato
+]
 
 /**
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
@@ -242,13 +342,37 @@ function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: s
   f.push([])
   f.push(["Categoría", "Cabezas", "Criterio de valuación", "Precio de referencia", "Origen del precio",
     "Factor", "Kg/cab", "$ por cabeza", "Valor total"])
+
+  /**
+   * 🧮 **Fórmulas, no resultados** — pedido textual del usuario en este mismo papel:
+   * *«si son fórmulas deben quedar las fórmulas en el excel y no los datos»*.
+   *
+   * `$ por cabeza` = precio × factor × kg (o precio × factor cuando ya viene por cabeza)
+   * `Valor total`  = cabezas × $ por cabeza
+   *
+   * 🔑 Así él cambia un precio en la columna D y **el papel se recalcula solo**. Con el número
+   * pegado tendría que rehacer la cuenta a mano, y el Excel dejaría de ser una herramienta para
+   * pasar a ser una foto.
+   *
+   * ⚠️ Las filas **sin precio siguen diciendo «FALTA EL PRECIO» en texto**: una fórmula sobre una
+   * celda vacía daría **0**, y un cero se lee como *«vale cero»*, que es justo lo contrario de lo
+   * que pasa.
+   */
   for (const x of h.filas) {
+    const fila = f.length + 1  // 1-based, la fila donde va a caer ésta
     f.push([
       x.categoria, x.cabezas, x.criterio,
       x.precioReferencia ?? "", x.origenPrecio,
       x.factor, x.pesoKg ?? "",
-      x.valorPorCabeza ?? "FALTA EL PRECIO",
-      x.valorTotal ?? "FALTA EL PRECIO",
+      x.valorPorCabeza == null
+        ? "FALTA EL PRECIO"
+        : conFormula(
+            x.pesoKg ? `D${fila}*F${fila}*G${fila}` : `D${fila}*F${fila}`,
+            x.valorPorCabeza,
+          ),
+      x.valorTotal == null
+        ? "FALTA EL PRECIO"
+        : conFormula(`B${fila}*H${fila}`, x.valorTotal),
     ])
   }
   f.push([])
@@ -386,24 +510,24 @@ export function armarWorkbook(
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
-  hoja(wb, "Compras", hojaDeAsientos(libro.compras))
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas))
-  hoja(wb, "05 Provision", hojaDeAsientos(libro.provisiones))
+  hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
+  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
+  hoja(wb, "05 Provision", hojaDeAsientos(libro.provisiones), COLS_ASIENTOS)
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
-  hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario))
+  hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
   if (templates) {
-    hoja(wb, "Templates", hojaDeTemplates(templates))
+    hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates))
   }
   if (hacienda) {
-    hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios))
-    hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios))
+    hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios), COLS_HACIENDA)
+    hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios), COLS_PRECIOS)
   }
-  if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre))
+  if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre), COLS_INSUMOS)
   if (campo) {
-    hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre))
-    hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre))
+    hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre), COLS_GRANOS)
+    hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre), COLS_SEMENTERAS)
   }
   return wb
 }

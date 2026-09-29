@@ -51,6 +51,11 @@ export interface CriterioValuacion {
   magFamilia?: string
   /** MAG: `Regular`, `Esp.Joven`… */
   magCalidad?: string
+  /**
+   * MAG: el corte de peso, `+ 430` · `h 430`. **Cuando está, es lo que manda** — la vaca de
+   * descarte se define por el peso, no por la calidad (ver el criterio de `Vaca CUT/Descarte`).
+   */
+  magCorte?: string
   /** Qué columna del mercado usa: él escribe «máximo», «medio»… */
   magCampo?: "maximo" | "minimo" | "promedio" | "mediana"
   /** Entresurcos: sexo y rango de kilos. */
@@ -88,8 +93,19 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Vaca CUT/Descarte",
-    criterio: "vaca regular MÁXIMO × 80 % × 450 kg",
-    fuente: "mag", magFamilia: "VACAS", magCalidad: "Regular", magCampo: "maximo",
+    /**
+     * ⚠️ **Corregido por el usuario 2026-09-29**, sobre el papel devuelto: *«lo de vaca regular es
+     * para nuestra vaca CUT. Está bien tomar MAG en ese caso, pero no la de Regular sino la de
+     * categoría **+ de 430** y el **promedio**, no el máximo»*.
+     *
+     * 🔑 O sea que lo que manda **no es la calidad sino el CORTE DE PESO**: una vaca de descarte de
+     * más de 430 kg. Yo había leído *«vaca regular máximo»* de su planilla 2025 y traducido
+     * `calidad = Regular` + `campo = máximo`. Las dos mitades estaban mal.
+     *
+     * 📌 Y aplica **sólo a esta categoría**: el resto sigue como estaba.
+     */
+    criterio: "vaca + de 430 kg, PROMEDIO × 80 % × 450 kg",
+    fuente: "mag", magFamilia: "VACAS", magCorte: "+ 430", magCampo: "promedio",
     factor: 0.8, pesoKg: 450,
   },
   {
@@ -176,20 +192,32 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 function precioDeMag(c: CriterioValuacion, mag: PrecioMag[]): { precio: number; origen: string } | null {
   const fam = norm(c.magFamilia ?? "")
   const cal = norm(c.magCalidad ?? "")
+  const corte = norm(c.magCorte ?? "").replace(/\s+/g, "")
+
   const candidatas = mag.filter(m =>
-    norm(m.familia).startsWith(fam) && (!cal || norm(m.calidad).startsWith(cal)))
+    norm(m.familia).startsWith(fam) &&
+    (!cal || norm(m.calidad).startsWith(cal)) &&
+    // El corte se compara sin espacios: el mercado publica `+ 430` y `+430` indistintamente.
+    (!corte || norm(m.corte ?? "").replace(/\s+/g, "") === corte))
   if (candidatas.length === 0) return null
-  // Si el mercado abre la categoría en varios cortes de peso, se toma el promedio de los cortes:
-  // elegir uno sin que el criterio lo diga sería inventar una precisión que no está escrita.
+
   const campo = c.magCampo ?? "promedio"
   const valores = candidatas.map(m => m[campo]).filter(v => v > 0)
   if (valores.length === 0) return null
   const precio = valores.reduce((a, b) => a + b, 0) / valores.length
-  const cortes = candidatas.map(m => m.corte).filter(Boolean)
+
+  /**
+   * 📌 **Si quedó más de una fila, se promedian — y se DICE cuáles.** Elegir una sin que el
+   * criterio lo indique sería inventar una precisión que no está escrita; promediarlas en silencio
+   * sería peor, porque el número saldría de algo que nadie puede reconstruir.
+   */
+  const detalle = candidatas.length > 1
+    ? ` (promedio de ${candidatas.length}: ${candidatas.map(m => `${m.calidad} ${m.corte ?? ""}`.trim()).join(" · ")})`
+    : candidatas[0].corte ? ` ${candidatas[0].corte}` : ""
+
   return {
     precio,
-    origen: `MAG · ${c.magFamilia} ${c.magCalidad ?? ""}`.trim() +
-      ` · ${campo}` + (cortes.length > 1 ? ` (promedio de ${cortes.length} cortes)` : ""),
+    origen: `MAG · ${c.magFamilia} ${c.magCalidad ?? c.magCorte ?? ""}`.trim() + ` · ${campo}` + detalle,
   }
 }
 

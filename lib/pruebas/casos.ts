@@ -2519,7 +2519,10 @@ export function correrCasos(): Resultado[] {
   {
     // Precios de referencia con la forma que devuelven las dos fuentes.
     const mag = [
+      // ⚠️ La vaca de descarte se define por el CORTE DE PESO, no por la calidad (JMS 2026-09-29).
+      //    Se dejan las dos filas a propósito: la de «Regular» sin corte NO tiene que usarse.
       { familia: "VACAS", calidad: "Regular", corte: null, minimo: 2000, maximo: 2750, promedio: 2400, mediana: 2380 },
+      { familia: "VACAS", calidad: "Esp.Joven", corte: "+ 430", minimo: 2600, maximo: 3400, promedio: 3000, mediana: 2990 },
       { familia: "NOVILLOS", calidad: "Regular", corte: "+ 490", minimo: 2800, maximo: 3300, promedio: 3100, mediana: 3090 },
       { familia: "MEJ", calidad: "Esp.", corte: null, minimo: 3100, maximo: 3600, promedio: 3400, mediana: 3390 },
     ]
@@ -2539,9 +2542,15 @@ export function correrCasos(): Resultado[] {
     const de = (cat: string) => v.filas.find(f => f.categoria === cat)
 
     // CUT: vaca regular MAXIMO 2750 x 80% x 450 kg = 990.000 por cabeza — el numero de su planilla.
-    chequear("Balance · hacienda", "🔑 CUT: vaca regular máximo × 80 % × 450 kg = 990.000/cab",
-      "990000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
-      de("Vaca CUT/Descarte")?.valorPorCabeza === 990000, "A-FEAT-1184")
+    chequear("Balance · hacienda", "🔑 CUT: vaca +430 PROMEDIO × 80 % × 450 kg = 1.080.000/cab",
+      "1080000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
+      de("Vaca CUT/Descarte")?.valorPorCabeza === 1080000, "A-FEAT-1184")
+
+    // 🔑 Y el adversario del cambio: NO puede haber tomado la fila «Regular» sin corte.
+    chequear("Balance · hacienda", "🔑 Y NO usa la de Regular sin corte: manda el corte de peso",
+      "menciona + 430",
+      de("Vaca CUT/Descarte")?.origenPrecio.includes("+ 430") ? "menciona + 430" : de("Vaca CUT/Descarte")?.origenPrecio ?? "-",
+      !!de("Vaca CUT/Descarte")?.origenPrecio.includes("+ 430"), "A-FEAT-1184")
 
     // TOROS: novillo regular 3100 x 70% x 1000 kg = 2.170.000 — tambien de su planilla.
     chequear("Balance · hacienda", "🔑 Toros: novillo regular × 70 % × 1000 kg = 2.170.000/cab",
