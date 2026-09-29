@@ -314,7 +314,7 @@ function hojaDeInsumos(st: StockInsumos, fechaCierre: string): unknown[][] {
     st.huecos.forEach(x => f.push([x.categoria, x.producto, x.cantidad, x.unidad]))
     f.push([])
   }
-  f.push(["🕳️ PAPELES QUE NO TIENEN DE DÓNDE SALIR TODAVÍA"])
+  f.push(["🕳️ LO QUE TODAVÍA LE FALTA A CADA PAPEL"])
   PAPELES_SIN_ORIGEN.forEach(p => f.push(["", p.papel, p.falta]))
   return f
 }

@@ -150,24 +150,26 @@ export function armarStockInsumos(
 }
 
 /**
- * 🕳️ LOS PAPELES QUE NO TIENEN DÓNDE SALIR — se declaran, no se omiten.
+ * 🕳️ LO QUE LE FALTA A CADA PAPEL — se declara, no se omite.
  *
- * Medido contra la base el 2026-09-28: no existe ninguna tabla de **granos** (la que parecía,
- * `productivo.stock_lotes`, es de hacienda: tiene desbaste y ganancia diaria) ni de **sementeras**.
- * Y **gas oil** tiene su categoría de insumo creada pero **cero productos cargados**.
+ * ⚠️ **Corregido el 2026-09-28 (tarde).** Esta lista decía que **granos y sementeras «no tienen de
+ * dónde salir»**, y era quedarse corto: los dos salen **en parte** (ver `granos-sementeras.ts`).
+ * Dejarlo como estaba habría hecho que la app **se contradijera a sí misma** — una solapa con los
+ * números al lado de un cartel diciendo que no se pueden calcular.
  *
- * 📌 Se listan en el papel para que el hueco tenga nombre. Omitirlos daría un export que **parece
- * completo** y le faltan tres stocks.
+ * 📌 Lo que queda acá es **lo que de verdad falta**, con nombre. Omitirlo daría un export que
+ * *parece* completo.
  */
 export const PAPELES_SIN_ORIGEN = [
   {
     papel: "1 - Granos",
-    falta: "No hay tabla de stock de granos. En su planilla se valúa por toneladas × precio × % calidad − % CZ, " +
-      "y lleva además un cuadre de kilos (inicio + cosecha − ventas = saldo) que tampoco tiene de dónde salir.",
+    falta: "Sale el cuadre de kilos, pero de sus cinco entradas la app sólo sabe las ventas: " +
+      "el stock al inicio, la cosecha y la existencia al cierre se cargan a mano.",
   },
   {
     papel: "3 - Sementeras",
-    falta: "No hay tabla. Es el costo sembrado y todavía no cosechado al cierre.",
+    falta: "Sale el detalle físico de las órdenes ejecutadas, pero el costo queda incompleto: " +
+      "los insumos no tienen precio y las labores no tienen dónde cargar su tarifa.",
   },
   {
     papel: "6 - Gas oil",

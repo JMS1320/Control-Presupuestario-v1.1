@@ -317,7 +317,7 @@ export function HaciendaAlCierre({
               )}
 
               <div className="text-xs text-muted-foreground">
-                <div className="font-medium">🕳️ Papeles que todavía no tienen de dónde salir:</div>
+                <div className="font-medium">🕳️ Lo que todavía le falta a cada papel:</div>
                 <ul className="list-disc pl-5">
                   {PAPELES_SIN_ORIGEN.map(p => (
                     <li key={p.papel}><strong>{p.papel}</strong> — {p.falta}</li>
