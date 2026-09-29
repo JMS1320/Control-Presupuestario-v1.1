@@ -9,12 +9,17 @@
  * endpoint tampoco sabe *quién* pregunta. Lo que sí evita es que la puerta abierta dé a la tabla.
  */
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { supabaseAdmin, faltaConfiguracionAdmin } from '@/lib/supabase-admin'
 
 export const runtime = 'nodejs'
 
 /** GET /api/revisiones → las abiertas, más recientes primero. `?todas=1` trae también las cerradas. */
 export async function GET(request: Request) {
+  // Sin la clave de servidor no hay plan B: `anon` no tiene permisos sobre `revisiones`. Se dice
+  // QUÉ falta en vez de devolver una lista vacía que se lee como «no hay nada para revisar».
+  const falta = faltaConfiguracionAdmin()
+  if (falta) return NextResponse.json({ ok: false, revisiones: [], error: falta }, { status: 500 })
+
   try {
     const { searchParams } = new URL(request.url)
     const todas = searchParams.get('todas') === '1'

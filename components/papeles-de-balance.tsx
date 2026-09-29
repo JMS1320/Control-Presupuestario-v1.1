@@ -147,7 +147,7 @@ export function PapelesDeBalance() {
                 hacienda?.insumos, hacienda?.campo,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Bajar el Excel
+              Bajar el Excel{hacienda ? " completo (12 solapas)" : " — sólo el libro diario"}
             </Button>
           )}
         </div>
@@ -261,6 +261,20 @@ export function PapelesDeBalance() {
                 </div>
               )}
             </div>
+
+            {/**
+              * ⚠️ **Lo que falta si no se trae el sector productivo.** El Excel arma sus solapas con
+              * lo que haya en memoria: sin apretar «Traer stock y precios», salen 6 y no 12 —
+              * **y antes no lo decía**, así que se podía entregar un papel incompleto creyendo que
+              * estaba entero. Ahora el botón lo dice y este cartel también (§ 🧮).
+              */}
+            {!hacienda && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1.5">
+                El Excel te va a salir <strong>sólo con el libro diario</strong> (compras, ventas,
+                provisión y templates). Para que traiga también <strong>hacienda, insumos, granos y
+                sementeras</strong>, apretá primero «Traer stock y precios» acá abajo.
+              </p>
+            )}
 
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}

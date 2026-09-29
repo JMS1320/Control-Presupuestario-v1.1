@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { supabaseAdmin, faltaConfiguracionAdmin } from '@/lib/supabase-admin'
 import { PANTALLAS } from '@/lib/pendientes/parse'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -20,6 +20,10 @@ export const runtime = 'nodejs'
 const PRIORIDADES = ['urgente', 'secundario', 'test'] as const
 
 export async function GET(request: Request) {
+  // Sin la clave de servidor no hay plan B: `anon` no tiene permisos. Se dice QUÉ falta
+  // en vez de devolver una lista vacía que se lee como «no hay nada» (A-BUG-1219).
+  const faltaCfg = faltaConfiguracionAdmin()
+  if (faltaCfg) return NextResponse.json({ ok: false, propuestos: [], error: faltaCfg }, { status: 500 })
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 

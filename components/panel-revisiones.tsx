@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Flag, CheckCircle2, Loader2 } from "lucide-react"
+import { Flag, CheckCircle2, Loader2, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { getRoleFromRoute } from "@/config/access-routes"
 import type { RevisionAbierta } from "@/components/boton-revision"
@@ -50,14 +50,33 @@ export function PanelRevisiones() {
   const [resolucion, setResolucion] = useState("")
   const [guardando, setGuardando] = useState(false)
 
+  /**
+   * 🧨 **Antes este `catch` no decía nada y dejaba la lista vacía** (A-BUG-1219). Con 13 marcas
+   * abiertas en la base, la pantalla mostraba *«No hay nada para revisar»* — o sea que **un error
+   * se leía como un dato**, que es la peor forma de fallar: nadie va a buscar lo que cree que no
+   * existe.
+   *
+   * Ahora un fallo se muestra como fallo. Es la § 🧮 de `CLAUDE.md`: nada se descarta en silencio.
+   */
+  const [error, setError] = useState<string | null>(null)
+
   const cargar = useCallback(async () => {
     setCargando(true)
+    setError(null)
     try {
       const r = await fetch("/api/revisiones")
-      const j = await r.json()
-      setRevisiones(j.revisiones ?? [])
-    } catch {
+      const j = await r.json().catch(() => null)
+      if (!r.ok || j?.ok === false) {
+        setRevisiones([])
+        setError(j?.error || (r.status === 401
+          ? "Se cerró la sesión: volvé a entrar."
+          : `No se pudieron leer las marcas (HTTP ${r.status}).`))
+        return
+      }
+      setRevisiones(j?.revisiones ?? [])
+    } catch (e) {
       setRevisiones([])
+      setError("No se pudieron leer las marcas: " + (e as Error).message)
     } finally {
       setCargando(false)
     }
@@ -133,6 +152,26 @@ export function PanelRevisiones() {
             <div className="flex items-center justify-center gap-2 py-6 text-gray-500">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Cargando…</span>
+            </div>
+          ) : error ? (
+            /* 🔴 Un fallo NO se muestra como «no hay nada»: eso hace que nadie vaya a buscar lo
+               que cree que no existe. Se dice qué pasó y se ofrece reintentar. */
+            <div className="rounded border-2 border-red-300 bg-red-50 px-3 py-3 text-sm text-red-800">
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertTriangle className="h-4 w-4" />
+                No se pudieron leer las marcas
+              </div>
+              <p className="mt-1">{error}</p>
+              <p className="mt-1 text-xs">
+                Puede haber marcas abiertas que no se están viendo. Esto <strong>no</strong> quiere
+                decir que no haya nada.
+              </p>
+              <button
+                type="button" onClick={cargar}
+                className="mt-2 rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium hover:bg-red-100"
+              >
+                Reintentar
+              </button>
             </div>
           ) : revisiones.length === 0 ? (
             <div className="py-10 text-center text-gray-500">
