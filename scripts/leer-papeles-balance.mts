@@ -61,7 +61,10 @@ for (const { ruta, carpeta, nombre } of archivos(RAIZ)) {
   let wb: XLSX.WorkBook
   try {
     // `cellFormula` es la clave: sin esto sólo vienen los valores.
-    wb = XLSX.read(readFileSync(ruta), { cellFormula: true, cellDates: true, cellNF: true })
+    // `cellComments` se agregó el 2026-09-29: sin esto, **16 notas del usuario estuvieron ahí
+    // todo el tiempo y nunca se leyeron** — justo las que explican lo «artesanal» que él avisó
+    // que iba a haber. Un lector que no pide un dato es indistinguible de un dato que no está.
+    wb = XLSX.read(readFileSync(ruta), { cellFormula: true, cellDates: true, cellNF: true, cellComments: true })
   } catch (e) {
     console.log(`   ⚠️ no se pudo abrir: ${(e as Error).message}`)
     continue
