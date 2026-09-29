@@ -2439,6 +2439,51 @@ cargado y **las labores no tienen dónde cargar su tarifa** todavía.
 
 ⚠️ Sin probar todavía → A-TEST-1156
 
+## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
+
+El Excel que se baja de **Reportes → Papeles de trabajo del balance** abre con la solapa
+**«00 Indice»**. Es el checklist de las **12 partes** del balance: qué hay de cada una, qué falta y
+en qué solapa está.
+
+**Cómo se lee, en este orden:**
+
+| | Qué mirar |
+|---|---|
+| **Los bloqueos** | van arriba y separados. Son los que **impiden entregar el balance**, no sólo ese papel |
+| **El resumen** | cuántas partes están completas, parciales, sin armar, y cuántas cargás vos |
+| **La tabla** | una fila por parte, con *qué hay hoy*, *qué falta* y la solapa donde está |
+
+💡 **El índice no está escrito a mano: se calcula.** Cada estado sale de mirar el dato de ese mismo
+archivo, así que no puede quedar viejo. Si dice «parcial», es porque el papel efectivamente tiene
+menos de lo que debería.
+
+### Las tres solapas nuevas
+
+**«07 Bancos»** — el saldo al cierre de cada cuenta y el movimiento de los fondos comunes.
+
+🔑 **Acá hay dos cosas para completar vos**, y están vacías a propósito: el **saldo al inicio** del
+ejercicio (columna B) y el **saldo del fondo** en las dos puntas. Ésos no están en el sistema — el
+extracto ve la plata que entra y sale de la cuenta, no cuánto quedó invertido. **Completalos y el
+resultado financiero se calcula solo**, porque es una fórmula. Mientras estén vacías dice «faltan los
+saldos», no un cero que parecería un resultado.
+
+**«08 Gastos bancarios»** — un concepto por fila y los 12 meses en columnas, como tu planilla. Los
+conceptos salen del **plan de cuentas** (totalizadoras *IMPUESTOS BANCARIOS* y *GASTOS BANCARIOS*).
+
+⚠️ **Si el extracto no cubre todo el ejercicio, la solapa abre con un ATENCIÓN** diciendo cuántos
+meses tiene y cuáles faltan. Al 29/09/2026 son **5 de 12**: el total no es el del ejercicio completo.
+
+**«09 Retiros y aportes»** — un retiro va en **negativo** y un aporte en **positivo**, así el neto se
+lee de una. No son gasto del resultado: son movimientos patrimoniales.
+
+📌 **Las dos últimas listan aparte lo que no pudieron ubicar** en el plan de cuentas, con su importe.
+No lo tiran: es el trabajo que falta en el plan.
+
+📌 **Sin abrir el Excel**, el mismo resumen por consola:
+`npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
+
+⚠️ Sin probar todavía → A-TEST-1165
+
 ## 📗 Papeles de balance → el libro diario por cuenta contable *(2026-09-29)*
 
 En **Reportes → Papeles de trabajo del balance**, el Excel que se baja trae dos solapas nuevas:
