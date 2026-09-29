@@ -29,6 +29,7 @@ import { toast } from "sonner"
 import { armarEjercicio, nombreSubdiario } from "@/lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiario } from "@/lib/balance/libro-diario"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -46,11 +47,13 @@ export function PapelesDeBalance() {
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
+  const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
 
   const generar = async () => {
     setCargando(true)
     setLibro(null)
     setTemplates(null)
+    setHacienda(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -139,7 +142,7 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id, templates ?? undefined)}>
+            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id, templates ?? undefined, hacienda ?? undefined)}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel
             </Button>
@@ -255,6 +258,10 @@ export function PapelesDeBalance() {
                 </div>
               )}
             </div>
+
+            {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
+                impedir que se bajen las compras. */}
+            <HaciendaAlCierre ejercicio={libro.ejercicio} onDatos={setHacienda} />
           </div>
         )}
       </CardContent>

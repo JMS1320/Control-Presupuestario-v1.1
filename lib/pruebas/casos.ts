@@ -61,6 +61,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
   type AsientoLibroDiario,
@@ -2499,6 +2500,101 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · templates", "🧮 El detalle y el resumen por mes dan EXACTAMENTE lo mismo",
       `${sumaDetalle}`, `${muchas.totalDebitos}`,
       Math.abs(sumaDetalle - muchas.totalDebitos) < 0.01, "A-FEAT-1184")
+  }
+
+  /**
+   * 🐄 **VALUACIÓN DE HACIENDA AL CIERRE — A-FEAT-1184.**
+   *
+   * Los criterios son **del usuario**, transcriptos de su planilla `2 - HACIENDA` del balance 2025.
+   * Los casos reproducen los números de esa planilla, así que si alguien cambia un castigo sin
+   * querer, saltan.
+   *
+   * 🕳️ **Y el más importante es el último**: una categoría sin precio **no se valúa en cero**.
+   * Valuar con un supuesto silencioso es peor que no valuar — el total quedaría «completo» y mal.
+   */
+  {
+    // Precios de referencia con la forma que devuelven las dos fuentes.
+    const mag = [
+      { familia: "VACAS", calidad: "Regular", corte: null, minimo: 2000, maximo: 2750, promedio: 2400, mediana: 2380 },
+      { familia: "NOVILLOS", calidad: "Regular", corte: "+ 490", minimo: 2800, maximo: 3300, promedio: 3100, mediana: 3090 },
+      { familia: "MEJ", calidad: "Esp.", corte: null, minimo: 3100, maximo: 3600, promedio: 3400, mediana: 3390 },
+    ]
+    const mercado = [
+      { categoria: "Vaquillonas 250-290 Kg.", pesoLo: 250, pesoHi: 290, promKilo: 3400, kiloMax: 3600, kiloMin: 3200 },
+    ]
+    const existencias = [
+      { categoria: "Vaca", cabezas: 177 },
+      { categoria: "Vaca CUT/Descarte", cabezas: 16 },
+      { categoria: "Toro", cabezas: 16 },
+      { categoria: "Torito", cabezas: 9 },
+      { categoria: "Ternera Recria", cabezas: 83 },
+      { categoria: "Ternero Recria", cabezas: 100 },
+      { categoria: "Vaquillona Preñada", cabezas: 27 },
+    ]
+    const v = valuarHacienda(existencias, mag, mercado)
+    const de = (cat: string) => v.filas.find(f => f.categoria === cat)
+
+    // CUT: vaca regular MAXIMO 2750 x 80% x 450 kg = 990.000 por cabeza — el numero de su planilla.
+    chequear("Balance · hacienda", "🔑 CUT: vaca regular máximo × 80 % × 450 kg = 990.000/cab",
+      "990000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
+      de("Vaca CUT/Descarte")?.valorPorCabeza === 990000, "A-FEAT-1184")
+
+    // TOROS: novillo regular 3100 x 70% x 1000 kg = 2.170.000 — tambien de su planilla.
+    chequear("Balance · hacienda", "🔑 Toros: novillo regular × 70 % × 1000 kg = 2.170.000/cab",
+      "2170000", String(de("Toro")?.valorPorCabeza),
+      de("Toro")?.valorPorCabeza === 2170000, "A-FEAT-1184")
+
+    // TORITOS: MEJ especial 3400 x 1,5 x 300 kg = 1.530.000 — idem.
+    chequear("Balance · hacienda", "🔑 Toritos: MEJ especial × 1,5 × 300 kg = 1.530.000/cab",
+      "1530000", String(de("Torito")?.valorPorCabeza),
+      de("Torito")?.valorPorCabeza === 1530000, "A-FEAT-1184")
+
+    // Ternera recria: vaquillona 250-290 al MAXIMO 3600 x 250 kg = 900.000 — idem.
+    chequear("Balance · hacienda", "Ternera recría: vaquillona 250-290 al máximo × 250 kg = 900.000/cab",
+      "900000", String(de("Ternera Recria")?.valorPorCabeza),
+      de("Ternera Recria")?.valorPorCabeza === 900000, "A-FEAT-1184")
+
+    // 🔑 El ternero DERIVA de la hembra: 10% mas. 3600 x 1,1 x 250 = 990.000.
+    chequear("Balance · hacienda", "🔑 El ternero deriva de la hembra: 10 % más = 990.000/cab",
+      "990000", String(de("Ternero Recria")?.valorPorCabeza),
+      de("Ternero Recria")?.valorPorCabeza === 990000, "A-FEAT-1184")
+
+    chequear("Balance · hacienda", "Y dice de dónde salió cada precio, no sólo el número",
+      "menciona Entresurcos y la derivación",
+      `${de("Ternera Recria")?.origenPrecio.includes("Entresurcos") ? "Entresurcos" : "?"} · ${de("Ternero Recria")?.origenPrecio.includes("deriva") ? "derivado" : "?"}`,
+      !!de("Ternera Recria")?.origenPrecio.includes("Entresurcos") &&
+      !!de("Ternero Recria")?.origenPrecio.includes("deriva"), "A-FEAT-1184")
+
+    // 🕳️ EL CASO QUE MAS IMPORTA: la vaca y la vaquillona preñada NO tienen precio de mercado
+    //    publicado (es un precio que consigue el usuario). NO se valuan en cero.
+    chequear("Balance · hacienda", "🕳️ Sin precio de mercado, la vaca NO se valúa en cero: queda como hueco",
+      "hueco, valor nulo",
+      `${de("Vaca")?.esHueco ? "hueco" : "valuada"}, valor ${de("Vaca")?.valorTotal === null ? "nulo" : de("Vaca")?.valorTotal}`,
+      de("Vaca")?.esHueco === true && de("Vaca")?.valorTotal === null, "A-FEAT-1184")
+
+    chequear("Balance · hacienda", "🕳️ Y se dice CUÁNTAS cabezas quedaron sin valuar",
+      "2 huecos · 204 cabezas",
+      `${v.huecos.length} huecos · ${v.cabezasSinValuar} cabezas`,
+      v.huecos.length === 2 && v.cabezasSinValuar === 204, "A-FEAT-1184")
+
+    // 🧮 El total valuado NO incluye los huecos, y las cabezas si: el papel muestra las dos cosas.
+    chequear("Balance · hacienda", "🧮 Cuenta las 428 cabezas aunque sólo pueda valuar una parte",
+      "428 cabezas", `${v.cabezas} cabezas`, v.cabezas === 428, "A-FEAT-1184")
+
+    // 🎚️ El precio a mano MANDA sobre el de mercado (default del dato real, siempre editable).
+    const conManual = valuarHacienda(existencias, mag, mercado, { "Vaca": 1370000 })
+    const vaca = conManual.filas.find(f => f.categoria === "Vaca")
+    chequear("Balance · hacienda", "🎚️ Un precio cargado a mano manda: 1.370.000 × 90 % = 1.233.000/cab",
+      "1233000 · ya no es hueco",
+      `${vaca?.valorPorCabeza} · ${vaca?.esHueco ? "sigue hueco" : "ya no es hueco"}`,
+      vaca?.valorPorCabeza === 1233000 && vaca?.esHueco === false, "A-FEAT-1184")
+
+    // Una categoria con existencia y SIN criterio escrito tambien sale a la luz.
+    const conRara = valuarHacienda([{ categoria: "Novillo", cabezas: 5 }], mag, mercado)
+    chequear("Balance · hacienda", "⚠️ Una categoría sin criterio definido se muestra, no se ignora",
+      "1 sin criterio · es hueco",
+      `${conRara.sinCriterio.length} sin criterio · ${conRara.filas[0]?.esHueco ? "es hueco" : "se valuó"}`,
+      conRara.sinCriterio.length === 1 && conRara.filas[0]?.esHueco === true, "A-FEAT-1184")
   }
 
   return r

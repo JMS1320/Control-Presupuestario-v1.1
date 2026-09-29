@@ -2391,6 +2391,26 @@ sin ningún comprobante, que puede ser un mes sin movimiento.
 📌 **El Excel se baja igual aunque no cierre**, y en ese caso el archivo se llama con `_REVISAR` al
 final. Es a propósito: si algo está mal, lo primero que hace falta es poder mirarlo.
 
+### 🐄 La hacienda al cierre
+
+Abajo de todo, **«Traer stock y precios»** arma la existencia de hacienda al día del cierre y la
+valúa con **tus criterios** — los mismos que venías escribiendo en la planilla (*«vaca regular
+máximo × 80 % × 450 kg»*, *«MEJ especial × 1,5 × 300 kg»*…).
+
+**De dónde salen los precios:** del **Mercado Agroganadero de Cañuelas** y de **Entresurcos y
+Corrales**, tomando **el mes entero** del cierre para que sea representativo. Quedan en la solapa
+**Precios** del Excel, para que la valuación se pueda revisar en vez de creerle.
+
+🕳️ **Lo que no tiene precio queda como hueco, no en cero.** La vaca y la vaquillona preñada se
+valúan contra el precio de *vaca con garantía de preñez*, que no publica ningún mercado: esas filas
+salen en ámbar y **el total dice que no las incluye**.
+
+**Para completarlas:** escribí el precio en la columna **«Precio a mano»** y apretá **Recalcular**.
+Lo que cargues manda sobre el mercado — como en toda la app, campo vacío = usá el dato real, campo
+lleno = acá mandás vos.
+
+⚠️ Los precios que cargues **no se guardan todavía**: si recargás la pantalla, se pierden.
+
 ⚠️ Esta pantalla **sólo lee**. No modifica ni un dato.
 
 ⚠️ Sin probar todavía → A-TEST-1156

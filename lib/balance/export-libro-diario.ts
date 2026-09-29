@@ -22,6 +22,7 @@ import * as XLSX from "xlsx"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
+import type { ValuacionHacienda, PrecioMag, PrecioMercado } from "./hacienda-stock"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -228,8 +229,65 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   return f
 }
 
+/**
+ * `02 - HACIENDA` — existencia al cierre y su valuación, con el criterio de cada categoría a la
+ * vista y **los huecos listados**, no escondidos en un total.
+ */
+function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`02 - HACIENDA — existencia al ${fechaCierre}`])
+  f.push([`Precios de referencia: mes completo de ${mesPrecios} (Cañuelas y Entresurcos)`])
+  f.push([])
+  f.push(["Categoría", "Cabezas", "Criterio de valuación", "Precio de referencia", "Origen del precio",
+    "Factor", "Kg/cab", "$ por cabeza", "Valor total"])
+  for (const x of h.filas) {
+    f.push([
+      x.categoria, x.cabezas, x.criterio,
+      x.precioReferencia ?? "", x.origenPrecio,
+      x.factor, x.pesoKg ?? "",
+      x.valorPorCabeza ?? "FALTA EL PRECIO",
+      x.valorTotal ?? "FALTA EL PRECIO",
+    ])
+  }
+  f.push([])
+  f.push(["TOTAL", h.cabezas, "", "", "", "", "", "", money(h.valuado)])
+  f.push([])
+  if (h.huecos.length > 0) {
+    f.push(["🕳️ LO QUE FALTA VALUAR — el total de arriba NO lo incluye"])
+    f.push(["", `${h.huecos.length} categoría(s) y ${h.cabezasSinValuar} cabezas sin precio.`])
+    f.push(["", "No se valúan en cero a propósito: un supuesto silencioso daría un total completo y mal."])
+    h.huecos.forEach(x => f.push(["", x.categoria, x.cabezas, x.criterio]))
+    f.push([])
+  }
+  if (h.sinCriterio.length > 0) {
+    f.push(["⚠️ CATEGORÍAS CON EXISTENCIA Y SIN CRITERIO DEFINIDO"])
+    h.sinCriterio.forEach(c => f.push(["", c]))
+  }
+  return f
+}
+
+/** Los precios que se usaron, para que la valuación se pueda auditar y no haya que creerle. */
+function hojaDePrecios(mag: PrecioMag[], mercado: PrecioMercado[], mesPrecios: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`PRECIOS DE REFERENCIA — mes completo de ${mesPrecios}`])
+  f.push(["Se toma el mes entero, no un día, para que sea representativo."])
+  f.push([])
+  f.push(["MERCADO AGROGANADERO DE CAÑUELAS — categorías comerciales"])
+  f.push(["Familia", "Calidad", "Corte", "Mínimo", "Máximo", "Promedio", "Mediana"])
+  mag.forEach(m => f.push([m.familia, m.calidad, m.corte ?? "", m.minimo, m.maximo, m.promedio, m.mediana]))
+  f.push([])
+  f.push(["ENTRESURCOS Y CORRALES — por rango de kilos"])
+  f.push(["Categoría", "Desde kg", "Hasta kg", "Prom. $/kg", "Máx. $/kg", "Mín. $/kg"])
+  mercado.forEach(m => f.push([m.categoria, m.pesoLo, m.pesoHi ?? "sin tope", m.promKilo, m.kiloMax, m.kiloMin]))
+  return f
+}
+
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
-export function armarWorkbook(libro: LibroDiario, templates?: TemplatesDelEjercicio): XLSX.WorkBook {
+export function armarWorkbook(
+  libro: LibroDiario,
+  templates?: TemplatesDelEjercicio,
+  hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras))
@@ -242,6 +300,10 @@ export function armarWorkbook(libro: LibroDiario, templates?: TemplatesDelEjerci
     hoja(wb, "Templates", hojaDeTemplates(templates))
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates))
   }
+  if (hacienda) {
+    hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios))
+    hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios))
+  }
   return wb
 }
 
@@ -252,8 +314,12 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
 }
 
 /** Descarga el archivo en el navegador. */
-export function descargarLibroDiario(libro: LibroDiario, empresa: string, templates?: TemplatesDelEjercicio) {
-  const wb = armarWorkbook(libro, templates)
+export function descargarLibroDiario(
+  libro: LibroDiario, empresa: string,
+  templates?: TemplatesDelEjercicio,
+  hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+) {
+  const wb = armarWorkbook(libro, templates, hacienda)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
