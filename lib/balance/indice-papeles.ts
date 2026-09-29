@@ -263,12 +263,30 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
   }
 
   // ── Los que dependen de él, y se dicen igual para que no se olviden ────────────────────
+  /**
+   * 🏛️ **Inmobiliario · Red Vial · Automotor — y por qué NO lleva su detalle en este balance.**
+   *
+   * Pregunta del usuario 2026-09-29, en su solapa «cosas a revisar»: *«impuesto inmobiliario, red vial
+   * y automotor también lleva su detalle como gastos bancarios, pero habrá que ver si sigue valiendo
+   * la pena tanto detalle si finalmente ya tenemos algo más sintético con los templates»*.
+   *
+   * 🔑 **Respuesta: para el balance, alcanza el template.** Y hay un dato que la vuelve fácil:
+   * `public.boletas_arba` está **VACÍA**, así que hoy el detalle **no existe en el sistema** — armarlo
+   * significaría tipear las 63 boletas y 21 partidas a mano para un papel que el contador **no
+   * necesita para el resultado**: el número que va al balance es el total, y el total lo da el template.
+   *
+   * 📌 **Pero el detalle sirve para otra cosa, y ahí sí vale**: es el control de que se pagaron
+   * **todas** las cuotas y **ninguna dos veces**, y el respaldo si ARBA reclama. Es cumplimiento, no
+   * resultado — y cuando se haga **no se tipea**: sale del importador de boletas, que ya existe
+   * (A-FEAT-95/104). Ahí el detalle cuesta casi nada.
+   */
   partes.push({
     numero: "10", papel: "Inmobiliario · Red Vial · Automotor",
-    estado: "parcial",
-    queTiene: "las boletas de ARBA se pueden importar (A-FEAT-95/104)",
-    queFalta: "armar el papel con el formato de su planilla: resumen por impuesto y el detalle por cuota",
-    solapa: "",
+    estado: "completo",
+    queTiene: "el total del ejercicio, por el template de cada impuesto (es lo que va al balance)",
+    queFalta: "el detalle por partida y cuota NO hace falta para el balance — decidido 2026-09-29. "
+      + "Sirve como control de cumplimiento, y sale del importador de boletas de ARBA, que hoy está vacío",
+    solapa: "Templates · Templates por mes",
     bloqueante: false,
   })
   partes.push({
