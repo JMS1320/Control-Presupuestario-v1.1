@@ -10,12 +10,12 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 const OUT = 'C:/Users/josem/AppData/Local/Temp/claude/D--Users-josem-Documents-Jose-Automatizarr-Claude-Control-Presupuestario-v1-1/93fe67ed-ce98-4c07-9cab-ef2f6c13fccd/scratchpad'
 
 test('👷 A-FEAT-77/78 · los pagos vienen CERRADOS por empleado y abren al apretar', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
 
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
@@ -69,7 +69,7 @@ test('👷 A-FEAT-77/78 · los pagos vienen CERRADOS por empleado y abren al apr
 })
 
 test('🏦 A-FEAT-79 · el selector de cuenta dice de QUIÉN es, no sólo el número', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
 
   await irAlInicio(page)
   await page.getByRole('tab', { name: 'Sueldos' }).click()
@@ -115,7 +115,7 @@ test('🏦 A-FEAT-79 · el selector de cuenta dice de QUIÉN es, no sólo el nú
 })
 
 test('🐞 A-BUG-197 · abrir un pago de CAJA no lo cambia a «banco»', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
 
   await irAlInicio(page)
   await page.getByRole('tab', { name: 'Sueldos' }).click()

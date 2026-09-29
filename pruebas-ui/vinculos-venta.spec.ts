@@ -9,10 +9,10 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 test('🔗 Comprobantes MSA: la FC 00010-00000021 figura vinculada (A-BUG-185)', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   await irAlInicio(page)
   await page.getByRole('tab', { name: 'Ingresos' }).click()
   await page.getByRole('tab', { name: 'Comprobantes' }).click()
@@ -24,7 +24,7 @@ test('🔗 Comprobantes MSA: la FC 00010-00000021 figura vinculada (A-BUG-185)',
 })
 
 test('🔗 Pantalla principal: no ofrece la FC 21 ya usada ni la de MSA para PAM (A-BUG-186/187/188)', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   await irAlInicio(page)
   const alerta = page.locator('div.rounded-lg', { hasText: 'Facturas de venta sin vincular' }).first()
   await expect(alerta).toBeVisible({ timeout: 90_000 })

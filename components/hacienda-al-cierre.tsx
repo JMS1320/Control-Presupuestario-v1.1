@@ -31,6 +31,9 @@ import {
   valuarHacienda, CRITERIOS,
   type ValuacionHacienda, type PrecioMag, type PrecioMercado, type ExistenciaHacienda,
 } from "@/lib/balance/hacienda-stock"
+import {
+  armarStockInsumos, desdeStockInsumo, PAPELES_SIN_ORIGEN, type StockInsumos,
+} from "@/lib/balance/stock-insumos"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const ent = (n: number) => Math.round(n).toLocaleString("es-AR")
@@ -42,6 +45,8 @@ export interface DatosHacienda {
   mercado: PrecioMercado[]
   /** El mes que se usó para los precios, para que quede dicho en el papel. */
   mesPrecios: string
+  /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
+  insumos: StockInsumos
 }
 
 export function HaciendaAlCierre({
@@ -94,6 +99,12 @@ export function HaciendaAlCierre({
           return []
         }
       }
+      const { data: ins, error: errIns } = await supabase
+        .schema("productivo")
+        .from("stock_insumos")
+        .select("*, categoria:categorias_insumo(nombre, ambito, unidad_medida)")
+      if (errIns) throw new Error(errIns.message)
+
       const [mag, hembras] = await Promise.all([
         pedir<PrecioMag>(`/api/precios-mag?desde=${desde}&hasta=${hasta}`),
         pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=hembra`),
@@ -109,6 +120,7 @@ export function HaciendaAlCierre({
         existencias, mag, mercado: hembras,
         valuacion: valuarHacienda(existencias, mag, hembras, numericos),
         mesPrecios: etiqueta,
+        insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
       }
       setDatos(d)
       onDatos(d)
@@ -202,6 +214,46 @@ export function HaciendaAlCierre({
               <> · ⚠️ sin criterio definido: <strong>{v.sinCriterio.join(", ")}</strong></>
             )}
           </p>
+
+          {/* 🧪 Los stocks de insumos: misma lógica de huecos que la hacienda. */}
+          {datos && (
+            <div className="border-t pt-3 space-y-2" data-test="stock-insumos">
+              <div className="text-sm font-medium">🧪 Stock de insumos</div>
+              <div className="text-sm">
+                <strong>{ent(datos.insumos.productos)}</strong> productos con existencia ·
+                valuado <strong>${fmt(datos.insumos.valuado)}</strong>
+                {datos.insumos.huecos.length > 0 && (
+                  <span className="text-amber-700"> · <strong>{datos.insumos.huecos.length}</strong> sin precio</span>
+                )}
+              </div>
+
+              {datos.insumos.grupos.map(g => (
+                <div key={g.ambito} className="text-xs">
+                  <div className="font-medium">{g.papel}</div>
+                  <div className="text-muted-foreground">
+                    {g.filas.length} producto(s) · valuado ${fmt(g.valuado)}
+                    {g.huecos > 0 && <span className="text-amber-700"> · {g.huecos} sin precio, no incluidos</span>}
+                  </div>
+                </div>
+              ))}
+
+              {datos.insumos.huecos.length > 0 && (
+                <div className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded px-2 py-1.5">
+                  <strong>{datos.insumos.huecos.length} productos están contados pero sin precio.</strong>{" "}
+                  El inventario existe; la valuación no. El total de arriba no los incluye.
+                </div>
+              )}
+
+              <div className="text-xs text-muted-foreground">
+                <div className="font-medium">🕳️ Papeles que todavía no tienen de dónde salir:</div>
+                <ul className="list-disc pl-5">
+                  {PAPELES_SIN_ORIGEN.map(p => (
+                    <li key={p.papel}><strong>{p.papel}</strong> — {p.falta}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
         </>
       )}
 

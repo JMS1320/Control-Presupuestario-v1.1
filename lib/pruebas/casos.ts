@@ -62,6 +62,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
+import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
   type AsientoLibroDiario,
@@ -2595,6 +2596,82 @@ export function correrCasos(): Resultado[] {
       "1 sin criterio · es hueco",
       `${conRara.sinCriterio.length} sin criterio · ${conRara.filas[0]?.esHueco ? "es hueco" : "se valuó"}`,
       conRara.sinCriterio.length === 1 && conRara.filas[0]?.esHueco === true, "A-FEAT-1184")
+  }
+
+  /**
+   * 🧪 **STOCK DE INSUMOS — A-FEAT-1184.**
+   *
+   * Cubre los papeles de insumos agrícolas, forrajeros y gas oil, que tienen la misma forma. El
+   * **ámbito** de la categoría ya los separa: no hizo falta inventar una clasificación.
+   *
+   * 🕳️ **El caso que más importa es el del precio faltante.** Medido contra la base el 2026-09-28:
+   * **32 productos con stock y ninguno con precio**. Si una fila sin precio se valuara en cero, el
+   * total del papel saldría «completo» y mal.
+   */
+  {
+    const linea = (o: Partial<LineaInsumo>): LineaInsumo => ({
+      id: o.id ?? "x", categoria: o.categoria ?? "Agroquímico", ambito: o.ambito ?? "agricola",
+      producto: o.producto ?? "Glifosato", cantidad: o.cantidad ?? 20, unidad: o.unidad ?? "L",
+      costoUnitario: o.costoUnitario ?? null, observaciones: "",
+    })
+
+    // 🕳️ Sin precio NO se valua en cero.
+    const sinPrecio = armarStockInsumos([linea({ id: "a", cantidad: 20, costoUnitario: null })])
+    chequear("Balance · insumos", "🕳️ Un insumo sin precio NO se valúa en cero: queda como hueco",
+      "1 hueco · valor nulo",
+      `${sinPrecio.huecos.length} hueco · valor ${sinPrecio.grupos[0].filas[0].valorTotal === null ? "nulo" : sinPrecio.grupos[0].filas[0].valorTotal}`,
+      sinPrecio.huecos.length === 1 && sinPrecio.grupos[0].filas[0].valorTotal === null, "A-FEAT-1184")
+
+    // 🔑 Un precio en CERO tampoco vale: un insumo que vale cero no existe.
+    const precioCero = armarStockInsumos([linea({ id: "b", costoUnitario: 0 })])
+    chequear("Balance · insumos", "🔑 Un precio en cero se trata como faltante, no como válido",
+      "es hueco", precioCero.huecos.length === 1 ? "es hueco" : "se valuó",
+      precioCero.huecos.length === 1, "A-FEAT-1184")
+
+    // Con precio, valua bien.
+    const conPrecio = armarStockInsumos([linea({ id: "c", cantidad: 96, costoUnitario: 6 })])
+    chequear("Balance · insumos", "Con precio cargado: 96 L × 6 = 576",
+      "576", String(conPrecio.valuado), conPrecio.valuado === 576, "A-FEAT-1184")
+
+    // 🗂️ El ambito separa los tres papeles del usuario.
+    const tresPapeles = armarStockInsumos([
+      linea({ id: "1", ambito: "agricola", costoUnitario: 1 }),
+      linea({ id: "2", ambito: "ganadero", producto: "Balanceado", costoUnitario: 1 }),
+      linea({ id: "3", ambito: "ambos", producto: "Gas oil", costoUnitario: 1 }),
+    ])
+    chequear("Balance · insumos", "🗂️ El ámbito separa los papeles: agrícolas, forrajeros y gas oil",
+      "3 papeles", `${tresPapeles.grupos.length} papeles`,
+      tresPapeles.grupos.length === 3 &&
+      tresPapeles.grupos.some(g => g.papel.includes("agrícolas")) &&
+      tresPapeles.grupos.some(g => g.papel.includes("Forrajeros")), "A-FEAT-1184")
+
+    // Un producto en CERO no es stock: no se cuenta ni como hueco.
+    const enCero = armarStockInsumos([linea({ id: "d", cantidad: 0, costoUnitario: null })])
+    chequear("Balance · insumos", "Un producto con existencia 0 no entra al papel",
+      "0 productos", `${enCero.productos} productos`, enCero.productos === 0, "A-FEAT-1184")
+
+    // 🎚️ El precio a mano manda, y por NOMBRE tambien (por si el producto se recreo).
+    const conManual = armarStockInsumos([linea({ id: "e", cantidad: 10, costoUnitario: null })], { "Glifosato": 4 })
+    chequear("Balance · insumos", "🎚️ Un precio a mano (por nombre) manda: 10 × 4 = 40 y deja de ser hueco",
+      "40 · 0 huecos", `${conManual.valuado} · ${conManual.huecos.length} huecos`,
+      conManual.valuado === 40 && conManual.huecos.length === 0, "A-FEAT-1184")
+
+    // 🕳️ Los papeles que NO tienen de donde salir se declaran.
+    chequear("Balance · insumos", "🕳️ Granos, sementeras y gas oil se declaran como papeles sin origen",
+      "3 declarados", `${PAPELES_SIN_ORIGEN.length} declarados`,
+      PAPELES_SIN_ORIGEN.length === 3 &&
+      PAPELES_SIN_ORIGEN.some(p => p.papel.includes("Granos")) &&
+      PAPELES_SIN_ORIGEN.some(p => p.papel.includes("Sementeras")), "A-FEAT-1184")
+
+    // 🧮 El total del grupo y el general tienen que dar lo mismo.
+    const varios = armarStockInsumos([
+      linea({ id: "f", ambito: "agricola", costoUnitario: 2, cantidad: 100 }),
+      linea({ id: "g", ambito: "ganadero", producto: "Sal", costoUnitario: 3, cantidad: 100 }),
+    ])
+    chequear("Balance · insumos", "🧮 La suma de los grupos da el total general",
+      "500", String(varios.grupos.reduce((s, g) => s + g.valuado, 0)),
+      varios.grupos.reduce((s, g) => s + g.valuado, 0) === varios.valuado && varios.valuado === 500,
+      "A-FEAT-1184")
   }
 
   return r

@@ -23,7 +23,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 const OUT = 'C:/Users/josem/AppData/Local/Temp/claude/D--Users-josem-Documents-Jose-Automatizarr-Claude-Control-Presupuestario-v1-1/93fe67ed-ce98-4c07-9cab-ef2f6c13fccd/scratchpad'
 
@@ -44,7 +44,7 @@ const CASOS = [
 
 for (const CASO of CASOS) {
 test(`📄 Detalle de Pago de ${CASO.nombre} — bajar el PDF y leerlo`, async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const CUIT_ALCORTA = CASO.cuit
 
   const errores: string[] = []

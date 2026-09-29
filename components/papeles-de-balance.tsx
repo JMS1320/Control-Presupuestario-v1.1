@@ -142,7 +142,7 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id, templates ?? undefined, hacienda ?? undefined)}>
+            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id, templates ?? undefined, hacienda ?? undefined, hacienda?.insumos)}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel
             </Button>

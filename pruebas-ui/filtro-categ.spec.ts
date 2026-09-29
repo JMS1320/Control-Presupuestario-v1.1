@@ -18,10 +18,10 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 test('🏷️ tildar UNA categoría filtra la tabla', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
 
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))

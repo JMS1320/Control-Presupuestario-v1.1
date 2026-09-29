@@ -23,6 +23,7 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado } from "./hacienda-stock"
+import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -282,11 +283,47 @@ function hojaDePrecios(mag: PrecioMag[], mercado: PrecioMercado[], mesPrecios: s
   return f
 }
 
+/** Los stocks de insumos, un bloque por papel, con los huecos contados. */
+function hojaDeInsumos(st: StockInsumos, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`STOCK DE INSUMOS al ${fechaCierre}`])
+  f.push([])
+  for (const g of st.grupos) {
+    f.push([g.papel])
+    f.push(["Categoría", "Producto", "Cantidad", "Unidad", "Precio unitario", "Valor total", "Observaciones"])
+    for (const x of g.filas) {
+      f.push([
+        x.categoria, x.producto, x.cantidad, x.unidad,
+        x.costoUnitario ?? "FALTA EL PRECIO",
+        x.valorTotal ?? "FALTA EL PRECIO",
+        x.observaciones,
+      ])
+    }
+    f.push(["", `Subtotal ${g.papel}`, "", "", "", money(g.valuado),
+      g.huecos > 0 ? `⚠️ ${g.huecos} producto(s) sin precio, NO incluidos` : ""])
+    f.push([])
+  }
+  f.push(["TOTAL VALUADO", money(st.valuado)])
+  f.push(["Productos con existencia", st.productos])
+  f.push(["Productos SIN PRECIO", st.huecos.length])
+  f.push([])
+  if (st.huecos.length > 0) {
+    f.push(["🕳️ LO QUE FALTA VALUAR — el total de arriba NO lo incluye"])
+    f.push(["Categoría", "Producto", "Cantidad", "Unidad"])
+    st.huecos.forEach(x => f.push([x.categoria, x.producto, x.cantidad, x.unidad]))
+    f.push([])
+  }
+  f.push(["🕳️ PAPELES QUE NO TIENEN DE DÓNDE SALIR TODAVÍA"])
+  PAPELES_SIN_ORIGEN.forEach(p => f.push(["", p.papel, p.falta]))
+  return f
+}
+
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
 export function armarWorkbook(
   libro: LibroDiario,
   templates?: TemplatesDelEjercicio,
   hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+  insumos?: StockInsumos,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
@@ -304,6 +341,7 @@ export function armarWorkbook(
     hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios))
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios))
   }
+  if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre))
   return wb
 }
 
@@ -318,8 +356,9 @@ export function descargarLibroDiario(
   libro: LibroDiario, empresa: string,
   templates?: TemplatesDelEjercicio,
   hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+  insumos?: StockInsumos,
 ) {
-  const wb = armarWorkbook(libro, templates, hacienda)
+  const wb = armarWorkbook(libro, templates, hacienda, insumos)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

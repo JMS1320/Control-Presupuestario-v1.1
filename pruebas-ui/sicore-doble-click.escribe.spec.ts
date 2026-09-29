@@ -37,7 +37,7 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 const FC = {
   id: '9e4ba330-310d-41fa-8a46-9af10fe8ea7f',
@@ -57,7 +57,7 @@ const OUT = 'C:/Users/josem/AppData/Local/Temp/claude/D--Users-josem-Documents-J
 test.describe.configure({ mode: 'serial' })
 
 test('🔴 A-BUG-146 · el doble click en «Confirmar» deja UNA sola fila de SICORE', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
 
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))

@@ -10,7 +10,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test'
-import { irAlInicio, RUTA } from './ayuda'
+import { irAlInicio, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 async function abrirArrendamientos(page: Page, empresa: 'PAM' | 'MA') {
   await irAlInicio(page)
@@ -57,7 +57,7 @@ async function nuevoContrato(page: Page, campania: string, has: string, qq: stri
 }
 
 test('🌾 PAM: un contrato nuevo 25/26 copia el esquema de MSA Nazarenas corrido un año y cierra en 15', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
@@ -79,7 +79,7 @@ test('🌾 PAM: un contrato nuevo 25/26 copia el esquema de MSA Nazarenas corrid
 })
 
 test('🌾 MA: 15 qq copiados contra 15,5 del contrato AVISA la diferencia y deja guardar', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
@@ -109,7 +109,7 @@ test('🌾 MA: 15 qq copiados contra 15,5 del contrato AVISA la diferencia y dej
  * Después de corregir el dato, el saldo es 112,960 tn exacto; antes decía 113,014.
  */
 test('🌾 Fijar Rojas #5: propone 112,960 tn exactas y el TC arranca vacío', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
@@ -151,7 +151,7 @@ test('🌾 Fijar Rojas #5: propone 112,960 tn exactas y el TC arranca vacío', a
  * 🛑 CERO ESCRITURA: borra el TC en pantalla, mira que vuelva a «falta el TC» y CANCELA.
  */
 test('✏️ Editar la venta cerrada de Rojas #3: se puede sacar el TC (sin guardar)', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 
@@ -187,7 +187,7 @@ test('✏️ Editar la venta cerrada de Rojas #3: se puede sacar el TC (sin guar
  * 🛑 CERO ESCRITURA: abre, mira y cancela.
  */
 test('📋 Duplicar PAM Nazarenas 25/26 → 26/27 con las cuotas un año después (sin guardar)', async ({ page }) => {
-  test.skip(!RUTA, 'Falta PRUEBA_RUTA en .env.local')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   const errores: string[] = []
   page.on('pageerror', e => errores.push('PAGEERROR: ' + e.message))
 

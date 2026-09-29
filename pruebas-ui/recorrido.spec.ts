@@ -10,11 +10,10 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { abrirPresupuesto, RUTA } from './ayuda'
+import { abrirPresupuesto, HAY_ACCESO, MOTIVO_SIN_ACCESO } from './ayuda'
 
 test.beforeEach(async ({ page }) => {
-  test.skip(!RUTA,
-    'Falta PRUEBA_RUTA en .env.local — el primer segmento de la URL es la contraseña y no se escribe en el repo.')
+  test.skip(!HAY_ACCESO, MOTIVO_SIN_ACCESO)
   await abrirPresupuesto(page)
 })
 

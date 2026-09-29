@@ -2529,3 +2529,26 @@ casilla. Por eso va como **Secret** en Vercel y fuera del repo — antes vivía 
 `localStorage.gas_mails_url` del navegador de cada uno, que además la dejaba envejecer sin arreglo
 posible (Apps Script cambia la `/exec` en **cada re-deploy**).
 
+
+## 🎭 Correr las pruebas de UI ahora que hay login `#playwright #testing #login #2026-09-28`
+
+`npm run ui` necesita **tres** variables en `.env.local` (nunca en el repo):
+
+```
+PRUEBA_RUTA=...        # la ruta-password, como antes
+PRUEBA_EMAIL=...       # el usuario de prueba
+PRUEBA_PASSWORD=...    # su contraseña
+```
+
+**Sin las dos últimas los tests se SALTEAN con el motivo**, no fallan. Eso es a propósito: hasta el
+2026-09-28 fallaban en rojo —13 de golpe, cada uno con el error de su propio locator— y eso
+**enseña a ignorar los rojos** (→ `A-BUG-1218`).
+
+⚠️ **El usuario de prueba no puede tener 2FA**: un test no pasa un TOTP. Y ahí está el nudo que
+falta resolver: **`admin` tiene 2FA obligatorio** y **`contable` sólo ve Egresos**, así que hoy
+**no existe un rol que un test pueda usar para probar la app entera**. Si el login cae en la
+pantalla del segundo factor, el helper corta con un mensaje que lo explica.
+
+📌 La suite **no escribe datos del negocio**: abre, mira y lee. La única escritura es **crear la
+sesión** al loguearse. Los specs que sí escriben llevan `.escribe.spec.ts` y **no corren** con
+`npm run ui` (ver `playwright.config.ts`).
