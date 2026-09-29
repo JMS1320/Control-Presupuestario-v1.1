@@ -23,6 +23,7 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
+import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import {
   TOTALIZADORAS_BANCARIAS,
@@ -188,6 +189,14 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
  * la tabla en cada solapa.
  */
 /** Templates, fila por cuota. */
+const COLS_TEMPLATES_POR_MES = (meses: number): Columna[] => [
+  { ancho: 14 },                                   // Responsable
+  { ancho: 34 },                                   // Categoría
+  ...Array.from({ length: meses }, () => ({ ancho: 15, z: MONEDA })),
+  { ancho: 17, z: MONEDA },                        // TOTAL
+  { ancho: 11, z: ENTERO },                        // Meses con movimiento
+]
+
 const COLS_TEMPLATES: Columna[] = [
   { ancho: 11 },                    // Fecha
   { ancho: 34 },                    // Concepto
@@ -575,48 +584,81 @@ function hojaDeBancos(
   f.push([])
   f.push([])
 
-  f.push(["FONDOS COMUNES DE INVERSION"])
+  /**
+   * 💹 **Los fondos comunes son CUOTAPARTES, no un saldo.**
+   *
+   * Corrección del usuario 2026-09-29: *«FCI son cuotapartes, con lo cual el saldo de inicio es
+   * cuotas × precio y el final también»*.
+   *
+   * 🔑 **No es un detalle de presentación: cambia de dónde sale el resultado.** Un fondo no rinde
+   * porque el saldo suba, rinde porque **el precio de la cuotaparte** sube; y las cuotapartes sólo
+   * cambian cuando se suscribe o se rescata. Pedir un «saldo» obliga al usuario a hacer la
+   * multiplicación afuera —y a rehacerla cada vez que corrige un precio—, que es justo lo que la
+   * § 🎚️ de `CLAUDE.md` manda evitar.
+   *
+   * Entonces la solapa pide **cuatro números** —cuotapartes y precio, al inicio y al cierre— y
+   * calcula los dos saldos **y** el resultado con fórmulas.
+   */
+  f.push(["FONDOS COMUNES DE INVERSION — son CUOTAPARTES: el saldo es cuotas x precio"])
   f.push([])
-  f.push(["Donde", "Saldo al inicio", "Suscripciones", "Rescates", "Saldo al cierre",
+  f.push(["Complete las cuatro columnas en amarillo (cuotapartes y precio, al inicio y al cierre)."])
+  f.push(["Los saldos y el resultado se calculan solos."])
+  f.push([])
+  f.push(["Donde",
+    "Cuotapartes al inicio", "Precio al inicio", "Saldo al inicio",
+    "Suscripciones", "Rescates",
+    "Cuotapartes al cierre", "Precio al cierre", "Saldo al cierre",
     "Resultado financiero", "Movimientos"])
+
   const filaPrimerFondo = f.length + 1
   for (const x of fci.fondos) {
     const n = f.length + 1
     f.push([
       x.donde,
-      x.saldoInicio || "",
-      money(x.suscripciones),
-      money(x.rescates),
-      x.saldoCierre || "",
+      "", "",                                               // B, C — los carga el usuario
+      { t: "n", f: `IF(OR(B${n}="",C${n}=""),"",B${n}*C${n})`, z: MONEDA },
+      money(x.suscripciones), money(x.rescates),
+      "", "",                                               // G, H — los carga el usuario
+      { t: "n", f: `IF(OR(G${n}="",H${n}=""),"",G${n}*H${n})`, z: MONEDA },
       /**
-       * 🧮 El resultado es una FORMULA y no un numero pegado, a proposito: el usuario completa los
-       * dos saldos y el resultado aparece solo. Es el camino inverso — lo que el fondo rindio se
-       * deduce de que la plata que entro y salio no explica el saldo final.
+       * 🧮 El resultado por el camino inverso: lo que el fondo rindió es lo que el saldo final tiene
+       * y que la plata movida no explica. Con las cuotapartes puestas, sale solo.
        */
-      { t: "n", f: `IF(OR(B${n}="",E${n}=""),"faltan los saldos",E${n}-(B${n}+C${n}-D${n}))`, z: MONEDA },
+      { t: "n", f: `IF(OR(D${n}="",I${n}=""),"faltan cuotapartes y precio",I${n}-(D${n}+E${n}-F${n}))`, z: MONEDA },
       x.movimientos,
     ])
   }
   const ultimoFondo = f.length
+  const nT = f.length + 1
   f.push(["TOTAL",
-    "", conFormula(`SUM(C${filaPrimerFondo}:C${ultimoFondo})`, money(fci.total.suscripciones)),
-    conFormula(`SUM(D${filaPrimerFondo}:D${ultimoFondo})`, money(fci.total.rescates)),
-    "", "", fci.total.movimientos])
+    "", "", conFormula(`SUM(D${filaPrimerFondo}:D${ultimoFondo})`, 0),
+    conFormula(`SUM(E${filaPrimerFondo}:E${ultimoFondo})`, money(fci.total.suscripciones)),
+    conFormula(`SUM(F${filaPrimerFondo}:F${ultimoFondo})`, money(fci.total.rescates)),
+    "", "", conFormula(`SUM(I${filaPrimerFondo}:I${ultimoFondo})`, 0),
+    conFormula(`SUM(J${filaPrimerFondo}:J${ultimoFondo})`, 0),
+    fci.total.movimientos])
+  void nT
   f.push([])
   f.push(["Suscribir es plata que SALE de la cuenta; rescatar es plata que ENTRA."])
-  f.push(["Complete el saldo al inicio (columna B) y al cierre (columna E): el resultado se calcula solo."])
-  f.push(["Control: saldo cierre - (saldo inicio + suscripciones - rescates) = resultado financiero."])
+  f.push(["Las cuotapartes SOLO cambian al suscribir o rescatar; lo que se mueve entre medio es el PRECIO."])
+  f.push(["Control: saldo al cierre - (saldo al inicio + suscripciones - rescates) = resultado financiero."])
+  f.push(["Y el control cruzado: si las cuotapartes al cierre no son las del inicio mas lo neto suscripto,"])
+  f.push(["falta o sobra una operacion del fondo."])
   return f
 }
 
 const COLS_BANCOS: Columna[] = [
-  { ancho: 34 },                    // Cuenta / Donde
-  { ancho: 18, z: MONEDA },         // Saldo inicio
-  { ancho: 18, z: MONEDA },         // Suscripciones
-  { ancho: 18, z: MONEDA },         // Rescates
-  { ancho: 18, z: MONEDA },         // Saldo cierre
-  { ancho: 20, z: MONEDA },         // Resultado
-  { ancho: 13, z: ENTERO },         // Movimientos
+  { ancho: 34 },                          // A · Cuenta / Donde
+  { ancho: 16, z: "#,##0.0000" },         // B · Cuotapartes al inicio (llevan decimales)
+  { ancho: 15, z: "#,##0.0000" },         // C · Precio al inicio
+  { ancho: 18, z: MONEDA },               // D · Saldo al inicio
+  { ancho: 18, z: MONEDA },               // E · Suscripciones
+  { ancho: 18, z: MONEDA },               // F · Rescates
+  { ancho: 16, z: "#,##0.0000" },         // G · Cuotapartes al cierre
+  { ancho: 15, z: "#,##0.0000" },         // H · Precio al cierre
+  { ancho: 18, z: MONEDA },               // I · Saldo al cierre
+  { ancho: 22, z: MONEDA },               // J · Resultado financiero
+  { ancho: 13, z: ENTERO },               // K · Movimientos
 ]
 
 /**
@@ -758,34 +800,91 @@ function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
  * gastos bancarios e impuestos por mes»*: filas de concepto, columnas jul→jun con «Suma de
  * Débitos / Suma de Créditos», y el total del ejercicio al final.
  */
+/**
+ * 🧾 La solapa **Templates por mes** — un mes por columna, **saldado**, y subtotal por responsable.
+ *
+ * Dos pedidos del usuario del 2026-09-29, revisando el export:
+ * > *«templates sin desglosar por responsable»*
+ * > *«template x mes siguen con 2 columnas deb y cred en vez de saldado»*
+ *
+ * Los dos apuntan a lo mismo: la tabla anterior tenía **24 columnas de importes** —débito y crédito
+ * por cada mes— y no decía **quién** pagó. Para saber cuánto costó un concepto había que **restar a
+ * ojo**, y para saber de qué empresa era, no había forma.
+ *
+ * Ahora: **un mes, una columna, con el saldo** (débito − crédito), y las filas agrupadas por
+ * responsable con su subtotal. Los débitos y créditos abiertos siguen estando en la solapa
+ * **Templates**, que es la del detalle.
+ */
 function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = []
   f.push(["TEMPLATES POR MES — lo que no entra por subdiario y se informa aparte"])
-  f.push(["⚠️ Estas cuotas se cortan por FECHA DE PAGO (o estimada si no hay), no por subdiario:"])
-  f.push(["un template no tiene factura de ARCA, así que no tiene subdiario."])
+  f.push(["Cada mes es UNA columna, con el SALDO del mes: debito menos credito."])
+  f.push(["Un importe negativo es una devolucion o un ajuste a favor."])
+  f.push(["Las cuotas se cortan por FECHA DE PAGO (o estimada si no hay), no por subdiario:"])
+  f.push(["un template no tiene factura de ARCA, asi que no tiene subdiario."])
   f.push([])
 
-  const cab: unknown[] = ["Categoría"]
-  t.columnas.forEach(c => { cab.push(`${c} Déb.`, `${c} Créd.`) })
-  cab.push("Total Débitos", "Total Créditos")
-  f.push(cab)
+  f.push(["Responsable", "Categoría", ...t.columnas, "TOTAL", "Meses con movimiento"])
 
-  for (const fila of t.porMes) {
-    const r: unknown[] = [fila.categ]
-    for (let i = 0; i < 12; i++) r.push(fila.debitos[i] || "", fila.creditos[i] || "")
-    r.push(fila.totalDebitos, fila.totalCreditos)
-    f.push(r)
+  /** La última columna de meses, para las fórmulas de total por fila. */
+  const ultima = String.fromCharCode(67 + t.columnas.length - 1)   // C es el primer mes
+
+  const filaDe = (x: { responsable: string; categ: string; neto: number[]; totalNeto: number }) => {
+    const n = f.length + 1
+    f.push([
+      x.responsable, x.categ,
+      ...x.neto.map(v => money(v)),
+      conFormula(`SUM(C${n}:${ultima}${n})`, money(x.totalNeto)),
+      x.neto.filter(v => v !== 0).length,
+    ])
   }
 
-  const tot: unknown[] = ["TOTAL"]
-  for (let i = 0; i < 12; i++) {
-    tot.push(
-      money(t.porMes.reduce((s, x) => s + x.debitos[i], 0)),
-      money(t.porMes.reduce((s, x) => s + x.creditos[i], 0)),
-    )
+  const responsables = [...new Set(t.porMes.map(x => x.responsable))]
+  /** Las filas del subtotal de cada responsable, para que el TOTAL general sume subtotales. */
+  const filasSubtotal: number[] = []
+
+  for (const r of responsables) {
+    const dela = t.porMes.filter(x => x.responsable === r)
+    const desde = f.length + 2                  // la primera fila de este responsable
+    dela.forEach(filaDe)
+    const hasta = f.length
+    const n = f.length + 1
+    filasSubtotal.push(n)
+    f.push([
+      `Total ${r}`, "",
+      ...t.columnas.map((_, j) => conFormula(
+        `SUM(${String.fromCharCode(67 + j)}${desde}:${String.fromCharCode(67 + j)}${hasta})`,
+        money(dela.reduce((s, x) => s + x.neto[j], 0)))),
+      conFormula(`SUM(C${n}:${ultima}${n})`, money(dela.reduce((s, x) => s + x.totalNeto, 0))),
+      "",
+    ])
+    f.push([])
   }
-  tot.push(t.totalDebitos, t.totalCreditos)
-  f.push(tot)
+
+  const nTot = f.length + 1
+  f.push([
+    "TOTAL DEL EJERCICIO", "",
+    ...t.columnas.map((_, j) => {
+      const col = String.fromCharCode(67 + j)
+      return conFormula(filasSubtotal.map(r => `${col}${r}`).join("+") || "0",
+        money(t.porMes.reduce((s, x) => s + x.neto[j], 0)))
+    }),
+    conFormula(`SUM(C${nTot}:${ultima}${nTot})`, money(t.totalDebitos - t.totalCreditos)),
+    "",
+  ])
+
+  /**
+   * 🧮 El control: el saldo total tiene que ser **débitos − créditos** de la solapa del detalle. Es el
+   * camino inverso — si el saldado perdió una cuota por el camino, esto no da.
+   */
+  f.push([])
+  f.push(["CONTROL", "Total debitos (solapa Templates)", money(t.totalDebitos)])
+  f.push(["", "Total creditos", money(t.totalCreditos)])
+  f.push(["", "= Saldo", money(t.totalDebitos - t.totalCreditos)])
+  const nC = f.length + 1
+  f.push(["", "Suma de esta solapa", conFormula(`${String.fromCharCode(67 + t.columnas.length)}${nTot}`, money(t.totalDebitos - t.totalCreditos))])
+  f.push(["", "Diferencia (tiene que dar 0)",
+    conFormula(`C${nC - 1}-C${nC}`, 0)])
 
   if (t.sinCategoria.length > 0 || t.sinFecha.length > 0) {
     f.push([])
@@ -804,11 +903,50 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
  * `02 - HACIENDA` — existencia al cierre y su valuación, con el criterio de cada categoría a la
  * vista y **los huecos listados**, no escondidos en un total.
  */
-function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: string): unknown[][] {
+function hojaDeHacienda(
+  h: ValuacionHacienda, fechaCierre: string, mesPrecios: string, cuadre?: CuadreHacienda,
+): unknown[][] {
   const f: unknown[][] = []
   f.push([`02 - HACIENDA — existencia al ${fechaCierre}`])
   f.push([`Precios de referencia: mes completo de ${mesPrecios} (Cañuelas y Entresurcos)`])
   f.push([])
+
+  /**
+   * 🧮 **El cuadre va ARRIBA de la valuación**, no al final.
+   *
+   * Pedido del usuario 2026-09-29: *«hacienda precisa el cheq de consistencia de inicio más menos mov
+   * = stock final»*. Y va primero porque **si la existencia no cuadra, valuarla no tiene sentido**:
+   * se estaría poniendo precio a un rodeo equivocado.
+   */
+  if (cuadre) {
+    f.push(["CUADRE DE LA EXISTENCIA — de donde salen las cabezas que se valuan"])
+    f.push([])
+    f.push(["", "Existencia al INICIO del ejercicio", cuadre.existenciaInicio, "cabezas"])
+    cuadre.porTipo.forEach(t => f.push(["", `  ${t.tipo}`, t.cabezas, `cabezas · ${t.movimientos} movimiento(s)`]))
+    const nMov = f.length + 1
+    const desdeMov = nMov - cuadre.porTipo.length
+    f.push(["", "Movimientos del ejercicio",
+      cuadre.porTipo.length > 0
+        ? conFormula(`SUM(C${desdeMov}:C${nMov - 1})`, cuadre.movimientosDelEjercicio, ENTERO)
+        : 0,
+      "cabezas"])
+    const nCalc = f.length + 1
+    f.push(["", "= Existencia al CIERRE (calculada)",
+      conFormula(`C${nCalc - cuadre.porTipo.length - 2}+C${nCalc - 1}`, cuadre.existenciaCierreCalculada, ENTERO),
+      "cabezas"])
+    f.push(["", "Existencia que se valua abajo", cuadre.existenciaCierreDeclarada, "cabezas"])
+    const nDif = f.length + 1
+    f.push(["", "Diferencia", conFormula(`C${nDif - 2}-C${nDif - 1}`, cuadre.diferencia, ENTERO),
+      cuadre.diferencia === 0 ? "CIERRA" : "NO CIERRA"])
+    if (cuadre.avisos.length > 0) {
+      f.push([])
+      f.push(["ATENCION"])
+      cuadre.avisos.forEach(a => f.push(["", a]))
+    }
+    f.push([])
+    f.push([])
+  }
+
   f.push(["Categoría", "Cabezas", "Criterio de valuación", "Precio de referencia", "Origen del precio",
     "Factor", "Kg/cab", "$ por cabeza", "Valor total", "De dónde salen los kilos"])
 
@@ -997,6 +1135,8 @@ export function armarWorkbook(
     mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] }
     porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
     mesPrecios: string
+    /** El cuadre de la existencia. Va arriba de la valuación — ver `hojaDeHacienda`. */
+    cuadre?: CuadreHacienda
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
@@ -1048,10 +1188,13 @@ export function armarWorkbook(
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
   if (templates) {
     hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
-    hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates))
+    hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
+      COLS_TEMPLATES_POR_MES(templates.columnas.length))
   }
   if (hacienda) {
-    hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios), COLS_HACIENDA)
+    hoja(wb, "02 Hacienda",
+      hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre),
+      COLS_HACIENDA)
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.porCabeza, hacienda.mesPrecios), COLS_PRECIOS)
   }
   if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre), COLS_INSUMOS)
@@ -1088,6 +1231,8 @@ export function descargarLibroDiario(
     mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] }
     porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
     mesPrecios: string
+    /** El cuadre de la existencia. Va arriba de la valuación — ver `hojaDeHacienda`. */
+    cuadre?: CuadreHacienda
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },

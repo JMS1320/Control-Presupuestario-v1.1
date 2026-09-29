@@ -26,7 +26,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
-import type { Ejercicio } from "@/lib/balance/ejercicio"
+import { primerDiaDelEjercicio, type Ejercicio } from "@/lib/balance/ejercicio"
+import {
+  cuadrarHacienda, type CuadreHacienda, type MovimientoDeHacienda,
+} from "@/lib/balance/cuadre-hacienda"
 import {
   valuarHacienda, CRITERIOS,
   type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza,
@@ -64,6 +67,11 @@ export interface DatosHacienda {
   porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
   /** El mes que se usó para los precios, para que quede dicho en el papel. */
   mesPrecios: string
+  /**
+   * 🧮 El cuadre de la existencia: inicio ± movimientos = cierre, más lo que no se pudo contar.
+   * Pedido del usuario 2026-09-29. Va **arriba** de la valuación en el papel.
+   */
+  cuadre: CuadreHacienda
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
   /** Los kilos por categoría, de las pesadas de la app. */
@@ -103,15 +111,27 @@ export function HaciendaAlCierre({
       const { data: movs, error } = await supabase
         .schema("productivo")
         .from("movimientos_hacienda")
-        .select("cantidad, fecha, categoria:categorias_hacienda(nombre)")
-        .lte("fecha", ejercicio.fechaCierre)
+        // 🧮 **Se traen TODOS, sin filtrar por fecha**: el cuadre necesita los anteriores al inicio
+        //    del ejercicio (para la existencia de arranque) y los posteriores al cierre (para poder
+        //    decir por qué el stock de hoy no es el del balance). El corte se hace en la lógica pura.
+        .select("cantidad, fecha, tipo, categoria:categorias_hacienda(nombre)")
       if (error) throw new Error(error.message)
 
+      /** Normalizados una vez, para la existencia y para el cuadre. */
+      const movimientos: MovimientoDeHacienda[] = ((movs ?? []) as Array<Record<string, unknown>>)
+        .map(m => ({
+          fecha: String(m.fecha ?? "").slice(0, 10),
+          tipo: String(m.tipo ?? ""),
+          cantidad: Number(m.cantidad ?? 0),
+          categoria: ((m.categoria as { nombre?: string } | null)?.nombre) ?? "",
+        }))
+
       const porCat = new Map<string, number>()
-      for (const m of (movs ?? []) as Array<Record<string, unknown>>) {
-        const nombre = ((m.categoria as { nombre?: string } | null)?.nombre) ?? ""
-        if (!nombre) continue
-        porCat.set(nombre, (porCat.get(nombre) ?? 0) + Number(m.cantidad ?? 0))
+      for (const m of movimientos) {
+        // ⚠️ Un movimiento sin categoría no se puede sumar a ninguna. **No desaparece**: lo cuenta
+        //    `cuadrarHacienda` y sale en el cuadre del papel.
+        if (!m.categoria || m.fecha > ejercicio.fechaCierre) continue
+        porCat.set(m.categoria, (porCat.get(m.categoria) ?? 0) + m.cantidad)
       }
       const existencias: ExistenciaHacienda[] = [...porCat.entries()]
         .filter(([, n]) => n !== 0)
@@ -231,6 +251,16 @@ export function HaciendaAlCierre({
       const d: DatosHacienda = {
         existencias, mag, mercado, porCabeza,
         valuacion: valuarHacienda(existencias, mag, mercado, numericos, pesos, porCabeza),
+        /**
+         * 🧮 El cuadre de la existencia (pedido del usuario 2026-09-29). El primer día del ejercicio
+         * es el del primer subdiario: el cierre menos 11 meses.
+         */
+        cuadre: cuadrarHacienda(
+          movimientos,
+          primerDiaDelEjercicio(ejercicio),
+          ejercicio.fechaCierre,
+          existencias.reduce((s, e) => s + e.cabezas, 0),
+        ),
         pesos,
         mesPrecios: etiqueta,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),

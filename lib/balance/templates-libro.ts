@@ -47,12 +47,30 @@ export interface CuotaTemplate {
 }
 
 export interface FilaPorMes {
+  /**
+   * 🔑 **Quién responde por el gasto** (MSA · PAM · MA · MSA/PAM).
+   *
+   * Pedido del usuario 2026-09-29, revisando el export: *«templates sin desglosar por responsable»*.
+   * Es el eje que le falta al resumen: **un mismo concepto lo puede pagar cualquiera de las tres
+   * empresas**, y el papel que él informa aparte va separado por quién lo pagó.
+   */
+  responsable: string
   categ: string
   /** 12 posiciones, en el orden de los subdiarios del ejercicio. */
   debitos: number[]
   creditos: number[]
+  /**
+   * 🧾 **El SALDO del mes: débito − crédito, en una sola columna.**
+   *
+   * Pedido del usuario el mismo día: *«template x mes siguen con 2 columnas deb y cred en vez de
+   * saldado»*. Con dos columnas por mes la tabla tiene 24 columnas de importes y **hay que restar a
+   * ojo** para saber cuánto costó cada concepto. Los débitos y créditos se conservan acá abajo porque
+   * el detalle los necesita, pero **la vista por mes va saldada**.
+   */
+  neto: number[]
   totalDebitos: number
   totalCreditos: number
+  totalNeto: number
 }
 
 export interface TemplatesDelEjercicio {
@@ -122,14 +140,18 @@ export function armarTemplatesDelEjercicio(
 
   const sinCategoria = detalle.filter(c => !c.categ)
 
+  /** La clave es **responsable + categoría**: el mismo concepto lo puede pagar más de una empresa. */
   const filas = new Map<string, FilaPorMes>()
   for (const c of detalle) {
-    const clave = c.categ || "(sin categoría)"
+    const categ = c.categ || "(sin categoría)"
+    const responsable = c.responsable || "(sin responsable)"
+    const clave = `${responsable}|${categ}`
     if (!filas.has(clave)) {
       filas.set(clave, {
-        categ: clave,
+        responsable, categ,
         debitos: new Array(12).fill(0), creditos: new Array(12).fill(0),
-        totalDebitos: 0, totalCreditos: 0,
+        neto: new Array(12).fill(0),
+        totalDebitos: 0, totalCreditos: 0, totalNeto: 0,
       })
     }
     const fila = filas.get(clave)!
@@ -138,6 +160,9 @@ export function armarTemplatesDelEjercicio(
     // que la columna de créditos se lea como en su planilla.
     if (c.monto >= 0) { fila.debitos[i] += c.monto; fila.totalDebitos += c.monto }
     else { fila.creditos[i] += -c.monto; fila.totalCreditos += -c.monto }
+    // El saldado: lo que el concepto costó ese mes, de una sola pasada.
+    fila.neto[i] += c.monto
+    fila.totalNeto += c.monto
   }
 
   const redondear = (x: number) => Math.round(x * 100) / 100
@@ -145,9 +170,12 @@ export function armarTemplatesDelEjercicio(
     .map(f => ({
       ...f,
       debitos: f.debitos.map(redondear), creditos: f.creditos.map(redondear),
+      neto: f.neto.map(redondear),
       totalDebitos: redondear(f.totalDebitos), totalCreditos: redondear(f.totalCreditos),
+      totalNeto: redondear(f.totalNeto),
     }))
-    .sort((a, b) => b.totalDebitos - a.totalDebitos)
+    // Ordenado por responsable y, dentro de cada uno, por lo que más pesa.
+    .sort((a, b) => a.responsable.localeCompare(b.responsable, "es") || b.totalNeto - a.totalNeto)
 
   return {
     detalle, porMes, columnas,

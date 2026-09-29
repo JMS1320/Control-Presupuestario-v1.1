@@ -51,6 +51,18 @@ export interface Ejercicio {
 
 const ultimoDiaDe = (anio: number, mes: number) => new Date(Date.UTC(anio, mes, 0)).getUTCDate()
 
+/**
+ * 📅 **El PRIMER día del ejercicio**, `AAAA-MM-DD`. Es el día 1 de su primer subdiario.
+ *
+ * Hace falta cada vez que algo se cuadra contra el arranque —la existencia de hacienda, los saldos
+ * bancarios, la variación patrimonial— y **deducirlo a mano en cada lugar es cómo se cuela un mes de
+ * diferencia**: para MSA es el 01/07 del año anterior, para PAM y MA el 01/01 del mismo año.
+ */
+export function primerDiaDelEjercicio(ej: Ejercicio): string {
+  const primero = ej.subdiarios[0]
+  return iso(primero.anio, primero.mes, 1)
+}
+
 /** `2026-06-30`. Se arma a mano y no con `toISOString()` para no depender del huso. */
 const iso = (anio: number, mes: number, dia: number) =>
   `${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`

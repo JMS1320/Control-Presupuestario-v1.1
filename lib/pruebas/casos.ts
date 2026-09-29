@@ -66,6 +66,8 @@ import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
+import { primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import {
   normalizarCuenta, buscarCuenta, mesesDelEjercicio, armarGastosBancarios,
   armarFondosComunes, armarRetirosYAportes,
@@ -3577,6 +3579,101 @@ export function correrCasos(): Resultado[] {
       "1 sin reconocer · 80000",
       `${raro.sinReconocer.length} sin reconocer · ${raro.sinReconocer[0]?.importe}`,
       raro.sinReconocer.length === 1 && raro.sinReconocer[0].importe === 80_000, "A-FEAT-1199")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🐄 EL CUADRE DE LA HACIENDA — los 5 puntos que el usuario marcó en el v2
+  //    del export (2026-09-29). Acá el punto 3: inicio ± mov = stock final.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const INICIO = "2025-07-01"
+    const CIERRE = "2026-06-30"
+    const mov = (fecha: string, tipo: string, cantidad: number, categoria = "Vaca"): MovimientoDeHacienda =>
+      ({ fecha, tipo, cantidad, categoria })
+
+    // El caso sano: arranca con 100, compra 20, vende 30 → cierra con 90.
+    const sano = cuadrarHacienda([
+      mov("2025-06-30", "ajuste_stock", 100),
+      mov("2025-09-10", "ajuste_stock", 20),
+      mov("2026-03-15", "venta", -30),
+    ], INICIO, CIERRE, 90)
+    chequear("Balance · hacienda", "🧮 Inicio 100 + movimientos (-10) = 90, y cuadra con lo valuado",
+      "inicio 100 · cierre 90 · dif 0",
+      `inicio ${sano.existenciaInicio} · cierre ${sano.existenciaCierreCalculada} · dif ${sano.diferencia}`,
+      sano.existenciaInicio === 100 && sano.existenciaCierreCalculada === 90 && sano.diferencia === 0,
+      "A-FEAT-1187")
+
+    chequear("Balance · hacienda", "Sin avisos cuando todo cuadra y no falta nada",
+      "0 avisos", `${sano.avisos.length} avisos`, sano.avisos.length === 0, "A-FEAT-1187")
+
+    // 🧨 EL CASO REAL DE MSA: la carga inicial está fechada DENTRO del ejercicio, así que la
+    //    existencia al inicio es CERO y el papel no puede mostrar la variación del rodeo.
+    const comoEstaMSA = cuadrarHacienda([
+      mov("2026-02-15", "ajuste_stock", 421),
+      mov("2026-03-30", "venta", -69),
+      mov("2026-04-15", "mortandad", -6),
+    ], INICIO, CIERRE, 346)
+    chequear("Balance · hacienda", "🔑 Con la carga inicial fechada DENTRO del ejercicio, el inicio es CERO y avisa",
+      "inicio 0 · avisa",
+      `inicio ${comoEstaMSA.existenciaInicio} · ${comoEstaMSA.avisos.some(a => a.includes("CERO")) ? "avisa" : "NO avisa"}`,
+      comoEstaMSA.existenciaInicio === 0 && comoEstaMSA.avisos.some(a => a.includes("CERO")),
+      "A-FEAT-1187")
+
+    chequear("Balance · hacienda", "…y el cuadre igual cierra contra lo valuado: 0 + 346 = 346",
+      "346 · dif 0",
+      `${comoEstaMSA.existenciaCierreCalculada} · dif ${comoEstaMSA.diferencia}`,
+      comoEstaMSA.existenciaCierreCalculada === 346 && comoEstaMSA.diferencia === 0, "A-FEAT-1187")
+
+    // 🛑 ADVERSARIO — un movimiento SIN categoría no se cuenta en la existencia, así que tiene que
+    //    aparecer en el cuadre. Hoy la pantalla lo saltea en silencio.
+    const conHuerfano = cuadrarHacienda([
+      mov("2025-06-30", "ajuste_stock", 100),
+      mov("2026-01-10", "ajuste_stock", 50, ""),
+    ], INICIO, CIERRE, 100)
+    chequear("Balance · hacienda", "🛑 Un movimiento sin categoría NO se cuenta, pero se INFORMA",
+      "1 sin categoría · avisa de 50",
+      `${conHuerfano.sinCategoria.length} sin categoría · ${conHuerfano.avisos.some(a => a.includes("50")) ? "avisa de 50" : "no avisa"}`,
+      conHuerfano.sinCategoria.length === 1 && conHuerfano.avisos.some(a => a.includes("50")),
+      "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO — los movimientos POSTERIORES al cierre no entran, y se dicen.
+    const conPosteriores = cuadrarHacienda([
+      mov("2025-06-30", "ajuste_stock", 100),
+      mov("2026-09-03", "venta", -40),
+    ], INICIO, CIERRE, 100)
+    chequear("Balance · hacienda", "🔑 Un movimiento posterior al cierre no entra al balance, y se avisa",
+      "cierre 100 · 1 posterior",
+      `cierre ${conPosteriores.existenciaCierreCalculada} · ${conPosteriores.posterioresAlCierre} posterior`,
+      conPosteriores.existenciaCierreCalculada === 100 && conPosteriores.posterioresAlCierre === 1,
+      "A-FEAT-1187")
+
+    // 🎯 Y si NO cuadra contra lo valuado, lo dice con los dos números.
+    const noCuadra = cuadrarHacienda([mov("2025-06-30", "ajuste_stock", 100)], INICIO, CIERRE, 95)
+    chequear("Balance · hacienda", "🧮 Si lo valuado no coincide con el cuadre, avisa con la diferencia",
+      "dif 5 · avisa", `dif ${noCuadra.diferencia} · ${noCuadra.avisos.some(a => a.includes("NO cierra")) ? "avisa" : "no avisa"}`,
+      noCuadra.diferencia === 5 && noCuadra.avisos.some(a => a.includes("NO cierra")), "A-FEAT-1187")
+
+    // `cambio_categoria` neto cero: mueve cabezas entre categorías sin cambiar el total.
+    const conCambio = cuadrarHacienda([
+      mov("2025-06-30", "ajuste_stock", 100),
+      mov("2026-02-18", "cambio_categoria", -10, "Ternero"),
+      mov("2026-02-18", "cambio_categoria", 10, "Novillo"),
+    ], INICIO, CIERRE, 100)
+    chequear("Balance · hacienda", "Un cambio de categoría no mueve el total, y se ve abierto por tipo",
+      "cierre 100 · cambio_categoria 0",
+      `cierre ${conCambio.existenciaCierreCalculada} · cambio_categoria ${conCambio.porTipo.find(t => t.tipo === "cambio_categoria")?.cabezas}`,
+      conCambio.existenciaCierreCalculada === 100 &&
+      conCambio.porTipo.find(t => t.tipo === "cambio_categoria")?.cabezas === 0, "A-FEAT-1187")
+
+    // 📅 El primer día del ejercicio, que es lo que separa «antes» de «durante».
+    const ejMSA = armarEjercicio(2026, 6)
+    chequear("Balance · hacienda", "🔑 El primer día del ejercicio de MSA es el 01/07/2025",
+      "2025-07-01", primerDiaDelEjercicio(ejMSA),
+      primerDiaDelEjercicio(ejMSA) === "2025-07-01", "A-FEAT-1187")
+    chequear("Balance · hacienda", "Y el de PAM/MA, el 01/01 del año de cierre",
+      "2026-01-01", primerDiaDelEjercicio(armarEjercicio(2026, 12)),
+      primerDiaDelEjercicio(armarEjercicio(2026, 12)) === "2026-01-01", "A-FEAT-1187")
   }
 
   return r
