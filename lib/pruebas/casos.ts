@@ -62,6 +62,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
+import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -2538,13 +2539,37 @@ export function correrCasos(): Resultado[] {
       { categoria: "Ternero Recria", cabezas: 100 },
       { categoria: "Vaquillona Preñada", cabezas: 27 },
     ]
-    const v = valuarHacienda(existencias, mag, mercado)
+    /**
+     * ⚖️ Los kilos ahora salen de las pesadas (A-FEAT-1187), así que hay que pasarlos. Los pesos
+     * proyectados son los que hacen que los valores de abajo sigan siendo los de su planilla.
+     */
+    const pesos = [
+      { categoria: "Ternera Recria", animales: 81, pesoUltimaPesada: 214.7, fechaUltimaPesada: "2026-05-04",
+        gananciaMedida: 0.285, gananciaConfigurada: 1, diasHastaCierre: 57, pesoProyectado: 250,
+        origen: "81 pesadas", difiereDeLaConfigurada: true },
+      { categoria: "Ternero Recria", animales: 41, pesoUltimaPesada: 205.6, fechaUltimaPesada: "2026-05-04",
+        gananciaMedida: 0.321, gananciaConfigurada: 1.1, diasHastaCierre: 57, pesoProyectado: 250,
+        origen: "41 pesadas", difiereDeLaConfigurada: true },
+      { categoria: "Torito", animales: 8, pesoUltimaPesada: 239.3, fechaUltimaPesada: "2026-05-04",
+        gananciaMedida: 0.436, gananciaConfigurada: 1, diasHastaCierre: 57, pesoProyectado: 300,
+        origen: "8 pesadas", difiereDeLaConfigurada: true },
+      { categoria: "Toro", animales: 16, pesoUltimaPesada: 1000, fechaUltimaPesada: "2026-05-04",
+        gananciaMedida: null, gananciaConfigurada: null, diasHastaCierre: 57, pesoProyectado: 1000,
+        origen: "16 pesadas", difiereDeLaConfigurada: false },
+    ]
+    const v = valuarHacienda(existencias, mag, mercado, {}, pesos)
     const de = (cat: string) => v.filas.find(f => f.categoria === cat)
 
     // CUT: vaca regular MAXIMO 2750 x 80% x 450 kg = 990.000 por cabeza — el numero de su planilla.
-    chequear("Balance · hacienda", "🔑 CUT: vaca +430 PROMEDIO × 80 % × 450 kg = 1.080.000/cab",
-      "1080000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
-      de("Vaca CUT/Descarte")?.valorPorCabeza === 1080000, "A-FEAT-1184")
+    chequear("Balance · hacienda", "🔑 CUT sin pesadas: cae al estimado DECLARADO de 500 kg → 1.200.000/cab",
+      "1200000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
+      de("Vaca CUT/Descarte")?.valorPorCabeza === 1200000, "A-FEAT-1187")
+
+    // 🔑 Y lo dice: un estimado que no se declara es indistinguible de un dato.
+    chequear("Balance · hacienda", "🔑 Y AVISA que son 500 kg estimados, no medidos",
+      "dice estimado",
+      de("Vaca CUT/Descarte")?.origenPeso.includes("estimado") ? "dice estimado" : de("Vaca CUT/Descarte")?.origenPeso ?? "-",
+      !!de("Vaca CUT/Descarte")?.origenPeso.includes("estimado"), "A-FEAT-1187")
 
     // 🔑 Y el adversario del cambio: NO puede haber tomado la fila «Regular» sin corte.
     chequear("Balance · hacienda", "🔑 Y NO usa la de Regular sin corte: manda el corte de peso",
@@ -2595,7 +2620,7 @@ export function correrCasos(): Resultado[] {
       "428 cabezas", `${v.cabezas} cabezas`, v.cabezas === 428, "A-FEAT-1184")
 
     // 🎚️ El precio a mano MANDA sobre el de mercado (default del dato real, siempre editable).
-    const conManual = valuarHacienda(existencias, mag, mercado, { "Vaca": 1370000 })
+    const conManual = valuarHacienda(existencias, mag, mercado, { "Vaca": 1370000 }, pesos)
     const vaca = conManual.filas.find(f => f.categoria === "Vaca")
     chequear("Balance · hacienda", "🎚️ Un precio cargado a mano manda: 1.370.000 × 90 % = 1.233.000/cab",
       "1233000 · ya no es hueco",
@@ -2603,7 +2628,7 @@ export function correrCasos(): Resultado[] {
       vaca?.valorPorCabeza === 1233000 && vaca?.esHueco === false, "A-FEAT-1184")
 
     // Una categoria con existencia y SIN criterio escrito tambien sale a la luz.
-    const conRara = valuarHacienda([{ categoria: "Novillo", cabezas: 5 }], mag, mercado)
+    const conRara = valuarHacienda([{ categoria: "Novillo", cabezas: 5 }], mag, mercado, {}, pesos)
     chequear("Balance · hacienda", "⚠️ Una categoría sin criterio definido se muestra, no se ignora",
       "1 sin criterio · es hueco",
       `${conRara.sinCriterio.length} sin criterio · ${conRara.filas[0]?.esHueco ? "es hueco" : "se valuó"}`,
@@ -2805,6 +2830,89 @@ export function correrCasos(): Resultado[] {
     ], "2026-06-30")
     chequear("Balance · sementeras", "Las hectáreas no se cuentan dos veces si el lote se repite",
       "29 ha", `${dosOrdenes.hectareas} ha`, dosOrdenes.hectareas === 29, "A-FEAT-1184")
+  }
+
+  /**
+   * ⚖️ **LOS KILOS SALEN DE LAS PESADAS — A-FEAT-1187.**
+   *
+   * *«tomar de la app: última pesada más propagar el aumento promedio de la categoría hasta el
+   * 30/6»*. Y las dos salidas cuando no hay pesada, que él distinguió a propósito: *«sino poner
+   * que no hay dato»* (toros) **no es lo mismo que** *«sino poner estimado de 500 kg»* (vaca CUT).
+   */
+  {
+    const pesada = (animalId: string, fecha: string, pesoKg: number, categoria = "Ternera Recria") =>
+      ({ categoria, animalId, fecha, pesoKg })
+
+    // Dos pesadas del mismo animal: 200 kg el 1/5 y 230 el 31/5 → 1 kg/día en 30 días.
+    const unMes = pesosAlCierre(
+      [pesada("a", "2026-05-01", 200), pesada("a", "2026-05-31", 230)],
+      {}, "2026-06-30",
+    )[0]
+    chequear("Balance · pesos", "🔑 Calcula la ganancia diaria entre pesadas del MISMO animal",
+      "1 kg/día", `${unMes.gananciaMedida} kg/día`, unMes.gananciaMedida === 1, "A-FEAT-1187")
+
+    // Y proyecta 30 dias mas, del 31/5 al 30/6: 230 + 30 = 260.
+    chequear("Balance · pesos", "🔑 Y proyecta hasta el cierre: 230 kg + 1 × 30 días = 260",
+      "260", String(unMes.pesoProyectado), unMes.pesoProyectado === 260, "A-FEAT-1187")
+
+    chequear("Balance · pesos", "Dice de dónde salió, con la fecha y la ganancia",
+      "menciona la fecha y kg/día",
+      unMes.origen.includes("2026-05-31") && unMes.origen.includes("kg/día") ? "menciona la fecha y kg/día" : unMes.origen,
+      unMes.origen.includes("2026-05-31") && unMes.origen.includes("kg/día"), "A-FEAT-1187")
+
+    // ⚠️ Con UNA sola pesada no hay ganancia que medir: NO se proyecta ni se inventa una.
+    const unaSola = pesosAlCierre([pesada("b", "2026-05-04", 214.7)], {}, "2026-06-30")[0]
+    chequear("Balance · pesos", "⚠️ Con una sola pesada no se proyecta: no hay ganancia que medir",
+      "214.7 · sin ganancia",
+      `${unaSola.pesoProyectado} · ${unaSola.gananciaMedida === null ? "sin ganancia" : unaSola.gananciaMedida}`,
+      unaSola.pesoProyectado === 214.7 && unaSola.gananciaMedida === null, "A-FEAT-1187")
+
+    // 🔑 El promedio es de la ULTIMA pesada de cada animal, no de todas mezcladas: promediar
+    //    febrero con mayo daría un animal que no existe.
+    const dosAnimales = pesosAlCierre([
+      pesada("x", "2026-02-01", 100), pesada("x", "2026-05-04", 200),
+      pesada("y", "2026-05-04", 300),
+    ], {}, "2026-05-04")[0]
+    chequear("Balance · pesos", "🔑 Promedia la ÚLTIMA pesada de cada animal, no todas mezcladas",
+      "250", String(dosAnimales.pesoUltimaPesada), dosAnimales.pesoUltimaPesada === 250, "A-FEAT-1187")
+
+    // 🚨 El hallazgo real: la ganancia configurada es 3x la medida. Se avisa.
+    const conConfigurada = pesosAlCierre(
+      [pesada("c", "2026-05-01", 200), pesada("c", "2026-05-31", 209)],   // 0,3 kg/día
+      { "Ternera Recria": 1.0 }, "2026-06-30",
+    )[0]
+    chequear("Balance · pesos", "🚨 Avisa cuando la ganancia cargada difiere mucho de la medida",
+      "avisa · 0.3 vs 1",
+      `${conConfigurada.difiereDeLaConfigurada ? "avisa" : "no avisa"} · ${conConfigurada.gananciaMedida} vs ${conConfigurada.gananciaConfigurada}`,
+      conConfigurada.difiereDeLaConfigurada === true && conConfigurada.gananciaMedida === 0.3,
+      "A-FEAT-1187")
+
+    // Una diferencia chica no avisa: la ganancia real fluctua con el pasto y avisar por poco
+    // convertiria el aviso en ruido.
+    const parecidas = pesosAlCierre(
+      [pesada("d", "2026-05-01", 200), pesada("d", "2026-05-31", 233)],   // 1,1 kg/día
+      { "Ternera Recria": 1.0 }, "2026-06-30",
+    )[0]
+    chequear("Balance · pesos", "Una diferencia del 10 % no avisa: sería ruido",
+      "no avisa", parecidas.difiereDeLaConfigurada ? "avisa" : "no avisa",
+      parecidas.difiereDeLaConfigurada === false, "A-FEAT-1187")
+
+    // 🔑 LAS TRES SALIDAS cuando se pide el peso de una categoría.
+    const medido = pesoParaValuar("Ternera Recria", [unMes], 500)
+    chequear("Balance · pesos", "Con pesadas, manda la pesada y no el estimado",
+      "260", String(medido.kg), medido.kg === 260, "A-FEAT-1187")
+
+    const conFallback = pesoParaValuar("Vaca CUT/Descarte", [], 500)
+    chequear("Balance · pesos", "🔑 Sin pesadas pero CON estimado declarado: usa 500 y lo dice",
+      "500 · dice estimado",
+      `${conFallback.kg} · ${conFallback.origen.includes("estimado") ? "dice estimado" : conFallback.origen}`,
+      conFallback.kg === 500 && conFallback.origen.includes("estimado"), "A-FEAT-1187")
+
+    const sinNada = pesoParaValuar("Toro", [], null)
+    chequear("Balance · pesos", "🔑 Sin pesadas y SIN estimado: dice que no hay dato, no inventa un kilo",
+      "nulo · no hay dato",
+      `${sinNada.kg === null ? "nulo" : sinNada.kg} · ${sinNada.origen}`,
+      sinNada.kg === null && sinNada.origen.includes("no hay dato"), "A-FEAT-1187")
   }
 
   return r

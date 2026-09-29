@@ -38,6 +38,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras,
   type CuadreGranos, type ValuacionGranos, type Sementeras,
 } from "@/lib/balance/granos-sementeras"
+import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
 
 /**
  * es-AR: coma decimal, punto de miles. **Vacío devuelve `null`, no 0** — «no lo sé» y «cero»
@@ -61,6 +62,8 @@ export interface DatosHacienda {
   mesPrecios: string
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
+  /** Los kilos por categoría, de las pesadas de la app. */
+  pesos: PesoCategoria[]
   /** Toneladas vendidas en el ejercicio: la única entrada del cuadre de granos que la app sabe. */
   ventasGranosTn: number
   sementeras: Sementeras
@@ -124,6 +127,20 @@ export function HaciendaAlCierre({
           return []
         }
       }
+      /**
+       * ⚖️ Las pesadas hasta el cierre. Se traen con su categoría porque el peso se proyecta
+       * **por categoría**, no por animal (A-FEAT-1187).
+       */
+      const { data: pes } = await supabase
+        .schema("productivo").from("pesadas_terneros")
+        .select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))")
+        .lte("fecha", ejercicio.fechaCierre)
+
+      // La ganancia diaria CARGADA, para poder compararla con la medida y avisar si difieren.
+      const { data: lotesGan } = await supabase
+        .schema("productivo").from("stock_lotes")
+        .select("categoria, ganancia_diaria_kg")
+
       // Granos: las toneladas vendidas en el ejercicio. Es lo único del cuadre que la app sabe.
       const { data: vg } = await supabase
         .schema("msa").from("comprobantes_venta")
@@ -146,6 +163,27 @@ export function HaciendaAlCierre({
         pedir<PrecioMag>(`/api/precios-mag?desde=${desde}&hasta=${hasta}`),
         pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=hembra`),
       ])
+
+      const ganConfig: Record<string, number> = {}
+      for (const l of (lotesGan ?? []) as Array<Record<string, unknown>>) {
+        const cat = String(l.categoria ?? "")
+        const g = Number(l.ganancia_diaria_kg ?? 0)
+        // Si hay varios lotes de la misma categoría se toma el mayor: es el que más se aleja de
+        // la medida, o sea el que hace más visible la diferencia si la hay.
+        if (cat && g > 0) ganConfig[cat] = Math.max(ganConfig[cat] ?? 0, g)
+      }
+      const pesos = pesosAlCierre(
+        (pes ?? []).map((p: Record<string, unknown>) => ({
+          categoria: String(
+            ((p.ternero as { categoria?: { nombre?: string } } | null)?.categoria?.nombre) ?? "",
+          ),
+          animalId: String(p.ternero_id ?? ""),
+          fecha: String(p.fecha ?? "").slice(0, 10),
+          pesoKg: Number(p.peso_kg ?? 0),
+        })).filter(p => p.categoria && p.pesoKg > 0),
+        ganConfig,
+        ejercicio.fechaCierre,
+      )
 
       const numericos: Record<string, number> = {}
       for (const [k, v] of Object.entries(manuales)) {
@@ -174,7 +212,8 @@ export function HaciendaAlCierre({
 
       const d: DatosHacienda = {
         existencias, mag, mercado: hembras,
-        valuacion: valuarHacienda(existencias, mag, hembras, numericos),
+        valuacion: valuarHacienda(existencias, mag, hembras, numericos, pesos),
+        pesos,
         mesPrecios: etiqueta,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
         ventasGranosTn, sementeras,
@@ -286,6 +325,29 @@ export function HaciendaAlCierre({
               <> · ⚠️ sin criterio definido: <strong>{v.sinCriterio.join(", ")}</strong></>
             )}
           </p>
+
+          {/* ⚖️ De dónde salió cada kilo, y el aviso si la ganancia cargada no coincide. */}
+          {datos && datos.pesos.length > 0 && (
+            <div className="border-t pt-3 space-y-1 text-xs" data-test="pesos">
+              <div className="text-sm font-medium">⚖️ Los kilos, de las pesadas</div>
+              {datos.pesos.map(p => (
+                <div key={p.categoria}>
+                  <strong>{p.categoria}</strong>: {p.pesoProyectado} kg — {p.origen}
+                  {p.difiereDeLaConfigurada && (
+                    <span className="text-amber-700">
+                      {" "}⚠️ medida {p.gananciaMedida} vs cargada {p.gananciaConfigurada} kg/día
+                    </span>
+                  )}
+                </div>
+              ))}
+              {datos.pesos.some(p => p.difiereDeLaConfigurada) && (
+                <p className="text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+                  Se usa la <strong>medida</strong> porque es el dato real. La diferencia con la
+                  cargada se muestra para que decidas, no se elige en silencio.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 🧪 Los stocks de insumos: misma lógica de huecos que la hacienda. */}
           {datos && (

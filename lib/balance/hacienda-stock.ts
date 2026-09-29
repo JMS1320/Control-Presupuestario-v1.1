@@ -26,6 +26,8 @@
  * es peor que no valuar (§ 🧮 de `CLAUDE.md`).
  */
 
+import { pesoParaValuar, type PesoCategoria } from "./pesos-hacienda"
+
 /** Una categoría con sus cabezas a la fecha de cierre. */
 export interface ExistenciaHacienda {
   categoria: string
@@ -64,8 +66,17 @@ export interface CriterioValuacion {
   pesoHasta?: number
   /** El castigo o la prima: 0,9 · 0,8 · 0,7 · 1,5 · 1,1. */
   factor: number
-  /** Kilos por cabeza cuando se valúa por kilo. */
-  pesoKg?: number
+  /**
+   * Kilos por cabeza cuando se valúa por kilo.
+   *
+   * ⚠️ **Es el FALLBACK, no el valor**: desde A-FEAT-1187 el peso sale de las pesadas de la app y
+   * esto se usa sólo si no hay ninguna. `null` = **no se estima**: se dice que falta el dato.
+   *
+   * 🔑 La distinción es del usuario y no es un detalle: para la vaca de descarte dijo *«sino poner
+   * estimado de 500 kg»* y para el toro *«sino poner que no hay dato de pesada»*. **Un estimado
+   * declarado sirve; un número inventado en silencio, no.**
+   */
+  pesoKg?: number | null
   /** true = el precio ya es por cabeza y no se multiplica por kilos. */
   porCabeza?: boolean
   /** Si se deriva de otra categoría (el ternero sale de la ternera + 10 %). */
@@ -104,32 +115,35 @@ export const CRITERIOS: CriterioValuacion[] = [
      *
      * 📌 Y aplica **sólo a esta categoría**: el resto sigue como estaba.
      */
-    criterio: "vaca + de 430 kg, PROMEDIO × 80 % × 450 kg",
+    criterio: "vaca + de 430 kg, PROMEDIO × 80 % × el peso de la pesada",
     fuente: "mag", magFamilia: "VACAS", magCorte: "+ 430", magCampo: "promedio",
-    factor: 0.8, pesoKg: 450,
+    // *«poner datos si hay, sino poner estimado de 500 kg»* (JMS 2026-09-29).
+    factor: 0.8, pesoKg: 500,
   },
   {
     categoria: "Toro",
-    criterio: "novillo regular +490 × 70 % × 1000 kg",
+    criterio: "novillo regular +490 × 70 % × el peso de la pesada",
     fuente: "mag", magFamilia: "NOVILLOS", magCalidad: "Regular", magCampo: "promedio",
-    factor: 0.7, pesoKg: 1000,
+    // *«poner dato de pesada si hay, sino poner que no hay dato de pesada»* — NO se estima.
+    factor: 0.7, pesoKg: null,
   },
   {
     categoria: "Torito",
-    criterio: "MEJ especial × 1,5 × 300 kg",
+    criterio: "MEJ especial × 1,5 × el peso de la pesada",
     fuente: "mag", magFamilia: "MEJ", magCalidad: "Esp", magCampo: "promedio",
-    factor: 1.5, pesoKg: 300,
+    // *«traer kg de app»* (JMS). Sin pesadas no se estima.
+    factor: 1.5, pesoKg: null,
   },
   {
     categoria: "Ternera Recria",
-    criterio: "vaquillona 250-290 kg a precio MÁXIMO × 250 kg",
+    criterio: "vaquillona 250-290 kg a precio MÁXIMO × el peso de la pesada",
     fuente: "entresurcos", sexo: "hembra", pesoDesde: 250, pesoHasta: 290,
-    factor: 1, pesoKg: 250,
+    factor: 1, pesoKg: null,
   },
   {
     categoria: "Ternero Recria",
-    criterio: "10 % más que la hembra × 250 kg",
-    fuente: "entresurcos", derivaDe: "Ternera Recria", factor: 1.1, pesoKg: 250,
+    criterio: "10 % más que la hembra × el peso de la pesada",
+    fuente: "entresurcos", derivaDe: "Ternera Recria", factor: 1.1, pesoKg: null,
   },
 ]
 
@@ -164,6 +178,8 @@ export interface FilaValuada {
   origenPrecio: string
   factor: number
   pesoKg: number | null
+  /** De dónde salió el peso: la pesada proyectada, un estimado declarado, o nada. */
+  origenPeso: string
   /** Valor por cabeza ya con el factor aplicado. */
   valorPorCabeza: number | null
   /** cabezas × valorPorCabeza. */
@@ -248,6 +264,8 @@ export function valuarHacienda(
   mag: PrecioMag[],
   mercado: PrecioMercado[],
   preciosManuales: Record<string, number> = {},
+  /** Los kilos medidos por categoría. Vacío = se cae al fallback de cada criterio. */
+  pesos: PesoCategoria[] = [],
 ): ValuacionHacienda {
   const porCategoria = new Map(CRITERIOS.map(c => [c.categoria, c]))
   const sinCriterio = existencias
@@ -284,17 +302,25 @@ export function valuarHacienda(
     const p = resolverPrecio(c)
     if (p) resueltas.set(c.categoria, p.precio)
 
-    const valorPorCabeza = p == null ? null
-      : redondear(c.porCabeza ? p.precio * c.factor : p.precio * c.factor * (c.pesoKg ?? 0))
+    // ⚖️ El peso sale de las pesadas; el del criterio es sólo el fallback (A-FEAT-1187).
+    const peso = c.porCabeza
+      ? { kg: null, origen: "se valúa por cabeza, no por kilo" }
+      : pesoParaValuar(e.categoria, pesos, c.pesoKg)
+
+    // 🔑 Sin precio NO se valúa; sin kilos tampoco, cuando la categoría se valúa por kilo.
+    //    Poner 0 en cualquiera de los dos daría un valor que se lee como real y no lo es.
+    const faltaPeso = !c.porCabeza && peso.kg == null
+    const valorPorCabeza = p == null || faltaPeso ? null
+      : redondear(c.porCabeza ? p.precio * c.factor : p.precio * c.factor * (peso.kg ?? 0))
 
     filas.push({
       categoria: e.categoria, cabezas: e.cabezas, criterio: c.criterio,
       precioReferencia: p ? redondear(p.precio) : null,
       origenPrecio: p ? p.origen : "— falta el precio —",
-      factor: c.factor, pesoKg: c.porCabeza ? null : (c.pesoKg ?? null),
+      factor: c.factor, pesoKg: peso.kg, origenPeso: peso.origen,
       valorPorCabeza,
       valorTotal: valorPorCabeza == null ? null : redondear(valorPorCabeza * e.cabezas),
-      esHueco: p == null,
+      esHueco: valorPorCabeza == null,
     })
   }
 
@@ -305,7 +331,7 @@ export function valuarHacienda(
       categoria: cat, cabezas: e.cabezas,
       criterio: "— sin criterio de valuación definido —",
       precioReferencia: null, origenPrecio: "— falta definirlo con el usuario —",
-      factor: 1, pesoKg: null, valorPorCabeza: null, valorTotal: null, esHueco: true,
+      factor: 1, pesoKg: null, origenPeso: "—", valorPorCabeza: null, valorTotal: null, esHueco: true,
     })
   }
 

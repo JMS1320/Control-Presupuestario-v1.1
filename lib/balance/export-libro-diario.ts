@@ -206,6 +206,7 @@ const COLS_HACIENDA: Columna[] = [
   { ancho: 9, z: ENTERO },          // Kg/cab
   { ancho: 17, z: MONEDA },         // $ por cabeza
   { ancho: 18, z: MONEDA },         // Valor total
+  { ancho: 60 },                    // De dónde salen los kilos
 ]
 
 /** Los precios de referencia de los dos mercados. */
@@ -341,7 +342,7 @@ function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: s
   f.push([`Precios de referencia: mes completo de ${mesPrecios} (Cañuelas y Entresurcos)`])
   f.push([])
   f.push(["Categoría", "Cabezas", "Criterio de valuación", "Precio de referencia", "Origen del precio",
-    "Factor", "Kg/cab", "$ por cabeza", "Valor total"])
+    "Factor", "Kg/cab", "$ por cabeza", "Valor total", "De dónde salen los kilos"])
 
   /**
    * 🧮 **Fórmulas, no resultados** — pedido textual del usuario en este mismo papel:
@@ -373,6 +374,9 @@ function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: s
       x.valorTotal == null
         ? "FALTA EL PRECIO"
         : conFormula(`B${fila}*H${fila}`, x.valorTotal),
+      // El origen del peso va al lado: un kilo estimado y uno medido no valen lo mismo, y el
+      // papel tiene que poder decir cuál es cuál sin preguntarle a nadie.
+      x.origenPeso,
     ])
   }
   f.push([])
