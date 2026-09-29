@@ -23,6 +23,11 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
+import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
+import {
+  TOTALIZADORAS_BANCARIAS,
+  type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
+} from "./papeles-bancarios"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -477,6 +482,236 @@ const COLS_CUENTAS: Columna[] = [
   { ancho: 34 },                    // Motivo
 ]
 
+/**
+ * 🗂️ La solapa **00 Índice** — la primera que se abre.
+ *
+ * Es el checklist de los papeles con lo que hay y lo que falta de cada uno, **calculado del dato**
+ * (ver `indice-papeles.ts`). Arriba, separados, los que **impiden entregar**: § 🧮 de `CLAUDE.md`,
+ * *el control se ve y es proporcional*.
+ */
+function hojaDeIndice(indice: IndiceDelBalance, libro: LibroDiario, empresa: string): unknown[][] {
+  const f: unknown[][] = []
+  const ej = libro.ejercicio
+
+  f.push([`PAPELES DE TRABAJO DEL BALANCE — ${empresa} — EJERCICIO ${ej.etiqueta}`])
+  f.push([`Cierre: ${ej.fechaCierre}`])
+  f.push([`Generado: ${new Date().toISOString().slice(0, 10)}`])
+  f.push([])
+  f.push(["Los 9 papeles son los que se le mandaron al contador el balance anterior."])
+  f.push(["El estado de cada uno NO esta escrito a mano: sale de mirar el dato de este mismo archivo."])
+  f.push([])
+
+  const c = indice.cuenta
+  f.push(["RESUMEN", `${c.completo} completos`, `${c.parcial} parciales`,
+    `${c.falta} sin armar`, `${c["lo carga el usuario"]} los carga el usuario`])
+  f.push([])
+
+  if (indice.bloqueos.length > 0) {
+    f.push([`NO SE PUEDE ENTREGAR TODAVIA — ${indice.bloqueos.length} bloqueo(s)`])
+    indice.bloqueos.forEach(b => f.push(["", `${b.numero} ${b.papel}`, b.queFalta]))
+    f.push([])
+    f.push(["El archivo se genera igual: es la forma de ver donde esta el problema."])
+    f.push([])
+  } else {
+    f.push(["Sin bloqueos: los papeles que estan armados se pueden entregar."])
+    f.push([])
+  }
+
+  f.push(["#", "Papel", "Estado", "Que hay hoy", "Que falta", "Solapa"])
+  for (const p of indice.partes) {
+    f.push([p.numero, p.papel, etiquetaEstado(p.estado), p.queTiene, p.queFalta, p.solapa])
+  }
+  return f
+}
+
+/** El estado en palabras. Sin emojis: el contador lo abre en Excel y los emojis no siempre salen. */
+const etiquetaEstado = (e: EstadoParte): string => ({
+  completo: "COMPLETO",
+  parcial: "PARCIAL",
+  falta: "SIN ARMAR",
+  "lo carga el usuario": "LO CARGA EL USUARIO",
+}[e])
+
+const COLS_INDICE: Columna[] = [
+  { ancho: 7 },                     // #
+  { ancho: 46 },                    // Papel
+  { ancho: 21 },                    // Estado
+  { ancho: 60 },                    // Que hay hoy
+  { ancho: 70 },                    // Que falta
+  { ancho: 42 },                    // Solapa
+]
+
+/**
+ * 🏦 La solapa **07 Bancos** — saldos al cierre y fondos comunes.
+ *
+ * ⚠️ Dos cosas van **vacías a propósito** y el papel lo dice: el **saldo al inicio** del ejercicio
+ * (no está en el sistema) y el **saldo del fondo** en las dos puntas (el extracto ve la plata que
+ * entra y sale de la cuenta, no cuánto quedó invertido). Sin esos números el resultado financiero
+ * **no se puede calcular**, y mostrar un cero ahí parecería un resultado.
+ */
+function hojaDeBancos(
+  saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>,
+  fci: { fondos: FondoComun[]; total: FondoComun },
+  fechaCierre: string,
+): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`SALDOS BANCARIOS Y DE CAJA AL ${fechaCierre}`])
+  f.push([])
+  f.push(["Cuenta", "Saldo al cierre", "Fecha del ultimo movimiento", "Saldo al INICIO (lo carga el usuario)"])
+  for (const s of saldos) {
+    f.push([s.nombre, s.saldo ?? "sin saldo en el periodo", s.fecha ?? "", ""])
+  }
+  const conSaldo = saldos.filter(s => s.saldo != null)
+  const desde = 4
+  const hasta = 3 + saldos.length
+  f.push(["TOTAL",
+    conSaldo.length > 0
+      ? conFormula(`SUM(B${desde}:B${hasta})`, money(conSaldo.reduce((t, s) => t + (s.saldo ?? 0), 0)))
+      : 0,
+    "", ""])
+  f.push([])
+  f.push(["El saldo al cierre es el del ULTIMO movimiento del ejercicio en cada cuenta."])
+  f.push(["El saldo al INICIO no esta en el sistema: se carga a mano. Sin el no hay variacion patrimonial."])
+  f.push([])
+  f.push([])
+
+  f.push(["FONDOS COMUNES DE INVERSION"])
+  f.push([])
+  f.push(["Donde", "Saldo al inicio", "Suscripciones", "Rescates", "Saldo al cierre",
+    "Resultado financiero", "Movimientos"])
+  const filaPrimerFondo = f.length + 1
+  for (const x of fci.fondos) {
+    const n = f.length + 1
+    f.push([
+      x.donde,
+      x.saldoInicio || "",
+      money(x.suscripciones),
+      money(x.rescates),
+      x.saldoCierre || "",
+      /**
+       * 🧮 El resultado es una FORMULA y no un numero pegado, a proposito: el usuario completa los
+       * dos saldos y el resultado aparece solo. Es el camino inverso — lo que el fondo rindio se
+       * deduce de que la plata que entro y salio no explica el saldo final.
+       */
+      { t: "n", f: `IF(OR(B${n}="",E${n}=""),"faltan los saldos",E${n}-(B${n}+C${n}-D${n}))`, z: MONEDA },
+      x.movimientos,
+    ])
+  }
+  const ultimoFondo = f.length
+  f.push(["TOTAL",
+    "", conFormula(`SUM(C${filaPrimerFondo}:C${ultimoFondo})`, money(fci.total.suscripciones)),
+    conFormula(`SUM(D${filaPrimerFondo}:D${ultimoFondo})`, money(fci.total.rescates)),
+    "", "", fci.total.movimientos])
+  f.push([])
+  f.push(["Suscribir es plata que SALE de la cuenta; rescatar es plata que ENTRA."])
+  f.push(["Complete el saldo al inicio (columna B) y al cierre (columna E): el resultado se calcula solo."])
+  f.push(["Control: saldo cierre - (saldo inicio + suscripciones - rescates) = resultado financiero."])
+  return f
+}
+
+const COLS_BANCOS: Columna[] = [
+  { ancho: 34 },                    // Cuenta / Donde
+  { ancho: 18, z: MONEDA },         // Saldo inicio
+  { ancho: 18, z: MONEDA },         // Suscripciones
+  { ancho: 18, z: MONEDA },         // Rescates
+  { ancho: 18, z: MONEDA },         // Saldo cierre
+  { ancho: 20, z: MONEDA },         // Resultado
+  { ancho: 13, z: ENTERO },         // Movimientos
+]
+
+/**
+ * 🏦 La solapa **08 Gastos bancarios** — un concepto por fila, los 12 meses en columnas.
+ *
+ * Es el formato de su `- detalle completo gastos bancarios e impuestos extractos. por mes`. Los
+ * conceptos salen del **plan de cuentas** (`IMPUESTOS BANCARIOS` y `GASTOS BANCARIOS`), no de una
+ * lista escrita acá.
+ */
+function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`GASTOS BANCARIOS E IMPUESTOS DEL EXTRACTO — ejercicio ${etiqueta}`])
+  f.push(["Los conceptos salen del plan de cuentas: totalizadoras IMPUESTOS BANCARIOS y GASTOS BANCARIOS."])
+
+  const conDatos = g.meses.filter((_, i) => g.total.debitos[i] !== 0 || g.total.creditos[i] !== 0)
+  if (conDatos.length < g.meses.length) {
+    f.push([])
+    f.push([`ATENCION: solo ${conDatos.length} de los ${g.meses.length} meses del ejercicio tienen movimientos.`])
+    f.push([`Sin datos: ${g.meses.filter(m => !conDatos.includes(m)).join(", ")}`])
+    f.push(["El total de abajo NO es el del ejercicio completo."])
+  }
+  f.push([])
+  f.push(["Totalizadora", "Concepto", ...g.meses, "TOTAL", "Movimientos"])
+
+  const fila = (x: FilaConceptoPorMes, esTotal = false) => {
+    const n = f.length + 1
+    const primera = 3                                    // columna C: el primer mes
+    const ultima = String.fromCharCode(66 + g.meses.length)   // la del ultimo mes
+    f.push([
+      esTotal ? "" : x.totalizadora, x.concepto,
+      ...x.debitos.map(v => money(v)),
+      conFormula(`SUM(C${n}:${ultima}${n})`, money(x.totalDebitos)),
+      x.movimientos,
+    ])
+    void primera
+  }
+
+  for (const t of TOTALIZADORAS_BANCARIAS) {
+    const dela = g.filas.filter(x => x.totalizadora === t)
+    if (dela.length === 0) continue
+    dela.forEach(x => fila(x))
+    const s = g.subtotales.find(s => s.totalizadora === t)
+    if (s) fila(s, true)
+    f.push([])
+  }
+  fila(g.total, true)
+
+  if (g.sinClasificar.length > 0) {
+    f.push([])
+    f.push([])
+    f.push(["PARECEN BANCARIOS Y NO ESTAN EN EL PLAN DE CUENTAS"])
+    f.push(["No entran al papel porque no se sabe en que totalizadora van. Hay que darles cuenta contable."])
+    f.push(["Categoria del extracto", "Debitos", "Creditos", "Movimientos"])
+    g.sinClasificar.forEach(s => f.push([s.categ, money(s.debitos), money(s.creditos), s.movimientos]))
+  }
+  return f
+}
+
+/**
+ * 🔄 La solapa **09 Retiros y aportes**.
+ *
+ * Un retiro va **negativo** y un aporte **positivo**, como en su planilla, así que el neto se lee de
+ * una sola pasada.
+ */
+function hojaDeRetiros(r: RetirosYAportes, etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`RETIROS Y APORTES DE LOS SOCIOS — ejercicio ${etiqueta}`])
+  f.push(["Un retiro va en NEGATIVO (sale de la empresa) y un aporte en POSITIVO."])
+  f.push(["No son gasto del resultado: son movimientos patrimoniales."])
+  f.push([])
+  f.push(["Concepto", ...r.meses, "TOTAL", "Movimientos"])
+
+  const ultima = String.fromCharCode(65 + r.meses.length)
+  const fila = (x: typeof r.neto) => {
+    const n = f.length + 1
+    f.push([x.etiqueta, ...x.porMes.map(v => money(v)),
+      conFormula(`SUM(B${n}:${ultima}${n})`, money(x.total)), x.movimientos])
+  }
+
+  r.filas.filter(x => x.clase === "retiro").forEach(fila)
+  r.filas.filter(x => x.clase === "aporte").forEach(fila)
+  f.push([])
+  fila(r.neto)
+
+  if (r.sinReconocer.length > 0) {
+    f.push([])
+    f.push([])
+    f.push(["PARECEN RETIRO O APORTE Y NO SE RECONOCIERON"])
+    f.push(["Los conceptos de retiro no estan en el plan de cuentas, asi que el papel usa una lista."])
+    f.push(["Categoria del extracto", "Importe", "Movimientos"])
+    r.sinReconocer.forEach(s => f.push([s.categ, money(s.importe), s.movimientos]))
+  }
+  return f
+}
+
 const COLS_ASIENTOS: Columna[] = [
   { ancho: 10 },                    // Subdiario
   { ancho: 11 },                    // Fecha
@@ -754,6 +989,8 @@ function hojaDeSementeras(s: Sementeras, fechaCierre: string): unknown[][] {
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
 export function armarWorkbook(
   libro: LibroDiario,
+  /** Para el encabezado del índice. */
+  empresa: string,
   templates?: TemplatesDelEjercicio,
   hacienda?: {
     valuacion: ValuacionHacienda; mag: PrecioMag[]
@@ -765,8 +1002,26 @@ export function armarWorkbook(
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
   /** Papeles 03 y 04. Van sólo si la pantalla pudo averiguar CUÁNDO se pagó cada comprobante. */
   cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
+  /** Papeles 07, 08 y 09. Salen del extracto ya parseado y categorizado. */
+  bancarios?: DatosDelIndice["bancarios"] & {
+    fci?: { fondos: FondoComun[]; total: FondoComun }
+  },
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
+
+  /**
+   * 🗂️ **El ÍNDICE va PRIMERO**, antes del Control: es lo que contesta *«¿qué hay y qué falta?»*,
+   * que es la pregunta con la que se abre el archivo. El Control viene atrás porque contesta la
+   * siguiente — *«¿los números cierran?»*.
+   */
+  const indice = armarIndice({
+    libro, templates, cuentas,
+    hacienda: hacienda?.valuacion ?? null,
+    insumos: insumos ?? null,
+    campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
+    bancarios: bancarios ?? null,
+  })
+  hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
   hoja(wb, "Control", hojaDeControl(libro))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
@@ -800,6 +1055,17 @@ export function armarWorkbook(
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.porCabeza, hacienda.mesPrecios), COLS_PRECIOS)
   }
   if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre), COLS_INSUMOS)
+  // 🏦 Los papeles bancarios (07, 08, 09). Van al final: son anexos del resultado, no el resultado.
+  if (bancarios) {
+    if (bancarios.fci) {
+      hoja(wb, "07 Bancos",
+        hojaDeBancos(bancarios.saldos, bancarios.fci, libro.ejercicio.fechaCierre), COLS_BANCOS)
+    }
+    hoja(wb, "08 Gastos bancarios",
+      hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta))
+    hoja(wb, "09 Retiros y aportes",
+      hojaDeRetiros(bancarios.retiros, libro.ejercicio.etiqueta))
+  }
   if (campo) {
     hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre), COLS_GRANOS)
     hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre), COLS_SEMENTERAS)
@@ -826,8 +1092,9 @@ export function descargarLibroDiario(
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
   cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
+  bancarios?: Parameters<typeof armarWorkbook>[7],
 ) {
-  const wb = armarWorkbook(libro, templates, hacienda, insumos, campo, cuentas)
+  const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

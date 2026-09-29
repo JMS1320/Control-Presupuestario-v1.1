@@ -450,3 +450,40 @@ export function armarRetirosYAportes(
     sinReconocer: [...sinReconocer.values()].sort((a, b) => Math.abs(b.importe) - Math.abs(a.importe)),
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// De qué cuentas sale el extracto de cada empresa
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 🏦 **Las cuentas cuyo extracto arma los papeles 7, 8 y 9**, por empresa.
+ *
+ * Está acá y no en la pantalla ni en el script porque **los dos la necesitan y tienen que coincidir**:
+ * si el control mira tres cuentas y el Excel cuatro, los números no van a dar lo mismo y nadie va a
+ * saber cuál creer. Es la § ♻️ de `CLAUDE.md`.
+ *
+ * ⚠️ **Las tarjetas NO están.** El resumen de la tarjeta es un gasto de la empresa, pero sus
+ * comisiones e impuestos **no son gastos bancarios de la cuenta**: van adentro del resumen y se
+ * pagan con el template de la tarjeta. Meterlas acá contaría dos veces.
+ */
+export const CUENTAS_DEL_EXTRACTO: Record<string, Array<{ schema: string; tabla: string; nombre: string }>> = {
+  MSA: [
+    { schema: "public", tabla: "msa_galicia", nombre: "BANCO GALICIA (cta cte)" },
+    { schema: "msa", tabla: "caja_general", nombre: "CAJA GENERAL" },
+    { schema: "msa", tabla: "caja_ams", nombre: "CAJA AMS" },
+    { schema: "msa", tabla: "caja_sigot", nombre: "CAJA SIGOT" },
+  ],
+  PAM: [
+    { schema: "public", tabla: "pam_galicia", nombre: "BANCO GALICIA (caja de ahorro)" },
+    { schema: "public", tabla: "pam_galicia_cc", nombre: "BANCO GALICIA (cta cte)" },
+  ],
+  MA: [
+    { schema: "ma", tabla: "ma_galicia", nombre: "BANCO GALICIA" },
+  ],
+}
+
+/** ¿Este movimiento es del fondo común de inversión? */
+export function esFCI(m: MovimientoExtracto): boolean {
+  const n = normalizarCuenta(m.categ)
+  return n === "fci" || n.includes("fondos comunes") || n.includes("fima")
+}

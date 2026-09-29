@@ -33,6 +33,11 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import { buscarFechasDePagoBancarias, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
+import {
+  mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
+  esFCI, CUENTAS_DEL_EXTRACTO,
+  type MovimientoExtracto, type CuentaDelPlan,
+} from "@/lib/balance/papeles-bancarios"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -53,6 +58,11 @@ export function PapelesDeBalance() {
    * consulta: cuándo se pagó cada comprobante. Ver `lib/balance/cuentas-al-cierre.ts`.
    */
   const [cuentas, setCuentas] = useState<{ pagar: CuentasAlCierre; cobrar: CuentasAlCierre } | null>(null)
+  /**
+   * 🏦 Papeles 07, 08 y 09. Salen del **extracto** ya parseado y categorizado, así que se traen
+   * junto con el libro: es una consulta más por cuenta bancaria.
+   */
+  const [bancarios, setBancarios] = useState<Parameters<typeof descargarLibroDiario>[7] | null>(null)
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
   const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
 
@@ -62,6 +72,7 @@ export function PapelesDeBalance() {
     setTemplates(null)
     setHacienda(null)
     setCuentas(null)
+    setBancarios(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -148,6 +159,70 @@ export function PapelesDeBalance() {
       } catch (e) {
         toast.warning("No se pudieron armar las cuentas a pagar y a cobrar; el resto del libro salió igual.")
       }
+
+      /**
+       * 🏦 **Los papeles bancarios (07, 08 y 09).**
+       *
+       * Se traen de las cuentas de `CUENTAS_DEL_EXTRACTO` —la misma lista que usa el control por
+       * consola, para que los números no puedan discrepar— y se arman con la lógica pura de
+       * `lib/balance/papeles-bancarios.ts`.
+       *
+       * ⚠️ Van en su propio `try`: si el extracto falla, **el resto del libro ya está en pantalla**.
+       * Estos tres son anexos del resultado, no el resultado.
+       */
+      try {
+        const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
+        const [aaF, mmF] = meses[11].split("-").map(Number)
+        const finDelEjercicio = new Date(Date.UTC(aaF, mmF, 0)).toISOString().slice(0, 10)
+
+        const { data: planCuentas } = await supabase.from("cuentas_contables")
+          .select("nro_cuenta, cuenta_contable, nombre_totalizadora, tipo")
+
+        const movimientos: Array<MovimientoExtracto & { donde: string }> = []
+        const saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }> = []
+        const noSePudoLeer: string[] = []
+
+        for (const t of CUENTAS_DEL_EXTRACTO[empresa.id] ?? []) {
+          const q = t.schema === "public"
+            ? supabase.from(t.tabla)
+            : supabase.schema(t.schema).from(t.tabla)
+          const { data, error } = await q
+            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo")
+            .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio)
+            .order("fecha", { ascending: true })
+
+          if (error) {
+            // Nada en silencio: una cuenta que no se pudo leer hace faltar gastos del papel.
+            noSePudoLeer.push(t.nombre)
+            saldos.push({ nombre: t.nombre, saldo: null, fecha: null })
+            continue
+          }
+          const filas = (data ?? []) as MovimientoExtracto[]
+          filas.forEach(f => movimientos.push({ ...f, donde: t.nombre }))
+          // El saldo al cierre es el del último movimiento del ejercicio en esa cuenta.
+          const ultimo = [...filas].reverse().find(f => f.saldo != null)
+          saldos.push({ nombre: t.nombre, saldo: ultimo?.saldo ?? null, fecha: ultimo?.fecha ?? null })
+        }
+        if (noSePudoLeer.length > 0) {
+          toast.warning(`No se pudieron leer ${noSePudoLeer.join(", ")}: faltan sus gastos en el papel 08.`)
+        }
+
+        const movFCI = movimientos.filter(esFCI)
+        setBancarios({
+          gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
+          retiros: armarRetirosYAportes(movimientos, meses),
+          saldos,
+          movimientosFCI: movFCI.length,
+          /**
+           * Los saldos del fondo van vacíos: **no están en el extracto**. El extracto ve la plata que
+           * entra y sale de la cuenta, no cuánto quedó invertido. La solapa los deja para que el
+           * usuario los complete y el resultado financiero se calcula solo, con fórmula.
+           */
+          fci: armarFondosComunes(movFCI, {}, {}),
+        })
+      } catch {
+        toast.warning("No se pudieron armar los papeles bancarios; el resto del libro salió igual.")
+      }
       setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
@@ -204,6 +279,7 @@ export function PapelesDeBalance() {
             <Button variant="outline" onClick={() => descargarLibroDiario(
                 libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
                 hacienda?.insumos, hacienda?.campo, cuentas ?? undefined,
+                bancarios ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}

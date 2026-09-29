@@ -16,7 +16,7 @@ import { createClient } from "@supabase/supabase-js"
 import { readFileSync } from "node:fs"
 import {
   mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
-  normalizarCuenta, type MovimientoExtracto, type CuentaDelPlan,
+  esFCI, CUENTAS_DEL_EXTRACTO, type MovimientoExtracto, type CuentaDelPlan,
 } from "../lib/balance/papeles-bancarios"
 
 const env = Object.fromEntries(
@@ -37,30 +37,17 @@ if (!url || !key) {
 const sb = createClient(url, key)
 const pesos = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2 })
 
-/** Las cuentas bancarias de cada empresa y su mes de cierre. */
-const EMPRESAS: Record<string, { mesCierre: number; tablas: Array<{ schema: string; tabla: string; nombre: string }> }> = {
-  MSA: {
-    mesCierre: 6,
-    tablas: [
-      { schema: "public", tabla: "msa_galicia", nombre: "BANCO GALICIA (cta cte)" },
-      { schema: "msa", tabla: "caja_general", nombre: "CAJA GENERAL" },
-      { schema: "msa", tabla: "caja_ams", nombre: "CAJA AMS" },
-      { schema: "msa", tabla: "caja_sigot", nombre: "CAJA SIGOT" },
-    ],
-  },
-  PAM: {
-    mesCierre: 12,
-    tablas: [
-      { schema: "public", tabla: "pam_galicia", nombre: "BANCO GALICIA (caja de ahorro)" },
-      { schema: "public", tabla: "pam_galicia_cc", nombre: "BANCO GALICIA (cta cte)" },
-    ],
-  },
-  MA: { mesCierre: 12, tablas: [{ schema: "ma", tabla: "ma_galicia", nombre: "BANCO GALICIA" }] },
-}
+/**
+ * El mes de cierre de cada empresa. **Las cuentas salen de `CUENTAS_DEL_EXTRACTO`**, la misma lista
+ * que usa el Excel: si el control mirara otras cuentas, los números no coincidirían y no se sabría
+ * a cuál creerle.
+ */
+const MES_CIERRE: Record<string, number> = { MSA: 6, PAM: 12, MA: 12 }
 
 const empresaId = (process.argv[2] || "MSA").toUpperCase()
 const anioCierre = Number(process.argv[3] || 2026)
-const empresa = EMPRESAS[empresaId]
+const empresa = MES_CIERRE[empresaId]
+  ? { mesCierre: MES_CIERRE[empresaId], tablas: CUENTAS_DEL_EXTRACTO[empresaId] } : undefined
 if (!empresa) { console.error(`❌ Empresa desconocida: ${empresaId}`); process.exit(1) }
 
 const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
@@ -110,10 +97,6 @@ for (const s of saldosAlCierre) {
 }
 
 // ── Fondos comunes ─────────────────────────────────────────────────────────────────
-const esFCI = (m: MovimientoExtracto) => {
-  const n = normalizarCuenta(m.categ)
-  return n === "fci" || n.includes("fondos comunes") || n.includes("fima")
-}
 const movFCI = movimientos.filter(esFCI)
 console.log(`\n══════ PAPEL 7 · FONDOS COMUNES DE INVERSIÓN ══════`)
 if (movFCI.length === 0) {
