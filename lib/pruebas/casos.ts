@@ -67,6 +67,10 @@ import {
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
+  normalizarCuenta, buscarCuenta, mesesDelEjercicio, armarGastosBancarios,
+  armarFondosComunes, armarRetirosYAportes,
+} from "@/lib/balance/papeles-bancarios"
+import {
   mismoCertificado, agruparEnCertificados, certificadosConVariosPagos, clavePago,
 } from "@/lib/sicore/clave-certificado"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
@@ -3430,6 +3434,149 @@ export function correrCasos(): Resultado[] {
     chequear("SICORE · certificado", "Para mostrar se agrupa por el número: 2 filas, 1 certificado",
       "1", String(agruparEnCertificados(grupoOk).length),
       agruparEnCertificados(grupoOk).length === 1, "A-BUG-1222")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🏦 PAPELES 7, 8 y 9 — bancos, gastos bancarios y retiros (A-FEAT-1197/98/99)
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const PLAN = [
+      { cuenta_contable: "Débitos / Créditos Ley 25413", nombre_totalizadora: "IMPUESTOS BANCARIOS", nro_cuenta: null },
+      { cuenta_contable: "IVA Bancario", nombre_totalizadora: "IMPUESTOS BANCARIOS", nro_cuenta: null },
+      { cuenta_contable: "Comisión Extracción Efectivo", nombre_totalizadora: "GASTOS BANCARIOS", nro_cuenta: null },
+      { cuenta_contable: "Comisión Transferencias", nombre_totalizadora: "GASTOS BANCARIOS", nro_cuenta: null },
+      { cuenta_contable: "Sueldos y jornales", nombre_totalizadora: "MANO DE OBRA", nro_cuenta: "422101" },
+    ]
+    const buscar = (categ: string, nro?: string) =>
+      buscarCuenta({ fecha: "2025-07-01", categ, nro_cuenta: nro ?? null }, PLAN)
+
+    // 🔑 EL CASO QUE JUSTIFICA TODO: el extracto escribe sin tildes y el plan con tildes.
+    chequear("Balance · bancos", "🔑 «Iva Bancario» del extracto encuentra «IVA Bancario» del plan",
+      "IMPUESTOS BANCARIOS", buscar("Iva Bancario")?.nombre_totalizadora ?? "(nada)",
+      buscar("Iva Bancario")?.nombre_totalizadora === "IMPUESTOS BANCARIOS", "A-FEAT-1198")
+
+    chequear("Balance · bancos", "🔑 «Comision Extraccion Efectivo» encuentra la que lleva tildes",
+      "GASTOS BANCARIOS", buscar("Comision Extraccion Efectivo")?.nombre_totalizadora ?? "(nada)",
+      buscar("Comision Extraccion Efectivo")?.nombre_totalizadora === "GASTOS BANCARIOS", "A-FEAT-1198")
+
+    // 🔑 Y el match por PREFIJO, que es el que resuelve el «Ley 25413».
+    chequear("Balance · bancos", "🔑 «Debitos / Creditos» encuentra «… Ley 25413» por prefijo",
+      "Débitos / Créditos Ley 25413", buscar("Debitos / Creditos")?.cuenta_contable ?? "(nada)",
+      buscar("Debitos / Creditos")?.cuenta_contable === "Débitos / Créditos Ley 25413", "A-FEAT-1198")
+
+    // 🎯 ADVERSARIO — el NÚMERO manda sobre el nombre: es la identidad de verdad.
+    chequear("Balance · bancos", "El número de cuenta manda sobre el nombre",
+      "Sueldos y jornales", buscar("Iva Bancario", "422101")?.cuenta_contable ?? "(nada)",
+      buscar("Iva Bancario", "422101")?.cuenta_contable === "Sueldos y jornales", "A-FEAT-1198")
+
+    // 🛑 ADVERSARIO — con DOS candidatas por prefijo NO se elige ninguna: adivinar pondría el gasto
+    //    en la totalizadora equivocada y el papel saldría plausible y mal.
+    const ambiguo = [
+      { cuenta_contable: "Comisión Cheques Depositados", nombre_totalizadora: "GASTOS BANCARIOS", nro_cuenta: null },
+      { cuenta_contable: "Comisión Cheques Rechazados", nombre_totalizadora: "IMPUESTOS BANCARIOS", nro_cuenta: null },
+    ]
+    chequear("Balance · bancos", "🛑 Con dos candidatas por prefijo no adivina: devuelve nada",
+      "(nada)",
+      buscarCuenta({ fecha: "2025-07-01", categ: "Comision Cheques" }, ambiguo)?.cuenta_contable ?? "(nada)",
+      buscarCuenta({ fecha: "2025-07-01", categ: "Comision Cheques" }, ambiguo) === null, "A-FEAT-1198")
+
+    chequear("Balance · bancos", "Normaliza tildes, mayúsculas y puntuación",
+      "debitos creditos ley 25413", normalizarCuenta("Débitos / Créditos Ley 25413"),
+      normalizarCuenta("Débitos / Créditos Ley 25413") === "debitos creditos ley 25413", "A-FEAT-1198")
+
+    // ── Los 12 meses del ejercicio ───────────────────────────────────────────────────────
+    const mesesMSA = mesesDelEjercicio(2026, 6)
+    chequear("Balance · bancos", "🔑 El ejercicio de MSA va de julio a junio",
+      "2025-07 → 2026-06 · 12 meses",
+      `${mesesMSA[0]} → ${mesesMSA[11]} · ${mesesMSA.length} meses`,
+      mesesMSA[0] === "2025-07" && mesesMSA[11] === "2026-06" && mesesMSA.length === 12, "A-FEAT-1198")
+
+    const mesesPAM = mesesDelEjercicio(2026, 12)
+    chequear("Balance · bancos", "Y el de PAM/MA, de enero a diciembre del mismo año",
+      "2026-01 → 2026-12", `${mesesPAM[0]} → ${mesesPAM[11]}`,
+      mesesPAM[0] === "2026-01" && mesesPAM[11] === "2026-12", "A-FEAT-1198")
+
+    // ── PAPEL 8 ──────────────────────────────────────────────────────────────────────────
+    const gastos = armarGastosBancarios([
+      { fecha: "2025-07-15", categ: "Iva Bancario", debitos: 100 },
+      { fecha: "2025-07-20", categ: "Iva Bancario", debitos: 50 },
+      { fecha: "2025-08-10", categ: "Comision Transferencias", debitos: 1000 },
+      { fecha: "2026-06-30", categ: "Debitos / Creditos", debitos: 7 },
+      { fecha: "2025-07-15", categ: "Sueldos", debitos: 999_999 },
+      { fecha: "2024-05-01", categ: "Iva Bancario", debitos: 888 },
+    ], PLAN, mesesMSA)
+
+    chequear("Balance · bancos", "Agrupa por concepto del plan y suma el mes correcto",
+      "IVA Bancario julio 150",
+      `IVA Bancario julio ${gastos.filas.find(f => f.concepto === "IVA Bancario")?.debitos[0]}`,
+      gastos.filas.find(f => f.concepto === "IVA Bancario")?.debitos[0] === 150, "A-FEAT-1198")
+
+    chequear("Balance · bancos", "🔑 Lo que no es bancario NO entra al papel",
+      "1157", String(gastos.total.totalDebitos),
+      gastos.total.totalDebitos === 1157, "A-FEAT-1198")
+
+    chequear("Balance · bancos", "🔑 Un movimiento FUERA del ejercicio no entra",
+      "julio = 150", `julio = ${gastos.total.debitos[0]}`,
+      gastos.total.debitos[0] === 150, "A-FEAT-1198")
+
+    chequear("Balance · bancos", "Subtotala por totalizadora: gastos y impuestos separados",
+      "2 subtotales", `${gastos.subtotales.length} subtotales`,
+      gastos.subtotales.length === 2, "A-FEAT-1198")
+
+    // 🧮 Lo bancario que NO está en el plan se informa, no se descarta.
+    const conHueco = armarGastosBancarios(
+      [{ fecha: "2025-07-15", categ: "Comision Rara Nueva", debitos: 500 }], PLAN, mesesMSA)
+    chequear("Balance · bancos", "🧮 Un gasto bancario que no está en el plan se INFORMA",
+      "1 sin clasificar · 500",
+      `${conHueco.sinClasificar.length} sin clasificar · ${conHueco.sinClasificar[0]?.debitos}`,
+      conHueco.sinClasificar.length === 1 && conHueco.sinClasificar[0].debitos === 500, "A-FEAT-1198")
+
+    // ── PAPEL 7 · fondos comunes ─────────────────────────────────────────────────────────
+    // 🔑 LOS NÚMEROS REALES de su balance anterior, para que el control quede verificado contra
+    //    algo que él ya validó a mano.
+    const fci = armarFondosComunes(
+      [{ fecha: "2025-08-01", debitos: 390_900_000, creditos: 371_998_456.97, donde: "BANCO GALICIA" }],
+      { "BANCO GALICIA": 0 }, { "BANCO GALICIA": 23_244_019.93 },
+    )
+    chequear("Balance · bancos", "🧮 El resultado del FCI sale por el camino inverso (caso real 24/25)",
+      "4342476.9", String(fci.fondos[0].resultadoFinanciero),
+      fci.fondos[0].resultadoFinanciero === 4_342_476.9, "A-FEAT-1197")
+
+    // 🎯 ADVERSARIO — un fondo que se abrió y se cerró dentro del ejercicio: saldo 0 en las dos
+    //    puntas, pero existió. No puede desaparecer del papel.
+    const efimero = armarFondosComunes(
+      [{ fecha: "2025-09-01", debitos: 1_000_000, creditos: 1_050_000, donde: "BROKER GSEC" }], {}, {})
+    chequear("Balance · bancos", "🔑 Un fondo abierto y cerrado en el ejercicio igual aparece, con su ganancia",
+      "1 fondo · 50000",
+      `${efimero.fondos.length} fondo · ${efimero.fondos[0]?.resultadoFinanciero}`,
+      efimero.fondos.length === 1 && efimero.fondos[0].resultadoFinanciero === 50_000, "A-FEAT-1197")
+
+    // ── PAPEL 9 · retiros y aportes ──────────────────────────────────────────────────────
+    const retiros = armarRetirosYAportes([
+      { fecha: "2025-07-10", categ: "Distribucion Mama", debitos: 500_000 },
+      { fecha: "2025-08-10", categ: "Retiro PAM", debitos: 1_300_000 },
+      { fecha: "2025-09-10", categ: "Aporte PAM", creditos: 6_900_100 },
+      { fecha: "2025-07-10", categ: "Sueldos", debitos: 999_999 },
+    ], mesesMSA)
+
+    chequear("Balance · bancos", "🔑 Un retiro va NEGATIVO y un aporte POSITIVO",
+      "-500000 · 6900100",
+      `${retiros.filas.find(f => f.etiqueta.includes("madre"))?.total} · ${retiros.filas.find(f => f.clase === "aporte")?.total}`,
+      retiros.filas.find(f => f.etiqueta.includes("madre"))?.total === -500_000 &&
+      retiros.filas.find(f => f.clase === "aporte")?.total === 6_900_100, "A-FEAT-1199")
+
+    chequear("Balance · bancos", "🧮 El neto es aportes menos retiros",
+      "5100100", String(retiros.neto.total),
+      retiros.neto.total === 5_100_100, "A-FEAT-1199")
+
+    // 🛑 Un concepto de retiro que no está en la lista se INFORMA: la lista es frágil a propósito.
+    const raro = armarRetirosYAportes(
+      [{ fecha: "2025-07-10", categ: "Retiro Tio Roberto", debitos: 80_000 }], mesesMSA)
+    chequear("Balance · bancos", "🛑 Un retiro con categoría nueva se informa, no se pierde",
+      "1 sin reconocer · 80000",
+      `${raro.sinReconocer.length} sin reconocer · ${raro.sinReconocer[0]?.importe}`,
+      raro.sinReconocer.length === 1 && raro.sinReconocer[0].importe === 80_000, "A-FEAT-1199")
   }
 
   return r
