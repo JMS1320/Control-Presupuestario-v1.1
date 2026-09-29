@@ -60,6 +60,7 @@ import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
+import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
   type AsientoLibroDiario,
@@ -2410,6 +2411,94 @@ export function correrCasos(): Resultado[] {
       "0 fuentes con propios",
       `${detectarSubdiariosDuplicados(comun(5, 900))[0].soloEn.length} fuente(s) con propios`,
       detectarSubdiariosDuplicados(comun(5, 900))[0].soloEn.length === 0, "A-DAT-61")
+  }
+
+  /**
+   * 🧾 **EL LIBRO DIARIO DE LOS TEMPLATES — A-FEAT-1184.**
+   *
+   * Pedido del usuario: *«los templates deberían generar su propio libro diario ya que yo lo daba
+   * en los excels»*. Van **aparte** porque **no entran por subdiario** — no tienen factura de ARCA.
+   *
+   * 🔑 **Y por eso el corte del período es DISTINTO**: fecha de pago, y si no hay, la estimada.
+   * Conviven dos criterios en el mismo ejercicio, y eso hay que probarlo: el primer caso falla si
+   * alguien "unifica" el corte usando la estimada siempre.
+   */
+  {
+    const ej = armarEjercicio(2026, 6)
+    const base = {
+      id: "c1", concepto: "Seguro Flota", proveedor: "Federacion Patronal SAU",
+      categ: "Seguros Estructura", cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+      responsable: "JMS", estado: "pagado",
+    }
+
+    chequear("Balance · templates", "Las 12 columnas son los meses del ejercicio",
+      "jul-25 … jun-26 (12)",
+      (() => { const r = armarTemplatesDelEjercicio([], ej); return `${r.columnas[0]} … ${r.columnas[11]} (${r.columnas.length})` })(),
+      (() => { const r = armarTemplatesDelEjercicio([], ej)
+        return r.columnas.length === 12 && r.columnas[0] === "jul-25" && r.columnas[11] === "jun-26" })(),
+      "A-FEAT-1184")
+
+    // 🔑 Una cuota estimada para JUNIO pero PAGADA en julio: manda la de pago, asi que sale del
+    //    ejercicio. Con el corte por estimada entraria, y el ejercicio quedaria inflado.
+    const pagadaDespues = armarTemplatesDelEjercicio(
+      [{ ...base, fecha: "2026-07-03", monto: 100000 }], ej)
+    chequear("Balance · templates", "🔑 Manda la fecha de PAGO: si se pagó en julio, no es del ejercicio",
+      "0 en el ejercicio", `${pagadaDespues.detalle.length} en el ejercicio`,
+      pagadaDespues.detalle.length === 0, "A-FEAT-1184")
+
+    // La misma cuota pagada dentro del ejercicio si entra, y cae en su mes.
+    const dentro = armarTemplatesDelEjercicio(
+      [{ ...base, fecha: "2026-06-05", monto: 100000 }], ej)
+    chequear("Balance · templates", "Una cuota de junio 2026 cae en la ÚLTIMA columna",
+      "columna 12 = 100000", `columna 12 = ${dentro.porMes[0]?.debitos[11]}`,
+      dentro.porMes[0]?.debitos[11] === 100000, "A-FEAT-1184")
+
+    const primerMes = armarTemplatesDelEjercicio(
+      [{ ...base, fecha: "2025-07-20", monto: 50000 }], ej)
+    chequear("Balance · templates", "Y una de julio 2025 cae en la PRIMERA",
+      "columna 1 = 50000", `columna 1 = ${primerMes.porMes[0]?.debitos[0]}`,
+      primerMes.porMes[0]?.debitos[0] === 50000, "A-FEAT-1184")
+
+    // Un monto negativo es una devolucion: va a CREDITOS, en positivo, como en su planilla.
+    const devolucion = armarTemplatesDelEjercicio(
+      [{ ...base, fecha: "2026-03-10", monto: -7500 }], ej)
+    chequear("Balance · templates", "Un monto negativo va a CRÉDITOS y en positivo",
+      "débitos 0 · créditos 7500",
+      `débitos ${devolucion.totalDebitos} · créditos ${devolucion.totalCreditos}`,
+      devolucion.totalDebitos === 0 && devolucion.totalCreditos === 7500, "A-FEAT-1184")
+
+    // Las categorias se agrupan y se ordenan por lo que mas pesa.
+    const variasCategs = armarTemplatesDelEjercicio([
+      { ...base, id: "a", fecha: "2025-08-01", categ: "Impuestos", monto: 900000 },
+      { ...base, id: "b", fecha: "2025-09-01", categ: "Seguros Estructura", monto: 100000 },
+      { ...base, id: "c", fecha: "2025-10-01", categ: "Impuestos", monto: 100000 },
+    ], ej)
+    chequear("Balance · templates", "Agrupa por categoría y ordena por la que más pesa",
+      "Impuestos 1000000 · Seguros Estructura 100000",
+      variasCategs.porMes.map(x => `${x.categ} ${x.totalDebitos}`).join(" · "),
+      variasCategs.porMes[0]?.categ === "Impuestos" && variasCategs.porMes[0]?.totalDebitos === 1000000,
+      "A-FEAT-1184")
+
+    // ⚠️ Nada se descarta en silencio: sin fecha y sin categoria van a sus propias listas.
+    const huecos = armarTemplatesDelEjercicio([
+      { ...base, id: "x", fecha: null, monto: 1000 },
+      { ...base, id: "y", fecha: "2026-01-15", categ: "", monto: 2000 },
+    ], ej)
+    chequear("Balance · templates", "⚠️ Sin fecha y sin categoría no se pierden: van a su propia lista",
+      "1 sin fecha · 1 sin categoría",
+      `${huecos.sinFecha.length} sin fecha · ${huecos.sinCategoria.length} sin categoría`,
+      huecos.sinFecha.length === 1 && huecos.sinCategoria.length === 1, "A-FEAT-1184")
+
+    // 🧮 El control que ata la vista de detalle con la de resumen: tienen que dar lo mismo.
+    const muchas = armarTemplatesDelEjercicio([
+      { ...base, id: "1", fecha: "2025-07-05", monto: 11111 },
+      { ...base, id: "2", fecha: "2025-12-05", categ: "Impuestos", monto: 22222 },
+      { ...base, id: "3", fecha: "2026-06-30", categ: "Sueldos", monto: 33333 },
+    ], ej)
+    const sumaDetalle = muchas.detalle.reduce((s, c) => s + c.monto, 0)
+    chequear("Balance · templates", "🧮 El detalle y el resumen por mes dan EXACTAMENTE lo mismo",
+      `${sumaDetalle}`, `${muchas.totalDebitos}`,
+      Math.abs(sumaDetalle - muchas.totalDebitos) < 0.01, "A-FEAT-1184")
   }
 
   return r

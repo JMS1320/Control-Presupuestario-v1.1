@@ -21,6 +21,7 @@
 import * as XLSX from "xlsx"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
+import type { TemplatesDelEjercicio } from "./templates-libro"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -159,8 +160,76 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][]) => {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), nombre.slice(0, 31))
 }
 
+/**
+ * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
+ * *«replicar formato de libro diario con los templates»*.
+ */
+function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
+  const f: unknown[][] = [[
+    "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
+    "Centro de costo", "Responsable", "Estado", "Débito", "Crédito",
+  ]]
+  for (const c of t.detalle) {
+    f.push([
+      c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
+      c.centro_costo, c.responsable, c.estado,
+      c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
+    ])
+  }
+  f.push([])
+  f.push(["TOTAL", "", "", "", "", "", "", "", "", money(t.totalDebitos), money(t.totalCreditos)])
+  return f
+}
+
+/**
+ * El resumen `concepto × los 12 meses` — **la forma exacta de su planilla** *«detalle completo
+ * gastos bancarios e impuestos por mes»*: filas de concepto, columnas jul→jun con «Suma de
+ * Débitos / Suma de Créditos», y el total del ejercicio al final.
+ */
+function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
+  const f: unknown[][] = []
+  f.push(["TEMPLATES POR MES — lo que no entra por subdiario y se informa aparte"])
+  f.push(["⚠️ Estas cuotas se cortan por FECHA DE PAGO (o estimada si no hay), no por subdiario:"])
+  f.push(["un template no tiene factura de ARCA, así que no tiene subdiario."])
+  f.push([])
+
+  const cab: unknown[] = ["Categoría"]
+  t.columnas.forEach(c => { cab.push(`${c} Déb.`, `${c} Créd.`) })
+  cab.push("Total Débitos", "Total Créditos")
+  f.push(cab)
+
+  for (const fila of t.porMes) {
+    const r: unknown[] = [fila.categ]
+    for (let i = 0; i < 12; i++) r.push(fila.debitos[i] || "", fila.creditos[i] || "")
+    r.push(fila.totalDebitos, fila.totalCreditos)
+    f.push(r)
+  }
+
+  const tot: unknown[] = ["TOTAL"]
+  for (let i = 0; i < 12; i++) {
+    tot.push(
+      money(t.porMes.reduce((s, x) => s + x.debitos[i], 0)),
+      money(t.porMes.reduce((s, x) => s + x.creditos[i], 0)),
+    )
+  }
+  tot.push(t.totalDebitos, t.totalCreditos)
+  f.push(tot)
+
+  if (t.sinCategoria.length > 0 || t.sinFecha.length > 0) {
+    f.push([])
+    f.push(["LO QUE NO SE PUDO UBICAR"])
+    if (t.sinCategoria.length > 0) {
+      f.push(["", `${t.sinCategoria.length} cuota(s) SIN CATEGORÍA contable: no se pueden ubicar en el balance.`])
+    }
+    if (t.sinFecha.length > 0) {
+      f.push(["", `${t.sinFecha.length} cuota(s) SIN FECHA (ni de pago ni estimada): no se pueden asignar a un período.`])
+    }
+  }
+  return f
+}
+
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
-export function armarWorkbook(libro: LibroDiario): XLSX.WorkBook {
+export function armarWorkbook(libro: LibroDiario, templates?: TemplatesDelEjercicio): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras))
@@ -169,6 +238,10 @@ export function armarWorkbook(libro: LibroDiario): XLSX.WorkBook {
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario))
+  if (templates) {
+    hoja(wb, "Templates", hojaDeTemplates(templates))
+    hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates))
+  }
   return wb
 }
 
@@ -179,8 +252,8 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
 }
 
 /** Descarga el archivo en el navegador. */
-export function descargarLibroDiario(libro: LibroDiario, empresa: string) {
-  const wb = armarWorkbook(libro)
+export function descargarLibroDiario(libro: LibroDiario, empresa: string, templates?: TemplatesDelEjercicio) {
+  const wb = armarWorkbook(libro, templates)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

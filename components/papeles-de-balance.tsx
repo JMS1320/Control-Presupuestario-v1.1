@@ -28,6 +28,7 @@ import { Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, Info } from "luc
 import { toast } from "sonner"
 import { armarEjercicio, nombreSubdiario } from "@/lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiario } from "@/lib/balance/libro-diario"
+import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -44,17 +45,19 @@ export function PapelesDeBalance() {
   const [anioCierre, setAnioCierre] = useState(2026)
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
+  const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
 
   const generar = async () => {
     setCargando(true)
     setLibro(null)
+    setTemplates(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
       // por subdiario vive en un solo lugar y no se puede aplicar distinto en cada fuente.
       const anios = [anioCierre - 1, anioCierre, anioCierre + 1]
 
-      const [arca, historico, ventas] = await Promise.all([
+      const [arca, historico, ventas, cuotas] = await Promise.all([
         supabase.schema(empresa.schema).from("comprobantes_arca")
           .select("*").in("año_contable", anios),
         // El histórico es sólo de MSA (es lo que migró del sistema anterior) y usa `anio_contable`.
@@ -63,9 +66,17 @@ export function PapelesDeBalance() {
           : Promise.resolve({ data: [], error: null }),
         supabase.schema(empresa.schema).from("comprobantes_venta")
           .select("*").in("año_contable", anios),
+        /**
+         * 🧾 Los templates viven en `public`, no en el schema de la empresa, y **no tienen
+         * subdiario**: se traen por fecha y el corte se hace en `armarTemplatesDelEjercicio`.
+         * Se pide un año extra de cada lado para no recortar antes de tiempo.
+         */
+        supabase.from("cuotas_egresos_sin_factura")
+          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable)")
+          .gte("fecha_estimada", `${anioCierre - 2}-01-01`),
       ])
 
-      for (const r of [arca, historico, ventas]) {
+      for (const r of [arca, historico, ventas, cuotas]) {
         if (r.error) throw new Error(r.error.message)
       }
 
@@ -75,6 +86,7 @@ export function PapelesDeBalance() {
       ]
       const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej)
       setLibro(armado)
+      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
         toast.warning(`No hay comprobantes en los 12 subdiarios del ejercicio ${ej.etiqueta}.`)
@@ -127,7 +139,7 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id)}>
+            <Button variant="outline" onClick={() => descargarLibroDiario(libro, empresa.id, templates ?? undefined)}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel
             </Button>
@@ -207,6 +219,26 @@ export function PapelesDeBalance() {
                 <div className="text-xs text-muted-foreground">Ventas del ejercicio</div>
                 <div className="font-mono">{c.ventas.cantidad} · ${fmt(c.ventas.totalGeneral)}</div>
               </div>
+              {templates && (
+                <div className="border rounded p-2 sm:col-span-2 bg-slate-50">
+                  <div className="text-xs text-muted-foreground">
+                    Templates — van <strong>aparte</strong>, no entran por subdiario
+                  </div>
+                  <div className="font-mono">
+                    {templates.detalle.length} cuota(s) · ${fmt(templates.totalDebitos)}
+                    {templates.totalCreditos > 0 && <> · créditos ${fmt(templates.totalCreditos)}</>}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Se cortan por <strong>fecha de pago</strong> (o estimada), porque no tienen subdiario.
+                    {templates.sinCategoria.length > 0 && (
+                      <span className="text-amber-700"> · {templates.sinCategoria.length} sin categoría contable</span>
+                    )}
+                    {templates.sinFecha.length > 0 && (
+                      <span className="text-amber-700"> · {templates.sinFecha.length} sin fecha</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="text-xs text-muted-foreground space-y-0.5">

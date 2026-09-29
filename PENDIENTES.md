@@ -2796,16 +2796,35 @@ Estructura: `categoría · producto · cantidad · unidad · USS por kg/L · val
 los agroquímicos con su cantidad… **pero a muchísimos les falta el precio**, así que su valor total
 da **0**. El inventario está; la valuación no.
 
+### 🧾 El papel de gastos bancarios NO tiene formato de libro diario — y sale del EXTRACTO
+
+*«detalle completo gastos bancarios e impuestos extractos. por mes»* es una **matriz `concepto × los 12 meses`**: filas como *Com. Caja de Seguridad*, *Comisión servicio de cuenta*, *Imp. Deb. Ley 25413*, *Ing. Brutos S/Cred*; columnas **jul→jun** con **«Suma de Débitos / Suma de Créditos»** cada una; **subtotales por bloque** (Gastos Bancarios · Créditos Pagados · Impuestos por Débito Bancario) y un **Total 24/25** al final.
+
+⚠️ **Y ojo con el origen**: ese papel sale del **extracto bancario**, no de los templates. Son dos fuentes distintas para dos papeles que se parecen. 🕳️ **Hueco reconocido**: el export de templates replica **la forma**, pero los gastos bancarios habrá que sacarlos del extracto clasificado — está pendiente de decidir.
+
 ### 🛠️ Los otros tres
 `3 - SEMENTERAS` · `5 - FORRAJEROS` · `6 - GAS OIL`, en el mismo archivo y con la misma forma.
 
 ---
 
+### 💲 Y los PRECIOS ya se traen — el usuario señaló de dónde
+
+*«podemos traer precios de entresurcos y corrales que está activo… en la parte de productivo, recría, histórico de pesadas, traer precios»*. **Ya existe**: `app/api/precios-mercado/route.ts` pega contra `entresurcosycorralesya.com` y devuelve, **por rango de fechas y por sexo**, la tabla de categorías con su rango de kilos y sus precios (promedio, máximo y mínimo, por kilo y por bulto).
+
+🔑 **Y como toma un RANGO, la instrucción del usuario sale sola**: *«se debería tomar todo el mes de junio para tomar algo representativo»* → `desde=2026-06-01&hasta=2026-06-30`.
+
+📌 **Los precios van como SOLAPA DE DETALLE** (pedido suyo), para que se vea de dónde salió cada valuación y no haya que creerle al total.
+
+⚠️ **Lo que el mercado no cubre lo llena él a mano**, y esos son los **huecos a reconocer y mostrar**: *«para lo que no tiene precio yo lo llenaría aparte»* y *«si faltan categorías yo luego te puedo decir cómo conseguir»*.
+
 ### 🔴 Veredicto de factibilidad — medido contra la base, no supuesto
 
 | Tabla | Filas hoy | Qué significa |
 |---|---:|---|
-| `productivo.stock_hacienda` | **0** | **vacía**: no hay foto de existencias |
+| `productivo.stock_hacienda` | **0** | ❌ **MI ERROR: miré ESTA tabla y concluí que no había stock. Está vacía porque NO SE USA.** El usuario lo cortó: *«la app ya tiene el stock capaz estás mirando mal, tiene kg y precio»*. Tenía razón |
+| `productivo.stock_ciclos` | 4 | ✅ **acá está el rodeo**: vacas y vaquillonas de apertura, destetados, machos, hembras, retenidas, por campaña. Para 25/26: 192 + 28 de apertura, 189 destetados |
+| `productivo.terneros` | 217 | ✅ la recría, animal por animal |
+| `productivo.pesadas_terneros` | **870** | ✅ **los KG**, que es lo que faltaba para valuar |
 | `productivo.movimientos_hacienda` | 47 | insuficiente para un rodeo de 325 cabezas en 12 meses |
 | `productivo.categorias_hacienda` | 15 | ✅ las categorías del papel **sí existen** |
 | `productivo.stock_insumos` | 32 | alcanza para el inventario, **no para valuarlo** |
