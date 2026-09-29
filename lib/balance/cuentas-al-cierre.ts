@@ -34,6 +34,17 @@
  * aparte, `sinDatoDePago`, con su total — § 🧮 *nada se descarta en silencio*. Meterlos en el papel
  * sería inventar una deuda; dejarlos afuera sin decirlo sería esconderla. Se dicen.
  *
+ * ## 🧨 El tercer caso, que encontré dando un número falso
+ *
+ * **`msa.comprobantes_historico` no tiene ni `estado` ni `fecha_pago`.** Es lo que migró del sistema
+ * anterior: son registros contables, no de pago. La primera versión los tomaba como «pendientes» por
+ * defecto y **la deuda al cierre daba $193.981.013,42** — sobre $302 M de compras, o sea el 64 %.
+ * El número era absurdo y por eso se miró; con el histórico aparte queda en su orden real.
+ *
+ * Van a `sinEstadoDePago`, con su total y dichos por lo que son: **de estos comprobantes la app no
+ * sabe nada sobre su pago**, y la respuesta tiene que venir de otro lado (el sistema viejo, o el
+ * propio usuario). Asumir que están pagos sería igual de inventado que asumir que no.
+ *
  * ## 📌 Lo que este módulo NO cubre todavía
  *
  * El papel 04 del usuario tiene además **cheques dados** (emitidos y no debitados al cierre) y
@@ -66,6 +77,7 @@ export type MotivoCuenta =
   | "no se pagó nunca"
   | "se pagó DESPUÉS del cierre"
   | "conciliado, pero sin saber cuándo"
+  | "del sistema anterior: no trae estado de pago"
 
 export interface FilaCuenta {
   asiento: AsientoLibroDiario
@@ -84,6 +96,24 @@ export interface CuentasAlCierre {
    */
   sinDatoDePago: FilaCuenta[]
   totalSinDato: number
+  /**
+   * Los que vienen del **sistema anterior**, que no migró estado de pago ni fecha.
+   * No se pueden clasificar ni para un lado ni para el otro: se listan y se dicen.
+   */
+  sinEstadoDePago: FilaCuenta[]
+  totalSinEstado: number
+  /**
+   * 🛑 **La red: estados que este módulo no conoce.**
+   *
+   * No se tiran ni se cuentan: se informan, con su total y el nombre del estado, para que alguien
+   * decida de qué lado van. § 🧮 *nada se descarta en silencio* — y esta red no es teórica: apenas
+   * se puso, atrapó **$103.044.319,07** de ventas en estado `a cobrar`, que hasta ese momento
+   * desaparecían del papel sin dejar rastro.
+   */
+  estadoDesconocido: FilaCuenta[]
+  totalDesconocido: number
+  /** Los nombres de estado que no se reconocieron, para poder agregarlos. */
+  estadosSinClasificar: string[]
   /** Cuántos se pagaron después del cierre — el caso que el criterio ingenuo perdía. */
   pagadosDespues: number
   /** Total de comprobantes mirados, para poder cerrar contra el libro. */
@@ -96,10 +126,27 @@ export interface CuentasAlCierre {
  * ⚠️ `anterior` NO está: marca un comprobante de un ejercicio previo y su deuda, si la hay, es de
  * aquel balance, no de éste. Meterlo acá duplicaría la deuda entre dos ejercicios.
  */
-const ESTADOS_IMPAGOS = ["pendiente", "pagar", "preparado", "programado", "echeq", "cuotas"]
+const ESTADOS_IMPAGOS = [
+  "pendiente", "pagar", "preparado", "programado", "echeq", "cuotas",
+  // 🧨 **«a cobrar», con espacio, es el estado de TODAS las ventas.** Faltaba, y las 4 facturas del
+  //    ejercicio —**$103.044.319,07**— se caían del papel **sin que nada lo dijera**. Lo encontró la
+  //    red de abajo (`estadoDesconocido`), que se puso justamente por esto.
+  "a cobrar",
+]
 
 /** Los estados que afirman que se pagó. Sin fecha, esa afirmación no se puede ubicar en el tiempo. */
-const ESTADOS_PAGADOS = ["pagado", "conciliado"]
+const ESTADOS_PAGADOS = ["pagado", "conciliado", "cobrado"]
+
+/**
+ * Los que **no son deuda de este ejercicio**, y se descartan a propósito.
+ *
+ * - `anterior`: comprobante de un ejercicio previo; su deuda, si la hay, es de aquel balance.
+ * - `credito` / `debito`: son notas, no facturas a pagar.
+ *
+ * ⚠️ **Todo lo que no esté en ninguna de las tres listas cae en `estadoDesconocido`**, que se
+ * informa. Es la red que atrapó lo de «a cobrar».
+ */
+const ESTADOS_AJENOS = ["anterior", "credito", "debito", "anulado"]
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
@@ -115,11 +162,23 @@ export function armarCuentasAlCierre(
 ): CuentasAlCierre {
   const filas: FilaCuenta[] = []
   const sinDatoDePago: FilaCuenta[] = []
+  const sinEstadoDePago: FilaCuenta[] = []
+  const estadoDesconocido: FilaCuenta[] = []
+  const estadosSinClasificar = new Set<string>()
   let pagadosDespues = 0
 
   for (const c of comprobantes) {
     const estado = (c.estado || "pendiente").toLowerCase()
     const base = { asiento: c.asiento, estado, fechaPago: c.fechaPago }
+
+    /**
+     * 🧨 El histórico primero, ANTES de mirar el estado: no tiene ninguno, y el default de la
+     * pantalla («pendiente») lo convertiría en deuda. Así daba $194 M de cuentas a pagar.
+     */
+    if (c.asiento.fuente === "historico" && !c.fechaPago) {
+      sinEstadoDePago.push({ ...base, motivo: "del sistema anterior: no trae estado de pago" })
+      continue
+    }
 
     if (c.fechaPago) {
       // Hay fecha: la pregunta se contesta sola y no depende del estado de hoy.
@@ -139,7 +198,11 @@ export function armarCuentasAlCierre(
       sinDatoDePago.push({ ...base, motivo: "conciliado, pero sin saber cuándo" })
       continue
     }
-    // Cualquier otro estado (`anterior`, `credito`, `debito`) no es una deuda de este ejercicio.
+    if (ESTADOS_AJENOS.includes(estado)) continue   // no es deuda de este ejercicio, a propósito
+
+    // 🛑 Un estado que no conocemos NO se tira: se informa. Ver `estadoDesconocido`.
+    estadosSinClasificar.add(estado)
+    estadoDesconocido.push({ ...base, motivo: "no se pagó nunca" })
   }
 
   const sumar = (f: FilaCuenta[]) => r2(f.reduce((s, x) => s + x.asiento.total, 0))
@@ -150,6 +213,11 @@ export function armarCuentasAlCierre(
     total: sumar(filas),
     sinDatoDePago: sinDatoDePago.sort((a, b) => Math.abs(b.asiento.total) - Math.abs(a.asiento.total)),
     totalSinDato: sumar(sinDatoDePago),
+    sinEstadoDePago: sinEstadoDePago.sort((a, b) => Math.abs(b.asiento.total) - Math.abs(a.asiento.total)),
+    totalSinEstado: sumar(sinEstadoDePago),
+    estadoDesconocido: estadoDesconocido.sort((a, b) => Math.abs(b.asiento.total) - Math.abs(a.asiento.total)),
+    totalDesconocido: sumar(estadoDesconocido),
+    estadosSinClasificar: [...estadosSinClasificar].sort(),
     pagadosDespues,
     mirados: comprobantes.length,
   }

@@ -31,6 +31,8 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiar
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import { buscarFechasDePagoBancarias, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -46,6 +48,11 @@ export function PapelesDeBalance() {
   const [anioCierre, setAnioCierre] = useState(2026)
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
+  /**
+   * 💳 Papeles 03 y 04. Se arman junto con el libro porque necesitan **lo mismo** que él más una
+   * consulta: cuándo se pagó cada comprobante. Ver `lib/balance/cuentas-al-cierre.ts`.
+   */
+  const [cuentas, setCuentas] = useState<{ pagar: CuentasAlCierre; cobrar: CuentasAlCierre } | null>(null)
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
   const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
 
@@ -54,6 +61,7 @@ export function PapelesDeBalance() {
     setLibro(null)
     setTemplates(null)
     setHacienda(null)
+    setCuentas(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -89,6 +97,57 @@ export function PapelesDeBalance() {
       ]
       const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej)
       setLibro(armado)
+
+      /**
+       * 💳 **Cuentas a pagar y a cobrar al cierre.**
+       *
+       * 🔑 Manda **cuándo se pagó**, no el estado de hoy: una factura que hoy figura paga pero se
+       * pagó después del cierre, al cierre era deuda. La fecha sale de `fecha_pago` o, mejor, del
+       * movimiento bancario conciliado — y se busca en **las diez** tablas que llevan el vínculo,
+       * no en tres (§ 🔁 La propagación del dato).
+       *
+       * ⚠️ Si la búsqueda de fechas falla, **el libro ya está en pantalla igual**: estos dos papeles
+       * son un agregado, no pueden tirar abajo el resto del export.
+       */
+      try {
+        const porId = new Map<string, { estado: string; fechaPago: string | null }>()
+        for (const f of [...(arca.data ?? []), ...(ventas.data ?? [])]) {
+          const r = f as Record<string, unknown>
+          if (!r.id) continue
+          porId.set(String(r.id), {
+            estado: String(r.estado ?? "pendiente"),
+            fechaPago: r.fecha_pago ? String(r.fecha_pago).slice(0, 10) : null,
+          })
+        }
+
+        const { porComprobante, tablasQueFallaron } = await buscarFechasDePagoBancarias(
+          supabase as unknown as ClienteMinimo,
+          [...armado.compras, ...armado.ventas].map(a => a.id),
+        )
+        if (tablasQueFallaron.length > 0) {
+          // Nada en silencio: una tabla que no se pudo leer puede hacer parecer impago algo pagado.
+          toast.warning(`No se pudieron leer ${tablasQueFallaron.join(", ")}: puede faltar alguna fecha de pago.`)
+        }
+
+        const conPago = (asientos: typeof armado.compras): ComprobanteConPago[] =>
+          asientos.map(a => {
+            const propia = porId.get(a.id)?.fechaPago ?? null
+            const banco = porComprobante.get(a.id) ?? null
+            return {
+              asiento: a,
+              estado: porId.get(a.id)?.estado ?? "pendiente",
+              fechaPago: propia ?? banco,
+              origenFecha: propia ? "fecha_pago" : banco ? "movimiento bancario" : "sin dato",
+            }
+          })
+
+        setCuentas({
+          pagar: armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre),
+          cobrar: armarCuentasAlCierre(conPago(armado.ventas), ej.fechaCierre),
+        })
+      } catch (e) {
+        toast.warning("No se pudieron armar las cuentas a pagar y a cobrar; el resto del libro salió igual.")
+      }
       setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
@@ -144,10 +203,10 @@ export function PapelesDeBalance() {
           {libro && (
             <Button variant="outline" onClick={() => descargarLibroDiario(
                 libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
-                hacienda?.insumos, hacienda?.campo,
+                hacienda?.insumos, hacienda?.campo, cuentas ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Bajar el Excel{hacienda ? " completo (12 solapas)" : " — sólo el libro diario"}
+              Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
             </Button>
           )}
         </div>

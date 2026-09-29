@@ -22,6 +22,7 @@ import * as XLSX from "xlsx"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
+import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -378,6 +379,104 @@ const COLS_POR_CUENTA: Columna[] = [
   { ancho: 13, z: ENTERO },         // R Comprobantes
 ]
 
+/**
+ * 💳 Las solapas **03 - Cuentas a cobrar** y **04 - Cuentas a pagar**.
+ *
+ * Mismo formato de fila que el libro de IVA —el que usan sus papeles originales— más la columna
+ * **Motivo**, que dice **por qué** cada comprobante está en el papel. Es lo que lo hace auditable:
+ * *«no se pagó nunca»* y *«se pagó DESPUÉS del cierre»* son cosas distintas y el contador puede
+ * querer mirarlas distinto.
+ *
+ * 🧮 **Y abajo van los tres bloques de lo que NO se pudo determinar**, con sus totales. No son un
+ * apéndice: son la parte que dice hasta dónde llega lo que el papel afirma.
+ */
+function hojaDeCuentas(c: CuentasAlCierre, titulo: string, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([titulo])
+  f.push([`Al ${fechaCierre}`])
+  f.push(["Entra lo que NO estaba pagado al cierre. Manda la fecha de pago, no el estado de hoy:"])
+  f.push(["una factura que hoy figura paga pero se pagó despues del cierre, al cierre era deuda."])
+  f.push([])
+  f.push([
+    "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
+    "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
+    "Cuenta contable", "Estado hoy", "Fecha de pago", "Motivo",
+  ])
+
+  const fila = (x: FilaCuenta) => {
+    const a = x.asiento
+    return [
+      a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
+      a.cuit, a.denominacion,
+      money(a.neto_gravado), money(a.no_gravado), money(a.exento),
+      money(a.otros_tributos), money(a.iva), money(a.total),
+      a.cuenta_contable, x.estado, x.fechaPago ?? "", x.motivo,
+    ]
+  }
+
+  c.filas.forEach(x => f.push(fila(x)))
+  const desde = 7
+  const hasta = 6 + c.filas.length
+  if (c.filas.length > 0) {
+    f.push(["", "", "", "", "", "", "TOTAL",
+      ...(["H", "I", "J", "K", "L", "M"] as const).map((col, i) =>
+        conFormula(`SUM(${col}${desde}:${col}${hasta})`, [0, 0, 0, 0, 0, c.total][i])),
+    ])
+  } else {
+    f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "", 0])
+  }
+  f.push([])
+
+  /** Los tres bloques de lo que no se pudo afirmar. Cada uno dice por qué y cuánto pesa. */
+  const bloque = (t: string[], filas: FilaCuenta[], total: number) => {
+    if (filas.length === 0) return
+    f.push([])
+    t.forEach(l => f.push([l]))
+    f.push([`${filas.length} comprobante(s) — total ${money(total)}`])
+    filas.forEach(x => f.push(fila(x)))
+  }
+
+  bloque([
+    "DEL SISTEMA ANTERIOR — no se puede decir si estaban pagos",
+    "El histórico migró los comprobantes pero NO su estado de pago ni su fecha.",
+    "No se cuentan como deuda ni como pagados: hace falta el dato de afuera.",
+  ], c.sinEstadoDePago, c.totalSinEstado)
+
+  bloque([
+    "CONCILIADOS PERO SIN NINGUNA FECHA — no se puede ubicar el pago en el tiempo",
+    "Dicen estar pagados, pero no tienen fecha de pago ni movimiento bancario enganchado.",
+  ], c.sinDatoDePago, c.totalSinDato)
+
+  bloque([
+    `ESTADO NO RECONOCIDO — ${c.estadosSinClasificar.join(", ")}`,
+    "No se descartan: hay que decidir de qué lado van.",
+  ], c.estadoDesconocido, c.totalDesconocido)
+
+  f.push([])
+  f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
+  return f
+}
+
+const COLS_CUENTAS: Columna[] = [
+  { ancho: 10 },                    // Subdiario
+  { ancho: 11 },                    // Fecha
+  { ancho: 6, z: ENTERO },          // Tipo
+  { ancho: 8, z: ENTERO },          // Pto Vta
+  { ancho: 11, z: ENTERO },         // Número
+  { ancho: 13 },                    // CUIT
+  { ancho: 42 },                    // Denominación
+  { ancho: 15, z: MONEDA },         // Neto Gravado
+  { ancho: 14, z: MONEDA },         // No Gravado
+  { ancho: 13, z: MONEDA },         // Exentas
+  { ancho: 14, z: MONEDA },         // Otros Tributos
+  { ancho: 13, z: MONEDA },         // IVA
+  { ancho: 16, z: MONEDA },         // Total
+  { ancho: 26 },                    // Cuenta contable
+  { ancho: 13 },                    // Estado hoy
+  { ancho: 13 },                    // Fecha de pago
+  { ancho: 34 },                    // Motivo
+]
+
 const COLS_ASIENTOS: Columna[] = [
   { ancho: 10 },                    // Subdiario
   { ancho: 11 },                    // Fecha
@@ -664,6 +763,8 @@ export function armarWorkbook(
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
+  /** Papeles 03 y 04. Van sólo si la pantalla pudo averiguar CUÁNDO se pagó cada comprobante. */
+  cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
@@ -676,6 +777,17 @@ export function armarWorkbook(
   hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
     `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
   hoja(wb, "05 Provision", hojaDeAsientos(libro.provisiones), COLS_ASIENTOS)
+  // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187).
+  if (cuentas?.pagar) {
+    hoja(wb, "04 Cuentas a pagar",
+      hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
+        libro.ejercicio.fechaCierre), COLS_CUENTAS)
+  }
+  if (cuentas?.cobrar) {
+    hoja(wb, "03 Cuentas a cobrar",
+      hojaDeCuentas(cuentas.cobrar, `CUENTAS A COBRAR — ejercicio ${libro.ejercicio.etiqueta}`,
+        libro.ejercicio.fechaCierre), COLS_CUENTAS)
+  }
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
@@ -713,8 +825,9 @@ export function descargarLibroDiario(
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
+  cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
 ) {
-  const wb = armarWorkbook(libro, templates, hacienda, insumos, campo)
+  const wb = armarWorkbook(libro, templates, hacienda, insumos, campo, cuentas)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

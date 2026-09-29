@@ -3260,6 +3260,43 @@ export function correrCasos(): Resultado[] {
       sinFecha.filas.length === 0 && sinFecha.sinDatoDePago.length === 1 &&
       sinFecha.totalSinDato === 6_000_000, "A-FEAT-1187")
 
+    // 🧨 EL SEGUNDO NÚMERO FALSO, y lo atrapó la red: TODAS las ventas están en estado
+    //    «a cobrar» —con espacio—, que no estaba en ninguna lista. Los $103.044.319,07 del
+    //    ejercicio desaparecían del papel sin dejar rastro.
+    const aCobrar = armarCuentasAlCierre([comp("a cobrar", null, 103_044_319.07, "Cliente")], CIERRE)
+    chequear("Balance · cuentas", "🔑 «a cobrar» (con espacio) SÍ es una cuenta a cobrar",
+      "1 fila · 103044319.07", `${aCobrar.filas.length} fila · ${aCobrar.total}`,
+      aCobrar.filas.length === 1 && aCobrar.total === 103_044_319.07, "A-FEAT-1187")
+
+    // 🛑 LA RED: un estado que el módulo no conoce NO se tira, se informa con su nombre.
+    const raro = armarCuentasAlCierre([comp("en veremos", null, 777)], CIERRE)
+    chequear("Balance · cuentas", "🔑 Un estado desconocido no se descarta en silencio: se informa",
+      "1 desconocido · 777 · «en veremos»",
+      `${raro.estadoDesconocido.length} desconocido · ${raro.totalDesconocido} · «${raro.estadosSinClasificar.join(", ")}»`,
+      raro.estadoDesconocido.length === 1 && raro.totalDesconocido === 777 &&
+      raro.estadosSinClasificar[0] === "en veremos", "A-FEAT-1187")
+
+    // 🧨 EL CASO QUE DABA UN NÚMERO FALSO: el histórico no trae estado ni fecha de pago. Tomarlo
+    //    como «pendiente» daba $193.981.013,42 de deuda sobre $302 M de compras — el 64 %.
+    const delHistorico = armarCuentasAlCierre([{
+      ...comp("pendiente", null, 5_000_000, "Del sistema viejo"),
+      asiento: { ...comp("pendiente", null, 5_000_000).asiento, fuente: "historico" },
+    }], CIERRE)
+    chequear("Balance · cuentas", "🔑 El histórico NO se cuenta como deuda: no trae estado de pago",
+      "0 en el papel · 1 sin estado · 5000000",
+      `${delHistorico.filas.length} en el papel · ${delHistorico.sinEstadoDePago.length} sin estado · ${delHistorico.totalSinEstado}`,
+      delHistorico.filas.length === 0 && delHistorico.sinEstadoDePago.length === 1 &&
+      delHistorico.totalSinEstado === 5_000_000, "A-FEAT-1187")
+
+    // …pero si el histórico SÍ tiene una fecha de pago, manda la fecha como en todos los demás.
+    const historicoConFecha = armarCuentasAlCierre([{
+      ...comp("pendiente", "2026-08-01", 700),
+      asiento: { ...comp("pendiente", "2026-08-01", 700).asiento, fuente: "historico" },
+    }], CIERRE)
+    chequear("Balance · cuentas", "Histórico CON fecha posterior al cierre: sí es deuda",
+      "1 fila", `${historicoConFecha.filas.length} fila`,
+      historicoConFecha.filas.length === 1, "A-FEAT-1187")
+
     // 🎯 ADVERSARIO — «anterior» es de OTRO ejercicio: no se duplica la deuda entre balances.
     const anterior = armarCuentasAlCierre([comp("anterior", null, 9_000_000)], CIERRE)
     chequear("Balance · cuentas", "🔑 Un comprobante «anterior» NO es deuda de este ejercicio",

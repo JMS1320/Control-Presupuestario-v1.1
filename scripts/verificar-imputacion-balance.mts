@@ -22,6 +22,8 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta } from "../lib/
 import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta,
 } from "../lib/balance/libro-por-cuenta"
+import { armarCuentasAlCierre, type ComprobanteConPago } from "../lib/balance/cuentas-al-cierre"
+import { buscarFechasDePagoBancarias, type ClienteMinimo } from "../lib/balance/fechas-de-pago"
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -134,4 +136,72 @@ if (descuadres.length > 0) {
     `  ${(d.fecha || "").slice(0, 10).padEnd(11)} $ ${pesos(d.diferencia).padStart(14)}  ${String(d.nombre).slice(0, 42)}`,
   ))
   if (descuadres.length > 20) console.log(`  … y ${descuadres.length - 20} más (están todos en la solapa «Control» del Excel)`)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 💳 CUENTAS A PAGAR y A COBRAR al cierre (papeles 03 y 04)
+// ══════════════════════════════════════════════════════════════════════════════
+const { porComprobante, tablasQueFallaron } = await buscarFechasDePagoBancarias(
+  sb as unknown as ClienteMinimo,
+  [...libro.compras, ...libro.ventas].map(a => a.id),
+)
+if (tablasQueFallaron.length > 0) {
+  console.log(`
+⚠️ No se pudieron leer: ${tablasQueFallaron.join(", ")} — puede faltar alguna fecha de pago.`)
+}
+
+/** El estado de cada comprobante, que el libro no arrastra. */
+const estadoPorId = new Map<string, string>()
+for (const f of [...(arca.data ?? []), ...(ventas.data ?? []), ...(historico.data ?? [])]) {
+  const r = f as Record<string, unknown>
+  if (r.id) estadoPorId.set(String(r.id), String(r.estado ?? "pendiente"))
+}
+const fechaPagoPropiaPorId = new Map<string, string>()
+for (const f of [...(arca.data ?? []), ...(ventas.data ?? [])]) {
+  const r = f as Record<string, unknown>
+  if (r.id && r.fecha_pago) fechaPagoPropiaPorId.set(String(r.id), String(r.fecha_pago).slice(0, 10))
+}
+
+const conPago = (asientos: typeof libro.compras): ComprobanteConPago[] =>
+  asientos.map(a => {
+    const propia = fechaPagoPropiaPorId.get(a.id) ?? null
+    const banco = porComprobante.get(a.id) ?? null
+    return {
+      asiento: a,
+      estado: estadoPorId.get(a.id) ?? "pendiente",
+      fechaPago: propia ?? banco,
+      origenFecha: propia ? "fecha_pago" : banco ? "movimiento bancario" : "sin dato",
+    }
+  })
+
+for (const [titulo, asientos] of [
+  ["04 — CUENTAS A PAGAR al cierre", libro.compras],
+  ["03 — CUENTAS A COBRAR al cierre", libro.ventas],
+] as const) {
+  const c = armarCuentasAlCierre(conPago(asientos), ej.fechaCierre)
+  console.log(`
+══════ ${titulo} ══════`)
+  console.log(`  ${c.filas.length} comprobante(s)   $ ${pesos(c.total)}`)
+  if (c.pagadosDespues > 0) {
+    console.log(`  🔑 de ésos, ${c.pagadosDespues} figuran pagados HOY pero se pagaron DESPUÉS del cierre`)
+  }
+  c.filas.slice(0, 12).forEach(f => console.log(
+    `     ${f.asiento.subdiario}  $ ${pesos(f.asiento.total).padStart(15)}  ${f.asiento.denominacion.slice(0, 38).padEnd(38)} ${f.motivo}`,
+  ))
+  if (c.filas.length > 12) console.log(`     … y ${c.filas.length - 12} más`)
+  if (c.estadoDesconocido.length > 0) {
+    console.log(`  🛑 ESTADO NO RECONOCIDO: ${c.estadoDesconocido.length} por $ ${pesos(c.totalDesconocido)} — estados: ${c.estadosSinClasificar.join(", ")}`)
+    console.log("     (no se descartan: hay que decidir de qué lado van y agregarlos a la lista)")
+  }
+  if (c.sinEstadoDePago.length > 0) {
+    console.log(`  📦 DEL SISTEMA ANTERIOR: ${c.sinEstadoDePago.length} comprobantes por $ ${pesos(c.totalSinEstado)}`)
+    console.log("     (el histórico no migró estado de pago ni fecha: no se puede decir si estaban pagos)")
+  }
+  if (c.sinDatoDePago.length > 0) {
+    console.log(`  ⚠️ SIN PODER DETERMINAR: ${c.sinDatoDePago.length} marcados pagados/conciliados pero SIN NINGUNA FECHA — $ ${pesos(c.totalSinDato)}`)
+    console.log("     (no se inventan: no se sabe si al cierre estaban pagos o no)")
+    c.sinDatoDePago.slice(0, 5).forEach(f => console.log(
+      `     ${f.asiento.subdiario}  $ ${pesos(f.asiento.total).padStart(15)}  ${f.asiento.denominacion.slice(0, 38)}`,
+    ))
+  }
 }
