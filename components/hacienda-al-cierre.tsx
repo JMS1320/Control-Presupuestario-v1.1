@@ -29,7 +29,8 @@ import { toast } from "sonner"
 import type { Ejercicio } from "@/lib/balance/ejercicio"
 import {
   valuarHacienda, CRITERIOS,
-  type ValuacionHacienda, type PrecioMag, type PrecioMercado, type ExistenciaHacienda,
+  type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza,
+  type ExistenciaHacienda,
 } from "@/lib/balance/hacienda-stock"
 import {
   armarStockInsumos, desdeStockInsumo, PAPELES_SIN_ORIGEN, type StockInsumos,
@@ -57,7 +58,10 @@ export interface DatosHacienda {
   existencias: ExistenciaHacienda[]
   valuacion: ValuacionHacienda
   mag: PrecioMag[]
-  mercado: PrecioMercado[]
+  /** Entresurcos por kilo, **separado por sexo**: son dos endpoints con precios distintos. */
+  mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] }
+  /** Entresurcos por cabeza: vientres y toros. Cierra el hueco de vaca, vaquillona y toro. */
+  porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
   /** El mes que se usó para los precios, para que quede dicho en el papel. */
   mesPrecios: string
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
@@ -159,10 +163,24 @@ export function HaciendaAlCierre({
         .select("*, categoria:categorias_insumo(nombre, ambito, unidad_medida)")
       if (errIns) throw new Error(errIns.message)
 
-      const [mag, hembras] = await Promise.all([
+/**
+       * 🐄 **Las CUATRO fuentes de precio.** Se piden juntas y **ninguna corta a las otras**: si un
+       * mercado no responde, las categorías que dependían de él quedan como hueco y el resto se
+       * valúa igual. Un papel incompleto sirve; uno que no se puede generar, no.
+       *
+       * ⚠️ **Los machos se agregaron el 2026-09-29** — el usuario lo notó: *«veo también que en
+       * precios no están los de los machos»*. El endpoint ya existía con `sexo=macho` y **nunca se
+       * había llamado**: el ternero se valuaba derivando de la hembra.
+       */
+      const [mag, hembras, machos, vientres, toros] = await Promise.all([
         pedir<PrecioMag>(`/api/precios-mag?desde=${desde}&hasta=${hasta}`),
         pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=hembra`),
+        pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=macho`),
+        pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${desde}&hasta=${hasta}`),
+        pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${desde}&hasta=${hasta}`),
       ])
+      const mercado = { macho: machos, hembra: hembras }
+      const porCabeza = { vientres, toros }
 
       const ganConfig: Record<string, number> = {}
       for (const l of (lotesGan ?? []) as Array<Record<string, unknown>>) {
@@ -211,8 +229,8 @@ export function HaciendaAlCierre({
       ) / 1000
 
       const d: DatosHacienda = {
-        existencias, mag, mercado: hembras,
-        valuacion: valuarHacienda(existencias, mag, hembras, numericos, pesos),
+        existencias, mag, mercado, porCabeza,
+        valuacion: valuarHacienda(existencias, mag, mercado, numericos, pesos, porCabeza),
         pesos,
         mesPrecios: etiqueta,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
@@ -254,7 +272,7 @@ export function HaciendaAlCierre({
         </Button>
         {datos && (
           <span className="text-xs text-muted-foreground">
-            Precios de <strong>{datos.mesPrecios}</strong> (el mes entero) · Cañuelas {datos.mag.length} categorías · Entresurcos {datos.mercado.length}
+            Precios de <strong>{datos.mesPrecios}</strong> (el mes entero) · Cañuelas {datos.mag.length} · terneras {datos.mercado.hembra.length} · terneros {datos.mercado.macho.length} · vientres {datos.porCabeza.vientres.length} · toros {datos.porCabeza.toros.length}
           </span>
         )}
       </div>

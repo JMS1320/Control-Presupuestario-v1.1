@@ -22,7 +22,7 @@ import * as XLSX from "xlsx"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
-import type { ValuacionHacienda, PrecioMag, PrecioMercado } from "./hacienda-stock"
+import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
@@ -397,7 +397,12 @@ function hojaDeHacienda(h: ValuacionHacienda, fechaCierre: string, mesPrecios: s
 }
 
 /** Los precios que se usaron, para que la valuación se pueda auditar y no haya que creerle. */
-function hojaDePrecios(mag: PrecioMag[], mercado: PrecioMercado[], mesPrecios: string): unknown[][] {
+function hojaDePrecios(
+  mag: PrecioMag[],
+  mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] },
+  porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] },
+  mesPrecios: string,
+): unknown[][] {
   const f: unknown[][] = []
   f.push([`PRECIOS DE REFERENCIA — mes completo de ${mesPrecios}`])
   f.push(["Se toma el mes entero, no un día, para que sea representativo."])
@@ -406,9 +411,18 @@ function hojaDePrecios(mag: PrecioMag[], mercado: PrecioMercado[], mesPrecios: s
   f.push(["Familia", "Calidad", "Corte", "Mínimo", "Máximo", "Promedio", "Mediana"])
   mag.forEach(m => f.push([m.familia, m.calidad, m.corte ?? "", m.minimo, m.maximo, m.promedio, m.mediana]))
   f.push([])
+  f.push(["ENTRESURCOS Y CORRALES — POR CABEZA (vientres y toros)"])
+  f.push(["Un vientre o un toro NO se valúan por kilo: valen lo que valen."])
+  f.push(["Categoría", "Cabezas operadas", "Promedio", "Máximo", "Mínimo"])
+  for (const [tipo, filas] of Object.entries(porCabeza)) {
+    filas.forEach(m => f.push([`${tipo} · ${m.categoria}`, m.cantidad, m.promedio, m.maximo, m.minimo]))
+  }
+  f.push([])
   f.push(["ENTRESURCOS Y CORRALES — por rango de kilos"])
   f.push(["Categoría", "Desde kg", "Hasta kg", "Prom. $/kg", "Máx. $/kg", "Mín. $/kg"])
-  mercado.forEach(m => f.push([m.categoria, m.pesoLo, m.pesoHi ?? "sin tope", m.promKilo, m.kiloMax, m.kiloMin]))
+  for (const [sexo, filas] of Object.entries(mercado)) {
+    filas.forEach(m => f.push([`${sexo} · ${m.categoria}`, m.pesoLo, m.pesoHi ?? "sin tope", m.promKilo, m.kiloMax, m.kiloMin]))
+  }
   return f
 }
 
@@ -508,7 +522,12 @@ function hojaDeSementeras(s: Sementeras, fechaCierre: string): unknown[][] {
 export function armarWorkbook(
   libro: LibroDiario,
   templates?: TemplatesDelEjercicio,
-  hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+  hacienda?: {
+    valuacion: ValuacionHacienda; mag: PrecioMag[]
+    mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] }
+    porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
+    mesPrecios: string
+  },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
 ): XLSX.WorkBook {
@@ -526,7 +545,7 @@ export function armarWorkbook(
   }
   if (hacienda) {
     hoja(wb, "02 Hacienda", hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios), COLS_HACIENDA)
-    hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios), COLS_PRECIOS)
+    hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.porCabeza, hacienda.mesPrecios), COLS_PRECIOS)
   }
   if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre), COLS_INSUMOS)
   if (campo) {
@@ -546,7 +565,12 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
 export function descargarLibroDiario(
   libro: LibroDiario, empresa: string,
   templates?: TemplatesDelEjercicio,
-  hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
+  hacienda?: {
+    valuacion: ValuacionHacienda; mag: PrecioMag[]
+    mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] }
+    porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
+    mesPrecios: string
+  },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
 ) {

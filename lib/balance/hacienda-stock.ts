@@ -34,8 +34,16 @@ export interface ExistenciaHacienda {
   cabezas: number
 }
 
-/** De dónde sale el precio de referencia. */
-export type FuentePrecio = "mag" | "entresurcos" | "manual"
+/**
+ * De dónde sale el precio de referencia.
+ *
+ * - `mag`          — Mercado Agroganadero de Cañuelas, **por kilo**, categoría comercial.
+ * - `entresurcos`  — Entresurcos, **por kilo**, por rango de peso (terneros y terneras).
+ * - `porCabeza`    — Entresurcos, **por CABEZA**: vientres y toros. Un vientre no se valúa por
+ *                    kilo, así que este precio **no se multiplica por peso**.
+ * - `manual`       — no hay mercado publicado: lo carga el usuario.
+ */
+export type FuentePrecio = "mag" | "entresurcos" | "porCabeza" | "manual"
 
 /**
  * Cómo se valúa una categoría. Transcripto de la planilla del usuario.
@@ -60,7 +68,18 @@ export interface CriterioValuacion {
   magCorte?: string
   /** Qué columna del mercado usa: él escribe «máximo», «medio»… */
   magCampo?: "maximo" | "minimo" | "promedio" | "mediana"
-  /** Entresurcos: sexo y rango de kilos. */
+  /** Entresurcos por cabeza: `vientres` o `toros`. */
+  tipoPorCabeza?: "vientres" | "toros"
+  /**
+   * La categoría tal como la publica Entresurcos. Se compara **sin tildes ni puntuación**: la
+   * fuente escribe `Gtia.` sin tilde y con puntos irregulares, así que una comparación literal
+   * no encuentra nada — y el síntoma sería «no hay precio», que se confunde con «no se publicó».
+   */
+  categoriaPorCabeza?: string
+  /** Qué columna usar de esa tabla. */
+  campoPorCabeza?: "promedio" | "maximo" | "minimo"
+
+  /** Entresurcos por kilo: sexo y rango de kilos. */
   sexo?: "macho" | "hembra"
   pesoDesde?: number
   pesoHasta?: number
@@ -92,15 +111,23 @@ export interface CriterioValuacion {
 export const CRITERIOS: CriterioValuacion[] = [
   {
     categoria: "Vaca",
-    criterio: "vaca con gtía de preñez MEDIO × 90 % — por cabeza",
-    // El mercado de vacas con garantía de preñez no se publica en MAG ni en Entresurcos:
-    // es un precio que consigue él. Por eso nace como hueco y no como un supuesto.
-    fuente: "manual", factor: 0.9, porCabeza: true,
+    criterio: "Vacas C. Gtía. Preñez MEDIO (Entresurcos, promedio) × 90 % — por cabeza",
+    /**
+     * ✅ **Dejó de ser un hueco el 2026-09-29.** Hasta entonces esto decía `manual` porque yo no
+     * sabía de dónde sacar el precio de un vientre. El usuario lo señaló: *«mi categoría vaca es
+     * vaca c/ gtía de preñez medio uso»*, con el link a `entresurcosycorralesya.com/vientres.html`.
+     * La categoría existe **textual** en la fuente. Son **177 cabezas** que no se valuaban.
+     */
+    fuente: "porCabeza", tipoPorCabeza: "vientres",
+    categoriaPorCabeza: "Vacas C. Gtia. Preñez Medio", campoPorCabeza: "promedio",
+    factor: 0.9, porCabeza: true,
   },
   {
     categoria: "Vaquillona Preñada",
-    criterio: "vaca con gtía de preñez NUEVA × 90 % — por cabeza",
-    fuente: "manual", factor: 0.9, porCabeza: true,
+    criterio: "Vacas C. Gtía. Preñez NUEVA (Entresurcos, promedio) × 90 % — por cabeza",
+    fuente: "porCabeza", tipoPorCabeza: "vientres",
+    categoriaPorCabeza: "Vacas C. Gtia. Preñez Nueva", campoPorCabeza: "promedio",
+    factor: 0.9, porCabeza: true,
   },
   {
     categoria: "Vaca CUT/Descarte",
@@ -122,10 +149,17 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Toro",
-    criterio: "novillo regular +490 × 70 % × el peso de la pesada",
-    fuente: "mag", magFamilia: "NOVILLOS", magCalidad: "Regular", magCampo: "promedio",
-    // *«poner dato de pesada si hay, sino poner que no hay dato de pesada»* — NO se estima.
-    factor: 0.7, pesoKg: null,
+    /**
+     * ⚠️ **Cambió de fuente el 2026-09-29.** Antes se valuaba como un novillo por kilo (MAG). El
+     * usuario lo corrigió: *«tomar de surcos, toros. Precio mínimo de un A.ANGUS GRAL. COLORADO»*.
+     *
+     * 🔑 Un toro es **reproductor**, no carne: su precio es por cabeza y no tiene nada que ver con
+     * lo que pesa. Valuarlo por kilo era conceptualmente equivocado, no sólo impreciso.
+     */
+    criterio: "A.ANGUS GRAL. COLORADO, precio MÍNIMO (Entresurcos toros) — por cabeza",
+    fuente: "porCabeza", tipoPorCabeza: "toros",
+    categoriaPorCabeza: "A.ANGUS GRAL. COLORADO", campoPorCabeza: "minimo",
+    factor: 1, porCabeza: true,
   },
   {
     categoria: "Torito",
@@ -142,8 +176,18 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Ternero Recria",
-    criterio: "10 % más que la hembra × el peso de la pesada",
-    fuente: "entresurcos", derivaDe: "Ternera Recria", factor: 1.1, pesoKg: null,
+    /**
+     * ⚠️ **Dejó de derivarse de la hembra el 2026-09-29.** El usuario: *«debe ser de la categoría
+     * de surcos pero del **ternero macho**»*. Entresurcos publica los machos en su propio módulo
+     * —el mismo endpoint con `sexo=macho`— y **no se estaban pidiendo**: *«veo también que en
+     * precios no están los de los machos»*.
+     *
+     * 📌 El 10 % era una **aproximación suya para cuando no tenía el dato**. Teniéndolo, se usa el
+     * dato.
+     */
+    criterio: "ternero macho 250-290 kg a precio MÁXIMO × el peso de la pesada",
+    fuente: "entresurcos", sexo: "macho", pesoDesde: 250, pesoHasta: 290,
+    factor: 1, pesoKg: null,
   },
 ]
 
@@ -156,6 +200,18 @@ export interface PrecioMag {
   maximo: number
   promedio: number
   mediana: number
+}
+
+/**
+ * Fila de Entresurcos **por cabeza** (vientres y toros).
+ * Ver `app/api/precios-por-cabeza/route.ts`, que explica de dónde sale y cómo mantenerlo.
+ */
+export interface PrecioCabeza {
+  categoria: string
+  cantidad: number
+  promedio: number
+  maximo: number
+  minimo: number
 }
 
 /** Fila de Entresurcos (subconjunto de `FilaMercado`). */
@@ -237,10 +293,44 @@ function precioDeMag(c: CriterioValuacion, mag: PrecioMag[]): { precio: number; 
   }
 }
 
+/**
+ * Busca el precio **por cabeza** de vientres o toros.
+ *
+ * 🔑 **La comparación va sin tildes ni puntuación, y es la clave de que esto funcione.** La fuente
+ * escribe `Vacas C. Gtia. Preñez Medio` —sin tilde en «Gtia», con puntos irregulares— y una
+ * comparación literal no encuentra nada. El síntoma sería *«no hay precio»*, que se confunde con
+ * *«el mercado no publicó»*, y nadie iría a buscar un error de puntuación.
+ */
+function precioPorCabeza(
+  c: CriterioValuacion,
+  porCabeza: Record<"vientres" | "toros", PrecioCabeza[]>,
+): { precio: number; origen: string } | null {
+  if (!c.tipoPorCabeza || !c.categoriaPorCabeza) return null
+  const sinRuido = (s: string) => norm(s).replace(/[.,]/g, "").replace(/\s+/g, " ")
+  const buscada = sinRuido(c.categoriaPorCabeza)
+
+  const fila = (porCabeza[c.tipoPorCabeza] ?? []).find(f => sinRuido(f.categoria) === buscada)
+  if (!fila) return null
+
+  const campo = c.campoPorCabeza ?? "promedio"
+  const precio = fila[campo]
+  // ⚠️ Cantidad 0 = el mercado NO operó esa categoría en el período. El precio que publica es 0 y
+  //    tomarlo valuaría el rodeo en cero: se trata como «no hay precio», que es lo que pasa.
+  if (!(precio > 0)) return null
+
+  return {
+    precio,
+    origen: `Entresurcos ${c.tipoPorCabeza} · ${fila.categoria} · ${campo}` +
+      (fila.cantidad > 0 ? ` (${fila.cantidad} cab. operadas)` : ""),
+  }
+}
+
 /** Busca en Entresurcos el rango de kilos que pide el criterio. */
 function precioDeMercado(c: CriterioValuacion, filas: PrecioMercado[]): { precio: number; origen: string } | null {
   const desde = c.pesoDesde ?? 0
   const hasta = c.pesoHasta ?? Infinity
+  // ⚠️ Recibe **la lista del sexo que pide el criterio**, elegida por quien llama. Ver la nota de
+  //    `mercado` en `valuarHacienda`: pasarle una sola lista fue un bug real.
   // Se toma el rango que SOLAPA con el pedido; si hay varios, el promedio de sus máximos.
   const candidatas = filas.filter(f => f.pesoLo <= hasta && (f.pesoHi ?? Infinity) >= desde)
   if (candidatas.length === 0) return null
@@ -262,10 +352,20 @@ function precioDeMercado(c: CriterioValuacion, filas: PrecioMercado[]): { precio
 export function valuarHacienda(
   existencias: ExistenciaHacienda[],
   mag: PrecioMag[],
-  mercado: PrecioMercado[],
+  /**
+   * Entresurcos **por kilo**, separado por sexo.
+   *
+   * 🔑 **Son dos listas y no una a propósito**: el módulo de terneros y el de terneras son
+   * endpoints distintos con precios distintos. Pasar una sola hacía que el criterio del macho
+   * leyera precios de hembra **sin que nada lo dijera** — un número plausible y equivocado, que
+   * es el peor.
+   */
+  mercado: { macho: PrecioMercado[]; hembra: PrecioMercado[] },
   preciosManuales: Record<string, number> = {},
   /** Los kilos medidos por categoría. Vacío = se cae al fallback de cada criterio. */
   pesos: PesoCategoria[] = [],
+  /** Entresurcos por cabeza: vientres y toros. Vacío = esas categorías quedan como hueco. */
+  porCabeza: Record<"vientres" | "toros", PrecioCabeza[]> = { vientres: [], toros: [] },
 ): ValuacionHacienda {
   const porCategoria = new Map(CRITERIOS.map(c => [c.categoria, c]))
   const sinCriterio = existencias
@@ -286,7 +386,8 @@ export function valuarHacienda(
       return base == null ? null : { precio: base, origen: `derivado de «${c.derivaDe}»` }
     }
     if (c.fuente === "mag") return precioDeMag(c, mag)
-    if (c.fuente === "entresurcos") return precioDeMercado(c, mercado)
+    if (c.fuente === "porCabeza") return precioPorCabeza(c, porCabeza)
+    if (c.fuente === "entresurcos") return precioDeMercado(c, mercado[c.sexo ?? "hembra"] ?? [])
     return null // manual y sin carga = hueco
   }
 
