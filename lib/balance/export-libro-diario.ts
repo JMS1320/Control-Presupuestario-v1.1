@@ -437,9 +437,9 @@ function hojaDeCuentas(c: CuentasAlCierre, titulo: string, fechaCierre: string):
   }
 
   bloque([
-    "DEL SISTEMA ANTERIOR — no se puede decir si estaban pagos",
+    "DEL SISTEMA ANTERIOR — SE DAN POR PAGADOS (decisión del usuario, 29/09/2026)",
     "El histórico migró los comprobantes pero NO su estado de pago ni su fecha.",
-    "No se cuentan como deuda ni como pagados: hace falta el dato de afuera.",
+    "No se cuentan como deuda al cierre. Se listan para que se vea en qué se apoya el papel.",
   ], c.sinEstadoDePago, c.totalSinEstado)
 
   bloque([

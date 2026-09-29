@@ -41,9 +41,18 @@
  * defecto y **la deuda al cierre daba $193.981.013,42** — sobre $302 M de compras, o sea el 64 %.
  * El número era absurdo y por eso se miró; con el histórico aparte queda en su orden real.
  *
- * Van a `sinEstadoDePago`, con su total y dichos por lo que son: **de estos comprobantes la app no
- * sabe nada sobre su pago**, y la respuesta tiene que venir de otro lado (el sistema viejo, o el
- * propio usuario). Asumir que están pagos sería igual de inventado que asumir que no.
+ * ✅ **RESUELTO por el usuario el 2026-09-29: «el bloque histórico dalo como pago sí».** Son los
+ * comprobantes de jul–dic 2025 que migraron del sistema anterior: **se consideran pagados** y **no**
+ * son cuentas a pagar al cierre.
+ *
+ * 📌 **Pero se siguen listando**, en `sinEstadoDePago`, con su total —**$162.885.886,68** en el
+ * ejercicio 25/26 de MSA—. No es un descarte silencioso: es una **decisión declarada**, y el papel
+ * tiene que poder mostrar sobre qué se apoya. Si alguna vez aparece un impago viejo, está la lista
+ * para revisarlo.
+ *
+ * ⚠️ **Y la excepción se respeta**: si un comprobante del histórico **sí** tiene fecha de pago —o
+ * está conciliado contra un movimiento bancario— manda la fecha, como con cualquier otro. La regla
+ * es «sin dato, se da por pagado», no «el histórico se ignora».
  *
  * ## 📌 Lo que este módulo NO cubre todavía
  *
@@ -77,7 +86,7 @@ export type MotivoCuenta =
   | "no se pagó nunca"
   | "se pagó DESPUÉS del cierre"
   | "conciliado, pero sin saber cuándo"
-  | "del sistema anterior: no trae estado de pago"
+  | "del sistema anterior: se da por pagado (decisión del usuario 2026-09-29)"
 
 export interface FilaCuenta {
   asiento: AsientoLibroDiario
@@ -98,7 +107,9 @@ export interface CuentasAlCierre {
   totalSinDato: number
   /**
    * Los que vienen del **sistema anterior**, que no migró estado de pago ni fecha.
-   * No se pueden clasificar ni para un lado ni para el otro: se listan y se dicen.
+   *
+   * ✅ **Se dan por PAGADOS** por decisión del usuario (2026-09-29) — no son deuda al cierre.
+   * Se listan igual, con su total, para que el papel muestre en qué se apoya.
    */
   sinEstadoDePago: FilaCuenta[]
   totalSinEstado: number
@@ -174,9 +185,16 @@ export function armarCuentasAlCierre(
     /**
      * 🧨 El histórico primero, ANTES de mirar el estado: no tiene ninguno, y el default de la
      * pantalla («pendiente») lo convertiría en deuda. Así daba $194 M de cuentas a pagar.
+     *
+     * ✅ **Decisión del usuario (2026-09-29): se dan por PAGADOS.** No entran al papel, pero quedan
+     * listados con su total, porque una decisión declarada no es lo mismo que un descarte en
+     * silencio (§ 🧮): el papel tiene que poder mostrar sobre qué se apoya.
      */
     if (c.asiento.fuente === "historico" && !c.fechaPago) {
-      sinEstadoDePago.push({ ...base, motivo: "del sistema anterior: no trae estado de pago" })
+      sinEstadoDePago.push({
+        ...base,
+        motivo: "del sistema anterior: se da por pagado (decisión del usuario 2026-09-29)",
+      })
       continue
     }
 

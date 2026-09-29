@@ -195,7 +195,7 @@ for (const [titulo, asientos] of [
   }
   if (c.sinEstadoDePago.length > 0) {
     console.log(`  📦 DEL SISTEMA ANTERIOR: ${c.sinEstadoDePago.length} comprobantes por $ ${pesos(c.totalSinEstado)}`)
-    console.log("     (el histórico no migró estado de pago ni fecha: no se puede decir si estaban pagos)")
+    console.log("     (se dan por PAGADOS — decisión del usuario 29/09/2026; se listan para que se vea)")
   }
   if (c.sinDatoDePago.length > 0) {
     console.log(`  ⚠️ SIN PODER DETERMINAR: ${c.sinDatoDePago.length} marcados pagados/conciliados pero SIN NINGUNA FECHA — $ ${pesos(c.totalSinDato)}`)

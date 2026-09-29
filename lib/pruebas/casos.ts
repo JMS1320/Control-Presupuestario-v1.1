@@ -3283,7 +3283,7 @@ export function correrCasos(): Resultado[] {
       ...comp("pendiente", null, 5_000_000, "Del sistema viejo"),
       asiento: { ...comp("pendiente", null, 5_000_000).asiento, fuente: "historico" },
     }], CIERRE)
-    chequear("Balance · cuentas", "🔑 El histórico NO se cuenta como deuda: no trae estado de pago",
+    chequear("Balance · cuentas", "🔑 El histórico se da por PAGADO (decisión del usuario): no es deuda",
       "0 en el papel · 1 sin estado · 5000000",
       `${delHistorico.filas.length} en el papel · ${delHistorico.sinEstadoDePago.length} sin estado · ${delHistorico.totalSinEstado}`,
       delHistorico.filas.length === 0 && delHistorico.sinEstadoDePago.length === 1 &&
