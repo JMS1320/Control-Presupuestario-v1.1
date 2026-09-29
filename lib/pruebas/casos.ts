@@ -66,7 +66,9 @@ import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
-import { mismoCertificado, agruparEnCertificados } from "@/lib/sicore/clave-certificado"
+import {
+  mismoCertificado, agruparEnCertificados, certificadosConVariosPagos, clavePago,
+} from "@/lib/sicore/clave-certificado"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
@@ -3320,58 +3322,114 @@ export function correrCasos(): Resultado[] {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // 🧾 UN CERTIFICADO = UN PAGO (A-BUG-1222). El caso real de BIOFARMA.
+  // 🧾 UN CERTIFICADO = UN PAGO, y lo que define el pago es LA TRANSFERENCIA
+  //    (A-BUG-1222). Los casos reales de BIOFARMA, LONGO y ALCORTA.
   // ══════════════════════════════════════════════════════════════════════════
   {
-    const ret = (fechaPago: string, retencion: number, quincena = "26-09 - 2da") => ({
+    let n = 0
+    const ret = (
+      fechaPago: string, retencion: number,
+      opts: { grupo?: string; fc?: string; quincena?: string; tipo?: string; cert?: string } = {},
+    ) => ({
       cuit_emisor: "30571438247", denominacion_emisor: "BIOFARMA S A",
-      tipo_sicore: "Bienes", quincena, fecha_pago: fechaPago, retencion,
+      tipo_sicore: opts.tipo ?? "Bienes", quincena: opts.quincena ?? "26-09 - 2da",
+      fecha_pago: fechaPago, retencion,
+      grupo_pago_id: opts.grupo ?? null,
+      factura_id: opts.fc ?? `fc-${++n}`,
+      nro_certificado: opts.cert ?? null,
+      anulado: false,
     })
 
-    // 🔑 EL CASO REAL, y falla con el código viejo: dos pagos de la MISMA quincena al MISMO
-    //    proveedor compartían certificado, y el PDF informaba $178.983,20 en vez de $69.213,15.
-    const veintiuno = ret("2026-09-21", 109_770.05)
-    const veintinueve = ret("2026-09-29", 69_213.15)
+    // 🔑 EL CASO ORIGINAL: dos pagos de la misma quincena son DOS certificados.
+    const a = ret("2026-09-21", 109_770.05)
+    const b = ret("2026-09-29", 69_213.15)
     chequear("SICORE · certificado", "🔑 Dos pagos de la misma quincena son DOS certificados",
-      "no comparten", mismoCertificado(veintiuno, veintinueve) ? "comparten" : "no comparten",
-      mismoCertificado(veintiuno, veintinueve) === false, "A-BUG-1222")
+      "no comparten", mismoCertificado(a, b) ? "comparten" : "no comparten",
+      mismoCertificado(a, b) === false, "A-BUG-1222")
 
-    // …y lo que SÍ se agrupa: varias facturas pagadas el mismo día (el caso Alcorta).
-    const mismaFecha = [ret("2026-09-29", 40_000), ret("2026-09-29", 29_213.15)]
-    chequear("SICORE · certificado", "Varias facturas del MISMO pago sí comparten certificado",
-      "1 certificado de 2 filas",
-      `${agruparEnCertificados(mismaFecha).length} certificado de ${agruparEnCertificados(mismaFecha)[0].length} filas`,
-      agruparEnCertificados(mismaFecha).length === 1 &&
-      agruparEnCertificados(mismaFecha)[0].length === 2, "A-BUG-1222")
+    // 🔑 LA PRECISIÓN DEL USUARIO: dos pagos DIRECTOS el MISMO DÍA también son dos certificados.
+    //    Mi primer arreglo usaba la fecha y este caso pasaba igual — o sea que no probaba nada.
+    const d1 = ret("2026-09-29", 100, { fc: "una" })
+    const d2 = ret("2026-09-29", 200, { fc: "otra" })
+    chequear("SICORE · certificado", "🔑 Dos pagos DIRECTOS del MISMO DÍA son dos certificados",
+      "no comparten", mismoCertificado(d1, d2) ? "comparten" : "no comparten",
+      mismoCertificado(d1, d2) === false, "A-BUG-1222")
 
-    // El caso completo de BIOFARMA: 3 pagos → 3 certificados, y el de hoy con SU importe.
-    const biofarma = [ret("2026-08-10", 39_260, "26-08 - 1ra"), veintiuno, veintinueve]
-    const grupos = agruparEnCertificados(biofarma)
-    const hoy = grupos.find(g => g[0].fecha_pago === "2026-09-29")!
-    chequear("SICORE · certificado", "🔑 BIOFARMA: 3 pagos → 3 certificados, y el de hoy son $69.213,15",
-      "3 certificados · 69213.15",
-      `${grupos.length} certificados · ${hoy.reduce((s, r) => s + r.retencion, 0)}`,
-      grupos.length === 3 && hoy.reduce((s, r) => s + r.retencion, 0) === 69_213.15, "A-BUG-1222")
+    // …y lo que SÍ comparte: dos facturas pagadas en la MISMA transferencia (el caso Alcorta).
+    const g1 = ret("2026-09-10", 158.26, { grupo: "d4a6320c", fc: "6328" })
+    const g2 = ret("2026-09-10", 1_408.67, { grupo: "d4a6320c", fc: "6347" })
+    chequear("SICORE · certificado", "🔑 Dos facturas de la MISMA transferencia comparten certificado",
+      "comparten", mismoCertificado(g1, g2) ? "comparten" : "no comparten",
+      mismoCertificado(g1, g2) === true, "A-BUG-1222")
 
-    // 🎯 ADVERSARIO — distinto régimen, mismo día: certificados separados. Cada régimen declara aparte.
-    const bienes = ret("2026-09-29", 100)
-    const servicios = { ...ret("2026-09-29", 200), tipo_sicore: "Servicios" }
-    chequear("SICORE · certificado", "Mismo día pero OTRO régimen: certificados separados",
-      "2", String(agruparEnCertificados([bienes, servicios]).length),
-      agruparEnCertificados([bienes, servicios]).length === 2, "A-BUG-1222")
+    // 🎯 Un grupo y un directo el mismo día: NO comparten. Es el 10/09 real de ALCORTA.
+    chequear("SICORE · certificado", "Un grupo y un pago directo del mismo día no comparten",
+      "no comparten", mismoCertificado(g1, ret("2026-09-10", 27_950)) ? "comparten" : "no comparten",
+      mismoCertificado(g1, ret("2026-09-10", 27_950)) === false, "A-BUG-1222")
 
-    // 🎯 ADVERSARIO — el CUIT con y sin guiones es el mismo proveedor.
-    const conGuiones = { ...ret("2026-09-29", 5), cuit_emisor: "30-57143824-7" }
-    chequear("SICORE · certificado", "El CUIT con guiones no abre un certificado aparte",
-      "1", String(agruparEnCertificados([bienes, conGuiones]).length),
-      agruparEnCertificados([bienes, conGuiones]).length === 1, "A-BUG-1222")
+    // 🎯 Mismo día y misma transferencia pero OTRO régimen: certificados separados.
+    chequear("SICORE · certificado", "Misma transferencia pero otro régimen: certificados separados",
+      "no comparten",
+      mismoCertificado(g1, { ...g1, tipo_sicore: "Servicios" }) ? "comparten" : "no comparten",
+      mismoCertificado(g1, { ...g1, tipo_sicore: "Servicios" }) === false, "A-BUG-1222")
 
-    // 🎯 ADVERSARIO — sin fecha de pago NO se agrupa: ante la duda, certificados separados.
-    //    Emitir uno donde iban dos le informa al proveedor una retención que no se le hizo.
-    const sinFecha = { ...ret("", 7) }
-    chequear("SICORE · certificado", "🔑 Sin fecha de pago NO se agrupa: ante la duda, separados",
-      "2", String(agruparEnCertificados([sinFecha, { ...sinFecha }]).length),
-      agruparEnCertificados([sinFecha, { ...sinFecha }]).length === 2, "A-BUG-1222")
+    // La clave del pago: el grupo manda sobre la factura, y la factura sobre la fecha.
+    chequear("SICORE · certificado", "La clave del pago es el grupo; sin grupo, el comprobante",
+      "grupo:d4a6320c · fc:sola",
+      `${clavePago(g1)} · ${clavePago(ret("2026-09-29", 1, { fc: "sola" }))}`,
+      clavePago(g1) === "grupo:d4a6320c" &&
+      clavePago(ret("2026-09-29", 1, { fc: "sola" })) === "fc:sola", "A-BUG-1222")
+
+    // 📌 Filas VIEJAS (sin grupo ni comprobante): lo único que quedó es la fecha.
+    chequear("SICORE · certificado", "En una fila vieja sin grupo ni comprobante, manda la fecha",
+      "fecha:2026-08-31",
+      clavePago({ fecha_pago: "2026-08-31", grupo_pago_id: null, factura_id: null }),
+      clavePago({ fecha_pago: "2026-08-31", grupo_pago_id: null, factura_id: null }) === "fecha:2026-08-31",
+      "A-BUG-1222")
+
+    // 🧮 EL CONTROL, con el caso real de BIOFARMA: un número cubriendo dos pagos.
+    const comoEstaba = [
+      { ...ret("2026-09-21", 109_770.05, { cert: "00002026000065", fc: "v1" }) },
+      { ...ret("2026-09-29", 69_213.15, { cert: "00002026000065", fc: "v2" }) },
+    ]
+    const hallazgos = certificadosConVariosPagos(comoEstaba)
+    chequear("SICORE · certificado", "🧮 El control detecta un certificado que cubre DOS pagos",
+      "1 hallazgo · 2 pagos · 178983.2",
+      `${hallazgos.length} hallazgo · ${hallazgos[0]?.pagos.length} pagos · ${hallazgos[0]?.totalSumado}`,
+      hallazgos.length === 1 && hallazgos[0].pagos.length === 2 &&
+      hallazgos[0].totalSumado === 178_983.2, "A-BUG-1222")
+
+    // …y con los números ya corregidos, el control queda en cero.
+    const yaCorregido = [
+      { ...ret("2026-09-21", 109_770.05, { cert: "00002026000065", fc: "v1" }) },
+      { ...ret("2026-09-29", 69_213.15, { cert: "00002026000070", fc: "v2" }) },
+    ]
+    chequear("SICORE · certificado", "Con los números corregidos, el control no encuentra nada",
+      "0", String(certificadosConVariosPagos(yaCorregido).length),
+      certificadosConVariosPagos(yaCorregido).length === 0, "A-BUG-1222")
+
+    // 🎯 ADVERSARIO — un grupo de 2 facturas bajo UN número NO es un hallazgo: es lo correcto.
+    const grupoOk = [
+      { ...g1, nro_certificado: "00002026000063" },
+      { ...g2, nro_certificado: "00002026000063" },
+    ]
+    chequear("SICORE · certificado", "🔑 Un grupo de 2 facturas con un solo número NO es un error",
+      "0", String(certificadosConVariosPagos(grupoOk).length),
+      certificadosConVariosPagos(grupoOk).length === 0, "A-BUG-1222")
+
+    // 🎯 ADVERSARIO — una retención ANULADA no dispara el control.
+    const conAnulada = [
+      { ...ret("2026-09-21", 1, { cert: "00002026000065", fc: "v1" }) },
+      { ...ret("2026-09-29", 2, { cert: "00002026000065", fc: "v2" }), anulado: true },
+    ]
+    chequear("SICORE · certificado", "Una retención anulada no dispara el control",
+      "0", String(certificadosConVariosPagos(conAnulada).length),
+      certificadosConVariosPagos(conAnulada).length === 0, "A-BUG-1222")
+
+    // Para MOSTRAR, se agrupa por el número guardado: es la identidad real del certificado.
+    chequear("SICORE · certificado", "Para mostrar se agrupa por el número: 2 filas, 1 certificado",
+      "1", String(agruparEnCertificados(grupoOk).length),
+      agruparEnCertificados(grupoOk).length === 1, "A-BUG-1222")
   }
 
   return r

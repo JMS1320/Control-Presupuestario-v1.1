@@ -2243,6 +2243,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       quincena,
       fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString().split('T')[0],
       factura_id: fila.id,
+      // 🔑 De qué PAGO salió: las facturas de un mismo grupo comparten certificado; un pago
+      //    directo estrena número, aunque sea el mismo día y el mismo proveedor (A-BUG-1222).
+      grupo_pago_id: fila.grupo_pago_id ?? null,
       fecha_emision: fila.fecha_emision ?? null,
       tipo_comprobante: fila.tipo_comprobante ?? null,
       punto_venta: fila.punto_venta ?? null,
@@ -2496,6 +2499,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           quincena,
           fecha_pago: fechaSicore,
           factura_id: guardadoPendienteCF.filaId,
+          grupo_pago_id: facturaEnProceso.grupo_pago_id ?? null,
           fecha_emision: facturaEnProceso.fecha_emision ?? null,
           tipo_comprobante: facturaEnProceso.tipo_comprobante ?? null,
           punto_venta: facturaEnProceso.punto_venta ?? null,

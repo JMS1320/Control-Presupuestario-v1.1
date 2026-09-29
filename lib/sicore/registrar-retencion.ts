@@ -2,9 +2,10 @@
  * Capa compartida (UI-agnóstica): registro de retención SICORE v2.
  *
  * 🔑 **La regla que ordena la numeración** (corregida 2026-09-29, A-BUG-1222):
- * **un certificado = un PAGO.** Varias facturas pagadas juntas comparten certificado; dos pagos
- * distintos —aunque caigan en la misma quincena y sean del mismo proveedor— son **dos** retenciones
- * con **dos** certificados. Ver el comentario largo en el bloque de reutilización de números.
+ * **un certificado = un PAGO**, y lo que define el pago es **la transferencia**, no el día. Varias
+ * facturas pagadas en un mismo grupo comparten certificado; dos pagos distintos —aunque caigan el
+ * mismo día, del mismo proveedor y del mismo régimen— son **dos** certificados. La regla vive en
+ * `lib/sicore/clave-certificado.ts` y acá se aplica al asignar el número.
  */
 // Mirror VERBATIM de registrarEnSicoreRetenciones (vista-facturas-arca) con `schema`
 // como parámetro (antes usaba schemaName del componente). Numeración perpetua de
@@ -19,6 +20,14 @@ export interface RegistrarRetencionParams {
   fecha_pago: string
   factura_id?: string | null
   anticipo_id?: string | null
+  /**
+   * 🔑 **De qué PAGO salió.** `null` = pago directo (no agrupado).
+   *
+   * Es lo que define qué retenciones comparten CERTIFICADO: un certificado = un pago
+   * (A-BUG-1222). Sin esto, lo más fino disponible era la fecha, y dos pagos directos al mismo
+   * proveedor el mismo día compartían certificado — que es justo lo que no debe pasar.
+   */
+  grupo_pago_id?: string | null
   fecha_emision?: string | null
   tipo_comprobante?: number | null
   punto_venta?: number | null
@@ -40,10 +49,10 @@ export interface RegistrarRetencionParams {
  * Registra una retención en {schema}.sicore_retenciones (v2).
  * - Bloquea si la quincena está 'declarada'.
  * - Hereda 'cerrada' si la quincena ya estaba cerrada.
- * - Reutiliza nro_comprobante/nro_certificado si ya hay un registro no anulado
- *   del mismo cuit+tipo+quincena **Y DEL MISMO `fecha_pago`**; sino asigna el
- *   siguiente número perpetuo. Ver A-BUG-1222: sin la fecha, un segundo pago
- *   heredaba el certificado del primero y el PDF salía con las dos retenciones.
+ * - Reutiliza nro_comprobante/nro_certificado **sólo dentro del mismo GRUPO DE PAGO**
+ *   (cuit+tipo+quincena+grupo_pago_id). Un pago **directo** siempre estrena número.
+ *   Ver A-BUG-1222: antes se reusaba por quincena y un segundo pago heredaba el
+ *   certificado del primero, así que el PDF salía con las dos retenciones.
  * No interrumpe el flujo si falla (loguea).
  */
 export async function registrarEnSicoreRetenciones(schema: string, params: RegistrarRetencionParams) {
@@ -118,45 +127,40 @@ export async function registrarEnSicoreRetenciones(schema: string, params: Regis
       }
     }
 
-    // ── A-BUG-1222 — EL CERTIFICADO SE COMPARTE POR PAGO, NO POR QUINCENA ────────────────────
+    // ── A-BUG-1222 — UN CERTIFICADO = UN PAGO ────────────────────────────────────────────────
     //
-    // 🐞 Encontrado por el usuario el 2026-09-29, con BIOFARMA:
+    // 🐞 Encontrado por el usuario el 2026-09-29 con BIOFARMA:
     // > *«Hice un pago y el certificado que me genera contempla pago anterior dentro de la misma
-    // > quincena. **La agrupación es cuando lo pago agrupado, no agrupar siempre. Si son 2 pagos son
-    // > 2 retenciones.**»*
+    // > quincena. **La agrupación es cuando lo pago agrupado, no agrupar siempre.**»*
     //
-    // 🧨 Acá estaba: este bloque reusaba el número para **cualquier** retención del mismo
-    // `cuit + tipo + quincena`. Entonces un **segundo pago independiente** dentro de la misma
-    // quincena heredaba el certificado del primero — y como el PDF y el TXT agrupan por
-    // `nro_certificado` **sumando**, el certificado nuevo salía con la retención vieja adentro.
+    // Y precisado por él el mismo día, después de un primer arreglo mío que usaba la fecha:
+    // > *«El certificado debe ser por pago y no por día. **Lo que lo agrupa es la transferencia.**»*
     //
-    // 📌 **Los dos casos reales, medidos en la base:**
-    // - **BIOFARMA** (26-09 2da, abierta): 21/09 $109.770,05 + 29/09 $69.213,15 → cert `…000065`
-    //   informando **$178.983,20**, cuando el del 29/09 son $69.213,15.
-    // - **LONGO** (26-08 2da, cerrada): 18/08 $102.874,10 + 31/08 $134.817,20 → cert `…000055`
-    //   con **$237.691,30**.
+    // 🧨 **Lo que estaba mal**: el número se reusaba para cualquier retención del mismo
+    // `cuit + tipo + quincena`, así que un **segundo pago** de la quincena heredaba el certificado
+    // del primero — y el PDF, la descarga y el TXT agrupan por ese número **sumando**. Casos reales:
+    // BIOFARMA `…000065` informando $178.983,20 donde iban $69.213,15, y LONGO `…000055` con
+    // $237.691,30.
     //
-    // 🔑 **El discriminante es `fecha_pago`**, y es el que corresponde al criterio del usuario: lo
-    // que comparte certificado es **un pago**. Varias facturas pagadas juntas el mismo día comparten
-    // `fecha_pago` y siguen compartiendo certificado, que es justamente la agrupación que él quiere
-    // conservar. Dos pagos en días distintos son dos retenciones y **dos certificados**.
-    //
-    // ⚠️ **Y no alcanzaba mirar `origen`**: la fila del 29/09 se guardó como `'agrupacion'` —era un
-    // pago agrupado de verdad— así que por ese campo parecía correcta. Lo que estaba mal no era el
-    // origen, era el alcance de la reutilización.
-    const { data: mismoGrupo } = await supabase
-      .schema(schema)
-      .from('sicore_retenciones')
-      .select('nro_comprobante, nro_certificado')
-      .eq('cuit_emisor', params.cuit_emisor ?? '')
-      .eq('tipo_sicore', params.tipo_sicore)
-      .eq('quincena', params.quincena)
-      // 👇 LA CORRECCIÓN: el mismo PAGO, no la misma quincena.
-      .eq('fecha_pago', params.fecha_pago)
-      .eq('anulado', false)
-      .not('nro_comprobante', 'is', null)
-      .limit(1)
-      .maybeSingle()
+    // 🔑 **La regla, ahora que existe `grupo_pago_id`:**
+    // - **Pago agrupado** → se reusa el número del mismo grupo. Es la agrupación que el usuario
+    //   quiere conservar: varias facturas en una transferencia, un solo certificado.
+    // - **Pago directo** → **número nuevo siempre**. Dos directos del mismo día son dos pagos.
+    const { data: mismoGrupo } = params.grupo_pago_id
+      ? await supabase
+          .schema(schema)
+          .from('sicore_retenciones')
+          .select('nro_comprobante, nro_certificado')
+          .eq('cuit_emisor', params.cuit_emisor ?? '')
+          .eq('tipo_sicore', params.tipo_sicore)
+          .eq('quincena', params.quincena)
+          .eq('grupo_pago_id', params.grupo_pago_id)
+          .eq('anulado', false)
+          .not('nro_comprobante', 'is', null)
+          .limit(1)
+          .maybeSingle()
+      // Pago directo: no hay con quién compartir. Se pide número nuevo.
+      : { data: null }
 
     let nroComp: number
     let nroCert: string

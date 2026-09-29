@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { esNotaCredito as esNotaCreditoArca } from "@/lib/pagos/notas-credito"
-import { agruparEnCertificados, mismoCertificado } from "@/lib/sicore/clave-certificado"
+import { agruparEnCertificados } from "@/lib/sicore/clave-certificado"
 import { tomarEncargoCancelacionNC, type EncargoCancelacionNC } from "@/lib/pagos/encargo-cancelacion-nc"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
@@ -282,10 +282,18 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
                          * certificado del pago de hoy salía **sumado al pago anterior**: BIOFARMA
                          * informaba $178.983,20 cuando el pago del 29/09 retuvo $69.213,15.
                          *
-                         * 🔑 Ahora se agrupa por la **regla** —un certificado = un pago—, así que
-                         * sale bien **incluso sobre filas viejas** cuyo número quedó repetido.
+                         * 🔑 Se agrupa por el **número**, que es la identidad real del certificado
+                         * —es lo que el proveedor recibió y lo que ARCA ve—, y que **ya está bien
+                         * asignado** porque la corrección está en el registro, no acá. Los dos
+                         * números repetidos que existían se renumeraron (A-DAT-64).
+                         *
+                         * 🧮 Y que sigan estando bien lo verifica un control aparte:
+                         * `certificadosConVariosPagos`. Agrupar acá por la regla, en vez de por el
+                         * número, escondería el problema en lugar de mostrarlo.
                          */
-                        const mismoPago = registros.filter(x => !x.anulado && mismoCertificado(x, r))
+                        const mismoPago = registros.filter(
+                          x => !x.anulado && r.nro_certificado && x.nro_certificado === r.nro_certificado,
+                        )
                         onCertificado(mismoPago.length > 0 ? mismoPago : [r])
                       }}
                       title="Descargar Certificado de Retención"
@@ -3552,6 +3560,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     fecha_pago: string
     factura_id?: string | null
     anticipo_id?: string | null
+    /** De qué PAGO salió. `null` = pago directo. Define qué comparte certificado (A-BUG-1222). */
+    grupo_pago_id?: string | null
     // Datos de la FC (opcionales para anticipo sin FC vinculada aún)
     fecha_emision?: string | null
     tipo_comprobante?: number | null
@@ -3598,29 +3608,30 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // El nuevo registro hereda el estado actual de la quincena (cerrada o abierta)
       const nuevoEstadoQ = estadoQ === 'cerrada' ? 'cerrada' : 'abierta'
 
-      // ── A-BUG-1222 — UN CERTIFICADO = UN PAGO, no una quincena ──────────────────────────
+      // ── A-BUG-1222 — UN CERTIFICADO = UN PAGO ──────────────────────────────────────────
       //
       // 🧨 **Este es el camino GEMELO** del de `lib/sicore/registrar-retencion.ts`, con el mismo
-      // bug y arreglado el mismo día. Es § 🗺️ *«se arregló un camino de los dos»* en su forma
-      // pura: dos copias de la numeración, y tocar una sola habría dejado el bug vivo en la mitad
-      // de los pagos según desde dónde se cobre.
+      // bug y arreglado el mismo día. Es § 🗺️ *«se arregló un camino de los dos»* en su forma pura:
+      // dos copias de la numeración, y tocar una sola dejaba el bug vivo en la mitad de los pagos
+      // según desde qué pantalla se cobrara.
       //
-      // Reutilizar los números vale para **varias facturas de un mismo pago** (el caso Alcorta),
-      // no para dos pagos distintos de la misma quincena — que son dos retenciones. Por eso se
-      // agrega `fecha_pago`. El dossier completo, con los dos casos reales medidos (BIOFARMA y
-      // LONGO), está en el otro archivo.
-      const { data: mismoGrupo } = await supabase
-        .schema(schemaName)
-        .from('sicore_retenciones')
-        .select('nro_comprobante, nro_certificado')
-        .eq('cuit_emisor', params.cuit_emisor ?? '')
-        .eq('tipo_sicore', params.tipo_sicore)
-        .eq('quincena', params.quincena)
-        .eq('fecha_pago', params.fecha_pago)
-        .eq('anulado', false)
-        .not('nro_comprobante', 'is', null)
-        .limit(1)
-        .maybeSingle()
+      // La regla —un certificado = un PAGO, y lo que define el pago es la transferencia— vive en
+      // `lib/sicore/clave-certificado.ts`. Acá: se reusa el número **sólo dentro del mismo grupo de
+      // pago**; un pago directo estrena número siempre, aunque sea el mismo día y el mismo proveedor.
+      const { data: mismoGrupo } = params.grupo_pago_id
+        ? await supabase
+            .schema(schemaName)
+            .from('sicore_retenciones')
+            .select('nro_comprobante, nro_certificado')
+            .eq('cuit_emisor', params.cuit_emisor ?? '')
+            .eq('tipo_sicore', params.tipo_sicore)
+            .eq('quincena', params.quincena)
+            .eq('grupo_pago_id', params.grupo_pago_id)
+            .eq('anulado', false)
+            .not('nro_comprobante', 'is', null)
+            .limit(1)
+            .maybeSingle()
+        : { data: null }
 
       let nroComp: number
       let nroCert: string
@@ -4223,6 +4234,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         quincena,
         fecha_pago: facturaEnProceso.fecha_estimada || facturaEnProceso.fecha_vencimiento || new Date().toISOString().split('T')[0],
         factura_id: facturaEnProceso.id,
+        // 🔑 De qué PAGO salió: si la factura va en un grupo, todas las del grupo comparten
+        //    certificado; si es un pago directo queda `null` y estrena número (A-BUG-1222).
+        grupo_pago_id: facturaEnProceso.grupo_pago_id || null,
         fecha_emision: facturaEnProceso.fecha_emision,
         tipo_comprobante: facturaEnProceso.tipo_comprobante,
         punto_venta: facturaEnProceso.punto_venta,
@@ -4563,6 +4577,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       fecha_pago: fechaParaQuincena.split('T')[0],
       anticipo_id: anticipoSicoreEnProceso.id,
       factura_id: anticipoSicoreEnProceso.factura_id || null,
+      // Un anticipo se paga solo: no hay grupo, así que su certificado es propio (A-BUG-1222).
+      grupo_pago_id: null,
       cuit_emisor: anticipoSicoreEnProceso.cuit_proveedor,
       denominacion_emisor: anticipoSicoreEnProceso.nombre_proveedor,
       tipo_sicore: tipoSicoreAnt.tipo,
