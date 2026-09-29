@@ -62,6 +62,9 @@ import {
   detectarProveedoresConNC, esNotaCredito, abreviaturaComprobante,
   type ComprobanteParaNC,
 } from "@/lib/pagos/notas-credito"
+import {
+  armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
+} from "@/lib/balance/libro-por-cuenta"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
@@ -3062,6 +3065,147 @@ export function correrCasos(): Resultado[] {
       "debe 40.000 · descuenta 10.000",
       `debe ${conND[0]?.totalFacturas.toLocaleString("es-AR")} · descuenta ${conND[0]?.totalNotasCredito.toLocaleString("es-AR")}`,
       conND[0]?.totalFacturas === 40_000 && conND[0]?.totalNotasCredito === 10_000, "A-FEAT-1192")
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 📗 LIBRO DIARIO POR CUENTA CONTABLE — el formato de su «Excel - Compras»
+  //    (A-FEAT-1187). Agrupa, ordena, totaliza y deja lo no imputado a la vista.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const asiento = (
+      subdiario: string, cuenta: string, neto: number, iva: number, total: number,
+      nroCuenta = "", exento = 0,
+    ): AsientoLibroDiario => ({
+      id: `${subdiario}-${cuenta}-${total}`, fuente: "arca", subdiario,
+      fecha: null, tipo: 1, punto_venta: 1, numero: 1, cuit: "30000000007", denominacion: "X",
+      neto_gravado: neto, no_gravado: 0, exento, otros_tributos: 0, iva, total,
+      cuenta_contable: cuenta, nro_cuenta: nroCuenta, centro_costo: "",
+    })
+
+    // 🔑 EL CASO BASE: dos meses, dos cuentas, y los totales que tienen que salir.
+    const libro = armarLibroPorCuenta([
+      asiento("2025-07", "Combustibles", 100, 21, 121, "422106"),
+      asiento("2025-07", "Combustibles", 200, 42, 242, "422106"),
+      asiento("2025-07", "Aguadas", 50, 10.5, 60.5, "422125"),
+      asiento("2025-08", "Combustibles", 400, 84, 484, "422106"),
+    ])
+
+    chequear("Balance · por cuenta", "Agrupa por mes y por cuenta: 2 meses, y julio con 2 cuentas",
+      "2 meses · julio 2 cuentas",
+      `${libro.meses.length} meses · julio ${libro.meses[0]?.filas.length} cuentas`,
+      libro.meses.length === 2 && libro.meses[0].filas.length === 2, "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "Suma las dos facturas de la misma cuenta en una sola fila",
+      "300 · 2 comprobantes",
+      `${libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.netoGravado} · ` +
+      `${libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.comprobantes} comprobantes`,
+      libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.netoGravado === 300 &&
+      libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.comprobantes === 2, "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "El «Total general» del mes suma sus cuentas",
+      "423.50", String(libro.meses[0].total.total),
+      libro.meses[0].total.total === 423.5, "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "🔑 El total del ejercicio suma los totales mensuales",
+      "907.50", String(libro.totalGeneral.total),
+      libro.totalGeneral.total === 907.5, "A-FEAT-1187")
+
+    // Ordenado alfabéticamente, que es como él lo lee.
+    chequear("Balance · por cuenta", "Las cuentas salen ordenadas por nombre",
+      "Aguadas, Combustibles", libro.meses[0].filas.map(f => f.cuenta).join(", "),
+      libro.meses[0].filas[0].cuenta === "Aguadas", "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "Se queda con el número del plan de cuentas",
+      "422106", libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.nroCuenta || "(vacío)",
+      libro.meses[0].filas.find(f => f.cuenta === "Combustibles")?.nroCuenta === "422106", "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 1 — lo NO IMPUTADO no se esconde ni se descarta, y va AL FINAL del mes.
+    const conHuecos = armarLibroPorCuenta([
+      asiento("2025-07", "Zapatos", 100, 21, 121),
+      asiento("2025-07", "", 1000, 210, 1210),
+      asiento("2025-07", "Aguadas", 50, 10.5, 60.5),
+    ])
+    chequear("Balance · por cuenta", "🔑 Lo sin cuenta sale como NO IMPUTADO y va ÚLTIMO, no ordenado alfabéticamente",
+      "Aguadas, Zapatos, NO IMPUTADO", conHuecos.meses[0].filas.map(f => f.cuenta).join(", "),
+      conHuecos.meses[0].filas[2].cuenta === SIN_IMPUTAR, "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "🔑 Lo no imputado SUMA en el total del mes: no se descarta",
+      "1391.50", String(conHuecos.meses[0].total.total),
+      conHuecos.meses[0].total.total === 1391.5, "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "Dice cuánto falta imputar y qué porcentaje es",
+      "1 comprobante · 1210 · 86.96%",
+      `${conHuecos.sinImputar.comprobantes} comprobante · ${conHuecos.sinImputar.total} · ${conHuecos.sinImputar.porcentaje}%`,
+      conHuecos.sinImputar.comprobantes === 1 && conHuecos.sinImputar.total === 1210 &&
+      conHuecos.sinImputar.porcentaje === 86.96, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 2 — una cuenta escrita con espacios de más NO es otra cuenta.
+    const conEspacios = armarLibroPorCuenta([
+      asiento("2025-07", "Aguadas", 100, 21, 121),
+      asiento("2025-07", "  Aguadas  ", 100, 21, 121),
+    ])
+    chequear("Balance · por cuenta", "Una cuenta con espacios de más no abre una fila aparte",
+      "1 fila", `${conEspacios.meses[0].filas.length} fila`,
+      conEspacios.meses[0].filas.length === 1, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 3 — una cuenta con SÓLO espacios es «no imputado», no una cuenta llamada " ".
+    const soloEspacios = armarLibroPorCuenta([asiento("2025-07", "   ", 100, 21, 121)])
+    chequear("Balance · por cuenta", "🔑 Una cuenta que es sólo espacios cuenta como NO IMPUTADO",
+      SIN_IMPUTAR, soloEspacios.meses[0].filas[0].cuenta,
+      soloEspacios.meses[0].filas[0].cuenta === SIN_IMPUTAR, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 4 — la DIFERENCIA delata un comprobante cuyas partes no suman el total.
+    //    Es el control de INTEGRIDAD (§ 🚦): no hay explicación de negocio posible.
+    const roto = armarLibroPorCuenta([asiento("2025-07", "Aguadas", 100, 21, 999)])
+    chequear("Balance · por cuenta", "🔑 Si las partes no suman el total, la Diferencia lo dice",
+      "878", String(roto.meses[0].filas[0].diferencia),
+      roto.meses[0].filas[0].diferencia === 878, "A-FEAT-1187")
+
+    const sano = armarLibroPorCuenta([asiento("2025-07", "Aguadas", 100, 21, 121)])
+    chequear("Balance · por cuenta", "Y si suman, la Diferencia da cero",
+      "0", String(sano.meses[0].filas[0].diferencia),
+      sano.meses[0].filas[0].diferencia === 0, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 5 — el corte es el SUBDIARIO, no la fecha. Un comprobante de junio que entró
+    //    en el subdiario de agosto va a agosto. Es toda la regla del ejercicio.
+    const porSubdiario = armarLibroPorCuenta([
+      { ...asiento("2025-08", "Aguadas", 100, 21, 121), fecha: "2025-06-15" },
+    ])
+    chequear("Balance · por cuenta", "🔑 Manda el SUBDIARIO, no la fecha de la factura",
+      "mes 8", `mes ${porSubdiario.meses[0].mes}`,
+      porSubdiario.meses[0].mes === 8, "A-FEAT-1187")
+
+    // 🎯 ADVERSARIO 6 — LA FAC C. Una factura C no discrimina IVA: su total NO se abre por
+    //    columnas, va entero a «sin crédito fiscal». 🧨 Este caso nació de un bug REAL: sin esta
+    //    columna, el ejercicio 25/26 de MSA marcaba $25.948.119,79 de descuadre que no existía.
+    const facC: AsientoLibroDiario = {
+      id: "c", fuente: "arca", subdiario: "2025-07", fecha: null,
+      tipo: 11, punto_venta: 1, numero: 1, cuit: "30000000007", denominacion: "Monotributista",
+      neto_gravado: 0, no_gravado: 0, exento: 0, otros_tributos: 0, iva: 0, total: 1000,
+      cuenta_contable: "Aguadas", nro_cuenta: "", centro_costo: "",
+    }
+    const conFacC = armarLibroPorCuenta([facC])
+    chequear("Balance · por cuenta", "🔑 Una Fac C va entera a «sin crédito fiscal» y NO descuadra",
+      "sin crédito 1000 · diferencia 0",
+      `sin crédito ${conFacC.meses[0].filas[0].sinCredito} · diferencia ${conFacC.meses[0].filas[0].diferencia}`,
+      conFacC.meses[0].filas[0].sinCredito === 1000 && conFacC.meses[0].filas[0].diferencia === 0,
+      "A-FEAT-1187")
+
+    // Y en VENTAS la lista de tipos es otra: una Fac B de venta SÍ genera débito fiscal, así que
+    // se abre. Usar la lista de compras acá contaría como «sin crédito» plata que sí abre.
+    const facBVenta = armarLibroPorCuenta(
+      [{ ...facC, tipo: 6, neto_gravado: 826.45, iva: 173.55, total: 1000 }],
+      TIPOS_SIN_CREDITO_VENTAS,
+    )
+    chequear("Balance · por cuenta", "🔑 En VENTAS una Fac B sí se abre: la lista de tipos es distinta",
+      "sin crédito 0 · diferencia 0",
+      `sin crédito ${facBVenta.meses[0].filas[0].sinCredito} · diferencia ${facBVenta.meses[0].filas[0].diferencia}`,
+      facBVenta.meses[0].filas[0].sinCredito === 0 && facBVenta.meses[0].filas[0].diferencia === 0,
+      "A-FEAT-1187")
+
+    chequear("Balance · por cuenta", "Sin nada que imputar, el resumen lo dice y no divide por cero",
+      "0 · 0%", `${sano.sinImputar.comprobantes} · ${sano.sinImputar.porcentaje}%`,
+      sano.sinImputar.comprobantes === 0 && sano.sinImputar.porcentaje === 0, "A-FEAT-1187")
   }
 
   return r

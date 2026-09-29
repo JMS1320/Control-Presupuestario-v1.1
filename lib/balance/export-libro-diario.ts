@@ -21,6 +21,7 @@
 import * as XLSX from "xlsx"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
+import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -242,6 +243,139 @@ const COLS_SEMENTERAS: Columna[] = [
   { ancho: 9 },                     // Unidad
   { ancho: 15, z: MONEDA },         // Precio unitario
   { ancho: 16, z: MONEDA },         // Costo
+]
+
+/**
+ * 📗 La solapa **«Por cuenta contable»** — el formato de su «Excel - Compras».
+ *
+ * Columnas A..N **en su orden exacto**, porque es lo que él y el contador ya saben leer; lo que
+ * agregamos va **a la derecha del todo** (Q y R), para no correr el bloque familiar de importes.
+ *
+ * 🧮 **Todo lo que es una cuenta va como FÓRMULA**, no como número pegado (pedido explícito): la
+ * columna Diferencia, los «Total general» de cada mes, el total del ejercicio y el Control final.
+ * Así él cambia un importe y el papel se recalcula solo.
+ *
+ * ## Las dos mitades del control, que son distintas (§ 🚦)
+ *
+ * - **Diferencia** (columna K) es **integridad**: `Total − (neto + no gravado + exento + otros
+ *   tributos + IVA)`. Si no da cero, el papel se contradice solo. Frena.
+ * - **DDJJ IVA** (M a P) es **discrepancia** contra un papel de afuera: él pega el neto gravado de
+ *   la declaración y la app le resta el del libro. Avisa, no frena — y las celdas van **vacías**
+ *   porque ese número sale de la DDJJ, que la app no tiene.
+ */
+function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
+  const f: unknown[][] = []
+
+  f.push([titulo])
+  f.push(['Otros tributos va AL GASTO: adentro hay impuestos que no son percepciones (nota del usuario).'])
+  f.push(['Las percepciones se toman de ARCA y se restan aparte.'])
+  f.push([])
+  f.push(["", "", "", "", "", "", "", "", "", "", "", "", "DDJJ IVA — lo llena el usuario"])
+  f.push([
+    "Año", "Mes", "Cuenta Contable",
+    "Suma de Neto Gravado", "Suma de No Gravado", "Suma de Exento",
+    "Otros Tributos", "Suma de IVA", "Suma de Total",
+    "Sin crédito fiscal (Fac B y C)", "Diferencia Entre Total y suma de columnas", "",
+    "Neto Gravado DDJJ", "Diferencia", "Exento + No gravado + Monotributo", "Diferencia",
+    "Nro cuenta", "Comprobantes",
+  ])
+
+  /** Las filas (1-based, como las ve Excel) de cada «Total general» de mes, para el Control final. */
+  const filasTotalMes: number[] = []
+
+  for (const m of libro.meses) {
+    for (const fila of m.filas) {
+      const n = f.length + 1
+      f.push([
+        fila.anio, fila.mes, fila.cuenta,
+        money(fila.netoGravado), money(fila.noGravado), money(fila.exento),
+        money(fila.otrosTributos), money(fila.iva), money(fila.total),
+        money(fila.sinCredito),
+        conFormula(`I${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+J${n})`, fila.diferencia), "",
+        "", "", "", "",
+        fila.nroCuenta, fila.comprobantes,
+      ])
+    }
+
+    // «Total general» del mes: suma de las filas de arriba, como fórmula.
+    const desde = f.length + 1 - m.filas.length
+    const hasta = f.length
+    const n = f.length + 1
+    filasTotalMes.push(n)
+    f.push([
+      m.anio, m.mes, "Total general",
+      ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
+        conFormula(`SUM(${col}${desde}:${col}${hasta})`, [
+          m.total.netoGravado, m.total.noGravado, m.total.exento,
+          m.total.otrosTributos, m.total.iva, m.total.total, m.total.sinCredito,
+        ][i]),
+      ),
+      conFormula(`I${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+J${n})`, m.total.diferencia), "",
+      // 🔑 M y O van VACÍAS a propósito: las llena él con la DDJJ. N y P se calculan solas — es la
+      //    mejora sobre su planilla, donde la resta también la hacía a mano.
+      "", { t: "n", f: `IF(M${n}="","",M${n}-D${n})`, z: MONEDA },
+      "", { t: "n", f: `IF(O${n}="","",O${n}-(E${n}+F${n}))`, z: MONEDA },
+      "", m.total.comprobantes,
+    ])
+    f.push([])
+  }
+
+  // El total del ejercicio y el Control, que es el camino inverso: si la suma de los totales
+  // mensuales no da el total del ejercicio, la apertura perdió algo por el camino.
+  const nTotal = f.length + 1
+  f.push([
+    "", "", "TOTAL DEL EJERCICIO",
+    ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
+      conFormula(filasTotalMes.map(r => `${col}${r}`).join("+") || "0", [
+        libro.totalGeneral.netoGravado, libro.totalGeneral.noGravado, libro.totalGeneral.exento,
+        libro.totalGeneral.otrosTributos, libro.totalGeneral.iva, libro.totalGeneral.total,
+        libro.totalGeneral.sinCredito,
+      ][i]),
+    ),
+    conFormula(`I${nTotal}-(D${nTotal}+E${nTotal}+F${nTotal}+G${nTotal}+H${nTotal}+J${nTotal})`, libro.totalGeneral.diferencia),
+    "", "", "", "", "", "", libro.totalGeneral.comprobantes,
+  ])
+
+  const nCtrl = f.length + 1
+  f.push([
+    "", "", "Control (tiene que dar 0)",
+    ...(["D", "E", "F", "G", "H", "I", "J"] as const).map(col =>
+      conFormula(`${col}${nTotal}-(${filasTotalMes.map(r => `${col}${r}`).join("+") || "0"})`, 0),
+    ),
+  ])
+  f.push([])
+
+  // Lo que falta imputar, dicho en una línea y con su peso. § 🧮: el control se ve.
+  if (libro.sinImputar.comprobantes > 0) {
+    f.push([`FALTA IMPUTAR: ${libro.sinImputar.comprobantes} comprobante(s) por ${money(libro.sinImputar.total)} — ${libro.sinImputar.porcentaje}% del total`])
+    f.push([`Aparece en: ${[...new Set(libro.sinImputar.meses)].join(" · ")}`])
+    f.push(["Se imputa en Egresos → Facturas → Asignación Cuentas. Hasta entonces sale como NO IMPUTADO."])
+  } else {
+    f.push(["TODO IMPUTADO — no hay comprobantes sin cuenta contable."])
+  }
+
+  return f
+}
+
+const COLS_POR_CUENTA: Columna[] = [
+  { ancho: 7, z: ENTERO },          // A Año
+  { ancho: 5, z: ENTERO },          // B Mes
+  { ancho: 34 },                    // C Cuenta Contable
+  { ancho: 17, z: MONEDA },         // D Neto Gravado
+  { ancho: 15, z: MONEDA },         // E No Gravado
+  { ancho: 15, z: MONEDA },         // F Exento
+  { ancho: 15, z: MONEDA },         // G Otros Tributos
+  { ancho: 15, z: MONEDA },         // H IVA
+  { ancho: 17, z: MONEDA },         // I Total
+  { ancho: 20, z: MONEDA },         // J Sin crédito fiscal (Fac B y C)
+  { ancho: 19, z: MONEDA },         // K Diferencia
+  { ancho: 3 },                     // L separador
+  { ancho: 17, z: MONEDA },         // M DDJJ Neto Gravado
+  { ancho: 14, z: MONEDA },         // N Diferencia
+  { ancho: 22, z: MONEDA },         // O DDJJ Exento + No grav + Mono
+  { ancho: 14, z: MONEDA },         // P Diferencia
+  { ancho: 12 },                    // Q Nro cuenta
+  { ancho: 13, z: ENTERO },         // R Comprobantes
 ]
 
 const COLS_ASIENTOS: Columna[] = [
@@ -535,6 +669,12 @@ export function armarWorkbook(
   hoja(wb, "Control", hojaDeControl(libro))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
+  // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
+  //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
+  hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),
+    `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
+  hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
+    `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
   hoja(wb, "05 Provision", hojaDeAsientos(libro.provisiones), COLS_ASIENTOS)
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).

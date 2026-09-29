@@ -2439,6 +2439,37 @@ cargado y **las labores no tienen dónde cargar su tarifa** todavía.
 
 ⚠️ Sin probar todavía → A-TEST-1156
 
+## 📗 Papeles de balance → el libro diario por cuenta contable *(2026-09-29)*
+
+En **Reportes → Papeles de trabajo del balance**, el Excel que se baja trae dos solapas nuevas:
+**«Compras por cuenta»** y **«Ventas por cuenta»**. Es el mismo formato que venías armando a mano
+en la solapa *Excel - Compras* de tu libro: `Año · Mes · Cuenta Contable`, los importes abiertos,
+una fila **Total general** por mes y un **Control** al final.
+
+**Qué mirar, en este orden:**
+
+| | Qué es | Qué tiene que dar |
+|---|---|---|
+| **NO IMPUTADO** | la última fila de cada mes: lo que todavía no tiene cuenta | idealmente nada. Si hay, ahí está el trabajo que falta |
+| **Diferencia** | las partes contra el total del propio comprobante | **cero o centavos**. Si da miles, hay un comprobante mal cargado |
+| **Control** (al final) | la suma de los totales mensuales contra el total del ejercicio | **0 en todas las columnas** |
+
+💡 **Las celdas de DDJJ IVA vienen vacías a propósito.** Poné el neto gravado de la declaración en
+la fila *Total general* del mes y **la diferencia se calcula sola** — antes esa resta la hacías vos.
+
+💡 **Son fórmulas, no números pegados.** Si corregís un importe, los totales se recalculan solos.
+
+📌 **Sin abrir el Excel**, el mismo resumen por consola:
+`npx tsx scripts/verificar-imputacion-balance.mts MSA 2026` — dice cuánto falta imputar, por qué
+mes, y qué comprobantes no cuadran consigo mismos.
+
+⚠️ **Lo que esto NO es:** el libro diario con Debe y Haber por número de cuenta (`11101 CAJA`,
+`112101 IVA CREDITO FISCAL`), que es lo que exportaba el sistema anterior. Eso necesita las cuentas
+patrimoniales, que la app todavía no lleva. Esto es **la apertura por cuenta**, que es la mitad que
+sí tenemos y la que usabas para chequear totales contra el contador.
+
+⚠️ Sin probar todavía → A-TEST-1161
+
 ## 🧾 Cash Flow → el aviso de notas de crédito sin aplicar *(2026-09-29)*
 
 Arriba de la grilla del Cash Flow puede aparecer un **cartel ámbar**. Aparece **sólo si hay algo**:
