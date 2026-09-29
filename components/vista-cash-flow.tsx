@@ -38,6 +38,7 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
+import { AvisoNotasCredito } from "./aviso-notas-credito"
 import useInlineEditor, { type CeldaEnEdicion as CeldaEnEdicionHook } from "@/hooks/useInlineEditor"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
@@ -3582,6 +3583,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         </CardHeader>
 
         <CardContent>
+          {/* 🧾 Notas de crédito sin aplicar (A-FEAT-1192).
+              ⚠️ Se le pasa `data` —todo lo cargado— y **no** la lista filtrada: si el usuario
+              filtra por fecha o por proveedor, una nota de crédito que quedó afuera del filtro
+              desaparecería del aviso, y un aviso que se calla según lo que estés mirando no avisa.
+              El cartel no se muestra solo si no hay ninguna. */}
+          <AvisoNotasCredito filas={data} />
+
           {/* Empresa — SIEMPRE visible: es el contexto de lo que estás mirando, no un criterio
               de búsqueda. Son dos selecciones porque los defaults difieren (A-FEAT-13). */}
           <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-gray-50 px-3 py-2">

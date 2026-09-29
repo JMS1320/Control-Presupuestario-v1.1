@@ -58,6 +58,10 @@ import { montoCorto, repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { corregir, agruparCorrecciones } from "@/lib/conciliacion/correcciones"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
+import {
+  detectarProveedoresConNC, esNotaCredito, abreviaturaComprobante,
+  type ComprobanteParaNC,
+} from "@/lib/pagos/notas-credito"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
@@ -2950,6 +2954,114 @@ export function correrCasos(): Resultado[] {
       "nulo · no hay dato",
       `${sinNada.kg === null ? "nulo" : sinNada.kg} · ${sinNada.origen}`,
       sinNada.kg === null && sinNada.origen.includes("no hay dato"), "A-FEAT-1187")
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🧾 NOTAS DE CRÉDITO contra facturas — la detección del aviso del Cash Flow
+  //    (A-FEAT-1192). Todo esto es lógica pura: no toca la base.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const c = (
+      id: string, cuit: string, proveedor: string, tipo: number,
+      importe: number, estado: string,
+    ): ComprobanteParaNC => ({
+      id, cuit, proveedor, tipoComprobante: tipo, importe, estado,
+      display: `${abreviaturaComprobante(tipo)} - ${id}`,
+    })
+
+    // Los códigos de ARCA, que estaban escritos a mano en siete lugares.
+    chequear("Pagos · NC", "El código 3 es nota de crédito y el 1 no",
+      "NC=sí · FC=no", `NC=${esNotaCredito(3) ? "sí" : "no"} · FC=${esNotaCredito(1) ? "sí" : "no"}`,
+      esNotaCredito(3) && !esNotaCredito(1), "A-FEAT-1192")
+
+    chequear("Pagos · NC", "El 213 (crédito electrónico MiPyME) también es NC",
+      "NC", abreviaturaComprobante(213), abreviaturaComprobante(213) === "NC", "A-FEAT-1192")
+
+    // 🔑 EL CASO BASE: un proveedor con las dos puntas.
+    const conLasDos = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 1, 1_000_000, "pendiente"),
+      c("2", "30111111119", "Luminatus", 3, 250_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "Proveedor con FC y NC: lo propone, y el saldo es la resta",
+      "1 proveedor · quedan 750.000",
+      `${conLasDos.length} proveedor · quedan ${conLasDos[0]?.saldo.toLocaleString("es-AR")}`,
+      conLasDos.length === 1 && conLasDos[0].saldo === 750_000, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 1 — la NC viene con importe NEGATIVO, que es como la guarda ARCA.
+    //    Si se sumara crudo, el saldo daría 1.250.000 en vez de 750.000: un número
+    //    plausible y equivocado, que es el peor de todos.
+    const negativa = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 1, 1_000_000, "pendiente"),
+      c("2", "30111111119", "Luminatus", 3, -250_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "🔑 La NC guardada en NEGATIVO se descuenta igual, no se suma",
+      "quedan 750.000", `quedan ${negativa[0]?.saldo.toLocaleString("es-AR")}`,
+      negativa[0]?.saldo === 750_000, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 2 — una sola punta no es un aviso, es ruido.
+    const soloNC = detectarProveedoresConNC([c("2", "30111111119", "Luminatus", 3, 250_000, "pendiente")])
+    chequear("Pagos · NC", "Una NC sin ninguna factura del proveedor: NO se avisa",
+      "0", String(soloNC.length), soloNC.length === 0, "A-FEAT-1192")
+
+    const soloFC = detectarProveedoresConNC([c("1", "30111111119", "Luminatus", 1, 1_000_000, "pendiente")])
+    chequear("Pagos · NC", "Una factura sin NC: NO se avisa",
+      "0", String(soloFC.length), soloFC.length === 0, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 3 — una NC ya conciliada no se puede volver a aplicar.
+    const yaUsada = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 1, 1_000_000, "pendiente"),
+      c("2", "30111111119", "Luminatus", 3, 250_000, "conciliado"),
+    ])
+    chequear("Pagos · NC", "🔑 Una NC ya conciliada no se vuelve a proponer",
+      "0", String(yaUsada.length), yaUsada.length === 0, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 4 — dos proveedores distintos NO se mezclan, aunque los importes calcen.
+    const dos = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 1, 1_000_000, "pendiente"),
+      c("2", "30222222227", "Otro SA", 3, 250_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "🔑 La NC de un proveedor NO se ofrece contra la factura de otro",
+      "0", String(dos.length), dos.length === 0, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 5 — sin CUIT no se agrupa. Agrupar por nombre junta cosas que no van juntas:
+    //    el mismo proveedor viene escrito de tres formas según quién lo cargó.
+    const sinCuit = detectarProveedoresConNC([
+      c("1", "", "Luminatus", 1, 1_000_000, "pendiente"),
+      c("2", "", "Luminatus", 3, 250_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "Sin CUIT no se agrupa por nombre: no se propone nada",
+      "0", String(sinCuit.length), sinCuit.length === 0, "A-FEAT-1192")
+
+    // 🎯 ADVERSARIO 6 — la NC es MÁS GRANDE que lo que se le debe. El saldo da negativo
+    //    y se muestra así: § 🧮 el número raro es el que hay que ver, no el que hay que esconder.
+    const deMas = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 1, 100_000, "pendiente"),
+      c("2", "30111111119", "Luminatus", 3, 250_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "🔑 NC más grande que la factura: el saldo queda NEGATIVO y se muestra",
+      "-150.000", String(deMas[0]?.saldo),
+      deMas.length === 1 && deMas[0].saldo === -150_000, "A-FEAT-1192")
+
+    // Orden: primero el que tiene más plata para descontar.
+    const orden = detectarProveedoresConNC([
+      c("1", "30111111119", "Chico", 1, 5_000, "pendiente"),
+      c("2", "30111111119", "Chico", 3, 3_000, "pendiente"),
+      c("3", "30222222227", "Grande", 1, 9_000_000, "pendiente"),
+      c("4", "30222222227", "Grande", 3, 2_000_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "Ordena por lo que hay para descontar, de mayor a menor",
+      "Grande, Chico", orden.map(p => p.proveedor).join(", "),
+      orden[0]?.proveedor === "Grande" && orden[1]?.proveedor === "Chico", "A-FEAT-1192")
+
+    // Las notas de débito NO son notas de crédito: van del lado de las facturas.
+    const conND = detectarProveedoresConNC([
+      c("1", "30111111119", "Luminatus", 2, 40_000, "pendiente"),
+      c("2", "30111111119", "Luminatus", 3, 10_000, "pendiente"),
+    ])
+    chequear("Pagos · NC", "Una ND suma del lado de lo que se debe, no del de las NC",
+      "debe 40.000 · descuenta 10.000",
+      `debe ${conND[0]?.totalFacturas.toLocaleString("es-AR")} · descuenta ${conND[0]?.totalNotasCredito.toLocaleString("es-AR")}`,
+      conND[0]?.totalFacturas === 40_000 && conND[0]?.totalNotasCredito === 10_000, "A-FEAT-1192")
   }
 
   return r

@@ -2439,6 +2439,37 @@ cargado y **las labores no tienen dónde cargar su tarifa** todavía.
 
 ⚠️ Sin probar todavía → A-TEST-1156
 
+## 🧾 Cash Flow → el aviso de notas de crédito sin aplicar *(2026-09-29)*
+
+Arriba de la grilla del Cash Flow puede aparecer un **cartel ámbar**. Aparece **sólo si hay algo**:
+cuando un proveedor tiene al mismo tiempo **facturas por pagar** y **notas de crédito sin aplicar**.
+Si no hay ninguna, no se muestra nada.
+
+**Para qué sirve:** si pagás la factura sin aplicar la nota de crédito, **pagás de más**. El cartel
+te avisa antes de que eso pase.
+
+**Cómo se lee.** Apretá **«Ver cuáles»** y por cada proveedor te dice tres números:
+
+| | Qué es |
+|---|---|
+| **Por pagar** | lo que se le debe hoy, sumando sus facturas pendientes |
+| **Notas de crédito** | lo que hay para descontarle |
+| **Quedaría a pagar** | la resta — **el número que importa** |
+
+💡 **Si «quedaría a pagar» sale en rojo y con signo menos**, la nota de crédito es más grande que la
+factura: no hay nada que pagarle y queda **saldo a favor tuyo** para la próxima. No es un error.
+
+**Cómo aplicarlas.** El cartel avisa, no aplica. Para aplicarlas:
+**Egresos → Facturas → pestaña Pagos**, seleccioná las facturas de ese proveedor y pasalas a
+**Pagar** — ahí te ofrece las notas de crédito y elegís cuáles. Cuando volvés al Cash Flow, ese
+proveedor ya no aparece en el cartel.
+
+⚠️ **Ojo con el selector de empresas: el cartel ve sólo las que tenés prendidas.** Las facturas de
+**MA vienen apagadas por default**, así que sus notas de crédito no aparecen hasta que las prendas —
+y ahí suele haber más que en MSA.
+
+⚠️ Sin probar todavía → A-TEST-1160
+
 ## 📎 Cash Flow → ver la factura *(2026-09-28)*
 
 En el Cash Flow hay una **columna con un clip 📎**, entre *Detalle* y *Débitos*. Sirve para abrir la
