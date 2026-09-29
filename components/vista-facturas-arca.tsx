@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { esNotaCredito as esNotaCreditoArca } from "@/lib/pagos/notas-credito"
+import { agruparEnCertificados, mismoCertificado } from "@/lib/sicore/clave-certificado"
 import { tomarEncargoCancelacionNC, type EncargoCancelacionNC } from "@/lib/pagos/encargo-cancelacion-nc"
 // Icons importados para funcionalidad Excel import + UI
 import { Loader2, Settings2, Receipt, Info, Eye, EyeOff, Filter, X, Edit3, Save, Check, Upload, FileSpreadsheet, AlertTriangle, CheckCircle, Calendar, RefreshCw, Trash2, MoreHorizontal, Search, Download, FileText, RotateCcw, BarChart3, Copy } from "lucide-react"
@@ -272,11 +273,20 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
                   ) : (
                     <button
                       onClick={() => {
-                        // Agrupar todos los registros NO anulados con el mismo nro_certificado
-                        const grupo = r.nro_certificado
-                          ? registros.filter(x => !x.anulado && x.nro_certificado === r.nro_certificado)
-                          : [r]
-                        onCertificado(grupo)
+                        /**
+                         * 🧾 **ACÁ SE VEÍA EL BUG** (A-BUG-1222). Este botón es el que el usuario
+                         * aprieta para bajar el certificado de una fila.
+                         *
+                         * Antes juntaba todas las filas con el mismo `nro_certificado`. Y como el
+                         * número se estaba reusando **por quincena** en vez de por pago, el
+                         * certificado del pago de hoy salía **sumado al pago anterior**: BIOFARMA
+                         * informaba $178.983,20 cuando el pago del 29/09 retuvo $69.213,15.
+                         *
+                         * 🔑 Ahora se agrupa por la **regla** —un certificado = un pago—, así que
+                         * sale bien **incluso sobre filas viejas** cuyo número quedó repetido.
+                         */
+                        const mismoPago = registros.filter(x => !x.anulado && mismoCertificado(x, r))
+                        onCertificado(mismoPago.length > 0 ? mismoPago : [r])
                       }}
                       title="Descargar Certificado de Retención"
                       className="text-blue-600 hover:text-blue-800 transition-colors"
@@ -3588,8 +3598,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // El nuevo registro hereda el estado actual de la quincena (cerrada o abierta)
       const nuevoEstadoQ = estadoQ === 'cerrada' ? 'cerrada' : 'abierta'
 
-      // Verificar si ya existe otro registro NO anulado del mismo grupo (cuit+tipo+quincena)
-      // En ese caso reutilizar sus números (ej: Alcorta con múltiples facturas)
+      // ── A-BUG-1222 — UN CERTIFICADO = UN PAGO, no una quincena ──────────────────────────
+      //
+      // 🧨 **Este es el camino GEMELO** del de `lib/sicore/registrar-retencion.ts`, con el mismo
+      // bug y arreglado el mismo día. Es § 🗺️ *«se arregló un camino de los dos»* en su forma
+      // pura: dos copias de la numeración, y tocar una sola habría dejado el bug vivo en la mitad
+      // de los pagos según desde dónde se cobre.
+      //
+      // Reutilizar los números vale para **varias facturas de un mismo pago** (el caso Alcorta),
+      // no para dos pagos distintos de la misma quincena — que son dos retenciones. Por eso se
+      // agrega `fecha_pago`. El dossier completo, con los dos casos reales medidos (BIOFARMA y
+      // LONGO), está en el otro archivo.
       const { data: mismoGrupo } = await supabase
         .schema(schemaName)
         .from('sicore_retenciones')
@@ -3597,6 +3616,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .eq('cuit_emisor', params.cuit_emisor ?? '')
         .eq('tipo_sicore', params.tipo_sicore)
         .eq('quincena', params.quincena)
+        .eq('fecha_pago', params.fecha_pago)
         .eq('anulado', false)
         .not('nro_comprobante', 'is', null)
         .limit(1)
@@ -5948,15 +5968,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       setDescargandoCerts(true)
       let count = 0
 
-      // Agrupar por nro_certificado (mismo criterio de agrupación que el TXT)
-      const grupos = new Map<string, typeof registrosVigentes>()
-      for (const r of registrosVigentes) {
-        const key = r.nro_certificado || r.id || String(r.cuit_emisor)
-        if (!grupos.has(String(key))) grupos.set(String(key), [])
-        grupos.get(String(key))!.push(r)
-      }
+      /**
+       * 🧾 **Se agrupa por la REGLA, no por el número guardado** (A-BUG-1222).
+       *
+       * Antes se agrupaba por `nro_certificado`, que parecía lo más directo — y era circular: si el
+       * número estaba mal asignado, la descarga heredaba el error y juntaba en un PDF dos pagos
+       * distintos. Pasó con BIOFARMA ($178.983,20 en un certificado que eran $69.213,15) y con LONGO.
+       *
+       * `agruparEnCertificados` aplica **un certificado = un pago**, así que la descarga sale bien
+       * incluso sobre filas viejas cuyo número quedó repetido.
+       */
+      const grupos = agruparEnCertificados(registrosVigentes as Array<Record<string, unknown>>) as unknown as Array<typeof registrosVigentes>
 
-      for (const grupo of grupos.values()) {
+      for (const grupo of grupos) {
         const bytes = await generarCertificadoRetencion(grupo, true)
         if (!bytes) continue
         const r0 = grupo[0]

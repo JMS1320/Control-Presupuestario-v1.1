@@ -87,8 +87,29 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
           .select(COLS).in('anticipo_id', idsAnt).eq('anulado', false)
         regs = [...regs, ...((data || []) as Array<Record<string, unknown>>)]
       }
-      if (!regs.length && cuitClean && registrosFallback) { // fallback: registros cargados en pantalla
-        regs = registrosFallback.filter(r => !r.anulado && (r.cuit_emisor || '').replace(/\D/g, '') === cuitClean) as Array<Record<string, unknown>>
+      if (!regs.length && cuitClean && registrosFallback) {
+        /**
+         * Fallback: los registros que la pantalla ya tenía cargados.
+         *
+         * 🧨 **A-BUG-1222 — filtraba SÓLO por CUIT.** O sea que se llevaba **todas** las retenciones
+         * vigentes de ese proveedor, de cualquier quincena y de cualquier pago, y el certificado
+         * salía sumándolas. Es el mismo error que la numeración, por otra puerta.
+         *
+         * 🔑 **La corrección: un certificado = un pago.** Se toma la retención **más reciente** de
+         * ese proveedor y se quedan sólo las que comparten su `nro_certificado`, que es exactamente
+         * el conjunto «este pago». Si el número es correcto, el grupo es correcto por construcción.
+         */
+        const delProveedor = (registrosFallback as Array<Record<string, unknown>>)
+          .filter(r => !r.anulado && String(r.cuit_emisor || '').replace(/\D/g, '') === cuitClean)
+        const masReciente = delProveedor
+          .slice()
+          .sort((a, b) => String(b.fecha_pago || '').localeCompare(String(a.fecha_pago || '')))[0]
+        const certDelPago = masReciente?.nro_certificado
+        regs = certDelPago
+          ? delProveedor.filter(r => r.nro_certificado === certDelPago)
+          // Sin número de certificado no se puede saber qué pago es: se manda una sola fila antes
+          // que sumar pagos distintos en un papel que va al proveedor.
+          : masReciente ? [masReciente] : []
       }
       if (regs.length) {
         fechaPagoReal = String((regs[0] as { fecha_pago?: string }).fecha_pago || '')

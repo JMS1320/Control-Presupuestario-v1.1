@@ -1,4 +1,11 @@
-// Capa compartida (UI-agnóstica): registro de retención SICORE v2.
+/**
+ * Capa compartida (UI-agnóstica): registro de retención SICORE v2.
+ *
+ * 🔑 **La regla que ordena la numeración** (corregida 2026-09-29, A-BUG-1222):
+ * **un certificado = un PAGO.** Varias facturas pagadas juntas comparten certificado; dos pagos
+ * distintos —aunque caigan en la misma quincena y sean del mismo proveedor— son **dos** retenciones
+ * con **dos** certificados. Ver el comentario largo en el bloque de reutilización de números.
+ */
 // Mirror VERBATIM de registrarEnSicoreRetenciones (vista-facturas-arca) con `schema`
 // como parámetro (antes usaba schemaName del componente). Numeración perpetua de
 // nro_comprobante y nro_certificado, dedup por cuit+tipo+quincena, respeta estado_quincena.
@@ -34,7 +41,9 @@ export interface RegistrarRetencionParams {
  * - Bloquea si la quincena está 'declarada'.
  * - Hereda 'cerrada' si la quincena ya estaba cerrada.
  * - Reutiliza nro_comprobante/nro_certificado si ya hay un registro no anulado
- *   del mismo cuit+tipo+quincena; sino asigna el siguiente número perpetuo.
+ *   del mismo cuit+tipo+quincena **Y DEL MISMO `fecha_pago`**; sino asigna el
+ *   siguiente número perpetuo. Ver A-BUG-1222: sin la fecha, un segundo pago
+ *   heredaba el certificado del primero y el PDF salía con las dos retenciones.
  * No interrumpe el flujo si falla (loguea).
  */
 export async function registrarEnSicoreRetenciones(schema: string, params: RegistrarRetencionParams) {
@@ -109,7 +118,32 @@ export async function registrarEnSicoreRetenciones(schema: string, params: Regis
       }
     }
 
-    // Reutilizar números si ya hay otro registro no anulado del mismo grupo (cuit+tipo+quincena)
+    // ── A-BUG-1222 — EL CERTIFICADO SE COMPARTE POR PAGO, NO POR QUINCENA ────────────────────
+    //
+    // 🐞 Encontrado por el usuario el 2026-09-29, con BIOFARMA:
+    // > *«Hice un pago y el certificado que me genera contempla pago anterior dentro de la misma
+    // > quincena. **La agrupación es cuando lo pago agrupado, no agrupar siempre. Si son 2 pagos son
+    // > 2 retenciones.**»*
+    //
+    // 🧨 Acá estaba: este bloque reusaba el número para **cualquier** retención del mismo
+    // `cuit + tipo + quincena`. Entonces un **segundo pago independiente** dentro de la misma
+    // quincena heredaba el certificado del primero — y como el PDF y el TXT agrupan por
+    // `nro_certificado` **sumando**, el certificado nuevo salía con la retención vieja adentro.
+    //
+    // 📌 **Los dos casos reales, medidos en la base:**
+    // - **BIOFARMA** (26-09 2da, abierta): 21/09 $109.770,05 + 29/09 $69.213,15 → cert `…000065`
+    //   informando **$178.983,20**, cuando el del 29/09 son $69.213,15.
+    // - **LONGO** (26-08 2da, cerrada): 18/08 $102.874,10 + 31/08 $134.817,20 → cert `…000055`
+    //   con **$237.691,30**.
+    //
+    // 🔑 **El discriminante es `fecha_pago`**, y es el que corresponde al criterio del usuario: lo
+    // que comparte certificado es **un pago**. Varias facturas pagadas juntas el mismo día comparten
+    // `fecha_pago` y siguen compartiendo certificado, que es justamente la agrupación que él quiere
+    // conservar. Dos pagos en días distintos son dos retenciones y **dos certificados**.
+    //
+    // ⚠️ **Y no alcanzaba mirar `origen`**: la fila del 29/09 se guardó como `'agrupacion'` —era un
+    // pago agrupado de verdad— así que por ese campo parecía correcta. Lo que estaba mal no era el
+    // origen, era el alcance de la reutilización.
     const { data: mismoGrupo } = await supabase
       .schema(schema)
       .from('sicore_retenciones')
@@ -117,6 +151,8 @@ export async function registrarEnSicoreRetenciones(schema: string, params: Regis
       .eq('cuit_emisor', params.cuit_emisor ?? '')
       .eq('tipo_sicore', params.tipo_sicore)
       .eq('quincena', params.quincena)
+      // 👇 LA CORRECCIÓN: el mismo PAGO, no la misma quincena.
+      .eq('fecha_pago', params.fecha_pago)
       .eq('anulado', false)
       .not('nro_comprobante', 'is', null)
       .limit(1)
