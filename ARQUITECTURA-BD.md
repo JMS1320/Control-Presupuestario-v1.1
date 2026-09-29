@@ -91,7 +91,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `caja_general` / `caja_ams` / `caja_sigot` | ❌ | 79 | Cajas efectivo (tablas de movimiento). |
 | `cheques` | ❌ | — | Cheques/ECHEQs (emisión, endoso, estado). |
 | `grupos_pago` | ❌ | — | Grupos de pago (agrupan facturas en una OP). |
-| `sicore_retenciones` | ✅ | 39 | Retenciones SICORE (certificados, quincenas, anulación). |
+| `sicore_retenciones` | ✅ | 40 | Retenciones SICORE (certificados, quincenas, anulación). `grupo_pago_id` define qué comparte certificado → `MODULO_SICORE.md` § 32.3. |
 | `tarjeta_visa_business` | ❌ | 320 | Tarjeta VISA Business MSA (resúmenes). |
 
 ### `pam` — contable/fiscal PAM
@@ -352,6 +352,7 @@ public.anticipos_proveedores.factura_id          → msa.comprobantes_arca
 public.cuotas_egresos_sin_factura.grupo_pago_id  → msa.grupos_pago
 msa.comprobantes_arca.grupo_pago_id              → msa.grupos_pago
 msa.sicore_retenciones.factura_id                → msa.comprobantes_arca
+msa.sicore_retenciones.grupo_pago_id             → public.grupos_pago   (NULL = pago directo)
 msa.sicore_retenciones.anticipo_id               → public.anticipos_proveedores
 msa.ventas_comprobantes.{venta_id,comprobante_id}→ msa.ventas / msa.comprobantes_venta
 productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/stock, stock→categorias, etc.)
@@ -447,6 +448,10 @@ silencio. Ver `PENDIENTES.md` § P-46.
 ### 6.3 Jerarquías por módulo
 - **Templates**: `templates_master` → `egresos_sin_factura` (template) → `cuotas_egresos_sin_factura` (cuotas). Cada cuota se concilia contra un movimiento.
 - **SICORE**: `sicore_retenciones` cuelga de `comprobantes_arca` (o `anticipos_proveedores`). Quincenas con estado abierta/cerrada/declarada.
+  🔑 **`grupo_pago_id` (agregada 2026-09-29) dice de qué PAGO salió la retención**, y es lo que define
+  **qué filas comparten certificado**: un certificado = un pago. `NULL` = pago directo, estrena número.
+  Las filas anteriores a esa fecha lo tienen en NULL y se agrupan por `fecha_pago` como respaldo.
+  Reglas completas → `MODULO_SICORE.md` § 32.
 - **Anticipos**: `anticipos_proveedores` ↔ `comprobantes_arca` (vía `anticipos_facturas` N:N o `factura_id`).
 - **Ventas**: `ventas` ↔ `comprobantes_venta` (N:N vía `ventas_comprobantes`).
 - **Grupos de pago**: `grupos_pago` agrupa varias `comprobantes_arca`/`cuotas` en una OP.

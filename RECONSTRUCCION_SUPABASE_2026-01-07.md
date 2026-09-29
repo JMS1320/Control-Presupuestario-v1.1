@@ -12694,3 +12694,33 @@ ALTER TABLE public.cuotas_arrendamiento ALTER COLUMN qq_ha_cuota TYPE numeric(12
 (242 ha) 0,01 qq/ha = 0,242 tn, y fijar 100 de 212,96 tn dejaba 99,946 + 113,014. Sólo agranda la
 columna: ningún dato cambia al aplicarla. Se corrigió la única cuota partida que existía (Rojas
 26/27 #4/#5) con autorización del usuario y foto en `respaldos/a-bug-183-rojas-cuotas-4-5-antes.json`.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-29 · `grupo_pago_id` en las retenciones (A-BUG-1222)
+
+```sql
+alter table msa.sicore_retenciones
+  add column if not exists grupo_pago_id uuid;
+
+comment on column msa.sicore_retenciones.grupo_pago_id is
+  'Grupo de pago del que salió esta retención. NULL = pago directo (no agrupado). '
+  'Define qué retenciones comparten CERTIFICADO: un certificado = un pago (A-BUG-1222, 2026-09-29). '
+  'Las filas anteriores al 29/09/2026 lo tienen en NULL y se agrupan por fecha_pago como respaldo.';
+
+create index if not exists idx_sicore_retenciones_grupo_pago
+  on msa.sicore_retenciones (grupo_pago_id)
+  where grupo_pago_id is not null;
+```
+
+**Por qué.** La retención guardaba a qué **factura** correspondía, pero no de qué **pago** salía — y
+eso es justo lo que define **qué filas comparten certificado**. Regla del usuario: *«el certificado
+debe ser por pago y no por día; lo que lo agrupa es la transferencia»*. Sin la columna, lo más fino
+disponible era `fecha_pago`, y **dos pagos directos al mismo proveedor el mismo día compartían
+certificado**.
+
+⚠️ **Sólo existe en `msa`**: `sicore_retenciones` es la única tabla de retenciones y vive ahí (MSA es
+el agente de retención). Si algún día PAM o MA retienen, la tabla se crea **con esta columna**.
+
+📌 Reglas completas del módulo → `MODULO_SICORE.md` § 32. El control que verifica que se respete →
+`scripts/auditar-sicore.mts`.

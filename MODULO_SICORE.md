@@ -7,6 +7,172 @@
 
 ---
 
+## 32. LAS CUATRO REGLAS DE SICORE — leer esto antes de tocar cualquier retención (2026-09-29)
+
+*Escrito después de una tanda en la que el usuario encontró **a mano** un certificado que sumaba dos
+pagos, y al auditar aparecieron **tres** casos más. Pedido suyo: «si es conveniente hacer una buena
+documentada general antes de seguir, hazlo». Hasta acá el módulo estaba documentado **por fix**: 31
+secciones contando qué se arregló cada día, y ninguna que dijera **cuáles son las reglas**. Esta
+sección es eso, y manda sobre cualquier descripción anterior.*
+
+### 32.1. Las cuatro reglas
+
+| | La regla | Qué la rompe |
+|---|---|---|
+| **1 · El mínimo es del RÉGIMEN** | cada régimen tiene su mínimo no imponible y **no se mezclan**: lo que consumió Bienes no descuenta el de Servicios | preguntar «¿ya retuvo este proveedor?» sin decir de qué régimen |
+| **2 · El mínimo es del MES** | se consume **una sola vez por mes calendario**, no por quincena ni por factura | mirar sólo la quincena del pago |
+| **3 · Un certificado = un PAGO** | lo que comparte certificado es **una transferencia**, no un día ni una quincena | reusar el número por `cuit + tipo + quincena` |
+| **4 · El mínimo vigente es el de ESE mes** | ARCA lo actualiza por resolución: el de marzo no es el de hoy | controlar una retención vieja contra la configuración actual |
+
+> 🔑 **Las cuatro se rompieron de verdad, y ninguna la avisó el sistema.** Las tres primeras las
+> encontró el usuario mirando un papel; la cuarta la encontró el control nuevo, marcando un error que
+> no existía. Ése es el motivo de la § 32.4.
+
+### 32.2. Regla 1 y 2 — el mínimo, por régimen y por mes
+
+El cálculo puro vive en **`lib/sicore/minimo.ts`** y está bien: recibe el neto, el mínimo del régimen,
+el neto previo del mes y si ya hubo retención, y reparte. Lo que falló nunca fue la aritmética sino
+**qué se le pasa**:
+
+- **`A-BUG-193` (23/09/2026)** — el período pasó de quincena a **mes**. Antes, un pago en la 1ra y otro
+  en la 2da recibían mínimo cada uno → **se retenía de menos**.
+- **`A-BUG-196` (23/09/2026)** — la consulta de «¿ya retuvo en el mes?» pasó a filtrar por
+  **régimen**. Antes, una retención de Bienes apagaba el mínimo de Servicios → **se retenía de más**.
+- **`A-BUG-195`** — el **portón** (la pregunta de si se abre el flujo SICORE) también mira si ya se
+  retuvo en el mes: una factura por debajo del mínimo **sí retiene** cuando el mínimo ya se consumió.
+
+⚠️ **Y acá está la distinción que cuesta ver**, porque parece una inconsistencia y no lo es:
+
+| Dónde | ¿Pasa el régimen? | Por qué |
+|---|---|---|
+| **El portón** (`evaluarRetencionSicore`, la factura negativa) | **NO, y está bien** | todavía no se eligió el régimen. Al no filtrar, el portón se abre **de más**, que es el lado seguro |
+| **El cálculo** (`calcularRetencionSicore`) | **SÍ** | acá el usuario ya eligió, y es donde el mínimo se aplica |
+
+🧨 **Este cuadro existe porque yo me equivequé leyéndolo.** El 29/09 conté con `grep` cuántas llamadas
+pasaban el régimen —2 de 7— y le dije al usuario que el bug seguía vivo. **Él insistió en que ya estaba
+arreglado y tenía razón**: las cinco que no lo pasan son el portón y el caso de factura negativa, donde
+no se puede. Contar llamadas no es leer código.
+
+📌 **Cómo se comprueba cuál rige**, y es el método que hay que usar: comparar la **fecha del commit**
+con el `created_at` de la fila. El caso testigo: Alcorta Servicios del 10/09 se escribió a las 19:36 del
+10/09 —**antes** de `A-BUG-196`— y salió con mínimo $0; la del 23/09 se escribió a las 22:23, **22
+minutos después** del commit, y su mínimo $0 era **correcto** (el del mes ya estaba consumido).
+
+### 32.3. Regla 3 — un certificado es un pago, y el pago es la transferencia
+
+**`A-BUG-1222`.** La regla la enunció el usuario en dos pasos, y el segundo corrige al primero:
+
+> *«La agrupación es cuando lo pago agrupado, **no agrupar siempre**. Si son 2 pagos son 2 retenciones.»*
+>
+> *«El certificado debe ser **por pago y no por día**. Lo que lo agrupa es **la transferencia**.»*
+
+**Lo que estaba mal:** el número de certificado se reusaba para cualquier retención del mismo
+`cuit + tipo_sicore + quincena`. Un **segundo pago** de la quincena heredaba el certificado del primero,
+y como el PDF, la descarga masiva y el TXT agrupan por ese número **sumando**, el certificado nuevo
+salía con la retención vieja adentro.
+
+**Los dos casos reales:** BIOFARMA `…000065` informando **$178.983,20** donde iban $69.213,15, y LONGO
+`…000055` con **$237.691,30**. En los dos la **plata estaba bien** — el problema era sólo el papel.
+
+**Cómo quedó.** La regla vive en **`lib/sicore/clave-certificado.ts`**, y son **dos mecanismos que un
+control mantiene de acuerdo**:
+
+| | Quién decide | Con qué |
+|---|---|---|
+| **Al registrar** — ¿reusa el número o estrena? | `registrarEnSicoreRetenciones` | `clavePago`: el **grupo de pago** |
+| **Al mostrar o bajar** — ¿qué filas van juntas? | las pantallas | el **`nro_certificado`** guardado |
+| **Que los dos coincidan** | `certificadosConVariosPagos` | el control de § 32.4 |
+
+No es redundante: **el número ES la identidad del certificado** —es lo que el proveedor recibió y lo
+que ARCA ve—, así que agrupar para mostrar por otra cosa sería inventar una segunda verdad. Y el
+número está bien porque la corrección está en el registro, no en la pantalla.
+
+🗄️ **Esto necesitó una columna nueva:** `msa.sicore_retenciones.grupo_pago_id` (migración
+`sicore_retenciones_grupo_pago_id`, autorizada por el usuario el 29/09/2026). La retención guardaba a
+qué **factura** correspondía, pero no de qué **pago** salía — y sin ese dato lo más fino disponible era
+la fecha. `NULL` significa **pago directo**: estrena número siempre.
+
+📅 **Las filas anteriores al 29/09/2026 lo tienen en NULL** y para ellas `clavePago` cae en
+`fecha_pago`, porque de aquel pago no se guardó nada más. **Se ven bien igual**, porque se agrupan por
+su número.
+
+🧨 **Y ojo con la tentación de usar el `factura_id` como identidad del pago en esas filas viejas**: lo
+probé y el control marcó **seis grupos legítimos de Alcorta** (3 y hasta 5 facturas pagadas juntas,
+marzo a junio) como si fueran pagos separados. Un control que grita donde no hay nada se termina
+apagando, y entonces no avisa cuando sí.
+
+⚠️ **Lo que `origen` NO sirve para decidir esto.** La fila que destapó el bug estaba guardada como
+`origen: 'agrupacion'` —era un pago agrupado de verdad— así que por ese campo parecía correcta. Y en el
+grupo de Alcorta del 10/09 conviven filas marcadas `directo` y `agrupacion` en **el mismo** grupo. El
+campo describe de dónde vino el flujo, no qué comparte certificado.
+
+### 32.4. Los dos CONTROLES — `scripts/auditar-sicore.mts`
+
+```
+npx tsx scripts/auditar-sicore.mts 2025-07 2026-09
+```
+
+> **Una retención es el número más condensado del módulo** —sale de un neto, un mínimo y una
+> alícuota— y nadie lo puede verificar a ojo. Tenía **cero** controles hasta el 29/09/2026.
+> (§ `CLAUDE.md` 🧮: *cuanto más condensado es el número, más control necesita*.)
+
+| | Qué compara | Tipo (§ 🚦) |
+|---|---|---|
+| **1 · Certificados** | ¿algún `nro_certificado` cubre **más de un pago**? | **integridad** — el sistema se contradice, no hay explicación de negocio |
+| **2 · Mínimo del mes** | lo retenido contra `(neto del mes − mínimo vigente) × alícuota`, por proveedor **y régimen** | **integridad** — es aritmética de RG 830, no criterio |
+
+📌 **El control 2 es el camino inverso**: en vez de repetir el reparto factura por factura, calcula el
+mes de una sola vez. Si la suma de las retenciones no da eso, el mínimo se aplicó dos veces (retuvo de
+menos) o ninguna (de más), y el propio control lo dice.
+
+🔑 **Regla 4, y es la que hace que el control no mienta:** el mínimo vigente de un mes es **el más
+grande que alguna fila de ese mes aplicó**, con la configuración actual sólo como piso. Comparar contra
+el valor de hoy marcó a **RIGO · Bienes · 03/2026** por $354,34 — y no era un error: en marzo el mínimo
+de bienes era **$241.717,20** y la fila lo aplicó exacto. El piso hace falta para el caso opuesto: si
+**ninguna** fila aplicó mínimo, el máximo es 0 y sin piso el control se callaría justo en el error que
+busca.
+
+✅ **Primera corrida, ejercicio 25/26 completo: 51 combinaciones proveedor × régimen × mes, 3 hallazgos**
+— y los dos falsos positivos de arriba eran míos, los encontró el control antes que el usuario.
+
+### 32.5. Qué se puede corregir y qué no — el estado de la quincena
+
+| Estado | Qué significa | Se puede |
+|---|---|---|
+| **abierta** | todavía no se cerró | corregir libremente |
+| **cerrada** | se generó el TXT | corregir; hay que **regenerar el TXT** |
+| **declarada** (`ddjj_confirmada`) | se presentó a ARCA | **rectificativa**: ya no es un tema de la app |
+
+`registrarEnSicoreRetenciones` **bloquea el insert** si la quincena está `declarada`, y una fila nueva
+**hereda** `cerrada` si la quincena ya lo estaba.
+
+📌 **Lo primero que hay que mirar ante un error de retención es esto**, porque cambia la respuesta
+entera. En la tanda del 29/09 ninguna de las quincenas de agosto y septiembre estaba declarada, así que
+todo se arregló sin rectificativa — incluido el TXT de LONGO, que se podía reemplazar.
+
+### 32.6. Y la distinción que ordena la corrección: ¿está mal la PLATA o el PAPEL?
+
+Ante un hallazgo, la primera pregunta **no** es qué se toca en la app:
+
+| | Qué pasó | Qué se hace |
+|---|---|---|
+| **Sólo el papel** | se retuvo bien y se pagó bien; el certificado informa mal | renumerar si hace falta y **reemitir el certificado**. No se mueve un peso |
+| **La plata** | se retuvo de más o de menos | decidir con el proveedor: **de más** lo computa él y no pierde nada; **de menos** es deuda del agente |
+
+🛑 **Lo que nunca se hace: corregir el certificado sin corregir la plata.** Si se le retuvo $1.800 y se
+le certifica $456,60, se lo perjudica — le sacaste plata y le das un papel por menos.
+
+**Los tres hallazgos del 29/09, con su tratamiento:**
+
+| Caso | Diferencia | Estado | Qué corresponde |
+|---|---|---|---|
+| **BIOFARMA** 09/2026 · LONGO 08/2026 | **$0** — la plata estaba bien | no declaradas | ✅ renumerados y a reemitir el certificado |
+| **ALCORTA** · Servicios · 09/2026 | **$1.343,40 de más** | no declarada | el proveedor lo computa; el usuario decidió dejarlo |
+| **MASSAGLIA** · Servicios · 07/2026 | **$1.343,40 de menos** | cerrada, **no** declarada | 🔴 es deuda del agente: hay que decidir |
+| **STRINGHINI** · Servicios · 05/2026 | **$1.343,40 de menos** | 1ra **declarada** | 🔴 rectificativa o dejarlo, con el contador |
+
+---
+
 ## 1. Introducción
 
 SICORE (Sistema de Control de Retenciones) es el módulo que gestiona la **retención de Impuesto a las Ganancias** sobre pagos a proveedores, según normativa AFIP.
@@ -727,7 +893,9 @@ Fila de totales en footer con sumas de todas las columnas numéricas.
 
 ### 21.4. Descarga de certificados individuales
 
-`TablaRegistrosV2` acepta la prop `onCertificado?: (registro: any) => void`. Cuando se pasa, cada fila muestra un ícono `⬇` que llama a `generarCertificadoRetencion(registro)` para descargar el certificado de esa retención específica.
+`TablaRegistrosV2` acepta la prop `onCertificado?: (registros: any[]) => void`. Cuando se pasa, cada fila muestra un ícono `⬇` que descarga el certificado de **ese pago**.
+
+⚠️ **Corregido 2026-09-29 (`A-BUG-1222`)** — acá decía *«el certificado de esa retención específica»*, y no es una retención: es **un pago**, que puede tener varias facturas. El botón junta las filas que comparten `nro_certificado`. **Y era el botón donde se veía el bug**: como el número se reusaba por quincena, sumaba el pago anterior. Ver § 32.3.
 
 En el tab Cierre v2, se pasa: `<TablaRegistrosV2 registros={registrosV2} onCertificado={generarCertificadoRetencion} />`.
 
@@ -738,7 +906,9 @@ Botón **"Certificados de Retención (N)"** — donde N = cantidad de registros 
 **Flujo:**
 1. Llama a `descargarTodosLosCertificados()`.
 2. Abre selector de carpeta con `window.showDirectoryPicker({ mode: 'readwrite' })`.
-3. Itera cada registro de `registrosV2`, llama a `generarCertificadoRetencion(registro, true)` que retorna un `ArrayBuffer` en lugar de disparar descarga directa.
+3. Agrupa los registros vigentes en certificados con `agruparEnCertificados` y llama a `generarCertificadoRetencion(grupo, true)`, que retorna un `ArrayBuffer` en lugar de disparar la descarga.
+
+   ⚠️ **Corregido 2026-09-29 (`A-BUG-1222`)** — acá decía *«itera cada registro»*, o sea **un archivo por retención**. Son **un archivo por pago**: si el pago fue agrupado, sus facturas van en el mismo certificado. Y con los números repetidos que había, dos archivos salían con **el mismo nombre** y uno pisaba al otro. Ver § 32.3.
 4. Crea cada archivo en la carpeta elegida con `dirHandle.getFileHandle(nombre, { create: true })`.
 5. Al finalizar, muestra alert con cantidad de certificados guardados.
 
