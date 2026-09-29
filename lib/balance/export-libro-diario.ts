@@ -24,6 +24,7 @@ import { nombreSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
+import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -318,12 +319,70 @@ function hojaDeInsumos(st: StockInsumos, fechaCierre: string): unknown[][] {
   return f
 }
 
+/** `1 - GRANOS`: el cuadre de kilos y la valuación, con la diferencia a la vista. */
+function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`1 - GRANOS al ${fechaCierre}`])
+  f.push([])
+  f.push(["CUADRE DE KILOS (toneladas)"])
+  f.push(["Stock al inicio del ejercicio", c.stockInicioTn ?? "FALTA"])
+  f.push(["+ Cosecha del ejercicio", c.cosechaTn ?? "FALTA"])
+  f.push(["− Ventas del ejercicio", c.ventasTn, "← esto lo sabe la app, de los comprobantes de venta"])
+  f.push(["= Saldo", c.saldoTn ?? "no se puede calcular"])
+  f.push(["− Existencia declarada al cierre", c.stockEmpresaTn ?? "FALTA"])
+  f.push(["= DIFERENCIA", c.diferenciaTn ?? "no se puede calcular",
+    c.diferenciaTn == null ? "" : c.cierra ? "cierra dentro de la tolerancia" : "NO CIERRA — hay que explicarla"])
+  f.push([])
+  if (c.faltan.length > 0) {
+    f.push(["Para poder cuadrar falta cargar:"])
+    c.faltan.forEach(x => f.push(["", x]))
+    f.push([])
+  }
+  f.push(["VALUACIÓN"])
+  f.push(["Toneladas", v.toneladas])
+  f.push(["Precio por tonelada", v.precioPorTn ?? "FALTA EL PRECIO"])
+  f.push(["Monto bruto", v.montoBruto ?? ""])
+  f.push(["% calidad", v.pctCalidad])
+  f.push(["Monto neto", v.montoNeto ?? ""])
+  f.push(["% CZ (comisión + flete + otros)", v.pctCz])
+  f.push(["NETO FINAL", v.netoFinal ?? "FALTA EL PRECIO"])
+  return f
+}
+
+/** `3 - SEMENTERAS`: lo sembrado y no cosechado, con lo que no entró y por qué. */
+function hojaDeSementeras(s: Sementeras, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`3 - SEMENTERAS al ${fechaCierre}`])
+  f.push(["Sólo cuenta las órdenes EJECUTADAS hasta el cierre: una planificada todavía no costó nada."])
+  f.push([])
+  f.push([`${s.ordenesEjecutadas} orden(es) ejecutada(s) · ${s.hectareas} ha`])
+  f.push([])
+  f.push(["Fecha", "Lote", "Ha", "Insumo", "Cantidad", "Unidad", "Precio unitario", "Costo"])
+  s.lineas.forEach(l => f.push([
+    l.fecha ?? "", l.lote, l.hectareas, l.insumo, l.cantidad ?? "", l.unidad,
+    l.precioUnitario ?? "FALTA EL PRECIO", l.costo ?? "FALTA EL PRECIO",
+  ]))
+  f.push([])
+  f.push(["COSTO", money(s.costo)])
+  f.push([])
+  f.push(["⚠️ EL COSTO ESTÁ INCOMPLETO — falta:"])
+  s.faltan.forEach(x => f.push(["", x]))
+  f.push([])
+  if (s.ordenesNoContadas.length > 0) {
+    f.push(["ÓRDENES QUE NO SE CONTARON, Y POR QUÉ"])
+    f.push(["Fecha", "Lote", "Estado", "Motivo"])
+    s.ordenesNoContadas.forEach(o => f.push([o.fecha ?? "", o.lote, o.estado, o.motivo]))
+  }
+  return f
+}
+
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
 export function armarWorkbook(
   libro: LibroDiario,
   templates?: TemplatesDelEjercicio,
   hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
   insumos?: StockInsumos,
+  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
   hoja(wb, "Control", hojaDeControl(libro))
@@ -342,6 +401,10 @@ export function armarWorkbook(
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.mesPrecios))
   }
   if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre))
+  if (campo) {
+    hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre))
+    hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre))
+  }
   return wb
 }
 
@@ -357,8 +420,9 @@ export function descargarLibroDiario(
   templates?: TemplatesDelEjercicio,
   hacienda?: { valuacion: ValuacionHacienda; mag: PrecioMag[]; mercado: PrecioMercado[]; mesPrecios: string },
   insumos?: StockInsumos,
+  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
 ) {
-  const wb = armarWorkbook(libro, templates, hacienda, insumos)
+  const wb = armarWorkbook(libro, templates, hacienda, insumos, campo)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

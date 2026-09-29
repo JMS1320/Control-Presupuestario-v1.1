@@ -34,6 +34,20 @@ import {
 import {
   armarStockInsumos, desdeStockInsumo, PAPELES_SIN_ORIGEN, type StockInsumos,
 } from "@/lib/balance/stock-insumos"
+import {
+  cuadrarGranos, valuarGranos, armarSementeras,
+  type CuadreGranos, type ValuacionGranos, type Sementeras,
+} from "@/lib/balance/granos-sementeras"
+
+/**
+ * es-AR: coma decimal, punto de miles. **Vacío devuelve `null`, no 0** — «no lo sé» y «cero»
+ * son cosas distintas, y confundirlas haría que el cuadre se declarara cerrado sin datos.
+ */
+const tn = (s: string): number | null => {
+  if (!s.trim()) return null
+  const n = parseFloat(s.replace(/\./g, "").replace(",", "."))
+  return Number.isFinite(n) ? n : null
+}
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const ent = (n: number) => Math.round(n).toLocaleString("es-AR")
@@ -47,6 +61,11 @@ export interface DatosHacienda {
   mesPrecios: string
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
+  /** Toneladas vendidas en el ejercicio: la única entrada del cuadre de granos que la app sabe. */
+  ventasGranosTn: number
+  sementeras: Sementeras
+  /** Lo que el Excel necesita de granos y sementeras, ya armado con lo que el usuario escribió. */
+  campo: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras }
 }
 
 export function HaciendaAlCierre({
@@ -55,6 +74,12 @@ export function HaciendaAlCierre({
   const [cargando, setCargando] = useState(false)
   const [datos, setDatos] = useState<DatosHacienda | null>(null)
   const [manuales, setManuales] = useState<Record<string, string>>({})
+  /**
+   * Las tres entradas del cuadre de granos que **hoy no están en ninguna tabla**. Van como texto
+   * (§ 💰 es-AR) y vacías significan «no lo sé», no «cero» — por eso el cuadre no se declara
+   * cerrado mientras falten.
+   */
+  const [granos, setGranos] = useState({ inicio: "", cosecha: "", cierre: "", precio: "" })
 
   /** El mes del cierre completo: `2026-06-01` … `2026-06-30`. */
   const mesDelCierre = () => {
@@ -99,6 +124,18 @@ export function HaciendaAlCierre({
           return []
         }
       }
+      // Granos: las toneladas vendidas en el ejercicio. Es lo único del cuadre que la app sabe.
+      const { data: vg } = await supabase
+        .schema("msa").from("comprobantes_venta")
+        .select("toneladas, fecha_liquidacion")
+        .gte("fecha_liquidacion", `${Number(ejercicio.fechaCierre.slice(0, 4)) - 1}-07-01`)
+        .lte("fecha_liquidacion", ejercicio.fechaCierre)
+
+      // Sementeras: las órdenes agrícolas con sus líneas de insumo.
+      const { data: ord } = await supabase
+        .schema("productivo").from("ordenes_agricolas")
+        .select("id, fecha, lote_nombre, hectareas, estado, lineas:lineas_orden_agricola(insumo_nombre, cantidad_total_l, unidad_dosis)")
+
       const { data: ins, error: errIns } = await supabase
         .schema("productivo")
         .from("stock_insumos")
@@ -116,11 +153,39 @@ export function HaciendaAlCierre({
         if (Number.isFinite(n) && n > 0) numericos[k] = n
       }
 
+      const sementeras = armarSementeras(
+        (ord ?? []).map((o: Record<string, unknown>) => ({
+          id: String(o.id), fecha: o.fecha ? String(o.fecha).slice(0, 10) : null,
+          lote: String(o.lote_nombre ?? ""), hectareas: Number(o.hectareas ?? 0),
+          estado: String(o.estado ?? ""),
+          lineas: ((o.lineas ?? []) as Array<Record<string, unknown>>).map(l => ({
+            insumo: String(l.insumo_nombre ?? ""),
+            cantidad: l.cantidad_total_l == null ? null : Number(l.cantidad_total_l),
+            unidad: String(l.unidad_dosis ?? ""),
+            // Los insumos no tienen precio cargado: por eso cada línea nace como hueco.
+            precioUnitario: null,
+          })),
+        })),
+        ejercicio.fechaCierre,
+      )
+      const ventasGranosTn = Math.round(
+        (vg ?? []).reduce((s, x: Record<string, unknown>) => s + Number(x.toneladas ?? 0), 0) * 1000,
+      ) / 1000
+
       const d: DatosHacienda = {
         existencias, mag, mercado: hembras,
         valuacion: valuarHacienda(existencias, mag, hembras, numericos),
         mesPrecios: etiqueta,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
+        ventasGranosTn, sementeras,
+        campo: {
+          granos: cuadrarGranos({
+            stockInicioTn: tn(granos.inicio), cosechaTn: tn(granos.cosecha),
+            ventasTn: ventasGranosTn, stockEmpresaTn: tn(granos.cierre),
+          }),
+          valuacionGranos: valuarGranos(tn(granos.cierre) ?? 0, tn(granos.precio)),
+          sementeras,
+        },
       }
       setDatos(d)
       onDatos(d)
@@ -132,6 +197,13 @@ export function HaciendaAlCierre({
   }
 
   const v = datos?.valuacion
+
+  const cuadreGranos: CuadreGranos = cuadrarGranos({
+    stockInicioTn: tn(granos.inicio),
+    cosechaTn: tn(granos.cosecha),
+    ventasTn: datos?.ventasGranosTn ?? 0,
+    stockEmpresaTn: tn(granos.cierre),
+  })
 
   return (
     <div className="border-t pt-3 space-y-3">
@@ -252,6 +324,81 @@ export function HaciendaAlCierre({
                   ))}
                 </ul>
               </div>
+            </div>
+          )}
+
+          {/* 🌾 Granos: el cuadre de kilos. La app sabe las ventas; las otras dos las cargás vos. */}
+          {datos && (
+            <div className="border-t pt-3 space-y-2" data-test="granos">
+              <div className="text-sm font-medium">🌾 Granos — cuadre de kilos (toneladas)</div>
+              <div className="flex flex-wrap items-end gap-2 text-xs">
+                <label className="block">
+                  <span className="block text-muted-foreground">Stock al inicio</span>
+                  <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
+                    value={granos.inicio} onChange={e => setGranos(g => ({ ...g, inicio: e.target.value }))} />
+                </label>
+                <label className="block">
+                  <span className="block text-muted-foreground">Cosecha</span>
+                  <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
+                    value={granos.cosecha} onChange={e => setGranos(g => ({ ...g, cosecha: e.target.value }))} />
+                </label>
+                <div>
+                  <span className="block text-muted-foreground">Ventas (de la app)</span>
+                  <span className="font-mono">{fmt(datos.ventasGranosTn)}</span>
+                </div>
+                <label className="block">
+                  <span className="block text-muted-foreground">Existencia al cierre</span>
+                  <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
+                    value={granos.cierre} onChange={e => setGranos(g => ({ ...g, cierre: e.target.value }))} />
+                </label>
+                <label className="block">
+                  <span className="block text-muted-foreground">Precio por tonelada</span>
+                  <Input type="text" placeholder="0,00" className="h-6 w-28 text-xs"
+                    value={granos.precio} onChange={e => setGranos(g => ({ ...g, precio: e.target.value }))} />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cargá lo que falte y apretá <strong>Recalcular</strong> para que entre al Excel.
+                Vacío significa <strong>«no lo sé»</strong>, no cero — por eso el cuadre no se declara
+                cerrado mientras falte algo.
+              </p>
+              {(() => {
+                const c = cuadreGranos
+                return (
+                  <div className="text-xs">
+                    Saldo: <strong className="font-mono">{c.saldoTn ?? "—"}</strong>
+                    {c.diferenciaTn != null && (
+                      <> · Diferencia: <strong className={`font-mono ${c.cierra ? "text-emerald-700" : "text-amber-700"}`}>
+                        {c.diferenciaTn}
+                      </strong> {c.cierra ? "✓ cierra" : "⚠️ no cierra — hay que explicarla"}</>
+                    )}
+                    {c.faltan.length > 0 && (
+                      <div className="text-muted-foreground">Falta cargar: {c.faltan.join(" · ")}</div>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* 🌱 Sementeras: lo ejecutado hasta el cierre. */}
+          {datos && (
+            <div className="border-t pt-3 space-y-1 text-xs" data-test="sementeras">
+              <div className="text-sm font-medium">🌱 Sementeras</div>
+              <div>
+                <strong>{datos.sementeras.ordenesEjecutadas}</strong> orden(es) ejecutada(s) ·
+                <strong> {datos.sementeras.hectareas}</strong> ha · costo{" "}
+                <strong>${fmt(datos.sementeras.costo)}</strong>
+              </div>
+              <div className="text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+                <strong>El costo está incompleto.</strong> Falta: {datos.sementeras.faltan.join(" · ")}
+              </div>
+              {datos.sementeras.ordenesNoContadas.length > 0 && (
+                <div className="text-muted-foreground">
+                  {datos.sementeras.ordenesNoContadas.length} orden(es) no se contaron:{" "}
+                  {[...new Set(datos.sementeras.ordenesNoContadas.map(o => o.motivo))].join(" · ")}
+                </div>
+              )}
             </div>
           )}
         </>

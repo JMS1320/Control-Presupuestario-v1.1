@@ -64,6 +64,9 @@ import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import {
+  cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
+} from "@/lib/balance/granos-sementeras"
+import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
@@ -2672,6 +2675,127 @@ export function correrCasos(): Resultado[] {
       "500", String(varios.grupos.reduce((s, g) => s + g.valuado, 0)),
       varios.grupos.reduce((s, g) => s + g.valuado, 0) === varios.valuado && varios.valuado === 500,
       "A-FEAT-1184")
+  }
+
+  /**
+   * 🌾 **GRANOS: EL CUADRE DE KILOS — A-FEAT-1184.**
+   *
+   * Reproduce el cuadre de su planilla 2025, **con sus números reales**, incluida la diferencia
+   * de **2,386 tn que no cierra y él deja escrita**. Ése es el punto: el cuadre **muestra** la
+   * diferencia, no la fuerza a cero.
+   */
+  {
+    // Los numeros de su planilla, en toneladas.
+    const suPlanilla = cuadrarGranos({
+      stockInicioTn: 305.133, cosechaTn: 232.150,
+      ventasTn: 308.741 + 219.230,       // ventas del ejercicio + la "venta extra"
+      // ⚠️ En su planilla la celda guarda el stock YA NEGADO (`=-B13*1000`) porque despues lo
+      //    SUMA. Acá se pasa el stock de verdad —6,926 tn, las mismas de la valuación— y la resta
+      //    la hace la función. Copiar la celda tal cual daba 16,238 en vez de 2,386.
+      stockEmpresaTn: 6.926,
+    })
+    chequear("Balance · granos", "🔑 Reproduce el cuadre de su planilla: saldo 9,312 tn",
+      "9.312", String(suPlanilla.saldoTn), Math.abs((suPlanilla.saldoTn ?? 0) - 9.312) < 0.001,
+      "A-FEAT-1184")
+
+    chequear("Balance · granos", "🧮 Y la diferencia de 2,386 tn SE MUESTRA, no se fuerza a cero",
+      "2.386", String(suPlanilla.diferenciaTn),
+      Math.abs((suPlanilla.diferenciaTn ?? 0) - 2.386) < 0.001, "A-FEAT-1184")
+
+    chequear("Balance · granos", "Y con esa diferencia, el cuadre NO se declara cerrado",
+      "no cierra", suPlanilla.cierra ? "cierra" : "no cierra",
+      suPlanilla.cierra === false, "A-FEAT-1184")
+
+    // Dentro de tolerancia si cierra: se pesa en balanza y se redondea.
+    const ajustado = cuadrarGranos({ stockInicioTn: 100, cosechaTn: 50, ventasTn: 30, stockEmpresaTn: 119.9 })
+    chequear("Balance · granos", "Una diferencia de 0,1 tn entra en la tolerancia y cierra",
+      "cierra", ajustado.cierra ? "cierra" : "no cierra", ajustado.cierra === true, "A-FEAT-1184")
+
+    // 🕳️ Sin las entradas que hoy no estan en la app, NO se declara que cierra.
+    const faltando = cuadrarGranos({ stockInicioTn: null, cosechaTn: null, ventasTn: 15, stockEmpresaTn: null })
+    chequear("Balance · granos", "🕳️ Sin stock inicial ni cosecha, no se dice que cierra: sería un verde falso",
+      "no cierra · 3 faltantes",
+      `${faltando.cierra ? "cierra" : "no cierra"} · ${faltando.faltan.length} faltantes`,
+      faltando.cierra === false && faltando.faltan.length === 3, "A-FEAT-1184")
+
+    // La valuacion, con las formulas de su planilla: bruto -> neto por calidad -> menos CZ.
+    // ⚠️ 6,926 tn, no 6,93: la planilla MUESTRA 6,93 redondeado pero calcula con 6,926 — se ve
+    //    en que su bruto da 2.223.246 y no 2.224.530. Redondear la entrada movía el final $1.181.
+    const v = valuarGranos(6.926, 321000, 1, 0.08)
+    chequear("Balance · granos", "🔑 Valuación como su planilla: 6,926 tn → neto final 2.045.386,32",
+      "2045386.32", String(v.netoFinal), Math.abs((v.netoFinal ?? 0) - 2045386.32) < 0.01,
+      "A-FEAT-1184")
+
+    chequear("Balance · granos", "🕳️ Sin precio, no se valúa en cero: es hueco",
+      "hueco · nulo",
+      `${valuarGranos(10, null).esHueco ? "hueco" : "valuado"} · ${valuarGranos(10, null).netoFinal === null ? "nulo" : "0"}`,
+      valuarGranos(10, null).esHueco === true && valuarGranos(10, null).netoFinal === null,
+      "A-FEAT-1184")
+  }
+
+  /**
+   * 🌱 **SEMENTERAS — A-FEAT-1184.**
+   *
+   * Es el costo **sembrado y todavía no cosechado**. Lo que se prueba acá es sobre todo **qué NO
+   * entra**: una orden planificada no costó nada todavía, y contarla inflaría el activo con un
+   * gasto que no ocurrió.
+   */
+  {
+    const orden = (o: Partial<OrdenAgricola>): OrdenAgricola => ({
+      id: o.id ?? "o1", fecha: o.fecha ?? "2026-04-01", lote: o.lote ?? "Casas",
+      hectareas: o.hectareas ?? 29, estado: o.estado ?? "ejecutada",
+      lineas: o.lineas ?? [{ insumo: "Glifosato", cantidad: 100, unidad: "L", precioUnitario: null }],
+    })
+
+    // 🛑 Solo las EJECUTADAS y hasta el cierre.
+    const mezcla = armarSementeras([
+      orden({ id: "a", estado: "ejecutada", fecha: "2026-04-01" }),
+      orden({ id: "b", estado: "planificada", fecha: "2026-05-01", lote: "Ribera" }),
+      orden({ id: "c", estado: "eliminada", fecha: "2026-03-01", lote: "Tosquera" }),
+      orden({ id: "d", estado: "ejecutada", fecha: "2026-09-25", lote: "Posterior" }),
+    ], "2026-06-30")
+
+    chequear("Balance · sementeras", "🛑 Sólo cuenta las ejecutadas hasta el cierre: 1 de 4",
+      "1 ejecutada", `${mezcla.ordenesEjecutadas} ejecutada`,
+      mezcla.ordenesEjecutadas === 1, "A-FEAT-1184")
+
+    chequear("Balance · sementeras", "Y las otras 3 se informan con su motivo, no desaparecen",
+      "3 no contadas", `${mezcla.ordenesNoContadas.length} no contadas`,
+      mezcla.ordenesNoContadas.length === 3, "A-FEAT-1184")
+
+    chequear("Balance · sementeras", "🔑 Una PLANIFICADA dice que todavía no es costo incurrido",
+      "lo dice",
+      mezcla.ordenesNoContadas.find(o => o.estado === "planificada")?.motivo.includes("no es costo")
+        ? "lo dice" : "no lo dice",
+      !!mezcla.ordenesNoContadas.find(o => o.estado === "planificada")?.motivo.includes("no es costo"),
+      "A-FEAT-1184")
+
+    // 🕳️ Sin precio de insumo, la linea es hueco y el costo no la incluye.
+    chequear("Balance · sementeras", "🕳️ Sin precio del insumo, la línea es hueco y el costo da 0",
+      "1 hueco · costo 0", `${mezcla.huecos.length} hueco · costo ${mezcla.costo}`,
+      mezcla.huecos.length === 1 && mezcla.costo === 0, "A-FEAT-1184")
+
+    // Con precio, valua.
+    const conPrecio = armarSementeras([
+      orden({ lineas: [{ insumo: "Glifosato", cantidad: 100, unidad: "L", precioUnitario: 4 }] }),
+    ], "2026-06-30")
+    chequear("Balance · sementeras", "Con precio: 100 L × 4 = 400",
+      "400", String(conPrecio.costo), conPrecio.costo === 400, "A-FEAT-1184")
+
+    // ⚠️ Y SIEMPRE avisa que falta la tarifa de labores: sin eso el costo esta incompleto
+    //    aunque todos los insumos tuvieran precio.
+    chequear("Balance · sementeras", "⚠️ Avisa que falta la tarifa de labores aunque los insumos tengan precio",
+      "avisa",
+      conPrecio.faltan.some(f => f.includes("labores")) ? "avisa" : "no avisa",
+      conPrecio.faltan.some(f => f.includes("labores")), "A-FEAT-1184")
+
+    // Las hectareas no se duplican si el mismo lote aparece en dos ordenes.
+    const dosOrdenes = armarSementeras([
+      orden({ id: "x", lote: "Casas", hectareas: 29 }),
+      orden({ id: "y", lote: "Casas", hectareas: 29, fecha: "2026-05-01" }),
+    ], "2026-06-30")
+    chequear("Balance · sementeras", "Las hectáreas no se cuentan dos veces si el lote se repite",
+      "29 ha", `${dosOrdenes.hectareas} ha`, dosOrdenes.hectareas === 29, "A-FEAT-1184")
   }
 
   return r

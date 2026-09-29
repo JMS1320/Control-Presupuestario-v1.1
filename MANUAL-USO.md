@@ -2411,6 +2411,30 @@ lleno = acá mandás vos.
 
 ⚠️ Los precios que cargues **no se guardan todavía**: si recargás la pantalla, se pierden.
 
+### 🌾 Granos y 🌱 sementeras
+
+Abajo de la hacienda hay dos bloques más.
+
+**Granos es el cuadre de kilos**, el mismo que hacías en la planilla:
+
+```
+stock al inicio + cosecha − ventas = saldo
+saldo − existencia al cierre = DIFERENCIA
+```
+
+**La app ya pone las ventas** (de los comprobantes de venta). Las otras tres las cargás vos, más el
+precio por tonelada para la valuación.
+
+🔑 **La diferencia se muestra aunque no dé cero** — como vos la dejabas escrita. Si no cierra, lo
+dice; no la maquilla. Y si dejás campos vacíos, **no dice que cierra**: lista qué falta, porque
+vacío significa *«no lo sé»*, no cero.
+
+**Sementeras** muestra lo sembrado y todavía no cosechado: sólo las órdenes **ejecutadas** hasta el
+cierre. Una orden *planificada* no se cuenta —todavía no costó nada— y te dice por qué quedó afuera.
+
+⚠️ **El costo de sementeras está incompleto y la pantalla lo avisa**: los insumos no tienen precio
+cargado y **las labores no tienen dónde cargar su tarifa** todavía.
+
 ⚠️ Esta pantalla **sólo lee**. No modifica ni un dato.
 
 ⚠️ Sin probar todavía → A-TEST-1156
