@@ -191,7 +191,13 @@ export function PanelBoletasArba() {
    * Lo que dijo el MAIL, por nombre de archivo. Se llena al bajar y se usa cuando después subís
    * esos mismos PDFs: ahí es donde los dos caminos se encuentran y se pueden comparar.
    */
-  const [mailPorArchivo, setMailPorArchivo] = useState<Record<string, { objeto: string | null; importe: number | null }>>({})
+  /**
+   * Lo que se sabe de cada archivo bajado: lo que dijo el MAIL (para cruzarlo con el PDF) y **el
+   * link de Drive**, que es lo que permite abrir la boleta desde la app para verificar el importe.
+   */
+  const [mailPorArchivo, setMailPorArchivo] = useState<Record<string, {
+    objeto: string | null; importe: number | null; url: string | null; carpeta: string | null
+  }>>({})
 
   const subir = async (archivos: FileList) => {
     setLeyendo(true)
@@ -339,9 +345,23 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       j = { ...j, bajadas: acumBajadas, ya_estaban: acumYaEstaban }
       setDelMail({ resumen: String(j.resumen ?? ""), bajadas: acumBajadas, ya_estaban: acumYaEstaban, descuadres: (j.descuadres ?? []) as { asunto: string; detalle: string }[] })
       // Se guarda lo que dijo el mail para poder cruzarlo cuando se suban los PDFs (A-FEAT-107).
-      const idx: Record<string, { objeto: string | null; importe: number | null }> = {}
+      /**
+       * 🔗 **También se guarda el LINK de Drive**, no sólo lo que dijo el mail.
+       *
+       * Pedido del usuario 2026-09-30: *«ya deben quedar linkeadas para verlas desde la app»*. El
+       * GAS lo venía devolviendo desde siempre (`b.url`) y la pantalla **lo mostraba en la lista de
+       * la bajada y lo tiraba**: al aplicar la boleta no quedaba forma de volver al PDF.
+       *
+       * 🔑 Y es lo que hace posible su circuito: *«importaría desde mail, quedaría guardado y
+       * linkeado para ver las boletas si tengo dudas y chequear que haya tomado bien los montos»*.
+       * Sin el link, para verificar un importe hay que salir a buscar el archivo en el Drive.
+       */
+      const idx: Record<string, { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null }> = {}
       for (const b of (j.bajadas ?? []) as Bajada[]) {
-        if (b.importe_mail != null || b.objeto_mail) idx[b.archivo] = { objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null }
+        idx[b.archivo] = {
+          objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null,
+        }
       }
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
 
@@ -422,7 +442,10 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           codigo_pago_electronico: f.boleta.codigoPagoElectronico,
           // 🔁 Los dos caminos se guardan SEPARADOS. Fundirlos en uno perdería justamente el control.
           importe_mail: f.importeMail, objeto_mail: f.objetoMail,
-          archivo_nombre: f.archivo, egreso_id: f.egresoId, cuota_id: f.cuotaId,
+          archivo_nombre: f.archivo,
+          // 🔗 El link al PDF en Drive, para poder abrirlo desde la app y verificar el importe.
+          archivo_url: mailPorArchivo[f.archivo]?.url ?? null,
+          egreso_id: f.egresoId, cuota_id: f.cuotaId,
           // 🐾 La huella: qué leyó el parser y qué puso el usuario. Sirve para preguntarle después
           // al importador qué campo se corrige más y si un cambio lo mejoró o lo empeoró.
           correcciones: huellaBoleta(
