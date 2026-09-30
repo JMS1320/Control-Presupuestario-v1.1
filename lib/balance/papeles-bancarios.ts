@@ -47,6 +47,15 @@ export interface MovimientoExtracto {
   debitos?: number | null
   creditos?: number | null
   saldo?: number | null
+  /**
+   * La posición del movimiento **dentro del día**, como vino del banco.
+   *
+   * 🧨 **Hace falta para el SALDO, no para los gastos.** Sin ella, «el último movimiento del
+   * ejercicio» es el que la base quiera devolver, y el 30/06/2026 hay 10 en Banco Galicia con saldos
+   * que van de $313.855,13 a −$2.261.369,97: **$2,58 M de diferencia** → [A-BUG-1224]. Las 7 tablas
+   * de extracto y caja la tienen. Ver `saldos-al-inicio.ts`.
+   */
+  orden?: number | null
 }
 
 /** Una cuenta del plan, con su totalizadora. */

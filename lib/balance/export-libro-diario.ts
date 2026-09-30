@@ -23,6 +23,7 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
+import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
@@ -665,6 +666,99 @@ const COLS_ANTICIPOS: Columna[] = [
 ]
 
 /**
+ * 🧮 **La solapa 07.1 — LA CADENA DE SALDOS, de dónde arranca el ejercicio hasta dónde termina.**
+ *
+ * Es el camino inverso del papel 07 (§ 🧮 de `CLAUDE.md`): el saldo al cierre **no se afirma, se
+ * reconstruye** desde el saldo al inicio, y se compara con el que trae el extracto.
+ *
+ * 🔑 **Y el tramo que la app no tiene cargado no se carga: se deduce** del primer movimiento que sí
+ * está (`saldo + débito − crédito`). Por eso el ejercicio 25/26 se puede cerrar **sin cargar los
+ * extractos de julio-25 a enero-26**, que es lo que el usuario decidió no hacer.
+ *
+ * 📌 **Va en solapa propia y no pegada a los saldos** por una razón práctica: `07 Bancos` ya mezcla
+ * la tabla de saldos con la de cuotapartes del FCI, y sus columnas quieren formatos distintos
+ * (importes contra cuotapartes con 4 decimales). Una tercera tabla ahí adentro haría que ninguna de
+ * las tres se vea bien.
+ */
+function hojaDeCadenaDeSaldos(cadenas: CadenaDeSaldos[], fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`LA CADENA DEL EJERCICIO — el saldo al cierre reconstruido desde el saldo al inicio`])
+  f.push([`Al ${fechaCierre}`])
+  f.push([])
+  f.push(["Cuenta", "Saldo al inicio", "Neto NO cargado", "Saldo al arrancar lo cargado",
+    "Neto de lo cargado", "Saldo al cierre calculado", "Saldo del extracto", "Diferencia",
+    "Desde", "Hasta", "Movim."])
+  for (const c of cadenas) {
+    const n = f.length + 1
+    f.push([
+      c.cuenta,
+      c.saldoInicio ?? "NO SE CONOCE",
+      c.netoNoCargado ?? "",
+      c.saldoAntesDeLoCargado ?? "",
+      money(c.netoCargado),
+      c.cierreCalculado ?? "",
+      c.saldoAlCierre ?? "",
+      c.cierreCalculado != null && c.saldoAlCierre != null
+        ? conFormula(`F${n}-G${n}`, c.diferencia ?? 0)
+        : "no se puede controlar",
+      c.desde ?? "", c.hasta ?? "", c.movimientos,
+    ])
+  }
+  f.push([])
+
+  const conControl = cadenas.filter(c => c.diferencia != null)
+  const noCierran = conControl.filter(c => Math.abs(c.diferencia ?? 0) > 0.01)
+  if (conControl.length === 0) {
+    f.push(["No se pudo controlar ninguna cuenta: no hay movimientos con saldo en el ejercicio."])
+  } else if (noCierran.length === 0) {
+    f.push([`CONTROL OK — en ${conControl.length} cuenta(s) los movimientos explican el saldo al cierre, al centavo.`])
+  } else {
+    f.push([`ATENCION — en ${noCierran.length} cuenta(s) los movimientos NO explican el saldo al cierre:`])
+    /**
+     * 🔍 **Y se dice CUAL de las dos causas es**, porque mandan a lugares distintos: un salto solo es
+     * un movimiento que falta (ahí está la plata); muchos saltos que se compensan es el orden mal, y
+     * no falta un peso. Ver `saltos` en `saldos-al-inicio.ts`.
+     */
+    for (const c of noCierran) {
+      const causa = c.saltos <= 1
+        ? "parece faltar (o sobrar) UN movimiento: la plata esta ahi"
+        : `el ORDEN de los movimientos no sigue a los saldos (${c.saltos} saltos que suman `
+          + `${money(c.sumaDeSaltos)}): NO falta plata, lo que no sirve es el orden`
+      f.push([`   ${c.cuenta}: diferencia ${money(c.diferencia ?? 0)} — ${causa}`])
+    }
+  }
+
+  f.push([])
+  f.push(["Como se lee: el ejercicio arranca en el Saldo al inicio; el Neto NO cargado son los meses"])
+  f.push(["que el extracto de la app no tiene y se DEDUCEN del primer movimiento cargado (no hay que"])
+  f.push(["cargarlos); despues se suma el neto de lo que si esta, y eso tiene que dar el saldo del extracto."])
+  f.push([])
+  for (const c of cadenas) {
+    if (c.fuenteInicio) f.push([`Saldo al inicio de ${c.cuenta} — de donde sale: ${c.fuenteInicio}`])
+  }
+  const sinInicio = cadenas.filter(c => c.saldoInicio == null)
+  if (sinInicio.length > 0) {
+    f.push([`Sin saldo al inicio declarado: ${sinInicio.map(c => c.cuenta).join(", ")}.`])
+    f.push(["Esas cuentas estan vacias en el sistema, asi que el saldo al inicio no sale de ningun lado."])
+  }
+  return f
+}
+
+const COLS_CADENA: Columna[] = [
+  { ancho: 30 },                    // Cuenta
+  { ancho: 18, z: MONEDA },         // Saldo al inicio
+  { ancho: 18, z: MONEDA },         // Neto NO cargado
+  { ancho: 22, z: MONEDA },         // Saldo al arrancar lo cargado
+  { ancho: 18, z: MONEDA },         // Neto de lo cargado
+  { ancho: 22, z: MONEDA },         // Saldo al cierre calculado
+  { ancho: 18, z: MONEDA },         // Saldo del extracto
+  { ancho: 16, z: MONEDA },         // Diferencia
+  { ancho: 11 },                    // Desde
+  { ancho: 11 },                    // Hasta
+  { ancho: 9, z: ENTERO },          // Movim.
+]
+
+/**
  * 🧾 La solapa **03.1 Provisión de cobros** — el espejo del papel 05, del lado de las ventas.
  *
  * *«Facturas o liquidaciones (siempre de venta) de cosas que sucedieron antes del cierre y se
@@ -780,13 +874,24 @@ function hojaDeBancos(
   saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>,
   fci: { fondos: FondoComun[]; total: FondoComun },
   fechaCierre: string,
+  /** 🏦 La cadena inicio → cierre de cada cuenta (A-FEAT-1206). Vacío = no se pudo armar. */
+  cadenas: CadenaDeSaldos[] = [],
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([`SALDOS BANCARIOS Y DE CAJA AL ${fechaCierre}`])
   f.push([])
-  f.push(["Cuenta", "Saldo al cierre", "Fecha del ultimo movimiento", "Saldo al INICIO (lo carga el usuario)"])
+  f.push(["Cuenta", "Saldo al cierre", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio"])
   for (const s of saldos) {
-    f.push([s.nombre, s.saldo ?? "sin saldo en el periodo", s.fecha ?? "", ""])
+    const c = cadenas.find(x => x.cuenta === s.nombre)
+    f.push([
+      s.nombre, s.saldo ?? "sin saldo en el periodo", s.fecha ?? "",
+      /**
+       * 🎚️ El saldo al inicio viene puesto **si está declarado**, y la celda sigue siendo suya
+       * (§ 🎚️ *default del dato real, siempre editable*). Donde no se conoce, se dice — antes iba
+       * vacío en todas y no se distinguía «no lo sabemos» de «es cero».
+       */
+      c?.saldoInicio ?? "",
+    ])
   }
   const conSaldo = saldos.filter(s => s.saldo != null)
   const desde = 4
@@ -795,12 +900,15 @@ function hojaDeBancos(
     conSaldo.length > 0
       ? conFormula(`SUM(B${desde}:B${hasta})`, money(conSaldo.reduce((t, s) => t + (s.saldo ?? 0), 0)))
       : 0,
-    "", ""])
+    "",
+    conFormula(`SUM(D${desde}:D${hasta})`,
+      money(cadenas.reduce((t, c) => t + (c.saldoInicio ?? 0), 0)))])
   f.push([])
-  f.push(["El saldo al cierre es el del ULTIMO movimiento del ejercicio en cada cuenta."])
-  f.push(["El saldo al INICIO no esta en el sistema: se carga a mano. Sin el no hay variacion patrimonial."])
+  f.push(["El saldo al cierre es el del ULTIMO movimiento del ejercicio, tomado por fecha Y por orden"])
+  f.push(["dentro del dia: el 30/06 hay 10 movimientos y entre el primero y el ultimo hay $2,58 M."])
   f.push([])
   f.push([])
+
 
   /**
    * 💹 **Los fondos comunes son CUOTAPARTES, no un saldo.**
@@ -1451,7 +1559,13 @@ export function armarWorkbook(
   if (bancarios) {
     if (bancarios.fci) {
       hoja(wb, "07 Bancos",
-        hojaDeBancos(bancarios.saldos, bancarios.fci, libro.ejercicio.fechaCierre), COLS_BANCOS)
+        hojaDeBancos(bancarios.saldos, bancarios.fci, libro.ejercicio.fechaCierre,
+          bancarios.cadenas ?? []), COLS_BANCOS)
+      // 🧮 El control del papel 07, en su propia solapa: ver `hojaDeCadenaDeSaldos`.
+      if ((bancarios.cadenas ?? []).length > 0) {
+        hoja(wb, "07.1 Cadena de saldos",
+          hojaDeCadenaDeSaldos(bancarios.cadenas ?? [], libro.ejercicio.fechaCierre), COLS_CADENA)
+      }
     }
     hoja(wb, "08 Gastos bancarios",
       hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta))

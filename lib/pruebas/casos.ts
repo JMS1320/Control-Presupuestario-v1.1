@@ -70,6 +70,9 @@ import {
   armarChequesDados, armarAnticiposAlCierre,
   type ChequeCrudo, type AnticipoCrudo, type AplicacionDeAnticipo,
 } from "@/lib/balance/valores-al-cierre"
+import {
+  armarCadenaDeSaldos, saldoAlInicioDe, ultimoMovimiento, primerMovimiento,
+} from "@/lib/balance/saldos-al-inicio"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -3997,6 +4000,141 @@ export function correrCasos(): Resultado[] {
       "1 descuadre de 14.720,00",
       `${sinSicore.descuadres.length} descuadre(s) de ${n2(sinSicore.descuadres[0]?.diferencia ?? 0)}`,
       sinSicore.descuadres.length === 1 && sinSicore.descuadres[0].diferencia === 14720, "A-FEAT-1195")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🏦 LA CADENA DE SALDOS del papel 07 (A-FEAT-1206) y el orden dentro del día (A-BUG-1224).
+  //    Los números son los reales de MSA / Banco Galicia cta cte, ejercicio 25/26.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /**
+     * 🧨 Los 10 movimientos del 30/06/2026, con su `orden` y su saldo reales. Puestos **fuera de
+     * orden a propósito**: así vienen de la base cuando no se pide `orden`, y es lo que hacía que el
+     * saldo al cierre pudiera ser cualquiera de los diez.
+     */
+    const ULTIMO_DIA = [
+      { fecha: "2026-06-30", orden: 686, debitos: 20000, creditos: 0, saldo: 313855.13 },
+      { fecha: "2026-06-30", orden: 695, debitos: 30214.6, creditos: 0, saldo: -2261369.97 },
+      { fecha: "2026-06-30", orden: 690, debitos: 0, creditos: 2470755.55, saldo: 2557881.63 },
+      { fecha: "2026-06-30", orden: 687, debitos: 4200, creditos: 0, saldo: 309655.13 },
+      { fecha: "2026-06-29", orden: 685, debitos: 4379.47, creditos: 0, saldo: 333855.13 },
+    ]
+
+    const ult = ultimoMovimiento(ULTIMO_DIA)
+    chequear("Papel 07 · saldos", "🧨 El saldo al cierre sale del último por FECHA **y ORDEN**, no del último de la lista",
+      "-2.261.369,97", n2(ult?.saldo ?? 0), ult?.saldo === -2261369.97, "A-BUG-1224")
+
+    // Y el adversario: el mismo arreglo mirado «como venía» daba el primero del día.
+    chequear("Papel 07 · saldos", "🧨 Sin ordenar por orden, el saldo habría sido el de media jornada",
+      "313.855,13 era el falso", n2(ULTIMO_DIA[0].saldo),
+      ULTIMO_DIA[0].saldo === 313855.13 && ult?.saldo !== ULTIMO_DIA[0].saldo, "A-BUG-1224")
+
+    const pri = primerMovimiento(ULTIMO_DIA)
+    chequear("Papel 07 · saldos", "Y el primero, con el mismo criterio al revés",
+      "29/06 orden 685", `${pri?.fecha} orden ${pri?.orden}`,
+      pri?.fecha === "2026-06-29" && pri?.orden === 685, "A-BUG-1224")
+
+    /**
+     * 🧮 **LA CADENA COMPLETA, con los números reales del ejercicio.**
+     *
+     * Se simula con dos movimientos que llevan los datos que importan: el **primero** cargado (para
+     * despejar el saldo previo) y el **último** (para el saldo al cierre), y un neto que es el de los
+     * 695 movimientos reales.
+     */
+    const NETO_REAL = 439261543.76 - 442723296.25            // créditos − débitos = −3.461.752,49
+    const MOVS = [
+      // 02/02/2026, «Comision Servicio De Cuenta»: dejó el saldo en 1.140.382,52 desde 1.200.382,52.
+      { fecha: "2026-02-02", orden: 1, debitos: 60000, creditos: 0, saldo: 1140382.52 },
+      // 30/06/2026, el último: el saldo del extracto.
+      { fecha: "2026-06-30", orden: 695, debitos: 0, creditos: 0, saldo: -2261369.97 },
+      // El resto del ejercicio, condensado para que el neto sea el real.
+      { fecha: "2026-03-15", orden: 2, debitos: 442663296.25, creditos: 439261543.76, saldo: 0 },
+    ]
+    const DECLARADO = {
+      empresa: "MSA", ejercicio: "25/26", cuenta: "BANCO GALICIA (cta cte)",
+      saldo: 832605.05, fuente: "planilla del usuario",
+    }
+
+    const c = armarCadenaDeSaldos("BANCO GALICIA (cta cte)", MOVS, DECLARADO)
+
+    chequear("Papel 07 · saldos", "🔑 El saldo previo al primer movimiento se DESPEJA de ese movimiento",
+      "1.200.382,52", n2(c.saldoAntesDeLoCargado ?? 0),
+      c.saldoAntesDeLoCargado === 1200382.52, "A-FEAT-1206")
+
+    chequear("Papel 07 · saldos", "🔑 El tramo que la app no tiene se deduce: no hay que cargar 7 meses",
+      "367.777,47", n2(c.netoNoCargado ?? 0),
+      c.netoNoCargado === 367777.47, "A-FEAT-1206")
+
+    chequear("Papel 07 · saldos", "El neto de lo cargado es el de los 695 movimientos",
+      "-3.461.752,49", n2(c.netoCargado), c.netoCargado === r2(NETO_REAL), "A-FEAT-1206")
+
+    chequear("Papel 07 · saldos", "🧮 EL CONTROL: reconstruido desde el inicio da el saldo del extracto",
+      "-2.261.369,97 y diferencia 0",
+      `${n2(c.cierreCalculado ?? 0)} y diferencia ${n2(c.diferencia ?? -1)}`,
+      c.cierreCalculado === -2261369.97 && c.diferencia === 0, "A-FEAT-1206")
+
+    // 🛑 Una cuenta sin saldo al inicio declarado no inventa cero: se dice que no se conoce, y el
+    //    control del tramo cargado se puede hacer igual.
+    const sinDeclarar = armarCadenaDeSaldos("CAJA GENERAL", MOVS, null)
+    chequear("Papel 07 · saldos", "🛑 Sin saldo al inicio declarado no se asume cero: queda en null",
+      "inicio null y neto no cargado null",
+      `inicio ${sinDeclarar.saldoInicio} y neto no cargado ${sinDeclarar.netoNoCargado}`,
+      sinDeclarar.saldoInicio === null && sinDeclarar.netoNoCargado === null, "A-FEAT-1206")
+
+    chequear("Papel 07 · saldos", "…pero el control del tramo cargado se hace igual",
+      "diferencia 0", n2(sinDeclarar.diferencia ?? -1),
+      sinDeclarar.diferencia === 0, "A-FEAT-1206")
+
+    // Una cuenta vacía (las 3 cajas) no puede controlarse, y eso se informa en vez de dar cero.
+    const vacia = armarCadenaDeSaldos("CAJA AMS", [], null)
+    chequear("Papel 07 · saldos", "Una cuenta vacía no se puede controlar, y no da cero",
+      "todo null", `cierre ${vacia.saldoAlCierre} diferencia ${vacia.diferencia}`,
+      vacia.saldoAlCierre === null && vacia.diferencia === null && vacia.movimientos === 0,
+      "A-FEAT-1206")
+
+    // 🧨 Y el control TIENE que gritar si falta un movimiento: se saca el del neto y no cierra.
+    const conHueco = armarCadenaDeSaldos("BANCO GALICIA (cta cte)",
+      MOVS.filter(m => m.fecha !== "2026-03-15"), DECLARADO)
+    // 📌 La diferencia es el neto de la fila quitada (439.261.543,76 − 442.663.296,25), NO el neto del
+    //    ejercicio: los $60.000 del primer movimiento siguen contados.
+    chequear("Papel 07 · saldos", "🧮 Si falta un movimiento, el control no cierra",
+      "diferencia 3.401.752,49", n2(conHueco.diferencia ?? 0),
+      conHueco.diferencia === 3401752.49, "A-FEAT-1206")
+
+    /**
+     * 🔍 **Lo que separa «falta un movimiento» de «el orden está mal»** — las dos causas dan la misma
+     * diferencia total y mandan a lugares distintos. Caso real: CAJA SIGOT parecía tener $205.000
+     * faltantes y eran 17 saltos que se cancelan (su `orden` no sigue a la fecha) → A-DAT-75.
+     */
+    const ORDEN_ROTO = [
+      { fecha: "2026-03-06", orden: 21, debitos: 0, creditos: 0, saldo: 893601 },
+      // El saldo sube 27.000 con un débito de 3.000: antes tenía que haber entrado plata.
+      { fecha: "2026-03-06", orden: 22, debitos: 3000, creditos: 0, saldo: 920601 },
+      // Y acá vuelve: el par se compensa. Es orden, no plata.
+      { fecha: "2026-03-07", orden: 17, debitos: 440000, creditos: 0, saldo: 453601 },
+    ]
+    const roto = armarCadenaDeSaldos("CAJA SIGOT", ORDEN_ROTO, null)
+    chequear("Papel 07 · saldos", "🔍 Varios saltos que se compensan = el ORDEN está mal, no falta plata",
+      "2 saltos", `${roto.saltos} saltos`, roto.saltos === 2, "A-FEAT-1206")
+
+    // Un solo salto, en cambio, es un movimiento que falta: ahí sí está la plata.
+    const faltaUno = [
+      { fecha: "2026-03-01", orden: 1, debitos: 0, creditos: 0, saldo: 100000 },
+      { fecha: "2026-03-02", orden: 2, debitos: 0, creditos: 0, saldo: 250000 },
+      { fecha: "2026-03-03", orden: 3, debitos: 10000, creditos: 0, saldo: 240000 },
+    ]
+    const unSalto = armarCadenaDeSaldos("PRUEBA", faltaUno, null)
+    chequear("Papel 07 · saldos", "🔍 Un solo salto = falta un movimiento, y su importe es el salto",
+      "1 salto de 150.000,00", `${unSalto.saltos} salto de ${n2(unSalto.sumaDeSaltos)}`,
+      unSalto.saltos === 1 && unSalto.sumaDeSaltos === 150000, "A-FEAT-1206")
+
+    chequear("Papel 07 · saldos", "El saldo al inicio declarado se encuentra por empresa, ejercicio y cuenta",
+      "832.605,05",
+      n2(saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo ?? 0),
+      saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo === 832605.05
+      && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL") === null
+      && saldoAlInicioDe("PAM", "25/26", "BANCO GALICIA (cta cte)") === null, "A-FEAT-1206")
   }
 
   return r

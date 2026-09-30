@@ -2504,11 +2504,26 @@ menos de lo que debería.
 
 **«07 Bancos»** — el saldo al cierre de cada cuenta y el movimiento de los fondos comunes.
 
-🔑 **Acá hay dos cosas para completar vos**, y están vacías a propósito: el **saldo al inicio** del
-ejercicio (columna B) y el **saldo del fondo** en las dos puntas. Ésos no están en el sistema — el
-extracto ve la plata que entra y sale de la cuenta, no cuánto quedó invertido. **Completalos y el
-resultado financiero se calcula solo**, porque es una fórmula. Mientras estén vacías dice «faltan los
-saldos», no un cero que parecería un resultado.
+🔑 **El saldo al inicio de Banco Galicia ya viene puesto** *(desde el 2026-09-30)*: sale de tu propia
+planilla de julio-25 a enero-26 y la celda sigue siendo tuya, así que si lo pisás manda el tuyo. Las
+**cajas** siguen vacías porque no hay de dónde sacarlo.
+
+🧮 **Y hay una solapa nueva, «07.1 Cadena de saldos», que es el control de este papel.** Reconstruye
+el saldo al cierre **desde el saldo al inicio** y lo compara con el que trae el extracto:
+
+`saldo al inicio` **+** `los meses que la app no tiene` **+** `el neto de lo cargado` **=** `saldo al cierre`
+
+Tiene que decir **CONTROL OK**. Si no cierra, te dice **cuál de las dos cosas pasa**, que mandan a
+lugares distintos: **un solo salto** significa que falta un movimiento (ahí está la plata); **muchos
+saltos que se compensan** significa que el **orden** de los movimientos no sigue a los saldos, y ahí
+no falta nada — lo que hay que arreglar es el orden.
+
+💡 **Los meses que la app no tiene no hay que cargarlos**: se deducen del primer movimiento que sí
+está. Por eso el ejercicio cierra sin cargar julio-25 a enero-26.
+
+🔑 **Lo que sí queda para completar vos** es el **saldo del fondo** en las dos puntas: eso no está en
+el sistema, porque el extracto ve la plata que entra y sale de la cuenta, no cuánto quedó invertido.
+**Completalo y el resultado financiero se calcula solo**, porque es una fórmula.
 
 **«08 Gastos bancarios»** — un concepto por fila y los 12 meses en columnas, como tu planilla. Los
 conceptos salen del **plan de cuentas** (totalizadoras *IMPUESTOS BANCARIOS* y *GASTOS BANCARIOS*).
@@ -2525,7 +2540,7 @@ No lo tiran: es el trabajo que falta en el plan.
 📌 **Sin abrir el Excel**, el mismo resumen por consola:
 `npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
 
-⚠️ Sin probar todavía → A-TEST-1165
+⚠️ Sin probar todavía → A-TEST-1165 · el saldo al inicio y la cadena → A-TEST-1169
 
 ## 💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*
 

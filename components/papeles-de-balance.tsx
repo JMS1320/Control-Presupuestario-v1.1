@@ -43,6 +43,9 @@ import {
   esFCI, CUENTAS_DEL_EXTRACTO,
   type MovimientoExtracto, type CuentaDelPlan,
 } from "@/lib/balance/papeles-bancarios"
+import {
+  armarCadenaDeSaldos, saldoAlInicioDe, type CadenaDeSaldos,
+} from "@/lib/balance/saldos-al-inicio"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
@@ -254,6 +257,8 @@ export function PapelesDeBalance() {
 
         const movimientos: Array<MovimientoExtracto & { donde: string }> = []
         const saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }> = []
+        /** 🏦 La cadena inicio → cierre de cada cuenta (A-FEAT-1206). */
+        const cadenas: CadenaDeSaldos[] = []
         const noSePudoLeer: string[] = []
 
         for (const t of CUENTAS_DEL_EXTRACTO[empresa.id] ?? []) {
@@ -261,9 +266,15 @@ export function PapelesDeBalance() {
             ? supabase.from(t.tabla)
             : supabase.schema(t.schema).from(t.tabla)
           const { data, error } = await q
-            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo")
+            /**
+             * 🧨 **`orden` no está de adorno.** Es la posición del movimiento dentro del día, y sin
+             * ella «el último del ejercicio» es el que la base quiera devolver: el 30/06/2026 hay 10
+             * movimientos en Banco Galicia y entre el primero y el último hay **$2,58 M**
+             * → A-BUG-1224. Las 7 tablas de extracto y caja la tienen.
+             */
+            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden")
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio)
-            .order("fecha", { ascending: true })
+            .order("fecha", { ascending: true }).order("orden", { ascending: true })
 
           if (error) {
             // Nada en silencio: una cuenta que no se pudo leer hace faltar gastos del papel.
@@ -273,9 +284,26 @@ export function PapelesDeBalance() {
           }
           const filas = (data ?? []) as MovimientoExtracto[]
           filas.forEach(f => movimientos.push({ ...f, donde: t.nombre }))
-          // El saldo al cierre es el del último movimiento del ejercicio en esa cuenta.
-          const ultimo = [...filas].reverse().find(f => f.saldo != null)
-          saldos.push({ nombre: t.nombre, saldo: ultimo?.saldo ?? null, fecha: ultimo?.fecha ?? null })
+
+          /**
+           * 🧮 El saldo al cierre y la cadena que lo explica salen del **mismo** lugar, así que no
+           * pueden discrepar entre la solapa y el control. Ver `lib/balance/saldos-al-inicio.ts`.
+           */
+          const cadena = armarCadenaDeSaldos(
+            t.nombre, filas, saldoAlInicioDe(empresa.id, ej.etiqueta, t.nombre))
+          cadenas.push(cadena)
+          saldos.push({ nombre: t.nombre, saldo: cadena.saldoAlCierre, fecha: cadena.hasta })
+        }
+        /**
+         * 🧮 El control se VE, no vive sólo en la solapa (§ 🧮). Si los importes del extracto no
+         * explican sus propios saldos, el saldo que va al papel no se puede entregar.
+         */
+        const noCierran = cadenas.filter(c => c.diferencia != null && Math.abs(c.diferencia) > 0.01)
+        if (noCierran.length > 0) {
+          toast.warning(
+            `En ${noCierran.map(c => c.cuenta).join(", ")} los movimientos no explican el saldo `
+            + "al cierre. Está en la solapa 07 Bancos, arriba.",
+          )
         }
         if (noSePudoLeer.length > 0) {
           toast.warning(`No se pudieron leer ${noSePudoLeer.join(", ")}: faltan sus gastos en el papel 08.`)
@@ -286,6 +314,7 @@ export function PapelesDeBalance() {
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           retiros: armarRetirosYAportes(movimientos, meses),
           saldos,
+          cadenas,
           movimientosFCI: movFCI.length,
           /**
            * Los saldos del fondo van vacíos: **no están en el extracto**. El extracto ve la plata que

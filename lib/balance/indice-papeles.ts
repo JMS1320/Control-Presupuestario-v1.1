@@ -26,6 +26,7 @@ import { claveSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { CuentasAlCierre } from "./cuentas-al-cierre"
 import type { ChequesDados, AnticiposAlCierre } from "./valores-al-cierre"
+import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { ValuacionHacienda } from "./hacienda-stock"
 import type { StockInsumos } from "./stock-insumos"
@@ -82,6 +83,11 @@ export interface DatosDelIndice {
     saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>
     /** Movimientos de FCI encontrados. */
     movimientosFCI: number
+    /**
+     * 🏦 La cadena inicio -> cierre de cada cuenta, con su control (A-FEAT-1206).
+     * Ausente = no se pudo armar; presente con `diferencia` != 0 = el saldo no se puede entregar.
+     */
+    cadenas?: CadenaDeSaldos[]
   } | null
 }
 
@@ -289,7 +295,27 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
   if (b) {
     const sinSaldo = b.saldos.filter(s => s.saldo == null)
     if (sinSaldo.length > 0) faltaBancos.push(`sin saldo al cierre: ${sinSaldo.map(s => s.nombre).join(", ")}`)
-    faltaBancos.push("los SALDOS AL INICIO del ejercicio, que no están en el sistema (los carga el usuario)")
+
+    /**
+     * 🏦 **El saldo al inicio ya no es un «lo carga el usuario» en bloque** (A-FEAT-1206).
+     *
+     * Para Banco Galicia está declarado —sale de su propia planilla— y **la cadena hasta el cierre
+     * cierra al centavo**. Para las cajas no, porque están vacías. El índice tiene que distinguir las
+     * dos cosas: decir «lo carga el usuario» cuando la mitad ya está puesta manda a hacer trabajo
+     * hecho, que es el modo de falla de un índice escrito a mano (§ 🔄).
+     */
+    const cadenas = b.cadenas ?? []
+    const sinInicio = cadenas.filter(c => c.saldoInicio == null)
+    const noCierran = cadenas.filter(c => c.diferencia != null && Math.abs(c.diferencia) > 0.01)
+    if (noCierran.length > 0) {
+      faltaBancos.push(
+        `🛑 EL CONTROL NO CIERRA en ${noCierran.map(c => `${c.cuenta} (${pesos(c.diferencia ?? 0)})`).join(", ")}: `
+        + "los movimientos no explican el saldo al cierre, probablemente falte un mes de extracto")
+    }
+    if (sinInicio.length > 0) {
+      faltaBancos.push(`el SALDO AL INICIO de ${sinInicio.map(c => c.cuenta).join(", ")} `
+        + "(esas cuentas están vacías en el sistema; se escribe en la solapa)")
+    }
     if (b.movimientosFCI > 0) faltaBancos.push("el SALDO DEL FONDO al inicio y al cierre: el extracto ve la plata que entra y sale, no cuánto quedó invertido")
     faltaBancos.push("la compra-venta de DÓLARES")
   }
@@ -297,7 +323,16 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     numero: "07", papel: "Bancos: saldos · fondos comunes · dólares",
     estado: !b ? "falta" : "parcial",
     queTiene: b
-      ? b.saldos.filter(s => s.saldo != null).map(s => `${s.nombre} ${pesos(s.saldo!)}`).join(" · ") || "ningún saldo"
+      ? [
+          b.saldos.filter(s => s.saldo != null).map(s => `${s.nombre} ${pesos(s.saldo!)}`).join(" · ") || "ningún saldo",
+          // 🧮 El resultado del control va en el índice, no sólo en la solapa: es lo que dice si el
+          //    saldo se puede entregar (§ 🧮 el control se ve, y es proporcional).
+          (b.cadenas ?? []).some(c => c.diferencia != null)
+            ? ((b.cadenas ?? []).every(c => c.diferencia == null || Math.abs(c.diferencia) <= 0.01)
+                ? "✓ la cadena inicio→cierre cierra al centavo"
+                : "⚠️ la cadena inicio→cierre NO cierra")
+            : null,
+        ].filter(Boolean).join(" · ")
       : "nada",
     queFalta: b ? faltaBancos.join(" · ") : "armar el papel",
     solapa: b ? "07 Bancos" : "",

@@ -18,6 +18,10 @@ import {
   mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
   esFCI, CUENTAS_DEL_EXTRACTO, type MovimientoExtracto, type CuentaDelPlan,
 } from "../lib/balance/papeles-bancarios"
+import {
+  armarCadenaDeSaldos, saldoAlInicioDe, type CadenaDeSaldos,
+} from "../lib/balance/saldos-al-inicio"
+import { armarEjercicio } from "../lib/balance/ejercicio"
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8")
@@ -54,6 +58,11 @@ const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
 const desde = `${meses[0]}-01`
 const [aa, mm] = meses[11].split("-").map(Number)
 const hasta = new Date(Date.UTC(aa, mm, 0)).toISOString().slice(0, 10)
+/**
+ * La etiqueta del ejercicio, como la arma `armarEjercicio`: `25/26`. Es la clave con la que se
+ * busca el saldo al inicio declarado, así que tiene que salir igual que en el export.
+ */
+const etiquetaEjercicio = armarEjercicio(anioCierre, empresa.mesCierre).etiqueta
 
 console.log(`\n🏦 PAPELES BANCARIOS · ${empresaId} · ejercicio ${desde} → ${hasta}`)
 
@@ -64,13 +73,17 @@ const cuentas = (plan ?? []) as CuentaDelPlan[]
 /** Se traen los movimientos de todas las cuentas de la empresa, marcando de dónde salió cada uno. */
 const movimientos: Array<MovimientoExtracto & { donde: string }> = []
 const saldosAlCierre: Array<{ nombre: string; saldo: number | null; fecha: string | null }> = []
+/** 🏦 La cadena inicio → cierre de cada cuenta, con su control (A-FEAT-1206). */
+const cadenas: CadenaDeSaldos[] = []
 
 for (const t of empresa.tablas) {
   const q = t.schema === "public" ? sb.from(t.tabla) : sb.schema(t.schema).from(t.tabla)
   const { data, error } = await q
-    .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo")
+    // 🧨 `orden` es la posición dentro del día. Sin ella el saldo al cierre sale de cualquier
+    //    movimiento del 30/06 → A-BUG-1224. El Presupuesto ya lo pedía así; este script no.
+    .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden")
     .gte("fecha", desde).lte("fecha", hasta)
-    .order("fecha", { ascending: true })
+    .order("fecha", { ascending: true }).order("orden", { ascending: true })
   if (error) {
     // No se corta: una cuenta que no se puede leer no puede tapar a las otras. Se dice y sigue.
     console.log(`\n⚠️  ${t.nombre}: no se pudo leer — ${error.message}`)
@@ -79,13 +92,14 @@ for (const t of empresa.tablas) {
   }
   const filas = (data ?? []) as MovimientoExtracto[]
   filas.forEach(f => movimientos.push({ ...f, donde: t.nombre }))
-  // El saldo al cierre es el del último movimiento del ejercicio.
-  const ultimo = filas.filter(f => f.saldo != null).at(-1)
-  saldosAlCierre.push({
-    nombre: t.nombre,
-    saldo: ultimo?.saldo ?? null,
-    fecha: ultimo?.fecha ?? null,
-  })
+  /**
+   * 🧮 El saldo al cierre y la cadena que lo explica salen del **mismo** lugar que en el export, así
+   * que la consola y el Excel no pueden discrepar. Ver `lib/balance/saldos-al-inicio.ts`.
+   */
+  const cadena = armarCadenaDeSaldos(
+    t.nombre, filas, saldoAlInicioDe(empresaId, etiquetaEjercicio, t.nombre))
+  cadenas.push(cadena)
+  saldosAlCierre.push({ nombre: t.nombre, saldo: cadena.saldoAlCierre, fecha: cadena.hasta })
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════
@@ -94,6 +108,33 @@ console.log("  (el saldo del último movimiento del ejercicio en cada cuenta)")
 for (const s of saldosAlCierre) {
   if (s.saldo == null) { console.log(`  ${s.nombre.padEnd(34)} — sin saldo en el período`); continue }
   console.log(`  ${s.nombre.padEnd(34)} $ ${pesos(s.saldo).padStart(18)}   (al ${s.fecha})`)
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// 🧮 LA CADENA: el saldo al cierre reconstruido desde el saldo al inicio (A-FEAT-1206).
+console.log(`
+══════ PAPEL 7.1 · LA CADENA DEL EJERCICIO ══════`)
+for (const c of cadenas) {
+  console.log(`
+  ${c.cuenta}  (${c.movimientos} movimiento(s), ${c.desde ?? "—"} → ${c.hasta ?? "—"})`)
+  if (c.movimientos === 0) { console.log("     sin movimientos en el ejercicio: no se puede armar"); continue }
+  console.log(`     saldo al inicio            ${c.saldoInicio == null ? "NO SE CONOCE" : "$ " + pesos(c.saldoInicio)}`)
+  if (c.netoNoCargado != null) console.log(`     + meses NO cargados        $ ${pesos(c.netoNoCargado)}`)
+  console.log(`     = al arrancar lo cargado   ${c.saldoAntesDeLoCargado == null ? "—" : "$ " + pesos(c.saldoAntesDeLoCargado)}`)
+  console.log(`     + neto de lo cargado       $ ${pesos(c.netoCargado)}`)
+  console.log(`     = cierre calculado         ${c.cierreCalculado == null ? "—" : "$ " + pesos(c.cierreCalculado)}`)
+  console.log(`       saldo del extracto       ${c.saldoAlCierre == null ? "—" : "$ " + pesos(c.saldoAlCierre)}`)
+  if (c.diferencia == null) console.log("     ⚠️  no se puede controlar")
+  else if (Math.abs(c.diferencia) <= 0.01) console.log("     ✓ CIERRA")
+  else {
+    console.log(`     ⚠️  NO CIERRA — diferencia $ ${pesos(c.diferencia)}`)
+    // 🔍 Un salto = falta un movimiento. Muchos que se compensan = el orden esta mal.
+    console.log(c.saltos <= 1
+      ? "        parece faltar (o sobrar) UN movimiento: la plata esta ahi"
+      : `        el ORDEN no sigue a los saldos (${c.saltos} saltos que suman $ ${pesos(c.sumaDeSaltos)}):`
+        + " NO falta plata, lo que no sirve es el orden")
+  }
+  if (c.fuenteInicio) console.log(`     saldo al inicio: ${c.fuenteInicio}`)
 }
 
 // ── Fondos comunes ─────────────────────────────────────────────────────────────────
