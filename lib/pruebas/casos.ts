@@ -77,7 +77,9 @@ import { hoyArgentina, mesArgentina, diaArgentino, ahoraISO } from "@/lib/fechas
 import {
   decidirPropagacion, esCategProvisoria, avisoDePropagacion,
 } from "@/lib/conciliacion/propagar-cuenta"
-import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
+import {
+  repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA,
+} from "@/lib/sueldos/reparto-ab"
 import {
   saldosDelPeriodo, controlarReparto, montoParaSaldo, estadoPorDefectoDe,
   type RenglonPago,
@@ -4427,6 +4429,59 @@ export function correrCasos(): Resultado[] {
     chequear("Pago repartido", "…y «saldo A» se acota a lo que queda, no vuelve a ser A entero",
       "128.000,00", n2(conMasFrancos.saldoA),
       conMasFrancos.saldoA === 128000, "A-DEC-39")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🧾 LA CUOTA ALIMENTARIA ES PARTE DE A (A-FEAT-1213). El caso es Sigot → Lucrecia.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /**
+     * 🔑 La regla, en palabras del usuario: *«se carga Lucrecia, se carga total A Sigot —Sigot antes
+     * de Lucrecia— y eso da el A total. Luego se carga total y eso calcula B»*.
+     *
+     * El A total de Sigot es 1.408.347,10. Si la cuota fueran 400.000, lo propio es 1.008.347,10.
+     */
+    const A_TOTAL = 1408347.10
+    const CUOTA = 400000
+    const ap = componerA(A_TOTAL - CUOTA, CUOTA)
+
+    chequear("Cuota alimentaria", "🧾 A total = A del empleado + la cuota",
+      "1.408.347,10", n2(ap.aTotal), ap.aTotal === A_TOTAL, "A-FEAT-1213")
+
+    // 🔑 Lo que prueba que no cambia ningún número: con el A total compuesto, B sigue siendo el mismo.
+    const TOTAL = 1600000
+    chequear("Cuota alimentaria", "🔑 Y B no se mueve: sigue saliendo del total menos el A total",
+      "191.652,90", n2(repartirTotalEnAB(TOTAL, ap.aTotal).b),
+      repartirTotalEnAB(TOTAL, ap.aTotal).b === 191652.90, "A-FEAT-1213")
+
+    // El camino inverso: al reabrir el período sólo está guardado el A total y la cuota.
+    const reabierto = abrirA(A_TOTAL, CUOTA)
+    chequear("Cuota alimentaria", "Al reabrir, lo propio se recupera por la resta",
+      "1.008.347,10", n2(reabierto.aPropio),
+      reabierto.aPropio === 1008347.10 && reabierto.aTotal === A_TOTAL, "A-FEAT-1213")
+
+    // Sin cuota (el resto de los empleados): A propio ES el A total, y nada cambia.
+    const sinCuota = abrirA(1100000, null)
+    chequear("Cuota alimentaria", "Sin cuota, A del empleado es el A total (los demás no cambian)",
+      "1.100.000,00 y cuota 0,00",
+      `${n2(sinCuota.aPropio)} y cuota ${n2(sinCuota.cuotaAlimentaria)}`,
+      sinCuota.aPropio === 1100000 && sinCuota.cuotaAlimentaria === 0, "A-FEAT-1213")
+
+    // ⚠️ Y si la cuota se pasó del A total, lo propio da NEGATIVO y se devuelve así, para mostrarlo.
+    const inconsistente = abrirA(300000, 500000)
+    chequear("Cuota alimentaria", "⚠️ Una cuota mayor que A se muestra (no se corrige en silencio)",
+      "-200.000,00", n2(inconsistente.aPropio),
+      inconsistente.aPropio === -200000, "A-FEAT-1213")
+
+    /**
+     * 🧮 Y la cadena completa de Sigot, punta a punta, como la carga él:
+     * Lucrecia + A propio = A total · total − A total = B · y (A+B) sigue dando el total.
+     */
+    const cadena = repartirTotalEnAB(TOTAL, componerA(1008347.10, 400000).aTotal)
+    chequear("Cuota alimentaria", "🧮 La cadena de Sigot cierra: Lucrecia + A propio + B = total",
+      "1.600.000,00", n2(cadena.a + cadena.b),
+      r2(cadena.a + cadena.b) === TOTAL && !cadena.invalido, "A-FEAT-1213")
   }
 
   return r

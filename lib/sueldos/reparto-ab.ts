@@ -29,6 +29,67 @@
  * (`A-FEAT-1212`): acá se define **cuánto es**, no **a quién se le transfiere**.
  */
 
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * 🧾 **LA CUOTA ALIMENTARIA ES PARTE DE A, NO UN EXTRA** (A-FEAT-1213).
+ *
+ * Precisión del usuario 2026-09-30, corrigiendo la lectura anterior:
+ *
+ * > *«Sigot es: se carga Lucrecia, se carga total A Sigot —Sigot antes de Lucrecia— y **eso da el A
+ * > total**. Luego se carga total y eso calcula B.»*
+ *
+ * 🧨 **Lo que yo había entendido mal**: leí *«lo que cobra él + la cuota alimentaria = el total»* como
+ * el total **del sueldo**. Es el total **de A**. El total del sueldo se carga aparte y B sale de la
+ * resta, como ya estaba.
+ *
+ * Entonces para Sigot son **cuatro** números y sólo **tres** se escriben:
+ *
+ * | | Se escribe | Cómo sale |
+ * |---|---|---|
+ * | **Cuota alimentaria** (Lucrecia) | ✍️ sí | |
+ * | **A de Sigot** (antes de Lucrecia) | ✍️ sí | |
+ * | **A total** | ❌ | `A Sigot + cuota` → es lo que se guarda en `monto_a` |
+ * | **Total del sueldo** | ✍️ sí | |
+ * | **B** | ❌ | `total − A total` |
+ *
+ * 🔑 **Y sigue sin cambiar ningún número**: `monto_a` guarda el **A total**, así que el bruto
+ * —que usa `(A + B)`— queda idéntico. La cuota es **la apertura de A**, no un componente nuevo.
+ *
+ * 💡 **Y sirve para algo más**: con la cuota cargada, el pago repartido puede **pre-llenar solo el
+ * renglón de Lucrecia** (`A-FEAT-1212`), que es el destino que ya existe entre sus tres cuentas.
+ */
+export interface AperturaDeA {
+  /** Lo que se le paga al empleado como parte de A, **antes** de la cuota. */
+  aPropio: number
+  /** La cuota alimentaria a un tercero. `0` cuando no aplica. */
+  cuotaAlimentaria: number
+  /** `aPropio + cuotaAlimentaria`. Es lo que se guarda en `monto_a`. */
+  aTotal: number
+}
+
+/** Compone el A total desde sus dos partes. */
+export function componerA(aPropio: number, cuotaAlimentaria: number): AperturaDeA {
+  return {
+    aPropio: r2(aPropio),
+    cuotaAlimentaria: r2(cuotaAlimentaria),
+    aTotal: r2(aPropio + cuotaAlimentaria),
+  }
+}
+
+/**
+ * Y el camino inverso, para **abrir** un A que ya está guardado: al reabrir un período sólo se conoce
+ * `monto_a` y la cuota, así que lo propio es la resta.
+ *
+ * ⚠️ Si la cuota guardada fuera mayor que `monto_a` —dato viejo o mal cargado— lo propio daría
+ * negativo. Se devuelve así, **sin corregirlo**, para que la pantalla lo muestre en vez de esconder
+ * una inconsistencia (§ 🧮).
+ */
+export function abrirA(aTotal: number, cuotaAlimentaria: number | null): AperturaDeA {
+  const cuota = r2(cuotaAlimentaria ?? 0)
+  return { aPropio: r2(aTotal - cuota), cuotaAlimentaria: cuota, aTotal: r2(aTotal) }
+}
+
 /** El reparto de un total entre las dos categorías del convenio. */
 export interface RepartoAB {
   total: number
@@ -45,8 +106,6 @@ export interface RepartoAB {
    */
   invalido: boolean
 }
-
-const r2 = (n: number) => Math.round(n * 100) / 100
 
 /** Reparte el total entre A (dado) y B (la resta). */
 export function repartirTotalEnAB(total: number, a: number): RepartoAB {

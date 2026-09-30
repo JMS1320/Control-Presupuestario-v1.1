@@ -83,6 +83,11 @@ export interface PeriodoParaPagar {
   bruto_calculado: number | null
   anticipos_descontados: number | null
   monto_a: number | null
+  /**
+   * 🧾 La parte de A que va como **cuota alimentaria** a un tercero (A-FEAT-1213).
+   * Si está cargada, el modal **arranca con ese renglón ya puesto**: es plata que ya se sabe a dónde va.
+   */
+  cuota_alimentaria?: number | null
 }
 
 interface Props {
@@ -101,7 +106,8 @@ export function ModalPagoRepartido({
   abierto, onCerrar, empleado, periodo, cuentas, mesEtiqueta, etiquetaCuenta, onGuardado,
 }: Props) {
   const [guardando, setGuardando] = useState(false)
-  const [renglones, setRenglones] = useState<RenglonEdit[]>([nuevoRenglon(cuentas)])
+  const [renglones, setRenglones] = useState<RenglonEdit[]>(
+    () => renglonesIniciales(cuentas, periodo.cuota_alimentaria ?? null))
 
   const saldos = useMemo(
     () => saldosDelPeriodo(
@@ -189,7 +195,7 @@ export function ModalPagoRepartido({
         + `Saldo: ${money(control.saldoFinal)}`)
       onGuardado()
       onCerrar()
-      setRenglones([nuevoRenglon(cuentas)])
+      setRenglones(renglonesIniciales(cuentas, periodo.cuota_alimentaria ?? null))
     } catch (e) {
       toast.error("No se pudieron registrar los pagos: " + (e as Error).message)
     } finally {
@@ -340,6 +346,40 @@ export function ModalPagoRepartido({
       </DialogContent>
     </Dialog>
   )
+}
+
+/**
+ * 🧾 **Con qué renglones arranca el modal** (A-FEAT-1213).
+ *
+ * Si el período tiene **cuota alimentaria**, se abre con **ese renglón ya cargado**: el importe es la
+ * cuota y la cuenta es la del tercero, buscada por nombre entre las del empleado. Es plata de la que
+ * ya se sabe **cuánto** y **a dónde** — pedirla de nuevo sería hacer tipear un dato que el sistema
+ * tiene (§ 🎚️ *default del dato real, siempre editable*: se puede borrar o cambiar).
+ *
+ * ⚠️ **La cuenta se busca normalizando**, porque en la base está escrita **«Lucresia»** con `s`.
+ * Si no se encuentra ninguna, el renglón queda con el importe y **sin cuenta**, para que la elija —
+ * nunca se adivina un destino de plata.
+ */
+function renglonesIniciales(
+  cuentas: CuentaEmpleadoMinima[],
+  cuota: number | null,
+): RenglonEdit[] {
+  if (!cuota || cuota <= 0) return [nuevoRenglon(cuentas)]
+  const laDelTercero = cuentas.find(c => {
+    const n = (c.banco ?? "").toLowerCase()
+    // La cuenta del tercero no es un banco: está cargada con su nombre.
+    return !n.includes("galicia") && !n.includes("santander") && !n.includes("nacion")
+      && !n.includes("bbva") && !n.includes("macro") && n.trim() !== ""
+  })
+  return [
+    {
+      ...nuevoRenglon(cuentas),
+      cuentaDestinoId: laDelTercero?.id ?? null,
+      montoTexto: money(cuota),
+      descripcion: "Cuota alimentaria",
+    },
+    nuevoRenglon(cuentas),
+  ]
 }
 
 /** Un renglón nuevo: con la primera cuenta del empleado y el estado que corresponde al banco. */

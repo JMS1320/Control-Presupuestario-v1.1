@@ -105,7 +105,8 @@ El usuario los actualiza desde el botón ✏️ en la tabla del mes.
 
 | Columna | Tipo | Aplica a | Notas |
 |---------|------|----------|-------|
-| `monto_a` | NUMERIC | `ab_francos` | Categoría A del convenio |
+| `monto_a` | NUMERIC | `ab_francos` | Categoría A del convenio — **el A TOTAL**, cuota alimentaria incluida |
+| `cuota_alimentaria` | NUMERIC | `ab_francos` | 🧾 La parte de `monto_a` que va a un tercero (Sigot → Lucrecia). `NULL` = no aplica. **Es la apertura de A, no un extra**: no suma al bruto (2026-09-30, A-FEAT-1213) |
 | `monto_b` | NUMERIC | `ab_francos` | Categoría B del convenio |
 | `francos_cantidad` | NUMERIC | `ab_francos` | Días trabajados (admite decimales, ej: 2.5) |
 | `valor_franco` | NUMERIC | `ab_francos` | NULL = usa (A+B)/25; si hay valor = override manual |
@@ -119,6 +120,21 @@ El usuario los actualiza desde el botón ✏️ en la tabla del mes.
 | `observaciones` | TEXT | todos | Visible en tabla principal (truncado 40 chars) |
 
 ### 💰 Cómo se INGRESA: total + A, y B se calcula *(cambió 2026-09-30, A-FEAT-1211)*
+
+🧾 **Y A se abre en dos** *(A-FEAT-1213)*, para el caso de una **cuota alimentaria**: se escriben
+**la cuota** y **la categoría A del empleado** (antes de la cuota), y **el A total es la suma** — que es
+lo que se guarda en `monto_a`. Son cuatro números y sólo tres se escriben:
+
+| | Se escribe | Cómo sale |
+|---|---|---|
+| Cuota alimentaria | ✅ | |
+| Categoría A del empleado | ✅ | |
+| **A total** | ❌ | `cuota + A del empleado` → se guarda en `monto_a` |
+| Total del sueldo | ✅ | |
+| **B** | ❌ | `total − A total` |
+
+🔑 **El bruto no cambia**: sigue siendo `(A + B) + …` con el A **total**. Para los empleados sin
+cuota, el campo queda vacío y su A se carga igual que siempre.
 
 ⚠️ **Hasta el 2026-09-30 el modal pedía `A` y `B` por separado.** Ya no: pide el **Total** y **A**, y
 **B se muestra calculado** (no se escribe). Lo pidió el usuario: *«pongo lo que cobra total y A, y

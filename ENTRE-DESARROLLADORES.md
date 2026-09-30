@@ -40,6 +40,22 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ Columnas nuevas en la BD (2026-09-30) — aviso, no hay nada que hacer
+
+**La BD es una sola, así que te aviso aunque no te toque nada.** Se agregaron columnas **nullable**, sin
+tocar un solo dato existente y sin RLS nueva:
+
+| Tabla | Columna | Para qué |
+|---|---|---|
+| `sueldos.periodos` | `cuota_alimentaria` | la parte de `monto_a` que va a un tercero (A-FEAT-1213) |
+
+✅ **Por qué no te afecta**: es `add column if not exists`, nullable, sin default y sin constraint. Lo
+que ya existía sigue igual y ninguna consulta tuya cambia de resultado. **Reversible** con
+`alter table sueldos.periodos drop column cuota_alimentaria`.
+
+📌 Borrá esta entrada cuando la leas.
+
+
 ### 🚨 Un hueco en el modelo de permisos — el default está al revés (2026-09-28)
 
 **Es tuyo, por eso no lo tocamos.** Lo encontramos auditando para un informe de seguridad.

@@ -2,7 +2,7 @@
 
 
 
-import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
+import { repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA } from "@/lib/sueldos/reparto-ab"
 import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
@@ -61,6 +61,11 @@ interface Periodo {
   empleado: Empleado
   // Parámetros del período
   monto_a: number | null
+  /**
+   * 🧾 La parte de `monto_a` que va como **cuota alimentaria** a un tercero (Sigot → Lucrecia).
+   * `null` = no aplica. `monto_a` sigue siendo el A **total** (A-FEAT-1213).
+   */
+  cuota_alimentaria?: number | null
   monto_b: number | null
   francos_cantidad: number | null
   valor_por_dia: number | null
@@ -268,6 +273,12 @@ export function TabSueldos() {
    * justos**. El total es redondo porque el total es lo que se acuerda; A y B son la apertura.
    */
   const [edTotalAB, setEdTotalAB] = useState('')
+  /**
+   * 🧾 **La apertura de A** (A-FEAT-1213). Se escriben la **cuota** y el **A propio**; el A total es
+   * la suma y es lo que se guarda en `monto_a`, así que el bruto no cambia.
+   */
+  const [edCuotaAlim, setEdCuotaAlim] = useState('')
+  const [edAPropio, setEdAPropio] = useState('')
   const [edFrancos, setEdFrancos] = useState('')
   const [edValorDia, setEdValorDia] = useState('')
   const [edDias, setEdDias] = useState('')
@@ -665,6 +676,10 @@ export function TabSueldos() {
     setEdMontoB(p.monto_b !== null ? fmt(p.monto_b) : '')
     // El total es lo que se muestra para editar; A y B se derivan de él (ver `edTotalAB`).
     setEdTotalAB(fmt((p.monto_a ?? 0) + (p.monto_b ?? 0)))
+    // 🧾 Y A se abre en cuota + propio: sólo se guardó el total, lo propio es la resta.
+    const ap = abrirA(p.monto_a ?? 0, p.cuota_alimentaria ?? null)
+    setEdCuotaAlim(ap.cuotaAlimentaria !== 0 ? fmt(ap.cuotaAlimentaria) : '')
+    setEdAPropio(fmt(ap.aPropio))
     setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
     setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
     setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
@@ -701,19 +716,31 @@ export function TabSueldos() {
    */
   const onChangeTotal = (v: string) => {
     setEdTotalAB(v)
-    const { b } = repartirTotalEnAB(num(v), num(edMontoA))
+    const { aTotal } = componerA(num(edAPropio), num(edCuotaAlim))
+    const { b } = repartirTotalEnAB(num(v), aTotal)
     setEdMontoB(b !== 0 ? fmtFranco(b) : '')
     if (francoAutoSync) setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(v))))
   }
-  const onChangeA = (v: string) => {
-    setEdMontoA(v)
-    const { b } = repartirTotalEnAB(num(edTotalAB), num(v))
+  /**
+   * 🧾 **A ya no se escribe directo: sale de `cuota + propio`** (A-FEAT-1213).
+   *
+   * Para Sigot: se carga lo de **Lucrecia** y lo de **él antes de Lucrecia**, y la suma es el A total
+   * — que es lo que se guarda en `monto_a` y lo que usa el bruto. Para el resto de los empleados la
+   * cuota queda vacía y el A propio **es** el A total, así que se sigue escribiendo A como siempre.
+   */
+  const aplicarA = (aPropio: string, cuota: string) => {
+    const { aTotal } = componerA(num(aPropio), num(cuota))
+    setEdMontoA(aTotal !== 0 ? fmtFranco(aTotal) : '')
+    const { b } = repartirTotalEnAB(num(edTotalAB), aTotal)
     setEdMontoB(b !== 0 ? fmtFranco(b) : '')
-    // El total no se mueve al cambiar A: lo que cambia es el reparto entre A y B.
+    // El total no se mueve: lo que cambia es el reparto entre A y B.
     if (francoAutoSync) setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(edTotalAB))))
   }
+  const onChangeAPropio = (v: string) => { setEdAPropio(v); aplicarA(v, edCuotaAlim) }
+  const onChangeCuotaAlim = (v: string) => { setEdCuotaAlim(v); aplicarA(edAPropio, v) }
   /** El reparto de hoy: `b` para mostrarlo, `invalido` para frenar si A se pasó del total. */
-  const reparto = repartirTotalEnAB(num(edTotalAB), num(edMontoA))
+  const aCompuesto = componerA(num(edAPropio), num(edCuotaAlim))
+  const reparto = repartirTotalEnAB(num(edTotalAB), aCompuesto.aTotal)
   const bDerivado = reparto.b
   const onChangeFrancoManual = (v: string) => {
     setEdValorFranco(v)
@@ -732,13 +759,14 @@ export function TabSueldos() {
      * partes no pueden sumar más que el todo (§ 🚦 de `CLAUDE.md`). No se recorta a cero en silencio.
      */
     if (edPeriodo.empleado?.tipo_empleado === 'ab_francos'
-        && repartirTotalEnAB(num(edTotalAB), num(edMontoA)).invalido) {
+        && repartirTotalEnAB(num(edTotalAB), componerA(num(edAPropio), num(edCuotaAlim)).aTotal).invalido) {
       alert('La categoría A es mayor que el total: la categoría B quedaría negativa. Revisá el total o A.')
       return
     }
     setGuardandoEdicion(true)
     const tipo      = edPeriodo.empleado?.tipo_empleado
-    const a         = num(edMontoA)
+    // 🧾 A es cuota + propio (A-FEAT-1213); para los demás tipos sigue siendo el campo suelto.
+    const a         = tipo === 'ab_francos' ? componerA(num(edAPropio), num(edCuotaAlim)).aTotal : num(edMontoA)
     // 🔑 B es la resta, no un campo suelto: así el total que él escribió es exactamente el que queda.
     const b         = tipo === 'ab_francos' ? repartirTotalEnAB(num(edTotalAB), a).b : num(edMontoB)
     const francos   = num(edFrancos)
@@ -769,6 +797,8 @@ export function TabSueldos() {
     if (tipo === 'ab_francos') {
       updateData.monto_a = a
       updateData.monto_b = b
+      // La cuota es la apertura de A: se guarda para poder reabrirla, y null cuando no aplica.
+      updateData.cuota_alimentaria = num(edCuotaAlim) || null
       updateData.francos_cantidad = francos
       updateData.valor_franco = francoAutoSync ? null : vf
     } else if (tipo === 'por_dia') {
@@ -1531,6 +1561,41 @@ export function TabSueldos() {
                     conoce; en Sigot incluye la cuota alimentaria a Lucrecia, que se paga a otra
                     cuenta pero es parte del mismo sueldo.
                   */}
+                  {/*
+                    🧾 LA APERTURA DE A (A-FEAT-1213). Para Sigot: se carga lo de Lucrecia y lo de él
+                    antes de Lucrecia, y la SUMA es el A total — que es lo que se guarda y lo que usa
+                    el bruto. Para el resto, la cuota queda vacía y «A de él» ES el A total.
+                  */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label>Cuota alimentaria (a un tercero)</Label>
+                      <Input
+                        type="text"
+                        placeholder="0,00 — vacío si no aplica"
+                        value={edCuotaAlim}
+                        onChange={e => onChangeCuotaAlim(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>Categoría A del empleado</Label>
+                      <Input
+                        type="text"
+                        placeholder="0,00"
+                        value={edAPropio}
+                        onChange={e => onChangeAPropio(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-gray-500">= Categoría A total (convenio)</Label>
+                      <Input
+                        type="text"
+                        value={edMontoA}
+                        readOnly
+                        tabIndex={-1}
+                        className="bg-gray-50 text-gray-700 font-medium"
+                      />
+                    </div>
+                  </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div>
                       <Label>Total del sueldo</Label>
@@ -1542,16 +1607,7 @@ export function TabSueldos() {
                       />
                     </div>
                     <div>
-                      <Label>Categoría A (convenio)</Label>
-                      <Input
-                        type="text"
-                        placeholder="0,00"
-                        value={edMontoA}
-                        onChange={e => onChangeA(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-gray-500">Categoría B (se calcula)</Label>
+                      <Label className="text-gray-500">= Categoría B (se calcula)</Label>
                       <Input
                         type="text"
                         value={edMontoB}
@@ -1560,6 +1616,12 @@ export function TabSueldos() {
                         className={`bg-gray-50 ${bDerivado < 0 ? 'text-red-600 border-red-300' : 'text-gray-600'}`}
                       />
                     </div>
+                    {/* ⚠️ Si la cuota se pasó del A total, lo propio daría negativo: se dice. */}
+                    {aCompuesto.aPropio < 0 && (
+                      <p className="col-span-1 self-end text-xs text-red-600">
+                        La cuota alimentaria es mayor que la categoría A del empleado.
+                      </p>
+                    )}
                   </div>
                   {/* 🧮 Si A se pasó del total, B daría negativo: se dice, no se guarda callado. */}
                   {bDerivado < 0 && (
@@ -1953,6 +2015,7 @@ export function TabSueldos() {
             bruto_calculado: repartirPeriodo.bruto_calculado,
             anticipos_descontados: repartirPeriodo.anticipos_descontados,
             monto_a: repartirPeriodo.monto_a,
+            cuota_alimentaria: repartirPeriodo.cuota_alimentaria ?? null,
           }}
           cuentas={cuentas.filter(c => c.empleado_id === repartirPeriodo.empleado_id)}
           mesEtiqueta={`${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`}
