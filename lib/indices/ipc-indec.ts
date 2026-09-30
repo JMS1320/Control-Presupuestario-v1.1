@@ -11,6 +11,14 @@
  * AMS) tienen el IPC **pendiente** —está escrito así en `MODULO_SUELDOS.md`— y los métodos IPC del
  * presupuesto no tienen base.
  *
+ * ## 🔄 Se puede correr INCREMENTAL, y eso lo dijo el usuario
+ *
+ * > *«INDEC publica sobre el mes anterior pero **nunca cambia los ya publicados**»* (2026-09-30).
+ *
+ * 🔑 **Eso simplifica el circuito entero**: una cifra publicada no se revisa nunca, así que lo ya
+ * cargado **no hay que volver a mirarlo** — alcanza con sumar el mes nuevo. Y por lo mismo, para los
+ * meses **ya pasados manda el dato real** sobre cualquier proyección (§ 🎚️ *default del dato real*).
+ *
  * ## 🔓 La fuente: la API de series de tiempo del Estado, no el PDF
  *
  * `apis.datos.gob.ar/series/api/series` — **abierta, sin token**, y devuelve JSON. La serie del IPC
