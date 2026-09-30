@@ -447,6 +447,18 @@ silencio. Ver `PENDIENTES.md` § P-46.
 
 ### 6.3 Jerarquías por módulo
 - **Templates**: `templates_master` → `egresos_sin_factura` (template) → `cuotas_egresos_sin_factura` (cuotas). Cada cuota se concilia contra un movimiento.
+- **IMPUESTO INMOBILIARIO y RED VIAL**: cuatro tablas que nacen el 2026-09-29 (A-DEC-36).
+  `partidas` es la ficha **eterna** de una parcela —sus dos números de partida, campo y hectáreas—;
+  `partidas_anio` lo que cambia cada año **por impuesto** (valuación, base imponible y los **dos**
+  sets de importe: anual y en cuotas); `partidas_centro_costo` el **reparto de hectáreas** por
+  actividad, que es uno-a-muchos; y `partidas_titularidad` el dueño **con desde y hasta**, separando
+  el ámbito **contable** del **interno**.
+  🔑 **Por qué no va en el template**: la partida **sobrevive al template**. El template se renueva
+  por campaña y la partida cambia de titular; si la ficha viviera ahí, cada año habría que volver a
+  tipear las hectáreas y el histórico de titularidad se perdería. El template sigue siendo el que
+  **paga** y se vincula por `partida_arba`, que ya existía. Diseño → `PENDIENTES.md` § A-DEC-36.
+  🔐 Las cuatro con RLS y **registradas en `recurso_tablas`** bajo el recurso `presupuesto`: sin esa
+  fila, `nivel_tabla()` cae en el default **'escritura'** y la política no protege nada (A-SEC-09).
 - **SICORE**: `sicore_retenciones` cuelga de `comprobantes_arca` (o `anticipos_proveedores`). Quincenas con estado abierta/cerrada/declarada.
   🔑 **`grupo_pago_id` (agregada 2026-09-29) dice de qué PAGO salió la retención**, y es lo que define
   **qué filas comparten certificado**: un certificado = un pago. `NULL` = pago directo, estrena número.

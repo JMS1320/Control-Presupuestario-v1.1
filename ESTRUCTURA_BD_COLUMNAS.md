@@ -118,6 +118,15 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### sicore_retenciones
 `id uuid, quincena varchar, fecha_pago date, origen varchar, factura_id uuid→comprobantes_arca, anticipo_id uuid→public.anticipos_proveedores, grupo_pago_id uuid→public.grupos_pago, fecha_emision date, tipo_comprobante int, punto_venta int, numero_desde bigint, cuit_emisor varchar, denominacion_emisor varchar, tipo_sicore varchar, alicuota numeric, neto_gravado_pagado numeric, total_pagado numeric, descuento_aplicado numeric, minimo_no_imponible numeric, base_imponible numeric, retencion numeric, pago numeric, created_at tstz, nro_comprobante bigint, nro_certificado varchar, ddjj_confirmada boolean, anulado boolean, fecha_anulacion tstz, motivo_anulacion text, estado_quincena varchar, fecha_cerrada tstz, fecha_declarada tstz`
 
+### partidas · partidas_anio · partidas_centro_costo · partidas_titularidad  (impuesto inmobiliario y red vial)
+`partidas: id uuid, campo text, establecimiento text, parcela text, partida_inmobiliario text, partida_red_vial text, has_totales numeric, has_productivas numeric, observaciones text, activo boolean, created_at tstz, updated_at tstz`
+
+`partidas_anio: id uuid, partida_id uuid→partidas, impuesto text (inmobiliario|red_vial), anio int, valuacion_fiscal numeric, base_imponible numeric, importe_anual numeric, importe_cuota numeric, cantidad_cuotas int, modo_pago text (anual|cuotas), observaciones text` · único por `(partida_id, impuesto, anio)`
+
+`partidas_centro_costo: id uuid, partida_id uuid→partidas, centro_costo text, has numeric, desde_anio int, hasta_anio int`
+
+`partidas_titularidad: id uuid, partida_id uuid→partidas, ambito text (contable|interno), propietario text, desde date, hasta date, observaciones text`
+
 ### tarjeta_visa_business (MSA) · ma.tarjeta_visa · pam.tarjeta_visa  (tarjetas — misma estructura)
 `id uuid, fecha date, descripcion text, debitos numeric, creditos numeric, saldo numeric, control numeric, categ text, detalle text, contable text, interno text, centro_de_costo text, cuenta text, orden numeric, estado text, motivo_revision text, comprobante_arca_id uuid, nro_cuenta varchar, template_id uuid, template_cuota_id uuid, referencia varchar, cuota varchar, comprobante varchar, debitos_usd numeric, creditos_usd numeric, nro_resumen varchar, fecha_cierre date, fecha_vencimiento date, tarjeta_adicional varchar, titular_adicional varchar, tipo_fila varchar, proveedor_nombre text, comprobantes_pagados text, sueldo_pago_id uuid, revisado boolean, nota_operador text, anticipo_id uuid`
 

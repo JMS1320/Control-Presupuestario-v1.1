@@ -12724,3 +12724,23 @@ el agente de retención). Si algún día PAM o MA retienen, la tabla se crea **c
 
 📌 Reglas completas del módulo → `MODULO_SICORE.md` § 32. El control que verifica que se respete →
 `scripts/auditar-sicore.mts`.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-09-29 · las PARTIDAS del inmobiliario y red vial (A-DEC-36)
+
+Cuatro tablas en `public`, autorizadas por el usuario: **`partidas`** (ficha eterna: los dos números
+de partida, campo, parcela, has totales y productivas), **`partidas_anio`** (por parcela × año ×
+impuesto: valuación fiscal, base imponible y los **dos sets** de importe —anual y en cuotas— más
+`modo_pago`), **`partidas_centro_costo`** (el reparto de hectáreas por actividad, uno-a-muchos) y
+**`partidas_titularidad`** (propietario con `desde`/`hasta` y `ambito` **contable** o **interno**).
+
+Las migraciones son `partidas_impuestos_inmobiliarios` y `partidas_rls_y_registro_permisos`.
+
+🔐 **Y la segunda migración no es opcional.** El default de permisos de este sistema está al revés:
+`nivel_tabla()` devuelve `'escritura'` para cualquier rol logueado cuando la tabla **no está en**
+**`recurso_tablas`**. Entonces hacen falta **las dos mitades** — RLS con las políticas
+`puede_ver`/`puede_escribir`, **y la fila en `recurso_tablas`**. Con la política puesta pero sin la
+fila, `puede_escribir` consulta `nivel_tabla`, que no encuentra la tabla y contesta `'escritura'`:
+la tabla queda **abierta y con cara de protegida**. Las cuatro se registraron bajo el recurso
+**`presupuesto`**. Ver `PENDIENTES.md` § A-SEC-09.
