@@ -374,7 +374,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | **A-TEST-145** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-199). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-145](#a-test-145) `@general` |
 | **A-TEST-146** | 🔴 | Test | **Permisos finos** (A-FEAT-169) — que una pestaña sin permiso **no aparezca** (no que aparezca vacía); que con permiso de lectura se vea pero **no se pueda guardar**; y el control que más importa: que el bloqueo esté **también en la API**, no sólo en la pantalla | → [A-TEST-146](#a-test-146) `@general` |
 | **A-TEST-147** | 🔴 | Test | **Los roles de la base funcionan** (A-BUG-200) — asignarle `productivo` a una cuenta y que **entre y vea sus 3 secciones**, no `/no-access` · que los 5 roles aparezcan en los dos desplegables de Usuarios · que un rol inventado se rechace diciendo cuáles hay | → [A-TEST-147](#a-test-147) `@general` |
-| **A-TEST-148** | 🔴 | 🔴 **Alta** | **La RLS por recurso frena de verdad** (A-SEC-10) — con una cuenta de rol **acotado**: que vea lo suyo · que **NO** pueda leer otra sección ni siquiera **desde la consola del navegador** (es la prueba que ninguna capa anterior pasaba) · que con «sólo ver» el `UPDATE` sea rechazado por la base. ⚠️ **No se puede probar con `admin`**: pasa todo | → [A-TEST-148](#a-test-148) `@general` |
+| **A-TEST-148** | 🟠 | 🔴 **Alta** | ⚠️ **CORRIDO 2026-09-29 — Y LA LECTURA NO FRENA.** Ya **se puede probar**: se creó la cuenta acotada que faltaba (`javiergc89+contable@gmail.com`, rol `contable`, 1 sección). Con **su token real**, no con `admin`: lee `sueldos.empleados` (9), `msa.cheques` (10), `proveedores` (167) y `cuentas_contables` (143). **Sólo `public.roles` la frena.** Y `nivel_tabla('sueldos','empleados')` **con su token devuelve `escritura`**. ✅ Lo que sí pasó: alta de punta a punta, rol correcto en el JWT (`contable`/`aal1`), y rol desconocido → sin secciones (falla cerrado). 🔴 **Falta**: el `UPDATE` rechazado por la base — **no se intentó a propósito**, sería escribir datos reales. Detalle → [A-SEC-10](#a-sec-10) § 2026-09-29 | → [A-TEST-148](#a-test-148) `@general` |
 | **A-TEST-144** | 🔴 | Test | **El QR del 2FA se escanea** (A-BUG-198). Probar **en modo oscuro**, que es donde fallaba, y también con la clave a mano y con el link `otpauth://` desde el teléfono. Si con el fondo blanco anda, la causa queda confirmada; si no, hay que mirar el `otpauth://` que arma Supabase | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Seguridad
@@ -4191,6 +4191,43 @@ la verdad es el mapeo.
 
 **Nada de esto está probado con un rol acotado.** Las dos cuentas son `admin` y pasan todo. El test
 real es [A-TEST-148](#a-test-148) y **no se puede hacer con las cuentas de hoy**.
+
+### ✅ Ya se puede — y la lectura NO frena (medido 2026-09-29)
+
+*Se creó la cuenta acotada que faltaba: `javiergc89+contable@gmail.com`, rol `contable`, 1 sección
+(Egresos). Lo de abajo se midió con **su token**, obtenido con `signInWithPassword`, **no** con
+`admin` ni con `service_role` — que es justo lo que esta § decía que nadie había hecho.*
+
+| Con la sesión del `contable` | Resultado |
+|---|---|
+| `public.proveedores` | 👁️ **lee** (167 filas) |
+| `public.cuentas_contables` | 👁️ **lee** (143 filas) |
+| **`sueldos.empleados`** | 👁️ **lee** (9 filas) |
+| **`msa.cheques`** | 👁️ **lee** (10 filas) |
+| `public.roles` | 🔒 bloqueado |
+| `nivel_tabla('sueldos','empleados')` **con su token** | **`escritura`** |
+
+🔑 **Parte es el diseño y parte no, y conviene no confundirlos:**
+
+- **Que lea, es lo decidido** en la corrección de `scripts/63` — *«la lectura alcanza con tener rol,
+  salvo que la tabla se marque `restringe_lectura`»*. Y `restringe_lectura` **sigue en `false` en
+  las 61 registradas**, así que hoy **ningún rol tiene restringida ninguna lectura**. El riesgo no
+  es teórico: el perfil pensado para **delegarle la carga a un empleado** llega a **sueldos y
+  cheques** desde la consola del navegador, con la `anon_key` que viaja en el bundle.
+- **Que `nivel_tabla` devuelva `escritura`, no.** Es el default que reporta JMS en
+  `ENTRE-DESARROLLADORES.md`: la función resuelve a `escritura` cuando la tabla no está mapeada.
+  ⚠️ **El `UPDATE` no se intentó** — sería escribir datos reales — así que esto está medido en la
+  función, no en una escritura consumada.
+
+🧨 **Y confirma la lección que esta misma § había escrito**: *«un sistema de permisos no se puede
+probar con el rol que tiene todos los permisos»*. Estuvo 5 días sin probarse por **no tener una
+cuenta acotada**; crearla costó dos minutos y encontró esto en la primera consulta.
+
+📌 **Un descarte que vale registrar**: antes se midió `nivel_tabla` con `service_role` y dio
+`ninguno` — parecía indicar que el default ya estaba corregido. **No probaba nada**: `service_role`
+no lleva rol en el token, así que el `ninguno` venía de *«no hay rol»*. **Con un rol real da
+`escritura`.** Un control corrido con la identidad equivocada da confianza sin respaldo — el mismo
+mecanismo de la rotura en vivo de `puede_ver`.
 
 ---
 
