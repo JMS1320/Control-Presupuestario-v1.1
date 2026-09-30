@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -305,7 +307,7 @@ export function VistaTemplatesEgresos() {
       // El lote se confirma junto: basta que UNA no tenga la fecha para preguntar por todas
       // (así lo decide `hayQuePreguntarFechaPago`, y está escrito ahí por qué).
       if (esEstadoQuePaga(nuevoEstadoMasivo)) {
-        const hoy = new Date().toISOString().split('T')[0]
+        const hoy = hoyArgentina()
         const filas = cuotasIds.map(id => ({
           fecha_pago: (cuotasOriginales.find(c => c.id === id) as any)?.fecha_pago,
         }))
@@ -794,7 +796,7 @@ export function VistaTemplatesEgresos() {
      */
     if (celdaEnEdicion.columna === 'estado' && esEstadoQuePaga(nuevoValor)) {
       const cuota = cuotasOriginales.find(c => c.id === celdaEnEdicion.cuotaId)
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyArgentina()
       if (hayQuePreguntarFechaPago([{ fecha_pago: (cuota as any)?.fecha_pago }], hoy)) {
         setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: [celdaEnEdicion.cuotaId], nuevoEstado: nuevoValor })
         setCeldaEnEdicion(null)

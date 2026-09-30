@@ -968,6 +968,39 @@ vínculo que nadie escribe— en vez de esperar que el índice lo adivine.
 lo viejo*): un resultado vacío del grafo sobre una tabla **no significa que nadie la escriba**.
 Significa que el grafo no mira ahí.
 
+### 🕐 UN DÍA es hora argentina; un INSTANTE es UTC (REGLA)
+*Confirmada por el usuario 2026-09-30: **«respecto de fechas, siempre tomar argentina»**. Nació de un
+bug que sólo se vio porque una API se quejó.*
+
+> **Si el resultado es un día del calendario, se calcula en hora argentina. Si es un instante, UTC.**
+> **📍 Acá:** `lib/fechas.ts` — `hoyArgentina()` · `mesArgentina()` · `diaArgentino()` · `ahoraISO()`.
+
+`new Date().toISOString()` da el instante en **UTC**, y Argentina es **UTC−3**. Entonces
+`new Date().toISOString().slice(0, 10)` —el modo más común de sacar «hoy»— **devuelve el día de
+mañana a partir de las 21:00 hora local**.
+
+**La clasificación, que es toda la regla** — porque «arreglar todos» *introduce* bugs:
+
+| Qué produce | Qué se usa | Por qué |
+|---|---|---|
+| un **instante** (`updated_at`, `created_at`, `fecha_anulacion`) | **UTC** (`ahoraISO()`) | va a un `timestamptz`: lleva la zona adentro y Postgres la convierte. Pasarlo a día local **sería** el error |
+| un **día que se guarda**, o es **default de un campo de fecha** | **`hoyArgentina()`** | el corrimiento cambia el dato |
+| un **día que se compara** con fechas del negocio (alertas, vencimientos, curvas) | **`hoyArgentina()`** | una alerta se adelanta un día |
+| un **nombre de archivo** o un «Generado:» | da igual | no tiene consecuencia |
+
+🧨 **Los motivos, todos reales y todos del 2026-09-30** ([A-OP-23](PENDIENTES.md#a-op-23), 43 usos
+corregidos sobre 139):
+- **La quincena de SICORE**: un pago a las 22:00 del **15** caía en la **2ª quincena**, o sea en otra
+  declaración.
+- **El ejercicio**: un movimiento a las 22:00 del **30/06** queda fechado el 01/07 — y ése es el
+  corte del balance.
+- 🚨 **En el SERVER no es sólo de noche.** Las rutas de `app/api/` corren en Vercel **en UTC todo el
+  día**, así que ahí el corrimiento es **permanente**. Dos importadores lo tenían.
+
+⚠️ **Y cómo se descubrió, que es lo que enseña**: nadie lo vio en una fila de la base. Lo cantó el
+**BCRA rechazando una fecha futura**. Un dato corrido un día no se nota; sólo lo delata algo que se
+niega a aceptarlo.
+
 ### 🔎 Buscar ANTES de escribir, no sólo antes de preguntar (REGLA)
 *Agregada 2026-08-03, después de que Claude duplicara **tres veces en una sola sesión** algo que
 ya existía. Las tres las detectó el usuario, no Claude.*

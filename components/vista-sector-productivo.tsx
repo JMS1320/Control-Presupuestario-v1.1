@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -1146,7 +1148,7 @@ function TabHacienda() {
 
   // Form nuevo movimiento
   const [nuevoMov, setNuevoMov] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyArgentina(),
     categoria_id: '',
     categoria_destino_id: '',
     tipo: 'compra',
@@ -1228,7 +1230,7 @@ function TabHacienda() {
 
   const resetNuevoMov = () => {
     setNuevoMov({
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: hoyArgentina(),
       categoria_id: '', categoria_destino_id: '', tipo: 'compra', cantidad: '',
       peso_total_kg: '', precio_por_kg: '', monto_total: '', campo_origen: '',
       campo_destino: '', proveedor_cliente: '', cuit: '', caravanas: '', observaciones: ''
@@ -3524,7 +3526,7 @@ function SubTabStockInsumos() {
 
   // Form movimiento multi-linea
   const [movCabecera, setMovCabecera] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyArgentina(),
     tipo: 'compra',
     proveedor: '',
     cuit: '',
@@ -3552,7 +3554,7 @@ function SubTabStockInsumos() {
   }
 
   const abrirModalMov = async (tipo: string) => {
-    setMovCabecera(p => ({ ...p, tipo, fecha: new Date().toISOString().split('T')[0], proveedor: '', cuit: '', observaciones: '' }))
+    setMovCabecera(p => ({ ...p, tipo, fecha: hoyArgentina(), proveedor: '', cuit: '', observaciones: '' }))
     setMovLineas([])
     setBuscaFc({})
     agregarLineaMov()
@@ -4400,7 +4402,7 @@ function SubTabOrdenesAplicacion() {
 
   // Form cabecera
   const [nuevaOrden, setNuevaOrden] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyArgentina(),
     peso_promedio_kg: '',
     observaciones: ''
   })
@@ -4981,7 +4983,7 @@ function SubTabOrdenesAplicacion() {
     setMostrarModal(false)
     setOrdenEditandoId(null)
     setModoVer(false)
-    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], peso_promedio_kg: '', observaciones: '' })
+    setNuevaOrden({ fecha: hoyArgentina(), peso_promedio_kg: '', observaciones: '' })
     setRodeosSeleccionados({})
     setCargaManualRodeos(false)
     setCantidadManualRodeos({})
@@ -6929,7 +6931,7 @@ function SubTabOrdenesAgricolas() {
   const [recuentoLineas, setRecuentoLineas] = useState<Record<string, { checked: boolean, cantidad: string }>>({})
 
   const [nuevaOrden, setNuevaOrden] = useState({
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyArgentina(),
     observaciones: ''
   })
 
@@ -6996,7 +6998,7 @@ function SubTabOrdenesAgricolas() {
     setMostrarModal(false)
     setOrdenEditandoId(null)
     setModoVer(false)
-    setNuevaOrden({ fecha: new Date().toISOString().split('T')[0], observaciones: '' })
+    setNuevaOrden({ fecha: hoyArgentina(), observaciones: '' })
     setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
     setLaboresSeleccionadas({})
     setLineas([])

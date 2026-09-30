@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 /**
  * Aviso en Principal cuando hace mucho que no se carga el extracto de una cuenta bancaria.
  *
@@ -18,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { AlertTriangle, Landmark } from "lucide-react"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { COLOR_EMPRESA, type Empresa } from "@/lib/empresas"
+
 
 /** A partir de acá se avisa. Un extracto bancario se publica todos los meses. */
 const DIAS_PARA_AVISAR = 30
@@ -42,7 +45,7 @@ export function AlertaExtractosDesactualizados() {
     const revisar = async () => {
       // Sólo bancos: las cajas de efectivo y las tarjetas no son extractos periódicos
       const cuentas = CUENTAS_BANCARIAS.filter(c => c.activa && c.tipo === 'banco')
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyArgentina()
 
       const estados = await Promise.all(cuentas.map(async (c): Promise<EstadoCuenta> => {
         const db = c.schema_bd && c.schema_bd !== 'public' ? supabase.schema(c.schema_bd) : supabase

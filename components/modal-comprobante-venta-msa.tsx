@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -12,6 +14,7 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
+
 
 export interface ComprobanteVenta {
   id: string
@@ -125,7 +128,7 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
       setNroCuenta(c.nro_cuenta || null)
       setCentroCosto(c.centro_costo || '')
     } else {
-      setFechaEmision(new Date().toISOString().slice(0, 10))
+      setFechaEmision(hoyArgentina())
       setTipoComp('')
       setPuntoVenta('')
       setNumero('')

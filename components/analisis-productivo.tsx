@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 // Bloque de Análisis Productivo-Económico (engorde) — va DEBAJO de la segmentación,
 // dentro del modal de historial de pesadas. Recibe los segmentos en vivo (props) para
 // que mover los rangos recalcule el análisis. Modelo reconstruido del Excel
@@ -21,6 +23,7 @@ import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 // Qué se vende y a quién: completa el desbaste y la CZ desde las normas de comercialización.
 import { SelectorComercializacion, useNormasComercializacion, parametrosDe } from "./selector-comercializacion"
 import type { SexoLote } from "@/lib/ganaderia/comercializacion"
+
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
 // Config de la segmentación (vive en tab-terneros; se guarda/restaura con el estudio)
@@ -178,7 +181,7 @@ interface StageForm {
 
 function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTotal, initial, onState, onRegisterExport, mercado }: SegProps) {
   const letra = String.fromCharCode(65 + indice) // A, B, C…
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyArgentina()
   const g = <K extends keyof SegState>(k: K, def: SegState[K]): SegState[K] => (initial?.[k] ?? def) as SegState[K]
   const [colapsado, setColapsado] = useState(indice > 0)
   const [fase, setFase] = useState(g("fase", ""))

@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 // VENTAS → Arrendamiento. Contratos → cuotas → FIJAR (= vender).
 // La fijación ES la venta: "Venta origina Factura/Liquidación que origina Cobro".
 // Precio y TC se fijan en MOMENTOS DISTINTOS (salvo pizarra, que cierra en un acto).
@@ -766,7 +768,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
   /** Lo facturado de la venta que se edita: si cambia el monto, hay que revisar ese vínculo. */
   const [facturado, setFacturado] = useState(0)
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyArgentina()
 
   useEffect(() => {
     if (!datos) return
@@ -806,7 +808,7 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
     setTc("")
     setTcSugerido(t.tc || null)
     setFechaCobro(cuota.fecha_cobro_estimada)
-    setFechaFijacion(new Date().toISOString().slice(0, 10))
+    setFechaFijacion(hoyArgentina())
     setError(null)
   }, [datos, ventas, precios, tcs])
 
@@ -1069,7 +1071,7 @@ function ModalFijarTC({ venta, tcs, onCerrar, onListo }: {
     setGuardando(true)
     const { error } = await supabase.from("ventas_arrendamiento").update({
       tc: valor,
-      fecha_fijacion_tc: new Date().toISOString().slice(0, 10),
+      fecha_fijacion_tc: hoyArgentina(),
       monto_pesos: monto,
     }).eq("id", venta.id)
     setGuardando(false)

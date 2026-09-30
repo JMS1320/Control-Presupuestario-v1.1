@@ -1,5 +1,7 @@
 "use client"
 
+
+import { mesArgentina } from "@/lib/fechas"
 // VENTAS → Ganadería · las ventas de hacienda, **separadas por actividad**.
 //
 // ── Por qué existe ───────────────────────────────────────────────────────────
@@ -279,7 +281,7 @@ export function SeccionVentasPorLote() {
       }))
       const fechaUltima = Object.values(ultima)
         .map((r: any) => r.fecha).sort().slice(-1)[0] as string | undefined
-      const mesPesada = fechaUltima ? fechaUltima.slice(0, 7) : new Date().toISOString().slice(0, 7)
+      const mesPesada = fechaUltima ? fechaUltima.slice(0, 7) : mesArgentina()
 
       const exist = existenciasDePesada(filasPesada, mesPesada,
         fechaUltima ? `pesada del ${fecha(fechaUltima)}` : undefined)

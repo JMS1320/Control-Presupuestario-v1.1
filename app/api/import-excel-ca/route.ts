@@ -1,3 +1,4 @@
+import { hoyArgentina } from "@/lib/fechas"
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
@@ -234,7 +235,7 @@ export async function POST(req: Request) {
       .select("categ")
     const setCategs = new Set(categsValidas?.map((c: any) => c.categ) ?? [])
 
-    const hoy = new Date().toISOString().split("T")[0]
+    const hoy = hoyArgentina()
 
     // -----------------------------------------------------------------------
     // 4. Mapear índices de columnas por nombre

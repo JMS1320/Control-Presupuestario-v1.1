@@ -1,3 +1,4 @@
+import { hoyArgentina } from "@/lib/fechas"
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
@@ -157,7 +158,7 @@ export async function POST(req: Request) {
     const { data: categsValidas } = await supabase.from("cuentas_contables").select("categ")
     const setCategs = new Set(categsValidas?.map((c: any) => c.categ))
 
-    const hoy = new Date().toISOString().split("T")[0]
+    const hoy = hoyArgentina()
     const errores: any[] = []
     const rowsParaInsertar: any[] = []
     const controlErrors: any[] = []

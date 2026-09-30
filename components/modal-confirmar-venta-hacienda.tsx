@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 // CONFIRMAR una venta de hacienda — **un solo paso**.
 //
 // Lo pidió así el usuario (2026-08-05): *"debe ser un solo paso: confirmar todos los datos reales
@@ -32,6 +34,7 @@ import {
   type TerneroRef, type MatchCaravana,
 } from "@/lib/ganaderia/confirmar-venta"
 import {
+
   useNormasComercializacion, SelectorComercializacion,
   type SeleccionComercial,
 } from "@/components/selector-comercializacion"
@@ -148,7 +151,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
       return
     }
     if (!lote) return
-    setFechaVenta(lote.fechaVentaEstimada ?? new Date().toISOString().slice(0, 10))
+    setFechaVenta(lote.fechaVentaEstimada ?? hoyArgentina())
     setCabezas(String(Math.round(lote.cabezas)))
     setKgTotales(fmtNumeroAR(lote.cabezas * lote.pesoProyectado, 0))
     setPrecioKg(lote.precioProyectado > 0 ? fmtNumeroAR(lote.precioProyectado, 0) : "")

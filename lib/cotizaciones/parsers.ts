@@ -338,21 +338,11 @@ export function cruzarDolarConBcra(
 }
 
 /**
- * 📅 **HOY, en hora argentina.** `AAAA-MM-DD`.
+ * 📅 **HOY, en hora argentina** — se re-exporta desde `lib/fechas.ts`.
  *
- * 🧨 **Existe por un bug real, encontrado el 2026-09-29 a las 22:xx.** `new Date().toISOString()`
- * devuelve la fecha en **UTC**, y Argentina es UTC−3: **después de las 21:00 hora local, el sistema
- * fecha todo al día siguiente**. El script pedía cotizaciones «hasta el 2026-09-30» siendo 29, y el
- * BCRA lo rechazó con *«La fecha no puede ser mayor al día actual»* — que fue la única razón por la
- * que se notó.
- *
- * ⚠️ **Y el problema es más grande que este script**: cualquier `toISOString().slice(0,10)` para
- * fechar algo que pasó *hoy* tiene el mismo corrimiento — una cotización, un pago, un movimiento
- * cargado de noche. La API lo cantó; en una fila de la base **nadie lo nota**.
+ * 🧨 **Nació acá**, el 2026-09-29 a las 22:xx, cuando el BCRA rechazó una fecha futura porque
+ * `toISOString()` fecha en UTC y Argentina es UTC−3. **Pero el problema no era de las cotizaciones**:
+ * estaba en 139 lugares del repo, así que la función se mudó a un módulo general (A-OP-23) y acá
+ * queda el re-export para no romper lo que ya la importaba desde este archivo.
  */
-export function hoyArgentina(): string {
-  const ahora = new Date()
-  // −3 horas lleva de UTC a hora argentina; después se lee la fecha en UTC, que ya es la local.
-  const local = new Date(ahora.getTime() - 3 * 60 * 60 * 1000)
-  return local.toISOString().slice(0, 10)
-}
+export { hoyArgentina } from "@/lib/fechas"

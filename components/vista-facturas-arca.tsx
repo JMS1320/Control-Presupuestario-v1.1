@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -4232,7 +4234,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       await registrarEnSicoreRetenciones({
         origen: procesandoColaSicore ? 'agrupacion' : 'directo',
         quincena,
-        fecha_pago: facturaEnProceso.fecha_estimada || facturaEnProceso.fecha_vencimiento || new Date().toISOString().split('T')[0],
+        fecha_pago: facturaEnProceso.fecha_estimada || facturaEnProceso.fecha_vencimiento || hoyArgentina(),
         factura_id: facturaEnProceso.id,
         // 🔑 De qué PAGO salió: si la factura va en un grupo, todas las del grupo comparten
         //    certificado; si es un pago directo queda `null` y estrena número (A-BUG-1222).
@@ -10247,7 +10249,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              setEcheqForm({ banco: '', numero: '', fechaEmision: new Date().toISOString().split('T')[0], fechaCobro: '' })
+                              setEcheqForm({ banco: '', numero: '', fechaEmision: hoyArgentina(), fechaCobro: '' })
                               setEcheqEstadoDestino('pagar')
                               setEcheqOrigen('facturas')
                               setMostrarModalEcheq(true)
@@ -11076,7 +11078,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              setEcheqForm({ banco: '', numero: '', fechaEmision: new Date().toISOString().split('T')[0], fechaCobro: '' })
+                              setEcheqForm({ banco: '', numero: '', fechaEmision: hoyArgentina(), fechaCobro: '' })
                               setEcheqEstadoDestino('pagar') // Siempre 'pagar' para activar flujo SICORE → echeq
                               setEcheqOrigen('anticipos')
                               setMostrarModalEcheq(true)

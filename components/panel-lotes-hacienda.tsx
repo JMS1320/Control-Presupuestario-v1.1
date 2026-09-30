@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 // Cabezas disponibles para vender. Dos orígenes:
 //   · stock_inicial → la foto de arranque (la recría que se retuvo y no se vendió)
 //   · destete / descarte → generados desde cada período de la línea de tiempo
@@ -401,7 +403,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                   const vs = ventasDe(l.id)
                   const vendidas = vs.reduce((s, v) => s + Number(v.cantidad || 0), 0)
                   const quedan = cantidadDisponible(l, vs)
-                  const hoy = new Date().toISOString().slice(0, 10)
+                  const hoy = hoyArgentina()
                   const curva = curvaDe(l)
                   const pesoHoy = pesoEstimado(l, hoy, curva)
                   const des = desactualizado(l)
@@ -683,7 +685,7 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
   // La curva se dibuja con el BORRADOR: mover un tramo tiene que verse antes de guardar.
   const misTramos = tramosDraft
   const curvaModal = curvaDeLote(loteCurva, misTramos, actividades)
-  const hoyIso = new Date().toISOString().slice(0, 10)
+  const hoyIso = hoyArgentina()
   const pesoHoy = curvaModal(hoyIso)
 
   // ── Peso y banda a la fecha de venta
@@ -1252,7 +1254,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     return Math.max(0, d)
   }
 
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyArgentina()
 
   /** El peso con el que se va a facturar: el de partida más el engorde hasta la venta. */
   const pesoALaVenta = (g: GrupoPesada, base: number, manual: boolean) =>
@@ -1290,7 +1292,7 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
           peso_base_kg: pesoManual ?? Math.round(pr.tomados * 100) / 100,
           // El peso corresponde a la fecha de la pesada, salvo que se haya puesto a mano
           // (en ese caso es de hoy).
-          fecha_peso: pesoManual ? new Date().toISOString().slice(0, 10) : (g.fecha_pesada ?? fecha),
+          fecha_peso: pesoManual ? hoyArgentina() : (g.fecha_pesada ?? fecha),
           ganancia_diaria_kg: parseNum(ganancia),
           fecha_venta_estimada: fechaVenta || null,
           plazo_cobro: plazo || "0",
@@ -1614,7 +1616,7 @@ function ModalGenerar({ abierto, filas, onCerrar, onAplicar, guardando }: {
       // Los que ya tienen ventas no se tocan: ahí manda lo que se decidió
       s[f.clave] = !f.tieneVentas
       // La fecha de venta nunca puede quedar en el pasado: si el destete ya paso, hoy.
-      const hoyISO = new Date().toISOString().slice(0, 10)
+      const hoyISO = hoyArgentina()
       a[f.clave] = {
         cantidad: String(f.cantidad.toFixed(1)),
         peso: String(f.peso),

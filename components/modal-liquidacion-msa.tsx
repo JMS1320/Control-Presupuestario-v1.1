@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -14,6 +16,7 @@ import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+
 
 export interface LiquidacionMsa {
   id: string
@@ -243,7 +246,7 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
       } else {
         // Alta — reset
         setSeleccionadas(new Set())
-        setFechaLiq(new Date().toISOString().slice(0, 10))
+        setFechaLiq(hoyArgentina())
         setNroComp(''); setCoe(''); setTipoOperacion(''); setActividad('')
         setCliente({ cuit: '', nombre: '' })
         setGrano(''); setGrado(''); setFactor(''); setToneladas('')

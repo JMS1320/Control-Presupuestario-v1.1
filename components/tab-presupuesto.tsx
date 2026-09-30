@@ -1,5 +1,7 @@
 "use client"
 
+
+import { mesArgentina } from "@/lib/fechas"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
@@ -72,6 +74,7 @@ import {
   tipoEfectivo,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
+
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1019,7 +1022,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     }
 
     // ── Capa 2: lo que existe y no tiene venta, por diferencia contra la fuente
-    const mesActual = new Date().toISOString().slice(0, 7)
+    const mesActual = mesArgentina()
     const primero = `${meses[0].anio}-${String(meses[0].mes).padStart(2, "0")}`
     const mesBase = mesActual < primero ? primero : mesActual
 

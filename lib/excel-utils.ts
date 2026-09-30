@@ -1,3 +1,4 @@
+import { hoyArgentina } from "@/lib/fechas"
 export function convertExcelNumber(value: string | number): number {
   if (typeof value === "number") return value
 
@@ -40,7 +41,11 @@ export function convertExcelDate(value: any): string | null {
   return date.toISOString().split("T")[0]
 }
 
+/**
+ * ⚠️ **Hoy nadie la llama** (verificado 2026-09-30), pero se arregló igual: comparaba contra el día
+ * en **UTC**, así que después de las 21:00 hora argentina decía que «hoy» era mañana. Dejarla con el
+ * bug es dejar una trampa armada para el primero que la use (A-OP-23).
+ */
 export function isToday(dateString: string): boolean {
-  const today = new Date().toISOString().split("T")[0]
-  return dateString === today
+  return dateString === hoyArgentina()
 }

@@ -73,11 +73,12 @@ import {
 import {
   armarCadenaDeSaldos, saldoAlInicioDe, ultimoMovimiento, primerMovimiento,
 } from "@/lib/balance/saldos-al-inicio"
+import { hoyArgentina, mesArgentina, diaArgentino, ahoraISO } from "@/lib/fechas"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
   promedioDelMes, urlPizarra, leerHistoricoDolar, leerCotizacionesBcra,
-  cruzarDolarConBcra, hoyArgentina,
+  cruzarDolarConBcra,
 } from "@/lib/cotizaciones/parsers"
 import { primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import {
@@ -4135,6 +4136,50 @@ export function correrCasos(): Resultado[] {
       saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo === 832605.05
       && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL") === null
       && saldoAlInicioDe("PAM", "25/26", "BANCO GALICIA (cta cte)") === null, "A-FEAT-1206")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🕐 LAS FECHAS EN HORA ARGENTINA (A-OP-23).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /**
+     * 🧨 El caso que vale: **22:00 hora argentina del 30/06** es la 01:00 UTC del **01/07**. Es el
+     * corte del balance, así que un movimiento cargado ahí cambiaba de EJERCICIO.
+     */
+    const finDeJunio = new Date("2026-07-01T01:00:00Z")
+    chequear("Fechas", "🧨 A las 22:00 del 30/06, UTC dice 01/07 y el ejercicio cambia",
+      "argentina 2026-06-30 · UTC 2026-07-01",
+      `argentina ${diaArgentino(finDeJunio)} · UTC ${finDeJunio.toISOString().slice(0, 10)}`,
+      diaArgentino(finDeJunio) === "2026-06-30"
+      && finDeJunio.toISOString().slice(0, 10) === "2026-07-01", "A-OP-23")
+
+    // Y el mes: a las 22:00 del 31/03 el presupuesto arrancaría en abril.
+    const finDeMarzo = new Date("2026-04-01T01:30:00Z")
+    chequear("Fechas", "🧨 Lo mismo con el MES: a las 22:30 del 31/03, UTC ya dice abril",
+      "2026-03", diaArgentino(finDeMarzo).slice(0, 7),
+      diaArgentino(finDeMarzo).slice(0, 7) === "2026-03", "A-OP-23")
+
+    // A media mañana los dos coinciden: el arreglo no corre las fechas del resto del día.
+    const mediaManana = new Date("2026-06-15T13:00:00Z")
+    chequear("Fechas", "A media mañana argentina y UTC dan el mismo día",
+      "2026-06-15", diaArgentino(mediaManana),
+      diaArgentino(mediaManana) === "2026-06-15", "A-OP-23")
+
+    // Forma y coherencia entre las tres funciones.
+    chequear("Fechas", "Hoy y el mes son coherentes, y hoy nunca está adelantado respecto de UTC",
+      "coherentes",
+      hoyArgentina().startsWith(mesArgentina())
+      && hoyArgentina() <= new Date().toISOString().slice(0, 10) ? "coherentes" : "NO coherentes",
+      /^\d{4}-\d{2}-\d{2}$/.test(hoyArgentina())
+      && /^\d{4}-\d{2}$/.test(mesArgentina())
+      && hoyArgentina().startsWith(mesArgentina())
+      && hoyArgentina() <= new Date().toISOString().slice(0, 10), "A-OP-23")
+
+    // 🔑 Y lo que NO se toca: un instante para un timestamptz sigue siendo UTC, con su zona adentro.
+    chequear("Fechas", "🔑 `ahoraISO` sigue siendo UTC: un timestamptz lleva la zona adentro",
+      "termina en Z y tiene hora", ahoraISO().endsWith("Z") ? "termina en Z y tiene hora" : "no",
+      ahoraISO().endsWith("Z") && ahoraISO().length > 20, "A-OP-23")
   }
 
   return r

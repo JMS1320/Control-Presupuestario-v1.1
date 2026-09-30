@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
@@ -19,6 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import {
+
   Users, DollarSign, ArrowDownCircle, Clock,
   ChevronLeft, ChevronRight, Plus, History, Loader2, Pencil, Trash2, UserPlus,
   Settings, UserMinus, CalendarDays, Lock,
@@ -217,7 +220,7 @@ export function TabSueldos() {
   const [antEmpId, setAntEmpId] = useState('')
   const [antTipo, setAntTipo] = useState<'anticipo' | 'sueldo'>('anticipo')
   const [antMonto, setAntMonto] = useState('')
-  const [antFecha, setAntFecha] = useState(new Date().toISOString().split('T')[0])
+  const [antFecha, setAntFecha] = useState(hoyArgentina())
   const [antCuenta, setAntCuenta] = useState('')
   const [antDesc, setAntDesc] = useState('')
   const [antEstado, setAntEstado] = useState('pagar')
@@ -443,7 +446,7 @@ export function TabSueldos() {
     } else {
       setAntMonto('')
     }
-    setAntFecha(new Date().toISOString().split('T')[0])
+    setAntFecha(hoyArgentina())
     setAntCuenta('__none__')
     setAntDesc('')
     setAntMedioPago('banco')
@@ -552,7 +555,7 @@ export function TabSueldos() {
     setAntEmpId('')
     setAntTipo('anticipo')
     setAntMonto('')
-    setAntFecha(new Date().toISOString().split('T')[0])
+    setAntFecha(hoyArgentina())
     setAntCuenta('__none__')
     setAntDesc('')
     setAntEstado('pagar')

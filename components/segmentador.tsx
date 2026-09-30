@@ -1,11 +1,14 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 // Segmentador por rangos de peso (extraído de tab-terneros para soportar MÚLTIPLES:
 // uno por población, ej. Machos y Hembras a la vez). Autocontenido: su estado, cálculo,
 // arrastre de cortes y render. Reporta sus secciones + su config hacia arriba.
 
 import { useState, useEffect, useRef, Fragment } from "react"
 import type { SegConfig, SegSnapshot } from "./analisis-productivo"
+
 
 interface AnimalSeg {
   sexo: string | null
@@ -235,7 +238,7 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   // Receta de reproducción: pesada BASE + fecha HASTA (del análisis), resueltas a fecha concreta
   // ("" → última / hoy) para que un estudio guardado reproduzca el kilaje exacto al recargar.
   // En modo foto se preserva la receta original (initialConfig) para no pisarla al re-guardar.
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyArgentina()
   const pesadaBaseFecha = frozen
     ? (initialConfig?.pesadaBaseFecha ?? null)
     : segOrigen === "estimado"

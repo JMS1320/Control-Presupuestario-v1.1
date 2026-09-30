@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -225,7 +227,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   const cambiarEstadoCheque = async (id: string, nuevoEstado: string) => {
     await supabase.schema('msa').from('cheques')
-      .update({ estado: nuevoEstado, fecha_estado: new Date().toISOString().split('T')[0] })
+      .update({ estado: nuevoEstado, fecha_estado: hoyArgentina() })
       .eq('id', id)
     await cargarCheques()
   }
@@ -680,7 +682,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         echeqFilaCF.current = filaParaCambioEstado
         echeqAnticipoCF.current = null
         setEcheqOrigenCF('factura')
-        setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || new Date().toISOString().split('T')[0], fechaCobro: '' })
+        setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || hoyArgentina(), fechaCobro: '' })
         setMostrarModalEcheqCF(true)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
@@ -1555,7 +1557,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
        * ya está. Un cartel que se contesta solo enseña a despacharlo sin leer — y el día que
        * pregunte algo distinto, se despacha igual.
        */
-      const hoy = new Date().toISOString().split('T')[0]
+      const hoy = hoyArgentina()
       const seleccionadas = Array.from(filasSeleccionadas)
         .map(id => data.find(f => f.id === id))
         .filter(Boolean) as CashFlowRow[]
@@ -1650,7 +1652,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           echeqFilaCF.current = null
           echeqAnticipoCF.current = null
           setEcheqOrigenCF('factura')
-          const hoy = new Date().toISOString().split('T')[0]
+          const hoy = hoyArgentina()
           setEcheqFormCF({ banco: '', numero: '', fechaEmision: (cambiarFechaVenc && valorFechaLote) || arcaFacturas[0].fecha_pago || hoy, fechaCobro: '' })
           setMostrarModalEcheqCF(true)
         } else {
@@ -2241,7 +2243,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     await registrarEnSicoreRetenciones('msa', {
       origen: colaLoteSicore.length > 0 ? 'agrupacion' : 'directo',
       quincena,
-      fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || new Date().toISOString().split('T')[0],
+      fecha_pago: fila.fecha_pago || fila.fecha_vencimiento || fila.fecha_estimada || hoyArgentina(),
       factura_id: fila.id,
       // 🔑 De qué PAGO salió: las facturas de un mismo grupo comparten certificado; un pago
       //    directo estrena número, aunque sea el mismo día y el mismo proveedor (A-BUG-1222).
@@ -2447,7 +2449,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
       const montoAAbona = saldoPesos / tc
       // Quincena desde fecha_pago (fecha real de pago); fallback venc/estimada
-      const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || new Date().toISOString().split('T')[0]
+      const fechaSicore = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || hoyArgentina()
       const quincena = generarQuincenaSicore(fechaSicore)
 
       // 0. La FECHA DE PAGO de esta factura (A-BUG-147). Se escribe acá y no en el lote, para que
@@ -3088,7 +3090,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       echeqAnticipoCF.current = anticipo
       echeqFilaCF.current = null
       setEcheqOrigenCF('anticipo')
-      setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || new Date().toISOString().split('T')[0], fechaCobro: '' })
+      setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || hoyArgentina(), fechaCobro: '' })
       setMostrarModalEcheqCF(true)
       return
     }
@@ -4215,7 +4217,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <tbody>
                     {cheques.map(ch => {
                       const estadoInfo = ESTADOS_CHEQUE.find(e => e.value === ch.estado) || ESTADOS_CHEQUE[0]
-                      const hoy = new Date().toISOString().split('T')[0]
+                      const hoy = hoyArgentina()
                       const vencido = ch.fecha_cobro && ch.fecha_cobro < hoy && ch.estado === 'vigente'
                       return (
                         <tr key={ch.id} className={`border-b hover:bg-gray-50 ${vencido ? 'bg-red-50' : ''}`}>

@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 /**
  * Aviso en Principal: **ECHEQs que ya llegaron a su fecha de cobro y siguen `vigente`**.
  *
@@ -33,6 +35,7 @@ import { CalendarClock, Loader2 } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
+
 interface Cheque {
   id: string
   numero: string | null
@@ -42,7 +45,7 @@ interface Cheque {
   beneficiario_nombre: string | null
 }
 
-const hoyISO = () => new Date().toISOString().slice(0, 10)
+const hoyISO = () => hoyArgentina()
 
 /** Cuántos días pasaron desde la fecha de cobro. Negativo = todavía no llegó. */
 const diasDesde = (fecha: string | null) => {

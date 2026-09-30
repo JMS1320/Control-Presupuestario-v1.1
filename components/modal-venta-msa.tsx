@@ -1,5 +1,7 @@
 "use client"
 
+
+import { hoyArgentina } from "@/lib/fechas"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -10,6 +12,7 @@ import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
+
 
 export interface VentaMsa {
   id: string
@@ -95,7 +98,7 @@ export function ModalVentaMsa({ open, onOpenChange, ventaInicial, onGuardado }: 
     } else {
       // Reset para alta
       setCliente({ cuit: '', nombre: '' })
-      setFechaOperacion(new Date().toISOString().slice(0, 10))
+      setFechaOperacion(hoyArgentina())
       setGrano('')
       setToneladas('')
       setModoPrecio('pesos')
