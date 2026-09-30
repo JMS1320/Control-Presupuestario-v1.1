@@ -77,6 +77,7 @@ import { hoyArgentina, mesArgentina, diaArgentino, ahoraISO } from "@/lib/fechas
 import {
   decidirPropagacion, esCategProvisoria, avisoDePropagacion,
 } from "@/lib/conciliacion/propagar-cuenta"
+import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4264,6 +4265,58 @@ export function correrCasos(): Resultado[] {
     chequear("Propagación de cuenta", "🔇 Una tabla que falla se dice, no va a la consola",
       "nombra la tabla", conFalla?.includes("tarjeta_visa_business") ? "nombra la tabla" : String(conFalla),
       !!conFalla && conFalla.includes("tarjeta_visa_business"), "A-BUG-1221")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 💰 EL SUELDO POR TOTAL + A (A-FEAT-1211). Los números son los reales de Sigot.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /** El caso testigo: Sigot. A viene del convenio, el total es lo que se acuerda. */
+    const TOTAL = 1600000
+    const A = 1408347.10
+    const rep = repartirTotalEnAB(TOTAL, A)
+
+    chequear("Sueldo total+A", "🔢 El total de Sigot es redondo y B sale de la resta",
+      "B = 191.652,90", n2(rep.b), rep.b === 191652.90, "A-FEAT-1211")
+
+    chequear("Sueldo total+A", "🔑 Y A + B vuelve a dar el total: el bruto no se mueve",
+      n2(TOTAL), n2(rep.a + rep.b), r2(rep.a + rep.b) === TOTAL, "A-FEAT-1211")
+
+    // 🔑 Lo que prueba que el cambio es de INGRESO y no de cálculo: el valor del franco es el mismo
+    //    salga de `total/25` o de `(A+B)/25`.
+    chequear("Sueldo total+A", "🔑 El valor del franco da igual desde el total que desde A+B",
+      "64.000,00", n2(valorFrancoDeTotal(TOTAL)),
+      valorFrancoDeTotal(TOTAL) === r2((A + rep.b) / 25) && valorFrancoDeTotal(TOTAL) === 64000,
+      "A-FEAT-1211")
+
+    // 🛑 El adversario: A mayor que el total. B negativo es una contradicción, no un dato.
+    const mal = repartirTotalEnAB(1000000, 1200000)
+    chequear("Sueldo total+A", "🛑 Si A supera el total, se marca inválido (no se recorta a cero)",
+      "inválido y B = -200.000,00",
+      `${mal.invalido ? "inválido" : "válido"} y B = ${n2(mal.b)}`,
+      mal.invalido && mal.b === -200000, "A-FEAT-1211")
+
+    chequear("Sueldo total+A", "Con A igual al total, B es cero y sigue siendo válido",
+      "B 0 y válido", `B ${n2(repartirTotalEnAB(500000, 500000).b)} y ${repartirTotalEnAB(500000, 500000).invalido ? "inválido" : "válido"}`,
+      repartirTotalEnAB(500000, 500000).b === 0 && !repartirTotalEnAB(500000, 500000).invalido,
+      "A-FEAT-1211")
+
+    // Los centavos no se escapan: el reparto redondea a 2 decimales en las dos puntas.
+    const conCentavos = repartirTotalEnAB(1000000.333, 333333.111)
+    chequear("Sueldo total+A", "Redondea a centavos y la suma sigue cerrando",
+      "cierra", r2(conCentavos.a + conCentavos.b) === conCentavos.total ? "cierra" : "no cierra",
+      r2(conCentavos.a + conCentavos.b) === conCentavos.total, "A-FEAT-1211")
+
+    // Y los otros empleados de ab_francos, para que no se rompa ninguno.
+    for (const [nombre, total, a, bEsperado] of [
+      ["Barreto", 1100000, 0, 1100000],
+      ["Alondra", 500000, 0, 500000],
+    ] as Array<[string, number, number, number]>) {
+      chequear("Sueldo total+A", `${nombre}: con A en cero, B es todo el total`,
+        n2(bEsperado), n2(repartirTotalEnAB(total, a).b),
+        repartirTotalEnAB(total, a).b === bEsperado, "A-FEAT-1211")
+    }
   }
 
   return r

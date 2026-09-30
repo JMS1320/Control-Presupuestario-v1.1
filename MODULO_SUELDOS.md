@@ -118,6 +118,25 @@ El usuario los actualiza desde el botón ✏️ en la tabla del mes.
 | `premio` | NUMERIC | todos | NULL cuando no aplica |
 | `observaciones` | TEXT | todos | Visible en tabla principal (truncado 40 chars) |
 
+### 💰 Cómo se INGRESA: total + A, y B se calcula *(cambió 2026-09-30, A-FEAT-1211)*
+
+⚠️ **Hasta el 2026-09-30 el modal pedía `A` y `B` por separado.** Ya no: pide el **Total** y **A**, y
+**B se muestra calculado** (no se escribe). Lo pidió el usuario: *«pongo lo que cobra total y A, y
+calcula solo B»*.
+
+🔑 **Y NO cambió ningún número.** Las fórmulas de abajo usan `(A + B)` y `(A + B)/25` — **nunca A y B
+por separado** —, así que esto es un cambio de cómo se ingresa, no de cómo se calcula. La regla vive
+en `lib/sueldos/reparto-ab.ts` con sus casos.
+
+🔢 **La prueba de que el total es el dato real**: Sigot es `A 1.408.347,10 + B 191.652,90` = **$1.600.000
+justos**. El total es redondo porque es lo que se acuerda; A sale de la escala y B es el resto.
+
+📌 **En Sigot el total incluye la cuota alimentaria a Lucrecia**, que se paga a otra cuenta pero es
+parte del mismo sueldo. El reparto entre destinos es `A-FEAT-1212`.
+
+🛑 **Si A supera el total, no se guarda**: B daría negativo, y las partes no pueden sumar más que el
+todo. Se avisa en vez de recortarlo a cero.
+
 ### Fórmulas de cálculo
 
 ```

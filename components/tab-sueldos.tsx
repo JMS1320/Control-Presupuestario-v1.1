@@ -1,6 +1,8 @@
 "use client"
 
 
+
+import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -244,6 +246,22 @@ export function TabSueldos() {
   const [edPeriodo, setEdPeriodo] = useState<Periodo | null>(null)
   const [edMontoA, setEdMontoA] = useState('')
   const [edMontoB, setEdMontoB] = useState('')
+  /**
+   * 💰 **El TOTAL del sueldo — lo que el usuario realmente conoce** (A-FEAT-1211).
+   *
+   * Pedido del usuario 2026-09-30: *«para editar el sueldo pongo lo que cobra total y A, y calcula
+   * solo B. Y en el caso de Sigot pongo lo que cobra él, lo que es la cuota alimentaria a Lucrecia, y
+   * eso es el total. Luego pongo A y calcula B»*.
+   *
+   * 🔑 **Y no cambia ninguna cuenta.** El bruto es `(A + B) + valor_franco × francos + extras` y el
+   * valor del franco es `(A + B) / 25`: **las dos usan la SUMA**, nunca A y B por separado. A y B sólo
+   * existen para mostrar la apertura del convenio. Así que esto es un cambio de **cómo se ingresa**,
+   * no de cómo se calcula — el bruto de todos los períodos queda idéntico.
+   *
+   * 🔢 La prueba de que el total es el dato: Sigot es **A 1.408.347,10 + B 191.652,90 = $1.600.000
+   * justos**. El total es redondo porque el total es lo que se acuerda; A y B son la apertura.
+   */
+  const [edTotalAB, setEdTotalAB] = useState('')
   const [edFrancos, setEdFrancos] = useState('')
   const [edValorDia, setEdValorDia] = useState('')
   const [edDias, setEdDias] = useState('')
@@ -639,6 +657,8 @@ export function TabSueldos() {
       : (p.monto_a !== null ? fmt(p.monto_a) : '')
     )
     setEdMontoB(p.monto_b !== null ? fmt(p.monto_b) : '')
+    // El total es lo que se muestra para editar; A y B se derivan de él (ver `edTotalAB`).
+    setEdTotalAB(fmt((p.monto_a ?? 0) + (p.monto_b ?? 0)))
     setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
     setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
     setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
@@ -666,36 +686,55 @@ export function TabSueldos() {
   const fmtFranco = (v: number) =>
     v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+  /**
+   * 🔑 **Ahora se escriben el TOTAL y A; B es la resta** (A-FEAT-1211).
+   *
+   * El valor del franco sigue saliendo de `total / 25`, que es lo mismo que `(A + B) / 25` — por eso
+   * el cálculo no cambia. Y B nunca queda negativo: si A supera el total, se muestra el problema en
+   * vez de guardar un número imposible (§ 🧮 *nada en silencio*).
+   */
+  const onChangeTotal = (v: string) => {
+    setEdTotalAB(v)
+    const { b } = repartirTotalEnAB(num(v), num(edMontoA))
+    setEdMontoB(b !== 0 ? fmtFranco(b) : '')
+    if (francoAutoSync) setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(v))))
+  }
   const onChangeA = (v: string) => {
     setEdMontoA(v)
-    if (francoAutoSync) {
-      const vf = (num(v) + num(edMontoB)) / 25
-      setEdValorFranco(fmtFranco(vf))
-    }
+    const { b } = repartirTotalEnAB(num(edTotalAB), num(v))
+    setEdMontoB(b !== 0 ? fmtFranco(b) : '')
+    // El total no se mueve al cambiar A: lo que cambia es el reparto entre A y B.
+    if (francoAutoSync) setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(edTotalAB))))
   }
-  const onChangeB = (v: string) => {
-    setEdMontoB(v)
-    if (francoAutoSync) {
-      const vf = (num(edMontoA) + num(v)) / 25
-      setEdValorFranco(fmtFranco(vf))
-    }
-  }
+  /** El reparto de hoy: `b` para mostrarlo, `invalido` para frenar si A se pasó del total. */
+  const reparto = repartirTotalEnAB(num(edTotalAB), num(edMontoA))
+  const bDerivado = reparto.b
   const onChangeFrancoManual = (v: string) => {
     setEdValorFranco(v)
     setFrancoAutoSync(false)
   }
   const resetFrancoAuto = () => {
-    const vf = (num(edMontoA) + num(edMontoB)) / 25
-    setEdValorFranco(fmtFranco(vf))
+    // Mismo número que antes: `total / 25` es `(A + B) / 25`.
+    setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(edTotalAB))))
     setFrancoAutoSync(true)
   }
 
   const guardarEdicion = async () => {
     if (!edPeriodo) return
+    /**
+     * 🛑 **Frena si A se pasó del total**: B daría negativo, que es una contradicción interna — las
+     * partes no pueden sumar más que el todo (§ 🚦 de `CLAUDE.md`). No se recorta a cero en silencio.
+     */
+    if (edPeriodo.empleado?.tipo_empleado === 'ab_francos'
+        && repartirTotalEnAB(num(edTotalAB), num(edMontoA)).invalido) {
+      alert('La categoría A es mayor que el total: la categoría B quedaría negativa. Revisá el total o A.')
+      return
+    }
     setGuardandoEdicion(true)
     const tipo      = edPeriodo.empleado?.tipo_empleado
     const a         = num(edMontoA)
-    const b         = num(edMontoB)
+    // 🔑 B es la resta, no un campo suelto: así el total que él escribió es exactamente el que queda.
+    const b         = tipo === 'ab_francos' ? repartirTotalEnAB(num(edTotalAB), a).b : num(edMontoB)
     const francos   = num(edFrancos)
     const vf        = num(edValorFranco)
     const vdia      = num(edValorDia)
@@ -1469,9 +1508,23 @@ export function TabSueldos() {
               {/* ab_francos */}
               {edPeriodo.empleado?.tipo_empleado === 'ab_francos' && (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
+                  {/*
+                    💰 TOTAL + A, y B se calcula (A-FEAT-1211). El total es el número que el usuario
+                    conoce; en Sigot incluye la cuota alimentaria a Lucrecia, que se paga a otra
+                    cuenta pero es parte del mismo sueldo.
+                  */}
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <Label>Categoría A</Label>
+                      <Label>Total del sueldo</Label>
+                      <Input
+                        type="text"
+                        placeholder="0,00"
+                        value={edTotalAB}
+                        onChange={e => onChangeTotal(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>Categoría A (convenio)</Label>
                       <Input
                         type="text"
                         placeholder="0,00"
@@ -1480,15 +1533,23 @@ export function TabSueldos() {
                       />
                     </div>
                     <div>
-                      <Label>Categoría B</Label>
+                      <Label className="text-gray-500">Categoría B (se calcula)</Label>
                       <Input
                         type="text"
-                        placeholder="0,00"
                         value={edMontoB}
-                        onChange={e => onChangeB(e.target.value)}
+                        readOnly
+                        tabIndex={-1}
+                        className={`bg-gray-50 ${bDerivado < 0 ? 'text-red-600 border-red-300' : 'text-gray-600'}`}
                       />
                     </div>
                   </div>
+                  {/* 🧮 Si A se pasó del total, B daría negativo: se dice, no se guarda callado. */}
+                  {bDerivado < 0 && (
+                    <p className="text-xs text-red-600">
+                      La categoría A ({edMontoA}) es mayor que el total ({edTotalAB}): B quedaría
+                      negativo. Revisá el total o A antes de guardar.
+                    </p>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label>Cant. francos trabajados</Label>
