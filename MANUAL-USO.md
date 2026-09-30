@@ -43,6 +43,7 @@
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
+- [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
 - [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
@@ -2541,6 +2542,37 @@ No lo tiran: es el trabajo que falta en el plan.
 `npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
 
 ⚠️ Sin probar todavía → A-TEST-1165 · el saldo al inicio y la cadena → A-TEST-1169
+
+## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
+
+Es la pantalla para **imputar rápido** las facturas que todavía no tienen cuenta contable — las que
+en el libro por cuenta salen como *NO IMPUTADO*.
+
+**Cómo se usa:** filtrás por período o por cuenta, tildás las facturas y apretás **Asignar**. El modal
+te **propone** cuentas ordenadas por probabilidad, y te dice de dónde sale cada propuesta:
+
+| Etiqueta | Qué significa |
+|---|---|
+| **Historial histórico** / **Historial ARCA** | a ese CUIT ya le pusiste esa cuenta antes (con la cantidad de veces) |
+| **Match exacto** | el nombre coincide con una cuenta del plan |
+| **Nombre similar** | se parece, revisalo |
+
+📎 **Y la columna del clip abre la factura** *(nuevo)*. Si dudás de qué cuenta le corresponde,
+mirala antes de decidir. Es el mismo criterio que en el subdiario y el Cash Flow: 📎 la tiene ·
+🌐 es de Portal (esas no llegan por mail, se bajan del portal) · ❌ debería tener PDF y falta.
+
+🧮 **Al confirmar te dice qué pasó con el extracto** *(nuevo)*. Si la factura ya estaba conciliada,
+la cuenta **viaja a su movimiento bancario** y el cartel te dice a cuántos llegó. Antes eso pasaba en
+silencio y no había forma de saber si había funcionado.
+
+⚠️ **Si algún movimiento NO se toca, te lo dice y es a propósito.** Cuando el movimiento ya está
+clasificado en otro sistema —`FCI`, `CAJA`, `Sueldos`, `Tarjetas MSA`— la cuenta de la factura **no lo
+pisa**: pisar `FCI`, que es financiero, con una cuenta de gasto metería en el egreso plata que sigue
+siendo de la empresa. En cambio `ANTICIPO`, `SIN_CATEG` e `INVALIDA:` **sí se pisan**: son provisorios.
+
+🔑 **Y quitar la cuenta también limpia el movimiento.** Antes se quedaba con la vieja.
+
+⚠️ Sin probar todavía → A-TEST-1170
 
 ## 💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*
 

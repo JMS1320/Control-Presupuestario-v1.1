@@ -11,6 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, AlertTriangle, CheckCircle, Search, AlertCircle, X, RefreshCw, FileCheck } from "lucide-react"
 import { toast } from "sonner"
+/**
+ * 📎 El link a la factura sale del MISMO módulo que el subdiario y el Cash Flow
+ * (§ ♻️ *Centralizar, no duplicar*): si mañana cambia el criterio, cambia en las tres.
+ */
+import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +43,8 @@ interface ComprobanteArca {
   ddjj_iva: string | null
   numero_desde: string | null
   tipo_comprobante: number | null
+  /** 📎 Para poder abrir la factura desde acá. Pedido del usuario 2026-09-30. */
+  pdf_drive_url: string | null
 }
 
 type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match"
@@ -151,7 +158,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
         supabase.schema(schemaName).from("comprobantes_arca")
-          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante")
+          .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante,pdf_drive_url")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
           .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
@@ -362,6 +369,26 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
 
   // ── Guardar asignación ────────────────────────────────────────────────────
 
+  /** Qué devuelve la ruta sobre la propagación al extracto. Ver `lib/conciliacion/propagar-cuenta.ts`. */
+  interface Propagacion {
+    propagados?: number
+    salteados?: number
+    aviso?: string | null
+  }
+
+  /**
+   * 🧮 Muestra qué pasó con los movimientos conciliados. **Nada en silencio**: si propagó, lo dice
+   * en verde; si algo quedó sin tocar o falló, en ámbar y con el detalle.
+   */
+  function mostrarPropagacion(p: Propagacion | undefined) {
+    if (!p) return
+    if (p.aviso) { toast.warning(p.aviso); return }
+    if ((p.propagados ?? 0) > 0) {
+      toast.success(`La cuenta llegó a ${p.propagados} movimiento(s) del extracto ya conciliados.`)
+    }
+  }
+
+
   async function guardarAsignacion() {
     if (!cuentaElegida) return
     setGuardando(true)
@@ -377,6 +404,17 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
       })
       const data = await res.json()
       if (!data.success) throw new Error(data.message)
+      /**
+       * 🔗 **Lo que pasó con el extracto SE VE** (A-BUG-1221).
+       *
+       * La asignación no termina en la factura: si ya está conciliada, la cuenta viaja a sus
+       * movimientos. Antes eso ocurría en silencio —y los errores iban a `console.error` mientras
+       * acá salía «Cuenta asignada»—, así que **no había forma de saber si había llegado**.
+       *
+       * Ahora la ruta devuelve cuántos movimientos recibió la cuenta y cuáles **no se tocaron** por
+       * estar clasificados en otro sistema (`FCI`, `CAJA`, `Sueldos`…): § 🚦 avisa y deja seguir.
+       */
+      mostrarPropagacion(data.propagacion)
       setModalAbierto(false)
       setSeleccionados(new Set())
       await cargar()
@@ -387,15 +425,39 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
     }
   }
 
+  /**
+   * 🔑 Y al QUITAR la cuenta también se propaga: antes el movimiento del extracto se quedaba con la
+   * cuenta vieja, imputado a algo que la factura ya no tenía (A-BUG-1221, hueco 3).
+   */
   async function quitarAsignacion(ids: string[]) {
     if (!confirm(`¿Quitar la asignación de ${ids.length} comprobante(s)?`)) return
     await fetch("/api/arca-asignar", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids, nro_cuenta: null, cuenta_contable: null }),
-    })
+    }).then(r => r.json()).then(d => mostrarPropagacion(d?.propagacion)).catch(() => {})
     setSeleccionados(new Set())
     await cargar()
+  }
+
+  /**
+   * 📎 **El link a la factura.** Pedido del usuario 2026-09-30: *«para la pantalla debés ponerle el
+   * link a la factura así yo lo puedo ver en caso de dudas»* — y tiene todo el sentido acá, porque la
+   * decisión que se toma en esta pantalla es **qué cuenta lleva esa factura**, y a veces eso no se
+   * puede saber sin mirarla.
+   *
+   * 🔑 Sale del **mismo** módulo que el subdiario y el Cash Flow, así que los cinco estados son los
+   * mismos: 📎 la tiene · 🌐 es de Portal (no llega por mail) · ❌ falta y debería estar.
+   */
+  function celdaFactura(c: ComprobanteArca) {
+    const estado = estadoArchivoDigital({ pdf_drive_url: c.pdf_drive_url, fc: c.fc, origen: "ARCA" })
+    const { icono, clase, titulo } = PRESENTACION_ARCHIVO[estado]
+    if (estado !== "con") return <span className={clase} title={titulo}>{icono}</span>
+    return (
+      <a href={c.pdf_drive_url!} target="_blank" rel="noreferrer" title={titulo} className={clase}>
+        {icono}
+      </a>
+    )
   }
 
   // ── Auto-asignar únicos ───────────────────────────────────────────────────
@@ -433,7 +495,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
   async function cargarFacturasArchivo(periodo: string) {
     const [año, mes] = periodo.split("-").map(Number)
     const { data, error } = await supabase.schema(schemaName).from("comprobantes_arca")
-      .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva")
+      .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante,pdf_drive_url")
       .eq("año_contable", año)
       .eq("mes_contable", mes)
       .order("denominacion_emisor")
@@ -585,6 +647,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                   <th className="px-3 py-2 text-left">Fecha</th>
                   <th className="px-3 py-2 text-left">Nro. Factura</th>
                   <th className="px-3 py-2 text-left">Emisor</th>
+                  <th className="px-3 py-2 text-center" title="Ver la factura">📎</th>
                   <th className="px-3 py-2 text-left">CUIT</th>
                   <th className="px-3 py-2 text-left">Cuenta Contable</th>
                   <th className="px-3 py-2 text-center">Cód.</th>
@@ -596,7 +659,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtrados.length === 0 ? (
-                  <tr><td colSpan={11} className="py-8 text-center text-gray-400">Sin resultados</td></tr>
+                  <tr><td colSpan={12} className="py-8 text-center text-gray-400">Sin resultados</td></tr>
                 ) : filtrados.map(c => (
                   <tr key={c.id} className={`${ESTADO_CONFIG[c._estado].rowBg} hover:brightness-95 transition-all`}>
                     <td className="px-2 py-1.5 text-center">
@@ -611,6 +674,8 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                     <td className="px-3 py-1.5 max-w-[150px] truncate" title={c.denominacion_emisor ?? ""}>
                       {c.denominacion_emisor ?? "—"}
                     </td>
+                    {/* 📎 La factura, para poder mirarla antes de decidir la cuenta. */}
+                    <td className="px-3 py-1.5 text-center">{celdaFactura(c)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap text-gray-400">{c.cuit ?? "—"}</td>
                     <td className="px-3 py-1.5 max-w-[180px] truncate font-medium" title={c.cuenta_contable ?? ""}>
                       {c.cuenta_contable ?? <span className="text-gray-300">—</span>}
