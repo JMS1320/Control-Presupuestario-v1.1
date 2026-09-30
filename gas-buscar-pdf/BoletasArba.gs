@@ -106,7 +106,43 @@ function anotarCreado_(carpeta, nombre, cache) {
   if (cache && cache.archivos[carpeta.getId()]) cache.archivos[carpeta.getId()][nombre] = true
 }
 
-function carpetaArba_() {
+/**
+ * 🗂️ **La carpeta destino, en orden de prioridad: la que elige el USUARIO, la Script Property, o
+ * find-or-create «Boletas ARBA».**
+ *
+ * Pedido del usuario 2026-09-30: *«el nombre de cada PDF descargado no lo tengo que nombrar yo…
+ * **yo solo digo la carpeta**»*. El nombre ya salía solo (ver `nombreUsuario_`); lo que faltaba era
+ * poder decir **dónde**, sin entrar al Apps Script a tocar una propiedad.
+ *
+ * 🛑 **Y si la carpeta que mandó no existe o no es accesible, FALLA en vez de caer al default.**
+ * Bajar 40 boletas a una carpeta que no es la que él eligió es peor que no bajarlas: quedan
+ * archivadas donde nadie las va a buscar, y el dedup por nombre hace que la próxima corrida crea
+ * que ya están.
+ *
+ * @param idElegido  id o URL de carpeta de Drive que manda la app. Vacío = como antes.
+ */
+/**
+ * Acepta **el id pelado o la URL completa** de Drive, que es lo que uno copia de la barra del
+ * navegador: `https://drive.google.com/drive/folders/1AbC...` → `1AbC...`.
+ *
+ * 📌 Pedir «el id» y no aceptar la URL sería hacerle buscar el id a mano cada vez.
+ */
+function idDeCarpeta_(v) {
+  var t = String(v || '').trim()
+  if (!t) return ''
+  var m = t.match(/\/folders\/([A-Za-z0-9_-]+)/)
+  if (m) return m[1]
+  // Un id de Drive no tiene barras ni espacios; si los tiene, no es un id.
+  return /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : ''
+}
+
+function carpetaArba_(idElegido) {
+  var elegida = idDeCarpeta_(idElegido)
+  if (elegida) {
+    try { return DriveApp.getFolderById(elegida) } catch (e) {
+      throw new Error('La carpeta elegida no existe o no es accesible para esta cuenta: ' + elegida)
+    }
+  }
   var id = propArba_('ARBA_CARPETA', '')
   if (id) {
     try { return DriveApp.getFolderById(id) } catch (e) {
@@ -381,7 +417,7 @@ function bajarBoletasArba(soloContar, opciones) {
   var mapaPartidas = op.partidas || null
   var empresaPorCuit = op.empresa_por_cuit || null
 
-  var carpeta = soloContar ? null : carpetaArba_()
+  var carpeta = soloContar ? null : carpetaArba_(op.carpeta_id)
   var TOPE = 50
   var hilos = GmailApp.search(query, 0, TOPE)
   // ⚠️ Si la búsqueda trae MÁS del tope, los que sobran se pierden sin que nadie lo note. Se avisa:

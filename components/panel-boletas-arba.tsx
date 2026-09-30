@@ -16,7 +16,7 @@
  * Los PDFs se pueden subir a mano acá; el GAS (`accion: boletas_arba`) hace lo mismo desde el mail.
  */
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
 import { decidirAplicar, controlDosCaminos, huellaBoleta, aMonto } from "@/lib/arba/casar-boleta"
@@ -182,6 +182,26 @@ export function PanelBoletasArba() {
   const [bajando, setBajando] = useState(false)
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
+  /**
+   * 🗂️ **La carpeta de Drive donde archivar.** Pedido del usuario 2026-09-30: *«el nombre de cada
+   * PDF descargado no lo tengo que nombrar yo… **yo solo digo la carpeta**»*.
+   *
+   * El nombre del archivo ya salía solo con su convención (`2026 - Inmob - Cuota 3 - Tango Parra 1`);
+   * lo único que faltaba era poder decir **dónde**, sin entrar al Apps Script a tocar una propiedad.
+   *
+   * 📌 Se **recuerda la última**: es siempre la misma y volver a pegarla cada vez es el tipo de
+   * fricción que hace que una herramienta no se use. Vive en el navegador porque es una comodidad
+   * de quien la usa, no un dato del sistema — y si el storage falla, el campo arranca vacío y la
+   * bajada usa la carpeta de siempre.
+   */
+  const [carpeta, setCarpeta] = useState("")
+  useEffect(() => {
+    try { setCarpeta(localStorage.getItem("arba-carpeta-drive") ?? "") } catch { /* sin storage */ }
+  }, [])
+  const recordarCarpeta = (v: string) => {
+    setCarpeta(v)
+    try { localStorage.setItem("arba-carpeta-drive", v) } catch { /* sin storage */ }
+  }
   const [informe, setInforme] = useState<Informe | null>(null)
   /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
   const [pasadas, setPasadas] = useState(0)
@@ -316,6 +336,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           body: JSON.stringify({
             solo_contar: soloContar, dias: Number(dias) || undefined,
             partidas, empresa_por_cuit: EMPRESA_POR_CUIT,
+            // Vacío = la carpeta de siempre. Acepta el id o la URL pegada de Drive.
+            carpeta_id: carpeta.trim() || undefined,
           }),
         })
         j = await r.json()
@@ -538,8 +560,19 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                   className="h-6 w-12 text-center text-[11px] tabular-nums" />
                 días
               </label>
+              <label className="flex items-center gap-1 text-[10px] text-gray-600">
+                carpeta
+                <Input
+                  type="text" value={carpeta} onChange={e => recordarCarpeta(e.target.value)}
+                  placeholder="pegá el link de la carpeta de Drive"
+                  className="h-6 w-64 text-[11px]"
+                />
+              </label>
               <span className="text-[10px] text-gray-500">
                 Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
+                <br /><b>El nombre del archivo sale solo</b>: «2026 - Inmob - Cuota 3 - Tango Parra 1».
+                Vos sólo elegís la carpeta — se recuerda la última, y adentro se arman las subcarpetas
+                por empresa. Si la dejás vacía, va a la de siempre.
                 <br />Si no entra todo en una pasada, <b>sigue solo</b> hasta terminar. No borres lo
                 ya archivado: lo que está no se vuelve a bajar.
               </span>

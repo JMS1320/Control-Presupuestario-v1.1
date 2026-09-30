@@ -2439,6 +2439,48 @@ cargado y **las labores no tienen dónde cargar su tarifa** todavía.
 
 ⚠️ Sin probar todavía → A-TEST-1156
 
+## 🏛️ Boletas de ARBA → bajarlas del mail *(actualizado 2026-09-30)*
+
+En **Cash Flow → 🏛️ Boletas ARBA**. Dos botones y dos campos:
+
+| | Qué hace |
+|---|---|
+| **👁 Ver qué hay** | mira los mails y te dice qué encontraría. **No baja ni guarda nada** |
+| **⬇ Bajar y archivar** | baja los PDF, los renombra y los archiva en Drive |
+| **últimos N días** | la ventana de búsqueda en el mail. Achicarla es lo primero si tarda mucho |
+| **carpeta** | dónde archivar: **pegá el link de la carpeta de Drive**. Se recuerda la última |
+
+💡 **El nombre del archivo sale solo**, con tu convención de siempre:
+
+```
+2026 - Inmob - Cuota 3 - Tango Parra 1.pdf
+2026 - Complementario - Cuota 3.pdf
+2026 - Complementario - Cuota 3 - Aviso de debito.pdf
+```
+
+**Vos sólo elegís la carpeta.** Adentro se arman solas las subcarpetas por empresa —*MSA*, *PAM*,
+*MA*, y el *MSA - viene PAM* para lo que es de una pero llegó en el mail de otra—.
+
+⚠️ **Si la carpeta que pegaste no existe o no se puede abrir, no baja nada y te lo dice.** Es a
+propósito: archivar 40 boletas donde vos no querías es peor que no archivarlas, porque quedan
+donde nadie las busca y la próxima corrida cree que ya están.
+
+💡 **Si no entra todo en una pasada, sigue solo** hasta terminar. Y no borres lo ya archivado: lo
+que está no se vuelve a bajar.
+
+### Después de bajar
+
+Subís los PDF a la pantalla y ella compara **dos caminos independientes**: el importe que decía el
+**cuerpo del mail** y el que dice el **PDF**. Si no coinciden, te lo muestra — no elige uno.
+
+Al aplicar, se escribe en la cuota del template **sólo el monto y el vencimiento**. La
+*fecha estimada* no se toca: ésa mueve la proyección del Cash Flow y no es lo que dice la boleta.
+
+🔗 **Y la boleta queda linkeada**: el PDF de Drive se guarda con ella, así podés abrirlo desde la
+app cuando quieras verificar un importe, sin salir a buscar el archivo.
+
+⚠️ Sin probar todavía → A-TEST-1167
+
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
 
 El Excel que se baja de **Reportes → Papeles de trabajo del balance** abre con la solapa
