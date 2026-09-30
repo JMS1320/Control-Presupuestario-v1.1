@@ -78,6 +78,39 @@ export function componerA(aPropio: number, cuotaAlimentaria: number): AperturaDe
 }
 
 /**
+ * 🧨 **Escribir la CUOTA no infla A: lo que baja es lo propio** (bug encontrado por el usuario el
+ * 2026-09-30, probando `A-FEAT-1213`).
+ *
+ * ## Qué pasó
+ *
+ * El modal abre con **«A del empleado» = el A total guardado**, porque hasta ese momento no había
+ * cuota. Al escribir la cuota, componer `A total = propio + cuota` **inflaba A** por encima del total
+ * del sueldo, B daba negativo y la guardia frenaba el guardado. Medido en Sigot: A total
+ * **1.661.085,80**, total nuevo **1.850.000** — con una cuota de sólo 200.000 ya se pasaba, y
+ * **no guardaba nada**.
+ *
+ * 🔑 **Por qué no se notó antes**: **Wilson funcionó bien** y era la prueba de que el camino sin
+ * cuota estaba sano. El bug vive **sólo** en el camino con cuota.
+ *
+ * ## La regla, que sigue siendo la que él enunció
+ *
+ * *«Se carga Lucrecia, se carga total A Sigot —Sigot antes de Lucrecia— y eso da el A total»*. Eso se
+ * respeta: **A total sigue siendo `propio + cuota`**. Lo que cambia es **qué se ajusta cuando se
+ * escribe la cuota**: se mantiene el **A total** y se baja lo propio.
+ *
+ * 📌 Y es lo que uno espera al cargarla por primera vez: poner la cuota es **decir qué parte del A que
+ * ya existe se le paga a un tercero**, no agregarle plata al sueldo. Si querés que A total suba, se
+ * edita **«A del empleado»**, que sí lo recompone.
+ */
+export function aplicarCuotaManteniendoA(aTotalActual: number, cuota: number): AperturaDeA {
+  return {
+    aPropio: r2(aTotalActual - cuota),
+    cuotaAlimentaria: r2(cuota),
+    aTotal: r2(aTotalActual),
+  }
+}
+
+/**
  * Y el camino inverso, para **abrir** un A que ya está guardado: al reabrir un período sólo se conoce
  * `monto_a` y la cuota, así que lo propio es la resta.
  *

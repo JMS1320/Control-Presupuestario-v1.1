@@ -2,7 +2,9 @@
 
 
 
-import { repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA } from "@/lib/sueldos/reparto-ab"
+import {
+  repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
+} from "@/lib/sueldos/reparto-ab"
 import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
@@ -736,10 +738,26 @@ export function TabSueldos() {
     // El total no se mueve: lo que cambia es el reparto entre A y B.
     if (francoAutoSync) setEdValorFranco(fmtFranco(valorFrancoDeTotal(num(edTotalAB))))
   }
+  /** Editar **A del empleado** SÍ recompone el A total: `propio + cuota`. */
   const onChangeAPropio = (v: string) => { setEdAPropio(v); aplicarA(v, edCuotaAlim) }
-  const onChangeCuotaAlim = (v: string) => { setEdCuotaAlim(v); aplicarA(edAPropio, v) }
+  /**
+   * 🧨 Editar **la cuota** NO infla A: mantiene el A total y **baja lo propio**.
+   *
+   * Poner la cuota es decir **qué parte del A que ya existe** se le paga a un tercero, no agregarle
+   * plata al sueldo. Antes se sumaba, A se pasaba del total, B daba negativo y **no guardaba nada** —
+   * es el bug que el usuario encontró cargando a Sigot.
+   */
+  const onChangeCuotaAlim = (v: string) => {
+    setEdCuotaAlim(v)
+    const { aPropio, aTotal } = aplicarCuotaManteniendoA(num(edMontoA), num(v))
+    setEdAPropio(aPropio !== 0 ? fmtFranco(aPropio) : '')
+    setEdMontoA(aTotal !== 0 ? fmtFranco(aTotal) : '')
+    const { b } = repartirTotalEnAB(num(edTotalAB), aTotal)
+    setEdMontoB(b !== 0 ? fmtFranco(b) : '')
+  }
   /** El reparto de hoy: `b` para mostrarlo, `invalido` para frenar si A se pasó del total. */
-  const aCompuesto = componerA(num(edAPropio), num(edCuotaAlim))
+  // El A total es el que está en pantalla: lo recomponen los handlers, no este render.
+  const aCompuesto = { aPropio: num(edAPropio), cuotaAlimentaria: num(edCuotaAlim), aTotal: num(edMontoA) }
   const reparto = repartirTotalEnAB(num(edTotalAB), aCompuesto.aTotal)
   const bDerivado = reparto.b
   const onChangeFrancoManual = (v: string) => {
@@ -759,14 +777,14 @@ export function TabSueldos() {
      * partes no pueden sumar más que el todo (§ 🚦 de `CLAUDE.md`). No se recorta a cero en silencio.
      */
     if (edPeriodo.empleado?.tipo_empleado === 'ab_francos'
-        && repartirTotalEnAB(num(edTotalAB), componerA(num(edAPropio), num(edCuotaAlim)).aTotal).invalido) {
+        && repartirTotalEnAB(num(edTotalAB), num(edMontoA)).invalido) {
       alert('La categoría A es mayor que el total: la categoría B quedaría negativa. Revisá el total o A.')
       return
     }
     setGuardandoEdicion(true)
     const tipo      = edPeriodo.empleado?.tipo_empleado
     // 🧾 A es cuota + propio (A-FEAT-1213); para los demás tipos sigue siendo el campo suelto.
-    const a         = tipo === 'ab_francos' ? componerA(num(edAPropio), num(edCuotaAlim)).aTotal : num(edMontoA)
+    const a         = num(edMontoA)   // 🧾 el A TOTAL, que los handlers mantienen en pantalla
     // 🔑 B es la resta, no un campo suelto: así el total que él escribió es exactamente el que queda.
     const b         = tipo === 'ab_francos' ? repartirTotalEnAB(num(edTotalAB), a).b : num(edMontoB)
     const francos   = num(edFrancos)

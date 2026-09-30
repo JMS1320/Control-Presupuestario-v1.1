@@ -78,7 +78,7 @@ import {
   decidirPropagacion, esCategProvisoria, avisoDePropagacion,
 } from "@/lib/conciliacion/propagar-cuenta"
 import {
-  repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA,
+  repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
 import {
   saldosDelPeriodo, controlarReparto, montoParaSaldo, estadoPorDefectoDe,
@@ -4473,6 +4473,39 @@ export function correrCasos(): Resultado[] {
     chequear("Cuota alimentaria", "⚠️ Una cuota mayor que A se muestra (no se corrige en silencio)",
       "-200.000,00", n2(inconsistente.aPropio),
       inconsistente.aPropio === -200000, "A-FEAT-1213")
+
+    /**
+     * 🧨 **EL BUG QUE ENCONTRÓ EL USUARIO** (2026-09-30, cargando a Sigot): escribir la cuota
+     * **inflaba** A por encima del total y el período **no se guardaba**.
+     *
+     * Los números reales: A total guardado **1.661.085,80**, total nuevo **1.850.000**. Al abrir, «A
+     * del empleado» se precarga con el A total (no había cuota todavía); si al escribir la cuota se
+     * compusiera `propio + cuota`, A total pasaría a 1.861.085,80 → B negativo → frenaba.
+     */
+    const A_GUARDADO = 1661085.80
+    const inflaria = componerA(A_GUARDADO, 200000)
+    chequear("Cuota alimentaria", "🧨 El bug: componer sobre el A ya cargado lo pasaba del total",
+      "A 1.861.085,80 y B negativo",
+      `A ${n2(inflaria.aTotal)} y B ${repartirTotalEnAB(1850000, inflaria.aTotal).invalido ? "negativo" : "ok"}`,
+      inflaria.aTotal === 1861085.80 && repartirTotalEnAB(1850000, inflaria.aTotal).invalido,
+      "A-FEAT-1213")
+
+    // ✅ El arreglo: escribir la cuota MANTIENE el A total y baja lo propio.
+    const arreglado = aplicarCuotaManteniendoA(A_GUARDADO, 200000)
+    chequear("Cuota alimentaria", "✅ Arreglado: la cuota no infla A, baja lo propio",
+      "A total 1.661.085,80 y propio 1.461.085,80",
+      `A total ${n2(arreglado.aTotal)} y propio ${n2(arreglado.aPropio)}`,
+      arreglado.aTotal === A_GUARDADO && arreglado.aPropio === 1461085.80, "A-FEAT-1213")
+
+    chequear("Cuota alimentaria", "✅ Y con el total de 1.850.000, B ya es positivo y se puede guardar",
+      "188.914,20", n2(repartirTotalEnAB(1850000, arreglado.aTotal).b),
+      repartirTotalEnAB(1850000, arreglado.aTotal).b === 188914.20
+      && !repartirTotalEnAB(1850000, arreglado.aTotal).invalido, "A-FEAT-1213")
+
+    // 🔑 Y la otra dirección sigue como él la describió: editar A del empleado SÍ recompone el total.
+    chequear("Cuota alimentaria", "🔑 Editar «A del empleado» sí recompone el A total",
+      "1.661.085,80", n2(componerA(1461085.80, 200000).aTotal),
+      componerA(1461085.80, 200000).aTotal === A_GUARDADO, "A-FEAT-1213")
 
     /**
      * 🧮 Y la cadena completa de Sigot, punta a punta, como la carga él:
