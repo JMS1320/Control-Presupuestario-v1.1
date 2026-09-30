@@ -45,6 +45,7 @@
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
 - [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
 - [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
@@ -2616,6 +2617,32 @@ siendo de la empresa. En cambio `ANTICIPO`, `SIN_CATEG` e `INVALIDA:` **sí se p
 🔑 **Y quitar la cuenta también limpia el movimiento.** Antes se quedaba con la vieja.
 
 ⚠️ Sin probar todavía → A-TEST-1170
+
+## 👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*
+
+**«13 Sueldos»**, al lado de los templates — son las dos partes del balance que **no salen de
+comprobantes**.
+
+🔑 **Lo que pediste está en la fila TOTAL**: el **total de A** y el **total de B** del ejercicio.
+
+⚠️ **Pero el BRUTO no es A + B**, y por eso la solapa tiene más columnas: lleva además los
+**francos** (o el **jornal**, según el empleado) y los **extras** — varios, vacaciones, premio y
+aguinaldo. Medido sobre junio: **A + B da $1.670.000 y el bruto $3.237.800**. Si se suman sólo A y B,
+faltan $1,57 M.
+
+🧾 **La cuota alimentaria tiene su columna y dice «de la cual»**: está **adentro de A**, así que
+**no se suma** al bruto — sumarla contaría dos veces.
+
+🧮 **El control, al final**: cada fila trae el bruto **recalculado desde sus partes** contra el
+**guardado**. Tiene que decir **CONTROL OK**. Si alguna no cierra, hay un sueldo cuyas partes no
+explican su total, y el índice lo marca como **bloqueante**.
+
+🛑 **Y avisa de los meses del ejercicio sin ningún sueldo cargado** — eso no se nota mirando el
+total.
+
+📌 Abajo de todo, un bloque **por mes** con cómo evolucionaron A y B.
+
+⚠️ Sin probar todavía → A-TEST-1176
 
 ## 💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*
 

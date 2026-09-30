@@ -88,6 +88,9 @@ import { hojaDePagos, nombreArchivoPagos } from "@/lib/sueldos/export-pagos"
 import {
   leerIpc, controlarIpc, acumuladaDelAnio, urlIpc, mesAnteriorISO,
 } from "@/lib/indices/ipc-indec"
+import {
+  armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo,
+} from "@/lib/balance/sueldos-balance"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4646,6 +4649,95 @@ export function correrCasos(): Resultado[] {
     chequear("IPC", "Y el mes anterior cruza bien el año",
       "2023-12", mesAnteriorISO("2024-01"),
       mesAnteriorISO("2024-01") === "2023-12" && mesAnteriorISO("2026-09") === "2026-08", "A-FEAT-1215")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 👷 LOS SUELDOS EN EL BALANCE (A-FEAT-1216). Los datos son los reales de MSA.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const MESES_EJ = ["2025-07","2025-08","2025-09","2025-10","2025-11","2025-12",
+                      "2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"]
+
+    /**
+     * Sigot en junio: A 1.661.085,80 + B 8.914,20 = 1.670.000, con 8,5 francos a 66.800 el franco.
+     * Bruto = 1.670.000 + 567.800 = 2.237.800, que es el que tiene guardado el período real.
+     */
+    const SIGOT: PeriodoDeSueldo = {
+      anio: 2026, mes: 6,
+      empleado: { nombre: "Ruben Sigot", empresa: "MSA", tipo_empleado: "ab_francos" },
+      monto_a: 1661085.80, monto_b: 8914.20, cuota_alimentaria: 200000,
+      francos_cantidad: 8.5, valor_franco: 66800,
+      bruto_calculado: 2237800, anticipos_descontados: 2237800, saldo_pendiente: 0,
+    }
+    // Elvio es por día: 16 días a 60.000.
+    const ELVIO: PeriodoDeSueldo = {
+      anio: 2026, mes: 6,
+      empleado: { nombre: "Elvio Paz", empresa: "MSA", tipo_empleado: "por_dia" },
+      valor_por_dia: 60000, dias_trabajados: 16, varios: 40000,
+      bruto_calculado: 1000000, anticipos_descontados: 0, saldo_pendiente: 1000000,
+    }
+    // Y uno de OTRO ejercicio, que no tiene que entrar.
+    const FUERA: PeriodoDeSueldo = {
+      anio: 2026, mes: 9,
+      empleado: { nombre: "Ruben Sigot", empresa: "MSA", tipo_empleado: "ab_francos" },
+      monto_a: 1661085.80, monto_b: 8914.20, bruto_calculado: 1670000,
+    }
+
+    const r = armarSueldosDelEjercicio([SIGOT, ELVIO, FUERA], MESES_EJ)
+
+    chequear("Sueldos en el balance", "Sólo entran los meses del ejercicio",
+      "2 filas", `${r.filas.length} filas`, r.filas.length === 2, "A-FEAT-1216")
+
+    // 🔑 Lo que el usuario pidió: el total de A y el total de B.
+    chequear("Sueldos en el balance", "🔑 Da el total de A y el total de B",
+      "A 1.661.085,80 · B 8.914,20",
+      `A ${n2(r.total.montoA)} · B ${n2(r.total.montoB)}`,
+      r.total.montoA === 1661085.80 && r.total.montoB === 8914.20, "A-FEAT-1216")
+
+    /**
+     * ⚠️ **Y lo que prueba que dos columnas no alcanzan**: A + B da 1.670.000, pero el bruto del
+     * ejercicio es 3.237.800 — la diferencia son los francos y el jornal de Elvio.
+     */
+    chequear("Sueldos en el balance", "⚠️ El bruto NO es A + B: los francos y el jornal son $1.567.800 más",
+      "A+B 1.670.000,00 · bruto 3.237.800,00",
+      `A+B ${n2(r.total.montoA + r.total.montoB)} · bruto ${n2(r.total.bruto)}`,
+      r2(r.total.montoA + r.total.montoB) === 1670000 && r.total.bruto === 3237800, "A-FEAT-1216")
+
+    chequear("Sueldos en el balance", "Abre los francos y el jornal en columnas propias",
+      "francos 567.800,00 · jornal 960.000,00",
+      `francos ${n2(r.total.porFrancos)} · jornal ${n2(r.total.porJornal)}`,
+      r.total.porFrancos === 567800 && r.total.porJornal === 960000, "A-FEAT-1216")
+
+    // 🧾 La cuota se muestra pero NO se suma: está adentro de A.
+    chequear("Sueldos en el balance", "🧾 La cuota alimentaria se informa aparte y NO infla el bruto",
+      "cuota 200.000,00 y el bruto sigue en 3.237.800,00",
+      `cuota ${n2(r.total.cuotaAlimentaria)} y el bruto sigue en ${n2(r.total.bruto)}`,
+      r.total.cuotaAlimentaria === 200000 && r.total.bruto === 3237800, "A-FEAT-1216")
+
+    // 🧮 El control del camino inverso: el bruto recompuesto da el guardado.
+    chequear("Sueldos en el balance", "🧮 El bruto recompuesto da el guardado en las dos filas",
+      "0 descuadres", `${r.descuadres.length} descuadres`,
+      r.descuadres.length === 0, "A-FEAT-1216")
+
+    // 🧨 Y grita si alguien toca una parte y no el total.
+    const roto = armarSueldosDelEjercicio(
+      [{ ...SIGOT, francos_cantidad: 10 }, ELVIO], MESES_EJ)
+    chequear("Sueldos en el balance", "🧨 Si una parte no explica el bruto guardado, lo detecta",
+      "1 descuadre de 100.200,00",
+      `${roto.descuadres.length} descuadre de ${n2(roto.descuadres[0]?.diferencia ?? 0)}`,
+      roto.descuadres.length === 1 && roto.descuadres[0].diferencia === 100200, "A-FEAT-1216")
+
+    // 🛑 Los meses sin un solo sueldo se dicen: no se notan mirando el total.
+    chequear("Sueldos en el balance", "🛑 Avisa de los meses del ejercicio sin ningún sueldo",
+      "11 meses vacíos", `${r.mesesVacios.length} meses vacíos`,
+      r.mesesVacios.length === 11 && !r.mesesVacios.includes("2026-06"), "A-FEAT-1216")
+
+    // Y la fórmula por tipo, que es la misma de la pantalla.
+    chequear("Sueldos en el balance", "La fórmula respeta el tipo de cada empleado",
+      "Sigot 2.237.800,00 · Elvio 1.000.000,00",
+      `Sigot ${n2(brutoDesdePartes(SIGOT))} · Elvio ${n2(brutoDesdePartes(ELVIO))}`,
+      brutoDesdePartes(SIGOT) === 2237800 && brutoDesdePartes(ELVIO) === 1000000, "A-FEAT-1216")
   }
 
   return r

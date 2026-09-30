@@ -27,6 +27,7 @@ import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { CuentasAlCierre } from "./cuentas-al-cierre"
 import type { ChequesDados, AnticiposAlCierre } from "./valores-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
+import type { SueldosDelEjercicio } from "./sueldos-balance"
 import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { ValuacionHacienda } from "./hacienda-stock"
 import type { StockInsumos } from "./stock-insumos"
@@ -76,6 +77,8 @@ export interface DatosDelIndice {
   hacienda?: ValuacionHacienda | null
   insumos?: StockInsumos | null
   campo?: { granos: CuadreGranos; sementeras: Sementeras } | null
+  /** 👷 El papel de sueldos (A-FEAT-1216). */
+  sueldos?: SueldosDelEjercicio | null
   bancarios?: {
     gastos: GastosBancarios
     retiros: RetirosYAportes
@@ -430,6 +433,34 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     ].filter(Boolean).join(" · "),
     solapa: "Templates · Templates por mes",
     bloqueante: false,
+  })
+
+  /**
+   * ── 13 · Sueldos ──────────────────────────────────────────────────────────────────────
+   *
+   * 🕳️ **No era ninguna de las 12 partes**, y el usuario lo notó: *«el export contable debe exportar
+   * sueldos»*. Entraban mezclados por el extracto y por los templates, pero sin un papel que los abra.
+   */
+  const su = d.sueldos
+  const faltaSueldos: string[] = []
+  if (su) {
+    if (su.descuadres.length > 0) {
+      faltaSueldos.push(`🛑 en ${su.descuadres.length} fila(s) el bruto recompuesto NO da el guardado`)
+    }
+    if (su.mesesVacios.length > 0) {
+      faltaSueldos.push(`${su.mesesVacios.length} mes(es) sin ningún sueldo cargado: ${su.mesesVacios.join(", ")}`)
+    }
+  }
+  partes.push({
+    numero: "13", papel: "Sueldos: total de A y total de B",
+    estado: !su ? "falta" : faltaSueldos.length > 0 ? "parcial" : "completo",
+    queTiene: su
+      ? `A ${pesos(su.total.montoA)} · B ${pesos(su.total.montoB)} · bruto ${pesos(su.total.bruto)} `
+        + `(${su.filas.length} período(s))`
+      : "nada",
+    queFalta: !su ? "armar el papel" : faltaSueldos.join(" · "),
+    solapa: su ? "13 Sueldos" : "",
+    bloqueante: (su?.descuadres.length ?? 0) > 0,
   })
 
   const cuenta: Record<EstadoParte, number> = {

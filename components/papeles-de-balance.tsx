@@ -46,6 +46,9 @@ import {
 import {
   armarCadenaDeSaldos, saldoAlInicioDe, type CadenaDeSaldos,
 } from "@/lib/balance/saldos-al-inicio"
+import {
+  armarSueldosDelEjercicio, type SueldosDelEjercicio, type PeriodoDeSueldo,
+} from "@/lib/balance/sueldos-balance"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
@@ -82,6 +85,11 @@ export function PapelesDeBalance() {
   const [bancarios, setBancarios] = useState<Parameters<typeof descargarLibroDiario>[7] | null>(null)
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
   const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
+  /**
+   * 👷 El papel de sueldos (A-FEAT-1216). Va en su propio estado: si falla, el resto del libro sale
+   * igual — es una parte más del balance, no el balance.
+   */
+  const [sueldos, setSueldos] = useState<SueldosDelEjercicio | null>(null)
 
   const generar = async () => {
     setCargando(true)
@@ -91,6 +99,7 @@ export function PapelesDeBalance() {
     setCuentas(null)
     setValores(null)
     setBancarios(null)
+    setSueldos(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -326,6 +335,36 @@ export function PapelesDeBalance() {
       } catch {
         toast.warning("No se pudieron armar los papeles bancarios; el resto del libro salió igual.")
       }
+      /**
+       * 👷 **Los sueldos** (A-FEAT-1216). Se cortan por `anio`/`mes` —no tienen subdiario— con los
+       * mismos 12 meses que los papeles bancarios, así el ejercicio es uno solo en todo el Excel.
+       *
+       * ⚠️ En su propio `try`: el resto del libro ya está en pantalla.
+       */
+      try {
+        const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
+        const [aa0] = meses[0].split("-").map(Number)
+        const [aaN] = meses[11].split("-").map(Number)
+        const { data: periodosSueldo, error: errSueldos } = await supabase
+          .from("sueldos_periodos")
+          .select("*, empleado:sueldos_empleados(nombre, empresa, tipo_empleado)")
+          .in("anio", aa0 === aaN ? [aa0] : [aa0, aaN])
+        if (errSueldos) throw new Error(errSueldos.message)
+
+        const armadoSueldos = armarSueldosDelEjercicio(
+          (periodosSueldo ?? []) as unknown as PeriodoDeSueldo[], meses)
+        setSueldos(armadoSueldos)
+
+        // 🧮 El control se ve: si el bruto recompuesto no da el guardado, hay que mirarlo.
+        if (armadoSueldos.descuadres.length > 0) {
+          toast.warning(
+            `En ${armadoSueldos.descuadres.length} sueldo(s) el bruto no coincide con sus partes: `
+            + "está en la solapa 13 Sueldos, al final.")
+        }
+      } catch {
+        toast.warning("No se pudieron armar los sueldos; el resto del libro salió igual.")
+      }
+
       setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
@@ -386,6 +425,7 @@ export function PapelesDeBalance() {
                 // comprobantes, los cheques y los anticipos son partes del mismo papel.
                 { ...(cuentas ?? {}), ...(valores ?? {}) },
                 bancarios ?? undefined,
+                sueldos ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}

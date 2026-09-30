@@ -24,6 +24,7 @@ import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
+import type { SueldosDelEjercicio, FilaSueldo } from "./sueldos-balance"
 import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
@@ -759,6 +760,103 @@ const COLS_CADENA: Columna[] = [
 ]
 
 /**
+ * 👷 La solapa **13 Sueldos** — el total de A y el total de B (A-FEAT-1216).
+ *
+ * Pedido del usuario: *«el export contable debe exportar sueldos! Debe dar el total de A y el total
+ * de B»*. Van **abiertos por empleado y por mes**, porque es como está el dato y es lo que deja
+ * revisar un número que no cierra.
+ *
+ * ⚠️ **Y con TODAS las columnas, no sólo A y B**: el bruto de un sueldo **no es A + B** — lleva los
+ * francos y los extras —, así que un papel con dos columnas no cerraría contra lo que se pagó.
+ *
+ * 🧮 Cada fila trae **el bruto recompuesto desde sus partes** contra **el guardado**, y su diferencia.
+ * Es el camino inverso: si no dan lo mismo, el papel lo dice antes de que lo vea el contador.
+ */
+function hojaDeSueldos(s: SueldosDelEjercicio, etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`SUELDOS — ejercicio ${etiqueta}`])
+  f.push(["El bruto NO es A + B: lleva ademas los francos (o el jornal) y los extras."])
+  f.push(["La cuota alimentaria esta ADENTRO de A y se muestra aparte: no se suma al bruto."])
+  f.push([])
+  f.push([
+    "Período", "Empresa", "Empleado", "Tipo", "Categoría A", "Categoría B",
+    "de la cual, cuota alim.", "Francos", "Valor franco", "Por francos", "Por jornal",
+    "Extras", "BRUTO", "Bruto recalculado", "Diferencia", "Pagado", "Saldo",
+  ])
+
+  const fila = (x: FilaSueldo) => [
+    x.periodo, x.empresa, x.empleado, x.tipo,
+    money(x.montoA), money(x.montoB), money(x.cuotaAlimentaria),
+    x.francos, money(x.valorFranco), money(x.porFrancos), money(x.porJornal),
+    money(x.extras), money(x.brutoGuardado), money(x.brutoCalculado), money(x.diferencia),
+    money(x.pagado), money(x.saldo),
+  ]
+
+  const desde = f.length + 1
+  s.filas.forEach(x => f.push(fila(x)))
+  const hasta = f.length
+
+  // 🔑 Los totales que él pidió, con fórmula para que sigan al filtro.
+  f.push([
+    "TOTAL", "", "", "",
+    ...(["E", "F", "G"] as const).map((col, i) =>
+      conFormula(`SUM(${col}${desde}:${col}${hasta})`,
+        [s.total.montoA, s.total.montoB, s.total.cuotaAlimentaria][i])),
+    "", "",
+    conFormula(`SUM(J${desde}:J${hasta})`, s.total.porFrancos),
+    conFormula(`SUM(K${desde}:K${hasta})`, s.total.porJornal),
+    conFormula(`SUM(L${desde}:L${hasta})`, s.total.extras),
+    conFormula(`SUM(M${desde}:M${hasta})`, s.total.bruto),
+    "", "",
+    conFormula(`SUM(P${desde}:P${hasta})`, s.total.pagado),
+    conFormula(`SUM(Q${desde}:Q${hasta})`, s.total.saldo),
+  ])
+
+  f.push([])
+  f.push([])
+  f.push(["POR MES — como evolucionaron A y B a lo largo del ejercicio"])
+  f.push(["Mes", "Categoría A", "Categoría B", "Bruto"])
+  s.porMes.forEach(m => f.push([m.periodo, money(m.montoA), money(m.montoB), money(m.bruto)]))
+
+  f.push([])
+  // 🧮 El control, al final y proporcional.
+  if (s.descuadres.length === 0) {
+    f.push([`CONTROL OK — el bruto recompuesto da el guardado en las ${s.filas.length} filas.`])
+  } else {
+    f.push([`ATENCION — en ${s.descuadres.length} fila(s) el bruto recompuesto NO da el guardado:`])
+    s.descuadres.forEach(d =>
+      f.push([`   ${d.periodo} ${d.empleado}: guardado ${money(d.brutoGuardado)} · recalculado `
+        + `${money(d.brutoCalculado)} · diferencia ${money(d.diferencia)}`]))
+    f.push(["Alguna de las dos esta mal. No se puede entregar el numero sin mirarlo."])
+  }
+  if (s.mesesVacios.length > 0) {
+    f.push([`ATENCION — ${s.mesesVacios.length} mes(es) del ejercicio sin ningun sueldo cargado: `
+      + s.mesesVacios.join(", ")])
+  }
+  return f
+}
+
+const COLS_SUELDOS: Columna[] = [
+  { ancho: 10 },                    // Período
+  { ancho: 9 },                     // Empresa
+  { ancho: 24 },                    // Empleado
+  { ancho: 13 },                    // Tipo
+  { ancho: 16, z: MONEDA },         // Categoría A
+  { ancho: 16, z: MONEDA },         // Categoría B
+  { ancho: 18, z: MONEDA },         // cuota alimentaria
+  { ancho: 9, z: COEFICIENTE },     // Francos
+  { ancho: 14, z: MONEDA },         // Valor franco
+  { ancho: 15, z: MONEDA },         // Por francos
+  { ancho: 15, z: MONEDA },         // Por jornal
+  { ancho: 14, z: MONEDA },         // Extras
+  { ancho: 17, z: MONEDA },         // BRUTO
+  { ancho: 17, z: MONEDA },         // Bruto recalculado
+  { ancho: 13, z: MONEDA },         // Diferencia
+  { ancho: 16, z: MONEDA },         // Pagado
+  { ancho: 16, z: MONEDA },         // Saldo
+]
+
+/**
  * 🧾 La solapa **03.1 Provisión de cobros** — el espejo del papel 05, del lado de las ventas.
  *
  * *«Facturas o liquidaciones (siempre de venta) de cosas que sucedieron antes del cierre y se
@@ -1478,6 +1576,8 @@ export function armarWorkbook(
   bancarios?: DatosDelIndice["bancarios"] & {
     fci?: { fondos: FondoComun[]; total: FondoComun }
   },
+  /** 👷 El papel de sueldos: el total de A y el total de B (A-FEAT-1216). */
+  sueldos?: SueldosDelEjercicio,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1487,7 +1587,7 @@ export function armarWorkbook(
    * siguiente — *«¿los números cierran?»*.
    */
   const indice = armarIndice({
-    libro, templates, cuentas,
+    libro, templates, cuentas, sueldos,
     hacienda: hacienda?.valuacion ?? null,
     insumos: insumos ?? null,
     campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
@@ -1543,6 +1643,10 @@ export function armarWorkbook(
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
+  // 👷 Los sueldos van pegados a los templates: son las dos partes que NO salen de comprobantes.
+  if (sueldos) {
+    hoja(wb, "13 Sueldos", hojaDeSueldos(sueldos, libro.ejercicio.etiqueta), COLS_SUELDOS)
+  }
   if (templates) {
     hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
@@ -1601,8 +1705,10 @@ export function descargarLibroDiario(
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
   cuentas?: Parameters<typeof armarWorkbook>[6],
   bancarios?: Parameters<typeof armarWorkbook>[7],
+  sueldos?: Parameters<typeof armarWorkbook>[8],
 ) {
-  const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios)
+  const wb = armarWorkbook(
+    libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios, sueldos)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
