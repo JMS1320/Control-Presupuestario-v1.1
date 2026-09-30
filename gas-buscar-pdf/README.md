@@ -108,6 +108,54 @@ En Vercel (Project Settings → Environment Variables, Production + Preview):
 - `GAS_BUSCAR_PDF_URL` = la URL del Web App
 - `GAS_AUTH_TOKEN` = mismo token que pusiste en GAS Script Properties
 
+## 🔁 El ciclo de desarrollo — sin abrir el editor cada vez *(2026-09-30)*
+
+Pregunta del usuario: *«¿hay una manera de hacerlo sin ir a Apps Script cada vez para probar
+código?»*. Sí, y son **dos cosas distintas** que conviene no confundir:
+
+| | Qué resuelve |
+|---|---|
+| **`clasp push`** | subir el código sin abrir el editor |
+| **La URL `/dev`** | que el cambio se vea **sin crear una versión nueva del deployment** |
+
+🔑 **La segunda es la que duele y casi nadie la conoce.** `clasp push` sube el código, pero la Web
+App sigue sirviendo **la versión publicada**: si no creás una versión nueva, probás lo viejo y
+parece que el cambio no funcionó.
+
+Apps Script expone **dos URLs** del mismo proyecto:
+
+```
+https://script.google.com/macros/s/AKfy.../exec   ← la versión PUBLICADA (producción)
+https://script.google.com/macros/s/AKfy.../dev    ← el ÚLTIMO código guardado (desarrollo)
+```
+
+**La `/dev` corre siempre lo último que subiste**, sin deployment nuevo. Se encuentra en el editor:
+**Deploy → Test deployments**.
+
+⚠️ **La `/dev` exige estar logueado** con una cuenta que tenga acceso al script. Por eso sirve para
+probar desde tu máquina y **no** sirve para Vercel.
+
+### Entonces, la configuración recomendada
+
+| Dónde | Qué URL va en `GAS_BUSCAR_PDF_URL` |
+|---|---|
+| **`.env.local`** (tu máquina) | la **`/dev`** — ves el cambio apenas hacés `clasp push` |
+| **Vercel** (Production + Preview) | la **`/exec`** — la versión publicada, estable |
+
+No hace falta ningún cambio en el código: es la misma variable con distinto valor en cada lado.
+
+```bash
+npm install -g @google/clasp
+clasp login
+# en gas-buscar-pdf/, copiar .clasp.json.example a .clasp.json y poner el scriptId
+# (Apps Script → ⚙️ Project Settings → Script ID)
+clasp push          # sube
+clasp push --watch  # o sube solo, cada vez que guardás
+```
+
+📌 Y para **publicar** lo probado: `clasp deploy` o, en el editor, *Deploy → Manage deployments →*
+*editar → New version*. Recién ahí lo ve la `/exec` y, con ella, Vercel.
+
 ### 8. Probar
 
 Desde el editor GAS, abrí `Main.gs` → seleccioná función `testManual` → Run.
