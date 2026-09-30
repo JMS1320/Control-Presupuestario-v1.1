@@ -195,6 +195,8 @@ export function PanelBoletasArba() {
    * bajada usa la carpeta de siempre.
    */
   const [carpeta, setCarpeta] = useState("")
+  /** Dónde archivó realmente la última corrida. Lo informa el GAS; vacío = GAS viejo. */
+  const [carpetaUsada, setCarpetaUsada] = useState<{ id: string; nombre: string } | null>(null)
   useEffect(() => {
     try { setCarpeta(localStorage.getItem("arba-carpeta-drive") ?? "") } catch { /* sin storage */ }
   }, [])
@@ -366,6 +368,37 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       // Lo acumulado de TODAS las pasadas, no sólo de la última.
       j = { ...j, bajadas: acumBajadas, ya_estaban: acumYaEstaban }
       setDelMail({ resumen: String(j.resumen ?? ""), bajadas: acumBajadas, ya_estaban: acumYaEstaban, descuadres: (j.descuadres ?? []) as { asunto: string; detalle: string }[] })
+
+      /**
+       * 🧮 **¿Dónde quedaron de verdad?** — el control de que el campo «carpeta» llegó.
+       *
+       * El GAS **se despliega aparte** (corre en la cuenta Google del usuario), así que la app puede
+       * estar actualizada y el GAS no. Un GAS viejo **ignora `carpeta_id` y archiva en la de siempre,
+       * sin fallar**: se vería «40 archivadas» y estarían en otro lado — y como el dedup es por
+       * nombre, la corrida siguiente creería que ya están.
+       *
+       * Por eso el GAS ahora devuelve `carpeta_usada`. Si vuelve vacío, el desplegado es anterior.
+       */
+      if (!soloContar) {
+        const usada = (j as { carpeta_usada?: { id?: string; nombre?: string } | null }).carpeta_usada
+        if (!usada?.id) {
+          toast.warning(
+            "El GAS no informó en qué carpeta archivó. Es una versión anterior: el campo «carpeta» "
+            + "no se está usando y los PDF fueron a la de siempre. Volvé a subir el GAS (clasp push).",
+            { duration: 12000 },
+          )
+        } else {
+          setCarpetaUsada(usada as { id: string; nombre: string })
+          const pedida = carpeta.trim()
+          const coincide = !pedida || pedida.includes(usada.id!)
+          if (!coincide) {
+            toast.warning(
+              `Se archivó en «${usada.nombre}», que no es la carpeta que pediste. Revisá el link.`,
+              { duration: 12000 },
+            )
+          }
+        }
+      }
       // Se guarda lo que dijo el mail para poder cruzarlo cuando se suban los PDFs (A-FEAT-107).
       /**
        * 🔗 **También se guarda el LINK de Drive**, no sólo lo que dijo el mail.
@@ -570,6 +603,9 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
               </label>
               <span className="text-[10px] text-gray-500">
                 Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
+                {carpetaUsada && (
+                  <><br />📁 La última bajada archivó en <b>{carpetaUsada.nombre}</b>.</>
+                )}
                 <br /><b>El nombre del archivo sale solo</b>: «2026 - Inmob - Cuota 3 - Tango Parra 1».
                 Vos sólo elegís la carpeta — se recuerda la última, y adentro se arman las subcarpetas
                 por empresa. Si la dejás vacía, va a la de siempre.

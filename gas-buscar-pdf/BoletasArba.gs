@@ -418,6 +418,18 @@ function bajarBoletasArba(soloContar, opciones) {
   var empresaPorCuit = op.empresa_por_cuit || null
 
   var carpeta = soloContar ? null : carpetaArba_(op.carpeta_id)
+  /**
+   * 🧮 **Se informa QUÉ carpeta se usó, y no es un detalle: es el control de que el pedido llegó.**
+   *
+   * El campo «carpeta» de la app viaja en `op.carpeta_id`, pero **el GAS corre en Google y se
+   * despliega aparte**. Si el código desplegado es anterior a este cambio, **ignora el campo y
+   * archiva en la de siempre — sin fallar**. El usuario vería «40 archivadas» y estarían en otro
+   * lado; y como el dedup es por nombre, la corrida siguiente creería que ya están.
+   *
+   * Devolviendo el nombre y el id, la pantalla puede decir **dónde quedaron de verdad**. Y si este
+   * campo vuelve vacío, es que el GAS desplegado es viejo — que es exactamente lo que hay que saber.
+   */
+  var carpetaUsada = carpeta ? { id: carpeta.getId(), nombre: carpeta.getName() } : null
   var TOPE = 50
   var hilos = GmailApp.search(query, 0, TOPE)
   // ⚠️ Si la búsqueda trae MÁS del tope, los que sobran se pierden sin que nadie lo note. Se avisa:
@@ -555,7 +567,7 @@ function bajarBoletasArba(soloContar, opciones) {
   for (var b = 0; b < bajadas.length; b++) if (bajadas[b].importe_mail != null) conImporte++
 
   return {
-    ok: true, modo: soloContar ? 'contar' : 'bajar', query: query,
+    ok: true, carpeta_usada: carpetaUsada, modo: soloContar ? 'contar' : 'bajar', query: query,
     hilos: hilos.length, truncado: truncado,
     bajadas: bajadas, ya_estaban: yaEstaban, sin_pdf: sinPdf, errores: errores,
     tablas: tablas, descuadres: descuadres,
