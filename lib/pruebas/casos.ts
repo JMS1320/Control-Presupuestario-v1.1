@@ -66,6 +66,10 @@ import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import {
+  armarChequesDados, armarAnticiposAlCierre,
+  type ChequeCrudo, type AnticipoCrudo, type AplicacionDeAnticipo,
+} from "@/lib/balance/valores-al-cierre"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -3866,6 +3870,133 @@ export function correrCasos(): Resultado[] {
     chequear("Cotizaciones", "🧨 Hoy en hora argentina nunca es POSTERIOR al de UTC",
       "no está adelantado", hoyArg > hoyUtc ? "adelantado (MAL)" : "no está adelantado",
       hoyArg <= hoyUtc && /^\d{4}-\d{2}-\d{2}$/.test(hoyArg), "A-FEAT-1202")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 💵 LOS VALORES AL CIERRE — cheques dados y anticipos (A-FEAT-1195).
+  //    Los datos son los reales de MSA al 30/06/2026, fijos en el archivo.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const CIERRE = "2026-06-30"
+
+    // ── Cheques dados ────────────────────────────────────────────────────────────────────
+    // 🧨 Los tres primeros son reales y anteriores al cierre: los tres dicen `vigente` y los tres
+    //    ya debitaron. Si el papel mirara el estado, listaría los tres.
+    const CHEQUES: ChequeCrudo[] = [
+      { numero: "101", banco: "Banco Galicia", monto: 1146880, fecha_emision: "2026-03-20",
+        fecha_cobro: "2026-04-17", beneficiario_nombre: "Grupo Campo", estado: "vigente" },
+      { numero: "102", banco: "Banco Galicia", monto: 1455755.7, fecha_emision: "2026-05-22",
+        fecha_cobro: "2026-05-22", beneficiario_nombre: "Eduardo Castillo", estado: "vigente" },
+      { numero: "105", banco: "Banco Galicia", monto: 1461558.28, fecha_emision: "2026-06-08",
+        fecha_cobro: "2026-06-08", beneficiario_nombre: "ARROYO TALA SH", estado: "vigente" },
+      // Emitido antes del cierre y debitado DESPUÉS: es el único que va al papel.
+      { numero: "107", banco: "Banco Galicia", monto: 900000, fecha_emision: "2026-06-25",
+        fecha_cobro: "2026-07-14", beneficiario_nombre: "Diferido de prueba", estado: "vigente" },
+      // Sin fecha de débito: no se puede afirmar nada. Va a la lista aparte.
+      { numero: "107", banco: "Banco Galicia", monto: 55000, fecha_emision: "2026-06-26",
+        fecha_cobro: null, beneficiario_nombre: "Sin fecha de debito", estado: "vigente" },
+      // Posterior al cierre: es de otro ejercicio.
+      { numero: "109", banco: "Banco Galicia", monto: 7087983.11, fecha_emision: "2026-09-21",
+        fecha_cobro: "2026-11-02", beneficiario_nombre: "BIOFARMA S A", estado: "vigente" },
+    ]
+
+    const ch = armarChequesDados(CHEQUES, CIERRE, "2026-09-30")
+
+    chequear("Valores al cierre", "🧨 Manda la FECHA DE DÉBITO, no el estado: los 3 debitados antes NO van",
+      "1 cheque · 900.000,00", `${ch.filas.length} cheque(s) · ${n2(ch.total)}`,
+      ch.filas.length === 1 && ch.total === 900000, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "El que no tiene fecha de débito va aparte, no al papel",
+      "1 · 55.000,00", `${ch.sinFechaDeDebito.length} · ${n2(ch.totalSinFecha)}`,
+      ch.sinFechaDeDebito.length === 1 && ch.totalSinFecha === 55000, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "Cierra el conteo: mirados = papel + sin fecha + debitados antes + posteriores",
+      "6", String(ch.filas.length + ch.sinFechaDeDebito.length + ch.debitadosAntes + ch.posteriores),
+      ch.filas.length + ch.sinFechaDeDebito.length + ch.debitadosAntes + ch.posteriores === ch.mirados,
+      "A-FEAT-1195")
+
+    chequear("Valores al cierre", "🚦 Avisa que hay estados vigentes con el débito ya pasado",
+      "avisa", ch.avisos.some(a => a.includes("vigente")) ? "avisa" : "no avisa",
+      ch.avisos.some(a => a.includes("vigente")), "A-FEAT-1195")
+
+    chequear("Valores al cierre", "🚦 Avisa del número de cheque repetido en el mismo banco",
+      "avisa del 107", ch.avisos.some(a => a.includes("107")) ? "avisa del 107" : "no avisa",
+      ch.avisos.some(a => a.includes("107")), "A-FEAT-1195")
+
+    // ── Anticipos ────────────────────────────────────────────────────────────────────────
+    // Casos reales de MSA. Los montos y las retenciones son los de la base.
+    const ANTICIPOS: AnticipoCrudo[] = [
+      // 🧨 Grupo Campo: HOY tiene `monto_restante` 0, y el saldo se consumió con la aplicación de
+      //    marzo MÁS la retención. Sin el término del SICORE quedarían $14.720 inventados.
+      { id: "gc", empresa: "MSA", nombre_proveedor: "Grupo Campo", cuit_proveedor: "1",
+        monto: 1161600, monto_restante: 0, monto_sicore: 14720, fecha_pago: "2026-03-20",
+        tipo: "pago" },
+      // 🔑 Aplicado DESPUÉS del cierre: hoy figura consumido, al cierre era saldo entero.
+      { id: "post", empresa: "MSA", nombre_proveedor: "Aplicado despues del cierre", cuit_proveedor: "2",
+        monto: 500000, monto_restante: 0, fecha_pago: "2026-05-10", tipo: "pago" },
+      // 🧨 `tipo = cobro`: es un anticipo DE UN CLIENTE, o sea PASIVO. No se suma con los de arriba.
+      { id: "genta", empresa: null, nombre_proveedor: "Pedro Genta y Cia SA", cuit_proveedor: "3",
+        monto: 116396073.85, monto_restante: 116396073.85, fecha_pago: "2026-02-26", tipo: "cobro" },
+      // Pagado DESPUÉS del cierre: no existía al cierre.
+      { id: "julio", empresa: "MSA", nombre_proveedor: "Anticipo de julio", cuit_proveedor: "4",
+        monto: 37810987.5, monto_restante: 37810987.5, fecha_pago: "2026-07-21", tipo: "pago" },
+      // Sin tipo: no se reparte a ninguno de los dos lados.
+      { id: "sintipo", empresa: "MSA", nombre_proveedor: "Sin tipo", cuit_proveedor: "5",
+        monto: 100000, monto_restante: 100000, fecha_pago: "2026-04-01", tipo: null },
+    ]
+    const APLICACIONES: AplicacionDeAnticipo[] = [
+      { anticipo_id: "gc", monto_aplicado: 1146880, fecha_aplicacion: "2026-03-20 15:00:00" },
+      { anticipo_id: "post", monto_aplicado: 500000, fecha_aplicacion: "2026-08-15 10:00:00" },
+    ]
+
+    const an = armarAnticiposAlCierre(ANTICIPOS, APLICACIONES, CIERRE, "MSA", true)
+
+    chequear("Valores al cierre", "🔑 El saldo se recalcula AL CIERRE: lo aplicado después no lo baja",
+      "500.000,00", n2(an.aProveedores.find(x => x.anticipo.id === "post")?.saldoAlCierre ?? 0),
+      an.aProveedores.find(x => x.anticipo.id === "post")?.saldoAlCierre === 500000, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "🧮 La retención de SICORE también consume el anticipo (Grupo Campo)",
+      "sin saldo", an.aProveedores.some(x => x.anticipo.id === "gc") ? "con saldo (MAL)" : "sin saldo",
+      !an.aProveedores.some(x => x.anticipo.id === "gc"), "A-FEAT-1195")
+
+    chequear("Valores al cierre", "🧨 Un anticipo de CLIENTE es pasivo y NO se suma con los de proveedores",
+      "proveedores 500.000,00 · clientes 116.396.073,85",
+      `proveedores ${n2(an.totalAProveedores)} · clientes ${n2(an.totalDeClientes)}`,
+      an.totalAProveedores === 500000 && an.totalDeClientes === 116396073.85, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "Un anticipo pagado DESPUÉS del cierre no existía al cierre",
+      "no está", an.aProveedores.some(x => x.anticipo.id === "julio") ? "está (MAL)" : "no está",
+      !an.aProveedores.some(x => x.anticipo.id === "julio"), "A-FEAT-1195")
+
+    chequear("Valores al cierre", "Sin tipo, no se reparte: queda en su propia lista",
+      "1 · 100.000,00", `${an.sinTipo.length} · ${n2(an.totalSinTipo)}`,
+      an.sinTipo.length === 1 && an.totalSinTipo === 100000, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "🧮 El control del camino inverso cierra con los anticipos del cierre",
+      "0 descuadres", `${an.descuadres.length} descuadres`,
+      an.descuadres.length === 0, "A-FEAT-1195")
+
+    chequear("Valores al cierre", "⚠️ Los que no tienen empresa se cuentan y se avisan, no se esconden",
+      "1 · 116.396.073,85", `${an.sinEmpresa} · ${n2(an.totalSinEmpresa)}`,
+      an.sinEmpresa === 1 && an.totalSinEmpresa === 116396073.85
+      && an.avisos.some(a => a.includes("empresa")), "A-FEAT-1195")
+
+    // 🔑 La otra mitad del criterio: en PAM lo que no tiene empresa NO entra, y se dice cuántos.
+    const enPam = armarAnticiposAlCierre(ANTICIPOS, APLICACIONES, CIERRE, "PAM", false)
+    chequear("Valores al cierre", "En PAM no entra nada de MSA ni lo que no tiene empresa",
+      "0 mirados · 5 afuera", `${enPam.mirados} mirados · ${enPam.deOtraEmpresa} afuera`,
+      enPam.mirados === 0 && enPam.deOtraEmpresa === 5, "A-FEAT-1195")
+
+    // 🧨 Y el control TIENE que gritar cuando falta una vía de consumo: el mismo Grupo Campo sin su
+    //    retención cargada da un saldo que no coincide con el que guarda el sistema.
+    const sinSicore = armarAnticiposAlCierre(
+      ANTICIPOS.map(a => (a.id === "gc" ? { ...a, monto_sicore: null } : a)),
+      APLICACIONES, CIERRE, "MSA", true)
+    chequear("Valores al cierre", "🧮 Si falta una vía de consumo, el control lo detecta",
+      "1 descuadre de 14.720,00",
+      `${sinSicore.descuadres.length} descuadre(s) de ${n2(sinSicore.descuadres[0]?.diferencia ?? 0)}`,
+      sinSicore.descuadres.length === 1 && sinSicore.descuadres[0].diferencia === 14720, "A-FEAT-1195")
   }
 
   return r

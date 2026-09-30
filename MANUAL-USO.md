@@ -43,6 +43,7 @@
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
+- [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
 - [📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*](#cash-flow-cuándo-te-pregunta-por-la-fecha-de-pago-2026-09-11)
 - [🔁 Renovar campaña por tandas 🟡 *(nuevo 2026-08-22, sin testear)*](#renovar-campaña-por-tandas-nuevo-2026-08-22-sin-testear)
@@ -2525,6 +2526,48 @@ No lo tiran: es el trabajo que falta en el plan.
 `npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
 
 ⚠️ Sin probar todavía → A-TEST-1165
+
+## 💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*
+
+Son los bloques que a **«03 Cuentas a cobrar»** y **«04 Cuentas a pagar»** les faltaban. Salen en
+tres solapas nuevas, con los mismos nombres que usabas en tus papeles.
+
+**«04.1 Cheques dados»** — los cheques que emitiste **antes** del cierre y que debitaron **después**:
+al 30/06 la plata todavía estaba en la cuenta, así que al cierre eran deuda.
+
+🔑 **Manda la fecha de débito, no el estado.** Un cheque que ya debitó sigue diciendo «vigente» en el
+sistema, así que si el papel mirara el estado listaría como pendiente todo lo que pagaste hace meses.
+La columna *Estado hoy* está igual, para que se vea el desfasaje.
+
+**«04.2 Anticipos»** — dos bloques que **no se suman entre sí**, y la diferencia es grande:
+
+| Bloque | Qué es | En el balance |
+|---|---|---|
+| **Anticipo a proveedores** | plata que adelantaste y al cierre no se había consumido | **activo** |
+| **Anticipos de clientes** | plata que un cliente te adelantó y todavía no facturaste | **pasivo** |
+
+⚠️ **Los dos salen de la misma pantalla de Anticipos** (la columna *Tipo* dice `pago` o `cobro`), y
+por eso van en la misma solapa. **El segundo bloque no existía en tu papel del año pasado** — hoy es
+el número más grande de la solapa, así que hay que decidir con el contador dónde lo quiere.
+
+🧮 **Al final de la solapa está el control**, y es el que dice si el saldo se puede creer: recalcular
+el saldo **a hoy** tiene que dar el mismo que muestra la pantalla de Anticipos. Tiene que decir
+**«✓ Cierra»**. Si no cierra, hay un anticipo al que le falta una aplicación o una retención, y su
+saldo al cierre tampoco sirve.
+
+💡 **El saldo al cierre se recalcula, no se copia.** Un anticipo que **hoy** figura consumido pudo
+tener saldo al 30/06 — si se aplicó a una factura en agosto, al cierre estaba entero.
+
+**«03.1 Provision cobros»** — las ventas de cosas que pasaron **antes** del cierre y se facturaron
+**después**. Es el espejo de *05 Provisión*, del lado de los ingresos.
+
+📌 **Abajo de esa misma solapa dice que los cheques en cartera no se pueden calcular**: el sistema
+sólo registra los cheques que emitís, no los que recibís. Si alguna vez hay uno, se carga a mano.
+
+📌 **Sin abrir el Excel**, los mismos números por consola:
+`npx tsx scripts/verificar-valores-al-cierre.mts MSA 2026`.
+
+⚠️ Sin probar todavía → A-TEST-1168
 
 ## 📗 Papeles de balance → el libro diario por cuenta contable *(2026-09-29)*
 

@@ -60,7 +60,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `reglas_contable_interno` | ✅ | — | Reglas contable/interno (por template/responsable). |
 | `reglas_ctas_import_arca` | ❌ | — | Reglas CUIT→cuenta contable al importar ARCA. |
 | `config_parseo_extracto` | ✅ | — | Config de parseo de extractos por cuenta bancaria. Ver § detalle abajo. |
-| `anticipos_proveedores` | ❌ | 27 | Anticipos a proveedores (pueden vincularse a FC). |
+| `anticipos_proveedores` | ❌ | 38 | ⚠️ **El nombre engaña: guarda las DOS puntas.** `tipo = 'pago'` es un anticipo **a un proveedor** (activo) y `tipo = 'cobro'` es un anticipo **de un cliente** (pasivo) — al 30/06/2026 los `cobro` eran **$133,8 M** (casi todo Pedro Genta) contra **$13,4 M** de `pago`. **Sumarlos mezcla activo con pasivo.** ⚠️ Y `empresa` está **en NULL en 15 filas** ($137,4 M): filtrar por empresa las hace desaparecer sin avisar → [A-DAT-73](PENDIENTES.md#a-dat-73). 🔑 El saldo se consume por **tres** vías: `anticipos_facturas` + `monto_sicore` + `descuento_aplicado`; `monto_restante` es **la foto de hoy**, no el saldo a una fecha. (visto 2026-09-30) |
 | `anticipos_facturas` | ❌ | — | N:N anticipo↔factura aplicada. |
 | `distribucion_socios` | ✅ | — | Config distribución por socio (dashboard). |
 | `indices_ipc` | ✅ | — | IPC mensual (ajustes). **VACÍA** — hay que cargarla para los métodos IPC del presupuesto. |
@@ -89,7 +89,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `ventas` | ✅ | — | Operaciones de venta (IVA Ventas). |
 | `ventas_comprobantes` | ✅ | — | N:N venta↔liquidación. |
 | `caja_general` / `caja_ams` / `caja_sigot` | ❌ | 79 | Cajas efectivo (tablas de movimiento). |
-| `cheques` | ❌ | — | Cheques/ECHEQs (emisión, endoso, estado). |
+| `cheques` | ❌ | 10 | Cheques/ECHEQs **que emitimos** (el beneficiario es el proveedor). 🚨 **No hay tabla de cheques RECIBIDOS** de clientes → [A-DAT-74](PENDIENTES.md#a-dat-74). 🧨 **`estado` no se mantiene**: los 10 dicen `vigente`, 8 con la fecha de débito ya pasada, y `fecha_estado` está vacía en los 10 — para saber si un cheque debitó se usa **`fecha_cobro`**, nunca `estado` → [A-BUG-1223](PENDIENTES.md#a-bug-1223). (visto 2026-09-30) |
 | `grupos_pago` | ❌ | — | Grupos de pago (agrupan facturas en una OP). |
 | `sicore_retenciones` | ✅ | 40 | Retenciones SICORE (certificados, quincenas, anulación). `grupo_pago_id` define qué comparte certificado → `MODULO_SICORE.md` § 32.3. |
 | `tarjeta_visa_business` | ❌ | 320 | Tarjeta VISA Business MSA (resúmenes). |

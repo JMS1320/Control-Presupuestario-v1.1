@@ -23,6 +23,9 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
+import type {
+  ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
+} from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import {
@@ -490,6 +493,221 @@ const COLS_CUENTAS: Columna[] = [
   { ancho: 13 },                    // Fecha de pago
   { ancho: 34 },                    // Motivo
 ]
+
+/**
+ * 💳 La solapa **04.1 Cheques dados** — los emitidos antes del cierre que todavía no debitaron.
+ *
+ * Mismas columnas que su hoja `4.1 Cheques dados` del balance anterior, más el **Motivo**.
+ *
+ * 🧨 **La columna «Estado hoy» está a propósito y NO se usa para decidir.** El estado no se
+ * mantiene: al 30/09/2026 los 10 cheques de MSA decían `vigente`, incluidos los que debitaron en
+ * abril. Manda la **fecha de débito**. Se muestra igual para que se vea el desfasaje.
+ */
+function hojaDeChequesDados(ch: ChequesDados, etiqueta: string, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`CHEQUES DADOS Y DIFERIDOS NO DEBITADOS — ejercicio ${etiqueta}`])
+  f.push([`Al ${fechaCierre}`])
+  f.push(["Emitidos antes del cierre y debitados despues: al cierre la plata todavia estaba en la cuenta."])
+  f.push(["Manda la FECHA DE DEBITO, no el estado: el estado no se actualiza cuando el cheque debita."])
+  f.push([])
+  f.push([
+    "Fecha emisión", "Fecha de débito", "N° Cheque", "Estado hoy", "Beneficiario", "CUIT",
+    "Banco", "Concepto", "Importe", "Motivo",
+  ])
+
+  const fila = (x: ChequeAlCierre) => {
+    const c = x.cheque
+    return [
+      c.fecha_emision ? String(c.fecha_emision).slice(0, 10) : "",
+      c.fecha_cobro ? String(c.fecha_cobro).slice(0, 10) : "",
+      c.numero ?? "", c.estado ?? "", c.beneficiario_nombre ?? "", c.beneficiario_cuit ?? "",
+      c.banco ?? "", c.concepto ?? "", money(c.monto ?? 0), x.motivo,
+    ]
+  }
+
+  ch.filas.forEach(x => f.push(fila(x)))
+  const desde = 7
+  const hasta = 6 + ch.filas.length
+  f.push(["", "", "", "", "", "", "", "TOTAL",
+    ch.filas.length > 0 ? conFormula(`SUM(I${desde}:I${hasta})`, ch.total) : 0])
+  f.push([])
+
+  if (ch.sinFechaDeDebito.length > 0) {
+    f.push([])
+    f.push(["EMITIDOS ANTES DEL CIERRE Y SIN FECHA DE DÉBITO — no se puede afirmar si debitaron"])
+    f.push([`${ch.sinFechaDeDebito.length} cheque(s) — total ${money(ch.totalSinFecha)}`])
+    ch.sinFechaDeDebito.forEach(x => f.push(fila(x)))
+  }
+
+  f.push([])
+  f.push([`Se miraron ${ch.mirados} cheque(s): ${ch.debitadosAntes} ya habían debitado al cierre, `
+    + `${ch.posteriores} son posteriores al cierre.`])
+  if (ch.filas.length === 0 && ch.sinFechaDeDebito.length === 0) {
+    // 🔑 Un cero calculado dice algo; una solapa vacía no. Se escribe el cero y de dónde sale.
+    f.push(["NO HUBO cheques dados pendientes de débito al cierre. No es que falte el dato: "
+      + "los cheques emitidos antes del cierre debitaron todos antes del cierre."])
+  }
+  ch.avisos.forEach(a => f.push([`⚠️ ${a}`]))
+  return f
+}
+
+const COLS_CHEQUES: Columna[] = [
+  { ancho: 13 },                    // Fecha emisión
+  { ancho: 14 },                    // Fecha de débito
+  { ancho: 12 },                    // N° Cheque
+  { ancho: 11 },                    // Estado hoy
+  { ancho: 46 },                    // Beneficiario
+  { ancho: 13 },                    // CUIT
+  { ancho: 15 },                    // Banco
+  { ancho: 34 },                    // Concepto
+  { ancho: 16, z: MONEDA },         // Importe
+  { ancho: 40 },                    // Motivo
+]
+
+/**
+ * 💰 La solapa **04.2 Anticipos** — los que tenían saldo al cierre.
+ *
+ * 🔑 **Dos bloques, y no se pueden sumar**: los `pago` son plata adelantada a un proveedor
+ * (**activo**), los `cobro` son plata que adelantó un cliente (**pasivo**). Salen del mismo cálculo
+ * y de la misma tabla, así que van en la misma solapa, pero con su total cada uno.
+ *
+ * 🧮 Al final, el **control del camino inverso**: recalcular el saldo a hoy tiene que dar la columna
+ * `monto_restante` del sistema. Si no da, el saldo al cierre tampoco es confiable.
+ */
+function hojaDeAnticipos(an: AnticiposAlCierre, etiqueta: string, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`ANTICIPOS CON SALDO AL CIERRE — ejercicio ${etiqueta}`])
+  f.push([`Al ${fechaCierre}`])
+  f.push(["El saldo se RECALCULA a la fecha de cierre. La columna del sistema es la foto de hoy:"])
+  f.push(["un anticipo hoy consumido pudo tener saldo al cierre, y ese saldo es el que va al balance."])
+  f.push(["Saldo = monto - aplicado a facturas hasta el cierre - retencion de SICORE - descuento."])
+
+  const cabecera = [
+    "Fecha", "Razón Social", "CUIT", "Empresa", "Tipo", "Monto original",
+    "Aplicado al cierre", "SICORE", "Descuento", "SALDO AL CIERRE",
+    "Aplicado después", "Estado hoy",
+  ]
+  const fila = (x: AnticipoAlCierre) => {
+    const a = x.anticipo
+    return [
+      a.fecha_pago ? String(a.fecha_pago).slice(0, 10) : "",
+      a.nombre_proveedor ?? "", a.cuit_proveedor ?? "",
+      a.empresa ?? "(sin empresa)", a.tipo ?? "(sin tipo)",
+      money(a.monto ?? 0), money(x.aplicadoAlCierre),
+      money(a.monto_sicore ?? 0), money(a.descuento_aplicado ?? 0),
+      money(x.saldoAlCierre), money(x.aplicadoDespues),
+      [a.estado, a.estado_pago].filter(Boolean).join(" / "),
+    ]
+  }
+
+  /** Un bloque con su cabecera, sus filas y su TOTAL con fórmula sobre la columna del saldo. */
+  const bloque = (titulo: string[], filas: AnticipoAlCierre[], total: number) => {
+    f.push([])
+    titulo.forEach(t => f.push([t]))
+    f.push(cabecera)
+    const desde = f.length + 1
+    filas.forEach(x => f.push(fila(x)))
+    const hasta = f.length
+    f.push(["", "", "", "", "", "", "", "", "TOTAL",
+      filas.length > 0 ? conFormula(`SUM(J${desde}:J${hasta})`, total) : 0])
+  }
+
+  bloque([
+    "ANTICIPO A PROVEEDORES — es un ACTIVO: plata adelantada que todavía no se consumió",
+  ], an.aProveedores, an.totalAProveedores)
+
+  bloque([
+    "ANTICIPOS DE CLIENTES (cobros a cuenta) — es un PASIVO: plata que ya se cobró y no se facturó",
+    "Vienen de la misma tabla que los de arriba (columna Tipo = cobro). NO se suman con ellos.",
+  ], an.deClientes, an.totalDeClientes)
+
+  if (an.sinTipo.length > 0) {
+    bloque([
+      `SIN TIPO — no dicen si son a proveedor o de cliente (${an.tiposSinClasificar.join(", ")})`,
+      "No se suman a ninguno de los dos bloques: hay que decidir de qué lado van.",
+    ], an.sinTipo, an.totalSinTipo)
+  }
+
+  // 🧮 El control, al final y con nombre propio.
+  f.push([])
+  f.push([])
+  f.push(["CONTROL — el camino inverso: recalcular el saldo a HOY tiene que dar el del sistema"])
+  if (an.descuadres.length === 0) {
+    f.push([`✓ Cierra en los ${an.mirados} anticipos mirados.`])
+  } else {
+    f.push([`⚠️ NO cierra en ${an.descuadres.length} de ${an.mirados}:`])
+    f.push(["Razón Social", "Monto", "Saldo del sistema", "Saldo recalculado", "Diferencia"])
+    an.descuadres.forEach(d => f.push([d.nombre, money(d.monto), money(d.guardado),
+      money(d.recalculado), money(d.diferencia)]))
+  }
+
+  f.push([])
+  an.avisos.forEach(a => f.push([`⚠️ ${a}`]))
+  if (an.deOtraEmpresa > 0) {
+    f.push([`${an.deOtraEmpresa} anticipo(s) quedaron afuera por ser de otra empresa.`])
+  }
+  return f
+}
+
+const COLS_ANTICIPOS: Columna[] = [
+  { ancho: 11 },                    // Fecha
+  { ancho: 46 },                    // Razón Social
+  { ancho: 13 },                    // CUIT
+  { ancho: 13 },                    // Empresa
+  { ancho: 10 },                    // Tipo
+  { ancho: 17, z: MONEDA },         // Monto original
+  { ancho: 17, z: MONEDA },         // Aplicado al cierre
+  { ancho: 13, z: MONEDA },         // SICORE
+  { ancho: 12, z: MONEDA },         // Descuento
+  { ancho: 18, z: MONEDA },         // SALDO AL CIERRE
+  { ancho: 16, z: MONEDA },         // Aplicado después
+  { ancho: 22 },                    // Estado hoy
+]
+
+/**
+ * 🧾 La solapa **03.1 Provisión de cobros** — el espejo del papel 05, del lado de las ventas.
+ *
+ * *«Facturas o liquidaciones (siempre de venta) de cosas que sucedieron antes del cierre y se
+ * emitieron después»* — la definición es suya, de la hoja `PROVISION COBROS`.
+ *
+ * 📌 Es exactamente la misma regla que la provisión de facturas: **fecha ≤ cierre, subdiario
+ * posterior**. Por eso no hay que marcar nada a mano: la marca ya está, es el subdiario.
+ *
+ * 🚫 Y abajo va el bloque de **cheques en cartera diciendo que no hay registro**. Omitirlo se leería
+ * como *«no había»*, que no es lo mismo que *«no lo sabemos»*.
+ */
+function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`PROVISIÓN DE COBROS — ejercicio ${etiqueta}`])
+  f.push(["Ventas de cosas que pasaron ANTES del cierre y se facturaron DESPUES:"])
+  f.push(["fecha del comprobante anterior al cierre, pero entro en un subdiario posterior."])
+  f.push([])
+  hojaDeAsientos(ventas).forEach(r => f.push(r))
+  if (ventas.length > 0) {
+    // La fila 5 es la cabecera, así que el detalle arranca en la 6. La columna M es el Total.
+    const desde = 6
+    const hasta = 5 + ventas.length
+    const total = ventas.reduce((s, a) => s + a.total, 0)
+    f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "",
+      conFormula(`SUM(M${desde}:M${hasta})`, money(total))])
+  }
+  if (ventas.length === 0) {
+    f.push([])
+    f.push(["NO HAY ventas a provisionar: ninguna con fecha anterior al cierre entró en un "
+      + "subdiario posterior. El año pasado tampoco hubo."])
+  }
+
+  f.push([])
+  f.push([])
+  f.push(["CHEQUES EN CARTERA — NO SE PUEDE CALCULAR: el sistema no registra valores recibidos"])
+  f.push(["La tabla de cheques guarda solo los que EMITIMOS (el beneficiario es el proveedor)."])
+  f.push(["No hay tabla de cheques de clientes, asi que este bloque no sale del sistema: hay que"])
+  f.push(["cargarlo a mano si hubiera. En el balance anterior no habia ninguno. Ver A-DAT-74."])
+  f.push([])
+  f.push(["ANTICIPOS DE CLIENTES (cobros a cuenta) — están en la solapa «04.2 Anticipos»"])
+  f.push(["Salen de la misma tabla que los anticipos a proveedores, por eso van juntos alli."])
+  return f
+}
 
 /**
  * 🗂️ La solapa **00 Índice** — la primera que se abre.
@@ -1140,8 +1358,14 @@ export function armarWorkbook(
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
-  /** Papeles 03 y 04. Van sólo si la pantalla pudo averiguar CUÁNDO se pagó cada comprobante. */
-  cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
+  /**
+   * Papeles 03 y 04. `pagar`/`cobrar` van sólo si la pantalla pudo averiguar **cuándo** se pagó cada
+   * comprobante; `cheques` y `anticipos` son los bloques 04.1, 04.2 y 03.1 (A-FEAT-1195).
+   */
+  cuentas?: {
+    pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre
+    cheques?: ChequesDados; anticipos?: AnticiposAlCierre
+  },
   /** Papeles 07, 08 y 09. Salen del extracto ya parseado y categorizado. */
   bancarios?: DatosDelIndice["bancarios"] & {
     fci?: { fondos: FondoComun[]; total: FondoComun }
@@ -1171,18 +1395,43 @@ export function armarWorkbook(
     `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
   hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
     `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
-  hoja(wb, "05 Provision", hojaDeAsientos(libro.provisiones), COLS_ASIENTOS)
-  // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187).
+  /**
+   * 🧾 **El papel 05 es la provisión de FACTURAS (compras); la de COBROS (ventas) es del papel 03.**
+   *
+   * Hasta el 2026-09-30 las dos iban juntas en `05 Provision`, porque `armarLibroDiario` las devuelve
+   * en una sola lista. **Son dos papeles distintos de su balance** —`05 - PROVISION FC` y el bloque
+   * `PROVISION COBROS` del 03—, y sumar una venta a provisionar dentro de la provisión de compras
+   * infla el gasto del ejercicio con un ingreso.
+   */
+  const provisionCompras = libro.provisiones.filter(a => a.fuente !== "venta")
+  const provisionVentas = libro.provisiones.filter(a => a.fuente === "venta")
+  hoja(wb, "05 Provision", hojaDeAsientos(provisionCompras), COLS_ASIENTOS)
+  // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
+  //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
   if (cuentas?.pagar) {
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre), COLS_CUENTAS)
+  }
+  if (cuentas?.cheques) {
+    hoja(wb, "04.1 Cheques dados",
+      hojaDeChequesDados(cuentas.cheques, libro.ejercicio.etiqueta, libro.ejercicio.fechaCierre),
+      COLS_CHEQUES)
+  }
+  if (cuentas?.anticipos) {
+    hoja(wb, "04.2 Anticipos",
+      hojaDeAnticipos(cuentas.anticipos, libro.ejercicio.etiqueta, libro.ejercicio.fechaCierre),
+      COLS_ANTICIPOS)
   }
   if (cuentas?.cobrar) {
     hoja(wb, "03 Cuentas a cobrar",
       hojaDeCuentas(cuentas.cobrar, `CUENTAS A COBRAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre), COLS_CUENTAS)
   }
+  // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
+  //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
+  hoja(wb, "03.1 Provision cobros",
+    hojaDeProvisionCobros(provisionVentas, libro.ejercicio.etiqueta), COLS_ASIENTOS)
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
@@ -1236,7 +1485,7 @@ export function descargarLibroDiario(
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
-  cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre },
+  cuentas?: Parameters<typeof armarWorkbook>[6],
   bancarios?: Parameters<typeof armarWorkbook>[7],
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios)

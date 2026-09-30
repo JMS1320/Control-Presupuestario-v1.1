@@ -32,12 +32,20 @@ import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } fr
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import {
+  armarChequesDados, armarAnticiposAlCierre,
+  type ChequesDados, type AnticiposAlCierre, type ChequeCrudo,
+  type AnticipoCrudo, type AplicacionDeAnticipo,
+} from "@/lib/balance/valores-al-cierre"
 import { buscarFechasDePagoBancarias, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
 import {
   mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
   esFCI, CUENTAS_DEL_EXTRACTO,
   type MovimientoExtracto, type CuentaDelPlan,
 } from "@/lib/balance/papeles-bancarios"
+// 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
+//    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
+import { hoyArgentina } from "@/lib/cotizaciones/parsers"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -59,6 +67,12 @@ export function PapelesDeBalance() {
    */
   const [cuentas, setCuentas] = useState<{ pagar: CuentasAlCierre; cobrar: CuentasAlCierre } | null>(null)
   /**
+   * 💵 Los bloques 04.1, 04.2 y 03.1 (A-FEAT-1195): cheques dados, anticipos y provisión de cobros.
+   * Van en **su propio estado** porque salen de otras tablas: si fallan, los papeles 03 y 04 que ya
+   * están armados no se caen.
+   */
+  const [valores, setValores] = useState<{ cheques?: ChequesDados; anticipos?: AnticiposAlCierre } | null>(null)
+  /**
    * 🏦 Papeles 07, 08 y 09. Salen del **extracto** ya parseado y categorizado, así que se traen
    * junto con el libro: es una consulta más por cuenta bancaria.
    */
@@ -72,6 +86,7 @@ export function PapelesDeBalance() {
     setTemplates(null)
     setHacienda(null)
     setCuentas(null)
+    setValores(null)
     setBancarios(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
@@ -158,6 +173,65 @@ export function PapelesDeBalance() {
         })
       } catch (e) {
         toast.warning("No se pudieron armar las cuentas a pagar y a cobrar; el resto del libro salió igual.")
+      }
+
+      /**
+       * 💵 **Los bloques 04.1, 04.2 y 03.1** — cheques dados, anticipos y provisión de cobros
+       * (A-FEAT-1195). Ver `lib/balance/valores-al-cierre.ts`, que es donde está el criterio.
+       *
+       * 🔑 Las dos consultas traen **todo** y el corte lo hace la lógica pura: si el filtro por fecha
+       * viviera en el `select`, el papel y el control del camino inverso usarían cortes distintos.
+       *
+       * ⚠️ En su propio `try`: son bloques de dos papeles que ya están armados.
+       */
+      try {
+        /**
+         * 🧨 **`cheques` existe sólo en el schema `msa`.** No es un olvido: el módulo de cheques es
+         * de MSA. Para PAM y MA el bloque queda **sin leer** —no en cero—, y el índice lo dice: un
+         * cero afirma que se miró, y acá no hay dónde mirar.
+         */
+        let cheques: ChequesDados | undefined
+        if (empresa.id === "MSA") {
+          const { data, error } = await supabase.schema("msa").from("cheques")
+            .select("id, numero, banco, monto, moneda, fecha_emision, fecha_cobro, "
+              + "beneficiario_nombre, beneficiario_cuit, estado, concepto, factura_id, anticipo_id")
+          if (error) throw new Error(error.message)
+          cheques = armarChequesDados(
+            (data ?? []) as unknown as ChequeCrudo[], ej.fechaCierre, hoyArgentina())
+        }
+
+        const [ant, apl] = await Promise.all([
+          supabase.from("anticipos_proveedores")
+            .select("id, empresa, nombre_proveedor, cuit_proveedor, monto, monto_restante, "
+              + "monto_sicore, descuento_aplicado, fecha_pago, tipo, estado, estado_pago, descripcion"),
+          supabase.from("anticipos_facturas")
+            .select("anticipo_id, monto_aplicado, fecha_aplicacion"),
+        ])
+        for (const r of [ant, apl]) if (r.error) throw new Error(r.error.message)
+
+        const anticipos = armarAnticiposAlCierre(
+          (ant.data ?? []) as unknown as AnticipoCrudo[],
+          (apl.data ?? []) as unknown as AplicacionDeAnticipo[],
+          ej.fechaCierre,
+          empresa.id,
+          /**
+           * ⚠️ **Las filas sin empresa se cuentan como de MSA y de ninguna otra.** Son $137,4 M al
+           * cierre: la columna se agregó después y el módulo nació siendo de MSA. Se marcan en el
+           * papel y el índice lo avisa — no es un silencio, es un criterio declarado (A-DAT-73).
+           */
+          empresa.id === "MSA",
+        )
+        setValores({ cheques, anticipos })
+
+        // 🧮 El control del camino inverso se muestra, no sólo se escribe en la solapa.
+        if (anticipos.descuadres.length > 0) {
+          toast.warning(
+            `El saldo de ${anticipos.descuadres.length} anticipo(s) no coincide con el del sistema: `
+            + "está en la solapa 04.2, al final.",
+          )
+        }
+      } catch (e) {
+        toast.warning("No se pudieron traer los cheques y anticipos; el resto del libro salió igual.")
       }
 
       /**
@@ -278,7 +352,10 @@ export function PapelesDeBalance() {
           {libro && (
             <Button variant="outline" onClick={() => descargarLibroDiario(
                 libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
-                hacienda?.insumos, hacienda?.campo, cuentas ?? undefined,
+                hacienda?.insumos, hacienda?.campo,
+                // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
+                // comprobantes, los cheques y los anticipos son partes del mismo papel.
+                { ...(cuentas ?? {}), ...(valores ?? {}) },
                 bancarios ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />

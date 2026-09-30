@@ -25,6 +25,7 @@ import type { LibroDiario } from "./libro-diario"
 import { claveSubdiario } from "./ejercicio"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { CuentasAlCierre } from "./cuentas-al-cierre"
+import type { ChequesDados, AnticiposAlCierre } from "./valores-al-cierre"
 import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { ValuacionHacienda } from "./hacienda-stock"
 import type { StockInsumos } from "./stock-insumos"
@@ -64,7 +65,13 @@ const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDig
 export interface DatosDelIndice {
   libro: LibroDiario
   templates?: TemplatesDelEjercicio | null
-  cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre } | null
+  cuentas?: {
+    pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre
+    /** Bloque 04.1. `undefined` = no se pudo leer; vacío = se leyó y no había. */
+    cheques?: ChequesDados
+    /** Bloques 04.2 y 03.2 — a proveedores (activo) y de clientes (pasivo). */
+    anticipos?: AnticiposAlCierre
+  } | null
   hacienda?: ValuacionHacienda | null
   insumos?: StockInsumos | null
   campo?: { granos: CuadreGranos; sementeras: Sementeras } | null
@@ -148,14 +155,10 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     if (c) {
       if (c.sinDatoDePago.length > 0) pendiente.push(`${c.sinDatoDePago.length} conciliado(s) sin fecha de pago (${pesos(c.totalSinDato)})`)
       if (c.estadoDesconocido.length > 0) pendiente.push(`${c.estadoDesconocido.length} con estado no reconocido: ${c.estadosSinClasificar.join(", ")}`)
-      // Los cheques y anticipos son bloques del papel original que todavía no se armaron.
-      pendiente.push(numero === "04"
-        ? "los CHEQUES DADOS y los ANTICIPOS A PROVEEDORES (A-FEAT-1195)"
-        : "los CHEQUES EN CARTERA y la PROVISIÓN DE COBROS (A-FEAT-1195)")
     }
     partes.push({
       numero, papel,
-      estado: !c ? "falta" : "parcial",
+      estado: !c ? "falta" : pendiente.length > 0 ? "parcial" : "completo",
       queTiene: c ? `${pesos(c.total)} · ${c.filas.length} comprobante(s)` : "nada",
       queFalta: c ? pendiente.join(" · ") : "armar el papel",
       solapa: c ? `${numero} Cuentas a ${numero === "04" ? "pagar" : "cobrar"}` : "",
@@ -163,11 +166,93 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     })
   }
 
-  // ── 05 · Provisión de facturas ─────────────────────────────────────────────────────────
+  /**
+   * ── 04.1 · Cheques dados ──────────────────────────────────────────────────────────────
+   *
+   * 🔑 **Un cero calculado no es un papel que falta.** Si se leyó la tabla y ningún cheque quedaba
+   * sin debitar al cierre, el papel está **completo** y dice cero. Marcarlo como «falta» mandaría a
+   * buscar un dato que no existe — y el año pasado, con cinco cheques, existía.
+   */
+  const ch = d.cuentas?.cheques
   partes.push({
-    numero: "05", papel: "Provisión de facturas",
+    numero: "04.1", papel: "Cheques dados y diferidos no debitados al cierre",
+    estado: !ch ? "falta" : ch.sinFechaDeDebito.length > 0 ? "parcial" : "completo",
+    queTiene: !ch ? "nada"
+      : ch.filas.length === 0
+        ? `ninguno: los ${ch.debitadosAntes} cheque(s) emitidos antes del cierre debitaron antes del cierre`
+        : `${pesos(ch.total)} · ${ch.filas.length} cheque(s)`,
+    queFalta: !ch ? "leer la tabla de cheques (existe sólo en MSA)"
+      : ch.sinFechaDeDebito.length > 0
+        ? `${ch.sinFechaDeDebito.length} cheque(s) sin fecha de débito (${pesos(ch.totalSinFecha)}): no se puede afirmar si debitaron`
+        : "",
+    solapa: ch ? "04.1 Cheques dados" : "",
+    bloqueante: false,
+  })
+
+  /**
+   * ── 04.2 · Anticipos ──────────────────────────────────────────────────────────────────
+   *
+   * 🧨 Los `cobro` son **pasivo**, no activo. Se dicen aparte en el índice justamente porque en el
+   * papel del año pasado no había ninguno y este año son el número más grande de la solapa.
+   */
+  const an = d.cuentas?.anticipos
+  const faltaAnt: string[] = []
+  if (an) {
+    if (an.descuadres.length > 0) {
+      faltaAnt.push(`🧮 el control no cierra en ${an.descuadres.length} anticipo(s): el saldo recalculado no da el del sistema`)
+    }
+    if (an.sinTipo.length > 0) {
+      faltaAnt.push(`${an.sinTipo.length} sin tipo (${pesos(an.totalSinTipo)}): no se sabe si son a proveedor o de cliente`)
+    }
+    if (an.sinEmpresa > 0) {
+      faltaAnt.push(`${an.sinEmpresa} sin empresa asignada (${pesos(an.totalSinEmpresa)}), tomados como de esta empresa — A-DAT-73`)
+    }
+    if (an.deClientes.length > 0) {
+      faltaAnt.push(`decidir dónde van los ${pesos(an.totalDeClientes)} de anticipos DE CLIENTES: son PASIVO y el papel del año pasado no tenía ese bloque`)
+    }
+  }
+  partes.push({
+    numero: "04.2", papel: "Anticipos: a proveedores (activo) y de clientes (pasivo)",
+    estado: !an ? "falta" : faltaAnt.length > 0 ? "parcial" : "completo",
+    queTiene: an
+      ? `a proveedores ${pesos(an.totalAProveedores)} (${an.aProveedores.length}) · `
+        + `de clientes ${pesos(an.totalDeClientes)} (${an.deClientes.length})`
+      : "nada",
+    queFalta: !an ? "leer los anticipos y sus aplicaciones" : faltaAnt.join(" · "),
+    solapa: an ? "04.2 Anticipos" : "",
+    bloqueante: false,
+  })
+
+  /**
+   * ── 03.1 · Provisión de cobros y cheques en cartera ───────────────────────────────────
+   *
+   * 🚫 Los **cheques en cartera** no salen del sistema: no hay tabla de valores recibidos. El papel
+   * se entrega igual **diciéndolo**, que es distinto de entregarlo sin el bloque.
+   */
+  const provVentas = libro.provisiones.filter(a => a.fuente === "venta")
+  partes.push({
+    numero: "03.1", papel: "Provisión de cobros · cheques en cartera",
+    estado: "parcial",
+    queTiene: provVentas.length > 0
+      ? `provisión de cobros ${pesos(provVentas.reduce((s, a) => s + a.total, 0))} · ${provVentas.length} venta(s)`
+      : "provisión de cobros: ninguna venta con fecha anterior al cierre entró en un subdiario posterior",
+    queFalta: "los CHEQUES EN CARTERA no se pueden calcular: el sistema sólo registra los cheques "
+      + "que emitimos, no los recibidos. El año pasado no había ninguno — A-DAT-74",
+    solapa: "03.1 Provision cobros",
+    bloqueante: false,
+  })
+
+  /**
+   * ── 05 · Provisión de facturas ─────────────────────────────────────────────────────────
+   *
+   * ⚠️ **Sólo las de COMPRA.** Las ventas a provisionar son el papel 03.1: mezclarlas contaría un
+   * ingreso adentro del gasto a provisionar (corregido 2026-09-30, A-FEAT-1195).
+   */
+  const provCompras = libro.provisiones.filter(a => a.fuente !== "venta")
+  partes.push({
+    numero: "05", papel: "Provisión de facturas (compras)",
     estado: "completo",
-    queTiene: `${pesos(libro.provisiones.reduce((s, a) => s + a.total, 0))} · ${libro.provisiones.length} comprobante(s) `
+    queTiene: `${pesos(provCompras.reduce((s, a) => s + a.total, 0))} · ${provCompras.length} comprobante(s) `
       + "con fecha anterior al cierre que entraron en subdiarios posteriores",
     queFalta: "",
     solapa: "05 Provision",
