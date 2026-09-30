@@ -6,6 +6,7 @@ import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
 import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
+import { descargarPagosDeSueldos, type PagoParaExportar } from "@/lib/sueldos/export-pagos"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -599,6 +600,38 @@ export function TabSueldos() {
     setAntMedioPago('banco')
     setAntMesAplicado(mesActual)
     await cargar()
+  }
+
+  /**
+   * 📗 **Bajar los pagos del mes en Excel** (A-FEAT-1217).
+   *
+   * Las columnas son las de la grilla del **Cash Flow** —las que él ya lee— y el formato es el
+   * **canónico** de los papeles del balance. ⚠️ El Cash Flow **no tiene** export propio hoy; el día
+   * que lo tenga, sale del mismo módulo (`lib/sueldos/export-pagos.ts`).
+   *
+   * 📌 Exporta **lo que está en pantalla**: los pagos del mes de trabajo. El día que la tabla tenga
+   * filtros, el Excel tiene que seguirlos — un export que baja de más es peor que no tenerlo.
+   */
+  const exportarPagos = () => {
+    const filas: PagoParaExportar[] = pagos.map(pg => {
+      const periodo = periodos.find(x => x.id === pg.periodo_id)
+      const cuenta = cuentas.find(c => c.id === pg.cuenta_destino_id)
+      return {
+        fecha: pg.fecha,
+        tipo: pg.tipo,
+        empleado: pg.empleado?.nombre ?? periodo?.empleado?.nombre ?? '(sin nombre)',
+        cuit: (periodo?.empleado as { cuit_empleado?: string | null } | undefined)?.cuit_empleado ?? null,
+        empresa: periodo?.empleado?.empresa ?? null,
+        descripcion: pg.descripcion,
+        monto: pg.monto,
+        estado: (pg as { estado?: string | null }).estado ?? null,
+        medio_pago: pg.medio_pago ?? null,
+        cuentaDestino: cuenta ? etiquetaCuenta(cuenta) : null,
+        periodo: periodo ? `${MESES_SHORT[periodo.mes - 1]} ${periodo.anio}` : null,
+      }
+    })
+    if (filas.length === 0) { alert('No hay pagos para exportar en este mes.'); return }
+    descargarPagosDeSueldos(filas, `${MESES_LONG[mesActual.mes - 1]} ${mesActual.anio}`)
   }
 
   // ── Editar / Eliminar pago ────────────────────────────────────────────────
@@ -1454,9 +1487,21 @@ export function TabSueldos() {
       {pagos.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm">
-              Pagos registrados — {MESES_LONG[mesActual.mes - 1]} {mesActual.anio}
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">
+                Pagos registrados — {MESES_LONG[mesActual.mes - 1]} {mesActual.anio}
+              </CardTitle>
+              {/* 📗 El listado a Excel, con el formato canónico del sistema (A-FEAT-1217). */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={exportarPagos}
+                title="Bajar los pagos de este mes en Excel"
+              >
+                📗 Exportar a Excel
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <Table>

@@ -84,6 +84,7 @@ import {
   saldosDelPeriodo, controlarReparto, montoParaSaldo, estadoPorDefectoDe,
   type RenglonPago,
 } from "@/lib/sueldos/pago-repartido"
+import { hojaDePagos, nombreArchivoPagos } from "@/lib/sueldos/export-pagos"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4515,6 +4516,55 @@ export function correrCasos(): Resultado[] {
     chequear("Cuota alimentaria", "🧮 La cadena de Sigot cierra: Lucrecia + A propio + B = total",
       "1.600.000,00", n2(cadena.a + cadena.b),
       r2(cadena.a + cadena.b) === TOTAL && !cadena.invalido, "A-FEAT-1213")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 📗 EL EXPORT DE PAGOS DE SUELDOS (A-FEAT-1217).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const PAGOS = [
+      { fecha: "2026-09-30", tipo: "sueldo", empleado: "Ruben Sigot", empresa: "MSA",
+        descripcion: "Cuota alimentaria", monto: 200000, estado: "pagar", medio_pago: "banco",
+        cuentaDestino: "Lucresia · …4347", periodo: "Sep 2026" },
+      { fecha: "2026-09-30", tipo: "sueldo", empleado: "Ruben Sigot", empresa: "MSA",
+        descripcion: "Pago saldo", monto: 1650000, estado: "programado", medio_pago: "caja_sigot",
+        cuentaDestino: null, periodo: "Sep 2026" },
+    ]
+    const f = hojaDePagos(PAGOS, "Septiembre 2026")
+
+    // título · aclaración · blanco · cabecera · 2 pagos · TOTAL · blanco · el conteo = 9
+    chequear("Export de pagos", "Una fila por pago, más título, aclaración, blanco, cabecera y cierre",
+      "2 pagos en 9 filas", `${PAGOS.length} pagos en ${f.length} filas`,
+      f.length === 9, "A-FEAT-1217")
+
+    chequear("Export de pagos", "Las columnas son las de la grilla del Cash Flow",
+      "Fecha · Período · … · Importe",
+      `${(f[3] as string[])[0]} · ${(f[3] as string[])[1]} · … · ${(f[3] as string[])[10]}`,
+      (f[3] as string[])[0] === "Fecha" && (f[3] as string[])[10] === "Importe"
+      && (f[3] as string[]).length === 11, "A-FEAT-1217")
+
+    // 🧮 El TOTAL es una FÓRMULA, no un número pegado: si se filtra, se recalcula solo.
+    const filaTotal = f[6] as unknown[]
+    const celda = filaTotal[10] as { f?: string; v?: number }
+    chequear("Export de pagos", "🧮 El total va con fórmula y suma los dos pagos",
+      "SUM(K5:K6) = 1.850.000,00",
+      `${celda?.f} = ${n2(celda?.v ?? 0)}`,
+      celda?.f === "SUM(K5:K6)" && celda?.v === 1850000, "A-FEAT-1217")
+
+    chequear("Export de pagos", "Y al pie dice cuántos se exportaron, para cruzarlo con la pantalla",
+      "2 pago(s) exportados.", String((f[8] as string[])[0]),
+      (f[8] as string[])[0] === "2 pago(s) exportados.", "A-FEAT-1217")
+
+    // Sin pagos: no explota y el total queda en cero.
+    const vacio = hojaDePagos([], "Septiembre 2026")
+    chequear("Export de pagos", "Sin pagos, el total es 0 y no se rompe",
+      "0", String((vacio[4] as unknown[])[10]),
+      (vacio[4] as unknown[])[10] === 0, "A-FEAT-1217")
+
+    chequear("Export de pagos", "El nombre del archivo lleva el período y no rompe el sistema de archivos",
+      "Pagos_sueldos_Septiembre_2026.xlsx", nombreArchivoPagos("Septiembre 2026"),
+      nombreArchivoPagos("Septiembre 2026") === "Pagos_sueldos_Septiembre_2026.xlsx", "A-FEAT-1217")
   }
 
   return r

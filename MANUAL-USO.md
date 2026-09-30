@@ -2575,7 +2575,16 @@ vez y *Pagar saldo total* por la diferencia. Los pagos viejos no se tocan.
 
 📌 El botón **+ Anticipo** y **+ Saldo** siguen igual, para un pago suelto.
 
-⚠️ Sin probar todavía → A-TEST-1172
+📗 **Y los pagos del mes se bajan en Excel** *(nuevo)*: el botón **📗 Exportar a Excel** en la
+tarjeta *Pagos registrados* baja una fila por pago con las columnas que ya conocés del Cash Flow,
+más la **cuenta destino**. El **total va con fórmula**, así que si filtrás en el Excel se recalcula
+solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la pantalla.
+
+📌 **La Fecha y el Período pueden ser distintos, y es a propósito**: un pago de septiembre hecho el
+3 de octubre tiene **fecha** de octubre y **período** septiembre.
+
+⚠️ Sin probar todavía → A-TEST-1174
+
 
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
 
