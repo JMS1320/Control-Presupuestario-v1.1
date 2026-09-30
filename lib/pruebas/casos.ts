@@ -85,6 +85,9 @@ import {
   type RenglonPago,
 } from "@/lib/sueldos/pago-repartido"
 import { hojaDePagos, nombreArchivoPagos } from "@/lib/sueldos/export-pagos"
+import {
+  leerIpc, controlarIpc, acumuladaDelAnio, urlIpc, mesAnteriorISO,
+} from "@/lib/indices/ipc-indec"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4565,6 +4568,84 @@ export function correrCasos(): Resultado[] {
     chequear("Export de pagos", "El nombre del archivo lleva el período y no rompe el sistema de archivos",
       "Pagos_sueldos_Septiembre_2026.xlsx", nombreArchivoPagos("Septiembre 2026"),
       nombreArchivoPagos("Septiembre 2026") === "Pagos_sueldos_Septiembre_2026.xlsx", "A-FEAT-1217")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 📈 EL IPC DEL INDEC (A-FEAT-1215). Los números son los reales de la serie.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /**
+     * Recorte real de `apis.datos.gob.ar`, serie 148.3_INIVELNAL_DICI_M_26:
+     * `[fecha, nivel, variación mensual, variación interanual]` — las variaciones como FRACCIÓN.
+     */
+    const CRUDO = [
+      ["2026-05-01", 11607.3937, 0.021499723349908573, null],
+      ["2026-06-01", 11826.4103, 0.018868714688293764, 0.33547731398508457],
+      ["2026-07-01", 12076.3937, 0.021137724267861868, 0.3382568520539679],
+      ["2026-08-01", 12276.766, 0.016592064235202875, 0.3354117291414028],
+      // 🛑 Sin nivel o sin variación: se descartan. Un IPC en cero es plausible y falso.
+      ["2026-09-01", null, 0.02, null],
+      ["2026-10-01", 12500, null, null],
+      ["basura", 1, 1, 1],
+    ]
+    const meses = leerIpc(CRUDO)
+
+    chequear("IPC", "🛑 Descarta los meses sin nivel o sin variación, no los rellena con cero",
+      "4 meses", `${meses.length} meses`, meses.length === 4, "A-FEAT-1215")
+
+    /**
+     * 🔑 **La conversión que evita el desastre**: la API da FRACCIÓN (0,016592) y la app guarda
+     * PORCENTAJE. Sin esto, agosto entraría como 0,02 % de inflación mensual.
+     */
+    const agosto = meses[3]
+    chequear("IPC", "🔑 La variación se guarda en PORCENTAJE, no en fracción",
+      "1,6592 %", `${agosto.variacionMensual} %`,
+      agosto.variacionMensual === 1.6592 && agosto.anio === 2026 && agosto.mes === 8, "A-FEAT-1215")
+
+    chequear("IPC", "La interanual también, y queda null cuando la serie no llega a 12 meses atrás",
+      "33,5412 % · mayo null",
+      `${agosto.variacionInteranual} % · mayo ${meses[0].variacionInteranual}`,
+      agosto.variacionInteranual === 33.5412 && meses[0].variacionInteranual === null, "A-FEAT-1215")
+
+    // 🧮 EL CONTROL DE LOS DOS CAMINOS: el nivel contra la variación publicada.
+    chequear("IPC", "🧮 Con los datos reales, el nivel y la variación publicada cierran",
+      "0 descuadres", `${controlarIpc(meses).length} descuadres`,
+      controlarIpc(meses).length === 0, "A-FEAT-1215")
+
+    // 🧨 Y grita si una de las dos está mal leída: se corrompe un nivel y tiene que saltar.
+    const corrupto = meses.map((m, i) => (i === 3 ? { ...m, nivel: 12900 } : m))
+    chequear("IPC", "🧨 Si el nivel no explica la variación publicada, lo detecta",
+      "1 descuadre en 2026-08",
+      `${controlarIpc(corrupto).length} descuadre en ${controlarIpc(corrupto)[0]?.anio}-0${controlarIpc(corrupto)[0]?.mes}`,
+      controlarIpc(corrupto).length === 1 && controlarIpc(corrupto)[0].mes === 8, "A-FEAT-1215")
+
+    // 📊 La acumulada sale del nivel de diciembre, y es null si ese diciembre no está.
+    chequear("IPC", "📊 Sin el diciembre de referencia, la acumulada es null (no acumula desde cualquier lado)",
+      "null", String(acumuladaDelAnio(meses, 2026, 8)),
+      acumuladaDelAnio(meses, 2026, 8) === null, "A-FEAT-1215")
+
+    const conDiciembre = [
+      { anio: 2025, mes: 12, variacionMensual: 2, variacionInteranual: null, nivel: 10121.2 },
+      ...meses,
+    ]
+    // 12.276,766 / 10.121,2 − 1 = 0,212975…
+    chequear("IPC", "📊 Con diciembre, la acumulada de agosto da 21,30 %",
+      "21,2975 %", String(acumuladaDelAnio(conDiciembre, 2026, 8)),
+      acumuladaDelAnio(conDiciembre, 2026, 8) === 21.2975, "A-FEAT-1215")
+
+    /**
+     * 🧨 **La trampa de la ventana**: la primera fila del rango nunca trae variación, así que se pide
+     * un mes ANTES. Sin esto, «desde enero» devolvía «desde febrero».
+     */
+    chequear("IPC", "🧨 La URL pide un mes ANTES del pedido, o se pierde el primero",
+      "start_date=2023-12", urlIpc("2024-01").includes("start_date=2023-12") ? "start_date=2023-12" : "otro",
+      urlIpc("2024-01").includes("start_date=2023-12") && urlIpc("2024-01").includes("sort=asc"),
+      "A-FEAT-1215")
+
+    chequear("IPC", "Y el mes anterior cruza bien el año",
+      "2023-12", mesAnteriorISO("2024-01"),
+      mesAnteriorISO("2024-01") === "2023-12" && mesAnteriorISO("2026-09") === "2026-08", "A-FEAT-1215")
   }
 
   return r
