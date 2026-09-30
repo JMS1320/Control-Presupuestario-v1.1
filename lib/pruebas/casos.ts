@@ -78,6 +78,10 @@ import {
   decidirPropagacion, esCategProvisoria, avisoDePropagacion,
 } from "@/lib/conciliacion/propagar-cuenta"
 import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
+import {
+  saldosDelPeriodo, controlarReparto, montoParaSaldo, estadoPorDefectoDe,
+  type RenglonPago,
+} from "@/lib/sueldos/pago-repartido"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4317,6 +4321,112 @@ export function correrCasos(): Resultado[] {
         n2(bEsperado), n2(repartirTotalEnAB(total, a).b),
         repartirTotalEnAB(total, a).b === bEsperado, "A-FEAT-1211")
     }
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 💸 EL PAGO DE SUELDO REPARTIDO (A-FEAT-1212). El caso es el de Sigot.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /**
+     * Sigot: total 1.600.000 (A 1.408.347,10 + B 191.652,90), 5 francos a 64.000 = 320.000.
+     * Bruto = 1.920.000. Sin anticipos todavía.
+     */
+    const BRUTO = 1920000
+    const MONTO_A = 1408347.10
+    const s = saldosDelPeriodo(BRUTO, 0, MONTO_A)
+
+    chequear("Pago repartido", "El saldo total es el bruto menos lo ya pagado",
+      "1.920.000,00", n2(s.saldoTotal), s.saldoTotal === 1920000, "A-FEAT-1212")
+
+    chequear("Pago repartido", "🔑 Y el «saldo A» es A completo mientras quede B sin pagar",
+      "1.408.347,10", n2(s.saldoA), s.saldoA === 1408347.10, "A-FEAT-1212")
+
+    // 🧮 El reparto que él describió: Lucrecia, Galicia y la caja Sigot como programado.
+    const REPARTO: RenglonPago[] = [
+      { cuentaDestinoId: "lucrecia", medio: "banco", monto: 191652.90, estado: "pagar", fecha: "2026-09-30" },
+      { cuentaDestinoId: "galicia", medio: "banco", monto: 1408347.10, estado: "pagar", fecha: "2026-09-30" },
+      { cuentaDestinoId: null, medio: "caja_sigot", monto: 320000, estado: "programado", fecha: "2026-09-30" },
+    ]
+    const c = controlarReparto(s, REPARTO)
+
+    chequear("Pago repartido", "🧮 Muestra el saldo DESPUÉS de cada renglón, no sólo el total",
+      "1.728.347,10 → 320.000,00 → 0,00",
+      c.pasos.map(x => n2(x.saldoDespues)).join(" → "),
+      c.pasos.map(x => x.saldoDespues).join(",") === "1728347.1,320000,0", "A-FEAT-1212")
+
+    chequear("Pago repartido", "🧮 Y el control cierra: los renglones agotan el saldo",
+      "total 1.920.000,00 y saldo 0,00",
+      `total ${n2(c.total)} y saldo ${n2(c.saldoFinal)}`,
+      c.total === 1920000 && c.saldoFinal === 0 && c.sePuedeGuardar, "A-FEAT-1212")
+
+    // 🔘 El botón «pagar saldo»: completa lo que falta CONTANDO los otros renglones.
+    const dosCargados: RenglonPago[] = [REPARTO[0], REPARTO[1], { ...REPARTO[2], monto: 0 }]
+    chequear("Pago repartido", "🔘 «Pagar saldo total» completa el resto, no repite el total",
+      "320.000,00", n2(montoParaSaldo(s, dosCargados, 2, "total")),
+      montoParaSaldo(s, dosCargados, 2, "total") === 320000, "A-FEAT-1212")
+
+    chequear("Pago repartido", "🔘 «Pagar saldo A» con nada cargado da A entero",
+      "1.408.347,10",
+      n2(montoParaSaldo(s, [{ ...REPARTO[0], monto: 0 }], 0, "A")),
+      montoParaSaldo(s, [{ ...REPARTO[0], monto: 0 }], 0, "A") === 1408347.10, "A-FEAT-1212")
+
+    /**
+     * 🔘 Y nunca da negativo: si los otros renglones **ya cubren** el objetivo, no queda nada por
+     * completar. El caso real es pedir «saldo A» cuando otro renglón ya se llevó más que A.
+     */
+    const yaCubierto: RenglonPago[] = [
+      { ...REPARTO[0], monto: 1600000 },
+      { ...REPARTO[2], monto: 0 },
+    ]
+    chequear("Pago repartido", "🔘 Si los otros ya cubren el objetivo, no queda nada por completar",
+      "0,00", n2(montoParaSaldo(s, yaCubierto, 1, "A")),
+      montoParaSaldo(s, yaCubierto, 1, "A") === 0, "A-FEAT-1212")
+
+    // 🛑 Frena: un renglón sin importe no es un pago.
+    const conVacio = controlarReparto(s, [REPARTO[0], { ...REPARTO[2], monto: 0 }])
+    chequear("Pago repartido", "🛑 Un renglón sin importe frena el guardado y se marca cuál",
+      "no se puede, renglón 1",
+      `${conVacio.sePuedeGuardar ? "se puede" : "no se puede"}, renglón ${conVacio.sinImporte.join(",")}`,
+      !conVacio.sePuedeGuardar && conVacio.sinImporte.join(",") === "1", "A-FEAT-1212")
+
+    /**
+     * ⚠️ Pagar MÁS que el saldo avisa y **deja seguir** — regla del propio usuario sobre los
+     * controles: *«es posible que yo tenga que pagar más o menos por algún motivo»*.
+     */
+    const deMas = controlarReparto(s, [{ ...REPARTO[0], monto: 2000000 }])
+    chequear("Pago repartido", "⚠️ Pagar más que el saldo AVISA y deja guardar (no es un bug)",
+      "avisa y se puede guardar",
+      `${deMas.pagaDeMas ? "avisa" : "no avisa"} y ${deMas.sePuedeGuardar ? "se puede guardar" : "no se puede"}`,
+      deMas.pagaDeMas && deMas.sePuedeGuardar && deMas.saldoFinal === -80000, "A-FEAT-1212")
+
+    // ⚠️ Dos renglones a la misma cuenta: raro, se avisa.
+    const repetida = controlarReparto(s, [REPARTO[0], { ...REPARTO[0], monto: 1000 }])
+    chequear("Pago repartido", "⚠️ Dos renglones a la misma cuenta se avisan, sin frenar",
+      "avisa de lucrecia y se puede guardar",
+      `${repetida.cuentasRepetidas.join(",")} y ${repetida.sePuedeGuardar ? "se puede guardar" : "no"}`,
+      repetida.cuentasRepetidas.join(",") === "lucrecia" && repetida.sePuedeGuardar, "A-FEAT-1212")
+
+    // 🎚️ El estado por default según el medio: la caja se programa, el banco se paga.
+    chequear("Pago repartido", "🎚️ El default: banco → pagar · caja → programado",
+      "pagar · programado · programado",
+      [estadoPorDefectoDe("banco"), estadoPorDefectoDe("caja_sigot"), estadoPorDefectoDe("caja_general")].join(" · "),
+      estadoPorDefectoDe("banco") === "pagar"
+      && estadoPorDefectoDe("caja_sigot") === "programado"
+      && estadoPorDefectoDe("caja_ams") === "programado", "A-FEAT-1212")
+
+    /**
+     * 🔑 **Y el caso que contesta su pregunta de los francos**: con el sueldo ya pagado, se cargan
+     * francos, el bruto sube y el saldo **vuelve a ser positivo** — sin tocar ningún pago.
+     */
+    const conMasFrancos = saldosDelPeriodo(BRUTO + 128000, 1920000, MONTO_A)
+    chequear("Pago repartido", "🔑 Al cargar 2 francos más, el saldo vuelve a mostrar lo que falta",
+      "128.000,00", n2(conMasFrancos.saldoTotal),
+      conMasFrancos.saldoTotal === 128000, "A-DEC-39")
+
+    chequear("Pago repartido", "…y «saldo A» se acota a lo que queda, no vuelve a ser A entero",
+      "128.000,00", n2(conMasFrancos.saldoA),
+      conMasFrancos.saldoA === 128000, "A-DEC-39")
   }
 
   return r

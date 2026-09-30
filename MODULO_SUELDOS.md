@@ -216,6 +216,27 @@ plano_ipc:     bruto_anterior + extras  (IPC pendiente)
 
 ## 💰 Flujo de Anticipos / Pagos
 
+### 💸 Pago REPARTIDO entre varios destinos *(2026-09-30, A-FEAT-1212)*
+
+Botón **⇄ Repartir** en la fila del empleado → `components/modal-pago-repartido.tsx`. La aritmética
+vive en `lib/sueldos/pago-repartido.ts` con sus casos; la pantalla sólo muestra y guarda.
+
+1. Se cargan **N renglones**, cada uno con `cuenta_destino_id` + `medio_pago` + monto + `estado` + fecha
+2. El **saldo se recalcula debajo de cada renglón** (`controlarReparto`), no sólo al final
+3. Al guardar: **un `INSERT` de N filas** en `sueldos_pagos` con el mismo `grupo_pago_id`, y el
+   período sube `anticipos_descontados` por el total y **recalcula** `saldo_pendiente`
+
+⚠️ **`grupo_pago_id` tiene FK a `msa.grupos_pago`**: el grupo se crea primero. Si eso falla, los pagos
+se insertan **sin agrupar** — perder el pago por no poder agruparlo sería peor.
+
+🏚️ **El estado sale del medio** (`estadoPorDefectoDe`): `banco → pagar`, `caja_* → programado`.
+Es editable por renglón (§ 🎚️ *default del dato real, siempre editable*).
+
+🔑 **El monto de un pago es FIRME y no se recalcula nunca** (decisión del usuario, `A-DEC-39`).
+*«Pagar saldo»* es un **atajo de carga**: rellena el campo con el saldo de ese momento. El aviso de
+que falta plata no viene del pago, viene del **saldo**, que se calcula siempre — al cargar francos el
+bruto sube, el saldo deja de ser cero y el período reaparece en el Cash Flow.
+
 ### Registrar anticipo
 
 1. Modal: empleado + monto + fecha + cuenta destino (opcional) + descripción + estado Cash Flow

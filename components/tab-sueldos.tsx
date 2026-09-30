@@ -3,6 +3,7 @@
 
 
 import { repartirTotalEnAB, valorFrancoDeTotal } from "@/lib/sueldos/reparto-ab"
+import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -219,6 +220,11 @@ export function TabSueldos() {
 
   // Modal anticipo / pago saldo
   const [modalAnticipo, setModalAnticipo] = useState(false)
+  /**
+   * 💸 El período que se está pagando **repartido** entre varios destinos (A-FEAT-1212).
+   * `null` = el modal está cerrado. El modal de anticipos sigue igual, para un pago suelto.
+   */
+  const [repartirPeriodo, setRepartirPeriodo] = useState<Periodo | null>(null)
   const [antEmpId, setAntEmpId] = useState('')
   const [antTipo, setAntTipo] = useState<'anticipo' | 'sueldo'>('anticipo')
   const [antMonto, setAntMonto] = useState('')
@@ -1357,6 +1363,18 @@ export function TabSueldos() {
                             + Saldo
                           </Button>
                         )}
+                        {/* 💸 Repartir el sueldo entre varias cuentas y medios, de una vez. */}
+                        {(p.saldo_pendiente ?? 0) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7 px-2 text-blue-700"
+                            onClick={() => setRepartirPeriodo(p)}
+                            title="Pagar repartido: cuánto a cada cuenta, banco o caja, en una sola carga"
+                          >
+                            ⇄ Repartir
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1919,6 +1937,29 @@ export function TabSueldos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Modal Pago repartido (A-FEAT-1212) ── */}
+      {repartirPeriodo && (
+        <ModalPagoRepartido
+          abierto={!!repartirPeriodo}
+          onCerrar={() => setRepartirPeriodo(null)}
+          empleado={{
+            id: repartirPeriodo.empleado_id,
+            nombre: repartirPeriodo.empleado?.nombre ?? '(sin nombre)',
+            cuit: (repartirPeriodo.empleado as { cuit_empleado?: string | null } | undefined)?.cuit_empleado ?? null,
+          }}
+          periodo={{
+            id: repartirPeriodo.id,
+            bruto_calculado: repartirPeriodo.bruto_calculado,
+            anticipos_descontados: repartirPeriodo.anticipos_descontados,
+            monto_a: repartirPeriodo.monto_a,
+          }}
+          cuentas={cuentas.filter(c => c.empleado_id === repartirPeriodo.empleado_id)}
+          mesEtiqueta={`${MESES_SHORT[mesActual.mes - 1]} ${mesActual.anio}`}
+          etiquetaCuenta={etiquetaCuenta}
+          onGuardado={cargar}
+        />
+      )}
 
       {/* ── Modal Propagar parámetros ── */}
       <Dialog open={modalPropagar} onOpenChange={setModalPropagar}>

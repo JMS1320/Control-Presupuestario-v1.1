@@ -43,6 +43,7 @@
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
+- [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
@@ -2542,6 +2543,39 @@ No lo tiran: es el trabajo que falta en el plan.
 `npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
 
 ⚠️ Sin probar todavía → A-TEST-1165 · el saldo al inicio y la cadena → A-TEST-1169
+
+## 💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*
+
+Para cuando un sueldo se paga **en varios destinos**: una parte a una cuenta, otra a otra, y otra
+desde una caja.
+
+**Cómo se usa:** en la fila del empleado, apretá **⇄ Repartir**. Arriba tenés los cuatro números que
+importan — **bruto · ya pagado · saldo total · saldo A (convenio)** — y abajo cargas un renglón por
+destino: **a qué cuenta · banco o caja · cuánto · a qué estado pasa · qué fecha**.
+
+🧮 **El saldo se actualiza abajo de cada renglón**, así ves cómo se va agotando mientras cargas. Al
+pie está el **total** y **el saldo que queda**, con un ✓ verde cuando llega a cero.
+
+🔘 **Dos botones que completan el importe solos:**
+
+| Botón | Qué pone |
+|---|---|
+| **Pagar saldo total** | lo que falta para saldar, **contando los otros renglones** ya cargados |
+| **Pagar saldo A** | lo que queda de la categoría A del convenio |
+
+🏚️ **El estado viene puesto según el medio**: **banco → pagar** y **caja → programado**, porque un
+pago por caja es una orden que se confirma cuando conciliás la caja. Lo podés cambiar por renglón.
+
+⚠️ **Si pagas más que el saldo te avisa pero te deja guardar** — puede ser a propósito. Lo que **no**
+te deja es guardar un renglón **sin importe**.
+
+🔑 **Y el monto de cada pago queda firme.** Si después cargás francos y el bruto sube, **el saldo
+vuelve a mostrar lo que falta** y el período reaparece en el Cash Flow: apretás **⇄ Repartir** otra
+vez y *Pagar saldo total* por la diferencia. Los pagos viejos no se tocan.
+
+📌 El botón **+ Anticipo** y **+ Saldo** siguen igual, para un pago suelto.
+
+⚠️ Sin probar todavía → A-TEST-1172
 
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
 
