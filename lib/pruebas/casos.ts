@@ -67,6 +67,10 @@ import {
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
+import {
+  leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
+  promedioDelMes, urlPizarra,
+} from "@/lib/cotizaciones/parsers"
 import { primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import {
   normalizarCuenta, buscarCuenta, mesesDelEjercicio, armarGastosBancarios,
@@ -3674,6 +3678,110 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · hacienda", "Y el de PAM/MA, el 01/01 del año de cierre",
       "2026-01-01", primerDiaDelEjercicio(armarEjercicio(2026, 12)),
       primerDiaDelEjercicio(armarEjercicio(2026, 12)) === "2026-01-01", "A-FEAT-1187")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 💱 COTIZACIONES — los parsers del BNA y de la pizarra de Rosario.
+  //    Los fragmentos de abajo son RECORTES REALES del 29/09/2026: el día que
+  //    el sitio cambie, estos casos fallan y dicen dónde.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    // 🔑 Recorte real de bna.com.ar/Personas. Trae LAS DOS solapas, como la página.
+    const BNA = `
+      <div id="billetes"><table class="table cotizacion">
+        <tr><td>29/9/2026</td><td>Compra</td><td>Venta</td></tr>
+        <tr><td>Dolar U.S.A</td><td>1495.0000</td><td>1545.0000</td></tr>
+        <tr><td>Euro</td><td>1670.0000</td><td>1770.0000</td></tr>
+      </table></div>
+      <div id="divisas"><table class="table cotizacion">
+        <tr><td>29/9/2026</td><td>Compra</td><td>Venta</td></tr>
+        <tr><td>Dolar U.S.A</td><td>1513.0000</td><td>1522.0000</td></tr>
+        <tr><td>Libra Esterlina</td><td>1999.1269</td><td>2015.5846</td></tr>
+        <tr><td>Euro</td><td>1712.4134</td><td>1726.4046</td></tr>
+      </table></div>`
+
+    const dolar = leerBnaDivisas(BNA, "Dolar U.S.A")
+    chequear("Cotizaciones", "🔑 Lee DIVISAS, no la solapa de Billetes que viene primero",
+      "2026-09-29 · 1513 / 1522",
+      `${dolar?.fecha} · ${dolar?.compra} / ${dolar?.venta}`,
+      dolar?.fecha === "2026-09-29" && dolar?.compra === 1513 && dolar?.venta === 1522,
+      "A-FEAT-1202")
+
+    // 🧨 EL ADVERSARIO QUE IMPORTA: billetes y divisas conviven en el mismo HTML y **los dos son
+    //    números plausibles**. Un parser que agarre «la primera tabla» trae 1495/1545 y no falla.
+    chequear("Cotizaciones", "🧨 NO devuelve el valor de Billetes (1495), que es el que viene antes",
+      "no es 1495", dolar?.compra === 1495 ? "es 1495 (MAL)" : "no es 1495",
+      dolar?.compra !== 1495, "A-FEAT-1202")
+
+    const euro = leerBnaDivisas(BNA, "Euro")
+    chequear("Cotizaciones", "Y encuentra el Euro de divisas, no el de billetes",
+      "1712.4134", String(euro?.compra), euro?.compra === 1712.4134, "A-FEAT-1202")
+
+    // 🛑 Ante una moneda que no está, devuelve null: no cae a otra fila.
+    chequear("Cotizaciones", "🛑 Una moneda que no está devuelve NADA, no la fila de al lado",
+      "null", String(leerBnaDivisas(BNA, "Peso Chileno")),
+      leerBnaDivisas(BNA, "Peso Chileno") === null, "A-FEAT-1202")
+
+    // 🛑 Y si la página cambia y ya no hay solapa de divisas, tampoco adivina.
+    chequear("Cotizaciones", "🛑 Sin la solapa de divisas devuelve NADA, no usa billetes",
+      "null", String(leerBnaDivisas('<div id="billetes">29/9/2026 Dolar U.S.A 1495.0000 1545.0000</div>', "Dolar U.S.A")),
+      leerBnaDivisas('<div id="billetes">29/9/2026 Dolar U.S.A 1495.0000 1545.0000</div>', "Dolar U.S.A") === null,
+      "A-FEAT-1202")
+
+    // ── La pizarra de Rosario ────────────────────────────────────────────────────────────
+    // 🔑 Recorte real de la consulta de soja, septiembre 2026.
+    const BCR = `<table><thead><tr><th>Soja</th></tr><tr><th>Fecha</th><th>Precio</th></tr></thead>
+      <tbody>
+        <tr><td> 01/09/2026 </td><td> $560.000,00 </td></tr>
+        <tr><td> 02/09/2026 </td><td> $564.000,00 </td></tr>
+        <tr><td> 08/09/2026 </td><td> $556.000,00 </td></tr>
+        <tr><td> 09/09/2026 </td><td> $555.000,00 </td></tr>
+      </tbody></table>`
+
+    const soja = leerPizarraBcr(BCR)
+    chequear("Cotizaciones", "🔑 Lee la serie diaria de la pizarra: 4 días, y el primero es 560.000",
+      "4 días · 560000 el 2026-09-01",
+      `${soja.length} días · ${soja[0]?.valor} el ${soja[0]?.fecha}`,
+      soja.length === 4 && soja[0].valor === 560_000 && soja[0].fecha === "2026-09-01",
+      "A-FEAT-1202")
+
+    // 🧨 EL FORMATO: `$560.000,00` son quinientos sesenta mil, no quinientos sesenta.
+    chequear("Cotizaciones", "🧨 El punto es de MILES y la coma decimal: 560.000,00 = 560000",
+      "560000", String(numeroConComa("$560.000,00")),
+      numeroConComa("$560.000,00") === 560_000, "A-FEAT-1202")
+
+    // …y en el BNA es al revés: el punto es DECIMAL.
+    chequear("Cotizaciones", "🧨 Y en el BNA el punto es DECIMAL: 1513.0000 = 1513",
+      "1513", String(numeroConPunto("1513.0000")),
+      numeroConPunto("1513.0000") === 1513, "A-FEAT-1202")
+
+    chequear("Cotizaciones", "La fecha argentina pasa a ISO",
+      "2026-09-01", String(fechaArgentina("1/9/2026")),
+      fechaArgentina("1/9/2026") === "2026-09-01", "A-FEAT-1202")
+
+    // ── El promedio del mes, que es lo que el usuario usa en todos lados ─────────────────
+    chequear("Cotizaciones", "🧮 El promedio del mes usa los días que COTIZARON, no los 30",
+      "558750", String(promedioDelMes(soja, "2026-09")),
+      promedioDelMes(soja, "2026-09") === 558_750, "A-FEAT-1202")
+
+    chequear("Cotizaciones", "🛑 Un mes sin datos da NULL, no cero",
+      "null", String(promedioDelMes(soja, "2026-10")),
+      promedioDelMes(soja, "2026-10") === null, "A-FEAT-1202")
+
+    chequear("Cotizaciones", "Y el promedio de una moneda se puede pedir por compra o por venta",
+      "1513 / 1522",
+      `${promedioDelMes([dolar!], "2026-09", "compra")} / ${promedioDelMes([dolar!], "2026-09", "venta")}`,
+      promedioDelMes([dolar!], "2026-09", "compra") === 1513 &&
+      promedioDelMes([dolar!], "2026-09", "venta") === 1522, "A-FEAT-1202")
+
+    // El id de producto: soja 13 y maíz 3. Si el sitio los cambia, esto es lo primero a mirar.
+    chequear("Cotizaciones", "La URL de la pizarra lleva el id del producto (soja 13, maíz 3)",
+      "product=13 · product=3",
+      `${urlPizarra("soja", "2026-09-01", "2026-09-30").match(/product=\d+/)?.[0]} · ` +
+      `${urlPizarra("maiz", "2026-09-01", "2026-09-30").match(/product=\d+/)?.[0]}`,
+      urlPizarra("soja", "2026-09-01", "2026-09-30").includes("product=13") &&
+      urlPizarra("maiz", "2026-09-01", "2026-09-30").includes("product=3"), "A-FEAT-1202")
   }
 
   return r
