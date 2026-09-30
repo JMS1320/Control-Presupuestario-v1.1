@@ -7,6 +7,75 @@
 
 ---
 
+## 🧪 GUÍA DE PRUEBAS — la tanda del EXPORT DE BALANCE *(2026-09-30)*
+
+> **Esto es la vista operable de los 10 `A-TEST` que esperan, para correrlos de una sentada.**
+> Los pasos de cada uno siguen viviendo en su fila (§ 📋 de `CLAUDE.md`): acá está **la secuencia y
+> los números que tienen que salir**. ⏱️ Los papeles van al contador el **01/10/2026**.
+
+### 🔴 PRIMERO ESTO, porque invalida lo que sigue
+
+1. **Abrí la solapa «00 Indice» antes que nada.** Es la primera del Excel y dice qué se puede
+   entregar. **Si arriba hay bloqueos, el número de los demás papeles no sirve** y hay que mirar eso
+   antes de seguir. Hoy tiene que avisar de **dos**: subdiarios sin comprobantes (si hay) y que el
+   **papel 08 tiene sólo 5 de los 12 meses**.
+2. **Para probar las boletas de ARBA (paso 10) faltan dos cosas tuyas**, y sin ellas no arranca:
+   **(a)** poner `GAS_BUSCAR_PDF_URL` y `GAS_AUTH_TOKEN` en `.env.local` y **reiniciar `npm run dev`**;
+   **(b)** volver a subir el GAS (`clasp push` + versión nueva). Si el GAS es viejo **archiva en la
+   carpeta de siempre sin fallar**, y la pantalla te lo avisa.
+
+### 🅐 Una sola bajada del Excel sirve para SEIS pruebas
+
+**Reportes → Papeles de trabajo del balance → MSA / 2026 → «Armar el libro» → «Bajar el Excel».**
+Después recorrés estas solapas, en este orden:
+
+| # | Solapa | Qué tiene que dar | Test |
+|---|---|---|---|
+| 1 | **00 Indice** | las 12 partes con qué hay y qué falta · los bloqueos arriba | A-TEST-1165 |
+| 2 | **Compras por cuenta** · **Ventas por cuenta** | **$302.238.687,77** en compras (**611** comprobantes) · **$103.044.319,07** en ventas · el **Control** al final en **0** | A-TEST-1161 |
+| 3 | **04 Cuentas a pagar** · **03 Cuentas a cobrar** | a pagar **45 comprobantes por $31.095.126,74** · a cobrar **$103.044.319,07**. Mirá los **8 que dicen «se pagó DESPUÉS del cierre»**: hoy figuran pagados y al 30/06 eran deuda | A-TEST-1163 |
+| 4 | **04.1 Cheques dados** | **CERO**, y es un cero calculado: los emitidos antes del cierre debitaron antes. Abajo avisa que **8 cheques siguen diciendo «vigente»** aunque ya debitaron | A-TEST-1168 |
+| 5 | **04.2 Anticipos** | dos bloques que **no se suman**: a proveedores **$13.373.240,32** (activo) y **de clientes $133.842.379,38** (pasivo, casi todo **Pedro Genta**). Al final, el control: **«✓ Cierra en los 32»** | A-TEST-1168 |
+| 6 | **07.1 Cadena de saldos** | Banco Galicia: **832.605,05 + 367.777,47 = 1.200.382,52**, **− 3.461.752,49** = **−2.261.369,97**, y **✓ CIERRA**. 🔴 **Caja SIGOT avisa que NO cierra por $205.000** — y aclara que **no falta plata**, que lo que está mal es el orden de los movimientos | A-TEST-1169 |
+| 7 | **08 Gastos bancarios** · **09 Retiros y aportes** | un concepto por fila y los 12 meses en columnas; el 08 abre con el ATENCIÓN de los meses que faltan | A-TEST-1165 |
+| 8 | **Templates por mes** · **02 Hacienda** | Templates: agrupado por responsable con subtotales y el **CONTROL en 0**. Hacienda: el **CUADRE** arriba de la valuación | A-TEST-1166 |
+
+📌 **Sin abrir el Excel**, los mismos números por consola:
+`npx tsx scripts/verificar-imputacion-balance.mts MSA 2026` ·
+`npx tsx scripts/verificar-valores-al-cierre.mts MSA 2026` ·
+`npx tsx scripts/verificar-papeles-bancarios.mts MSA 2026`.
+
+### 🅑 En la app, sin bajar nada
+
+9. **Cash Flow** — arriba de la grilla, el **cartel ámbar de notas de crédito**. Apretá
+   **«Ver cuáles»**: con las facturas de MSA tiene que salir **NOVITAS SA — por pagar $3.621.832,50 ·
+   notas de crédito $1.764.482,50 · quedaría $1.857.350,00**. Después **«Cancelarlas»** tiene que
+   llevarte a *Egresos → Facturas → Pagos* con el modal abierto. Y en **modo Pagos**, scrolleando a la
+   derecha, la columna **Sel.** y la **Fecha Estimada** quedan pegadas a la izquierda.
+   → A-TEST-1160 · A-TEST-1162
+10. **Egresos → Facturas → SICORE → Ver Retenciones** — el certificado de **BIOFARMA del 29/09** tiene
+    que decir **$69.213,15** (no $178.983,20), y el del **21/09** **$109.770,05**. **LONGO**: 18/08
+    **$102.874,10** y 31/08 **$134.817,20**, cada uno con su importe. → A-TEST-1164
+
+### 🅒 Boletas de ARBA *(necesita las dos cosas del punto 2)*
+
+11. **Cash Flow → 🏛️ Boletas ARBA** — pegá el **link de tu carpeta de Drive** y apretá primero
+    **«👁 Ver qué hay»** (no baja nada). Mirá **los descuadres**: si las filas del mail no coinciden
+    con los links, ahí está la respuesta a *«no sé si bajó todas»*. Después **«⬇ Bajar y archivar»**:
+    los PDF caen **en tu carpeta**, con el nombre armado solo, y quedan **linkeados** para abrirlos
+    desde la app. → A-TEST-1167
+
+### Cómo contestar
+
+**Desde el cartel del proceso, en la pantalla donde probás**: ✅ anduvo · 🟡 anduvo en parte ·
+🔴 falló, **y la nota**. Eso entra por `pendientes_comentarios` y se lee al abrir la sesión
+siguiente — no hace falta anotarlo en otro lado.
+
+⚠️ **Esta guía se actualiza cuando cambia el desarrollo.** Si manda a probar algo que ya no existe,
+es un error de la guía y hay que corregirla, no ignorarla.
+
+---
+
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
 > **2026-08-03 — TESTEAR LA CRÍA DESDE EL MARGEN.** El Presupuesto quedó cerrado e implementado y

@@ -260,6 +260,12 @@ un solo lugar**, sin buscar botones. Lo que hay adentro de la app son herramient
 **la secuencia** de lo que él tiene que hacer va en la guía, y se actualiza cuando el desarrollo
 cambia (§ 📋 Guía de pruebas).
 
+📍 **Acá: la guía vive como la PRIMERA sección de `PENDIENTES.md`** (§ 🧪 *Guía de pruebas*), y no en
+un archivo propio. Motivo: es **una vista de los `A-TEST`**, así que pertenece a su misma dimensión —
+un `.md` nuevo en la raíz habría necesitado autorización (§ 🔒) para guardar algo que ya tiene casa.
+**Se reescribe entera en cada tanda**: no es una bitácora que crece, es la lista de lo que hay que
+probar **ahora**. Lo probado sale de la guía y queda ✅ en su fila.
+
 ### 📄 Importar un documento: plástico, editable y con HUELLA (REGLA)
 *Enunciada por el usuario 2026-09-06, sobre el importador de romaneos pero **para todo el tipo de
 proceso**: boletas de ARBA, facturas, extractos, cualquier papel que entre.*
