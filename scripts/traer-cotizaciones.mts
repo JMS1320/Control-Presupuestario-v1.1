@@ -24,6 +24,8 @@ import { createClient } from "@supabase/supabase-js"
 import { readFileSync } from "node:fs"
 import {
   leerBnaDivisas, leerPizarraBcr, urlPizarra, promedioDelMes,
+  leerHistoricoDolar, leerCotizacionesBcra, cruzarDolarConBcra, hoyArgentina,
+  URL_HISTORICO_DOLAR, URL_BCRA_COTIZACIONES,
   type CotizacionLeida,
 } from "../lib/cotizaciones/parsers"
 
@@ -37,9 +39,15 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL!, env.SUPABASE_SERVICE_ROLE
 const args = process.argv.slice(2)
 const soloLeer = args.includes("--solo-leer")
 const fechas = args.filter(a => /^\d{4}-\d{2}-\d{2}$/.test(a))
-const hoy = new Date().toISOString().slice(0, 10)
+/** ⚠️ En hora ARGENTINA, no UTC: después de las 21:00 `toISOString()` ya devuelve mañana. */
+const hoy = hoyArgentina()
 const desde = fechas[0] ?? hoy
-const hasta = fechas[1] ?? hoy
+/**
+ * ⚠️ Se recorta a HOY: una fuente puede publicar una fila con fecha de mañana (pasa cuando su
+ * servidor está en otro huso), y una cotización futura en el histórico no es un dato, es ruido.
+ */
+const hastaPedido = fechas[1] ?? hoy
+const hasta = hastaPedido > hoy ? hoy : hastaPedido
 
 const UA = { "User-Agent": "Mozilla/5.0" }
 
@@ -66,7 +74,52 @@ const pesos = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 
 /** Lo leído, por serie. Se junta todo antes de escribir para poder mostrar un resumen. */
 const leido = new Map<string, CotizacionLeida[]>()
 
-// ── BNA ─────────────────────────────────────────────────────────────────────────────────
+// ── El HISTÓRICO del dólar ──────────────────────────────────────────────────────────────
+//
+// 🔑 El BNA sólo publica hoy, así que el histórico viene de `argentinadatos`, casa **mayorista** —
+//    que es la de DIVISAS, no la que se llama «oficial», que es el billete. Ver la nota del parser.
+//
+// 🧮 Y se **cruza contra el BCRA** el mismo rango: si las dos fuentes independientes no coinciden,
+//    se dice. Es la pieza 4 de § 🤖 — el mismo número por dos caminos, gratis.
+if (desde !== hasta) {
+  try {
+    const crudo = await (await fetch(URL_HISTORICO_DOLAR, { headers: UA })).json()
+    const filas = leerHistoricoDolar(crudo, desde, hasta)
+    if (filas.length === 0) {
+      console.log(`⚠️  histórico del dólar: no devolvió nada para ${desde} → ${hasta}`)
+    } else {
+      leido.set("dolar_bna_divisas", filas)
+      try {
+        /**
+         * ⚠️ El BCRA **rechaza una fecha futura** (`La fecha no puede ser mayor al día actual`), así
+         * que el tope se recorta a hoy. Fue lo que destapó el bug del huso: el script pedía «hasta
+         * el 30» siendo 29 porque calculaba la fecha en UTC.
+         */
+        const topeBcra = hasta > hoy ? hoy : hasta
+        const b = await (await fetch(
+          `${URL_BCRA_COTIZACIONES}/USD?fechadesde=${desde}&fechahasta=${topeBcra}`, { headers: UA },
+        )).json()
+        const bcra = leerCotizacionesBcra(b)
+        const difs = cruzarDolarConBcra(filas, bcra)
+        if (bcra.length === 0) {
+          console.log("⚠️  el BCRA no respondió: el histórico del dólar queda SIN cruzar.")
+        } else if (difs.length === 0) {
+          console.log(`🧮 Control: ${bcra.length} días cruzados contra el BCRA, todos coinciden.`)
+        } else {
+          console.log(`🛑 Control: ${difs.length} día(s) en que el histórico y el BCRA difieren:`)
+          difs.slice(0, 5).forEach(d =>
+            console.log(`     ${d.fecha}  histórico ${pesos(d.historico)}  ·  BCRA ${pesos(d.bcra)}  ·  dif ${pesos(d.diferencia)}`))
+        }
+      } catch (e) {
+        console.log(`⚠️  no se pudo cruzar con el BCRA: ${(e as Error).message}`)
+      }
+    }
+  } catch (e) {
+    console.log(`⚠️  histórico del dólar: ${(e as Error).message}`)
+  }
+}
+
+// ── BNA: el día de hoy, que es lo único que publica ─────────────────────────────────────
 try {
   const html = await (await fetch("https://www.bna.com.ar/Personas", { headers: UA })).text()
   for (const [serie, moneda] of [
@@ -76,7 +129,11 @@ try {
     const c = leerBnaDivisas(html, moneda)
     // 🛑 Nada en silencio: si no se pudo leer, se dice cuál y se sigue con las otras series.
     if (!c) { console.log(`⚠️  ${serie}: no se pudo leer del BNA`); continue }
-    leido.set(serie, [c])
+    // Se SUMA al histórico en vez de reemplazarlo: el BNA trae el día de hoy, que suele ser el que
+    // al histórico todavía le falta.
+    const previas = leido.get(serie) ?? []
+    leido.set(serie, [...previas.filter(f => f.fecha !== c.fecha), c]
+      .sort((a, b) => a.fecha.localeCompare(b.fecha)))
   }
 } catch (e) {
   console.log(`⚠️  BNA no respondió: ${(e as Error).message}`)

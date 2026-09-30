@@ -69,7 +69,8 @@ import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cue
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
-  promedioDelMes, urlPizarra,
+  promedioDelMes, urlPizarra, leerHistoricoDolar, leerCotizacionesBcra,
+  cruzarDolarConBcra, hoyArgentina,
 } from "@/lib/cotizaciones/parsers"
 import { primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import {
@@ -3782,6 +3783,89 @@ export function correrCasos(): Resultado[] {
       `${urlPizarra("maiz", "2026-09-01", "2026-09-30").match(/product=\d+/)?.[0]}`,
       urlPizarra("soja", "2026-09-01", "2026-09-30").includes("product=13") &&
       urlPizarra("maiz", "2026-09-01", "2026-09-30").includes("product=3"), "A-FEAT-1202")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 📅 EL HISTÓRICO DEL DÓLAR y su control contra el BCRA (A-FEAT-1202).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    // Recorte real de api.argentinadatos.com, casa **mayorista** (la de DIVISAS).
+    const CRUDO = [
+      { casa: "mayorista", compra: 1465, venta: 1465, fecha: "2025-10-29" },
+      { casa: "mayorista", compra: 1500, venta: 1509, fecha: "2026-09-28" },
+      { casa: "mayorista", compra: 1513, venta: 1522, fecha: "2026-09-29" },
+      { casa: "mayorista", compra: null, venta: 1600, fecha: "2026-09-30" },   // incompleta
+      { casa: "mayorista", compra: 1, venta: 1 },                              // sin fecha
+    ]
+
+    const hist = leerHistoricoDolar(CRUDO)
+    chequear("Cotizaciones", "🛑 Descarta las filas sin fecha o sin los dos valores, no las rellena con cero",
+      "3 filas", `${hist.length} filas`, hist.length === 3, "A-FEAT-1202")
+
+    chequear("Cotizaciones", "Ordena por fecha y conserva compra y venta",
+      "2025-10-29 → 2026-09-29 · 1513/1522",
+      `${hist[0].fecha} → ${hist[2].fecha} · ${hist[2].compra}/${hist[2].venta}`,
+      hist[0].fecha === "2025-10-29" && hist[2].fecha === "2026-09-29" &&
+      hist[2].compra === 1513 && hist[2].venta === 1522, "A-FEAT-1202")
+
+    chequear("Cotizaciones", "Recorta al rango pedido",
+      "1", String(leerHistoricoDolar(CRUDO, "2026-09-29", "2026-09-29").length),
+      leerHistoricoDolar(CRUDO, "2026-09-29", "2026-09-29").length === 1, "A-FEAT-1202")
+
+    // ── El BCRA, que viene anidado ───────────────────────────────────────────────────────
+    const BCRA = {
+      status: 200,
+      results: [
+        { fecha: "2026-09-29", detalle: [{ codigoMoneda: "USD", tipoCotizacion: 1522 }] },
+        { fecha: "2026-09-28", detalle: [{ codigoMoneda: "USD", tipoCotizacion: 1509 }] },
+        { fecha: "2025-10-29", detalle: [{ codigoMoneda: "USD", tipoCotizacion: 1436 }] },
+        { fecha: "2026-09-27", detalle: [{ codigoMoneda: "USD", tipoCotizacion: 0 }] },  // feriado
+      ],
+    }
+    const bcra = leerCotizacionesBcra(BCRA)
+    chequear("Cotizaciones", "🛑 Un día con cotización CERO (feriado) no es un precio: se descarta",
+      "3 días", `${bcra.length} días`, bcra.length === 3, "A-FEAT-1202")
+
+    // 🧮 EL CONTROL DE LAS DOS FUENTES, con el caso real: el 29/10/2025 difieren 29 pesos.
+    const difs = cruzarDolarConBcra(hist, bcra)
+    chequear("Cotizaciones", "🧮 Detecta el día que se desvía: 29/10/2025, 1465 contra 1436",
+      "1 hallazgo · 2025-10-29 · 29",
+      `${difs.length} hallazgo · ${difs[0]?.fecha} · ${difs[0]?.diferencia}`,
+      difs.length === 1 && difs[0].fecha === "2025-10-29" && difs[0].diferencia === 29,
+      "A-FEAT-1202")
+
+    /**
+     * 🔑 LA TOLERANCIA ES UN PORCENTAJE, no un monto, y acá está el porqué: la misma diferencia de
+     * **$3** es enorme sobre el dólar de 2011 ($4) e irrelevante sobre el de hoy ($1.522).
+     */
+    const dosEpocas = [
+      { fecha: "2011-01-03", compra: 4, venta: 7 },       // +$3 sobre 4 = 75 %
+      { fecha: "2026-09-29", compra: 1519, venta: 1525 }, // +$3 sobre 1522 = 0,2 %
+    ]
+    const bcraDosEpocas = [
+      { fecha: "2011-01-03", valor: 4 },
+      { fecha: "2026-09-29", valor: 1522 },
+    ]
+    const porcentual = cruzarDolarConBcra(dosEpocas, bcraDosEpocas)
+    chequear("Cotizaciones", "🔑 Los mismos $3 se marcan en 2011 y NO en 2026: la tolerancia es %",
+      "1 hallazgo · 2011-01-03",
+      `${porcentual.length} hallazgo · ${porcentual[0]?.fecha}`,
+      porcentual.length === 1 && porcentual[0].fecha === "2011-01-03", "A-FEAT-1202")
+
+    chequear("Cotizaciones", "Y con el 2 % por default, el día de 13 pesos sobre 1509 NO se marca",
+      "no marca el 28/09",
+      difs.some(d => d.fecha === "2026-09-28") ? "lo marca (MAL)" : "no marca el 28/09",
+      !difs.some(d => d.fecha === "2026-09-28"), "A-FEAT-1202")
+
+    // ── El huso ──────────────────────────────────────────────────────────────────────────
+    // 🧨 No se puede fijar el resultado (depende de cuándo corre), pero sí la FORMA y que nunca
+    //    esté adelantado respecto de UTC, que es el bug que se arregló.
+    const hoyArg = hoyArgentina()
+    const hoyUtc = new Date().toISOString().slice(0, 10)
+    chequear("Cotizaciones", "🧨 Hoy en hora argentina nunca es POSTERIOR al de UTC",
+      "no está adelantado", hoyArg > hoyUtc ? "adelantado (MAL)" : "no está adelantado",
+      hoyArg <= hoyUtc && /^\d{4}-\d{2}-\d{2}$/.test(hoyArg), "A-FEAT-1202")
   }
 
   return r

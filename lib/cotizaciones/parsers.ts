@@ -216,3 +216,143 @@ export function promedioDelMes(
   const suma = delMes.reduce((s, f) => s + Number(f[campo]), 0)
   return Math.round((suma / delMes.length) * 10000) / 10000
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 📅 EL HISTÓRICO DEL DÓLAR
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 🔑 **El BNA sólo publica el día de hoy**, así que el histórico tiene que venir de otro lado.
+ * Pedido del usuario 2026-09-29: *«el precio histórico es correcto que sea el real y no el estimado
+ * en algún momento… BNA tiene buscador para histórico pero eso se puede buscar en alguna web que dé
+ * la data mejor»*.
+ *
+ * ## Qué serie es la que corresponde, y por qué NO es la que dice «oficial»
+ *
+ * `api.argentinadatos.com` publica varias «casas». La que se llama **`oficial` es el BILLETE** del
+ * BNA, y el usuario pidió **DIVISAS**. La que corresponde es **`mayorista`**.
+ *
+ * 🧮 **Y está verificado, no deducido**: el 29/09/2026 el BNA Divisas daba **1513 / 1522** y
+ * `mayorista` devuelve **exactamente 1513 / 1522**, mientras que `oficial` devuelve 1495 / 1545 —
+ * que es el billete. **Elegir la casa por el nombre habría traído la serie equivocada sin fallar.**
+ *
+ * 📌 Cubre desde **2011-01-03**, unos 5.750 días.
+ */
+export const URL_HISTORICO_DOLAR = "https://api.argentinadatos.com/v1/cotizaciones/dolares/mayorista"
+
+/**
+ * 🧮 **La segunda fuente, para el control.** El BCRA publica la cotización de referencia (A 3500) por
+ * fecha y por moneda. Sirve para dos cosas: **cruzar** el histórico del dólar —el 29/09 las dos dan
+ * 1522 de venta— y traer el **euro**, que `argentinadatos` no tiene.
+ *
+ * `…/Cotizaciones/USD?fechadesde=AAAA-MM-DD&fechahasta=AAAA-MM-DD`
+ */
+export const URL_BCRA_COTIZACIONES = "https://api.bcra.gob.ar/estadisticascambiarias/v1.0/Cotizaciones"
+
+/** Una fila cruda del histórico de argentinadatos. */
+interface FilaHistoricoDolar { fecha?: string; compra?: number; venta?: number }
+
+/**
+ * Normaliza el histórico del dólar y lo recorta al rango pedido.
+ *
+ * 🛑 **Descarta las filas sin fecha o sin los dos valores** en vez de rellenarlas con cero: un cero
+ * en una serie de cotizaciones arrastra cualquier promedio que la use.
+ */
+export function leerHistoricoDolar(
+  crudo: unknown, desde?: string, hasta?: string,
+): CotizacionLeida[] {
+  if (!Array.isArray(crudo)) return []
+  const filas: CotizacionLeida[] = []
+  for (const f of crudo as FilaHistoricoDolar[]) {
+    const fecha = typeof f?.fecha === "string" ? f.fecha.slice(0, 10) : null
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) continue
+    if (desde && fecha < desde) continue
+    if (hasta && fecha > hasta) continue
+    /**
+     * 🧨 **`Number.isFinite(Number(null))` es `true`**, porque `Number(null)` da **0**. Un chequeo
+     * de «es un número finito» deja pasar los nulos y los convierte en **cero pesos**, que es el
+     * valor más peligroso que puede tener una cotización: no rompe nada y arrastra todo promedio
+     * que la incluya. Por eso se descarta el nulo ANTES de convertir.
+     *
+     * Lo encontró un caso; en la serie real no había ninguna fila así.
+     */
+    if (f.compra == null || f.venta == null) continue
+    const compra = Number(f.compra)
+    const venta = Number(f.venta)
+    if (!Number.isFinite(compra) || !Number.isFinite(venta)) continue
+    filas.push({ fecha, compra, venta })
+  }
+  return filas.sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+/**
+ * Normaliza la respuesta del BCRA, que viene anidada: `results[].detalle[].tipoCotizacion`.
+ *
+ * ⚠️ El BCRA publica **un solo valor** (la cotización de referencia), no compra y venta. Se guarda
+ * en `valor`, y por eso no se puede usar para reemplazar a la serie de divisas — sirve de control.
+ */
+export function leerCotizacionesBcra(crudo: unknown): CotizacionLeida[] {
+  const res = (crudo as { results?: Array<{ fecha?: string; detalle?: Array<{ tipoCotizacion?: number }> }> })?.results
+  if (!Array.isArray(res)) return []
+  const filas: CotizacionLeida[] = []
+  for (const r of res) {
+    const fecha = typeof r?.fecha === "string" ? r.fecha.slice(0, 10) : null
+    const valor = Number(r?.detalle?.[0]?.tipoCotizacion)
+    // El BCRA manda 0 los días sin cotización (feriados): un cero no es un precio.
+    if (!fecha || !Number.isFinite(valor) || valor === 0) continue
+    filas.push({ fecha, valor })
+  }
+  return filas.sort((a, b) => a.fecha.localeCompare(b.fecha))
+}
+
+/**
+ * 🧮 **El control de las dos fuentes** (§ 🧮 de `CLAUDE.md`, pieza 4: el mismo número por dos
+ * caminos). Compara la **venta** del histórico contra la cotización del BCRA, día por día.
+ *
+ * ⚠️ **La tolerancia es un PORCENTAJE, no un monto**, y eso importa: la serie arranca en **$4** en
+ * 2011 y hoy va por **$1.520**. Un tope fijo de «un peso» es holgadísimo al principio y absurdamente
+ * estricto al final — con ese criterio el control marcaba **28 días de 457** por diferencias de entre
+ * $1,50 y $17, que sobre $1.350 es medio punto.
+ *
+ * 📌 Y las dos series **no tienen por qué dar idéntico**: una es el cierre del mayorista y la otra la
+ * referencia A 3500 del BCRA. El control busca un **desvío grande** —una serie cargada mal, un salto
+ * que una fuente tiene y la otra no—, no la diferencia normal entre dos referencias.
+ *
+ * @param tolerancia fracción: `0.01` = 1 %
+ * @returns los días que se desvían más que eso, con las dos puntas
+ */
+export function cruzarDolarConBcra(
+  historico: CotizacionLeida[], bcra: CotizacionLeida[], tolerancia = 0.02,
+): Array<{ fecha: string; historico: number; bcra: number; diferencia: number }> {
+  const porFecha = new Map(bcra.map(b => [b.fecha, b.valor!]))
+  const hallazgos: Array<{ fecha: string; historico: number; bcra: number; diferencia: number }> = []
+  for (const h of historico) {
+    const b = porFecha.get(h.fecha)
+    if (b == null || h.venta == null) continue
+    const dif = Math.round((h.venta - b) * 100) / 100
+    if (b > 0 && Math.abs(dif) / b > tolerancia) {
+      hallazgos.push({ fecha: h.fecha, historico: h.venta, bcra: b, diferencia: dif })
+    }
+  }
+  return hallazgos
+}
+
+/**
+ * 📅 **HOY, en hora argentina.** `AAAA-MM-DD`.
+ *
+ * 🧨 **Existe por un bug real, encontrado el 2026-09-29 a las 22:xx.** `new Date().toISOString()`
+ * devuelve la fecha en **UTC**, y Argentina es UTC−3: **después de las 21:00 hora local, el sistema
+ * fecha todo al día siguiente**. El script pedía cotizaciones «hasta el 2026-09-30» siendo 29, y el
+ * BCRA lo rechazó con *«La fecha no puede ser mayor al día actual»* — que fue la única razón por la
+ * que se notó.
+ *
+ * ⚠️ **Y el problema es más grande que este script**: cualquier `toISOString().slice(0,10)` para
+ * fechar algo que pasó *hoy* tiene el mismo corrimiento — una cotización, un pago, un movimiento
+ * cargado de noche. La API lo cantó; en una fila de la base **nadie lo nota**.
+ */
+export function hoyArgentina(): string {
+  const ahora = new Date()
+  // −3 horas lleva de UTC a hora argentina; después se lee la fecha en UTC, que ya es la local.
+  const local = new Date(ahora.getTime() - 3 * 60 * 60 * 1000)
+  return local.toISOString().slice(0, 10)
+}
