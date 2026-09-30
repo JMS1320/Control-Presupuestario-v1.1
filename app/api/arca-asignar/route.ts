@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import {
+  propagarCuentaAMovimientos, avisoDePropagacion, type ClienteParaPropagar,
+} from "@/lib/conciliacion/propagar-cuenta"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,7 +16,8 @@ const supabase = createClient(
  * Body: { ids: string[], nro_cuenta: string | null, cuenta_contable: string | null }
  * Para desasignar: pasar nro_cuenta: null (cuenta_contable se mantiene)
  *
- * Propaga categ a extractos bancarios vinculados (msa_galicia, pam_galicia, pam_galicia_cc).
+ * Propaga la cuenta a los movimientos conciliados de las DIEZ tablas que llevan el vinculo
+ * (ver lib/conciliacion/propagar-cuenta.ts). Antes nombraba tres a mano y no corria al desasignar.
  */
 export async function PATCH(request: Request) {
   const sesion = await exigirSesion()
@@ -45,19 +49,23 @@ export async function PATCH(request: Request) {
 
     if (error) throw new Error(error.message)
 
-    // Propagar categ a extractos bancarios vinculados via comprobante_arca_id
-    if (cuenta_contable) {
-      const tablas = ["msa_galicia", "pam_galicia", "pam_galicia_cc"]
-      for (const tabla of tablas) {
-        const { error: errProp } = await supabase
-          .from(tabla)
-          .update({ categ: cuenta_contable, nro_cuenta })
-          .in("comprobante_arca_id", ids)
-        if (errProp) {
-          console.error(`Error propagando cuenta a ${tabla}:`, errProp.message)
-        }
-      }
-    }
+    /**
+     * 🔗 **Propagar a los movimientos conciliados — por UN solo camino** (A-BUG-1221).
+     *
+     * Antes acá había una lista de **3 tablas escrita a mano**, adentro de un `if (cuenta_contable)`
+     * —así que **al desasignar no propagaba nada** y el movimiento se quedaba con la cuenta vieja—, y
+     * los errores iban a `console.error` mientras el usuario leía «Cuenta asignada».
+     *
+     * Ahora las diez tablas salen de `TABLAS_CON_VINCULO_ARCA`, corre también al desasignar, y
+     * **devuelve qué propagó y qué salteó** para poder decírselo.
+     */
+    const { data: plan } = await supabase.from("cuentas_contables").select("cuenta_contable")
+    const propagacion = await propagarCuentaAMovimientos(
+      supabase as unknown as ClienteParaPropagar,
+      ids,
+      { cuenta_contable: nro_cuenta === null ? null : cuenta_contable, nro_cuenta },
+      (plan ?? []).map(c => String((c as { cuenta_contable: string }).cuenta_contable)),
+    )
 
     return NextResponse.json({
       success: true,
@@ -65,6 +73,14 @@ export async function PATCH(request: Request) {
       message: nro_cuenta
         ? `Cuenta asignada a ${ids.length} comprobante(s)`
         : `Asignación removida de ${ids.length} comprobante(s)`,
+      // 🧮 Nada en silencio: la pantalla muestra esto si hay algo que decir.
+      propagacion: {
+        propagados: propagacion.propagados,
+        salteados: propagacion.salteados.length,
+        aviso: avisoDePropagacion(propagacion),
+        detalleSalteados: propagacion.salteados,
+        fallaron: propagacion.fallaron,
+      },
     })
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 })

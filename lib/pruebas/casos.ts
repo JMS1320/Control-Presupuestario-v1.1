@@ -74,6 +74,9 @@ import {
   armarCadenaDeSaldos, saldoAlInicioDe, ultimoMovimiento, primerMovimiento,
 } from "@/lib/balance/saldos-al-inicio"
 import { hoyArgentina, mesArgentina, diaArgentino, ahoraISO } from "@/lib/fechas"
+import {
+  decidirPropagacion, esCategProvisoria, avisoDePropagacion,
+} from "@/lib/conciliacion/propagar-cuenta"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4180,6 +4183,87 @@ export function correrCasos(): Resultado[] {
     chequear("Fechas", "🔑 `ahoraISO` sigue siendo UTC: un timestamptz lleva la zona adentro",
       "termina en Z y tiene hora", ahoraISO().endsWith("Z") ? "termina en Z y tiene hora" : "no",
       ahoraISO().endsWith("Z") && ahoraISO().length > 20, "A-OP-23")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔗 LA PROPAGACIÓN DE LA CUENTA AL EXTRACTO (A-BUG-1221 / A-BUG-1225).
+  //    Los valores de `categ` son los reales de `msa_galicia`.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /** Las cuentas del plan que intervienen, tal como están escritas. */
+    const PLAN = ["COMBUSTIBLES Y LUBRICANTES", "HONORARIOS AMS", "IMPUESTOS BANCARIOS"]
+
+    /**
+     * 🔑 La regla la fijó el usuario: **«el anticipo nunca es una cuenta contable, es una vía de pago
+     * cuando no hay factura. Anticipo es provisorio»**. Entonces se pisa, y hay que pisarlo.
+     */
+    for (const [valor, provisoria] of [
+      ["ANTICIPO", true], ["SIN_CATEG", true], ["INVALIDA:", true], ["", true], [null, true],
+      ["FCI", false], ["CAJA", false], ["Sueldos", false], ["Tarjetas MSA", false],
+      ["COMBUSTIBLES Y LUBRICANTES", false],
+    ] as Array<[string | null, boolean]>) {
+      chequear("Propagación de cuenta", `«${valor ?? "(null)"}» ${provisoria ? "ES" : "NO es"} provisoria`,
+        String(provisoria), String(esCategProvisoria(valor)),
+        esCategProvisoria(valor) === provisoria, "A-BUG-1225")
+    }
+
+    const MOVS = [
+      // Los tres casos reales que hoy no coinciden: facturas sin cuenta todavía.
+      { schema: "public", tabla: "msa_galicia", id: "m1", categ: "SIN_CATEG" },
+      { schema: "public", tabla: "msa_galicia", id: "m2", categ: "INVALIDA:" },
+      { schema: "public", tabla: "msa_galicia", id: "m3", categ: "ANTICIPO" },
+      // Uno ya bien imputado: se reimputa sin drama.
+      { schema: "public", tabla: "msa_galicia", id: "m4", categ: "COMBUSTIBLES Y LUBRICANTES" },
+      // 🧨 Y los dos peligrosos: clasificación de OTRO sistema.
+      { schema: "public", tabla: "msa_galicia", id: "m5", categ: "FCI" },
+      { schema: "msa", tabla: "tarjeta_visa_business", id: "m6", categ: "Sueldos" },
+    ]
+
+    const decs = decidirPropagacion(MOVS, PLAN)
+    const escriben = decs.filter(d => d.seEscribe).map(d => d.movimientoId)
+    const saltean = decs.filter(d => !d.seEscribe).map(d => d.movimientoId)
+
+    chequear("Propagación de cuenta", "🔑 Los provisorios y los ya imputados SÍ se escriben",
+      "m1, m2, m3, m4", escriben.join(", "),
+      escriben.join(",") === "m1,m2,m3,m4", "A-BUG-1225")
+
+    chequear("Propagación de cuenta", "🧨 FCI y Sueldos NO se pisan: son de otro sistema",
+      "m5, m6", saltean.join(", "), saltean.join(",") === "m5,m6", "A-BUG-1225")
+
+    chequear("Propagación de cuenta", "Y cada decisión dice su motivo, para poder auditarla",
+      "provisorio · del plan · de otro sistema",
+      [decs.find(d => d.movimientoId === "m3")?.motivo,
+       decs.find(d => d.movimientoId === "m4")?.motivo,
+       decs.find(d => d.movimientoId === "m5")?.motivo].join(" | "),
+      decs.find(d => d.movimientoId === "m3")?.motivo === "estaba vacío o provisorio"
+      && decs.find(d => d.movimientoId === "m4")?.motivo === "tenía una cuenta del plan"
+      && decs.find(d => d.movimientoId === "m5")?.motivo === "tenía una clasificación de otro sistema",
+      "A-BUG-1225")
+
+    // 🧮 El aviso: si no hay nada que decir, no molesta; si hay, nombra los valores salteados.
+    chequear("Propagación de cuenta", "Sin salteados ni fallas, no avisa nada",
+      "null", String(avisoDePropagacion({ propagados: 4, salteados: [], fallaron: [], decisiones: [] })),
+      avisoDePropagacion({ propagados: 4, salteados: [], fallaron: [], decisiones: [] }) === null,
+      "A-BUG-1225")
+
+    const aviso = avisoDePropagacion({
+      propagados: 4, fallaron: [], decisiones: decs,
+      salteados: decs.filter(d => !d.seEscribe),
+    })
+    chequear("Propagación de cuenta", "🧮 Con salteados, el aviso dice CUÁNTOS y con qué categoría",
+      "nombra FCI y Sueldos", aviso?.includes("FCI") && aviso?.includes("Sueldos") ? "nombra FCI y Sueldos" : String(aviso),
+      !!aviso && aviso.includes("FCI") && aviso.includes("Sueldos") && aviso.includes("2 movimiento"),
+      "A-BUG-1225")
+
+    // 🔇 Y una tabla que falló tampoco se calla.
+    const conFalla = avisoDePropagacion({
+      propagados: 1, salteados: [], decisiones: [],
+      fallaron: [{ schema: "msa", tabla: "tarjeta_visa_business", error: "permission denied" }],
+    })
+    chequear("Propagación de cuenta", "🔇 Una tabla que falla se dice, no va a la consola",
+      "nombra la tabla", conFalla?.includes("tarjeta_visa_business") ? "nombra la tabla" : String(conFalla),
+      !!conFalla && conFalla.includes("tarjeta_visa_business"), "A-BUG-1221")
   }
 
   return r

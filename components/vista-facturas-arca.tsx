@@ -35,6 +35,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { toast } from "sonner"
+import {
+  propagarCuentaAMovimientos, avisoDePropagacion, contarMovimientosDeFactura,
+  type ClienteParaPropagar,
+} from "@/lib/conciliacion/propagar-cuenta"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
@@ -893,20 +897,23 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Retorna lo que está vinculado a la FC para que el usuario decida.
   const chequearDependenciasFC = async (facturaId: string) => {
     try {
-      const [anticiposRes, sicoreRes, conciliacionesMsa, conciliacionesPam, conciliacionesPamCc, conciliacionesMa, fcRes] = await Promise.all([
+      /**
+       * 🧨 **Acá estaban 4 de las 10 tablas escritas a mano** (A-BUG-1221, y es el peor de los cuatro
+       * lugares): faltaban las 3 tarjetas y las 3 cajas, y `msa.tarjeta_visa_business` **ya tiene 7
+       * movimientos enganchados**. Una omisión acá no deja un dato viejo: **deja pasar un borrado**,
+       * porque la pantalla concluía «esta factura no tiene conciliaciones».
+       */
+      const [anticiposRes, sicoreRes, movimientos, fcRes] = await Promise.all([
         supabase.from('anticipos_proveedores').select('id, monto').eq('factura_id', facturaId),
         supabase.schema('msa').from('sicore_retenciones').select('id, ddjj_confirmada').eq('factura_id', facturaId),
-        supabase.from('msa_galicia').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.from('pam_galicia').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.from('pam_galicia_cc').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.schema('ma').from('ma_galicia').select('id').eq('comprobante_arca_id', facturaId),
+        contarMovimientosDeFactura(supabase as unknown as ClienteParaPropagar, facturaId),
         supabase.schema(schemaName).from('comprobantes_arca').select('ddjj_iva, estado').eq('id', facturaId).maybeSingle(),
       ])
-      const conciliaciones =
-        (conciliacionesMsa.data?.length || 0) +
-        (conciliacionesPam.data?.length || 0) +
-        (conciliacionesPamCc.data?.length || 0) +
-        (conciliacionesMa.data?.length || 0)
+      const conciliaciones = movimientos.total
+      // 🛑 Una tabla que no se pudo leer no se cuenta como cero: se avisa.
+      if (movimientos.fallaron.length > 0) {
+        toast.warning(`No se pudieron revisar ${movimientos.fallaron.join(', ')}: puede haber movimientos conciliados que no se ven.`)
+      }
       const sicoreCount = sicoreRes.data?.length || 0
       const sicoreDdjjConfirmada = (sicoreRes.data || []).some((s: any) => s.ddjj_confirmada)
       return {
@@ -1335,11 +1342,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         return
       }
 
-      // Si se actualizó cuenta_contable, propagar categ + nro_cuenta a movimientos bancarios vinculados
+      /**
+       * 🔗 **Propagar la cuenta a los movimientos conciliados** (A-BUG-1221).
+       *
+       * Antes acá había **3 tablas escritas a mano** de las diez que llevan el vínculo, con los
+       * errores yéndose a `console.error` mientras el usuario no se enteraba de nada. Ahora va por
+       * `propagarCuentaAMovimientos`, que además **no pisa una `categ` que pertenece a otro sistema**
+       * (`FCI`, `CAJA`, `Sueldos`…) y devuelve qué salteó → A-BUG-1225.
+       */
       if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
         const nroCta = cuentas.find(c => c.categ === valorFinal)?.nro_cuenta || null
-        const updateExtracto: Record<string, any> = { categ: valorFinal }
-        if (nroCta) updateExtracto.nro_cuenta = nroCta
         // También actualizar nro_cuenta en la factura misma
         if (nroCta) {
           supabase.schema(schemaName).from('comprobantes_arca')
@@ -1347,16 +1359,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             .then(({ error }) => { if (error) console.error('Error propagando nro_cuenta a factura:', error) })
           camposUpdate.nro_cuenta = nroCta
         }
-        for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
-          supabase
-            .from(tabla)
-            .update(updateExtracto)
-            .eq('comprobante_arca_id', datosEdicion.facturaId)
-            .then(({ error }) => {
-              if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
-              else console.log(`✅ cuenta_contable+nro_cuenta propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
-            })
-        }
+        const r = await propagarCuentaAMovimientos(
+          supabase as unknown as ClienteParaPropagar,
+          [datosEdicion.facturaId],
+          { cuenta_contable: valorFinal, nro_cuenta: nroCta },
+          cuentas.map(c => c.categ),
+        )
+        const aviso = avisoDePropagacion(r)
+        if (aviso) toast.warning(aviso)
       }
 
       // Actualizar estado local (incluir fecha_estimada si aplica)
@@ -10500,14 +10510,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                             const nroCta = cuenta?.nro_cuenta ?? null
                                             await supabase.schema(schemaName).from('comprobantes_arca')
                                               .update({ cuenta_contable: categ, nro_cuenta: nroCta }).eq('id', f.id)
-                                            // Propagar a extractos bancarios vinculados
-                                            if (categ) {
-                                              for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
-                                                await supabase.from(tabla)
-                                                  .update({ categ, nro_cuenta: nroCta })
-                                                  .eq('comprobante_arca_id', f.id)
-                                              }
-                                            }
+                                            /**
+                                             * 🔗 Las DIEZ tablas, y también al desasignar: antes
+                                             * eran 3 a mano adentro de un `if (categ)`, así que
+                                             * quitar la cuenta dejaba el movimiento con la vieja
+                                             * (A-BUG-1221, hueco 3).
+                                             */
+                                            const rProp = await propagarCuentaAMovimientos(
+                                              supabase as unknown as ClienteParaPropagar,
+                                              [f.id],
+                                              { cuenta_contable: categ, nro_cuenta: nroCta },
+                                              cuentas.map(c => c.categ),
+                                            )
+                                            const avisoProp = avisoDePropagacion(rProp)
+                                            if (avisoProp) toast.warning(avisoProp)
                                             setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: categ, nro_cuenta: nroCta } : x))
                                             setEditandoCuentaPagosId(null)
                                           }}
