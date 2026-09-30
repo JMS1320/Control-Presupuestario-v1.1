@@ -829,7 +829,24 @@ export function TabSueldos() {
       updateData.monto_a = a
     }
 
-    await supabase.from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
+    /**
+     * 🧨 **El error de este UPDATE se descartaba, y por eso un bug tardó dos vueltas en aparecer**
+     * (A-BUG-1229, 2026-09-30).
+     *
+     * La columna `cuota_alimentaria` se había agregado a `sueldos.periodos` pero **no a la vista
+     * `public.sueldos_periodos`**, que es por donde escribe la app. El UPDATE fallaba **entero** —no
+     * se guardaba ni el total, ni A, ni B— y la pantalla **cerraba el modal como si hubiera
+     * guardado**. El usuario sólo podía decir *«volvió a fallar»*, porque no había nada más que ver.
+     *
+     * § 🧮 de `CLAUDE.md`: *nada se descarta en silencio*. Un guardado que falla tiene que decirlo.
+     */
+    const { error: errGuardar } = await supabase
+      .from('sueldos_periodos').update(updateData).eq('id', edPeriodo.id)
+    if (errGuardar) {
+      setGuardandoEdicion(false)
+      alert('No se pudo guardar el período: ' + errGuardar.message)
+      return
+    }
 
     setGuardandoEdicion(false)
     setModalEdicion(false)

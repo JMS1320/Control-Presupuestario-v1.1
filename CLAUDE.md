@@ -941,6 +941,26 @@ llevan el vínculo. `msa.tarjeta_visa_business` ya tenía **7 movimientos** que 
 **quitar** la cuenta no propagaba nada: el movimiento quedaba imputado a una cuenta que la factura
 ya no tenía.
 
+#### 🗃️ Y vale también para la ESTRUCTURA: una columna nueva no alcanza con crearla
+
+*Agregado 2026-09-30, después de romper el guardado de sueldos con esta misma regla escrita dos días
+antes.*
+
+> **Antes de dar por hecha una columna nueva, preguntarse por dónde ESCRIBE la app** — que muchas
+> veces no es la tabla.
+
+🧨 **El caso**: se agregó `cuota_alimentaria` a **`sueldos.periodos`**, pero la app escribe en la
+**vista `public.sueldos_periodos`**, que lista sus columnas una por una. El `UPDATE` falló **entero**
+—no se guardó ni el total, ni A, ni B— y el usuario sólo pudo decir *«volvió a fallar»*, porque la
+pantalla **descartaba el error**. → [A-BUG-1229](PENDIENTES.md#a-bug-1229).
+
+📍 **Acá**: los schemas `sueldos`, `msa`, `pam`, `ma` se exponen por **vistas `public.*`**. Una
+columna nueva hay que agregarla **en los dos lados**, con `create or replace view` — que **conserva
+los GRANTs**; un `drop + create` los pierde.
+
+✅ **Y se verifica sin escribir un dato**: `explain update <vista> set <columna nueva> = ...` planea la
+consulta y falla si la columna no existe. **Crear la columna y no probar la escritura es media tarea.**
+
 #### 🛑 Y esto el GRAFO **no lo ve** — no es que esté mal indexado, es por construcción
 
 La § 🗺️ de arriba manda usar el grafo antes de `grep`, y sigue valiendo **para símbolos y

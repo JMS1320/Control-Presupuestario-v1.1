@@ -3323,6 +3323,22 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-09-30 · `sueldos.periodos.cuota_alimentaria` + su vista (A-FEAT-1213)
+
+```sql
+alter table sueldos.periodos add column if not exists cuota_alimentaria numeric;
+-- 🛑 Y LA VISTA, que es por donde escribe la app. Sin esto el UPDATE falla ENTERO (A-BUG-1229).
+create or replace view public.sueldos_periodos as
+  select id, empleado_id, campana_id, anio, mes, fecha_inicio_periodo, fecha_fin_periodo,
+         bruto_calculado, sueldo_x_ipc, sueldo_pagado, anticipos_descontados, saldo_pendiente,
+         estado, observaciones, created_at, monto_a, monto_b, francos_cantidad, valor_por_dia,
+         dias_trabajados, valor_por_hora, horas_mes, varios, valor_franco, vacaciones, premio,
+         aguinaldo_a, aguinaldo_b, cuota_alimentaria
+  from sueldos.periodos;
+```
+
+La cuota es **la apertura de `monto_a`**, no un extra: el bruto no cambia.
+
 ### **2026-08-19: `pendientes_propuestos` — pendientes que propone el usuario**
 
 Misma lógica que los comentarios: la app no puede escribir `PENDIENTES.md`. Y aunque pudiera, un
