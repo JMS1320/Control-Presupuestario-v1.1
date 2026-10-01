@@ -183,3 +183,23 @@ dos veces el 24/09**: tu A-BUG-200 y nuestro A-BUG-1198. La nuestra tenía dos c
 
 📌 **Queda un tema de seguridad para charlar con vos** — lo vamos a dejar escrito acá aparte, con
 JMS. Es sobre las tablas sin mapear y las vistas de `public`.
+
+---
+
+## 📨 2026-10-01 · PARA JAVIER — el default de permisos: una propuesta para que la evalúes
+
+**JMS quiere que esto lo veas vos.** El planteo es suyo: *alguien con un rol, a propósito y sabiendo
+cómo, puede ir más allá de lo que su rol permite* — y cada tabla, vista o ruta nueva repite el dilema
+de **cerrado por defecto** (si se olvida, da errores) contra **abierto por defecto** (si se olvida,
+queda el hueco).
+
+**Medido hoy con la identidad de cada rol, no con admin**: son **tres puertas** con el mismo modo de
+falla — 66 tablas sin sección, 13 vistas sin `security_invoker` y 24 rutas con `service_role`.
+
+**La propuesta, acordada con JMS: cerrado por defecto salvo para admin, más un control que avise el
+mismo día.** Y cerrar la lectura de sueldos, que medimos que no rompe a nadie.
+
+👉 **Todo el detalle, los números y el orden propuesto: [A-SEC-13](PENDIENTES.md#a-sec-13).**
+
+Hay scripts escritos y **sin correr** en la rama `jms/vistas-seguras`, que cuelga de la tuya. Úsalos o
+descartalos: la decisión es tuya.
