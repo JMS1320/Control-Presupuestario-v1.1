@@ -263,3 +263,30 @@ anon. Lo hace JMS en el script; **no se re-abre `anon`**.
 ❓ **Lo único que necesitamos de vos**: si hay **otros consumidores externos** apuntando a la base
 con la anon key —otro GAS, un n8n, un script suelto—, decilo, porque están rotos igual y **callados**.
 Es el único hueco que el hardening no puede ver solo.
+
+
+---
+
+## 📨 2026-10-01 · PARA JAVIER — `feature/permisos-granulares` lleva 26 commits sin mergear, y JMS está tapado por eso
+
+**El síntoma, del lado de JMS:** creó el rol **`pruebas`** (sección *Egresos*), se lo asignó a
+`sanmanuel.sp@gmail.com`, entra, y la app le dice **«no tenés roles aún adjudicados»**.
+
+**La causa es tu `A-BUG-200`, y ya la arreglaste** — `4708c9d`, 24/09. El problema es que ese
+commit vive **sólo en `feature/permisos-granulares`**: no está en `desarrollo` ni en ninguna rama
+de JMS, así que la rama que él corre sigue con `getRole()` validando contra la lista cerrada.
+
+⚠️ **Y lo que lo hace urgente lo escribiste vos en ese mismo commit:** la base ya se mudó
+(`scripts/60` y `62` corridos) y `tiene_rol()` sólo pregunta *«¿tenés algún rol?»*. Entonces
+`sanmanuel.sp` **sí pasa la RLS y puede leer y escribir las 95 tablas**, mientras la app lo manda a
+`/no-access`. Puerta de adelante cerrada, puerta de atrás abierta — y hoy hay una cuenta real así.
+
+❓ **Lo que necesitamos de vos, y es una sola decisión:** ¿mergeás `feature/permisos-granulares` a
+`desarrollo`, o preferís que esperemos? **No la tocamos de este lado** — es tu rama, lleva scripts
+de BD y uno de los commits se titula *«ROTURA EN VIVO»*, así que el orden lo ponés vos.
+
+📌 Mientras tanto JMS **no puede delegar nada**: cualquier rol que cree queda inservible en la app.
+Es justo la *quinta pieza* de `CLAUDE.md` — la automatización que no se puede delegar no libera a
+nadie.
+
+→ `PENDIENTES.md` [A-OP-24](PENDIENTES.md#a-op-24)
