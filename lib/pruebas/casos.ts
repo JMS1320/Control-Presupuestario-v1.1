@@ -91,6 +91,9 @@ import {
 import {
   armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
+import {
+  armarCuentasCorrientes, normalizar, CONTRAPARTES_DEL_BALANCE,
+} from "@/lib/balance/cuentas-corrientes"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -4738,6 +4741,113 @@ export function correrCasos(): Resultado[] {
       "Sigot 2.237.800,00 · Elvio 1.000.000,00",
       `Sigot ${n2(brutoDesdePartes(SIGOT))} · Elvio ${n2(brutoDesdePartes(ELVIO))}`,
       brutoDesdePartes(SIGOT) === 2237800 && brutoDesdePartes(ELVIO) === 1000000, "A-FEAT-1216")
+  }
+
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🧾 LAS CUENTAS CORRIENTES DEL BALANCE (A-FEAT-1218). Datos reales de MSA.
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    /** Compras: una de ARCA (con CUIT) y una del histórico (SIN cuit, sólo el nombre). */
+    const COMPRAS = [
+      { id: "c1", fecha: "2026-06-27", numero: "0001-00000012", total: 15300000,
+        cuit: "20287492546", denominacion: "MARTINEZ PLACIDO ANDRES" },
+      // 🧨 El histórico no tiene CUIT: sólo matchea por el alias declarado.
+      { id: "c2", fecha: "2025-10-15", numero: "0001-00000008", total: 13540000,
+        cuit: null, denominacion: "MARTINEZ PLACIDO ANDRES" },
+      { id: "c3", fecha: "2025-09-30", numero: "0001-00000003", total: 19320000,
+        cuit: null, denominacion: "MARTINEZ JOSE MARIA" },
+      // Una del histórico que no es de nadie de la lista: tiene que quedar sin atribuir.
+      { id: "c4", fecha: "2025-08-01", numero: "0001-00000001", total: 500000,
+        cuit: null, denominacion: "OTRO PROVEEDOR CUALQUIERA" },
+    ]
+    const VENTAS = [
+      { id: "v1", fecha: "2026-03-10", numero: "0001-00000045", total: 7328488.75, cuit: "30525718626" },
+    ]
+    /**
+     * Movimientos con la marca del usuario. 🔑 El caso que importa: **`CTA JMS` y `CUENTA JMS` son
+     * la misma cuenta** — sin el mapa, JMS saldría partido en dos.
+     */
+    const MOVS = [
+      { id: "m1", fecha: "2026-02-27", debitos: 37458124.35, contable: "CTA JMS" },
+      { id: "m2", fecha: "2026-04-16", debitos: 2137884.27, contable: "CUENTA JMS" },
+      { id: "m3", fecha: "2026-02-04", debitos: 13063089.73, contable: "CTA AMS" },
+      { id: "m4", fecha: "2026-02-04", debitos: 37945000, contable: "CTA MA" },
+      // 🛑 Y las que el usuario pidió NO tratar todavía.
+      { id: "m5", fecha: "2026-02-11", debitos: 5908272.45, contable: "RET 3 PAM" },
+      { id: "m6", fecha: "2026-04-21", debitos: 4840704.05, contable: "RET 3 MA" },
+      { id: "m7", fecha: "2026-03-10", debitos: 12664999.77, contable: "LIB" },
+    ]
+
+    const r = armarCuentasCorrientes(COMPRAS, VENTAS, MOVS, { AMS: 1000000 })
+    const de = (k: string) => r.cuentas.find(c => c.contraparte.clave === k)!
+
+    // 🔑 EL CASO QUE MOTIVA EL MAPA: las dos etiquetas de JMS suman en una sola cuenta.
+    chequear("Cuentas corrientes", "🔑 «CTA JMS» y «CUENTA JMS» son la MISMA cuenta",
+      "pagado 39.596.008,62", n2(de("JMS").resumen.totalPagado),
+      de("JMS").resumen.totalPagado === 39596008.62, "A-FEAT-1218")
+
+    // 🧨 Y el histórico entra por alias, porque no tiene CUIT.
+    chequear("Cuentas corrientes", "🧨 El histórico matchea por ALIAS: JMS factura $19,32 M sin CUIT",
+      "19.320.000,00 · 1 del histórico",
+      `${n2(de("JMS").resumen.totalComprado)} · ${de("JMS").desdeHistorico} del histórico`,
+      de("JMS").resumen.totalComprado === 19320000 && de("JMS").desdeHistorico === 1, "A-FEAT-1218")
+
+    chequear("Cuentas corrientes", "AMS suma sus DOS facturas: la de ARCA y la del histórico",
+      "28.840.000,00", n2(de("AMS").resumen.totalComprado),
+      de("AMS").resumen.totalComprado === 28840000 && de("AMS").desdeHistorico === 1, "A-FEAT-1218")
+
+    // 🧮 El saldo al cierre: inicio + lo del ejercicio.
+    chequear("Cuentas corrientes", "🧮 El saldo al cierre suma el saldo de inicio",
+      "1.000.000 + 15.776.910,27 = 16.776.910,27",
+      `${n2(de("AMS").saldoInicio ?? 0)} + ${n2(de("AMS").resumen.saldo)} = ${n2(de("AMS").saldoAlCierre ?? 0)}`,
+      de("AMS").saldoAlCierre === 16776910.27, "A-FEAT-1218")
+
+    // 🎚️ Y sin saldo de inicio NO se asume cero: se dice que no se conoce.
+    chequear("Cuentas corrientes", "🎚️ Sin saldo de inicio declarado, el cierre queda en null",
+      "null", String(de("JMS").saldoAlCierre),
+      de("JMS").saldoInicio === null && de("JMS").saldoAlCierre === null, "A-FEAT-1218")
+
+    // 🔑 AFA es la única con las dos puntas: la venta compensa.
+    chequear("Cuentas corrientes", "🔑 En AFA la venta COMPENSA y baja el saldo",
+      "vendido 7.328.488,75 y saldo -7.328.488,75",
+      `vendido ${n2(de("AFA").resumen.totalVendido)} y saldo ${n2(de("AFA").resumen.saldo)}`,
+      de("AFA").resumen.totalVendido === 7328488.75 && de("AFA").resumen.saldo === -7328488.75,
+      "A-FEAT-1218")
+
+    /**
+     * 🛑 **Lo que el usuario pidió NO tratar todavía**: *«debemos ir tratando cada cosa a la vez»*.
+     * No se reparte ni se esconde: se lista con su total.
+     */
+    chequear("Cuentas corrientes", "🛑 RET, RET 3 y LIB quedan SIN TRATAR, con su total a la vista",
+      "3 etiquetas · 23.413.976,27",
+      `${r.sinTratar.length} etiquetas · ${n2(r.totalSinTratar)}`,
+      r.sinTratar.length === 3 && r.totalSinTratar === 23413976.27, "A-FEAT-1218")
+
+    chequear("Cuentas corrientes", "…y «RET 3 MA» NO se mezcla con la cuenta corriente de MA",
+      "MA pagó 37.945.000,00",
+      n2(de("MA").resumen.totalPagado),
+      de("MA").resumen.totalPagado === 37945000, "A-FEAT-1218")
+
+    // Un comprobante del histórico que no es de nadie se informa, no se asigna por las dudas.
+    chequear("Cuentas corrientes", "El histórico sin atribuir se cuenta, no se reparte",
+      "1", String(r.historicoSinAtribuir),
+      r.historicoSinAtribuir === 1, "A-FEAT-1218")
+
+    // 🧨 Y la normalización, que es lo que evita atribuirle la plata de uno a otro.
+    chequear("Cuentas corrientes", "🧨 Normaliza acentos y espacios, pero NO confunde nombres",
+      "igual · distinto",
+      `${normalizar("Suc. de  Plácido Martinez") === normalizar("SUC. DE PLACIDO MARTINEZ") ? "igual" : "distinto"} · `
+      + `${normalizar("Mercedes Martinez") === normalizar("Mercedes Areco") ? "igual" : "distinto"}`,
+      normalizar("Suc. de  Plácido Martinez") === normalizar("SUC. DE PLACIDO MARTINEZ")
+      && normalizar("Mercedes Martinez") !== normalizar("Mercedes Areco"), "A-FEAT-1218")
+
+    chequear("Cuentas corrientes", "La lista tiene las 6 contrapartes y sólo etiquetas CTA",
+      "6 · sin RET",
+      `${CONTRAPARTES_DEL_BALANCE.length} · ${CONTRAPARTES_DEL_BALANCE.some(c => c.etiquetasContable.some(e => e.includes("RET"))) ? "con RET" : "sin RET"}`,
+      CONTRAPARTES_DEL_BALANCE.length === 6
+      && !CONTRAPARTES_DEL_BALANCE.some(c => c.etiquetasContable.some(e => e.includes("RET"))),
+      "A-FEAT-1218")
   }
 
   return r
