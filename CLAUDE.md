@@ -399,11 +399,23 @@ en una rama nueva y si no hacemos nada queda solo como algo evaluado registrado 
 algo futuro en evaluación y se pushea eso»**.*
 
 > **Antes de la primera escritura de un tema —código o documentación— se dice en qué rama se está y
-> en cuál se debería estar. Tema nuevo, rama nueva.**
+> en cuál se debería estar. Tema GRANDE, rama nueva con su nombre. Arreglo CHICO, en la rama en curso.**
+
+⚠️ **Cambió 2026-10-01 — hasta acá decía «tema nuevo, rama nueva», sin excepción, y era un error de
+la regla, no del usuario.** Él lo había dicho antes y no había quedado escrito: *«acordate que dijimos
+que siempre trabajaremos macro sobre algo que llevará el nombre, pero siempre habrá mini fixes que no
+podemos abrir ramas para cada mini cosa»*. Con la regla vieja se abrieron **seis ramas en un día**
+(un filtro, un gesto de chips, un aviso…).
+- **Grande** = tiene nombre propio y su lista de pendientes, y va a durar más de una sentada: el
+  balance, Enrique, los permisos. → **rama nueva** con ese nombre.
+- **Chico** = entra en una sentada y no abre su propia lista de pendientes: un filtro, un bug, un
+  cartel. → **en la rama del tema grande en curso**, con un commit propio que diga qué es.
+- Ante la duda, **chico**: una rama de más cuesta más (hay que mergearla, se desfasa, choca IDs) que
+  un commit de más en la rama en curso.
 
 - **Se declara, no se asume**: `git branch --show-current` y decirlo en voz alta *antes* del primer
   `Edit`. Si la rama actual es de otro tema, **se crea la del tema nuevo** y se dice el nombre.
-- **Una rama por tema, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
+- **Una rama por tema GRANDE, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
   el 2026-09-04 y no obligó a nadie — ver el motivo abajo.)*
 - 🧊 **Un tema que se EVALÚA y no se construye también termina en una rama, y se pushea.** No hacer
   el desarrollo **no es no dejar nada**: queda el ítem en `PENDIENTES.md` con su ID, en estado *futuro
