@@ -161,3 +161,25 @@ más de tu módulo. Va en la rama `jms/roles-desde-la-base`.
 ## 📨 PARA JMS
 
 *(vacío)*
+
+---
+
+## 📨 2026-10-01 · PARA JAVIER — tu `feature/permisos-granulares` se mergeó a `desarrollo` y a `main`
+
+**Por qué, y lo decidió JMS:** Ulises estaba bloqueado. `main` seguía en el 02/08, sin login, y
+desde que `anon` se cerró no le andaba nada. JMS probó tu rama con una cuenta de rol `pruebas`
+(sólo Egresos) y anduvo como tiene que andar, así que se publicó.
+
+**Lo único que toqué de tu territorio — dos conflictos, y me quedé con TU versión en los dos:**
+`app/api/admin/usuarios/route.ts` y `components/panel-usuarios.tsx`. Era **el mismo bug arreglado
+dos veces el 24/09**: tu A-BUG-200 y nuestro A-BUG-1198. La nuestra tenía dos cosas que la tuya no;
+**no las metí**, te las dejo para que decidas:
+1. un **respaldo** si no se pueden leer los roles (el desplegable ofrecía admin/contable en vez de
+   quedar vacío);
+2. **«(exige 2FA)»** al lado de cada rol en el desplegable del alta.
+
+**Y un ID:** `A-FEAT-169` estaba repetido. El tuyo (permisos finos) **queda como está**; el nuestro
+(desactivar la Vista de Pagos) pasó a `A-FEAT-1169`.
+
+📌 **Queda un tema de seguridad para charlar con vos** — lo vamos a dejar escrito acá aparte, con
+JMS. Es sobre las tablas sin mapear y las vistas de `public`.
