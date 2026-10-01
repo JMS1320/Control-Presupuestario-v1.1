@@ -45,6 +45,7 @@
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
 - [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
 - [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
 - [📎 Cash Flow → ver la factura *(2026-09-28)*](#cash-flow-ver-la-factura-2026-09-28)
@@ -2617,6 +2618,33 @@ siendo de la empresa. En cambio `ANTICIPO`, `SIN_CATEG` e `INVALIDA:` **sí se p
 🔑 **Y quitar la cuenta también limpia el movimiento.** Antes se quedaba con la vieja.
 
 ⚠️ Sin probar todavía → A-TEST-1170
+
+## 🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*
+
+**«14 Cuentas corrientes»**: el saldo al cierre con cada contraparte — **JMS · AMS · MA · PAM · AFA ·
+ACREN**.
+
+🔑 **Cómo se lee el signo**, que es tu regla: si alguien te **factura 100 y le pagaste 120**, te
+debe 20; si le pagaste 90, **le debés 10**. La columna *Cómo se lee* lo dice en palabras para no
+tener que interpretarlo.
+
+📋 **Arriba el resumen** — una fila por contraparte con lo facturado, lo vendido, lo pagado y el
+saldo — **y abajo el detalle de cada una**, asiento por asiento con el saldo acumulado. El resumen es
+lo que va al balance; el detalle es lo que deja revisar un número que no cierra.
+
+🔴 **Los pagos que no dicen contra qué comprobante fueron** salen marcados *«← sin referencia»*:
+son los que generan saldo sin que nadie lo note.
+
+🛑 **Y al final, «TODAVÍA SIN TRATAR»**: las marcas de la columna *Contable* del extracto que no
+son ninguna de estas cuentas — `RET`, `RET 3`, `AP`, `LIB`, `Desglosar` — con su total. **No se
+reparten a propósito**: cada una se trata por separado.
+
+⚠️ **El saldo al cierre dice «falta el saldo al inicio»** hasta que se carguen los saldos al
+01/07/2025. El movimiento del ejercicio ya está; lo que falta es **de dónde arranca**.
+
+📌 Sólo se arma para **MSA**: la columna *Contable* y el sistema anterior son suyos.
+
+⚠️ Sin probar todavía → A-TEST-1177
 
 ## 👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*
 

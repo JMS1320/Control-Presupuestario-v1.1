@@ -49,6 +49,10 @@ import {
 import {
   armarSueldosDelEjercicio, type SueldosDelEjercicio, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
+import {
+  armarCuentasCorrientes, type PapelDeCuentasCorrientes,
+  type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
+} from "@/lib/balance/cuentas-corrientes"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
@@ -90,6 +94,8 @@ export function PapelesDeBalance() {
    * igual — es una parte más del balance, no el balance.
    */
   const [sueldos, setSueldos] = useState<SueldosDelEjercicio | null>(null)
+  /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
+  const [cuentasCorrientes, setCuentasCorrientes] = useState<PapelDeCuentasCorrientes | null>(null)
 
   const generar = async () => {
     setCargando(true)
@@ -100,6 +106,7 @@ export function PapelesDeBalance() {
     setValores(null)
     setBancarios(null)
     setSueldos(null)
+    setCuentasCorrientes(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -365,6 +372,58 @@ export function PapelesDeBalance() {
         toast.warning("No se pudieron armar los sueldos; el resto del libro salió igual.")
       }
 
+      /**
+       * 🧾 **Las cuentas corrientes** (A-FEAT-1218). Las tres fuentes que hacen falta:
+       *
+       * 1. las **compras**, de ARCA (con CUIT) y del **histórico** (sin CUIT, se une por alias);
+       * 2. las **ventas**, que compensan;
+       * 3. los **movimientos con la columna `contable` cargada**, que es donde el usuario ya viene
+       *    marcando a mano de quién es cada pago.
+       *
+       * ⚠️ Sólo se arma para **MSA**: la columna `contable` y el histórico son suyos.
+       */
+      if (empresa.id === "MSA") {
+        try {
+          const comprasCC: CompraParaCC[] = armado.compras.map(a2 => ({
+            id: a2.id,
+            fecha: a2.fecha,
+            numero: `${a2.punto_venta ?? ""}-${a2.numero ?? ""}`,
+            total: a2.total,
+            // 🔑 El histórico no trae CUIT: por eso se manda el nombre, que es con lo que se une.
+            cuit: a2.fuente === "historico" ? null : a2.cuit,
+            denominacion: a2.denominacion,
+          }))
+          const ventasCC: VentaParaCC[] = armado.ventas.map(v => ({
+            id: v.id,
+            fecha: v.fecha,
+            numero: `${v.punto_venta ?? ""}-${v.numero ?? ""}`,
+            total: v.total,
+            cuit: v.cuit,
+          }))
+
+          const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
+          const [aaF2, mmF2] = meses[11].split("-").map(Number)
+          const finEj = new Date(Date.UTC(aaF2, mmF2, 0)).toISOString().slice(0, 10)
+          const { data: movsCC } = await supabase.from("msa_galicia")
+            .select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados")
+            .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
+            .not("contable", "is", null)
+
+          const armadoCC = armarCuentasCorrientes(
+            comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
+          setCuentasCorrientes(armadoCC)
+
+          // 🛑 Lo que falta encuadrar se ve: es plata marcada que todavía no es de nadie.
+          if (armadoCC.totalSinTratar !== 0) {
+            toast.warning(
+              `Hay ${armadoCC.sinTratar.length} marca(s) del extracto sin encuadrar `
+              + `(${fmt(armadoCC.totalSinTratar)}): están en la solapa 14, abajo.`)
+          }
+        } catch {
+          toast.warning("No se pudieron armar las cuentas corrientes; el resto del libro salió igual.")
+        }
+      }
+
       setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
@@ -426,6 +485,7 @@ export function PapelesDeBalance() {
                 { ...(cuentas ?? {}), ...(valores ?? {}) },
                 bancarios ?? undefined,
                 sueldos ?? undefined,
+                cuentasCorrientes ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}

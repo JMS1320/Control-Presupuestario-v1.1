@@ -28,6 +28,7 @@ import type { CuentasAlCierre } from "./cuentas-al-cierre"
 import type { ChequesDados, AnticiposAlCierre } from "./valores-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { SueldosDelEjercicio } from "./sueldos-balance"
+import type { PapelDeCuentasCorrientes } from "./cuentas-corrientes"
 import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { ValuacionHacienda } from "./hacienda-stock"
 import type { StockInsumos } from "./stock-insumos"
@@ -79,6 +80,8 @@ export interface DatosDelIndice {
   campo?: { granos: CuadreGranos; sementeras: Sementeras } | null
   /** 👷 El papel de sueldos (A-FEAT-1216). */
   sueldos?: SueldosDelEjercicio | null
+  /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
+  cuentasCorrientes?: PapelDeCuentasCorrientes | null
   bancarios?: {
     gastos: GastosBancarios
     retiros: RetirosYAportes
@@ -461,6 +464,39 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     queFalta: !su ? "armar el papel" : faltaSueldos.join(" · "),
     solapa: su ? "13 Sueldos" : "",
     bloqueante: (su?.descuadres.length ?? 0) > 0,
+  })
+
+  /**
+   * ── 14 · Cuentas corrientes ───────────────────────────────────────────────────────────
+   *
+   * 🔑 La definición del usuario: *«si AMS factura 100 y cobré 120, debe 20; si cobré 90, tiene a
+   * cobrar 10»*. Lo que falta casi siempre es **el saldo al inicio**, que no está en el sistema.
+   */
+  const cc = d.cuentasCorrientes
+  const faltaCC: string[] = []
+  if (cc) {
+    const sinInicio = cc.cuentas.filter(c => c.saldoInicio == null)
+    if (sinInicio.length > 0) {
+      faltaCC.push(`el SALDO AL INICIO de ${sinInicio.map(c => c.contraparte.clave).join(", ")} `
+        + "(no está en el sistema: lo declara el usuario)")
+    }
+    if (cc.sinTratar.length > 0) {
+      faltaCC.push(`${cc.sinTratar.length} marca(s) del extracto sin encuadrar por ${pesos(cc.totalSinTratar)} `
+        + `(${cc.sinTratar.map(x => x.etiqueta).join(", ")}): se tratan de a una`)
+    }
+    if (cc.historicoSinAtribuir > 0) {
+      faltaCC.push(`${cc.historicoSinAtribuir} comprobante(s) del sistema anterior sin atribuir`)
+    }
+  }
+  partes.push({
+    numero: "14", papel: "Cuentas corrientes con socios y proveedores-clientes",
+    estado: !cc ? "falta" : faltaCC.length > 0 ? "parcial" : "completo",
+    queTiene: cc
+      ? cc.cuentas.map(c => `${c.contraparte.clave} ${pesos(c.resumen.saldo)}`).join(" · ")
+      : "nada",
+    queFalta: !cc ? "armar el papel" : faltaCC.join(" · "),
+    solapa: cc ? "14 Cuentas corrientes" : "",
+    bloqueante: false,
   })
 
   const cuenta: Record<EstadoParte, number> = {

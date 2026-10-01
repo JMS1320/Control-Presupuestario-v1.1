@@ -25,6 +25,8 @@ import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } fr
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { SueldosDelEjercicio, FilaSueldo } from "./sueldos-balance"
+import { leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
+import type { PapelDeCuentasCorrientes } from "./cuentas-corrientes"
 import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
@@ -857,6 +859,105 @@ const COLS_SUELDOS: Columna[] = [
 ]
 
 /**
+ * 🧾 La solapa **14 Cuentas corrientes** — el saldo al cierre con cada contraparte (A-FEAT-1218).
+ *
+ * Pedido del usuario: *«él le factura a la SRL y cobra mensual (…) **es una cuenta corriente, se
+ * debería reflejar el saldo a cierre de balance**»*. Y su definición, que es la que gobierna el
+ * signo: *«si AMS factura 100 y cobré 120, debe 20; si cobré 90, tiene a cobrar 10»*.
+ *
+ * 📋 **Primero el resumen** —una fila por contraparte con su saldo— y **después el detalle** de cada
+ * una, asiento por asiento con el saldo acumulado. El resumen es lo que va al balance; el detalle es
+ * lo que deja revisar un número que no cierra.
+ *
+ * 🛑 **Y al final, lo que NO se trató todavía**, por pedido expreso suyo: *«no es lo mismo todo lo
+ * relacionado a RET, RET 3, AP; debemos ir tratando cada cosa a la vez»*. No se reparte ni se
+ * esconde — se muestra con su total, que es cuánta plata falta encuadrar.
+ */
+function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`CUENTAS CORRIENTES — saldo al ${fechaCierre}`])
+  f.push(["Saldo positivo = le debemos. Negativo = tenemos a cobrar."])
+  f.push([])
+  f.push(["Contraparte", "CUIT", "Saldo al INICIO", "Facturado", "Vendido (compensa)",
+    "Pagado/cobrado", "Movimiento del ejercicio", "SALDO AL CIERRE", "Cómo se lee"])
+
+  const desde = f.length + 1
+  for (const c of cc.cuentas) {
+    f.push([
+      c.contraparte.nombre,
+      c.contraparte.cuit,
+      // 🎚️ Sin saldo de inicio NO se pone cero: se dice que no se conoce.
+      c.saldoInicio ?? "NO SE CONOCE",
+      money(c.resumen.totalComprado),
+      money(c.resumen.totalVendido),
+      money(c.resumen.totalPagado),
+      money(c.resumen.saldo),
+      c.saldoAlCierre ?? "falta el saldo al inicio",
+      c.saldoAlCierre == null ? "" : leyendaSaldo(c.saldoAlCierre),
+    ])
+  }
+  const hasta = f.length
+  f.push(["TOTAL", "", "", ...(["D", "E", "F", "G"] as const).map((col, i) =>
+    conFormula(`SUM(${col}${desde}:${col}${hasta})`, [
+      cc.cuentas.reduce((s, c) => s + c.resumen.totalComprado, 0),
+      cc.cuentas.reduce((s, c) => s + c.resumen.totalVendido, 0),
+      cc.cuentas.reduce((s, c) => s + c.resumen.totalPagado, 0),
+      cc.cuentas.reduce((s, c) => s + c.resumen.saldo, 0),
+    ][i]))])
+
+  // ── 🛑 Lo que falta encuadrar ────────────────────────────────────────────────────────
+  if (cc.sinTratar.length > 0) {
+    f.push([])
+    f.push([])
+    f.push(["TODAVIA SIN TRATAR — marcas del extracto que no son ninguna de estas cuentas"])
+    f.push(["Se muestran enteras y NO se reparten: cada una se trata por separado."])
+    f.push(["Marca en la columna Contable", "Movimientos", "Total"])
+    cc.sinTratar.forEach(x => f.push([x.etiqueta, x.movimientos, money(x.total)]))
+    f.push(["TOTAL SIN TRATAR", "", money(cc.totalSinTratar)])
+  }
+  if (cc.historicoSinAtribuir > 0) {
+    f.push([])
+    f.push([`${cc.historicoSinAtribuir} comprobante(s) del sistema anterior no se pudieron atribuir `
+      + "a ninguna de estas cuentas (el historico no guarda CUIT, se une por nombre)."])
+  }
+
+  // ── El detalle de cada cuenta ────────────────────────────────────────────────────────
+  for (const c of cc.cuentas) {
+    if (c.resumen.asientos.length === 0) continue
+    f.push([])
+    f.push([])
+    f.push([`DETALLE — ${c.contraparte.nombre}`])
+    f.push(["Fecha", "Qué es", "Concepto", "Importe", "Saldo acumulado"])
+    for (const x of c.resumen.asientos) {
+      f.push([
+        x.fecha,
+        x.tipo === "compra" ? "nos factura" : x.tipo === "venta" ? "le facturamos" : "pago",
+        // 🔴 Un pago que no dice contra qué fue es el que genera saldo sin que nadie lo note.
+        x.sinReferencia ? `${x.concepto}  ← sin referencia` : x.concepto,
+        money(x.importe),
+        money(x.saldo),
+      ])
+    }
+    if (c.resumen.pagosSinReferencia > 0) {
+      f.push([`${c.resumen.pagosSinReferencia} pago(s) no dicen contra que comprobante fueron.`])
+    }
+  }
+  return f
+}
+
+const COLS_CUENTAS_CORRIENTES: Columna[] = [
+  { ancho: 34 },                    // Contraparte / Fecha
+  { ancho: 14 },                    // CUIT / Qué es
+  { ancho: 18, z: MONEDA },         // Saldo al inicio / Concepto
+  { ancho: 18, z: MONEDA },         // Facturado / Importe
+  { ancho: 18, z: MONEDA },         // Vendido / Saldo acumulado
+  { ancho: 18, z: MONEDA },         // Pagado
+  { ancho: 20, z: MONEDA },         // Movimiento del ejercicio
+  { ancho: 20, z: MONEDA },         // SALDO AL CIERRE
+  { ancho: 26 },                    // Cómo se lee
+]
+
+/**
  * 🧾 La solapa **03.1 Provisión de cobros** — el espejo del papel 05, del lado de las ventas.
  *
  * *«Facturas o liquidaciones (siempre de venta) de cosas que sucedieron antes del cierre y se
@@ -1578,6 +1679,8 @@ export function armarWorkbook(
   },
   /** 👷 El papel de sueldos: el total de A y el total de B (A-FEAT-1216). */
   sueldos?: SueldosDelEjercicio,
+  /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
+  cuentasCorrientes?: PapelDeCuentasCorrientes,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1587,7 +1690,7 @@ export function armarWorkbook(
    * siguiente — *«¿los números cierran?»*.
    */
   const indice = armarIndice({
-    libro, templates, cuentas, sueldos,
+    libro, templates, cuentas, sueldos, cuentasCorrientes,
     hacienda: hacienda?.valuacion ?? null,
     insumos: insumos ?? null,
     campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
@@ -1646,6 +1749,12 @@ export function armarWorkbook(
   // 👷 Los sueldos van pegados a los templates: son las dos partes que NO salen de comprobantes.
   if (sueldos) {
     hoja(wb, "13 Sueldos", hojaDeSueldos(sueldos, libro.ejercicio.etiqueta), COLS_SUELDOS)
+  }
+  // 🧾 Las cuentas corrientes, pegadas a los sueldos: las dos son saldos con personas.
+  if (cuentasCorrientes) {
+    hoja(wb, "14 Cuentas corrientes",
+      hojaDeCuentasCorrientes(cuentasCorrientes, libro.ejercicio.fechaCierre),
+      COLS_CUENTAS_CORRIENTES)
   }
   if (templates) {
     hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
@@ -1706,9 +1815,10 @@ export function descargarLibroDiario(
   cuentas?: Parameters<typeof armarWorkbook>[6],
   bancarios?: Parameters<typeof armarWorkbook>[7],
   sueldos?: Parameters<typeof armarWorkbook>[8],
+  cuentasCorrientes?: Parameters<typeof armarWorkbook>[9],
 ) {
-  const wb = armarWorkbook(
-    libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios, sueldos)
+  const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
+    bancarios, sueldos, cuentasCorrientes)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
