@@ -16,7 +16,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import * as XLSX from 'xlsx'
 import type {
   GenerarLoteInput, GenerarLoteOutput, ItemPreview, Empresa,
@@ -28,14 +28,25 @@ import {
 } from '@/lib/lotes-galicia/helpers'
 import { computarPreview } from '@/lib/lotes-galicia/preview-core'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { exigirEscritura } from "@/lib/auth/guard-recurso"
 
 export const runtime = 'nodejs'
 
 const MAX_FILAS_POR_ARCHIVO = 50
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
+
+  // A-FEAT-169 etapa 4: además de la sesión, el NIVEL sobre el recurso. Frena el pedido aunque
+  // venga de la consola o de una pantalla vieja que no apagó sus botones.
+  const permiso = await exigirEscritura("productivo.lotes")
+  if (!permiso.ok) {
+    return NextResponse.json({ error: permiso.motivo }, { status: permiso.status })
+  }
 
   try {
     const body = (await request.json()) as GenerarLoteInput
@@ -97,7 +108,7 @@ export async function POST(request: Request) {
         }
       }
       for (const [provId, msg] of porProveedor) {
-        await supabaseAdmin.from('proveedores')
+        await supabase.from('proveedores')
           .update({ mensaje_transferencia: msg || null })
           .eq('id', provId)
       }
@@ -120,7 +131,7 @@ export async function POST(request: Request) {
     // ── 4. UPDATE proveedores.ultimo_uso_bancario ──
     const provIds = [...new Set([...pagosValidos, ...sueldosValidos].map(p => p.proveedor_id).filter(Boolean) as string[])]
     if (provIds.length > 0) {
-      await supabaseAdmin.from('proveedores')
+      await supabase.from('proveedores')
         .update({ ultimo_uso_bancario: new Date().toISOString() })
         .in('id', provIds)
     }
@@ -161,7 +172,7 @@ export async function POST(request: Request) {
 
     let loteId = ''
     if (inserts.length > 0) {
-      const { data: ins } = await supabaseAdmin.from('lotes_transferencias')
+      const { data: ins } = await supabase.from('lotes_transferencias')
         .insert(inserts).select('id')
       loteId = ins?.[0]?.id || ''
     }

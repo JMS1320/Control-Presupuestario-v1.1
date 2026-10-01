@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { ProveedorPermisos } from "./components/contexto-permisos"
+import type { UserRole } from "@/lib/auth/roles"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
 import { ImportadorExcel } from "./components/importador-excel"
@@ -46,16 +48,18 @@ import { MarcaFlotante } from "@/components/boton-revision"
 import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
 
 interface ControlPresupuestarioProps {
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
   /** Sección a abrir, si vino por `?seccion=` — así el menú lateral funciona desde otras rutas. */
   seccionInicial?: string
   /** Preferencias personales del usuario (A-FEAT-83): menú abierto, contadores, salida. */
   preferencias?: Preferencias
   /** Ids de las secciones que ve este usuario, de `public.roles`. */
   secciones?: string[]
+  /** Excepciones finas de este rol: `{ "productivo.insumos": "lectura" }` (A-FEAT-169). */
+  nivelesPermisos?: Record<string, "ninguno" | "lectura" | "escritura">
 }
 
-export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias, nivelesPermisos = {} }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -158,6 +162,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   }, [])
 
   return (
+    <ProveedorPermisos niveles={nivelesPermisos}>
     <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
@@ -526,5 +531,6 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
           </CardContent>
           </Card>
     </LayoutApp>
+    </ProveedorPermisos>
   )
 }

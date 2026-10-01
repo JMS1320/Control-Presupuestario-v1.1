@@ -1,13 +1,18 @@
 "use client"
 
 import { useState } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
+import type { UserRole } from "@/lib/auth/roles"
+import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Receipt, FileText, Building2 } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
 
-export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'contable' }) {
+export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
+  // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("facturas-msa")
 
   return (
@@ -31,40 +36,56 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: 'admin' | 'con
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
+              {puedeVer("egresos.facturas-msa") && (
+<TabsTrigger value="facturas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Facturas MSA
               </TabsTrigger>
-              <TabsTrigger value="facturas-pam" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.facturas-pam") && (
+<TabsTrigger value="facturas-pam" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas PAM
               </TabsTrigger>
-              <TabsTrigger value="facturas-ma" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.facturas-ma") && (
+<TabsTrigger value="facturas-ma" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas MA
               </TabsTrigger>
-              <TabsTrigger value="templates" className="flex items-center gap-2">
+)}
+              {puedeVer("egresos.templates") && (
+<TabsTrigger value="templates" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Egresos sin Factura
               </TabsTrigger>
+)}
             </TabsList>
 
             <div className="mt-6">
               <TabsContent value="facturas-msa" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-msa">
                 <VistaFacturasArca empresa="MSA" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="facturas-pam" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-pam">
                 <VistaFacturasArca empresa="PAM" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="facturas-ma" className="space-y-4">
+<SoloLectura recurso="egresos.facturas-ma">
                 <VistaFacturasArca empresa="MA" userRole={userRole} />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
 
               <TabsContent value="templates" className="space-y-4">
+<SoloLectura recurso="egresos.templates">
                 <VistaTemplatesEgresos />
-              </TabsContent>
+              </SoloLectura>
+</TabsContent>
             </div>
           </Tabs>
         </CardContent>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -50,7 +51,7 @@ export function PanelPerfil({
   userRole,
   secciones,
 }: {
-  userRole: "admin" | "contable"
+  userRole: UserRole
   /** Ids de las secciones que ve este usuario: las opciones de «sección de inicio». */
   secciones: string[]
 }) {

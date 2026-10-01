@@ -11,7 +11,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { PANTALLAS } from '@/lib/pendientes/parse'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -20,13 +20,16 @@ export const runtime = 'nodejs'
 const PRIORIDADES = ['urgente', 'secundario', 'test'] as const
 
 export async function GET(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
   const rol = new URL(request.url).searchParams.get('rol')
   if (rol !== 'admin') return NextResponse.json({ error: 'Sólo admin' }, { status: 403 })
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('pendientes_propuestos')
     .select('id, titulo, descripcion, prioridad_sugerida, pantalla_sugerida, estado, pendiente_id_asignado, created_at')
     .eq('estado', 'propuesto')
@@ -37,6 +40,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -54,7 +60,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `pantalla debe ser una de: ${PANTALLAS.join(', ')}` }, { status: 400 })
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from('pendientes_propuestos')
       .insert({
         titulo,

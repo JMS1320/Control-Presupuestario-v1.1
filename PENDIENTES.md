@@ -342,6 +342,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-BUG-12 | 🔴 | **Alta** | Tarjeta — conciliación auto contra `credito` **diverge del motor** (sin fecha → riesgo cruzar períodos; ±1 monto; sin estado auditar). Hay que alinearla al razonamiento del motor | → [A-BUG-12](#a-bug-12) `@extracto` |
 | A-BUG-97 | 🟠 | **Bug** | **Aviso de hidratación en el menú del avatar** (apareció con A-FEAT-77, 2026-09-05). React avisa que el `id` que genera Radix para el `DropdownMenuTrigger` no coincide: servidor `radix-_R_2j9bn5rlb_` vs cliente `radix-_R_kpbn5rlb_` — **sólo cambia el prefijo, que codifica la posición en el árbol**, así que algo se renderiza distinto MÁS ARRIBA, no en el menú. **Impacto real: ninguno visible** — el menú abre, navega y cierra sesión bien; es un atributo `id` que Radix usa para `aria-controls`. Se ve en el overlay de dev. 🔍 **Ya descartado** (no repetir): **el `Toaster` de sonner** —se movió de lugar y se sacó del todo, y el aviso sigue igual— y **`useIsMobile()`**, que devuelve `!!undefined` = `false` y es consistente en la hidratación. ⏳ **Falta**: ver si también pasa en build de producción o si es artefacto de dev con Turbopack `@general` |
 | **A-BUG-199** | 🟡 | **Alta** | ✅ **CONFIG ARREGLADA 2026-09-18** (verificada: las 5 direcciones pasan, el Site URL ya es producción, `localhost:3000` cerrado) — queda testear de punta a punta → [A-TEST-97](#a-test-97). **Los links de invitación creados desde producción iban a `http://localhost:3000`** (verificado 2026-09-18 sondeando GoTrue). El código de la app está bien —`urlBase()` arma el origen correcto—, pero **Supabase descarta el `redirectTo` que no esté en su allow-list y lo reemplaza por el Site URL, en silencio**. Hoy el Site URL del proyecto es `http://localhost:3000` —que ni siquiera es esta app, es **otra** del usuario— y la allow-list sólo tiene localhost. Rompe también el **login con Google** desde producción (mismo mecanismo, `/auth/callback`) | → [A-BUG-98](#a-bug-98) `@general` |
+| **A-SEC-09** | 🟡 | 🔴 **Alta** | ✅ **13 de 37 migradas 2026-09-24.** **Las rutas de API salteaban la RLS**: usaban `service_role`, que la ignora por completo. El mismo día que se instaló la RLS, **37 de 41 rutas no la aplicaban** — y 25 pedían sólo «cualquier rol con sesión». Política nueva: **el cliente de la sesión es el default, `service_role` se declara**. Control: `npm run verificar:service-role`. ⏳ Quedan **17 de deuda declarada** (usan el cliente en helpers de módulo) | → [A-SEC-09](#a-sec-09) `@general` |
+| **A-SEC-10** | 🟡 | 🔴 **Alta** | ✅ **CORRIDO 2026-09-24** (`scripts/62`). **La RLS ahora lee la política**: hasta hoy `tiene_rol()` sólo preguntaba «¿tenés algún rol?», así que un `contable` pasaba la misma puerta que un `admin`. Ahora cada tabla tiene **dos** policies —`ver_segun_permiso` y `escribir_segun_permiso`— que resuelven el nivel contra `roles.permisos`. Es lo único que frena las **452 escrituras directas del navegador**. ⏳ **Falta el test que importa**: una cuenta con rol acotado que NO pueda escribir donde no debe | → [A-TEST-148](#a-test-148) `@general` |
+| **A-BUG-200** | ✅ | **Alta** | ✅ **ARREGLADO 2026-09-24.** **Los roles creados por el usuario no servían para nada.** `scripts/60` movió los roles a `public.roles` el 05/09 para que el admin creara los suyos, pero **el código nunca se enteró**: `getRole()` tenía `rol === "admin" || rol === "contable"` y devolvía `null` para cualquier otro. El 24/09 había **5 roles en la base** (`productivo`, `pruebas`, `socio`): asignar uno mandaba a la persona a `/no-access` con su fila de permisos intacta y sin que nada avisara. Y los dos desplegables de Usuarios ni los ofrecían. ⚠️ **Con la RLS de [A-SEC-07](#a-sec-07) puesta el desfasaje empeora**: `tiene_rol()` sólo pregunta «¿tenés algún rol?», así que esa persona **sí pasa la base** —lee y escribe las 95 tablas— mientras la app la rechaza. Puerta de adelante cerrada, puerta de atrás abierta | → [A-TEST-147](#a-test-147) `@general` |
 | **A-BUG-198** | 🟡 | **Alta** | **El QR del segundo factor no se deja escanear en modo oscuro** (reportado 2026-09-23: José lo escanea y el autenticador no agrega nada, sin error de ningún lado). El SVG de Supabase son módulos oscuros **sin fondo propio**, y la tarjeta es `dark:bg-slate-900` → negro sobre gris oscuro, sin contraste para una cámara. Tampoco tenía la **zona de silencio** que el estándar QR exige. **FIX APLICADO**: fondo blanco fijo + `p-4`, y los dos caminos sin cámara (link `otpauth://` y la clave a mano) salen a la vista en vez de vivir en un `<details>`. ⚠️ **Causa deducida leyendo el código, no reproducida** — inscribir un factor es tocar datos reales | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Testing — módulos recientes
@@ -369,6 +372,9 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-95 | 🔴 | Test | **Invitar a alguien de punta a punta** (A-FEAT-87) — con una cuenta **de verdad, que no sea tuya**: invitar desde Configuración → Usuarios · ⚠️ **ver si el mail llega** (el mailer interno de Supabase limita a ~2/hora: si no llega, usar «Copiar link», que es el respaldo previsto) · abrir el link → tiene que caer en **Bienvenida**, no en el login ni en un error · **definir contraseña** y salir y entrar con ella · repetir con otra persona pero **vinculando Google** en vez de contraseña, y que entre con Google · y una tercera que haga **las dos** y entre indistinto. ⚠️ **Lo que más se rompe**: que el link **vencido o ya usado** dé un mensaje que se entienda y no una pantalla en blanco · que quien ya tiene contraseña **no** pueda usar `/bienvenida` de otro · y que al terminar vea **sus** secciones según el rol que le pusiste | → [A-FEAT-87](#a-feat-87) `@general` |
 | A-TEST-96 | 🔴 | Test | **Inicio configurable** (A-FEAT-88) — elegir widgets, reordenarlos, salir y volver: tienen que quedar · quitar todos y que la pantalla **diga qué hacer** en vez de quedar en blanco · que cada widget muestre **lo mismo** que la pantalla de la que salió (comparar número por número: si difieren, se duplicó la lógica en vez de compartirla) · que el **camino al detalle** de cada uno lleve a donde se verifica el número. ⚠️⚠️ **El candado, salteando la UI**: con una cuenta `contable`, escribir a mano un widget de una sección que su rol NO tiene (`updateUser({data:{preferencias:{widgets:['cashflow…']}}})`) y recargar → **no se tiene que ver**. Si aparece, la preferencia está decidiendo un permiso · y que un widget que falla **no rompa los demás** | → [A-FEAT-88](#a-feat-88) `@principal` |
 | **A-TEST-145** | 🔴 | Test | **El link de alta apunta a donde se creó** (A-BUG-199). Depende de que el usuario arregle antes el Site URL y las Redirect URLs en Supabase — **hasta entonces el test tiene que FALLAR**, y que falle con el cartel rojo es justamente medio test | → [A-TEST-145](#a-test-145) `@general` |
+| **A-TEST-146** | 🔴 | Test | **Permisos finos** (A-FEAT-169) — que una pestaña sin permiso **no aparezca** (no que aparezca vacía); que con permiso de lectura se vea pero **no se pueda guardar**; y el control que más importa: que el bloqueo esté **también en la API**, no sólo en la pantalla | → [A-TEST-146](#a-test-146) `@general` |
+| **A-TEST-147** | 🔴 | Test | **Los roles de la base funcionan** (A-BUG-200) — asignarle `productivo` a una cuenta y que **entre y vea sus 3 secciones**, no `/no-access` · que los 5 roles aparezcan en los dos desplegables de Usuarios · que un rol inventado se rechace diciendo cuáles hay | → [A-TEST-147](#a-test-147) `@general` |
+| **A-TEST-148** | 🟠 | 🔴 **Alta** | ⚠️ **CORRIDO 2026-09-29 — Y LA LECTURA NO FRENA.** Ya **se puede probar**: se creó la cuenta acotada que faltaba (`javiergc89+contable@gmail.com`, rol `contable`, 1 sección). Con **su token real**, no con `admin`: lee `sueldos.empleados` (9), `msa.cheques` (10), `proveedores` (167) y `cuentas_contables` (143). **Sólo `public.roles` la frena.** Y `nivel_tabla('sueldos','empleados')` **con su token devuelve `escritura`**. ✅ Lo que sí pasó: alta de punta a punta, rol correcto en el JWT (`contable`/`aal1`), y rol desconocido → sin secciones (falla cerrado). 🔴 **Falta**: el `UPDATE` rechazado por la base — **no se intentó a propósito**, sería escribir datos reales. Detalle → [A-SEC-10](#a-sec-10) § 2026-09-29 | → [A-TEST-148](#a-test-148) `@general` |
 | **A-TEST-144** | 🔴 | Test | **El QR del 2FA se escanea** (A-BUG-198). Probar **en modo oscuro**, que es donde fallaba, y también con la clave a mano y con el link `otpauth://` desde el teléfono. Si con el fondo blanco anda, la causa queda confirmada; si no, hay que mirar el `otpauth://` que arma Supabase | → [A-TEST-144](#a-test-144) `@general` |
 
 ### Seguridad
@@ -381,8 +387,8 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 
 | ID | Estado | Prio | Ítem | Detalle |
 |----|--------|------|------|---------|
-| A-SEC-01 | 🔴 | Alta | Hardening — anon puede borrar todo + plan P0/P1/P2. **2026-09-03:** los P2 (9) *RLS real* y (10) *auth Supabase real* quedaron **escritos y listos para correr** en `scripts/57-rls-login-cerrar-anon.sql` (revoca TODO a `anon`, no sólo la escritura) — **la BD todavía no se tocó**. Ver [A-SEC-03](#a-sec-03) | → [A-SEC-01](#a-sec-01) `@general` |
-| **A-SEC-07** | 🔴 | **Alta** | **La policy de `scripts/57` le abre la base a cualquier sesión, tenga rol o no.** Decía `USING (auth.uid() IS NOT NULL)`: una cuenta sin rol —a la que la app manda a `/no-access`— igual llega a PostgREST con su cookie y la `anon_key` del bundle, y **lee y escribe las 72 tablas**. Hoy se disimula porque las cuentas sólo nacen de una invitación del admin; con el auto-registro de [A-FEAT-85](#a-feat-85) pasa a ser una puerta abierta. Hallado 2026-09-07. ✅ **Corregido en el script**: `public.tiene_rol()`, que lee `app_metadata.role` del JWT (que el propio usuario no puede escribir). 🔴 **La BD sigue sin tocarse** — se corre junto con el resto de `scripts/57` | → [A-SEC-07](#a-sec-07) `@general` |
+| A-SEC-01 | 🟡 | Alta | 🔓 **EL CORAZÓN SE CERRÓ 2026-09-24**: `anon` quedó sin permisos y la RLS filtra por rol (§ A-SEC-07). `anon` ahora da **401** leyendo y escribiendo. ⏳ **Queda**: auditar las funciones **`SECURITY DEFINER`** — `REVOKE ... FROM anon` **no cierra funciones**, porque `EXECUTE` se otorga a `PUBLIC` por defecto; el cierre es `FROM PUBLIC`. Y falta probar la app logueada de punta a punta (A-TEST-81). Hardening — anon podía borrar todo + plan P0/P1/P2. **2026-09-03:** los P2 (9) *RLS real* y (10) *auth Supabase real* quedaron **escritos y listos para correr** en `scripts/57-rls-login-cerrar-anon.sql` (revoca TODO a `anon`, no sólo la escritura) — **la BD todavía no se tocó**. Ver [A-SEC-03](#a-sec-03) | → [A-SEC-01](#a-sec-01) `@general` |
+| **A-SEC-07** | ✅ | **Alta** | ✅ **RESUELTO 2026-09-24**: `scripts/57` corrido con el usuario paso a paso; la policy quedó con `public.tiene_rol()` (tener rol, no sólo sesión) en ~95 tablas, y el PASO 3 dio cero filas en las tres verificaciones. Estado previo en `respaldos/a-sec-07-*-antes-2026-09-24.csv` · detalle en `ARQUITECTURA-BD.md` §5. **La policy de `scripts/57` le abría la base a cualquier sesión, tenga rol o no.** Decía `USING (auth.uid() IS NOT NULL)`: una cuenta sin rol —a la que la app manda a `/no-access`— igual llega a PostgREST con su cookie y la `anon_key` del bundle, y **lee y escribe las 72 tablas**. Hoy se disimula porque las cuentas sólo nacen de una invitación del admin; con el auto-registro de [A-FEAT-85](#a-feat-85) pasa a ser una puerta abierta. Hallado 2026-09-07. ✅ **Corregido en el script**: `public.tiene_rol()`, que lee `app_metadata.role` del JWT (que el propio usuario no puede escribir). 🔴 **La BD sigue sin tocarse** — se corre junto con el resto de `scripts/57` | → [A-SEC-07](#a-sec-07) `@general` |
 | **A-SEC-08** | 🔴 | Media | **Faltan códigos de recuperación del 2FA — con un solo admin no hay red.** [A-FEAT-86](#a-feat-86) cubre los dos casos normales, pero los dos dependen de algo: el de `/perfil` exige estar adentro, y el de Usuarios exige **otro** admin con `aal2`. Si queda **un solo admin** y pierde el autenticador, no hay salida desde la app: hay que tocar la base con `service_role`, que es exactamente lo que pasó el 2026-09-07. Fix de fondo: **al inscribir el TOTP, generar N códigos de un solo uso**, mostrarlos una vez y guardarlos **hasheados**; usar uno vale como segundo factor (algo que tenés) y dispara la reinscripción. ⚠️ Supabase no los trae: hay que implementarlos | → [A-SEC-08](#a-sec-08) `@general` |
 | **A-SEC-04** | 🟡 | **Alta** | **Las notas guardaban la ruta-password en claro, en 2 tablas sin RLS.** ✅ **HECHO 2026-08-31 (2 de 3), sin testear ([A-TEST-77](#a-sec-04))**: RLS con `anon` sólo-INSERT + la lista pasó a `/api/notas` (servidor) · ya no se guarda la llave (se guarda el **rol**). **2026-09-03:** con el login real la URL dejó de tener llave, así que el rol pasó a salir de la **sesión** y la ruta se guarda **entera** (recortar el primer segmento pasó a ser un bug). 🔴 **Falta limpiar 15 filas viejas** que todavía la tienen — son datos, se pregunta antes | → [A-SEC-04](#a-sec-04) `@general` |
 | A-TEST-77 | 🔴 | Test | **Notas después del cierre de seguridad** (A-SEC-04) — que **dejar una nota siga funcionando** con RLS puesta (`anon` sólo INSERT) y que **click derecho siga listando** (ahora vía `/api/notas`). Si algo se rompió, se rompió acá | → [A-SEC-04](#a-sec-04) `@general` |
@@ -572,12 +578,13 @@ la app del otro al instante, con el `type-check` en verde. Se avisa **antes** de
 | A-DAT-58 | 🔵 | Media | 🧮 **Dos retenciones viejas quedaron con el mínimo aplicado dos veces.** El arreglo de [A-BUG-193](#a-bug-193) vale **de acá en adelante**; lo ya registrado sigue como estaba. **MASSAGLIA** 07/2026 (FC 2-481 el 03/07 + anticipo el 30/07, las dos quincenas **cerradas**) y **STRINGHINI** 05/2026 (FC 1-86 el 12/05 en quincena **DECLARADA** + anticipo el 29/05, cerrada). Se retuvo **$1.343,40 de menos en cada uno** — **$2.686,80** en total. ⚠️ **No son el mismo caso**: el de Massaglia se puede recalcular (quincena cerrada, no declarada); **el de Stringhini cae en una quincena YA DECLARADA a ARCA**, así que sería una **rectificativa**. 📌 **Decisión del usuario**: por el monto puede no valer la pena tocar nada — pero conviene que lo sepa el contador antes del balance | → [A-BUG-193](#a-bug-193) `@cashflow/sicore` |
 | A-BUG-194 | 🟢 | 🔴 **Alta** | 🧾 **Lo que se GRABA de la retención de un anticipo no era lo que se CALCULÓ.** ✅ **ARREGLADO 2026-09-23** (rama `jms/sicore-minimo-mensual`). Encontrado barriendo el módulo entero a pedido del usuario: *«¿te has fijado de una manera segura que este cambio no tenga que aplicarse en otras partes?»*. **No me había fijado, y acá había algo.** 🔑 **Dónde**: al registrar en `sicore_retenciones` desde Facturas ARCA, la base se recalculaba restando **siempre** el mínimo del régimen e ignorando `datosSicoreAnt` — que es donde vive el cálculo real. Cuando ya se retuvo en el período, el modal **no** aplica mínimo y retiene sobre el neto completo. 🧨 **La retención se guardaba bien y la base no**, así que el registro quedaba contradiciéndose: **`base × alícuota ≠ retención`**. Y esa base es la que viaja al **TXT de ARCA**. 📌 **Hasta [A-BUG-193](#a-bug-193) no se notaba**: como el mínimo se reiniciaba cada quincena casi nunca había retención adicional, y los dos números coincidían **por accidente**. ⚠️ **O sea que A-BUG-193 habría DESTAPADO este defecto en producción** si no se barría el módulo antes — es el caso de manual de por qué un cambio se mira entero | → [A-BUG-193](#a-bug-193) [A-TEST-140](#a-test-140) `@egresos @cashflow/sicore` |
 | A-BUG-195 | 🟢 | Media | ✅ **ARREGLADO 2026-09-23** por pedido del usuario (*«arreglá el 195 también»*), en la rama `jms/sicore-minimo-mensual`. Ahora el portón consulta `verificarRetencionPrevia` y **deja pasar la factura chica cuando el mínimo del mes ya está consumido**. ⚠️ **Cambia el comportamiento de una pantalla que hoy anda**: antes esas facturas ni ofrecían el flujo SICORE — por eso hay que probarlo ([A-TEST-140](#a-test-140)). 🚪 **El portón del mínimo en Facturas ARCA no miraba si ya se retuvo en el período.** 🔑 **Qué pasa**: antes de ofrecer el flujo SICORE, `evaluarRetencionSicore` corta con `if (netoFactura <= minimoServicios)` usando el mínimo más bajo ($67.170) **y nada más**. Si al proveedor **ya se le retuvo en el mes**, una factura por debajo de ese monto **debería retener sobre el neto completo** — y acá ni se ofrece. ✅ **El Cash Flow SÍ lo contempla**: `califica = yaRetuvo || hayNegativa || (totalNeto + netoPrevio) > minimoSicore`. **Otra vez un camino de dos** (§ `MODULO_CONCILIACION.md` 30.9.5). 📈 **Y [A-BUG-193](#a-bug-193) lo vuelve más frecuente**: al pasar el período de quincena a mes, hay más casos de «ya retuvo», o sea más facturas chicas que deberían retener y el portón deja afuera. 🔧 **El arreglo es chico y conocido**: consultar `verificarRetencionPrevia` antes del portón y dejar pasar si dio true — exactamente lo que hace el Cash Flow. ⚠️ **Sentido del error**: se retiene **de menos**, o sea la empresa queda en falta con ARCA | → [A-BUG-193](#a-bug-193) `@egresos` |
-| A-TEST-141 | 🔵 | Media | 💵 **Pagar una FC en DÓLARES desde Cash Flow — el permiso para borrar la Vista de Pagos.** Condición puesta por el usuario 2026-09-23: **hasta que esto salga bien, [A-FEAT-169](#a-feat-169) no se toca**, porque la pantalla vieja es la referencia contra la cual contrastar si algo falla. **Qué probar vos:** en **Cash Flow**, tomá una factura de ARCA en **dólares sin TC de pago cargado** y pasala a **pagar**. Tiene que: **(1)** frenar y **pedirte el tipo de cambio** antes de nada; **(2)** al guardarlo, **seguir solo con el SICORE**, sin que tengas que volver a apretar; **(3)** mostrar el importe **convertido a pesos** con ese TC —no con el tipo de cambio de la factura—; y **(4)** que el SICORE se calcule sobre el neto **en pesos**. 🔴 **Adversario 1**: una FC en dólares **que ya tenga TC de pago** no tiene que volver a preguntarlo. 🔴 **Adversario 2**: una FC **en pesos** no tiene que preguntar nada. 🔴 **Adversario 3 — el caso que puede faltar**: **dos o más** facturas en dólares sin TC. La Vista de Pagos las procesaba **en cola**; Cash Flow cambia de a una fila. Si al hacerlo de a una funciona bien, no falta nada. 📌 Si algo no anda, **abrí la Vista de Pagos de Egresos y hacé lo mismo ahí** para ver cómo debería quedar — para eso se deja viva | → [A-FEAT-169](#a-feat-169) `@cashflow/pagar` |
-| A-FEAT-170 | 🔵 | Media | 🔍 **Cash Flow: filtrar por TIPO DE COMPROBANTE y buscar por NÚMERO.** Pedido del usuario 2026-09-23, al revisar qué le faltaría a Cash Flow para poder apagar la Vista de Pagos: *«con tener un filtro por tipo de comprobante, y hasta escribir el nro ya que estamos cuando uno quiere buscar algo muy puntual, sería bueno y listo»*. 🔑 **Cierra el único hueco del análisis de [A-FEAT-169](#a-feat-169)**: la Vista de Pagos tenía un filtro de **sólo notas de crédito** que Cash Flow no tiene. El usuario no pidió ese filtro sino **uno más general** — por tipo de comprobante—, que lo cubre y sirve para más cosas. 📌 **Dos piezas**: (1) filtro por **tipo de comprobante** (Factura A/B/C, Nota de Crédito, Nota de Débito…), (2) **buscar por número** de comprobante, para ir a uno puntual. ⚠️ **El buscador tiene que mirar TODO, no la página cargada** — es el bug que ya apareció dos veces en el Extracto ([A-BUG-189](#a-bug-189)): buscar sobre lo que está en pantalla **no encuentra** lo que no se cargó todavía | → [A-FEAT-169](#a-feat-169) [A-BUG-189](#a-bug-189) `@cashflow` |
+| A-TEST-141 | 🔵 | Media | 💵 **Pagar una FC en DÓLARES desde Cash Flow — el permiso para borrar la Vista de Pagos.** Condición puesta por el usuario 2026-09-23: **hasta que esto salga bien, [A-FEAT-1169](#a-feat-1169) no se toca**, porque la pantalla vieja es la referencia contra la cual contrastar si algo falla. **Qué probar vos:** en **Cash Flow**, tomá una factura de ARCA en **dólares sin TC de pago cargado** y pasala a **pagar**. Tiene que: **(1)** frenar y **pedirte el tipo de cambio** antes de nada; **(2)** al guardarlo, **seguir solo con el SICORE**, sin que tengas que volver a apretar; **(3)** mostrar el importe **convertido a pesos** con ese TC —no con el tipo de cambio de la factura—; y **(4)** que el SICORE se calcule sobre el neto **en pesos**. 🔴 **Adversario 1**: una FC en dólares **que ya tenga TC de pago** no tiene que volver a preguntarlo. 🔴 **Adversario 2**: una FC **en pesos** no tiene que preguntar nada. 🔴 **Adversario 3 — el caso que puede faltar**: **dos o más** facturas en dólares sin TC. La Vista de Pagos las procesaba **en cola**; Cash Flow cambia de a una fila. Si al hacerlo de a una funciona bien, no falta nada. 📌 Si algo no anda, **abrí la Vista de Pagos de Egresos y hacé lo mismo ahí** para ver cómo debería quedar — para eso se deja viva | → [A-FEAT-1169](#a-feat-1169) `@cashflow/pagar` |
+| A-FEAT-170 | 🔵 | Media | 🔍 **Cash Flow: filtrar por TIPO DE COMPROBANTE y buscar por NÚMERO.** Pedido del usuario 2026-09-23, al revisar qué le faltaría a Cash Flow para poder apagar la Vista de Pagos: *«con tener un filtro por tipo de comprobante, y hasta escribir el nro ya que estamos cuando uno quiere buscar algo muy puntual, sería bueno y listo»*. 🔑 **Cierra el único hueco del análisis de [A-FEAT-1169](#a-feat-1169)**: la Vista de Pagos tenía un filtro de **sólo notas de crédito** que Cash Flow no tiene. El usuario no pidió ese filtro sino **uno más general** — por tipo de comprobante—, que lo cubre y sirve para más cosas. 📌 **Dos piezas**: (1) filtro por **tipo de comprobante** (Factura A/B/C, Nota de Crédito, Nota de Débito…), (2) **buscar por número** de comprobante, para ir a uno puntual. ⚠️ **El buscador tiene que mirar TODO, no la página cargada** — es el bug que ya apareció dos veces en el Extracto ([A-BUG-189](#a-bug-189)): buscar sobre lo que está en pantalla **no encuentra** lo que no se cargó todavía | → [A-FEAT-1169](#a-feat-1169) [A-BUG-189](#a-bug-189) `@cashflow` |
 | A-DEC-27 | ✅ | Media | ⚖️ **RESUELTA 2026-09-23: el mínimo es POR RÉGIMEN.** Textual del usuario: *«el mínimo es por cada tipo de facturación. Si son 2 facturas, una de bienes y otra de servicios, se debe descontar el mínimo de bienes y el mínimo de servicios. **Un mínimo no aplica para otro tipo de facturación.** A Alcorta le debería haber descontado su mínimo por servicios y no sucedió»*. → **El arreglo es [A-BUG-196](#a-bug-196)**, **de acá en adelante y sin retroactivo** (decisión suya). *(Pregunta original: ¿por régimen o uno solo por proveedor?)* Detectado 2026-09-23 mirando el caso real que el usuario probó. 🔑 **Qué hace hoy el sistema**: `verificarRetencionPrevia` busca por **CUIT y período**, **sin mirar `tipo_sicore`**. Entonces, si a un proveedor se le retuvo por **Bienes**, al retenerle por **Servicios** el sistema dice *«ya retuvo»* y **no le da el mínimo de Servicios**. 🧾 **Caso real, ALCORTA 10/09/2026**: se le retuvo por **Bienes** (mínimo $224.000 consumido entre 3 facturas) y el mismo día por **Servicios** — y esa retención de Servicios quedó registrada con **mínimo $0**, o sea **el mínimo de Servicios de septiembre nunca se usó**. 📐 **La RG 830 fija los mínimos POR RÉGIMEN** (Bienes $224.000 · Servicios $67.170 son reglón distintos del Anexo VIII), lo que sugiere que **cada régimen tiene su propio mínimo mensual** y habría que filtrar también por `tipo_sicore`. ⚠️ **Sentido del error si se confirma: se retiene de MÁS** — al revés de [A-BUG-193](#a-bug-193). 🛑 **NO tocar sin confirmarlo**, igual que se hizo con lo mensual ([A-DEC-26](#a-dec-26)): si el criterio actual fuera el correcto, «arreglarlo» haría retener de menos. **Es una pregunta para el contador** | → [A-BUG-193](#a-bug-193) [A-DEC-26](#a-dec-26) `@cashflow/sicore` |
 | A-BUG-196 | 🟢 | 🔴 **Alta** | ⚖️ **El mínimo de Bienes consumía el de Servicios.** ✅ **ARREGLADO 2026-09-23** en `jms/sicore-minimo-mensual`, falta el test del usuario ([A-TEST-140](#a-test-140)). 🔑 **Qué pasaba**: la consulta de retención previa buscaba por **CUIT y período, sin mirar el régimen**. Si a un proveedor se le había retenido por **Bienes**, al retenerle por **Servicios** el sistema decía *«ya retuvo»* y **no le daba el mínimo de Servicios**. 🧾 **Caso real, y lo encontró el usuario mirando su propia pantalla**: ALCORTA 10/09/2026 — se le retuvo por Bienes (mínimo $224.000 consumido entre 3 facturas) y el mismo día por Servicios, y esa retención quedó con **mínimo $0**: el mínimo de Servicios de septiembre **nunca se usó**. ⚠️ **Se retenía de MÁS** — al revés de [A-BUG-193](#a-bug-193). ⚙️ **Cómo**: las 3 funciones de retención previa (2 en Cash Flow, 1 en Facturas ARCA) aceptan un **régimen opcional** y filtran por `tipo_sicore`; los **4 llamados que deciden el mínimo** se lo pasan, porque corren **después** de que el usuario elige. 📌 **Los «portones» —los que sólo deciden si abrir el modal— NO lo pasan y siguen igual**: corren antes de que haya régimen, y para abrir una puerta alcanza; el cálculo de adentro decide el monto. ✅ **El dato estaba completo**: las **70** retenciones registradas tienen su `tipo_sicore` cargado. 🕳️ **Hueco que queda a propósito**: una factura que pasa **sin retener** consume parte del mínimo pero **nunca se le pregunta el régimen** — hoy hay **20 así, todas sin régimen**. Son de monto chico por definición; preguntarlo en cada una costaría más de lo que arregla. 🛑 **No retroactivo**: *«no lo haremos retroactivo, lo haremos de ahora en adelante»* | → [A-DEC-27](#a-dec-27) [A-BUG-193](#a-bug-193) [A-TEST-140](#a-test-140) `@cashflow/sicore @egresos` |
-| A-FEAT-169 | 🔵 | Media | 🗑️ **Desactivar la VISTA DE PAGOS de Egresos — ANÁLISIS HECHO 2026-09-23, listo para desarrollar.** 🔎 **Qué es**: el botón verde *«💰 Vista de Pagos»* de **Egresos → Facturas ARCA**, al lado de SICORE. Abre un modal de **2.512 líneas** (`vista-facturas-arca.tsx` 9177-11688). 📏 **Cuánto se puede sacar, medido**: el botón y su `onClick` (~130 líneas), el modal entero (**2.512**), su modal de TC (12264-12300), `guardarTcPagoPagos` (3337-3350), **10 estados exclusivos** (`facturasPagos`, `templatesPagos`, `sueldosPagos`, `anticiposPagos`, `cuentasContablesPagos`, `filtroOrigenPagos`, `filtrosPagos`, `filtroBusquedaPagos`, `filtroSoloNCPagos`, `cargandoPagos`) más los 3 del TC, y **2 ramas muertas** `if (mostrarModalPagos)` (3843 y 4257) que sólo refrescan la lista del propio modal. **≈2.700 líneas.** 🔑 **Verificado uno por uno: los 10 estados tienen CERO usos fuera del modal.** 🎯 **Y la pregunta del usuario —*«salvo que sea código único que usa Cash Flow»*— tiene respuesta: NO lo es.** El modal tiene **su propia `agruparPagos` y `desagruparPago` locales** (9460 y 9506), mientras **Cash Flow usa las del lib** (`lib/pagos/agrupar.ts`). **Son dos implementaciones distintas**: borrar el modal se lleva la copia y no toca la de Cash Flow. 🛑 **`lib/pagos/agrupar.ts` NO se toca.** ✅ **Lo que hace la Vista de Pagos y ya existe en Cash Flow**: agrupar/desagrupar, el **TC de pago** (`vista-cash-flow` 471-489) y el filtro por origen. ⚠️ **Lo que hay que mirar ANTES de borrar**: las ediciones **inline** del modal (cuenta contable, detalle, fecha de pago) y el **filtro de sólo NC** — confirmar con el usuario que no le falten en Cash Flow. 🛑 **NO SE BORRA HASTA PROBAR UNA FC EN DÓLARES — decisión del usuario 2026-09-23**: *«hay un tema con los pagos de FC en dólares que usan TC que no he tenido casos pero el funcionamiento debe estar contemplado. Si no, tal vez sea mejor dejar documentado para primero probar con una FC en dólares, y si anda borramos todo; y si no anda tendremos el funcionamiento de la Vista Pagos desde Egresos para contrastar»*. 🔑 **La pantalla vieja vale como REFERENCIA DE CONTRASTE**, y eso es un motivo para no apurar el borrado: una vez borrada, si el TC falla en Cash Flow no queda contra qué comparar. 📊 **COMPARACIÓN FUNCIONAL HECHA 2026-09-23** — qué de la Vista de Pagos ya existe en Cash Flow: ✅ **agrupar y desagrupar** (Cash Flow usa `lib/pagos/agrupar.ts`; el modal tiene copia propia) · ✅ **TC de pago de facturas USD**: Cash Flow **sí lo intercepta** al pasar a `pagar` (el «HOOK TC PAGO USD», `vista-cash-flow` 714-727) y después sigue con SICORE — hasta está comentado que el orden es a propósito · ✅ **edición inline** de cuenta contable, detalle y fecha de pago · ✅ **filtro por origen**. ⚠️ **La única diferencia REAL encontrada en dólares**: la Vista de Pagos procesa **varias facturas USD en COLA** (`colaUSDSinTC`, pide TC una tras otra); **Cash Flow cambia de estado de a UNA fila** (`filaParaCambioEstado` es singular), así que no necesita cola — **pero eso hay que confirmarlo pagando de verdad**. ❓ **Lo único que no encontré en Cash Flow**: el filtro de **sólo notas de crédito**. Preguntarle al usuario si lo usa. 🌿 **Va en RAMA APARTE**, pedido suyo: *«lo único que debemos ver es de hacerlo en una rama aparte por las dudas»*. 📌 **Motivo del usuario**: *«ya no lo uso hace mucho… agrupar siempre lo hago desde Cash Flow»*, y quiere **sacar el código, no sólo el botón** | → [A-FEAT-33](#a-feat-33) `@egresos` |
+| A-FEAT-1169 | 🔵 | Media | ⚠️ *Renumerado 2026-10-01 de A-FEAT-169 → 1169: chocaba con los permisos finos de Javier, que llevan ese número en 25 archivos de código (convención de A-OP-16: el nuestro va a +1000).* 🗑️ **Desactivar la VISTA DE PAGOS de Egresos — ANÁLISIS HECHO 2026-09-23, listo para desarrollar.** 🔎 **Qué es**: el botón verde *«💰 Vista de Pagos»* de **Egresos → Facturas ARCA**, al lado de SICORE. Abre un modal de **2.512 líneas** (`vista-facturas-arca.tsx` 9177-11688). 📏 **Cuánto se puede sacar, medido**: el botón y su `onClick` (~130 líneas), el modal entero (**2.512**), su modal de TC (12264-12300), `guardarTcPagoPagos` (3337-3350), **10 estados exclusivos** (`facturasPagos`, `templatesPagos`, `sueldosPagos`, `anticiposPagos`, `cuentasContablesPagos`, `filtroOrigenPagos`, `filtrosPagos`, `filtroBusquedaPagos`, `filtroSoloNCPagos`, `cargandoPagos`) más los 3 del TC, y **2 ramas muertas** `if (mostrarModalPagos)` (3843 y 4257) que sólo refrescan la lista del propio modal. **≈2.700 líneas.** 🔑 **Verificado uno por uno: los 10 estados tienen CERO usos fuera del modal.** 🎯 **Y la pregunta del usuario —*«salvo que sea código único que usa Cash Flow»*— tiene respuesta: NO lo es.** El modal tiene **su propia `agruparPagos` y `desagruparPago` locales** (9460 y 9506), mientras **Cash Flow usa las del lib** (`lib/pagos/agrupar.ts`). **Son dos implementaciones distintas**: borrar el modal se lleva la copia y no toca la de Cash Flow. 🛑 **`lib/pagos/agrupar.ts` NO se toca.** ✅ **Lo que hace la Vista de Pagos y ya existe en Cash Flow**: agrupar/desagrupar, el **TC de pago** (`vista-cash-flow` 471-489) y el filtro por origen. ⚠️ **Lo que hay que mirar ANTES de borrar**: las ediciones **inline** del modal (cuenta contable, detalle, fecha de pago) y el **filtro de sólo NC** — confirmar con el usuario que no le falten en Cash Flow. 🛑 **NO SE BORRA HASTA PROBAR UNA FC EN DÓLARES — decisión del usuario 2026-09-23**: *«hay un tema con los pagos de FC en dólares que usan TC que no he tenido casos pero el funcionamiento debe estar contemplado. Si no, tal vez sea mejor dejar documentado para primero probar con una FC en dólares, y si anda borramos todo; y si no anda tendremos el funcionamiento de la Vista Pagos desde Egresos para contrastar»*. 🔑 **La pantalla vieja vale como REFERENCIA DE CONTRASTE**, y eso es un motivo para no apurar el borrado: una vez borrada, si el TC falla en Cash Flow no queda contra qué comparar. 📊 **COMPARACIÓN FUNCIONAL HECHA 2026-09-23** — qué de la Vista de Pagos ya existe en Cash Flow: ✅ **agrupar y desagrupar** (Cash Flow usa `lib/pagos/agrupar.ts`; el modal tiene copia propia) · ✅ **TC de pago de facturas USD**: Cash Flow **sí lo intercepta** al pasar a `pagar` (el «HOOK TC PAGO USD», `vista-cash-flow` 714-727) y después sigue con SICORE — hasta está comentado que el orden es a propósito · ✅ **edición inline** de cuenta contable, detalle y fecha de pago · ✅ **filtro por origen**. ⚠️ **La única diferencia REAL encontrada en dólares**: la Vista de Pagos procesa **varias facturas USD en COLA** (`colaUSDSinTC`, pide TC una tras otra); **Cash Flow cambia de estado de a UNA fila** (`filaParaCambioEstado` es singular), así que no necesita cola — **pero eso hay que confirmarlo pagando de verdad**. ❓ **Lo único que no encontré en Cash Flow**: el filtro de **sólo notas de crédito**. Preguntarle al usuario si lo usa. 🌿 **Va en RAMA APARTE**, pedido suyo: *«lo único que debemos ver es de hacerlo en una rama aparte por las dudas»*. 📌 **Motivo del usuario**: *«ya no lo uso hace mucho… agrupar siempre lo hago desde Cash Flow»*, y quiere **sacar el código, no sólo el botón** | → [A-FEAT-33](#a-feat-33) `@egresos` |
 | A-FEAT-168 | 🔵 | 🔴 **Alta** | 💳 **AGRUPAR UN ANTICIPO/SALDO A FAVOR JUNTO CON LAS FACTURAS.** Propuesto por el usuario 2026-09-22 sobre un caso real: *«¿yo podría crear el anticipo y luego agruparlo junto con las facturas agrupadas? Quedaría un grupo de 3 FC más 1 anticipo. ¿Eso no se puede?»*. 🔑 **Tiene razón y es el mismo patrón que ya se resolvió para SUELDOS** ([A-FEAT-33](#a-feat-33)): el banco debita **una sola línea** y el sistema tiene N filas; sin poder agruparlas, ninguna fila vale lo que el banco debitó y **el movimiento no concilia nunca**. 🛑 **Hoy NO se puede, por dos motivos concretos**: (1) el botón Agrupar acepta sólo `ARCA`, `TEMPLATE` y `SUELDO` — un anticipo queda fuera; (2) **`public.anticipos_proveedores` no tiene columna `grupo_pago_id`**, así que aunque se habilitara el botón **no hay dónde guardar el vínculo**. ⚠️ Cambio de ESTRUCTURA: se avisa antes de aplicarlo (la BD es una sola). 📌 Y al agrupar, el **monto del grupo** y el **Detalle de Pago** tienen que incluir la línea del anticipo, o el PDF vuelve a mostrar menos de lo transferido. 🧾 **Caso testigo que lo originó**: [A-DAT-55](#a-dat-55) — Alcorta 10/06/2026, $4.480,00 transferidos de más. 💡 **Alternativa descartada**: vincular el movimiento a *grupo + anticipo* por doble vínculo (la auditoría ya lo considera legítimo para `ARCA`+`anticipo`), pero **el Extracto no tiene forma manual de sumar un anticipo** y el motor sólo los arma cuando la descripción del banco dice «anticipo». Agrupar es más limpio: deja **una sola fila** que vale exactamente lo que el banco debitó | → [A-FEAT-33](#a-feat-33) [A-DAT-55](#a-dat-55) `@cashflow/agrupar @extracto/conciliacion` |
+| **A-FEAT-169** | 🔴 | Media | ⭐ **Permisos finos: por pestaña y por lectura/escritura.** Pedido del usuario 2026-09-24. Hoy el permiso es **por solapa entera y siempre con edición**: quien ve Productivo ve sus 6 pestañas y puede escribir en todas. Eso bloquea delegar — es la **quinta pieza** de `CLAUDE.md` § norte administrativo: si la tarea no se puede acotar, no se puede delegar, y el cuello de botella sigue siendo el dueño. Caso testigo: Ulises de peón | → [A-FEAT-169](#a-feat-169) `@general` |
 | A-DAT-55 | 🔵 | Media | 💸 **Alcorta 10/06/2026: se transfirieron $4.480,00 DE MÁS y el movimiento no puede conciliar.** Lo trajo el usuario 2026-09-22 cruzando el extracto de Galicia contra el Cash Flow: *«hay 2 que marcan diferencias»*. 🔑 **La causa es el MÍNIMO NO IMPONIBLE de Ganancias aplicado DOS VECES.** SICORE Bienes tiene un mínimo de **$224.000** que se consume **una sola vez por proveedor y por quincena** *(así lo acumula el sistema; ver [A-DEC-26](#a-dec-26))*; en el detalle que se envió se aplicó entero en la FC 6115 (que lo consumió todo) **y otra vez** en la FC 6152. Como la alícuota es 2 %, el efecto es exactamente **2 % × $224.000 = $4.480,00**. ✅ **El sistema HOY está bien**: certificado **00002026000034** (vigente) con retención total **$65.380,71** y las tres bases correctas (6115 con mínimo $224.000 → $13.178,94 · 2734 sin mínimo → $19.526,40 · 6152 sin mínimo, neto post-descuento $1.633.768,56 → $32.675,37). El certificado **00002026000030** quedó **anulado** y era el que tenía la 6152 en $28.195,37. 🧨 **El desfase es de la TRANSFERENCIA, no del registro**: banco **$4.165.672,09** vs. aplicado a comprobantes **$4.161.192,09**. ⚠️ **Y la retención NO se puede bajar para que cierre la resta**: está certificada y la quincena `26-06 - 1ra` está cerrada — Alcorta se toma el crédito por los $65.380,71 completos, así que **los $4.480 los puso MSA**. 📌 **Los $4.480 son un CRÉDITO contra el proveedor, no un gasto**: meterlos dentro del grupo dejaría una factura cancelada por más de lo que vale e inflaría el gasto del período. 🎯 **Destino**: saldo a favor de $4.480 con fecha 10/06, agrupado con las 3 FC → [A-FEAT-168](#a-feat-168), y se descuenta del próximo pago. ⏳ **Pendiente de avisar a Alcorta** con el detalle corregido | → [A-FEAT-168](#a-feat-168) `@cashflow/detalle-pago @extracto/conciliacion` |
 | A-TEST-143 | 🔵 | 🔴 **Alta** | 🔐 **Entrar con tu LOGIN después del merge a `desarrollo`** (2026-09-23). **Qué probar vos:** en la preview de **`desarrollo`**, entrá con tu usuario de Google y verificá que **(1)** te deje pasar; **(2)** el **menú lateral** muestre las secciones que te tocan; **(3)** una pantalla que ESCRIBA —conciliar un movimiento, cambiar un estado— **funcione**: las 35 rutas de API ahora **exigen sesión**, y si algo quedó sin cookie va a devolver 401 en vez de guardar; **(4)** el botón de **notas** y la **marca** 🚩 sigan apareciendo — van montados en toda la app y el merge los movió adentro del layout nuevo. 👥 **Y después habilitá a Ulises**: es el punto de todo esto. 🔴 **Adversario**: sin loguearte, la app **no** tiene que dejarte operar. ⚠️ **Si algo falla, avisá antes de seguir** — `main` sigue en el 02/08 y no se toca hasta que esto ande | → [A-SEC-06](#a-sec-06) `@principal` |
 | A-OP-17 | 🔵 | 🔴 **Alta** | 🗺️ **REPARTIR EL ESPACIO DE IDs entre JMS y Javier — es lo único que evita que el choque vuelva.** Limpiar los 38 de [A-OP-16](#a-op-16) no arregla la causa: **los dos seguimos tomando números del mismo pozo**, y git no lo ve hasta el merge siguiente — esta vez tardó **tres semanas** en salir a la luz. 💡 **Propuesta del usuario (2026-09-23)**: rangos por persona. Evaluó también prefijos (`Jav-BUG-12` / `Jose-BUG-12`) y numeración negativa. ❌ **El prefijo se descarta**: es lo más legible, pero rompe el parser del panel, el control y las ~800 referencias `[A-TEST-90](#a-test-90)` ya escritas. ❌ **Los negativos ordenan mal.** ✅ **Rangos, con el reparto elegido para que Javier NO tenga que hacer nada**: **él 500-999** (hoy va por ~98, le sobra para años) · **JMS 1000 en adelante** (los 33 renumerados ya cayeron ahí) · lo viejo de los dos por debajo de 500 **queda donde está**, que no choca y nadie lo pisa. 📌 **Lo que hace falta de Javier es UNA frase**: *«de ahora en adelante numerá del 500 al 999»*. Ningún renumerado de su lado. ⚠️ **Y hay que escribirlo en `CLAUDE.md` § regla 12**, no sólo acordarlo: un reparto que vive en una conversación **no obliga** — es la misma lección de «*una decisión que no está en su dimensión es un recuerdo*» | → [A-OP-16](#a-op-16) `@principal` |
@@ -3852,6 +3859,437 @@ Modelo de edición acordado:
 
 ⚠️ El paso 5 **no se puede probar sin un deploy de preview**; y el 6 consume uno de los ~2 mails
 por hora del mailer de Supabase.
+
+---
+
+## <a id="a-feat-169"></a>A-FEAT-169 — Permisos finos: por pestaña y por lectura/escritura (2026-09-24)
+
+**Pedido del usuario**: *"granularizar los permisos dentro de las páginas. Si la página tiene tabs
+o sub-tabs que se pueda poner permisos a ellas también. Agregar permisos de lectura y escritura
+específicos para cada tab o funcionalidad dentro de cada página."*
+
+### Por qué importa, más allá de la feature
+
+Es la **quinta pieza** del norte administrativo (`CLAUDE.md` § El PERMISO): automatizar no es sólo
+que el sistema haga más, es **que la tarea pueda pasar a otra persona**. Hoy el permiso es la
+piedra en el camino: como se reparte por solapa entera y siempre con edición, dar acceso a una
+tarea chica obliga a abrir todo lo demás. Por eso Ulises sigue sin poder cargar lo suyo y la carga
+la sigue haciendo el dueño — *la automatización le ahorraría trabajo a quien no es el cuello de
+botella*.
+
+### Lo que hay hoy
+
+`public.roles` (creada por `scripts/60`) con `secciones text[]`, leída por `seccionesDelRol()` en
+`lib/auth/permisos.ts` y consumida por `app/page.tsx`, `/perfil` y `/configuracion`. Se edita desde
+Configuración → Roles. **Dos limitaciones**, las dos pedidas por el usuario:
+
+1. **Grano de solapa**: quien ve Productivo ve sus 9 pestañas; quien ve Extracto, las 12.
+2. **No existe sólo-lectura**: ver una solapa es poder editarla.
+
+### ⚠️ El hallazgo que cambia el diseño
+
+**452 escrituras salen directo del navegador** (`.insert/.update/.upsert/.delete` en 66 componentes
+de `components/`), contra 27 archivos en `app/api`. O sea que la app escribe mayormente con la
+**anon key desde el cliente**.
+
+Consecuencia dura: **un modo lectura hecho sólo en la UI es cosmético**. Deshabilitar el botón no
+impide nada — la consola del navegador tiene la misma sesión y la misma clave. Quien quiera
+escribir, escribe.
+
+Y la RLS que cerraría eso ([A-SEC-07](#a-sec-07), `scripts/57`) **todavía no se corrió**.
+
+### Diseño — tres capas, y la tercera es la única que obliga
+
+**1 · Registro de recursos** — `lib/auth/recursos.ts`: una fila por sección y por pestaña
+(`id`, `seccion`, `etiqueta`). Hoy las pestañas viven sueltas dentro de cada `vista-*.tsx`.
+🧮 **Su control**: un script que extrae los `TabsTrigger value=` de cada vista y los compara con el
+registro. Si aparece una pestaña nueva y nadie la registró, queda **sin permiso asignable** y nadie
+se entera — el modo de falla es exactamente el de § Templates: se asume un default y no avisa.
+
+**2 · Modelo de datos** — columna `permisos jsonb` en `public.roles`, claves planas:
+`{"extracto": "escritura", "extracto.conciliacion": "lectura", "productivo.hacienda": "escritura"}`.
+Ausente = sin acceso. Lo más específico gana sobre lo general.
+**Migración, no reemplazo** (§ Datos): se rellena desde `secciones` con `"escritura"` en todas, así
+**el día 1 nadie cambia de permisos**; `secciones` queda un tiempo como paracaídas, igual que el
+`FALLBACK` que ya existe.
+
+**3 · Aplicación** — en tres lugares, y sólo el último es una barrera:
+   - **UI**: la pestaña sin permiso **no se muestra** (no aparece vacía: una pestaña que existe y no
+     sirve es peor que una que no está); con `lectura`, los controles de guardar se deshabilitan.
+   - **API**: las 27 rutas que escriben validan contra el permiso. Hoy varias ya validan sesión
+     ([A-SEC-06](#a-sec-06)), falta el nivel.
+   - **RLS**: lo único que frena las 452 escrituras directas. Requiere traducir *"pestaña X en
+     lectura"* a *"este rol no hace UPDATE en estas tablas"* — y esa traducción es el corazón del
+     trabajo, no un detalle de implementación.
+
+### Etapas propuestas
+
+| # | Qué | Sirve para |
+|---|---|---|
+| 1 | Registro de recursos + su control | Saber qué se puede permisar. Sin esto lo demás no tiene sobre qué operar |
+| 2 | `permisos jsonb` + migración desde `secciones` + Configuración → Roles editando el árbol | Ya permite **ocultar pestañas**, que es la mitad del pedido y la que desbloquea delegar |
+| 3 | Sólo-lectura en la UI | Mitad cosmética, mitad real: evita el error honesto, no al que quiere saltarlo |
+| 4 | Validación en las 27 rutas de API | Primera barrera de verdad |
+| 5 | RLS por rol — **depende de [A-SEC-07](#a-sec-07)** | La única que obliga de verdad |
+
+⚠️ **Etapas 1-3 sin la 5 son un permiso por confianza, no por seguridad.** Sirven para que cada uno
+vea lo suyo y no se equivoque; **no** para contener a alguien que no debería poder escribir. Eso hay
+que decirlo al entregar, no después.
+
+### Etapa 1 — HECHA 2026-09-24
+
+`lib/auth/recursos.ts` (27 recursos) + `npm run verificar:recursos` + la pantalla de Roles
+mostrando lo que hay dentro de cada sección.
+
+**Lo que el relevamiento corrigió**, y vale anotarlo porque una lista mal armada acá se propaga a
+todo lo demás: en Extracto **las 12 pestañas no son hermanas**. Sólo 4 son navegación
+(`movimientos`, `importar`, `reportes`, `auditoria`); las otras 8 están dentro de **tres modales
+distintos** — las reglas (conciliación, contable-interno, parseo) y el asignador de un movimiento
+(template, ARCA, sueldo, grupo, venta). Por eso el registro distingue `pestana` de `funcionalidad`:
+una es un lugar donde se está, la otra es algo que se hace. Medirlo pidió contar anidamiento de
+`<Tabs>` y si estaban dentro de un `<Dialog>`; a ojo parecían 12 iguales.
+
+**Reparto real**: Egresos 4 · Extracto 4+8 · Productivo 9 · Cash Flow 2 · y **8 secciones sin nada
+adentro**, cada una con su motivo escrito en `SIN_RECURSOS` (el control exige que lo tengan: un
+hueco sin explicación no se distingue de un olvido).
+
+⚠️ **Ingresos queda afuera**: sus pestañas se generan por empresa y por vista, así que no existen
+en el código. Permisarlas pide resolverlas en tiempo de ejecución.
+
+⚠️ **Las casillas de adentro se muestran DESHABILITADAS.** El permiso fino todavía no se guarda ni
+se aplica — están para que se vea el alcance real de cada sección. Mostrarlas como si funcionaran
+sería exactamente lo que `scripts/60` decidió evitar: *«una columna de permisos que ninguna guarda
+chequea parece un permiso y no lo es»*.
+
+### Etapa 2 — HECHA 2026-09-24 (falta correr `scripts/61`)
+
+Se puede **destildar una pestaña sin sacarle la sección**, se guarda, y la pestaña **no se dibuja**.
+
+**El modelo guarda EXCEPCIONES, no permisos.** `roles.permisos jsonb` arranca en `{}` = "todo lo
+que hay dentro de tus secciones", que es exactamente el comportamiento de hoy — por eso
+**`scripts/61` no migra ni una fila** y el día 1 nadie cambia de permisos. La alternativa (listar
+lo permitido) obligaba a mantener `secciones` y la lista sincronizadas para siempre.
+
+Y tiene una segunda virtud, que es la que decidió el diseño: **lo que todavía nadie registró se
+sigue viendo**. Con lista de permitidos, una pestaña nueva sin registrar desaparecería de la
+pantalla sin que nadie la haya prohibido, y en silencio.
+
+**Piezas**: `scripts/61` (columna + `CHECK` que rechaza niveles inventados) · `recursosOcultosDe()`
+en `permisos.ts` · `ocultos[]` en el `PATCH` de `/api/admin/roles` (valida contra el registro y
+descarta excepciones de secciones que el rol no tiene) · `components/contexto-permisos.tsx` —
+por contexto y no por props, porque las pestañas viven dentro de vistas de miles de líneas.
+
+🔎 **Lo que destapó aplicarlo**: `stock`, `ordenes` y `compras` **NO son hermanas de Hacienda: son
+sub-pestañas de Insumos**, y viven en otro componente del mismo archivo. La medición de
+anidamiento de la etapa 1 no lo vio, porque ese componente se declara aparte y su `<Tabs>` abre
+después de que cerró el de arriba. El registro ahora tiene `padre`, y la pantalla las muestra
+indentadas y bloqueadas si el padre está destildado.
+
+⚠️ **Sigue sin ser seguridad.** Esconder una pestaña en el navegador no impide nada: con la misma
+sesión se escribe desde la consola. La barrera real es la RLS por recurso — etapa 5.
+
+### 🔻 Un error mío que vale más que la feature (2026-09-24)
+
+Al agregar `permisos` al `select` de `leerRoles()` **sin haber corrido `scripts/61`**, la lectura
+de roles empezó a fallar entera —un `select` con una columna inexistente no devuelve las otras
+columnas: falla— y la app cayó al FALLBACK mostrando **«Falta crear la tabla de roles en la
+base»**.
+
+**Era falso.** La tabla estaba y tenía sus 2 filas. Faltaba una columna. Y el cartel mandaba a
+correr `scripts/60`, que no arreglaba nada, mientras el problema real quedaba invisible.
+
+Es el modo de falla de § Contrapartes y § Templates otra vez: **el paracaídas funcionó, y al
+funcionar tapó la causa**. Un fallback que no distingue qué falta es un fallback que miente.
+
+**Arreglado**: `leerRoles()` pide `permisos` y, si falla, **reintenta sin esa columna**. Así un
+script pendiente degrada **una función**, no la tabla entera. Y `leerRoles()` devuelve `falta:
+"tabla" | "columna_permisos"`, con un cartel distinto para cada caso — el de la columna dice que
+los permisos por sección **sí** andan y que lo único pendiente es el grano fino.
+
+### Etapa 3 (a medias) — Ver y Editar por separado, 2026-09-24
+
+Pedido del usuario: *«tiene que tener un checkbox para ver y otro para editar. Y estos mismos datos
+debería poder verlos en la pantalla de permisos»*. Las dos cosas hechas:
+
+- **Dos casillas por recurso** en Roles. Destildar **Ver** arrastra Editar — no se puede editar lo
+  que no se ve, y dejar las dos libres permitiría guardar un permiso que no significa nada.
+- **La pantalla de Permisos muestra lo mismo**: cada sección abre sus recursos, con tres estados
+  (`edita` verde · `ve` ámbar · sin acceso). Sale de la misma fuente que el editor, así que no se
+  pueden desincronizar.
+
+⚠️ **Y acá está lo que hay que decir, no callar**: **«Ver» se aplica hoy** (la pestaña no se
+dibuja). **«Editar» se guarda y se puede consultar** (`usePuedeEditar`), pero **todavía casi
+ninguna pantalla lo consulta y la base no lo frena**. Por eso el editor muestra un aviso ámbar en
+cuanto ponés algo en «sólo ver»: sin ese cartel esto sería exactamente lo que `scripts/60` decidió
+evitar — *«una columna de permisos que ninguna guarda chequea parece un permiso y no lo es»*.
+
+**Lo que falta para que «Editar» muerda**: apagar los controles de guardar en cada pantalla (resto
+de la etapa 3), las 27 rutas de API (etapa 4) y la RLS por recurso (etapa 5, la única que obliga).
+
+### Etapas 3 y 4 — HECHAS 2026-09-24
+
+**Etapa 3 · sólo-lectura en la pantalla.** `components/solo-lectura.tsx` envuelve el contenido de
+cada pestaña registrada (17 en total). Si el rol la tiene en `"lectura"`, pone un cartel y apaga
+los controles con un **`<fieldset disabled>`**.
+
+⚠️ **El `fieldset` es una decisión, no una comodidad.** Ir botón por botón en vistas de miles de
+líneas es whack-a-mole, y **el que se olvida no avisa**: queda un botón que guarda cuando no
+debería y se descubre el día que alguien lo aprieta. `fieldset[disabled]` es del navegador y
+alcanza a todo `input/button/select/textarea` de adentro — **incluidos los que se agreguen mañana
+sin que nadie se acuerde de esta feature**. Se eligió el mecanismo que falla cerrado.
+**Lo que NO cubre**: un `<div onClick>` no es control de formulario. Radix renderiza `<button>` de
+verdad, así que la mayoría queda cubierta, pero no es garantía.
+
+**Etapa 4 · el nivel en la API.** `lib/auth/guard-recurso.ts` → `exigirEscritura(recurso)`: valida
+sesión, rol, que la sección esté dada, que el padre no esté oculto, y que el nivel sea escritura.
+Frena el pedido aunque venga de la consola.
+
+🔑 **Pero el mapeo ruta→recurso es donde está el trabajo real, y se declaró en vez de adivinarse.**
+`lib/auth/rutas-recursos.ts` tiene una fila por cada una de las **27 rutas que escriben**: **2
+mapeadas** (`reparsear-extracto` → `extracto.parseo`, `lotes/generar` → `productivo.lotes`) y **25
+declaradas SIN mapear, cada una con su motivo**.
+
+⚠️ **Que sean sólo 2 no es pereza: adivinar es peor que no mapear.** `arca-asignar` toca
+comprobantes de **las tres empresas** y las pestañas son una por empresa — ponerle
+`egresos.facturas-msa` **le abriría PAM y MA a quien sólo tenía MSA**, y no fallaría nada. Es el
+`UPDATE` que no matchea (§ Contrapartes) otra vez: **un hueco declarado se ve en la lista; un mapeo
+equivocado no se ve en ningún lado.**
+
+🧮 **Control**: `npm run verificar:rutas` busca qué rutas escriben y exige que **todas** estén
+declaradas —con recurso o con motivo— y que los recursos a los que apuntan existan.
+
+⚠️ **Y lo que ninguna de las dos etapas cubre**: las **452 escrituras directas desde el navegador**
+(66 componentes). No pasan por `app/api`, así que el guard no las ve, y el `fieldset` sólo apaga
+botones. Eso lo frena **únicamente la RLS por recurso — etapa 5**.
+
+**ETAPAS 1-4 HECHAS · 5 PENDIENTE (la única que obliga)** → [A-TEST-146](#a-test-146)
+
+---
+
+## <a id="a-sec-10"></a>A-SEC-10 — La RLS ahora lee la política de permisos (2026-09-24)
+
+`scripts/62`, corrido con el usuario paso a paso. **Cierra la etapa 5 de [A-FEAT-169](#a-feat-169)**
+y es la pieza que convierte todo lo anterior en una barrera.
+
+### Qué faltaba
+
+[A-SEC-07](#a-sec-07) puso RLS en ~95 tablas, pero su candado `tiene_rol()` sólo preguntaba
+**«¿tenés ALGÚN rol?»**. La política vivía en `public.roles` y **la base no la leía**: un `contable`
+pasaba exactamente la misma puerta que un `admin`.
+
+Y eso importaba más que en cualquier otro sistema, porque **452 escrituras salen directo del
+navegador** (66 componentes): no pasan por ninguna ruta de API, así que ni el guard de
+[A-FEAT-169](#a-feat-169) ni el `<fieldset disabled>` las ven.
+
+### Cómo quedó
+
+- **`public.recurso_tablas`** — el mapeo, declarado: 45 tablas.
+- **`nivel_recurso` / `nivel_tabla` / `puede_ver` / `puede_escribir`** — resuelven el nivel contra
+  `roles.secciones` + `roles.permisos`.
+- **Dos policies por tabla** en lugar de una `FOR ALL`. Sin separarlas, «sólo lectura» **no puede
+  existir**: o entrás y escribís, o no entrás.
+
+### Las dos decisiones que más costaron
+
+**1 · A nivel de TABLA la ambigüedad por empresa desaparece.** `msa.comprobantes_arca` es
+inequívocamente Facturas MSA porque **el schema es la empresa**. Desde las rutas esto era imposible
+—una sola ruta toca las tres— y fue lo que dejó 25 rutas sin mapear en la etapa 4. **La misma
+pregunta tiene respuesta clara en una capa y ambigua en otra**: conviene elegir la capa.
+
+**2 · `productivo` se mapeó por SECCIÓN, no por pestaña.** De sus 40 tablas, pocas se atribuyen a
+una pestaña con certeza (¿`romaneos` es Hacienda o una venta? ¿`labores` es Órdenes o Lotes?).
+Por sección impide que un `contable` escriba en Productivo —el riesgo real— **sin inventar nada**.
+Lo no mapeado conserva el comportamiento anterior, así que nada se rompe por omisión.
+
+### Cómo se verificó
+
+Se cambió el orden del protocolo a propósito: **el PASO 3 se probó primero en UNA tabla**
+(`msa.comprobantes_arca`) antes de tocar las 95. Se eligió una **mapeada** porque prueba los cuatro
+eslabones de una vez — JWT, mapeo, resolución del nivel y policy. Las facturas siguieron
+viéndose → recién entonces el resto.
+
+Después: PASO 4 con cero filas en las tres consultas, `anon` sigue en 401, `service_role` sigue
+entrando.
+
+⚠️ **`security definer` es obligatorio** acá: `public.roles` está revocada a `authenticated` a
+propósito, así que sin él la policy no podría leer la tabla que la define. Va blindado con
+`search_path` fijo y **`REVOKE ... FROM PUBLIC`** — no `FROM anon`, que es lo que **no cerró**
+`tiene_rol()` esa misma mañana.
+
+### Lo que falta, y no es un detalle
+
+### 🔻 ROTURA EN VIVO: `puede_ver` sin `security definer` (2026-09-24)
+
+`scripts/63` hizo que `puede_ver` consultara `recurso_tablas` y **se olvidó el `security definer`**.
+Esa tabla está revocada a `authenticated` a propósito, así que la policy fallaba al leerla:
+
+> `403 · permission denied for table recurso_tablas`
+
+**Ningún usuario logueado podía leer casi ninguna tabla desde el navegador.** La app parecía andar
+porque el menú y los contadores usan rutas con `service_role`, que saltea la RLS — **la parte rota
+era justo la que no se ve al abrir la pantalla**. Arreglado con `scripts/65`.
+
+⚠️ **Por qué no se detectó antes, que vale más que el fix.** `scripts/63` se verificó con `anon`
+(401 ✅) y con `service_role` (200 ✅). **Ninguno de los dos pasa por esa policy**: `anon` no llega y
+`service_role` la saltea. Se probaron los dos caminos que no podían fallar y no el único que
+importaba.
+
+📌 **Regla que deja: una policy de RLS sólo se prueba con una sesión de usuario.** Verificar con
+`anon` y `service_role` da una falsa sensación de cobertura — las dos dan el resultado esperado
+mientras la app está rota.
+
+Apareció al pedir el usuario *«¿puedes usar Claude en Chrome y validarlo vos?»*. Con el JWT real de
+su sesión, el primer barrido de 15 tablas dio 403 en 13. Después del fix: **16 de 16 en 200**, y las
+7 secciones con datos (Egresos 434 comprobantes · Extracto 849 movimientos · Productivo 217
+terneros · Sueldos 117 pagos). Eso cierra de paso el control «recorrer la app logueado», que no se
+podía hacer desde la línea de comandos.
+
+### Extracto mapeado, 2026-09-24 (`scripts/64`)
+
+Ninguna tabla de Extracto estaba mapeada, así que un rol con sólo Productivo **podía escribir en el
+extracto bancario**. Se mapearon **12** a nivel sección: los movimientos de cada cuenta, las tres
+cajas, las tres tarjetas y las dos de configuración de reglas. Total: **57 tablas**.
+
+🔑 **`msa.cheques` quedó AFUERA, y el motivo es el aprendizaje**: la escribe `vista-facturas-arca`,
+o sea **Egresos**. Mapearla a Extracto habría roto las facturas. Es el mismo error que destapó
+`scripts/63`, pero esta vez se evitó **midiendo quién escribe cada tabla antes de mapearla** — que
+pasa a ser el paso obligatorio antes de tocar `recurso_tablas`.
+
+### 🔻 «Una tabla, un recurso» era falso — y ya había roto Presupuesto (2026-09-24)
+
+Apareció al querer mapear las tablas de Extracto: antes de proponerlo se midió **quién más las
+lee**, y el resultado invalidó el modelo de `scripts/62`.
+
+| Tabla | Mapeada a | Pero también la leen |
+|---|---|---|
+| `actividades`, `actividad_insumos` | `productivo` | los configuradores y el **panel de margen** (Presupuesto) |
+| `movimientos_hacienda`, `categorias_hacienda` | `productivo` | ídem |
+| `caja_general` | *(iba a Extracto)* | **Sueldos** y **Cash Flow** |
+| `cuotas_egresos_sin_factura` | *(iba a Egresos)* | **27 archivos** |
+
+Como la policy aplicaba el mapeo **tanto a leer como a escribir**, desde el mismo 24/09 **alguien con
+Presupuesto pero sin Productivo encontraba el panel de margen roto**.
+
+🔑 **Y esto es lo que hay que recordar del episodio**: el defecto era invisible porque **las dos
+cuentas son `admin`**. Se habría descubierto el primer día que existiera un rol acotado — es decir,
+al crear la cuenta de prueba, y el síntoma habría sido «se rompió todo» en vez de «falta un
+permiso». Un sistema de permisos **no se puede probar con el rol que tiene todos los permisos**.
+
+**Corrección** (`scripts/63`): **una tabla se ESCRIBE desde un lado y se LEE desde varios.** El mapeo
+gobierna la escritura, que es donde está el riesgo; la lectura alcanza con tener rol, salvo que la
+tabla se marque `restringe_lectura`. Esa columna arranca en `false` en las 45 — marcarla rompe las
+pantallas de otras secciones que la lean, así que se hace de a una y midiendo.
+
+### 🔻 El cartel quedó viejo el mismo día (2026-09-24)
+
+Lo vio el usuario: la pantalla seguía diciendo *«sólo ver se guarda pero todavía no impide
+escribir»* — un cartel de la etapa 3 que `scripts/62` volvió **falso unas horas después**.
+
+Es un modo de falla propio de la documentación dentro del producto: **el cartel honesto de ayer es
+la mentira de hoy**, y nadie lo revisa porque no falla nada.
+
+**Y arreglarlo no era borrarlo**, porque la verdad quedó más fina: depende del mapeo.
+`egresos.facturas-*` está mapeado **por pestaña**, así que ahí la base sí frena; `productivo` está
+mapeado **por sección**, así que poner «sólo ver» en una de sus pestañas **no lo aplica la base** —
+sus tablas resuelven contra la clave de sección, que la pantalla nunca escribe.
+
+**Solución**: que la pantalla lo sepa. `/api/admin/roles` devuelve `recursosAplicados` (los recursos
+con tablas mapeadas), cada fila muestra **🔒 base** cuando corresponde, y el cartel **nombra las
+pestañas** donde el «sólo ver» es sólo visual. El mismo dato por el otro camino: lo único que sabe
+la verdad es el mapeo.
+
+**Nada de esto está probado con un rol acotado.** Las dos cuentas son `admin` y pasan todo. El test
+real es [A-TEST-148](#a-test-148) y **no se puede hacer con las cuentas de hoy**.
+
+### ✅ Ya se puede — y la lectura NO frena (medido 2026-09-29)
+
+*Se creó la cuenta acotada que faltaba: `javiergc89+contable@gmail.com`, rol `contable`, 1 sección
+(Egresos). Lo de abajo se midió con **su token**, obtenido con `signInWithPassword`, **no** con
+`admin` ni con `service_role` — que es justo lo que esta § decía que nadie había hecho.*
+
+| Con la sesión del `contable` | Resultado |
+|---|---|
+| `public.proveedores` | 👁️ **lee** (167 filas) |
+| `public.cuentas_contables` | 👁️ **lee** (143 filas) |
+| **`sueldos.empleados`** | 👁️ **lee** (9 filas) |
+| **`msa.cheques`** | 👁️ **lee** (10 filas) |
+| `public.roles` | 🔒 bloqueado |
+| `nivel_tabla('sueldos','empleados')` **con su token** | **`escritura`** |
+
+🔑 **Parte es el diseño y parte no, y conviene no confundirlos:**
+
+- **Que lea, es lo decidido** en la corrección de `scripts/63` — *«la lectura alcanza con tener rol,
+  salvo que la tabla se marque `restringe_lectura`»*. Y `restringe_lectura` **sigue en `false` en
+  las 61 registradas**, así que hoy **ningún rol tiene restringida ninguna lectura**. El riesgo no
+  es teórico: el perfil pensado para **delegarle la carga a un empleado** llega a **sueldos y
+  cheques** desde la consola del navegador, con la `anon_key` que viaja en el bundle.
+- **Que `nivel_tabla` devuelva `escritura`, no.** Es el default que reporta JMS en
+  `ENTRE-DESARROLLADORES.md`: la función resuelve a `escritura` cuando la tabla no está mapeada.
+  ⚠️ **El `UPDATE` no se intentó** — sería escribir datos reales — así que esto está medido en la
+  función, no en una escritura consumada.
+
+🧨 **Y confirma la lección que esta misma § había escrito**: *«un sistema de permisos no se puede
+probar con el rol que tiene todos los permisos»*. Estuvo 5 días sin probarse por **no tener una
+cuenta acotada**; crearla costó dos minutos y encontró esto en la primera consulta.
+
+📌 **Un descarte que vale registrar**: antes se midió `nivel_tabla` con `service_role` y dio
+`ninguno` — parecía indicar que el default ya estaba corregido. **No probaba nada**: `service_role`
+no lleva rol en el token, así que el `ninguno` venía de *«no hay rol»*. **Con un rol real da
+`escritura`.** Un control corrido con la identidad equivocada da confianza sin respaldo — el mismo
+mecanismo de la rotura en vivo de `puede_ver`.
+
+---
+
+## <a id="a-sec-09"></a>A-SEC-09 — Las rutas de API salteaban la RLS: 37 de 41 usaban `service_role` (2026-09-24)
+
+**Hallado** al preguntar el usuario *«quiero estar alineado con buenas prácticas de seguridad de
+roles y permisos, ¿qué sugerís?»*. Antes de recomendar nada se midió, y el número reordenó la
+respuesta.
+
+### El problema
+
+`service_role` **saltea la RLS por completo**. El mismo día en que [A-SEC-07](#a-sec-07) instaló la
+RLS en ~95 tablas, **37 de 41 rutas la salteaban**. O sea que la RLS protegía las 452 escrituras
+directas del navegador **y no protegía ni una ruta de API**: cada ruta era una puerta de acceso
+total, limitada sólo por el guard escrito a mano — y **25 de ellas decían apenas «cualquier rol con
+sesión»**, así que un `contable` podía llamar a `import-pesadas` o `sueldos/cuenta-empleado` con un
+`fetch` desde la consola.
+
+### La política, en una línea
+
+> **El cliente de la sesión es el default; `service_role` es la excepción y se declara.**
+
+Con el cliente de la sesión, **la RLS gobierna también la API** y una ruta nueva **nace protegida**.
+Con `service_role`, cada ruta nueva es una decisión de seguridad que alguien puede olvidar — y
+olvidarla no falla, sólo abre.
+
+🔑 **Y esto es lo que lo vuelve la pieza más rentable de todo el trabajo de permisos**: hace
+innecesario mapear ruta por ruta. Las 25 rutas sin mapear de [A-FEAT-169](#a-feat-169) quedan
+gobernadas por la política de la base sin que nadie decida nada sobre ellas.
+
+### Hecho
+
+**13 rutas migradas** a `clienteUsuario()` (`lib/supabase-usuario.ts`): las de GAS, importadores de
+cuenta, lotes, pendientes, proveedores, sueldos. **37 → 24.**
+
+**Las 3 razones legítimas** para seguir usando `service_role`, verificadas: `auth.admin.*` (crear e
+invitar cuentas), `public.roles` (revocada a `authenticated` a propósito por `scripts/60`, para que
+nadie edite sus propios permisos) y Storage.
+
+🧮 **Control**: `npm run verificar:service-role` exige que **toda** ruta que use `service_role` esté
+declarada con su motivo. Ya atajó un error propio: la migración había dejado el cliente de sesión
+**llamándose `supabaseAdmin`** — engañoso, y además invisible para el control.
+
+### Lo que queda
+
+**17 rutas de deuda declarada**: definen el cliente a nivel de módulo y lo usan en helpers, así que
+migrarlas pide refactor por archivo. Están listadas una por una en el control, no escondidas.
+
+⚠️ **Y el paso que le da sentido a todo esto**: hoy la RLS sólo pregunta *«¿tenés algún rol?»*
+(`tiene_rol()`), así que migrar una ruta la sujeta a una política que todavía no distingue entre
+roles. **Migrar es gratis hoy y protege recién cuando la RLS lea `roles.permisos`** — etapa 5 de
+[A-FEAT-169](#a-feat-169). Ese orden es a propósito: primero el punto de control único, después la
+política fina; al revés habría que volver a tocar las 41 rutas.
 
 ---
 

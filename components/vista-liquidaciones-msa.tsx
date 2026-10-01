@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { cobroEsperado } from "@/lib/ventas/cobro-esperado"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,7 +17,7 @@ import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-ms
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 interface Props {
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
   /**
    * De qué empresa son los comprobantes. `comprobantes_venta` existe en los 3 schemas.
    * Lo que NO existe fuera de `msa` son `retenciones_recibidas`, `ventas` y `ventas_comprobantes`
