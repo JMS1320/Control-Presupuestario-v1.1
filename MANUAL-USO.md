@@ -1160,6 +1160,19 @@ link en la factura.
 | **🔗 Vincular PDFs (lee el contenido)** | **El que hace el trabajo.** Abre cada archivo, le lee adentro el CUIT, el número y el monto, y lo vincula a su factura cuando los tres coinciden | Cuando querés que se vinculen. Es el normal |
 | **🔗 Vincular sólo los que faltan** | Lo mismo, pero saltea los que ya están vinculados | Para re-correr sin repetir trabajo |
 
+#### 🖱️ Los chips de colores: click y **Ctrl+click**
+
+Debajo de los botones hay una fila **🗂️ Archivo digital** con tres chips — *con archivo*, *falta*,
+*portal* — que **filtran la tabla**:
+
+- **Click** sobre un chip lo prende o lo apaga, y deja los otros como estaban.
+- **Ctrl+click** (o **⌘+click** en Mac) deja **sólo ése** — útil cuando querés ver de una las que
+  faltan y nada más. Pasá el mouse por encima y el cartelito te lo recuerda.
+- Con ninguno prendido se ven **todas**.
+
+Es el mismo gesto que los chips de **Estado** y **Origen** del Cash Flow, y que la fila **Tipos** del
+buscador de PDFs. ⚠️ Sin probar todavía → A-TEST-1178
+
 > ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
 > vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
 > se reportó como un bug del sistema que no existía.

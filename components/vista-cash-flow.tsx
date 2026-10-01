@@ -2,6 +2,7 @@
 
 
 import { hoyArgentina } from "@/lib/fechas"
+import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -1190,14 +1191,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    * Motivo: con todos los chips prendidos, ir a "ver sólo uno" obligaba a apretar *ninguno* y
    * después el que se quería. Dos pasos para lo que se hace todo el tiempo.
    */
-  const toggleChip = (
-    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
-    val: string,
-    soloEste = false,
-  ) => {
-    if (soloEste) { setter(new Set([val])); return }
-    setter(prev => { const n = new Set(prev); n.has(val) ? n.delete(val) : n.add(val); return n })
-  }
+  // `toggleChip` vive en `lib/ui/chips.ts` desde A-FEAT-1221: lo usan tambien las otras pantallas.
   const verTodo = () => {
     setChipsEstados(new Set(estadosDisponibles))
     setChipsOrigenes(new Set(origenesDisponibles))
@@ -3992,8 +3986,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               {estadosDisponibles.map(e => (
                 <button
                   key={e}
-                  onClick={(ev) => toggleChip(setChipsEstados, e, ev.ctrlKey || ev.metaKey)}
-                  title={`Click: prender/apagar «${e}» · Ctrl+click: ver SÓLO «${e}»`}
+                  onClick={(ev) => toggleChip(setChipsEstados, e, esSoloEste(ev))}
+                  title={tituloChip(e)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsEstados.has(e) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
                   {e} ({data.filter(f => f.estado === e).length})
@@ -4001,15 +3995,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               ))}
               <button onClick={() => setChipsEstados(new Set(estadosDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
               <button onClick={() => setChipsEstados(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
-              <span className="ml-1 text-[10px] text-gray-400" title="Sirve en los chips de Estado y de Origen">ctrl+click = sólo ése</span>
+              <span className="ml-1 text-[10px] text-gray-400" title="Sirve en los chips de Estado y de Origen">{PISTA_CTRL_CLICK}</span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-xs font-semibold text-gray-600 mr-1">Origen:</span>
               {origenesDisponibles.map(o => (
                 <button
                   key={o}
-                  onClick={(ev) => toggleChip(setChipsOrigenes, o, ev.ctrlKey || ev.metaKey)}
-                  title={`Click: prender/apagar «${o}» · Ctrl+click: ver SÓLO «${o}»`}
+                  onClick={(ev) => toggleChip(setChipsOrigenes, o, esSoloEste(ev))}
+                  title={tituloChip(o)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsOrigenes.has(o) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
                   {o} ({data.filter(f => f.origen === o).length})

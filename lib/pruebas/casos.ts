@@ -123,6 +123,7 @@ import {
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
+import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2115,6 +2116,47 @@ export function correrCasos(): Resultado[] {
   chequear("Cobro de venta", "Un cobro que coincide exacto se marca exacto",
     "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
     diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
+
+
+  // ══ 🖱️ EL GESTO DE LOS CHIPS: ctrl+click = solo ese (A-FEAT-1221) ═══════════════════════════
+  // Pedido del usuario 2026-10-01 mirando el Cash Flow: «funciona muy bien, llevalo a todos».
+  // Es logica pura: se le pasa un setter de mentira que guarda el resultado.
+
+  const correrChip = (inicial: string[], valor: string, soloEste: boolean) => {
+    let estado = new Set(inicial)
+    toggleChip<string>(f => { estado = f(estado) }, valor, soloEste)
+    return [...estado].sort()
+  }
+
+  chequear("Chips de filtro", "Click sobre un chip APAGADO lo prende, sin tocar los otros",
+    "a,b,c", correrChip(["a", "c"], "b", false).join(","),
+    correrChip(["a", "c"], "b", false).join(",") === "a,b,c", "A-FEAT-1221")
+
+  chequear("Chips de filtro", "Click sobre un chip PRENDIDO lo apaga, sin tocar los otros",
+    "a,c", correrChip(["a", "b", "c"], "b", false).join(","),
+    correrChip(["a", "b", "c"], "b", false).join(",") === "a,c", "A-FEAT-1221")
+
+  // 🔑 El gesto que pidio: con ctrl, la seleccion entera se reemplaza por ese chip.
+  chequear("Chips de filtro", "🔑 CTRL+click deja SOLO ese chip, aunque hubiera 4 prendidos",
+    "b", correrChip(["a", "b", "c", "d"], "b", true).join(","),
+    correrChip(["a", "b", "c", "d"], "b", true).join(",") === "b", "A-FEAT-1221")
+
+  // ⚠️ Adversario: ctrl+click sobre uno APAGADO tambien deja solo ese -- lo PRENDE.
+  //    Si en vez de eso lo apagara, el usuario quedaria sin nada a la vista y pareceria un bug.
+  chequear("Chips de filtro", "⚠️ CTRL+click sobre un chip apagado lo deja PRENDIDO y solo",
+    "z", correrChip(["a", "b"], "z", true).join(","),
+    correrChip(["a", "b"], "z", true).join(",") === "z", "A-FEAT-1221")
+
+  // ⚠️ Adversario: ctrl+click sobre el UNICO prendido no puede dejar la pantalla vacia.
+  chequear("Chips de filtro", "⚠️ CTRL+click sobre el unico prendido lo mantiene, no vacia el filtro",
+    "a", correrChip(["a"], "a", true).join(","),
+    correrChip(["a"], "a", true).join(",") === "a", "A-FEAT-1221")
+
+  // El ⌘ de Mac cuenta igual que el Ctrl de Windows.
+  chequear("Chips de filtro", "El gesto vale con Ctrl y con ⌘ (Mac), y no con un click pelado",
+    "true · true · false",
+    `${esSoloEste({ ctrlKey: true })} · ${esSoloEste({ metaKey: true })} · ${esSoloEste({})}`,
+    esSoloEste({ ctrlKey: true }) && esSoloEste({ metaKey: true }) && !esSoloEste({}), "A-FEAT-1221")
 
 
   /**

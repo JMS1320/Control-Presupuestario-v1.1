@@ -1,6 +1,7 @@
 "use client"
 
 
+import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
 import jsPDF from 'jspdf'
@@ -6344,12 +6345,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               const con = facturasPeriodo.filter(f => categoriaArchivo(f) === 'con').length
               const falta = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta').length
               const portal = facturasPeriodo.filter(f => categoriaArchivo(f) === 'portal').length
-              const toggle = (cat: 'con' | 'falta' | 'portal') =>
-                setFiltroArchivoPdf(prev => { const n = new Set(prev); if (n.has(cat)) n.delete(cat); else n.add(cat); return n })
+              // Ctrl+click = ver SOLO esa categoria (A-FEAT-1221, el gesto del Cash Flow).
               const chip = (cat: 'con' | 'falta' | 'portal', label: string, color: string) => {
                 const activo = filtroArchivoPdf.has(cat)
                 return (
-                  <button type="button" onClick={() => toggle(cat)}
+                  <button type="button" title={tituloChip(label)}
+                    onClick={(ev) => toggleChip(setFiltroArchivoPdf, cat, esSoloEste(ev))}
                     className={`px-2 py-0.5 rounded-full text-xs border transition ${activo ? color + ' ring-2 ring-offset-1' : color + ' opacity-80 hover:opacity-100'}`}>
                     {label}
                   </button>
@@ -12504,8 +12505,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     {tiposPresentes.map(tipo => {
                       const activo = filtroTiposPdf.has(tipo)
                       return (
-                        <button key={tipo} type="button" disabled={buscandoPdfs}
-                          onClick={() => setFiltroTiposPdf(prev => { const n = new Set(prev); if (n.has(tipo)) n.delete(tipo); else n.add(tipo); return n })}
+                        <button key={tipo} type="button" disabled={buscandoPdfs} title={tituloChip(tipo)}
+                          onClick={(ev) => toggleChip(setFiltroTiposPdf, tipo, esSoloEste(ev))}
                           className={`px-2 py-0.5 rounded text-[11px] border ${activo ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
                           {tipo}
                         </button>
@@ -12513,6 +12514,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     })}
                     {filtroTiposPdf.size > 0 && (
                       <button type="button" className="text-[11px] text-gray-500 underline ml-1" onClick={() => setFiltroTiposPdf(new Set())}>limpiar</button>
+                    )}
+                    {tiposPresentes.length > 1 && (
+                      <span className="ml-1 text-[10px] text-gray-400">{PISTA_CTRL_CLICK}</span>
                     )}
                   </div>
                 )}
