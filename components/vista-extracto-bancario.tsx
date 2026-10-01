@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo, useRef } from "react"
+import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -277,6 +278,8 @@ export function VistaExtractoBancario() {
    * movimientos bancarios sin conciliar— y sin mensajes de usuario»*.
    */
   const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
+  /** ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. Decide también sobre qué columna mira el rango de montos. */
+  const [filtroSentido, setFiltroSentido] = useState<Sentido>('todos')
   const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
   /**
    * 🧹 **A-FEAT-135** — qué hacer con las notas de lo que se acaba de conciliar.
@@ -627,11 +630,13 @@ ${texto.trim()}` : texto.trim()
     if (filtroEstado !== 'Todos') items.push(`estado ${filtroEstado}`)
     if (filtroRevisado !== 'todas') items.push(filtroRevisado === 'revisadas' ? 'sólo revisadas' : 'sólo no revisadas')
     if (filtroNota !== 'todas') items.push(filtroNota === 'con_nota' ? 'con nota mía' : 'sin nota mía')
+    if (filtroSentido !== 'todos') items.push(ETIQUETA_SENTIDO[filtroSentido])
     if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
   }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
-      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial])
+      busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
+      filtroSentido])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -2632,6 +2637,7 @@ ${marca}` : marca
     if (filtroRevisado !== 'todas') filtros.filtroRevisado = filtroRevisado
     if (filtroNota !== 'todas') filtros.filtroNota = filtroNota
     if (busquedaNota.trim()) filtros.busquedaNota = busquedaNota.trim()
+    if (filtroSentido !== 'todos') filtros.sentido = filtroSentido
     return { ...filtros, ...overrides }
   }
 
@@ -2661,6 +2667,7 @@ ${marca}` : marca
      */
     setFiltroRevisado('todas')
     setFiltroNota('todas')
+    setFiltroSentido('todos')   // A-FEAT-1224 — si quedara puesto, es el bug A-BUG-155 otra vez
 
     // Reset completo: acá SÍ va el objeto mínimo — se limpió todo, no hay nada que preservar.
     cargarMovimientos({
@@ -3234,6 +3241,25 @@ ${marca}` : marca
                   <option value="sin_nota">💬 Sin nota</option>
                 </select>
 
+                {/* ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. Mismo select-chip que sus vecinos:
+                    recorta la lista por un atributo, así que se lee como parte de la familia.
+                    Va a la CONSULTA (no filtra lo ya cargado) y además decide sobre qué columna
+                    mira el «Rango de Montos». */}
+                <select
+                  value={filtroSentido}
+                  onChange={(e) => {
+                    const nuevo = e.target.value as Sentido
+                    setFiltroSentido(nuevo)
+                    cargarMovimientos(construirFiltros({ sentido: nuevo !== 'todos' ? nuevo : undefined }))
+                  }}
+                  title="Ver sólo los débitos (lo que sale) o sólo los créditos (lo que entra). El rango de montos busca en la columna que elijas acá."
+                  className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroSentido !== 'todos' ? 'bg-sky-700 text-white border-sky-700' : 'bg-white text-sky-800 border-sky-300'}`}
+                >
+                  <option value="todos">↕️ Débitos y créditos</option>
+                  <option value="debitos">↓ Sólo débitos</option>
+                  <option value="creditos">↑ Sólo créditos</option>
+                </select>
+
                 {/* 🔍 A-FEAT-134 — buscar DENTRO de la nota. Va pegado al chip porque es su
                     afinado: el chip dice «si tiene o no» y esto «qué dice». Se aplica al salir o con
                     Enter y no en cada tecla: cada cambio es una consulta a la base. */}
@@ -3258,7 +3284,7 @@ ${marca}` : marca
                 >
                   📝 Anotar los {movimientos.length}
                 </Button>
-                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas' || busquedaNota.trim()) && (
+                {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas' || busquedaNota.trim() || filtroSentido !== 'todos') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -3271,6 +3297,7 @@ ${marca}` : marca
                       // queda recortada y el botón dice lo contrario.
                       setFiltroNota('todas')
                       setBusquedaNota('')   // A-FEAT-134: si queda puesta, «Limpiar» miente igual que antes
+                      setFiltroSentido('todos')   // A-FEAT-1224, por la misma razón
                       /**
                        * ⚠️ Acá los overrides van **al revés** que en los chips: hay que APAGAR
                        * explícitamente lo que se acaba de limpiar.
@@ -3288,6 +3315,7 @@ ${marca}` : marca
                         categEspecial: undefined,
                         filtroRevisado: undefined,
                         filtroNota: undefined,
+                        sentido: undefined,
                       }))
                     }}
                   >

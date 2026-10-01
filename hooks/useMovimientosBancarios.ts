@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
+import { filtroDeSentidoYMonto, type Sentido } from "@/lib/movimientos/sentido"
 
 export interface MovimientoBancario {
   id: string
@@ -76,6 +77,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     fechaHasta?: string
     montoDesde?: number
     montoHasta?: number
+    /** ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. También decide sobre qué columna mira el rango de montos. */
+    sentido?: Sentido
     categ?: string
     categEspecial?: 'invalida' | 'sin_categ'
     detalle?: string
@@ -120,15 +123,17 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.lte('fecha', filtros.fechaHasta)
       }
 
-      // Aplicar filtro de monto desde (débitos)
-      if (filtros?.montoDesde) {
-        query = query.gte('debitos', filtros.montoDesde)
-      }
-
-      // Aplicar filtro de monto hasta (débitos)
-      if (filtros?.montoHasta) {
-        query = query.lte('debitos', filtros.montoHasta)
-      }
+      /**
+       * ↕️ A-FEAT-1224 — sólo débitos / sólo créditos, y el RANGO DE MONTOS sobre la columna que
+       * corresponde. ⚠️ Hasta 2026-10-01 el rango comparaba sólo contra `debitos`: un crédito nunca
+       * aparecía buscándolo por monto, y un «hasta» dejaba pasar todos los créditos (débito 0).
+       * La traducción vive en `lib/movimientos/sentido.ts`, que tiene sus casos.
+       */
+      const fm = filtroDeSentidoYMonto(filtros?.sentido ?? 'todos', filtros?.montoDesde, filtros?.montoHasta)
+      if (fm.soloColumna) query = query.gt(fm.soloColumna, 0)
+      if (fm.rango?.desde) query = query.gte(fm.rango.columna, fm.rango.desde)
+      if (fm.rango?.hasta) query = query.lte(fm.rango.columna, fm.rango.hasta)
+      if (fm.rangoEnCualquiera) query = query.or(fm.rangoEnCualquiera)
 
       // Aplicar filtro especial de CATEG (invalida / sin_categ)
       if (filtros?.categEspecial === 'invalida') {
