@@ -124,6 +124,7 @@ import {
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
+import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2157,6 +2158,74 @@ export function correrCasos(): Resultado[] {
     "true · true · false",
     `${esSoloEste({ ctrlKey: true })} · ${esSoloEste({ metaKey: true })} · ${esSoloEste({})}`,
     esSoloEste({ ctrlKey: true }) && esSoloEste({ metaKey: true }) && !esSoloEste({}), "A-FEAT-1221")
+
+
+  // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
+  // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto
+  // comparaba SÓLO contra débitos. Los casos marcados 🧨 fallan con esa lógica vieja.
+
+  // Cómo filtraba ANTES el rango (sólo la columna de débitos, sin exigir que no sea cero).
+  const pasabaAntes = (f: { debitos: number; creditos: number }, desde?: number, hasta?: number) =>
+    (!desde || f.debitos >= desde) && (!hasta || f.debitos <= hasta)
+  const credito500k = { debitos: 0, creditos: 500000 }
+  const debito500k = { debitos: 500000, creditos: 0 }
+
+  chequear("Débitos / créditos", "🧨 ANTES un crédito de $500.000 NO aparecía en «400.000 a 600.000»",
+    "no aparecía", pasabaAntes(credito500k, 400000, 600000) ? "aparecía" : "no aparecía",
+    pasabaAntes(credito500k, 400000, 600000) === false, "A-FEAT-1224")
+
+  const todosConRango = filtroDeSentidoYMonto("todos", 400000, 600000)
+  chequear("Débitos / créditos", "🔑 AHORA con «todos» el rango mira las DOS columnas",
+    "débitos o créditos entre 400000 y 600000",
+    todosConRango.rangoEnCualquiera ?? "(nada)",
+    todosConRango.rangoEnCualquiera ===
+      "and(debitos.gt.0,debitos.gte.400000,debitos.lte.600000),and(creditos.gt.0,creditos.gte.400000,creditos.lte.600000)",
+    "A-FEAT-1224")
+
+  // 🧨 El otro lado del mismo bug: «hasta» solo dejaba pasar TODOS los créditos (débito 0 <= cualquier cosa).
+  chequear("Débitos / créditos", "🧨 ANTES «hasta $100» dejaba pasar un crédito de $500.000",
+    "lo dejaba pasar", pasabaAntes(credito500k, undefined, 100) ? "lo dejaba pasar" : "lo frenaba",
+    pasabaAntes(credito500k, undefined, 100) === true, "A-FEAT-1224")
+  const soloHasta = filtroDeSentidoYMonto("todos", undefined, 100)
+  chequear("Débitos / créditos", "🔑 AHORA cada condición exige importe en ESA columna (> 0)",
+    "las dos llevan .gt.0",
+    soloHasta.rangoEnCualquiera ?? "(nada)",
+    soloHasta.rangoEnCualquiera === "and(debitos.gt.0,debitos.lte.100),and(creditos.gt.0,creditos.lte.100)",
+    "A-FEAT-1224")
+
+  const soloCreditos = filtroDeSentidoYMonto("creditos", 400000, 600000)
+  chequear("Débitos / créditos", "«Sólo créditos» + monto: el rango va contra CRÉDITOS, no contra débitos",
+    "creditos 400000–600000",
+    `${soloCreditos.soloColumna} ${soloCreditos.rango?.columna} ${soloCreditos.rango?.desde}–${soloCreditos.rango?.hasta}`,
+    soloCreditos.soloColumna === "creditos" && soloCreditos.rango?.columna === "creditos"
+      && soloCreditos.rango?.desde === 400000 && soloCreditos.rango?.hasta === 600000, "A-FEAT-1224")
+
+  chequear("Débitos / créditos", "Sin sentido y sin monto, la consulta no se toca",
+    "{}", JSON.stringify(filtroDeSentidoYMonto("todos")),
+    JSON.stringify(filtroDeSentidoYMonto("todos")) === "{}", "A-FEAT-1224")
+
+  chequear("Débitos / créditos", "Un monto en 0 no filtra (igual que antes)",
+    "sólo la columna, sin rango", JSON.stringify(filtroDeSentidoYMonto("debitos", 0, 0)),
+    JSON.stringify(filtroDeSentidoYMonto("debitos", 0, 0)) === JSON.stringify({ soloColumna: "debitos" }), "A-FEAT-1224")
+
+  // Cash Flow: filtra lo que ya trajo.
+  const ambos = new Set<"debitos" | "creditos">(["debitos", "creditos"])
+  const filaCero = { debitos: 0, creditos: 0 }
+  chequear("Débitos / créditos", "Cash Flow: con los DOS chips prendidos no se esconde nada, ni las filas en cero",
+    "pasan las tres",
+    [debito500k, credito500k, filaCero].map(f => pasaSentido(f, ambos)).join(" "),
+    [debito500k, credito500k, filaCero].every(f => pasaSentido(f, ambos)), "A-FEAT-1224")
+
+  const soloDeb = new Set<"debitos" | "creditos">(["debitos"])
+  chequear("Débitos / créditos", "Cash Flow: sólo Débitos deja el débito y saca el crédito y el cero",
+    "true false false",
+    [debito500k, credito500k, filaCero].map(f => pasaSentido(f, soloDeb)).join(" "),
+    pasaSentido(debito500k, soloDeb) && !pasaSentido(credito500k, soloDeb) && !pasaSentido(filaCero, soloDeb),
+    "A-FEAT-1224")
+
+  chequear("Débitos / créditos", "Cash Flow: con los dos apagados no pasa nada (como Estado y Origen)",
+    "false", String(pasaSentido(debito500k, new Set())),
+    pasaSentido(debito500k, new Set()) === false, "A-FEAT-1224")
 
 
   /**
