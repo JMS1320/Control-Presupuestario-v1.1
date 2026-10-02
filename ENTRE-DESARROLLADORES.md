@@ -359,6 +359,16 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
+## 📨 2026-10-02 · PARA JAVIER — VOY A CORRER `scripts/73`: una tabla NUEVA con RLS (aviso ANTES)
+
+**`msa.echeqs_terceros`** ([A-FEAT-1230](PENDIENTES.md#a-feat-1230)): el «extracto» de los cheques de clientes
+(entra el recibido, sale el endoso). Es una cuenta más del Extracto, **con la misma forma que
+`msa.caja_general`** (`like ... including all`) más `anticipo_id` (único) y `comprobante_venta_id`.
+- **RLS como las cajas**: `ver_segun_permiso` / `escribir_segun_permiso` con `puede_ver` /
+  `puede_escribir('msa','echeqs_terceros')`; `revoke` a `anon`; `grant` a `authenticated` y `service_role`.
+- **Registrada en `recurso_tablas`** bajo `extracto` en el mismo script (para no sumar una a A-SEC-14).
+- Rama `jms/extracto-echeqs`. Deshacer con freno.
+
 ## 📨 2026-10-02 · PARA JAVIER — `desarrollo` se actualizó con todo lo de JMS (tu trabajo, intacto)
 
 Se juntaron en `desarrollo` las dos líneas de JMS: **balance** (export de papeles de trabajo, sueldos,
