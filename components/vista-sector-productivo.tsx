@@ -3663,8 +3663,8 @@ function SubTabStockInsumos() {
     try {
       const [catRes, stockRes, movRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_insumo').select('*').eq('activo', true).order('nombre'),
-        supabase.schema('productivo').from('stock_insumos').select('*, categorias_insumo(nombre, unidad_medida)').order('producto'),
-        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre))').order('fecha', { ascending: false }).limit(100)
+        supabase.schema('productivo').from('stock_insumos').select('*, categorias_insumo(nombre, unidad_medida, ambito)').order('producto'),
+        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre, ambito))').order('fecha', { ascending: false }).limit(100)
       ])
       if (catRes.data) setCategorias(catRes.data)
       if (stockRes.data) setStock(stockRes.data)
@@ -3817,17 +3817,21 @@ function SubTabStockInsumos() {
     cargarDatos()
   }
 
-  const stockFiltrado = stock.filter(s => {
-    const esAgroquimico = s.categorias_insumo?.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
-  })
-  const categoriasFiltradas = categorias.filter(c => {
-    const esAgroquimico = c.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
-  })
+  /**
+   * 🌾 Agrícola o ganadero se decide por el ÁMBITO de la categoría (`categorias_insumo.ambito`), no por
+   * su nombre. Antes era `nombre === 'Agroquímico'`: Semilla, Fertilizante, Herbicida, Fungicida e
+   * Insecticida —todas `agricola` en la base— no se podían crear ni ver en la pestaña agrícola
+   * (pedido del usuario 2026-10-02). `ambos` (Combustible) aparece en las dos.
+   */
+  const deEsteAmbito = (ambitoCat: string | null | undefined, nombreCat?: string | null) => {
+    const ambitoReal = ambitoCat || (nombreCat === 'Agroquímico' ? 'agricola' : 'ganadero')
+    return ambitoReal === 'ambos' || ambitoReal === filtroTipo
+  }
+  const stockFiltrado = stock.filter(s => deEsteAmbito((s.categorias_insumo as any)?.ambito, s.categorias_insumo?.nombre))
+  const categoriasFiltradas = categorias.filter(c => deEsteAmbito((c as any).ambito, c.nombre))
   const movimientosFiltrados = movimientos.filter(m => {
-    const esAgroquimico = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-    const matchAmbito = filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    const cat = (m.stock_insumos as any)?.categorias_insumo
+    const matchAmbito = deEsteAmbito(cat?.ambito, cat?.nombre)
     if (!matchAmbito) return false
     // Filtro por tipo de movimiento (multi-select; vacío = todos)
     if (filtroTipoMov.size > 0 && !filtroTipoMov.has(m.tipo)) return false
@@ -3987,8 +3991,8 @@ function SubTabStockInsumos() {
             </div>
             <span className="text-xs text-muted-foreground ml-auto">
               {movimientosFiltrados.length} de {movimientos.filter(m => {
-                const esAgro = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-                return filtroTipo === 'agricola' ? esAgro : !esAgro
+                const cat = (m.stock_insumos as any)?.categorias_insumo
+                return deEsteAmbito(cat?.ambito, cat?.nombre)
               }).length} movimientos
             </span>
           </div>
