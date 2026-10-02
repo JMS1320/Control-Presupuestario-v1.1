@@ -1217,6 +1217,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         if (eLeer) throw eLeer
         let cambios: Record<string, any>
         if (sufijo) {
+          // Una cuota conciliada con el banco no se cambia con una marca (A-BUG-1234): se dice, no se ignora.
+          if ((comp?.plazos as any[] | null)?.[Number(sufijo) - 1]?.movimiento_id) {
+            throw new Error('Esa cuota está conciliada con el banco: se suelta desconciliando el movimiento en el Extracto')
+          }
           const r = marcarCuota((comp?.plazos || []) as any[], Number(sufijo) - 1, destino, comp?.estado ?? null)
           cambios = { plazos: r.plazos, estado: r.estadoComprobante }
         } else {

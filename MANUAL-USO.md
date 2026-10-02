@@ -1738,11 +1738,40 @@ Queda en la lista con la marca **histórica**, y desde ahí se liquida como cual
 📌 Si la hacienda **está** en el stock, la venta se carga desde **Productivo → Movimientos**, que la
 descuenta. Si ponés una fecha posterior a febrero de 2026, la pantalla te lo recuerda.
 
+### El detalle del cobro: cómo se fue cobrando
+En **Ingresos → Cobros**, abrí un comprobante. Arriba a la izquierda está el **Detalle del cobro**: cada
+cosa que lo canceló, con su fecha y su medio — transferencia, pago a cuenta, echeq (también endosado),
+**factura del cliente que descontó** de lo que pagó, y a la derecha las retenciones. Abajo, el control:
+
+- **✓ El detalle cierra** → está todo.
+- **Faltan $X** → falta cobrar, o falta cargar algo (una retención, un echeq, una factura descontada).
+- **⚠️ Suma de más** → hay algo cargado dos veces.
+
+**Pagos a cuenta sin vincular**: si el cliente te hizo pagos a cuenta que todavía no están atados a
+ningún comprobante, aparecen ahí con un botón **Vincular**. Es lo mismo que vincularlos desde el
+Cash Flow.
+
+**Un echeq del cliente que endosaste**: como no pasa por tu banco, se carga a mano con **+ Registrar un
+echeq del cliente que endosaste** (fecha, monto, número, a quién). Queda en el detalle y no se espera
+en el Cash Flow.
+
+### Conciliar el cobro de una cuota
+En el **Extracto**, al asignar un crédito → pestaña **Venta**, una liquidación con plazos aparece **una
+vez por cada cuota pendiente** (*cuota 1 de 3, vence…*). Elegí la cuota: queda conciliada **esa** cuota
+y la liquidación pasa a conciliada recién con todas. Si reasignás el movimiento, la cuota vuelve a
+«a cobrar».
+
 ### Marcar las cuotas cobradas
 En **Ingresos → Cobros**, abrí la liquidación: abajo están sus cuotas, con **Marcar cobrada**. Es lo
 mismo que pasarla a cobrado en el **Cash Flow**: lo que marcás en un lado se ve en el otro. Cuando
 están todas cobradas, la liquidación pasa a *cobrado*; *conciliado* lo decide la conciliación con el
-banco.
+banco. Una cuota **✓ conciliada** no se desmarca desde acá ni desde el Cash Flow: se suelta
+desconciliando su movimiento en el Extracto.
+
+### Las retenciones en el Excel del Subdiario de Ventas
+El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, con las retenciones
+recibidas del mes: los certificados (por su fecha) y las que vienen impresas en los comprobantes del
+subdiario, con el total por tipo. Sirve para que el contador las compare con *Mis Retenciones* de ARCA.
 
 Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
 su venta, y el consignatario queda registrado como cliente.

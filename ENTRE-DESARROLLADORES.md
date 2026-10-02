@@ -228,3 +228,9 @@ esto no la empeora ni la arregla.
 ([A-FEAT-1226](PENDIENTES.md#a-feat-1226)). ⚠️ **Te aviso después de correrlo, no antes** como pide la regla:
 se aplicó en la misma tanda en que JMS lo autorizó. Mismo perfil que las anteriores: default `false`, no
 toca filas, permisos, RLS ni roles, y la vista `public.ventas_unificadas` **no se tocó**. Deshacer con freno.
+
+➕ **2026-10-02, `scripts/71`**: el CHECK de **`public.anticipos_proveedores.estado_pago`** admite también
+**`endosado`** ([A-FEAT-1228](PENDIENTES.md#a-feat-1228)): el echeq de un cliente que se endosa. ⚠️ **También te
+aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Sólo agrega un valor permitido;
+no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
+anticipo, sumale `endosado`.

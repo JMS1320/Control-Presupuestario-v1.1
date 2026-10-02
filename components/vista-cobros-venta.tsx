@@ -14,6 +14,7 @@ import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
 import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { parseNumeroAR } from "@/lib/format/numero"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -223,6 +224,8 @@ export function VistaCobrosVenta() {
 
   return (
     <div className="space-y-3">
+      {/* 🧪 Los A-TEST de este proceso aparecen acá, donde se prueban (CLAUDE.md § 🧪). */}
+      <TestsDelProceso proceso="ingresos/cobros" pantalla="ingresos" />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />

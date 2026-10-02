@@ -12732,6 +12732,19 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-02 · el echeq ENDOSADO de un cliente (`anticipos_proveedores.estado_pago = 'endosado'`) — A-FEAT-1228
+
+```sql
+ALTER TABLE public.anticipos_proveedores DROP CONSTRAINT anticipos_proveedores_estado_pago_check;
+ALTER TABLE public.anticipos_proveedores ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+  CHECK (estado_pago::text = ANY (ARRAY['pendiente','pagar','preparado','programado','pagado','echeq','conciliado','endosado']::text[]));
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/71-anticipo-echeq-endosado.sql` (deshacer con freno si ya hay endosados). Verificado con
+`EXPLAIN INSERT` como `authenticated`, sin escribir datos. Sin cambio de estructura en `plazos`: el
+`movimiento_id` por cuota (A-BUG-1234) es un campo más del jsonb.
+
 ### 2026-10-02 · la VENTA HISTÓRICA de hacienda (`productivo.stock_ventas.historica`) — A-FEAT-1226
 
 ```sql
