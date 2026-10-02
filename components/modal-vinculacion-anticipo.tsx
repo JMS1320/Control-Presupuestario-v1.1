@@ -23,7 +23,7 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
     conflictoCuenta, cuentaPreferida,
     onSeleccionarFactura, avanzarAConfirmacion, volverASeleccion, confirmarVinculacion, cerrarModal,
     iniciarMarcaExterno, volverDeExterno, confirmarMarcaExterno, setMotivoExterno,
-    setCuentaPreferida,
+    setCuentaPreferida, setTcPago,
   } = controller
 
   // Un anticipo de COBRO se vincula contra facturas de venta: cambia el vocabulario
@@ -134,9 +134,20 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                       <div className="font-semibold mb-2">
                         {calculo.caso === 'A' ? '✅ Factura cubierta completamente' : '⚠️ Anticipo cubre parcialmente'}
                       </div>
+                      {/* 💵 A-BUG-1236 — factura en dólares: el TC del pago. Default el de la factura; se corrige acá. */}
+                      {calculo.esExtranjera && (
+                        <label className="flex items-center gap-2 text-xs mb-2">
+                          <span className="text-gray-600">Factura en dólares · TC del pago:</span>
+                          <input type="text" className="h-7 w-28 rounded border px-2 text-right"
+                            key={facturaElegida}
+                            defaultValue={calculo.tc.toLocaleString('es-AR')}
+                            onBlur={e => { const v = parseFloat(e.target.value.replace(/\./g, '').replace(',', '.')); if (v > 0) setTcPago(v) }} />
+                          <span className="text-gray-400">{fac?.tc_pago ? 'el cargado en la factura' : 'el de la factura — corregilo si el pago fue a otro'}</span>
+                        </label>
+                      )}
                       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
                         <span className="text-gray-600">Total factura:</span>
-                        <span className="font-medium">{fmt(fac?.imp_total || 0)}</span>
+                        <span className="font-medium">{calculo.esExtranjera ? `US$ ${(fac?.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} × ${calculo.tc.toLocaleString('es-AR')} = ${fmt(calculo.totalPesos)}` : fmt(fac?.imp_total || 0)}</span>
                         {calculo.sicoreFactura > 0 && (<><span className="text-gray-600">SICORE factura:</span><span className="font-medium text-red-700">− {fmt(calculo.sicoreFactura)}</span></>)}
                         {/* En ventas, entre el total y el saldo hay retenciones sufridas y cobros
                             anteriores ya imputados. Sin esta línea la cuenta NO cerraba a la vista:
@@ -244,7 +255,7 @@ export function ModalVinculacionAnticipo({ controller }: { controller: Vinculaci
                       <div className="font-medium text-gray-700 mb-1">Factura: {fac?.denominacion_emisor} — {fac?.fecha_emision}</div>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                         <span className="text-gray-600">Total factura:</span>
-                        <span>{fmt(fac?.imp_total || 0)}</span>
+                        <span>{calculo.esExtranjera ? `US$ ${(fac?.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })} × ${calculo.tc.toLocaleString('es-AR')} = ${fmt(calculo.totalPesos)}` : fmt(fac?.imp_total || 0)}</span>
                         {calculo.sicoreFactura > 0 && (<><span className="text-gray-600">SICORE factura (se conserva):</span><span className="text-red-700">− {fmt(calculo.sicoreFactura)}</span></>)}
                         {esCobro && imputadoPrevio > 0.01 && (<>
                           <span className="text-gray-600">Retenciones y cobros previos:</span>

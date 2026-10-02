@@ -133,6 +133,7 @@ import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
+import { calcularVinculacionPago, tcDeFactura } from "@/lib/pagos/moneda-factura"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -5445,6 +5446,26 @@ export function correrCasos(): Resultado[] {
   chequear("Extracto de echeqs", "Un cheque depositado (ni en cartera ni endosado) no va a esta cuenta",
     "0", String(filasExtractoEcheqs([{ ...chGenta, estado_pago: "conciliado" }], pagosG, impV, impF).length),
     filasExtractoEcheqs([{ ...chGenta, estado_pago: "conciliado" }], pagosG, impV, impF).length === 0, "A-FEAT-1230")
+
+
+  // ══ 💵 UN PAGO EN PESOS CONTRA UNA FACTURA EN DÓLARES (A-BUG-1236) — la FC 2014 de Almacén ══
+  // USD 3.213,58 × 1.390 = $4.466.876,20, pagada entera con el echeq de Genta.
+  const fc2014 = { imp_total: 3213.58, monto_a_abonar: 3213.58, moneda: "USD" }
+  const v2014 = calcularVinculacionPago({ anticipoMonto: 4466876.20, sicoreAnticipo: 0, descuento: 0, ...fc2014, tc: 1390, sobreSaldo: false })
+  chequear("Dólares", "💵 El pago de $4.466.876,20 cubre la FC de USD 3.213,58 a 1.390 — comparando en PESOS",
+    "cubre · 4466876.2", `${v2014.cubierto ? "cubre" : "no cubre"} · ${v2014.totalPesos}`, v2014.cubierto && v2014.totalPesos === 4466876.2, "A-BUG-1236")
+  chequear("Dólares", "🧨 Lo que se guarda en la factura queda en DÓLARES (3.213,58), no en pesos (antes: 4.466.876,20)",
+    "3213.58", String(v2014.montoAAbonarSiCubre), v2014.montoAAbonarSiCubre === 3213.58, "A-BUG-1236")
+  const parcialUsd = calcularVinculacionPago({ anticipoMonto: 2000000, sicoreAnticipo: 0, descuento: 0, ...fc2014, tc: 1390, sobreSaldo: false })
+  chequear("Dólares", "Pago parcial de $2.000.000: quedan $2.466.876,20 por pagar, guardados como USD 1.774,73",
+    "no cubre · 2466876.2 · 1774.73", `${parcialUsd.cubierto ? "cubre" : "no cubre"} · ${parcialUsd.saldoPesos} · ${parcialUsd.montoAAbonarSiQueda}`,
+    !parcialUsd.cubierto && parcialUsd.saldoPesos === 2466876.2 && parcialUsd.montoAAbonarSiQueda === 1774.73, "A-BUG-1236")
+  const pesos = calcularVinculacionPago({ anticipoMonto: 1000, sicoreAnticipo: 20, descuento: 0, imp_total: 1500, monto_a_abonar: 1500, moneda: "PES", tc: 1390, sobreSaldo: false })
+  chequear("Dólares", "Una factura en PESOS da lo mismo que antes (el TC no se usa): saldo 1500 − 1000 − 20 = 480",
+    "480 · 1", `${pesos.saldoPesos} · ${pesos.tc}`, pesos.saldoPesos === 480 && pesos.tc === 1, "A-BUG-1236")
+  chequear("Dólares", "El TC: el del pago si está; si no, el de la factura; en pesos, 1",
+    "1405 · 1390 · 1", `${tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "PES", tipo_cambio: 1390 })}`,
+    tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 }) === 1405 && tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 }) === 1390 && tcDeFactura({ moneda: "PES", tipo_cambio: 1390 }) === 1, "A-BUG-1236")
 
   return r
 }

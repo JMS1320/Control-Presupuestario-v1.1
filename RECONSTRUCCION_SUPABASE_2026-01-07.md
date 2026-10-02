@@ -12795,6 +12795,10 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-02 · EL EXTRACTO DE ECHEQS DE TERCEROS (`msa.echeqs_terceros`) — A-FEAT-1230
+
+Script `scripts/73-extracto-echeqs-terceros.sql` (deshacer con freno si tiene filas): `create table msa.echeqs_terceros (like msa.caja_general including all)` + `anticipo_id` (único) + `comprobante_venta_id`; RLS `ver_segun_permiso`/`escribir_segun_permiso` como las cajas; `revoke` a `anon`; registrada en `recurso_tablas` (recurso `extracto`). Avisado a Javier antes. Verificado: 22 columnas, 2 políticas, RLS activa, `EXPLAIN INSERT` como `authenticated`.
+
 ### 2026-10-02 · CHEQUES DE TERCEROS en cartera (`en_cartera` + `endosado_en_id`) — A-FEAT-1229
 
 ```sql

@@ -1922,6 +1922,14 @@ En el **Cash Flow → 📝 ECHEQs** elegís qué ver: **Emitidos** (los tuyos), 
 mismo importe); si ese pago no estaba cargado, se crea desde ahí. El cheque queda *endosado a* ese
 proveedor y ninguno de los dos se espera en el banco.
 
+### Echeqs de terceros en el Extracto
+En el **Extracto**, la cuenta **Echeqs de terceros MSA** muestra los cheques de clientes como si fueran una
+cuenta del banco: **entra** el cheque al recibirlo (con la cuenta de la venta que cobró) y **sale** cuando
+lo endosás (con la cuenta de la factura que pagó). El saldo es lo que tenés en cartera. Se pone al día
+sola al registrar o endosar un cheque; si hace falta, **Importar → ↻ Traer echeqs**. Si una factura no
+tiene cuenta, la fila queda pendiente y se imputa como cualquier movimiento. Estos movimientos suman
+en el **Dashboard**.
+
 ### Conciliar el cobro de una cuota
 En el **Extracto**, al asignar un crédito → pestaña **Venta**, una liquidación con plazos aparece **una
 vez por cada cuota pendiente** (*cuota 1 de 3, vence…*). Elegí la cuota: queda conciliada **esa** cuota

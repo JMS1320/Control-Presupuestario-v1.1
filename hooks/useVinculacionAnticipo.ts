@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { calcularVinculacionPago, tcDeFactura, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { supabase } from "@/lib/supabase"
@@ -43,6 +44,10 @@ export interface FacturaCandidato {
   monto_a_abonar: number
   monto_sicore: number | null
   nro_cuenta?: string | null
+  /** A-BUG-1236 — en moneda extranjera, `imp_total` y `monto_a_abonar` están en ESA moneda. */
+  moneda?: string | null
+  tipo_cambio?: number | null
+  tc_pago?: number | null
 }
 
 export interface CalcVinculacion {
@@ -52,6 +57,13 @@ export interface CalcVinculacion {
   descuento: number
   sicore: number          // SICORE que aporta el anticipo (flujo clásico)
   sicoreFactura: number   // SICORE propio de la factura, si ya lo tiene (se preserva)
+  /** A-BUG-1236 — la moneda: en dólares se compara en pesos con `tc` y se guarda en dólares. */
+  esExtranjera: boolean
+  tc: number
+  totalPesos: number
+  aPagarPesos: number
+  montoAAbonarSiCubre: number
+  montoAAbonarSiQueda: number
 }
 
 const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
@@ -76,7 +88,7 @@ export async function buscarFacturasCandidatas(
   const { data } = await supabase
     .schema('msa')
     .from('comprobantes_arca')
-    .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado, monto_a_abonar, monto_sicore, nro_cuenta')
+    .select('id, denominacion_emisor, cuit, imp_total, fecha_emision, estado, monto_a_abonar, monto_sicore, nro_cuenta, moneda, tipo_cambio, tc_pago')
     .eq('cuit', cuit)
     // Excluir pagadas/conciliadas (sin saldo que reducir) y anteriores (históricas, no se muestran en ARCA)
     .not('estado', 'in', '("pagado","conciliado","anterior")')
@@ -165,6 +177,8 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
   // Conflicto de cuenta contable cuando FC y anticipo tienen cuentas distintas
   const [conflictoCuenta, setConflictoCuenta] = useState<{ fc: string, anticipo: string } | null>(null)
   const [cuentaPreferida, setCuentaPreferida] = useState<'fc' | 'anticipo'>('fc')
+  /** TC del pago para una factura en dólares: default el de la factura, editable (A-BUG-1236). */
+  const [tcPago, setTcPagoState] = useState<number | null>(null)
 
   const abrirVinculacion = async (anticipo: AnticipoVinculable, candidatos: FacturaCandidato[]) => {
     setAnticipoParaVincular(anticipo)
@@ -251,6 +265,16 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
       setConflictoCuenta(null)
     }
 
+    recalcular(fac, tcDeFactura(fac))
+  }
+
+  /**
+   * 💵 La cuenta, con la moneda en cuenta (A-BUG-1236): en dólares compara en pesos con el TC del
+   * pago y guarda el saldo en dólares — la convención del Cash Flow (`lib/pagos/moneda-factura.ts`).
+   */
+  const recalcular = (fac: FacturaCandidato, tc: number) => {
+    if (!anticipoParaVincular) return
+    setTcPagoState(esMonedaExtranjera(fac.moneda) ? tc : null)
     const sicore = anticipoParaVincular.monto_sicore || 0
     const descuento = anticipoParaVincular.descuento_aplicado || 0
     // ¿La factura ya tiene SICORE propio? Entonces su monto_a_abonar ya está neto de retención.
@@ -258,31 +282,27 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     // En VENTAS se trabaja siempre sobre el saldo (`monto_a_abonar` ya viene neto de retenciones
     // sufridas y de los anticipos de cobro anteriores) — es la misma mecánica que una factura de
     // compra con SICORE propio, así que se reusa esa rama en vez de escribir una tercera.
-    const facturaTieneSicorePropio = sicoreFactura > 0 || esCobro(anticipoParaVincular)
-
-    let cubierto: boolean
-    let saldo: number
-    if (facturaTieneSicorePropio) {
-      // SICORE en la FACTURA: trabajar sobre el neto a pagar actual (su SICORE no se toca)
-      const montoAPagar = fac.monto_a_abonar
-      cubierto = anticipoParaVincular.monto >= montoAPagar - 0.01
-      saldo = cubierto ? 0 : montoAPagar - anticipoParaVincular.monto - descuento
-    } else {
-      // SICORE en el ANTICIPO (flujo clásico): la factura hereda el SICORE del anticipo
-      // Caso A: anticipo >= imp_total → FC cubierta; Caso B: saldo = imp_total - anticipo - sicore - descuento
-      cubierto = anticipoParaVincular.monto >= fac.imp_total - 0.01
-      saldo = cubierto ? 0 : fac.imp_total - anticipoParaVincular.monto - sicore - descuento
-    }
-    const neto_pagado = anticipoParaVincular.monto - sicore - descuento
-
+    const sobreSaldo = sicoreFactura > 0 || esCobro(anticipoParaVincular)
+    const r = calcularVinculacionPago({
+      anticipoMonto: anticipoParaVincular.monto, sicoreAnticipo: sicore, descuento,
+      imp_total: fac.imp_total, monto_a_abonar: fac.monto_a_abonar, moneda: fac.moneda, tc, sobreSaldo,
+    })
     setCalculo({
-      caso: cubierto ? 'A' : 'B',
-      saldo: Math.max(0, saldo),
-      neto_pagado,
+      caso: r.cubierto ? 'A' : 'B',
+      saldo: r.saldoPesos,
+      neto_pagado: r.netoPagadoPesos,
       descuento,
       sicore,
       sicoreFactura,
+      esExtranjera: r.esExtranjera, tc: r.tc, totalPesos: r.totalPesos, aPagarPesos: r.aPagarPesos,
+      montoAAbonarSiCubre: r.montoAAbonarSiCubre, montoAAbonarSiQueda: r.montoAAbonarSiQueda,
     })
+  }
+
+  /** El usuario corrige el TC del pago de una factura en dólares: se recalcula todo. */
+  const setTcPago = (tc: number) => {
+    const fac = candidatosActivos.find(f => f.id === facturaElegida)
+    if (fac && tc > 0) recalcular(fac, tc)
   }
 
   // Paso 1 → Paso 2
@@ -398,7 +418,9 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
           .update({
             ...herenciaComun,
             estado: estadoFC,
-            monto_a_abonar: calculo.neto_pagado,
+            // En la moneda de la FACTURA (en dólares, dólares): A-BUG-1236.
+            monto_a_abonar: calculo.montoAAbonarSiCubre,
+            ...(calculo.esExtranjera ? { tc_pago: calculo.tc } : {}),
             fecha_vencimiento: anticipoParaVincular.fecha_pago,
             fecha_estimada: anticipoParaVincular.fecha_pago,
           })
@@ -411,7 +433,8 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
           .from('comprobantes_arca')
           .update({
             ...herenciaComun,
-            monto_a_abonar: calculo.saldo,
+            monto_a_abonar: calculo.montoAAbonarSiQueda,
+            ...(calculo.esExtranjera ? { tc_pago: calculo.tc } : {}),
           })
           .eq('id', facturaElegida)
         if (errFac) throw errFac
@@ -615,6 +638,7 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     motivoExterno,
     conflictoCuenta,
     cuentaPreferida,
+    tcPago,
     // acciones
     abrirVinculacion,
     onSeleccionarFactura,
@@ -627,6 +651,7 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     confirmarMarcaExterno,
     setMotivoExterno,
     setCuentaPreferida,
+    setTcPago,
   }
 }
 
