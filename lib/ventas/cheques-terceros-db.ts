@@ -2,6 +2,8 @@
  * 🧾 Lectura y escritura de los CHEQUES DE TERCEROS — A-FEAT-1229. La lógica, en `cheques-terceros.ts`.
  */
 
+import { filasExtractoEcheqs } from './extracto-echeqs'
+
 type Cliente = { from: (t: string) => any; schema: (s: string) => any }
 
 export interface ChequeTercero {
@@ -92,4 +94,67 @@ export async function endosarCheque(
   if (eC) throw eC
   if (count === 0) throw new Error('No se encontró el cheque: el endoso NO se guardó')
   return pagoId
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 🏦 El «extracto» de los echeqs de terceros — A-FEAT-1230
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Trae las filas que tiene que tener `msa.echeqs_terceros` a partir de los cheques, y las escribe:
+ * crea las que faltan y actualiza fecha, montos, descripción, vínculos y saldo de las que están.
+ * 🔑 La imputación (cuenta, número, centro) **sólo se completa si la fila no la tiene**: lo que el
+ * usuario eligió a mano en el Extracto no se pisa. Nunca borra. Devuelve cuántas creó y actualizó.
+ */
+export async function sincronizarExtractoEcheqs(supabase: Cliente): Promise<{ creadas: number; actualizadas: number }> {
+  const { data: ch, error } = await supabase.from('anticipos_proveedores')
+    .select('id, fecha_pago, monto, descripcion, nombre_proveedor, estado_pago, endosado_en_id, comprobante_venta_id')
+    .eq('tipo', 'cobro').eq('metodo_pago', 'echeq').in('estado_pago', ['en_cartera', 'endosado'])
+  if (error) throw error
+  const cheques = (ch || []) as any[]
+
+  const idsPago = [...new Set(cheques.map(c => c.endosado_en_id).filter(Boolean))]
+  const { data: ps } = idsPago.length
+    ? await supabase.from('anticipos_proveedores').select('id, fecha_pago, nombre_proveedor, factura_id').in('id', idsPago)
+    : { data: [] }
+  const pagos = new Map(((ps || []) as any[]).map(p => [p.id, { ...p }]))
+  // La factura del pago: la de `factura_id`, o la primera a la que se aplicó.
+  const sinFactura = [...pagos.values()].filter(p => !p.factura_id).map(p => p.id)
+  if (sinFactura.length) {
+    const { data: apps } = await supabase.from('anticipos_facturas').select('anticipo_id, factura_arca_id').in('anticipo_id', sinFactura)
+    for (const a of (apps || []) as any[]) { const p = pagos.get(a.anticipo_id); if (p && !p.factura_id) p.factura_id = a.factura_arca_id }
+  }
+
+  const idsVenta = [...new Set(cheques.map(c => c.comprobante_venta_id).filter(Boolean))]
+  const idsFac = [...new Set([...pagos.values()].map(p => p.factura_id).filter(Boolean))]
+  const [{ data: vs }, { data: fs }] = await Promise.all([
+    idsVenta.length ? supabase.schema('msa').from('comprobantes_venta').select('id, cuenta_contable, nro_cuenta, centro_costo, nro_comprobante').in('id', idsVenta) : Promise.resolve({ data: [] }),
+    idsFac.length ? supabase.schema('msa').from('comprobantes_arca').select('id, cuenta_contable, nro_cuenta, centro_costo, numero_desde, denominacion_emisor').in('id', idsFac) : Promise.resolve({ data: [] }),
+  ])
+  const impVenta = new Map(((vs || []) as any[]).map(v => [v.id, { categ: v.cuenta_contable, nro_cuenta: v.nro_cuenta, centro_costo: v.centro_costo, referencia: v.nro_comprobante }]))
+  const impFac = new Map(((fs || []) as any[]).map(f => [f.id, { categ: f.cuenta_contable, nro_cuenta: f.nro_cuenta, centro_costo: f.centro_costo, referencia: `FC ${f.numero_desde ?? ''} ${f.denominacion_emisor ?? ''}`.trim() }]))
+
+  const deseadas = filasExtractoEcheqs(cheques, pagos as any, impVenta, impFac)
+  const { data: ex, error: eEx } = await supabase.schema('msa').from('echeqs_terceros').select('id, anticipo_id, categ')
+  if (eEx) throw eEx
+  const existentes = new Map(((ex || []) as any[]).map(r => [r.anticipo_id, r]))
+  let creadas = 0, actualizadas = 0
+  for (const f of deseadas) {
+    const e: any = existentes.get(f.anticipo_id)
+    if (!e) {
+      const { error: eI } = await supabase.schema('msa').from('echeqs_terceros').insert(f)
+      if (eI) throw eI
+      creadas++
+    } else {
+      const upd: Record<string, any> = {
+        fecha: f.fecha, descripcion: f.descripcion, creditos: f.creditos, debitos: f.debitos, saldo: f.saldo,
+        comprobante_venta_id: f.comprobante_venta_id, comprobante_arca_id: f.comprobante_arca_id,
+      }
+      if (!e.categ && f.categ) Object.assign(upd, { categ: f.categ, nro_cuenta: f.nro_cuenta, centro_de_costo: f.centro_de_costo, estado: 'conciliado' })
+      const { error: eU } = await supabase.schema('msa').from('echeqs_terceros').update(upd).eq('id', e.id)
+      if (eU) throw eU
+      actualizadas++
+    }
+  }
+  return { creadas, actualizadas }
 }

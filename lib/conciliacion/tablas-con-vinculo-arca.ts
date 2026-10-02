@@ -42,7 +42,7 @@ export interface TablaConVinculoArca {
 }
 
 /**
- * Las diez tablas que llevan `comprobante_arca_id`, en el orden en que importan.
+ * Las tablas que llevan `comprobante_arca_id`, en el orden en que importan (11 desde A-FEAT-1230).
  *
  * ⚠️ **`mails_pago` NO está** aunque tenga la columna: no es un movimiento de plata, es la cola de
  * mails al proveedor. Propagarle una cuenta contable no significa nada.
@@ -58,6 +58,8 @@ export const TABLAS_CON_VINCULO_ARCA: TablaConVinculoArca[] = [
   { schema: "msa", tabla: "caja_general", que: "caja general" },
   { schema: "msa", tabla: "caja_ams", que: "caja de AMS" },
   { schema: "msa", tabla: "caja_sigot", que: "caja de Sigot" },
+  // A-FEAT-1230: la salida de un echeq endosado lleva la factura que pagó.
+  { schema: "msa", tabla: "echeqs_terceros", que: "extracto de echeqs de terceros (endosos)" },
 ]
 
 /** La columna del vínculo. Se nombra una vez para que un `grep` por ella encuentre todo. */

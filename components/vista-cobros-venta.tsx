@@ -13,6 +13,7 @@ import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
 import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
+import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 
@@ -200,6 +201,8 @@ export function VistaCobrosVenta() {
       if (error) throw error
       await vincular(f, data as any)
       setEcheqForm(null)
+      // La entrada del cheque en el extracto de echeqs (A-FEAT-1230).
+      try { await sincronizarExtractoEcheqs(supabase) } catch (e) { toast.error('El echeq se registró, pero no llegó al extracto de echeqs: ' + (e as Error).message) }
       toast.info('El echeq quedó en cartera: se endosa desde el Cash Flow → ECHEQs → En cartera')
     } catch (err) {
       toast.error('No se pudo registrar el echeq: ' + (err as Error).message)

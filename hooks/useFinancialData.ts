@@ -87,9 +87,23 @@ export function useFinancialData(año: number, semestre?: number) {
           return
         }
 
+        /**
+         * 🏦 A-FEAT-1230 — los echeqs de clientes que se endosan no pasan por el banco, así que ni el
+         * ingreso de la venta ni el egreso del pago aparecían. Su «extracto» (`msa.echeqs_terceros`)
+         * tiene la misma forma: se suma acá. Si falla, se avisa y el resto sigue.
+         */
+        const { data: echeqsData, error: echeqsError } = await supabase.schema("msa")
+          .from("echeqs_terceros")
+          .select("*")
+          .gte("fecha", fechaInicio)
+          .lte("fecha", fechaFin)
+          .not("categ", "is", null)
+        if (echeqsError) console.error("⚠️ No se pudo leer el extracto de echeqs de terceros:", echeqsError)
+
         if (movimientosData) {
-          setMovimientos(movimientosData)
-          const resumenPorMes = procesarResumenFinanciero(movimientosData, cuentasData || [], templateMap)
+          const todos = [...movimientosData, ...((echeqsData || []) as any[])]
+          setMovimientos(todos)
+          const resumenPorMes = procesarResumenFinanciero(todos, cuentasData || [], templateMap)
           setResumen(resumenPorMes)
         }
       } catch (error) {

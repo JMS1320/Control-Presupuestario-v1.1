@@ -184,6 +184,9 @@ export async function propagarImputacionDeVenta(
   if (!imp) return 0
   const { error, count } = await supabase.from('msa_galicia').update(imp, { count: 'exact' }).eq('comprobante_venta_id', compId)
   if (error) throw error
+  // Y la entrada de un echeq de ese cliente en el extracto de echeqs (A-FEAT-1230).
+  const { error: eE } = await supabase.schema('msa').from('echeqs_terceros').update(imp).eq('comprobante_venta_id', compId)
+  if (eE) throw eE
   // Y los que todavía dicen «ANTICIPO COBRO: …» en el detalle dejan de decirlo.
   const { data: conPrefijo } = await supabase.from('msa_galicia').select('id, detalle')
     .eq('comprobante_venta_id', compId).ilike('detalle', 'ANTICIPO COBRO:%')

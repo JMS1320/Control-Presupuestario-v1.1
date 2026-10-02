@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
-import { cargarChequesTerceros, pagosParaEndosar, endosarCheque, type ChequeTercero } from "@/lib/ventas/cheques-terceros-db"
+import { cargarChequesTerceros, pagosParaEndosar, endosarCheque, sincronizarExtractoEcheqs, type ChequeTercero } from "@/lib/ventas/cheques-terceros-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso, ETIQUETA_ESTADO_CHEQUE } from "@/lib/ventas/cheques-terceros"
 
 const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -55,6 +55,8 @@ export function CarteraChequesTerceros({ modo, recargar }: { modo: 'cartera' | '
     setGuardando(true)
     try {
       await endosarCheque(supabase, endosando, elegido ? { pagoId: elegido } : { nuevo: nuevo! })
+      // La salida del cheque en el extracto de echeqs (A-FEAT-1230).
+      try { await sincronizarExtractoEcheqs(supabase) } catch (e) { toast.error('Endosado, pero no llegó al extracto de echeqs: ' + (e as Error).message) }
       toast.success('Cheque endosado')
       setEndosando(null); await cargar()
     } catch (err) {

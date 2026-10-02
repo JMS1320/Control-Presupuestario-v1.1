@@ -132,6 +132,7 @@ import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cob
 import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
+import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -5419,6 +5420,31 @@ export function correrCasos(): Resultado[] {
   chequear("Cheques de terceros", "La búsqueda filtra por proveedor o detalle",
     "almacen", candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(","),
     candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(",") === "almacen", "A-FEAT-1229")
+
+
+  // ══ 🏦 EL EXTRACTO DE ECHEQS DE TERCEROS (A-FEAT-1230) — el echeq de Genta, con sus cuentas reales ══
+  const chGenta = { id: "ch", fecha_pago: "2026-02-25", monto: 4466876.20, descripcion: "Echeq Nº 5-30526554562-0000233143_8360-1 endosado a Almacen Veterinario SRL",
+    nombre_proveedor: "PEDRO GENTA Y CIA", estado_pago: "endosado", endosado_en_id: "pago", comprobante_venta_id: "v" }
+  const pagosG = new Map([["pago", { id: "pago", fecha_pago: "2026-02-26", nombre_proveedor: "Almacen Veterinario SRL", factura_id: "fc2014" }]])
+  const impV = new Map([["v", { categ: "VENTA INVERNADA MACHO Y HEMBRA", nro_cuenta: "410805", centro_costo: "Recria", referencia: "11-75880" }]])
+  const impF = new Map([["fc2014", { categ: "INSUMOS VETERINARIOS", nro_cuenta: "42307", centro_costo: null, referencia: "FC 2014" }]])
+  const extG = filasExtractoEcheqs([chGenta], pagosG, impV, impF)
+  chequear("Extracto de echeqs", "🏦 Un echeq endosado da DOS filas: entra con la cuenta de la venta, sale con la de la factura",
+    "VENTA INVERNADA… +4466876.2 · INSUMOS VETERINARIOS −4466876.2",
+    extG.map(f => `${f.categ} ${f.creditos ? "+" + f.creditos : "−" + f.debitos}`).join(" · "),
+    extG.length === 2 && extG[0].categ === "VENTA INVERNADA MACHO Y HEMBRA" && extG[0].creditos === 4466876.2
+      && extG[1].categ === "INSUMOS VETERINARIOS" && extG[1].debitos === 4466876.2 && extG[1].comprobante_arca_id === "fc2014", "A-FEAT-1230")
+  chequear("Extracto de echeqs", "El saldo es lo que queda en cartera: después del endoso, 0",
+    "4466876.2 → 0", `${extG[0].saldo} → ${extG[1].saldo}`, extG[0].saldo === 4466876.2 && extG[1].saldo === 0, "A-FEAT-1230")
+  const enCartera = filasExtractoEcheqs([{ ...chGenta, estado_pago: "en_cartera", endosado_en_id: null }], pagosG, impV, impF)
+  chequear("Extracto de echeqs", "Un echeq en cartera da sólo la entrada, y el saldo es el cheque",
+    "1 fila · saldo 4466876.2", `${enCartera.length} fila · saldo ${enCartera[0]?.saldo}`, enCartera.length === 1 && enCartera[0].saldo === 4466876.2, "A-FEAT-1230")
+  const sinCuenta = filasExtractoEcheqs([chGenta], pagosG, impV, new Map())
+  chequear("Extracto de echeqs", "Si la factura no tiene cuenta, la salida queda PENDIENTE para imputarla en el Extracto",
+    "pendiente · null", `${sinCuenta[1].estado} · ${sinCuenta[1].categ}`, sinCuenta[1].estado === "pendiente" && sinCuenta[1].categ === null, "A-FEAT-1230")
+  chequear("Extracto de echeqs", "Un cheque depositado (ni en cartera ni endosado) no va a esta cuenta",
+    "0", String(filasExtractoEcheqs([{ ...chGenta, estado_pago: "conciliado" }], pagosG, impV, impF).length),
+    filasExtractoEcheqs([{ ...chGenta, estado_pago: "conciliado" }], pagosG, impV, impF).length === 0, "A-FEAT-1230")
 
   return r
 }

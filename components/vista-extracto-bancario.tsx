@@ -17,6 +17,7 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { cargarFuentesCobro, vincularPagoACuenta, imputacionParaElBanco, detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
+import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -4442,6 +4443,25 @@ ${marca}` : marca
             const config: ImpCfg | undefined = cfgBase
               ? (cfgBase.alt && importTipoArchivo === 'alt' ? cfgBase.alt : cfgBase)
               : undefined
+
+            // 🏦 A-FEAT-1230 — los echeqs de terceros no se importan: se arman desde los cheques.
+            if (cuentaId === 'echeqs_terceros') {
+              return (
+                <Card>
+                  <CardHeader><CardTitle>Echeqs de terceros</CardTitle></CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    <p className="text-gray-600">Esta cuenta se arma sola desde los cheques de clientes: cada uno <b>entra</b> con la cuenta de la venta que cobró y, cuando se endosa, <b>sale</b> con la cuenta de la factura que pagó. El saldo es lo que hay en cartera.</p>
+                    <Button onClick={async () => {
+                      try {
+                        const r = await sincronizarExtractoEcheqs(supabase)
+                        toast.success(`Echeqs traídos: ${r.creadas} nuevos, ${r.actualizadas} actualizados`)
+                        recargar()
+                      } catch (err) { toast.error('No se pudieron traer los echeqs: ' + (err as Error).message) }
+                    }}>↻ Traer echeqs</Button>
+                  </CardContent>
+                </Card>
+              )
+            }
 
             if (!config) {
               return (

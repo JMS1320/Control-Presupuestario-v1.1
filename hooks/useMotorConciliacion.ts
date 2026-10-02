@@ -89,6 +89,17 @@ export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
     tipo: 'caja'
   },
   {
+    // 🏦 A-FEAT-1230 — los echeqs de CLIENTES: entra el recibido, sale el endoso. Se arma desde los
+    // cheques (Extracto → Importar → «Traer echeqs»), no se importa de un archivo.
+    id: 'echeqs_terceros',
+    nombre: 'Echeqs de terceros MSA',
+    tabla_bd: 'echeqs_terceros',
+    schema_bd: 'msa',
+    empresa: 'MSA',
+    activa: true,
+    tipo: 'caja'
+  },
+  {
     id: 'tarjeta_visa_business_msa',
     nombre: 'VISA Business MSA',
     tabla_bd: 'tarjeta_visa_business',
