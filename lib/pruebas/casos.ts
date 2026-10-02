@@ -61,7 +61,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
-  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar } from "@/lib/ventas/hacienda"
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1972,6 +1972,41 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "Sin plazos, una sola fila por el cobro entero",
     "1 · 2026-08-04 · 97745477.95", `${sinPlazos.length} · ${sinPlazos[0].vencimiento} · ${sinPlazos[0].importe}`,
     sinPlazos.length === 1 && sinPlazos[0].vencimiento === "2026-08-04" && sinPlazos[0].importe === 97745477.95, "A-FEAT-1225")
+
+  // ══ 🐾 LA HUELLA (A-FEAT-1225) — lo que propuso la app al lado de lo que quedó ═══════════
+  // El caso real: precarga de Genta (55 cab, 15.695 kg, $5.670, comisión 0) y lo que el usuario
+  // puso de su papel ($5.742 y la comisión por MONTO), con «Coincide» en el importe neto.
+  const preG = precargaDesdeVenta({ fecha: "2026-08-04", cliente: "Pedro Genta", cuit: "", categoria: "Ternero Recria",
+    cabezas: 55, kgTotales: 16180, pctDesbaste: 0.03, precioKg: 5670, pctCz: 0 })
+  const lineaPapel = { ...preG.linea, razonSocial: "DON FELICIANO S", precio: 5742 }
+  const entradaH = { lineas: [lineaPapel], comisionPct: 0, comisionMonto: 1050807.25, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "IIBB", alicuota: 0.75, importe: 675905.18 }] }
+  const calcH = calcularLiqHacienda(entradaH)
+  const huella = huellaLiquidacion({
+    calc: calcH, calcSinAMano: calcularLiqHacienda({ ...entradaH, comisionMonto: null }),
+    comisionAMano: true, ivaAMano: false,
+    marcas: { importe: { estado: "ok" } },
+    precarga: { ventaId: "venta-genta", linea: preG.linea, comisionPct: preG.comisionPct },
+    guardado: { linea: lineaPapel, comisionPct: calcH.comisionPctEfectivo },
+  })
+  chequear("Liquidación de hacienda", "🐾 La huella guarda las DOS puntas: la comisión que daba el % (0) y la tipeada (1.050.807,25)",
+    "0 → 1050807.25", `${huella?.montosAMano.comision?.calculado} → ${huella?.montosAMano.comision?.tipeado}`,
+    huella?.montosAMano.comision?.calculado === 0 && huella?.montosAMano.comision?.tipeado === 1050807.25, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🐾 …y qué cambió de la precarga: precio 5670 → 5742, comprador y comisión",
+    "precio, comprador, comisionPct",
+    (huella?.precarga?.cambios || []).map(c => c.campo).join(", "),
+    (huella?.precarga?.cambios || []).map(c => c.campo).join(", ") === "precio, comprador, comisionPct"
+      && huella?.precarga?.cambios.find(c => c.campo === "precio")?.precargado === 5670
+      && huella?.precarga?.cambios.find(c => c.campo === "precio")?.guardado === 5742, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🐾 …y la marca «Coincide» del importe neto, con el valor de la app",
+    "coincide · 97745477.95", `${(huella?.contraElPapel.importe as any)?.estado} · ${(huella?.contraElPapel.importe as any)?.app}`,
+    (huella?.contraElPapel.importe as any)?.estado === "coincide" && (huella?.contraElPapel.importe as any)?.app === 97745477.95, "A-FEAT-1225")
+
+  // Sin nada que anotar, no se guarda un objeto vacío.
+  const sinNada = huellaLiquidacion({ calc: calcH, calcSinAMano: calcH, comisionAMano: false, ivaAMano: false, marcas: {},
+    precarga: { ventaId: "x", linea: lineaPapel, comisionPct: 0 }, guardado: { linea: lineaPapel, comisionPct: 0 } })
+  chequear("Liquidación de hacienda", "Sin correcciones ni marcas, la huella queda vacía (null), no un objeto vacío",
+    "null", String(sinNada), sinNada === null, "A-FEAT-1225")
 
   return r
 }

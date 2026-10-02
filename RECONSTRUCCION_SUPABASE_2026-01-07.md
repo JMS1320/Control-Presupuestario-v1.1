@@ -12719,3 +12719,16 @@ NOTIFY pgrst, 'reload schema';
 la primera excepción del control de paridad entre empresas, A-FEAT-1222). La escritura se probó sin
 escribir datos: `EXPLAIN INSERT` con las seis columnas, como usuario `authenticated`.
 
+### Ampliación 2026-10-01 · la HUELLA de la liquidación (`correcciones`)
+
+```sql
+ALTER TABLE msa.comprobantes_venta ADD COLUMN IF NOT EXISTS correcciones jsonb;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/69-liquidacion-hacienda-correcciones.sql` (deshacer con freno si ya hay huellas). Mismo
+patrón que `romaneos.correcciones` y `boletas_arba.correcciones`: lo que propuso la app (precarga desde la
+venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en `lib/ventas/hacienda.ts`.
+Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
+`authenticated`, sin escribir datos.
+

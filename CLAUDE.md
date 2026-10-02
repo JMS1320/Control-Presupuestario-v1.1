@@ -285,7 +285,9 @@ suma, el importador no le ahorró nada.
 **4 · Cada corrección deja HUELLA**: se guarda **lo que leyó el parser junto a lo que puso el
 usuario**. Sin las dos puntas la huella no sirve — saber que un campo se corrigió no dice nada;
 saber que se leyó `185` y el usuario puso `373` dice dónde falla y cuánto.
-📍 **Acá:** `productivo.romaneos.correcciones` y `public.boletas_arba.correcciones`.
+📍 **Acá:** `productivo.romaneos.correcciones`, `public.boletas_arba.correcciones` y, desde 2026-10-01,
+`msa.comprobantes_venta.correcciones` (la liquidación de hacienda: lo que precargó y calculó la app al lado de
+lo que dejó el usuario).
 
 **Motivo, y es el que ordena las prioridades:** sin la huella, cada error se arregla **una vez** —
 cuando el usuario lo ve y avisa. Con la huella, el importador **mejora con el uso**: se puede

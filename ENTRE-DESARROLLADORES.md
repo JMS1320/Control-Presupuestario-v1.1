@@ -218,5 +218,8 @@ venden hacienda, así que sus tablas quedan en 53 columnas y la de MSA en 59, a 
 roles; ninguna vista de `public` está armada sobre esa tabla; y no toca filas existentes. Hay un
 **deshacer** escrito antes de correrlo, que se niega a correr si ya hay liquidaciones cargadas.
 
+➕ **Y una más el mismo día, `scripts/69`**: `correcciones jsonb` en `msa.comprobantes_venta` (la huella, como en romaneos y
+boletas de ARBA). Mismo perfil: acepta vacío, sólo MSA, sin tocar permisos.
+
 📌 La tabla `msa.comprobantes_venta` sigue entre las **sin sección** de [A-SEC-13](PENDIENTES.md#a-sec-13):
 esto no la empeora ni la arregla.

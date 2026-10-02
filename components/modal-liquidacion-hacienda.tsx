@@ -29,7 +29,7 @@ import { toast } from "sonner"
 import { Plus, Trash2, CheckCircle2, AlertTriangle } from "lucide-react"
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
-  plazosDesdeVenta, kgNetosDeVenta, precargaDesdeVenta, type AvisoLiq, type PlazoCobro, type VentaParaLiquidar,
+  plazosDesdeVenta, kgNetosDeVenta, precargaDesdeVenta, huellaLiquidacion, type AvisoLiq, type PlazoCobro, type VentaParaLiquidar,
 } from "@/lib/ventas/hacienda"
 
 /** La venta de Productivo desde la que se abre (null = liquidación suelta, sin venta). */
@@ -119,6 +119,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
   const [verif, setVerif] = useState<Record<TotalId, Verificacion>>({ bruto: null, neto: null, importe: null })
   const [papel, setPapel] = useState<Record<TotalId, string>>({ bruto: '', neto: '', importe: '' })
   const [guardando, setGuardando] = useState(false)
+  /** 🐾 Lo que propuso la app al abrir (para la huella): la precarga desde la venta, tal cual. */
+  const [precargado, setPrecargado] = useState<ReturnType<typeof precargaDesdeVenta> | null>(null)
 
   // Al abrir: precarga desde la venta, o formulario vacío.
   useEffect(() => {
@@ -131,8 +133,10 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
     if (venta) {
       const p = precargaParaPantalla(venta)
       setFecha(p.fecha); setLineas(p.lineas); setComisionPct(p.comisionPct)
+      setPrecargado(precargaDesdeVenta(venta))
     } else {
       setFecha(''); setLineas([lineaVacia()]); setComisionPct('')
+      setPrecargado(null)
     }
   }, [open, venta])
 
@@ -204,6 +208,19 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
       const otras = entrada.retenciones.filter(r => !esIibb(r.concepto) && !esRetIva(r.concepto) && r.importe > 0)
       const unaLinea = entrada.lineas.length === 1 ? entrada.lineas[0] : null
 
+      // 🐾 La huella (§ 📄 de CLAUDE.md): lo que propuso la app al lado de lo que quedó.
+      const huella = huellaLiquidacion({
+        calc,
+        calcSinAMano: calcularLiqHacienda({ ...entrada, comisionMonto: null, ivaMonto: null }),
+        comisionAMano: !!comisionMonto.trim(),
+        ivaAMano: !!ivaMonto.trim(),
+        marcas: Object.fromEntries((['bruto', 'neto', 'importe'] as TotalId[])
+          .filter(id => verif[id])
+          .map(id => [id, { estado: verif[id] as 'ok' | 'distinto', papel: verif[id] === 'distinto' ? parsearAR(papel[id]) || null : null }])),
+        precarga: precargado && venta ? { ventaId: venta.id, linea: precargado.linea, comisionPct: precargado.comisionPct } : null,
+        guardado: { linea: entrada.lineas[0] ?? null, comisionPct: comisionMonto.trim() ? calc.comisionPctEfectivo : entrada.comisionPct },
+      })
+
       const payload = {
         tipo_comprobante: 60,                      // Cta. de Venta y Líquido Producto A
         fecha_liquidacion: fecha,
@@ -228,6 +245,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
         dte: dte || null,
         hacienda_lineas: entrada.lineas,
         plazos: plazosNum.length ? plazosNum : null,
+        correcciones: huella,
         // Para el libro de IVA, igual que la liquidación de granos: neto gravado + IVA.
         imp_neto_gravado: calc.netoGravado,
         imp_neto_no_gravado: 0,

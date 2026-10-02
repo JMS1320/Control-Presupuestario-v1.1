@@ -265,6 +265,68 @@ export function precargaDesdeVenta(v: {
 }
 
 /**
+ * 🐾 **LA HUELLA de una liquidación** — § 📄 de `CLAUDE.md`: *«cada corrección deja huella: lo que
+ * leyó el parser junto a lo que puso el usuario»*. Acá no hay parser: lo que **propone la app** es
+ * la precarga desde la venta y las cuentas con porcentaje. Se guarda, al lado, lo que el usuario
+ * dejó. Pedido del usuario 2026-10-01 (*«sí»* a guardar las marcas y lo tipeado a mano).
+ *
+ * Sin las dos puntas no sirve: saber que se tocó la comisión no dice nada; saber que la app
+ * calculó 0 y el usuario puso 1.050.807,25 dice dónde falla y cuánto.
+ *
+ * Devuelve `null` cuando no hay nada que registrar, para no llenar la tabla de objetos vacíos.
+ */
+export interface HuellaLiq {
+  version: 1
+  /** Montos tipeados a mano: lo que daba el %, y lo que se puso. */
+  montosAMano: { comision?: { calculado: number; tipeado: number }; iva?: { calculado: number; tipeado: number } }
+  /** Las marcas ✓ / ✗ contra el papel, por total. */
+  contraElPapel: Partial<Record<'bruto' | 'neto' | 'importe', { estado: 'coincide'; app: number } | { estado: 'distinto'; app: number; papel: number }>>
+  /** Qué cambió el usuario de lo que se precargó desde la venta. */
+  precarga: { ventaId: string; cambios: { campo: string; precargado: string | number; guardado: string | number }[] } | null
+}
+
+export function huellaLiquidacion(a: {
+  calc: LiqHaciendaCalculo
+  /** La misma cuenta con los montos a mano sacados: lo que habría dado el %. */
+  calcSinAMano: LiqHaciendaCalculo
+  comisionAMano: boolean
+  ivaAMano: boolean
+  marcas: Partial<Record<'bruto' | 'neto' | 'importe', { estado: 'ok' | 'distinto'; papel?: number | null }>>
+  precarga: { ventaId: string; linea: LineaLiqHacienda; comisionPct: number } | null
+  guardado: { linea: LineaLiqHacienda | null; comisionPct: number }
+}): HuellaLiq | null {
+  const montosAMano: HuellaLiq['montosAMano'] = {}
+  if (a.comisionAMano) montosAMano.comision = { calculado: a.calcSinAMano.comision, tipeado: a.calc.comision }
+  if (a.ivaAMano) montosAMano.iva = { calculado: a.calcSinAMano.iva, tipeado: a.calc.iva }
+
+  const valorApp = { bruto: a.calc.bruto, neto: a.calc.netoGravado, importe: a.calc.importeNeto }
+  const contraElPapel: HuellaLiq['contraElPapel'] = {}
+  for (const id of ['bruto', 'neto', 'importe'] as const) {
+    const m = a.marcas[id]
+    if (!m) continue
+    if (m.estado === 'ok') contraElPapel[id] = { estado: 'coincide', app: valorApp[id] }
+    else if (m.papel !== null && m.papel !== undefined) contraElPapel[id] = { estado: 'distinto', app: valorApp[id], papel: Number(m.papel) }
+  }
+
+  let precarga: HuellaLiq['precarga'] = null
+  if (a.precarga && a.guardado.linea) {
+    const p = a.precarga.linea, g = a.guardado.linea
+    const cambios: { campo: string; precargado: string | number; guardado: string | number }[] = []
+    const comparar = (campo: string, x: string | number, y: string | number) => { if (String(x) !== String(y)) cambios.push({ campo, precargado: x, guardado: y }) }
+    comparar('cabezas', p.cabezas, g.cabezas)
+    comparar('kilos', p.kilos, g.kilos)
+    comparar('precio', p.precio, g.precio)
+    comparar('clasificacion', p.clasificacion, g.clasificacion)
+    comparar('comprador', p.razonSocial, g.razonSocial)
+    comparar('comisionPct', a.precarga.comisionPct, a.guardado.comisionPct)
+    precarga = { ventaId: a.precarga.ventaId, cambios }
+  }
+
+  const hayAlgo = Object.keys(montosAMano).length > 0 || Object.keys(contraElPapel).length > 0 || (precarga !== null && precarga.cambios.length > 0)
+  return hayAlgo ? { version: 1, montosAMano, contraElPapel, precarga } : null
+}
+
+/**
  * 📅 **Las cuotas que el Cash Flow espera cobrar** de una liquidación con plazos.
  * Lo imputado aparte (anticipos, certificados) cancela primero las cuotas más viejas; una cuota
  * cancelada entera no aparece. Sin plazos, una sola fila por el cobro entero.
