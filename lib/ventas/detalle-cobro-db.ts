@@ -124,10 +124,76 @@ export async function vincularPagoACuenta(
     if (movs && movs.length > 0) {
       // `comprobante_venta_id` existe sólo en `msa_galicia` (A-FEAT-24): en las otras se ata sólo el anticipo.
       const upd: Record<string, any> = { anticipo_id: anticipo.id, estado: 'conciliado', motivo_revision: null }
-      if (tabla === 'msa_galicia') upd.comprobante_venta_id = comp.id
+      if (tabla === 'msa_galicia') {
+        upd.comprobante_venta_id = comp.id
+        // Deja de ser «ANTICIPO COBRO»: toma la imputación de su comprobante (si la tiene).
+        const { data: c } = await supabase.schema('msa').from('comprobantes_venta')
+          .select('cuenta_contable, nro_cuenta, centro_costo').eq('id', comp.id).maybeSingle()
+        const imp = c ? await imputacionParaElBanco(supabase, c as any) : null
+        if (imp) Object.assign(upd, imp)
+        const { data: m } = await client.from(tabla).select('detalle').eq('id', (movs[0] as any).id).maybeSingle()
+        upd.detalle = detalleSinAnticipo((m as any)?.detalle)
+      }
       await client.from(tabla).update(upd).eq('id', (movs[0] as any).id)
       return { extractoActualizado: true }
     }
   }
   return { extractoActualizado: false }
+}
+
+/**
+ * 🏷️ **La imputación de la venta viaja a sus movimientos del banco** — pedido del usuario 2026-10-02:
+ * *«que cuando le ponga la cuenta contable la propague a extracto… no puede quedar como anticipo
+ * cuando ya tiene su registro definitivo»*. Los 4 cobros de enero de Genta quedaron conciliados con
+ * `categ = 'ANTICIPO COBRO'` y sin cuenta, aunque la liquidación tenía la suya.
+ *
+ * Es el espejo de compras: ahí la conciliación copia la cuenta de la factura al movimiento, y editar
+ * la cuenta de la factura la propaga (`vista-facturas-arca`). En ventas no estaba ninguna de las dos.
+ *
+ * Devuelve lo que hay que escribir en el movimiento (`categ`, `nro_cuenta`, `centro_de_costo`), o
+ * `null` si la venta todavía no tiene cuenta — en ese caso no se pisa nada.
+ */
+export async function imputacionParaElBanco(
+  supabase: Cliente, comp: { cuenta_contable?: string | null; nro_cuenta?: string | null; centro_costo?: string | null },
+): Promise<Record<string, string> | null> {
+  const categ = (comp.cuenta_contable || '').trim()
+  if (!categ) return null
+  let nro = comp.nro_cuenta || null
+  if (!nro) {
+    // Igual que compras: sin número en el comprobante, se busca por la cuenta en el plan.
+    const { data } = await supabase.from('cuentas_contables').select('nro_cuenta').eq('categ', categ).maybeSingle()
+    nro = (data as any)?.nro_cuenta || null
+  }
+  const salida: Record<string, string> = { categ }
+  if (nro) salida.nro_cuenta = nro
+  if (comp.centro_costo) salida.centro_de_costo = comp.centro_costo
+  return salida
+}
+
+/**
+ * Propaga la imputación de un comprobante de venta a TODOS sus movimientos del banco
+ * (`msa_galicia.comprobante_venta_id` — la única tabla con ese vínculo). Se llama al guardar la
+ * cuenta del comprobante, desde cualquiera de sus pantallas. Devuelve cuántos movimientos tocó.
+ */
+export async function propagarImputacionDeVenta(
+  supabase: Cliente, compId: string,
+  comp: { cuenta_contable?: string | null; nro_cuenta?: string | null; centro_costo?: string | null },
+): Promise<number> {
+  const imp = await imputacionParaElBanco(supabase, comp)
+  if (!imp) return 0
+  const { error, count } = await supabase.from('msa_galicia').update(imp, { count: 'exact' }).eq('comprobante_venta_id', compId)
+  if (error) throw error
+  // Y los que todavía dicen «ANTICIPO COBRO: …» en el detalle dejan de decirlo.
+  const { data: conPrefijo } = await supabase.from('msa_galicia').select('id, detalle')
+    .eq('comprobante_venta_id', compId).ilike('detalle', 'ANTICIPO COBRO:%')
+  for (const m of (conPrefijo || []) as any[]) {
+    await supabase.from('msa_galicia').update({ detalle: detalleSinAnticipo(m.detalle) }).eq('id', m.id)
+  }
+  return count || 0
+}
+
+/** «ANTICIPO COBRO: Adelanto» → «Adelanto». El movimiento deja de ser un anticipo cuando tiene su comprobante. */
+export function detalleSinAnticipo(detalle: string | null | undefined): string | null {
+  const d = String(detalle || '').replace(/^\s*ANTICIPO COBRO:\s*/i, '').trim()
+  return d || null
 }

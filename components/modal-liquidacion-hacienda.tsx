@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react"
+import { propagarImputacionDeVenta } from "@/lib/ventas/detalle-cobro-db"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -345,6 +346,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
         if (error) throw error
         if (count === 0) throw new Error('No se encontró la liquidación: el cambio NO se guardó')
         compId = comprobanteId
+        // 🏷️ La cuenta viaja a sus cobros ya conciliados en el banco.
+        await propagarImputacionDeVenta(supabase, compId, payload as any)
       } else {
         const { data: comp, error } = await supabase.schema('msa').from('comprobantes_venta')
           .insert({ ...payload, estado: 'a cobrar' }).select('id').single()

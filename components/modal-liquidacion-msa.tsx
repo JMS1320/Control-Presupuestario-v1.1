@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { propagarImputacionDeVenta } from "@/lib/ventas/detalle-cobro-db"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -469,9 +470,15 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
     // FACTURA de venta: montos importados de AFIP (read-only). Solo se guarda la imputación.
     if (esFacturaEdit && liquidacionInicial) {
       setGuardando(true)
+      const imputacion = { cuenta_contable: cuentaContable || null, nro_cuenta: nroCuenta || null, centro_costo: centroCosto || null }
       const { error } = await supabase.schema('msa').from('comprobantes_venta')
-        .update({ cuenta_contable: cuentaContable || null, nro_cuenta: nroCuenta || null, centro_costo: centroCosto || null })
+        .update(imputacion)
         .eq('id', liquidacionInicial.id)
+      if (!error) {
+        // 🏷️ La cuenta viaja a sus cobros ya conciliados en el banco.
+        try { await propagarImputacionDeVenta(supabase, liquidacionInicial.id, imputacion) }
+        catch (e) { toast.error('La imputación se guardó, pero no llegó al Extracto: ' + (e as Error).message) }
+      }
       setGuardando(false)
       if (error) { toast.error('Error: ' + error.message); return }
       toast.success('Imputación guardada')
@@ -559,6 +566,8 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', liqId!)
         if (error) throw error
+        // 🏷️ La cuenta viaja a sus cobros ya conciliados en el banco.
+        await propagarImputacionDeVenta(supabase, liqId!, payload as any)
       } else {
         const { data, error } = await supabase
           .schema('msa')

@@ -15,7 +15,7 @@ import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-concili
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
-import { cargarFuentesCobro, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
+import { cargarFuentesCobro, vincularPagoACuenta, imputacionParaElBanco, detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -1602,7 +1602,7 @@ ${texto.trim()}` : texto.trim()
         const sch = schemaDeEmpresa(empresa)
         // `plazos` existe sólo en MSA (la liquidación de hacienda): pedirlo en PAM/MA haría fallar todo.
         const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
-          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante' + (sch === 'msa' ? ', plazos' : ''))
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante, cuenta_contable, nro_cuenta, centro_costo' + (sch === 'msa' ? ', plazos' : ''))
           .order('fecha_liquidacion', { ascending: false })
           .limit(500)
         const ids = (comps ?? []).map((c: any) => c.id)
@@ -2343,9 +2343,17 @@ ${marca}` : marca
           comprobantes_pagados: ventaElegida.__cuota != null
             ? `${ventaElegida.nro_comprobante} cuota ${ventaElegida.__cuota + 1}/${ventaElegida.__cuotaDe}`
             : (ventaElegida.nro_comprobante || null),
-          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D).
-          detalle: movimientoAsignando.detalle?.trim() || null,
+          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D), y deja de decir
+          // «ANTICIPO COBRO»: con su comprobante, ya no es un anticipo.
+          detalle: detalleSinAnticipo(movimientoAsignando.detalle),
           comprobante_venta_id: ventaElegida.id,
+        }
+        // 🏷️ La imputación del comprobante (cuenta, número, centro de costo) — como en compras. Lo que
+        // se escribió a mano en el modal manda sobre la cuenta.
+        const impVenta = await imputacionParaElBanco(supabase, ventaElegida)
+        if (impVenta) {
+          Object.assign(updateVenta, impVenta)
+          if (categManualAsignar.trim()) updateVenta.categ = categManualAsignar.trim()
         }
 
         /**

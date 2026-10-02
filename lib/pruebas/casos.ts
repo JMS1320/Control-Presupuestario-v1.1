@@ -66,6 +66,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { filasRetenciones } from "@/lib/ventas/retenciones-export"
+import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -2285,6 +2286,12 @@ export function correrCasos(): Resultado[] {
   chequear("Débitos / créditos", "Cash Flow: con los dos apagados no pasa nada (como Estado y Origen)",
     "false", String(pasaSentido(debito500k, new Set())),
     pasaSentido(debito500k, new Set()) === false, "A-FEAT-1224")
+
+
+  // 🏷️ Un cobro vinculado a su comprobante deja de decir «ANTICIPO COBRO» (pedido del usuario 2026-10-02).
+  chequear("Detalle del cobro", "«ANTICIPO COBRO: Adelanto» pasa a «Adelanto»; un detalle propio no se toca; sólo el prefijo queda vacío",
+    "Adelanto · Seña Genta · (vacío)", `${detalleSinAnticipo("ANTICIPO COBRO: Adelanto")} · ${detalleSinAnticipo("Seña Genta")} · ${detalleSinAnticipo("ANTICIPO COBRO: ") ?? "(vacío)"}`,
+    detalleSinAnticipo("ANTICIPO COBRO: Adelanto") === "Adelanto" && detalleSinAnticipo("Seña Genta") === "Seña Genta" && detalleSinAnticipo("ANTICIPO COBRO: ") === null, "A-FEAT-1228")
 
   return r
 }
