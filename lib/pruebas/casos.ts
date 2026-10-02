@@ -2060,7 +2060,7 @@ export function correrCasos(): Resultado[] {
   const baseHist = {
     fecha: "2026-01-27", categoriaId: "cat-novillo", cabezas: 70, kgTotales: 30000, pctDesbaste: 0.03,
     kgCarne: null, precioKg: 5000, pctCz: 0.04, flete: 0, plazo: "30/60/90",
-    cliente: "Frigorífico", cuit: "30000000001", notas: "", confirmada: true,
+    cliente: "Frigorífico", cuit: "30000000001", notas: "", historica: true, kgNetos: null,
   }
   const hist = armarVentaHistorica(baseHist)
   chequear("Venta histórica", "🕰️ El neto sale con la cuenta de Productivo: 29.100 kg × 5.000 − 4 % = 139.680.000",
@@ -2070,10 +2070,25 @@ export function correrCasos(): Resultado[] {
     hist.fila.historica === true && hist.fila.lote_id === null && hist.fila.pct_desbaste === 0.03, "A-FEAT-1226")
   chequear("Venta histórica", "Completa y confirmada: no falta nada y no hay avisos (enero es anterior al stock)",
     "0 · 0", `${hist.faltan.length} · ${hist.avisos.length}`, hist.faltan.length === 0 && hist.avisos.length === 0, "A-FEAT-1226")
-  const sinConfirmar = armarVentaHistorica({ ...baseHist, confirmada: false })
-  chequear("Venta histórica", "🛑 Sin confirmar que no descuenta stock, no se guarda",
-    "confirmar que no descuenta stock", sinConfirmar.faltan.join(", "),
-    sinConfirmar.faltan.includes("confirmar que no descuenta stock"), "A-FEAT-1226")
+  const noHist = armarVentaHistorica({ ...baseHist, historica: false })
+  chequear("Venta histórica", "🛑 Hacienda NO histórica no se guarda acá: la del stock se vende desde Productivo",
+    "1 faltante", `${noHist.faltan.length} faltante`, noHist.faltan.length === 1 && /Productivo/.test(noHist.faltan[0]), "A-FEAT-1226")
+
+  // ── Los kilos NETOS de desbaste, que es el dato que tiene el usuario (2026-10-02) ──
+  chequear("Venta histórica", "Sin netos tipeados, se muestran calculados: 30.000 × (1 − 3 %) = 29.100",
+    "29100", String(hist.kgNetos), Math.abs(hist.kgNetos - 29100) < 1e-6, "A-FEAT-1226")
+  const conNetos = armarVentaHistorica({ ...baseHist, pctDesbaste: 0, kgNetos: 28800 })
+  chequear("Venta histórica", "🎚️ Netos tipeados con vivos: el desbaste sale de ahí (1 − 28.800/30.000 = 4 %) y el neto usa 28.800",
+    "0.04 · 138240000", `${conNetos.pctDesbaste.toFixed(4)} · ${conNetos.neto}`,
+    Math.abs(conNetos.pctDesbaste - 0.04) < 1e-9 && Math.abs(conNetos.neto - 28800 * 5000 * 0.96) < 0.01, "A-FEAT-1226")
+  const soloNetos = armarVentaHistorica({ ...baseHist, kgTotales: 0, pctDesbaste: 0, kgNetos: 28800 })
+  chequear("Venta histórica", "Sólo netos (sin vivos): se guardan como los kilos de la venta, desbaste 0, y no falta nada",
+    "28800 · 0 · 0 faltan", `${soloNetos.fila.kg_totales} · ${soloNetos.fila.pct_desbaste} · ${soloNetos.faltan.length} faltan`,
+    soloNetos.fila.kg_totales === 28800 && soloNetos.fila.pct_desbaste === 0 && soloNetos.faltan.length === 0, "A-FEAT-1226")
+  const netosDeMas = armarVentaHistorica({ ...baseHist, kgNetos: 31000 })
+  chequear("Venta histórica", "🛑 Netos mayores que los vivos no se guardan (el desbaste daría negativo)",
+    "kilos netos menores que los vivos", netosDeMas.faltan.join(", "),
+    netosDeMas.faltan.includes("kilos netos menores que los vivos"), "A-FEAT-1226")
   const posterior = armarVentaHistorica({ ...baseHist, fecha: "2026-05-10" })
   chequear("Venta histórica", "⚠️ Con fecha posterior a feb-2026 AVISA (lo normal es venderla desde el stock) pero deja guardar",
     "1 aviso · 0 faltan", `${posterior.avisos.length} aviso · ${posterior.faltan.length} faltan`,

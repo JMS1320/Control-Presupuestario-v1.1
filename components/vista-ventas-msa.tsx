@@ -16,6 +16,7 @@ import { kgQueSeCobran, promedioKg } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, liquidacionDeVenta, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
 import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { ModalVentaHistoricaHacienda } from "./modal-venta-historica-hacienda"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 interface Props {
   userRole?: UserRole
@@ -221,9 +222,19 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
             <RefreshCw className="mr-2 h-4 w-4" />Actualizar
           </Button>
           {esAdmin && (
-            <Button onClick={abrirAlta} className="bg-green-600 hover:bg-green-700">
-              <Plus className="mr-2 h-4 w-4" />Nueva venta
-            </Button>
+            /* Un solo botón para toda venta (2026-10-02, «estamos perdiendo consistencia»): adentro se
+               elige granos o hacienda, y en hacienda, si es histórica. */
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="bg-green-600 hover:bg-green-700">
+                  <Plus className="mr-2 h-4 w-4" />Nueva venta
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={abrirAlta}>🌾 Agrícola (granos)</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setHistoricaAbierta(true)}>🐂 Ganadera (hacienda)</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
       </div>
@@ -322,7 +333,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       <div className="space-y-2">
         <div className="flex items-baseline gap-3">
           <h3 className="text-base font-semibold">🐂 Ventas de hacienda</h3>
-          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos (las anteriores al stock, acá: Venta histórica). Acá se liquidan: tildá varias si vienen en un solo papel.</span>
+          <span className="text-xs text-gray-500">Las del stock se cargan en Productivo → Movimientos; las históricas, con Nueva venta → Ganadera. Acá se liquidan: tildá varias si vienen en un solo papel.</span>
           {esAdmin && (
             <div className="ml-auto flex gap-2">
               {tildadas.size > 0 && (
@@ -332,14 +343,6 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                   <FileText className="mr-1 h-3.5 w-3.5" />Liquidar las {tildadas.size} juntas
                 </Button>
               )}
-              <Button size="sm" variant="outline" onClick={() => abrirLiquidacion([])}
-                title="Cargar una liquidación de hacienda que no tiene venta en Productivo">
-                <FileText className="mr-1 h-3.5 w-3.5" />Liquidación suelta
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setHistoricaAbierta(true)}
-                title="Una venta anterior al stock de la app: se guarda con las demás, sin descontar stock">
-                <Plus className="mr-1 h-3.5 w-3.5" />Venta histórica
-              </Button>
             </div>
           )}
         </div>

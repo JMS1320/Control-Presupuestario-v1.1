@@ -1,7 +1,11 @@
 "use client"
 
 /**
- * 🕰️ **VENTA HISTÓRICA DE HACIENDA** — A-FEAT-1226 (2026-10-02).
+ * 🐂 **NUEVA VENTA DE HACIENDA desde Ingresos** — A-FEAT-1226 (2026-10-02).
+ *
+ * Se abre desde *Nueva venta → Hacienda* (un solo botón para toda venta: pedido del usuario,
+ * *«estamos perdiendo consistencia»* con tres botones para lo mismo). Hoy ofrece la opción
+ * **histórica**; la hacienda que está en el stock se sigue vendiendo desde Productivo.
  *
  * Para las ventas anteriores al stock de la app (la de enero: 70 novillos a Rioplatense). Esa
  * hacienda nunca estuvo en el stock, así que la venta **no puede descontarla**: se guarda sin
@@ -35,7 +39,7 @@ interface Props {
 }
 
 const vacio = {
-  fecha: '', categoriaId: '', cabezas: '', kgTotales: '', desbaste: '', kgCarne: '',
+  fecha: '', categoriaId: '', cabezas: '', kgTotales: '', desbaste: '', kgNetos: '', kgCarne: '',
   precioKg: '', cz: '', flete: '', plazo: '', notas: '',
 }
 type Clave = keyof typeof vacio
@@ -43,13 +47,14 @@ type Clave = keyof typeof vacio
 export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: Props) {
   const [f, setF] = useState(vacio)
   const [cliente, setCliente] = useState({ cuit: '', nombre: '' })
-  const [confirmada, setConfirmada] = useState(false)
+  /** Histórica = no descuenta stock. Elegirla ES la confirmación: no se pregunta dos veces. */
+  const [historica, setHistorica] = useState(true)
   const [categorias, setCategorias] = useState<{ id: string; nombre: string }[]>([])
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setF(vacio); setCliente({ cuit: '', nombre: '' }); setConfirmada(false)
+    setF(vacio); setCliente({ cuit: '', nombre: '' }); setHistorica(true)
     supabase.schema('productivo').from('categorias_hacienda').select('id, nombre').order('nombre')
       .then(({ data, error }) => {
         if (error) toast.error('No se pudieron leer las categorías: ' + error.message)
@@ -71,6 +76,7 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
     cabezas: parseNumeroAR(f.cabezas),
     kgTotales: parseNumeroAR(f.kgTotales),
     pctDesbaste: parseNumeroAR(f.desbaste) / 100,
+    kgNetos: parseNumeroAR(f.kgNetos) || null,
     kgCarne: parseNumeroAR(f.kgCarne) || null,
     precioKg: parseNumeroAR(f.precioKg),
     pctCz: parseNumeroAR(f.cz) / 100,
@@ -79,8 +85,8 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
     cliente: cliente.nombre,
     cuit: cliente.cuit,
     notas: f.notas,
-    confirmada,
-  }), [f, cliente, confirmada])
+    historica,
+  }), [f, cliente, historica])
 
   const guardar = async () => {
     if (armada.faltan.length) { toast.error('Falta: ' + armada.faltan.join(', ')); return }
@@ -111,12 +117,22 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>🕰️ Venta histórica de hacienda</DialogTitle>
+          <DialogTitle>🐂 Nueva venta de hacienda</DialogTitle>
           <DialogDescription>
-            Para una venta anterior al stock de la app. Se guarda junto a las demás ventas de hacienda,
-            pero <strong>no descuenta animales del stock</strong>. Después se liquida desde la lista, como cualquier otra.
+            Se guarda junto a las demás ventas de hacienda y después se liquida desde la lista, como cualquier otra.
           </DialogDescription>
         </DialogHeader>
+
+        <label className="flex items-start gap-2 rounded border bg-amber-50 border-amber-300 p-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={historica} onChange={e => setHistorica(e.target.checked)} className="mt-0.5" />
+          <span><strong>Histórica</strong> — anterior al stock de la app: <strong>no descuenta stock</strong>.</span>
+        </label>
+        {!historica && (
+          <div className="rounded border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+            La hacienda que está en el stock se vende desde <strong>Productivo → Movimientos</strong>, que la descuenta.
+            Desde acá todavía no.
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div>
@@ -132,7 +148,10 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
           </div>
           {campo('Cabezas', 'cabezas', '0', 0)}
           {campo('Kg vivos', 'kgTotales', '0', 0)}
-          {campo('Desbaste %', 'desbaste', '0', 2)}
+          {campo('Desbaste %', 'desbaste', f.kgNetos ? fmtNumeroAR(armada.pctDesbaste * 100, 2) : '0', 2,
+            f.kgNetos ? 'Sale de vivos y netos' : undefined)}
+          {campo('Kg netos (desbastados)', 'kgNetos', fmtNumeroAR(armada.kgNetos, 0) || '0', 0,
+            f.kgNetos ? 'Tipeado: manda sobre el desbaste' : 'Vacío = vivos − desbaste. Si tenés este dato, escribilo')}
           {campo('Kg de carne', 'kgCarne', 'sólo al gancho', 0, 'Si fue al gancho: son los kilos que se cobran')}
           {campo('Precio por kg $', 'precioKg', '0,00', 2)}
           {campo('CZ %', 'cz', '0', 2, 'Comisión, flete y otros, en %')}
@@ -155,7 +174,7 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
         {/* La cuenta, a la vista: es la misma que hace Productivo. */}
         <div className="rounded border bg-gray-50 p-3 text-sm grid gap-1">
           <div className="flex justify-between">
-            <span>Kg que se cobran {parseNumeroAR(f.kgCarne) > 0 ? '(carne)' : '(vivos − desbaste)'}</span>
+            <span>Kg que se cobran {parseNumeroAR(f.kgCarne) > 0 ? '(carne)' : f.kgNetos ? '(netos tipeados)' : '(vivos − desbaste)'}</span>
             <span className="font-mono">{fmtNumeroAR(armada.kgQueSeCobran, 1)}</span>
           </div>
           <div className="flex justify-between"><span>Bruto</span><span className="font-mono">$ {fmtNumeroAR(armada.bruto)}</span></div>
@@ -172,16 +191,11 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
           </div>
         ))}
 
-        <label className="flex gap-2 rounded border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900 cursor-pointer">
-          <input type="checkbox" checked={confirmada} onChange={e => setConfirmada(e.target.checked)} className="mt-0.5" />
-          <span><strong>Esta venta NO descuenta stock.</strong> Confirmo que es histórica: la hacienda no está en el stock de la app.</span>
-        </label>
-
         <DialogFooter className="items-center gap-2">
           {armada.faltan.length > 0 && <span className="text-xs text-gray-500 mr-auto">Falta: {armada.faltan.join(', ')}</span>}
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button onClick={guardar} disabled={guardando || armada.faltan.length > 0}>
-            {guardando && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Guardar venta histórica
+            {guardando && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}Guardar venta
           </Button>
         </DialogFooter>
       </DialogContent>

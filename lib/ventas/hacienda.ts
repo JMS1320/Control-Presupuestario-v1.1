@@ -464,6 +464,12 @@ export interface VentaHistoricaEntrada {
   kgTotales: number
   /** FRACCIÓN (0.03 = 3 %), como la guarda Productivo. */
   pctDesbaste: number
+  /**
+   * Kilos NETOS de desbaste, si el usuario los tiene (2026-10-02: *«es el dato que tengo»*). Vacío =
+   * se calculan de vivos y desbaste. Lleno = manda: con los vivos, el desbaste sale de ahí; sin los
+   * vivos, los netos son los kilos de la venta y el desbaste queda en 0.
+   */
+  kgNetos: number | null
   /** Sólo al gancho: si está, son los kilos que se cobran. */
   kgCarne: number | null
   precioKg: number
@@ -474,8 +480,12 @@ export interface VentaHistoricaEntrada {
   cliente: string
   cuit: string
   notas: string
-  /** El usuario confirmó que la venta NO descuenta stock. */
-  confirmada: boolean
+  /**
+   * La venta es HISTÓRICA: no descuenta stock. Es una opción de *Nueva venta → Hacienda*, y elegirla
+   * ES la confirmación (2026-10-02: *«histórico quiere decir que no afecta stock, no hace falta
+   * ponerlo 2 veces»*). Sin ella, la hacienda que está en el stock se vende desde Productivo.
+   */
+  historica: boolean
 }
 
 export interface VentaHistoricaArmada {
@@ -484,6 +494,12 @@ export interface VentaHistoricaArmada {
   /** Lo que se advierte y deja seguir (§ 🚦 de CLAUDE.md). */
   avisos: string[]
   kgQueSeCobran: number
+  /** Kilos netos de desbaste: los tipeados, o vivos × (1 − desbaste). */
+  kgNetos: number
+  /** El desbaste que se guarda (FRACCIÓN): el tipeado, o el que sale de vivos y netos. */
+  pctDesbaste: number
+  /** Los kilos que se guardan como vivos (sin vivos, son los netos). */
+  kgTotales: number
   bruto: number
   cz: number
   neto: number
@@ -500,26 +516,34 @@ export interface VentaHistoricaArmada {
  * stock, y con `historica = true`, que es lo que dice que la falta del movimiento es a propósito.
  */
 export function armarVentaHistorica(e: VentaHistoricaEntrada): VentaHistoricaArmada {
-  const kg = kgQueSeCobran({ kgTotales: e.kgTotales, pctDesbaste: e.pctDesbaste, kgCarne: e.kgCarne })
+  // Los netos tipeados mandan (§ 🎚️ default del dato real, siempre editable).
+  const netosTipeados = Number(e.kgNetos) > 0 ? Number(e.kgNetos) : null
+  const kgTotales = e.kgTotales > 0 ? e.kgTotales : (netosTipeados ?? 0)
+  const pctDesbaste = netosTipeados && e.kgTotales > 0 ? 1 - netosTipeados / e.kgTotales
+    : netosTipeados ? 0 : e.pctDesbaste
+  const kgNetos = kgNetosDeVenta(kgTotales, pctDesbaste)
+  const kg = kgQueSeCobran({ kgTotales, pctDesbaste, kgCarne: e.kgCarne })
   const cuenta = netoDeVenta(kg, e.precioKg, e.pctCz, e.flete)
 
   const faltan: string[] = []
+  if (!e.historica) faltan.push('la hacienda que está en el stock se vende desde Productivo → Movimientos')
   if (!e.fecha) faltan.push('fecha')
   if (!e.categoriaId) faltan.push('categoría')
   if (!(e.cabezas > 0)) faltan.push('cabezas')
-  if (!(e.kgTotales > 0)) faltan.push('kilos')
+  if (!(kgTotales > 0)) faltan.push('kilos (vivos o netos)')
   if (!(e.precioKg > 0)) faltan.push('precio por kilo')
   if (!e.cuit) faltan.push('cliente (con CUIT)')
-  if (e.pctDesbaste < 0 || e.pctDesbaste >= 1) faltan.push('desbaste entre 0 y 100 %')
+  if (pctDesbaste < 0 || pctDesbaste >= 1) {
+    faltan.push(netosTipeados ? 'kilos netos menores que los vivos' : 'desbaste entre 0 y 100 %')
+  }
   if (e.pctCz < 0 || e.pctCz >= 1) faltan.push('CZ entre 0 y 100 %')
-  if (!e.confirmada) faltan.push('confirmar que no descuenta stock')
 
   const avisos: string[] = []
   if (e.fecha && e.fecha >= INICIO_STOCK_APP) {
     avisos.push('La fecha es posterior a febrero de 2026: para entonces la app ya lleva el stock. ' +
       'Si la hacienda está en el stock, cargala desde Productivo → Movimientos, que la descuenta.')
   }
-  if (e.kgCarne && e.kgTotales > 0 && e.kgCarne > e.kgTotales) {
+  if (e.kgCarne && kgTotales > 0 && e.kgCarne > kgTotales) {
     avisos.push('Los kilos de carne superan a los kilos vivos.')
   }
 
@@ -528,11 +552,11 @@ export function armarVentaHistorica(e: VentaHistoricaEntrada): VentaHistoricaArm
     categoria_id: e.categoriaId,
     fecha_venta: e.fecha,
     cantidad: e.cabezas,
-    kg_totales: e.kgTotales,
+    kg_totales: kgTotales,
     kg_carne: e.kgCarne && e.kgCarne > 0 ? e.kgCarne : null,
-    peso_kg: e.cabezas > 0 ? e.kgTotales / e.cabezas : null,
+    peso_kg: e.cabezas > 0 ? kgTotales / e.cabezas : null,
     precio_kg: e.precioKg,
-    pct_desbaste: e.pctDesbaste,
+    pct_desbaste: pctDesbaste,
     pct_cz: e.pctCz,
     flete: e.flete || null,
     monto_neto: cuenta.neto,
@@ -544,5 +568,5 @@ export function armarVentaHistorica(e: VentaHistoricaEntrada): VentaHistoricaArm
     notas: ['Venta histórica, cargada desde Ingresos → Ventas: NO descuenta stock (anterior al stock de la app).',
       e.notas.trim()].filter(Boolean).join(' — '),
   }
-  return { faltan, avisos, kgQueSeCobran: kg, bruto: cuenta.bruto, cz: cuenta.cz, neto: cuenta.neto, fila }
+  return { faltan, avisos, kgQueSeCobran: kg, kgNetos, pctDesbaste, kgTotales, bruto: cuenta.bruto, cz: cuenta.cz, neto: cuenta.neto, fila }
 }

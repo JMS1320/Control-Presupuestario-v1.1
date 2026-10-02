@@ -1691,7 +1691,9 @@ editan**: se siguen cargando y corrigiendo en Productivo.
 ### Cargar la liquidación del consignatario
 - **🧾 Liquidar** en una venta → la liquidación abre **precargada** con los datos de la venta: cabezas,
   kilos netos, precio, categoría, comprador, fecha y comisión.
-- **Liquidación suelta** → para un papel que no tiene venta cargada en Productivo.
+- Si el papel no tiene venta en la app (una venta anterior al stock), **primero cargá la venta** con
+  **Nueva venta → Ganadera → Histórica**, y después liquidala desde la lista. Así toda liquidación
+  queda vinculada a su venta.
 
 Después copiás lo que dice tu papel: consignatario, guía, DTe, el precio y la comisión reales, el ajuste
 por redondeo (con su signo), y las retenciones impresas. Para Ingresos Brutos la app **sugiere** el
@@ -1722,11 +1724,14 @@ vivos.
 
 ### Cargar una venta histórica (anterior al stock de la app)
 Para una venta que se hizo antes de que la app llevara el stock —por ejemplo, la de enero de 2026—:
-**Ventas de hacienda → Venta histórica**. Cargás fecha, categoría, cabezas, kilos (y los de carne si fue
-al gancho), precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que usa Productivo.
+**Nueva venta → 🐂 Ganadera**, con **Histórica** tildado (viene así). Cargás fecha, categoría, cabezas,
+kilos, precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que usa Productivo.
 
-Para guardar tenés que tildar **«Esta venta NO descuenta stock»**. Queda en la lista con la marca
-**histórica**, y desde ahí se liquida como cualquier otra.
+- **Kilos**: cargá los **vivos y el desbaste**, o directamente los **kilos netos (desbastados)** si es
+  el dato que tenés. Con vivos y netos, el desbaste se calcula solo; con sólo los netos, alcanza.
+- Si fue **al gancho**, cargá también los kilos de carne: son los que se cobran.
+
+Queda en la lista con la marca **histórica**, y desde ahí se liquida como cualquier otra.
 
 📌 Si la hacienda **está** en el stock, la venta se carga desde **Productivo → Movimientos**, que la
 descuenta. Si ponés una fecha posterior a febrero de 2026, la pantalla te lo recuerda.
