@@ -2243,6 +2243,17 @@ Antes, para pasar de "todos" a "ver sólo uno" había que apretar *ninguno* y de
 quería. Ahora es un solo click. Sirve en las dos filas de chips, y el cartelito
 *«ctrl+click = sólo ése»* está al lado para no tener que acordarse.
 
+### ↕️ Chips de Columna: sólo débitos o sólo créditos
+Al lado de Estado y Origen hay un tercer grupo, **Columna:**, con **Débitos** y **Créditos**:
+- arrancan los dos prendidos, así que no esconden nada;
+- **ctrl+click en Créditos** deja sólo los cobros; **en Débitos**, sólo los pagos;
+- **ambos** (o *Ver todo*) vuelve a mostrar todo.
+
+⚠️ No es lo mismo que el chip de estado **«debito»**: ése son los débitos automáticos. Por eso este
+grupo se llama *Columna* — filtra por la columna Débitos o Créditos de la tabla.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1179`.
+
 ### ✍️ Escribir fechas: el año se completa solo
 Al tipear una fecha en la grilla podés poner sólo día y mes: `10/8` queda **10/08/2026**. Sirven
 `/`, `-` y `.`, y el año de dos dígitos (`5/3/26`). *Por ahora sólo en Cash Flow.*
@@ -2583,6 +2594,25 @@ nota y en color cuando sí).
 de todo el extracto, no de las filas que entraron por el límite.
 
 ⚠️ Sin probar por vos todavía → `A-TEST-117`.
+
+## ↕️ Extracto → sólo débitos o sólo créditos *(2026-10-01)*
+
+En la misma barra, al lado de **📝 Notas**, hay otro selector:
+
+```
+↕️ Débitos y créditos   ·   ↓ Sólo débitos   ·   ↑ Sólo créditos
+```
+
+- **Sólo débitos** → lo que salió de la cuenta.
+- **Sólo créditos** → lo que entró.
+- Arriba, el cartel de filtros activos lo dice, y **«Limpiar»** lo vuelve a *Débitos y créditos*.
+
+🔑 **Decide también dónde busca el «Rango de Montos»** de *Avanzados*: con *Sólo créditos* busca el
+monto entre los créditos, con *Sólo débitos* entre los débitos, y con *Débitos y créditos* en los dos.
+
+📌 Igual que el de notas, se aplica **al traer los datos**: no recorta sólo lo que está en pantalla.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1179`.
 
 ## 🏦 Conciliar sueldos que el motor no encuentra ✅ *(testeado OK 2026-08-19)*
 

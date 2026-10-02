@@ -1,5 +1,6 @@
 "use client"
 
+import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -389,6 +390,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
   const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
   const [chipsInit, setChipsInit] = useState(false)
+  /**
+   * ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. Arranca con los DOS prendidos: así no esconde nada
+   * (ni las filas en cero) hasta que el usuario lo pide.
+   * ⚠️ OJO con el nombre: acá «debito» ya es un ESTADO (los débitos automáticos, y el «ver débitos
+   * vencidos»). Por eso este grupo se rotula **«Columna:»** — filtra por la columna Débitos/Créditos
+   * de la tabla, no por ese estado.
+   */
+  const [chipsSentido, setChipsSentido] = useState<Set<Columna>>(new Set<Columna>(['debitos', 'creditos']))
   const [verDebitosVencidos, setVerDebitosVencidos] = useState(false) // débitos auto: ocultar los ya vencidos (se asumen pagados)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
@@ -1170,6 +1179,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     ? datosConBusqueda
     : datosConBusqueda.filter(fila => {
         if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
+        if (!pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
       })
@@ -1191,6 +1201,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const verTodo = () => {
     setChipsEstados(new Set(estadosDisponibles))
     setChipsOrigenes(new Set(origenesDisponibles))
+    setChipsSentido(new Set<Columna>(['debitos', 'creditos']))   // A-FEAT-1224
   }
   // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
   const subtotales = calcularSubtotales(datosOperativos)
@@ -3959,6 +3970,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               ))}
               <button onClick={() => setChipsOrigenes(new Set(origenesDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
               <button onClick={() => setChipsOrigenes(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
+            </div>
+            {/* ↕️ A-FEAT-1224 — sólo débitos / sólo créditos, con el mismo gesto (ctrl+click = sólo ése). */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1" title="Filtra por la columna Débitos o Créditos de la tabla — no por el estado «debito»">Columna:</span>
+              {([['debitos', 'Débitos', 'bg-red-600 border-red-600'], ['creditos', 'Créditos', 'bg-green-600 border-green-600']] as const).map(([col, etiqueta, color]) => (
+                <button
+                  key={col}
+                  onClick={(ev) => toggleChip(setChipsSentido as unknown as React.Dispatch<React.SetStateAction<Set<string>>>, col, ev.ctrlKey || ev.metaKey)}
+                  title={`Click: prender/apagar «${etiqueta}» · Ctrl+click: ver SÓLO «${etiqueta}»`}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsSentido.has(col) ? `${color} text-white` : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {etiqueta} ({data.filter(f => (Number(f[col]) || 0) > 0).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsSentido(new Set<Columna>(['debitos', 'creditos']))} className="text-[10px] underline text-gray-400 ml-1">ambos</button>
             </div>
             <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
               <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />
