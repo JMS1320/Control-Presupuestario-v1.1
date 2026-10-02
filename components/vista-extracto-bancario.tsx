@@ -14,6 +14,8 @@ import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-concili
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
+import { cargarFuentesCobro, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
+import { lineasDeCobro } from "@/lib/ventas/detalle-cobro"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -1610,9 +1612,26 @@ ${texto.trim()}` : texto.trim()
             retsConFecha.set(k, [...(retsConFecha.get(k) ?? []), { monto: Number((r as any).monto) || 0, fecha: (r as any).fecha ?? null }])
           }
         }
+        /**
+         * 💰 A-FEAT-1228 — **cobros parciales**: lo ya cobrado por otros caminos (otros créditos del
+         * banco, pagos a cuenta vinculados, echeq endosado, facturas del cliente descontadas) se
+         * descuenta, y el crédito se compara contra **lo que falta**, no contra el total. Pedido del
+         * usuario: *«vincular los pagos desde el extracto sería lo mejor, ya conciliando»* — Genta pagó
+         * la liquidación de enero en 5 partes. Las retenciones no entran acá: `pagoCondiciones` ya las
+         * descuenta. El propio movimiento, si ya estaba atado, no se cuenta contra sí mismo.
+         */
+        const fuentesComp = sch === 'msa'
+          ? await cargarFuentesCobro(supabase, (comps ?? []).map((c: any) => ({ id: c.id, cuit_cliente: c.cuit_cliente })))
+          : new Map()
+        const yaCobrado = (id: string) => lineasDeCobro((fuentesComp.get(id) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
+          .filter(l => l.medio !== 'retencion' && l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
+          .reduce((acc, l) => acc + l.monto, 0)
         return (comps ?? []).flatMap((c: any) => {
-          const cobro = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
-          const base = { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+          const cobroTotal = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
+          const cobrado = yaCobrado(String(c.id))
+          // `__cobro.pagoCondiciones` pasa a ser LO QUE FALTA: es contra lo que se compara el crédito.
+          const cobro = cobrado > 0.005 ? { ...cobroTotal, pagoCondiciones: cobroTotal.pagoCondiciones - cobrado } : cobroTotal
+          const base = { ...c, __empresa: empresa, __schema: sch, __cobro: cobro, __yaCobrado: cobrado }
           /**
            * 🏦 A-BUG-1234 — una liquidación con PLAZOS se ofrece **por cuota**, no entera. Asignar el
            * cobro de una cuota a la liquidación entera la marcaba cobrada completa y borraba las
@@ -2279,6 +2298,16 @@ ${marca}` : marca
         const cobro = ventaElegida.__cobro
         const acreditado = Number(movimientoAsignando.creditos) || 0
         const dif = diferenciaContraElBanco(acreditado, cobro)
+        /**
+         * 💰 A-FEAT-1228 — un crédito MENOR a lo que falta es un **cobro parcial**: se concilia (la
+         * plata entró y es de este comprobante) y el comprobante sigue «a cobrar» con su saldo. Antes
+         * quedaba en auditar y el comprobante pasaba a cobrado con el primer pago. Un crédito MAYOR a
+         * lo que falta sí queda en auditar: cobrar de más no tiene explicación sin mirar.
+         * Con cuota (A-BUG-1234) sigue igual que antes: se compara contra la cuota.
+         */
+        const esCuota = ventaElegida.__cuota != null
+        const parcial = !esCuota && !dif.exacto && dif.diferencia < 0
+        const saldada = dif.exacto || dif.diferencia > 0
 
         const updateVenta: Record<string, any> = {
           ...vinculosLimpios(),
@@ -2297,11 +2326,35 @@ ${marca}` : marca
          * ⚠️ **Si no coincide exacto, queda en `auditar` con el motivo** — no se calla la diferencia.
          * En ventas lo más común es que falte cargar una retención, y eso hay que poder verlo.
          */
-        if (!dif.exacto) {
+        if (!dif.exacto && !parcial) {
           updateVenta.estado = 'auditar'
           updateVenta.motivo_revision = cobro.retenciones === 0
             ? `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) y el comprobante no tiene retenciones cargadas`
             : `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) contra el pago según condiciones`
+        }
+
+        /**
+         * 🔗 Si este crédito ya tiene su **pago a cuenta** cargado (Genta: «Adelanto», «Adelanto Nro 2»…),
+         * se vincula ESE pago a cuenta al comprobante — con el mismo camino que Cobros y el asistente
+         * (`vincularPagoACuenta`). Si no, el pago a cuenta quedaría suelto y la misma plata se vería
+         * dos veces: en el detalle por el banco y en la lista de «sin vincular».
+         */
+        let anticipoDelMov: any = null
+        if (!esCuota && ventaElegida.__schema === 'msa') {
+          const cuitMov = String(movimientoAsignando.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
+          const q = (movimientoAsignando as any).anticipo_id
+            ? supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id').eq('id', (movimientoAsignando as any).anticipo_id)
+            : supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id')
+                .eq('tipo', 'cobro').eq('fecha_pago', movimientoAsignando.fecha).eq('cuit_proveedor', cuitMov).is('comprobante_venta_id', null)
+          const { data: ants } = await q
+          anticipoDelMov = ((ants || []) as any[]).find(a => Math.abs((Number(a.monto) || 0) - acreditado) < 1
+            && (!a.comprobante_venta_id || a.comprobante_venta_id === ventaElegida.id)) ?? null
+        }
+        if (anticipoDelMov) {
+          await vincularPagoACuenta(supabase, { ...anticipoDelMov, monto: Number(anticipoDelMov.monto) || 0 },
+            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada, movimientoConciliado: true })
+          updateVenta.anticipo_id = anticipoDelMov.id
+          avisosAsignacion.push(`ℹ️ Se vinculó también su pago a cuenta (${formatCurrency(Number(anticipoDelMov.monto))}).`)
         }
 
         const { error: errExt } = await dbCuenta()
@@ -2318,7 +2371,8 @@ ${marca}` : marca
           const { error: errCuota } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
             .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
           if (errCuota) throw errCuota
-        } else {
+        } else if (saldada && !anticipoDelMov) {
+          // Cobrado sólo cuando este crédito completa lo que faltaba (con pago a cuenta lo decide `vincularPagoACuenta`).
           const { error: errVenta } = await supabase
             .schema(ventaElegida.__schema)
             .from('comprobantes_venta')
@@ -2330,7 +2384,9 @@ ${marca}` : marca
         actualizarLocal(movimientoAsignando.id, updateVenta)
         toast.success(dif.exacto
           ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
-          : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
+          : parcial
+            ? `Cobro parcial de ${ventaElegida.nro_comprobante} — falta cobrar ${formatCurrency(Math.abs(dif.diferencia))} (si era el último pago, falta cargar una retención)`
+            : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
         // Buscar códigos contable/interno por template (si aplica)
@@ -4918,7 +4974,10 @@ ${marca}` : marca
                           </span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3 mt-0.5">
-                          <span>{v.__cuota != null ? 'Entra en esta cuota' : 'Pago s/cond.'} <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          <span>{v.__cuota != null ? 'Entra en esta cuota' : v.__yaCobrado > 0.005 ? 'Falta cobrar' : 'Pago s/cond.'} <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          {v.__cuota == null && v.__yaCobrado > 0.005 && (
+                            <span className="text-gray-500">ya cobrado {formatCurrency(v.__yaCobrado)}</span>
+                          )}
                           {v.__cobro.retenciones > 0 && (
                             <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
                           )}
@@ -4926,7 +4985,9 @@ ${marca}` : marca
                           {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
                           <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
                             {d.exacto ? 'coincide exacto'
-                              : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
+                              : v.__cuota == null && d.diferencia < 0
+                                ? `cobro parcial · quedan ${formatCurrency(Math.abs(d.diferencia))}`
+                                : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
                           </span>
                         </div>
                         {!d.exacto && Math.abs(d.porcentaje) > 1 && v.__cobro.retenciones === 0 && (

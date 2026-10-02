@@ -1755,6 +1755,13 @@ Cash Flow.
 echeq del cliente que endosaste** (fecha, monto, número, a quién). Queda en el detalle y no se espera
 en el Cash Flow.
 
+### Cobros en varias partes, desde el Extracto
+Si un cliente te paga una venta en varios pagos (adelantos y saldo), cada crédito se concilia desde el
+**Extracto** → **Asignar** (o **Vincular**, si ya estaba conciliado sin vínculo) → pestaña **Venta**. La
+lista te muestra **cuánto falta cobrar** de cada comprobante y, si el crédito es menor, dice *cobro
+parcial · quedan $X*. Queda conciliado y el comprobante sigue a cobrar hasta el último pago. Si el
+crédito ya tenía su pago a cuenta cargado, se vincula ese mismo.
+
 ### Conciliar el cobro de una cuota
 En el **Extracto**, al asignar un crédito → pestaña **Venta**, una liquidación con plazos aparece **una
 vez por cada cuota pendiente** (*cuota 1 de 3, vence…*). Elegí la cuota: queda conciliada **esa** cuota
