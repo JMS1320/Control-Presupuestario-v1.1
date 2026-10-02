@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
+import { vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 
@@ -87,7 +89,7 @@ async function buscarFacturasVentaCandidatas(cuit: string): Promise<FacturaCandi
   const { data } = await supabase
     .schema('msa')
     .from('comprobantes_venta')
-    .select('id, denominacion_cliente, cuit_cliente, imp_total, fecha_liquidacion, estado, nro_cuenta')
+    .select('id, denominacion_cliente, cuit_cliente, imp_total, fecha_liquidacion, estado, nro_cuenta, tipo_comprobante, ret_iva, ret_iibb')
     .eq('cuit_cliente', cuit)
     .not('estado', 'in', '("cobrado","conciliado","anterior")')
     .order('fecha_liquidacion', { ascending: false })
@@ -116,8 +118,11 @@ async function buscarFacturasVentaCandidatas(cuit: string): Promise<FacturaCandi
   ;(ants || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto))
 
   return facturas.map(f => {
+    // En una liquidación de hacienda la retención viene IMPRESA en el papel: no entra al banco
+    // (A-FEAT-1225). Sin restarla, el saldo quedaba $675.905 alto en la de Genta.
+    const impresas = TIPOS_LIQ_HACIENDA.has(Number(f.tipo_comprobante)) ? (Number(f.ret_iva) || 0) + (Number(f.ret_iibb) || 0) : 0
     const total = Number(f.imp_total) || 0
-    const saldo = total - (imputado.get(f.id) || 0)
+    const saldo = total - impresas - (imputado.get(f.id) || 0)
     return {
       id: f.id,
       // Se mapea al mismo shape que compras para no bifurcar el modal.
@@ -304,62 +309,19 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
     if (!anticipoParaVincular || !calculo) return
     const cubierta = calculo.caso === 'A'
 
-    // 1) La factura: sólo cambia de estado cuando queda saldada.
-    const updateFac: Record<string, any> = {}
-    if (cubierta) {
-      updateFac.estado = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'cobrado'
-    }
-    // Si la factura no tiene cuenta contable y el anticipo sí, la hereda.
-    if (!fac.nro_cuenta && anticipoParaVincular.nro_cuenta) {
-      updateFac.nro_cuenta = anticipoParaVincular.nro_cuenta
-    }
-    if (Object.keys(updateFac).length > 0) {
-      const { error } = await supabase
-        .schema('msa').from('comprobantes_venta')
-        .update(updateFac).eq('id', fac.id)
-      if (error) throw error
-    }
-
-    // 2) El anticipo queda imputado. `parcial` = entró pero la factura sigue con saldo.
-    //    Va en `comprobante_venta_id`, columna propia: `factura_id` tiene FK a
-    //    `msa.comprobantes_arca` y escribir ahí un id de venta lo rechaza la base.
-    const { error: errAnt } = await supabase
-      .from('anticipos_proveedores')
-      .update({ comprobante_venta_id: fac.id, estado: cubierta ? 'vinculado' : 'parcial' })
-      .eq('id', anticipoParaVincular.id)
-    if (errAnt) throw errAnt
-
-    // 3) El movimiento del extracto, si se encuentra: es un CRÉDITO (entró plata).
-    let extractoActualizado = false
-    for (const { tabla, schema } of TABLAS_BANCARIAS) {
-      const client = schema ? supabase.schema(schema) : supabase
-
-      let { data: movs } = await client
-        .from(tabla).select('id, creditos, estado')
-        .eq('anticipo_id', anticipoParaVincular.id).limit(1)
-
-      if (!movs || movs.length === 0) {
-        const { data: porCuit } = await client
-          .from(tabla).select('id, creditos, estado, leyendas_adicionales_2')
-          .eq('fecha', anticipoParaVincular.fecha_pago)
-          .eq('leyendas_adicionales_2', anticipoParaVincular.cuit_proveedor)
-          .limit(10)
-        const match = (porCuit || []).find((m: any) =>
-          Math.abs((parseFloat(m.creditos) || 0) - anticipoParaVincular.monto) < Math.max(1, anticipoParaVincular.monto * 0.03))
-        if (match) movs = [match]
-      }
-
-      if (movs && movs.length > 0) {
-        await client.from(tabla).update({
-          comprobante_venta_id: fac.id,
-          anticipo_id: anticipoParaVincular.id,
-          estado: 'conciliado',
-          motivo_revision: null,
-        }).eq('id', movs[0].id)
-        extractoActualizado = true
-        break
-      }
-    }
+    // Las tres escrituras (comprobante, anticipo, movimiento del banco) viven en UN solo lugar,
+    // compartido con el detalle del cobro de Cobros (A-FEAT-1228).
+    const { extractoActualizado } = await vincularPagoACuenta(supabase, {
+      id: anticipoParaVincular.id,
+      monto: anticipoParaVincular.monto,
+      fecha_pago: anticipoParaVincular.fecha_pago,
+      cuit_proveedor: anticipoParaVincular.cuit_proveedor,
+      nro_cuenta: anticipoParaVincular.nro_cuenta,
+      estado_pago: (anticipoParaVincular as any).estado_pago ?? null,
+    }, { id: fac.id, nro_cuenta: fac.nro_cuenta }, {
+      saldada: cubierta,
+      movimientoConciliado: extractoInfo?.estado === 'conciliado',
+    })
 
     const msgExtracto = extractoActualizado
       ? ' Extracto actualizado.'

@@ -64,6 +64,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
   kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
+import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2149,6 +2150,52 @@ export function correrCasos(): Resultado[] {
   const sinCliente = armarVentaHistorica({ ...baseHist, cuit: "" })
   chequear("Venta histórica", "Sin CUIT del cliente no se guarda (§ Contrapartes)",
     "cliente (con CUIT)", sinCliente.faltan.join(", "), sinCliente.faltan.includes("cliente (con CUIT)"), "A-FEAT-1226")
+
+
+  // ══ 💰 EL DETALLE DEL COBRO (A-FEAT-1228) — la liquidación de enero de Genta, con los datos reales ══
+  // Importe neto 138.746.475. Cuatro pagos a cuenta (5 M · 8 M · 2,1 M · 116.396.073,85), el echeq
+  // endosado (4.466.876,20), la FC 77393 de Genta descontada (279.174,47). Las retenciones de
+  // Ganancias todavía no están cargadas: el saldo tiene que dar exactamente lo que faltaría.
+  const fuentesEnero = {
+    movimientos: [
+      // El crédito del 26/02 ya está representado por su anticipo: NO se cuenta otra vez.
+      { id: "mov-2602", fecha: "2026-02-26", creditos: 116396073.85, anticipo_id: "ant-4" },
+    ],
+    anticipos: [
+      { id: "ant-1", fecha_pago: "2026-02-04", monto: 5000000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: "Adelanto" },
+      { id: "ant-2", fecha_pago: "2026-02-11", monto: 8000000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: "Adelanto Nro 2" },
+      { id: "ant-3", fecha_pago: "2026-02-23", monto: 2100000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: null },
+      { id: "ant-4", fecha_pago: "2026-02-26", monto: 116396073.85, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: null },
+      { id: "ant-5", fecha_pago: "2026-02-26", monto: 4466876.20, metodo_pago: "echeq", estado_pago: "endosado", descripcion: "Echeq endosado a Almacén Veterinario" },
+    ],
+    compensaciones: [{ id: "ap-1", anticipo_id: "ant-1", monto_aplicado: 279174.47, fecha: "2026-02-26", comprobante: "liquidación 77393" }],
+    retenciones: [],
+  }
+  const detEnero = armarDetalleCobro(fuentesEnero, 138746475)
+  chequear("Detalle del cobro", "💰 Enero de Genta: pagos a cuenta + echeq endosado + compensación = 136.242.124,52",
+    "136242124.52", String(detEnero.total), detEnero.total === 136242124.52, "A-FEAT-1228")
+  chequear("Detalle del cobro", "🔑 El crédito del banco que ya tiene su pago a cuenta NO se cuenta dos veces (6 líneas, no 7)",
+    "6", String(detEnero.lineas.length), detEnero.lineas.length === 6 && !detEnero.lineas.some(l => l.medio === "banco"), "A-FEAT-1228")
+  chequear("Detalle del cobro", "🧮 Sin las retenciones cargadas, el saldo es lo que faltaría: 2.504.350,48",
+    "2504350.48 · no cierra", `${detEnero.saldo} · ${detEnero.cierra ? "cierra" : "no cierra"}`,
+    detEnero.saldo === 2504350.48 && !detEnero.cierra, "A-FEAT-1228")
+  chequear("Detalle del cobro", "El echeq endosado y la compensación aparecen con su medio",
+    "4466876.2 · 279174.47", `${detEnero.porMedio.echeq_endosado} · ${detEnero.porMedio.compensacion}`,
+    detEnero.porMedio.echeq_endosado === 4466876.2 && detEnero.porMedio.compensacion === 279174.47, "A-FEAT-1228")
+  const conRetsEnero = armarDetalleCobro({ ...fuentesEnero, retenciones: [{ id: "r1", tipo: "ganancias", monto: 2504350.48, fecha: "2026-02-26", nro_certificado: "123" }] }, 138746475)
+  chequear("Detalle del cobro", "✓ Con las retenciones de Ganancias cargadas, el detalle cierra contra el papel",
+    "cierra · Ret. Ganancias · cert. 123", `${conRetsEnero.cierra ? "cierra" : "saldo " + conRetsEnero.saldo} · ${conRetsEnero.lineas.find(l => l.medio === "retencion")?.descripcion}`,
+    conRetsEnero.cierra && conRetsEnero.lineas.find(l => l.medio === "retencion")?.descripcion === "Ret. Ganancias · cert. 123", "A-FEAT-1228")
+  chequear("Detalle del cobro", "Las líneas van ordenadas por fecha (la del 04/02 primero)",
+    "2026-02-04", detEnero.lineas[0].fecha ?? "", detEnero.lineas[0].fecha === "2026-02-04", "A-FEAT-1228")
+  // Con una sola cuota del 100 % (la liquidación de enero), lo imputado la cancela; el banco directo no se imputa.
+  const cuotaEnero = repartirEnCuotas([{ vencimiento: "2026-02-26", importe: 138746475 }], 0, imputacionesDeCobro(conRetsEnero.lineas), "")
+  chequear("Detalle del cobro", "La cuota del papel queda en 0 con todo imputado (sale del Cash Flow)",
+    "0", String(cuotaEnero[0].aCobrar), cuotaEnero[0].aCobrar === 0, "A-FEAT-1228")
+  const conBancoDirecto = armarDetalleCobro({ movimientos: [{ id: "m", fecha: "2026-09-03", creditos: 31672612.47, anticipo_id: null }], anticipos: [], compensaciones: [], retenciones: [] }, 31672612.47)
+  chequear("Detalle del cobro", "Un crédito conciliado directo (sin pago a cuenta) cuenta como «banco» y no se imputa a cuotas",
+    "banco · cierra · 0 imputaciones", `${conBancoDirecto.lineas[0].medio} · ${conBancoDirecto.cierra ? "cierra" : "no"} · ${imputacionesDeCobro(conBancoDirecto.lineas).length} imputaciones`,
+    conBancoDirecto.lineas[0].medio === "banco" && conBancoDirecto.cierra && imputacionesDeCobro(conBancoDirecto.lineas).length === 0, "A-FEAT-1228")
 
   return r
 }
