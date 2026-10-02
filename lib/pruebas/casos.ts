@@ -65,6 +65,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
+import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2196,6 +2197,20 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle del cobro", "Un crédito conciliado directo (sin pago a cuenta) cuenta como «banco» y no se imputa a cuotas",
     "banco · cierra · 0 imputaciones", `${conBancoDirecto.lineas[0].medio} · ${conBancoDirecto.cierra ? "cierra" : "no"} · ${imputacionesDeCobro(conBancoDirecto.lineas).length} imputaciones`,
     conBancoDirecto.lineas[0].medio === "banco" && conBancoDirecto.cierra && imputacionesDeCobro(conBancoDirecto.lineas).length === 0, "A-FEAT-1228")
+
+
+  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227) ══════════════════════
+  const hojaRet = filasRetenciones(
+    [{ fecha: "2026-09-03", tipo: "ganancias", monto: 583395.25, nro_certificado: null, denominacion_cliente: "GENTA", cuit_cliente: "30526554562", comprobante: "11-86270" }],
+    [{ fecha: "2026-08-10", nro: "11-86270", cliente: "GENTA", cuit: "30526554562", ret_iva: 0, ret_iibb: 675905.18 },
+     { fecha: "2026-08-15", nro: "FC 1", cliente: "X", cuit: "1", ret_iva: null, ret_iibb: null }],
+  )
+  chequear("Retenciones en el subdiario", "🧾 Certificado + impresa: 2 filas (la FC sin retenciones no suma una vacía), ordenadas por fecha",
+    "2 · 2026-08-10 IIBB · 2026-09-03 Ganancias", `${hojaRet.filas.length} · ${hojaRet.filas.map(f => f.Fecha + " " + f.Tipo).join(" · ")}`,
+    hojaRet.filas.length === 2 && hojaRet.filas[0].Tipo === "IIBB" && hojaRet.filas[1].Tipo === "Ganancias", "A-FEAT-1227")
+  chequear("Retenciones en el subdiario", "Totales por tipo y total general",
+    "IIBB 675905.18 · Ganancias 583395.25 · 1259300.43", `IIBB ${hojaRet.porTipo.IIBB} · Ganancias ${hojaRet.porTipo.Ganancias} · ${hojaRet.total}`,
+    hojaRet.porTipo.IIBB === 675905.18 && hojaRet.porTipo.Ganancias === 583395.25 && hojaRet.total === 1259300.43, "A-FEAT-1227")
 
   return r
 }

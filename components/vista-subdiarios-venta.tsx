@@ -22,6 +22,7 @@ import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/li
 import { useCarpetaPorDefecto } from "@/hooks/useCarpetaPorDefecto"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
+import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 
 interface Props {
   /** PAM incluida para cuando exista `pam.comprobantes_venta` (hoy la tabla no está creada). */
@@ -388,6 +389,42 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
       const ws = XLSX.utils.json_to_sheet([...datosExcel, ...filasExtras])
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, `LIBRO IVA VENTAS ${mes}-${año}`)
+
+      /**
+       * 🧾 A-FEAT-1227 — segunda hoja: las RETENCIONES RECIBIDAS del mes, para que el contador las
+       * cruce con *Mis Retenciones* de ARCA. Certificados por su fecha (sólo MSA: la tabla no
+       * existe en PAM/MA) + las impresas en los comprobantes de este subdiario. Si la lectura falla,
+       * la hoja lo dice — no se omite en silencio.
+       */
+      const mm = mes.padStart(2, '0')
+      const ultimo = String(new Date(parseInt(año), parseInt(mes), 0).getDate()).padStart(2, '0')
+      let certificados: any[] = []
+      let errorCert: string | null = null
+      if (empresa === 'MSA') {
+        const { data: certs, error: eC } = await supabase.schema('msa').from('retenciones_recibidas')
+          .select('fecha, tipo, monto, nro_certificado, denominacion_cliente, cuit_cliente, comprobante_venta_id')
+          .gte('fecha', `${año}-${mm}-01`).lte('fecha', `${año}-${mm}-${ultimo}`)
+        if (eC) errorCert = eC.message
+        const idsComp = [...new Set((certs || []).map((c: any) => c.comprobante_venta_id).filter(Boolean))]
+        const { data: compsCert } = idsComp.length
+          ? await supabase.schema('msa').from('comprobantes_venta').select('id, nro_comprobante').in('id', idsComp)
+          : { data: [] as any[] }
+        const nroPorId = new Map((compsCert || []).map((c: any) => [c.id, c.nro_comprobante]))
+        certificados = (certs || []).map((c: any) => ({ ...c, comprobante: nroPorId.get(c.comprobante_venta_id) || '' }))
+      }
+      const ret = filasRetenciones(certificados, filas.map(c => ({
+        fecha: c.fecha_liquidacion || null,
+        nro: c.nro_comprobante || [c.punto_venta, c.numero_desde].filter(Boolean).join('-') || null,
+        cliente: c.denominacion_cliente || null, cuit: c.cuit_cliente || null,
+        ret_iva: c.ret_iva, ret_iibb: c.ret_iibb,
+      })))
+      const filasHoja: any[] = ret.filas.map(f => ({ ...f, Importe: fmtNum(f.Importe) }))
+      if (errorCert) filasHoja.unshift({ Fecha: '⚠️ No se pudieron leer los certificados: ' + errorCert })
+      if (ret.filas.length === 0 && !errorCert) filasHoja.push({ Fecha: 'Sin retenciones recibidas en el período' })
+      filasHoja.push({}, ...Object.entries(ret.porTipo).map(([t, v]) => ({ Fecha: `Total ${t}`, Importe: fmtNum(v) })),
+        { Fecha: 'TOTAL RETENCIONES', Importe: fmtNum(ret.total) })
+      if (empresa !== 'MSA') filasHoja.push({}, { Fecha: `Nota: los certificados se cargan sólo en MSA; acá van sólo las impresas en los comprobantes de ${empresa}.` })
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasHoja), `RETENCIONES ${mes}-${año}`)
 
       const filename = await generarNombreUnico(directorio, nombreBaseReporte(periodo), 'xlsx')
       if (directorio) {
