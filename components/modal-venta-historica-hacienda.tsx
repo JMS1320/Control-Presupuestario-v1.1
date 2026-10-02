@@ -48,13 +48,13 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
   const [f, setF] = useState(vacio)
   const [cliente, setCliente] = useState({ cuit: '', nombre: '' })
   /** Histórica = no descuenta stock. Elegirla ES la confirmación: no se pregunta dos veces. */
-  const [historica, setHistorica] = useState(true)
+  const [historica, setHistorica] = useState(false)
   const [categorias, setCategorias] = useState<{ id: string; nombre: string }[]>([])
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setF(vacio); setCliente({ cuit: '', nombre: '' }); setHistorica(true)
+    setF(vacio); setCliente({ cuit: '', nombre: '' }); setHistorica(false)
     supabase.schema('productivo').from('categorias_hacienda').select('id, nombre').order('nombre')
       .then(({ data, error }) => {
         if (error) toast.error('No se pudieron leer las categorías: ' + error.message)

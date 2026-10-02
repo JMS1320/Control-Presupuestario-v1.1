@@ -1724,7 +1724,7 @@ vivos.
 
 ### Cargar una venta histórica (anterior al stock de la app)
 Para una venta que se hizo antes de que la app llevara el stock —por ejemplo, la de enero de 2026—:
-**Nueva venta → 🐂 Ganadera**, con **Histórica** tildado (viene así). Cargás fecha, categoría, cabezas,
+**Nueva venta → 🐂 Ganadera**, tildando **Histórica** (viene sin tildar). Cargás fecha, categoría, cabezas,
 kilos, precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que usa Productivo.
 
 - **Kilos**: cargá los **vivos y el desbaste**, o directamente los **kilos netos (desbastados)** si es
