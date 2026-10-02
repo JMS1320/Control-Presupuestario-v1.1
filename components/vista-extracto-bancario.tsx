@@ -2306,8 +2306,11 @@ ${marca}` : marca
          * Con cuota (A-BUG-1234) sigue igual que antes: se compara contra la cuota.
          */
         const esCuota = ventaElegida.__cuota != null
-        const parcial = !esCuota && !dif.exacto && dif.diferencia < 0
-        const saldada = dif.exacto || dif.diferencia > 0
+        // Menos de $1 de diferencia es redondeo del emisor (Genta: $0,02 al cerrar la venta de enero):
+        // cierra el comprobante igual, y se anota — no se calla (§ 🧮, tolerancia explícita).
+        const redondeo = !esCuota && !dif.exacto && Math.abs(dif.diferencia) < 1
+        const parcial = !esCuota && !dif.exacto && !redondeo && dif.diferencia < 0
+        const saldada = dif.exacto || redondeo || dif.diferencia > 0
 
         const updateVenta: Record<string, any> = {
           ...vinculosLimpios(),
@@ -2326,7 +2329,10 @@ ${marca}` : marca
          * ⚠️ **Si no coincide exacto, queda en `auditar` con el motivo** — no se calla la diferencia.
          * En ventas lo más común es que falte cargar una retención, y eso hay que poder verlo.
          */
-        if (!dif.exacto && !parcial) {
+        if (redondeo) {
+          const previa = String((movimientoAsignando as any).nota_operador || '').trim()
+          updateVenta.nota_operador = [previa, `Cierra ${ventaElegida.nro_comprobante} con ${formatCurrency(Math.abs(dif.diferencia))} de redondeo`].filter(Boolean).join(' · ')
+        } else if (!dif.exacto && !parcial) {
           updateVenta.estado = 'auditar'
           updateVenta.motivo_revision = cobro.retenciones === 0
             ? `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) y el comprobante no tiene retenciones cargadas`
