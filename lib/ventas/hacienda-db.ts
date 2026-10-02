@@ -32,6 +32,8 @@ export interface VentaHaciendaDatos {
   /** % de CZ de la venta, FRACCIÓN. */
   pctCz: number | null
   centroCosto: string | null
+  /** Cuenta contable de la venta (categ). La liquidación la precarga: el dato entra una sola vez. */
+  cuentaContable: string | null
   /** A-FEAT-1226 — venta anterior al stock de la app, guardada sin movimiento de stock a propósito. */
   historica: boolean
 }
@@ -43,7 +45,7 @@ export interface VentaHaciendaDatos {
  */
 export async function cargarVentasHacienda(supabase: Cliente, ids?: string[]): Promise<VentaHaciendaDatos[]> {
   let q = supabase.from('ventas_unificadas')
-    .select('venta_id, cliente_nombre, cliente_cuit, fecha_venta, cantidad, precio_pesos, monto_pesos, facturado, centro_costo')
+    .select('venta_id, cliente_nombre, cliente_cuit, fecha_venta, cantidad, precio_pesos, monto_pesos, facturado, centro_costo, cuenta_contable')
     .eq('venta_tipo', 'ganaderia').eq('empresa', 'MSA')
   if (ids) q = q.in('venta_id', ids)
   const { data: base, error: eBase } = await q.order('fecha_venta', { ascending: false })
@@ -73,6 +75,7 @@ export async function cargarVentasHacienda(supabase: Cliente, ids?: string[]): P
       liquidado: Number(b.facturado) || 0,
       pctCz: d.pct_cz === null || d.pct_cz === undefined ? null : Number(d.pct_cz),
       centroCosto: b.centro_costo || null,
+      cuentaContable: b.cuenta_contable || null,
       historica: !!d.historica,
     }
   })

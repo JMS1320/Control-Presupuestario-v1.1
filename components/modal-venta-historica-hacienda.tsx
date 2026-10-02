@@ -25,6 +25,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { altaContraparte } from "@/lib/proveedores/alta"
 import { toast } from "sonner"
@@ -49,12 +51,16 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
   const [cliente, setCliente] = useState({ cuit: '', nombre: '' })
   /** Histórica = no descuenta stock. Elegirla ES la confirmación: no se pregunta dos veces. */
   const [historica, setHistorica] = useState(false)
+  /** Imputación: se carga acá y la liquidación de esta venta la trae precargada. */
+  const [cuentaContable, setCuentaContable] = useState<string | null>(null)
+  const [centroCosto, setCentroCosto] = useState('')
   const [categorias, setCategorias] = useState<{ id: string; nombre: string }[]>([])
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setF(vacio); setCliente({ cuit: '', nombre: '' }); setHistorica(false)
+    setCuentaContable(null); setCentroCosto('')
     supabase.schema('productivo').from('categorias_hacienda').select('id, nombre').order('nombre')
       .then(({ data, error }) => {
         if (error) toast.error('No se pudieron leer las categorías: ' + error.message)
@@ -96,8 +102,10 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
     cliente: cliente.nombre,
     cuit: cliente.cuit,
     notas: f.notas,
+    cuentaContable,
+    centroCosto,
     historica,
-  }), [f, cliente, historica])
+  }), [f, cliente, historica, cuentaContable, centroCosto])
 
   const guardar = async () => {
     if (armada.faltan.length) { toast.error('Falta: ' + armada.faltan.join(', ')); return }
@@ -174,6 +182,22 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
           <div className="col-span-2 sm:col-span-3">
             <ProveedorCombobox label="Cliente" rol="cliente" value={cliente}
               onChange={sel => setCliente({ cuit: sel.cuit, nombre: sel.nombre })} />
+          </div>
+          <div className="col-span-2 sm:col-span-2">
+            <Label className="text-xs">Cuenta contable</Label>
+            <SelectorCuentaContable
+              value={cuentaContable}
+              onSelect={(cta) => setCuentaContable(cta?.categ || null)}
+              cuitProveedor={cliente.cuit || null}
+              mostrarSinAsignar={true}
+              placeholder="Sin cuenta — clic para asignar"
+            />
+            <div className="text-[10px] text-gray-500 mt-0.5">La liquidación de esta venta la trae precargada</div>
+          </div>
+          <div>
+            <Label className="text-xs">Centro de costo</Label>
+            <CentroCostoCombobox value={centroCosto} onValueChange={setCentroCosto} className="h-9" />
+            <div className="text-[10px] text-gray-500 mt-0.5">Vacío = el de la categoría</div>
           </div>
           <div className="col-span-2 sm:col-span-3">
             <Label className="text-xs">Notas</Label>

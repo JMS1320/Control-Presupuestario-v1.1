@@ -1730,6 +1730,8 @@ kilos, precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que u
 - **Kilos**: cargá los **vivos y el desbaste**, o directamente los **kilos netos (desbastados)** si es
   el dato que tenés. Con vivos y netos, el desbaste se calcula solo; con sólo los netos, alcanza.
 - Si fue **al gancho**, cargá también los kilos de carne: son los que se cobran.
+- **Cuenta contable y centro de costo**: se cargan acá y la liquidación de esa venta los trae
+  precargados. El centro de costo vacío toma el de la categoría.
 
 Queda en la lista con la marca **histórica**, y desde ahí se liquida como cualquier otra.
 

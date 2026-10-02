@@ -480,6 +480,10 @@ export interface VentaHistoricaEntrada {
   cliente: string
   cuit: string
   notas: string
+  /** Cuenta contable (categ del plan). Pedido del usuario 2026-10-02: «ya cargarle la cuenta ya que estamos». */
+  cuentaContable?: string | null
+  /** Centro de costo. Vacío = el de la categoría (lo resuelve `ventas_unificadas`). */
+  centroCosto?: string | null
   /**
    * La venta es HISTÓRICA: no descuenta stock. Es una opción de *Nueva venta → Hacienda*, y elegirla
    * ES la confirmación (2026-10-02: *«histórico quiere decir que no afecta stock, no hace falta
@@ -564,6 +568,8 @@ export function armarVentaHistorica(e: VentaHistoricaEntrada): VentaHistoricaArm
     cliente_nombre: e.cliente || null,
     cliente_cuit: e.cuit || null,
     empresa: 'MSA',
+    cuenta_contable: e.cuentaContable || null,
+    centro_costo: e.centroCosto || null,
     historica: true,
     notas: ['Venta histórica, cargada desde Ingresos → Ventas: NO descuenta stock (anterior al stock de la app).',
       e.notas.trim()].filter(Boolean).join(' — '),

@@ -2101,6 +2101,10 @@ export function correrCasos(): Resultado[] {
   const cz3 = armarVentaHistorica({ ...baseHist, pctCz: parseNumeroAR("4,125") / 100 })
   chequear("Venta histórica", "CZ de 4,125 % se usa entera: 145.500.000 × 4,125 % = 6.001.875 (con 4,13 daría 6.009.150)",
     "6001875", String(Math.round(cz3.cz * 100) / 100), Math.abs(cz3.cz - 6001875) < 0.01, "A-FEAT-1226")
+  const conCuenta = armarVentaHistorica({ ...baseHist, cuentaContable: "Venta de hacienda", centroCosto: "" })
+  chequear("Venta histórica", "La cuenta contable se guarda con la venta; centro de costo vacío queda vacío (manda el de la categoría)",
+    "Venta de hacienda · null", `${conCuenta.fila.cuenta_contable} · ${conCuenta.fila.centro_costo}`,
+    conCuenta.fila.cuenta_contable === "Venta de hacienda" && conCuenta.fila.centro_costo === null, "A-FEAT-1226")
   const sinCliente = armarVentaHistorica({ ...baseHist, cuit: "" })
   chequear("Venta histórica", "Sin CUIT del cliente no se guarda (§ Contrapartes)",
     "cliente (con CUIT)", sinCliente.faltan.join(", "), sinCliente.faltan.includes("cliente (con CUIT)"), "A-FEAT-1226")

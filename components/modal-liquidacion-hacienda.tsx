@@ -136,6 +136,14 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
       const comisiones = Array.from(new Set(pre.map(p => p.comisionPct)))
       setComisionPct(fmtPct(comisiones.length === 1 ? comisiones[0] : 0))
       setCentroCosto(ventas[0].centroCosto || '')
+      // La cuenta de la venta viaja a su liquidación (§ 🔁 propagación): se carga una sola vez.
+      // La venta guarda el nombre; el número se busca en el plan para no dejarlo a medias.
+      const cta = ventas[0].cuentaContable
+      if (cta) {
+        setCuentaContable(cta)
+        void supabase.from('cuentas_contables').select('nro_cuenta').eq('categ', cta).maybeSingle()
+          .then(({ data }) => setNroCuenta((data as { nro_cuenta?: string } | null)?.nro_cuenta || null))
+      }
       setPrecargado(pre[0])
     } else {
       setFecha(''); setLineas([lineaVacia()]); setComisionPct('')
