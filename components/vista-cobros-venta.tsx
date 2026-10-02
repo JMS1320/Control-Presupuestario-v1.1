@@ -152,9 +152,24 @@ export function VistaCobrosVenta() {
     setVinculando(a.id)
     try {
       const d = derivados(f)
-      const saldada = d.detalle.saldo - (Number(a.monto) || 0) <= 0.01
+      // Menos de $1 de diferencia es redondeo del emisor: cierra igual (como en el Extracto).
+      const saldada = d.detalle.saldo - (Number(a.monto) || 0) < 1
       const r = await vincularPagoACuenta(supabase, { ...a, monto: Number(a.monto) || 0 }, { id: f.id },
         { saldada, movimientoConciliado: a.estado_pago === 'conciliado' })
+      // Si con esto se completó, las cuotas que quedaban abiertas pasan a cobradas (un echeq endosado no
+      // tiene movimiento del banco con el que conciliarlas).
+      if (saldada && (f.plazos || []).length) {
+        let plazos = f.plazos || []
+        let estado: string = 'cobrado'
+        plazos.forEach((q, i) => {
+          if (q.estado !== 'cobrado' && !q.movimiento_id) {
+            const m = marcarCuota(plazos, i, 'cobrado', estado); plazos = m.plazos; estado = m.estadoComprobante
+          }
+        })
+        const { error: eCuotas } = await supabase.schema('msa').from('comprobantes_venta')
+          .update({ plazos, estado: 'cobrado' }).eq('id', f.id)
+        if (eCuotas) throw eCuotas
+      }
       toast.success(`Pago a cuenta de ${fmt(Number(a.monto))} vinculado a ${f.nro_comprobante}.` + (r.extractoActualizado ? ' Movimiento del banco atado.' : ''))
       await cargar(); await abrir(f)
     } catch (err) {

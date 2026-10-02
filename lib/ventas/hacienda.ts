@@ -435,8 +435,9 @@ export function cuotasPorCobrar(
   fechaSinPlazos: string,
 ): { n: number; de: number; vencimiento: string; importe: number; estado?: string }[] {
   const lista = Array.isArray(imputado) ? imputado : (Number(imputado) > 0 ? [{ monto: Number(imputado) }] : [])
+  // Menos de $1 por cobrar es redondeo del emisor (Genta: $0,02 en la venta de enero): no se espera.
   return repartirEnCuotas(plazos, cobroTotal, lista, fechaSinPlazos)
-    .filter(q => q.aCobrar > 0.01)
+    .filter(q => q.aCobrar > 0.99)
     .map(q => ({ n: q.n, de: q.de, vencimiento: q.vencimiento, importe: q.aCobrar, ...(q.estado ? { estado: q.estado } : {}) }))
 }
 
