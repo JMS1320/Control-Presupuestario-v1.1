@@ -8,7 +8,7 @@
  * Env: GAS_BUSCAR_PDF_URL, GAS_AUTH_TOKEN, GAS_FOLDER_ID_{MSA,PAM,MA}.
  */
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -34,6 +34,9 @@ function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): strin
 const fileIdDe = (u?: string | null) => { const m = String(u || '').match(/[-\w]{25,}/); return m ? m[0] : null }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -67,7 +70,7 @@ export async function POST(request: Request) {
     const archivos = gas.archivos || []
 
     // 2) Facturas del período contable
-    const { data: facturas, error } = await supabaseAdmin
+    const { data: facturas, error } = await supabase
       .schema(schema)
       .from('comprobantes_arca')
       .select('*')

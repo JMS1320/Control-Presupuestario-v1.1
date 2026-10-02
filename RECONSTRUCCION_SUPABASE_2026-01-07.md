@@ -12759,4 +12759,79 @@ Las migraciones son `partidas_impuestos_inmobiliarios` y `partidas_rls_y_registr
 `puede_ver`/`puede_escribir`, **y la fila en `recurso_tablas`**. Con la política puesta pero sin la
 fila, `puede_escribir` consulta `nivel_tabla`, que no encuentra la tabla y contesta `'escritura'`:
 la tabla queda **abierta y con cara de protegida**. Las cuatro se registraron bajo el recurso
-**`presupuesto`**. Ver `PENDIENTES.md` § A-SEC-09.
+**`presupuesto`**. Ver `PENDIENTES.md` § A-SEC-14 (era A-SEC-09).
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-10-01 · Liquidación de HACIENDA en `msa.comprobantes_venta` (A-FEAT-1225)
+
+Para la «Cuenta de Venta y Líquido Producto» (tipo 60) del consignatario. Va a la misma tabla que la
+liquidación de granos y las facturas de venta, así entra sola al subdiario, al balance y al Cash Flow.
+**Sólo MSA**, por decisión del usuario: *«MA y PAM no venden hacienda»*. Script: `scripts/68-liquidacion-hacienda.sql`
+(deshacer: `scripts/68-liquidacion-hacienda-deshacer.sql`, que se niega a correr si ya hay liquidaciones cargadas).
+
+```sql
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cabezas         numeric,
+  ADD COLUMN IF NOT EXISTS hacienda_lineas jsonb,   -- [{razonSocial, cuit, cabezas, clasificacion, kilos, precio}]
+  ADD COLUMN IF NOT EXISTS redondeo        numeric, -- «Ajuste por redondeo», con el signo del papel
+  ADD COLUMN IF NOT EXISTS nro_guia        text,
+  ADD COLUMN IF NOT EXISTS dte             text,
+  ADD COLUMN IF NOT EXISTS plazos          jsonb;   -- [{dias, pct, vencimiento, importe}]
+NOTIFY pgrst, 'reload schema';
+```
+
+✅ Verificado al aplicarlo: MSA pasó de 53 a **59** columnas; **PAM y MA siguen en 53** (a propósito: es
+la primera excepción del control de paridad entre empresas, A-FEAT-1222). La escritura se probó sin
+escribir datos: `EXPLAIN INSERT` con las seis columnas, como usuario `authenticated`.
+
+### Ampliación 2026-10-01 · la HUELLA de la liquidación (`correcciones`)
+
+```sql
+ALTER TABLE msa.comprobantes_venta ADD COLUMN IF NOT EXISTS correcciones jsonb;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/69-liquidacion-hacienda-correcciones.sql` (deshacer con freno si ya hay huellas). Mismo
+patrón que `romaneos.correcciones` y `boletas_arba.correcciones`: lo que propuso la app (precarga desde la
+venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en `lib/ventas/hacienda.ts`.
+Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
+`authenticated`, sin escribir datos.
+
+### 2026-10-02 · CHEQUES DE TERCEROS en cartera (`en_cartera` + `endosado_en_id`) — A-FEAT-1229
+
+```sql
+ALTER TABLE public.anticipos_proveedores DROP CONSTRAINT anticipos_proveedores_estado_pago_check;
+ALTER TABLE public.anticipos_proveedores ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+  CHECK (estado_pago::text = ANY (ARRAY['pendiente','pagar','preparado','programado','pagado','echeq','conciliado','endosado','en_cartera']::text[]));
+ALTER TABLE public.anticipos_proveedores ADD COLUMN IF NOT EXISTS endosado_en_id uuid
+  REFERENCES public.anticipos_proveedores(id) ON DELETE SET NULL;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/72-cheques-de-terceros.sql` (deshacer con freno). Avisado a Javier antes de correrlo.
+Verificado con `EXPLAIN UPDATE` como `authenticated`, sin escribir datos.
+
+### 2026-10-02 · el echeq ENDOSADO de un cliente (`anticipos_proveedores.estado_pago = 'endosado'`) — A-FEAT-1228
+
+```sql
+ALTER TABLE public.anticipos_proveedores DROP CONSTRAINT anticipos_proveedores_estado_pago_check;
+ALTER TABLE public.anticipos_proveedores ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+  CHECK (estado_pago::text = ANY (ARRAY['pendiente','pagar','preparado','programado','pagado','echeq','conciliado','endosado']::text[]));
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/71-anticipo-echeq-endosado.sql` (deshacer con freno si ya hay endosados). Verificado con
+`EXPLAIN INSERT` como `authenticated`, sin escribir datos. Sin cambio de estructura en `plazos`: el
+`movimiento_id` por cuota (A-BUG-1234) es un campo más del jsonb.
+
+### 2026-10-02 · la VENTA HISTÓRICA de hacienda (`productivo.stock_ventas.historica`) — A-FEAT-1226
+
+```sql
+ALTER TABLE productivo.stock_ventas ADD COLUMN IF NOT EXISTS historica boolean NOT NULL DEFAULT false;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/70-venta-historica.sql` (deshacer con freno si ya hay ventas históricas). Marca la venta
+anterior al stock de la app, que se guarda **sin movimiento de stock a propósito** (la de enero de 2026). La
+vista `public.ventas_unificadas` **no se tocó**: ya resuelve la categoría por `categoria_id` cuando no hay
+lote. Verificado: `stock_ventas` 29 → **30** columnas; escritura probada con `EXPLAIN INSERT` como
+`authenticated` con todas las columnas que manda la app, sin escribir datos.
+

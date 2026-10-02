@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { cobroEsperado } from "@/lib/ventas/cobro-esperado"
+import type { UserRole } from "@/lib/auth/roles"
+import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,10 +14,11 @@ import { ModalRetencionesVenta } from "./modal-retenciones-venta"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-msa"
+import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 interface Props {
-  userRole?: 'admin' | 'contable'
+  userRole?: UserRole
   /**
    * De qué empresa son los comprobantes. `comprobantes_venta` existe en los 3 schemas.
    * Lo que NO existe fuera de `msa` son `retenciones_recibidas`, `ventas` y `ventas_comprobantes`
@@ -183,7 +185,10 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
     setLiqEditando(null)
     setModalAbierto(true)
   }
+  /** 🐂 A-FEAT-1225 — una liquidación de HACIENDA se edita en su propia pantalla, no en la de granos. */
+  const [haciendaEditarId, setHaciendaEditarId] = useState<string | null>(null)
   const abrirEdicion = (l: LiquidacionMsa) => {
+    if (TIPOS_LIQ_HACIENDA.has(Number(l.tipo_comprobante))) { setHaciendaEditarId(l.id); return }
     setLiqEditando(l)
     setModalAbierto(true)
   }
@@ -268,8 +273,8 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
                   <TableHead>Nº Comp.</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Comprador</TableHead>
-                  <TableHead>Grano</TableHead>
-                  <TableHead className="text-right">Ton</TableHead>
+                  <TableHead title="Grano, o la categoría de la hacienda">Grano · categ.</TableHead>
+                  <TableHead className="text-right" title="Toneladas, o los kilos de la tropa">Ton · kg</TableHead>
                   <TableHead className="text-right">Neto</TableHead>
                   <TableHead className="text-right">Total op.</TableHead>
                   <TableHead className="text-right">Retenc.</TableHead>
@@ -301,8 +306,18 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
                         </Badge>
                       </TableCell>
                       <TableCell>{l.denominacion_cliente || '—'}</TableCell>
-                      <TableCell>{l.grano || '—'}{l.grado ? <span className="text-xs text-gray-500 ml-1">({l.grado})</span> : null}</TableCell>
-                      <TableCell className="text-right whitespace-nowrap">{l.toneladas != null ? fmtAR(Number(l.toneladas), 2) : '—'}</TableCell>
+                      {/* 🐂 A-FEAT-1225 — una liquidación de hacienda no tiene grano ni toneladas: muestra la
+                          categoría de la tropa y sus kilos, que es lo que el usuario busca en esta lista. */}
+                      {TIPOS_LIQ_HACIENDA.has(Number(l.tipo_comprobante)) ? (<>
+                        <TableCell>
+                          {Array.from(new Set(((l as any).hacienda_lineas || []).map((x: any) => x.clasificacion).filter(Boolean))).join(' · ') || '—'}
+                          {(l as any).cabezas ? <span className="text-xs text-gray-500 ml-1">({fmtAR(Number((l as any).cabezas), 0)} cab)</span> : null}
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{(l as any).peso_kg != null ? fmtAR(Number((l as any).peso_kg), 0) + ' kg' : '—'}</TableCell>
+                      </>) : (<>
+                        <TableCell>{l.grano || '—'}{l.grado ? <span className="text-xs text-gray-500 ml-1">({l.grado})</span> : null}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{l.toneladas != null ? fmtAR(Number(l.toneladas), 2) : '—'}</TableCell>
+                      </>)}
                       <TableCell className="text-right whitespace-nowrap">{c.neto ? fmtMoney(c.neto) : '—'}</TableCell>
                       <TableCell className="text-right whitespace-nowrap">{fmtMoney(c.totalOp)}</TableCell>
                       <TableCell className="text-right whitespace-nowrap text-orange-700">{c.retenciones ? fmtMoney(c.retenciones) : '—'}</TableCell>
@@ -363,6 +378,9 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
           </div>
         </CardContent>
       </Card>
+
+      <ModalLiquidacionHacienda open={!!haciendaEditarId} onOpenChange={o => { if (!o) setHaciendaEditarId(null) }}
+        ventas={[]} comprobanteId={haciendaEditarId} onGuardado={cargar} />
 
       <ModalLiquidacionMsa
         open={modalAbierto}

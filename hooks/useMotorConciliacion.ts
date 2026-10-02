@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { supabase } from "@/lib/supabase"
 import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
@@ -497,7 +498,9 @@ export function useMotorConciliacion() {
                 : [matchCF.cashFlowRow.id]
               extraIdsCF.sueldo_pago_id = idsSueldo[0]
             } else if (matchCF.cashFlowRow.origen === 'VENTA') {
-              extraIdsCF.comprobante_venta_id = matchCF.cashFlowRow.id
+              // Una cuota de liquidación viene como `<id>#cuota-N`: el vínculo es al comprobante
+              // (A-BUG-1234 — con el sufijo, la escritura fallaba: no es un id).
+              extraIdsCF.comprobante_venta_id = String(matchCF.cashFlowRow.id).split('#')[0]
             }
             // Obtener contable/interno: Tab2 TipoA→TipoB > Tab1 regla con código
             const extraCF: any = {}
@@ -665,11 +668,23 @@ export function useMotorConciliacion() {
                   console.error('⚠️ El pago de sueldo no se marcó conciliado:', idsSueldoConciliar)
                 }
               } else if (matchCF.cashFlowRow.origen === 'VENTA') {
-                await supabase
-                  .schema('msa')
-                  .from('comprobantes_venta')
-                  .update({ estado: 'conciliado' })
-                  .eq('id', matchCF.cashFlowRow.id)
+                const [compId, sufijo] = String(matchCF.cashFlowRow.id).split('#cuota-')
+                if (sufijo) {
+                  // 🏦 A-BUG-1234 — se concilia SÓLO esa cuota; la liquidación, recién con todas.
+                  // Antes pasaba a «conciliado» la liquidación entera con el cobro de una cuota.
+                  const { data: comp } = await supabase.schema('msa').from('comprobantes_venta')
+                    .select('plazos').eq('id', compId).maybeSingle()
+                  const r = conciliarCuota(((comp as any)?.plazos ?? []) as PlazoCobro[], Number(sufijo) - 1, movimiento.id)
+                  const { error: errCuota } = await supabase.schema('msa').from('comprobantes_venta')
+                    .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', compId)
+                  if (errCuota) console.error('⚠️ La cuota no se marcó conciliada:', compId, sufijo, errCuota.message)
+                } else {
+                  await supabase
+                    .schema('msa')
+                    .from('comprobantes_venta')
+                    .update({ estado: 'conciliado' })
+                    .eq('id', compId)
+                }
               }
             }
 

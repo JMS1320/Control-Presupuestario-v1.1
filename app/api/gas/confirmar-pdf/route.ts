@@ -5,7 +5,7 @@
  * El candidato sale del log (arca_pdf_busqueda_log). Env: GAS_BUSCAR_PDF_URL, GAS_AUTH_TOKEN, GAS_FOLDER_ID_*.
  */
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
@@ -39,6 +39,9 @@ function periodoArchivo(factura: any): { anio: number; mes: number } {
 }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
     const schema = schemaDe(empresa)
 
     // Factura (datos para renombrar + carpeta)
-    const { data: f, error: errF } = await supabaseAdmin
+    const { data: f, error: errF } = await supabase
       .schema(schema)
       .from('comprobantes_arca')
       .select('*')  // '*' evita el ParserError de supabase-js con la columna `año_contable` (ñ); trae año_contable/mes_contable para el período de archivo
@@ -71,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     // Candidato en el log (último con drive_url). gmail_message_id permite etiquetar el mail al confirmar.
-    const { data: log } = await supabaseAdmin
+    const { data: log } = await supabase
       .from('arca_pdf_busqueda_log')
       .select('drive_url, gmail_message_id')
       .eq('factura_id', factura_id)
@@ -102,7 +105,7 @@ export async function POST(request: Request) {
     }
 
     // Confirmada → FC = Sí + link (ahora sí, porque está confirmada)
-    await supabaseAdmin.schema(schema).from('comprobantes_arca')
+    await supabase.schema(schema).from('comprobantes_arca')
       .update({
         fc: 'Sí',
         pdf_drive_url: gas.drive_url,

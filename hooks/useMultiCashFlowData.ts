@@ -1,9 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
+import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
+import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 
@@ -596,8 +600,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   //     imp_total − retenciones sufridas − anticipos de cobro ya vinculados
   // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
   // fila, así que si no se restan la misma plata se cuenta dos veces.
-  const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>): CashFlowRow[] => {
-    return comprobantes.map(c => {
+  const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>, imputacionesPorComp: Map<string, Imputacion[]> = new Map()): CashFlowRow[] => {
+    return comprobantes.flatMap(c => {
+      // 🐂 La liquidación de hacienda va aparte: en cuotas y con su propia cuenta de cobro.
+      if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0, imputacionesPorComp.get(c.id) || [])
       const total = Number(c.imp_total) || 0
       const imputado = imputadoPorComp.get(c.id) || 0
       const netoACobrar = total - imputado
@@ -624,6 +630,56 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         comprobante_display: c.nro_comprobante || null,
       }
     })
+  }
+
+  /**
+   * 🐂 **A-FEAT-1225 — la liquidación de HACIENDA, en sus cuotas.** El usuario lo vio probando:
+   * *«creo que sólo veo una cuota en cash flow de la venta, ¿es correcto esto?»*. No lo era.
+   *
+   * Dos cosas cambian respecto de una factura de venta:
+   *   1. **Cuánto se cobra** sale de `cobroEsperado()`, la cuenta de toda la app: total − retenciones
+   *      impresas (IIBB) − lo imputado aparte. La resta de arriba no descuenta la retención impresa,
+   *      y en la liquidación de Genta proyectaba $675.905 de más. (Para el resto de las ventas esa
+   *      resta sigue igual: cambiarla es A-BUG-1231, que el usuario dejó como tema aparte.)
+   *   2. **Cuándo**: si el papel trae plazos (30/60/90), una fila por cuota, cada una en su fecha.
+   *      Lo imputado aparte (anticipos, certificados) va a la cuota de SU FECHA (`repartirEnCuotas`):
+   *      la retención de Ganancias del pago del 03/09 baja la cuota del 03/09, no «la primera».
+   *
+   * 📌 El `id` de una cuota lleva `#cuota-N` para que sea único en la grilla. Las filas de venta no
+   * se editan desde el Cash Flow, así que no hay escritura que dependa de ese id.
+   */
+  const filasLiqHacienda = (c: any, imputado: number, imputaciones: Imputacion[]): CashFlowRow[] => {
+    const cobro = cobroEsperado(c, imputado).pagoCondiciones
+    const base = {
+      origen: 'VENTA' as const,
+      origen_tabla: 'msa.comprobantes_venta',
+      empresas: ['MSA'] as string[],
+      fecha_vencimiento: null,
+      categ: 'VENTAS',
+      centro_costo: c.centro_costo || '',
+      cuit_proveedor: c.cuit_cliente || '',
+      nombre_proveedor: c.denominacion_cliente || '',
+      debitos: 0,
+      saldo_cta_cte: 0,
+      estado: c.estado || 'a cobrar',
+      comprobante_display: c.nro_comprobante || null,
+    }
+    const fechaSola = c.fecha_cobro_estimada || c.fecha_liquidacion
+    // Una cuota ya conciliada contra el banco sale del Cash Flow, como un comprobante conciliado
+    // (A-BUG-1234): si quedara, el motor podría volver a matchearla con otro movimiento.
+    const cuotas = cuotasPorCobrar(c.plazos, cobro, imputaciones, fechaSola)
+      .filter(q => !(Array.isArray(c.plazos) && c.plazos[q.n - 1]?.movimiento_id))
+    const detalle = `Liquidación hacienda ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
+    return cuotas.map(q => ({
+      ...base,
+      id: q.de > 1 ? `${c.id}#cuota-${q.n}` : c.id,
+      fecha_estimada: q.vencimiento,
+      creditos: q.importe,
+      imp_total: q.importe,
+      // Cada cuota con SU estado: lo que se marque en Cobros se ve acá, y al revés.
+      estado: c.estado === 'conciliado' ? 'conciliado' : (q.estado === 'cobrado' ? 'cobrado' : 'a cobrar'),
+      detalle: q.de > 1 ? `${detalle} — cuota ${q.n} de ${q.de}` : detalle,
+    }))
   }
 
   /**
@@ -793,6 +849,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .select('*')
         .neq('estado', 'vinculado')           // Vinculado = FC lo reemplaza, desaparece del CF
         .neq('estado_pago', 'conciliado')     // Conciliado en banco = desaparece del CF
+        .neq('estado_pago', 'endosado')       // Echeq de un cliente endosado: no va a entrar al banco (A-FEAT-1228)
         .order('fecha_pago', { ascending: true })
 
       if (errorAnticipos) {
@@ -835,7 +892,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: ventasACobrar, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, ret_iva, ret_iibb')
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
@@ -851,21 +908,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Se restan sea cual sea el estado del anticipo (`parcial` o `vinculado`): si está imputado
       // a la factura, ya no es un ingreso pendiente de ella.
       const imputadoPorComp = new Map<string, number>()
+      // Las mismas imputaciones CON SU FECHA, para repartirlas por cuota en las liquidaciones con plazos.
+      const imputacionesPorComp = new Map<string, Imputacion[]>()
       if (idsVentas.length > 0) {
-        const [{ data: retenciones }, { data: anticiposCobro }] = await Promise.all([
-          supabase.schema('msa').from('retenciones_recibidas')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
-          // Por `comprobante_venta_id`, la columna propia de los cobros: `factura_id` tiene FK a
-          // `msa.comprobantes_arca` y nunca puede contener una venta.
-          supabase.from('anticipos_proveedores')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
-        ])
-        const sumar = (id: string | null, monto: any) => {
-          if (!id) return
-          imputadoPorComp.set(id, (imputadoPorComp.get(id) || 0) + (Number(monto) || 0))
+        /**
+         * 💰 A-FEAT-1228 — lo imputado sale del DETALLE DEL COBRO, la misma cuenta que Cobros:
+         * retenciones, pagos a cuenta vinculados (transferencia, echeq, también endosado) y las
+         * COMPENSACIONES con facturas del cliente — que antes no se restaban, y la venta de enero de
+         * Genta seguía esperando $279.174,47 que el cliente ya había descontado. El crédito del banco
+         * conciliado directo NO se imputa: ése saca al comprobante (o a su cuota) por estado.
+         */
+        const fuentesCobro = await cargarFuentesCobro(supabase,
+          (ventasACobrar || []).map(v => ({ id: v.id, cuit_cliente: (v as any).cuit_cliente ?? null })))
+        for (const [id, fuentes] of fuentesCobro) {
+          const lineas = lineasDeCobro(fuentes)
+          if (!lineas.length) continue
+          // Para las cuotas (liquidaciones con plazos): TODO lo cobrado, con su fecha — también el banco.
+          imputacionesPorComp.set(id, imputacionesDeCobro(lineas))
+          // El total que se resta a una venta SIN cuotas sigue como antes: sin el banco directo
+          // (ése la saca del Cash Flow por estado). Cambiarlo es A-BUG-1231.
+          imputadoPorComp.set(id, lineas.filter(l => l.medio !== 'banco').reduce((acc, l) => acc + l.monto, 0))
         }
-        ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
-        ;(anticiposCobro || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto))
       }
 
       // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).
@@ -991,7 +1054,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
-      const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp)
+      const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
       const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
       const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
@@ -1147,6 +1210,42 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
         if (count === 0) throw new Error('No se encontró el anticipo: el cambio NO se guardó')
+      } else if (origen === 'VENTA') {
+        /**
+         * 💰 A-FEAT-1225 — una VENTA se marca cobrada desde acá con EL MISMO cambio que desde
+         * Ingresos → Cobros (`marcarCuota`). Regla del usuario: «son 2 lugares donde se puede marcar
+         * como cobrado, pero el cambio en BBDD debe ser el mismo».
+         *
+         * 🐞 Hasta acá una fila de venta caía en la rama de TEMPLATES de abajo: buscaba una cuota de
+         * template con el id de la venta, no encontraba nada y daba error. O sea que desde el Cash
+         * Flow nunca se pudo marcar una venta.
+         *
+         * Sólo el ESTADO: el resto de una venta se edita donde se carga. «Pagado» —el que ofrece el
+         * menú del Cash Flow— vale como «cobrado» en una fila que es un ingreso.
+         */
+        if (campo !== 'estado') throw new Error('En una venta, desde el Cash Flow sólo se cambia el estado: el resto se edita en Ingresos')
+        const destino = valor === 'pagado' || valor === 'cobrado' ? 'cobrado' : valor === 'a cobrar' || valor === 'pendiente' ? 'a cobrar' : null
+        if (!destino) throw new Error(`«${valor}» no es un estado de venta: usá Cobrado o A cobrar`)
+        const [compId, sufijo] = String(id).split('#cuota-')
+        const { data: comp, error: eLeer } = await supabase.schema('msa').from('comprobantes_venta')
+          .select('plazos, estado').eq('id', compId).single()
+        if (eLeer) throw eLeer
+        let cambios: Record<string, any>
+        if (sufijo) {
+          // Una cuota conciliada con el banco no se cambia con una marca (A-BUG-1234): se dice, no se ignora.
+          if ((comp?.plazos as any[] | null)?.[Number(sufijo) - 1]?.movimiento_id) {
+            throw new Error('Esa cuota está conciliada con el banco: se suelta desconciliando el movimiento en el Extracto')
+          }
+          const r = marcarCuota((comp?.plazos || []) as any[], Number(sufijo) - 1, destino, comp?.estado ?? null)
+          cambios = { plazos: r.plazos, estado: r.estadoComprobante }
+        } else {
+          if (comp?.estado === 'conciliado') throw new Error('Ya está conciliada: el estado lo decide la conciliación')
+          cambios = { estado: destino }
+        }
+        const { error, count } = await supabase.schema('msa').from('comprobantes_venta')
+          .update(cambios, { count: 'exact' }).eq('id', compId)
+        if (error) throw error
+        if (count === 0) throw new Error('No se encontró la venta: el cambio NO se guardó')
       } else {
         // Para templates: manejo especial de categ
         if (campo === 'categ') {

@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useState, useEffect, useMemo, useRef } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
+import { usePuedeVer } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
+import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
+import { cargarFuentesCobro, vincularPagoACuenta, imputacionParaElBanco, detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
+import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -197,6 +202,8 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
 // ────────────────────────────────────────────────────────────────────────────
 
 export function VistaExtractoBancario() {
+  // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  const puedeVer = usePuedeVer()
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
@@ -1626,23 +1633,73 @@ ${texto.trim()}` : texto.trim()
        */
       const res = await Promise.all(EMPRESAS.map(async (empresa) => {
         const sch = schemaDeEmpresa(empresa)
+        // `plazos` existe sólo en MSA (la liquidación de hacienda): pedirlo en PAM/MA haría fallar todo.
         const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
-          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante')
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante, cuenta_contable, nro_cuenta, centro_costo' + (sch === 'msa' ? ', plazos' : ''))
           .order('fecha_liquidacion', { ascending: false })
           .limit(500)
         const ids = (comps ?? []).map((c: any) => c.id)
         let retPorComp = new Map<string, number>()
+        const retsConFecha = new Map<string, { monto: number; fecha: string | null }[]>()
         if (ids.length) {
           const { data: rets } = await supabase.schema(sch).from('retenciones_recibidas')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids)
+            .select('comprobante_venta_id, monto, fecha').in('comprobante_venta_id', ids)
           for (const r of rets ?? []) {
             const k = String((r as any).comprobante_venta_id)
             retPorComp.set(k, (retPorComp.get(k) ?? 0) + (Number((r as any).monto) || 0))
+            retsConFecha.set(k, [...(retsConFecha.get(k) ?? []), { monto: Number((r as any).monto) || 0, fecha: (r as any).fecha ?? null }])
           }
         }
-        return (comps ?? []).map((c: any) => {
-          const cobro = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
-          return { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+        /**
+         * 💰 A-FEAT-1228 — **cobros parciales**: lo ya cobrado por otros caminos (otros créditos del
+         * banco, pagos a cuenta vinculados, echeq endosado, facturas del cliente descontadas) se
+         * descuenta, y el crédito se compara contra **lo que falta**, no contra el total. Pedido del
+         * usuario: *«vincular los pagos desde el extracto sería lo mejor, ya conciliando»* — Genta pagó
+         * la liquidación de enero en 5 partes. Las retenciones no entran acá: `pagoCondiciones` ya las
+         * descuenta. El propio movimiento, si ya estaba atado, no se cuenta contra sí mismo.
+         */
+        const fuentesComp = sch === 'msa'
+          ? await cargarFuentesCobro(supabase, (comps ?? []).map((c: any) => ({ id: c.id, cuit_cliente: c.cuit_cliente })))
+          : new Map()
+        const yaCobrado = (id: string) => lineasDeCobro((fuentesComp.get(id) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
+          .filter(l => l.medio !== 'retencion' && l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
+          .reduce((acc, l) => acc + l.monto, 0)
+        return (comps ?? []).flatMap((c: any) => {
+          const cobroTotal = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
+          const cobrado = yaCobrado(String(c.id))
+          // `__cobro.pagoCondiciones` pasa a ser LO QUE FALTA: es contra lo que se compara el crédito.
+          const cobro = cobrado > 0.005 ? { ...cobroTotal, pagoCondiciones: cobroTotal.pagoCondiciones - cobrado } : cobroTotal
+          const base = { ...c, __empresa: empresa, __schema: sch, __cobro: cobro, __yaCobrado: cobrado }
+          /**
+           * 🏦 A-BUG-1234 — una liquidación con PLAZOS se ofrece **por cuota**, no entera. Asignar el
+           * cobro de una cuota a la liquidación entera la marcaba cobrada completa y borraba las
+           * otras cuotas del Cash Flow. Cada cuota se compara contra lo que tiene que entrar al banco
+           * (su importe menos las retenciones de su fecha — la misma cuenta que Cobros y Cash Flow).
+           * Las ya conciliadas no se ofrecen.
+           */
+          const plazos: PlazoCobro[] = Array.isArray(c.plazos) ? c.plazos : []
+          if (!plazos.length) return [base]
+          // Lo cobrado (todo, con su fecha) baja la cuota que corresponde; se ofrecen las que todavía
+          // tienen algo por cobrar. Una cuota puede recibir VARIOS cobros (Genta: 5 por la de enero).
+          const lineasComp = lineasDeCobro((fuentesComp.get(String(c.id)) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
+            .filter(l => l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
+          const cuotas = sch === 'msa'
+            ? repartirEnCuotas(plazos, 0, imputacionesDeCobro(lineasComp), '')
+            : repartirEnCuotas(plazos, 0, retsConFecha.get(String(c.id)) ?? [], '')
+          return cuotas
+            .map((q, i) => ({ q, i }))
+            // Se ofrece mientras le falte cobrar — aunque tenga un movimiento marcado: con el error de
+            // antes (2026-10-02) la cuota de enero quedó «conciliada» por un cobro parcial de $2,1 M y
+            // la venta dejó de aparecer. La que está bien conciliada ya llega con 0 y no se ofrece.
+            .filter(({ q }) => q.aCobrar > 0.99)
+            .map(({ q, i }) => ({
+              ...base,
+              __key: `${c.id}#${i}`,
+              __cuota: i,
+              __cuotaDe: q.de,
+              __cuotaVence: q.vencimiento,
+              __cobro: { ...cobro, pagoCondiciones: q.aCobrar },
+            }))
         })
       }))
       setVentasParaAsignar(res.flat())
@@ -1878,6 +1935,34 @@ ${texto.trim()}` : texto.trim()
     return `ℹ️ La cuota que estaba vinculada antes ($${monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) volvió a "pendiente". Si no corresponde, borrala desde Templates.`
   }
 
+  /**
+   * 🏦 A-BUG-1234 — si el movimiento estaba conciliado contra una CUOTA de una liquidación, la suelta
+   * antes de reasignarlo: la cuota vuelve a «a cobrar» y reaparece en el Cash Flow. Es la contracara
+   * de `soltarCuotaAnterior` para las ventas. Sin esto, la cuota quedaría «conciliada» contra un
+   * movimiento que ya apunta a otra cosa.
+   */
+  const soltarCuotaDeVenta = async (): Promise<string | null> => {
+    const compId = (movimientoAsignando as any)?.comprobante_venta_id
+    if (!compId || tablaActiva !== 'msa_galicia') return null
+    // Su pago a cuenta, si se había vinculado con él, vuelve a quedar suelto: si no, la misma plata
+    // seguiría contando en el comprobante viejo (A-FEAT-1228).
+    const antId = (movimientoAsignando as any)?.anticipo_id
+    if (antId) {
+      await supabase.from('anticipos_proveedores').update({ comprobante_venta_id: null, estado: 'pendiente_vincular' })
+        .eq('id', antId).eq('comprobante_venta_id', compId)
+    }
+    const { data: comp } = await supabase.schema('msa').from('comprobantes_venta')
+      .select('id, nro_comprobante, plazos').eq('id', compId).maybeSingle()
+    const plazos: PlazoCobro[] = Array.isArray((comp as any)?.plazos) ? (comp as any).plazos : []
+    if (!plazos.length) return null
+    const r = conciliarCuota(plazos, null, null, movimientoAsignando!.id)
+    if (!r.cambio) return null
+    const { error } = await supabase.schema('msa').from('comprobantes_venta')
+      .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', compId)
+    if (error) return `⚠️ No se pudo soltar la cuota de ${(comp as any)?.nro_comprobante}: ${error.message}`
+    return `ℹ️ La cuota de ${(comp as any)?.nro_comprobante} que cobraba este movimiento volvió a «a cobrar».`
+  }
+
   const vinculosLimpios = () => {
     const base: Record<string, any> = {
       comprobante_arca_id: null,
@@ -1898,6 +1983,9 @@ ${texto.trim()}` : texto.trim()
     // pasaba en silencio (A-BUG-42): nada destructivo debería ser invisible.
     const avisosAsignacion: string[] = []
     try {
+      // Si cobraba una cuota de una liquidación, se suelta primero (A-BUG-1234).
+      const avisoCuotaVenta = await soltarCuotaDeVenta()
+      if (avisoCuotaVenta) avisosAsignacion.push(avisoCuotaVenta)
       const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
       const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
 
@@ -2264,45 +2352,128 @@ ${marca}` : marca
         const cobro = ventaElegida.__cobro
         const acreditado = Number(movimientoAsignando.creditos) || 0
         const dif = diferenciaContraElBanco(acreditado, cobro)
+        /**
+         * 💰 A-FEAT-1228 — un crédito MENOR a lo que falta es un **cobro parcial**: se concilia (la
+         * plata entró y es de este comprobante) y el comprobante sigue «a cobrar» con su saldo. Antes
+         * quedaba en auditar y el comprobante pasaba a cobrado con el primer pago. Un crédito MAYOR a
+         * lo que falta sí queda en auditar: cobrar de más no tiene explicación sin mirar.
+         * Con cuota (A-BUG-1234) sigue igual que antes: se compara contra la cuota.
+         */
+        const esCuota = ventaElegida.__cuota != null
+        // Menos de $1 de diferencia es redondeo del emisor (Genta: $0,02 al cerrar la venta de enero):
+        // cierra el comprobante igual, y se anota — no se calla (§ 🧮, tolerancia explícita).
+        // Vale también para una cuota (la 1 de la 11-86270 quedaba en auditar por $0,01).
+        const redondeo = !dif.exacto && Math.abs(dif.diferencia) < 1
+        // También en una cuota: un crédito menor a lo que le falta es un cobro parcial de esa cuota.
+        const parcial = !dif.exacto && !redondeo && dif.diferencia < 0
+        const saldada = dif.exacto || redondeo || dif.diferencia > 0
 
         const updateVenta: Record<string, any> = {
           ...vinculosLimpios(),
           estado: 'conciliado',
           categ: categManualAsignar.trim() || movimientoAsignando.categ || null,
           proveedor_nombre: ventaElegida.denominacion_cliente || null,
-          comprobantes_pagados: ventaElegida.nro_comprobante || null,
-          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D).
-          detalle: movimientoAsignando.detalle?.trim() || null,
+          comprobantes_pagados: ventaElegida.__cuota != null
+            ? `${ventaElegida.nro_comprobante} cuota ${ventaElegida.__cuota + 1}/${ventaElegida.__cuotaDe}`
+            : (ventaElegida.nro_comprobante || null),
+          // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D), y deja de decir
+          // «ANTICIPO COBRO»: con su comprobante, ya no es un anticipo.
+          detalle: detalleSinAnticipo(movimientoAsignando.detalle),
           comprobante_venta_id: ventaElegida.id,
+        }
+        // 🏷️ La imputación del comprobante (cuenta, número, centro de costo) — como en compras. Lo que
+        // se escribió a mano en el modal manda sobre la cuenta.
+        const impVenta = await imputacionParaElBanco(supabase, ventaElegida)
+        if (impVenta) {
+          Object.assign(updateVenta, impVenta)
+          if (categManualAsignar.trim()) updateVenta.categ = categManualAsignar.trim()
         }
 
         /**
          * ⚠️ **Si no coincide exacto, queda en `auditar` con el motivo** — no se calla la diferencia.
          * En ventas lo más común es que falte cargar una retención, y eso hay que poder verlo.
          */
-        if (!dif.exacto) {
+        if (redondeo) {
+          const previa = String((movimientoAsignando as any).nota_operador || '').trim()
+          updateVenta.nota_operador = [previa, `Cierra ${ventaElegida.nro_comprobante} con ${formatCurrency(Math.abs(dif.diferencia))} de redondeo`].filter(Boolean).join(' · ')
+        } else if (!dif.exacto && !parcial) {
           updateVenta.estado = 'auditar'
           updateVenta.motivo_revision = cobro.retenciones === 0
             ? `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) y el comprobante no tiene retenciones cargadas`
             : `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) contra el pago según condiciones`
         }
 
+        /**
+         * 🔗 Si este crédito ya tiene su **pago a cuenta** cargado (Genta: «Adelanto», «Adelanto Nro 2»…),
+         * se vincula ESE pago a cuenta al comprobante — con el mismo camino que Cobros y el asistente
+         * (`vincularPagoACuenta`). Si no, el pago a cuenta quedaría suelto y la misma plata se vería
+         * dos veces: en el detalle por el banco y en la lista de «sin vincular».
+         */
+        let anticipoDelMov: any = null
+        if (ventaElegida.__schema === 'msa') {
+          const cuitMov = String(movimientoAsignando.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
+          const q = (movimientoAsignando as any).anticipo_id
+            ? supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id').eq('id', (movimientoAsignando as any).anticipo_id)
+            : supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id')
+                .eq('tipo', 'cobro').eq('fecha_pago', movimientoAsignando.fecha).eq('cuit_proveedor', cuitMov).is('comprobante_venta_id', null)
+          const { data: ants } = await q
+          anticipoDelMov = ((ants || []) as any[]).find(a => Math.abs((Number(a.monto) || 0) - acreditado) < 1
+            && (!a.comprobante_venta_id || a.comprobante_venta_id === ventaElegida.id)) ?? null
+        }
+        if (anticipoDelMov) {
+          // Con cuotas, el estado del comprobante lo decide `conciliarCuota` (abajo), no el pago a cuenta.
+          await vincularPagoACuenta(supabase, { ...anticipoDelMov, monto: Number(anticipoDelMov.monto) || 0 },
+            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada: saldada && !esCuota, movimientoConciliado: true })
+          updateVenta.anticipo_id = anticipoDelMov.id
+          avisosAsignacion.push(`ℹ️ Se vinculó también su pago a cuenta (${formatCurrency(Number(anticipoDelMov.monto))}).`)
+        }
+
         const { error: errExt } = await dbCuenta()
           .from(tablaActiva).update(updateVenta).eq('id', movimientoAsignando.id)
         if (errExt) throw errExt
 
-        // El otro lado: el comprobante pasa a cobrado.
-        const { error: errVenta } = await supabase
-          .schema(ventaElegida.__schema)
-          .from('comprobantes_venta')
-          .update({ estado: 'cobrado' })
-          .eq('id', ventaElegida.id)
-        if (errVenta) throw errVenta
+        // El otro lado. Con CUOTA: sólo esa cuota queda conciliada contra este movimiento, y la
+        // liquidación pasa a conciliado recién con todas (A-BUG-1234). Sin cuota: cobrado, como antes.
+        if (ventaElegida.__cuota != null && !saldada) {
+          // Un cobro parcial sobre una cuota que figura «conciliada» delata la marca vieja: se suelta,
+          // y la cuota vuelve a «a cobrar» hasta que el último cobro la complete.
+          const { data: compAhora } = await supabase.schema(ventaElegida.__schema)
+            .from('comprobantes_venta').select('plazos').eq('id', ventaElegida.id).maybeSingle()
+          const plazosAhora = ((compAhora as any)?.plazos ?? []) as PlazoCobro[]
+          const marcaVieja = plazosAhora[ventaElegida.__cuota]?.movimiento_id
+          if (marcaVieja) {
+            const r = conciliarCuota(plazosAhora, null, null, marcaVieja)
+            const { error: errSoltar } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
+              .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
+            if (errSoltar) throw errSoltar
+            avisosAsignacion.push(`ℹ️ La cuota figuraba conciliada por un cobro parcial: volvió a «a cobrar» hasta completarse.`)
+          }
+        } else if (ventaElegida.__cuota != null && saldada) {
+          // Sólo el cobro que COMPLETA la cuota la da por conciliada; los parciales quedan atados al
+          // comprobante (y su pago a cuenta) y van bajando lo que falta.
+          const { data: compAhora, error: errLeer } = await supabase.schema(ventaElegida.__schema)
+            .from('comprobantes_venta').select('plazos').eq('id', ventaElegida.id).maybeSingle()
+          if (errLeer) throw errLeer
+          const r = conciliarCuota(((compAhora as any)?.plazos ?? []) as PlazoCobro[], ventaElegida.__cuota, movimientoAsignando.id)
+          const { error: errCuota } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
+            .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
+          if (errCuota) throw errCuota
+        } else if (!esCuota && saldada && !anticipoDelMov) {
+          // Cobrado sólo cuando este crédito completa lo que faltaba (con pago a cuenta lo decide `vincularPagoACuenta`).
+          const { error: errVenta } = await supabase
+            .schema(ventaElegida.__schema)
+            .from('comprobantes_venta')
+            .update({ estado: 'cobrado' })
+            .eq('id', ventaElegida.id)
+          if (errVenta) throw errVenta
+        }
 
         actualizarLocal(movimientoAsignando.id, updateVenta)
         toast.success(dif.exacto
           ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
-          : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
+          : parcial
+            ? `Cobro parcial de ${ventaElegida.nro_comprobante}${esCuota ? ` cuota ${ventaElegida.__cuota + 1}` : ''} — falta cobrar ${formatCurrency(Math.abs(dif.diferencia))} (si era el último pago, falta cargar una retención)`
+            : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
         // Buscar códigos contable/interno por template (si aplica)
@@ -2945,25 +3116,34 @@ ${marca}` : marca
       {/* Tabs del contenido */}
       <Tabs defaultValue="movimientos" className="space-y-4">
         <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="movimientos" className="flex items-center gap-2">
+          {puedeVer("extracto.movimientos") && (
+<TabsTrigger value="movimientos" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Movimientos
           </TabsTrigger>
-          <TabsTrigger value="importar" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.importar") && (
+<TabsTrigger value="importar" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Importar
           </TabsTrigger>
-          <TabsTrigger value="reportes" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.reportes") && (
+<TabsTrigger value="reportes" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Reportes
           </TabsTrigger>
-          <TabsTrigger value="auditoria" className="flex items-center gap-2">
+)}
+          {puedeVer("extracto.auditoria") && (
+<TabsTrigger value="auditoria" className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />
             Auditoría
           </TabsTrigger>
+)}
         </TabsList>
 
         <TabsContent value="movimientos" className="space-y-4">
+<SoloLectura recurso="extracto.movimientos">
           {/* Estadísticas */}
           <div className="grid grid-cols-5 gap-4">
             <Card>
@@ -4226,9 +4406,11 @@ ${marca}` : marca
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         <TabsContent value="importar" className="space-y-4">
+<SoloLectura recurso="extracto.importar">
           {(() => {
             // Configuración por cuenta. `alt` = importador alternativo (ej: tarjetas tienen PDF default + Excel manual).
             type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf' }
@@ -4605,9 +4787,11 @@ ${marca}` : marca
               </Card>
             )
           })()}
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         <TabsContent value="reportes" className="space-y-4">
+<SoloLectura recurso="extracto.reportes">
           <Card>
             <CardHeader>
               <CardTitle>Reportes de Conciliación</CardTitle>
@@ -4622,12 +4806,15 @@ ${marca}` : marca
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
 
         {/* 🧪 A-FEAT-145 — el audit de consistencia contra el estandar por origen (§ 30.9.6). */}
         <TabsContent value="auditoria" className="space-y-4">
+<SoloLectura recurso="extracto.auditoria">
           <PanelAuditoriaConciliacion />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
       </Tabs>
 
       {/* Modal Configurador */}
@@ -4914,24 +5101,27 @@ ${marca}` : marca
                   }
 
                   return lista.map(v => {
-                    const elegido = ventaElegida?.id === v.id
+                    const elegido = (ventaElegida?.__key ?? ventaElegida?.id) === (v.__key ?? v.id)
                     const d = v.__dif
                     return (
-                      <button key={v.id} type="button"
+                      <button key={v.__key ?? v.id} type="button"
                         onClick={() => setVentaElegida(v)}
                         className={`w-full text-left p-2 rounded border text-xs ${
                           elegido ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
                         }`}>
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="font-medium truncate">
-                            {v.nro_comprobante || '—'} · {v.denominacion_cliente || '—'}
+                            {v.nro_comprobante || '—'}{v.__cuota != null && <> · <b>cuota {v.__cuota + 1} de {v.__cuotaDe}</b> (vence {new Date(v.__cuotaVence + 'T12:00:00').toLocaleDateString('es-AR')})</>} · {v.denominacion_cliente || '—'}
                           </span>
                           <span className="text-gray-500 whitespace-nowrap">
                             {v.fecha_liquidacion ? new Date(v.fecha_liquidacion + 'T12:00:00').toLocaleDateString('es-AR') : ''}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3 mt-0.5">
-                          <span>Pago s/cond. <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          <span>{v.__cuota != null ? 'Entra en esta cuota' : v.__yaCobrado > 0.005 ? 'Falta cobrar' : 'Pago s/cond.'} <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          {v.__cuota == null && v.__yaCobrado > 0.005 && (
+                            <span className="text-gray-500">ya cobrado {formatCurrency(v.__yaCobrado)}</span>
+                          )}
                           {v.__cobro.retenciones > 0 && (
                             <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
                           )}
@@ -4939,7 +5129,9 @@ ${marca}` : marca
                           {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
                           <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
                             {d.exacto ? 'coincide exacto'
-                              : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
+                              : d.diferencia < 0
+                                ? `cobro parcial · quedan ${formatCurrency(Math.abs(d.diferencia))}`
+                                : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
                           </span>
                         </div>
                         {!d.exacto && Math.abs(d.porcentaje) > 1 && v.__cobro.retenciones === 0 && (

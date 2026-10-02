@@ -3,6 +3,7 @@
 
 import { hoyArgentina } from "@/lib/fechas"
 import { useEffect, useMemo, useState } from "react"
+import { propagarImputacionDeVenta } from "@/lib/ventas/detalle-cobro-db"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -14,6 +15,7 @@ import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
+import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { toast } from "sonner"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
@@ -112,7 +114,20 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
   const esEdicion = !!liquidacionInicial?.id
   // Detección: la edición es de una FACTURA de venta (FC/ND/NC) vs liquidación de granos (332)
   const CODS_FACTURA = [1, 2, 3, 6, 7, 8, 11, 12, 13, 51, 52, 53, 201, 202, 203, 206, 207, 208, 211, 212, 213]
-  const esFacturaEdit = esEdicion && liquidacionInicial?.tipo_comprobante != null && CODS_FACTURA.includes(liquidacionInicial.tipo_comprobante)
+  /**
+   * 🐂 A-BUG-1233 — la liquidación de HACIENDA (60/61) se trata como una factura: montos sólo
+   * lectura y al guardar se escribe SÓLO la imputación.
+   *
+   * 🧨 Pasó el 2026-10-01, el mismo día que nació: el usuario abrió *Editar* para asignarle la
+   * cuenta contable, y este modal —que es de granos— la guardó con `tipo_comprobante: 332` fijo y
+   * recalculó el neto gravado con la cuenta de granos, que no conoce el ajuste por redondeo. Quedó
+   * marcada como granos, con el neto gravado $757,75 corrido, y con eso el cobro esperado le
+   * restaba todo el IVA como RG 2300. Este modal no sabe nada de hacienda: lo único que puede
+   * hacer bien con ella es la imputación.
+   */
+  const esHaciendaEdit = esEdicion && liquidacionInicial?.tipo_comprobante != null && TIPOS_LIQ_HACIENDA.has(liquidacionInicial.tipo_comprobante)
+  const esFacturaEdit = esEdicion && liquidacionInicial?.tipo_comprobante != null
+    && (CODS_FACTURA.includes(liquidacionInicial.tipo_comprobante) || esHaciendaEdit)
 
   // ─── Identificación ────────────────────────────────────────────
   const [fechaLiq, setFechaLiq] = useState('')
@@ -458,9 +473,15 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
     // FACTURA de venta: montos importados de AFIP (read-only). Solo se guarda la imputación.
     if (esFacturaEdit && liquidacionInicial) {
       setGuardando(true)
+      const imputacion = { cuenta_contable: cuentaContable || null, nro_cuenta: nroCuenta || null, centro_costo: centroCosto || null }
       const { error } = await supabase.schema('msa').from('comprobantes_venta')
-        .update({ cuenta_contable: cuentaContable || null, nro_cuenta: nroCuenta || null, centro_costo: centroCosto || null })
+        .update(imputacion)
         .eq('id', liquidacionInicial.id)
+      if (!error) {
+        // 🏷️ La cuenta viaja a sus cobros ya conciliados en el banco.
+        try { await propagarImputacionDeVenta(supabase, liquidacionInicial.id, imputacion) }
+        catch (e) { toast.error('La imputación se guardó, pero no llegó al Extracto: ' + (e as Error).message) }
+      }
       setGuardando(false)
       if (error) { toast.error('Error: ' + error.message); return }
       toast.success('Imputación guardada')
@@ -548,6 +569,8 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', liqId!)
         if (error) throw error
+        // 🏷️ La cuenta viaja a sus cobros ya conciliados en el banco.
+        await propagarImputacionDeVenta(supabase, liqId!, payload as any)
       } else {
         const { data, error } = await supabase
           .schema('msa')
@@ -618,7 +641,9 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
           {/* FACTURA de venta (importada): montos en solo lectura */}
           {esFacturaEdit && liquidacionInicial && (
             <div className="rounded-lg border bg-purple-50/40 p-3 space-y-2">
-              <div className="text-sm font-semibold text-purple-800">Factura de venta (importada) — montos solo lectura</div>
+              <div className="text-sm font-semibold text-purple-800">{esHaciendaEdit
+                ? 'Liquidación de hacienda — montos solo lectura (se cargan desde Ingresos → Ventas)'
+                : 'Factura de venta (importada) — montos solo lectura'}</div>
               <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
                 <div><span className="text-gray-500 text-xs block">Fecha</span>{liquidacionInicial.fecha_liquidacion || '—'}</div>
                 <div><span className="text-gray-500 text-xs block">Nº Comprobante</span>{liquidacionInicial.nro_comprobante || '—'}</div>
@@ -627,7 +652,9 @@ export function ModalLiquidacionMsa({ open, onOpenChange, liquidacionInicial, on
                 <div><span className="text-gray-500 text-xs block">IVA</span>${(Number(liquidacionInicial.iva) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</div>
                 <div><span className="text-gray-500 text-xs block">Total</span><b>${(Number(liquidacionInicial.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</b></div>
               </div>
-              <div className="text-xs text-gray-500">Los montos vienen de AFIP y no se editan. Editá solo la imputación contable de abajo.</div>
+              <div className="text-xs text-gray-500">{esHaciendaEdit
+                ? 'Este modal es de granos: con una liquidación de hacienda sólo guarda la imputación contable de abajo.'
+                : 'Los montos vienen de AFIP y no se editan. Editá solo la imputación contable de abajo.'}</div>
             </div>
           )}
 

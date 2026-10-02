@@ -10,7 +10,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin, faltaConfiguracionAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
@@ -18,17 +18,16 @@ export const runtime = 'nodejs'
 const ESTADOS = ['terminado', 'chequeado', 'revisar', 'descartar'] as const
 
 export async function GET(request: Request) {
-  // Sin la clave de servidor no hay plan B: `anon` no tiene permisos. Se dice QUÉ falta
-  // en vez de devolver una lista vacía que se lee como «no hay nada» (A-BUG-1219).
-  const faltaCfg = faltaConfiguracionAdmin()
-  if (faltaCfg) return NextResponse.json({ ok: false, comentarios: [], error: faltaCfg }, { status: 500 })
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
   const rol = new URL(request.url).searchParams.get('rol')
   if (rol !== 'admin') return NextResponse.json({ error: 'Sólo admin' }, { status: 403 })
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('pendientes_comentarios')
     .select('id, pendiente_id, texto, estado_usuario, autor, created_at, leido_at')
     .order('created_at', { ascending: false })
@@ -38,6 +37,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const supabase = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `estado_usuario debe ser uno de: ${ESTADOS.join(', ')}` }, { status: 400 })
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from('pendientes_comentarios')
       .insert({
         pendiente_id,

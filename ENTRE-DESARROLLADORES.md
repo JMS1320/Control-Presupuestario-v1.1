@@ -75,7 +75,7 @@ Y `puede_ver` tampoco distingue rol salvo en las marcadas `restringe_lectura`, q
 
 Si se hace (2) antes que (1), **se cae media app**.
 
-**No cambiamos nada.** Queda como `A-SEC-09` en `PENDIENTES.md`, con el detalle y los números.
+**No cambiamos nada.** Queda como `A-SEC-14` (antes `A-SEC-09`, que chocaba con el tuyo) en `PENDIENTES.md`, con el detalle y los números.
 Decinos si lo tomás vos o si querés que lo hagamos nosotros con tu revisión.
 
 *(Borrar esta entrada cuando la leas.)*
@@ -263,6 +263,47 @@ anon. Lo hace JMS en el script; **no se re-abre `anon`**.
 ❓ **Lo único que necesitamos de vos**: si hay **otros consumidores externos** apuntando a la base
 con la anon key —otro GAS, un n8n, un script suelto—, decilo, porque están rotos igual y **callados**.
 Es el único hueco que el hardening no puede ver solo.
+---
+
+## 📨 2026-10-01 · PARA JAVIER — tu `feature/permisos-granulares` se mergeó a `desarrollo` y a `main`
+
+**Por qué, y lo decidió JMS:** Ulises estaba bloqueado. `main` seguía en el 02/08, sin login, y
+desde que `anon` se cerró no le andaba nada. JMS probó tu rama con una cuenta de rol `pruebas`
+(sólo Egresos) y anduvo como tiene que andar, así que se publicó.
+
+**Lo único que toqué de tu territorio — dos conflictos, y me quedé con TU versión en los dos:**
+`app/api/admin/usuarios/route.ts` y `components/panel-usuarios.tsx`. Era **el mismo bug arreglado
+dos veces el 24/09**: tu A-BUG-200 y nuestro A-BUG-1198. La nuestra tenía dos cosas que la tuya no;
+**no las metí**, te las dejo para que decidas:
+1. un **respaldo** si no se pueden leer los roles (el desplegable ofrecía admin/contable en vez de
+   quedar vacío);
+2. **«(exige 2FA)»** al lado de cada rol en el desplegable del alta.
+
+**Y un ID:** `A-FEAT-169` estaba repetido. El tuyo (permisos finos) **queda como está**; el nuestro
+(desactivar la Vista de Pagos) pasó a `A-FEAT-1169`.
+
+📌 **Queda un tema de seguridad para charlar con vos** — lo vamos a dejar escrito acá aparte, con
+JMS. Es sobre las tablas sin mapear y las vistas de `public`.
+
+---
+
+## 📨 2026-10-01 · PARA JAVIER — el default de permisos: una propuesta para que la evalúes
+
+**JMS quiere que esto lo veas vos.** El planteo es suyo: *alguien con un rol, a propósito y sabiendo
+cómo, puede ir más allá de lo que su rol permite* — y cada tabla, vista o ruta nueva repite el dilema
+de **cerrado por defecto** (si se olvida, da errores) contra **abierto por defecto** (si se olvida,
+queda el hueco).
+
+**Medido hoy con la identidad de cada rol, no con admin**: son **tres puertas** con el mismo modo de
+falla — 66 tablas sin sección, 13 vistas sin `security_invoker` y 24 rutas con `service_role`.
+
+**La propuesta, acordada con JMS: cerrado por defecto salvo para admin, más un control que avise el
+mismo día.** Y cerrar la lectura de sueldos, que medimos que no rompe a nadie.
+
+👉 **Todo el detalle, los números y el orden propuesto: [A-SEC-13](PENDIENTES.md#a-sec-13).**
+
+Hay scripts escritos y **sin correr** en la rama `jms/vistas-seguras`, que cuelga de la tuya. Úsalos o
+descartalos: la decisión es tuya.
 
 
 ---
@@ -290,3 +331,40 @@ Es justo la *quinta pieza* de `CLAUDE.md` — la automatización que no se puede
 nadie.
 
 → `PENDIENTES.md` [A-OP-24](PENDIENTES.md#a-op-24)
+## 📨 2026-10-01 · PARA JAVIER — 6 columnas nuevas en `msa.comprobantes_venta` (ya corrido, sólo MSA)
+
+Para la liquidación de hacienda ([A-FEAT-1225](PENDIENTES.md#a-feat-1225)) se corrió
+**`scripts/68-liquidacion-hacienda.sql`** — **ya corrido el 2026-10-01, con OK de JMS**: agrega `cabezas`,
+`hacienda_lineas`, `redondeo`, `nro_guia`, `dte` y `plazos` **sólo a `msa.comprobantes_venta`**. PAM y MA no
+venden hacienda, así que sus tablas quedan en 53 columnas y la de MSA en 59, a propósito.
+
+**Por qué no te debería tocar nada:** son columnas que aceptan vacío; no cambian permisos, RLS ni
+roles; ninguna vista de `public` está armada sobre esa tabla; y no toca filas existentes. Hay un
+**deshacer** escrito antes de correrlo, que se niega a correr si ya hay liquidaciones cargadas.
+
+➕ **Y una más el mismo día, `scripts/69`**: `correcciones jsonb` en `msa.comprobantes_venta` (la huella, como en romaneos y
+boletas de ARBA). Mismo perfil: acepta vacío, sólo MSA, sin tocar permisos.
+
+📌 La tabla `msa.comprobantes_venta` sigue entre las **sin sección** de [A-SEC-13](PENDIENTES.md#a-sec-13):
+esto no la empeora ni la arregla.
+
+➕ **2026-10-02, `scripts/70`**: `historica boolean not null default false` en **`productivo.stock_ventas`**
+([A-FEAT-1226](PENDIENTES.md#a-feat-1226)). ⚠️ **Te aviso después de correrlo, no antes** como pide la regla:
+se aplicó en la misma tanda en que JMS lo autorizó. Mismo perfil que las anteriores: default `false`, no
+toca filas, permisos, RLS ni roles, y la vista `public.ventas_unificadas` **no se tocó**. Deshacer con freno.
+
+➕ **2026-10-02, `scripts/71`**: el CHECK de **`public.anticipos_proveedores.estado_pago`** admite también
+**`endosado`** ([A-FEAT-1228](PENDIENTES.md#a-feat-1228)): el echeq de un cliente que se endosa. ⚠️ **También te
+aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Sólo agrega un valor permitido;
+no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
+anticipo, sumale `endosado`.
+
+## 📨 2026-10-02 · PARA JAVIER — `scripts/72` (avisado ANTES; ✅ corrido el mismo día, después de este aviso)
+
+Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **`public.anticipos_proveedores`**:
+- el CHECK de `estado_pago` suma **`en_cartera`** (cheque de un cliente recibido y todavía no usado);
+- columna nueva **`endosado_en_id uuid`** → FK a la misma tabla (el pago al proveedor que se canceló
+  endosando ese cheque), `on delete set null`.
+
+No toca filas, permisos, RLS ni vistas. Tiene deshacer con freno. Si algo tuyo enumera los estados
+de pago de un anticipo o hace `select *` y valida columnas, sumale estos dos.

@@ -3,6 +3,8 @@
 
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
+import { SoloLectura } from "@/components/solo-lectura"
+import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -923,6 +925,8 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
 // ============================================================
 
 export function VistaSectorProductivo() {
+  // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("hacienda")
 
   return (
@@ -936,56 +940,80 @@ export function VistaSectorProductivo() {
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-6">
-              <TabsTrigger value="hacienda" className="flex items-center gap-2">
+              {puedeVer("productivo.hacienda") && (
+<TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
               </TabsTrigger>
-              <TabsTrigger value="evolucion" className="flex items-center gap-2">
+)}
+              {puedeVer("productivo.evolucion") && (
+<TabsTrigger value="evolucion" className="flex items-center gap-2">
                 📈
                 Evolución Rodeo
               </TabsTrigger>
-              <TabsTrigger value="cria" className="flex items-center gap-2">
+)}
+              {puedeVer("productivo.cria") && (
+<TabsTrigger value="cria" className="flex items-center gap-2">
                 🐮
                 Cría
               </TabsTrigger>
-              <TabsTrigger value="recria" className="flex items-center gap-2">
+)}
+              {puedeVer("productivo.recria") && (
+<TabsTrigger value="recria" className="flex items-center gap-2">
                 🐄
                 Recría / Engorde
               </TabsTrigger>
-              <TabsTrigger value="insumos" className="flex items-center gap-2">
+)}
+              {puedeVer("productivo.insumos") && (
+<TabsTrigger value="insumos" className="flex items-center gap-2">
                 <Package className="h-4 w-4" />
                 Insumos
               </TabsTrigger>
-              <TabsTrigger value="lotes" className="flex items-center gap-2">
+)}
+              {puedeVer("productivo.lotes") && (
+<TabsTrigger value="lotes" className="flex items-center gap-2">
                 <Wheat className="h-4 w-4" />
                 Lotes Agrícolas
               </TabsTrigger>
+)}
             </TabsList>
 
             <TabsContent value="hacienda">
+<SoloLectura recurso="productivo.hacienda">
               <TabHacienda />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="evolucion">
+<SoloLectura recurso="productivo.evolucion">
               <TabEvolucionRodeo />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="cria">
+<SoloLectura recurso="productivo.cria">
               <TabTerneros modo="cria" />
               <CiclosCriaPanel />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="recria">
+<SoloLectura recurso="productivo.recria">
               {/* El ciclo va ARRIBA de los terneros: primero de dónde viene el rodeo y a qué
                   costo entró, después el detalle animal por animal. */}
               <div className="mb-4">
                 <PanelCicloRecria />
               </div>
               <TabTerneros />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="insumos">
+<SoloLectura recurso="productivo.insumos">
               <TabInsumos />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
             <TabsContent value="lotes">
+<SoloLectura recurso="productivo.lotes">
               <TabLotesAgricolas />
-            </TabsContent>
+            </SoloLectura>
+</TabsContent>
           </Tabs>
         </CardContent>
       </Card>
@@ -3367,34 +3395,49 @@ function TabHacienda() {
 
 function TabInsumos() {
   const [subTab, setSubTab] = useState("stock")
+  // A-FEAT-169. Va acá y no en el componente de arriba: Stock, Órdenes y Compras son SUB-pestañas
+  // de Insumos, no hermanas de Hacienda — viven en otro componente del mismo archivo.
+  const puedeVer = usePuedeVer()
 
   return (
     <div className="space-y-4 pt-4">
       <Tabs value={subTab} onValueChange={setSubTab}>
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="stock" className="flex items-center gap-1 text-xs">
+          {puedeVer("productivo.stock") && (
+<TabsTrigger value="stock" className="flex items-center gap-1 text-xs">
             <Package className="h-3.5 w-3.5" />
             Stock & Movimientos
           </TabsTrigger>
-          <TabsTrigger value="ordenes" className="flex items-center gap-1 text-xs">
+)}
+          {puedeVer("productivo.ordenes") && (
+<TabsTrigger value="ordenes" className="flex items-center gap-1 text-xs">
             <Syringe className="h-3.5 w-3.5" />
             Ordenes Aplicacion
           </TabsTrigger>
-          <TabsTrigger value="compras" className="flex items-center gap-1 text-xs">
+)}
+          {puedeVer("productivo.compras") && (
+<TabsTrigger value="compras" className="flex items-center gap-1 text-xs">
             <ShoppingCart className="h-3.5 w-3.5" />
             Necesidad de Compra
           </TabsTrigger>
+)}
         </TabsList>
 
         <TabsContent value="stock">
+<SoloLectura recurso="productivo.stock">
           <SubTabStockInsumos />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
         <TabsContent value="ordenes">
+<SoloLectura recurso="productivo.ordenes">
           <SubTabOrdenesAplicacion />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
         <TabsContent value="compras">
+<SoloLectura recurso="productivo.compras">
           <SubTabNecesidadCompra />
-        </TabsContent>
+        </SoloLectura>
+</TabsContent>
       </Tabs>
     </div>
   )
@@ -3622,8 +3665,8 @@ function SubTabStockInsumos() {
     try {
       const [catRes, stockRes, movRes] = await Promise.all([
         supabase.schema('productivo').from('categorias_insumo').select('*').eq('activo', true).order('nombre'),
-        supabase.schema('productivo').from('stock_insumos').select('*, categorias_insumo(nombre, unidad_medida)').order('producto'),
-        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre))').order('fecha', { ascending: false }).limit(100)
+        supabase.schema('productivo').from('stock_insumos').select('*, categorias_insumo(nombre, unidad_medida, ambito)').order('producto'),
+        supabase.schema('productivo').from('movimientos_insumos').select('*, stock_insumos(producto, categorias_insumo(nombre, ambito))').order('fecha', { ascending: false }).limit(100)
       ])
       if (catRes.data) setCategorias(catRes.data)
       if (stockRes.data) setStock(stockRes.data)
@@ -3776,17 +3819,21 @@ function SubTabStockInsumos() {
     cargarDatos()
   }
 
-  const stockFiltrado = stock.filter(s => {
-    const esAgroquimico = s.categorias_insumo?.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
-  })
-  const categoriasFiltradas = categorias.filter(c => {
-    const esAgroquimico = c.nombre === 'Agroquímico'
-    return filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
-  })
+  /**
+   * 🌾 Agrícola o ganadero se decide por el ÁMBITO de la categoría (`categorias_insumo.ambito`), no por
+   * su nombre. Antes era `nombre === 'Agroquímico'`: Semilla, Fertilizante, Herbicida, Fungicida e
+   * Insecticida —todas `agricola` en la base— no se podían crear ni ver en la pestaña agrícola
+   * (pedido del usuario 2026-10-02). `ambos` (Combustible) aparece en las dos.
+   */
+  const deEsteAmbito = (ambitoCat: string | null | undefined, nombreCat?: string | null) => {
+    const ambitoReal = ambitoCat || (nombreCat === 'Agroquímico' ? 'agricola' : 'ganadero')
+    return ambitoReal === 'ambos' || ambitoReal === filtroTipo
+  }
+  const stockFiltrado = stock.filter(s => deEsteAmbito((s.categorias_insumo as any)?.ambito, s.categorias_insumo?.nombre))
+  const categoriasFiltradas = categorias.filter(c => deEsteAmbito((c as any).ambito, c.nombre))
   const movimientosFiltrados = movimientos.filter(m => {
-    const esAgroquimico = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-    const matchAmbito = filtroTipo === 'agricola' ? esAgroquimico : !esAgroquimico
+    const cat = (m.stock_insumos as any)?.categorias_insumo
+    const matchAmbito = deEsteAmbito(cat?.ambito, cat?.nombre)
     if (!matchAmbito) return false
     // Filtro por tipo de movimiento (multi-select; vacío = todos)
     if (filtroTipoMov.size > 0 && !filtroTipoMov.has(m.tipo)) return false
@@ -3946,8 +3993,8 @@ function SubTabStockInsumos() {
             </div>
             <span className="text-xs text-muted-foreground ml-auto">
               {movimientosFiltrados.length} de {movimientos.filter(m => {
-                const esAgro = (m.stock_insumos as any)?.categorias_insumo?.nombre === 'Agroquímico'
-                return filtroTipo === 'agricola' ? esAgro : !esAgro
+                const cat = (m.stock_insumos as any)?.categorias_insumo
+                return deEsteAmbito(cat?.ambito, cat?.nombre)
               }).length} movimientos
             </span>
           </div>

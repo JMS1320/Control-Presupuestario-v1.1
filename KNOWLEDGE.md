@@ -156,7 +156,7 @@ hasta el botón. Ver `PENDIENTES.md` § A-TEST-32.
 |---|---|
 | `A-SEC-01`: *«la BD todavía no se tocó»* | **`anon` con cero permisos y RLS en las 125 tablas** — cerrado hacía semanas |
 | `A-OP-15`: *«el baseline de type-check es 279»* | **110** — los 279 eran un paquete sin instalar |
-| `A-SEC-09`: *«los roles pueden leer de más»* | también **escriben**: 68 tablas sin declarar quedan abiertas |
+| `A-SEC-14` *(era A-SEC-09)*: *«los roles pueden leer de más»* | también **escriben**: 68 tablas sin declarar quedan abiertas |
 
 🔑 **La diferencia con el código es la que importa.** Una afirmación sobre el código envejece y se
 nota: alguien lo lee y no coincide. Una afirmación sobre **infraestructura** —permisos, RLS, qué se

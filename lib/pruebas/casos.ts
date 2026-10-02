@@ -124,6 +124,14 @@ import {
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
+import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
+  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
+import { parseNumeroAR } from "@/lib/format/numero"
+import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
+import { filasRetenciones } from "@/lib/ventas/retenciones-export"
+import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
+import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -2159,6 +2167,431 @@ export function correrCasos(): Resultado[] {
     `${esSoloEste({ ctrlKey: true })} · ${esSoloEste({ metaKey: true })} · ${esSoloEste({})}`,
     esSoloEste({ ctrlKey: true }) && esSoloEste({ metaKey: true }) && !esSoloEste({}), "A-FEAT-1221")
 
+  // ══ 🐂 LA VENTA DE HACIENDA VISTA DESDE INGRESOS (A-BUG-1232) ═══════════════════════════════
+  // Números REALES: la venta de Pedro Genta del 04/08/2026 y su liquidación.
+
+  // 🧨 El desbaste se guarda como FRACCIÓN (0.03). Tratarlo como porcentaje daba kilos negativos.
+  chequear("Venta de hacienda", "🧨 El desbaste es FRACCIÓN: 16.180 kg con 0,03 dejan 15.694,6 kg",
+    "15694.6", kgNetosDeVenta(16180, 0.03).toFixed(1),
+    Math.abs(kgNetosDeVenta(16180, 0.03) - 15694.6) < 0.001, "A-BUG-1232")
+
+  // 🔑 Y esos kilos son los que trae la liquidación (15.695): la venta y el papel hablan de lo mismo.
+  chequear("Venta de hacienda", "🔑 Los kg netos de la venta coinciden con los de la liquidación (15.695)",
+    "diferencia < 0,5 kg", (15695 - kgNetosDeVenta(16180, 0.03)).toFixed(1) + " kg",
+    Math.abs(15695 - kgNetosDeVenta(16180, 0.03)) < 0.5, "A-BUG-1232")
+
+  // El neto guardado de la venta sale de esos kilos: 15.694,6 × 5.670 = 88.988.382.
+  chequear("Venta de hacienda", "El neto guardado de la venta es kg netos × precio",
+    "88988382", (kgNetosDeVenta(16180, 0.03) * 5670).toFixed(0),
+    Math.round(kgNetosDeVenta(16180, 0.03) * 5670) === 88988382, "A-BUG-1232")
+
+  chequear("Venta de hacienda", "Promedio: 16.180 kg / 55 cabezas = 294 kg; sin cabezas, cero (no divide por cero)",
+    "294 · 0", promedioKg(16180, 55).toFixed(0) + " · " + promedioKg(16180, 0),
+    Math.round(promedioKg(16180, 55)) === 294 && promedioKg(16180, 0) === 0, "A-BUG-1232")
+
+  // 🧨 La venta de Genta tiene la categoría en su LOTE, no en la venta: mirar sólo la directa la hacía «sin categoría».
+  chequear("Venta de hacienda", "🧨 Una venta por lote toma la categoría del lote (Genta = Ternero Recria)",
+    "Ternero Recria", String(categoriaDeVenta("Ternero Recria", null)),
+    categoriaDeVenta("Ternero Recria", null) === "Ternero Recria" && categoriaDeVenta(null, "Toro") === "Toro"
+      && categoriaDeVenta(null, null) === null, "A-BUG-1232")
+
+  // ══ 🧾 LA LIQUIDACIÓN DE HACIENDA — tipo 60 (A-FEAT-1225) ══════════════════════════════════
+  // Los dos papeles REALES de «de Campo a Campo». Si una cuenta de la app no da lo del papel,
+  // la app está mal — el papel es la referencia.
+
+  // Papel 1 · 27/01/2026 · 70 novillos de invernada · Frig. Rioplatense
+  const papel1 = calcularLiqHacienda({
+    lineas: [{ razonSocial: "FRIG.RIOPLATENS", cuit: "30540080298", cabezas: 70, clasificacion: "NOVILLO DE INVERNADA", kilos: 28000, precio: 4623 }],
+    comisionPct: 2.319, redondeo: -1193.64, ivaPct: 10.5,
+    retenciones: [{ concepto: "INGRESOS BRUTOS Pcia BS AS", alicuota: 0.75, importe: 970830 }],
+  })
+  chequear("Liquidación de hacienda", "Papel 1 (27/01): bruto, comisión y neto gravado, al centavo",
+    "129.444.000 · 3.001.806,36 · 126.441.000",
+    `${papel1.bruto} · ${papel1.comision} · ${papel1.netoGravado}`,
+    papel1.bruto === 129444000 && papel1.comision === 3001806.36 && papel1.netoGravado === 126441000, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 1: IVA 10,5 % del neto gravado e importe neto = 138.746.475",
+    "13.276.305 · 138.746.475", `${papel1.iva} · ${papel1.importeNeto}`,
+    papel1.iva === 13276305 && papel1.importeNeto === 138746475, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 1: el «TOTAL» del papel es la columna de gastos/IVA/retenciones = 9.302.475",
+    "9302475", String(papel1.columnaGastos), papel1.columnaGastos === 9302475, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🔑 IIBB se retiene sobre el BRUTO, no sobre el neto: 0,75 % de 129.444.000 = 970.830",
+    "970830", String(retencionSugerida(129444000, 0.75)), retencionSugerida(129444000, 0.75) === 970830, "A-FEAT-1225")
+
+  // Papel 2 · 04/08/2026 · 55 novillitos · la venta de Pedro Genta
+  const papel2 = calcularLiqHacienda({
+    lineas: [{ razonSocial: "DON FELICIANO S", cuit: "30709270105", cabezas: 55, clasificacion: "Novillito de Invernada", kilos: 15695, precio: 5742 }],
+    comisionPct: 1.166, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "INGRESOS BRUTOS Pcia BS AS", alicuota: 0.75, importe: 675905.18 }],
+  })
+  chequear("Liquidación de hacienda", "Papel 2 (04/08): bruto 90.120.690 · neto gravado 89.069.125 · importe neto 97.745.477,95",
+    "90120690 · 89069125 · 97745477.95", `${papel2.bruto} · ${papel2.netoGravado} · ${papel2.importeNeto}`,
+    papel2.bruto === 90120690 && papel2.netoGravado === 89069125 && papel2.importeNeto === 97745477.95, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 2: precio después de comisión = 5.675,00 $/kg (neto gravado / kilos)",
+    "5675.00", papel2.precioPostComision.toFixed(2), papel2.precioPostComision.toFixed(2) === "5675.00", "A-FEAT-1225")
+
+  // 🔑 El cobro: lo que el banco va a acreditar.
+  const cobro1 = cobroEsperado({ tipo_comprobante: 60, imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
+    comision_neto: 3001806.36, ret_iibb: 970830, subtotal_neto: 129444000 }, 0)
+  chequear("Liquidación de hacienda", "🔑 Se cobra el importe neto del papel: 138.746.475",
+    "138746475", String(cobro1.pagoCondiciones), Math.abs(cobro1.pagoCondiciones - 138746475) < 0.005, "A-FEAT-1225")
+  const cobro2 = cobroEsperado({ tipo_comprobante: 60, imp_neto_gravado: 89069125, iva: 9352258.13, imp_total: 98421383.13,
+    comision_neto: 1050807.25, ret_iibb: 675905.18, subtotal_neto: 90120690 }, 0)
+  chequear("Liquidación de hacienda", "🔑 Papel 2: se cobra 97.745.477,95",
+    "97745477.95", cobro2.pagoCondiciones.toFixed(2), Math.abs(cobro2.pagoCondiciones - 97745477.95) < 0.005, "A-FEAT-1225")
+
+  // 🧨 Sin el caso aparte, la cuenta de GRANOS le restaba todo el IVA como si fuera RG 2300.
+  const cobroComoGranos = cobroEsperado({ imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
+    comision_neto: 3001806.36, ret_iibb: 970830, subtotal_neto: 129444000 }, 0)
+  chequear("Liquidación de hacienda", "🧨 Tratada como granos, el cobro daba MAL (le sacaba el IVA entero)",
+    "≠ 138.746.475", cobroComoGranos.pagoCondiciones.toFixed(2),
+    Math.abs(cobroComoGranos.pagoCondiciones - 138746475) > 1000000, "A-FEAT-1225")
+
+  // 🔑 La paridad que pidió el usuario: subtotal de la venta contra subtotal después de comisión.
+  const ventaGenta = { cabezas: 55, kgNetos: kgNetosDeVenta(16180, 0.03), precioKg: 5670, neto: 88988382 }
+  const avisosGenta = compararConVenta(ventaGenta, papel2)
+  const av = (t: string) => avisosGenta.find(a => a.tema === t)!
+  chequear("Liquidación de hacienda", "Venta de Genta vs. su liquidación: cabezas y kilos coinciden",
+    "ok · ok", `${av("Cabezas").nivel} · ${av("Kilos").nivel}`,
+    av("Cabezas").nivel === "ok" && av("Kilos").nivel === "ok", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🔑 …y el subtotal AVISA: la liquidación pagó +$80.743 (+5,00 $/kg sobre lo pactado)",
+    "aviso · 80743", `${av("Subtotal").nivel} · ${av("Subtotal").diferencia}`,
+    av("Subtotal").nivel === "aviso" && av("Subtotal").diferencia === 80743 && av("Subtotal").mensaje.includes("+5,00"), "A-FEAT-1225")
+
+  // Con el subtotal igual al neto de la venta, no hay aviso (tolerancia: medio kilo).
+  const iguales = compararConVenta({ cabezas: 55, kgNetos: 15695, precioKg: 5675, neto: 89069125 + 1000 }, papel2)
+  chequear("Liquidación de hacienda", "Si la diferencia está dentro de medio kilo de redondeo, no avisa",
+    "ok", iguales.find(a => a.tema === "Subtotal")!.nivel, iguales.find(a => a.tema === "Subtotal")!.nivel === "ok", "A-FEAT-1225")
+
+  // Contra el papel: un número mal tipeado se señala; uno bien, no.
+  chequear("Liquidación de hacienda", "Un importe neto mal tipeado se avisa; el correcto, no",
+    "aviso · ok",
+    `${controlContraPapel(papel2, { importeNeto: 97745487.95 })[0].nivel} · ${controlContraPapel(papel2, { importeNeto: 97745477.95 })[0].nivel}`,
+    controlContraPapel(papel2, { importeNeto: 97745487.95 })[0].nivel === "aviso"
+      && controlContraPapel(papel2, { importeNeto: 97745477.95 })[0].nivel === "ok", "A-FEAT-1225")
+
+  // Plazos: 30/60/90 desde el 04/08 → los vencimientos del papel, 33/34/33, y la suma exacta.
+  const plazos = plazosDesdeVenta("30/60/90", "2026-08-04", 97745477.95)
+  chequear("Liquidación de hacienda", "Plazos 30/60/90 desde el 04/08: vencen 03/09, 03/10 y 02/11, al 33/34/33 %",
+    "2026-09-03 2026-10-03 2026-11-02 · 33/34/33",
+    plazos.map(x => x.vencimiento).join(" ") + " · " + plazos.map(x => x.pct).join("/"),
+    plazos.map(x => x.vencimiento).join(" ") === "2026-09-03 2026-10-03 2026-11-02"
+      && plazos.map(x => x.pct).join("/") === "33/34/33", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Las cuotas suman exacto el importe neto",
+    "ok", String(controlPlazos(plazos, 97745477.95)?.nivel), controlPlazos(plazos, 97745477.95)?.nivel === "ok", "A-FEAT-1225")
+
+  // ══ 🎚️ LA PRECARGA DESDE LA VENTA — «chupar los datos» (A-FEAT-1225, paso 3) ═══════════════
+  const pre = precargaDesdeVenta({ fecha: "2026-08-04", cliente: "Pedro Genta", cuit: "", categoria: "Ternero Recria",
+    cabezas: 55, kgTotales: 16180, pctDesbaste: 0.03, precioKg: 5670, pctCz: 0 })
+  chequear("Liquidación de hacienda", "🎚️ La precarga de Genta trae 55 cab, 15.695 kg NETOS (no 16.180), $5.670 y comisión 0",
+    "55 · 15695 · 5670 · 0",
+    `${pre.linea.cabezas} · ${pre.linea.kilos} · ${pre.linea.precio} · ${pre.comisionPct}`,
+    pre.linea.cabezas === 55 && pre.linea.kilos === 15695 && pre.linea.precio === 5670 && pre.comisionPct === 0, "A-FEAT-1225")
+
+  // 🔑 Con lo precargado tal cual, la liquidación da la venta: ningún aviso. La diferencia aparece
+  //    recién cuando el usuario tipea lo que dice su papel (el caso del +$80.743 de más arriba).
+  const tal = calcularLiqHacienda({ lineas: [pre.linea], comisionPct: pre.comisionPct, redondeo: 0, ivaPct: 10.5, retenciones: [] })
+  const avisosTal = compararConVenta({ cabezas: 55, kgNetos: kgNetosDeVenta(16180, 0.03), precioKg: 5670, neto: 88988382 }, tal)
+  chequear("Liquidación de hacienda", "🔑 Precargada sin tocar, no avisa nada: cabezas, kilos y subtotal coinciden con la venta",
+    "ok ok ok", avisosTal.map(a => a.nivel).join(" "), avisosTal.every(a => a.nivel === "ok"), "A-FEAT-1225")
+
+  // La CZ de la venta es FRACCIÓN; la comisión del papel, PORCENTAJE.
+  chequear("Liquidación de hacienda", "Una CZ de 0,02 en la venta se precarga como comisión 2 %",
+    "2", String(precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct),
+    precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct === 2, "A-FEAT-1225")
+
+  // ══ 🎚️ MONTOS A MANO: comisión e IVA (pedido del usuario 2026-10-01) ═════════════════════
+  // «Cosas como comisión deben poder tipearse el monto, por si se calcula sobre otra cosa.»
+  const lineaGenta = { razonSocial: "DON FELICIANO S", cuit: "30709270105", cabezas: 55, clasificacion: "Novillito", kilos: 15695, precio: 5742 }
+  const conMonto = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 0, comisionMonto: 1050807.25, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "IIBB", alicuota: 0.75, importe: 675905.18 }] })
+  chequear("Liquidación de hacienda", "🎚️ Comisión tipeada por MONTO (con 0 %): da el mismo papel, y el % que resulta es 1,166",
+    "89069125 · 97745477.95 · 1.166",
+    `${conMonto.netoGravado} · ${conMonto.importeNeto} · ${conMonto.comisionPctEfectivo.toFixed(3)}`,
+    conMonto.netoGravado === 89069125 && conMonto.importeNeto === 97745477.95 && conMonto.comisionPctEfectivo.toFixed(3) === "1.166", "A-FEAT-1225")
+
+  // El monto MANDA sobre el %: con 5 % y un monto tipeado, vale el monto.
+  const mandaMonto = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 5, comisionMonto: 1000000, redondeo: 0, ivaPct: 10.5, retenciones: [] })
+  chequear("Liquidación de hacienda", "El monto tipeado manda sobre el %: con 5 % y $1.000.000 tipeado, vale $1.000.000",
+    "1000000", String(mandaMonto.comision), mandaMonto.comision === 1000000, "A-FEAT-1225")
+
+  // Vacío = se calcula: null no es cero.
+  const vacio = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 1.166, comisionMonto: null, ivaMonto: null, redondeo: -757.75, ivaPct: 10.5, retenciones: [] })
+  chequear("Liquidación de hacienda", "Con el monto VACÍO se calcula con el % (vacío no es cero)",
+    "1050807.25 · 9352258.13", `${vacio.comision} · ${vacio.iva}`,
+    vacio.comision === 1050807.25 && vacio.iva === 9352258.13, "A-FEAT-1225")
+
+  const ivaAMano = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 1.166, redondeo: -757.75, ivaPct: 10.5, ivaMonto: 9352258, retenciones: [] })
+  chequear("Liquidación de hacienda", "El IVA también se puede tipear por monto, y el importe neto lo sigue",
+    "9352258 · 98421383", `${ivaAMano.iva} · ${ivaAMano.importeNeto}`,
+    ivaAMano.iva === 9352258 && ivaAMano.importeNeto === 98421383, "A-FEAT-1225")
+
+  // ══ 📅 EL CASH FLOW EN CUOTAS (A-FEAT-1225) ══════════════════════════════════════════════
+  // «Creo que sólo veo una cuota en cash flow de la venta, ¿es correcto esto?» — no lo era.
+  // Las cuotas son las que quedaron guardadas en la liquidación real de Genta.
+  const plazosGenta = [
+    { vencimiento: "2026-09-03", importe: 32256007.73 },
+    { vencimiento: "2026-10-03", importe: 33233462.5 },
+    { vencimiento: "2026-11-02", importe: 32256007.72 },
+  ]
+  const enCuotas = cuotasPorCobrar(plazosGenta, 97745477.95, 0, "2026-09-03")
+  chequear("Liquidación de hacienda", "📅 Con plazos, el Cash Flow muestra 3 cuotas en sus fechas y suman el importe neto",
+    "3 · 03/09 03/10 02/11 · 97745477.95",
+    `${enCuotas.length} · ${enCuotas.map(q => q.vencimiento).join(" ")} · ${enCuotas.reduce((x, q) => x + q.importe, 0).toFixed(2)}`,
+    enCuotas.length === 3 && enCuotas.map(q => q.vencimiento).join(" ") === "2026-09-03 2026-10-03 2026-11-02"
+      && enCuotas.reduce((x, q) => x + q.importe, 0).toFixed(2) === "97745477.95", "A-FEAT-1225")
+
+  // Un anticipo de $40 M cancela la 1ª cuota entera y $7.743.992,27 de la 2ª.
+  const cuotasConAnticipo = cuotasPorCobrar(plazosGenta, 97745477.95, 40000000, "2026-09-03")
+  chequear("Liquidación de hacienda", "Lo cobrado por adelantado cancela primero las cuotas más viejas",
+    "2 cuotas · 25489470.23 · 32256007.72",
+    `${cuotasConAnticipo.length} cuotas · ${cuotasConAnticipo.map(q => q.importe).join(" · ")}`,
+    cuotasConAnticipo.length === 2 && cuotasConAnticipo[0].importe === 25489470.23 && cuotasConAnticipo[1].importe === 32256007.72, "A-FEAT-1225")
+
+  // ══ 🧾 Las retenciones van a la cuota de SU FECHA (2026-10-02, caso real de Genta) ══════════
+  // Ganancias del pago del 03/09: $583.395,25 (como la cargó el usuario). El banco acreditó $31.672.612,47.
+  const retGan1 = { monto: 583395.25, fecha: "2026-09-03" }
+  const conRet1 = repartirEnCuotas(plazosGenta, 0, [retGan1], "")
+  chequear("Liquidación de hacienda", "🧾 La retención del 03/09 baja la cuota del 03/09: 32.256.007,73 − 583.395,25 = 31.672.612,48 (banco: ,47)",
+    "31672612.48 · 33233462.5 · 32256007.72", conRet1.map(q => q.aCobrar).join(" · "),
+    conRet1[0].aCobrar === 31672612.48 && conRet1[1].aCobrar === 33233462.5 && conRet1[2].aCobrar === 32256007.72, "A-BUG-1234")
+  // La del 2º pago tiene que caer en la 2ª cuota — con el reparto viejo (en orden) caía en la 1ª.
+  const conRet2 = repartirEnCuotas(plazosGenta, 0, [retGan1, { monto: 600000, fecha: "2026-10-05" }], "")
+  chequear("Liquidación de hacienda", "La retención del 2º pago (05/10) cae en la cuota del 03/10, no en la primera",
+    "31672612.48 · 32633462.5", `${conRet2[0].aCobrar} · ${conRet2[1].aCobrar}`,
+    conRet2[0].aCobrar === 31672612.48 && conRet2[1].aCobrar === 32633462.5, "A-BUG-1234")
+  const ctl = controlCuotas(conRet2, 97745477.95, 1183395.25)
+  chequear("Liquidación de hacienda", "🧮 Control: las cuotas suman el importe neto del papel y no queda retención sin repartir",
+    "cierra", ctl.cierra ? "cierra" : `dif papel ${ctl.difPapel} · sin repartir ${ctl.sinRepartir}`, ctl.cierra, "A-BUG-1234")
+  const ctlMal = controlCuotas(repartirEnCuotas(plazosGenta.slice(0, 2), 0, [], ""), 97745477.95, 0)
+  chequear("Liquidación de hacienda", "🧮 Si las cuotas no suman el papel (falta una), el control marca el descuadre",
+    "-32256007.72", String(ctlMal.difPapel), !ctlMal.cierra && ctlMal.difPapel === -32256007.72, "A-BUG-1234")
+  chequear("Liquidación de hacienda", "Cuota 1 cobrada con su retención: lo cobrado es lo que entró al banco (31.672.612,48), no $0",
+    "31672612.48", String(repartirEnCuotas(plazosGenta.map((q, i) => i === 0 ? { ...q, estado: "cobrado" } : q), 0, [retGan1], "")
+      .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0)),
+    repartirEnCuotas(plazosGenta.map((q, i) => i === 0 ? { ...q, estado: "cobrado" } : q), 0, [retGan1], "")
+      .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0) === 31672612.48, "A-BUG-1234")
+
+  // ══ 🏦 Conciliar UNA cuota contra su movimiento (A-BUG-1234) ═════════════════════════════
+  const plGenta = plazosGenta.map(q => ({ dias: 30, pct: 33, ...q }))
+  const cqUno = conciliarCuota(plGenta, 0, "mov-0309")
+  chequear("Conciliación por cuota", "🏦 Conciliar el cobro del 03/09 marca SÓLO la cuota 1 — la liquidación sigue «a cobrar»",
+    "cobrado,mov-0309 · sin marca · a cobrar", `${cqUno.plazos[0].estado},${cqUno.plazos[0].movimiento_id} · ${cqUno.plazos[1].estado ?? "sin marca"} · ${cqUno.estadoComprobante}`,
+    cqUno.plazos[0].movimiento_id === "mov-0309" && cqUno.plazos[1].estado === undefined && cqUno.estadoComprobante === "a cobrar", "A-BUG-1234")
+  const cqTres = conciliarCuota(conciliarCuota(cqUno.plazos, 1, "mov-0310").plazos, 2, "mov-0211")
+  chequear("Conciliación por cuota", "Con las 3 cuotas conciliadas, la liquidación pasa a «conciliado»",
+    "conciliado", cqTres.estadoComprobante, cqTres.estadoComprobante === "conciliado", "A-BUG-1234")
+  const cqSuelta = conciliarCuota(cqTres.plazos, null, null, "mov-0310")
+  chequear("Conciliación por cuota", "Desconciliar el movimiento cqSuelta SU cuota (la 2) y la liquidación vuelve a «a cobrar»",
+    "a cobrar · sin movimiento · a cobrar", `${cqSuelta.plazos[1].estado} · ${cqSuelta.plazos[1].movimiento_id ?? "sin movimiento"} · ${cqSuelta.estadoComprobante}`,
+    cqSuelta.plazos[1].estado === "a cobrar" && !cqSuelta.plazos[1].movimiento_id && cqSuelta.estadoComprobante === "a cobrar" && cqSuelta.cambio, "A-BUG-1234")
+  chequear("Conciliación por cuota", "🛑 Una cuota conciliada no se desmarca a mano (lo decide la conciliación)",
+    "cobrado", marcarCuota(cqUno.plazos, 0, "a cobrar", "a cobrar").plazos[0].estado ?? "",
+    marcarCuota(cqUno.plazos, 0, "a cobrar", "a cobrar").plazos[0].estado === "cobrado", "A-BUG-1234")
+
+  const sinPlazos = cuotasPorCobrar(null, 97745477.95, 0, "2026-08-04")
+  chequear("Liquidación de hacienda", "Sin plazos, una sola fila por el cobro entero",
+    "1 · 2026-08-04 · 97745477.95", `${sinPlazos.length} · ${sinPlazos[0].vencimiento} · ${sinPlazos[0].importe}`,
+    sinPlazos.length === 1 && sinPlazos[0].vencimiento === "2026-08-04" && sinPlazos[0].importe === 97745477.95, "A-FEAT-1225")
+
+  // ══ 🐾 LA HUELLA (A-FEAT-1225) — lo que propuso la app al lado de lo que quedó ═══════════
+  // El caso real: precarga de Genta (55 cab, 15.695 kg, $5.670, comisión 0) y lo que el usuario
+  // puso de su papel ($5.742 y la comisión por MONTO), con «Coincide» en el importe neto.
+  const preG = precargaDesdeVenta({ fecha: "2026-08-04", cliente: "Pedro Genta", cuit: "", categoria: "Ternero Recria",
+    cabezas: 55, kgTotales: 16180, pctDesbaste: 0.03, precioKg: 5670, pctCz: 0 })
+  const lineaPapel = { ...preG.linea, razonSocial: "DON FELICIANO S", precio: 5742 }
+  const entradaH = { lineas: [lineaPapel], comisionPct: 0, comisionMonto: 1050807.25, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "IIBB", alicuota: 0.75, importe: 675905.18 }] }
+  const calcH = calcularLiqHacienda(entradaH)
+  const huella = huellaLiquidacion({
+    calc: calcH, calcSinAMano: calcularLiqHacienda({ ...entradaH, comisionMonto: null }),
+    comisionAMano: true, ivaAMano: false,
+    marcas: { importe: { estado: "ok" } },
+    precarga: { ventaId: "venta-genta", linea: preG.linea, comisionPct: preG.comisionPct },
+    guardado: { linea: lineaPapel, comisionPct: calcH.comisionPctEfectivo },
+  })
+  chequear("Liquidación de hacienda", "🐾 La huella guarda las DOS puntas: la comisión que daba el % (0) y la tipeada (1.050.807,25)",
+    "0 → 1050807.25", `${huella?.montosAMano.comision?.calculado} → ${huella?.montosAMano.comision?.tipeado}`,
+    huella?.montosAMano.comision?.calculado === 0 && huella?.montosAMano.comision?.tipeado === 1050807.25, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🐾 …y qué cambió de la precarga: precio 5670 → 5742, comprador y comisión",
+    "precio, comprador, comisionPct",
+    (huella?.precarga?.cambios || []).map(c => c.campo).join(", "),
+    (huella?.precarga?.cambios || []).map(c => c.campo).join(", ") === "precio, comprador, comisionPct"
+      && huella?.precarga?.cambios.find(c => c.campo === "precio")?.precargado === 5670
+      && huella?.precarga?.cambios.find(c => c.campo === "precio")?.guardado === 5742, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🐾 …y la marca «Coincide» del importe neto, con el valor de la app",
+    "coincide · 97745477.95", `${(huella?.contraElPapel.importe as any)?.estado} · ${(huella?.contraElPapel.importe as any)?.app}`,
+    (huella?.contraElPapel.importe as any)?.estado === "coincide" && (huella?.contraElPapel.importe as any)?.app === 97745477.95, "A-FEAT-1225")
+
+  // Sin nada que anotar, no se guarda un objeto vacío.
+  const sinNada = huellaLiquidacion({ calc: calcH, calcSinAMano: calcH, comisionAMano: false, ivaAMano: false, marcas: {},
+    precarga: { ventaId: "x", linea: lineaPapel, comisionPct: 0 }, guardado: { linea: lineaPapel, comisionPct: 0 } })
+  chequear("Liquidación de hacienda", "Sin correcciones ni marcas, la huella queda vacía (null), no un objeto vacío",
+    "null", String(sinNada), sinNada === null, "A-FEAT-1225")
+
+  // ══ 🥩 AL GANCHO y VARIAS VENTAS EN UN PAPEL — Arre Beef (pedido del usuario 2026-10-02) ═══
+  // Datos REALES de Productivo: 7 vacas (3.640 kg vivos, 1.748 de carne, $5.949,49) y 3 toros
+  // (2.661 vivos, 1.606 de carne, $5.200), las dos del 03/09/2026, un solo papel.
+  const vacasAB = { cabezas: 7, kgTotales: 3640, pctDesbaste: 0, kgCarne: 1748, neto: 10399700 }
+  const torosAB = { cabezas: 3, kgTotales: 2661, pctDesbaste: 0, kgCarne: 1606, neto: 8351200 }
+  chequear("Liquidación de hacienda", "🥩 Al gancho se cobran los kilos de CARNE (1.748), no los vivos (3.640)",
+    "1748", String(kgQueSeCobran(vacasAB)), kgQueSeCobran(vacasAB) === 1748, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🧨 Con los vivos, la venta de vacas esperaba $21,6 M en vez de $10,4 M",
+    "≈ 2,08 veces", (3640 * 5949.49 / 10399700).toFixed(2), 3640 * 5949.49 > 2 * 10399700, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "En pie, sin kilos de carne, siguen siendo los vivos menos desbaste (Genta 15.694,6)",
+    "15694.6", kgQueSeCobran({ kgTotales: 16180, pctDesbaste: 0.03 }).toFixed(1),
+    kgQueSeCobran({ kgTotales: 16180, pctDesbaste: 0.03 }).toFixed(1) === "15694.6", "A-FEAT-1225")
+
+  const juntasAB = ventaParaComparar([vacasAB, torosAB])
+  chequear("Liquidación de hacienda", "🔑 Dos ventas, un papel: se comparan sumadas — 10 cab, 3.354 kg de carne, $18.750.900",
+    "10 · 3354 · 18750900", `${juntasAB?.cabezas} · ${juntasAB?.kgNetos} · ${juntasAB?.neto}`,
+    juntasAB?.cabezas === 10 && juntasAB?.kgNetos === 3354 && juntasAB?.neto === 18750900, "A-FEAT-1225")
+  const preVacas = precargaDesdeVenta({ fecha: "2026-09-03", cliente: "Arre Beef SA", cuit: "30666277550", categoria: "Vaca CUT/Descarte",
+    cabezas: 7, kgTotales: 3640, pctDesbaste: 0, precioKg: 5949.49, kgCarne: 1748 })
+  chequear("Liquidación de hacienda", "La precarga de una venta al gancho trae los kilos de carne",
+    "1748", String(preVacas.linea.kilos), preVacas.linea.kilos === 1748, "A-FEAT-1225")
+
+  // ══ ✅ MARCAR CUOTAS COBRADAS — el mismo cambio desde Cobros y desde el Cash Flow ═════════
+  const tres = [
+    { dias: 30, pct: 33, vencimiento: "2026-09-03", importe: 32256007.73 },
+    { dias: 60, pct: 34, vencimiento: "2026-10-03", importe: 33233462.5 },
+    { dias: 90, pct: 33, vencimiento: "2026-11-02", importe: 32256007.72 },
+  ]
+  const una = marcarCuota(tres, 0, "cobrado", "a cobrar")
+  chequear("Liquidación de hacienda", "✅ Con 1 de 3 cuotas cobrada, la liquidación sigue «a cobrar»",
+    "cobrado · a cobrar", `${una.plazos[0].estado} · ${una.estadoComprobante}`,
+    una.plazos[0].estado === "cobrado" && una.estadoComprobante === "a cobrar", "A-FEAT-1225")
+  const cuotasTodas = marcarCuota(marcarCuota(una.plazos, 1, "cobrado", "a cobrar").plazos, 2, "cobrado", "a cobrar")
+  chequear("Liquidación de hacienda", "✅ Con las 3 cobradas, la liquidación pasa a «cobrado»",
+    "cobrado", cuotasTodas.estadoComprobante, cuotasTodas.estadoComprobante === "cobrado", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Desmarcar una vuelve la liquidación a «a cobrar»",
+    "a cobrar", marcarCuota(cuotasTodas.plazos, 1, "a cobrar", "cobrado").estadoComprobante,
+    marcarCuota(cuotasTodas.plazos, 1, "a cobrar", "cobrado").estadoComprobante === "a cobrar", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🛑 «Conciliado» no lo cambia una marca: lo decide la conciliación",
+    "conciliado", marcarCuota(tres, 0, "a cobrar", "conciliado").estadoComprobante,
+    marcarCuota(tres, 0, "a cobrar", "conciliado").estadoComprobante === "conciliado", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "El Cash Flow recibe el estado de cada cuota",
+    "cobrado · (sin marca)", `${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado} · ${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado ?? "(sin marca)"}`,
+    cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado === "cobrado" && cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado === undefined, "A-FEAT-1225")
+
+  // ══ 🕰️ LA VENTA HISTÓRICA — A-FEAT-1226 (2026-10-02) ══════════════════════════════════════
+  // Datos de ejemplo con cuenta a mano: 30.000 kg − 3 % = 29.100 kg × $5.000 = $145.500.000 de
+  // bruto; CZ 4 % = $5.820.000; neto $139.680.000.
+  const baseHist = {
+    fecha: "2026-01-27", categoriaId: "cat-novillo", cabezas: 70, kgTotales: 30000, pctDesbaste: 0.03,
+    kgCarne: null, precioKg: 5000, pctCz: 0.04, flete: 0, plazo: "30/60/90",
+    cliente: "Frigorífico", cuit: "30000000001", notas: "", historica: true, kgNetos: null,
+  }
+  const hist = armarVentaHistorica(baseHist)
+  chequear("Venta histórica", "🕰️ El neto sale con la cuenta de Productivo: 29.100 kg × 5.000 − 4 % = 139.680.000",
+    "139680000", String(hist.neto), Math.abs(hist.neto - 139680000) < 0.01, "A-FEAT-1226")
+  chequear("Venta histórica", "🔑 Se guarda marcada histórica, sin lote y con el desbaste como FRACCIÓN",
+    "true · null · 0.03", `${hist.fila.historica} · ${hist.fila.lote_id} · ${hist.fila.pct_desbaste}`,
+    hist.fila.historica === true && hist.fila.lote_id === null && hist.fila.pct_desbaste === 0.03, "A-FEAT-1226")
+  chequear("Venta histórica", "Completa y confirmada: no falta nada y no hay avisos (enero es anterior al stock)",
+    "0 · 0", `${hist.faltan.length} · ${hist.avisos.length}`, hist.faltan.length === 0 && hist.avisos.length === 0, "A-FEAT-1226")
+  const noHist = armarVentaHistorica({ ...baseHist, historica: false })
+  chequear("Venta histórica", "🛑 Hacienda NO histórica no se guarda acá: la del stock se vende desde Productivo",
+    "1 faltante", `${noHist.faltan.length} faltante`, noHist.faltan.length === 1 && /Productivo/.test(noHist.faltan[0]), "A-FEAT-1226")
+
+  // ── Los kilos NETOS de desbaste, que es el dato que tiene el usuario (2026-10-02) ──
+  chequear("Venta histórica", "Sin netos tipeados, se muestran calculados: 30.000 × (1 − 3 %) = 29.100",
+    "29100", String(hist.kgNetos), Math.abs(hist.kgNetos - 29100) < 1e-6, "A-FEAT-1226")
+  const conNetos = armarVentaHistorica({ ...baseHist, pctDesbaste: 0, kgNetos: 28800 })
+  chequear("Venta histórica", "🎚️ Netos tipeados con vivos: el desbaste sale de ahí (1 − 28.800/30.000 = 4 %) y el neto usa 28.800",
+    "0.04 · 138240000", `${conNetos.pctDesbaste.toFixed(4)} · ${conNetos.neto}`,
+    Math.abs(conNetos.pctDesbaste - 0.04) < 1e-9 && Math.abs(conNetos.neto - 28800 * 5000 * 0.96) < 0.01, "A-FEAT-1226")
+  const soloNetos = armarVentaHistorica({ ...baseHist, kgTotales: 0, pctDesbaste: 0, kgNetos: 28800 })
+  chequear("Venta histórica", "Sólo netos (sin vivos): se guardan como los kilos de la venta, desbaste 0, y no falta nada",
+    "28800 · 0 · 0 faltan", `${soloNetos.fila.kg_totales} · ${soloNetos.fila.pct_desbaste} · ${soloNetos.faltan.length} faltan`,
+    soloNetos.fila.kg_totales === 28800 && soloNetos.fila.pct_desbaste === 0 && soloNetos.faltan.length === 0, "A-FEAT-1226")
+  const netosDeMas = armarVentaHistorica({ ...baseHist, kgNetos: 31000 })
+  chequear("Venta histórica", "🛑 Netos mayores que los vivos no se guardan (el desbaste daría negativo)",
+    "kilos netos menores que los vivos", netosDeMas.faltan.join(", "),
+    netosDeMas.faltan.includes("kilos netos menores que los vivos"), "A-FEAT-1226")
+  const posterior = armarVentaHistorica({ ...baseHist, fecha: "2026-05-10" })
+  chequear("Venta histórica", "⚠️ Con fecha posterior a feb-2026 AVISA (lo normal es venderla desde el stock) pero deja guardar",
+    "1 aviso · 0 faltan", `${posterior.avisos.length} aviso · ${posterior.faltan.length} faltan`,
+    posterior.avisos.length === 1 && posterior.faltan.length === 0, "A-FEAT-1226")
+  const ganchoHist = armarVentaHistorica({ ...baseHist, kgCarne: 16000, pctCz: 0 })
+  chequear("Venta histórica", "🥩 Al gancho se cobran los kilos de carne: 16.000 × 5.000 = 80.000.000",
+    "80000000", String(ganchoHist.neto), ganchoHist.neto === 80000000, "A-FEAT-1226")
+  // CZ con 3 decimales (2026-10-02, «no me deja poner con 3 decimales la CZ»): 4,125 % no se redondea.
+  const cz3 = armarVentaHistorica({ ...baseHist, pctCz: parseNumeroAR("4,125") / 100 })
+  chequear("Venta histórica", "CZ de 4,125 % se usa entera: 145.500.000 × 4,125 % = 6.001.875 (con 4,13 daría 6.009.150)",
+    "6001875", String(Math.round(cz3.cz * 100) / 100), Math.abs(cz3.cz - 6001875) < 0.01, "A-FEAT-1226")
+  const conCuenta = armarVentaHistorica({ ...baseHist, cuentaContable: "Venta de hacienda", centroCosto: "" })
+  chequear("Venta histórica", "La cuenta contable se guarda con la venta; centro de costo vacío queda vacío (manda el de la categoría)",
+    "Venta de hacienda · null", `${conCuenta.fila.cuenta_contable} · ${conCuenta.fila.centro_costo}`,
+    conCuenta.fila.cuenta_contable === "Venta de hacienda" && conCuenta.fila.centro_costo === null, "A-FEAT-1226")
+  const sinCliente = armarVentaHistorica({ ...baseHist, cuit: "" })
+  chequear("Venta histórica", "Sin CUIT del cliente no se guarda (§ Contrapartes)",
+    "cliente (con CUIT)", sinCliente.faltan.join(", "), sinCliente.faltan.includes("cliente (con CUIT)"), "A-FEAT-1226")
+
+
+  // ══ 💰 EL DETALLE DEL COBRO (A-FEAT-1228) — la liquidación de enero de Genta, con los datos reales ══
+  // Importe neto 138.746.475. Cuatro pagos a cuenta (5 M · 8 M · 2,1 M · 116.396.073,85), el echeq
+  // endosado (4.466.876,20), la FC 77393 de Genta descontada (279.174,47). Las retenciones de
+  // Ganancias todavía no están cargadas: el saldo tiene que dar exactamente lo que faltaría.
+  const fuentesEnero = {
+    movimientos: [
+      // El crédito del 26/02 ya está representado por su anticipo: NO se cuenta otra vez.
+      { id: "mov-2602", fecha: "2026-02-26", creditos: 116396073.85, anticipo_id: "ant-4" },
+    ],
+    anticipos: [
+      { id: "ant-1", fecha_pago: "2026-02-04", monto: 5000000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: "Adelanto" },
+      { id: "ant-2", fecha_pago: "2026-02-11", monto: 8000000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: "Adelanto Nro 2" },
+      { id: "ant-3", fecha_pago: "2026-02-23", monto: 2100000, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: null },
+      { id: "ant-4", fecha_pago: "2026-02-26", monto: 116396073.85, metodo_pago: "transferencia", estado_pago: "conciliado", descripcion: null },
+      { id: "ant-5", fecha_pago: "2026-02-26", monto: 4466876.20, metodo_pago: "echeq", estado_pago: "endosado", descripcion: "Echeq endosado a Almacén Veterinario" },
+    ],
+    compensaciones: [{ id: "ap-1", anticipo_id: "ant-1", monto_aplicado: 279174.47, fecha: "2026-02-26", comprobante: "liquidación 77393" }],
+    retenciones: [],
+  }
+  const detEnero = armarDetalleCobro(fuentesEnero, 138746475)
+  chequear("Detalle del cobro", "💰 Enero de Genta: pagos a cuenta + echeq endosado + compensación = 136.242.124,52",
+    "136242124.52", String(detEnero.total), detEnero.total === 136242124.52, "A-FEAT-1228")
+  chequear("Detalle del cobro", "🔑 El crédito del banco que ya tiene su pago a cuenta NO se cuenta dos veces (6 líneas, no 7)",
+    "6", String(detEnero.lineas.length), detEnero.lineas.length === 6 && !detEnero.lineas.some(l => l.medio === "banco"), "A-FEAT-1228")
+  chequear("Detalle del cobro", "🧮 Sin las retenciones cargadas, el saldo es lo que faltaría: 2.504.350,48",
+    "2504350.48 · no cierra", `${detEnero.saldo} · ${detEnero.cierra ? "cierra" : "no cierra"}`,
+    detEnero.saldo === 2504350.48 && !detEnero.cierra, "A-FEAT-1228")
+  chequear("Detalle del cobro", "El echeq endosado y la compensación aparecen con su medio",
+    "4466876.2 · 279174.47", `${detEnero.porMedio.echeq_endosado} · ${detEnero.porMedio.compensacion}`,
+    detEnero.porMedio.echeq_endosado === 4466876.2 && detEnero.porMedio.compensacion === 279174.47, "A-FEAT-1228")
+  const conRetsEnero = armarDetalleCobro({ ...fuentesEnero, retenciones: [{ id: "r1", tipo: "ganancias", monto: 2504350.48, fecha: "2026-02-26", nro_certificado: "123" }] }, 138746475)
+  chequear("Detalle del cobro", "✓ Con las retenciones de Ganancias cargadas, el detalle cierra contra el papel",
+    "cierra · Ret. Ganancias · cert. 123", `${conRetsEnero.cierra ? "cierra" : "saldo " + conRetsEnero.saldo} · ${conRetsEnero.lineas.find(l => l.medio === "retencion")?.descripcion}`,
+    conRetsEnero.cierra && conRetsEnero.lineas.find(l => l.medio === "retencion")?.descripcion === "Ret. Ganancias · cert. 123", "A-FEAT-1228")
+  chequear("Detalle del cobro", "Las líneas van ordenadas por fecha (la del 04/02 primero)",
+    "2026-02-04", detEnero.lineas[0].fecha ?? "", detEnero.lineas[0].fecha === "2026-02-04", "A-FEAT-1228")
+  // Con una sola cuota del 100 % (la liquidación de enero), lo imputado la cancela; el banco directo no se imputa.
+  const cuotaEnero = repartirEnCuotas([{ vencimiento: "2026-02-26", importe: 138746475 }], 0, imputacionesDeCobro(conRetsEnero.lineas), "")
+  chequear("Detalle del cobro", "La cuota del papel queda en 0 con todo imputado (sale del Cash Flow)",
+    "0", String(cuotaEnero[0].aCobrar), cuotaEnero[0].aCobrar === 0, "A-FEAT-1228")
+  const conBancoDirecto = armarDetalleCobro({ movimientos: [{ id: "m", fecha: "2026-09-03", creditos: 31672612.47, anticipo_id: null }], anticipos: [], compensaciones: [], retenciones: [] }, 31672612.47)
+  chequear("Detalle del cobro", "Un crédito conciliado directo (sin pago a cuenta) cuenta como «banco» y TAMBIÉN baja su cuota",
+    "banco · cierra · 1 imputación", `${conBancoDirecto.lineas[0].medio} · ${conBancoDirecto.cierra ? "cierra" : "no"} · ${imputacionesDeCobro(conBancoDirecto.lineas).length} imputación`,
+    conBancoDirecto.lineas[0].medio === "banco" && conBancoDirecto.cierra && imputacionesDeCobro(conBancoDirecto.lineas).length === 1, "A-FEAT-1228")
+  // 🧨 El caso que lo rompió (2026-10-02): UNA cuota de enero, cobrada en partes por el banco directo.
+  // Con el primer crédito de $2,1 M la cuota quedaba «conciliada» entera y la venta desaparecía.
+  const cuotaUna = [{ vencimiento: "2026-02-26", importe: 138746475 }]
+  const trasUno = repartirEnCuotas(cuotaUna, 0, imputacionesDeCobro(armarDetalleCobro({ movimientos: [{ id: "m1", fecha: "2026-02-23", creditos: 2100000, anticipo_id: null }], anticipos: [], compensaciones: [], retenciones: [] }, 138746475).lineas), "")
+  chequear("Detalle del cobro", "🧨 Una cuota cobrada en partes: tras $2,1 M por banco le faltan 136.646.475 (no queda «conciliada»)",
+    "136646475", String(trasUno[0].aCobrar), trasUno[0].aCobrar === 136646475, "A-FEAT-1228")
+
+
+  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227) ══════════════════════
+  const hojaRet = filasRetenciones(
+    [{ fecha: "2026-09-03", tipo: "ganancias", monto: 583395.25, nro_certificado: null, denominacion_cliente: "GENTA", cuit_cliente: "30526554562", comprobante: "11-86270" }],
+    [{ fecha: "2026-08-10", nro: "11-86270", cliente: "GENTA", cuit: "30526554562", ret_iva: 0, ret_iibb: 675905.18 },
+     { fecha: "2026-08-15", nro: "FC 1", cliente: "X", cuit: "1", ret_iva: null, ret_iibb: null }],
+  )
+  chequear("Retenciones en el subdiario", "🧾 Certificado + impresa: 2 filas (la FC sin retenciones no suma una vacía), ordenadas por fecha",
+    "2 · 2026-08-10 IIBB · 2026-09-03 Ganancias", `${hojaRet.filas.length} · ${hojaRet.filas.map(f => f.Fecha + " " + f.Tipo).join(" · ")}`,
+    hojaRet.filas.length === 2 && hojaRet.filas[0].Tipo === "IIBB" && hojaRet.filas[1].Tipo === "Ganancias", "A-FEAT-1227")
+  chequear("Retenciones en el subdiario", "Totales por tipo y total general",
+    "IIBB 675905.18 · Ganancias 583395.25 · 1259300.43", `IIBB ${hojaRet.porTipo.IIBB} · Ganancias ${hojaRet.porTipo.Ganancias} · ${hojaRet.total}`,
+    hojaRet.porTipo.IIBB === 675905.18 && hojaRet.porTipo.Ganancias === 583395.25 && hojaRet.total === 1259300.43, "A-FEAT-1227")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto
@@ -4960,6 +5393,32 @@ export function correrCasos(): Resultado[] {
       && !CONTRAPARTES_DEL_BALANCE.some(c => c.etiquetasContable.some(e => e.includes("RET"))),
       "A-FEAT-1218")
   }
+  // 🏷️ Un cobro vinculado a su comprobante deja de decir «ANTICIPO COBRO» (pedido del usuario 2026-10-02).
+  chequear("Detalle del cobro", "«ANTICIPO COBRO: Adelanto» pasa a «Adelanto»; un detalle propio no se toca; sólo el prefijo queda vacío",
+    "Adelanto · Seña Genta · (vacío)", `${detalleSinAnticipo("ANTICIPO COBRO: Adelanto")} · ${detalleSinAnticipo("Seña Genta")} · ${detalleSinAnticipo("ANTICIPO COBRO: ") ?? "(vacío)"}`,
+    detalleSinAnticipo("ANTICIPO COBRO: Adelanto") === "Adelanto" && detalleSinAnticipo("Seña Genta") === "Seña Genta" && detalleSinAnticipo("ANTICIPO COBRO: ") === null, "A-FEAT-1228")
+
+
+  // ══ 🧾 CHEQUES DE TERCEROS EN CARTERA (A-FEAT-1229) — el echeq de Genta ═════════════════════
+  chequear("Cheques de terceros", "Recibido = en cartera; endosado con destino = endosado; endosado sin destino = falta decir a quién",
+    "en_cartera · endosado · endosado_sin_destino",
+    `${estadoCheque({ estado_pago: "en_cartera" })} · ${estadoCheque({ estado_pago: "endosado", endosado_en_id: "p1" })} · ${estadoCheque({ estado_pago: "endosado" })}`,
+    estadoCheque({ estado_pago: "en_cartera" }) === "en_cartera" && estadoCheque({ estado_pago: "endosado", endosado_en_id: "p1" }) === "endosado"
+      && estadoCheque({ estado_pago: "endosado" }) === "endosado_sin_destino", "A-FEAT-1229")
+  chequear("Cheques de terceros", "🔑 El de Genta, cargado «endosado» sin decir a quién, sigue en la cartera para completarlo",
+    "true · false", `${chequePendienteDeEndoso({ estado_pago: "endosado" })} · ${chequePendienteDeEndoso({ estado_pago: "endosado", endosado_en_id: "p1" })}`,
+    chequePendienteDeEndoso({ estado_pago: "endosado" }) && !chequePendienteDeEndoso({ estado_pago: "endosado", endosado_en_id: "p1" }), "A-FEAT-1229")
+  const candEcheq = candidatosEndoso([
+    { id: "otro", nombre_proveedor: "BIOFARMA", monto: 4291215.31, fecha_pago: "2026-02-26" },
+    { id: "almacen", nombre_proveedor: "Almacen Veterinario SRL", monto: 4466876.20, fecha_pago: "2026-02-26", descripcion: "Echeq Pedro Genta" },
+    { id: "lejos", nombre_proveedor: "X", monto: 100, fecha_pago: "2026-01-01" },
+  ], { monto: 4466876.20, fecha: "2026-02-25" })
+  chequear("Cheques de terceros", "Al endosar, el pago del MISMO importe va primero (Almacén Veterinario, $4.466.876,20)",
+    "almacen · mismo importe", `${candEcheq[0].id} · ${candEcheq[0].exacto ? "mismo importe" : "distinto"}`,
+    candEcheq[0].id === "almacen" && candEcheq[0].exacto, "A-FEAT-1229")
+  chequear("Cheques de terceros", "La búsqueda filtra por proveedor o detalle",
+    "almacen", candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(","),
+    candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(",") === "almacen", "A-FEAT-1229")
 
   return r
 }

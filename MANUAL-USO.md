@@ -1830,6 +1830,121 @@ sigue mostrando el **remanente** hasta que termines de facturar.
 
 ---
 
+## 🐂 Ventas de hacienda y su liquidación (Ingresos → MSA → Ventas) *(2026-10-01)*
+
+**Dónde:** Ingresos → MSA → **Ventas**, debajo de las ventas de granos, en el bloque **🐂 Ventas de hacienda**.
+
+**Qué ves:** las ventas de hacienda que cargaste en **Productivo → Movimientos**, con sus cabezas, kilos,
+desbaste, kilos netos, promedio, precio por kilo, neto, plazo y si ya están liquidadas. Acá **no se
+editan**: se siguen cargando y corrigiendo en Productivo.
+
+### Cargar la liquidación del consignatario
+- **🧾 Liquidar** en una venta → la liquidación abre **precargada** con los datos de la venta: cabezas,
+  kilos netos, precio, categoría, comprador, fecha y comisión.
+- Si el papel no tiene venta en la app (una venta anterior al stock), **primero cargá la venta** con
+  **Nueva venta → Ganadera → Histórica**, y después liquidala desde la lista. Así toda liquidación
+  queda vinculada a su venta.
+
+Después copiás lo que dice tu papel: consignatario, guía, DTe, el precio y la comisión reales, el ajuste
+por redondeo (con su signo), y las retenciones impresas. Para Ingresos Brutos la app **sugiere** el
+importe —la alícuota sobre el **bruto**— y lo usás con **usar**.
+
+**Los avisos:** abajo la app compara tres cosas y te muestra todas, las que cierran y las que no:
+- **contra la venta**: cabezas, kilos y el **subtotal después de comisión** contra el neto de la venta,
+  con la diferencia por kilo;
+- **contra el papel**: si cargás el bruto, el neto gravado o el importe neto del papel, te dice si la
+  cuenta da lo mismo;
+- **los plazos**: que las cuotas sumen el importe neto. **Repartir** las arma según el plazo de la venta.
+
+Un aviso **no te impide guardar**: si la diferencia tiene explicación, la decisión es tuya.
+
+### Editar una liquidación ya cargada
+- En Ventas, una venta liquidada dice **Ver / editar**: abre esa misma liquidación. Al guardar se
+  actualiza ésa; **no se crea otra**.
+- En **Comprobantes → Editar** pasa lo mismo, y ahí también le ponés la cuenta contable y el centro
+  de costo.
+
+### Un papel para varias ventas
+Si el consignatario liquidó varias ventas en un solo papel —por ejemplo, vacas y toros juntos—,
+**tildá las ventas** y apretá **Liquidar las N juntas**. Abre con una línea por venta y compara la
+liquidación contra las ventas sumadas.
+
+📌 Si la venta fue **al gancho** (por kilo de carne), la precarga trae los **kilos de carne**, no los
+vivos.
+
+### Cargar una venta histórica (anterior al stock de la app)
+Para una venta que se hizo antes de que la app llevara el stock —por ejemplo, la de enero de 2026—:
+**Nueva venta → 🐂 Ganadera**, tildando **Histórica** (viene sin tildar). Cargás fecha, categoría, cabezas,
+kilos, precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que usa Productivo.
+
+- **Kilos**: cargá los **vivos y el desbaste**, o directamente los **kilos netos (desbastados)** si es
+  el dato que tenés. Con vivos y netos, el desbaste se calcula solo; con sólo los netos, alcanza.
+- Si fue **al gancho**, cargá también los kilos de carne: son los que se cobran.
+- **Cuenta contable y centro de costo**: se cargan acá y la liquidación de esa venta los trae
+  precargados. El centro de costo vacío toma el de la categoría.
+
+Queda en la lista con la marca **histórica**, y desde ahí se liquida como cualquier otra.
+
+📌 Si la hacienda **está** en el stock, la venta se carga desde **Productivo → Movimientos**, que la
+descuenta. Si ponés una fecha posterior a febrero de 2026, la pantalla te lo recuerda.
+
+### El detalle del cobro: cómo se fue cobrando
+En **Ingresos → Cobros**, abrí un comprobante. Arriba a la izquierda está el **Detalle del cobro**: cada
+cosa que lo canceló, con su fecha y su medio — transferencia, pago a cuenta, echeq (también endosado),
+**factura del cliente que descontó** de lo que pagó, y a la derecha las retenciones. Abajo, el control:
+
+- **✓ El detalle cierra** → está todo.
+- **Faltan $X** → falta cobrar, o falta cargar algo (una retención, un echeq, una factura descontada).
+- **⚠️ Suma de más** → hay algo cargado dos veces.
+
+**Pagos a cuenta sin vincular**: si el cliente te hizo pagos a cuenta que todavía no están atados a
+ningún comprobante, aparecen ahí con un botón **Vincular**. Es lo mismo que vincularlos desde el
+Cash Flow.
+
+**Un echeq del cliente que endosaste**: como no pasa por tu banco, se carga a mano con **+ Registrar un
+echeq del cliente que endosaste** (fecha, monto, número, a quién). Queda en el detalle y no se espera
+en el Cash Flow.
+
+### Cobros en varias partes, desde el Extracto
+Si un cliente te paga una venta en varios pagos (adelantos y saldo), cada crédito se concilia desde el
+**Extracto** → **Asignar** (o **Vincular**, si ya estaba conciliado sin vínculo) → pestaña **Venta**. La
+lista te muestra **cuánto falta cobrar** de cada comprobante y, si el crédito es menor, dice *cobro
+parcial · quedan $X*. Queda conciliado y el comprobante sigue a cobrar hasta el último pago. Si el
+crédito ya tenía su pago a cuenta cargado, se vincula ese mismo.
+
+### Cheques de clientes: recibirlos y endosarlos
+Si un cliente te paga con un echeq, registralo desde **Cobros** → el comprobante → **+ Registrar un echeq
+recibido del cliente** (fecha, monto, número y fecha de cobro). Queda **en cartera**: la venta lo cuenta
+como cobrado y el cheque figura disponible.
+
+En el **Cash Flow → 📝 ECHEQs** elegís qué ver: **Emitidos** (los tuyos), **De clientes en cartera**
+(disponibles) o **Endosados**. Cuando uses uno en cartera para pagarle a un proveedor, apretá **Endosar…** y elegí el pago al que va (aparecen primero los del
+mismo importe); si ese pago no estaba cargado, se crea desde ahí. El cheque queda *endosado a* ese
+proveedor y ninguno de los dos se espera en el banco.
+
+### Conciliar el cobro de una cuota
+En el **Extracto**, al asignar un crédito → pestaña **Venta**, una liquidación con plazos aparece **una
+vez por cada cuota pendiente** (*cuota 1 de 3, vence…*). Elegí la cuota: queda conciliada **esa** cuota
+y la liquidación pasa a conciliada recién con todas. Si reasignás el movimiento, la cuota vuelve a
+«a cobrar».
+
+### Marcar las cuotas cobradas
+En **Ingresos → Cobros**, abrí la liquidación: abajo están sus cuotas, con **Marcar cobrada**. Es lo
+mismo que pasarla a cobrado en el **Cash Flow**: lo que marcás en un lado se ve en el otro. Cuando
+están todas cobradas, la liquidación pasa a *cobrado*; *conciliado* lo decide la conciliación con el
+banco. Una cuota **✓ conciliada** no se desmarca desde acá ni desde el Cash Flow: se suelta
+desconciliando su movimiento en el Extracto.
+
+### Las retenciones en el Excel del Subdiario de Ventas
+El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, con las retenciones
+recibidas del mes: los certificados (por su fecha) y las que vienen impresas en los comprobantes del
+subdiario, con el total por tipo. Sirve para que el contador las compare con *Mis Retenciones* de ARCA.
+
+Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
+su venta, y el consignatario queda registrado como cliente.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1180`.
+
 ## 🐄 Módulo: Ganadería — venta de destete (Ingresos → Ganadería) 🟡 (nuevo, sin testear)
 
 > Mismo criterio que arrendamiento: **la venta vive en Ventas y Presupuesto la lee**.

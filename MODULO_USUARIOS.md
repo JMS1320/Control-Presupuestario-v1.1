@@ -406,7 +406,7 @@ marcadas `restringe_lectura` — y **de las 57 registradas, ninguna lo está**.
 🧨 **Por qué importa más de lo que parece**: una tabla nueva **nace abierta** y nadie se entera. No
 hay que olvidarse de cerrarla: hay que acordarse de declararla, que es lo que siempre falla.
 
-**El arreglo, y el orden no es negociable** ([A-SEC-09](../PENDIENTES.md)):
+**El arreglo, y el orden no es negociable** ([A-SEC-14](../PENDIENTES.md)):
 1. **registrar las 68** — clasificación, no programación, y no cambia ningún comportamiento;
 2. **recién entonces** dar vuelta el `coalesce` a `'ninguno'` — una línea; **al revés se cae media app**;
 3. marcar `restringe_lectura` en las sensibles (sueldos, cheques, proveedores).
@@ -414,7 +414,7 @@ hay que olvidarse de cerrarla: hay que acordarse de declararla, que es lo que si
 *Lo que lo contiene hoy: hay que tener cuenta, y las cuentas sólo nacen de una invitación del admin.
 El riesgo es **hacia adentro**, y crece el día que exista auto-registro ([A-FEAT-85](../PENDIENTES.md)).*
 
-### 🔑 La clave fiscal de ARCA → [A-SEC-10](../PENDIENTES.md)
+### 🔑 La clave fiscal de ARCA → [A-SEC-15](../PENDIENTES.md)
 
 Lo mostró **Javier**: se puede inspeccionar la app y ver la clave. **Verificado qué NO pasa**: no
 está en el código, no está en ninguna `NEXT_PUBLIC_*`, no se guarda en la BD, y no queda en
@@ -430,7 +430,7 @@ ARCA con permiso **sólo de consulta**.
 
 ### ⏳ Lo que sigue abierto
 
-`A-SEC-09` (las 68 tablas) · `A-SEC-10` (clave ARCA) · `A-SEC-11` (el log toma el rol del cliente) ·
+`A-SEC-14` (las 68 tablas) · `A-SEC-15` (clave ARCA) · `A-SEC-11` (el log toma el rol del cliente) ·
 `A-SEC-08` (sin códigos de recuperación del 2FA) · `A-SEC-05` (CSP) · `A-SEC-04` (15 notas viejas) ·
 **`A-TEST-81`** — probar el login de punta a punta, que es lo que valida todos los cierres de arriba.
 

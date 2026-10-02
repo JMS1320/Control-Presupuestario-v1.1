@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,7 +17,7 @@ import { toast } from "sonner"
  * Antes estaba fija en MSA en los dos lados, así que las ventas de MA y PAM no se podían importar
  * aunque tuvieran su subdiario.
  */
-export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admin', empresa = 'MSA' }: { open: boolean; onClose: () => void; onImportado: () => void; userRole?: 'admin' | 'contable'; empresa?: 'MSA' | 'PAM' | 'MA' }) {
+export function ModalImportVentas({ open, onClose, onImportado, userRole = 'admin', empresa = 'MSA' }: { open: boolean; onClose: () => void; onImportado: () => void; userRole?: UserRole; empresa?: 'MSA' | 'PAM' | 'MA' }) {
   const [file, setFile] = useState<File | null>(null)
   const [fechaCobro, setFechaCobro] = useState('')
   const [cargando, setCargando] = useState(false)

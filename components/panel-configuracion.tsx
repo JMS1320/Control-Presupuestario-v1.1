@@ -1,15 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
+import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { DATOS_FISCALES, EMPRESAS, cuitFormateado } from "@/lib/empresas"
-import { Users, ShieldCheck, Building2, KeyRound, Check, Minus } from "lucide-react"
-import { useEffect } from "react"
+import { Users, ShieldCheck, Building2, KeyRound, Check, Minus, Eye } from "lucide-react"
 
 const PANELES = [
   { id: "usuarios",   label: "Usuarios",   Icono: Users,       ayuda: "Cuentas, roles y acceso" },
@@ -74,6 +74,7 @@ type RolDB = {
   id: string
   descripcion: string
   secciones: string[]
+  permisos?: Record<string, string>
   exige_2fa: boolean
   es_sistema: boolean
 }
@@ -82,6 +83,11 @@ type RolDB = {
 function useRoles() {
   const [roles, setRoles] = useState<RolDB[] | null>(null)
   const [desdeLaBase, setDesdeLaBase] = useState(true)
+  // Qué falta exactamente. Un cartel que culpa a la pieza equivocada manda a correr el script que
+  // no arregla nada, y el problema real queda invisible.
+  const [falta, setFalta] = useState<"tabla" | "columna_permisos" | undefined>()
+  // Los recursos que la BASE aplica (tienen tablas mapeadas). Ver el comentario en la ruta.
+  const [aplicados, setAplicados] = useState<string[]>([])
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
 
   const recargar = () =>
@@ -91,6 +97,8 @@ function useRoles() {
         if (!j) return
         setRoles(j.roles)
         setDesdeLaBase(j.desdeLaBase)
+        setFalta(j.falta)
+        setAplicados(j.recursosAplicados ?? [])
       })
       .catch(() => {})
 
@@ -107,7 +115,7 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, cuentas, recargar }
+  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar }
 }
 
 /**
@@ -117,17 +125,116 @@ function useRoles() {
  * alguien deja el sistema sin nadie que pueda administrarlo. No alcanza con esconder los
  * checkboxes — el endpoint y un trigger de la base lo rechazan igual.
  */
+/**
+ * Una casilla de "todos" con TRES estados, no dos.
+ *
+ * El tercero —el guión de indeterminado— no es un lujo: con 9 recursos en Productivo, una casilla
+ * que se ve vacía cuando hay 4 tildados **miente**, y al tocarla la persona espera marcar los 5
+ * que faltan y termina borrando los 4 que había. `indeterminate` sólo se puede poner por DOM, de
+ * ahí el ref.
+ */
+function CasillaMaestra({
+  etiqueta,
+  marcados,
+  total,
+  deshabilitada = false,
+  onCambio,
+}: {
+  etiqueta: string
+  marcados: number
+  total: number
+  deshabilitada?: boolean
+  onCambio: (valor: boolean) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const todos = total > 0 && marcados === total
+  const algunos = marcados > 0 && marcados < total
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = algunos
+  }, [algunos])
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      aria-label={etiqueta}
+      title={
+        deshabilitada
+          ? "Primero hay que poder ver algo: no se puede editar lo que no se ve"
+          : algunos
+            ? `${marcados} de ${total} — tocá para marcar todos`
+            : etiqueta
+      }
+      checked={todos}
+      disabled={deshabilitada}
+      // Desde "algunos" se marca todo: es lo que se espera al tocar un encabezado a medias.
+      onChange={() => onCambio(!todos)}
+      className="h-3 w-3 disabled:cursor-not-allowed disabled:opacity-40"
+    />
+  )
+}
+
 function PanelRoles() {
-  const { roles, desdeLaBase, cuentas, recargar } = useRoles()
+  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar } = useRoles()
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
   const [editando, setEditando] = useState<string | null>(null)
   const [borrador, setBorrador] = useState<Set<string>>(new Set())
+  // Las EXCEPCIONES por recurso. Lo que no figura hereda de la sección = escritura, así lo que
+  // todavía no está registrado se sigue viendo y editando (ver `nivelesDe`).
+  const [niveles, setNiveles] = useState<Record<string, "ninguno" | "lectura" | "escritura">>({})
+  const nivelDe = (id: string) => niveles[id] ?? "escritura"
+  /**
+   * ⚠️ **Cada columna toca SÓLO su dimensión.** Antes las dos maestras ponían `"escritura"`, así
+   * que marcar «Ver todos» también marcaba todos los «Editar» — lo reportó el usuario.
+   *
+   * Los tres niveles no son dos casillas independientes, son una escalera
+   * (`ninguno` → `lectura` → `escritura`), y cada maestra mueve un solo escalón:
+   *
+   *   · **Ver ON**  → lo que estaba en `ninguno` pasa a `lectura`. Lo que ya editaba, **no se
+   *     degrada**: marcar «ver» no puede quitarle permisos a nadie.
+   *   · **Ver OFF** → todo a `ninguno`. Único caso en que arrastra la otra columna, y es
+   *     inevitable: no se puede editar lo que no se ve.
+   *   · **Editar ON**  → todo a `escritura` (que implica ver).
+   *   · **Editar OFF** → lo que editaba baja a `lectura`. Lo que no se veía **sigue sin verse**:
+   *     destildar «editar» no puede conceder visibilidad.
+   *
+   * Y el ON de «Ver» da `lectura` y no `escritura` a propósito: al conceder, lo mínimo.
+   */
+  const verTodos = (ids: string[], valor: boolean) =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      for (const id of ids) {
+        if (!valor) sig[id] = "ninguno"
+        else if ((prev[id] ?? "escritura") === "ninguno") sig[id] = "lectura"
+      }
+      return sig
+    })
+
+  const editarTodos = (ids: string[], valor: boolean) =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      for (const id of ids) {
+        if (valor) delete sig[id] // sin excepción = hereda de la sección = escritura
+        else if ((prev[id] ?? "escritura") === "escritura") sig[id] = "lectura"
+      }
+      return sig
+    })
+
+  const ponerNivel = (id: string, n: "ninguno" | "lectura" | "escritura") =>
+    setNiveles((prev) => {
+      const sig = { ...prev }
+      if (n === "escritura") delete sig[id]
+      else sig[id] = n
+      return sig
+    })
   const [guardando, setGuardando] = useState(false)
 
   function empezar(r: RolDB) {
     setEditando(r.id)
     setBorrador(new Set(r.secciones))
+    setNiveles({ ...((r.permisos ?? {}) as Record<string, "ninguno" | "lectura" | "escritura">) })
   }
 
   async function guardar(id: string) {
@@ -135,7 +242,7 @@ function PanelRoles() {
     const res = await fetch("/api/admin/roles", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, secciones: [...borrador] }),
+      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles }),
     })
     const json = await res.json().catch(() => ({}))
     setGuardando(false)
@@ -162,6 +269,25 @@ function PanelRoles() {
               Se está mostrando el reparto que estaba escrito en el código, así que la app funciona
               igual que siempre — pero <strong>editar todavía no va a guardar nada</strong>. Se
               habilita corriendo <code>scripts/60-roles-permisos.sql</code>.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/*
+        Caso distinto del de arriba y por eso cartel aparte: la tabla ESTÁ y los roles se leen
+        bien; lo único que falta es la columna de permisos finos. Antes este caso se mostraba
+        como «falta la tabla» —porque un select con una columna inexistente falla entero— y
+        mandaba a correr scripts/60, que no arreglaba nada.
+      */}
+      {desdeLaBase && falta === "columna_permisos" && (
+        <Card className="entrada-suave border-sky-300 bg-sky-50">
+          <CardContent className="space-y-1 p-4 text-sm">
+            <p className="font-medium text-sky-900">Los permisos por sección funcionan. Falta el grano fino.</p>
+            <p className="text-sky-900/80">
+              Podés ver qué hay dentro de cada sección, pero <strong>destildar algo de adentro
+              todavía no se guarda</strong>: falta la columna. Se habilita corriendo{" "}
+              <code>scripts/61-permisos-finos.sql</code>.
             </p>
           </CardContent>
         </Card>
@@ -208,30 +334,251 @@ function PanelRoles() {
 
               {enEdicion ? (
                 <div className="space-y-3">
-                  <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {/*
+                    Cada sección abre lo que tiene adentro (A-FEAT-169). Antes era una grilla plana
+                    de 12 casillas y no se veía qué había dentro de cada una.
+                    ⚠️ Las casillas de adentro se muestran **deshabilitadas**: el permiso fino
+                    todavía no se guarda ni se aplica. Están para que se vea el alcance real de
+                    cada sección — mostrarlas como si funcionaran sería peor que no mostrarlas
+                    (`scripts/60`: «una columna de permisos que ninguna guarda chequea parece un
+                    permiso y no lo es»).
+                  */}
+                  <div className="space-y-1.5">
                     {todas.map(({ id, label, Icono }) => {
                       const puesta = borrador.has(id)
+                      const dentro = recursosDe(id)
                       return (
-                        <label
-                          key={id}
-                          className={`flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-xs transition-colors duration-150 ease-out ${
-                            puesta ? "border-emerald-300 bg-emerald-50" : "bg-white hover:bg-slate-50"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={puesta}
-                            onChange={(e) => {
-                              const s = new Set(borrador)
-                              if (e.target.checked) s.add(id)
-                              else s.delete(id)
-                              setBorrador(s)
-                            }}
-                            className="h-3.5 w-3.5"
-                          />
-                          <Icono className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                          {label}
-                        </label>
+                        <div key={id} className={`rounded-md border ${puesta ? "border-emerald-300 bg-emerald-50/60" : "bg-white"}`}>
+                          <label className="flex cursor-pointer items-center gap-2 px-2.5 py-2 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={puesta}
+                              onChange={(e) => {
+                                const s = new Set(borrador)
+                                if (e.target.checked) s.add(id)
+                                else s.delete(id)
+                                setBorrador(s)
+                              }}
+                              className="h-3.5 w-3.5"
+                            />
+                            <Icono className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                            <span className="font-medium">{label}</span>
+                            {dentro.length > 0 && (
+                              <span className="ml-auto text-[11px] text-muted-foreground">
+                                {dentro.length} {dentro.length === 1 ? "cosa adentro" : "cosas adentro"}
+                              </span>
+                            )}
+                          </label>
+
+                          {puesta && dentro.length > 0 && (
+                            <div className="border-t bg-white/70 px-2.5 py-2">
+                              {/*
+                                Orden: primero los títulos de columna, DESPUÉS las maestras. Al
+                                revés (como estaba) no se veía a qué columna pertenecía cada
+                                casilla — lo reportó el usuario 2026-09-24.
+                              */}
+                              <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground">
+                                <span className="flex-1" />
+                                <span className="w-9 text-center">Ver</span>
+                                <span className="w-12 text-center">Editar</span>
+                              </div>
+                              {(() => {
+                                const ids = dentro.map((r) => r.id)
+                                const ven = ids.filter((i) => nivelDe(i) !== "ninguno").length
+                                const editan = ids.filter((i) => nivelDe(i) === "escritura").length
+                                return (
+                                  <div className="mb-1 flex items-center gap-2 border-b pb-1.5 text-[10px] text-muted-foreground">
+                                    <span className="flex-1 italic">Seleccionar todos</span>
+                                    <span className="flex w-9 justify-center">
+                                      <CasillaMaestra
+                                        etiqueta={`Ver: seleccionar todos en ${label}`}
+                                        marcados={ven}
+                                        total={ids.length}
+                                        onCambio={(v) => verTodos(ids, v)}
+                                      />
+                                    </span>
+                                    <span className="flex w-12 justify-center">
+                                      <CasillaMaestra
+                                        etiqueta={`Editar: seleccionar todos en ${label}`}
+                                        marcados={editan}
+                                        total={ids.length}
+                                        // Deshabilitada cuando no hay nada visible: así se VE que
+                                        // «editar» depende de «ver», en vez de que se destilde
+                                        // solo y parezca un error de la pantalla.
+                                        deshabilitada={ven === 0}
+                                        onCambio={(v) => editarTodos(ids, v)}
+                                      />
+                                    </span>
+                                  </div>
+                                )
+                              })()}
+                              <div className="space-y-0.5">
+                                {dentro.map((r) => {
+                                  // Si el padre está oculto, el hijo tampoco: destildar Insumos y
+                                  // dejar Stock tildado diría algo que no es cierto.
+                                  const tapado = Boolean(r.padre && nivelDe(r.padre) === "ninguno")
+                                  // El nombre del padre, para poder DECIR por qué está bloqueada.
+                                  // «Está dentro de algo que destildaste» obliga a adivinar cuál.
+                                  const padre = r.padre ? dentro.find((x) => x.id === r.padre) : undefined
+                                  const nivel = tapado ? "ninguno" : nivelDe(r.id)
+                                  const ve = nivel !== "ninguno"
+                                  const edita = nivel === "escritura"
+                                  return (
+                                    <div
+                                      key={r.id}
+                                      title={
+                                        tapado
+                                          ? `Está dentro de «${padre?.etiqueta ?? "otra pestaña"}», que está destildada`
+                                          : padre
+                                            ? `Dentro de ${padre.etiqueta}`
+                                            : undefined
+                                      }
+                                      className={`flex items-center gap-2 rounded px-1.5 py-1 text-[11px] ${
+                                        r.padre ? "ml-5 border-l pl-2" : ""
+                                      } ${tapado ? "opacity-50" : ""} ${ve ? "" : "text-muted-foreground line-through"}`}
+                                    >
+                                      <span className="flex-1">
+                                        {r.etiqueta}
+                                        {r.tipo === "funcionalidad" && (
+                                          <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
+                                            acción
+                                          </span>
+                                        )}
+                                        {/*
+                                          El candado distingue lo que la BASE aplica de lo que es
+                                          sólo la pantalla. Sin esta marca, «sólo ver» prometía en
+                                          todos lados una contención que hoy existe sólo donde hay
+                                          tablas mapeadas (A-SEC-10).
+                                        */}
+                                        {padre && (
+                                          <span className="ml-1.5 text-[10px] text-muted-foreground">
+                                            (dentro de {padre.etiqueta})
+                                          </span>
+                                        )}
+                                        {/*
+                                          Tres grados, no dos. Decir «no mapeada» de una pestaña de
+                                          Productivo era FALSO —sus 40 tablas están mapeadas— pero a
+                                          nivel SECCIÓN, así que la base protege Productivo entero y
+                                          no distingue una pestaña de otra. Mezclar los dos casos
+                                          hacía que el cartel mintiera sobre la mitad de ellos.
+                                        */}
+                                        {aplicados.includes(r.id) ? (
+                                          <span
+                                            title="La base lo aplica a ESTA pestaña: con «sólo ver», el intento de escribir se rechaza aunque venga de la consola"
+                                            className="ml-1.5 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800"
+                                          >
+                                            🔒 base
+                                          </span>
+                                        ) : aplicados.includes(r.seccion) ? (
+                                          <span
+                                            title={`La base protege la sección entera, pero sus tablas están mapeadas a «${r.seccion}» y no a cada pestaña: acá adentro no distingue una de otra`}
+                                            className="ml-1.5 rounded bg-sky-100 px-1 text-[10px] text-sky-800"
+                                          >
+                                            🔒 sección
+                                          </span>
+                                        ) : null}
+                                      </span>
+
+                                      <span className="flex w-9 justify-center">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Ver ${r.etiqueta}`}
+                                          checked={ve}
+                                          disabled={tapado}
+                                          // Mismo criterio que la maestra: marcar «ver» concede lo
+                                          // mínimo (lectura), no escritura. Destildarlo sí arrastra
+                                          // «editar», que es lo único inevitable.
+                                          onChange={(e) =>
+                                            ponerNivel(
+                                              r.id,
+                                              e.target.checked
+                                                ? nivel === "ninguno"
+                                                  ? "lectura"
+                                                  : nivel
+                                                : "ninguno"
+                                            )
+                                          }
+                                          className="h-3 w-3"
+                                        />
+                                      </span>
+                                      <span className="flex w-12 justify-center">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Editar ${r.etiqueta}`}
+                                          checked={edita}
+                                          disabled={tapado || !ve}
+                                          onChange={(e) => ponerNivel(r.id, e.target.checked ? "escritura" : "lectura")}
+                                          className="h-3 w-3"
+                                        />
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+
+                              {/*
+                                ⚠️ El aviso NO es opcional. «Ver» se aplica hoy: la pestaña no se
+                                dibuja. «Editar» se guarda y se puede consultar (`usePuedeEditar`),
+                                pero todavía casi ninguna pantalla lo consulta y **la base no lo
+                                frena** — con la misma sesión se escribe desde la consola.
+                                Callarlo convertiría esto en lo que `scripts/60` decidió evitar:
+                                algo que parece un permiso y no lo es.
+                              */}
+                              {(() => {
+                                // El cartel dice la verdad POR CASO. El anterior afirmaba que
+                                // «sólo ver» no impedía escribir; desde `scripts/62` eso es falso
+                                // donde hay tablas mapeadas, y sigue siendo cierto donde no.
+                                const enLectura = dentro.filter((r) => nivelDe(r.id) === "lectura")
+                                if (enLectura.length === 0) return null
+                                const porSeccion = enLectura.filter(
+                                  (r) => !aplicados.includes(r.id) && aplicados.includes(r.seccion)
+                                )
+                                const sinBase = enLectura.filter(
+                                  (r) => !aplicados.includes(r.id) && !aplicados.includes(r.seccion)
+                                )
+                                if (sinBase.length === 0 && porSeccion.length > 0) {
+                                  return (
+                                    <p className="mt-1.5 rounded border border-sky-200 bg-sky-50 p-1.5 text-[10px] text-sky-800">
+                                      🔒 <strong>La base protege la sección entera</strong>, pero sus
+                                      tablas están mapeadas a «{porSeccion[0].seccion}» y no a cada
+                                      pestaña: nadie de otro rol escribe acá adentro, pero{" "}
+                                      <strong>entre estas pestañas la base no distingue</strong>. El
+                                      «sólo ver» de {porSeccion.map((r) => r.etiqueta).join(", ")} lo
+                                      aplica la pantalla.
+                                    </p>
+                                  )
+                                }
+                                if (sinBase.length === 0) {
+                                  return (
+                                    <p className="mt-1.5 rounded border border-emerald-200 bg-emerald-50 p-1.5 text-[10px] text-emerald-800">
+                                      🔒 <strong>La base lo aplica.</strong> Con «sólo ver», el intento
+                                      de guardar se rechaza — aunque lo haga desde la consola del navegador.
+                                    </p>
+                                  )
+                                }
+                                return (
+                                  <p className="mt-1.5 rounded border border-amber-200 bg-amber-50 p-1.5 text-[10px] text-amber-800">
+                                    <strong>Ojo:</strong> en {sinBase.map((r) => r.etiqueta).join(", ")}{" "}
+                                    el «sólo ver» lo aplica <strong>sólo la pantalla</strong>: sus tablas
+                                    todavía no están mapeadas en la base, así que ordena el trabajo pero
+                                    no contiene a alguien decidido. Las que tienen 🔒 sí las frena la base.
+                                  </p>
+                                )
+                              })()}
+                              {dentro.some((r) => nivelDe(r.id) === "ninguno") && (
+                                <p className="mt-1.5 text-[10px] text-muted-foreground">
+                                  Lo destildado no se le va a mostrar. Sigue pudiendo entrar a la sección.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {puesta && dentro.length === 0 && SIN_RECURSOS[id] && (
+                            <div className="border-t bg-white/70 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+                              {SIN_RECURSOS[id]}
+                            </div>
+                          )}
+                        </div>
                       )
                     })}
                   </div>
@@ -319,6 +666,19 @@ function PanelPermisos() {
     (rolesDB ?? []).map((r) => [r.id, new Set(r.secciones)])
   ) as Record<string, Set<string>>
 
+  // Las excepciones finas, para poder mostrar la misma info que el editor (A-FEAT-169).
+  const nivelesPorRol = Object.fromEntries(
+    (rolesDB ?? []).map((r) => [r.id, (r.permisos ?? {}) as Record<string, string>])
+  ) as Record<string, Record<string, string>>
+
+  /** El nivel efectivo de un recurso para un rol: sin excepción, hereda de la sección. */
+  const nivelEfectivo = (rol: string, recurso: Recurso): "ninguno" | "lectura" | "escritura" => {
+    if (!seccionesPorRol[rol]?.has(recurso.seccion)) return "ninguno"
+    // Si el padre está oculto, el hijo también — igual que en el editor.
+    if (recurso.padre && nivelesPorRol[rol]?.[recurso.padre] === "ninguno") return "ninguno"
+    return (nivelesPorRol[rol]?.[recurso.id] as "ninguno" | "lectura" | "escritura") ?? "escritura"
+  }
+
   const todasLasSecciones = seccionesDe("admin")
 
   // ⚠️ Estas SÍ están escritas a mano: dependen de `esAdmin()`, que sigue siendo el rol `admin`
@@ -333,6 +693,22 @@ function PanelPermisos() {
     { label: "Ver y editar su propio perfil", puede: () => true, donde: "app/perfil/page.tsx" },
     { label: "Subir su foto", puede: () => true, donde: "app/api/perfil/avatar/route.ts" },
   ]
+
+  /** Tres estados, no dos: «no lo ve», «lo ve», «lo ve y lo edita». */
+  const CeldaNivel = ({ nivel }: { nivel: "ninguno" | "lectura" | "escritura" }) =>
+    nivel === "escritura" ? (
+      <span title="Ve y edita" className="inline-flex h-6 items-center gap-1 rounded-full bg-emerald-100 px-2 text-[10px] font-medium text-emerald-800">
+        <Check className="h-3 w-3" /> edita
+      </span>
+    ) : nivel === "lectura" ? (
+      <span title="Sólo ve — todavía no se impide escribir" className="inline-flex h-6 items-center gap-1 rounded-full bg-amber-100 px-2 text-[10px] font-medium text-amber-800">
+        <Eye className="h-3 w-3" /> ve
+      </span>
+    ) : (
+      <span title="No lo ve" className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100">
+        <Minus className="h-3.5 w-3.5 text-slate-400" />
+      </span>
+    )
 
   const Celda = ({ si }: { si: boolean }) =>
     si ? (
@@ -363,7 +739,7 @@ function PanelPermisos() {
                 </tr>
               </thead>
               <tbody>
-                {todasLasSecciones.map(({ id, label, Icono }) => (
+                {todasLasSecciones.flatMap(({ id, label, Icono }) => [
                   <tr key={id} className="border-b last:border-0">
                     <td className="py-2 pr-4">
                       <span className="inline-flex items-center gap-2">
@@ -376,8 +752,30 @@ function PanelPermisos() {
                         <Celda si={Boolean(seccionesPorRol[r]?.has(id))} />
                       </td>
                     ))}
-                  </tr>
-                ))}
+                  </tr>,
+                  /*
+                    Y debajo de cada sección, lo que hay ADENTRO — el mismo dato que se edita en
+                    Roles, leído de la misma fuente. Pedido del usuario 2026-09-24: «estos mismos
+                    datos debería poder verlos en la pantalla de permisos».
+                  */
+                  ...recursosDe(id).map((rec) => (
+                    <tr key={rec.id} className="border-b bg-slate-50/50 last:border-0">
+                      <td className="py-1.5 pr-4 pl-6 text-xs text-muted-foreground">
+                        <span className={rec.padre ? "ml-4 border-l pl-2" : ""}>
+                          ↳ {rec.etiqueta}
+                          {rec.tipo === "funcionalidad" && (
+                            <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">acción</span>
+                          )}
+                        </span>
+                      </td>
+                      {roles.map((r) => (
+                        <td key={r} className="px-3 py-1.5 text-center">
+                          <CeldaNivel nivel={nivelEfectivo(r, rec)} />
+                        </td>
+                      ))}
+                    </tr>
+                  )),
+                ])}
               </tbody>
             </table>
           </div>

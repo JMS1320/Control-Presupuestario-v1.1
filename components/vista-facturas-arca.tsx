@@ -4,6 +4,7 @@
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
+import type { UserRole } from "@/lib/auth/roles"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -336,7 +337,7 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
 const calcularSubtotalesSubdiario = (facturas: any[]) =>
   calcularSubtotalesSubdiarioLib(facturas, TIPOS_SIN_CREDITO_COMPRAS)
 
-export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: 'admin' | 'contable' } = {}) {
+export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: UserRole } = {}) {
   const esContable = userRole === 'contable'
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])

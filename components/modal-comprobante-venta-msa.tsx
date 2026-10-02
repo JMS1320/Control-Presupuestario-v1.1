@@ -3,6 +3,7 @@
 
 import { hoyArgentina } from "@/lib/fechas"
 import { useEffect, useMemo, useState } from "react"
+import { propagarImputacionDeVenta } from "@/lib/ventas/detalle-cobro-db"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -221,6 +222,8 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', comprobanteInicial!.id)
         if (error) throw error
+        // 🏷️ La cuenta viaja a sus movimientos del banco (sólo MSA tiene ese vínculo).
+        if (schemaName === 'msa') await propagarImputacionDeVenta(supabase, comprobanteInicial!.id, payload as any)
       } else {
         const { error } = await supabase
           .schema(schemaName)

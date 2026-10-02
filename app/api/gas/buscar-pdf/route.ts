@@ -20,7 +20,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { clienteUsuario } from "@/lib/supabase-usuario"
 import type {
   ApiBuscarPdfInput,
   ApiBuscarPdfOutput,
@@ -71,10 +71,13 @@ function empresaToSchema(e: Empresa): SchemaEmpresa {
 }
 
 export async function POST(request: Request) {
+  // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
+  const db = await clienteUsuario()
+
   const sesion = await exigirSesion()
   if (!sesion.ok) return respuestaSinAcceso(sesion)
 
-  const supabase = supabaseAdmin
+  const supabase = db
 
   try {
     const body = (await request.json()) as ApiBuscarPdfInput
