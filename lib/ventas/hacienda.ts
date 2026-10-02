@@ -264,6 +264,31 @@ export function precargaDesdeVenta(v: {
   }
 }
 
+/**
+ * 📅 **Las cuotas que el Cash Flow espera cobrar** de una liquidación con plazos.
+ * Lo imputado aparte (anticipos, certificados) cancela primero las cuotas más viejas; una cuota
+ * cancelada entera no aparece. Sin plazos, una sola fila por el cobro entero.
+ */
+export function cuotasPorCobrar(
+  plazos: { vencimiento?: string; importe?: number | string }[] | null | undefined,
+  cobroTotal: number,
+  imputado: number,
+  fechaSinPlazos: string,
+): { n: number; de: number; vencimiento: string; importe: number }[] {
+  const cuotas = (Array.isArray(plazos) ? plazos : []).filter(q => Number(q?.importe) > 0)
+  if (!cuotas.length) return [{ n: 1, de: 1, vencimiento: fechaSinPlazos, importe: r2(cobroTotal) }]
+  let porCancelar = Math.max(Number(imputado) || 0, 0)
+  const salida: { n: number; de: number; vencimiento: string; importe: number }[] = []
+  cuotas.forEach((q, i) => {
+    const importe = Number(q.importe) || 0
+    const cancelado = Math.min(porCancelar, importe)
+    porCancelar -= cancelado
+    const resta = r2(importe - cancelado)
+    if (resta > 0.01) salida.push({ n: i + 1, de: cuotas.length, vencimiento: q.vencimiento || fechaSinPlazos, importe: resta })
+  })
+  return salida
+}
+
 /** Plazos de cobro: la suma de las cuotas tiene que dar el importe neto. */
 export interface PlazoCobro { dias: number; pct: number; vencimiento: string; importe: number }
 

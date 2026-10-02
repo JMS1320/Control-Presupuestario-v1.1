@@ -61,7 +61,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
-  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta } from "@/lib/ventas/hacienda"
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1945,6 +1945,33 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "El IVA también se puede tipear por monto, y el importe neto lo sigue",
     "9352258 · 98421383", `${ivaAMano.iva} · ${ivaAMano.importeNeto}`,
     ivaAMano.iva === 9352258 && ivaAMano.importeNeto === 98421383, "A-FEAT-1225")
+
+  // ══ 📅 EL CASH FLOW EN CUOTAS (A-FEAT-1225) ══════════════════════════════════════════════
+  // «Creo que sólo veo una cuota en cash flow de la venta, ¿es correcto esto?» — no lo era.
+  // Las cuotas son las que quedaron guardadas en la liquidación real de Genta.
+  const plazosGenta = [
+    { vencimiento: "2026-09-03", importe: 32256007.73 },
+    { vencimiento: "2026-10-03", importe: 33233462.5 },
+    { vencimiento: "2026-11-02", importe: 32256007.72 },
+  ]
+  const enCuotas = cuotasPorCobrar(plazosGenta, 97745477.95, 0, "2026-09-03")
+  chequear("Liquidación de hacienda", "📅 Con plazos, el Cash Flow muestra 3 cuotas en sus fechas y suman el importe neto",
+    "3 · 03/09 03/10 02/11 · 97745477.95",
+    `${enCuotas.length} · ${enCuotas.map(q => q.vencimiento).join(" ")} · ${enCuotas.reduce((x, q) => x + q.importe, 0).toFixed(2)}`,
+    enCuotas.length === 3 && enCuotas.map(q => q.vencimiento).join(" ") === "2026-09-03 2026-10-03 2026-11-02"
+      && enCuotas.reduce((x, q) => x + q.importe, 0).toFixed(2) === "97745477.95", "A-FEAT-1225")
+
+  // Un anticipo de $40 M cancela la 1ª cuota entera y $7.743.992,27 de la 2ª.
+  const cuotasConAnticipo = cuotasPorCobrar(plazosGenta, 97745477.95, 40000000, "2026-09-03")
+  chequear("Liquidación de hacienda", "Lo cobrado por adelantado cancela primero las cuotas más viejas",
+    "2 cuotas · 25489470.23 · 32256007.72",
+    `${cuotasConAnticipo.length} cuotas · ${cuotasConAnticipo.map(q => q.importe).join(" · ")}`,
+    cuotasConAnticipo.length === 2 && cuotasConAnticipo[0].importe === 25489470.23 && cuotasConAnticipo[1].importe === 32256007.72, "A-FEAT-1225")
+
+  const sinPlazos = cuotasPorCobrar(null, 97745477.95, 0, "2026-08-04")
+  chequear("Liquidación de hacienda", "Sin plazos, una sola fila por el cobro entero",
+    "1 · 2026-08-04 · 97745477.95", `${sinPlazos.length} · ${sinPlazos[0].vencimiento} · ${sinPlazos[0].importe}`,
+    sinPlazos.length === 1 && sinPlazos[0].vencimiento === "2026-08-04" && sinPlazos[0].importe === 97745477.95, "A-FEAT-1225")
 
   return r
 }

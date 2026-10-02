@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
+import { cuotasPorCobrar } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 
@@ -585,7 +587,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
   // fila, así que si no se restan la misma plata se cuenta dos veces.
   const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>): CashFlowRow[] => {
-    return comprobantes.map(c => {
+    return comprobantes.flatMap(c => {
+      // 🐂 La liquidación de hacienda va aparte: en cuotas y con su propia cuenta de cobro.
+      if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0)
       const total = Number(c.imp_total) || 0
       const imputado = imputadoPorComp.get(c.id) || 0
       const netoACobrar = total - imputado
@@ -612,6 +616,50 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         comprobante_display: c.nro_comprobante || null,
       }
     })
+  }
+
+  /**
+   * 🐂 **A-FEAT-1225 — la liquidación de HACIENDA, en sus cuotas.** El usuario lo vio probando:
+   * *«creo que sólo veo una cuota en cash flow de la venta, ¿es correcto esto?»*. No lo era.
+   *
+   * Dos cosas cambian respecto de una factura de venta:
+   *   1. **Cuánto se cobra** sale de `cobroEsperado()`, la cuenta de toda la app: total − retenciones
+   *      impresas (IIBB) − lo imputado aparte. La resta de arriba no descuenta la retención impresa,
+   *      y en la liquidación de Genta proyectaba $675.905 de más. (Para el resto de las ventas esa
+   *      resta sigue igual: cambiarla es A-BUG-1231, que el usuario dejó como tema aparte.)
+   *   2. **Cuándo**: si el papel trae plazos (30/60/90), una fila por cuota, cada una en su fecha.
+   *      Lo imputado aparte (anticipos, certificados) cancela primero las cuotas más viejas.
+   *
+   * 📌 El `id` de una cuota lleva `#cuota-N` para que sea único en la grilla. Las filas de venta no
+   * se editan desde el Cash Flow, así que no hay escritura que dependa de ese id.
+   */
+  const filasLiqHacienda = (c: any, imputado: number): CashFlowRow[] => {
+    const cobro = cobroEsperado(c, imputado).pagoCondiciones
+    const base = {
+      origen: 'VENTA' as const,
+      origen_tabla: 'msa.comprobantes_venta',
+      empresas: ['MSA'] as string[],
+      fecha_vencimiento: null,
+      categ: 'VENTAS',
+      centro_costo: c.centro_costo || '',
+      cuit_proveedor: c.cuit_cliente || '',
+      nombre_proveedor: c.denominacion_cliente || '',
+      debitos: 0,
+      saldo_cta_cte: 0,
+      estado: c.estado || 'a cobrar',
+      comprobante_display: c.nro_comprobante || null,
+    }
+    const fechaSola = c.fecha_cobro_estimada || c.fecha_liquidacion
+    const cuotas = cuotasPorCobrar(c.plazos, cobro, imputado, fechaSola)
+    const detalle = `Liquidación hacienda ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
+    return cuotas.map(q => ({
+      ...base,
+      id: q.de > 1 ? `${c.id}#cuota-${q.n}` : c.id,
+      fecha_estimada: q.vencimiento,
+      creditos: q.importe,
+      imp_total: q.importe,
+      detalle: q.de > 1 ? `${detalle} — cuota ${q.n} de ${q.de}` : detalle,
+    }))
   }
 
   /**
@@ -823,7 +871,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: ventasACobrar, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, ret_iva, ret_iibb')
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
