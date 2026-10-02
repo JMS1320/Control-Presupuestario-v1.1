@@ -258,8 +258,9 @@ export function VistaCobrosVenta() {
                                 <span className="w-32 text-right tabular-nums">{fmt(q.importe)}</span>
                                 <span className="w-28 text-right tabular-nums text-orange-700">{d.cuotas[i]?.imputado ? '− ' + fmt(d.cuotas[i].imputado) : '—'}</span>
                                 <span className="w-32 text-right tabular-nums font-medium">{fmt(d.cuotas[i]?.aCobrar ?? Number(q.importe))}</span>
-                                <span className={'w-20 ' + (q.estado === 'cobrado' ? 'text-green-700 font-medium' : 'text-gray-500')}>{q.estado === 'cobrado' ? '✓ cobrada' : 'a cobrar'}</span>
-                                {f.estado !== 'conciliado' && (
+                                <span className={'w-20 ' + (q.estado === 'cobrado' ? 'text-green-700 font-medium' : 'text-gray-500')}>{q.movimiento_id ? '✓ conciliada' : q.estado === 'cobrado' ? '✓ cobrada' : 'a cobrar'}</span>
+                                {/* Conciliada contra el banco: se suelta desconciliando el movimiento, no desde acá (A-BUG-1234). */}
+                                {f.estado !== 'conciliado' && !q.movimiento_id && (
                                   <Button size="sm" variant="outline" className="h-6 text-xs px-2" disabled={marcando === f.id + '#' + i}
                                     onClick={(e) => { e.stopPropagation(); void cambiarCuota(f, i, q.estado === 'cobrado' ? 'a cobrar' : 'cobrado') }}>
                                     {q.estado === 'cobrado' ? 'Volver a a cobrar' : 'Marcar cobrada'}

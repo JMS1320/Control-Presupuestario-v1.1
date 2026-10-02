@@ -62,7 +62,7 @@ import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -1993,6 +1993,23 @@ export function correrCasos(): Resultado[] {
       .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0)),
     repartirEnCuotas(plazosGenta.map((q, i) => i === 0 ? { ...q, estado: "cobrado" } : q), 0, [retGan1], "")
       .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0) === 31672612.48, "A-BUG-1234")
+
+  // ══ 🏦 Conciliar UNA cuota contra su movimiento (A-BUG-1234) ═════════════════════════════
+  const plGenta = plazosGenta.map(q => ({ dias: 30, pct: 33, ...q }))
+  const cqUno = conciliarCuota(plGenta, 0, "mov-0309")
+  chequear("Conciliación por cuota", "🏦 Conciliar el cobro del 03/09 marca SÓLO la cuota 1 — la liquidación sigue «a cobrar»",
+    "cobrado,mov-0309 · sin marca · a cobrar", `${cqUno.plazos[0].estado},${cqUno.plazos[0].movimiento_id} · ${cqUno.plazos[1].estado ?? "sin marca"} · ${cqUno.estadoComprobante}`,
+    cqUno.plazos[0].movimiento_id === "mov-0309" && cqUno.plazos[1].estado === undefined && cqUno.estadoComprobante === "a cobrar", "A-BUG-1234")
+  const cqTres = conciliarCuota(conciliarCuota(cqUno.plazos, 1, "mov-0310").plazos, 2, "mov-0211")
+  chequear("Conciliación por cuota", "Con las 3 cuotas conciliadas, la liquidación pasa a «conciliado»",
+    "conciliado", cqTres.estadoComprobante, cqTres.estadoComprobante === "conciliado", "A-BUG-1234")
+  const cqSuelta = conciliarCuota(cqTres.plazos, null, null, "mov-0310")
+  chequear("Conciliación por cuota", "Desconciliar el movimiento cqSuelta SU cuota (la 2) y la liquidación vuelve a «a cobrar»",
+    "a cobrar · sin movimiento · a cobrar", `${cqSuelta.plazos[1].estado} · ${cqSuelta.plazos[1].movimiento_id ?? "sin movimiento"} · ${cqSuelta.estadoComprobante}`,
+    cqSuelta.plazos[1].estado === "a cobrar" && !cqSuelta.plazos[1].movimiento_id && cqSuelta.estadoComprobante === "a cobrar" && cqSuelta.cambio, "A-BUG-1234")
+  chequear("Conciliación por cuota", "🛑 Una cuota conciliada no se desmarca a mano (lo decide la conciliación)",
+    "cobrado", marcarCuota(cqUno.plazos, 0, "a cobrar", "a cobrar").plazos[0].estado ?? "",
+    marcarCuota(cqUno.plazos, 0, "a cobrar", "a cobrar").plazos[0].estado === "cobrado", "A-BUG-1234")
 
   const sinPlazos = cuotasPorCobrar(null, 97745477.95, 0, "2026-08-04")
   chequear("Liquidación de hacienda", "Sin plazos, una sola fila por el cobro entero",

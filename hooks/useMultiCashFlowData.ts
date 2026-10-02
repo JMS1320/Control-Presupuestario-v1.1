@@ -651,7 +651,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       comprobante_display: c.nro_comprobante || null,
     }
     const fechaSola = c.fecha_cobro_estimada || c.fecha_liquidacion
+    // Una cuota ya conciliada contra el banco sale del Cash Flow, como un comprobante conciliado
+    // (A-BUG-1234): si quedara, el motor podría volver a matchearla con otro movimiento.
     const cuotas = cuotasPorCobrar(c.plazos, cobro, imputaciones, fechaSola)
+      .filter(q => !(Array.isArray(c.plazos) && c.plazos[q.n - 1]?.movimiento_id))
     const detalle = `Liquidación hacienda ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
     return cuotas.map(q => ({
       ...base,

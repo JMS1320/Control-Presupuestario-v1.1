@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PanelAuditoriaConciliacion } from "@/components/panel-auditoria-conciliacion"
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
+import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -1592,23 +1593,47 @@ ${texto.trim()}` : texto.trim()
        */
       const res = await Promise.all(EMPRESAS.map(async (empresa) => {
         const sch = schemaDeEmpresa(empresa)
+        // `plazos` existe sólo en MSA (la liquidación de hacienda): pedirlo en PAM/MA haría fallar todo.
         const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
-          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante')
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante' + (sch === 'msa' ? ', plazos' : ''))
           .order('fecha_liquidacion', { ascending: false })
           .limit(500)
         const ids = (comps ?? []).map((c: any) => c.id)
         let retPorComp = new Map<string, number>()
+        const retsConFecha = new Map<string, { monto: number; fecha: string | null }[]>()
         if (ids.length) {
           const { data: rets } = await supabase.schema(sch).from('retenciones_recibidas')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', ids)
+            .select('comprobante_venta_id, monto, fecha').in('comprobante_venta_id', ids)
           for (const r of rets ?? []) {
             const k = String((r as any).comprobante_venta_id)
             retPorComp.set(k, (retPorComp.get(k) ?? 0) + (Number((r as any).monto) || 0))
+            retsConFecha.set(k, [...(retsConFecha.get(k) ?? []), { monto: Number((r as any).monto) || 0, fecha: (r as any).fecha ?? null }])
           }
         }
-        return (comps ?? []).map((c: any) => {
+        return (comps ?? []).flatMap((c: any) => {
           const cobro = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
-          return { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+          const base = { ...c, __empresa: empresa, __schema: sch, __cobro: cobro }
+          /**
+           * 🏦 A-BUG-1234 — una liquidación con PLAZOS se ofrece **por cuota**, no entera. Asignar el
+           * cobro de una cuota a la liquidación entera la marcaba cobrada completa y borraba las
+           * otras cuotas del Cash Flow. Cada cuota se compara contra lo que tiene que entrar al banco
+           * (su importe menos las retenciones de su fecha — la misma cuenta que Cobros y Cash Flow).
+           * Las ya conciliadas no se ofrecen.
+           */
+          const plazos: PlazoCobro[] = Array.isArray(c.plazos) ? c.plazos : []
+          if (!plazos.length) return [base]
+          const cuotas = repartirEnCuotas(plazos, 0, retsConFecha.get(String(c.id)) ?? [], '')
+          return cuotas
+            .map((q, i) => ({ q, i }))
+            .filter(({ i }) => !plazos[i]?.movimiento_id)
+            .map(({ q, i }) => ({
+              ...base,
+              __key: `${c.id}#${i}`,
+              __cuota: i,
+              __cuotaDe: q.de,
+              __cuotaVence: q.vencimiento,
+              __cobro: { ...cobro, pagoCondiciones: q.aCobrar },
+            }))
         })
       }))
       setVentasParaAsignar(res.flat())
@@ -1844,6 +1869,27 @@ ${texto.trim()}` : texto.trim()
     return `ℹ️ La cuota que estaba vinculada antes ($${monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) volvió a "pendiente". Si no corresponde, borrala desde Templates.`
   }
 
+  /**
+   * 🏦 A-BUG-1234 — si el movimiento estaba conciliado contra una CUOTA de una liquidación, la suelta
+   * antes de reasignarlo: la cuota vuelve a «a cobrar» y reaparece en el Cash Flow. Es la contracara
+   * de `soltarCuotaAnterior` para las ventas. Sin esto, la cuota quedaría «conciliada» contra un
+   * movimiento que ya apunta a otra cosa.
+   */
+  const soltarCuotaDeVenta = async (): Promise<string | null> => {
+    const compId = (movimientoAsignando as any)?.comprobante_venta_id
+    if (!compId || tablaActiva !== 'msa_galicia') return null
+    const { data: comp } = await supabase.schema('msa').from('comprobantes_venta')
+      .select('id, nro_comprobante, plazos').eq('id', compId).maybeSingle()
+    const plazos: PlazoCobro[] = Array.isArray((comp as any)?.plazos) ? (comp as any).plazos : []
+    if (!plazos.length) return null
+    const r = conciliarCuota(plazos, null, null, movimientoAsignando!.id)
+    if (!r.cambio) return null
+    const { error } = await supabase.schema('msa').from('comprobantes_venta')
+      .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', compId)
+    if (error) return `⚠️ No se pudo soltar la cuota de ${(comp as any)?.nro_comprobante}: ${error.message}`
+    return `ℹ️ La cuota de ${(comp as any)?.nro_comprobante} que cobraba este movimiento volvió a «a cobrar».`
+  }
+
   const vinculosLimpios = () => {
     const base: Record<string, any> = {
       comprobante_arca_id: null,
@@ -1864,6 +1910,9 @@ ${texto.trim()}` : texto.trim()
     // pasaba en silencio (A-BUG-42): nada destructivo debería ser invisible.
     const avisosAsignacion: string[] = []
     try {
+      // Si cobraba una cuota de una liquidación, se suelta primero (A-BUG-1234).
+      const avisoCuotaVenta = await soltarCuotaDeVenta()
+      if (avisoCuotaVenta) avisosAsignacion.push(avisoCuotaVenta)
       const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
       const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
 
@@ -2236,7 +2285,9 @@ ${marca}` : marca
           estado: 'conciliado',
           categ: categManualAsignar.trim() || movimientoAsignando.categ || null,
           proveedor_nombre: ventaElegida.denominacion_cliente || null,
-          comprobantes_pagados: ventaElegida.nro_comprobante || null,
+          comprobantes_pagados: ventaElegida.__cuota != null
+            ? `${ventaElegida.nro_comprobante} cuota ${ventaElegida.__cuota + 1}/${ventaElegida.__cuotaDe}`
+            : (ventaElegida.nro_comprobante || null),
           // El detalle no repite lo que ya dicen las otras dos columnas (§ 30.9.6 D).
           detalle: movimientoAsignando.detalle?.trim() || null,
           comprobante_venta_id: ventaElegida.id,
@@ -2257,13 +2308,24 @@ ${marca}` : marca
           .from(tablaActiva).update(updateVenta).eq('id', movimientoAsignando.id)
         if (errExt) throw errExt
 
-        // El otro lado: el comprobante pasa a cobrado.
-        const { error: errVenta } = await supabase
-          .schema(ventaElegida.__schema)
-          .from('comprobantes_venta')
-          .update({ estado: 'cobrado' })
-          .eq('id', ventaElegida.id)
-        if (errVenta) throw errVenta
+        // El otro lado. Con CUOTA: sólo esa cuota queda conciliada contra este movimiento, y la
+        // liquidación pasa a conciliado recién con todas (A-BUG-1234). Sin cuota: cobrado, como antes.
+        if (ventaElegida.__cuota != null) {
+          const { data: compAhora, error: errLeer } = await supabase.schema(ventaElegida.__schema)
+            .from('comprobantes_venta').select('plazos').eq('id', ventaElegida.id).maybeSingle()
+          if (errLeer) throw errLeer
+          const r = conciliarCuota(((compAhora as any)?.plazos ?? []) as PlazoCobro[], ventaElegida.__cuota, movimientoAsignando.id)
+          const { error: errCuota } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
+            .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
+          if (errCuota) throw errCuota
+        } else {
+          const { error: errVenta } = await supabase
+            .schema(ventaElegida.__schema)
+            .from('comprobantes_venta')
+            .update({ estado: 'cobrado' })
+            .eq('id', ventaElegida.id)
+          if (errVenta) throw errVenta
+        }
 
         actualizarLocal(movimientoAsignando.id, updateVenta)
         toast.success(dif.exacto
@@ -4839,24 +4901,24 @@ ${marca}` : marca
                   }
 
                   return lista.map(v => {
-                    const elegido = ventaElegida?.id === v.id
+                    const elegido = (ventaElegida?.__key ?? ventaElegida?.id) === (v.__key ?? v.id)
                     const d = v.__dif
                     return (
-                      <button key={v.id} type="button"
+                      <button key={v.__key ?? v.id} type="button"
                         onClick={() => setVentaElegida(v)}
                         className={`w-full text-left p-2 rounded border text-xs ${
                           elegido ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
                         }`}>
                         <div className="flex items-baseline justify-between gap-2">
                           <span className="font-medium truncate">
-                            {v.nro_comprobante || '—'} · {v.denominacion_cliente || '—'}
+                            {v.nro_comprobante || '—'}{v.__cuota != null && <> · <b>cuota {v.__cuota + 1} de {v.__cuotaDe}</b> (vence {new Date(v.__cuotaVence + 'T12:00:00').toLocaleDateString('es-AR')})</>} · {v.denominacion_cliente || '—'}
                           </span>
                           <span className="text-gray-500 whitespace-nowrap">
                             {v.fecha_liquidacion ? new Date(v.fecha_liquidacion + 'T12:00:00').toLocaleDateString('es-AR') : ''}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-baseline gap-x-3 mt-0.5">
-                          <span>Pago s/cond. <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
+                          <span>{v.__cuota != null ? 'Entra en esta cuota' : 'Pago s/cond.'} <b>{formatCurrency(v.__cobro.pagoCondiciones)}</b></span>
                           {v.__cobro.retenciones > 0 && (
                             <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
                           )}

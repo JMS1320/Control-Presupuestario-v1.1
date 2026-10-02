@@ -477,10 +477,42 @@ export function controlCuotas(cuotas: CuotaDetalle[], importeNetoPapel: number, 
 export function marcarCuota(
   plazos: PlazoCobro[], indice: number, estado: 'cobrado' | 'a cobrar', estadoComprobante: string | null,
 ): { plazos: PlazoCobro[]; estadoComprobante: string } {
+  // Una cuota conciliada contra el banco no se toca con una marca: la decide la conciliación.
+  if (plazos[indice]?.movimiento_id) return { plazos, estadoComprobante: estadoComprobante || 'a cobrar' }
   const nuevos = plazos.map((p, i) => (i === indice ? { ...p, estado } : p))
   if (estadoComprobante === 'conciliado') return { plazos: nuevos, estadoComprobante: 'conciliado' }
   const todas = nuevos.length > 0 && nuevos.every(p => p.estado === 'cobrado')
   return { plazos: nuevos, estadoComprobante: todas ? 'cobrado' : 'a cobrar' }
+}
+
+/**
+ * 🏦 **Concilia UNA cuota contra el movimiento del banco que la cobró** — A-BUG-1234 (2026-10-02).
+ *
+ * Antes la conciliación sólo conocía el comprobante entero: asignar el cobro de la cuota 1 marcaba
+ * cobrada la liquidación completa, y las cuotas 2 y 3 desaparecían del Cash Flow y de Cobros.
+ *
+ * - Con `movimientoId`: la cuota queda `cobrado` y guarda el movimiento.
+ * - Con `null`: se suelta (la cuota que tenía `movimientoId` vuelve a «a cobrar»). Para eso se
+ *   busca por movimiento, no por índice: el que desconcilia sabe el movimiento, no la cuota.
+ * - El comprobante: **conciliado** cuando TODAS las cuotas tienen su movimiento; **cobrado** si
+ *   todas están cobradas (alguna sin banco); si no, **a cobrar**.
+ */
+export function conciliarCuota(
+  plazos: PlazoCobro[], indice: number | null, movimientoId: string | null, soltarMovimientoId?: string | null,
+): { plazos: PlazoCobro[]; estadoComprobante: string; cambio: boolean } {
+  let cambio = false
+  const nuevos = plazos.map((p, i) => {
+    if (movimientoId && i === indice) { cambio = true; return { ...p, estado: 'cobrado' as const, movimiento_id: movimientoId } }
+    if (soltarMovimientoId && p.movimiento_id === soltarMovimientoId) {
+      cambio = true
+      const { movimiento_id: _fuera, ...resto } = p
+      return { ...resto, estado: 'a cobrar' as const }
+    }
+    return p
+  })
+  const todasConBanco = nuevos.length > 0 && nuevos.every(p => !!p.movimiento_id)
+  const todasCobradas = nuevos.length > 0 && nuevos.every(p => p.estado === 'cobrado')
+  return { plazos: nuevos, estadoComprobante: todasConBanco ? 'conciliado' : todasCobradas ? 'cobrado' : 'a cobrar', cambio }
 }
 
 /** Plazos de cobro: la suma de las cuotas tiene que dar el importe neto. */
@@ -488,6 +520,11 @@ export interface PlazoCobro {
   dias: number; pct: number; vencimiento: string; importe: number
   /** `cobrado` = el usuario sabe que se cobró (verde en el Cash Flow), aunque no esté conciliado. */
   estado?: 'a cobrar' | 'cobrado'
+  /**
+   * El movimiento del banco que cobró ESTA cuota (A-BUG-1234). Con él, la cuota está conciliada:
+   * no se desmarca a mano — se suelta desconciliando el movimiento.
+   */
+  movimiento_id?: string | null
 }
 
 export function controlPlazos(plazos: PlazoCobro[], importeNeto: number): AvisoLiq | null {
