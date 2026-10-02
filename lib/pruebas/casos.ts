@@ -62,7 +62,7 @@ import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, marcarCuota } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2053,6 +2053,37 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "El Cash Flow recibe el estado de cada cuota",
     "cobrado · (sin marca)", `${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado} · ${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado ?? "(sin marca)"}`,
     cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado === "cobrado" && cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado === undefined, "A-FEAT-1225")
+
+  // ══ 🕰️ LA VENTA HISTÓRICA — A-FEAT-1226 (2026-10-02) ══════════════════════════════════════
+  // Datos de ejemplo con cuenta a mano: 30.000 kg − 3 % = 29.100 kg × $5.000 = $145.500.000 de
+  // bruto; CZ 4 % = $5.820.000; neto $139.680.000.
+  const baseHist = {
+    fecha: "2026-01-27", categoriaId: "cat-novillo", cabezas: 70, kgTotales: 30000, pctDesbaste: 0.03,
+    kgCarne: null, precioKg: 5000, pctCz: 0.04, flete: 0, plazo: "30/60/90",
+    cliente: "Frigorífico", cuit: "30000000001", notas: "", confirmada: true,
+  }
+  const hist = armarVentaHistorica(baseHist)
+  chequear("Venta histórica", "🕰️ El neto sale con la cuenta de Productivo: 29.100 kg × 5.000 − 4 % = 139.680.000",
+    "139680000", String(hist.neto), Math.abs(hist.neto - 139680000) < 0.01, "A-FEAT-1226")
+  chequear("Venta histórica", "🔑 Se guarda marcada histórica, sin lote y con el desbaste como FRACCIÓN",
+    "true · null · 0.03", `${hist.fila.historica} · ${hist.fila.lote_id} · ${hist.fila.pct_desbaste}`,
+    hist.fila.historica === true && hist.fila.lote_id === null && hist.fila.pct_desbaste === 0.03, "A-FEAT-1226")
+  chequear("Venta histórica", "Completa y confirmada: no falta nada y no hay avisos (enero es anterior al stock)",
+    "0 · 0", `${hist.faltan.length} · ${hist.avisos.length}`, hist.faltan.length === 0 && hist.avisos.length === 0, "A-FEAT-1226")
+  const sinConfirmar = armarVentaHistorica({ ...baseHist, confirmada: false })
+  chequear("Venta histórica", "🛑 Sin confirmar que no descuenta stock, no se guarda",
+    "confirmar que no descuenta stock", sinConfirmar.faltan.join(", "),
+    sinConfirmar.faltan.includes("confirmar que no descuenta stock"), "A-FEAT-1226")
+  const posterior = armarVentaHistorica({ ...baseHist, fecha: "2026-05-10" })
+  chequear("Venta histórica", "⚠️ Con fecha posterior a feb-2026 AVISA (lo normal es venderla desde el stock) pero deja guardar",
+    "1 aviso · 0 faltan", `${posterior.avisos.length} aviso · ${posterior.faltan.length} faltan`,
+    posterior.avisos.length === 1 && posterior.faltan.length === 0, "A-FEAT-1226")
+  const ganchoHist = armarVentaHistorica({ ...baseHist, kgCarne: 16000, pctCz: 0 })
+  chequear("Venta histórica", "🥩 Al gancho se cobran los kilos de carne: 16.000 × 5.000 = 80.000.000",
+    "80000000", String(ganchoHist.neto), ganchoHist.neto === 80000000, "A-FEAT-1226")
+  const sinCliente = armarVentaHistorica({ ...baseHist, cuit: "" })
+  chequear("Venta histórica", "Sin CUIT del cliente no se guarda (§ Contrapartes)",
+    "cliente (con CUIT)", sinCliente.faltan.join(", "), sinCliente.faltan.includes("cliente (con CUIT)"), "A-FEAT-1226")
 
   return r
 }

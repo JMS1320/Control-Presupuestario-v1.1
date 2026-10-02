@@ -12732,3 +12732,16 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-02 · la VENTA HISTÓRICA de hacienda (`productivo.stock_ventas.historica`) — A-FEAT-1226
+
+```sql
+ALTER TABLE productivo.stock_ventas ADD COLUMN IF NOT EXISTS historica boolean NOT NULL DEFAULT false;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/70-venta-historica.sql` (deshacer con freno si ya hay ventas históricas). Marca la venta
+anterior al stock de la app, que se guarda **sin movimiento de stock a propósito** (la de enero de 2026). La
+vista `public.ventas_unificadas` **no se tocó**: ya resuelve la categoría por `categoria_id` cuando no hay
+lote. Verificado: `stock_ventas` 29 → **30** columnas; escritura probada con `EXPLAIN INSERT` como
+`authenticated` con todas las columnas que manda la app, sin escribir datos.
+

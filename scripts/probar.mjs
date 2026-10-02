@@ -18,8 +18,28 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
+import { register } from "node:module"
 
 const raiz = process.cwd()
+
+/**
+ * 🔗 Y para lo que importan las librerías ENTRE SÍ (2026-10-02): el rodeo de abajo reescribe sólo
+ * los imports de `casos.ts`. Cuando una librería importa a otra (`lib/ventas/hacienda.ts` →
+ * `lib/ganaderia/confirmar-venta.ts`, que comparte la cuenta del neto), Node no resolvía ni el
+ * `@/` ni la ruta sin extensión, y el runner se caía antes de correr un solo caso. Este gancho de
+ * resolución lo arregla para todos los niveles: `@/x` → `<raíz>/x`, y sin extensión → `.ts`.
+ */
+const gancho = `
+import { pathToFileURL } from "node:url"
+const raiz = ${JSON.stringify(pathToFileURL(raiz + "/").href)}
+export async function resolve(spec, ctx, next) {
+  const s = spec.startsWith("@/") ? new URL(spec.slice(2), raiz).href : spec
+  try { return await next(s, ctx) } catch (e) {
+    if (e?.code !== "ERR_MODULE_NOT_FOUND" || !(s.startsWith(".") || s.startsWith("file:"))) throw e
+    return next(s + ".ts", ctx)
+  }
+}`
+register("data:text/javascript," + encodeURIComponent(gancho))
 const origen = path.join(raiz, "lib", "pruebas", "casos.ts")
 
 if (!fs.existsSync(origen)) {

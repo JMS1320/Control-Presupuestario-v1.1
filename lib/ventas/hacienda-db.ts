@@ -32,6 +32,8 @@ export interface VentaHaciendaDatos {
   /** % de CZ de la venta, FRACCIÓN. */
   pctCz: number | null
   centroCosto: string | null
+  /** A-FEAT-1226 — venta anterior al stock de la app, guardada sin movimiento de stock a propósito. */
+  historica: boolean
 }
 
 /**
@@ -49,7 +51,7 @@ export async function cargarVentasHacienda(supabase: Cliente, ids?: string[]): P
   const lista = (base || []) as any[]
   if (!lista.length) return []
   const { data: det, error: eDet } = await supabase.schema('productivo').from('stock_ventas')
-    .select('id, kg_totales, kg_carne, pct_desbaste, plazo_cobro, pct_cz, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
+    .select('id, historica, kg_totales, kg_carne, pct_desbaste, plazo_cobro, pct_cz, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
     .in('id', lista.map(b => b.venta_id))
   if (eDet) throw eDet
   const detPorId = new Map(((det || []) as any[]).map(d => [d.id, d]))
@@ -71,6 +73,7 @@ export async function cargarVentasHacienda(supabase: Cliente, ids?: string[]): P
       liquidado: Number(b.facturado) || 0,
       pctCz: d.pct_cz === null || d.pct_cz === undefined ? null : Number(d.pct_cz),
       centroCosto: b.centro_costo || null,
+      historica: !!d.historica,
     }
   })
 }

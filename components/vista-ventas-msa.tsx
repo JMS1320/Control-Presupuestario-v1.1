@@ -15,6 +15,7 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { kgQueSeCobran, promedioKg } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, liquidacionDeVenta, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
 import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
+import { ModalVentaHistoricaHacienda } from "./modal-venta-historica-hacienda"
 
 interface Props {
   userRole?: UserRole
@@ -80,6 +81,8 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const [liqEditarId, setLiqEditarId] = useState<string | null>(null)
   /** Ventas tildadas para liquidar juntas. */
   const [tildadas, setTildadas] = useState<Set<string>>(new Set())
+  /** 🕰️ A-FEAT-1226 — alta de una venta anterior al stock de la app (no descuenta stock). */
+  const [historicaAbierta, setHistoricaAbierta] = useState(false)
 
   const abrirLiquidacion = (vs: VentaHaciendaFila[]) => { setLiqEditarId(null); setLiqVentas(vs); setLiqAbierta(true) }
   /**
@@ -319,7 +322,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       <div className="space-y-2">
         <div className="flex items-baseline gap-3">
           <h3 className="text-base font-semibold">🐂 Ventas de hacienda</h3>
-          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos. Acá se liquidan: tildá varias si vienen en un solo papel.</span>
+          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos (las anteriores al stock, acá: Venta histórica). Acá se liquidan: tildá varias si vienen en un solo papel.</span>
           {esAdmin && (
             <div className="ml-auto flex gap-2">
               {tildadas.size > 0 && (
@@ -332,6 +335,10 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
               <Button size="sm" variant="outline" onClick={() => abrirLiquidacion([])}
                 title="Cargar una liquidación de hacienda que no tiene venta en Productivo">
                 <FileText className="mr-1 h-3.5 w-3.5" />Liquidación suelta
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setHistoricaAbierta(true)}
+                title="Una venta anterior al stock de la app: se guarda con las demás, sin descontar stock">
+                <Plus className="mr-1 h-3.5 w-3.5" />Venta histórica
               </Button>
             </div>
           )}
@@ -384,6 +391,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                         <TableCell>
                           {h.cliente}
                           {h.cuit && <div className="text-xs text-gray-400">{h.cuit}</div>}
+                          {h.historica && <Badge variant="outline" className="mt-0.5 bg-amber-50 text-amber-800" title="Anterior al stock de la app: no descontó stock">histórica</Badge>}
                         </TableCell>
                         <TableCell>{h.categoria || <span className="text-amber-600 text-xs">sin categoría</span>}</TableCell>
                         <TableCell className="text-right">{fmtAR(h.cabezas, 0)}</TableCell>
@@ -417,6 +425,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
         </Card>
       </div>
 
+      <ModalVentaHistoricaHacienda open={historicaAbierta} onOpenChange={setHistoricaAbierta} onGuardado={cargar} />
       <ModalLiquidacionHacienda open={liqAbierta} onOpenChange={setLiqAbierta} ventas={liqVentas} comprobanteId={liqEditarId} onGuardado={cargar} />
 
       <ModalVentaMsa

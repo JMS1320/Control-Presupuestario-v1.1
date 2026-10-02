@@ -1720,6 +1720,17 @@ liquidación contra las ventas sumadas.
 📌 Si la venta fue **al gancho** (por kilo de carne), la precarga trae los **kilos de carne**, no los
 vivos.
 
+### Cargar una venta histórica (anterior al stock de la app)
+Para una venta que se hizo antes de que la app llevara el stock —por ejemplo, la de enero de 2026—:
+**Ventas de hacienda → Venta histórica**. Cargás fecha, categoría, cabezas, kilos (y los de carne si fue
+al gancho), precio, CZ, plazo y cliente; abajo ves el neto, con la misma cuenta que usa Productivo.
+
+Para guardar tenés que tildar **«Esta venta NO descuenta stock»**. Queda en la lista con la marca
+**histórica**, y desde ahí se liquida como cualquier otra.
+
+📌 Si la hacienda **está** en el stock, la venta se carga desde **Productivo → Movimientos**, que la
+descuenta. Si ponés una fecha posterior a febrero de 2026, la pantalla te lo recuerda.
+
 ### Marcar las cuotas cobradas
 En **Ingresos → Cobros**, abrí la liquidación: abajo están sus cuotas, con **Marcar cobrada**. Es lo
 mismo que pasarla a cobrado en el **Cash Flow**: lo que marcás en un lado se ve en el otro. Cuando

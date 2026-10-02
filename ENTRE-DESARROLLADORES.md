@@ -223,3 +223,8 @@ boletas de ARBA). Mismo perfil: acepta vacío, sólo MSA, sin tocar permisos.
 
 📌 La tabla `msa.comprobantes_venta` sigue entre las **sin sección** de [A-SEC-13](PENDIENTES.md#a-sec-13):
 esto no la empeora ni la arregla.
+
+➕ **2026-10-02, `scripts/70`**: `historica boolean not null default false` en **`productivo.stock_ventas`**
+([A-FEAT-1226](PENDIENTES.md#a-feat-1226)). ⚠️ **Te aviso después de correrlo, no antes** como pide la regla:
+se aplicó en la misma tanda en que JMS lo autorizó. Mismo perfil que las anteriores: default `false`, no
+toca filas, permisos, RLS ni roles, y la vista `public.ventas_unificadas` **no se tocó**. Deshacer con freno.

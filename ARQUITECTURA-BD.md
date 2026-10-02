@@ -128,7 +128,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 |-------|-----------|
 | `stock_ciclos` | Un **ciclo anual** por fila (servicio oct → destete mar). Cada período **abre con el cierre del anterior**; `vacas_apertura`/`vaquillonas_apertura` en NULL = hereda, cargadas = foto manual. Parámetros **por período**, no constantes globales (la reposición es decisión de estrategia y cambia año a año). Los `real_*` **pisan el cálculo** y recalculan todo lo posterior. |
 | `stock_lotes` | Cabezas disponibles para vender: destete no retenido, vaca de descarte, y la recría heredada del stock inicial. `ganancia_diaria_kg` hace crecer el peso si se vende después del destete. |
-| `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). |
+| `stock_ventas` | Venta **total o PARCIAL** de un lote. Peso y precio quedan **congelados** al vender (mismo criterio que `ventas_arrendamiento`). **Todas** las ventas de hacienda van acá, por cualquier camino. `historica = true` (2026-10-02, A-FEAT-1226): venta anterior al stock de la app, **sin lote y sin movimiento de stock a propósito** — se carga desde Ingresos → Ventas. |
 
 #### 🧭 Las capas que ordenan un egreso — cuál es cuál
 
