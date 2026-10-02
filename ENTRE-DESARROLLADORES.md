@@ -359,6 +359,22 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
+## 📨 2026-10-02 · PARA JAVIER — `desarrollo` se actualizó con todo lo de JMS (tu trabajo, intacto)
+
+Se juntaron en `desarrollo` las dos líneas de JMS: **balance** (export de papeles de trabajo, sueldos,
+IPC, cuentas corrientes, chips, filtro débitos/créditos) y **hacienda** (liquidación, cuotas, cobros,
+cheques de terceros). Fue fast-forward sobre tu `desarrollo`: **nada tuyo se pisó**. Antes de pullear tu
+rama, mirá estos dos puntos:
+
+- **Choque de IDs**: había dos `A-SEC-09` y dos `A-SEC-10`. **Los tuyos (24/09) se quedan**; los
+  nuestros (26/09) pasaron a **`A-SEC-14`** (tablas no registradas abiertas a escritura) y **`A-SEC-15`**
+  (la clave de ARCA en el navegador).
+- **`/api/pendientes/comentarios` y `/propuestos`**: chocaban un arreglo nuestro (clave de servidor) con
+  el tuyo (cliente de la sesión). **Quedó el tuyo.**
+
+`main` no se tocó. Tus ramas tampoco. `jms/vistas-seguras` (scripts 66/67) sigue aparte, para que la
+evalúes.
+
 ## 📨 2026-10-02 · PARA JAVIER — `scripts/72` (avisado ANTES; ✅ corrido el mismo día, después de este aviso)
 
 Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **`public.anticipos_proveedores`**:
