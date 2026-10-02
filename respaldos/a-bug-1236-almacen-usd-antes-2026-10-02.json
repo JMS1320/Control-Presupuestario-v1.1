@@ -1,0 +1,23 @@
+{
+  "que": "Correccion de los datos de Almacen Veterinario danados por A-BUG-1236 (anticipo en pesos aplicado a FC en USD). Con OK del usuario 2026-10-02: «si, corregi los datos de Almacen con respaldo».",
+  "antes": {
+    "factura_2014": {"id": "5d55a255-f53d-4a2d-92e3-1e868bbee5a2", "numero_desde": 2014, "moneda": "USD", "tipo_cambio": 1390, "tc_pago": null, "imp_total": 3213.58, "monto_a_abonar": 4466876.2, "estado": "pagado"},
+    "anticipo_almacen": {"id": "720a9289-6ad6-499e-8e5c-06d1563f33a3", "monto": 4466876.2, "monto_restante": 4463331.12, "estado": "vinculado", "estado_pago": "endosado", "factura_id": "5d55a255-f53d-4a2d-92e3-1e868bbee5a2"},
+    "aplicaciones": [
+      {"id": "c70a7a63-86c0-4e20-aa0e-989161a3afe0", "anticipo_id": "720a9289-6ad6-499e-8e5c-06d1563f33a3", "factura_arca_id": "5d55a255-f53d-4a2d-92e3-1e868bbee5a2", "monto_aplicado": 3213.58, "fecha_aplicacion": "2026-03-02T14:59:17.821718"},
+      {"id": "d708c34c-d9f5-4704-9417-2c0e1addddda", "anticipo_id": "720a9289-6ad6-499e-8e5c-06d1563f33a3", "factura_arca_id": "4f69d6b5-bf1d-450e-a88c-534706a729c2", "monto_aplicado": 331.5, "fecha_aplicacion": "2026-04-17T19:05:48.931555"}
+    ]
+  },
+  "despues": {
+    "factura_2014": {"monto_a_abonar": 3213.58, "tc_pago": 1390, "nota": "saldo en la moneda de la factura (USD), convencion del Cash Flow; el echeq la pago entera a 1.390"},
+    "anticipo_almacen": {"monto_restante": 0},
+    "aplicacion_c70a7a63": {"monto_aplicado": 4466876.2, "nota": "en pesos, como el anticipo"},
+    "aplicacion_d708c34c": "BORRADA: la ND 146 se pago por banco el 21/04 ($461.807,50); esta aplicacion salio del mismo error (el sistema creia que al anticipo le sobraban $4,46 M)"
+  },
+  "deshacer": [
+    "update msa.comprobantes_arca set monto_a_abonar = 4466876.20, tc_pago = null where id = '5d55a255-f53d-4a2d-92e3-1e868bbee5a2';",
+    "update public.anticipos_proveedores set monto_restante = 4463331.12 where id = '720a9289-6ad6-499e-8e5c-06d1563f33a3';",
+    "update public.anticipos_facturas set monto_aplicado = 3213.58 where id = 'c70a7a63-86c0-4e20-aa0e-989161a3afe0';",
+    "insert into public.anticipos_facturas (id, anticipo_id, factura_arca_id, monto_aplicado, fecha_aplicacion) values ('d708c34c-d9f5-4704-9417-2c0e1addddda', '720a9289-6ad6-499e-8e5c-06d1563f33a3', '4f69d6b5-bf1d-450e-a88c-534706a729c2', 331.50, '2026-04-17 19:05:48.931555');"
+  ]
+}
