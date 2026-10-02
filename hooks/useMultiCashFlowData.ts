@@ -5,7 +5,7 @@ import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identific
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
-import { cuotasPorCobrar, marcarCuota } from "@/lib/ventas/hacienda"
+import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 
@@ -586,10 +586,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   //     imp_total − retenciones sufridas − anticipos de cobro ya vinculados
   // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
   // fila, así que si no se restan la misma plata se cuenta dos veces.
-  const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>): CashFlowRow[] => {
+  const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>, imputacionesPorComp: Map<string, Imputacion[]> = new Map()): CashFlowRow[] => {
     return comprobantes.flatMap(c => {
       // 🐂 La liquidación de hacienda va aparte: en cuotas y con su propia cuenta de cobro.
-      if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0)
+      if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0, imputacionesPorComp.get(c.id) || [])
       const total = Number(c.imp_total) || 0
       const imputado = imputadoPorComp.get(c.id) || 0
       const netoACobrar = total - imputado
@@ -628,12 +628,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    *      y en la liquidación de Genta proyectaba $675.905 de más. (Para el resto de las ventas esa
    *      resta sigue igual: cambiarla es A-BUG-1231, que el usuario dejó como tema aparte.)
    *   2. **Cuándo**: si el papel trae plazos (30/60/90), una fila por cuota, cada una en su fecha.
-   *      Lo imputado aparte (anticipos, certificados) cancela primero las cuotas más viejas.
+   *      Lo imputado aparte (anticipos, certificados) va a la cuota de SU FECHA (`repartirEnCuotas`):
+   *      la retención de Ganancias del pago del 03/09 baja la cuota del 03/09, no «la primera».
    *
    * 📌 El `id` de una cuota lleva `#cuota-N` para que sea único en la grilla. Las filas de venta no
    * se editan desde el Cash Flow, así que no hay escritura que dependa de ese id.
    */
-  const filasLiqHacienda = (c: any, imputado: number): CashFlowRow[] => {
+  const filasLiqHacienda = (c: any, imputado: number, imputaciones: Imputacion[]): CashFlowRow[] => {
     const cobro = cobroEsperado(c, imputado).pagoCondiciones
     const base = {
       origen: 'VENTA' as const,
@@ -650,7 +651,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       comprobante_display: c.nro_comprobante || null,
     }
     const fechaSola = c.fecha_cobro_estimada || c.fecha_liquidacion
-    const cuotas = cuotasPorCobrar(c.plazos, cobro, imputado, fechaSola)
+    const cuotas = cuotasPorCobrar(c.plazos, cobro, imputaciones, fechaSola)
     const detalle = `Liquidación hacienda ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
     return cuotas.map(q => ({
       ...base,
@@ -889,21 +890,24 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Se restan sea cual sea el estado del anticipo (`parcial` o `vinculado`): si está imputado
       // a la factura, ya no es un ingreso pendiente de ella.
       const imputadoPorComp = new Map<string, number>()
+      // Las mismas imputaciones CON SU FECHA, para repartirlas por cuota en las liquidaciones con plazos.
+      const imputacionesPorComp = new Map<string, Imputacion[]>()
       if (idsVentas.length > 0) {
         const [{ data: retenciones }, { data: anticiposCobro }] = await Promise.all([
           supabase.schema('msa').from('retenciones_recibidas')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
+            .select('comprobante_venta_id, monto, fecha').in('comprobante_venta_id', idsVentas),
           // Por `comprobante_venta_id`, la columna propia de los cobros: `factura_id` tiene FK a
           // `msa.comprobantes_arca` y nunca puede contener una venta.
           supabase.from('anticipos_proveedores')
-            .select('comprobante_venta_id, monto').in('comprobante_venta_id', idsVentas),
+            .select('comprobante_venta_id, monto, fecha_pago').in('comprobante_venta_id', idsVentas),
         ])
-        const sumar = (id: string | null, monto: any) => {
+        const sumar = (id: string | null, monto: any, fecha: string | null) => {
           if (!id) return
           imputadoPorComp.set(id, (imputadoPorComp.get(id) || 0) + (Number(monto) || 0))
+          imputacionesPorComp.set(id, [...(imputacionesPorComp.get(id) || []), { monto: Number(monto) || 0, fecha }])
         }
-        ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto))
-        ;(anticiposCobro || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto))
+        ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto, r.fecha || null))
+        ;(anticiposCobro || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto, a.fecha_pago || null))
       }
 
       // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).
@@ -1029,7 +1033,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasAnticiposSueldos = [...filasAnticiposSueldosInd, ...filasAnticiposSueldosGrupo]
 
       // 7. Combinar y ordenar por fecha_estimada
-      const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp)
+      const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
       const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
       const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))

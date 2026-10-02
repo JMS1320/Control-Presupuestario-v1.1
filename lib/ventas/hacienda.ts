@@ -357,29 +357,109 @@ export function huellaLiquidacion(a: {
   return hayAlgo ? { version: 1, montosAMano, contraElPapel, precarga } : null
 }
 
+/** Algo que ya cancela parte de una liquidación: una retención con su fecha, un anticipo. */
+export interface Imputacion { monto: number; fecha?: string | null }
+
+/** Una cuota con lo que se le imputó: `importe` es la del papel, `aCobrar` lo que tiene que entrar al banco. */
+export interface CuotaDetalle {
+  n: number
+  de: number
+  vencimiento: string
+  importe: number
+  imputado: number
+  aCobrar: number
+  estado?: string
+}
+
+const diasEntre = (a: string, b: string) => Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 86400000
+
 /**
- * 📅 **Las cuotas que el Cash Flow espera cobrar** de una liquidación con plazos.
- * Lo imputado aparte (anticipos, certificados) cancela primero las cuotas más viejas; una cuota
- * cancelada entera no aparece. Sin plazos, una sola fila por el cobro entero.
+ * 🧾 **Reparte lo imputado (retenciones, anticipos) entre las CUOTAS, cada cosa en la cuota de su
+ * fecha.** Pedido del usuario 2026-10-02, al cargar la retención de Ganancias que Genta le hizo en el
+ * pago del 03/09: *«no se adjudica a cuotas, quedó como general»*.
+ *
+ * - Con fecha → a la cuota cuyo vencimiento está **más cerca** de esa fecha (empate: la anterior).
+ *   La retención del 03/09 cae en la cuota del 03/09, y la del 2º pago caerá en la 2ª — antes todo
+ *   se descontaba de la primera cuota, y la del 2º pago la habría dejado en negativo.
+ * - Sin fecha → a la primera cuota todavía no cobrada (es lo más probable: lo próximo que se paga).
+ * - Si excede su cuota, el sobrante pasa a las siguientes, en orden — no se pierde.
+ *
+ * Devuelve TODAS las cuotas, también las canceladas del todo (`aCobrar` 0): el que llama decide si
+ * mostrarlas. Sin plazos, una sola cuota por el cobro entero, en `fechaSinPlazos`.
+ */
+export function repartirEnCuotas(
+  plazos: { vencimiento?: string; importe?: number | string; estado?: string }[] | null | undefined,
+  cobroTotal: number,
+  imputaciones: Imputacion[],
+  fechaSinPlazos: string,
+): CuotaDetalle[] {
+  const crudas = (Array.isArray(plazos) ? plazos : []).filter(q => Number(q?.importe) > 0)
+  if (!crudas.length) {
+    // Sin plazos, `cobroTotal` ya viene neto de lo imputado (es `cobroEsperado`).
+    return [{ n: 1, de: 1, vencimiento: fechaSinPlazos, importe: r2(cobroTotal), imputado: 0, aCobrar: r2(cobroTotal) }]
+  }
+  const cuotas: CuotaDetalle[] = crudas.map((q, i) => ({
+    n: i + 1, de: crudas.length, vencimiento: q.vencimiento || fechaSinPlazos,
+    importe: Number(q.importe) || 0, imputado: 0, aCobrar: Number(q.importe) || 0,
+    ...(q.estado ? { estado: q.estado } : {}),
+  }))
+  const destino = (im: Imputacion): number => {
+    if (im.fecha) {
+      let mejor = 0
+      cuotas.forEach((q, i) => { if (diasEntre(q.vencimiento, im.fecha!) < diasEntre(cuotas[mejor].vencimiento, im.fecha!)) mejor = i })
+      return mejor
+    }
+    const abierta = cuotas.findIndex(q => q.estado !== 'cobrado' && q.aCobrar > 0.01)
+    return abierta >= 0 ? abierta : 0
+  }
+  for (const im of imputaciones) {
+    let resto = Math.max(Number(im.monto) || 0, 0)
+    for (let i = destino(im); i < cuotas.length && resto > 0.001; i++) {
+      const toma = Math.min(resto, cuotas[i].aCobrar)
+      cuotas[i].imputado = r2(cuotas[i].imputado + toma)
+      cuotas[i].aCobrar = r2(cuotas[i].aCobrar - toma)
+      resto -= toma
+    }
+  }
+  return cuotas
+}
+
+/**
+ * Las cuotas que el Cash Flow todavía espera cobrar (las que tienen algo por entrar). `imputado`
+ * acepta un número —se reparte como si no tuviera fecha, como antes— o la lista con fechas.
  */
 export function cuotasPorCobrar(
   plazos: { vencimiento?: string; importe?: number | string; estado?: string }[] | null | undefined,
   cobroTotal: number,
-  imputado: number,
+  imputado: number | Imputacion[],
   fechaSinPlazos: string,
 ): { n: number; de: number; vencimiento: string; importe: number; estado?: string }[] {
-  const cuotas = (Array.isArray(plazos) ? plazos : []).filter(q => Number(q?.importe) > 0)
-  if (!cuotas.length) return [{ n: 1, de: 1, vencimiento: fechaSinPlazos, importe: r2(cobroTotal) }]
-  let porCancelar = Math.max(Number(imputado) || 0, 0)
-  const salida: { n: number; de: number; vencimiento: string; importe: number; estado?: string }[] = []
-  cuotas.forEach((q, i) => {
-    const importe = Number(q.importe) || 0
-    const cancelado = Math.min(porCancelar, importe)
-    porCancelar -= cancelado
-    const resta = r2(importe - cancelado)
-    if (resta > 0.01) salida.push({ n: i + 1, de: cuotas.length, vencimiento: q.vencimiento || fechaSinPlazos, importe: resta, ...(q.estado ? { estado: q.estado } : {}) })
-  })
-  return salida
+  const lista = Array.isArray(imputado) ? imputado : (Number(imputado) > 0 ? [{ monto: Number(imputado) }] : [])
+  return repartirEnCuotas(plazos, cobroTotal, lista, fechaSinPlazos)
+    .filter(q => q.aCobrar > 0.01)
+    .map(q => ({ n: q.n, de: q.de, vencimiento: q.vencimiento, importe: q.aCobrar, ...(q.estado ? { estado: q.estado } : {}) }))
+}
+
+/**
+ * 🧮 **El control de las cuotas contra el papel** — pedido del usuario: *«marcar un descuadre entre
+ * las 3 fechas de cobro con sus montos vs el total»*. Dos identidades:
+ *   1. Las cuotas del papel suman el importe neto de la liquidación (total − retenciones impresas).
+ *   2. Lo que queda por cobrar en las cuotas + lo imputado aparte = lo mismo, menos nada: si no, se
+ *      perdió algo al repartir.
+ * Devuelve la diferencia de cada una (0 = cierra, tolerancia 1 centavo por cuota).
+ */
+export function controlCuotas(cuotas: CuotaDetalle[], importeNetoPapel: number, imputadoTotal: number) {
+  const sumaCuotas = r2(cuotas.reduce((s, q) => s + q.importe, 0))
+  const sumaACobrar = r2(cuotas.reduce((s, q) => s + q.aCobrar, 0))
+  const sumaImputada = r2(cuotas.reduce((s, q) => s + q.imputado, 0))
+  const tol = 0.01 * Math.max(cuotas.length, 1)
+  const difPapel = r2(sumaCuotas - importeNetoPapel)
+  const sinRepartir = r2(imputadoTotal - sumaImputada)
+  return {
+    sumaCuotas, sumaACobrar, sumaImputada,
+    difPapel, sinRepartir,
+    cierra: Math.abs(difPapel) <= tol && Math.abs(sinRepartir) <= tol,
+  }
 }
 
 /**

@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
-import { marcarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
+import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -34,7 +34,7 @@ interface Factura {
   plazos: PlazoCobro[] | null
 }
 interface Cobro { id: string; fecha: string | null; creditos: number; concepto: string | null; detalle: string | null }
-interface Ret { id: string; tipo: string; monto: number; cuenta_contable: string | null }
+interface Ret { id: string; tipo: string; monto: number; cuenta_contable: string | null; fecha: string | null }
 
 const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const fmtFecha = (s: string | null) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
@@ -66,7 +66,7 @@ export function VistaCobrosVenta() {
             .select('id, fecha, creditos, concepto, detalle, comprobante_venta_id')
             .in('comprobante_venta_id', ids),
           supabase.schema('msa').from('retenciones_recibidas')
-            .select('id, tipo, monto, cuenta_contable, comprobante_venta_id')
+            .select('id, tipo, monto, cuenta_contable, comprobante_venta_id, fecha')
             .in('comprobante_venta_id', ids),
         ])
         ;(cobros || []).forEach((c: any) => {
@@ -93,12 +93,31 @@ export function VistaCobrosVenta() {
    * comprobantes no cambia nada: es el tema aparte de A-BUG-1231.)
    */
   const impresas = (f: Factura) => (TIPOS_LIQ_HACIENDA.has(Number(f.tipo_comprobante)) ? (Number(f.ret_iibb) || 0) + (Number(f.ret_iva) || 0) : 0)
+  /**
+   * 📅 Las cuotas de una liquidación con plazos, con las retenciones cargadas aparte repartidas en la
+   * cuota de SU FECHA (`repartirEnCuotas`, la misma cuenta que usa el Cash Flow). Pedido del usuario
+   * 2026-10-02: la retención de Ganancias del 03/09 «quedó como general» y las cuotas no bajaban.
+   */
+  const cuotasDe = (f: Factura) => (f.plazos || []).length
+    ? repartirEnCuotas(f.plazos, 0, (retsPorFac.get(f.id) || []).map(r => ({ monto: Number(r.monto) || 0, fecha: r.fecha })), '')
+    : []
   const derivados = (f: Factura) => {
     const total = Number(f.imp_total) || 0
-    const cobrado = (cobrosPorFac.get(f.id) || []).reduce((s, c) => s + (Number(c.creditos) || 0), 0)
-    const retenido = (retsPorFac.get(f.id) || []).reduce((s, r) => s + (Number(r.monto) || 0), 0) + impresas(f)
+    const retAparte = (retsPorFac.get(f.id) || []).reduce((s, r) => s + (Number(r.monto) || 0), 0)
+    const retenido = retAparte + impresas(f)
+    const cuotas = cuotasDe(f)
+    /**
+     * 🔑 Con cuotas, lo cobrado es lo de las cuotas MARCADAS cobradas (lo que entró por cada una:
+     * su importe menos su retención). Antes sólo contaba el banco vinculado, y una cuota marcada
+     * cobrada dejaba «Cobrado $0» — el usuario lo vio el 2026-10-02. Sin cuotas, sigue el banco.
+     * (El cobro del banco atado a su cuota es A-BUG-1234: cuando exista, marca la cuota y entra acá.)
+     */
+    const cobrado = cuotas.length
+      ? cuotas.filter(q => q.estado === 'cobrado').reduce((s, q) => s + q.aCobrar, 0)
+      : (cobrosPorFac.get(f.id) || []).reduce((s, c) => s + (Number(c.creditos) || 0), 0)
     const saldo = total - cobrado - retenido
-    return { total, cobrado, retenido, saldo }
+    const control = cuotas.length ? controlCuotas(cuotas, total - impresas(f), retAparte) : null
+    return { total, cobrado, retenido, saldo, cuotas, control }
   }
 
   /**
@@ -226,11 +245,19 @@ export function VistaCobrosVenta() {
                         {(f.plazos || []).length > 0 && (
                           <div className="mt-3">
                             <div className="text-xs font-medium text-gray-700 mb-1">Cuotas ({(f.plazos || []).filter(q => q.estado === 'cobrado').length} de {(f.plazos || []).length} cobradas)</div>
+                            <div className="text-[10px] text-gray-500 flex gap-3 pb-0.5">
+                              <span className="w-24">Vence</span><span className="w-16" />
+                              <span className="w-32 text-right">Cuota del papel</span>
+                              <span className="w-28 text-right">− Retenciones</span>
+                              <span className="w-32 text-right">= Entra al banco</span>
+                            </div>
                             {(f.plazos || []).map((q, i) => (
                               <div key={i} className="text-xs flex items-center gap-3 border-b py-1">
                                 <span className="w-24">{fmtFecha(q.vencimiento)}</span>
                                 <span className="w-16 text-gray-500">{q.dias} días</span>
                                 <span className="w-32 text-right tabular-nums">{fmt(q.importe)}</span>
+                                <span className="w-28 text-right tabular-nums text-orange-700">{d.cuotas[i]?.imputado ? '− ' + fmt(d.cuotas[i].imputado) : '—'}</span>
+                                <span className="w-32 text-right tabular-nums font-medium">{fmt(d.cuotas[i]?.aCobrar ?? Number(q.importe))}</span>
                                 <span className={'w-20 ' + (q.estado === 'cobrado' ? 'text-green-700 font-medium' : 'text-gray-500')}>{q.estado === 'cobrado' ? '✓ cobrada' : 'a cobrar'}</span>
                                 {f.estado !== 'conciliado' && (
                                   <Button size="sm" variant="outline" className="h-6 text-xs px-2" disabled={marcando === f.id + '#' + i}
@@ -240,6 +267,14 @@ export function VistaCobrosVenta() {
                                 )}
                               </div>
                             ))}
+                            {/* 🧮 El control: las cuotas contra el papel, y que no quede retención sin repartir. */}
+                            {d.control && (d.control.cierra
+                              ? <div className="mt-1 text-[11px] text-green-700">✓ Las cuotas suman el importe neto del papel ({fmt(d.control.sumaCuotas)}) y las retenciones quedaron repartidas</div>
+                              : <div className="mt-1 rounded border border-red-300 bg-red-50 p-1.5 text-[11px] text-red-800">
+                                  ⚠️ Descuadre:
+                                  {Math.abs(d.control.difPapel) > 0.01 && <> las cuotas suman {fmt(d.control.sumaCuotas)} y el importe neto del papel es {fmt(d.total - impresas(f))} (dif. {fmt(d.control.difPapel)}).</>}
+                                  {Math.abs(d.control.sinRepartir) > 0.01 && <> Hay {fmt(d.control.sinRepartir)} de retenciones que superan lo que queda en las cuotas.</>}
+                                </div>)}
                           </div>
                         )}
                         {!saldado && (

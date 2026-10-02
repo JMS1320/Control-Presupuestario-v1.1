@@ -62,7 +62,7 @@ import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -1969,6 +1969,30 @@ export function correrCasos(): Resultado[] {
     "2 cuotas · 25489470.23 · 32256007.72",
     `${cuotasConAnticipo.length} cuotas · ${cuotasConAnticipo.map(q => q.importe).join(" · ")}`,
     cuotasConAnticipo.length === 2 && cuotasConAnticipo[0].importe === 25489470.23 && cuotasConAnticipo[1].importe === 32256007.72, "A-FEAT-1225")
+
+  // ══ 🧾 Las retenciones van a la cuota de SU FECHA (2026-10-02, caso real de Genta) ══════════
+  // Ganancias del pago del 03/09: $583.395,25 (como la cargó el usuario). El banco acreditó $31.672.612,47.
+  const retGan1 = { monto: 583395.25, fecha: "2026-09-03" }
+  const conRet1 = repartirEnCuotas(plazosGenta, 0, [retGan1], "")
+  chequear("Liquidación de hacienda", "🧾 La retención del 03/09 baja la cuota del 03/09: 32.256.007,73 − 583.395,25 = 31.672.612,48 (banco: ,47)",
+    "31672612.48 · 33233462.5 · 32256007.72", conRet1.map(q => q.aCobrar).join(" · "),
+    conRet1[0].aCobrar === 31672612.48 && conRet1[1].aCobrar === 33233462.5 && conRet1[2].aCobrar === 32256007.72, "A-BUG-1234")
+  // La del 2º pago tiene que caer en la 2ª cuota — con el reparto viejo (en orden) caía en la 1ª.
+  const conRet2 = repartirEnCuotas(plazosGenta, 0, [retGan1, { monto: 600000, fecha: "2026-10-05" }], "")
+  chequear("Liquidación de hacienda", "La retención del 2º pago (05/10) cae en la cuota del 03/10, no en la primera",
+    "31672612.48 · 32633462.5", `${conRet2[0].aCobrar} · ${conRet2[1].aCobrar}`,
+    conRet2[0].aCobrar === 31672612.48 && conRet2[1].aCobrar === 32633462.5, "A-BUG-1234")
+  const ctl = controlCuotas(conRet2, 97745477.95, 1183395.25)
+  chequear("Liquidación de hacienda", "🧮 Control: las cuotas suman el importe neto del papel y no queda retención sin repartir",
+    "cierra", ctl.cierra ? "cierra" : `dif papel ${ctl.difPapel} · sin repartir ${ctl.sinRepartir}`, ctl.cierra, "A-BUG-1234")
+  const ctlMal = controlCuotas(repartirEnCuotas(plazosGenta.slice(0, 2), 0, [], ""), 97745477.95, 0)
+  chequear("Liquidación de hacienda", "🧮 Si las cuotas no suman el papel (falta una), el control marca el descuadre",
+    "-32256007.72", String(ctlMal.difPapel), !ctlMal.cierra && ctlMal.difPapel === -32256007.72, "A-BUG-1234")
+  chequear("Liquidación de hacienda", "Cuota 1 cobrada con su retención: lo cobrado es lo que entró al banco (31.672.612,48), no $0",
+    "31672612.48", String(repartirEnCuotas(plazosGenta.map((q, i) => i === 0 ? { ...q, estado: "cobrado" } : q), 0, [retGan1], "")
+      .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0)),
+    repartirEnCuotas(plazosGenta.map((q, i) => i === 0 ? { ...q, estado: "cobrado" } : q), 0, [retGan1], "")
+      .filter(q => q.estado === "cobrado").reduce((x, q) => x + q.aCobrar, 0) === 31672612.48, "A-BUG-1234")
 
   const sinPlazos = cuotasPorCobrar(null, 97745477.95, 0, "2026-08-04")
   chequear("Liquidación de hacienda", "Sin plazos, una sola fila por el cobro entero",
