@@ -234,3 +234,13 @@ toca filas, permisos, RLS ni roles, y la vista `public.ventas_unificadas` **no s
 aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Sólo agrega un valor permitido;
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
+
+## 📨 2026-10-02 · PARA JAVIER — VOY A CORRER `scripts/72` (aviso ANTES de aplicarlo)
+
+Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **`public.anticipos_proveedores`**:
+- el CHECK de `estado_pago` suma **`en_cartera`** (cheque de un cliente recibido y todavía no usado);
+- columna nueva **`endosado_en_id uuid`** → FK a la misma tabla (el pago al proveedor que se canceló
+  endosando ese cheque), `on delete set null`.
+
+No toca filas, permisos, RLS ni vistas. Tiene deshacer con freno. Si algo tuyo enumera los estados
+de pago de un anticipo o hace `select *` y valida columnas, sumale estos dos.
