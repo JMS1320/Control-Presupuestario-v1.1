@@ -60,6 +60,7 @@ import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
+import { kgNetosDeVenta, promedioKg, categoriaDeVenta } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1785,6 +1786,34 @@ export function correrCasos(): Resultado[] {
   chequear("Cobro de venta", "Un cobro que coincide exacto se marca exacto",
     "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
     diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
+
+  // ══ 🐂 LA VENTA DE HACIENDA VISTA DESDE INGRESOS (A-BUG-1232) ═══════════════════════════════
+  // Números REALES: la venta de Pedro Genta del 04/08/2026 y su liquidación.
+
+  // 🧨 El desbaste se guarda como FRACCIÓN (0.03). Tratarlo como porcentaje daba kilos negativos.
+  chequear("Venta de hacienda", "🧨 El desbaste es FRACCIÓN: 16.180 kg con 0,03 dejan 15.694,6 kg",
+    "15694.6", kgNetosDeVenta(16180, 0.03).toFixed(1),
+    Math.abs(kgNetosDeVenta(16180, 0.03) - 15694.6) < 0.001, "A-BUG-1232")
+
+  // 🔑 Y esos kilos son los que trae la liquidación (15.695): la venta y el papel hablan de lo mismo.
+  chequear("Venta de hacienda", "🔑 Los kg netos de la venta coinciden con los de la liquidación (15.695)",
+    "diferencia < 0,5 kg", (15695 - kgNetosDeVenta(16180, 0.03)).toFixed(1) + " kg",
+    Math.abs(15695 - kgNetosDeVenta(16180, 0.03)) < 0.5, "A-BUG-1232")
+
+  // El neto guardado de la venta sale de esos kilos: 15.694,6 × 5.670 = 88.988.382.
+  chequear("Venta de hacienda", "El neto guardado de la venta es kg netos × precio",
+    "88988382", (kgNetosDeVenta(16180, 0.03) * 5670).toFixed(0),
+    Math.round(kgNetosDeVenta(16180, 0.03) * 5670) === 88988382, "A-BUG-1232")
+
+  chequear("Venta de hacienda", "Promedio: 16.180 kg / 55 cabezas = 294 kg; sin cabezas, cero (no divide por cero)",
+    "294 · 0", promedioKg(16180, 55).toFixed(0) + " · " + promedioKg(16180, 0),
+    Math.round(promedioKg(16180, 55)) === 294 && promedioKg(16180, 0) === 0, "A-BUG-1232")
+
+  // 🧨 La venta de Genta tiene la categoría en su LOTE, no en la venta: mirar sólo la directa la hacía «sin categoría».
+  chequear("Venta de hacienda", "🧨 Una venta por lote toma la categoría del lote (Genta = Ternero Recria)",
+    "Ternero Recria", String(categoriaDeVenta("Ternero Recria", null)),
+    categoriaDeVenta("Ternero Recria", null) === "Ternero Recria" && categoriaDeVenta(null, "Toro") === "Toro"
+      && categoriaDeVenta(null, null) === null, "A-BUG-1232")
 
   return r
 }

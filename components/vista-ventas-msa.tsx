@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalVentaMsa, type VentaMsa } from "./modal-venta-msa"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { kgNetosDeVenta, promedioKg, categoriaDeVenta } from "@/lib/ventas/hacienda"
 
 interface Props {
   userRole?: UserRole
@@ -47,6 +48,25 @@ function calcDerivados(v: VentaMsa) {
   }
 }
 
+/** Una venta de hacienda tal como la muestra esta solapa (A-BUG-1232). */
+interface VentaHaciendaFila {
+  id: string
+  fecha: string
+  cliente: string
+  cuit: string
+  categoria: string | null
+  cabezas: number
+  kgTotales: number
+  /** FRACCIÓN (0.03 = 3 %), como la guarda Productivo. */
+  pctDesbaste: number
+  precioKg: number
+  /** El neto que guardó Productivo — se lee, no se recalcula. */
+  neto: number
+  plazo: string | null
+  /** Lo ya vinculado a comprobantes (ventas_facturas). */
+  liquidado: number
+}
+
 export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const esAdmin = userRole === 'admin'
   const [ventas, setVentas] = useState<VentaMsa[]>([])
@@ -57,6 +77,15 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const [busqueda, setBusqueda] = useState('')
   const [modalAbierto, setModalAbierto] = useState(false)
   const [ventaEditando, setVentaEditando] = useState<VentaMsa | null>(null)
+  /**
+   * 🐂 A-BUG-1232 — las ventas de HACIENDA, que se cargan en Productivo. Esta solapa sólo miraba
+   * granos, y la venta de 55 novillos del 04/08 no aparecía en Ingresos aunque estaba en la base.
+   * Se leen de `ventas_unificadas` —la vista que ya junta todas las ventas y usan otras cinco
+   * pantallas— y se completan con los kilos y el desbaste de `stock_ventas`. Sólo lectura: se
+   * siguen cargando y editando en Productivo.
+   */
+  const [ventasHacienda, setVentasHacienda] = useState<VentaHaciendaFila[]>([])
+  const [errorHacienda, setErrorHacienda] = useState<string | null>(null)
 
   const cargar = async () => {
     setLoading(true)
@@ -95,6 +124,44 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       setAggLiq(agg)
     } catch (err) {
       toast.error('Error cargando ventas: ' + (err as Error).message)
+    }
+
+    // 🐂 Hacienda, aparte: si falla, no se lleva puestas las de granos — y se dice, no se calla.
+    try {
+      setErrorHacienda(null)
+      const { data: base, error: eBase } = await supabase
+        .from('ventas_unificadas')
+        .select('venta_id, cliente_nombre, cliente_cuit, fecha_venta, cantidad, precio_pesos, monto_pesos, facturado, centro_costo')
+        .eq('venta_tipo', 'ganaderia').eq('empresa', 'MSA')
+        .order('fecha_venta', { ascending: false })
+      if (eBase) throw eBase
+      const ids = (base || []).map((b: any) => b.venta_id)
+      const { data: det, error: eDet } = ids.length
+        ? await supabase.schema('productivo').from('stock_ventas')
+            .select('id, kg_totales, pct_desbaste, plazo_cobro, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
+            .in('id', ids)
+        : { data: [] as any[], error: null }
+      if (eDet) throw eDet
+      const detPorId = new Map((det || []).map((d: any) => [d.id, d]))
+      setVentasHacienda((base || []).map((b: any) => {
+        const d: any = detPorId.get(b.venta_id) || {}
+        return {
+          id: b.venta_id,
+          fecha: b.fecha_venta,
+          cliente: b.cliente_nombre || '—',
+          cuit: b.cliente_cuit || '',
+          categoria: categoriaDeVenta(d.lote?.categoria, d.cat?.nombre),
+          cabezas: Number(b.cantidad) || 0,
+          kgTotales: Number(d.kg_totales) || 0,
+          pctDesbaste: Number(d.pct_desbaste) || 0,
+          precioKg: Number(b.precio_pesos) || 0,
+          neto: Number(b.monto_pesos) || 0,
+          plazo: d.plazo_cobro || null,
+          liquidado: Number(b.facturado) || 0,
+        }
+      }))
+    } catch (err) {
+      setErrorHacienda((err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -110,6 +177,14 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           || normalizarBusqueda(v.grano || '').includes(q)
       })
     : ventas
+
+  const haciendaFiltrada = busqueda.trim()
+    ? ventasHacienda.filter(h => {
+        const q = normalizarBusqueda(busqueda)
+        return normalizarBusqueda(h.cliente).includes(q) || h.cuit.includes(q)
+          || normalizarBusqueda(h.categoria || '').includes(q)
+      })
+    : ventasHacienda
 
   const abrirAlta = () => {
     setVentaEditando(null)
@@ -149,7 +224,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
           <Input
-            placeholder="Buscar cliente, CUIT, grano..."
+            placeholder="Buscar cliente, CUIT, grano, categoría..."
             value={busqueda}
             onChange={e => setBusqueda(e.target.value)}
             className="pl-8 h-9 text-sm"
@@ -256,6 +331,77 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 🐂 A-BUG-1232 — las ventas de hacienda de Productivo, vistas desde Ingresos. */}
+      <div className="space-y-2">
+        <div className="flex items-baseline gap-3">
+          <h3 className="text-base font-semibold">🐂 Ventas de hacienda</h3>
+          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos. Acá se ven para liquidarlas.</span>
+        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Categoría</TableHead>
+                    <TableHead className="text-right">Cabezas</TableHead>
+                    <TableHead className="text-right">Kg</TableHead>
+                    <TableHead className="text-right" title="Desbaste: los kilos que se descuentan antes de pagar">Desbaste</TableHead>
+                    <TableHead className="text-right" title="Kilos después del desbaste: los que se cobran">Kg netos</TableHead>
+                    <TableHead className="text-right">Prom.</TableHead>
+                    <TableHead className="text-right">Precio/kg</TableHead>
+                    <TableHead className="text-right">Neto venta</TableHead>
+                    <TableHead>Plazo</TableHead>
+                    <TableHead className="text-center">Liquidación</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {errorHacienda ? (
+                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-red-600">
+                      No se pudieron leer las ventas de hacienda: {errorHacienda}
+                    </TableCell></TableRow>
+                  ) : loading ? (
+                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-gray-500">Cargando…</TableCell></TableRow>
+                  ) : haciendaFiltrada.length === 0 ? (
+                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-gray-500">
+                      {ventasHacienda.length === 0 ? 'No hay ventas de hacienda cargadas en Productivo.' : 'No hay resultados para la búsqueda.'}
+                    </TableCell></TableRow>
+                  ) : haciendaFiltrada.map(h => {
+                    const kgNetos = kgNetosDeVenta(h.kgTotales, h.pctDesbaste)
+                    const desbaste = h.pctDesbaste ? fmtAR(h.pctDesbaste * 100, 1) + ' %' : '—'
+                    return (
+                      <TableRow key={h.id} className="hover:bg-gray-50">
+                        <TableCell className="whitespace-nowrap">{fmtFecha(h.fecha)}</TableCell>
+                        <TableCell>
+                          {h.cliente}
+                          {h.cuit && <div className="text-xs text-gray-400">{h.cuit}</div>}
+                        </TableCell>
+                        <TableCell>{h.categoria || <span className="text-amber-600 text-xs">sin categoría</span>}</TableCell>
+                        <TableCell className="text-right">{fmtAR(h.cabezas, 0)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmtAR(h.kgTotales, 0)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{desbaste}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmtAR(kgNetos, 1)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmtAR(promedioKg(h.kgTotales, h.cabezas), 0)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmtMoney(h.precioKg)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap font-semibold">{fmtMoney(h.neto)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{h.plazo || '—'}</TableCell>
+                        <TableCell className="text-center">
+                          {h.liquidado > 0
+                            ? <Badge variant="outline" className="bg-green-50 text-green-700" title={'Vinculado: ' + fmtMoney(h.liquidado)}><CheckCircle2 className="h-3 w-3 mr-1" />liquidada</Badge>
+                            : <span className="text-xs text-gray-400">— sin liquidar</span>}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <ModalVentaMsa
         open={modalAbierto}
