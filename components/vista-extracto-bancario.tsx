@@ -1655,7 +1655,10 @@ ${texto.trim()}` : texto.trim()
             : repartirEnCuotas(plazos, 0, retsConFecha.get(String(c.id)) ?? [], '')
           return cuotas
             .map((q, i) => ({ q, i }))
-            .filter(({ q, i }) => !plazos[i]?.movimiento_id && q.aCobrar > 0.99)
+            // Se ofrece mientras le falte cobrar — aunque tenga un movimiento marcado: con el error de
+            // antes (2026-10-02) la cuota de enero quedó «conciliada» por un cobro parcial de $2,1 M y
+            // la venta dejó de aparecer. La que está bien conciliada ya llega con 0 y no se ofrece.
+            .filter(({ q }) => q.aCobrar > 0.99)
             .map(({ q, i }) => ({
               ...base,
               __key: `${c.id}#${i}`,
@@ -2390,7 +2393,21 @@ ${marca}` : marca
 
         // El otro lado. Con CUOTA: sólo esa cuota queda conciliada contra este movimiento, y la
         // liquidación pasa a conciliado recién con todas (A-BUG-1234). Sin cuota: cobrado, como antes.
-        if (ventaElegida.__cuota != null && saldada) {
+        if (ventaElegida.__cuota != null && !saldada) {
+          // Un cobro parcial sobre una cuota que figura «conciliada» delata la marca vieja: se suelta,
+          // y la cuota vuelve a «a cobrar» hasta que el último cobro la complete.
+          const { data: compAhora } = await supabase.schema(ventaElegida.__schema)
+            .from('comprobantes_venta').select('plazos').eq('id', ventaElegida.id).maybeSingle()
+          const plazosAhora = ((compAhora as any)?.plazos ?? []) as PlazoCobro[]
+          const marcaVieja = plazosAhora[ventaElegida.__cuota]?.movimiento_id
+          if (marcaVieja) {
+            const r = conciliarCuota(plazosAhora, null, null, marcaVieja)
+            const { error: errSoltar } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
+              .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
+            if (errSoltar) throw errSoltar
+            avisosAsignacion.push(`ℹ️ La cuota figuraba conciliada por un cobro parcial: volvió a «a cobrar» hasta completarse.`)
+          }
+        } else if (ventaElegida.__cuota != null && saldada) {
           // Sólo el cobro que COMPLETA la cuota la da por conciliada; los parciales quedan atados al
           // comprobante (y su pago a cuenta) y van bajando lo que falta.
           const { data: compAhora, error: errLeer } = await supabase.schema(ventaElegida.__schema)
