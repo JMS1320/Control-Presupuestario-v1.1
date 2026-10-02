@@ -60,7 +60,8 @@ import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
-import { kgNetosDeVenta, promedioKg, categoriaDeVenta } from "@/lib/ventas/hacienda"
+import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1814,6 +1815,90 @@ export function correrCasos(): Resultado[] {
     "Ternero Recria", String(categoriaDeVenta("Ternero Recria", null)),
     categoriaDeVenta("Ternero Recria", null) === "Ternero Recria" && categoriaDeVenta(null, "Toro") === "Toro"
       && categoriaDeVenta(null, null) === null, "A-BUG-1232")
+
+  // ══ 🧾 LA LIQUIDACIÓN DE HACIENDA — tipo 60 (A-FEAT-1225) ══════════════════════════════════
+  // Los dos papeles REALES de «de Campo a Campo». Si una cuenta de la app no da lo del papel,
+  // la app está mal — el papel es la referencia.
+
+  // Papel 1 · 27/01/2026 · 70 novillos de invernada · Frig. Rioplatense
+  const papel1 = calcularLiqHacienda({
+    lineas: [{ razonSocial: "FRIG.RIOPLATENS", cuit: "30540080298", cabezas: 70, clasificacion: "NOVILLO DE INVERNADA", kilos: 28000, precio: 4623 }],
+    comisionPct: 2.319, redondeo: -1193.64, ivaPct: 10.5,
+    retenciones: [{ concepto: "INGRESOS BRUTOS Pcia BS AS", alicuota: 0.75, importe: 970830 }],
+  })
+  chequear("Liquidación de hacienda", "Papel 1 (27/01): bruto, comisión y neto gravado, al centavo",
+    "129.444.000 · 3.001.806,36 · 126.441.000",
+    `${papel1.bruto} · ${papel1.comision} · ${papel1.netoGravado}`,
+    papel1.bruto === 129444000 && papel1.comision === 3001806.36 && papel1.netoGravado === 126441000, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 1: IVA 10,5 % del neto gravado e importe neto = 138.746.475",
+    "13.276.305 · 138.746.475", `${papel1.iva} · ${papel1.importeNeto}`,
+    papel1.iva === 13276305 && papel1.importeNeto === 138746475, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 1: el «TOTAL» del papel es la columna de gastos/IVA/retenciones = 9.302.475",
+    "9302475", String(papel1.columnaGastos), papel1.columnaGastos === 9302475, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🔑 IIBB se retiene sobre el BRUTO, no sobre el neto: 0,75 % de 129.444.000 = 970.830",
+    "970830", String(retencionSugerida(129444000, 0.75)), retencionSugerida(129444000, 0.75) === 970830, "A-FEAT-1225")
+
+  // Papel 2 · 04/08/2026 · 55 novillitos · la venta de Pedro Genta
+  const papel2 = calcularLiqHacienda({
+    lineas: [{ razonSocial: "DON FELICIANO S", cuit: "30709270105", cabezas: 55, clasificacion: "Novillito de Invernada", kilos: 15695, precio: 5742 }],
+    comisionPct: 1.166, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "INGRESOS BRUTOS Pcia BS AS", alicuota: 0.75, importe: 675905.18 }],
+  })
+  chequear("Liquidación de hacienda", "Papel 2 (04/08): bruto 90.120.690 · neto gravado 89.069.125 · importe neto 97.745.477,95",
+    "90120690 · 89069125 · 97745477.95", `${papel2.bruto} · ${papel2.netoGravado} · ${papel2.importeNeto}`,
+    papel2.bruto === 90120690 && papel2.netoGravado === 89069125 && papel2.importeNeto === 97745477.95, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Papel 2: precio después de comisión = 5.675,00 $/kg (neto gravado / kilos)",
+    "5675.00", papel2.precioPostComision.toFixed(2), papel2.precioPostComision.toFixed(2) === "5675.00", "A-FEAT-1225")
+
+  // 🔑 El cobro: lo que el banco va a acreditar.
+  const cobro1 = cobroEsperado({ tipo_comprobante: 60, imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
+    comision_neto: 3001806.36, ret_iibb: 970830, subtotal_neto: 129444000 }, 0)
+  chequear("Liquidación de hacienda", "🔑 Se cobra el importe neto del papel: 138.746.475",
+    "138746475", String(cobro1.pagoCondiciones), Math.abs(cobro1.pagoCondiciones - 138746475) < 0.005, "A-FEAT-1225")
+  const cobro2 = cobroEsperado({ tipo_comprobante: 60, imp_neto_gravado: 89069125, iva: 9352258.13, imp_total: 98421383.13,
+    comision_neto: 1050807.25, ret_iibb: 675905.18, subtotal_neto: 90120690 }, 0)
+  chequear("Liquidación de hacienda", "🔑 Papel 2: se cobra 97.745.477,95",
+    "97745477.95", cobro2.pagoCondiciones.toFixed(2), Math.abs(cobro2.pagoCondiciones - 97745477.95) < 0.005, "A-FEAT-1225")
+
+  // 🧨 Sin el caso aparte, la cuenta de GRANOS le restaba todo el IVA como si fuera RG 2300.
+  const cobroComoGranos = cobroEsperado({ imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
+    comision_neto: 3001806.36, ret_iibb: 970830, subtotal_neto: 129444000 }, 0)
+  chequear("Liquidación de hacienda", "🧨 Tratada como granos, el cobro daba MAL (le sacaba el IVA entero)",
+    "≠ 138.746.475", cobroComoGranos.pagoCondiciones.toFixed(2),
+    Math.abs(cobroComoGranos.pagoCondiciones - 138746475) > 1000000, "A-FEAT-1225")
+
+  // 🔑 La paridad que pidió el usuario: subtotal de la venta contra subtotal después de comisión.
+  const ventaGenta = { cabezas: 55, kgNetos: kgNetosDeVenta(16180, 0.03), precioKg: 5670, neto: 88988382 }
+  const avisosGenta = compararConVenta(ventaGenta, papel2)
+  const av = (t: string) => avisosGenta.find(a => a.tema === t)!
+  chequear("Liquidación de hacienda", "Venta de Genta vs. su liquidación: cabezas y kilos coinciden",
+    "ok · ok", `${av("Cabezas").nivel} · ${av("Kilos").nivel}`,
+    av("Cabezas").nivel === "ok" && av("Kilos").nivel === "ok", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🔑 …y el subtotal AVISA: la liquidación pagó +$80.743 (+5,00 $/kg sobre lo pactado)",
+    "aviso · 80743", `${av("Subtotal").nivel} · ${av("Subtotal").diferencia}`,
+    av("Subtotal").nivel === "aviso" && av("Subtotal").diferencia === 80743 && av("Subtotal").mensaje.includes("+5,00"), "A-FEAT-1225")
+
+  // Con el subtotal igual al neto de la venta, no hay aviso (tolerancia: medio kilo).
+  const iguales = compararConVenta({ cabezas: 55, kgNetos: 15695, precioKg: 5675, neto: 89069125 + 1000 }, papel2)
+  chequear("Liquidación de hacienda", "Si la diferencia está dentro de medio kilo de redondeo, no avisa",
+    "ok", iguales.find(a => a.tema === "Subtotal")!.nivel, iguales.find(a => a.tema === "Subtotal")!.nivel === "ok", "A-FEAT-1225")
+
+  // Contra el papel: un número mal tipeado se señala; uno bien, no.
+  chequear("Liquidación de hacienda", "Un importe neto mal tipeado se avisa; el correcto, no",
+    "aviso · ok",
+    `${controlContraPapel(papel2, { importeNeto: 97745487.95 })[0].nivel} · ${controlContraPapel(papel2, { importeNeto: 97745477.95 })[0].nivel}`,
+    controlContraPapel(papel2, { importeNeto: 97745487.95 })[0].nivel === "aviso"
+      && controlContraPapel(papel2, { importeNeto: 97745477.95 })[0].nivel === "ok", "A-FEAT-1225")
+
+  // Plazos: 30/60/90 desde el 04/08 → los vencimientos del papel, 33/34/33, y la suma exacta.
+  const plazos = plazosDesdeVenta("30/60/90", "2026-08-04", 97745477.95)
+  chequear("Liquidación de hacienda", "Plazos 30/60/90 desde el 04/08: vencen 03/09, 03/10 y 02/11, al 33/34/33 %",
+    "2026-09-03 2026-10-03 2026-11-02 · 33/34/33",
+    plazos.map(x => x.vencimiento).join(" ") + " · " + plazos.map(x => x.pct).join("/"),
+    plazos.map(x => x.vencimiento).join(" ") === "2026-09-03 2026-10-03 2026-11-02"
+      && plazos.map(x => x.pct).join("/") === "33/34/33", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Las cuotas suman exacto el importe neto",
+    "ok", String(controlPlazos(plazos, 97745477.95)?.nivel), controlPlazos(plazos, 97745477.95)?.nivel === "ok", "A-FEAT-1225")
 
   return r
 }

@@ -38,7 +38,27 @@ export interface ComprobanteVentaParaCobro {
   almacenaje_iva?: number | null
   ret_iva?: number | null
   ret_iibb?: number | null
+  /** Hace falta para distinguir la liquidación de HACIENDA (60/61), que no lleva RG 2300. */
+  tipo_comprobante?: number | null
 }
+
+/**
+ * 🐂 **Cuenta de Venta y Líquido Producto (60 · A, 61 · B) — la liquidación de hacienda.** A-FEAT-1225.
+ *
+ * ⚠️ Con la cuenta de granos de abajo, esta liquidación daría MAL: restaría todo el IVA como si
+ * el comprador lo hubiera retenido por RG 2300. **En hacienda el IVA se cobra entero.** Y la
+ * comisión ya está afuera del neto gravado, así que tampoco se resta otra vez.
+ *
+ *     se cobra = total (neto gravado + IVA) − retenciones impresas − retenciones cargadas aparte
+ *
+ * Verificado con dos papeles reales: 139.717.305 − 970.830 = **138.746.475** (27/01/2026) y
+ * 98.421.383,13 − 675.905,18 = **97.745.477,95** (04/08/2026), los dos al centavo.
+ *
+ * 📌 Es un caso aparte y no un cambio a la cuenta de granos a propósito: la de granos la validó el
+ * usuario contra un papel real (A-FEAT-167), y tocarla para que sirva a las dos es arriesgar la
+ * que ya anda por la que no estaba.
+ */
+export const TIPOS_LIQ_HACIENDA = new Set([60, 61])
 
 export interface CobroEsperado {
   /** Lo facturado. */
@@ -65,6 +85,13 @@ export function cobroEsperado(
   v: ComprobanteVentaParaCobro,
   retencionesAparte = 0,
 ): CobroEsperado {
+  if (TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante))) {
+    const total = n(v.imp_total) || (n(v.imp_neto_gravado) + n(v.iva))
+    const retenciones = n(v.ret_iva) + n(v.ret_iibb) + n(retencionesAparte)
+    const neto = total - retenciones
+    return { totalOperacion: total, deducciones: 0, retenciones, importeNeto: neto, ivaRg2300: 0, pagoCondiciones: neto }
+  }
+
   const neto = n(v.subtotal_neto)
     || (n(v.imp_neto_gravado) + n(v.imp_neto_no_gravado) + n(v.imp_op_exentas))
   const ivaVenta = n(v.iva)
