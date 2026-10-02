@@ -61,7 +61,7 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
-  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta } from "@/lib/ventas/hacienda"
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -1899,6 +1899,26 @@ export function correrCasos(): Resultado[] {
       && plazos.map(x => x.pct).join("/") === "33/34/33", "A-FEAT-1225")
   chequear("Liquidación de hacienda", "Las cuotas suman exacto el importe neto",
     "ok", String(controlPlazos(plazos, 97745477.95)?.nivel), controlPlazos(plazos, 97745477.95)?.nivel === "ok", "A-FEAT-1225")
+
+  // ══ 🎚️ LA PRECARGA DESDE LA VENTA — «chupar los datos» (A-FEAT-1225, paso 3) ═══════════════
+  const pre = precargaDesdeVenta({ fecha: "2026-08-04", cliente: "Pedro Genta", cuit: "", categoria: "Ternero Recria",
+    cabezas: 55, kgTotales: 16180, pctDesbaste: 0.03, precioKg: 5670, pctCz: 0 })
+  chequear("Liquidación de hacienda", "🎚️ La precarga de Genta trae 55 cab, 15.695 kg NETOS (no 16.180), $5.670 y comisión 0",
+    "55 · 15695 · 5670 · 0",
+    `${pre.linea.cabezas} · ${pre.linea.kilos} · ${pre.linea.precio} · ${pre.comisionPct}`,
+    pre.linea.cabezas === 55 && pre.linea.kilos === 15695 && pre.linea.precio === 5670 && pre.comisionPct === 0, "A-FEAT-1225")
+
+  // 🔑 Con lo precargado tal cual, la liquidación da la venta: ningún aviso. La diferencia aparece
+  //    recién cuando el usuario tipea lo que dice su papel (el caso del +$80.743 de más arriba).
+  const tal = calcularLiqHacienda({ lineas: [pre.linea], comisionPct: pre.comisionPct, redondeo: 0, ivaPct: 10.5, retenciones: [] })
+  const avisosTal = compararConVenta({ cabezas: 55, kgNetos: kgNetosDeVenta(16180, 0.03), precioKg: 5670, neto: 88988382 }, tal)
+  chequear("Liquidación de hacienda", "🔑 Precargada sin tocar, no avisa nada: cabezas, kilos y subtotal coinciden con la venta",
+    "ok ok ok", avisosTal.map(a => a.nivel).join(" "), avisosTal.every(a => a.nivel === "ok"), "A-FEAT-1225")
+
+  // La CZ de la venta es FRACCIÓN; la comisión del papel, PORCENTAJE.
+  chequear("Liquidación de hacienda", "Una CZ de 0,02 en la venta se precarga como comisión 2 %",
+    "2", String(precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct),
+    precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct === 2, "A-FEAT-1225")
 
   return r
 }

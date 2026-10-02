@@ -1,0 +1,433 @@
+"use client"
+
+/**
+ * 🐂 **CARGAR UNA LIQUIDACIÓN DE HACIENDA** — «Cuenta de Venta y Líquido Producto A» (tipo 60).
+ * A-FEAT-1225. Pedido del usuario 2026-10-01: *«es como las de granos pero con sus propios tipos
+ * de datos… debe estar lista para chupar los datos de la venta… y debe dar alert en caso de cosas
+ * que no coincidan»*.
+ *
+ * - Las cuentas y los avisos viven en `lib/ventas/hacienda.ts`, con casos verificados al centavo
+ *   contra dos papeles reales. Esta pantalla sólo junta lo que se tipea y muestra lo que da.
+ * - **Abierta desde una venta, viene PRECARGADA** (§ Default del dato real): cabezas, kilos netos,
+ *   precio, clasificación, comprador, fecha y plazos. Lo que el usuario cambie es suyo; la
+ *   comparación se hace siempre contra la venta ORIGINAL, no contra lo editado.
+ * - **Avisa, no frena** (§ 🚦): una diferencia con la venta o con el papel puede tener explicación
+ *   —el usuario pacta el precio después de comisión—, así que se muestra y se deja guardar.
+ * - Las retenciones van igual que en granos: lo impreso en el papel acá; un certificado suelto,
+ *   después, con el botón % de la solapa Comprobantes.
+ */
+
+import { useEffect, useMemo, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { supabase } from "@/lib/supabase"
+import { registrarContrapartes } from "@/lib/contrapartes/registrar"
+import { toast } from "sonner"
+import { Plus, Trash2, CheckCircle2, AlertTriangle } from "lucide-react"
+import {
+  calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
+  plazosDesdeVenta, kgNetosDeVenta, precargaDesdeVenta, type AvisoLiq, type PlazoCobro, type VentaParaLiquidar,
+} from "@/lib/ventas/hacienda"
+
+/** La venta de Productivo desde la que se abre (null = liquidación suelta, sin venta). */
+export interface VentaOrigen {
+  id: string
+  fecha: string
+  cliente: string
+  cuit: string
+  categoria: string | null
+  cabezas: number
+  kgTotales: number
+  /** FRACCIÓN (0.03 = 3 %). */
+  pctDesbaste: number
+  precioKg: number
+  neto: number
+  plazo: string | null
+  /** % de CZ de la venta, FRACCIÓN. Se precarga como comisión. */
+  pctCz?: number | null
+  centroCosto?: string | null
+  /** Lo ya vinculado de esta venta a otros comprobantes. */
+  liquidado?: number
+}
+
+interface Props {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  venta: VentaOrigen | null
+  onGuardado?: () => void
+}
+
+// ── Formato es-AR (§ 💰 de CLAUDE.md) ────────────────────────────────────────────────────────
+// Montos: punto de miles, coma decimal. Porcentajes: coma o punto decimal, sin miles (2,319).
+const parsearAR = (s: string): number => (s ? parseFloat(String(s).replace(/\./g, '').replace(',', '.')) || 0 : 0)
+const parsearPct = (s: string): number => (s ? parseFloat(String(s).replace(',', '.')) || 0 : 0)
+const fmtAR = (n: number, dec = 2) => n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+const fmtPct = (n: number) => String(n).replace('.', ',')
+
+interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string }
+interface RetUI { concepto: string; alicuota: string; importe: string }
+interface PlazoUI { dias: string; pct: string; vencimiento: string; importe: string }
+
+const lineaVacia = (): LineaUI => ({ razonSocial: '', cuit: '', cabezas: '', clasificacion: '', kilos: '', precio: '' })
+const RET_IIBB: RetUI = { concepto: 'INGRESOS BRUTOS Pcia BS AS', alicuota: '0,75', importe: '' }
+
+/** 🎚️ La precarga (la lógica vive en lib; acá sólo se le da formato de pantalla). */
+function precargaParaPantalla(v: VentaOrigen) {
+  const p = precargaDesdeVenta(v)
+  return {
+    fecha: p.fecha,
+    lineas: [{
+      razonSocial: p.linea.razonSocial, cuit: p.linea.cuit,
+      cabezas: p.linea.cabezas ? String(p.linea.cabezas) : '',
+      clasificacion: p.linea.clasificacion,
+      kilos: p.linea.kilos ? fmtAR(p.linea.kilos, 0) : '',
+      precio: p.linea.precio ? fmtAR(p.linea.precio, 2) : '',
+    }],
+    comisionPct: fmtPct(p.comisionPct),
+  }
+}
+
+export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado }: Props) {
+  const [fecha, setFecha] = useState('')
+  const [consignatario, setConsignatario] = useState({ cuit: '', nombre: '' })
+  const [nroComp, setNroComp] = useState('')
+  const [nroGuia, setNroGuia] = useState('')
+  const [dte, setDte] = useState('')
+  const [procedencia, setProcedencia] = useState('')
+  const [lineas, setLineas] = useState<LineaUI[]>([lineaVacia()])
+  const [comisionPct, setComisionPct] = useState('')
+  const [redondeo, setRedondeo] = useState('')
+  const [ivaPct, setIvaPct] = useState('10,5')
+  const [rets, setRets] = useState<RetUI[]>([RET_IIBB])
+  const [plazos, setPlazos] = useState<PlazoUI[]>([])
+  const [papelBruto, setPapelBruto] = useState('')
+  const [papelNetoGravado, setPapelNetoGravado] = useState('')
+  const [papelImporteNeto, setPapelImporteNeto] = useState('')
+  const [guardando, setGuardando] = useState(false)
+
+  // Al abrir: precarga desde la venta, o formulario vacío.
+  useEffect(() => {
+    if (!open) return
+    setConsignatario({ cuit: '', nombre: '' })
+    setNroComp(''); setNroGuia(''); setDte(''); setProcedencia('')
+    setRedondeo(''); setIvaPct('10,5'); setRets([RET_IIBB]); setPlazos([])
+    setPapelBruto(''); setPapelNetoGravado(''); setPapelImporteNeto('')
+    if (venta) {
+      const p = precargaParaPantalla(venta)
+      setFecha(p.fecha); setLineas(p.lineas); setComisionPct(p.comisionPct)
+    } else {
+      setFecha(''); setLineas([lineaVacia()]); setComisionPct('')
+    }
+  }, [open, venta])
+
+  // ── Las cuentas: todas en lib/ventas/hacienda.ts ────────────────────────────────────────────
+  const entrada = useMemo(() => ({
+    lineas: lineas.map(l => ({
+      razonSocial: l.razonSocial, cuit: l.cuit, clasificacion: l.clasificacion,
+      cabezas: parsearAR(l.cabezas), kilos: parsearAR(l.kilos), precio: parsearAR(l.precio),
+    })),
+    comisionPct: parsearPct(comisionPct),
+    redondeo: parsearAR(redondeo),
+    ivaPct: parsearPct(ivaPct),
+    retenciones: rets.map(r => ({ concepto: r.concepto, alicuota: parsearPct(r.alicuota), importe: parsearAR(r.importe) })),
+  }), [lineas, comisionPct, redondeo, ivaPct, rets])
+
+  const calc = useMemo(() => calcularLiqHacienda(entrada), [entrada])
+
+  const plazosNum: PlazoCobro[] = plazos.map(p => ({
+    dias: parsearAR(p.dias), pct: parsearPct(p.pct), vencimiento: p.vencimiento, importe: parsearAR(p.importe),
+  }))
+
+  const ventaRef: VentaParaLiquidar | null = venta
+    ? { cabezas: venta.cabezas, kgNetos: kgNetosDeVenta(venta.kgTotales, venta.pctDesbaste), precioKg: venta.precioKg, neto: venta.neto }
+    : null
+
+  const avisos: AvisoLiq[] = useMemo(() => {
+    const a: AvisoLiq[] = []
+    if (calc.kilos > 0 && ventaRef) a.push(...compararConVenta(ventaRef, calc))
+    a.push(...controlContraPapel(calc, {
+      bruto: parsearAR(papelBruto) || null, netoGravado: parsearAR(papelNetoGravado) || null, importeNeto: parsearAR(papelImporteNeto) || null,
+    }))
+    const p = controlPlazos(plazosNum, calc.importeNeto)
+    if (p) a.push(p)
+    return a
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calc, papelBruto, papelNetoGravado, papelImporteNeto, plazos, venta])
+
+  const repartirPlazos = () => {
+    const base = plazosDesdeVenta(venta?.plazo ?? (plazos.map(p => p.dias).join('/') || '30'), fecha, calc.importeNeto)
+    setPlazos(base.map(p => ({ dias: String(p.dias), pct: fmtPct(p.pct), vencimiento: p.vencimiento, importe: fmtAR(p.importe) })))
+  }
+
+  const setLinea = (i: number, campo: keyof LineaUI, v: string) =>
+    setLineas(ls => ls.map((l, k) => (k === i ? { ...l, [campo]: v } : l)))
+  const setRet = (i: number, campo: keyof RetUI, v: string) =>
+    setRets(rs => rs.map((r, k) => (k === i ? { ...r, [campo]: v } : r)))
+  const setPlazo = (i: number, campo: keyof PlazoUI, v: string) =>
+    setPlazos(ps => ps.map((p, k) => (k === i ? { ...p, [campo]: v } : p)))
+
+  const faltan: string[] = []
+  if (!fecha) faltan.push('la fecha')
+  if (!consignatario.cuit || !consignatario.nombre) faltan.push('el consignatario')
+  if (!(calc.kilos > 0 && calc.bruto > 0)) faltan.push('al menos una línea con kilos y precio')
+
+  const guardar = async () => {
+    if (faltan.length) { toast.error('Falta ' + faltan.join(', ')); return }
+    setGuardando(true)
+    try {
+      const [anio, mes] = fecha.split('-').map(Number)
+      const esIibb = (c: string) => /bruto|iibb/i.test(c)
+      const esRetIva = (c: string) => /\biva\b/i.test(c) && /ret/i.test(c)
+      const retIibb = entrada.retenciones.filter(r => esIibb(r.concepto)).reduce((s, r) => s + r.importe, 0)
+      const retIva = entrada.retenciones.filter(r => esRetIva(r.concepto)).reduce((s, r) => s + r.importe, 0)
+      const otras = entrada.retenciones.filter(r => !esIibb(r.concepto) && !esRetIva(r.concepto) && r.importe > 0)
+      const unaLinea = entrada.lineas.length === 1 ? entrada.lineas[0] : null
+
+      const payload = {
+        tipo_comprobante: 60,                      // Cta. de Venta y Líquido Producto A
+        fecha_liquidacion: fecha,
+        nro_comprobante: nroComp || null,
+        actividad: 'ganaderia',
+        cuit_cliente: consignatario.cuit,
+        denominacion_cliente: consignatario.nombre,
+        cabezas: calc.cabezas,
+        peso_kg: calc.kilos,
+        precio_pesos: unaLinea ? unaLinea.precio : null,
+        subtotal_neto: calc.bruto,
+        comision_neto: calc.comision,
+        comision_alicuota_iva: 0,
+        comision_iva: 0,
+        alicuota_iva: entrada.ivaPct,
+        iva: calc.iva,
+        ret_iibb: retIibb,
+        ret_iva: retIva,
+        redondeo: entrada.redondeo,
+        procedencia: procedencia || null,
+        nro_guia: nroGuia || null,
+        dte: dte || null,
+        hacienda_lineas: entrada.lineas,
+        plazos: plazosNum.length ? plazosNum : null,
+        // Para el libro de IVA, igual que la liquidación de granos: neto gravado + IVA.
+        imp_neto_gravado: calc.netoGravado,
+        imp_neto_no_gravado: 0,
+        imp_op_exentas: 0,
+        imp_total: Math.round((calc.netoGravado + calc.iva) * 100) / 100,
+        año_contable: anio || null,
+        mes_contable: mes || null,
+        centro_costo: venta?.centroCosto || null,
+        estado: 'a cobrar',
+        fecha_cobro_estimada: plazosNum[0]?.vencimiento || fecha,
+      }
+      const { data: comp, error } = await supabase.schema('msa').from('comprobantes_venta').insert(payload).select('id').single()
+      if (error) throw error
+
+      // Retenciones impresas que no son IVA ni IIBB (Ganancias…): van donde van los certificados.
+      if (otras.length) {
+        const { error: eR } = await supabase.schema('msa').from('retenciones_recibidas').insert(otras.map(r => ({
+          tipo: r.concepto, monto: r.importe, comprobante_venta_id: comp.id,
+          cuit_cliente: consignatario.cuit, denominacion_cliente: consignatario.nombre, fecha,
+          observaciones: 'Impresa en la liquidación de hacienda (alícuota ' + fmtPct(r.alicuota) + ' %)',
+        })))
+        if (eR) toast.warning('La liquidación se guardó, pero no las retenciones extra', { description: eR.message })
+      }
+
+      // El vínculo con la venta: mismo criterio que el resto de la app — lo menor entre el
+      // comprobante y lo que falta facturar de la venta.
+      if (venta) {
+        const falta = Math.max(venta.neto - (venta.liquidado || 0), 0)
+        const { error: eV } = await supabase.from('ventas_facturas').insert({
+          venta_tipo: 'ganaderia', venta_id: venta.id, empresa: 'MSA', comprobante_id: comp.id,
+          monto_asignado: Math.min(calc.netoGravado, falta), vinculado: true,
+        })
+        if (eV) toast.warning('La liquidación se guardó, pero no quedó vinculada a la venta', { description: eV.message })
+      }
+
+      // 👥 La contraparte queda registrada (upsert, nunca sólo UPDATE).
+      const rc = await registrarContrapartes(supabase, [{ cuit: consignatario.cuit, razon_social: consignatario.nombre || null }], 'cliente')
+      if (rc.error) toast.warning('La liquidación se guardó, pero el consignatario no quedó registrado en Proveedores', { description: rc.error.slice(0, 120) })
+
+      const avisosActivos = avisos.filter(a => a.nivel === 'aviso').length
+      toast.success('Liquidación de hacienda registrada' + (avisosActivos ? ` — con ${avisosActivos} aviso(s)` : ''))
+      onOpenChange(false)
+      onGuardado?.()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const avisosActivos = avisos.filter(a => a.nivel === 'aviso')
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>🐂 Liquidación de hacienda — Cuenta de Venta y Líquido Producto</DialogTitle>
+          <DialogDescription>
+            {venta
+              ? <>Precargada de la venta del <b>{venta.fecha.split('-').reverse().join('/')}</b> · {venta.cliente} · {venta.cabezas} cab. Cambiá lo que diga distinto tu papel: la comparación se hace siempre contra la venta original.</>
+              : <>Liquidación sin venta asociada. Cargala como figura en el papel.</>}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* ── Datos del papel ── */}
+        <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div><Label htmlFor="lh-fecha">Fecha</Label><Input id="lh-fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} /></div>
+          <div className="col-span-2">
+            <ProveedorCombobox value={consignatario} onChange={setConsignatario} label="Consignatario (quien liquida y paga)" rol="cliente" />
+          </div>
+          <div><Label htmlFor="lh-nro">Nº de comprobante</Label><Input id="lh-nro" value={nroComp} onChange={e => setNroComp(e.target.value)} /></div>
+          <div><Label htmlFor="lh-guia">Nº de guía</Label><Input id="lh-guia" value={nroGuia} onChange={e => setNroGuia(e.target.value)} /></div>
+          <div><Label htmlFor="lh-dte">DTe Nº</Label><Input id="lh-dte" value={dte} onChange={e => setDte(e.target.value)} /></div>
+          <div><Label htmlFor="lh-proc">Procedencia (partido de la guía)</Label><Input id="lh-proc" value={procedencia} onChange={e => setProcedencia(e.target.value)} placeholder="San Pedro" /></div>
+        </section>
+
+        {/* ── La tabla del papel ── */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold">Hacienda liquidada</h4>
+            <Button size="sm" variant="outline" onClick={() => setLineas(ls => [...ls, lineaVacia()])}><Plus className="h-3.5 w-3.5 mr-1" />Línea</Button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-gray-500">
+                <tr>
+                  <th className="text-left p-1">Comprador (razón social)</th><th className="text-left p-1">CUIT</th>
+                  <th className="text-right p-1">Cabezas</th><th className="text-left p-1">Clasificación</th>
+                  <th className="text-right p-1">Kilos</th><th className="text-right p-1">Prom.</th>
+                  <th className="text-right p-1">Precio $/kg</th><th className="text-right p-1">Importe</th><th />
+                </tr>
+              </thead>
+              <tbody>
+                {lineas.map((l, i) => {
+                  const e = entrada.lineas[i]
+                  return (
+                    <tr key={i}>
+                      <td className="p-1"><Input value={l.razonSocial} onChange={ev => setLinea(i, 'razonSocial', ev.target.value)} /></td>
+                      <td className="p-1 w-36"><Input value={l.cuit} onChange={ev => setLinea(i, 'cuit', ev.target.value)} /></td>
+                      <td className="p-1 w-20"><Input type="text" className="text-right" value={l.cabezas} onChange={ev => setLinea(i, 'cabezas', ev.target.value)} /></td>
+                      <td className="p-1"><Input value={l.clasificacion} onChange={ev => setLinea(i, 'clasificacion', ev.target.value)} /></td>
+                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0" value={l.kilos} onChange={ev => setLinea(i, 'kilos', ev.target.value)} /></td>
+                      <td className="p-1 text-right tabular-nums text-gray-500">{e.cabezas > 0 ? fmtAR(e.kilos / e.cabezas, 0) : '—'}</td>
+                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => setLinea(i, 'precio', ev.target.value)} /></td>
+                      <td className="p-1 text-right tabular-nums">{fmtAR(e.kilos * e.precio)}</td>
+                      <td className="p-1">{lineas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setLineas(ls => ls.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot className="font-semibold">
+                <tr>
+                  <td className="p-1" colSpan={2}>Total</td>
+                  <td className="p-1 text-right tabular-nums">{fmtAR(calc.cabezas, 0)}</td><td />
+                  <td className="p-1 text-right tabular-nums">{fmtAR(calc.kilos, 0)}</td>
+                  <td className="p-1 text-right tabular-nums">{calc.cabezas ? fmtAR(calc.promedio, 0) : '—'}</td><td />
+                  <td className="p-1 text-right tabular-nums">{fmtAR(calc.bruto)}</td><td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        {/* ── Gastos, IVA y retenciones ── */}
+        <section className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <h4 className="text-sm font-semibold">Gastos e IVA</h4>
+            <div className="grid grid-cols-[1fr_6rem_9rem] gap-2 items-center text-sm">
+              <span>Comisión venta y garantía (%)</span>
+              <Input type="text" className="text-right" value={comisionPct} onChange={e => setComisionPct(e.target.value)} placeholder="0" />
+              <span className="text-right tabular-nums">−{fmtAR(calc.comision)}</span>
+              <span>Ajuste por redondeo (con signo)</span>
+              <span />
+              <Input type="text" className="text-right" value={redondeo} onChange={e => setRedondeo(e.target.value)} placeholder="-0,00" />
+              <span className="font-medium">Neto gravado</span><span />
+              <span className="text-right tabular-nums font-medium">{fmtAR(calc.netoGravado)}</span>
+              <span>I.V.A. (%)</span>
+              <Input type="text" className="text-right" value={ivaPct} onChange={e => setIvaPct(e.target.value)} />
+              <span className="text-right tabular-nums">+{fmtAR(calc.iva)}</span>
+            </div>
+            <p className="text-xs text-gray-500">Precio después de comisión: <b>{calc.kilos ? fmtAR(calc.precioPostComision) : '—'} $/kg</b></p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Retenciones impresas</h4>
+              <Button size="sm" variant="outline" onClick={() => setRets(rs => [...rs, { concepto: '', alicuota: '', importe: '' }])}><Plus className="h-3.5 w-3.5 mr-1" />Retención</Button>
+            </div>
+            {rets.map((r, i) => {
+              const sug = retencionSugerida(calc.bruto, parsearPct(r.alicuota))
+              return (
+                <div key={i} className="grid grid-cols-[1fr_4.5rem_8rem_auto] gap-2 items-center">
+                  <Input value={r.concepto} onChange={e => setRet(i, 'concepto', e.target.value)} placeholder="Concepto" />
+                  <Input type="text" className="text-right" value={r.alicuota} onChange={e => setRet(i, 'alicuota', e.target.value)} placeholder="%" />
+                  <Input type="text" className="text-right" value={r.importe} onChange={e => setRet(i, 'importe', e.target.value)}
+                    placeholder={sug ? fmtAR(sug) : '0,00'} title={sug ? 'Sugerido: ' + fmtAR(sug) + ' (alícuota sobre el bruto)' : ''} />
+                  <div className="flex gap-1">
+                    {!r.importe && sug > 0 && <Button size="sm" variant="ghost" className="text-xs px-1" onClick={() => setRet(i, 'importe', fmtAR(sug))} title="Usar el sugerido">usar</Button>}
+                    <Button size="sm" variant="ghost" onClick={() => setRets(rs => rs.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  </div>
+                </div>
+              )
+            })}
+            <p className="text-xs text-gray-500">La retención de Ingresos Brutos se calcula sobre el <b>bruto</b>. Un certificado que llegue aparte se carga después con el botón % de Comprobantes.</p>
+          </div>
+        </section>
+
+        {/* ── Totales y control contra el papel ── */}
+        <section className="rounded border p-3 grid md:grid-cols-3 gap-3 text-sm">
+          <div><span className="text-gray-500">Importe bruto</span><div className="text-lg font-semibold tabular-nums">{fmtAR(calc.bruto)}</div>
+            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelBruto} onChange={e => setPapelBruto(e.target.value)} placeholder="según el papel (control)" /></div>
+          <div><span className="text-gray-500">Neto gravado</span><div className="text-lg font-semibold tabular-nums">{fmtAR(calc.netoGravado)}</div>
+            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelNetoGravado} onChange={e => setPapelNetoGravado(e.target.value)} placeholder="según el papel (control)" /></div>
+          <div><span className="text-gray-500">Importe neto (lo que se cobra)</span><div className="text-lg font-semibold tabular-nums text-green-700">{fmtAR(calc.importeNeto)}</div>
+            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelImporteNeto} onChange={e => setPapelImporteNeto(e.target.value)} placeholder="según el papel (control)" /></div>
+        </section>
+
+        {/* ── Plazos ── */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold">Operaciones con plazo</h4>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={repartirPlazos} title={venta?.plazo ? 'Repartir según el plazo de la venta (' + venta.plazo + ')' : 'Repartir el importe neto'}>Repartir{venta?.plazo ? ' ' + venta.plazo : ''}</Button>
+              <Button size="sm" variant="outline" onClick={() => setPlazos(ps => [...ps, { dias: '', pct: '', vencimiento: '', importe: '' }])}><Plus className="h-3.5 w-3.5 mr-1" />Cuota</Button>
+            </div>
+          </div>
+          {plazos.map((p, i) => (
+            <div key={i} className="grid grid-cols-[5rem_5rem_10rem_10rem_auto] gap-2 items-center">
+              <Input type="text" className="text-right" value={p.dias} onChange={e => setPlazo(i, 'dias', e.target.value)} placeholder="días" />
+              <Input type="text" className="text-right" value={p.pct} onChange={e => setPlazo(i, 'pct', e.target.value)} placeholder="%" />
+              <Input type="date" value={p.vencimiento} onChange={e => setPlazo(i, 'vencimiento', e.target.value)} />
+              <Input type="text" className="text-right" value={p.importe} onChange={e => setPlazo(i, 'importe', e.target.value)} placeholder="0,00" />
+              <Button size="sm" variant="ghost" onClick={() => setPlazos(ps => ps.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>
+            </div>
+          ))}
+        </section>
+
+        {/* ── Los avisos: se ven todos, los que cierran y los que no ── */}
+        {avisos.length > 0 && (
+          <section className={`rounded p-3 space-y-1 text-sm ${avisosActivos.length ? 'bg-amber-50 border border-amber-300' : 'bg-green-50 border border-green-200'}`}>
+            {avisos.map((a, i) => (
+              <div key={i} className={`flex items-start gap-2 ${a.nivel === 'ok' ? 'text-green-700' : 'text-amber-800'}`}>
+                {a.nivel === 'ok' ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+                <span>{a.mensaje}{a.diferencia !== undefined && a.nivel === 'aviso' && <> — diferencia <b className="tabular-nums">{fmtAR(a.diferencia)}</b></>}</span>
+              </div>
+            ))}
+            {avisosActivos.length > 0 && <p className="text-xs text-amber-700 pt-1">Podés guardar igual: es un aviso, no un error. Si la diferencia tiene explicación —un precio pactado distinto, un papel con otro dato—, la decisión es tuya.</p>}
+          </section>
+        )}
+
+        <DialogFooter className="gap-2">
+          {faltan.length > 0 && <span className="text-xs text-gray-500 mr-auto">Falta {faltan.join(', ')}.</span>}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={guardar} disabled={guardando || faltan.length > 0} className="bg-green-600 hover:bg-green-700">
+            {guardando ? 'Guardando…' : 'Guardar liquidación'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

@@ -221,6 +221,34 @@ export function compararConVenta(venta: VentaParaLiquidar, calc: LiqHaciendaCalc
   return avisos
 }
 
+/**
+ * 🎚️ **La precarga desde la venta — «chupar los datos»** (A-FEAT-1225, paso 3).
+ *
+ * De la venta salen: cabezas, kilos NETOS (después del desbaste, redondeados como en el papel),
+ * precio pactado, clasificación, comprador y fecha; la comisión, del % de CZ de la venta.
+ *
+ * 📌 Con lo precargado tal cual, la liquidación da EXACTO la venta —es la misma cuenta—, así que no
+ * hay avisos. Cuando el usuario tipea lo que dice su papel (otro precio, otra comisión), recién ahí
+ * aparece la diferencia. Por eso la comparación se hace siempre contra la venta ORIGINAL.
+ */
+export function precargaDesdeVenta(v: {
+  fecha: string; cliente: string; cuit: string; categoria: string | null
+  cabezas: number; kgTotales: number; pctDesbaste: number; precioKg: number; pctCz?: number | null
+}): { fecha: string; linea: LineaLiqHacienda; comisionPct: number } {
+  return {
+    fecha: v.fecha || '',
+    linea: {
+      razonSocial: v.cliente || '', cuit: v.cuit || '',
+      cabezas: Number(v.cabezas) || 0,
+      clasificacion: v.categoria || '',
+      kilos: Math.round(kgNetosDeVenta(v.kgTotales, v.pctDesbaste)),
+      precio: Number(v.precioKg) || 0,
+    },
+    // pct_cz es FRACCIÓN en la venta; la comisión del papel va en PORCENTAJE.
+    comisionPct: Math.round((Number(v.pctCz) || 0) * 100 * 1000) / 1000,
+  }
+}
+
 /** Plazos de cobro: la suma de las cuotas tiene que dar el importe neto. */
 export interface PlazoCobro { dias: number; pct: number; vencimiento: string; importe: number }
 

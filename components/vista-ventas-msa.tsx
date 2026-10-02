@@ -7,12 +7,13 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, CheckCircle2, AlertTriangle } from "lucide-react"
+import { Plus, RefreshCw, Search, Pencil, Trash2, Link2, CheckCircle2, AlertTriangle, FileText } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalVentaMsa, type VentaMsa } from "./modal-venta-msa"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta } from "@/lib/ventas/hacienda"
+import { ModalLiquidacionHacienda, type VentaOrigen } from "./modal-liquidacion-hacienda"
 
 interface Props {
   userRole?: UserRole
@@ -65,6 +66,9 @@ interface VentaHaciendaFila {
   plazo: string | null
   /** Lo ya vinculado a comprobantes (ventas_facturas). */
   liquidado: number
+  /** % de CZ (comisión) de la venta, FRACCIÓN. */
+  pctCz: number | null
+  centroCosto: string | null
 }
 
 export function VistaVentasMsa({ userRole = 'admin' }: Props) {
@@ -86,6 +90,9 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
    */
   const [ventasHacienda, setVentasHacienda] = useState<VentaHaciendaFila[]>([])
   const [errorHacienda, setErrorHacienda] = useState<string | null>(null)
+  /** 🧾 A-FEAT-1225 — la liquidación de hacienda: abierta desde una venta (precargada) o suelta. */
+  const [liqAbierta, setLiqAbierta] = useState(false)
+  const [liqVenta, setLiqVenta] = useState<VentaOrigen | null>(null)
 
   const cargar = async () => {
     setLoading(true)
@@ -138,7 +145,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       const ids = (base || []).map((b: any) => b.venta_id)
       const { data: det, error: eDet } = ids.length
         ? await supabase.schema('productivo').from('stock_ventas')
-            .select('id, kg_totales, pct_desbaste, plazo_cobro, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
+            .select('id, kg_totales, pct_desbaste, plazo_cobro, pct_cz, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
             .in('id', ids)
         : { data: [] as any[], error: null }
       if (eDet) throw eDet
@@ -158,6 +165,8 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           neto: Number(b.monto_pesos) || 0,
           plazo: d.plazo_cobro || null,
           liquidado: Number(b.facturado) || 0,
+          pctCz: d.pct_cz === null || d.pct_cz === undefined ? null : Number(d.pct_cz),
+          centroCosto: b.centro_costo || null,
         }
       }))
     } catch (err) {
@@ -337,6 +346,12 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
         <div className="flex items-baseline gap-3">
           <h3 className="text-base font-semibold">🐂 Ventas de hacienda</h3>
           <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos. Acá se ven para liquidarlas.</span>
+          {esAdmin && (
+            <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setLiqVenta(null); setLiqAbierta(true) }}
+              title="Cargar una liquidación de hacienda que no tiene venta en Productivo">
+              <FileText className="mr-1 h-3.5 w-3.5" />Liquidación suelta
+            </Button>
+          )}
         </div>
         <Card>
           <CardContent className="p-0">
@@ -356,17 +371,18 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                     <TableHead className="text-right">Neto venta</TableHead>
                     <TableHead>Plazo</TableHead>
                     <TableHead className="text-center">Liquidación</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {errorHacienda ? (
-                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-red-600">
+                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-red-600">
                       No se pudieron leer las ventas de hacienda: {errorHacienda}
                     </TableCell></TableRow>
                   ) : loading ? (
-                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-gray-500">Cargando…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-gray-500">Cargando…</TableCell></TableRow>
                   ) : haciendaFiltrada.length === 0 ? (
-                    <TableRow><TableCell colSpan={12} className="text-center py-6 text-gray-500">
+                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-gray-500">
                       {ventasHacienda.length === 0 ? 'No hay ventas de hacienda cargadas en Productivo.' : 'No hay resultados para la búsqueda.'}
                     </TableCell></TableRow>
                   ) : haciendaFiltrada.map(h => {
@@ -393,6 +409,14 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                             ? <Badge variant="outline" className="bg-green-50 text-green-700" title={'Vinculado: ' + fmtMoney(h.liquidado)}><CheckCircle2 className="h-3 w-3 mr-1" />liquidada</Badge>
                             : <span className="text-xs text-gray-400">— sin liquidar</span>}
                         </TableCell>
+                        <TableCell className="text-right">
+                          {esAdmin && (
+                            <Button size="sm" variant="ghost" onClick={() => { setLiqVenta(h); setLiqAbierta(true) }}
+                              title="Cargar la liquidación de esta venta — viene precargada con sus datos">
+                              <FileText className="h-3.5 w-3.5 mr-1" />Liquidar
+                            </Button>
+                          )}
+                        </TableCell>
                       </TableRow>
                     )
                   })}
@@ -402,6 +426,8 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           </CardContent>
         </Card>
       </div>
+
+      <ModalLiquidacionHacienda open={liqAbierta} onOpenChange={setLiqAbierta} venta={liqVenta} onGuardado={cargar} />
 
       <ModalVentaMsa
         open={modalAbierto}
