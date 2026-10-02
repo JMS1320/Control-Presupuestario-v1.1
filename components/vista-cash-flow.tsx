@@ -384,6 +384,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
   // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
+  // 'cobrado' es el 'pagado' de los ingresos (el hook los trata igual): se oculta igual. Antes quedaba a la vista
+  // y una cuota marcada cobrada en Ingresos → Cobros parecía no haber llegado al Cash Flow (2026-10-02).
   const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
   const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
   const [chipsInit, setChipsInit] = useState(false)
@@ -391,7 +393,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
-    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
+    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado' && e !== 'cobrado')))
     setChipsOrigenes(new Set(data.map(f => f.origen)))
     setChipsInit(true)
   }, [data, chipsInit])
@@ -3264,8 +3266,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           const montoActual = valor != null ? Number(valor) : 0
           const esColumnaColor = columna.key === 'debitos' || columna.key === 'creditos'
           if (esColumnaColor && montoActual > 0) {
-            if (fila.estado === 'pagado') {
-              // Aplica a debitos (egresos pagados) y creditos (cobros pagados)
+            if (fila.estado === 'pagado' || fila.estado === 'cobrado') {
+              // Aplica a debitos (egresos pagados) y creditos (cobros cobrados)
               colorClase = 'text-white bg-green-600 px-2 py-1 rounded'
             } else if (columna.key === 'debitos') {
               // Estados de proceso solo aplican a egresos (columna debitos)
