@@ -1706,6 +1706,26 @@ importe —la alícuota sobre el **bruto**— y lo usás con **usar**.
 
 Un aviso **no te impide guardar**: si la diferencia tiene explicación, la decisión es tuya.
 
+### Editar una liquidación ya cargada
+- En Ventas, una venta liquidada dice **Ver / editar**: abre esa misma liquidación. Al guardar se
+  actualiza ésa; **no se crea otra**.
+- En **Comprobantes → Editar** pasa lo mismo, y ahí también le ponés la cuenta contable y el centro
+  de costo.
+
+### Un papel para varias ventas
+Si el consignatario liquidó varias ventas en un solo papel —por ejemplo, vacas y toros juntos—,
+**tildá las ventas** y apretá **Liquidar las N juntas**. Abre con una línea por venta y compara la
+liquidación contra las ventas sumadas.
+
+📌 Si la venta fue **al gancho** (por kilo de carne), la precarga trae los **kilos de carne**, no los
+vivos.
+
+### Marcar las cuotas cobradas
+En **Ingresos → Cobros**, abrí la liquidación: abajo están sus cuotas, con **Marcar cobrada**. Es lo
+mismo que pasarla a cobrado en el **Cash Flow**: lo que marcás en un lado se ve en el otro. Cuando
+están todas cobradas, la liquidación pasa a *cobrado*; *conciliado* lo decide la conciliación con el
+banco.
+
 Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
 su venta, y el consignatario queda registrado como cliente.
 
