@@ -66,6 +66,10 @@ const parsearAR = (s: string): number => (s ? parseFloat(String(s).replace(/\./g
 const parsearPct = (s: string): number => (s ? parseFloat(String(s).replace(',', '.')) || 0 : 0)
 const fmtAR = (n: number, dec = 2) => n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec })
 const fmtPct = (n: number) => String(n).replace('.', ',')
+/** Al salir de un campo de monto, se reescribe en formato es-AR (1.234.567,89). Vacío queda vacío. */
+const reformatear = (v: string, dec = 2) => (v.trim() ? fmtAR(parsearAR(v), dec) : '')
+type TotalId = 'bruto' | 'neto' | 'importe'
+type Verificacion = 'ok' | 'distinto' | null
 
 interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string }
 interface RetUI { concepto: string; alicuota: string; importe: string }
@@ -101,11 +105,19 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
   const [comisionPct, setComisionPct] = useState('')
   const [redondeo, setRedondeo] = useState('')
   const [ivaPct, setIvaPct] = useState('10,5')
+  /** 🎚️ Montos a mano: vacío = se calcula con el %; con valor = manda el tipeado. */
+  const [comisionMonto, setComisionMonto] = useState('')
+  const [ivaMonto, setIvaMonto] = useState('')
   const [rets, setRets] = useState<RetUI[]>([RET_IIBB])
   const [plazos, setPlazos] = useState<PlazoUI[]>([])
-  const [papelBruto, setPapelBruto] = useState('')
-  const [papelNetoGravado, setPapelNetoGravado] = useState('')
-  const [papelImporteNeto, setPapelImporteNeto] = useState('')
+  /**
+   * ✓ / ✗ contra el papel, por total. Pedido del usuario 2026-10-01: *«mejor sería que yo le dé
+   * check si es así y tipee si no es así»*. Con ✓ queda verificado; con ✗ se tipea lo que dice el
+   * papel y se muestra la diferencia — y como cada componente (kilos, precio, comisión, IVA,
+   * retenciones) se puede tipear, corregir el que difiere deja la cuenta igual al papel.
+   */
+  const [verif, setVerif] = useState<Record<TotalId, Verificacion>>({ bruto: null, neto: null, importe: null })
+  const [papel, setPapel] = useState<Record<TotalId, string>>({ bruto: '', neto: '', importe: '' })
   const [guardando, setGuardando] = useState(false)
 
   // Al abrir: precarga desde la venta, o formulario vacío.
@@ -114,7 +126,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
     setConsignatario({ cuit: '', nombre: '' })
     setNroComp(''); setNroGuia(''); setDte(''); setProcedencia('')
     setRedondeo(''); setIvaPct('10,5'); setRets([RET_IIBB]); setPlazos([])
-    setPapelBruto(''); setPapelNetoGravado(''); setPapelImporteNeto('')
+    setComisionMonto(''); setIvaMonto('')
+    setVerif({ bruto: null, neto: null, importe: null }); setPapel({ bruto: '', neto: '', importe: '' })
     if (venta) {
       const p = precargaParaPantalla(venta)
       setFecha(p.fecha); setLineas(p.lineas); setComisionPct(p.comisionPct)
@@ -133,7 +146,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
     redondeo: parsearAR(redondeo),
     ivaPct: parsearPct(ivaPct),
     retenciones: rets.map(r => ({ concepto: r.concepto, alicuota: parsearPct(r.alicuota), importe: parsearAR(r.importe) })),
-  }), [lineas, comisionPct, redondeo, ivaPct, rets])
+    comisionMonto: comisionMonto.trim() ? parsearAR(comisionMonto) : null,
+    ivaMonto: ivaMonto.trim() ? parsearAR(ivaMonto) : null,
+  }), [lineas, comisionPct, redondeo, ivaPct, rets, comisionMonto, ivaMonto])
 
   const calc = useMemo(() => calcularLiqHacienda(entrada), [entrada])
 
@@ -148,14 +163,17 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
   const avisos: AvisoLiq[] = useMemo(() => {
     const a: AvisoLiq[] = []
     if (calc.kilos > 0 && ventaRef) a.push(...compararConVenta(ventaRef, calc))
-    a.push(...controlContraPapel(calc, {
-      bruto: parsearAR(papelBruto) || null, netoGravado: parsearAR(papelNetoGravado) || null, importeNeto: parsearAR(papelImporteNeto) || null,
-    }))
+    const delPapel = (id: TotalId) => (verif[id] === 'distinto' ? parsearAR(papel[id]) || null : null)
+    a.push(...controlContraPapel(calc, { bruto: delPapel('bruto'), netoGravado: delPapel('neto'), importeNeto: delPapel('importe') }))
+    const nombres: Record<TotalId, string> = { bruto: 'Importe bruto', neto: 'Neto gravado', importe: 'Importe neto' }
+    for (const id of ['bruto', 'neto', 'importe'] as TotalId[]) {
+      if (verif[id] === 'ok') a.push({ nivel: 'ok', tema: nombres[id], mensaje: nombres[id] + ': verificado contra el papel' })
+    }
     const p = controlPlazos(plazosNum, calc.importeNeto)
     if (p) a.push(p)
     return a
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calc, papelBruto, papelNetoGravado, papelImporteNeto, plazos, venta])
+  }, [calc, verif, papel, plazos, venta])
 
   const repartirPlazos = () => {
     const base = plazosDesdeVenta(venta?.plazo ?? (plazos.map(p => p.dias).join('/') || '30'), fecha, calc.importeNeto)
@@ -274,6 +292,20 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
           </DialogDescription>
         </DialogHeader>
 
+        {/* 🎚️ Lo que se tiene que cobrar según la venta — chiquito, siempre a la vista. Pedido del
+            usuario 2026-10-01: «son tantos kg × tal precio menos tanto de CZ = tanto a cobrar». */}
+        {venta && (() => {
+          const kgN = kgNetosDeVenta(venta.kgTotales, venta.pctDesbaste)
+          const bruto = kgN * venta.precioKg
+          const cz = bruto * (Number(venta.pctCz) || 0)
+          return (
+            <div className="rounded bg-slate-50 border px-3 py-1.5 text-xs text-slate-700 tabular-nums">
+              <b>Según la venta:</b> {fmtAR(kgN, 1)} kg × ${fmtAR(venta.precioKg)} − CZ ${fmtAR(cz)} = <b>${fmtAR(venta.neto)}</b> a cobrar
+              <span className="text-slate-500"> (neto, antes de IVA)</span>
+            </div>
+          )
+        })()}
+
         {/* ── Datos del papel ── */}
         <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div><Label htmlFor="lh-fecha">Fecha</Label><Input id="lh-fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} /></div>
@@ -311,9 +343,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
                       <td className="p-1 w-36"><Input value={l.cuit} onChange={ev => setLinea(i, 'cuit', ev.target.value)} /></td>
                       <td className="p-1 w-20"><Input type="text" className="text-right" value={l.cabezas} onChange={ev => setLinea(i, 'cabezas', ev.target.value)} /></td>
                       <td className="p-1"><Input value={l.clasificacion} onChange={ev => setLinea(i, 'clasificacion', ev.target.value)} /></td>
-                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0" value={l.kilos} onChange={ev => setLinea(i, 'kilos', ev.target.value)} /></td>
+                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0" value={l.kilos} onChange={ev => setLinea(i, 'kilos', ev.target.value)} onBlur={ev => setLinea(i, 'kilos', reformatear(ev.target.value, 0))} /></td>
                       <td className="p-1 text-right tabular-nums text-gray-500">{e.cabezas > 0 ? fmtAR(e.kilos / e.cabezas, 0) : '—'}</td>
-                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => setLinea(i, 'precio', ev.target.value)} /></td>
+                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatear(ev.target.value))} /></td>
                       <td className="p-1 text-right tabular-nums">{fmtAR(e.kilos * e.precio)}</td>
                       <td className="p-1">{lineas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setLineas(ls => ls.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>}</td>
                     </tr>
@@ -337,18 +369,23 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
         <section className="grid md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <h4 className="text-sm font-semibold">Gastos e IVA</h4>
-            <div className="grid grid-cols-[1fr_6rem_9rem] gap-2 items-center text-sm">
-              <span>Comisión venta y garantía (%)</span>
-              <Input type="text" className="text-right" value={comisionPct} onChange={e => setComisionPct(e.target.value)} placeholder="0" />
-              <span className="text-right tabular-nums">−{fmtAR(calc.comision)}</span>
+            <div className="grid grid-cols-[1fr_5rem_9rem] gap-2 items-center text-sm">
+              <span className="text-xs text-gray-400" /><span className="text-xs text-gray-400 text-right">%</span><span className="text-xs text-gray-400 text-right">monto</span>
+              <span>Comisión venta y garantía{comisionMonto.trim() && <span className="ml-1 text-[10px] text-amber-700" title="Monto tipeado a mano: manda sobre el %">✎ manual · {fmtAR(calc.comisionPctEfectivo, 3)} %</span>}</span>
+              <Input type="text" className="text-right" value={comisionPct} onChange={e => { setComisionPct(e.target.value); setComisionMonto('') }} placeholder="0" disabled={!!comisionMonto.trim()} />
+              <Input type="text" className="text-right" value={comisionMonto} onChange={e => setComisionMonto(e.target.value)}
+                onBlur={e => setComisionMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.comision)}
+                title="Vacío: se calcula con el %. Si la comisión del papel se calcula sobre otra cosa, tipeá el monto." />
               <span>Ajuste por redondeo (con signo)</span>
               <span />
-              <Input type="text" className="text-right" value={redondeo} onChange={e => setRedondeo(e.target.value)} placeholder="-0,00" />
+              <Input type="text" className="text-right" value={redondeo} onChange={e => setRedondeo(e.target.value)} onBlur={e => setRedondeo(reformatear(e.target.value))} placeholder="-0,00" />
               <span className="font-medium">Neto gravado</span><span />
-              <span className="text-right tabular-nums font-medium">{fmtAR(calc.netoGravado)}</span>
-              <span>I.V.A. (%)</span>
-              <Input type="text" className="text-right" value={ivaPct} onChange={e => setIvaPct(e.target.value)} />
-              <span className="text-right tabular-nums">+{fmtAR(calc.iva)}</span>
+              <span className="text-right tabular-nums font-medium pr-3">{fmtAR(calc.netoGravado)}</span>
+              <span>I.V.A.{ivaMonto.trim() && <span className="ml-1 text-[10px] text-amber-700">✎ manual · {fmtAR(calc.ivaPctEfectivo, 3)} %</span>}</span>
+              <Input type="text" className="text-right" value={ivaPct} onChange={e => { setIvaPct(e.target.value); setIvaMonto('') }} disabled={!!ivaMonto.trim()} />
+              <Input type="text" className="text-right" value={ivaMonto} onChange={e => setIvaMonto(e.target.value)}
+                onBlur={e => setIvaMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.iva)}
+                title="Vacío: se calcula con el %. Con valor, manda el tipeado." />
             </div>
             <p className="text-xs text-gray-500">Precio después de comisión: <b>{calc.kilos ? fmtAR(calc.precioPostComision) : '—'} $/kg</b></p>
           </div>
@@ -364,7 +401,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
                 <div key={i} className="grid grid-cols-[1fr_4.5rem_8rem_auto] gap-2 items-center">
                   <Input value={r.concepto} onChange={e => setRet(i, 'concepto', e.target.value)} placeholder="Concepto" />
                   <Input type="text" className="text-right" value={r.alicuota} onChange={e => setRet(i, 'alicuota', e.target.value)} placeholder="%" />
-                  <Input type="text" className="text-right" value={r.importe} onChange={e => setRet(i, 'importe', e.target.value)}
+                  <Input type="text" className="text-right" value={r.importe} onChange={e => setRet(i, 'importe', e.target.value)} onBlur={e => setRet(i, 'importe', reformatear(e.target.value))}
                     placeholder={sug ? fmtAR(sug) : '0,00'} title={sug ? 'Sugerido: ' + fmtAR(sug) + ' (alícuota sobre el bruto)' : ''} />
                   <div className="flex gap-1">
                     {!r.importe && sug > 0 && <Button size="sm" variant="ghost" className="text-xs px-1" onClick={() => setRet(i, 'importe', fmtAR(sug))} title="Usar el sugerido">usar</Button>}
@@ -377,14 +414,32 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
           </div>
         </section>
 
-        {/* ── Totales y control contra el papel ── */}
+        {/* ── Totales, con ✓ / ✗ contra el papel ── */}
         <section className="rounded border p-3 grid md:grid-cols-3 gap-3 text-sm">
-          <div><span className="text-gray-500">Importe bruto</span><div className="text-lg font-semibold tabular-nums">{fmtAR(calc.bruto)}</div>
-            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelBruto} onChange={e => setPapelBruto(e.target.value)} placeholder="según el papel (control)" /></div>
-          <div><span className="text-gray-500">Neto gravado</span><div className="text-lg font-semibold tabular-nums">{fmtAR(calc.netoGravado)}</div>
-            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelNetoGravado} onChange={e => setPapelNetoGravado(e.target.value)} placeholder="según el papel (control)" /></div>
-          <div><span className="text-gray-500">Importe neto (lo que se cobra)</span><div className="text-lg font-semibold tabular-nums text-green-700">{fmtAR(calc.importeNeto)}</div>
-            <Input type="text" className="mt-1 h-7 text-right text-xs" value={papelImporteNeto} onChange={e => setPapelImporteNeto(e.target.value)} placeholder="según el papel (control)" /></div>
+          {([['bruto', 'Importe bruto', calc.bruto, ''], ['neto', 'Neto gravado', calc.netoGravado, ''], ['importe', 'Importe neto (lo que se cobra)', calc.importeNeto, 'text-green-700']] as const).map(([id, rotulo, valor, color]) => (
+            <div key={id}>
+              <span className="text-gray-500">{rotulo}</span>
+              <div className={'text-lg font-semibold tabular-nums ' + color}>{fmtAR(valor)}</div>
+              <div className="mt-1 flex gap-1">
+                <Button type="button" size="sm" variant={verif[id] === 'ok' ? 'default' : 'outline'}
+                  className={'h-7 px-2 text-xs ' + (verif[id] === 'ok' ? 'bg-green-600 hover:bg-green-700' : '')}
+                  onClick={() => setVerif(v => ({ ...v, [id]: v[id] === 'ok' ? null : 'ok' }))} title="El papel dice lo mismo">
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1" />Coincide
+                </Button>
+                <Button type="button" size="sm" variant={verif[id] === 'distinto' ? 'default' : 'outline'}
+                  className={'h-7 px-2 text-xs ' + (verif[id] === 'distinto' ? 'bg-amber-600 hover:bg-amber-700' : '')}
+                  onClick={() => setVerif(v => ({ ...v, [id]: v[id] === 'distinto' ? null : 'distinto' }))} title="El papel dice otro número">
+                  ✗ Distinto
+                </Button>
+              </div>
+              {verif[id] === 'distinto' && (
+                <Input type="text" className="mt-1 h-7 text-right text-xs" value={papel[id]} placeholder="lo que dice el papel"
+                  onChange={e => setPapel(pp => ({ ...pp, [id]: e.target.value }))}
+                  onBlur={e => setPapel(pp => ({ ...pp, [id]: reformatear(e.target.value) }))} />
+              )}
+            </div>
+          ))}
+          <p className="md:col-span-3 text-xs text-gray-500">Si el papel dice otra cosa, buscá el dato que difiere —kilos, precio, comisión, IVA o una retención— y tipealo: todos se pueden escribir a mano, y la cuenta se rehace sola.</p>
         </section>
 
         {/* ── Plazos ── */}
@@ -401,7 +456,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
               <Input type="text" className="text-right" value={p.dias} onChange={e => setPlazo(i, 'dias', e.target.value)} placeholder="días" />
               <Input type="text" className="text-right" value={p.pct} onChange={e => setPlazo(i, 'pct', e.target.value)} placeholder="%" />
               <Input type="date" value={p.vencimiento} onChange={e => setPlazo(i, 'vencimiento', e.target.value)} />
-              <Input type="text" className="text-right" value={p.importe} onChange={e => setPlazo(i, 'importe', e.target.value)} placeholder="0,00" />
+              <Input type="text" className="text-right" value={p.importe} onChange={e => setPlazo(i, 'importe', e.target.value)} onBlur={e => setPlazo(i, 'importe', reformatear(e.target.value))} placeholder="0,00" />
               <Button size="sm" variant="ghost" onClick={() => setPlazos(ps => ps.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
           ))}

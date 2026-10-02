@@ -88,6 +88,14 @@ export interface LiqHaciendaEntrada {
   /** IVA en PORCENTAJE (10,5). */
   ivaPct: number
   retenciones: RetencionImpresa[]
+  /**
+   * 🎚️ Montos tipeados a mano (§ Default del dato real, siempre editable). Pedido del usuario
+   * 2026-10-01: *«cosas como comisión deben poder tipearse el monto, por si se calcula sobre otra
+   * cosa»*. Vacío (null/undefined) = se calcula con el %; con valor = manda el tipeado, y el % que
+   * se muestra pasa a ser el que resulta.
+   */
+  comisionMonto?: number | null
+  ivaMonto?: number | null
 }
 
 export interface LiqHaciendaCalculo {
@@ -105,6 +113,10 @@ export interface LiqHaciendaCalculo {
   columnaGastos: number
   /** Neto gravado / kilos: el precio por kilo que queda después de la comisión. */
   precioPostComision: number
+  /** El % que resulta del monto de comisión (si se tipeó el monto, es el que corresponde a ése). */
+  comisionPctEfectivo: number
+  /** Ídem para el IVA. */
+  ivaPctEfectivo: number
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -118,10 +130,11 @@ export function calcularLiqHacienda(e: LiqHaciendaEntrada): LiqHaciendaCalculo {
   const cabezas = e.lineas.reduce((s, l) => s + (Number(l.cabezas) || 0), 0)
   const kilos = e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0), 0)
   const bruto = r2(e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0) * (Number(l.precio) || 0), 0))
-  const comision = r2(bruto * (Number(e.comisionPct) || 0) / 100)
+  const tipeado = (x: number | null | undefined) => x !== null && x !== undefined && Number.isFinite(Number(x))
+  const comision = tipeado(e.comisionMonto) ? r2(Number(e.comisionMonto)) : r2(bruto * (Number(e.comisionPct) || 0) / 100)
   const redondeo = Number(e.redondeo) || 0
   const netoGravado = r2(bruto - comision + redondeo)
-  const iva = r2(netoGravado * (Number(e.ivaPct) || 0) / 100)
+  const iva = tipeado(e.ivaMonto) ? r2(Number(e.ivaMonto)) : r2(netoGravado * (Number(e.ivaPct) || 0) / 100)
   const totalRetenciones = r2(e.retenciones.reduce((s, x) => s + (Number(x.importe) || 0), 0))
   const importeNeto = r2(netoGravado + iva - totalRetenciones)
   return {
@@ -129,6 +142,8 @@ export function calcularLiqHacienda(e: LiqHaciendaEntrada): LiqHaciendaCalculo {
     bruto, comision, netoGravado, iva, totalRetenciones, importeNeto,
     columnaGastos: r2(iva - comision + redondeo - totalRetenciones),
     precioPostComision: kilos > 0 ? netoGravado / kilos : 0,
+    comisionPctEfectivo: bruto > 0 ? comision / bruto * 100 : 0,
+    ivaPctEfectivo: netoGravado > 0 ? iva / netoGravado * 100 : 0,
   }
 }
 

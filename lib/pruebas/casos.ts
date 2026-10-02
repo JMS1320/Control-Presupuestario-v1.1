@@ -1920,5 +1920,31 @@ export function correrCasos(): Resultado[] {
     "2", String(precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct),
     precargaDesdeVenta({ fecha: "", cliente: "", cuit: "", categoria: null, cabezas: 1, kgTotales: 1, pctDesbaste: 0, precioKg: 1, pctCz: 0.02 }).comisionPct === 2, "A-FEAT-1225")
 
+  // ══ 🎚️ MONTOS A MANO: comisión e IVA (pedido del usuario 2026-10-01) ═════════════════════
+  // «Cosas como comisión deben poder tipearse el monto, por si se calcula sobre otra cosa.»
+  const lineaGenta = { razonSocial: "DON FELICIANO S", cuit: "30709270105", cabezas: 55, clasificacion: "Novillito", kilos: 15695, precio: 5742 }
+  const conMonto = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 0, comisionMonto: 1050807.25, redondeo: -757.75, ivaPct: 10.5,
+    retenciones: [{ concepto: "IIBB", alicuota: 0.75, importe: 675905.18 }] })
+  chequear("Liquidación de hacienda", "🎚️ Comisión tipeada por MONTO (con 0 %): da el mismo papel, y el % que resulta es 1,166",
+    "89069125 · 97745477.95 · 1.166",
+    `${conMonto.netoGravado} · ${conMonto.importeNeto} · ${conMonto.comisionPctEfectivo.toFixed(3)}`,
+    conMonto.netoGravado === 89069125 && conMonto.importeNeto === 97745477.95 && conMonto.comisionPctEfectivo.toFixed(3) === "1.166", "A-FEAT-1225")
+
+  // El monto MANDA sobre el %: con 5 % y un monto tipeado, vale el monto.
+  const mandaMonto = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 5, comisionMonto: 1000000, redondeo: 0, ivaPct: 10.5, retenciones: [] })
+  chequear("Liquidación de hacienda", "El monto tipeado manda sobre el %: con 5 % y $1.000.000 tipeado, vale $1.000.000",
+    "1000000", String(mandaMonto.comision), mandaMonto.comision === 1000000, "A-FEAT-1225")
+
+  // Vacío = se calcula: null no es cero.
+  const vacio = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 1.166, comisionMonto: null, ivaMonto: null, redondeo: -757.75, ivaPct: 10.5, retenciones: [] })
+  chequear("Liquidación de hacienda", "Con el monto VACÍO se calcula con el % (vacío no es cero)",
+    "1050807.25 · 9352258.13", `${vacio.comision} · ${vacio.iva}`,
+    vacio.comision === 1050807.25 && vacio.iva === 9352258.13, "A-FEAT-1225")
+
+  const ivaAMano = calcularLiqHacienda({ lineas: [lineaGenta], comisionPct: 1.166, redondeo: -757.75, ivaPct: 10.5, ivaMonto: 9352258, retenciones: [] })
+  chequear("Liquidación de hacienda", "El IVA también se puede tipear por monto, y el importe neto lo sigue",
+    "9352258 · 98421383", `${ivaAMano.iva} · ${ivaAMano.importeNeto}`,
+    ivaAMano.iva === 9352258 && ivaAMano.importeNeto === 98421383, "A-FEAT-1225")
+
   return r
 }
