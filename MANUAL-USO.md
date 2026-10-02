@@ -1680,6 +1680,37 @@ sigue mostrando el **remanente** hasta que termines de facturar.
 
 ---
 
+## 🐂 Ventas de hacienda y su liquidación (Ingresos → MSA → Ventas) *(2026-10-01)*
+
+**Dónde:** Ingresos → MSA → **Ventas**, debajo de las ventas de granos, en el bloque **🐂 Ventas de hacienda**.
+
+**Qué ves:** las ventas de hacienda que cargaste en **Productivo → Movimientos**, con sus cabezas, kilos,
+desbaste, kilos netos, promedio, precio por kilo, neto, plazo y si ya están liquidadas. Acá **no se
+editan**: se siguen cargando y corrigiendo en Productivo.
+
+### Cargar la liquidación del consignatario
+- **🧾 Liquidar** en una venta → la liquidación abre **precargada** con los datos de la venta: cabezas,
+  kilos netos, precio, categoría, comprador, fecha y comisión.
+- **Liquidación suelta** → para un papel que no tiene venta cargada en Productivo.
+
+Después copiás lo que dice tu papel: consignatario, guía, DTe, el precio y la comisión reales, el ajuste
+por redondeo (con su signo), y las retenciones impresas. Para Ingresos Brutos la app **sugiere** el
+importe —la alícuota sobre el **bruto**— y lo usás con **usar**.
+
+**Los avisos:** abajo la app compara tres cosas y te muestra todas, las que cierran y las que no:
+- **contra la venta**: cabezas, kilos y el **subtotal después de comisión** contra el neto de la venta,
+  con la diferencia por kilo;
+- **contra el papel**: si cargás el bruto, el neto gravado o el importe neto del papel, te dice si la
+  cuenta da lo mismo;
+- **los plazos**: que las cuotas sumen el importe neto. **Repartir** las arma según el plazo de la venta.
+
+Un aviso **no te impide guardar**: si la diferencia tiene explicación, la decisión es tuya.
+
+Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
+su venta, y el consignatario queda registrado como cliente.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1180`.
+
 ## 🐄 Módulo: Ganadería — venta de destete (Ingresos → Ganadería) 🟡 (nuevo, sin testear)
 
 > Mismo criterio que arrendamiento: **la venta vive en Ventas y Presupuesto la lee**.

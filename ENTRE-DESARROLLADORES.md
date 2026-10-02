@@ -203,3 +203,20 @@ mismo día.** Y cerrar la lectura de sueldos, que medimos que no rompe a nadie.
 
 Hay scripts escritos y **sin correr** en la rama `jms/vistas-seguras`, que cuelga de la tuya. Úsalos o
 descartalos: la decisión es tuya.
+
+
+---
+
+## 📨 2026-10-01 · PARA JAVIER — 6 columnas nuevas en `comprobantes_venta` (aviso ANTES de correrlo)
+
+Para la liquidación de hacienda ([A-FEAT-1225](PENDIENTES.md#a-feat-1225)) vamos a correr
+**`scripts/68-liquidacion-hacienda.sql`**: agrega `cabezas`, `hacienda_lineas`, `redondeo`,
+`nro_guia`, `dte` y `plazos` a `comprobantes_venta` de **las tres empresas** (las tres son idénticas
+y siguen siéndolo).
+
+**Por qué no te debería tocar nada:** son columnas que aceptan vacío; no cambian permisos, RLS ni
+roles; ninguna vista de `public` está armada sobre esa tabla; y no toca filas existentes. Hay un
+**deshacer** escrito antes de correrlo, que se niega a correr si ya hay liquidaciones cargadas.
+
+📌 La tabla `msa.comprobantes_venta` sigue entre las **sin sección** de [A-SEC-13](PENDIENTES.md#a-sec-13):
+esto no la empeora ni la arregla.
