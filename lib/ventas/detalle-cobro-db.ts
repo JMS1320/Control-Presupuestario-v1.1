@@ -108,7 +108,8 @@ export async function vincularPagoACuenta(
   if (errAnt) throw errAnt
   if (count === 0) throw new Error('No se encontró el pago a cuenta: el vínculo NO se guardó')
 
-  if (anticipo.estado_pago === 'endosado') return { extractoActualizado: false }
+  // Un cheque de tercero en cartera o endosado no pasó por el banco: no hay movimiento que buscar.
+  if (anticipo.estado_pago === 'endosado' || anticipo.estado_pago === 'en_cartera') return { extractoActualizado: false }
 
   for (const { tabla, schema } of TABLAS_BANCARIAS) {
     const client = schema ? supabase.schema(schema) : supabase

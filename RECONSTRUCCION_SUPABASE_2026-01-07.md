@@ -12732,6 +12732,20 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-02 · CHEQUES DE TERCEROS en cartera (`en_cartera` + `endosado_en_id`) — A-FEAT-1229
+
+```sql
+ALTER TABLE public.anticipos_proveedores DROP CONSTRAINT anticipos_proveedores_estado_pago_check;
+ALTER TABLE public.anticipos_proveedores ADD CONSTRAINT anticipos_proveedores_estado_pago_check
+  CHECK (estado_pago::text = ANY (ARRAY['pendiente','pagar','preparado','programado','pagado','echeq','conciliado','endosado','en_cartera']::text[]));
+ALTER TABLE public.anticipos_proveedores ADD COLUMN IF NOT EXISTS endosado_en_id uuid
+  REFERENCES public.anticipos_proveedores(id) ON DELETE SET NULL;
+NOTIFY pgrst, 'reload schema';
+```
+
+Script `scripts/72-cheques-de-terceros.sql` (deshacer con freno). Avisado a Javier antes de correrlo.
+Verificado con `EXPLAIN UPDATE` como `authenticated`, sin escribir datos.
+
 ### 2026-10-02 · el echeq ENDOSADO de un cliente (`anticipos_proveedores.estado_pago = 'endosado'`) — A-FEAT-1228
 
 ```sql

@@ -235,7 +235,7 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
-## 📨 2026-10-02 · PARA JAVIER — VOY A CORRER `scripts/72` (aviso ANTES de aplicarlo)
+## 📨 2026-10-02 · PARA JAVIER — `scripts/72` (avisado ANTES; ✅ corrido el mismo día, después de este aviso)
 
 Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **`public.anticipos_proveedores`**:
 - el CHECK de `estado_pago` suma **`en_cartera`** (cheque de un cliente recibido y todavía no usado);

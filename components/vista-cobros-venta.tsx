@@ -15,6 +15,7 @@ import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCob
 import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -55,8 +56,10 @@ export function VistaCobrosVenta() {
   /** Pagos a cuenta del cliente del comprobante abierto, todavía sin vincular. */
   const [sinVincular, setSinVincular] = useState<Awaited<ReturnType<typeof pagosACuentaSinVincular>>>([])
   const [vinculando, setVinculando] = useState<string | null>(null)
-  /** Alta de un echeq del cliente que se endosó (no pasa por el banco). */
-  const [echeqForm, setEcheqForm] = useState<{ fecha: string; monto: string; numero: string; endosadoA: string } | null>(null)
+  /** Alta de un echeq recibido del cliente: entra EN CARTERA (A-FEAT-1229); se endosa desde la cartera. */
+  const [echeqForm, setEcheqForm] = useState<{ fecha: string; monto: string; numero: string; fechaCobro: string } | null>(null)
+  /** Para que la cartera de cheques se recargue cuando se registra uno. */
+  const [recargarCartera, setRecargarCartera] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [expandida, setExpandida] = useState<string | null>(null)
@@ -178,9 +181,10 @@ export function VistaCobrosVenta() {
   }
 
   /**
-   * 🔁 Registrar un echeq del cliente que se ENDOSÓ a un tercero: un cobro que nunca pasa por el
-   * banco. Queda como pago a cuenta (echeq, `endosado`) vinculado a este comprobante — así no se
-   * espera en el Cash Flow ni se busca en el extracto (scripts/71).
+   * 🧾 Registrar un echeq RECIBIDO del cliente (A-FEAT-1229): queda como pago a cuenta (echeq) en
+   * estado **en cartera**, vinculado a este comprobante. ⚠️ Cambió 2026-10-02: antes entraba
+   * «endosado» de entrada y sin decir a quién — el usuario lo vio «artesanal». Ahora el endoso es
+   * un segundo paso, en la cartera de cheques (arriba de Cobros), eligiendo el pago al proveedor.
    */
   const registrarEcheq = async (f: Factura) => {
     if (!echeqForm) return
@@ -190,13 +194,15 @@ export function VistaCobrosVenta() {
     try {
       const { data, error } = await supabase.from('anticipos_proveedores').insert({
         tipo: 'cobro', cuit_proveedor: f.cuit_cliente, nombre_proveedor: f.denominacion_cliente,
-        monto, monto_restante: monto, fecha_pago: echeqForm.fecha, metodo_pago: 'echeq', estado_pago: 'endosado',
+        monto, monto_restante: monto, fecha_pago: echeqForm.fecha, metodo_pago: 'echeq', estado_pago: 'en_cartera',
+        fecha_cobro_echeq: echeqForm.fechaCobro || null,
         estado: 'pendiente_vincular', empresa: 'MSA',
-        descripcion: `Echeq${echeqForm.numero ? ' Nº ' + echeqForm.numero : ''} endosado${echeqForm.endosadoA ? ' a ' + echeqForm.endosadoA : ''}`,
+        descripcion: `Echeq${echeqForm.numero ? ' Nº ' + echeqForm.numero : ''}`,
       }).select('id, fecha_pago, monto, metodo_pago, estado_pago, descripcion, cuit_proveedor, nro_cuenta').single()
       if (error) throw error
       await vincular(f, data as any)
       setEcheqForm(null)
+      setRecargarCartera(n => n + 1)
     } catch (err) {
       toast.error('No se pudo registrar el echeq: ' + (err as Error).message)
     } finally { setVinculando(null) }
@@ -241,6 +247,8 @@ export function VistaCobrosVenta() {
     <div className="space-y-3">
       {/* 🧪 Los A-TEST de este proceso aparecen acá, donde se prueban (CLAUDE.md § 🧪). */}
       <TestsDelProceso proceso="ingresos/cobros" pantalla="ingresos" />
+      {/* 🧾 Los cheques de clientes: disponibles en cartera, y a quién se endosaron (A-FEAT-1229). */}
+      <CarteraChequesTerceros recargar={recargarCartera} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
@@ -364,14 +372,14 @@ export function VistaCobrosVenta() {
                               <label className="grid gap-0.5">Fecha<Input type="date" className="h-7 text-xs w-36" value={echeqForm.fecha} onChange={e => setEcheqForm({ ...echeqForm, fecha: e.target.value })} /></label>
                               <label className="grid gap-0.5">Monto<Input type="text" placeholder="0,00" className="h-7 text-xs w-32" value={echeqForm.monto} onChange={e => setEcheqForm({ ...echeqForm, monto: e.target.value })} /></label>
                               <label className="grid gap-0.5">Número<Input type="text" className="h-7 text-xs w-28" value={echeqForm.numero} onChange={e => setEcheqForm({ ...echeqForm, numero: e.target.value })} /></label>
-                              <label className="grid gap-0.5">Endosado a<Input type="text" className="h-7 text-xs w-48" value={echeqForm.endosadoA} onChange={e => setEcheqForm({ ...echeqForm, endosadoA: e.target.value })} /></label>
+                              <label className="grid gap-0.5">Fecha de cobro<Input type="date" className="h-7 text-xs w-36" value={echeqForm.fechaCobro} onChange={e => setEcheqForm({ ...echeqForm, fechaCobro: e.target.value })} /></label>
                               <Button size="sm" className="h-7 text-xs" disabled={!!vinculando} onClick={() => void registrarEcheq(f)}>{vinculando === 'echeq' ? 'Guardando…' : 'Registrar y vincular'}</Button>
                               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEcheqForm(null)}>Cancelar</Button>
                             </div>
                           ) : (
                             <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-gray-600"
-                              onClick={() => setEcheqForm({ fecha: '', monto: '', numero: '', endosadoA: '' })}>
-                              + Registrar un echeq del cliente que endosaste
+                              onClick={() => setEcheqForm({ fecha: '', monto: '', numero: '', fechaCobro: '' })}>
+                              + Registrar un echeq recibido del cliente
                             </Button>
                           )}
                         </div>

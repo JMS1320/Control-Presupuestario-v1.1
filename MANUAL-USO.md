@@ -1762,6 +1762,16 @@ lista te muestra **cuánto falta cobrar** de cada comprobante y, si el crédito 
 parcial · quedan $X*. Queda conciliado y el comprobante sigue a cobrar hasta el último pago. Si el
 crédito ya tenía su pago a cuenta cargado, se vincula ese mismo.
 
+### Cheques de clientes: recibirlos y endosarlos
+Si un cliente te paga con un echeq, registralo desde **Cobros** → el comprobante → **+ Registrar un echeq
+recibido del cliente** (fecha, monto, número y fecha de cobro). Queda **en cartera**: la venta lo cuenta
+como cobrado y el cheque figura disponible.
+
+Arriba de Cobros está la tarjeta **🧾 Cheques de terceros**, con lo que tenés en cartera. Cuando lo uses
+para pagarle a un proveedor, apretá **Endosar…** y elegí el pago al que va (aparecen primero los del
+mismo importe); si ese pago no estaba cargado, se crea desde ahí. El cheque queda *endosado a* ese
+proveedor y ninguno de los dos se espera en el banco.
+
 ### Conciliar el cobro de una cuota
 En el **Extracto**, al asignar un crédito → pestaña **Venta**, una liquidación con plazos aparece **una
 vez por cada cuota pendiente** (*cuota 1 de 3, vence…*). Elegí la cuota: queda conciliada **esa** cuota

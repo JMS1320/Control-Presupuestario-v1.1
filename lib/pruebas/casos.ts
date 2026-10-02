@@ -67,6 +67,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
+import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -2292,6 +2293,28 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle del cobro", "«ANTICIPO COBRO: Adelanto» pasa a «Adelanto»; un detalle propio no se toca; sólo el prefijo queda vacío",
     "Adelanto · Seña Genta · (vacío)", `${detalleSinAnticipo("ANTICIPO COBRO: Adelanto")} · ${detalleSinAnticipo("Seña Genta")} · ${detalleSinAnticipo("ANTICIPO COBRO: ") ?? "(vacío)"}`,
     detalleSinAnticipo("ANTICIPO COBRO: Adelanto") === "Adelanto" && detalleSinAnticipo("Seña Genta") === "Seña Genta" && detalleSinAnticipo("ANTICIPO COBRO: ") === null, "A-FEAT-1228")
+
+
+  // ══ 🧾 CHEQUES DE TERCEROS EN CARTERA (A-FEAT-1229) — el echeq de Genta ═════════════════════
+  chequear("Cheques de terceros", "Recibido = en cartera; endosado con destino = endosado; endosado sin destino = falta decir a quién",
+    "en_cartera · endosado · endosado_sin_destino",
+    `${estadoCheque({ estado_pago: "en_cartera" })} · ${estadoCheque({ estado_pago: "endosado", endosado_en_id: "p1" })} · ${estadoCheque({ estado_pago: "endosado" })}`,
+    estadoCheque({ estado_pago: "en_cartera" }) === "en_cartera" && estadoCheque({ estado_pago: "endosado", endosado_en_id: "p1" }) === "endosado"
+      && estadoCheque({ estado_pago: "endosado" }) === "endosado_sin_destino", "A-FEAT-1229")
+  chequear("Cheques de terceros", "🔑 El de Genta, cargado «endosado» sin decir a quién, sigue en la cartera para completarlo",
+    "true · false", `${chequePendienteDeEndoso({ estado_pago: "endosado" })} · ${chequePendienteDeEndoso({ estado_pago: "endosado", endosado_en_id: "p1" })}`,
+    chequePendienteDeEndoso({ estado_pago: "endosado" }) && !chequePendienteDeEndoso({ estado_pago: "endosado", endosado_en_id: "p1" }), "A-FEAT-1229")
+  const candEcheq = candidatosEndoso([
+    { id: "otro", nombre_proveedor: "BIOFARMA", monto: 4291215.31, fecha_pago: "2026-02-26" },
+    { id: "almacen", nombre_proveedor: "Almacen Veterinario SRL", monto: 4466876.20, fecha_pago: "2026-02-26", descripcion: "Echeq Pedro Genta" },
+    { id: "lejos", nombre_proveedor: "X", monto: 100, fecha_pago: "2026-01-01" },
+  ], { monto: 4466876.20, fecha: "2026-02-25" })
+  chequear("Cheques de terceros", "Al endosar, el pago del MISMO importe va primero (Almacén Veterinario, $4.466.876,20)",
+    "almacen · mismo importe", `${candEcheq[0].id} · ${candEcheq[0].exacto ? "mismo importe" : "distinto"}`,
+    candEcheq[0].id === "almacen" && candEcheq[0].exacto, "A-FEAT-1229")
+  chequear("Cheques de terceros", "La búsqueda filtra por proveedor o detalle",
+    "almacen", candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(","),
+    candidatosEndoso([{ id: "a", nombre_proveedor: "BIOFARMA", monto: 1, fecha_pago: null }, { id: "almacen", nombre_proveedor: "Almacen Veterinario", monto: 1, fecha_pago: null }], { monto: 1 }, "almac").map(p => p.id).join(",") === "almacen", "A-FEAT-1229")
 
   return r
 }
