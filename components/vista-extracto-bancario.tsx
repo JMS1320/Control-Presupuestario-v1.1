@@ -2308,7 +2308,8 @@ ${marca}` : marca
         const esCuota = ventaElegida.__cuota != null
         // Menos de $1 de diferencia es redondeo del emisor (Genta: $0,02 al cerrar la venta de enero):
         // cierra el comprobante igual, y se anota — no se calla (§ 🧮, tolerancia explícita).
-        const redondeo = !esCuota && !dif.exacto && Math.abs(dif.diferencia) < 1
+        // Vale también para una cuota (la 1 de la 11-86270 quedaba en auditar por $0,01).
+        const redondeo = !dif.exacto && Math.abs(dif.diferencia) < 1
         const parcial = !esCuota && !dif.exacto && !redondeo && dif.diferencia < 0
         const saldada = dif.exacto || redondeo || dif.diferencia > 0
 
