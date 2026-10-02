@@ -19,9 +19,13 @@
 --   nro_guia, dte    la guía y el documento de tránsito
 --   plazos           las cuotas de cobro: días, %, vencimiento, importe
 --
--- EN LAS TRES EMPRESAS, aunque hoy sólo MSA vende hacienda: las tres comprobantes_venta son
--- idénticas (53 columnas, medido 2026-10-01) y conviene que lo sigan siendo. Son columnas que
--- aceptan vacío: no tocan ninguna fila existente ni ninguna pantalla.
+-- SÓLO EN MSA — decisión del usuario 2026-10-01: *«recordá que MA y PAM no venden hacienda»*.
+-- Es la misma que ya había tomado para las retenciones (A-FEAT-1219: *«no venden granos ni carne,
+-- eso no hay que replicarlo»*). ⚠️ Hasta acá las tres `comprobantes_venta` eran idénticas (53
+-- columnas); desde este script MSA tiene 59 y PAM y MA siguen en 53, **a propósito**. Es la primera
+-- entrada de la lista de excepciones del control de paridad entre empresas (A-FEAT-1222): sin
+-- declararla, ese control marcaría como hueco algo que es una decisión.
+-- Son columnas que aceptan vacío: no tocan ninguna fila existente ni ninguna pantalla.
 --
 -- ✅ Verificado antes de escribir esto: ninguna vista de `public` está armada sobre
 --   comprobantes_venta (las 13 que hay no la usan), y la app escribe en la TABLA
@@ -40,21 +44,7 @@ alter table msa.comprobantes_venta
   add column if not exists dte             text,
   add column if not exists plazos          jsonb;
 
-alter table pam.comprobantes_venta
-  add column if not exists cabezas         numeric,
-  add column if not exists hacienda_lineas jsonb,
-  add column if not exists redondeo        numeric,
-  add column if not exists nro_guia        text,
-  add column if not exists dte             text,
-  add column if not exists plazos          jsonb;
 
-alter table ma.comprobantes_venta
-  add column if not exists cabezas         numeric,
-  add column if not exists hacienda_lineas jsonb,
-  add column if not exists redondeo        numeric,
-  add column if not exists nro_guia        text,
-  add column if not exists dte             text,
-  add column if not exists plazos          jsonb;
 
 comment on column msa.comprobantes_venta.hacienda_lineas is
   'A-FEAT-1225 — líneas de la Cuenta de Venta y Líquido Producto: [{razonSocial, cuit, cabezas, clasificacion, kilos, precio}]';
@@ -63,7 +53,10 @@ comment on column msa.comprobantes_venta.plazos is
 
 commit;
 
+-- PostgREST guarda una foto de las columnas: sin esto, la app no ve las nuevas hasta que se refresque sola.
+notify pgrst, 'reload schema';
+
 -- ── Control (sólo lectura) ───────────────────────────────────────────────────────────────────
--- Las tres tablas tienen que seguir idénticas: 59 columnas cada una.
+-- MSA tiene que quedar en 59 columnas; PAM y MA, en 53 (sin tocar).
 -- select table_schema, count(*) from information_schema.columns
 --  where table_name = 'comprobantes_venta' and table_schema in ('msa','pam','ma') group by 1;

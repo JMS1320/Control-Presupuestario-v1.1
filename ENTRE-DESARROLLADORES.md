@@ -207,12 +207,12 @@ descartalos: la decisión es tuya.
 
 ---
 
-## 📨 2026-10-01 · PARA JAVIER — 6 columnas nuevas en `comprobantes_venta` (aviso ANTES de correrlo)
+## 📨 2026-10-01 · PARA JAVIER — 6 columnas nuevas en `msa.comprobantes_venta` (ya corrido, sólo MSA)
 
-Para la liquidación de hacienda ([A-FEAT-1225](PENDIENTES.md#a-feat-1225)) vamos a correr
-**`scripts/68-liquidacion-hacienda.sql`**: agrega `cabezas`, `hacienda_lineas`, `redondeo`,
-`nro_guia`, `dte` y `plazos` a `comprobantes_venta` de **las tres empresas** (las tres son idénticas
-y siguen siéndolo).
+Para la liquidación de hacienda ([A-FEAT-1225](PENDIENTES.md#a-feat-1225)) se corrió
+**`scripts/68-liquidacion-hacienda.sql`** — **ya corrido el 2026-10-01, con OK de JMS**: agrega `cabezas`,
+`hacienda_lineas`, `redondeo`, `nro_guia`, `dte` y `plazos` **sólo a `msa.comprobantes_venta`**. PAM y MA no
+venden hacienda, así que sus tablas quedan en 53 columnas y la de MSA en 59, a propósito.
 
 **Por qué no te debería tocar nada:** son columnas que aceptan vacío; no cambian permisos, RLS ni
 roles; ninguna vista de `public` está armada sobre esa tabla; y no toca filas existentes. Hay un

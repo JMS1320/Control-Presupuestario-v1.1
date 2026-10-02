@@ -12694,3 +12694,28 @@ ALTER TABLE public.cuotas_arrendamiento ALTER COLUMN qq_ha_cuota TYPE numeric(12
 (242 ha) 0,01 qq/ha = 0,242 tn, y fijar 100 de 212,96 tn dejaba 99,946 + 113,014. Sólo agranda la
 columna: ningún dato cambia al aplicarla. Se corrigió la única cuota partida que existía (Rojas
 26/27 #4/#5) con autorización del usuario y foto en `respaldos/a-bug-183-rojas-cuotas-4-5-antes.json`.
+
+---
+
+## 🔧 CAMBIOS POST-RECONSTRUCCIÓN — 2026-10-01 · Liquidación de HACIENDA en `msa.comprobantes_venta` (A-FEAT-1225)
+
+Para la «Cuenta de Venta y Líquido Producto» (tipo 60) del consignatario. Va a la misma tabla que la
+liquidación de granos y las facturas de venta, así entra sola al subdiario, al balance y al Cash Flow.
+**Sólo MSA**, por decisión del usuario: *«MA y PAM no venden hacienda»*. Script: `scripts/68-liquidacion-hacienda.sql`
+(deshacer: `scripts/68-liquidacion-hacienda-deshacer.sql`, que se niega a correr si ya hay liquidaciones cargadas).
+
+```sql
+ALTER TABLE msa.comprobantes_venta
+  ADD COLUMN IF NOT EXISTS cabezas         numeric,
+  ADD COLUMN IF NOT EXISTS hacienda_lineas jsonb,   -- [{razonSocial, cuit, cabezas, clasificacion, kilos, precio}]
+  ADD COLUMN IF NOT EXISTS redondeo        numeric, -- «Ajuste por redondeo», con el signo del papel
+  ADD COLUMN IF NOT EXISTS nro_guia        text,
+  ADD COLUMN IF NOT EXISTS dte             text,
+  ADD COLUMN IF NOT EXISTS plazos          jsonb;   -- [{dias, pct, vencimiento, importe}]
+NOTIFY pgrst, 'reload schema';
+```
+
+✅ Verificado al aplicarlo: MSA pasó de 53 a **59** columnas; **PAM y MA siguen en 53** (a propósito: es
+la primera excepción del control de paridad entre empresas, A-FEAT-1222). La escritura se probó sin
+escribir datos: `EXPLAIN INSERT` con las seis columnas, como usuario `authenticated`.
+

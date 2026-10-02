@@ -85,7 +85,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 |-------|:--:|:--:|-----------|
 | `comprobantes_arca` | ✅ | 318 | Facturas de compra ARCA (IVA compras, SICORE, pagos, PDF). |
 | `comprobantes_historico` | ❌ | 273 | Facturas históricas pre-sistema. |
-| `comprobantes_venta` | ✅ | — | Liquidaciones de venta (granos). |
+| `comprobantes_venta` | ✅ | — | Comprobantes de venta: facturas, liquidación de **granos** (tipo 332) y, desde 2026-10-01, liquidación de **hacienda** (tipo 60, «Cuenta de Venta y Líquido Producto», A-FEAT-1225) con 6 columnas propias que sólo tiene MSA. El vínculo con su venta va en `public.ventas_facturas`. |
 | `ventas` | ✅ | — | Operaciones de venta (IVA Ventas). |
 | `ventas_comprobantes` | ✅ | — | N:N venta↔liquidación. |
 | `caja_general` / `caja_ams` / `caja_sigot` | ❌ | 79 | Cajas efectivo (tablas de movimiento). |
