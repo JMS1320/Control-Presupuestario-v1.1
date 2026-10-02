@@ -1,7 +1,10 @@
 "use client"
 
 /**
- * 🧾 **Cheques de terceros en cartera** — A-FEAT-1229 (2026-10-02). Va arriba de Cobros.
+ * 🧾 **Cheques de terceros en cartera** — A-FEAT-1229 (2026-10-02). Vive en el **Cash Flow**, dentro
+ * del botón **ECHEQs**, junto a los emitidos (pedido del usuario: *«los cheques en cartera no se pueden
+ * tener para entrar a ver desde cobros, deben estar en cash flow… que muestre cheques emitidos, en
+ * cartera o endosados según se quiera»*). `modo` elige cuáles se listan.
  *
  * Lista los cheques que mandaron los clientes y todavía no se usaron (*en cartera*), y los que se
  * endosaron sin decir a quién. Para cada uno, **Endosar**: se elige el pago al proveedor que se
@@ -21,9 +24,8 @@ import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso, ETIQUETA_ESTAD
 const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const fmtFecha = (s: string | null) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
 
-export function CarteraChequesTerceros({ recargar }: { recargar?: number }) {
+export function CarteraChequesTerceros({ modo, recargar }: { modo: 'cartera' | 'endosados'; recargar?: number }) {
   const [cheques, setCheques] = useState<ChequeTercero[]>([])
-  const [verEndosados, setVerEndosados] = useState(false)
   const [endosando, setEndosando] = useState<ChequeTercero | null>(null)
   const [pagos, setPagos] = useState<any[]>([])
   const [busqueda, setBusqueda] = useState('')
@@ -61,20 +63,21 @@ export function CarteraChequesTerceros({ recargar }: { recargar?: number }) {
   }
 
   const pendientes = cheques.filter(chequePendienteDeEndoso)
-  const visibles = verEndosados ? cheques : pendientes
+  // En cartera: los disponibles y los endosados sin decir a quién (hay algo que hacer). Endosados: los completos.
+  const visibles = modo === 'cartera' ? pendientes : cheques.filter(c => estadoCheque(c) === 'endosado')
   const disponible = cheques.filter(c => estadoCheque(c) === 'en_cartera').reduce((s, c) => s + c.monto, 0)
-  if (cheques.length === 0) return null
 
   return (
-    <div className="rounded border bg-white p-2 text-xs space-y-1">
+    <div className="p-3 text-xs space-y-1">
       <div className="flex items-center gap-3">
-        <span className="font-medium text-sm">🧾 Cheques de terceros</span>
-        <span className="text-gray-600">En cartera: <b className="text-green-700">{fmt(disponible)}</b></span>
-        {pendientes.length > 0 && <Badge variant="outline" className="bg-amber-50 text-amber-800">{pendientes.length} por endosar o completar</Badge>}
-        <label className="ml-auto flex items-center gap-1 cursor-pointer text-gray-500">
-          <input type="checkbox" checked={verEndosados} onChange={e => setVerEndosados(e.target.checked)} />ver también los endosados
-        </label>
+        {modo === 'cartera'
+          ? <span className="text-gray-600">Disponible en cartera: <b className="text-green-700">{fmt(disponible)}</b></span>
+          : <span className="text-gray-600">Cheques de clientes que se endosaron a proveedores</span>}
+        {modo === 'cartera' && pendientes.length > 0 && <Badge variant="outline" className="bg-amber-50 text-amber-800">{pendientes.length} por endosar o completar</Badge>}
       </div>
+      {visibles.length === 0 && (
+        <p className="py-4 text-center text-gray-500">{modo === 'cartera' ? 'No hay cheques de terceros en cartera.' : 'No hay cheques endosados.'}</p>
+      )}
       {visibles.map(c => {
         const e = estadoCheque(c)
         return (

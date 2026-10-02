@@ -15,7 +15,6 @@ import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCob
 import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -58,8 +57,7 @@ export function VistaCobrosVenta() {
   const [vinculando, setVinculando] = useState<string | null>(null)
   /** Alta de un echeq recibido del cliente: entra EN CARTERA (A-FEAT-1229); se endosa desde la cartera. */
   const [echeqForm, setEcheqForm] = useState<{ fecha: string; monto: string; numero: string; fechaCobro: string } | null>(null)
-  /** Para que la cartera de cheques se recargue cuando se registra uno. */
-  const [recargarCartera, setRecargarCartera] = useState(0)
+
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [expandida, setExpandida] = useState<string | null>(null)
@@ -202,7 +200,7 @@ export function VistaCobrosVenta() {
       if (error) throw error
       await vincular(f, data as any)
       setEcheqForm(null)
-      setRecargarCartera(n => n + 1)
+      toast.info('El echeq quedó en cartera: se endosa desde el Cash Flow → ECHEQs → En cartera')
     } catch (err) {
       toast.error('No se pudo registrar el echeq: ' + (err as Error).message)
     } finally { setVinculando(null) }
@@ -247,8 +245,6 @@ export function VistaCobrosVenta() {
     <div className="space-y-3">
       {/* 🧪 Los A-TEST de este proceso aparecen acá, donde se prueban (CLAUDE.md § 🧪). */}
       <TestsDelProceso proceso="ingresos/cobros" pantalla="ingresos" />
-      {/* 🧾 Los cheques de clientes: disponibles en cartera, y a quién se endosaron (A-FEAT-1229). */}
-      <CarteraChequesTerceros recargar={recargarCartera} />
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />

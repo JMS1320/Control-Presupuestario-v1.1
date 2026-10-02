@@ -1,6 +1,7 @@
 "use client"
 
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
+import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -220,6 +221,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       .eq('id', id)
     await cargarCheques()
   }
+
+  /**
+   * 📝 El panel ECHEQs muestra tres cosas, según se quiera (A-FEAT-1229, pedido del usuario 2026-10-02):
+   * los que **emite** MSA (`msa.cheques`), los de **clientes en cartera** (disponibles, para endosar) y
+   * los de clientes **endosados** a proveedores.
+   */
+  const [vistaEcheqs, setVistaEcheqs] = useState<'emitidos' | 'cartera' | 'endosados'>('emitidos')
 
   const ESTADOS_CHEQUE = [
     { value: 'vigente',    label: 'Vigente',    color: 'bg-amber-100 text-amber-800' },
@@ -4121,6 +4129,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <CardHeader className="pb-3 bg-amber-50">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">📝 Gestión de ECHEQs</CardTitle>
+              <div className="flex gap-1 rounded border bg-white p-0.5">
+                {([['emitidos', 'Emitidos'], ['cartera', 'De clientes en cartera'], ['endosados', 'Endosados']] as const).map(([v, etiqueta]) => (
+                  <button key={v} onClick={() => setVistaEcheqs(v)}
+                    className={`text-xs px-2 py-1 rounded ${vistaEcheqs === v ? 'bg-amber-600 text-white' : 'text-gray-600 hover:bg-amber-50'}`}>
+                    {etiqueta}
+                  </button>
+                ))}
+              </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={cargarCheques} disabled={cargandoCheques}>
                   {cargandoCheques ? <Loader2 className="h-4 w-4 animate-spin" /> : '↺ Actualizar'}
@@ -4130,7 +4146,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {cheques.length === 0 ? (
+            {vistaEcheqs !== 'emitidos' ? (
+              <CarteraChequesTerceros modo={vistaEcheqs} />
+            ) : cheques.length === 0 ? (
               <p className="p-6 text-center text-gray-500">No hay ECHEQs registrados</p>
             ) : (
               <div className="overflow-x-auto">

@@ -1767,8 +1767,8 @@ Si un cliente te paga con un echeq, registralo desde **Cobros** → el comproban
 recibido del cliente** (fecha, monto, número y fecha de cobro). Queda **en cartera**: la venta lo cuenta
 como cobrado y el cheque figura disponible.
 
-Arriba de Cobros está la tarjeta **🧾 Cheques de terceros**, con lo que tenés en cartera. Cuando lo uses
-para pagarle a un proveedor, apretá **Endosar…** y elegí el pago al que va (aparecen primero los del
+En el **Cash Flow → 📝 ECHEQs** elegís qué ver: **Emitidos** (los tuyos), **De clientes en cartera**
+(disponibles) o **Endosados**. Cuando uses uno en cartera para pagarle a un proveedor, apretá **Endosar…** y elegí el pago al que va (aparecen primero los del
 mismo importe); si ese pago no estaba cargado, se crea desde ahí. El cheque queda *endosado a* ese
 proveedor y ninguno de los dos se espera en el banco.
 
