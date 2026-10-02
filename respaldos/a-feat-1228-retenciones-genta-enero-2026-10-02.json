@@ -1,0 +1,14 @@
+{
+  "que": "5 retenciones de Ganancias de la liquidacion 11-75880 (Genta, enero), cargadas por Claude a pedido del usuario (2026-10-02, «aca estan las retenciones. las cargas»), desde las capturas del portal de Genta.",
+  "tabla": "msa.retenciones_recibidas",
+  "antes": "0 retenciones para comprobante_venta_id c7a6306f-cdc1-4149-acad-3888302430b8",
+  "ids_insertados": [
+    "790fed4e-dd20-43db-88ef-85f7ae8d06ec",
+    "51666d00-ca11-4b73-b01b-c791a71a735e",
+    "817c4db6-7ca6-429d-8327-e00f0f887e19",
+    "70709798-73bd-47f2-84e9-1d8ef8e7ee90",
+    "0c7e4829-fc63-4383-8685-238a0c2222cc"
+  ],
+  "total": 2504350.46,
+  "deshacer": "delete from msa.retenciones_recibidas where id in ('790fed4e-dd20-43db-88ef-85f7ae8d06ec','51666d00-ca11-4b73-b01b-c791a71a735e','817c4db6-7ca6-429d-8327-e00f0f887e19','70709798-73bd-47f2-84e9-1d8ef8e7ee90','0c7e4829-fc63-4383-8685-238a0c2222cc');"
+}
