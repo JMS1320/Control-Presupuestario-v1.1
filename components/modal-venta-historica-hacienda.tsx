@@ -66,9 +66,20 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
     const v = e.target.value
     setF(prev => ({ ...prev, [k]: v }))
   }
-  /** Al salir del campo, el número queda escrito en es-AR (1.234,5). */
+  /**
+   * Al salir del campo, el número queda escrito en es-AR (1.234,5). `dec` negativo = PORCENTAJE:
+   * hasta |dec| decimales sin rellenar con ceros — una CZ de 4,125 % no se puede redondear a 4,13
+   * (pedido del usuario 2026-10-02: «no me deja poner con 3 decimales la CZ»).
+   */
   const formatear = (k: Clave, dec: number) => () =>
-    setF(prev => prev[k] ? { ...prev, [k]: fmtNumeroAR(parseNumeroAR(prev[k]), dec) } : prev)
+    setF(prev => {
+      if (!prev[k]) return prev
+      const n = parseNumeroAR(prev[k])
+      const txt = dec < 0
+        ? n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: -dec })
+        : fmtNumeroAR(n, dec)
+      return { ...prev, [k]: txt }
+    })
 
   const armada = useMemo(() => armarVentaHistorica({
     fecha: f.fecha,
@@ -148,13 +159,13 @@ export function ModalVentaHistoricaHacienda({ open, onOpenChange, onGuardado }: 
           </div>
           {campo('Cabezas', 'cabezas', '0', 0)}
           {campo('Kg vivos', 'kgTotales', '0', 0)}
-          {campo('Desbaste %', 'desbaste', f.kgNetos ? fmtNumeroAR(armada.pctDesbaste * 100, 2) : '0', 2,
+          {campo('Desbaste %', 'desbaste', f.kgNetos ? (armada.pctDesbaste * 100).toLocaleString('es-AR', { maximumFractionDigits: 4 }) : '0', -4,
             f.kgNetos ? 'Sale de vivos y netos' : undefined)}
           {campo('Kg netos (desbastados)', 'kgNetos', fmtNumeroAR(armada.kgNetos, 0) || '0', 0,
             f.kgNetos ? 'Tipeado: manda sobre el desbaste' : 'Vacío = vivos − desbaste. Si tenés este dato, escribilo')}
           {campo('Kg de carne', 'kgCarne', 'sólo al gancho', 0, 'Si fue al gancho: son los kilos que se cobran')}
           {campo('Precio por kg $', 'precioKg', '0,00', 2)}
-          {campo('CZ %', 'cz', '0', 2, 'Comisión, flete y otros, en %')}
+          {campo('CZ %', 'cz', '0', -4, 'Comisión, flete y otros, en %')}
           {campo('Flete $', 'flete', '0,00', 2, 'Monto, no %')}
           <div>
             <Label className="text-xs">Plazo de cobro</Label>

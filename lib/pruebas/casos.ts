@@ -63,6 +63,7 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
   kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica } from "@/lib/ventas/hacienda"
+import { parseNumeroAR } from "@/lib/format/numero"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2096,6 +2097,10 @@ export function correrCasos(): Resultado[] {
   const ganchoHist = armarVentaHistorica({ ...baseHist, kgCarne: 16000, pctCz: 0 })
   chequear("Venta histórica", "🥩 Al gancho se cobran los kilos de carne: 16.000 × 5.000 = 80.000.000",
     "80000000", String(ganchoHist.neto), ganchoHist.neto === 80000000, "A-FEAT-1226")
+  // CZ con 3 decimales (2026-10-02, «no me deja poner con 3 decimales la CZ»): 4,125 % no se redondea.
+  const cz3 = armarVentaHistorica({ ...baseHist, pctCz: parseNumeroAR("4,125") / 100 })
+  chequear("Venta histórica", "CZ de 4,125 % se usa entera: 145.500.000 × 4,125 % = 6.001.875 (con 4,13 daría 6.009.150)",
+    "6001875", String(Math.round(cz3.cz * 100) / 100), Math.abs(cz3.cz - 6001875) < 0.01, "A-FEAT-1226")
   const sinCliente = armarVentaHistorica({ ...baseHist, cuit: "" })
   chequear("Venta histórica", "Sin CUIT del cliente no se guarda (§ Contrapartes)",
     "cliente (con CUIT)", sinCliente.faltan.join(", "), sinCliente.faltan.includes("cliente (con CUIT)"), "A-FEAT-1226")
