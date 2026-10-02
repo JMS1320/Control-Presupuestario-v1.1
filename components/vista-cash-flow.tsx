@@ -384,8 +384,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
   // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
-  // 'cobrado' es el 'pagado' de los ingresos (el hook los trata igual): se oculta igual. Antes quedaba a la vista
-  // y una cuota marcada cobrada en Ingresos → Cobros parecía no haber llegado al Cash Flow (2026-10-02).
+  // 'cobrado' se muestra, en verde como lo pagado (abajo, en la colorización). Se probó ocultarlo y el usuario
+  // lo frenó (2026-10-02): «lo pagado no se oculta, se muestra en verde; no cambiemos el funcionamiento general».
   const [chipsEstados, setChipsEstados] = useState<Set<string>>(new Set())
   const [chipsOrigenes, setChipsOrigenes] = useState<Set<string>>(new Set())
   const [chipsInit, setChipsInit] = useState(false)
@@ -393,7 +393,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
-    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado' && e !== 'cobrado')))
+    setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
     setChipsOrigenes(new Set(data.map(f => f.origen)))
     setChipsInit(true)
   }, [data, chipsInit])
