@@ -12,8 +12,9 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalVentaMsa, type VentaMsa } from "./modal-venta-msa"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
-import { kgNetosDeVenta, promedioKg, categoriaDeVenta } from "@/lib/ventas/hacienda"
-import { ModalLiquidacionHacienda, type VentaOrigen } from "./modal-liquidacion-hacienda"
+import { kgQueSeCobran, promedioKg } from "@/lib/ventas/hacienda"
+import { cargarVentasHacienda, liquidacionDeVenta, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
+import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 
 interface Props {
   userRole?: UserRole
@@ -49,27 +50,8 @@ function calcDerivados(v: VentaMsa) {
   }
 }
 
-/** Una venta de hacienda tal como la muestra esta solapa (A-BUG-1232). */
-interface VentaHaciendaFila {
-  id: string
-  fecha: string
-  cliente: string
-  cuit: string
-  categoria: string | null
-  cabezas: number
-  kgTotales: number
-  /** FRACCIÓN (0.03 = 3 %), como la guarda Productivo. */
-  pctDesbaste: number
-  precioKg: number
-  /** El neto que guardó Productivo — se lee, no se recalcula. */
-  neto: number
-  plazo: string | null
-  /** Lo ya vinculado a comprobantes (ventas_facturas). */
-  liquidado: number
-  /** % de CZ (comisión) de la venta, FRACCIÓN. */
-  pctCz: number | null
-  centroCosto: string | null
-}
+/** Una venta de hacienda tal como la muestra esta solapa (A-BUG-1232). La forma vive en lib. */
+type VentaHaciendaFila = VentaHaciendaDatos
 
 export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const esAdmin = userRole === 'admin'
@@ -92,7 +74,29 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
   const [errorHacienda, setErrorHacienda] = useState<string | null>(null)
   /** 🧾 A-FEAT-1225 — la liquidación de hacienda: abierta desde una venta (precargada) o suelta. */
   const [liqAbierta, setLiqAbierta] = useState(false)
-  const [liqVenta, setLiqVenta] = useState<VentaOrigen | null>(null)
+  /** Las ventas que liquida el papel: una, varias (Arre Beef: vacas y toros en una sola), o ninguna. */
+  const [liqVentas, setLiqVentas] = useState<VentaHaciendaFila[]>([])
+  /** Con id: se EDITA esa liquidación en vez de crear otra (2026-10-02 — no duplicar). */
+  const [liqEditarId, setLiqEditarId] = useState<string | null>(null)
+  /** Ventas tildadas para liquidar juntas. */
+  const [tildadas, setTildadas] = useState<Set<string>>(new Set())
+
+  const abrirLiquidacion = (vs: VentaHaciendaFila[]) => { setLiqEditarId(null); setLiqVentas(vs); setLiqAbierta(true) }
+  /**
+   * 🔑 *Liquidar* sobre una venta YA liquidada abre ESA liquidación para editarla. El usuario creía
+   * que volver a liquidar era editar, y en realidad creaba otra (2026-10-02).
+   */
+  const liquidarOEditar = async (h: VentaHaciendaFila) => {
+    if (h.liquidado > 0) {
+      try {
+        const id = await liquidacionDeVenta(supabase, h.id)
+        if (id) { setLiqVentas([]); setLiqEditarId(id); setLiqAbierta(true); return }
+      } catch (err) {
+        toast.error('No se pudo buscar la liquidación de la venta: ' + (err as Error).message); return
+      }
+    }
+    abrirLiquidacion([h])
+  }
 
   const cargar = async () => {
     setLoading(true)
@@ -136,39 +140,9 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
     // 🐂 Hacienda, aparte: si falla, no se lleva puestas las de granos — y se dice, no se calla.
     try {
       setErrorHacienda(null)
-      const { data: base, error: eBase } = await supabase
-        .from('ventas_unificadas')
-        .select('venta_id, cliente_nombre, cliente_cuit, fecha_venta, cantidad, precio_pesos, monto_pesos, facturado, centro_costo')
-        .eq('venta_tipo', 'ganaderia').eq('empresa', 'MSA')
-        .order('fecha_venta', { ascending: false })
-      if (eBase) throw eBase
-      const ids = (base || []).map((b: any) => b.venta_id)
-      const { data: det, error: eDet } = ids.length
-        ? await supabase.schema('productivo').from('stock_ventas')
-            .select('id, kg_totales, pct_desbaste, plazo_cobro, pct_cz, lote:stock_lotes(categoria), cat:categorias_hacienda(nombre)')
-            .in('id', ids)
-        : { data: [] as any[], error: null }
-      if (eDet) throw eDet
-      const detPorId = new Map((det || []).map((d: any) => [d.id, d]))
-      setVentasHacienda((base || []).map((b: any) => {
-        const d: any = detPorId.get(b.venta_id) || {}
-        return {
-          id: b.venta_id,
-          fecha: b.fecha_venta,
-          cliente: b.cliente_nombre || '—',
-          cuit: b.cliente_cuit || '',
-          categoria: categoriaDeVenta(d.lote?.categoria, d.cat?.nombre),
-          cabezas: Number(b.cantidad) || 0,
-          kgTotales: Number(d.kg_totales) || 0,
-          pctDesbaste: Number(d.pct_desbaste) || 0,
-          precioKg: Number(b.precio_pesos) || 0,
-          neto: Number(b.monto_pesos) || 0,
-          plazo: d.plazo_cobro || null,
-          liquidado: Number(b.facturado) || 0,
-          pctCz: d.pct_cz === null || d.pct_cz === undefined ? null : Number(d.pct_cz),
-          centroCosto: b.centro_costo || null,
-        }
-      }))
+      // Mismo lector que usa la liquidación (lib/ventas/hacienda-db.ts): una sola lectura de la venta.
+      setVentasHacienda(await cargarVentasHacienda(supabase))
+      setTildadas(new Set())
     } catch (err) {
       setErrorHacienda((err as Error).message)
     } finally {
@@ -345,12 +319,21 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
       <div className="space-y-2">
         <div className="flex items-baseline gap-3">
           <h3 className="text-base font-semibold">🐂 Ventas de hacienda</h3>
-          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos. Acá se ven para liquidarlas.</span>
+          <span className="text-xs text-gray-500">Se cargan y se editan en Productivo → Movimientos. Acá se liquidan: tildá varias si vienen en un solo papel.</span>
           {esAdmin && (
-            <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setLiqVenta(null); setLiqAbierta(true) }}
-              title="Cargar una liquidación de hacienda que no tiene venta en Productivo">
-              <FileText className="mr-1 h-3.5 w-3.5" />Liquidación suelta
-            </Button>
+            <div className="ml-auto flex gap-2">
+              {tildadas.size > 0 && (
+                <Button size="sm" className="bg-green-600 hover:bg-green-700"
+                  onClick={() => abrirLiquidacion(ventasHacienda.filter(v => tildadas.has(v.id)))}
+                  title="Un solo papel para varias ventas: una línea por cada una">
+                  <FileText className="mr-1 h-3.5 w-3.5" />Liquidar las {tildadas.size} juntas
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => abrirLiquidacion([])}
+                title="Cargar una liquidación de hacienda que no tiene venta en Productivo">
+                <FileText className="mr-1 h-3.5 w-3.5" />Liquidación suelta
+              </Button>
+            </div>
           )}
         </div>
         <Card>
@@ -359,13 +342,14 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8" title="Tildá varias para liquidarlas en un solo papel" />
                     <TableHead>Fecha</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Categoría</TableHead>
                     <TableHead className="text-right">Cabezas</TableHead>
                     <TableHead className="text-right">Kg</TableHead>
                     <TableHead className="text-right" title="Desbaste: los kilos que se descuentan antes de pagar">Desbaste</TableHead>
-                    <TableHead className="text-right" title="Kilos después del desbaste: los que se cobran">Kg netos</TableHead>
+                    <TableHead className="text-right" title="Los kilos que se cobran: después del desbaste, o los de carne si la venta es al gancho">Kg que se cobran</TableHead>
                     <TableHead className="text-right">Prom.</TableHead>
                     <TableHead className="text-right">Precio/kg</TableHead>
                     <TableHead className="text-right">Neto venta</TableHead>
@@ -376,20 +360,26 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                 </TableHeader>
                 <TableBody>
                   {errorHacienda ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-red-600">
+                    <TableRow><TableCell colSpan={14} className="text-center py-6 text-red-600">
                       No se pudieron leer las ventas de hacienda: {errorHacienda}
                     </TableCell></TableRow>
                   ) : loading ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-gray-500">Cargando…</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={14} className="text-center py-6 text-gray-500">Cargando…</TableCell></TableRow>
                   ) : haciendaFiltrada.length === 0 ? (
-                    <TableRow><TableCell colSpan={13} className="text-center py-6 text-gray-500">
+                    <TableRow><TableCell colSpan={14} className="text-center py-6 text-gray-500">
                       {ventasHacienda.length === 0 ? 'No hay ventas de hacienda cargadas en Productivo.' : 'No hay resultados para la búsqueda.'}
                     </TableCell></TableRow>
                   ) : haciendaFiltrada.map(h => {
-                    const kgNetos = kgNetosDeVenta(h.kgTotales, h.pctDesbaste)
+                    const kgNetos = kgQueSeCobran(h)
                     const desbaste = h.pctDesbaste ? fmtAR(h.pctDesbaste * 100, 1) + ' %' : '—'
                     return (
                       <TableRow key={h.id} className="hover:bg-gray-50">
+                        <TableCell>
+                          {esAdmin && h.liquidado <= 0 && (
+                            <input type="checkbox" aria-label="Liquidar junto con otras" checked={tildadas.has(h.id)}
+                              onChange={e => setTildadas(t => { const n = new Set(t); e.target.checked ? n.add(h.id) : n.delete(h.id); return n })} />
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">{fmtFecha(h.fecha)}</TableCell>
                         <TableCell>
                           {h.cliente}
@@ -399,7 +389,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                         <TableCell className="text-right">{fmtAR(h.cabezas, 0)}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{fmtAR(h.kgTotales, 0)}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{desbaste}</TableCell>
-                        <TableCell className="text-right whitespace-nowrap">{fmtAR(kgNetos, 1)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmtAR(kgNetos, 1)}{h.kgCarne ? <span className="text-xs text-gray-500"> carne</span> : null}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{fmtAR(promedioKg(h.kgTotales, h.cabezas), 0)}</TableCell>
                         <TableCell className="text-right whitespace-nowrap">{fmtMoney(h.precioKg)}</TableCell>
                         <TableCell className="text-right whitespace-nowrap font-semibold">{fmtMoney(h.neto)}</TableCell>
@@ -411,9 +401,9 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                         </TableCell>
                         <TableCell className="text-right">
                           {esAdmin && (
-                            <Button size="sm" variant="ghost" onClick={() => { setLiqVenta(h); setLiqAbierta(true) }}
-                              title="Cargar la liquidación de esta venta — viene precargada con sus datos">
-                              <FileText className="h-3.5 w-3.5 mr-1" />Liquidar
+                            <Button size="sm" variant="ghost" onClick={() => liquidarOEditar(h)}
+                              title={h.liquidado > 0 ? 'Abrir la liquidación de esta venta para verla o corregirla' : 'Cargar la liquidación de esta venta — viene precargada con sus datos'}>
+                              <FileText className="h-3.5 w-3.5 mr-1" />{h.liquidado > 0 ? 'Ver / editar' : 'Liquidar'}
                             </Button>
                           )}
                         </TableCell>
@@ -427,7 +417,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
         </Card>
       </div>
 
-      <ModalLiquidacionHacienda open={liqAbierta} onOpenChange={setLiqAbierta} venta={liqVenta} onGuardado={cargar} />
+      <ModalLiquidacionHacienda open={liqAbierta} onOpenChange={setLiqAbierta} ventas={liqVentas} comprobanteId={liqEditarId} onGuardado={cargar} />
 
       <ModalVentaMsa
         open={modalAbierto}

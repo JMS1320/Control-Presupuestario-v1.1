@@ -5,7 +5,7 @@ import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identific
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
-import { cuotasPorCobrar } from "@/lib/ventas/hacienda"
+import { cuotasPorCobrar, marcarCuota } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 
@@ -658,6 +658,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       fecha_estimada: q.vencimiento,
       creditos: q.importe,
       imp_total: q.importe,
+      // Cada cuota con SU estado: lo que se marque en Cobros se ve acá, y al revés.
+      estado: c.estado === 'conciliado' ? 'conciliado' : (q.estado === 'cobrado' ? 'cobrado' : 'a cobrar'),
       detalle: q.de > 1 ? `${detalle} — cuota ${q.n} de ${q.de}` : detalle,
     }))
   }
@@ -1183,6 +1185,38 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
         if (error) throw error
         if (count === 0) throw new Error('No se encontró el anticipo: el cambio NO se guardó')
+      } else if (origen === 'VENTA') {
+        /**
+         * 💰 A-FEAT-1225 — una VENTA se marca cobrada desde acá con EL MISMO cambio que desde
+         * Ingresos → Cobros (`marcarCuota`). Regla del usuario: «son 2 lugares donde se puede marcar
+         * como cobrado, pero el cambio en BBDD debe ser el mismo».
+         *
+         * 🐞 Hasta acá una fila de venta caía en la rama de TEMPLATES de abajo: buscaba una cuota de
+         * template con el id de la venta, no encontraba nada y daba error. O sea que desde el Cash
+         * Flow nunca se pudo marcar una venta.
+         *
+         * Sólo el ESTADO: el resto de una venta se edita donde se carga. «Pagado» —el que ofrece el
+         * menú del Cash Flow— vale como «cobrado» en una fila que es un ingreso.
+         */
+        if (campo !== 'estado') throw new Error('En una venta, desde el Cash Flow sólo se cambia el estado: el resto se edita en Ingresos')
+        const destino = valor === 'pagado' || valor === 'cobrado' ? 'cobrado' : valor === 'a cobrar' || valor === 'pendiente' ? 'a cobrar' : null
+        if (!destino) throw new Error(`«${valor}» no es un estado de venta: usá Cobrado o A cobrar`)
+        const [compId, sufijo] = String(id).split('#cuota-')
+        const { data: comp, error: eLeer } = await supabase.schema('msa').from('comprobantes_venta')
+          .select('plazos, estado').eq('id', compId).single()
+        if (eLeer) throw eLeer
+        let cambios: Record<string, any>
+        if (sufijo) {
+          const r = marcarCuota((comp?.plazos || []) as any[], Number(sufijo) - 1, destino, comp?.estado ?? null)
+          cambios = { plazos: r.plazos, estado: r.estadoComprobante }
+        } else {
+          if (comp?.estado === 'conciliado') throw new Error('Ya está conciliada: el estado lo decide la conciliación')
+          cambios = { estado: destino }
+        }
+        const { error, count } = await supabase.schema('msa').from('comprobantes_venta')
+          .update(cambios, { count: 'exact' }).eq('id', compId)
+        if (error) throw error
+        if (count === 0) throw new Error('No se encontró la venta: el cambio NO se guardó')
       } else {
         // Para templates: manejo especial de categ
         if (campo === 'categ') {

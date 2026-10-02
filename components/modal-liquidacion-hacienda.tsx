@@ -1,18 +1,20 @@
 "use client"
 
 /**
- * 🐂 **CARGAR UNA LIQUIDACIÓN DE HACIENDA** — «Cuenta de Venta y Líquido Producto A» (tipo 60).
+ * 🐂 **CARGAR o EDITAR UNA LIQUIDACIÓN DE HACIENDA** — «Cuenta de Venta y Líquido Producto A» (tipo 60).
  * A-FEAT-1225. Pedido del usuario 2026-10-01: *«es como las de granos pero con sus propios tipos
  * de datos… debe estar lista para chupar los datos de la venta… y debe dar alert en caso de cosas
  * que no coincidan»*.
  *
  * - Las cuentas y los avisos viven en `lib/ventas/hacienda.ts`, con casos verificados al centavo
- *   contra dos papeles reales. Esta pantalla sólo junta lo que se tipea y muestra lo que da.
- * - **Abierta desde una venta, viene PRECARGADA** (§ Default del dato real): cabezas, kilos netos,
- *   precio, clasificación, comprador, fecha y plazos. Lo que el usuario cambie es suyo; la
- *   comparación se hace siempre contra la venta ORIGINAL, no contra lo editado.
- * - **Avisa, no frena** (§ 🚦): una diferencia con la venta o con el papel puede tener explicación
- *   —el usuario pacta el precio después de comisión—, así que se muestra y se deja guardar.
+ *   contra papeles reales. Esta pantalla sólo junta lo que se tipea y muestra lo que da.
+ * - **Abierta desde una o varias ventas, viene PRECARGADA** (§ Default del dato real): una línea por
+ *   venta. Arre Beef (2026-10-02): 7 vacas y 3 toros, dos ventas, **un solo papel**.
+ * - 🔑 **EDITAR, nunca duplicar** (2026-10-02). El usuario creía que volver a apretar *Liquidar*
+ *   editaba la liquidación — creaba otra. Ahora, con `comprobanteId`, esta pantalla abre la que ya
+ *   existe y GUARDA ENCIMA; y *Liquidar* sobre una venta ya liquidada abre ésa. Lo mismo desde
+ *   Comprobantes → Editar, que antes abría el modal de granos (A-BUG-1233).
+ * - **Avisa, no frena** (§ 🚦): una diferencia con la venta o con el papel puede tener explicación.
  * - Las retenciones van igual que en granos: lo impreso en el papel acá; un certificado suelto,
  *   después, con el botón % de la solapa Comprobantes.
  */
@@ -23,40 +25,29 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
-import { Plus, Trash2, CheckCircle2, AlertTriangle } from "lucide-react"
+import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
-  plazosDesdeVenta, kgNetosDeVenta, precargaDesdeVenta, huellaLiquidacion, type AvisoLiq, type PlazoCobro, type VentaParaLiquidar,
+  plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
+  type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
+import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
 
-/** La venta de Productivo desde la que se abre (null = liquidación suelta, sin venta). */
-export interface VentaOrigen {
-  id: string
-  fecha: string
-  cliente: string
-  cuit: string
-  categoria: string | null
-  cabezas: number
-  kgTotales: number
-  /** FRACCIÓN (0.03 = 3 %). */
-  pctDesbaste: number
-  precioKg: number
-  neto: number
-  plazo: string | null
-  /** % de CZ de la venta, FRACCIÓN. Se precarga como comisión. */
-  pctCz?: number | null
-  centroCosto?: string | null
-  /** Lo ya vinculado de esta venta a otros comprobantes. */
-  liquidado?: number
-}
+/** Una venta de Productivo desde la que se liquida. */
+export type VentaOrigen = VentaHaciendaDatos
 
 interface Props {
   open: boolean
   onOpenChange: (o: boolean) => void
-  venta: VentaOrigen | null
+  /** Las ventas que liquida este papel (una, varias, o ninguna = liquidación suelta). */
+  ventas: VentaOrigen[]
+  /** Con id: se EDITA esa liquidación (sus ventas se buscan solas). Sin id: se crea una nueva. */
+  comprobanteId?: string | null
   onGuardado?: () => void
 }
 
@@ -68,33 +59,30 @@ const fmtAR = (n: number, dec = 2) => n.toLocaleString('es-AR', { minimumFractio
 const fmtPct = (n: number) => String(n).replace('.', ',')
 /** Al salir de un campo de monto, se reescribe en formato es-AR (1.234.567,89). Vacío queda vacío. */
 const reformatear = (v: string, dec = 2) => (v.trim() ? fmtAR(parsearAR(v), dec) : '')
+const r2 = (n: number) => Math.round(n * 100) / 100
 type TotalId = 'bruto' | 'neto' | 'importe'
 type Verificacion = 'ok' | 'distinto' | null
 
 interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string }
 interface RetUI { concepto: string; alicuota: string; importe: string }
-interface PlazoUI { dias: string; pct: string; vencimiento: string; importe: string }
+interface PlazoUI { dias: string; pct: string; vencimiento: string; importe: string; estado?: 'a cobrar' | 'cobrado' }
 
 const lineaVacia = (): LineaUI => ({ razonSocial: '', cuit: '', cabezas: '', clasificacion: '', kilos: '', precio: '' })
 const RET_IIBB: RetUI = { concepto: 'INGRESOS BRUTOS Pcia BS AS', alicuota: '0,75', importe: '' }
 
-/** 🎚️ La precarga (la lógica vive en lib; acá sólo se le da formato de pantalla). */
-function precargaParaPantalla(v: VentaOrigen) {
-  const p = precargaDesdeVenta(v)
-  return {
-    fecha: p.fecha,
-    lineas: [{
-      razonSocial: p.linea.razonSocial, cuit: p.linea.cuit,
-      cabezas: p.linea.cabezas ? String(p.linea.cabezas) : '',
-      clasificacion: p.linea.clasificacion,
-      kilos: p.linea.kilos ? fmtAR(p.linea.kilos, 0) : '',
-      precio: p.linea.precio ? fmtAR(p.linea.precio, 2) : '',
-    }],
-    comisionPct: fmtPct(p.comisionPct),
-  }
-}
+const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: number; clasificacion: string; kilos: number; precio: number }): LineaUI => ({
+  razonSocial: l.razonSocial || '', cuit: l.cuit || '',
+  cabezas: l.cabezas ? String(l.cabezas) : '',
+  clasificacion: l.clasificacion || '',
+  kilos: l.kilos ? fmtAR(l.kilos, 0) : '',
+  precio: l.precio ? fmtAR(l.precio, 2) : '',
+})
 
-export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado }: Props) {
+export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comprobanteId, onGuardado }: Props) {
+  const esEdicion = !!comprobanteId
+  const [cargando, setCargando] = useState(false)
+  /** Las ventas de este papel: las que vienen por props, o las que se encuentran al editar. */
+  const [ventasCtx, setVentasCtx] = useState<VentaOrigen[]>([])
   const [fecha, setFecha] = useState('')
   const [consignatario, setConsignatario] = useState({ cuit: '', nombre: '' })
   const [nroComp, setNroComp] = useState('')
@@ -110,35 +98,111 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
   const [ivaMonto, setIvaMonto] = useState('')
   const [rets, setRets] = useState<RetUI[]>([RET_IIBB])
   const [plazos, setPlazos] = useState<PlazoUI[]>([])
-  /**
-   * ✓ / ✗ contra el papel, por total. Pedido del usuario 2026-10-01: *«mejor sería que yo le dé
-   * check si es así y tipee si no es así»*. Con ✓ queda verificado; con ✗ se tipea lo que dice el
-   * papel y se muestra la diferencia — y como cada componente (kilos, precio, comisión, IVA,
-   * retenciones) se puede tipear, corregir el que difiere deja la cuenta igual al papel.
-   */
+  /** ✓ / ✗ contra el papel, por total («mejor que yo le dé check si es así y tipee si no»). */
   const [verif, setVerif] = useState<Record<TotalId, Verificacion>>({ bruto: null, neto: null, importe: null })
   const [papel, setPapel] = useState<Record<TotalId, string>>({ bruto: '', neto: '', importe: '' })
+  const [cuentaContable, setCuentaContable] = useState<string | null>(null)
+  const [nroCuenta, setNroCuenta] = useState<string | null>(null)
+  const [centroCosto, setCentroCosto] = useState('')
+  const [pickCuenta, setPickCuenta] = useState(false)
   const [guardando, setGuardando] = useState(false)
-  /** 🐾 Lo que propuso la app al abrir (para la huella): la precarga desde la venta, tal cual. */
+  /** 🐾 Lo que propuso la app al abrir (para la huella): la precarga desde la PRIMERA venta. */
   const [precargado, setPrecargado] = useState<ReturnType<typeof precargaDesdeVenta> | null>(null)
+  /** 🐾 Al editar: la huella de la precarga original se conserva, no se pisa. */
+  const [huellaAnterior, setHuellaAnterior] = useState<HuellaLiq | null>(null)
+  const [estadoComprobante, setEstadoComprobante] = useState<string>('a cobrar')
 
-  // Al abrir: precarga desde la venta, o formulario vacío.
-  useEffect(() => {
-    if (!open) return
+  const limpiar = () => {
     setConsignatario({ cuit: '', nombre: '' })
     setNroComp(''); setNroGuia(''); setDte(''); setProcedencia('')
     setRedondeo(''); setIvaPct('10,5'); setRets([RET_IIBB]); setPlazos([])
     setComisionMonto(''); setIvaMonto('')
     setVerif({ bruto: null, neto: null, importe: null }); setPapel({ bruto: '', neto: '', importe: '' })
-    if (venta) {
-      const p = precargaParaPantalla(venta)
-      setFecha(p.fecha); setLineas(p.lineas); setComisionPct(p.comisionPct)
-      setPrecargado(precargaDesdeVenta(venta))
+    setCuentaContable(null); setNroCuenta(null); setCentroCosto(''); setPickCuenta(false)
+    setPrecargado(null); setHuellaAnterior(null); setEstadoComprobante('a cobrar')
+  }
+
+  // ── Al abrir: editar la existente, o precargar desde las ventas ─────────────────────────────
+  useEffect(() => {
+    if (!open) return
+    limpiar()
+    if (comprobanteId) { void cargarParaEditar(comprobanteId); return }
+    setVentasCtx(ventas)
+    if (ventas.length) {
+      const pre = ventas.map(v => precargaDesdeVenta(v))
+      setFecha(ventas.map(v => v.fecha).sort().slice(-1)[0] || '')
+      setLineas(pre.map(p => lineaParaPantalla(p.linea)))
+      // La comisión: la de la venta si todas tienen la misma; si no, 0 y que mande el papel.
+      const comisiones = Array.from(new Set(pre.map(p => p.comisionPct)))
+      setComisionPct(fmtPct(comisiones.length === 1 ? comisiones[0] : 0))
+      setCentroCosto(ventas[0].centroCosto || '')
+      setPrecargado(pre[0])
     } else {
       setFecha(''); setLineas([lineaVacia()]); setComisionPct('')
-      setPrecargado(null)
     }
-  }, [open, venta])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, comprobanteId, ventas])
+
+  const cargarParaEditar = async (id: string) => {
+    setCargando(true)
+    try {
+      const { data: c, error } = await supabase.schema('msa').from('comprobantes_venta').select('*').eq('id', id).single()
+      if (error) throw error
+      const { data: links } = await supabase.from('ventas_facturas')
+        .select('venta_id').eq('venta_tipo', 'ganaderia').eq('comprobante_id', id).eq('vinculado', true)
+      const ids = ((links || []) as any[]).map(l => l.venta_id)
+      setVentasCtx(ids.length ? await cargarVentasHacienda(supabase, ids) : [])
+
+      setFecha(c.fecha_liquidacion || '')
+      setConsignatario({ cuit: c.cuit_cliente || '', nombre: c.denominacion_cliente || '' })
+      setNroComp(c.nro_comprobante || ''); setNroGuia(c.nro_guia || ''); setDte(c.dte || ''); setProcedencia(c.procedencia || '')
+      const ls = (c.hacienda_lineas || []) as any[]
+      setLineas(ls.length ? ls.map(l => lineaParaPantalla(l)) : [lineaVacia()])
+      setRedondeo(c.redondeo ? fmtAR(Number(c.redondeo)) : '')
+
+      // La comisión y el IVA vuelven como % si el % los reproduce al centavo; si no, como monto a mano.
+      const bruto = Number(c.subtotal_neto) || 0
+      const com = Number(c.comision_neto) || 0
+      const comPct = bruto > 0 ? Math.round(com / bruto * 100 * 1000) / 1000 : 0
+      const huella = (c.correcciones || null) as HuellaLiq | null
+      if (huella?.montosAMano?.comision || r2(bruto * comPct / 100) !== r2(com)) { setComisionPct(fmtPct(comPct)); setComisionMonto(fmtAR(com)) }
+      else { setComisionPct(fmtPct(comPct)); setComisionMonto('') }
+      const neto = Number(c.imp_neto_gravado) || 0
+      const iva = Number(c.iva) || 0
+      const alic = Number(c.alicuota_iva) || 0
+      setIvaPct(fmtPct(alic))
+      setIvaMonto(huella?.montosAMano?.iva || r2(neto * alic / 100) !== r2(iva) ? fmtAR(iva) : '')
+
+      const retsL: RetUI[] = []
+      if (Number(c.ret_iibb)) retsL.push({ concepto: 'INGRESOS BRUTOS Pcia BS AS', alicuota: fmtPct(bruto > 0 ? Math.round(Number(c.ret_iibb) / bruto * 100 * 1000) / 1000 : 0), importe: fmtAR(Number(c.ret_iibb)) })
+      if (Number(c.ret_iva)) retsL.push({ concepto: 'RETENCIÓN IVA', alicuota: '', importe: fmtAR(Number(c.ret_iva)) })
+      setRets(retsL.length ? retsL : [RET_IIBB])
+
+      setPlazos(((c.plazos || []) as any[]).map(p => ({
+        dias: String(p.dias ?? ''), pct: fmtPct(Number(p.pct) || 0), vencimiento: p.vencimiento || '',
+        importe: fmtAR(Number(p.importe) || 0), estado: p.estado,
+      })))
+      const marcas = huella?.contraElPapel || {}
+      setVerif({
+        bruto: marcas.bruto ? (marcas.bruto.estado === 'coincide' ? 'ok' : 'distinto') : null,
+        neto: marcas.neto ? (marcas.neto.estado === 'coincide' ? 'ok' : 'distinto') : null,
+        importe: marcas.importe ? (marcas.importe.estado === 'coincide' ? 'ok' : 'distinto') : null,
+      })
+      setPapel({
+        bruto: marcas.bruto?.estado === 'distinto' ? fmtAR(marcas.bruto.papel) : '',
+        neto: marcas.neto?.estado === 'distinto' ? fmtAR(marcas.neto.papel) : '',
+        importe: marcas.importe?.estado === 'distinto' ? fmtAR(marcas.importe.papel) : '',
+      })
+      setCuentaContable(c.cuenta_contable || null); setNroCuenta(c.nro_cuenta || null); setCentroCosto(c.centro_costo || '')
+      setHuellaAnterior(huella)
+      setEstadoComprobante(c.estado || 'a cobrar')
+    } catch (err) {
+      toast.error('No se pudo abrir la liquidación: ' + (err as Error).message)
+      onOpenChange(false)
+    } finally {
+      setCargando(false)
+    }
+  }
 
   // ── Las cuentas: todas en lib/ventas/hacienda.ts ────────────────────────────────────────────
   const entrada = useMemo(() => ({
@@ -158,11 +222,11 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
 
   const plazosNum: PlazoCobro[] = plazos.map(p => ({
     dias: parsearAR(p.dias), pct: parsearPct(p.pct), vencimiento: p.vencimiento, importe: parsearAR(p.importe),
+    ...(p.estado ? { estado: p.estado } : {}),
   }))
 
-  const ventaRef: VentaParaLiquidar | null = venta
-    ? { cabezas: venta.cabezas, kgNetos: kgNetosDeVenta(venta.kgTotales, venta.pctDesbaste), precioKg: venta.precioKg, neto: venta.neto }
-    : null
+  /** Las ventas del papel, sumadas: contra eso se compara la liquidación. */
+  const ventaRef = useMemo(() => ventaParaComparar(ventasCtx), [ventasCtx])
 
   const avisos: AvisoLiq[] = useMemo(() => {
     const a: AvisoLiq[] = []
@@ -177,10 +241,11 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
     if (p) a.push(p)
     return a
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calc, verif, papel, plazos, venta])
+  }, [calc, verif, papel, plazos, ventaRef])
 
+  const plazoVenta = ventasCtx.find(v => v.plazo)?.plazo || null
   const repartirPlazos = () => {
-    const base = plazosDesdeVenta(venta?.plazo ?? (plazos.map(p => p.dias).join('/') || '30'), fecha, calc.importeNeto)
+    const base = plazosDesdeVenta(plazoVenta ?? (plazos.map(p => p.dias).join('/') || '30'), fecha, calc.importeNeto)
     setPlazos(base.map(p => ({ dias: String(p.dias), pct: fmtPct(p.pct), vencimiento: p.vencimiento, importe: fmtAR(p.importe) })))
   }
 
@@ -209,7 +274,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
       const unaLinea = entrada.lineas.length === 1 ? entrada.lineas[0] : null
 
       // 🐾 La huella (§ 📄 de CLAUDE.md): lo que propuso la app al lado de lo que quedó.
-      const huella = huellaLiquidacion({
+      let huella = huellaLiquidacion({
         calc,
         calcSinAMano: calcularLiqHacienda({ ...entrada, comisionMonto: null, ivaMonto: null }),
         comisionAMano: !!comisionMonto.trim(),
@@ -217,9 +282,14 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
         marcas: Object.fromEntries((['bruto', 'neto', 'importe'] as TotalId[])
           .filter(id => verif[id])
           .map(id => [id, { estado: verif[id] as 'ok' | 'distinto', papel: verif[id] === 'distinto' ? parsearAR(papel[id]) || null : null }])),
-        precarga: precargado && venta ? { ventaId: venta.id, linea: precargado.linea, comisionPct: precargado.comisionPct } : null,
+        precarga: !esEdicion && precargado && ventasCtx[0] ? { ventaId: ventasCtx[0].id, linea: precargado.linea, comisionPct: precargado.comisionPct } : null,
         guardado: { linea: entrada.lineas[0] ?? null, comisionPct: comisionMonto.trim() ? calc.comisionPctEfectivo : entrada.comisionPct },
       })
+      // Al editar, la huella de la precarga ORIGINAL se conserva: es lo que la app propuso la primera vez.
+      if (esEdicion && huellaAnterior?.precarga) {
+        huella = huella ? { ...huella, precarga: huellaAnterior.precarga }
+          : { version: 1, montosAMano: {}, contraElPapel: {}, precarga: huellaAnterior.precarga }
+      }
 
       const payload = {
         tipo_comprobante: 60,                      // Cta. de Venta y Líquido Producto A
@@ -250,43 +320,56 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
         imp_neto_gravado: calc.netoGravado,
         imp_neto_no_gravado: 0,
         imp_op_exentas: 0,
-        imp_total: Math.round((calc.netoGravado + calc.iva) * 100) / 100,
+        imp_total: r2(calc.netoGravado + calc.iva),
         año_contable: anio || null,
         mes_contable: mes || null,
-        centro_costo: venta?.centroCosto || null,
-        estado: 'a cobrar',
+        cuenta_contable: cuentaContable,
+        nro_cuenta: nroCuenta,
+        centro_costo: centroCosto || null,
         fecha_cobro_estimada: plazosNum[0]?.vencimiento || fecha,
       }
-      const { data: comp, error } = await supabase.schema('msa').from('comprobantes_venta').insert(payload).select('id').single()
-      if (error) throw error
 
-      // Retenciones impresas que no son IVA ni IIBB (Ganancias…): van donde van los certificados.
-      if (otras.length) {
-        const { error: eR } = await supabase.schema('msa').from('retenciones_recibidas').insert(otras.map(r => ({
-          tipo: r.concepto, monto: r.importe, comprobante_venta_id: comp.id,
-          cuit_cliente: consignatario.cuit, denominacion_cliente: consignatario.nombre, fecha,
-          observaciones: 'Impresa en la liquidación de hacienda (alícuota ' + fmtPct(r.alicuota) + ' %)',
-        })))
-        if (eR) toast.warning('La liquidación se guardó, pero no las retenciones extra', { description: eR.message })
-      }
+      let compId: string
+      if (esEdicion && comprobanteId) {
+        // 🔑 Se guarda ENCIMA. El estado no se toca: lo deciden las marcas de cobrado y la conciliación.
+        const { error, count } = await supabase.schema('msa').from('comprobantes_venta')
+          .update(payload, { count: 'exact' }).eq('id', comprobanteId)
+        if (error) throw error
+        if (count === 0) throw new Error('No se encontró la liquidación: el cambio NO se guardó')
+        compId = comprobanteId
+      } else {
+        const { data: comp, error } = await supabase.schema('msa').from('comprobantes_venta')
+          .insert({ ...payload, estado: 'a cobrar' }).select('id').single()
+        if (error) throw error
+        compId = comp.id
 
-      // El vínculo con la venta: mismo criterio que el resto de la app — lo menor entre el
-      // comprobante y lo que falta facturar de la venta.
-      if (venta) {
-        const falta = Math.max(venta.neto - (venta.liquidado || 0), 0)
-        const { error: eV } = await supabase.from('ventas_facturas').insert({
-          venta_tipo: 'ganaderia', venta_id: venta.id, empresa: 'MSA', comprobante_id: comp.id,
-          monto_asignado: Math.min(calc.netoGravado, falta), vinculado: true,
-        })
-        if (eV) toast.warning('La liquidación se guardó, pero no quedó vinculada a la venta', { description: eV.message })
+        // Retenciones impresas que no son IVA ni IIBB (Ganancias…): van donde van los certificados.
+        if (otras.length) {
+          const { error: eR } = await supabase.schema('msa').from('retenciones_recibidas').insert(otras.map(r => ({
+            tipo: r.concepto, monto: r.importe, comprobante_venta_id: compId,
+            cuit_cliente: consignatario.cuit, denominacion_cliente: consignatario.nombre, fecha,
+            observaciones: 'Impresa en la liquidación de hacienda (alícuota ' + fmtPct(r.alicuota) + ' %)',
+          })))
+          if (eR) toast.warning('La liquidación se guardó, pero no las retenciones extra', { description: eR.message })
+        }
+
+        // Un vínculo POR VENTA, con el mismo criterio que el resto de la app: lo menor entre lo que
+        // trae la venta y lo que le falta facturar.
+        if (ventasCtx.length) {
+          const { error: eV } = await supabase.from('ventas_facturas').insert(ventasCtx.map(v => ({
+            venta_tipo: 'ganaderia', venta_id: v.id, empresa: 'MSA', comprobante_id: compId,
+            monto_asignado: r2(Math.max(v.neto - (v.liquidado || 0), 0)), vinculado: true,
+          })))
+          if (eV) toast.warning('La liquidación se guardó, pero no quedó vinculada a la venta', { description: eV.message })
+        }
       }
 
       // 👥 La contraparte queda registrada (upsert, nunca sólo UPDATE).
       const rc = await registrarContrapartes(supabase, [{ cuit: consignatario.cuit, razon_social: consignatario.nombre || null }], 'cliente')
       if (rc.error) toast.warning('La liquidación se guardó, pero el consignatario no quedó registrado en Proveedores', { description: rc.error.slice(0, 120) })
 
-      const avisosActivos = avisos.filter(a => a.nivel === 'aviso').length
-      toast.success('Liquidación de hacienda registrada' + (avisosActivos ? ` — con ${avisosActivos} aviso(s)` : ''))
+      const n = avisos.filter(a => a.nivel === 'aviso').length
+      toast.success((esEdicion ? 'Liquidación actualizada' : 'Liquidación de hacienda registrada') + (n ? ` — con ${n} aviso(s)` : ''))
       onOpenChange(false)
       onGuardado?.()
     } catch (err) {
@@ -297,32 +380,43 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
   }
 
   const avisosActivos = avisos.filter(a => a.nivel === 'aviso')
+  const fmtF = (s: string) => s ? s.split('-').reverse().join('/') : '—'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>🐂 Liquidación de hacienda — Cuenta de Venta y Líquido Producto</DialogTitle>
+          <DialogTitle>🐂 {esEdicion ? 'Editar liquidación de hacienda' : 'Liquidación de hacienda'} — Cuenta de Venta y Líquido Producto</DialogTitle>
           <DialogDescription>
-            {venta
-              ? <>Precargada de la venta del <b>{venta.fecha.split('-').reverse().join('/')}</b> · {venta.cliente} · {venta.cabezas} cab. Cambiá lo que diga distinto tu papel: la comparación se hace siempre contra la venta original.</>
-              : <>Liquidación sin venta asociada. Cargala como figura en el papel.</>}
+            {esEdicion
+              ? <>Estás editando la liquidación que ya está cargada: al guardar se actualiza ésta, no se crea otra.{estadoComprobante !== 'a cobrar' && <> Estado: <b>{estadoComprobante}</b>.</>}</>
+              : ventasCtx.length
+                ? <>Precargada de {ventasCtx.length === 1 ? 'la venta' : `las ${ventasCtx.length} ventas`} — una línea por venta. Cambiá lo que diga distinto tu papel: la comparación se hace siempre contra las ventas originales.</>
+                : <>Liquidación sin venta asociada. Cargala como figura en el papel.</>}
           </DialogDescription>
         </DialogHeader>
 
-        {/* 🎚️ Lo que se tiene que cobrar según la venta — chiquito, siempre a la vista. Pedido del
+        {cargando ? (
+          <div className="flex items-center justify-center py-12 text-gray-500"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Abriendo la liquidación…</div>
+        ) : (<>
+
+        {/* 🎚️ Lo que se tiene que cobrar según las ventas — chiquito, siempre a la vista. Pedido del
             usuario 2026-10-01: «son tantos kg × tal precio menos tanto de CZ = tanto a cobrar». */}
-        {venta && (() => {
-          const kgN = kgNetosDeVenta(venta.kgTotales, venta.pctDesbaste)
-          const bruto = kgN * venta.precioKg
-          const cz = bruto * (Number(venta.pctCz) || 0)
-          return (
-            <div className="rounded bg-slate-50 border px-3 py-1.5 text-xs text-slate-700 tabular-nums">
-              <b>Según la venta:</b> {fmtAR(kgN, 1)} kg × ${fmtAR(venta.precioKg)} − CZ ${fmtAR(cz)} = <b>${fmtAR(venta.neto)}</b> a cobrar
-              <span className="text-slate-500"> (neto, antes de IVA)</span>
-            </div>
-          )
-        })()}
+        {ventasCtx.length > 0 && (
+          <div className="rounded bg-slate-50 border px-3 py-1.5 text-xs text-slate-700 tabular-nums space-y-0.5">
+            {ventasCtx.map(v => {
+              const kg = kgQueSeCobran(v)
+              const cz = kg * v.precioKg * (Number(v.pctCz) || 0)
+              return (
+                <div key={v.id}>
+                  <b>Según la venta del {fmtF(v.fecha)}</b> ({v.cliente}{v.categoria ? ' · ' + v.categoria : ''}): {fmtAR(kg, 1)} kg{v.kgCarne ? ' de carne' : ''} × ${fmtAR(v.precioKg)} − CZ ${fmtAR(cz)} = <b>${fmtAR(v.neto)}</b> a cobrar
+                </div>
+              )
+            })}
+            {ventasCtx.length > 1 && ventaRef && <div className="pt-0.5 border-t"><b>Total de las ventas: ${fmtAR(ventaRef.neto)}</b> a cobrar</div>}
+            <div className="text-slate-500">neto, antes de IVA</div>
+          </div>
+        )}
 
         {/* ── Datos del papel ── */}
         <section className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -465,19 +559,45 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-semibold">Operaciones con plazo</h4>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={repartirPlazos} title={venta?.plazo ? 'Repartir según el plazo de la venta (' + venta.plazo + ')' : 'Repartir el importe neto'}>Repartir{venta?.plazo ? ' ' + venta.plazo : ''}</Button>
+              <Button size="sm" variant="outline" onClick={repartirPlazos} title={plazoVenta ? 'Repartir según el plazo de la venta (' + plazoVenta + ')' : 'Repartir el importe neto'}>Repartir{plazoVenta ? ' ' + plazoVenta : ''}</Button>
               <Button size="sm" variant="outline" onClick={() => setPlazos(ps => [...ps, { dias: '', pct: '', vencimiento: '', importe: '' }])}><Plus className="h-3.5 w-3.5 mr-1" />Cuota</Button>
             </div>
           </div>
           {plazos.map((p, i) => (
-            <div key={i} className="grid grid-cols-[5rem_5rem_10rem_10rem_auto] gap-2 items-center">
+            <div key={i} className="grid grid-cols-[5rem_5rem_10rem_10rem_6rem_auto] gap-2 items-center">
               <Input type="text" className="text-right" value={p.dias} onChange={e => setPlazo(i, 'dias', e.target.value)} placeholder="días" />
               <Input type="text" className="text-right" value={p.pct} onChange={e => setPlazo(i, 'pct', e.target.value)} placeholder="%" />
               <Input type="date" value={p.vencimiento} onChange={e => setPlazo(i, 'vencimiento', e.target.value)} />
               <Input type="text" className="text-right" value={p.importe} onChange={e => setPlazo(i, 'importe', e.target.value)} onBlur={e => setPlazo(i, 'importe', reformatear(e.target.value))} placeholder="0,00" />
+              <span className={'text-xs ' + (p.estado === 'cobrado' ? 'text-green-700 font-medium' : 'text-gray-400')} title="Se marca en Ingresos → Cobros o en el Cash Flow">{p.estado === 'cobrado' ? '✓ cobrada' : 'a cobrar'}</span>
               <Button size="sm" variant="ghost" onClick={() => setPlazos(ps => ps.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>
             </div>
           ))}
+        </section>
+
+        {/* ── Imputación contable ── */}
+        <section className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>Cuenta contable</Label>
+            {cuentaContable && !pickCuenta ? (
+              <div className="flex items-center gap-2 border rounded px-2 py-1.5 text-sm bg-gray-50">
+                <span className="flex-1 truncate" title={cuentaContable}>{cuentaContable}</span>
+                <button type="button" className="text-blue-600 text-xs shrink-0" onClick={() => setPickCuenta(true)}>Cambiar</button>
+              </div>
+            ) : (
+              <SelectorCuentaContable
+                value={cuentaContable}
+                onSelect={(cta) => { setCuentaContable(cta?.categ || null); setNroCuenta(cta?.nro_cuenta || null); setPickCuenta(false) }}
+                cuitProveedor={consignatario.cuit || null}
+                mostrarSinAsignar={true}
+                placeholder="Sin cuenta — clic para asignar"
+              />
+            )}
+          </div>
+          <div>
+            <Label>Centro de costo</Label>
+            <CentroCostoCombobox value={centroCosto} onValueChange={setCentroCosto} className="h-9" />
+          </div>
         </section>
 
         {/* ── Los avisos: se ven todos, los que cierran y los que no ── */}
@@ -492,12 +612,13 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, venta, onGuardado
             {avisosActivos.length > 0 && <p className="text-xs text-amber-700 pt-1">Podés guardar igual: es un aviso, no un error. Si la diferencia tiene explicación —un precio pactado distinto, un papel con otro dato—, la decisión es tuya.</p>}
           </section>
         )}
+        </>)}
 
         <DialogFooter className="gap-2">
-          {faltan.length > 0 && <span className="text-xs text-gray-500 mr-auto">Falta {faltan.join(', ')}.</span>}
+          {!cargando && faltan.length > 0 && <span className="text-xs text-gray-500 mr-auto">Falta {faltan.join(', ')}.</span>}
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={guardar} disabled={guardando || faltan.length > 0} className="bg-green-600 hover:bg-green-700">
-            {guardando ? 'Guardando…' : 'Guardar liquidación'}
+          <Button onClick={guardar} disabled={cargando || guardando || faltan.length > 0} className="bg-green-600 hover:bg-green-700">
+            {guardando ? 'Guardando…' : esEdicion ? 'Guardar cambios' : 'Guardar liquidación'}
           </Button>
         </DialogFooter>
       </DialogContent>

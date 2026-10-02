@@ -25,6 +25,34 @@ export function kgNetosDeVenta(kgTotales: number | null | undefined, pctDesbaste
   return kg * (1 - d)
 }
 
+/**
+ * 🥩 **Los kilos que se COBRAN** de una venta. Pedido del usuario 2026-10-02 al ir a liquidar Arre Beef.
+ *
+ * - Venta **al gancho** (a frigorífico, por kilo de carne): `kg_carne`. Arre Beef: 1.748 kg de carne
+ *   × $5.949,49 ≈ $10.399.700, cuando los kilos vivos eran 3.640.
+ * - Venta **en pie**: kilos vivos menos el desbaste.
+ *
+ * 🧨 Usar los vivos en una venta al gancho duplicaba el importe esperado y llenaba la liquidación de
+ * avisos falsos: 3.640 × $5.949,49 = $21,6 M contra un neto real de $10,4 M.
+ */
+export function kgQueSeCobran(v: { kgTotales: number | null | undefined; pctDesbaste: number | null | undefined; kgCarne?: number | null }): number {
+  const carne = Number(v.kgCarne) || 0
+  return carne > 0 ? carne : kgNetosDeVenta(v.kgTotales, v.pctDesbaste)
+}
+
+/**
+ * Varias ventas que se liquidan en UN solo papel (Arre Beef: 7 vacas y 3 toros, una liquidación).
+ * Para comparar contra la liquidación se suman: cabezas, kilos que se cobran y neto; el precio es el
+ * promedio ponderado, que es el que da el neto total sobre los kilos totales.
+ */
+export function ventaParaComparar(ventas: { cabezas: number; kgTotales: number; pctDesbaste: number; kgCarne?: number | null; neto: number }[]): VentaParaLiquidar | null {
+  if (!ventas.length) return null
+  const cabezas = ventas.reduce((s, v) => s + (Number(v.cabezas) || 0), 0)
+  const kgNetos = ventas.reduce((s, v) => s + kgQueSeCobran(v), 0)
+  const neto = ventas.reduce((s, v) => s + (Number(v.neto) || 0), 0)
+  return { cabezas, kgNetos, neto, precioKg: kgNetos > 0 ? neto / kgNetos : 0 }
+}
+
 /** Peso promedio por cabeza. Sin cabezas, cero (no se divide por cero ni se inventa). */
 export function promedioKg(kg: number | null | undefined, cabezas: number | null | undefined): number {
   const c = Number(cabezas) || 0
@@ -248,7 +276,7 @@ export function compararConVenta(venta: VentaParaLiquidar, calc: LiqHaciendaCalc
  */
 export function precargaDesdeVenta(v: {
   fecha: string; cliente: string; cuit: string; categoria: string | null
-  cabezas: number; kgTotales: number; pctDesbaste: number; precioKg: number; pctCz?: number | null
+  cabezas: number; kgTotales: number; pctDesbaste: number; precioKg: number; pctCz?: number | null; kgCarne?: number | null
 }): { fecha: string; linea: LineaLiqHacienda; comisionPct: number } {
   return {
     fecha: v.fecha || '',
@@ -256,7 +284,8 @@ export function precargaDesdeVenta(v: {
       razonSocial: v.cliente || '', cuit: v.cuit || '',
       cabezas: Number(v.cabezas) || 0,
       clasificacion: v.categoria || '',
-      kilos: Math.round(kgNetosDeVenta(v.kgTotales, v.pctDesbaste)),
+      // Al gancho, los kilos de carne; en pie, los vivos menos desbaste (kgQueSeCobran).
+      kilos: Math.round(kgQueSeCobran(v)),
       precio: Number(v.precioKg) || 0,
     },
     // pct_cz es FRACCIÓN en la venta; la comisión del papel va en PORCENTAJE.
@@ -332,27 +361,52 @@ export function huellaLiquidacion(a: {
  * cancelada entera no aparece. Sin plazos, una sola fila por el cobro entero.
  */
 export function cuotasPorCobrar(
-  plazos: { vencimiento?: string; importe?: number | string }[] | null | undefined,
+  plazos: { vencimiento?: string; importe?: number | string; estado?: string }[] | null | undefined,
   cobroTotal: number,
   imputado: number,
   fechaSinPlazos: string,
-): { n: number; de: number; vencimiento: string; importe: number }[] {
+): { n: number; de: number; vencimiento: string; importe: number; estado?: string }[] {
   const cuotas = (Array.isArray(plazos) ? plazos : []).filter(q => Number(q?.importe) > 0)
   if (!cuotas.length) return [{ n: 1, de: 1, vencimiento: fechaSinPlazos, importe: r2(cobroTotal) }]
   let porCancelar = Math.max(Number(imputado) || 0, 0)
-  const salida: { n: number; de: number; vencimiento: string; importe: number }[] = []
+  const salida: { n: number; de: number; vencimiento: string; importe: number; estado?: string }[] = []
   cuotas.forEach((q, i) => {
     const importe = Number(q.importe) || 0
     const cancelado = Math.min(porCancelar, importe)
     porCancelar -= cancelado
     const resta = r2(importe - cancelado)
-    if (resta > 0.01) salida.push({ n: i + 1, de: cuotas.length, vencimiento: q.vencimiento || fechaSinPlazos, importe: resta })
+    if (resta > 0.01) salida.push({ n: i + 1, de: cuotas.length, vencimiento: q.vencimiento || fechaSinPlazos, importe: resta, ...(q.estado ? { estado: q.estado } : {}) })
   })
   return salida
 }
 
+/**
+ * ✅ **MARCAR UNA CUOTA COMO COBRADA** — el mismo cambio desde Cobros y desde el Cash Flow.
+ *
+ * Pedido del usuario 2026-10-02: *«cobros debería mostrar los 3 plazos y ahí poder poner cobrado
+ * cada uno. Poner cobrado dijimos que es un ídem de que en cash flow esté como cobrado en verde, y
+ * puede no estar conciliado»*. Y su regla de siempre: *«son 2 lugares donde se puede marcar como
+ * cobrado, pero el cambio en BBDD debe ser el mismo»*. Por eso es UNA función y la usan los dos.
+ *
+ * - Se marca la cuota (`plazos[i].estado`); el comprobante pasa a `cobrado` recién cuando lo están
+ *   **todas**, y vuelve a `a cobrar` si se desmarca una.
+ * - `conciliado` no se toca: lo decide la conciliación con el banco, no esta marca.
+ */
+export function marcarCuota(
+  plazos: PlazoCobro[], indice: number, estado: 'cobrado' | 'a cobrar', estadoComprobante: string | null,
+): { plazos: PlazoCobro[]; estadoComprobante: string } {
+  const nuevos = plazos.map((p, i) => (i === indice ? { ...p, estado } : p))
+  if (estadoComprobante === 'conciliado') return { plazos: nuevos, estadoComprobante: 'conciliado' }
+  const todas = nuevos.length > 0 && nuevos.every(p => p.estado === 'cobrado')
+  return { plazos: nuevos, estadoComprobante: todas ? 'cobrado' : 'a cobrar' }
+}
+
 /** Plazos de cobro: la suma de las cuotas tiene que dar el importe neto. */
-export interface PlazoCobro { dias: number; pct: number; vencimiento: string; importe: number }
+export interface PlazoCobro {
+  dias: number; pct: number; vencimiento: string; importe: number
+  /** `cobrado` = el usuario sabe que se cobró (verde en el Cash Flow), aunque no esté conciliado. */
+  estado?: 'a cobrar' | 'cobrado'
+}
 
 export function controlPlazos(plazos: PlazoCobro[], importeNeto: number): AvisoLiq | null {
   if (!plazos.length) return null

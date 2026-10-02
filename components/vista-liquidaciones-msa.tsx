@@ -14,6 +14,7 @@ import { ModalRetencionesVenta } from "./modal-retenciones-venta"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-msa"
+import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 
 interface Props {
@@ -184,7 +185,10 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
     setLiqEditando(null)
     setModalAbierto(true)
   }
+  /** 🐂 A-FEAT-1225 — una liquidación de HACIENDA se edita en su propia pantalla, no en la de granos. */
+  const [haciendaEditarId, setHaciendaEditarId] = useState<string | null>(null)
   const abrirEdicion = (l: LiquidacionMsa) => {
+    if (TIPOS_LIQ_HACIENDA.has(Number(l.tipo_comprobante))) { setHaciendaEditarId(l.id); return }
     setLiqEditando(l)
     setModalAbierto(true)
   }
@@ -374,6 +378,9 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
           </div>
         </CardContent>
       </Card>
+
+      <ModalLiquidacionHacienda open={!!haciendaEditarId} onOpenChange={o => { if (!o) setHaciendaEditarId(null) }}
+        ventas={[]} comprobanteId={haciendaEditarId} onGuardado={cargar} />
 
       <ModalLiquidacionMsa
         open={modalAbierto}

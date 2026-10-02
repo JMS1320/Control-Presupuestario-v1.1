@@ -8,6 +8,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RefreshCw, Search, ChevronRight, ChevronDown, Landmark, Percent } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { toast } from "sonner"
+import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
+import { marcarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -25,6 +28,10 @@ interface Factura {
   estado: string | null
   fecha_liquidacion: string | null
   fecha_cobro_estimada: string | null
+  tipo_comprobante: number | null
+  ret_iva: number | null
+  ret_iibb: number | null
+  plazos: PlazoCobro[] | null
 }
 interface Cobro { id: string; fecha: string | null; creditos: number; concepto: string | null; detalle: string | null }
 interface Ret { id: string; tipo: string; monto: number; cuenta_contable: string | null }
@@ -44,7 +51,7 @@ export function VistaCobrosVenta() {
     setLoading(true)
     try {
       const { data: facs } = await supabase.schema('msa').from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada, tipo_comprobante, ret_iva, ret_iibb, plazos')
         .neq('estado', 'anterior')
         .order('fecha_liquidacion', { ascending: false, nullsFirst: false })
       const lista = (facs as Factura[]) || []
@@ -78,12 +85,42 @@ export function VistaCobrosVenta() {
 
   useEffect(() => { cargar() }, [])
 
+  /**
+   * 🐂 A-FEAT-1225 — en una liquidación de HACIENDA la retención viene IMPRESA en el papel
+   * (`ret_iibb`, `ret_iva`), no como certificado aparte. El usuario lo vio el 2026-10-02: el saldo
+   * decía $98.421.383,13 con «Retenc. $0», cuando lo que se cobra es $97.745.477,95. Para ese tipo se
+   * suman las impresas, que es la misma cuenta que `cobroEsperado()`. (Para el resto de los
+   * comprobantes no cambia nada: es el tema aparte de A-BUG-1231.)
+   */
+  const impresas = (f: Factura) => (TIPOS_LIQ_HACIENDA.has(Number(f.tipo_comprobante)) ? (Number(f.ret_iibb) || 0) + (Number(f.ret_iva) || 0) : 0)
   const derivados = (f: Factura) => {
     const total = Number(f.imp_total) || 0
     const cobrado = (cobrosPorFac.get(f.id) || []).reduce((s, c) => s + (Number(c.creditos) || 0), 0)
-    const retenido = (retsPorFac.get(f.id) || []).reduce((s, r) => s + (Number(r.monto) || 0), 0)
+    const retenido = (retsPorFac.get(f.id) || []).reduce((s, r) => s + (Number(r.monto) || 0), 0) + impresas(f)
     const saldo = total - cobrado - retenido
     return { total, cobrado, retenido, saldo }
+  }
+
+  /**
+   * ✅ Marcar una cuota cobrada — EL MISMO cambio que marcarla en el Cash Flow (`marcarCuota`).
+   * «Son 2 lugares donde se puede marcar como cobrado, pero el cambio en BBDD debe ser el mismo.»
+   */
+  const [marcando, setMarcando] = useState<string | null>(null)
+  const cambiarCuota = async (f: Factura, i: number, estado: 'cobrado' | 'a cobrar') => {
+    setMarcando(f.id + '#' + i)
+    try {
+      const r = marcarCuota(f.plazos || [], i, estado, f.estado)
+      const { error, count } = await supabase.schema('msa').from('comprobantes_venta')
+        .update({ plazos: r.plazos, estado: r.estadoComprobante }, { count: 'exact' }).eq('id', f.id)
+      if (error) throw error
+      if (count === 0) throw new Error('No se encontró el comprobante: el cambio NO se guardó')
+      toast.success(estado === 'cobrado' ? `Cuota ${i + 1} marcada cobrada` : `Cuota ${i + 1} vuelta a «a cobrar»`)
+      await cargar()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    } finally {
+      setMarcando(null)
+    }
   }
 
   const filtradas = facturas.filter(f => {
@@ -170,8 +207,14 @@ export function VistaCobrosVenta() {
                             ))}
                           </div>
                           <div>
-                            <div className="text-xs font-medium text-orange-700 flex items-center gap-1 mb-1"><Percent className="h-3.5 w-3.5" />Retenciones ({rets.length})</div>
-                            {rets.length === 0 ? <div className="text-xs text-gray-400">Sin retenciones</div> : rets.map(r => (
+                            <div className="text-xs font-medium text-orange-700 flex items-center gap-1 mb-1"><Percent className="h-3.5 w-3.5" />Retenciones ({rets.length + (impresas(f) > 0 ? 1 : 0)})</div>
+                            {impresas(f) > 0 && (
+                              <div className="text-xs flex justify-between border-b py-0.5">
+                                <span>IMPRESA EN LA LIQUIDACIÓN{Number(f.ret_iibb) ? ' · IIBB' : ''}{Number(f.ret_iva) ? ' · IVA' : ''}</span>
+                                <span className="text-orange-700">{fmt(impresas(f))}</span>
+                              </div>
+                            )}
+                            {rets.length === 0 && impresas(f) === 0 ? <div className="text-xs text-gray-400">Sin retenciones</div> : rets.map(r => (
                               <div key={r.id} className="text-xs flex justify-between border-b py-0.5">
                                 <span>{r.tipo?.toUpperCase()} · {r.cuenta_contable || 's/cuenta'}</span>
                                 <span className="text-orange-700">{fmt(r.monto)}</span>
@@ -179,6 +222,26 @@ export function VistaCobrosVenta() {
                             ))}
                           </div>
                         </div>
+                        {/* 📅 Las cuotas del papel, con «cobrada» por cuota — lo mismo que el verde del Cash Flow. */}
+                        {(f.plazos || []).length > 0 && (
+                          <div className="mt-3">
+                            <div className="text-xs font-medium text-gray-700 mb-1">Cuotas ({(f.plazos || []).filter(q => q.estado === 'cobrado').length} de {(f.plazos || []).length} cobradas)</div>
+                            {(f.plazos || []).map((q, i) => (
+                              <div key={i} className="text-xs flex items-center gap-3 border-b py-1">
+                                <span className="w-24">{fmtFecha(q.vencimiento)}</span>
+                                <span className="w-16 text-gray-500">{q.dias} días</span>
+                                <span className="w-32 text-right tabular-nums">{fmt(q.importe)}</span>
+                                <span className={'w-20 ' + (q.estado === 'cobrado' ? 'text-green-700 font-medium' : 'text-gray-500')}>{q.estado === 'cobrado' ? '✓ cobrada' : 'a cobrar'}</span>
+                                {f.estado !== 'conciliado' && (
+                                  <Button size="sm" variant="outline" className="h-6 text-xs px-2" disabled={marcando === f.id + '#' + i}
+                                    onClick={(e) => { e.stopPropagation(); void cambiarCuota(f, i, q.estado === 'cobrado' ? 'a cobrar' : 'cobrado') }}>
+                                    {q.estado === 'cobrado' ? 'Volver a a cobrar' : 'Marcar cobrada'}
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {!saldado && (
                           <div className="mt-2 text-xs text-blue-700">⚠️ Saldo pendiente: {fmt(d.saldo)} (Total {fmt(d.total)} − Cobrado {fmt(d.cobrado)} − Retenc. {fmt(d.retenido)})</div>
                         )}

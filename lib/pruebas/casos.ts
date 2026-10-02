@@ -61,7 +61,8 @@ import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
-  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion } from "@/lib/ventas/hacienda"
+  compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
+  kgQueSeCobran, ventaParaComparar, marcarCuota } from "@/lib/ventas/hacienda"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
   partirCuota, DECIMALES_QQ, camposDeVenta, tonsMaximasEdicion, campaniaSiguiente,
@@ -2007,6 +2008,51 @@ export function correrCasos(): Resultado[] {
     precarga: { ventaId: "x", linea: lineaPapel, comisionPct: 0 }, guardado: { linea: lineaPapel, comisionPct: 0 } })
   chequear("Liquidación de hacienda", "Sin correcciones ni marcas, la huella queda vacía (null), no un objeto vacío",
     "null", String(sinNada), sinNada === null, "A-FEAT-1225")
+
+  // ══ 🥩 AL GANCHO y VARIAS VENTAS EN UN PAPEL — Arre Beef (pedido del usuario 2026-10-02) ═══
+  // Datos REALES de Productivo: 7 vacas (3.640 kg vivos, 1.748 de carne, $5.949,49) y 3 toros
+  // (2.661 vivos, 1.606 de carne, $5.200), las dos del 03/09/2026, un solo papel.
+  const vacasAB = { cabezas: 7, kgTotales: 3640, pctDesbaste: 0, kgCarne: 1748, neto: 10399700 }
+  const torosAB = { cabezas: 3, kgTotales: 2661, pctDesbaste: 0, kgCarne: 1606, neto: 8351200 }
+  chequear("Liquidación de hacienda", "🥩 Al gancho se cobran los kilos de CARNE (1.748), no los vivos (3.640)",
+    "1748", String(kgQueSeCobran(vacasAB)), kgQueSeCobran(vacasAB) === 1748, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🧨 Con los vivos, la venta de vacas esperaba $21,6 M en vez de $10,4 M",
+    "≈ 2,08 veces", (3640 * 5949.49 / 10399700).toFixed(2), 3640 * 5949.49 > 2 * 10399700, "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "En pie, sin kilos de carne, siguen siendo los vivos menos desbaste (Genta 15.694,6)",
+    "15694.6", kgQueSeCobran({ kgTotales: 16180, pctDesbaste: 0.03 }).toFixed(1),
+    kgQueSeCobran({ kgTotales: 16180, pctDesbaste: 0.03 }).toFixed(1) === "15694.6", "A-FEAT-1225")
+
+  const juntasAB = ventaParaComparar([vacasAB, torosAB])
+  chequear("Liquidación de hacienda", "🔑 Dos ventas, un papel: se comparan sumadas — 10 cab, 3.354 kg de carne, $18.750.900",
+    "10 · 3354 · 18750900", `${juntasAB?.cabezas} · ${juntasAB?.kgNetos} · ${juntasAB?.neto}`,
+    juntasAB?.cabezas === 10 && juntasAB?.kgNetos === 3354 && juntasAB?.neto === 18750900, "A-FEAT-1225")
+  const preVacas = precargaDesdeVenta({ fecha: "2026-09-03", cliente: "Arre Beef SA", cuit: "30666277550", categoria: "Vaca CUT/Descarte",
+    cabezas: 7, kgTotales: 3640, pctDesbaste: 0, precioKg: 5949.49, kgCarne: 1748 })
+  chequear("Liquidación de hacienda", "La precarga de una venta al gancho trae los kilos de carne",
+    "1748", String(preVacas.linea.kilos), preVacas.linea.kilos === 1748, "A-FEAT-1225")
+
+  // ══ ✅ MARCAR CUOTAS COBRADAS — el mismo cambio desde Cobros y desde el Cash Flow ═════════
+  const tres = [
+    { dias: 30, pct: 33, vencimiento: "2026-09-03", importe: 32256007.73 },
+    { dias: 60, pct: 34, vencimiento: "2026-10-03", importe: 33233462.5 },
+    { dias: 90, pct: 33, vencimiento: "2026-11-02", importe: 32256007.72 },
+  ]
+  const una = marcarCuota(tres, 0, "cobrado", "a cobrar")
+  chequear("Liquidación de hacienda", "✅ Con 1 de 3 cuotas cobrada, la liquidación sigue «a cobrar»",
+    "cobrado · a cobrar", `${una.plazos[0].estado} · ${una.estadoComprobante}`,
+    una.plazos[0].estado === "cobrado" && una.estadoComprobante === "a cobrar", "A-FEAT-1225")
+  const cuotasTodas = marcarCuota(marcarCuota(una.plazos, 1, "cobrado", "a cobrar").plazos, 2, "cobrado", "a cobrar")
+  chequear("Liquidación de hacienda", "✅ Con las 3 cobradas, la liquidación pasa a «cobrado»",
+    "cobrado", cuotasTodas.estadoComprobante, cuotasTodas.estadoComprobante === "cobrado", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "Desmarcar una vuelve la liquidación a «a cobrar»",
+    "a cobrar", marcarCuota(cuotasTodas.plazos, 1, "a cobrar", "cobrado").estadoComprobante,
+    marcarCuota(cuotasTodas.plazos, 1, "a cobrar", "cobrado").estadoComprobante === "a cobrar", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "🛑 «Conciliado» no lo cambia una marca: lo decide la conciliación",
+    "conciliado", marcarCuota(tres, 0, "a cobrar", "conciliado").estadoComprobante,
+    marcarCuota(tres, 0, "a cobrar", "conciliado").estadoComprobante === "conciliado", "A-FEAT-1225")
+  chequear("Liquidación de hacienda", "El Cash Flow recibe el estado de cada cuota",
+    "cobrado · (sin marca)", `${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado} · ${cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado ?? "(sin marca)"}`,
+    cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[0].estado === "cobrado" && cuotasPorCobrar(una.plazos, 97745477.95, 0, "")[1].estado === undefined, "A-FEAT-1225")
 
   return r
 }
