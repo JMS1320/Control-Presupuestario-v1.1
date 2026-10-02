@@ -15,7 +15,7 @@ import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { cargarFuentesCobro, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
-import { lineasDeCobro } from "@/lib/ventas/detalle-cobro"
+import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
@@ -1641,10 +1641,16 @@ ${texto.trim()}` : texto.trim()
            */
           const plazos: PlazoCobro[] = Array.isArray(c.plazos) ? c.plazos : []
           if (!plazos.length) return [base]
-          const cuotas = repartirEnCuotas(plazos, 0, retsConFecha.get(String(c.id)) ?? [], '')
+          // Lo cobrado (todo, con su fecha) baja la cuota que corresponde; se ofrecen las que todavía
+          // tienen algo por cobrar. Una cuota puede recibir VARIOS cobros (Genta: 5 por la de enero).
+          const lineasComp = lineasDeCobro((fuentesComp.get(String(c.id)) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
+            .filter(l => l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
+          const cuotas = sch === 'msa'
+            ? repartirEnCuotas(plazos, 0, imputacionesDeCobro(lineasComp), '')
+            : repartirEnCuotas(plazos, 0, retsConFecha.get(String(c.id)) ?? [], '')
           return cuotas
             .map((q, i) => ({ q, i }))
-            .filter(({ i }) => !plazos[i]?.movimiento_id)
+            .filter(({ q, i }) => !plazos[i]?.movimiento_id && q.aCobrar > 0.99)
             .map(({ q, i }) => ({
               ...base,
               __key: `${c.id}#${i}`,
@@ -1897,6 +1903,13 @@ ${texto.trim()}` : texto.trim()
   const soltarCuotaDeVenta = async (): Promise<string | null> => {
     const compId = (movimientoAsignando as any)?.comprobante_venta_id
     if (!compId || tablaActiva !== 'msa_galicia') return null
+    // Su pago a cuenta, si se había vinculado con él, vuelve a quedar suelto: si no, la misma plata
+    // seguiría contando en el comprobante viejo (A-FEAT-1228).
+    const antId = (movimientoAsignando as any)?.anticipo_id
+    if (antId) {
+      await supabase.from('anticipos_proveedores').update({ comprobante_venta_id: null, estado: 'pendiente_vincular' })
+        .eq('id', antId).eq('comprobante_venta_id', compId)
+    }
     const { data: comp } = await supabase.schema('msa').from('comprobantes_venta')
       .select('id, nro_comprobante, plazos').eq('id', compId).maybeSingle()
     const plazos: PlazoCobro[] = Array.isArray((comp as any)?.plazos) ? (comp as any).plazos : []
@@ -2310,7 +2323,8 @@ ${marca}` : marca
         // cierra el comprobante igual, y se anota — no se calla (§ 🧮, tolerancia explícita).
         // Vale también para una cuota (la 1 de la 11-86270 quedaba en auditar por $0,01).
         const redondeo = !dif.exacto && Math.abs(dif.diferencia) < 1
-        const parcial = !esCuota && !dif.exacto && !redondeo && dif.diferencia < 0
+        // También en una cuota: un crédito menor a lo que le falta es un cobro parcial de esa cuota.
+        const parcial = !dif.exacto && !redondeo && dif.diferencia < 0
         const saldada = dif.exacto || redondeo || dif.diferencia > 0
 
         const updateVenta: Record<string, any> = {
@@ -2347,7 +2361,7 @@ ${marca}` : marca
          * dos veces: en el detalle por el banco y en la lista de «sin vincular».
          */
         let anticipoDelMov: any = null
-        if (!esCuota && ventaElegida.__schema === 'msa') {
+        if (ventaElegida.__schema === 'msa') {
           const cuitMov = String(movimientoAsignando.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
           const q = (movimientoAsignando as any).anticipo_id
             ? supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id').eq('id', (movimientoAsignando as any).anticipo_id)
@@ -2358,8 +2372,9 @@ ${marca}` : marca
             && (!a.comprobante_venta_id || a.comprobante_venta_id === ventaElegida.id)) ?? null
         }
         if (anticipoDelMov) {
+          // Con cuotas, el estado del comprobante lo decide `conciliarCuota` (abajo), no el pago a cuenta.
           await vincularPagoACuenta(supabase, { ...anticipoDelMov, monto: Number(anticipoDelMov.monto) || 0 },
-            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada, movimientoConciliado: true })
+            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada: saldada && !esCuota, movimientoConciliado: true })
           updateVenta.anticipo_id = anticipoDelMov.id
           avisosAsignacion.push(`ℹ️ Se vinculó también su pago a cuenta (${formatCurrency(Number(anticipoDelMov.monto))}).`)
         }
@@ -2370,7 +2385,9 @@ ${marca}` : marca
 
         // El otro lado. Con CUOTA: sólo esa cuota queda conciliada contra este movimiento, y la
         // liquidación pasa a conciliado recién con todas (A-BUG-1234). Sin cuota: cobrado, como antes.
-        if (ventaElegida.__cuota != null) {
+        if (ventaElegida.__cuota != null && saldada) {
+          // Sólo el cobro que COMPLETA la cuota la da por conciliada; los parciales quedan atados al
+          // comprobante (y su pago a cuenta) y van bajando lo que falta.
           const { data: compAhora, error: errLeer } = await supabase.schema(ventaElegida.__schema)
             .from('comprobantes_venta').select('plazos').eq('id', ventaElegida.id).maybeSingle()
           if (errLeer) throw errLeer
@@ -2378,7 +2395,7 @@ ${marca}` : marca
           const { error: errCuota } = await supabase.schema(ventaElegida.__schema).from('comprobantes_venta')
             .update({ plazos: r.plazos, estado: r.estadoComprobante }).eq('id', ventaElegida.id)
           if (errCuota) throw errCuota
-        } else if (saldada && !anticipoDelMov) {
+        } else if (!esCuota && saldada && !anticipoDelMov) {
           // Cobrado sólo cuando este crédito completa lo que faltaba (con pago a cuenta lo decide `vincularPagoACuenta`).
           const { error: errVenta } = await supabase
             .schema(ventaElegida.__schema)
@@ -2392,7 +2409,7 @@ ${marca}` : marca
         toast.success(dif.exacto
           ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
           : parcial
-            ? `Cobro parcial de ${ventaElegida.nro_comprobante} — falta cobrar ${formatCurrency(Math.abs(dif.diferencia))} (si era el último pago, falta cargar una retención)`
+            ? `Cobro parcial de ${ventaElegida.nro_comprobante}${esCuota ? ` cuota ${ventaElegida.__cuota + 1}` : ''} — falta cobrar ${formatCurrency(Math.abs(dif.diferencia))} (si era el último pago, falta cargar una retención)`
             : `Asignado a ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`)
 
       } else if (tabAsignar === 'grupo' && grupoElegido) {
@@ -4992,7 +5009,7 @@ ${marca}` : marca
                           {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
                           <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
                             {d.exacto ? 'coincide exacto'
-                              : v.__cuota == null && d.diferencia < 0
+                              : d.diferencia < 0
                                 ? `cobro parcial · quedan ${formatCurrency(Math.abs(d.diferencia))}`
                                 : `dif. ${formatCurrency(Math.abs(d.diferencia))} (${d.porcentaje.toFixed(1)}%)`}
                           </span>

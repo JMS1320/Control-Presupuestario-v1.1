@@ -2194,9 +2194,15 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle del cobro", "La cuota del papel queda en 0 con todo imputado (sale del Cash Flow)",
     "0", String(cuotaEnero[0].aCobrar), cuotaEnero[0].aCobrar === 0, "A-FEAT-1228")
   const conBancoDirecto = armarDetalleCobro({ movimientos: [{ id: "m", fecha: "2026-09-03", creditos: 31672612.47, anticipo_id: null }], anticipos: [], compensaciones: [], retenciones: [] }, 31672612.47)
-  chequear("Detalle del cobro", "Un crédito conciliado directo (sin pago a cuenta) cuenta como «banco» y no se imputa a cuotas",
-    "banco · cierra · 0 imputaciones", `${conBancoDirecto.lineas[0].medio} · ${conBancoDirecto.cierra ? "cierra" : "no"} · ${imputacionesDeCobro(conBancoDirecto.lineas).length} imputaciones`,
-    conBancoDirecto.lineas[0].medio === "banco" && conBancoDirecto.cierra && imputacionesDeCobro(conBancoDirecto.lineas).length === 0, "A-FEAT-1228")
+  chequear("Detalle del cobro", "Un crédito conciliado directo (sin pago a cuenta) cuenta como «banco» y TAMBIÉN baja su cuota",
+    "banco · cierra · 1 imputación", `${conBancoDirecto.lineas[0].medio} · ${conBancoDirecto.cierra ? "cierra" : "no"} · ${imputacionesDeCobro(conBancoDirecto.lineas).length} imputación`,
+    conBancoDirecto.lineas[0].medio === "banco" && conBancoDirecto.cierra && imputacionesDeCobro(conBancoDirecto.lineas).length === 1, "A-FEAT-1228")
+  // 🧨 El caso que lo rompió (2026-10-02): UNA cuota de enero, cobrada en partes por el banco directo.
+  // Con el primer crédito de $2,1 M la cuota quedaba «conciliada» entera y la venta desaparecía.
+  const cuotaUna = [{ vencimiento: "2026-02-26", importe: 138746475 }]
+  const trasUno = repartirEnCuotas(cuotaUna, 0, imputacionesDeCobro(armarDetalleCobro({ movimientos: [{ id: "m1", fecha: "2026-02-23", creditos: 2100000, anticipo_id: null }], anticipos: [], compensaciones: [], retenciones: [] }, 138746475).lineas), "")
+  chequear("Detalle del cobro", "🧨 Una cuota cobrada en partes: tras $2,1 M por banco le faltan 136.646.475 (no queda «conciliada»)",
+    "136646475", String(trasUno[0].aCobrar), trasUno[0].aCobrar === 136646475, "A-FEAT-1228")
 
 
   // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227) ══════════════════════

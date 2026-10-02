@@ -909,10 +909,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         const fuentesCobro = await cargarFuentesCobro(supabase,
           (ventasACobrar || []).map(v => ({ id: v.id, cuit_cliente: (v as any).cuit_cliente ?? null })))
         for (const [id, fuentes] of fuentesCobro) {
-          const imps = imputacionesDeCobro(lineasDeCobro(fuentes))
-          if (!imps.length) continue
-          imputadoPorComp.set(id, imps.reduce((acc, i) => acc + i.monto, 0))
-          imputacionesPorComp.set(id, imps)
+          const lineas = lineasDeCobro(fuentes)
+          if (!lineas.length) continue
+          // Para las cuotas (liquidaciones con plazos): TODO lo cobrado, con su fecha — también el banco.
+          imputacionesPorComp.set(id, imputacionesDeCobro(lineas))
+          // El total que se resta a una venta SIN cuotas sigue como antes: sin el banco directo
+          // (ése la saca del Cash Flow por estado). Cambiarlo es A-BUG-1231.
+          imputadoPorComp.set(id, lineas.filter(l => l.medio !== 'banco').reduce((acc, l) => acc + l.monto, 0))
         }
       }
 

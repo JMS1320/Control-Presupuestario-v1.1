@@ -108,9 +108,14 @@ export function armarDetalleCobro(fuentes: FuentesCobro, esperado: number): Deta
 }
 
 /**
- * Las líneas que cancelan CUOTAS (todo menos el banco directo): van a `repartirEnCuotas` como
- * imputaciones con fecha. El banco directo no, porque ése concilia su cuota por sí mismo.
+ * Las líneas que cancelan CUOTAS: TODAS, también el crédito del banco, cada una con su fecha.
+ *
+ * ⚠️ Cambió 2026-10-02 — hasta acá el banco quedaba afuera («concilia su cuota por sí mismo»), y eso
+ * suponía **un movimiento por cuota**. Genta pagó la única cuota de enero en 5 partes: con el primer
+ * crédito la cuota quedaba conciliada entera y la venta desaparecía para los otros cuatro. Ahora
+ * cada cobro, del medio que sea, baja la cuota de su fecha; la cuota se da por conciliada cuando
+ * llega a cero.
  */
 export function imputacionesDeCobro(lineas: LineaCobro[]): { monto: number; fecha: string | null }[] {
-  return lineas.filter(l => l.medio !== 'banco').map(l => ({ monto: l.monto, fecha: l.fecha }))
+  return lineas.map(l => ({ monto: l.monto, fecha: l.fecha }))
 }
