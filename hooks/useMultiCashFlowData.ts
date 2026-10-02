@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
+import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
@@ -835,6 +837,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .select('*')
         .neq('estado', 'vinculado')           // Vinculado = FC lo reemplaza, desaparece del CF
         .neq('estado_pago', 'conciliado')     // Conciliado en banco = desaparece del CF
+        .neq('estado_pago', 'endosado')       // Echeq de un cliente endosado: no va a entrar al banco (A-FEAT-1228)
         .order('fecha_pago', { ascending: true })
 
       if (errorAnticipos) {
@@ -896,21 +899,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // Las mismas imputaciones CON SU FECHA, para repartirlas por cuota en las liquidaciones con plazos.
       const imputacionesPorComp = new Map<string, Imputacion[]>()
       if (idsVentas.length > 0) {
-        const [{ data: retenciones }, { data: anticiposCobro }] = await Promise.all([
-          supabase.schema('msa').from('retenciones_recibidas')
-            .select('comprobante_venta_id, monto, fecha').in('comprobante_venta_id', idsVentas),
-          // Por `comprobante_venta_id`, la columna propia de los cobros: `factura_id` tiene FK a
-          // `msa.comprobantes_arca` y nunca puede contener una venta.
-          supabase.from('anticipos_proveedores')
-            .select('comprobante_venta_id, monto, fecha_pago').in('comprobante_venta_id', idsVentas),
-        ])
-        const sumar = (id: string | null, monto: any, fecha: string | null) => {
-          if (!id) return
-          imputadoPorComp.set(id, (imputadoPorComp.get(id) || 0) + (Number(monto) || 0))
-          imputacionesPorComp.set(id, [...(imputacionesPorComp.get(id) || []), { monto: Number(monto) || 0, fecha }])
+        /**
+         * 💰 A-FEAT-1228 — lo imputado sale del DETALLE DEL COBRO, la misma cuenta que Cobros:
+         * retenciones, pagos a cuenta vinculados (transferencia, echeq, también endosado) y las
+         * COMPENSACIONES con facturas del cliente — que antes no se restaban, y la venta de enero de
+         * Genta seguía esperando $279.174,47 que el cliente ya había descontado. El crédito del banco
+         * conciliado directo NO se imputa: ése saca al comprobante (o a su cuota) por estado.
+         */
+        const fuentesCobro = await cargarFuentesCobro(supabase,
+          (ventasACobrar || []).map(v => ({ id: v.id, cuit_cliente: (v as any).cuit_cliente ?? null })))
+        for (const [id, fuentes] of fuentesCobro) {
+          const imps = imputacionesDeCobro(lineasDeCobro(fuentes))
+          if (!imps.length) continue
+          imputadoPorComp.set(id, imps.reduce((acc, i) => acc + i.monto, 0))
+          imputacionesPorComp.set(id, imps)
         }
-        ;(retenciones || []).forEach((r: any) => sumar(r.comprobante_venta_id, r.monto, r.fecha || null))
-        ;(anticiposCobro || []).forEach((a: any) => sumar(a.comprobante_venta_id, a.monto, a.fecha_pago || null))
       }
 
       // 5c. Ventas todavía sin factura (arrendamiento hoy; granos/ganadería después).
