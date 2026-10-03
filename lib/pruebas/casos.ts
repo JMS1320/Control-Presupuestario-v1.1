@@ -5509,5 +5509,14 @@ export function correrCasos(): Resultado[] {
     "true true true false", [3, 8, 13, 1].map(esNotaCreditoArca).join(" "),
     esNotaCreditoArca(3) && esNotaCreditoArca(8) && esNotaCreditoArca(13) && !esNotaCreditoArca(1), "A-FEAT-1232")
 
+
+  // El cartel muestra TODAS las NC pendientes (A-FEAT-1232, 2026-10-03): también la que no tiene factura.
+  {
+    const soloNC = [{ id: "n1", cuit: "1", display: "NC - 789", proveedor: "ALCORTA", tipoComprobante: 3, estado: "pendiente", importe: -55551.02 }]
+    chequear("Notas de crédito", "Una NC sin factura por pagar: el aviso viejo la ignora; el cartel con acciones la muestra",
+      "0 · 1", `${detectarProveedoresConNC(soloNC).length} · ${detectarProveedoresConNC(soloNC, { incluirSinFacturas: true }).length}`,
+      detectarProveedoresConNC(soloNC).length === 0 && detectarProveedoresConNC(soloNC, { incluirSinFacturas: true }).length === 1, "A-FEAT-1232")
+  }
+
   return r
 }

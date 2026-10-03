@@ -2912,16 +2912,20 @@ te avisa antes de que eso pase.
 💡 **Si «quedaría a pagar» sale en rojo y con signo menos**, la nota de crédito es más grande que la
 factura: no hay nada que pagarle y queda **saldo a favor tuyo** para la próxima. No es un error.
 
-**Cómo aplicarlas.** En el cartel, apretá **«Cancelarlas»** en el proveedor: se abre **ahí mismo**
+**El cartel se ve siempre.** Lista **todas** las notas de crédito pendientes, tengan o no facturas
+por pagar; si no hay ninguna, dice *«Sin notas de crédito pendientes de aplicar»*. Todo se gestiona
+desde ahí — no hace falta buscar la nota de crédito en la grilla.
+
+**Cómo aplicarlas contra sus facturas.** En el cartel, apretá **«Cancelar con sus facturas»** en el proveedor: se abre **ahí mismo**
 el modal de cancelación, con sus facturas y sus notas de crédito ya tildadas. Confirmás con
 **Aplicar Cancelación**: si la nota de crédito cubre la factura, las dos quedan **conciliadas** con
 saldo 0; si no, la factura baja lo que se descontó y sigue pendiente. El proveedor desaparece del
 cartel.
 
 **Notas de crédito por descuentos.** Si un proveedor te manda una nota de crédito por los descuentos
-que ya le aplicaste al pagarle, pasá **esa nota de crédito a «Pagar»** en el Cash Flow: si hay
-facturas pagadas con descuento, te pregunta si querés aplicarla contra ellas y abre el modal con las
-facturas **agrupadas por pago**. Tildás el grupo; el resumen te dice si **cuadra** (tolerancia $1).
+que ya le aplicaste al pagarle, apretá **«Contra descuentos»** al lado de esa nota de crédito en el
+cartel: abre el modal con las facturas pagadas con descuento, **agrupadas por pago**. Si no hay
+ninguna, te lo avisa. Tildás el grupo; el resumen te dice si **cuadra** (tolerancia $1).
 
 📌 Es el mismo modal que había en la pestaña **Pagos** de Egresos — se mudó para que siga existiendo
 cuando esa pestaña se saque.

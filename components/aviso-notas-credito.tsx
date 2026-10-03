@@ -82,9 +82,15 @@ const pesos = (n: number) =>
  * el modal se mudó de la Vista de Pagos a su propio componente. Sin `onCancelar` sigue el camino
  * viejo (encargo + navegar a Pagos).
  */
-export function AvisoNotasCredito({ filas, onCancelar }: {
+export function AvisoNotasCredito({ filas, onCancelar, onDescuentos }: {
   filas: FilaParaAviso[]
   onCancelar?: (cuit: string, proveedor: string, empresa: string | null) => void
+  /**
+   * 🔄 A-FEAT-1232 (2026-10-03) — aplicar UNA nota de crédito contra los descuentos que se le
+   * aplicaron al proveedor. Pedido del usuario: *«las notas de crédito podrían mostrarse siempre y
+   * gestionarse desde el cartel ámbar, mejor que ubicarla en el Cash Flow y darle pagar»*.
+   */
+  onDescuentos?: (ncId: string, cuit: string, proveedor: string, empresa: string | null) => void
 }) {
   const [abierto, setAbierto] = useState(false)
 
@@ -103,8 +109,9 @@ export function AvisoNotasCredito({ filas, onCancelar }: {
         importe: Math.abs(f.imp_total ?? f.debitos ?? 0),
         estado: f.estado,
       }))
-    return detectarProveedoresConNC(comprobantes)
-  }, [filas])
+    // Con `incluirSinFacturas`: también las NC que no tienen factura para cancelar (van contra descuentos).
+    return detectarProveedoresConNC(comprobantes, { incluirSinFacturas: !!onDescuentos })
+  }, [filas, onDescuentos])
   // La empresa de cada proveedor, para saber en qué schema buscar sus comprobantes.
   const empresaDe = useMemo(() => {
     const m = new Map<string, string>()
@@ -112,20 +119,27 @@ export function AvisoNotasCredito({ filas, onCancelar }: {
     return m
   }, [filas])
 
-  if (proveedores.length === 0) return null
+  // Con las acciones en el cartel, se ve SIEMPRE: también para decir que no hay nada pendiente.
+  if (proveedores.length === 0) {
+    return onDescuentos
+      ? <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-500">🧾 Sin notas de crédito pendientes de aplicar.</div>
+      : null
+  }
 
   const totalNC = proveedores.reduce((s, p) => s + p.totalNotasCredito, 0)
+  const conFacturas = proveedores.filter(p => p.facturas.length > 0).length
 
   return (
     <div className="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-amber-900">
-          🧾 <strong>{proveedores.length}</strong>{" "}
-          {proveedores.length === 1 ? "proveedor tiene" : "proveedores tienen"} notas de crédito sin
-          aplicar contra facturas por pagar, por <strong>${pesos(totalNC)}</strong>.{" "}
-          <span className="text-amber-800">
-            Si pagás las facturas sin aplicarlas, pagás de más.
-          </span>
+          🧾 Notas de crédito pendientes: <strong>{proveedores.length}</strong>{" "}
+          {proveedores.length === 1 ? "proveedor" : "proveedores"}, por <strong>${pesos(totalNC)}</strong>.{" "}
+          {conFacturas > 0 && (
+            <span className="text-amber-800">
+              {conFacturas} {conFacturas === 1 ? "tiene" : "tienen"} facturas por pagar: si las pagás sin aplicarlas, pagás de más.
+            </span>
+          )}
         </div>
         <Button
           variant="outline"
@@ -165,25 +179,43 @@ export function AvisoNotasCredito({ filas, onCancelar }: {
                   )}
                 </span>
               </div>
+              {/* Cada nota de crédito, con su acción contra descuentos. */}
+              {onDescuentos && (
+                <div className="mt-1 space-y-0.5">
+                  {p.notasCredito.map(nc => (
+                    <div key={nc.id} className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="text-gray-700">{nc.display || "NC"} · <span className="text-amber-800">${pesos(Math.abs(nc.importe))}</span></span>
+                      <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] border-amber-400 text-amber-800"
+                        title="Aplicarla contra los descuentos que ya le aplicaste al pagarle"
+                        onClick={() => onDescuentos(nc.id, p.cuit, p.proveedor, empresaDe.get(p.cuit) ?? null)}>
+                        Contra descuentos
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] leading-relaxed text-gray-600">
-                  {p.notasCredito.map(nc => nc.display).filter(Boolean).join(" · ")}
+                  {onDescuentos ? "" : p.notasCredito.map(nc => nc.display).filter(Boolean).join(" · ")}
                 </span>
-                <Button
-                  size="sm"
-                  className="bg-amber-600 hover:bg-amber-700"
-                  onClick={() => onCancelar
-                    ? onCancelar(p.cuit, p.proveedor, empresaDe.get(p.cuit) ?? null)
-                    : dejarEncargoCancelacionNC(p.cuit, p.proveedor)}
-                >
-                  Cancelarlas
-                </Button>
+                {p.facturas.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700"
+                    onClick={() => onCancelar
+                      ? onCancelar(p.cuit, p.proveedor, empresaDe.get(p.cuit) ?? null)
+                      : dejarEncargoCancelacionNC(p.cuit, p.proveedor)}
+                  >
+                    Cancelar con sus facturas
+                  </Button>
+                )}
               </div>
             </div>
           ))}
           <p className="text-[11px] leading-relaxed text-amber-900">
-            <strong>«Cancelarlas»</strong> abre el modal de cancelación de ese proveedor: elegís cuáles
-            aplicar y confirmás. Es el mismo modal que había en Pagos.
+            <strong>«Cancelar con sus facturas»</strong> aplica las notas de crédito contra las facturas por
+            pagar de ese proveedor. <strong>«Contra descuentos»</strong> aplica una nota de crédito contra los
+            descuentos que ya le aplicaste al pagarle. Las dos abren el mismo modal que había en Pagos.
           </p>
           {/* El test aparece donde se corre el proceso (§ 🧪 un A-TEST nace con su proceso). */}
           <TestsDelProceso proceso="cashflow/notas-credito" pantalla="cashflow" />

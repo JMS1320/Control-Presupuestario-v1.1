@@ -6,7 +6,7 @@ import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/c
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 import { ModalCancelacionNC } from "@/components/modal-cancelacion-nc"
-import { armarCancelacionPorCuit, facturasConDescuentoParaNC, esNotaCreditoArca, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
+import { armarCancelacionPorCuit, facturasConDescuentoParaNC, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -420,6 +420,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setCancelacionNC({ datos, schema })
     } catch (err) { toast.error('No se pudieron leer los comprobantes: ' + (err as Error).message) }
   }
+  /**
+   * Una nota de crédito contra los DESCUENTOS que se le aplicaron al proveedor (escenario B) — desde
+   * el cartel. Se descartó hacerlo al pasar la NC a «pagar» en la grilla (usuario 2026-10-03: mejor
+   * gestionarlas todas desde el cartel).
+   */
+  const abrirDescuentosNC = async (ncId: string, cuit: string, proveedor: string, empresa: string | null) => {
+    const schema = (empresa || 'MSA').toLowerCase()
+    try {
+      const fcs = await facturasConDescuentoParaNC(supabase, schema, [cuit])
+      if (!fcs.length) { toast.info(`${proveedor} no tiene facturas pagadas con descuento sin cubrir.`); return }
+      const { data: nc } = await supabase.schema(schema).from('comprobantes_arca')
+        .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado').eq('id', ncId).maybeSingle()
+      if (!nc) { toast.error('No se encontró la nota de crédito'); return }
+      setCancelacionNC({ schema, datos: { tipo: 'nc_con_descuento', facturas: [nc as ComprobanteNC], disponibles: fcs, seleccionadas: new Set() } })
+    } catch (err) { toast.error('No se pudieron leer los comprobantes: ' + (err as Error).message) }
+  }
 
   // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
   // 'cobrado' se muestra, en verde como lo pagado (abajo, en la colorización). Se probó ocultarlo y el usuario
@@ -757,29 +773,6 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setGuardandoCambio(false)
         await cambiarEstadoPagoAnticipo(idAnticipo, 'echeq')
         return
-      }
-
-      // ── HOOK NC CONTRA DESCUENTOS (A-FEAT-1232) ─────────────────────────────
-      // Lo mismo que hacía la Vista de Pagos al pasar una NOTA DE CRÉDITO a «pagar»: si el proveedor
-      // tiene facturas pagadas con descuento todavía sin cubrir, se ofrece aplicarla contra esos
-      // descuentos. Si dice que no, sigue el flujo normal.
-      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && esNotaCreditoArca((filaParaCambioEstado as any).tipo_comprobante)) {
-        const schemaNC = schemaDeFila(filaParaCambioEstado)
-        const fcsDescuento = await facturasConDescuentoParaNC(supabase, schemaNC, [filaParaCambioEstado.cuit_proveedor])
-        if (fcsDescuento.length > 0 && window.confirm(
-          `Hay ${fcsDescuento.length} factura(s) pagada(s) de ${filaParaCambioEstado.nombre_proveedor} con descuento aplicado.\n\n` +
-          `¿Aplicar esta nota de crédito contra esos descuentos?\n\n[Aceptar] = elegir las facturas\n[Cancelar] = seguir sin aplicar`
-        )) {
-          const { data: nc } = await supabase.schema(schemaNC).from('comprobantes_arca')
-            .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado')
-            .eq('id', filaParaCambioEstado.id).maybeSingle()
-          if (nc) {
-            setCancelacionNC({ schema: schemaNC, datos: { tipo: 'nc_con_descuento', facturas: [nc as ComprobanteNC], disponibles: fcsDescuento, seleccionadas: new Set() } })
-            setFilaParaCambioEstado(null)
-            setGuardandoCambio(false)
-            return
-          }
-        }
       }
 
       // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
@@ -3648,7 +3641,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               filtra por fecha o por proveedor, una nota de crédito que quedó afuera del filtro
               desaparecería del aviso, y un aviso que se calla según lo que estés mirando no avisa.
               El cartel no se muestra solo si no hay ninguna. */}
-          <AvisoNotasCredito filas={data} onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)} />
+          <AvisoNotasCredito filas={data}
+            onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)}
+            onDescuentos={(ncId, cuit, prov, emp) => void abrirDescuentosNC(ncId, cuit, prov, emp)} />
           {cancelacionNC && (
             <ModalCancelacionNC
               inicial={cancelacionNC.datos}

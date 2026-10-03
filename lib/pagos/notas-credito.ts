@@ -121,7 +121,15 @@ function estaPendiente(estado: string | null | undefined): boolean {
  * @returns  un elemento por proveedor, ordenado por **lo que hay para descontar**, de mayor a menor:
  *           el proveedor con $2 M de notas de crédito importa más que el de $3.000
  */
-export function detectarProveedoresConNC(comprobantes: ComprobanteParaNC[]): ProveedorConNC[] {
+export function detectarProveedoresConNC(
+  comprobantes: ComprobanteParaNC[],
+  /**
+   * `incluirSinFacturas` (A-FEAT-1232, 2026-10-03): el cartel del Cash Flow muestra TODAS las notas
+   * de crédito pendientes —también las que no tienen factura para cancelar, que pueden ir contra
+   * descuentos—. Sin el parámetro, la cuenta de siempre (sólo las dos puntas): la usa el script.
+   */
+  opciones: { incluirSinFacturas?: boolean } = {},
+): ProveedorConNC[] {
   const porCuit = new Map<string, { facturas: ComprobanteParaNC[]; notasCredito: ComprobanteParaNC[]; proveedor: string }>()
 
   for (const c of comprobantes) {
@@ -142,7 +150,8 @@ export function detectarProveedoresConNC(comprobantes: ComprobanteParaNC[]): Pro
   for (const [cuit, e] of porCuit) {
     // Hace falta que haya **las dos puntas**: una NC sola no tiene contra qué aplicarse, y una
     // factura sola no tiene nada que descontar. Avisar de una sola punta sería ruido.
-    if (e.facturas.length === 0 || e.notasCredito.length === 0) continue
+    if (e.notasCredito.length === 0) continue
+    if (e.facturas.length === 0 && !opciones.incluirSinFacturas) continue
 
     const totalFacturas = redondear(e.facturas.reduce((s, f) => s + Math.abs(f.importe), 0))
     const totalNotasCredito = redondear(e.notasCredito.reduce((s, n) => s + Math.abs(n.importe), 0))
