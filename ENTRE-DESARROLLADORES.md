@@ -359,6 +359,14 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
+## 📨 2026-10-03 · PARA JAVIER — `main` se actualizó con todo lo de JMS (nada tuyo nuevo)
+
+Con OK de JMS, `main` pasó de `bf3a068` a lo mismo que `desarrollo` (fast-forward, 193 commits, **todos
+de JMS**). **De lo tuyo no viajó nada que no estuviera ya en `main`**: tus ramas ya estaban adentro desde
+el 01/10. Los scripts SQL que viajan (61–64, 68–74) **ya estaban corridos** en la base; los dejamos con su
+`-deshacer`. `jms/vistas-seguras` (scripts 66/67) **sigue afuera**, para que la evalúes vos.
+👉 Antes de seguir tu próxima rama, pulleá `desarrollo` (o `main`, que ahora son iguales).
+
 ## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/74` (aviso ANTES)
 
 Dos columnas de texto en **`msa.echeqs_terceros`**: `proveedor_nombre` y `comprobantes_pagados` (las del
