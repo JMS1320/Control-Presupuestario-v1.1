@@ -5474,5 +5474,14 @@ export function correrCasos(): Resultado[] {
     "1405 · 1390 · 1", `${tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "PES", tipo_cambio: 1390 })}`,
     tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 }) === 1405 && tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 }) === 1390 && tcDeFactura({ moneda: "PES", tipo_cambio: 1390 }) === 1, "A-BUG-1236")
 
+
+  // ══ 🔁 COMPENSAR una venta con una factura del cliente (A-FEAT-1231) ═════════════════════════
+  const conComp = armarDetalleCobro({ movimientos: [], anticipos: [
+    { id: "comp", fecha_pago: "2026-02-26", monto: 279174.47, metodo_pago: "compensacion", estado_pago: "pagado", descripcion: "Compensación con su liquidación 77393" },
+  ], compensaciones: [], retenciones: [] }, 279174.47)
+  chequear("Detalle del cobro", "🔁 Una compensación cuenta como «compensación» (no como transferencia) y cierra",
+    "compensacion · cierra", `${conComp.lineas[0].medio} · ${conComp.cierra ? "cierra" : "no"}`,
+    conComp.lineas[0].medio === "compensacion" && conComp.cierra, "A-FEAT-1231")
+
   return r
 }

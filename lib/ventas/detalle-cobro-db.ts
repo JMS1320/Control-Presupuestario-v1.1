@@ -45,11 +45,14 @@ export async function cargarFuentesCobro(
       : { data: [] }
     const facPorId = new Map(((facs || []) as any[]).map(f => [f.id, f]))
     const compDeAnticipo = new Map(((ants || []) as any[]).map(a => [a.id, a.comprobante_venta_id]))
+    // Un pago a cuenta que ES una compensación (A-FEAT-1231) ya es su propia línea: su aplicación a
+    // la factura del cliente no se cuenta otra vez.
+    const esCompensacion = new Set(((ants || []) as any[]).filter(a => a.metodo_pago === 'compensacion').map(a => a.id))
     const cuitDeComp = new Map(comps.map(c => [c.id, String(c.cuit_cliente || '').replace(/\D/g, '')]))
     for (const ap of (apps || []) as any[]) {
       const compId = compDeAnticipo.get(ap.anticipo_id)
       const fac: any = facPorId.get(ap.factura_arca_id)
-      if (!compId || !fac) continue
+      if (!compId || !fac || esCompensacion.has(ap.anticipo_id)) continue
       // Sólo si la factura es del mismo cliente: eso es una compensación. Aplicada a otro, no es de esta venta.
       if (String(fac.cuit || '').replace(/\D/g, '') !== cuitDeComp.get(compId)) continue
       salida.get(compId)?.compensaciones.push({
@@ -90,7 +93,7 @@ const TABLAS_BANCARIAS: { tabla: string; schema?: string }[] = [
  */
 export async function vincularPagoACuenta(
   supabase: Cliente,
-  anticipo: { id: string; monto: number; fecha_pago: string | null; cuit_proveedor: string; nro_cuenta?: string | null; estado_pago?: string | null },
+  anticipo: { id: string; monto: number; fecha_pago: string | null; cuit_proveedor: string; nro_cuenta?: string | null; estado_pago?: string | null; sinMovimiento?: boolean },
   comp: { id: string; nro_cuenta?: string | null },
   opciones: { saldada: boolean; movimientoConciliado?: boolean },
 ): Promise<{ extractoActualizado: boolean }> {
@@ -108,8 +111,9 @@ export async function vincularPagoACuenta(
   if (errAnt) throw errAnt
   if (count === 0) throw new Error('No se encontró el pago a cuenta: el vínculo NO se guardó')
 
-  // Un cheque de tercero en cartera o endosado no pasó por el banco: no hay movimiento que buscar.
-  if (anticipo.estado_pago === 'endosado' || anticipo.estado_pago === 'en_cartera') return { extractoActualizado: false }
+  // Un cheque de tercero en cartera o endosado, o una compensación, no pasaron por el banco: no hay
+  // movimiento que buscar (y buscarlo podría atar uno ajeno del mismo importe).
+  if (anticipo.estado_pago === 'endosado' || anticipo.estado_pago === 'en_cartera' || anticipo.sinMovimiento) return { extractoActualizado: false }
 
   for (const { tabla, schema } of TABLAS_BANCARIAS) {
     const client = schema ? supabase.schema(schema) : supabase
@@ -200,4 +204,67 @@ export async function propagarImputacionDeVenta(
 export function detalleSinAnticipo(detalle: string | null | undefined): string | null {
   const d = String(detalle || '').replace(/^\s*ANTICIPO COBRO:\s*/i, '').trim()
   return d || null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 🔁 COMPENSAR una venta con una factura del MISMO cliente — A-FEAT-1231 (2026-10-03)
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Las facturas que el cliente nos hizo (compras a su nombre) que todavía tienen algo por pagar,
+ * con ese saldo en PESOS (en dólares, con el TC del pago o el de la factura).
+ */
+export async function facturasDelClienteParaCompensar(supabase: Cliente, cuit: string) {
+  const { data, error } = await supabase.schema('msa').from('comprobantes_arca')
+    .select('id, fecha_emision, tipo_comprobante, numero_desde, imp_total, monto_a_abonar, moneda, tipo_cambio, tc_pago, estado, cuenta_contable')
+    .eq('cuit', cuit).not('estado', 'in', '("conciliado","anterior")')
+    .order('fecha_emision', { ascending: false })
+  if (error) throw error
+  return ((data || []) as any[]).map(f => {
+    const tc = (f.moneda && f.moneda !== 'PES' && f.moneda !== 'ARS') ? (Number(f.tc_pago) || Number(f.tipo_cambio) || 1) : 1
+    const pendiente = Math.round((Number(f.monto_a_abonar ?? f.imp_total) || 0) * tc * 100) / 100
+    return { ...f, pendientePesos: pendiente }
+  }).filter(f => f.pendientePesos > 0.01)
+}
+
+/**
+ * 🔁 **Compensa**: el cliente nos facturó algo (intereses por adelantar, un servicio) y lo
+ * descontó de lo que nos pagó. Funciona como la cancelación de una nota de crédito contra una
+ * factura (pantalla de Pagos): la factura del cliente queda **conciliada con saldo 0**, y la venta
+ * cuenta ese importe como **cobrado por compensación**.
+ *
+ * Se registra como un pago a cuenta de cobro (`metodo_pago = 'compensacion'`, sin movimiento del
+ * banco) aplicado a esa factura — así se reusa el vínculo con la venta y el detalle del cobro, y
+ * no hace falta tabla nueva. Pedido del usuario 2026-10-03: *«debería comportarse como una nota de
+ * crédito que se cancela con una factura cuando las emparejo… nunca la asigné, así que no sabría
+ * cómo hacerlo en el futuro»*.
+ */
+export async function compensarConFactura(
+  supabase: Cliente,
+  venta: { id: string; nro_comprobante: string | null; cuit_cliente: string; denominacion_cliente: string | null; saldoPesos: number },
+  fac: { id: string; tipo_comprobante: number; numero_desde: number | string | null; pendientePesos: number; detalle?: string | null },
+  fecha: string,
+): Promise<void> {
+  const monto = fac.pendientePesos
+  const tipo = Number(fac.tipo_comprobante) === 3 ? 'NC' : Number(fac.tipo_comprobante) === 2 ? 'ND' : Number(fac.tipo_comprobante) === 180 ? 'liquidación' : 'FC'
+  const { data: ant, error } = await supabase.from('anticipos_proveedores').insert({
+    tipo: 'cobro', cuit_proveedor: venta.cuit_cliente, nombre_proveedor: venta.denominacion_cliente,
+    monto, monto_restante: 0, fecha_pago: fecha, metodo_pago: 'compensacion', estado_pago: 'pagado',
+    estado: 'pendiente_vincular', empresa: 'MSA',
+    descripcion: `Compensación con su ${tipo} ${fac.numero_desde ?? ''}`.trim(),
+  }).select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago').single()
+  if (error) throw error
+  const { error: eA } = await supabase.from('anticipos_facturas').insert({
+    anticipo_id: (ant as any).id, factura_arca_id: fac.id, monto_aplicado: monto, fecha_aplicacion: new Date().toISOString(),
+  })
+  if (eA) throw eA
+  // La factura del cliente, cancelada como una NC emparejada: conciliada y sin saldo.
+  const { data: f0 } = await supabase.schema('msa').from('comprobantes_arca').select('detalle').eq('id', fac.id).maybeSingle()
+  const nota = `Compensada con la venta ${venta.nro_comprobante ?? ''}`.trim()
+  const { error: eF } = await supabase.schema('msa').from('comprobantes_arca')
+    .update({ estado: 'conciliado', monto_a_abonar: 0, detalle: [String((f0 as any)?.detalle || '').trim(), nota].filter(Boolean).join(' | ') })
+    .eq('id', fac.id)
+  if (eF) throw eF
+  await vincularPagoACuenta(supabase, { ...(ant as any), monto, sinMovimiento: true }, { id: venta.id },
+    { saldada: venta.saldoPesos - monto < 1, movimientoConciliado: false })
 }

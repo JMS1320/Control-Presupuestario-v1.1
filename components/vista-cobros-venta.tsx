@@ -12,7 +12,7 @@ import { toast } from "sonner"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
-import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
+import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta, facturasDelClienteParaCompensar, compensarConFactura } from "@/lib/ventas/detalle-cobro-db"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
@@ -58,6 +58,8 @@ export function VistaCobrosVenta() {
   const [vinculando, setVinculando] = useState<string | null>(null)
   /** Alta de un echeq recibido del cliente: entra EN CARTERA (A-FEAT-1229); se endosa desde la cartera. */
   const [echeqForm, setEcheqForm] = useState<{ fecha: string; monto: string; numero: string; fechaCobro: string } | null>(null)
+  /** 🔁 Compensar con una factura del cliente (A-FEAT-1231): las candidatas y la elegida. */
+  const [compensando, setCompensando] = useState<{ facturas: any[]; elegida: string | null; fecha: string } | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
@@ -143,7 +145,7 @@ export function VistaCobrosVenta() {
   /** Al abrir un comprobante, se buscan los pagos a cuenta de ese cliente todavía sin vincular. */
   const abrir = async (f: Factura | null) => {
     setExpandida(f ? f.id : null)
-    setSinVincular([]); setEcheqForm(null)
+    setSinVincular([]); setEcheqForm(null); setCompensando(null)
     if (!f?.cuit_cliente) return
     try { setSinVincular(await pagosACuentaSinVincular(supabase, f.cuit_cliente)) }
     catch (err) { toast.error('No se pudieron leer los pagos a cuenta: ' + (err as Error).message) }
@@ -177,6 +179,30 @@ export function VistaCobrosVenta() {
     } catch (err) {
       toast.error('No se pudo vincular: ' + (err as Error).message)
     } finally { setVinculando(null) }
+  }
+
+  /** 🔁 Abre la compensación: trae las facturas que el cliente nos hizo y siguen con saldo. */
+  const abrirCompensar = async (f: Factura) => {
+    if (!f.cuit_cliente) { toast.error('El comprobante no tiene CUIT del cliente'); return }
+    try {
+      const facturas = await facturasDelClienteParaCompensar(supabase, f.cuit_cliente)
+      if (!facturas.length) { toast.info('Este cliente no tiene facturas a su nombre con saldo para compensar'); return }
+      setCompensando({ facturas, elegida: null, fecha: f.fecha_liquidacion || '' })
+    } catch (err) { toast.error('No se pudieron leer sus facturas: ' + (err as Error).message) }
+  }
+  const confirmarCompensar = async (f: Factura) => {
+    if (!compensando?.elegida) { toast.error('Elegí la factura a compensar'); return }
+    const fac = compensando.facturas.find(x => x.id === compensando.elegida)
+    if (!fac) return
+    setVinculando('compensar')
+    try {
+      await compensarConFactura(supabase,
+        { id: f.id, nro_comprobante: f.nro_comprobante, cuit_cliente: f.cuit_cliente!, denominacion_cliente: f.denominacion_cliente, saldoPesos: derivados(f).detalle.saldo },
+        fac, compensando.fecha || fac.fecha_emision)
+      toast.success('Compensada: la factura del cliente quedó cancelada y la venta la cuenta como cobrada')
+      setCompensando(null); await cargar(); await abrir(f)
+    } catch (err) { toast.error('No se pudo compensar: ' + (err as Error).message) }
+    finally { setVinculando(null) }
   }
 
   /**
@@ -379,6 +405,29 @@ export function VistaCobrosVenta() {
                             <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-gray-600"
                               onClick={() => setEcheqForm({ fecha: '', monto: '', numero: '', fechaCobro: '' })}>
                               + Registrar un echeq recibido del cliente
+                            </Button>
+                          )}
+                          {/* 🔁 Una factura del cliente que se descontó de lo que pagó: se cancela como una NC emparejada. */}
+                          {compensando ? (
+                            <div className="mt-1 rounded border bg-white p-2 text-xs space-y-1">
+                              <div className="text-gray-600">¿Qué factura del cliente se descontó de esta venta? Queda cancelada, como una nota de crédito emparejada.</div>
+                              {compensando.facturas.map(x => (
+                                <label key={x.id} className="flex items-center gap-2 cursor-pointer">
+                                  <input type="radio" name={'comp-' + f.id} checked={compensando.elegida === x.id} onChange={() => setCompensando({ ...compensando, elegida: x.id })} />
+                                  <span className="w-20">{fmtFecha(x.fecha_emision)}</span>
+                                  <span className="flex-1">{Number(x.tipo_comprobante) === 180 ? 'Liquidación' : Number(x.tipo_comprobante) === 2 ? 'ND' : 'FC'} {x.numero_desde} · {x.cuenta_contable || 'sin cuenta'}</span>
+                                  <span className="w-32 text-right tabular-nums">{fmt(x.pendientePesos)}</span>
+                                </label>
+                              ))}
+                              <label className="flex items-center gap-2">Fecha<Input type="date" className="h-7 text-xs w-36" value={compensando.fecha} onChange={e => setCompensando({ ...compensando, fecha: e.target.value })} /></label>
+                              <div className="flex gap-2">
+                                <Button size="sm" className="h-7 text-xs" disabled={!!vinculando} onClick={() => void confirmarCompensar(f)}>{vinculando === 'compensar' ? 'Compensando…' : 'Compensar'}</Button>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setCompensando(null)}>Cancelar</Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-gray-600" onClick={() => void abrirCompensar(f)}>
+                              + Compensar con una factura del cliente
                             </Button>
                           )}
                         </div>

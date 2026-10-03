@@ -849,7 +849,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .select('*')
         .neq('estado', 'vinculado')           // Vinculado = FC lo reemplaza, desaparece del CF
         .neq('estado_pago', 'conciliado')     // Conciliado en banco = desaparece del CF
-        .neq('estado_pago', 'endosado')       // Echeq de un cliente endosado: no va a entrar al banco (A-FEAT-1228)
+        // Echeq de un cliente endosado (A-FEAT-1228) y compensaciones (A-FEAT-1231): no pasan por el
+        // banco. Con `.or` y no `.neq`, porque `.neq` también descarta los que tienen el campo vacío.
+        .or('estado_pago.is.null,estado_pago.neq.endosado')
+        .or('metodo_pago.is.null,metodo_pago.neq.compensacion')
         .order('fecha_pago', { ascending: true })
 
       if (errorAnticipos) {

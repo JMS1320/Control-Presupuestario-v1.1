@@ -70,7 +70,9 @@ export function lineasDeCobro(f: FuentesCobro): LineaCobro[] {
     lineas.push({ medio: 'banco', fecha: m.fecha, monto: Number(m.creditos) || 0, descripcion: 'Crédito en el banco', ref: m.id })
   }
   for (const a of f.anticipos) {
-    const medio: MedioCobro = a.estado_pago === 'endosado' ? 'echeq_endosado' : a.metodo_pago === 'echeq' ? 'echeq' : 'transferencia'
+    // `compensacion` (A-FEAT-1231): el cliente nos facturó algo y se canceló contra esta venta.
+    const medio: MedioCobro = a.metodo_pago === 'compensacion' ? 'compensacion'
+      : a.estado_pago === 'endosado' ? 'echeq_endosado' : a.metodo_pago === 'echeq' ? 'echeq' : 'transferencia'
     // Un echeq en cartera (A-FEAT-1229) ya cancela la venta: el cliente pagó; qué hace MSA con el cheque es otra cosa.
     const desc = a.estado_pago === 'en_cartera' ? `${a.descripcion || 'Echeq'} · en cartera` : (a.descripcion || ETIQUETA_MEDIO[medio])
     lineas.push({ medio, fecha: a.fecha_pago, monto: Number(a.monto) || 0, descripcion: desc, ref: a.id })
