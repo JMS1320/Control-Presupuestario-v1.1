@@ -268,6 +268,12 @@ export function VistaExtractoBancario() {
   const [mostrarFiltrosAvanzados, setMostrarFiltrosAvanzados] = useState(false)
   const [fechaMovDesde, setFechaMovDesde] = useState('')
   const [fechaMovHasta, setFechaMovHasta] = useState('')
+  /**
+   * 📅 ¿Se filtra por fechas? Las fechas se PRECARGAN al abrir Avanzados (el mes actual, para tipear
+   * rápido), pero eso no puede filtrar solo: el usuario buscaba sin querer filtrar fechas y la
+   * búsqueda le erraba (2026-10-03). Se usan sólo con el tilde — y tocar una fecha lo prende solo.
+   */
+  const [usarFechas, setUsarFechas] = useState(false)
   const [montoDesde, setMontoDesde] = useState('')
   const [montoHasta, setMontoHasta] = useState('')
   const [busquedaCateg, setBusquedaCategExtracto] = useState('')
@@ -626,7 +632,7 @@ ${texto.trim()}` : texto.trim()
   const filtrosActivos = useMemo(() => {
     const fmt = (f: string) => f ? f.split('-').reverse().join('/') : '…'
     const items: string[] = []
-    if (fechaMovDesde || fechaMovHasta) items.push(`fechas ${fmt(fechaMovDesde)} a ${fmt(fechaMovHasta)}`)
+    if (usarFechas && (fechaMovDesde || fechaMovHasta)) items.push(`fechas ${fmt(fechaMovDesde)} a ${fmt(fechaMovHasta)}`)
     if (montoDesde || montoHasta) items.push(`monto ${montoDesde || '…'} a ${montoHasta || '…'}`)
     if (categsFiltro !== null) items.push(`${categsFiltro.size} categoría(s)`)
     if (busquedaCateg.trim()) items.push(`categ "${busquedaCateg.trim()}"`)
@@ -642,7 +648,7 @@ ${texto.trim()}` : texto.trim()
     if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
     return items
-  }, [fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
+  }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
       filtroSentido])
 
@@ -2850,8 +2856,8 @@ ${marca}` : marca
       busqueda: busqueda.trim() || undefined,
       limite: limiteRegistros,
     }
-    if (fechaMovDesde) filtros.fechaDesde = fechaMovDesde
-    if (fechaMovHasta) filtros.fechaHasta = fechaMovHasta
+    if (usarFechas && fechaMovDesde) filtros.fechaDesde = fechaMovDesde
+    if (usarFechas && fechaMovHasta) filtros.fechaHasta = fechaMovHasta
     if (montoDesde) filtros.montoDesde = parseFloat(montoDesde.replace(/\./g, '').replace(',', '.'))
     if (montoHasta) filtros.montoHasta = parseFloat(montoHasta.replace(/\./g, '').replace(',', '.'))
     if (filtroCategEspecial) filtros.categEspecial = filtroCategEspecial
@@ -2871,6 +2877,7 @@ ${marca}` : marca
   const limpiarFiltrosAvanzados = () => {
     setFechaMovDesde('')
     setFechaMovHasta('')
+    setUsarFechas(false)
     setMontoDesde('')
     setMontoHasta('')
     setBusquedaCategExtracto('')
@@ -3599,13 +3606,17 @@ ${marca}` : marca
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
                   {/* Filtros de fecha de movimiento */}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-purple-700">📅 Rango de Fechas Movimiento</label>
+                    <label className="text-sm font-medium text-purple-700 flex items-center gap-2">
+                      <input type="checkbox" checked={usarFechas} onChange={e => setUsarFechas(e.target.checked)} />
+                      📅 Filtrar por fechas de movimiento
+                      {!usarFechas && <span className="text-[11px] font-normal text-gray-400">(precargadas, sin usar)</span>}
+                    </label>
                     <div className="flex gap-2">
                       <Input
                         type="date"
                         placeholder="Desde"
                         value={fechaMovDesde}
-                        onChange={(e) => setFechaMovDesde(e.target.value)}
+                        onChange={(e) => { setFechaMovDesde(e.target.value); setUsarFechas(true) }}
                         onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
@@ -3613,7 +3624,7 @@ ${marca}` : marca
                         type="date"
                         placeholder="Hasta"
                         value={fechaMovHasta}
-                        onChange={(e) => setFechaMovHasta(e.target.value)}
+                        onChange={(e) => { setFechaMovHasta(e.target.value); setUsarFechas(true) }}
                         onKeyDown={(e) => e.key === 'Enter' && aplicarFiltrosAvanzados()}
                         className="text-xs"
                       />
