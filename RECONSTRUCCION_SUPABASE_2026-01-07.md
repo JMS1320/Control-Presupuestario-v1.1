@@ -12795,6 +12795,10 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-03 · EL BALANCE PROPIO (`public.balance_fotos` + `public.balance_foto_valores`) — A-FEAT-1190
+
+Script `scripts/75-balance-propio.sql` (deshacer: `75-balance-propio-deshacer.sql`, borra las fotos): dos tablas nuevas — `balance_fotos` (una por `empresa` + `fecha_cierre`, único; `tc`, `tc_fuente`, `notas`) y `balance_foto_valores` (`foto_id` FK cascade, `renglon`, `version` ∈ contador/jms/sistema/senasa, `importe` en pesos, `origen` ∈ manual/planilla/sistema, `valor_sistema`, `detalle`; único `foto_id+renglon+version`). RLS `ver_segun_permiso`/`escribir_segun_permiso`; `revoke` a `anon`; registradas en `recurso_tablas` con recurso `extracto` y **`restringe_lectura = true`** (el rol `contable` no las ve — verificado: admin ve 75 filas, contable 0). Datos: `scripts/76-balance-propio-carga-msa-2025.sql` (fotos MSA 30/06/24 y 30/06/25). Avisado a Javier antes.
+
 ### 2026-10-02 · EL EXTRACTO DE ECHEQS DE TERCEROS (`msa.echeqs_terceros`) — A-FEAT-1230
 
 Script `scripts/73-extracto-echeqs-terceros.sql` (deshacer con freno si tiene filas): `create table msa.echeqs_terceros (like msa.caja_general including all)` + `anticipo_id` (único) + `comprobante_venta_id`; RLS `ver_segun_permiso`/`escribir_segun_permiso` como las cajas; `revoke` a `anon`; registrada en `recurso_tablas` (recurso `extracto`). Avisado a Javier antes. Verificado: 22 columnas, 2 políticas, RLS activa, `EXPLAIN INSERT` como `authenticated`.

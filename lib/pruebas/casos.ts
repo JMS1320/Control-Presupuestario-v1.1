@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
@@ -5525,6 +5526,60 @@ export function correrCasos(): Resultado[] {
     const a = añosHastaElProximo(2022, "2026-10-03")
     chequear("Dashboard", "El selector de año va de 2022 al año en curso + 1",
       "2022…2027", `${a[0]}…${a[a.length - 1]}`, a[0] === 2022 && a[a.length - 1] === 2027 && a.includes(2026), "A-BUG-1237")
+  }
+
+
+  // ══ El balance propio (A-FEAT-1190) — con los números de SU planilla, fijos acá ═════════════
+  {
+    const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const v = (version: "jms" | "contador", d: Record<string, number>): ValorFoto[] =>
+      Object.entries(d).map(([renglon, importe]) => ({ renglon: renglon.replace(/#.*/, ""), version, importe }))
+    // Solapa NOTAS de «BAPU JMS USS 2025.xlsx», SIN las filas de PAM.
+    const jms24 = v("jms", { caja: 682722.7, banco_galicia: 18499417.13, banco_santander: 35150.48, banco_provincia: 3360.93,
+      ret_ganancias: 8944954.76, saldo_favor_iibb: 1342.34, anticipos_ganancias: 3846698.64, iva_libre_disponibilidad: 5389859.5,
+      iva_saldo_tecnico: 2730598.82, impuesto_cheque: 4454609.88, deudores_ventas: 2448367.01, otros_creditos_comerciales: 81457200,
+      cereales: 78378977.6, sementeras_ganaderas: 6454743.75, insumos_agricolas: 28923292.08, insumos_ganaderos: 9876195,
+      stock_cria: 197625000, stock_recria: 52714000, proveedores: 23571319.29, ganancias_a_pagar: 29622717.96,
+      cargas_sociales: 1344674.56, impuesto_diferido: 38029617.62 })
+    const jms25 = v("jms", { dolares_mep: 28811048.46, distribucion_fondos: 11200207, banco_galicia: 832605.05, fci: 23244019.93,
+      ret_ganancias: 13577503.78, perc_ganancias: 61910.75, saldo_favor_iibb: 2230667.45, anticipos_ganancias: 14474434.24,
+      iva_libre_disponibilidad: 3765973.66, iva_saldo_tecnico: 5446163.83, impuesto_cheque: 11184300.93,
+      otros_creditos_comerciales: 92655408.78, cereales: 2045386.32, sementeras_agricolas: 5660415.43, sementeras_ganaderas: 3830287.5,
+      insumos_agricolas: 5299830, insumos_ganaderos: 26894811.38, stock_cria: 308090000, stock_recria: 97470000,
+      proveedores: 4431467.73, ganancias_a_pagar: 12287931.74, cargas_sociales: 3415867.25, cheques_pendientes: 6064989.95,
+      impuesto_diferido: 66802158.96 })
+    // Las filas de PAM que la planilla sumaba (Galicia PAM y FCI PAM): agregadas, tiene que dar SU número.
+    const pam24 = v("jms", { "banco_galicia#pam": 1743413.41 })
+    const pam25 = v("jms", { "banco_galicia#pam": 454882.89, "fci#pam": 20634266.83 })
+    const conPam = gananciaDelEjercicio({ valores: [...jms24, ...pam24], tc: 1365 }, { valores: [...jms25, ...pam25], tc: 1215 }, "jms")
+    chequear("Balance propio", "Con las filas de PAM, la ganancia en pesos es la de SU planilla (corriente y total)",
+      "201.992.675,33 · 173.220.133,99", `${fmt(conPam.pesosCorriente)} · ${fmt(conPam.pesosTotal)}`,
+      cerca(conPam.pesosCorriente, 201992675.33, 0.01) && cerca(conPam.pesosTotal, 173220133.99, 0.01), "A-FEAT-1190")
+    const msa = gananciaDelEjercicio({ valores: jms24, tc: 1365 }, { valores: jms25, tc: 1215 }, "jms")
+    chequear("Balance propio", "MSA sola 24/25: los 4 resultados (pesos y US$, corriente y total)",
+      "182.646.939,01 · 153.874.397,67 · US$ 190.839,32 · US$ 163.719,69",
+      `${fmt(msa.pesosCorriente)} · ${fmt(msa.pesosTotal)} · US$ ${fmt(msa.usdCorriente ?? 0)} · US$ ${fmt(msa.usdTotal ?? 0)}`,
+      cerca(msa.pesosCorriente, 182646939.01, 0.01) && cerca(msa.pesosTotal, 153874397.67, 0.01)
+        && cerca(msa.usdCorriente ?? 0, 630574717.82 / 1215 - 447927778.81 / 1365, 0.01)
+        && cerca(msa.usdTotal ?? 0, 563772558.86 / 1215 - 409898161.19 / 1365, 0.01), "A-FEAT-1190")
+    // El contador: su activo − pasivo tiene que ser su patrimonio neto + el resultado (camino inverso).
+    const cont = resultadosDeVersion(v("contador", { caja: 9903617.62, caja_dolares: 932000, banco_santander: 7204.86,
+      banco_provincia: 15298.25, cheques_pendientes: 6064989.95, fci: 23244019.93, banco_galicia: 832605.05,
+      banco_galicia_usd: 40776898.95, anticipos_ganancias: 14474434.24, ret_ganancias: 13577503.78, perc_ganancias: 61910.75,
+      anticipos_proveedores: 31728000.07, cuenta_socios: 45905575.52, iva_saldo_tecnico: 5446163.83,
+      iva_libre_disponibilidad: 3765973.66, impuesto_cheque: 11184300.93, saldo_favor_iibb: 2230667.45, cereales: 2045386.32,
+      equinos: 536919.86, stock_cria: 255479054.9, sementeras_agricolas: 4738332.1, proveedores: 3543793.46,
+      provision_gastos: 12456000.14, tarjetas: 887674.27, cargas_sociales: 3415867.25, cuota_solidaria: 90621.62,
+      ganancias_a_pagar: 12287931.74, impuesto_diferido: 66802158.96, bienes_uso_neto: 417164580.02 }), "contador")
+    chequear("Balance propio", "Contador 30/06/25: activo − pasivo = patrimonio neto + resultado de su balance",
+      "778.501.410,70", fmt(cont.netoTotal), cerca(cont.netoTotal, 626977326.43 + 151524084.27, 0.01), "A-FEAT-1190")
+    const raro = resultadosDeVersion([{ renglon: "no_existe", version: "jms", importe: 5 }], "jms")
+    chequear("Balance propio", "Un renglón fuera del catálogo se avisa, no se descarta en silencio",
+      "1 desconocido, activo 0", `${raro.desconocidos.length} desconocido, activo ${raro.activo}`,
+      raro.desconocidos.length === 1 && raro.activo === 0, "A-FEAT-1190")
+    chequear("Balance propio", "Sin TC no hay dólares (null, no cero) · monto vacío = sin valor",
+      "null · null · 1234567,89", `${enDolares(cont, null)} · ${parsearMonto("  ")} · ${parsearMonto("1.234.567,89")}`,
+      enDolares(cont, null) === null && parsearMonto("  ") === null && parsearMonto("1.234.567,89") === 1234567.89, "A-FEAT-1190")
   }
 
   return r

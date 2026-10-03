@@ -15,6 +15,7 @@ import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
 import { PapelesDeBalance } from "./components/papeles-de-balance"
+import { BalancePropio } from "./components/balance-propio"
 import { VistaIngresos } from "./components/vista-ingresos"
 import { WizardTemplatesEgresos } from "./components/wizard-templates-egresos"
 import { VistaCashFlow } from "./components/vista-cash-flow"
@@ -363,6 +364,9 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
                 cruza compras y ventas, y porque es un reporte para afuera — el destinatario es
                 el contador, no el trabajo del día. */}
             <PapelesDeBalance />
+
+            {/* 📸 El balance propio de JMS (A-FEAT-1190): activo − pasivo, fin − inicio, en $ y US$. */}
+            <BalancePropio />
           </TabsContent>
 
           {/* EGRESOS */}

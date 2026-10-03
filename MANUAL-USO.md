@@ -43,6 +43,7 @@
 - [🧾 Módulo: Templates (Egresos) — Renovar campaña 🟡 (v1 sin testear)](#módulo-templates-egresos-renovar-campaña-v1-sin-testear)
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
+- [📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*](#reportes-balance-propio-activo-menos-pasivo-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
@@ -2632,6 +2633,31 @@ Al aplicar, se escribe en la cuota del template **sólo el monto y el vencimient
 app cuando quieras verificar un importe, sin salir a buscar el archivo.
 
 ⚠️ Sin probar todavía → A-TEST-1167
+
+## 📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*
+
+Es **tu** balance, aparte del del contador: activo menos pasivo al cierre, contra el cierre anterior,
+en pesos y en dólares. Está en **Reportes**, abajo de los papeles de trabajo: apretá el título
+**«📸 Balance propio»** para abrirlo.
+
+- **Arriba** elegís la empresa (MSA o MA) y la **foto**: una por fecha de cierre. Cada foto es un
+  dato guardado — no se recalcula sola aunque después cambie algo en el sistema.
+- **La grilla** tiene los renglones de tu solapa NOTAS, agrupados por rubro, con una columna por
+  versión: **Contador** y **JMS** (y **Sistema** o **SENASA** cuando haya). La última columna es la
+  diferencia **JMS − Contador**, en ámbar cuando no coinciden.
+- **Cada celda se edita**: escribí el importe (formato `1.234.567,89`) y salí de la celda; se guarda
+  solo. Vaciarla borra ese valor. Pasando el mouse ves de dónde salió (planilla, a mano, sistema).
+- **El TC** de la foto se edita al lado de la fecha. Los dólares salen de ese TC, así que no cambian
+  si después se reimporta una cotización.
+- **Abajo, los resultados** de cada versión: activo − pasivo **corriente** y **total**, en $ y US$, y
+  la **ganancia** contra la foto anterior (los cuatro números).
+- **Nueva foto**: elegí la fecha de cierre y apretá **Nueva foto**. El TC se propone del dólar BNA
+  importado a esa fecha; si no hay, lo cargás a mano.
+
+📌 Ya están cargadas las fotos de **MSA al 30/06/24** (tu versión) y **al 30/06/25** (contador y tuya,
+sin lo de PAM). La del 30/06/25 es el inicio del ejercicio 25/26.
+
+⚠️ Sin probar todavía → A-TEST-1182
 
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
 
