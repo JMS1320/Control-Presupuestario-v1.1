@@ -359,6 +359,15 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
+## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/75` (aviso ANTES): dos tablas NUEVAS con RLS
+
+`public.balance_fotos` y `public.balance_foto_valores` — el **balance propio** de JMS (A-FEAT-1190 /
+A-DEC-1001): una foto por empresa y fecha de cierre, con un importe por renglón y versión (contador /
+JMS / sistema / SENASA). Mismo patrón que `scripts/73`: RLS con `puede_ver` / `puede_escribir`, revoke a
+`anon`, y registradas en `recurso_tablas` con recurso **`extracto`** y **`restringe_lectura = true`**
+(es el análisis patrimonial del dueño: el rol `contable` no lo ve). No toca ninguna tabla existente.
+Después, `scripts/76` carga las fotos MSA 30/06/24 y 30/06/25 (datos nuevos). 🔙 `scripts/75-balance-propio-deshacer.sql`.
+
 ## 📨 2026-10-03 · PARA JAVIER — `main` se actualizó con todo lo de JMS (nada tuyo nuevo)
 
 Con OK de JMS, `main` pasó de `bf3a068` a lo mismo que `desarrollo` (fast-forward, 193 commits, **todos
