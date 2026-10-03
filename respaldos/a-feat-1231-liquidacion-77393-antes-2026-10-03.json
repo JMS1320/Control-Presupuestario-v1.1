@@ -1,0 +1,6 @@
+{
+  "que": "La liquidacion 77393 de Genta (intereses por adelantar, $279.174,47) pasa a conciliada: ya esta compensada contra la venta 11-75880 (aplicada al pago a cuenta de $5 M). Con OK del usuario 2026-10-03: «ahora ya modificaste el dato manualmente? si no, hazlo».",
+  "antes": {"id": "cefc22d8-7362-41a2-b559-40600cea2f27", "estado": "pendiente", "monto_a_abonar": 0, "detalle": "T180 77393 - PEDRO GENTA Y COMPAÑIA SOCIEDAD ANONIMA | Anticipo $279.174,47 (4/2/2026)"},
+  "despues": {"estado": "conciliado", "detalle": "T180 77393 - PEDRO GENTA Y COMPAÑIA SOCIEDAD ANONIMA | Anticipo $279.174,47 (4/2/2026) | Compensada con la venta 11-75880"},
+  "deshacer": "update msa.comprobantes_arca set estado = 'pendiente', detalle = 'T180 77393 - PEDRO GENTA Y COMPAÑIA SOCIEDAD ANONIMA | Anticipo $279.174,47 (4/2/2026)' where id = 'cefc22d8-7362-41a2-b559-40600cea2f27';"
+}
