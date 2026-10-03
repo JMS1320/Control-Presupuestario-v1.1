@@ -129,13 +129,24 @@ export async function sincronizarExtractoEcheqs(supabase: Cliente): Promise<{ cr
   const idsFac = [...new Set([...pagos.values()].map(p => p.factura_id).filter(Boolean))]
   const [{ data: vs }, { data: fs }] = await Promise.all([
     idsVenta.length ? supabase.schema('msa').from('comprobantes_venta').select('id, cuenta_contable, nro_cuenta, centro_costo, nro_comprobante').in('id', idsVenta) : Promise.resolve({ data: [] }),
-    idsFac.length ? supabase.schema('msa').from('comprobantes_arca').select('id, cuenta_contable, nro_cuenta, centro_costo, numero_desde, denominacion_emisor').in('id', idsFac) : Promise.resolve({ data: [] }),
+    idsFac.length ? supabase.schema('msa').from('comprobantes_arca').select('id, cuenta_contable, nro_cuenta, centro_costo, numero_desde, tipo_comprobante, denominacion_emisor, cuit').in('id', idsFac) : Promise.resolve({ data: [] }),
   ])
-  const impVenta = new Map(((vs || []) as any[]).map(v => [v.id, { categ: v.cuenta_contable, nro_cuenta: v.nro_cuenta, centro_costo: v.centro_costo, referencia: v.nro_comprobante }]))
-  const impFac = new Map(((fs || []) as any[]).map(f => [f.id, { categ: f.cuenta_contable, nro_cuenta: f.nro_cuenta, centro_costo: f.centro_costo, referencia: `FC ${f.numero_desde ?? ''} ${f.denominacion_emisor ?? ''}`.trim() }]))
+  // El proveedor, como en el estándar: la razón social del MAESTRO por CUIT (§ 30.9.6 B).
+  const cuits = [...new Set(((fs || []) as any[]).map(f => String(f.cuit || '').replace(/\D/g, '')).filter(Boolean))]
+  const { data: maestro } = cuits.length
+    ? await supabase.from('proveedores').select('cuit, razon_social').in('cuit', cuits)
+    : { data: [] }
+  const razon = new Map(((maestro || []) as any[]).map(p => [String(p.cuit), p.razon_social]))
+  const impVenta = new Map(((vs || []) as any[]).map(v => [v.id, { categ: v.cuenta_contable, nro_cuenta: v.nro_cuenta, centro_costo: v.centro_costo, referencia: v.nro_comprobante, proveedor: null }]))
+  const tipoFc = (t: number) => (t === 3 ? 'NC' : t === 2 ? 'ND' : 'FC')
+  const impFac = new Map(((fs || []) as any[]).map(f => [f.id, {
+    categ: f.cuenta_contable, nro_cuenta: f.nro_cuenta, centro_costo: f.centro_costo,
+    referencia: `${tipoFc(Number(f.tipo_comprobante))} - ${f.numero_desde ?? ''}`,
+    proveedor: razon.get(String(f.cuit || '').replace(/\D/g, '')) || f.denominacion_emisor || null,
+  }]))
 
   const deseadas = filasExtractoEcheqs(cheques, pagos as any, impVenta, impFac)
-  const { data: ex, error: eEx } = await supabase.schema('msa').from('echeqs_terceros').select('id, anticipo_id, categ')
+  const { data: ex, error: eEx } = await supabase.schema('msa').from('echeqs_terceros').select('id, anticipo_id, categ, detalle')
   if (eEx) throw eEx
   const existentes = new Map(((ex || []) as any[]).map(r => [r.anticipo_id, r]))
   let creadas = 0, actualizadas = 0
@@ -149,7 +160,12 @@ export async function sincronizarExtractoEcheqs(supabase: Cliente): Promise<{ cr
       const upd: Record<string, any> = {
         fecha: f.fecha, descripcion: f.descripcion, creditos: f.creditos, debitos: f.debitos, saldo: f.saldo,
         comprobante_venta_id: f.comprobante_venta_id, comprobante_arca_id: f.comprobante_arca_id,
+        proveedor_nombre: f.proveedor_nombre, comprobantes_pagados: f.comprobantes_pagados,
       }
+      // El detalle se completa sólo si está vacío o es el autogenerado viejo («Cobro de …» / «Pago de …»):
+      // lo que el usuario escribió a mano no se pisa.
+      const det = String(e.detalle || '')
+      if (!det || /^(Cobro|Pago) de /.test(det)) upd.detalle = f.detalle
       if (!e.categ && f.categ) Object.assign(upd, { categ: f.categ, nro_cuenta: f.nro_cuenta, centro_de_costo: f.centro_de_costo, estado: 'conciliado' })
       const { error: eU } = await supabase.schema('msa').from('echeqs_terceros').update(upd).eq('id', e.id)
       if (eU) throw eU

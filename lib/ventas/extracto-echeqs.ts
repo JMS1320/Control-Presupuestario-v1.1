@@ -26,7 +26,8 @@ export interface ChequeParaExtracto {
   comprobante_venta_id: string | null
 }
 
-export interface Imputacion { categ: string | null; nro_cuenta: string | null; centro_costo?: string | null; referencia?: string | null }
+/** La imputación del origen y las columnas del estándar: quién (`proveedor`) y cuál (`referencia`, el comprobante). */
+export interface Imputacion { categ: string | null; nro_cuenta: string | null; centro_costo?: string | null; referencia?: string | null; proveedor?: string | null }
 
 export interface FilaExtractoEcheq {
   anticipo_id: string
@@ -41,6 +42,10 @@ export interface FilaExtractoEcheq {
   comprobante_arca_id: string | null
   estado: 'conciliado' | 'pendiente'
   cuenta: 'echeqs_terceros'
+  /** Las columnas del ESTÁNDAR de registro (MODULO_CONCILIACION § 30.9.6 B): quién y cuál. */
+  proveedor_nombre: string | null
+  comprobantes_pagados: string | null
+  /** Sólo lo que no se deduce de las otras columnas: el número del echeq (§ 30.9.6 D). */
   detalle: string | null
   saldo: number
 }
@@ -63,24 +68,30 @@ export function filasExtractoEcheqs(
     const monto = Number(c.monto) || 0
     const nro = nroDe(c.descripcion)
     const iv = c.comprobante_venta_id ? imputacionVenta.get(c.comprobante_venta_id) : undefined
+    // ⚠️ Cambió 2026-10-03: antes el comprobante y el proveedor iban dentro del detalle («Cobro de
+    // 11-75880»). El usuario: «no es el formato standard». Ahora cada dato en su columna.
     filas.push({
       anticipo_id: c.id, fecha: c.fecha_pago || '', creditos: monto, debitos: 0,
-      descripcion: `Echeq${nro ? ' Nº ' + nro : ''} recibido de ${c.nombre_proveedor || 'cliente'}`,
+      descripcion: 'Echeq recibido',
       categ: iv?.categ ?? null, nro_cuenta: iv?.nro_cuenta ?? null, centro_de_costo: iv?.centro_costo ?? null,
       comprobante_venta_id: c.comprobante_venta_id, comprobante_arca_id: null,
       estado: iv?.categ ? 'conciliado' : 'pendiente', cuenta: 'echeqs_terceros',
-      detalle: iv?.referencia ? `Cobro de ${iv.referencia}` : null,
+      proveedor_nombre: iv?.proveedor || c.nombre_proveedor || null,
+      comprobantes_pagados: iv?.referencia || null,
+      detalle: nro ? `Echeq Nº ${nro}` : null,
     })
     const p = c.endosado_en_id ? pagos.get(c.endosado_en_id) : undefined
     if (c.estado_pago === 'endosado' && p) {
       const ifac = p.factura_id ? imputacionFactura.get(p.factura_id) : undefined
       filas.push({
         anticipo_id: p.id, fecha: p.fecha_pago || c.fecha_pago || '', creditos: 0, debitos: monto,
-        descripcion: `Echeq${nro ? ' Nº ' + nro : ''} endosado a ${p.nombre_proveedor || 'proveedor'}`,
+        descripcion: 'Echeq endosado',
         categ: ifac?.categ ?? null, nro_cuenta: ifac?.nro_cuenta ?? null, centro_de_costo: ifac?.centro_costo ?? null,
         comprobante_venta_id: null, comprobante_arca_id: p.factura_id,
         estado: ifac?.categ ? 'conciliado' : 'pendiente', cuenta: 'echeqs_terceros',
-        detalle: ifac?.referencia ? `Pago de ${ifac.referencia}` : null,
+        proveedor_nombre: ifac?.proveedor || p.nombre_proveedor || null,
+        comprobantes_pagados: ifac?.referencia || null,
+        detalle: nro ? `Echeq Nº ${nro}` : null,
       })
     }
   }
