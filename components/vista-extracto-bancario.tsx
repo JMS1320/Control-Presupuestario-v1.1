@@ -1073,6 +1073,41 @@ ${texto.trim()}` : texto.trim()
     }
   }
 
+  /**
+   * ✅ **OK sobre un movimiento «para revisar»**: pasa a conciliado de un click (pedido del usuario
+   * 2026-10-03, con el cobro de $2,1 M de Genta: *«yo debería poder decirle simplemente: sí, OK, ya
+   * tiene su cuenta y está vinculada a la liquidación»*).
+   * - El motivo no se pierde: queda en la NOTA como huella (`OK a mano · <motivo>`).
+   * - Si es un cobro atado a una venta y su pago a cuenta seguía suelto, se vincula ese mismo
+   *   (si no, quedaría en la lista de «sin vincular» con la plata ya contada).
+   */
+  const [confirmandoOk, setConfirmandoOk] = useState<string | null>(null)
+  const confirmarAuditado = async (movimiento: any) => {
+    setConfirmandoOk(movimiento.id)
+    try {
+      const previa = String(movimiento.nota_operador || '').trim()
+      const huella = `OK a mano${movimiento.motivo_revision ? ' · ' + movimiento.motivo_revision : ''}`
+      const upd: Record<string, any> = { estado: 'conciliado', motivo_revision: null, nota_operador: [previa, huella].filter(Boolean).join(' · ') }
+      if (movimiento.comprobante_venta_id && !movimiento.anticipo_id) {
+        const cuit = String(movimiento.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
+        const { data: ants } = await supabase.from('anticipos_proveedores')
+          .select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id')
+          .eq('tipo', 'cobro').eq('fecha_pago', movimiento.fecha).eq('cuit_proveedor', cuit).is('comprobante_venta_id', null)
+        const ant = ((ants || []) as any[]).find(a => Math.abs((Number(a.monto) || 0) - (Number(movimiento.creditos) || 0)) < 1)
+        if (ant) {
+          await vincularPagoACuenta(supabase, { ...ant, monto: Number(ant.monto) || 0 }, { id: movimiento.comprobante_venta_id }, { saldada: false, movimientoConciliado: true })
+          upd.anticipo_id = ant.id
+        }
+      }
+      const { error } = await dbCuenta().from(tablaActiva).update(upd).eq('id', movimiento.id)
+      if (error) throw error
+      actualizarLocal(movimiento.id, upd)
+      toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : ''))
+    } catch (err) {
+      toast.error('No se pudo confirmar: ' + (err as Error).message)
+    } finally { setConfirmandoOk(null) }
+  }
+
   // Aplicar ediciones masivas
   const aplicarEdicionMasiva = async () => {
     if (seleccionados.size === 0) return
@@ -4263,8 +4298,19 @@ ${marca}` : marca
                             </TableCell>
                           )}
                           {col('motivo_revision') && (
-                            <TableCell className="max-w-xs truncate text-xs text-orange-600">
-                              {movimiento.motivo_revision || '-'}
+                            <TableCell className="max-w-xs text-xs text-orange-600">
+                              <div className="flex items-center gap-1">
+                                <span className="truncate" title={movimiento.motivo_revision || ''}>{movimiento.motivo_revision || '-'}</span>
+                                {/* ✅ Un movimiento «para revisar» se da por bueno de un click. */}
+                                {String(movimiento.estado).toLowerCase() === 'auditar' && (
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-green-700 border-green-300 shrink-0"
+                                    disabled={confirmandoOk === movimiento.id}
+                                    title="Darlo por bueno: pasa a conciliado y el motivo queda en la nota"
+                                    onClick={(e) => { e.stopPropagation(); void confirmarAuditado(movimiento) }}>
+                                    ✓ OK
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           )}
                           {col('centro_de_costo') && (
