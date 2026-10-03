@@ -1000,6 +1000,22 @@ ${texto.trim()}` : texto.trim()
   useEffect(() => { yaSeCargoTodo.current = false }, [tablaActiva, schemaActivo])
 
   /**
+   * 🏦 A-FEAT-1230 — la cuenta de echeqs de terceros se pone al día SOLA al abrirla. Sus filas se
+   * derivan de los cheques (una por anticipo, nunca se duplican ni se pisa lo imputado a mano). Con
+   * el botón sólo, un cheque endosado antes de que existiera esta cuenta no aparecía — el usuario
+   * abrió la cuenta y la vio vacía (2026-10-03).
+   */
+  useEffect(() => {
+    if (cuentaId !== 'echeqs_terceros') return
+    let vivo = true
+    sincronizarExtractoEcheqs(supabase)
+      .then(r => { if (vivo && r.creadas > 0) { toast.success(`Echeqs: ${r.creadas} movimiento(s) nuevo(s)`); recargar() } })
+      .catch(err => toast.error('No se pudo poner al día la cuenta de echeqs: ' + (err as Error).message))
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cuentaId])
+
+  /**
    * 🔎 **Ampliado 2026-09-22 (A-BUG-162): también cuando se busca por CONTRAPARTE.**
    *
    * Lo vio el usuario: *«acabo de buscar por contraparte en extracto bancario y me buscó sobre los
