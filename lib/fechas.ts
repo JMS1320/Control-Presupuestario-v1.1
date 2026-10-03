@@ -69,3 +69,14 @@ export function mesArgentina(): string {
 export function ahoraISO(): string {
   return new Date().toISOString()
 }
+
+/**
+ * Los años para un selector: desde `desde` hasta el año en curso + 1, en fecha argentina.
+ * A-BUG-1237: el del Dashboard era una lista escrita a mano que terminaba en 2025.
+ */
+export function añosHastaElProximo(desde: number, hoy: string = hoyArgentina()): number[] {
+  const hasta = Number(hoy.slice(0, 4)) + 1
+  const años: number[] = []
+  for (let a = desde; a <= hasta; a++) años.push(a)
+  return años
+}

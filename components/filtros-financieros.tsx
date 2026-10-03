@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { añosHastaElProximo } from "@/lib/fechas"
 
 interface FiltrosFinancierosProps {
   año: number
@@ -22,7 +23,8 @@ export function FiltrosFinancieros({
   onSemestreChange,
   onMostrarDecimalesChange,
 }: FiltrosFinancierosProps) {
-  const años = [2022, 2023, 2024, 2025]
+  // Se arma sola hasta el año que viene (A-BUG-1237) — antes terminaba en 2025.
+  const años = añosHastaElProximo(2022)
 
   return (
     <Card>

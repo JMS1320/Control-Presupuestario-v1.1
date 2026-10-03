@@ -37,6 +37,7 @@ import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
+import { añosHastaElProximo } from "@/lib/fechas"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
@@ -5516,6 +5517,14 @@ export function correrCasos(): Resultado[] {
     chequear("Notas de crédito", "Una NC sin factura por pagar: el aviso viejo la ignora; el cartel con acciones la muestra",
       "0 · 1", `${detectarProveedoresConNC(soloNC).length} · ${detectarProveedoresConNC(soloNC, { incluirSinFacturas: true }).length}`,
       detectarProveedoresConNC(soloNC).length === 0 && detectarProveedoresConNC(soloNC, { incluirSinFacturas: true }).length === 1, "A-FEAT-1232")
+  }
+
+
+  // El selector de año del Dashboard se arma solo (A-BUG-1237): antes terminaba en 2025.
+  {
+    const a = añosHastaElProximo(2022, "2026-10-03")
+    chequear("Dashboard", "El selector de año va de 2022 al año en curso + 1",
+      "2022…2027", `${a[0]}…${a[a.length - 1]}`, a[0] === 2022 && a[a.length - 1] === 2027 && a.includes(2026), "A-BUG-1237")
   }
 
   return r
