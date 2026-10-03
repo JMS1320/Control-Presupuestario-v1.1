@@ -70,12 +70,22 @@ export interface FilaParaAviso {
   debitos: number
   estado: string
   facturas_agrupadas?: number
+  /** La empresa de la fila: dice en qué schema vive la factura (A-FEAT-1232). */
+  empresas?: string[]
 }
 
 const pesos = (n: number) =>
   n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export function AvisoNotasCredito({ filas }: { filas: FilaParaAviso[] }) {
+/**
+ * ⚠️ Cambió 2026-10-03 (A-FEAT-1232): con `onCancelar`, **«Cancelarlas» abre el modal acá mismo** —
+ * el modal se mudó de la Vista de Pagos a su propio componente. Sin `onCancelar` sigue el camino
+ * viejo (encargo + navegar a Pagos).
+ */
+export function AvisoNotasCredito({ filas, onCancelar }: {
+  filas: FilaParaAviso[]
+  onCancelar?: (cuit: string, proveedor: string, empresa: string | null) => void
+}) {
   const [abierto, setAbierto] = useState(false)
 
   const proveedores = useMemo(() => {
@@ -94,6 +104,12 @@ export function AvisoNotasCredito({ filas }: { filas: FilaParaAviso[] }) {
         estado: f.estado,
       }))
     return detectarProveedoresConNC(comprobantes)
+  }, [filas])
+  // La empresa de cada proveedor, para saber en qué schema buscar sus comprobantes.
+  const empresaDe = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const f of filas) if (f.cuit_proveedor && f.empresas?.[0] && !m.has(f.cuit_proveedor)) m.set(f.cuit_proveedor, f.empresas[0])
+    return m
   }, [filas])
 
   if (proveedores.length === 0) return null
@@ -156,7 +172,9 @@ export function AvisoNotasCredito({ filas }: { filas: FilaParaAviso[] }) {
                 <Button
                   size="sm"
                   className="bg-amber-600 hover:bg-amber-700"
-                  onClick={() => dejarEncargoCancelacionNC(p.cuit, p.proveedor)}
+                  onClick={() => onCancelar
+                    ? onCancelar(p.cuit, p.proveedor, empresaDe.get(p.cuit) ?? null)
+                    : dejarEncargoCancelacionNC(p.cuit, p.proveedor)}
                 >
                   Cancelarlas
                 </Button>
@@ -164,10 +182,8 @@ export function AvisoNotasCredito({ filas }: { filas: FilaParaAviso[] }) {
             </div>
           ))}
           <p className="text-[11px] leading-relaxed text-amber-900">
-            <strong>«Cancelarlas»</strong> te lleva a Egresos → Facturas → <strong>Pagos</strong> con
-            el modal de cancelación <strong>ya abierto</strong> para ese proveedor: elegís cuáles
-            aplicar y confirmás. Es el mismo modal de siempre — este aviso no cancela nada por su
-            cuenta, sólo te deja parado ahí.
+            <strong>«Cancelarlas»</strong> abre el modal de cancelación de ese proveedor: elegís cuáles
+            aplicar y confirmás. Es el mismo modal que había en Pagos.
           </p>
           {/* El test aparece donde se corre el proceso (§ 🧪 un A-TEST nace con su proceso). */}
           <TestsDelProceso proceso="cashflow/notas-credito" pantalla="cashflow" />

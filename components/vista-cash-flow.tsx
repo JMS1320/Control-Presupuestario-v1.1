@@ -5,6 +5,8 @@ import { hoyArgentina } from "@/lib/fechas"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
+import { ModalCancelacionNC } from "@/components/modal-cancelacion-nc"
+import { armarCancelacionPorCuit, facturasConDescuentoParaNC, esNotaCreditoArca, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
@@ -405,6 +407,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
+  /**
+   * 🔄 A-FEAT-1232 — el modal de cancelación de notas de crédito, abierto ACÁ (antes había que ir a la
+   * Vista de Pagos, que se va a borrar). El modal y su lógica se mudaron a su propio componente.
+   */
+  const [cancelacionNC, setCancelacionNC] = useState<{ datos: DatosCancelacionNC; schema: string } | null>(null)
+  const abrirCancelacionNC = async (cuit: string, proveedor: string, empresa: string | null) => {
+    const schema = (empresa || 'MSA').toLowerCase()
+    try {
+      const datos = await armarCancelacionPorCuit(supabase, schema, cuit)
+      if (!datos) { toast.info(`Ya no quedan notas de crédito para aplicar en ${proveedor}.`); return }
+      setCancelacionNC({ datos, schema })
+    } catch (err) { toast.error('No se pudieron leer los comprobantes: ' + (err as Error).message) }
+  }
+
   // E1: vista operativa — chips estado/origen (siempre visibles). Default = impagos (todo menos 'pagado'), todos los orígenes.
   // 'cobrado' se muestra, en verde como lo pagado (abajo, en la colorización). Se probó ocultarlo y el usuario
   // lo frenó (2026-10-02): «lo pagado no se oculta, se muestra en verde; no cambiemos el funcionamiento general».
@@ -741,6 +757,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setGuardandoCambio(false)
         await cambiarEstadoPagoAnticipo(idAnticipo, 'echeq')
         return
+      }
+
+      // ── HOOK NC CONTRA DESCUENTOS (A-FEAT-1232) ─────────────────────────────
+      // Lo mismo que hacía la Vista de Pagos al pasar una NOTA DE CRÉDITO a «pagar»: si el proveedor
+      // tiene facturas pagadas con descuento todavía sin cubrir, se ofrece aplicarla contra esos
+      // descuentos. Si dice que no, sigue el flujo normal.
+      if (filaParaCambioEstado.origen === 'ARCA' && nuevoEstado === 'pagar' && esNotaCreditoArca((filaParaCambioEstado as any).tipo_comprobante)) {
+        const schemaNC = schemaDeFila(filaParaCambioEstado)
+        const fcsDescuento = await facturasConDescuentoParaNC(supabase, schemaNC, [filaParaCambioEstado.cuit_proveedor])
+        if (fcsDescuento.length > 0 && window.confirm(
+          `Hay ${fcsDescuento.length} factura(s) pagada(s) de ${filaParaCambioEstado.nombre_proveedor} con descuento aplicado.\n\n` +
+          `¿Aplicar esta nota de crédito contra esos descuentos?\n\n[Aceptar] = elegir las facturas\n[Cancelar] = seguir sin aplicar`
+        )) {
+          const { data: nc } = await supabase.schema(schemaNC).from('comprobantes_arca')
+            .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado')
+            .eq('id', filaParaCambioEstado.id).maybeSingle()
+          if (nc) {
+            setCancelacionNC({ schema: schemaNC, datos: { tipo: 'nc_con_descuento', facturas: [nc as ComprobanteNC], disponibles: fcsDescuento, seleccionadas: new Set() } })
+            setFilaParaCambioEstado(null)
+            setGuardandoCambio(false)
+            return
+          }
+        }
       }
 
       // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
@@ -3609,7 +3648,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               filtra por fecha o por proveedor, una nota de crédito que quedó afuera del filtro
               desaparecería del aviso, y un aviso que se calla según lo que estés mirando no avisa.
               El cartel no se muestra solo si no hay ninguna. */}
-          <AvisoNotasCredito filas={data} />
+          <AvisoNotasCredito filas={data} onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)} />
+          {cancelacionNC && (
+            <ModalCancelacionNC
+              inicial={cancelacionNC.datos}
+              schemaName={cancelacionNC.schema}
+              onCerrar={() => setCancelacionNC(null)}
+              onAplicado={() => { setCancelacionNC(null); cargarDatos() }}
+            />
+          )}
 
           {/* Empresa — SIEMPRE visible: es el contexto de lo que estás mirando, no un criterio
               de búsqueda. Son dos selecciones porque los defaults difieren (A-FEAT-13). */}

@@ -134,6 +134,7 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura } from "@/lib/pagos/moneda-factura"
+import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -5482,6 +5483,31 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle del cobro", "🔁 Una compensación cuenta como «compensación» (no como transferencia) y cierra",
     "compensacion · cierra", `${conComp.lineas[0].medio} · ${conComp.cierra ? "cierra" : "no"}`,
     conComp.lineas[0].medio === "compensacion" && conComp.cierra, "A-FEAT-1231")
+
+
+  // ══ 🔄 CANCELACIÓN DE NC, mudada fuera de Pagos (A-FEAT-1232) — tiene que escribir LO MISMO que antes ══
+  // Novitas, aplicada por el usuario el 2026-10-03 con el modal viejo: FC 12842 y NC 170 por $1.764.482,50.
+  // En la base quedó: FC «Cancelada con NC 170», NC «Cancela FC 12842», las dos conciliadas con saldo 0.
+  const fcNov = { id: "fc", cuit: "30678552980", tipo_comprobante: 1, numero_desde: 12842, denominacion_emisor: "NOVITAS SA", imp_total: 1764482.5 }
+  const ncNov = { id: "nc", cuit: "30678552980", tipo_comprobante: 3, numero_desde: 170, denominacion_emisor: "NOVITAS SA", imp_total: -1764482.5 }
+  const planNov = planCancelacionNC({ tipo: "fc_con_nc", facturas: [fcNov], disponibles: [ncNov], seleccionadas: new Set(["nc"]) })
+  chequear("Notas de crédito", "🔄 Novitas, con la lógica mudada: lo MISMO que dejó el modal viejo en la base",
+    "fc conciliado 0 «Cancelada con NC 170» · nc conciliado 0 «Cancela FC 12842»",
+    planNov.map(c => `${c.id} ${c.cambios.estado} ${c.cambios.monto_a_abonar} «${c.cambios.detalle}»`).join(" · "),
+    planNov.length === 2 && planNov[0].id === "fc" && planNov[0].cambios.estado === "conciliado" && planNov[0].cambios.detalle === "Cancelada con NC 170"
+      && planNov[1].id === "nc" && planNov[1].cambios.detalle === "Cancela FC 12842" && planNov[1].cambios.monto_a_abonar === 0, "A-FEAT-1232")
+  const planParcial = planCancelacionNC({ tipo: "fc_con_nc", facturas: [{ ...fcNov, imp_total: 2000000 }], disponibles: [ncNov], seleccionadas: new Set(["nc"]) })
+  chequear("Notas de crédito", "Una NC que no cubre la factura: la factura baja a 235.517,50 y sigue pendiente",
+    "235517.5 · sin estado", `${planParcial[0].cambios.monto_a_abonar} · ${planParcial[0].cambios.estado ?? "sin estado"}`,
+    planParcial[0].cambios.monto_a_abonar === 235517.5 && planParcial[0].cambios.estado === undefined, "A-FEAT-1232")
+  const planB = planCancelacionNC({ tipo: "nc_con_descuento", facturas: [{ ...ncNov, id: "nc789", numero_desde: 789 }],
+    disponibles: [{ ...fcNov, id: "a", numero_desde: 5926 }, { ...fcNov, id: "b", numero_desde: 5930 }], seleccionadas: new Set(["a", "b"]) })
+  chequear("Notas de crédito", "Escenario B (Alcorta): la NC queda conciliada con «Corresponde a descuentos aplicados FC 5926, 5930»",
+    "Corresponde a descuentos aplicados FC 5926, 5930", planB[0].cambios.detalle,
+    planB.length === 1 && planB[0].cambios.detalle === "Corresponde a descuentos aplicados FC 5926, 5930", "A-FEAT-1232")
+  chequear("Notas de crédito", "Qué es una nota de crédito: tipos 3, 8, 13 sí; 1 (factura) no",
+    "true true true false", [3, 8, 13, 1].map(esNotaCreditoArca).join(" "),
+    esNotaCreditoArca(3) && esNotaCreditoArca(8) && esNotaCreditoArca(13) && !esNotaCreditoArca(1), "A-FEAT-1232")
 
   return r
 }
