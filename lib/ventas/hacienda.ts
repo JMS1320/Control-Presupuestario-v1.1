@@ -108,6 +108,28 @@ export interface LineaLiqHacienda {
    * misma unidad. Vacío en una venta en pie.
    */
   kgGancho?: number | null
+  /**
+   * 🥩 **El precio por kilo GANCHO — el dato real** (usuario 2026-10-04: *«el kg al gancho es nuestro dato
+   * real, el otro dato es una conversión pero no puede faltar el dato real»*). Con kilos y precio gancho
+   * cargados, el importe de la línea es **kg gancho × precio gancho** y el precio por kilo vivo se deriva
+   * (importe ÷ kg pie), que es como lo expresa el papel del frigorífico.
+   */
+  precioGancho?: number | null
+}
+
+/** ¿La línea trae el dato real al gancho (kilos y precio)? */
+export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null }) =>
+  (Number(l.kgGancho) || 0) > 0 && (Number(l.precioGancho) || 0) > 0
+
+/** El importe de una línea: al gancho, kg gancho × precio gancho; si no, kilos × precio. */
+export function importeDeLinea(l: { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null }): number {
+  return lineaAlGancho(l) ? Number(l.kgGancho) * Number(l.precioGancho) : (Number(l.kilos) || 0) * (Number(l.precio) || 0)
+}
+
+/** El precio por kilo VIVO de una línea al gancho: la conversión del papel (importe ÷ kg pie). */
+export function precioPieDerivado(l: { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null }): number {
+  const k = Number(l.kilos) || 0
+  return lineaAlGancho(l) && k > 0 ? importeDeLinea(l) / k : Number(l.precio) || 0
 }
 
 /** Una retención impresa en el papel (IIBB, Ganancias…). `importe` en positivo: se descuenta. */
@@ -168,7 +190,8 @@ export function retencionSugerida(bruto: number, alicuotaPct: number): number {
 export function calcularLiqHacienda(e: LiqHaciendaEntrada): LiqHaciendaCalculo {
   const cabezas = e.lineas.reduce((s, l) => s + (Number(l.cabezas) || 0), 0)
   const kilos = e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0), 0)
-  const bruto = r2(e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0) * (Number(l.precio) || 0), 0))
+  // Al gancho manda el dato real (kg gancho × precio gancho) — ver `importeDeLinea`.
+  const bruto = r2(e.lineas.reduce((s, l) => s + importeDeLinea(l), 0))
   const tipeado = (x: number | null | undefined) => x !== null && x !== undefined && Number.isFinite(Number(x))
   const comision = tipeado(e.comisionMonto) ? r2(Number(e.comisionMonto)) : r2(bruto * (Number(e.comisionPct) || 0) / 100)
   const redondeo = Number(e.redondeo) || 0
@@ -337,8 +360,9 @@ export function precargaDesdeVenta(v: {
       ...((Number(v.kgCarne) || 0) > 0 && (Number(v.kgTotales) || 0) > 0
         ? {
             kilos: Math.round(Number(v.kgTotales)),
-            precio: Math.round(Number(v.kgCarne) * (Number(v.precioKg) || 0) / Number(v.kgTotales) * 100) / 100,
+            precio: Number(v.kgCarne) * (Number(v.precioKg) || 0) / Math.round(Number(v.kgTotales)),
             kgGancho: Number(v.kgCarne),
+            precioGancho: Number(v.precioKg) || 0,
           }
         : { kilos: Math.round(kgQueSeCobran(v)), precio: Number(v.precioKg) || 0 }),
     },

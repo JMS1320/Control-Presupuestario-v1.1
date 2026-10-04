@@ -129,7 +129,7 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { filasRetenciones } from "@/lib/ventas/retenciones-export"
@@ -2456,7 +2456,13 @@ export function correrCasos(): Resultado[] {
   // ⚠️ Cambió 2026-10-03 (A-FEAT-1234): el papel del frigorífico viene en kilo VIVO; los de carne van aparte.
   chequear("Liquidación de hacienda", "🥩 La precarga al gancho trae los kilos VIVOS (como el papel) y los de carne como kilos gancho",
     "3640 vivos · 1748 gancho · misma plata", `${preVacas.linea.kilos} vivos · ${preVacas.linea.kgGancho} gancho · ${Math.round(preVacas.linea.kilos * preVacas.linea.precio)}`,
-    preVacas.linea.kilos === 3640 && preVacas.linea.kgGancho === 1748 && Math.abs(preVacas.linea.kilos * preVacas.linea.precio - 1748 * 5949.49) < 20, "A-FEAT-1234")
+    preVacas.linea.kilos === 3640 && preVacas.linea.kgGancho === 1748 && preVacas.linea.precioGancho === 5949.49
+      && Math.abs(preVacas.linea.kilos * preVacas.linea.precio - 1748 * 5949.49) < 0.01, "A-FEAT-1234")
+  // El dato real manda: con kg y precio gancho, el importe es gancho × precio gancho, y el $/kg pie se deriva.
+  const lineaRealAB = { kilos: 3000, precio: 0, kgGancho: 1606, precioGancho: 5024.12 }
+  chequear("Liquidación de hacienda", "🥩 Al gancho el importe sale del dato real (1.606 × 5.024,12 = 8.068.736,72) y el $/kg pie es su conversión (2.689,58)",
+    "8068736.72 · 2689.58", `${importeDeLinea(lineaRealAB).toFixed(2)} · ${precioPieDerivado(lineaRealAB).toFixed(2)}`,
+    importeDeLinea(lineaRealAB).toFixed(2) === "8068736.72" && precioPieDerivado(lineaRealAB).toFixed(2) === "2689.58", "A-FEAT-1234")
   // El papel REAL de Arre Beef (03/09/2026): 3.000 + 3.260 kg pie, 1.606 + 1.748 kg gancho a $5.024,12.
   const papelAB = calcularLiqHacienda({
     lineas: [{ razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579, kgGancho: 1606 },
