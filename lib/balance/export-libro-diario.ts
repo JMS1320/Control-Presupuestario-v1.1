@@ -19,6 +19,7 @@
  * cuando la necesita para encontrar el problema.
  */
 import * as XLSX from "xlsx"
+import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
@@ -1248,6 +1249,49 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
  * Un retiro va **negativo** y un aporte **positivo**, como en su planilla, así que el neto se lee de
  * una sola pasada.
  */
+/**
+ * 🧾 **Papel 08.1 — impuesto a los débitos y créditos (Ley 25.413), total y desglosado.**
+ * Pedido del usuario 2026-10-03: *«debe ser un cuadro importante, total y desglosado»*. Lo
+ * computable como pago a cuenta de Ganancias se calcula con FÓRMULA sobre los porcentajes de la
+ * solapa, así si el contador usa otro porcentaje lo cambia en una celda.
+ */
+function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`IMPUESTO A LOS DEBITOS Y CREDITOS BANCARIOS (Ley 25.413) — ejercicio ${etiqueta}`])
+  f.push(["Sale del extracto: cada debito del impuesto es un movimiento propio del banco."])
+  f.push([])
+  f.push(["Mes", ETIQUETA_CONCEPTO.creditos, ETIQUETA_CONCEPTO.debitos, ETIQUETA_CONCEPTO.efectivo, "TOTAL", "Movimientos"])
+  const primera = f.length + 1
+  for (const m of c.porMes) {
+    const n = f.length + 1
+    f.push([m.mes, money(m.creditos), money(m.debitos), money(m.efectivo),
+      conFormula(`SUM(B${n}:D${n})`, money(m.total)),
+      c.mesesSinExtracto.includes(m.mes) ? "SIN EXTRACTO" : m.movimientos])
+  }
+  const ultima = f.length
+  const nT = f.length + 1
+  f.push(["TOTAL",
+    conFormula(`SUM(B${primera}:B${ultima})`, money(c.total.creditos)),
+    conFormula(`SUM(C${primera}:C${ultima})`, money(c.total.debitos)),
+    conFormula(`SUM(D${primera}:D${ultima})`, money(c.total.efectivo)),
+    conFormula(`SUM(E${primera}:E${ultima})`, money(c.total.total)),
+    c.total.movimientos])
+  f.push([])
+  f.push(["COMPUTABLE COMO PAGO A CUENTA DE GANANCIAS (credito impositivo al cierre)"])
+  const nPg = f.length + 1
+  f.push(["% sobre alicuota general (creditos + debitos)", c.pctGeneral])
+  const nPe = f.length + 1
+  f.push(["% sobre alicuota doble (extraccion en efectivo)", c.pctEfectivo])
+  f.push(["Computable", conFormula(`(B${nT}+C${nT})*B${nPg}+D${nT}*B${nPe}`, money(c.computable))])
+  f.push(["No computable (va a gasto)", conFormula(`E${nT}-((B${nT}+C${nT})*B${nPg}+D${nT}*B${nPe})`, money(c.total.total - c.computable))])
+  f.push([])
+  f.push(["Por defecto 33% / 20% (Decreto 409/2018). Una PyME puede computar mas: cambiar el % en la celda."])
+  if (c.mesesSinExtracto.length > 0) {
+    f.push([`ATENCION: ${c.mesesSinExtracto.length} mes(es) sin extracto en la app (${c.mesesSinExtracto.join(", ")}): el impuesto de esos meses NO esta en este total.`])
+  }
+  return f
+}
+
 function hojaDeRetiros(r: RetirosYAportes, etiqueta: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`RETIROS Y APORTES DE LOS SOCIOS — ejercicio ${etiqueta}`])
@@ -1676,6 +1720,8 @@ export function armarWorkbook(
   /** Papeles 07, 08 y 09. Salen del extracto ya parseado y categorizado. */
   bancarios?: DatosDelIndice["bancarios"] & {
     fci?: { fondos: FondoComun[]; total: FondoComun }
+    /** 🧾 El impuesto al cheque, total y desglosado (A-FEAT-1190). */
+    impuestoCheque?: ImpuestoCheque
   },
   /** 👷 El papel de sueldos: el total de A y el total de B (A-FEAT-1216). */
   sueldos?: SueldosDelEjercicio,
@@ -1782,6 +1828,10 @@ export function armarWorkbook(
     }
     hoja(wb, "08 Gastos bancarios",
       hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta))
+    if (bancarios.impuestoCheque) {
+      hoja(wb, "08.1 Impuesto al cheque",
+        hojaDeImpuestoCheque(bancarios.impuestoCheque, libro.ejercicio.etiqueta))
+    }
     hoja(wb, "09 Retiros y aportes",
       hojaDeRetiros(bancarios.retiros, libro.ejercicio.etiqueta))
   }

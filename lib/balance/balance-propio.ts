@@ -268,6 +268,10 @@ export interface DatosDeLosPapeles {
   echeqsCartera?: number | null
   /** La tarjeta: la deuda al cierre y lo que falta para saberla entera. */
   tarjeta?: DeudaTarjeta
+  /** 🧾 El impuesto al cheque del ejercicio: lo computable es crédito al cierre. */
+  impuestoCheque?: { computable: number; total: number; mesesSinExtracto: string[] }
+  /** Anticipos de Ganancias pagados en el ejercicio (cuotas del template «Anticipo Ganancias»). */
+  anticiposGanancias?: { total: number; cuotas: number; detalle: string }
   /** Fondo común: cuotapartes × valor (los pide el sistema) y lo que se movió en el ejercicio. */
   fci?: { cuotapartes: number | null; valorCuotaparte: number | null; suscripciones: number; rescates: number }
 }
@@ -375,6 +379,13 @@ export function propuestaDelSistema(d: DatosDeLosPapeles): { valores: ValorPropu
       else poner("iva_a_pagar", -saldo, det)
     }
   }
+  if (d.impuestoCheque) {
+    poner("impuesto_cheque", d.impuestoCheque.computable,
+      `computable del impuesto al cheque del ejercicio (total pagado ${d.impuestoCheque.total.toFixed(2)}) — papel 08.1`)
+    if (d.impuestoCheque.mesesSinExtracto.length)
+      faltan.push(`Impuesto al cheque: ${d.impuestoCheque.mesesSinExtracto.length} mes(es) sin extracto en la app (${d.impuestoCheque.mesesSinExtracto.join(", ")}) — su parte computable no está`)
+  }
+  if (d.anticiposGanancias) poner("anticipos_ganancias", d.anticiposGanancias.total, d.anticiposGanancias.detalle)
   if (d.echeqsCartera != null) poner("echeqs_cartera", d.echeqsCartera, "saldo del extracto de echeqs de terceros al cierre")
   if (d.tarjeta) {
     poner("tarjetas", d.tarjeta.deuda, `tarjeta: ${d.tarjeta.detalle}`)

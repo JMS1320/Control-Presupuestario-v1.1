@@ -2666,6 +2666,12 @@ cría y de recría valuada a mercado, insumos, granos y sementeras, **echeqs de 
 el **saldo técnico de IVA** arrastrado desde la foto anterior, y la **tarjeta** — cada uno con de dónde
 sale y qué le falta.
 
+- **Impuesto al cheque**: arriba del cuadro celeste está su propio cuadro, mes por mes y separado en
+  *sobre créditos*, *sobre débitos* y *extracción en efectivo*, con el total y lo **computable como
+  pago a cuenta de Ganancias** (33 % y 20 % por defecto). Lo computable va a la foto como crédito. En
+  el Excel es la solapa **08.1**, y ahí el porcentaje se cambia en una celda y recalcula.
+- **Anticipos de Ganancias**: salen de las cuotas pagadas del template «Anticipo Ganancias» del
+  ejercicio.
 - **Fondo común**: el sistema ve la plata que entra y sale, pero no las cuotapartes. Escribí las
   **cuotapartes** y el **valor de la cuotaparte** al cierre en las dos casillas y el valor sale solo.
 - **Tarjeta**: siempre es deuda al cierre (vence al mes siguiente). Si el resumen que cierra después
@@ -2675,8 +2681,8 @@ con el dólar BNA importado a esa fecha.
 
 - En el balance propio aparece la columna **Sistema**, y tu columna **JMS** toma esos valores
   (en celeste e itálica) en los renglones que dejás vacíos. Escribí un número para pisarlo.
-- Lo que el sistema no sabe —anticipos y percepciones de Ganancias, impuesto al cheque, IVA de
-  libre disponibilidad, deudas sociales, impuesto diferido— queda vacío y lo cargás a mano.
+- Lo que el sistema no sabe —percepciones de Ganancias, IVA de libre disponibilidad, deudas
+  sociales, impuesto diferido— queda vacío y lo cargás a mano.
 - Si más adelante volvés a armar los papeles y el sistema dice otra cosa (entró una factura tardía,
   por ejemplo), el cuadro te muestra **qué cambió contra la foto** y no la toca hasta que apretás
   **«Actualizar la versión Sistema de la foto»**.

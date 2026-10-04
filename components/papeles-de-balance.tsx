@@ -32,6 +32,7 @@ import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } fr
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
+import { armarImpuestoCheque, ETIQUETA_CONCEPTO } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
@@ -328,7 +329,13 @@ export function PapelesDeBalance() {
         }
 
         const movFCI = movimientos.filter(esFCI)
+        /**
+         * 🧾 El impuesto al cheque (A-FEAT-1190), total y desglosado. Sólo de los BANCOS: las cajas
+         * no pagan el impuesto, y contarlas haría creer que un mes tiene extracto cuando no.
+         */
+        const movBanco = movimientos.filter(m => !/caja/i.test(m.donde))
         setBancarios({
+          impuestoCheque: armarImpuestoCheque(movBanco, meses),
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           retiros: armarRetirosYAportes(movimientos, meses),
           saldos,
@@ -454,6 +461,9 @@ export function PapelesDeBalance() {
     insumos: hacienda?.insumos.grupos,
     granosNetoFinal: hacienda?.campo.valuacionGranos.netoFinal ?? null,
     sementerasCosto: hacienda ? hacienda.campo.sementeras.costo : null,
+    impuestoCheque: bancarios?.impuestoCheque
+      ? { computable: bancarios.impuestoCheque.computable, total: bancarios.impuestoCheque.total.total, mesesSinExtracto: bancarios.impuestoCheque.mesesSinExtracto }
+      : undefined,
   }), [bancarios, cuentas, valores, hacienda])
   // El IVA del ejercicio para arrastrar el saldo técnico — del libro diario, con signo por NC.
   const ivaDelLibro = useMemo(() => libro
@@ -645,6 +655,46 @@ export function PapelesDeBalance() {
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}
             <HaciendaAlCierre ejercicio={libro.ejercicio} onDatos={setHacienda} />
+
+            {bancarios?.impuestoCheque && (() => {
+              const ic = bancarios.impuestoCheque
+              return (
+                <div className="rounded border p-3 text-xs space-y-2">
+                  <div className="font-semibold text-sm">🧾 Impuesto al cheque (Ley 25.413) — total y desglosado</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead><tr className="border-b text-gray-600">
+                        <th className="text-left">Mes</th>
+                        <th className="text-right">{ETIQUETA_CONCEPTO.creditos}</th>
+                        <th className="text-right">{ETIQUETA_CONCEPTO.debitos}</th>
+                        <th className="text-right">{ETIQUETA_CONCEPTO.efectivo}</th>
+                        <th className="text-right">Total</th>
+                      </tr></thead>
+                      <tbody>
+                        {[...ic.porMes, ic.total].map(m => (
+                          <tr key={m.mes} className={m.mes === "TOTAL" ? "font-semibold border-t" : ""}>
+                            <td>{m.mes}{ic.mesesSinExtracto.includes(m.mes) && <span className="text-amber-700"> — sin extracto</span>}</td>
+                            <td className="text-right">{fmt(m.creditos)}</td>
+                            <td className="text-right">{fmt(m.debitos)}</td>
+                            <td className="text-right">{fmt(m.efectivo)}</td>
+                            <td className="text-right">{fmt(m.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div>
+                    Computable como pago a cuenta de Ganancias (crédito al cierre):{" "}
+                    <strong>${fmt(ic.computable)}</strong>{" "}
+                    <span className="text-gray-500">({Math.round(ic.pctGeneral * 100)} % general · {Math.round(ic.pctEfectivo * 100)} % efectivo — se cambia en el Excel, solapa 08.1)</span>
+                    {" · "}no computable (gasto): ${fmt(ic.total.total - ic.computable)}
+                  </div>
+                  {ic.mesesSinExtracto.length > 0 && (
+                    <div className="text-amber-800">⚠️ {ic.mesesSinExtracto.length} mes(es) sin extracto en la app ({ic.mesesSinExtracto.join(", ")}): su impuesto no está en el total.</div>
+                  )}
+                </div>
+              )
+            })()}
 
             <ProponerFotoBalance empresa={empresa.id} fechaInicio={primerDiaDelEjercicio(libro.ejercicio)}
               fechaCierre={libro.ejercicio.fechaCierre} datos={datosParaLaFoto}

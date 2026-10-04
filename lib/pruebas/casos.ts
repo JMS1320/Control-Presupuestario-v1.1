@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { armarImpuestoCheque } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
@@ -5657,6 +5658,33 @@ export function correrCasos(): Resultado[] {
       "IVA a pagar 60 · FCI 25.500", `IVA a pagar ${v2.find(x => x.renglon === "iva_a_pagar")?.importe} · FCI ${v2.find(x => x.renglon === "fci")?.importe}`,
       v2.find(x => x.renglon === "iva_a_pagar")?.importe === 60 && v2.find(x => x.renglon === "fci")?.importe === 25500
         && !v2.some(x => x.renglon === "iva_saldo_tecnico"), "A-FEAT-1190")
+  }
+
+
+  // ══ Impuesto al cheque (Ley 25.413), total y desglosado (A-FEAT-1190) ═══════════════════════
+  {
+    // Las tres descripciones reales del Galicia, más un reintegro y un movimiento cualquiera.
+    const movs = [
+      { fecha: "2026-02-04", descripcion: "Imp. Cre. Ley 25413", categ: "Debitos / Creditos", debitos: 1000, creditos: 0 },
+      { fecha: "2026-02-05", descripcion: "Imp. Deb. Ley 25413 Gral.", categ: "Debitos / Creditos", debitos: 600, creditos: 0 },
+      { fecha: "2026-03-18", descripcion: "Impuesto Deb.ley 25413 Extrac. Efect.", categ: "Debitos / Creditos", debitos: 400, creditos: 0 },
+      { fecha: "2026-03-20", descripcion: "Imp. Deb. Ley 25413 Gral.", categ: "Debitos / Creditos", debitos: 0, creditos: 100 },
+      { fecha: "2026-03-21", descripcion: "Transferencia a terceros", categ: "PROVEEDORES", debitos: 99999, creditos: 0 },
+    ]
+    const ic = armarImpuestoCheque(movs, ["2026-01", "2026-02", "2026-03"])
+    chequear("Impuesto al cheque", "Desglosa créditos / débitos / efectivo, el reintegro resta, lo demás no entra",
+      "créd 1000 · déb 500 · efect 400 · total 1900", `créd ${ic.total.creditos} · déb ${ic.total.debitos} · efect ${ic.total.efectivo} · total ${ic.total.total}`,
+      ic.total.creditos === 1000 && ic.total.debitos === 500 && ic.total.efectivo === 400 && ic.total.total === 1900, "A-FEAT-1190")
+    chequear("Impuesto al cheque", "Computable: 33 % de créditos + débitos y 20 % del efectivo; enero sin extracto se avisa",
+      "575 · sin extracto 2026-01", `${ic.computable} · sin extracto ${ic.mesesSinExtracto.join(",")}`,
+      ic.computable === 575 && ic.mesesSinExtracto.join(",") === "2026-01", "A-FEAT-1190")
+    const { valores: v, faltan } = propuestaDelSistema({
+      impuestoCheque: { computable: ic.computable, total: ic.total.total, mesesSinExtracto: ic.mesesSinExtracto },
+      anticiposGanancias: { total: 0, cuotas: 7, detalle: "x" },
+    })
+    chequear("Impuesto al cheque", "Lo computable va a la foto como crédito; el mes sin extracto se pide; anticipos en 0 no se proponen",
+      "impuesto_cheque 575 · 1 falta · sin anticipos", `impuesto_cheque ${v.find(x => x.renglon === "impuesto_cheque")?.importe} · ${faltan.length} falta · ${v.some(x => x.renglon === "anticipos_ganancias") ? "con" : "sin"} anticipos`,
+      v.find(x => x.renglon === "impuesto_cheque")?.importe === 575 && faltan.length === 1 && !v.some(x => x.renglon === "anticipos_ganancias"), "A-FEAT-1190")
   }
 
   return r

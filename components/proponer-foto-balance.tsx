@@ -86,6 +86,19 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
             .map(f => ({ fecha: f.fecha, importe: (Number(f.debitos) || 0) - (Number(f.creditos) || 0), cierreResumen: f.fecha_cierre ?? null })),
           fechaCierre)
       } catch { fallas.push("tarjeta") }
+      try {
+        // Anticipos de Ganancias: las cuotas pagadas en el ejercicio del template de la empresa.
+        const { data, error } = await supabase.from("cuotas_egresos_sin_factura")
+          .select("monto, estado, fecha_estimada, egreso:egresos_sin_factura!inner(nombre_referencia, responsable)")
+          .gte("fecha_estimada", fechaInicio).lte("fecha_estimada", fechaCierre)
+          .ilike("egreso.nombre_referencia", "%anticipo%ganancia%").eq("egreso.responsable", empresa)
+        if (error) throw error
+        const pagadas = ((data ?? []) as any[]).filter(c => ["pagado", "conciliado", "debitado"].includes(String(c.estado)))
+        e.anticiposGanancias = {
+          total: suma(pagadas, c => c.monto), cuotas: pagadas.length,
+          detalle: `anticipos de Ganancias pagados en el ejercicio: ${pagadas.length} cuota(s) del template «Anticipo Ganancias ${empresa}»`,
+        }
+      } catch { fallas.push("anticipos de Ganancias") }
       // El saldo técnico de IVA al inicio sale de la foto ANTERIOR (contador primero, si no JMS).
       let tecnicoInicio: number | null = null
       const { data: ant } = await supabase.from("balance_fotos").select("id")
@@ -204,7 +217,7 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
           )}
           {noLeidas.length > 0 && <p className="text-amber-800">No se pudieron leer: {noLeidas.join(", ")}.</p>}
           <p className="text-gray-600">
-            No se proponen (el sistema no los sabe; van a mano): anticipos y percepciones de Ganancias, impuesto al cheque, IVA de libre disponibilidad, deudas sociales, impuesto diferido.
+            No se proponen (el sistema no los sabe; van a mano): percepciones de Ganancias, IVA de libre disponibilidad, deudas sociales, impuesto diferido.
           </p>
           {yaGuardada && cambios.length === 0 ? (
             <p className="text-emerald-700">✓ La foto ya tiene exactamente estos valores del sistema.</p>
