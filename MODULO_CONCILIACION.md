@@ -141,6 +141,16 @@ if (cf.debitos === movimiento.debitos) {
 
 **Importante:** el match es por monto exacto contra el AGREGADO del Cash Flow, no contra una factura individual.
 
+> ⚠️ **Cambió 2026-10-03 (A-DEC-1002) — un solo motor para todas las cuentas, también la TARJETA.**
+> - El Cash Flow deja afuera lo pagado con tarjeta (estado `credito`), así que la tarjeta tenía un
+>   **buscador propio de facturas** antes del motor. Ya no: para una cuenta `tipo = 'tarjeta'` el motor
+>   busca **primero** en lo pagado con tarjeta de su empresa (`cargarPagadoConTarjeta` en
+>   `useMultiCashFlowData`: facturas y cuotas en `credito`) y **después** en el resto del Cash Flow.
+> - **Lo usado en una corrida no se ofrece otra vez** (`usadosEnCorrida`): antes dos movimientos del
+>   mismo importe podían conciliarse contra la misma fila. Vale para todas las cuentas.
+> - El pago del resumen se ata al débito de la cuenta corriente por `nro_resumen` — ver
+>   `lib/conciliacion/pago-tarjeta.ts`.
+
 ### Fase 2: Reglas de Conciliación
 
 Si no matcheó en Fase 1, aplica las reglas de `reglas_conciliacion` en orden:

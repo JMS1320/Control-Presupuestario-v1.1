@@ -12795,6 +12795,16 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-03 · EL PAGO DE LA TARJETA ATADO A SU RESUMEN (`nro_resumen` en los extractos) — A-DEC-1002
+
+```sql
+ALTER TABLE public.msa_galicia    ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE public.pam_galicia    ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE public.pam_galicia_cc ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE ma.ma_galicia         ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+```
+Script `scripts/77-pago-de-resumen-tarjeta.sql` (deshacer: `-deshacer.sql`). Avisado a Javier antes. Verificado con `EXPLAIN UPDATE` como `authenticated`.
+
 ### 2026-10-03 · EL BALANCE PROPIO (`public.balance_fotos` + `public.balance_foto_valores`) — A-FEAT-1190
 
 Script `scripts/75-balance-propio.sql` (deshacer: `75-balance-propio-deshacer.sql`, borra las fotos): dos tablas nuevas — `balance_fotos` (una por `empresa` + `fecha_cierre`, único; `tc`, `tc_fuente`, `notas`) y `balance_foto_valores` (`foto_id` FK cascade, `renglon`, `version` ∈ contador/jms/sistema/senasa, `importe` en pesos, `origen` ∈ manual/planilla/sistema, `valor_sistema`, `detalle`; único `foto_id+renglon+version`). RLS `ver_segun_permiso`/`escribir_segun_permiso`; `revoke` a `anon`; registradas en `recurso_tablas` con recurso `extracto` y **`restringe_lectura = true`** (el rol `contable` no las ve — verificado: admin ve 75 filas, contable 0). Datos: `scripts/76-balance-propio-carga-msa-2025.sql` (fotos MSA 30/06/24 y 30/06/25). Avisado a Javier antes.

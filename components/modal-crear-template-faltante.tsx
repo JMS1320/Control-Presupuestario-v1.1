@@ -14,7 +14,13 @@ interface Props {
   abierto: boolean
   categ: string
   empresaDestino: string
-  motivo: "activar_regla" | "guardar_regla"
+  /**
+   * `conciliacion` (A-DEC-1002, 2026-10-03): se crea desde el modal de asignar un movimiento, sin ir a
+   * Templates — *«desde la propia conciliación a mano»* (usuario). Ahí no hay regla que quede inactiva.
+   */
+  motivo: "activar_regla" | "guardar_regla" | "conciliacion"
+  /** Nombre que se propone (p. ej. la descripción del movimiento) si no hay otro template de esa cuenta. */
+  nombreSugerido?: string
   onCerrar: () => void
   onCreado: (templateId: string) => void
   onCancelar: () => void   // usuario decide NO crear → regla queda inactiva
@@ -34,6 +40,7 @@ export function ModalCrearTemplateFaltante({
   categ,
   empresaDestino,
   motivo,
+  nombreSugerido,
   onCerrar,
   onCreado,
   onCancelar,
@@ -75,7 +82,7 @@ export function ModalCrearTemplateFaltante({
             tipo_template: data.tipo_template || "abierto",
           }
         : {
-            nombre_referencia: categ,
+            nombre_referencia: nombreSugerido || categ,
             cuenta_agrupadora: null,
             centro_costo: null,
             solo_conciliacion: false,
@@ -83,14 +90,16 @@ export function ModalCrearTemplateFaltante({
             tipo_template: "abierto",
           }
       setDefaults(d)
-      setNombreReferencia(d.nombre_referencia)
+      // Desde la conciliación el nombre es el del movimiento (CHUBB SEGUROS), no el de otro template
+      // que comparta la cuenta (sería «Seguro Accidentes de Trabajo»): se heredan sólo los defaults.
+      setNombreReferencia(motivo === "conciliacion" && nombreSugerido ? nombreSugerido : d.nombre_referencia)
       setCuentaAgrupadora(d.cuenta_agrupadora || "")
       setCentroCosto(d.centro_costo || "")
       setCargandoDefaults(false)
     }
 
     cargar()
-  }, [abierto, categ])
+  }, [abierto, categ, motivo, nombreSugerido])
 
   const crearTemplate = async () => {
     if (!defaults) return
@@ -162,7 +171,7 @@ export function ModalCrearTemplateFaltante({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-600" />
-            Falta template para esta regla
+            {motivo === "conciliacion" ? "Crear template desde la conciliación" : "Falta template para esta regla"}
           </DialogTitle>
         </DialogHeader>
 
@@ -174,7 +183,10 @@ export function ModalCrearTemplateFaltante({
 
         <Alert>
           <AlertDescription>
-            {motivo === "activar_regla" ? (
+            {motivo === "conciliacion" ? (
+              <>Se crea un template <strong>abierto</strong> de la cuenta <strong>{categ}</strong> para <strong>{empresaDestino}</strong>,
+              y el movimiento se asigna a él con su importe y su fecha. Después queda en Templates como cualquier otro.</>
+            ) : motivo === "activar_regla" ? (
               <>Para activar esta regla hace falta un template <strong>{categ}</strong> con responsable{" "}
               <strong>{empresaDestino}</strong>. Si no lo creás ahora, la regla queda <strong>inactiva</strong>.</>
             ) : (
@@ -238,7 +250,7 @@ export function ModalCrearTemplateFaltante({
 
         <DialogFooter>
           <Button variant="outline" onClick={onCancelar} disabled={guardando}>
-            No crear (regla queda inactiva)
+            {motivo === "conciliacion" ? "Cancelar" : "No crear (regla queda inactiva)"}
           </Button>
           <Button onClick={crearTemplate} disabled={guardando || cargandoDefaults} className="bg-blue-600 hover:bg-blue-700">
             {guardando ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}

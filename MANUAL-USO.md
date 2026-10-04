@@ -44,6 +44,7 @@
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
 - [📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*](#reportes-balance-propio-activo-menos-pasivo-2026-10-03)
+- [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
@@ -2638,6 +2639,31 @@ Al aplicar, se escribe en la cuota del template **sólo el monto y el vencimient
 app cuando quieras verificar un importe, sin salir a buscar el archivo.
 
 ⚠️ Sin probar todavía → A-TEST-1167
+
+## 💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*
+
+En **Extracto**, elegí la tarjeta (abajo, *Tarjetas de Crédito*). Arriba aparece un renglón por
+**resumen**, con su control y tres datos: **total** del resumen contra la **suma** de sus consumos,
+cuántos están **conciliados** (por ejemplo *conciliado 3/17*) y el estado del **pago**.
+
+1. **Importar** el PDF del resumen (como siempre). Importar no concilia: es otra acción.
+2. **Conciliar (N)** en el renglón del resumen: corre **el mismo motor que la cuenta corriente** —
+   primero contra lo que marcaste como pagado con tarjeta (facturas y cuotas en *crédito*), después
+   contra el resto: facturas, templates, anticipos, sueldos y reglas.
+3. **Tocá la fecha** del resumen y la tabla de abajo muestra **sólo ese resumen**: lo que quedó lo
+   asignás a mano con el mismo modal de siempre.
+4. **¿No está el template?** En el modal de asignar, solapa **Template**, apretá **+ Crear uno acá**:
+   elegís la cuenta del plan, confirmás el nombre (viene el del movimiento, por ejemplo *CHUBB
+   SEGUROS*) y queda creado y elegido. Vale igual para la cuenta corriente y las cajas.
+5. **Vincular pago**: si el débito «Pago Visa Empresa» de la cuenta corriente coincide con el total
+   del resumen, el renglón ofrece **Vincular pago**. Al apretarlo, el débito queda atado a ese resumen
+   y el «SU PAGO» del resumen siguiente se concilia contra él.
+
+**El estado del pago** dice: *✓ pagado* (total = débito = SU PAGO del siguiente), *⚠ pagado con
+diferencia* (pasando el mouse ves cuánto y contra qué), *pago encontrado — vincular*, *⚠ vencido, sin
+pago* o *por vencer*.
+
+⚠️ Sin probar todavía → A-TEST-1183
 
 ## 📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*
 

@@ -1,6 +1,8 @@
 "use client"
 
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
+import { hoyArgentina } from "@/lib/fechas"
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
@@ -22,6 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -417,6 +421,14 @@ export function VistaExtractoBancario() {
   const [sueldosParaAsignar, setSueldosParaAsignar] = useState<any[]>([])
   const [gruposParaAsignar, setGruposParaAsignar] = useState<any[]>([])
   const [templateElegido, setTemplateElegido] = useState<any>(null)
+  /**
+   * 🧩 A-DEC-1002 — crear el template DESDE la conciliación, sin ir a Templates. Primero se elige la
+   * cuenta del plan (la regla 🏷️: un template no se crea con una categoría que no existe), después se
+   * confirma en el mismo modal que usan las reglas.
+   */
+  const [crearTemplateAbierto, setCrearTemplateAbierto] = useState(false)
+  const [cuentaNuevoTemplate, setCuentaNuevoTemplate] = useState<string>('')
+  const [modalNuevoTemplate, setModalNuevoTemplate] = useState(false)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
   const [sueldoElegido, setSueldoElegido] = useState<any>(null)
   const [grupoElegido, setGrupoElegido] = useState<any>(null)
@@ -455,6 +467,31 @@ export function VistaExtractoBancario() {
   // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
   const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
+
+  /**
+   * 💳 A-DEC-1002 — la tarjeta por RESUMEN: el lote que se mira (filtra la tabla de abajo, que es la
+   * misma que la de la cuenta corriente) y los débitos de la cuenta corriente que pagan cada resumen.
+   */
+  const [resumenFiltro, setResumenFiltro] = useState<string | null>(null)
+  const [debitosTarjeta, setDebitosTarjeta] = useState<DebitoCtaCte[]>([])
+  const [vinculandoNr, setVinculandoNr] = useState<string | null>(null)
+  useEffect(() => { setResumenFiltro(null) }, [tablaActiva, schemaActivo])
+  const cargarDebitosTarjeta = useCallback(async () => {
+    if (cuentaActivaObj?.tipo !== 'tarjeta') { setDebitosTarjeta([]); return }
+    const bancos = CUENTAS_BANCARIAS.filter(c => c.empresa === cuentaActivaObj.empresa && (c.tipo ?? 'banco') === 'banco')
+    const todos: DebitoCtaCte[] = []
+    for (const b of bancos) {
+      const cli = b.schema_bd && b.schema_bd !== 'public' ? supabase.schema(b.schema_bd) : supabase
+      const { data, error } = await cli.from(b.tabla_bd)
+        .select('id, fecha, debitos, descripcion, nro_resumen')
+        .gt('debitos', 0)
+        .or('nro_resumen.not.is.null,categ.ilike.%tarjeta%,descripcion.ilike.%visa%')
+      if (error) { console.error('No se pudieron leer los pagos de tarjeta en', b.tabla_bd, error); continue }
+      for (const d of (data || []) as any[]) todos.push({ id: d.id, tabla: `${b.schema_bd || 'public'}.${b.tabla_bd}`, fecha: d.fecha, debitos: Number(d.debitos) || 0, nro_resumen: d.nro_resumen ?? null, descripcion: d.descripcion ?? null })
+    }
+    setDebitosTarjeta(todos)
+  }, [cuentaActivaObj?.tipo, cuentaActivaObj?.empresa])
+  useEffect(() => { void cargarDebitosTarjeta() }, [cargarDebitosTarjeta])
 
   /**
    * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
@@ -656,7 +693,8 @@ ${texto.trim()}` : texto.trim()
 
   const movimientosVisibles = useMemo(() => {
     // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
-    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen')
+    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen'
+      && (!resumenFiltro || (m as any).nro_resumen === resumenFiltro))
     let lista = categsFiltro
       ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
       : base
@@ -707,7 +745,7 @@ ${texto.trim()}` : texto.trim()
     }
 
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -901,7 +939,42 @@ ${texto.trim()}` : texto.trim()
     recargar()
   }
 
-  // Conciliar UN resumen de tarjeta: (1) auto-match contra facturas crédito por monto, (2) motor de reglas con el resto
+  /**
+   * 💳 **Vincular el pago de un resumen** (A-DEC-1002): el débito de la cuenta corriente queda con el
+   * `nro_resumen`, y el «SU PAGO» del resumen siguiente se concilia contra ese mismo débito. Lo escribe
+   * el usuario con el botón; si los importes no coinciden igual se vincula y el panel lo avisa.
+   */
+  const vincularPagoResumen = async (nr: string, cierre: string, debito: DebitoCtaCte, suPagoIds: string[]) => {
+    setVinculandoNr(nr)
+    try {
+      const [sch, tabla] = debito.tabla.split('.')
+      const cli = sch && sch !== 'public' ? supabase.schema(sch) : supabase
+      const etiqueta = `Resumen tarjeta cierre ${new Date(cierre + 'T12:00:00').toLocaleDateString('es-AR')}`
+      const { data: actual } = await cli.from(tabla).select('comprobantes_pagados, categ').eq('id', debito.id).maybeSingle()
+      const { error } = await cli.from(tabla)
+        .update({ nro_resumen: nr, ...((actual as any)?.comprobantes_pagados ? {} : { comprobantes_pagados: etiqueta }) })
+        .eq('id', debito.id)
+      if (error) throw error
+      if (suPagoIds.length) {
+        const upd = {
+          estado: 'conciliado',
+          categ: (actual as any)?.categ || null,
+          proveedor_nombre: 'Pago desde cuenta corriente',
+          comprobantes_pagados: etiqueta,
+          detalle: null,
+        }
+        const { error: e2 } = await dbCuenta().from(tablaActiva).update(upd).in('id', suPagoIds)
+        if (e2) throw e2
+        suPagoIds.forEach(id => actualizarLocal(id, upd))
+      }
+      toast.success(`Pago vinculado al resumen del ${new Date(cierre + 'T12:00:00').toLocaleDateString('es-AR')}`)
+      await cargarDebitosTarjeta()
+    } catch (err) {
+      toast.error('No se pudo vincular el pago: ' + (err as Error).message)
+    } finally { setVinculandoNr(null) }
+  }
+
+  // Conciliar UN resumen de tarjeta con el motor de la cuenta corriente
   const conciliarResumen = async (nr: string, cierre?: string) => {
     if (!cuentaSeleccionada) return
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
@@ -4067,16 +4140,52 @@ ${marca}` : marca
                   return { nr, total, viva, dif, movs: movsOrd, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
                 }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
                 if (lista.length === 0) return null
+                // 💳 El pago de cada resumen y su control de tres caminos (A-DEC-1002).
+                const pagos = pagosDeResumenes(
+                  lista.filter(x => x.total != null && x.cierre).map(x => ({
+                    nr: x.nr, cierre: String(x.cierre).slice(0, 10),
+                    vencimiento: (grupos.get(x.nr)?.resumen?.fecha_vencimiento as string | null) ?? null,
+                    total: x.total as number,
+                  })),
+                  debitosTarjeta,
+                  (movimientos as any[]).filter(m => m.tipo_fila === 'pago').map(m => ({ id: m.id, nr: m.nro_resumen, creditos: Number(m.creditos) || 0, estado: m.estado })),
+                  hoyArgentina(),
+                )
                 return (
                   <div className="mb-4 space-y-1">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control)</p>
+                    <TestsDelProceso proceso="extracto/tarjeta" pantalla="extracto" />
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control · conciliado · pago)</p>
+                    {resumenFiltro && (
+                      <p className="text-xs text-blue-700">
+                        La tabla muestra sólo el resumen elegido. <button type="button" className="underline" onClick={() => setResumenFiltro(null)}>Ver todos</button>
+                      </p>
+                    )}
                     {lista.map(item => {
                       const ok = item.dif != null && Math.abs(item.dif) < 0.5
                       return (
                         <div key={item.nr} className="border rounded flex items-center justify-between px-3 py-2 text-sm">
                           <span className="flex items-center gap-2">
-                            <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
+                            <button type="button" title="Ver sólo los movimientos de este resumen en la tabla de abajo"
+                              onClick={() => setResumenFiltro(f => f === item.nr ? null : item.nr)}
+                              className={`font-medium underline-offset-2 hover:underline ${resumenFiltro === item.nr ? 'text-blue-700 underline' : ''}`}>
+                              {item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}
+                            </button>
                             <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
+                            {(() => {
+                              const consumos = item.movs.filter((m: any) => m.tipo_fila !== 'pago')
+                              const listos = consumos.filter((m: any) => m.estado === 'conciliado').length
+                              return <span className={`text-xs ${listos === consumos.length ? 'text-green-600' : 'text-gray-500'}`}>conciliado {listos}/{consumos.length}</span>
+                            })()}
+                            {(() => {
+                              const p = pagos.get(item.nr)
+                              if (!p) return null
+                              const color = p.estado === 'pagado' ? 'text-green-600' : (p.estado === 'con_diferencia' || p.estado === 'vencido_sin_pago') ? 'text-red-600' : p.estado === 'propuesto' ? 'text-blue-700' : 'text-gray-500'
+                              return (
+                                <span className={`text-xs ${color}`} title={p.avisos.join('\n') || undefined}>
+                                  · {ETIQUETA_ESTADO_PAGO[p.estado]}{p.avisos.length > 0 && ` (${p.avisos.length})`}
+                                </span>
+                              )
+                            })()}
                           </span>
                           <span className="flex items-center gap-3 text-xs">
                             <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
@@ -4086,6 +4195,19 @@ ${marca}` : marca
                               : ok
                                 ? <span className="text-green-600 font-medium">✓ control OK</span>
                                 : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                            {(() => {
+                              const p = pagos.get(item.nr)
+                              if (!p?.propuesto) return null
+                              const d = p.propuesto
+                              return (
+                                <button type="button" disabled={vinculandoNr !== null}
+                                  title={`Débito del ${new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(d.debitos)}`}
+                                  onClick={() => vincularPagoResumen(item.nr, String(item.cierre).slice(0, 10), d, p.suPagos.map(x => x.id))}
+                                  className="px-2 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">
+                                  {vinculandoNr === item.nr ? 'Vinculando…' : 'Vincular pago'}
+                                </button>
+                              )
+                            })()}
                             {item.pendientes > 0 && (
                               <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
                                 onClick={() => conciliarResumen(item.nr, item.cierre)}
@@ -5197,6 +5319,51 @@ ${marca}` : marca
 
             {/* Tab Template */}
             <TabsContent value="template" className="space-y-3 mt-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">¿No está el template?</span>
+                <button type="button" className="text-blue-700 underline" onClick={() => setCrearTemplateAbierto(v => !v)}>
+                  {crearTemplateAbierto ? 'Cerrar' : '+ Crear uno acá'}
+                </button>
+              </div>
+              {crearTemplateAbierto && (
+                <div className="rounded border border-blue-200 bg-blue-50 p-2 space-y-2 text-xs">
+                  <div>Elegí la <strong>cuenta contable</strong> del template nuevo (tiene que existir en el plan de cuentas):</div>
+                  <SelectorCuentaContable
+                    value={cuentaNuevoTemplate}
+                    onSelect={(c) => setCuentaNuevoTemplate(c?.categ || '')}
+                    autoFocus={false}
+                    mostrarSinAsignar={false}
+                    className="w-full"
+                  />
+                  <Button size="sm" disabled={!cuentaNuevoTemplate} onClick={() => setModalNuevoTemplate(true)}>
+                    Seguir con «{cuentaNuevoTemplate || '…'}»
+                  </Button>
+                </div>
+              )}
+              <ModalCrearTemplateFaltante
+                abierto={modalNuevoTemplate}
+                categ={cuentaNuevoTemplate}
+                empresaDestino={cuentaActivaObj?.empresa || 'MSA'}
+                motivo="conciliacion"
+                nombreSugerido={(movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim() || undefined}
+                onCerrar={() => setModalNuevoTemplate(false)}
+                onCancelar={() => setModalNuevoTemplate(false)}
+                onCreado={async (templateId) => {
+                  setModalNuevoTemplate(false)
+                  setCrearTemplateAbierto(false)
+                  setCuentaNuevoTemplate('')
+                  const { data } = await supabase
+                    .from('egresos_sin_factura')
+                    .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
+                    .eq('activo', true)
+                    .order('cuenta_agrupadora')
+                    .order('nombre_referencia')
+                  setTemplatesParaAsignar(data || [])
+                  const nuevo = (data || []).find((t: any) => t.id === templateId)
+                  if (nuevo) { setTemplateElegido(nuevo); setCuotaElegida(null); setCuotasExistentes([]); setBusquedaAsignarTemplate(nuevo.nombre_referencia) }
+                  toast.success('Template creado. Revisá y confirmá la asignación.')
+                }}
+              />
               <Input
                 placeholder="Buscar template por nombre o agrupadora..."
                 value={busquedaAsignarTemplate}

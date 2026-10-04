@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
@@ -5705,6 +5706,35 @@ export function correrCasos(): Resultado[] {
     chequear("Impuesto al cheque", "Lo computable va a la foto como crédito; el mes sin extracto se pide; anticipos en 0 no se proponen",
       "impuesto_cheque 575 · 1 falta · sin anticipos", `impuesto_cheque ${v.find(x => x.renglon === "impuesto_cheque")?.importe} · ${faltan.length} falta · ${v.some(x => x.renglon === "anticipos_ganancias") ? "con" : "sin"} anticipos`,
       v.find(x => x.renglon === "impuesto_cheque")?.importe === 575 && faltan.length === 1 && !v.some(x => x.renglon === "anticipos_ganancias"), "A-FEAT-1190")
+  }
+
+
+  // ══ El pago de cada resumen de tarjeta (A-DEC-1002) — con los números reales de MSA ════════
+  {
+    const res = [
+      { nr: "R04", cierre: "2026-04-30", vencimiento: "2026-05-11", total: 2030886.25 },
+      { nr: "R05", cierre: "2026-05-28", vencimiento: "2026-06-08", total: 2047532.73 },
+    ]
+    const deb = [
+      { id: "d1", tabla: "public.msa_galicia", fecha: "2026-05-11", debitos: 2030886.25, nro_resumen: null, descripcion: "Pago Visa Empresa" },
+      { id: "d2", tabla: "public.msa_galicia", fecha: "2026-06-08", debitos: 2047532.73, nro_resumen: null, descripcion: "Pago Visa Empresa" },
+    ]
+    const su = [{ id: "s1", nr: "R05", creditos: 2030886.25, estado: "pendiente" }]
+    const p1 = pagosDeResumenes(res, deb, su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Sin vincular: cada resumen encuentra SU débito (por importe y fecha) y lo propone",
+      "R04→d1 · R05→d2", `R04→${p1.get("R04")?.propuesto?.id} · R05→${p1.get("R05")?.propuesto?.id}`,
+      p1.get("R04")?.estado === "propuesto" && p1.get("R04")?.propuesto?.id === "d1" && p1.get("R05")?.propuesto?.id === "d2", "A-DEC-1002")
+    const p2 = pagosDeResumenes(res, deb.map(d => d.id === "d1" ? { ...d, nro_resumen: "R04" } : d), su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Vinculado: total del resumen = débito = SU PAGO del siguiente → pagado, sin avisos",
+      "pagado · 0 avisos", `${p2.get("R04")?.estado} · ${p2.get("R04")?.avisos.length} avisos`,
+      p2.get("R04")?.estado === "pagado" && p2.get("R04")?.avisos.length === 0, "A-DEC-1002")
+    const p3 = pagosDeResumenes(res, deb.map(d => d.id === "d1" ? { ...d, nro_resumen: "R04", debitos: 2000000 } : d), su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Pagado de menos: se vincula igual y AVISA las dos diferencias (contra el total y contra el SU PAGO)",
+      "con_diferencia · 2 avisos", `${p3.get("R04")?.estado} · ${p3.get("R04")?.avisos.length} avisos`,
+      p3.get("R04")?.estado === "con_diferencia" && p3.get("R04")?.avisos.length === 2, "A-DEC-1002")
+    const p4 = pagosDeResumenes([...res, { nr: "R06", cierre: "2026-06-25", vencimiento: "2026-07-06", total: 1900000 }], deb, su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Un resumen vencido sin débito en la cuenta corriente se marca y se dice",
+      "vencido_sin_pago", String(p4.get("R06")?.estado), p4.get("R06")?.estado === "vencido_sin_pago" && (p4.get("R06")?.avisos.length ?? 0) === 1, "A-DEC-1002")
   }
 
   return r
