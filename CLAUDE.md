@@ -772,6 +772,30 @@ tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a 
 variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
 está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
 dónde caen los commits**.*
+### 🌙 TRABAJAR SIN SUPERVISIÓN — el acuerdo para una tanda (REGLA)
+*Aprobada por el usuario 2026-10-04 ([A-DEC-1003](PENDIENTES.md#a-dec-1003)): **«¿es posible que
+trabajes sobre varios pendientes con una indicación clara mía pero sin mi supervisión? Para que
+funcione no me debés preguntar cosas mientras… trabajar en una sub rama por posibles errores»**.*
+
+> **El usuario da la lista; Claude la resuelve sin preguntar, en una rama aparte, sin tocar nada
+> irreversible, y deja escrito todo lo que decidió solo.**
+
+1. **La lista la da él**, con IDs y en orden. Sólo eso se toca; un hallazgo nuevo se anota en
+   `PENDIENTES.md` y no se desarrolla (§ 🚦).
+2. **Una sub-rama por tanda** (`jms/tanda-AAAA-MM-DD`) que **no se mergea** hasta que él la revise.
+3. **Nunca, sin él**: escribir datos reales, cambiar estructura de la base, RLS o permisos, mergear,
+   borrar. Si un pendiente lo necesita, **se salta y se escribe por qué**.
+4. **Una duda no frena la tanda**: se elige lo más conservador y reversible, y la decisión queda
+   anotada en el pendiente para que la confirme. Si la duda cambia el resultado, ese pendiente
+   **queda para después**.
+5. **Cada pendiente termina igual**: casos en `npm run probar`, `type-check:diff` y build en verde,
+   commit propio, y su `A-TEST` con *«Qué probar vos»*.
+6. **Al volver**: resumen de lo hecho, lo saltado con su motivo, y la guía de pruebas actualizada.
+
+*Motivo: el cuello de botella es el tiempo del usuario. Si cada duda lo espera, la tanda no avanza;
+si avanza sin reglas, lo que vuelve no se puede revisar. Las dos cosas se resuelven separando lo
+reversible (se hace y se anota) de lo irreversible (se salta).*
+
 ### 📝 Una nota de la app se CIERRA en el mismo momento en que se procesa (REGLA)
 *Pedida por el usuario 2026-10-04, al aparecer **38 notas sin cerrar** (del 04/09 al 29/09) — una de
 ellas marcada «urgente para el 1/10», que se leyó el 4/10: **«claramente hay que regularizar el
