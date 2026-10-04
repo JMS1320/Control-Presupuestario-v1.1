@@ -1285,7 +1285,7 @@ function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string): unknown[][] 
   f.push(["Computable", conFormula(`(B${nT}+C${nT})*B${nPg}+D${nT}*B${nPe}`, money(c.computable))])
   f.push(["No computable (va a gasto)", conFormula(`E${nT}-((B${nT}+C${nT})*B${nPg}+D${nT}*B${nPe})`, money(c.total.total - c.computable))])
   f.push([])
-  f.push(["Por defecto 33% / 20% (Decreto 409/2018). Una PyME puede computar mas: cambiar el % en la celda."])
+  f.push(["MSA computa el 100% por su categoria de empresa; el resto, 33% / 20% (Decreto 409/2018). Se cambia en la celda."])
   if (c.mesesSinExtracto.length > 0) {
     f.push([`ATENCION: ${c.mesesSinExtracto.length} mes(es) sin extracto en la app (${c.mesesSinExtracto.join(", ")}): el impuesto de esos meses NO esta en este total.`])
   }

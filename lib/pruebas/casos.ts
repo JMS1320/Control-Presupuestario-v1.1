@@ -38,7 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
-import { armarImpuestoCheque } from "@/lib/balance/impuesto-cheque"
+import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
@@ -5671,7 +5671,10 @@ export function correrCasos(): Resultado[] {
       { fecha: "2026-03-20", descripcion: "Imp. Deb. Ley 25413 Gral.", categ: "Debitos / Creditos", debitos: 0, creditos: 100 },
       { fecha: "2026-03-21", descripcion: "Transferencia a terceros", categ: "PROVEEDORES", debitos: 99999, creditos: 0 },
     ]
-    const ic = armarImpuestoCheque(movs, ["2026-01", "2026-02", "2026-03"])
+    const ic = armarImpuestoCheque(movs, ["2026-01", "2026-02", "2026-03"], pctComputable("MA").general, pctComputable("MA").efectivo)
+    const icMsa = armarImpuestoCheque(movs, ["2026-01", "2026-02", "2026-03"], pctComputable("MSA").general, pctComputable("MSA").efectivo)
+    chequear("Impuesto al cheque", "MSA computa el 100 % (su categoría de empresa): computable = todo lo pagado",
+      "1900", String(icMsa.computable), icMsa.computable === 1900 && icMsa.computable === icMsa.total.total, "A-FEAT-1190")
     chequear("Impuesto al cheque", "Desglosa créditos / débitos / efectivo, el reintegro resta, lo demás no entra",
       "créd 1000 · déb 500 · efect 400 · total 1900", `créd ${ic.total.creditos} · déb ${ic.total.debitos} · efect ${ic.total.efectivo} · total ${ic.total.total}`,
       ic.total.creditos === 1000 && ic.total.debitos === 500 && ic.total.efectivo === 400 && ic.total.total === 1900, "A-FEAT-1190")

@@ -13,6 +13,9 @@
  * débitos) y **20 %** de lo pagado a la alícuota doble (extracción en efectivo). Los porcentajes son
  * **editables**: una PyME puede computar más, y eso lo sabe el usuario, no el sistema.
  *
+ * ⚠️ **MSA computa el 100 %** (usuario, 2026-10-03: *«nosotros nos tomamos el 100 % del impuesto al
+ * cheque por nuestra categoría de empresa»*). Va en `PCT_COMPUTABLE_POR_EMPRESA`.
+ *
  * Lógica pura, probada en `lib/pruebas/casos.ts`.
  */
 
@@ -31,6 +34,12 @@ export const ETIQUETA_CONCEPTO: Record<ConceptoCheque, string> = {
   debitos: "Sobre débitos (general)",
   efectivo: "Extracción en efectivo (alícuota doble)",
 }
+
+/** Lo computable por empresa: general (créditos y débitos) y efectivo. Default: Decreto 409/2018. */
+export const PCT_COMPUTABLE_POR_EMPRESA: Record<string, { general: number; efectivo: number }> = {
+  MSA: { general: 1, efectivo: 1 },
+}
+export const pctComputable = (empresa: string) => PCT_COMPUTABLE_POR_EMPRESA[empresa] ?? { general: 0.33, efectivo: 0.2 }
 
 export interface MesCheque { mes: string; creditos: number; debitos: number; efectivo: number; total: number; movimientos: number }
 

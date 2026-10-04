@@ -32,7 +32,7 @@ import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } fr
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
-import { armarImpuestoCheque, ETIQUETA_CONCEPTO } from "@/lib/balance/impuesto-cheque"
+import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
@@ -335,7 +335,8 @@ export function PapelesDeBalance() {
          */
         const movBanco = movimientos.filter(m => !/caja/i.test(m.donde))
         setBancarios({
-          impuestoCheque: armarImpuestoCheque(movBanco, meses),
+          impuestoCheque: armarImpuestoCheque(movBanco, meses,
+            pctComputable(empresa.id).general, pctComputable(empresa.id).efectivo),
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           retiros: armarRetirosYAportes(movimientos, meses),
           saldos,

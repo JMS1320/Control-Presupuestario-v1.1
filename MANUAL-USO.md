@@ -2668,7 +2668,7 @@ sale y qué le falta.
 
 - **Impuesto al cheque**: arriba del cuadro celeste está su propio cuadro, mes por mes y separado en
   *sobre créditos*, *sobre débitos* y *extracción en efectivo*, con el total y lo **computable como
-  pago a cuenta de Ganancias** (33 % y 20 % por defecto). Lo computable va a la foto como crédito. En
+  pago a cuenta de Ganancias** (MSA computa el 100 % por su categoría de empresa). Lo computable va a la foto como crédito. En
   el Excel es la solapa **08.1**, y ahí el porcentaje se cambia en una celda y recalcula.
 - **Anticipos de Ganancias**: salen de las cuotas pagadas del template «Anticipo Ganancias» del
   ejercicio.
