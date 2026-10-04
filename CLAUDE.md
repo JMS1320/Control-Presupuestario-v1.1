@@ -772,6 +772,26 @@ tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a 
 variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
 está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
 dónde caen los commits**.*
+### 📝 Una nota de la app se CIERRA en el mismo momento en que se procesa (REGLA)
+*Pedida por el usuario 2026-10-04, al aparecer **38 notas sin cerrar** (del 04/09 al 29/09) — una de
+ellas marcada «urgente para el 1/10», que se leyó el 4/10: **«claramente hay que regularizar el
+tratado de una nota, para no olvidar darla como cerrada»**.*
+
+> **Los tres canales del usuario se miran al abrir sesión, y cada nota sale de la bandeja con su
+> destino escrito: pendiente con ID, o descartada con motivo. Nunca «la vi» sin marcarla.**
+> 📍 **Acá:** `public.notas_para_claude` → `estado='leida'`, `leida_at`, y `resultado` = el ID del
+> pendiente (o «ya atendida: A-XXX-NN», o el motivo del descarte). Mismo criterio para
+> `pendientes_comentarios.leido_at` y `pendientes_propuestos.estado`.
+
+- **Al abrir sesión**, la consulta de las tres bandejas va antes que cualquier otra cosa. Si hay algo,
+  se le dice al usuario en la primera respuesta.
+- **Se cierra en el mismo paso**: escribir la fila en `PENDIENTES.md`, commitear, y marcar la nota.
+  «La proceso y la marco después» es la misma apuesta que perdió el corte de luz (§ ⚡).
+- **Una nota que pide algo con fecha** («urgente para el…») se avisa aunque no se vaya a trabajar.
+
+*Motivo: la bandeja existía y se usaba; lo que faltaba era el paso de cerrarla. De las 38, 17 ya
+estaban resueltas sin marcar — y por eso las otras 21 quedaron escondidas entre ellas.*
+
 ### 📁 La carpeta de comunicación — se mira sin que lo pidan (REGLA)
 *Pedido del usuario 2026-09-06: **«recordá usarla siempre y ya no hace falta que yo te diga que ahí
 lo dejé»**.*
