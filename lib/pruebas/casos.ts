@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
@@ -5737,6 +5738,29 @@ export function correrCasos(): Resultado[] {
     chequear("Cash Flow — filtros", "La ventana: 2 semanas antes del 04/10 es el 20/09; 1 mes, el 04/09; lo de antes se esconde, lo sin fecha no",
       "2026-09-20 · 2026-09-04 · fuera · adentro · sin fecha adentro", `${d2s} · ${d1m} · ${pasaVentana("2026-09-01", d1m) ? "adentro" : "fuera"} · ${pasaVentana("2026-11-15", d1m) ? "adentro" : "fuera"} · sin fecha ${pasaVentana(null, d1m) ? "adentro" : "fuera"}`,
       d2s === "2026-09-20" && d1m === "2026-09-04" && !pasaVentana("2026-09-01", d1m) && pasaVentana("2026-11-15", d1m) && pasaVentana(null, d1m) && d3m === "2025-12-31", "A-FEAT-1237")
+  }
+
+
+  // ══ A-BUG-191: al conciliar, la fecha de pago es la del movimiento — completa, no pisa ═══════
+  {
+    // Un cliente falso que anota qué se le pidió (cero escritura real: § lib/pruebas).
+    const pedido: Record<string, unknown> = {}
+    const falso = { schema: (sch: string) => ({ from: (t: string) => ({
+      update: (v: unknown) => { Object.assign(pedido, { sch, t, v }); return {
+        in: (_c: string, ids: string[]) => { pedido.ids = ids; return {
+          is: (col: string, val: unknown) => { pedido.soloVacias = col === "fecha_pago" && val === null; return Promise.resolve({ count: 2, error: null }) },
+        } },
+      } },
+    }) }) }
+    // El pedido se arma sincrónico: se mira apenas se llama (los casos no esperan promesas).
+    void completarFechaPago(falso, "msa", ["a", "b"], "2026-07-13T00:00:00")
+    const conFecha = { ...pedido }
+    for (const k of Object.keys(pedido)) delete pedido[k]
+    void completarFechaPago(falso, "msa", ["a"], null)
+    const sinFechaPidio = Object.keys(pedido).length > 0
+    chequear("Conciliación — fecha de pago", "Escribe la fecha del movimiento SÓLO donde la factura no tiene (no pisa la que hay), y sin fecha no escribe nada",
+      "msa · 2026-07-13 · a,b · sólo vacías · sin fecha: nada", `${conFecha.sch} · ${(conFecha.v as any)?.fecha_pago} · ${(conFecha.ids as string[])?.join(",")} · ${conFecha.soloVacias ? "sólo vacías" : "PISA"} · sin fecha: ${sinFechaPidio ? "ESCRIBIÓ" : "nada"}`,
+      conFecha.sch === "msa" && (conFecha.v as any)?.fecha_pago === "2026-07-13" && conFecha.soloVacias === true && !sinFechaPidio, "A-BUG-191")
   }
 
   return r

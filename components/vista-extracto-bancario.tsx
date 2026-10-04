@@ -1,5 +1,6 @@
 "use client"
 
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import React, { useState, useEffect, useMemo, useRef } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
@@ -1212,6 +1213,8 @@ ${texto.trim()}` : texto.trim()
                   .from('comprobantes_arca')
                   .update(updateData)
                   .eq('id', opcionId)
+                // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
+                if (!error) await completarFechaPago(supabase, 'msa', [opcionId], movimiento.fecha)
 
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
@@ -1325,6 +1328,8 @@ ${texto.trim()}` : texto.trim()
                 .from('comprobantes_arca')
                 .update({ estado: 'conciliado' })
                 .eq('id', movimiento.comprobante_arca_id)
+              // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
+              await completarFechaPago(supabase, 'msa', [movimiento.comprobante_arca_id], movimiento.fecha)
             }
 
             // Cuota template ya vinculada
@@ -2551,6 +2556,8 @@ ${marca}` : marca
             .from('comprobantes_arca')
             .update({ estado: 'conciliado' })
             .in('id', idsGrupo)
+          // 📅 A-BUG-191 — la fecha de pago de todo el grupo es la del movimiento (completa, no pisa).
+          await completarFechaPago(supabase, 'msa', idsGrupo, movimientoAsignando.fecha)
         } else if (grupoElegido.tipo_grupo === 'sueldo') {
           await supabase
             .from('sueldos_pagos')

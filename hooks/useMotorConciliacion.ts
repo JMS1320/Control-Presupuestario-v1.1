@@ -1,5 +1,6 @@
 "use client"
 
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { useState } from "react"
 import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { supabase } from "@/lib/supabase"
@@ -662,6 +663,8 @@ export function useMotorConciliacion() {
                   console.error('⚠️ La factura no se marcó como conciliada (no se encontró):',
                     matchCF.cashFlowRow.origen_tabla, idsArcaConciliar)
                 }
+                // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
+                await completarFechaPago(supabase, schemaDeFila(matchCF.cashFlowRow), idsArcaConciliar, movimiento.fecha)
               } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
                 // Igual que ARCA y templates: si es un grupo se concilian TODOS sus miembros.
                 // Antes la rama exigía `origen_tabla === 'sueldos.pagos'` y un grupo no lo cumple:
