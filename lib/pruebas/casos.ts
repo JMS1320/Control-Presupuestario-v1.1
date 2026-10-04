@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
@@ -5711,6 +5712,31 @@ export function correrCasos(): Resultado[] {
     chequear("Impuesto al cheque", "Lo computable va a la foto como crédito; el mes sin extracto se pide; anticipos en 0 no se proponen",
       "impuesto_cheque 575 · 1 falta · sin anticipos", `impuesto_cheque ${v.find(x => x.renglon === "impuesto_cheque")?.importe} · ${faltan.length} falta · ${v.some(x => x.renglon === "anticipos_ganancias") ? "con" : "sin"} anticipos`,
       v.find(x => x.renglon === "impuesto_cheque")?.importe === 575 && faltan.length === 1 && !v.some(x => x.renglon === "anticipos_ganancias"), "A-FEAT-1190")
+  }
+
+
+  // ══ Cash Flow: tipo de comprobante, número y ventana hacia atrás (A-FEAT-170 / A-FEAT-1237) ══
+  {
+    const et = [
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 1 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 3 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 11 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 7 }),
+      etiquetaTipoComprobante({ origen: "TEMPLATE" }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: null, facturas_agrupadas: 3 }),
+      etiquetaTipoComprobante({ origen: "VENTA", tipo_comprobante: 60 }),
+    ]
+    chequear("Cash Flow — filtros", "El chip de comprobante nombra tipo y letra (FC A, NC A, FC C, ND B) y separa lo que no es factura",
+      "FC A · NC A · FC C · ND B · Sin comprobante · Grupo (tipos mezclados) · Liquidación", et.join(" · "),
+      et.join("|") === "FC A|NC A|FC C|ND B|Sin comprobante|Grupo (tipos mezclados)|Liquidación", "A-FEAT-170")
+    const f = { comprobante_display: "FC A 00001-00012842", numero_desde: 12842, punto_venta: 1 }
+    chequear("Cash Flow — filtros", "Buscar por número encuentra «12842», «00012842» y «0001-00012842»; con menos de 3 dígitos no busca",
+      "sí · sí · sí · no · no", [coincideNumeroComprobante(f, "12842"), coincideNumeroComprobante(f, "00012842"), coincideNumeroComprobante(f, "0001-00012842"), coincideNumeroComprobante(f, "99999"), coincideNumeroComprobante(f, "12")].map(x => x ? "sí" : "no").join(" · "),
+      coincideNumeroComprobante(f, "12842") && coincideNumeroComprobante(f, "00012842") && coincideNumeroComprobante(f, "0001-00012842") && !coincideNumeroComprobante(f, "99999") && !coincideNumeroComprobante(f, "12"), "A-FEAT-170")
+    const d2s = desdeVentana("2026-10-04", "semana", 2), d1m = desdeVentana("2026-10-04", "mes", 1), d3m = desdeVentana("2026-03-31", "mes", 3)
+    chequear("Cash Flow — filtros", "La ventana: 2 semanas antes del 04/10 es el 20/09; 1 mes, el 04/09; lo de antes se esconde, lo sin fecha no",
+      "2026-09-20 · 2026-09-04 · fuera · adentro · sin fecha adentro", `${d2s} · ${d1m} · ${pasaVentana("2026-09-01", d1m) ? "adentro" : "fuera"} · ${pasaVentana("2026-11-15", d1m) ? "adentro" : "fuera"} · sin fecha ${pasaVentana(null, d1m) ? "adentro" : "fuera"}`,
+      d2s === "2026-09-20" && d1m === "2026-09-04" && !pasaVentana("2026-09-01", d1m) && pasaVentana("2026-11-15", d1m) && pasaVentana(null, d1m) && d3m === "2025-12-31", "A-FEAT-1237")
   }
 
   return r

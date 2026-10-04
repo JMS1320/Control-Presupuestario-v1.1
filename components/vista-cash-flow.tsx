@@ -2,10 +2,12 @@
 
 
 import { hoyArgentina } from "@/lib/fechas"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante, type UnidadVentana } from "@/lib/pagos/filtros-cash-flow"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 import { ModalCancelacionNC } from "@/components/modal-cancelacion-nc"
+import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
 import { armarCancelacionPorCuit, facturasConDescuentoParaNC, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
@@ -182,6 +184,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>({ empresasFacturas: ['MSA', 'PAM'], empresasTemplates: ['MSA', 'PAM', 'MA'] })
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [busquedaRapida, setBusquedaRapida] = useState('')
+  /** 💰 A-FEAT-1238 — el modal de propagación del monto de una cuota de template (compartido con Templates). */
+  const [propagacionCF, setPropagacionCF] = useState<{ cuotaId: string; nuevoMonto: number } | null>(null)
   
   // Estados para filtros específicos
   const [fechaDesde, setFechaDesde] = useState('')
@@ -452,6 +456,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    */
   const [chipsSentido, setChipsSentido] = useState<Set<Columna>>(new Set<Columna>(['debitos', 'creditos']))
   const [verDebitosVencidos, setVerDebitosVencidos] = useState(false) // débitos auto: ocultar los ya vencidos (se asumen pagados)
+  /**
+   * 🔎 A-FEAT-170 — chips por TIPO DE COMPROBANTE. `null` = todos (así un tipo que aparece después
+   * de recargar no queda escondido sin que nadie lo haya apagado).
+   */
+  const [chipsTipo, setChipsTipo] = useState<Set<string> | null>(null)
+  /** 🎯 A-FEAT-149 — ¿se ve el panel de PAGOS de arriba? Si no, aparece la barra fija de abajo. */
+  const panelPagosRef = useRef<HTMLDivElement>(null)
+  const [panelPagosVisible, setPanelPagosVisible] = useState(true)
+  useEffect(() => {
+    if (!modoPagos) { setPanelPagosVisible(true); return }
+    const el = panelPagosRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const obs = new IntersectionObserver(([e]) => setPanelPagosVisible(e.isIntersecting), { threshold: 0 })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [modoPagos])
+  /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
+  const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
@@ -1058,6 +1080,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
     }
 
+    /**
+     * 💰 A-FEAT-1238 — el monto de una CUOTA DE TEMPLATE se cambia con el mismo modal que en
+     * Templates: pregunta si propagar a las futuras, y con qué monto. Antes se guardaba directo.
+     */
+    if (celdaEnEdicion.columna === 'debitos') {
+      const filaTpl = data.find(f => f.id === celdaEnEdicion.filaId)
+      if (filaTpl?.origen === 'TEMPLATE') {
+        const nuevo = parseFloat(String(celdaEnEdicion.valor).replace(/\./g, '').replace(',', '.')) || 0
+        if (nuevo > 0) {
+          setPropagacionCF({ cuotaId: filaTpl.id, nuevoMonto: nuevo })
+          return
+        }
+      }
+    }
+
     // Si está editando categ, validar si existe primero
     if (celdaEnEdicion.columna === 'categ') {
       const categIngresado = String(celdaEnEdicion.valor).toUpperCase()
@@ -1217,6 +1254,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           normalizarBusqueda(fila.cuit_proveedor).includes(q) ||
           normalizarBusqueda(fila.categ).includes(q) ||
           normalizarBusqueda(fila.detalle).includes(q) ||
+          normalizarBusqueda(fila.comprobante_display || '').includes(q) ||
+          coincideNumeroComprobante(fila, busquedaRapida) ||   // A-FEAT-170: buscar por número
           normalizarMonto(fila.debitos).includes(q) ||
           normalizarMonto(fila.creditos).includes(q)
         )
@@ -1228,10 +1267,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const origenesDisponibles = Array.from(new Set(data.map(f => f.origen))).sort()
   // Débitos automáticos: los anteriores a hoy se asumen pagados. Ocultar los previos a (hoy − 7 días) salvo que se pidan.
   const corteDebitoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+  const tiposDisponibles = Array.from(new Set(data.map(f => etiquetaTipoComprobante(f)))).sort()
+  const tiposActivos = chipsTipo ?? new Set(tiposDisponibles)
+  const desdeV = ventana ? desdeVentana(hoyArgentina(), ventana.unidad, ventana.n) : null
   const datosOperativos = !chipsInit
     ? datosConBusqueda
     : datosConBusqueda.filter(fila => {
         if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
+        if (!tiposActivos.has(etiquetaTipoComprobante(fila))) return false   // A-FEAT-170
+        if (!pasaVentana(fila.fecha_estimada, desdeV)) return false          // A-FEAT-1237
         if (!pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
@@ -1248,6 +1292,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setChipsEstados(new Set(estadosDisponibles))
     setChipsOrigenes(new Set(origenesDisponibles))
     setChipsSentido(new Set<Columna>(['debitos', 'creditos']))   // A-FEAT-1224
+    setChipsTipo(null)                                           // A-FEAT-170
+    setVentana(null)                                             // A-FEAT-1237
   }
   // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
   const subtotales = calcularSubtotales(datosOperativos)
@@ -3478,6 +3524,178 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     )
   }
 
+  /** 💰 El contenido del panel de PAGOS: lo usan el panel de arriba y la barra fija de abajo (A-FEAT-149). */
+  const contenidoPanelPagos = (sufijo: 'arriba' | 'abajo') => (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  {/*
+                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
+                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
+                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
+                    justo lo que uno quiere notar antes de pagar.
+                  */}
+                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
+                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
+                    {totalSeleccionado.cantidad > 0 && (
+                      <span className="text-sm font-normal">
+                        {totalSeleccionado.debitos > 0 && (
+                          <span className="text-red-700 font-semibold tabular-nums">
+                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {totalSeleccionado.creditos > 0 && (
+                          <span className="text-green-700 font-semibold tabular-nums ml-3">
+                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={seleccionarTodasVisibles}
+                      className="text-xs"
+                    >
+                      Seleccionar todas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={deseleccionarTodas}
+                      className="text-xs"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      Deseleccionar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generarPDFPagosSeleccionados}
+                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      📄 Detalle PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={encolarMailsSeleccionados}
+                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      ✉ Encolar mail detalle
+                    </Button>
+                    <PanelMailsPago />
+                    <Button
+                      size="sm"
+                      onClick={exportarLoteSeleccionados}
+                      className="text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      🏦 Exportar lote Galicia
+                    </Button>
+                    {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
+                    {filaGrupoSeleccionada ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
+                        className="text-xs border-red-500 text-red-700 hover:bg-red-50"
+                        title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
+                      >
+                        ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={agruparSeleccionados}
+                        className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
+                        disabled={filasSeleccionadas.size < 2}
+                        title="Seleccioná 2 o más filas del mismo proveedor"
+                      >
+                        🔗 Agrupar
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
+
+                <div className="flex items-center gap-4">
+                  {/* Checkboxes independientes */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`cambiar-fecha-${sufijo}`}
+                      checked={cambiarFechaVenc}
+                      onCheckedChange={setCambiarFechaVenc}
+                    />
+                    <Label htmlFor={`cambiar-fecha-${sufijo}`}>Cambiar fecha vencimiento</Label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`cambiar-estado-${sufijo}`}
+                      checked={cambiarEstadoLote}
+                      onCheckedChange={setCambiarEstadoLote}
+                    />
+                    <Label htmlFor={`cambiar-estado-${sufijo}`}>Cambiar estado</Label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Inputs para ambas opciones */}
+                  {cambiarFechaVenc && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Fecha:</Label>
+                      <Input
+                        type="date"
+                        value={valorFechaLote}
+                        onChange={(e) => setValorFechaLote(e.target.value)}
+                        placeholder="Nueva fecha vencimiento"
+                        className="w-40"
+                      />
+                    </div>
+                  )}
+                  
+                  {cambiarEstadoLote && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Estado:</Label>
+                      <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESTADOS_DISPONIBLES.map((estado) => (
+                            <SelectItem key={estado.value} value={estado.value}>
+                              {estado.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={aplicarCambiosLote}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {procesandoLote ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Aplicando...
+                      </>
+                    ) : (
+                      `Aplicar a ${filasSeleccionadas.size} filas`
+                    )}
+                  </Button>
+                </div>
+              </div>
+  )
+
   return (
     <div className="space-y-6">
       {/* Header con estadísticas */}
@@ -3644,6 +3862,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <AvisoNotasCredito filas={data}
             onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)}
             onDescuentos={(ncId, cuit, prov, emp) => void abrirDescuentosNC(ncId, cuit, prov, emp)} />
+          {propagacionCF && (
+            <ModalPropagarMontoCuota
+              abierto={true}
+              cuotaId={propagacionCF.cuotaId}
+              nuevoMonto={propagacionCF.nuevoMonto}
+              onCancelar={() => { setPropagacionCF(null); setCeldaEnEdicion(null) }}
+              onGuardado={async (r) => {
+                setPropagacionCF(null)
+                setCeldaEnEdicion(null)
+                await cargarDatos()
+                toast.success(r.tipo === 'propagado'
+                  ? (r.cuotasModificadas > 0
+                      ? `Monto actualizado y propagado a ${r.cuotasModificadas} cuota(s) futura(s)${r.montoPropagado !== r.nuevoMonto ? ` con $${r.montoPropagado.toLocaleString('es-AR')}` : ''}`
+                      : 'Monto actualizado (no había cuotas futuras)')
+                  : 'Sólo esta cuota actualizada')
+              }}
+            />
+          )}
           {cancelacionNC && (
             <ModalCancelacionNC
               inicial={cancelacionNC.datos}
@@ -3868,180 +4104,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           )}
 
-          {/* Panel modo PAGOS */}
+          {/* Panel modo PAGOS — el contenido vive en `contenidoPanelPagos`, que también usa la barra de abajo (A-FEAT-149) */}
           {modoPagos && (
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  {/*
-                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
-                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
-                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
-                    justo lo que uno quiere notar antes de pagar.
-                  */}
-                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
-                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
-                    {totalSeleccionado.cantidad > 0 && (
-                      <span className="text-sm font-normal">
-                        {totalSeleccionado.debitos > 0 && (
-                          <span className="text-red-700 font-semibold tabular-nums">
-                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                        {totalSeleccionado.creditos > 0 && (
-                          <span className="text-green-700 font-semibold tabular-nums ml-3">
-                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={seleccionarTodasVisibles}
-                      className="text-xs"
-                    >
-                      Seleccionar todas
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={deseleccionarTodas}
-                      className="text-xs"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      Deseleccionar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={generarPDFPagosSeleccionados}
-                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      📄 Detalle PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={encolarMailsSeleccionados}
-                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      ✉ Encolar mail detalle
-                    </Button>
-                    <PanelMailsPago />
-                    <Button
-                      size="sm"
-                      onClick={exportarLoteSeleccionados}
-                      className="text-xs bg-blue-600 hover:bg-blue-700"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      🏦 Exportar lote Galicia
-                    </Button>
-                    {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
-                    {filaGrupoSeleccionada ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
-                        className="text-xs border-red-500 text-red-700 hover:bg-red-50"
-                        title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
-                      >
-                        ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={agruparSeleccionados}
-                        className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
-                        disabled={filasSeleccionadas.size < 2}
-                        title="Seleccioná 2 o más filas del mismo proveedor"
-                      >
-                        🔗 Agrupar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
-
-                <div className="flex items-center gap-4">
-                  {/* Checkboxes independientes */}
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="cambiar-fecha"
-                      checked={cambiarFechaVenc}
-                      onCheckedChange={setCambiarFechaVenc}
-                    />
-                    <Label htmlFor="cambiar-fecha">Cambiar fecha vencimiento</Label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="cambiar-estado"
-                      checked={cambiarEstadoLote}
-                      onCheckedChange={setCambiarEstadoLote}
-                    />
-                    <Label htmlFor="cambiar-estado">Cambiar estado</Label>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {/* Inputs para ambas opciones */}
-                  {cambiarFechaVenc && (
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">Fecha:</Label>
-                      <Input
-                        type="date"
-                        value={valorFechaLote}
-                        onChange={(e) => setValorFechaLote(e.target.value)}
-                        placeholder="Nueva fecha vencimiento"
-                        className="w-40"
-                      />
-                    </div>
-                  )}
-                  
-                  {cambiarEstadoLote && (
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">Estado:</Label>
-                      <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ESTADOS_DISPONIBLES.map((estado) => (
-                            <SelectItem key={estado.value} value={estado.value}>
-                              {estado.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {procesandoLote ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Aplicando...
-                      </>
-                    ) : (
-                      `Aplicar a ${filasSeleccionadas.size} filas`
-                    )}
-                  </Button>
-                </div>
+            <div ref={panelPagosRef} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <TestsDelProceso proceso="cashflow/pagos" pantalla="cashflow" />
+              {contenidoPanelPagos('arriba')}
+            </div>
+          )}
+          {/*
+            🎯 A-FEAT-149 — la barra que te sigue: el MISMO panel (contador, totales y todos los botones),
+            fijo abajo, sólo cuando hay algo seleccionado y el panel de arriba ya no se ve. Abajo y no
+            arriba porque el encabezado de la tabla ya es sticky arriba.
+          */}
+          {modoPagos && filasSeleccionadas.size > 0 && !panelPagosVisible && (
+            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-300 bg-blue-50/95 backdrop-blur shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+              <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
+                {contenidoPanelPagos('abajo')}
               </div>
             </div>
           )}
 
+          <TestsDelProceso proceso="cashflow/filtros" pantalla="cashflow" />
           {/* E1: barra de chips operativos (siempre visible) — Estado + Origen */}
           <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-white rounded-lg border">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -4089,6 +4173,34 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 </button>
               ))}
               <button onClick={() => setChipsSentido(new Set<Columna>(['debitos', 'creditos']))} className="text-[10px] underline text-gray-400 ml-1">ambos</button>
+            </div>
+            {/* 🔎 A-FEAT-170 — por tipo de comprobante, con el mismo gesto (ctrl+click = sólo ése). */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Comprobante:</span>
+              {tiposDisponibles.map(t => (
+                <button
+                  key={t}
+                  onClick={(ev) => toggleChip<string>(fn => setChipsTipo(prev => fn(prev ?? new Set(tiposDisponibles))), t, esSoloEste(ev))}
+                  title={tituloChip(t)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${tiposActivos.has(t) ? 'bg-violet-600 text-white border-violet-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {t} ({data.filter(f => etiquetaTipoComprobante(f) === t).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsTipo(null)} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+            </div>
+            {/* ⏪ A-FEAT-1237 — desde hace 1, 2 o 3 semanas o meses (lo futuro se ve siempre). */}
+            <div className="flex flex-wrap items-center gap-1.5" title="Esconde lo que tiene fecha estimada anterior a esa ventana; lo que viene y lo que no tiene fecha se sigue viendo">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Desde:</span>
+              <button onClick={() => setVentana(null)}
+                className={`text-xs px-2 py-0.5 rounded-full border ${!ventana ? 'bg-slate-700 text-white border-slate-700' : 'bg-gray-50 text-gray-500 border-gray-300'}`}>todo</button>
+              {(['semana', 'mes'] as const).map(u => [1, 2, 3].map(n => (
+                <button key={`${u}${n}`} onClick={() => setVentana(v => v && v.unidad === u && v.n === n ? null : { unidad: u, n })}
+                  className={`text-xs px-2 py-0.5 rounded-full border ${ventana?.unidad === u && ventana.n === n ? 'bg-slate-700 text-white border-slate-700' : 'bg-gray-50 text-gray-500 border-gray-300'}`}>
+                  {n} {u === 'semana' ? (n === 1 ? 'sem' : 'sem') : (n === 1 ? 'mes' : 'meses')}
+                </button>
+              )))}
+              {desdeV && <span className="text-[10px] text-gray-500">desde el {desdeV.split('-').reverse().join('/')}</span>}
             </div>
             <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
               <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />
