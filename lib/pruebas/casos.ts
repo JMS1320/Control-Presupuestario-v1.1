@@ -38,7 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
-import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, type ValorFoto } from "@/lib/balance/balance-propio"
+import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
@@ -5585,7 +5585,7 @@ export function correrCasos(): Resultado[] {
 
   // ══ La foto que se arma sola: la versión «sistema» (A-FEAT-1190) ═══════════════════════════
   {
-    const p = propuestaDelSistema({
+    const { valores: p } = propuestaDelSistema({
       saldos: [{ nombre: "BANCO GALICIA (cta cte)", saldo: -2261369.97 }, { nombre: "CAJA GENERAL", saldo: 1000 }, { nombre: "CAJA AMS", saldo: null }],
       cuentasAPagar: { total: 500, totalSinDato: 0 }, cuentasACobrar: { total: 0, totalSinDato: 0 },
       cheques: { total: 300, totalSinFecha: 50 },
@@ -5617,6 +5617,46 @@ export function correrCasos(): Resultado[] {
     chequear("Balance propio — sistema", "Avisa lo que cambió desde la foto (cambió, desapareció, apareció) y calla lo igual",
       "caja 7→9 · fci 1→— · cereales —→3", cambios.map(c => `${c.renglon} ${c.guardado ?? "—"}→${c.hoy ?? "—"}`).join(" · "),
       cambios.length === 3 && !cambios.some(c => c.renglon === "banco_galicia"), "A-FEAT-1190")
+  }
+
+
+  // ══ Balance propio — créditos impositivos, tarjeta, FCI, echeqs (A-FEAT-1190, 2026-10-03) ════
+  {
+    // La tarjeta con los datos reales: el último resumen cargado cierra el 28/05 y vence el 08/06.
+    const res = [{ cierre: "2026-04-30", vencimiento: "2026-05-11", total: 2030886.25 }, { cierre: "2026-05-28", vencimiento: "2026-06-08", total: 2047532.73 }]
+    const t1 = deudaDeTarjeta(res, [{ fecha: "2026-05-20", importe: 100, cierreResumen: "2026-05-28" }], "2026-06-30")
+    chequear("Balance propio — tarjeta", "Sin el resumen de junio cargado: deuda 0 conocida y lo DICE (no un cero callado)",
+      "0 · falta el resumen posterior al 2026-05-28", `${t1.deuda} · ${t1.falta ? "falta " + (t1.falta.match(/después del (\S+?):/)?.[1] ?? "") : "nada"}`,
+      t1.deuda === 0 && !!t1.falta && t1.falta.includes("2026-05-28"), "A-FEAT-1190")
+    const t2 = deudaDeTarjeta([...res, { cierre: "2026-06-25", vencimiento: "2026-07-06", total: 1900000 }],
+      [{ fecha: "2026-06-28", importe: 5000, cierreResumen: "2026-07-30" }, { fecha: "2026-07-02", importe: 999, cierreResumen: "2026-07-30" }], "2026-06-30")
+    chequear("Balance propio — tarjeta", "Con el de junio: su total (vence en julio) + los consumos del 26 al 30/06",
+      "1.905.000 · sin falta", `${t2.deuda} · ${t2.falta ? "falta" : "sin falta"}`, t2.deuda === 1905000 && t2.falta === null, "A-FEAT-1190")
+    chequear("Balance propio — IVA", "Una nota de crédito resta su IVA, venga guardada en positivo o negativo",
+      "100", String(ivaConSigno([{ tipo: 1, iva: 210 }, { tipo: 3, iva: 21 }, { tipo: 3, iva: -89 }])),
+      ivaConSigno([{ tipo: 1, iva: 210 }, { tipo: 3, iva: 21 }, { tipo: 3, iva: -89 }]) === 100, "A-FEAT-1190")
+    const { valores: v, faltan } = propuestaDelSistema({
+      retenciones: { ganancias: 2504350.46, iibb: 1013288.8, iva: 277103.83, detalle: "x" },
+      iva: { creditoFiscal: 1000, debitoFiscal: 7000, tecnicoInicio: 5446163.83 },
+      echeqsCartera: 0,
+      tarjeta: t1,
+      fci: { cuotapartes: null, valorCuotaparte: null, suscripciones: 10, rescates: 5 },
+    })
+    const de = (r: string) => v.find(x => x.renglon === r)?.importe
+    chequear("Balance propio — créditos", "Retenciones sufridas e IVA arrastrado entran como crédito; FCI y tarjeta incompletos se piden",
+      "gan 2.504.350,46 · iibb 1.013.288,80 · iva ret 277.103,83 · técnico 5.440.163,83 · 2 faltan",
+      `gan ${de("ret_ganancias")} · iibb ${de("ret_iibb")} · iva ret ${de("ret_iva")} · técnico ${de("iva_saldo_tecnico")} · ${faltan.length} faltan`,
+      de("ret_ganancias") === 2504350.46 && de("ret_iibb") === 1013288.8 && de("ret_iva") === 277103.83
+        && de("iva_saldo_tecnico") === 5440163.83 && de("echeqs_cartera") === undefined && faltan.length === 2
+        && faltan.some(f => f.startsWith("Fondo común")) && faltan.some(f => f.startsWith("Tarjeta")), "A-FEAT-1190")
+    const { valores: v2 } = propuestaDelSistema({
+      iva: { creditoFiscal: 0, debitoFiscal: 100, tecnicoInicio: 40 },
+      fci: { cuotapartes: 1000, valorCuotaparte: 25.5, suscripciones: 0, rescates: 0 },
+    })
+    chequear("Balance propio — créditos", "IVA que da negativo pasa a deuda; FCI = cuotapartes × valor",
+      "IVA a pagar 60 · FCI 25.500", `IVA a pagar ${v2.find(x => x.renglon === "iva_a_pagar")?.importe} · FCI ${v2.find(x => x.renglon === "fci")?.importe}`,
+      v2.find(x => x.renglon === "iva_a_pagar")?.importe === 60 && v2.find(x => x.renglon === "fci")?.importe === 25500
+        && !v2.some(x => x.renglon === "iva_saldo_tecnico"), "A-FEAT-1190")
   }
 
   return r

@@ -16,8 +16,9 @@ import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { Input } from "@/components/ui/input"
 import {
-  RENGLONES, propuestaDelSistema, cambiosContraLoGuardado,
+  RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, deudaDeTarjeta, parsearMonto,
   type DatosDeLosPapeles, type ValorFoto,
 } from "@/lib/balance/balance-propio"
 
@@ -25,12 +26,88 @@ const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2,
 const etiqueta = (id: string) => RENGLONES.find(r => r.id === id)?.etiqueta ?? id
 const fmtFecha = (f: string) => f.split("-").reverse().join("/")
 
-export function ProponerFotoBalance({ empresa, fechaCierre, datos }: {
+export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, iva, fciMovimientos }: {
   empresa: string
+  /** Primer día del ejercicio: las retenciones se cuentan desde acá. */
+  fechaInicio: string
   fechaCierre: string
   datos: DatosDeLosPapeles
+  /** Crédito y débito fiscal del ejercicio, del libro diario (con signo). */
+  iva: { creditoFiscal: number; debitoFiscal: number } | null
+  /** Suscripciones y rescates del fondo común en el ejercicio (papel 07). */
+  fciMovimientos: { suscripciones: number; rescates: number } | null
 }) {
-  const propuesta = useMemo(() => propuestaDelSistema(datos), [datos])
+  /**
+   * Lo que no sale de los papeles y se lee acá: retenciones que nos hicieron, echeqs en cartera, la
+   * tarjeta y el saldo técnico de IVA de la foto anterior. Son tablas de MSA; para otra empresa que
+   * no las tenga, cada una se omite y se dice.
+   */
+  const [extra, setExtra] = useState<Partial<DatosDeLosPapeles>>({})
+  const [noLeidas, setNoLeidas] = useState<string[]>([])
+  const [cuotapartes, setCuotapartes] = useState("")
+  const [valorCuota, setValorCuota] = useState("")
+
+  useEffect(() => {
+    let vivo = true
+    ;(async () => {
+      const sch = empresa.toLowerCase()
+      const fallas: string[] = []
+      const e: Partial<DatosDeLosPapeles> = {}
+      const suma = (xs: any[], f: (x: any) => unknown) => xs.reduce((a, x) => a + (Number(f(x)) || 0), 0)
+      try {
+        const [rr, cv] = await Promise.all([
+          supabase.schema(sch).from("retenciones_recibidas").select("tipo, monto, fecha").gte("fecha", fechaInicio).lte("fecha", fechaCierre),
+          supabase.schema(sch).from("comprobantes_venta").select("ret_iva, ret_iibb, fecha_liquidacion").gte("fecha_liquidacion", fechaInicio).lte("fecha_liquidacion", fechaCierre),
+        ])
+        if (rr.error) throw rr.error
+        if (cv.error) throw cv.error
+        const rec = (rr.data ?? []) as any[], liq = (cv.data ?? []) as any[]
+        e.retenciones = {
+          ganancias: suma(rec.filter(x => x.tipo === "ganancias"), x => x.monto),
+          iibb: suma(rec.filter(x => x.tipo === "iibb"), x => x.monto) + suma(liq, x => x.ret_iibb),
+          iva: suma(rec.filter(x => x.tipo === "iva"), x => x.monto) + suma(liq, x => x.ret_iva),
+          detalle: `${rec.length} retención(es) cargadas en cobros + ${liq.length} liquidación(es) de venta del sistema`,
+        }
+      } catch { fallas.push("retenciones") }
+      try {
+        const { data, error } = await supabase.schema(sch).from("echeqs_terceros").select("debitos, creditos").lte("fecha", fechaCierre)
+        if (error) throw error
+        e.echeqsCartera = suma((data ?? []) as any[], x => (Number(x.creditos) || 0) - (Number(x.debitos) || 0))
+      } catch { fallas.push("echeqs de terceros") }
+      try {
+        const { data, error } = await supabase.schema(sch).from("tarjeta_visa_business")
+          .select("tipo_fila, fecha, debitos, creditos, fecha_cierre, fecha_vencimiento")
+        if (error) throw error
+        const filas = (data ?? []) as any[]
+        e.tarjeta = deudaDeTarjeta(
+          filas.filter(f => f.tipo_fila === "resumen" && f.fecha_cierre && f.fecha_vencimiento)
+            .map(f => ({ cierre: f.fecha_cierre, vencimiento: f.fecha_vencimiento, total: Number(f.debitos) || 0 })),
+          filas.filter(f => f.tipo_fila === "movimiento")
+            .map(f => ({ fecha: f.fecha, importe: (Number(f.debitos) || 0) - (Number(f.creditos) || 0), cierreResumen: f.fecha_cierre ?? null })),
+          fechaCierre)
+      } catch { fallas.push("tarjeta") }
+      // El saldo técnico de IVA al inicio sale de la foto ANTERIOR (contador primero, si no JMS).
+      let tecnicoInicio: number | null = null
+      const { data: ant } = await supabase.from("balance_fotos").select("id")
+        .eq("empresa", empresa).lt("fecha_cierre", fechaCierre).order("fecha_cierre", { ascending: false }).limit(1).maybeSingle()
+      if (ant) {
+        const { data: vs } = await supabase.from("balance_foto_valores").select("version, importe")
+          .eq("foto_id", ant.id).eq("renglon", "iva_saldo_tecnico")
+        const v = (vs ?? []) as any[]
+        const c = v.find(x => x.version === "contador") ?? v.find(x => x.version === "jms")
+        tecnicoInicio = c ? Number(c.importe) : null
+      }
+      if (iva) e.iva = { ...iva, tecnicoInicio }
+      if (vivo) { setExtra(e); setNoLeidas(fallas) }
+    })()
+    return () => { vivo = false }
+  }, [empresa, fechaInicio, fechaCierre, iva])
+
+  const datosCompletos = useMemo<DatosDeLosPapeles>(() => ({
+    ...datos, ...extra,
+    fci: fciMovimientos ? { ...fciMovimientos, cuotapartes: parsearMonto(cuotapartes), valorCuotaparte: parsearMonto(valorCuota) } : undefined,
+  }), [datos, extra, fciMovimientos, cuotapartes, valorCuota])
+  const { valores: propuesta, faltan } = useMemo(() => propuestaDelSistema(datosCompletos), [datosCompletos])
   const [guardado, setGuardado] = useState<ValorFoto[] | null>(null)
   const [fotoId, setFotoId] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
@@ -114,8 +191,20 @@ export function ProponerFotoBalance({ empresa, fechaCierre, datos }: {
               ))}
             </tbody>
           </table>
+          {fciMovimientos && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span>Fondo común al cierre:</span>
+              <Input type="text" className="h-7 w-36 text-right text-xs" placeholder="cuotapartes" value={cuotapartes} onChange={e => setCuotapartes(e.target.value)} />
+              <span>×</span>
+              <Input type="text" className="h-7 w-32 text-right text-xs" placeholder="valor cuotaparte" value={valorCuota} onChange={e => setValorCuota(e.target.value)} />
+            </div>
+          )}
+          {faltan.length > 0 && (
+            <ul className="list-disc pl-5 text-amber-800">{faltan.map((f, i) => <li key={i}>{f}</li>)}</ul>
+          )}
+          {noLeidas.length > 0 && <p className="text-amber-800">No se pudieron leer: {noLeidas.join(", ")}.</p>}
           <p className="text-gray-600">
-            No se proponen (el sistema no los sabe; van a mano): créditos impositivos, fondo común, deudas fiscales y sociales, impuesto diferido.
+            No se proponen (el sistema no los sabe; van a mano): anticipos y percepciones de Ganancias, impuesto al cheque, IVA de libre disponibilidad, deudas sociales, impuesto diferido.
           </p>
           {yaGuardada && cambios.length === 0 ? (
             <p className="text-emerald-700">✓ La foto ya tiene exactamente estos valores del sistema.</p>

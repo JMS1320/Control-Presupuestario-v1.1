@@ -2661,14 +2661,22 @@ sin lo de PAM). La del 30/06/25 es el inicio del ejercicio 25/26.
 balance**, armá el libro del año de cierre y apretá **«Traer stock y precios»**. Abajo aparece el
 cuadro celeste **«📸 Pasar a la foto del balance propio»** con lo que el sistema sabe: bancos y cajas,
 cuentas a pagar y a cobrar, cheques sin debitar, anticipos (a proveedores y de clientes), hacienda de
-cría y de recría valuada a mercado, insumos, granos y sementeras — cada uno con de dónde sale y qué le
-falta. Apretá **«Guardar en la foto (versión Sistema)»**: si la foto de esa fecha no existe, se crea,
+cría y de recría valuada a mercado, insumos, granos y sementeras, **echeqs de terceros en cartera**,
+**retenciones de Ganancias, IIBB e IVA que te hicieron** en el ejercicio (cobros y liquidaciones),
+el **saldo técnico de IVA** arrastrado desde la foto anterior, y la **tarjeta** — cada uno con de dónde
+sale y qué le falta.
+
+- **Fondo común**: el sistema ve la plata que entra y sale, pero no las cuotapartes. Escribí las
+  **cuotapartes** y el **valor de la cuotaparte** al cierre en las dos casillas y el valor sale solo.
+- **Tarjeta**: siempre es deuda al cierre (vence al mes siguiente). Si el resumen que cierra después
+  del cierre todavía no está cargado, el cuadro lo avisa en ámbar: esos consumos son deuda y no se
+  conocen hasta cargarlo. Apretá **«Guardar en la foto (versión Sistema)»**: si la foto de esa fecha no existe, se crea,
 con el dólar BNA importado a esa fecha.
 
 - En el balance propio aparece la columna **Sistema**, y tu columna **JMS** toma esos valores
   (en celeste e itálica) en los renglones que dejás vacíos. Escribí un número para pisarlo.
-- Lo que el sistema no sabe —créditos impositivos, fondo común, deudas fiscales y sociales,
-  impuesto diferido— queda vacío y lo cargás a mano.
+- Lo que el sistema no sabe —anticipos y percepciones de Ganancias, impuesto al cheque, IVA de
+  libre disponibilidad, deudas sociales, impuesto diferido— queda vacío y lo cargás a mano.
 - Si más adelante volvés a armar los papeles y el sistema dice otra cosa (entró una factura tardía,
   por ejemplo), el cuadro te muestra **qué cambió contra la foto** y no la toca hasta que apretás
   **«Actualizar la versión Sistema de la foto»**.

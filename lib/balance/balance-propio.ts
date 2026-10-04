@@ -74,6 +74,7 @@ export const RENGLONES: Renglon[] = [
   { id: "dolares_mep", rubro: "caja_bancos", etiqueta: "Dólar MEP comprados en el ejercicio", nota: "sólo lo comprado o vendido en el ejercicio, no lo que había" },
   { id: "distribucion_fondos", rubro: "caja_bancos", etiqueta: "Distribución de fondos en el ejercicio" },
   { id: "valores_depositar", rubro: "caja_bancos", etiqueta: "Valores a depositar" },
+  { id: "echeqs_cartera", rubro: "caja_bancos", etiqueta: "Echeqs de terceros en cartera" },
   { id: "banco_galicia", rubro: "caja_bancos", etiqueta: "Banco Galicia" },
   { id: "fci", rubro: "caja_bancos", etiqueta: "Fondos comunes de inversión" },
   { id: "banco_galicia_usd", rubro: "caja_bancos", etiqueta: "Banco Galicia cta. USD", nota: "JMS no la pone: sólo compras y ventas" },
@@ -85,6 +86,8 @@ export const RENGLONES: Renglon[] = [
   { id: "perc_ganancias", rubro: "creditos_impositivos", etiqueta: "Percepciones Imp. a las Ganancias" },
   { id: "saldo_favor_ganancias", rubro: "creditos_impositivos", etiqueta: "Saldo a favor Ganancias anteriores" },
   { id: "saldo_favor_iibb", rubro: "creditos_impositivos", etiqueta: "Saldo a favor Ingresos Brutos" },
+  { id: "ret_iibb", rubro: "creditos_impositivos", etiqueta: "Retenciones de IIBB sufridas en el ejercicio" },
+  { id: "ret_iva", rubro: "creditos_impositivos", etiqueta: "Retenciones de IVA sufridas en el ejercicio" },
   { id: "anticipos_ganancias", rubro: "creditos_impositivos", etiqueta: "Anticipos Imp. a las Ganancias" },
   { id: "iva_libre_disponibilidad", rubro: "creditos_impositivos", etiqueta: "IVA saldo de libre disponibilidad" },
   { id: "iva_saldo_tecnico", rubro: "creditos_impositivos", etiqueta: "IVA saldo técnico" },
@@ -254,6 +257,52 @@ export interface DatosDeLosPapeles {
   insumos?: Array<{ ambito: string; valuado: number; huecos: number }>
   granosNetoFinal?: number | null
   sementerasCosto?: number | null
+  /**
+   * Retenciones que NOS hicieron en el ejercicio (cobros + liquidaciones). Son crédito impositivo.
+   * ⚠️ SICORE no juega acá: ésas son las que hacemos nosotros (usuario, 2026-10-03).
+   */
+  retenciones?: { ganancias: number; iibb: number; iva: number; detalle: string }
+  /** IVA del ejercicio para arrastrar el saldo técnico: inicio (foto anterior) + crédito − débito. */
+  iva?: { creditoFiscal: number; debitoFiscal: number; tecnicoInicio: number | null }
+  /** Saldo del extracto de echeqs de terceros al cierre (lo que quedó en cartera). */
+  echeqsCartera?: number | null
+  /** La tarjeta: la deuda al cierre y lo que falta para saberla entera. */
+  tarjeta?: DeudaTarjeta
+  /** Fondo común: cuotapartes × valor (los pide el sistema) y lo que se movió en el ejercicio. */
+  fci?: { cuotapartes: number | null; valorCuotaparte: number | null; suscripciones: number; rescates: number }
+}
+
+export interface DeudaTarjeta { deuda: number; detalle: string; falta: string | null }
+
+/**
+ * 💳 **La tarjeta siempre es deuda al cierre** (usuario, 2026-10-03): *«siempre vence al mes siguiente»*.
+ * Deuda = los resúmenes que cerraron antes del cierre y vencen después, más los consumos posteriores
+ * al último resumen cerrado (que van en el próximo). Si el próximo resumen todavía no está cargado,
+ * esos consumos no se conocen: se dice, no se pone un cero.
+ */
+export function deudaDeTarjeta(
+  resumenes: Array<{ cierre: string; vencimiento: string; total: number }>,
+  consumos: Array<{ fecha: string; importe: number; cierreResumen: string | null }>,
+  fechaCierre: string,
+): DeudaTarjeta {
+  const abiertos = resumenes.filter(r => r.cierre <= fechaCierre && r.vencimiento > fechaCierre)
+  const delProximo = consumos.filter(c => c.fecha <= fechaCierre && (c.cierreResumen == null || c.cierreResumen > fechaCierre))
+  const deuda = abiertos.reduce((a, r) => a + r.total, 0) + delProximo.reduce((a, c) => a + c.importe, 0)
+  const ultimo = resumenes.filter(r => r.cierre <= fechaCierre).map(r => r.cierre).sort().pop() ?? null
+  // Los consumos del tramo final se conocen si está cargado el resumen siguiente (o sus movimientos).
+  const hayPosterior = resumenes.some(r => r.cierre > fechaCierre) || consumos.some(c => c.cierreResumen != null && c.cierreResumen > fechaCierre)
+  const partes: string[] = []
+  if (abiertos.length) partes.push(`resumen(es) que vencen después del cierre: ${abiertos.map(r => r.cierre).join(", ")}`)
+  if (delProximo.length) partes.push(`${delProximo.length} consumo(s) posteriores al último resumen`)
+  const falta = hayPosterior ? null
+    : `falta cargar el resumen que cierra después del ${ultimo ?? "—"}: los consumos hasta el ${fechaCierre} son deuda al cierre y todavía no se conocen`
+  return { deuda: Math.round(deuda * 100) / 100, detalle: partes.join(" · ") || "sin resúmenes abiertos al cierre", falta }
+}
+
+const TIPOS_NC = [3, 8, 13, 53, 203, 208, 213]
+/** IVA del ejercicio con signo: una nota de crédito RESTA (venga guardada en positivo o en negativo). */
+export function ivaConSigno(asientos: Array<{ tipo: number | null; iva: number }>): number {
+  return asientos.reduce((a, x) => a + (TIPOS_NC.includes(Number(x.tipo)) ? -Math.abs(x.iva) : x.iva), 0)
 }
 
 export interface ValorPropuesto { renglon: string; importe: number; detalle: string }
@@ -267,8 +316,10 @@ export const esRecria = (categoria: string) => /recr[ií]a/i.test(categoria)
  * Reparte lo que calcularon los papeles en los renglones del balance propio. **No suma nada que no
  * esté**: un papel ausente no propone, y una parte que el papel no pudo valuar se dice en `detalle`.
  */
-export function propuestaDelSistema(d: DatosDeLosPapeles): ValorPropuesto[] {
+export function propuestaDelSistema(d: DatosDeLosPapeles): { valores: ValorPropuesto[]; faltan: string[] } {
   const out: ValorPropuesto[] = []
+  /** Lo que tendría que estar y no se pudo saber: se muestra, no se calla (§ 🧮). */
+  const faltan: string[] = []
   const poner = (renglon: string, importe: number, detalle: string) => {
     if (Math.abs(importe) >= 0.005) out.push({ renglon, importe: Math.round(importe * 100) / 100, detalle })
   }
@@ -310,7 +361,32 @@ export function propuestaDelSistema(d: DatosDeLosPapeles): ValorPropuesto[] {
   }
   if (d.granosNetoFinal != null) poner("cereales", d.granosNetoFinal, "granos al cierre, neto de calidad y gastos (papel de granos)")
   if (d.sementerasCosto != null) poner("sementeras_agricolas", d.sementerasCosto, "costo de las órdenes ejecutadas (papel de sementeras)")
-  return out
+  if (d.retenciones) {
+    poner("ret_ganancias", d.retenciones.ganancias, `retenciones de Ganancias que nos hicieron en el ejercicio — ${d.retenciones.detalle}`)
+    poner("ret_iibb", d.retenciones.iibb, `retenciones de IIBB que nos hicieron en el ejercicio — ${d.retenciones.detalle}`)
+    poner("ret_iva", d.retenciones.iva, `retenciones de IVA en las liquidaciones del ejercicio — ${d.retenciones.detalle}`)
+  }
+  if (d.iva) {
+    if (d.iva.tecnicoInicio == null) faltan.push("IVA saldo técnico: la foto anterior no tiene el saldo de inicio, no se puede arrastrar")
+    else {
+      const saldo = d.iva.tecnicoInicio + d.iva.creditoFiscal - d.iva.debitoFiscal
+      const det = `arrastre: inicio ${d.iva.tecnicoInicio.toFixed(2)} + crédito ${d.iva.creditoFiscal.toFixed(2)} − débito ${d.iva.debitoFiscal.toFixed(2)} (sin percepciones, retenciones ni pagos de IVA del ejercicio)`
+      if (saldo >= 0) poner("iva_saldo_tecnico", saldo, det)
+      else poner("iva_a_pagar", -saldo, det)
+    }
+  }
+  if (d.echeqsCartera != null) poner("echeqs_cartera", d.echeqsCartera, "saldo del extracto de echeqs de terceros al cierre")
+  if (d.tarjeta) {
+    poner("tarjetas", d.tarjeta.deuda, `tarjeta: ${d.tarjeta.detalle}`)
+    if (d.tarjeta.falta) faltan.push(`Tarjeta: ${d.tarjeta.falta}`)
+  }
+  if (d.fci) {
+    const mov = `en el ejercicio: suscripciones ${d.fci.suscripciones.toFixed(2)}, rescates ${d.fci.rescates.toFixed(2)}`
+    if (d.fci.cuotapartes != null && d.fci.valorCuotaparte != null)
+      poner("fci", d.fci.cuotapartes * d.fci.valorCuotaparte, `${d.fci.cuotapartes} cuotapartes × ${d.fci.valorCuotaparte} — ${mov}`)
+    else faltan.push(`Fondo común: cargá las cuotapartes y el valor de la cuotaparte al cierre (${mov})`)
+  }
+  return { valores: out, faltan }
 }
 
 /**

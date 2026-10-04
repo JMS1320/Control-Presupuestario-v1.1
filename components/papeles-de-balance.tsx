@@ -26,12 +26,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, Info } from "lucide-react"
 import { toast } from "sonner"
-import { armarEjercicio, nombreSubdiario } from "@/lib/balance/ejercicio"
+import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiario } from "@/lib/balance/libro-diario"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
-import type { DatosDeLosPapeles } from "@/lib/balance/balance-propio"
+import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
@@ -455,6 +455,13 @@ export function PapelesDeBalance() {
     granosNetoFinal: hacienda?.campo.valuacionGranos.netoFinal ?? null,
     sementerasCosto: hacienda ? hacienda.campo.sementeras.costo : null,
   }), [bancarios, cuentas, valores, hacienda])
+  // El IVA del ejercicio para arrastrar el saldo técnico — del libro diario, con signo por NC.
+  const ivaDelLibro = useMemo(() => libro
+    ? { creditoFiscal: ivaConSigno(libro.compras), debitoFiscal: ivaConSigno(libro.ventas) }
+    : null, [libro])
+  const fciMovimientos = useMemo(() => bancarios?.fci
+    ? { suscripciones: bancarios.fci.total.suscripciones, rescates: bancarios.fci.total.rescates }
+    : null, [bancarios])
 
   return (
     <Card>
@@ -639,7 +646,9 @@ export function PapelesDeBalance() {
                 impedir que se bajen las compras. */}
             <HaciendaAlCierre ejercicio={libro.ejercicio} onDatos={setHacienda} />
 
-            <ProponerFotoBalance empresa={empresa.id} fechaCierre={libro.ejercicio.fechaCierre} datos={datosParaLaFoto} />
+            <ProponerFotoBalance empresa={empresa.id} fechaInicio={primerDiaDelEjercicio(libro.ejercicio)}
+              fechaCierre={libro.ejercicio.fechaCierre} datos={datosParaLaFoto}
+              iva={ivaDelLibro} fciMovimientos={fciMovimientos} />
           </div>
         )}
       </CardContent>
