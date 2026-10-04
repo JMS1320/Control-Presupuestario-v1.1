@@ -10,6 +10,23 @@
 
 ---
 
+## 🧪 <a id="guia-pruebas-tanda-2026-10-04"></a>GUÍA DE PRUEBAS — tanda sin supervisión del 4 de octubre (rama `jms/tanda-2026-10-04`, sin mergear)
+
+> Publicada también como página («Tanda del 4 de octubre»), con el link a la vista previa de la rama y las
+> explicaciones de [A-BUG-1240](#a-bug-1240) y [A-BUG-1231](#a-bug-1231).
+
+| # | Qué | Dónde | Qué tiene que pasar | Pendiente |
+|---|---|---|---|---|
+| 1 | ⏪ Ventana hacia atrás | Cash Flow → chips «Desde» | **2 sem** → «desde el 20/09» y se van las anteriores; **todo** las devuelve | [A-FEAT-1237](#a-feat-1237) |
+| 2 | 🔎 Comprobante y número | Cash Flow → chips «Comprobante» + búsqueda | ctrl+click en una NC deja sólo ésas; el número de una factura la encuentra | [A-FEAT-170](#a-feat-170) |
+| 3 | 🎯 Barra de pagos | Cash Flow → Modo PAGOS, 3 filas tildadas, bajar | aparece abajo con «3 filas seleccionadas» y todos los botones | [A-FEAT-149](#a-feat-149) |
+| 4 | 💰 Monto de template | Cash Flow → editar el débito de un template | aparece «Modificar Monto»; «NO, sólo esta» no cambia la cuota siguiente | [A-FEAT-1238](#a-feat-1238) |
+| 5 | 📅 Fecha de pago | conciliar una factura con el motor o como grupo | en Egresos, fecha de pago = la del movimiento | [A-BUG-191](#a-bug-191) |
+| 6 | 🔎 Stock | Productivo → Insumos → Stock & Movimientos | buscador, ctrl+click en una categoría, «sólo con stock» | [A-FEAT-1243](#a-feat-1243) |
+| 7 | 🐄 Pesadas | Recría / Engorde → Historial → «Cabeza por cabeza» | baja directo a la tabla, con (+kg) por animal; buscar caravana | [A-BUG-1239](#a-bug-1239) |
+
+**Para tu OK**: completar las 115 facturas conciliadas sin fecha de pago (A-BUG-191) · guardar los estudios de pesadas en la base (A-BUG-1240) · el arreglo del Cash Flow en granos (A-BUG-1231, te lo recuerdo).
+
 ## 🧪 <a id="guia-pruebas-2026-10-04"></a>GUÍA DE PRUEBAS — tanda del 3 y 4 de octubre (tarjeta, Arre Beef, balance propio)
 
 > La vista operable de lo que espera tu prueba de esta tanda. Los pasos de cada uno viven en su fila;
