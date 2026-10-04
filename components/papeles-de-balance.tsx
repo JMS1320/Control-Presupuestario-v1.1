@@ -20,7 +20,7 @@
  * ## ⚠️ Sólo LEE
  * Esta pantalla no escribe una sola fila. Genera un archivo y nada más.
  */
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -30,6 +30,8 @@ import { armarEjercicio, nombreSubdiario } from "@/lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiario } from "@/lib/balance/libro-diario"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
+import { ProponerFotoBalance } from "./proponer-foto-balance"
+import type { DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
@@ -438,6 +440,22 @@ export function PapelesDeBalance() {
 
   const c = libro?.controles
 
+  /**
+   * 📸 Lo que estos papeles le pasan a la foto del balance propio (A-FEAT-1190). Son los MISMOS
+   * números que van al Excel: no se recalcula nada, sólo se reparte en los renglones.
+   */
+  const datosParaLaFoto = useMemo<DatosDeLosPapeles>(() => ({
+    saldos: bancarios?.saldos,
+    cuentasAPagar: cuentas?.pagar,
+    cuentasACobrar: cuentas?.cobrar,
+    cheques: valores?.cheques,
+    anticipos: valores?.anticipos,
+    hacienda: hacienda?.valuacion.filas,
+    insumos: hacienda?.insumos.grupos,
+    granosNetoFinal: hacienda?.campo.valuacionGranos.netoFinal ?? null,
+    sementerasCosto: hacienda ? hacienda.campo.sementeras.costo : null,
+  }), [bancarios, cuentas, valores, hacienda])
+
   return (
     <Card>
       <CardHeader>
@@ -620,6 +638,8 @@ export function PapelesDeBalance() {
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}
             <HaciendaAlCierre ejercicio={libro.ejercicio} onDatos={setHacienda} />
+
+            <ProponerFotoBalance empresa={empresa.id} fechaCierre={libro.ejercicio.fechaCierre} datos={datosParaLaFoto} />
           </div>
         )}
       </CardContent>

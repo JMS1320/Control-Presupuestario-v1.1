@@ -2657,6 +2657,22 @@ en pesos y en dólares. Está en **Reportes**, abajo de los papeles de trabajo: 
 📌 Ya están cargadas las fotos de **MSA al 30/06/24** (tu versión) y **al 30/06/25** (contador y tuya,
 sin lo de PAM). La del 30/06/25 es el inicio del ejercicio 25/26.
 
+**La foto del cierre se arma con los papeles de trabajo.** En **Reportes → Papeles de trabajo del
+balance**, armá el libro del año de cierre y apretá **«Traer stock y precios»**. Abajo aparece el
+cuadro celeste **«📸 Pasar a la foto del balance propio»** con lo que el sistema sabe: bancos y cajas,
+cuentas a pagar y a cobrar, cheques sin debitar, anticipos (a proveedores y de clientes), hacienda de
+cría y de recría valuada a mercado, insumos, granos y sementeras — cada uno con de dónde sale y qué le
+falta. Apretá **«Guardar en la foto (versión Sistema)»**: si la foto de esa fecha no existe, se crea,
+con el dólar BNA importado a esa fecha.
+
+- En el balance propio aparece la columna **Sistema**, y tu columna **JMS** toma esos valores
+  (en celeste e itálica) en los renglones que dejás vacíos. Escribí un número para pisarlo.
+- Lo que el sistema no sabe —créditos impositivos, fondo común, deudas fiscales y sociales,
+  impuesto diferido— queda vacío y lo cargás a mano.
+- Si más adelante volvés a armar los papeles y el sistema dice otra cosa (entró una factura tardía,
+  por ejemplo), el cuadro te muestra **qué cambió contra la foto** y no la toca hasta que apretás
+  **«Actualizar la versión Sistema de la foto»**.
+
 ⚠️ Sin probar todavía → A-TEST-1182
 
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*

@@ -193,18 +193,22 @@ export function BalancePropio() {
                         </tr>,
                         ...renglones.map(r => {
                           const c = valoresFoto.find(v => v.renglon === r.id && v.version === "contador")
-                          const j = valoresFoto.find(v => v.renglon === r.id && v.version === "jms")
+                          const sis = valoresFoto.find(v => v.renglon === r.id && v.version === "sistema")
+                          // JMS vacío = toma el del sistema (default del dato real).
+                          const j = valoresFoto.find(v => v.renglon === r.id && v.version === "jms") ?? sis
                           const dif = (j?.importe ?? 0) - (c?.importe ?? 0)
                           return (
                             <tr key={r.id} className="border-b border-gray-100">
                               <td className="py-0.5 pl-3">{r.etiqueta}{r.nota && <span className="text-gray-400"> — {r.nota}</span>}</td>
                               {versiones.map(v => {
                                 const val = valoresFoto.find(x => x.renglon === r.id && x.version === v.id)
+                                const heredado = v.id === "jms" && !val && sis
                                 return (
                                   <td key={v.id} className="text-right">
-                                    <Input key={`${foto.id}-${r.id}-${v.id}-${val?.importe ?? ""}`} type="text" placeholder="—"
-                                      className="h-6 text-right text-xs"
-                                      title={val ? `${val.origen === "planilla" ? "De la planilla" : val.origen === "sistema" ? "Del sistema" : "Cargado a mano"}${val.detalle ? " · " + val.detalle : ""}` : "Vacío"}
+                                    <Input key={`${foto.id}-${r.id}-${v.id}-${val?.importe ?? ""}`} type="text"
+                                      placeholder={heredado ? fmt(sis.importe) : "—"}
+                                      className={`h-6 text-right text-xs ${heredado ? "placeholder:italic placeholder:text-sky-600" : ""}`}
+                                      title={val ? `${val.origen === "planilla" ? "De la planilla" : val.origen === "sistema" ? "Del sistema" : "Cargado a mano"}${val.detalle ? " · " + val.detalle : ""}` : heredado ? `Vacío: toma el del sistema (${sis.detalle ?? ""}). Escribí un número para pisarlo.` : "Vacío"}
                                       defaultValue={val ? fmt(val.importe) : ""}
                                       onBlur={e => void guardarValor(r.id, v.id, e.target.value)} />
                                   </td>
@@ -252,7 +256,8 @@ export function BalancePropio() {
                 })}
               </div>
               <p className="text-xs text-gray-500">
-                Los retiros de socios todavía no se suman al cierre: se agregan cuando se defina el sistema de retiros.
+                En la columna JMS, lo que está en celeste e itálica es el valor del sistema: se usa mientras
+                la celda esté vacía; escribí un número para pisarlo. Los retiros de socios todavía no se suman al cierre: se agregan cuando se defina el sistema de retiros.
                 Los importes van en positivo; el lado (activo o pasivo) lo da el rubro.
               </p>
             </>

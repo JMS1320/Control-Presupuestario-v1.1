@@ -38,7 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
-import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, type ValorFoto } from "@/lib/balance/balance-propio"
+import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
@@ -5580,6 +5580,43 @@ export function correrCasos(): Resultado[] {
     chequear("Balance propio", "Sin TC no hay dólares (null, no cero) · monto vacío = sin valor",
       "null · null · 1234567,89", `${enDolares(cont, null)} · ${parsearMonto("  ")} · ${parsearMonto("1.234.567,89")}`,
       enDolares(cont, null) === null && parsearMonto("  ") === null && parsearMonto("1.234.567,89") === 1234567.89, "A-FEAT-1190")
+  }
+
+
+  // ══ La foto que se arma sola: la versión «sistema» (A-FEAT-1190) ═══════════════════════════
+  {
+    const p = propuestaDelSistema({
+      saldos: [{ nombre: "BANCO GALICIA (cta cte)", saldo: -2261369.97 }, { nombre: "CAJA GENERAL", saldo: 1000 }, { nombre: "CAJA AMS", saldo: null }],
+      cuentasAPagar: { total: 500, totalSinDato: 0 }, cuentasACobrar: { total: 0, totalSinDato: 0 },
+      cheques: { total: 300, totalSinFecha: 50 },
+      anticipos: { totalAProveedores: 13400000, totalDeClientes: 133800000 },
+      hacienda: [{ categoria: "Vaca", cabezas: 100, valorTotal: 90000000 }, { categoria: "Ternero Recria", cabezas: 40, valorTotal: 20000000 },
+        { categoria: "Ternera Recria", cabezas: 10, valorTotal: null }, { categoria: "Toro", cabezas: 0, valorTotal: 0 }],
+      insumos: [{ ambito: "agricola", valuado: 10, huecos: 0 }, { ambito: "ambos", valuado: 7, huecos: 2 }],
+      granosNetoFinal: null,
+    })
+    const de = (r: string) => p.find(x => x.renglon === r)
+    chequear("Balance propio — sistema", "Reparte los papeles en los renglones; el cero no se propone; lo que falta se dice",
+      "galicia −2.261.369,97 · caja 1000 (1 sin saldo) · cobrar no · anticipo cliente como deuda · recría 20 M con Ternera sin precio",
+      `galicia ${de("banco_galicia")?.importe} · caja ${de("caja")?.importe} · cobrar ${de("deudores_ventas") ? "sí" : "no"} · cliente ${de("anticipos_clientes")?.importe} · recría ${de("stock_recria")?.importe}`,
+      de("banco_galicia")?.importe === -2261369.97 && de("caja")?.importe === 1000 && /1 sin saldo/.test(de("caja")?.detalle ?? "")
+        && !de("deudores_ventas") && de("anticipos_clientes")?.importe === 133800000 && de("anticipos_proveedores")?.importe === 13400000
+        && de("stock_recria")?.importe === 20000000 && /Ternera Recria \(10\)/.test(de("stock_recria")?.detalle ?? "")
+        && de("stock_cria")?.importe === 90000000 && de("insumos_otros")?.importe === 7 && !de("cereales"), "A-FEAT-1190")
+    const vals: ValorFoto[] = [
+      { renglon: "banco_galicia", version: "sistema", importe: 100 }, { renglon: "stock_cria", version: "sistema", importe: 900 },
+      { renglon: "stock_cria", version: "jms", importe: 1200 }, { renglon: "caja", version: "contador", importe: 5 },
+    ]
+    const ej = valoresEfectivos(vals, "jms")
+    chequear("Balance propio — sistema", "JMS vacío toma el del sistema; lo escrito manda; el contador no hereda nada",
+      "JMS activo 1300 · contador activo 5", `JMS activo ${resultadosDeVersion(vals, "jms").activo} · contador activo ${resultadosDeVersion(vals, "contador").activo}`,
+      ej.length === 2 && resultadosDeVersion(vals, "jms").activo === 1300 && resultadosDeVersion(vals, "contador").activo === 5, "A-FEAT-1190")
+    const cambios = cambiosContraLoGuardado(
+      [{ renglon: "banco_galicia", version: "sistema", importe: 100 }, { renglon: "caja", version: "sistema", importe: 7 }, { renglon: "fci", version: "sistema", importe: 1 }],
+      [{ renglon: "banco_galicia", importe: 100, detalle: "" }, { renglon: "caja", importe: 9, detalle: "" }, { renglon: "cereales", importe: 3, detalle: "" }])
+    chequear("Balance propio — sistema", "Avisa lo que cambió desde la foto (cambió, desapareció, apareció) y calla lo igual",
+      "caja 7→9 · fci 1→— · cereales —→3", cambios.map(c => `${c.renglon} ${c.guardado ?? "—"}→${c.hoy ?? "—"}`).join(" · "),
+      cambios.length === 3 && !cambios.some(c => c.renglon === "banco_galicia"), "A-FEAT-1190")
   }
 
   return r

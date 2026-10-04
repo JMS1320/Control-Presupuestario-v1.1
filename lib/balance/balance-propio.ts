@@ -101,6 +101,7 @@ export const RENGLONES: Renglon[] = [
 
   { id: "insumos_agricolas", rubro: "insumos", etiqueta: "Insumos agrícolas", nota: "JMS: valor real" },
   { id: "insumos_ganaderos", rubro: "insumos", etiqueta: "Insumos ganaderos", nota: "JMS: valor real" },
+  { id: "insumos_otros", rubro: "insumos", etiqueta: "Gas oil y otros (ambos ámbitos)" },
 
   { id: "stock_cria", rubro: "stock_ganadero", etiqueta: "Stock de cría", nota: "JMS: valuación propia" },
   { id: "stock_recria", rubro: "stock_ganadero", etiqueta: "Stock de recría", nota: "JMS: valuación propia" },
@@ -112,6 +113,7 @@ export const RENGLONES: Renglon[] = [
   { id: "tarjetas", rubro: "deudas_comerciales", etiqueta: "Tarjetas de crédito", nota: "JMS la suma a proveedores" },
   { id: "provision_gastos", rubro: "deudas_comerciales", etiqueta: "Provisión para gastos" },
   { id: "otras_deudas_comerciales", rubro: "deudas_comerciales", etiqueta: "Otras deudas" },
+  { id: "anticipos_clientes", rubro: "deudas_comerciales", etiqueta: "Anticipos de clientes", nota: "plata que un cliente adelantó: es deuda al cierre" },
 
   { id: "ganancias_a_pagar", rubro: "deudas_fiscales", etiqueta: "Impuesto a las Ganancias a pagar" },
   { id: "iibb_a_pagar", rubro: "deudas_fiscales", etiqueta: "IIBB a pagar" },
@@ -162,8 +164,8 @@ export interface Resultados {
 export function resultadosDeVersion(valores: ValorFoto[], version: Version): Resultados & { desconocidos: string[] } {
   let activo = 0, pasivoCorriente = 0, pasivoTotal = 0
   const desconocidos: string[] = []
-  for (const v of valores) {
-    if (v.version !== version) continue
+  // En JMS, un renglón vacío toma el del sistema (default del dato real).
+  for (const v of valoresEfectivos(valores, version)) {
     const rubro = rubroDelRenglon(v.renglon)
     if (!rubro) { desconocidos.push(v.renglon); continue }
     if (rubro.lado === "activo") activo += v.importe
@@ -218,8 +220,8 @@ export function gananciaDelEjercicio(
 
 /** El total de un rubro en una versión (para la grilla). */
 export function totalDelRubro(valores: ValorFoto[], rubroId: string, version: Version): number {
-  return valores
-    .filter(v => v.version === version && RENGLON_DE.get(v.renglon)?.rubro === rubroId)
+  return valoresEfectivos(valores, version)
+    .filter(v => RENGLON_DE.get(v.renglon)?.rubro === rubroId)
     .reduce((s, v) => s + v.importe, 0)
 }
 
@@ -229,4 +231,110 @@ export function parsearMonto(texto: string): number | null {
   if (!t) return null
   const n = parseFloat(t.replace(/\./g, "").replace(",", "."))
   return Number.isFinite(n) ? n : null
+}
+
+// ══ LA FOTO QUE SE ARMA SOLA — la versión «sistema» (A-FEAT-1190, 2026-10-03) ══════════════════
+//
+// Pedido del usuario: *«avanzá sobre que la foto del 30/6/26 se arme sola»*. Los números salen de
+// los **papeles de trabajo** —los mismos cálculos, no otros—: esta función sólo los reparte en los
+// renglones del balance propio. Lo que el sistema no sabe (créditos impositivos, el fondo común,
+// las deudas fiscales) **no se inventa**: queda vacío y se completa a mano.
+
+/** Lo mínimo de cada papel que hace falta. Todo opcional: un papel que no se armó no propone nada. */
+export interface DatosDeLosPapeles {
+  /** Saldos al cierre por cuenta del extracto (`saldo: null` = no se pudo calcular). */
+  saldos?: Array<{ nombre: string; saldo: number | null }>
+  cuentasAPagar?: { total: number; totalSinDato: number }
+  cuentasACobrar?: { total: number; totalSinDato: number }
+  cheques?: { total: number; totalSinFecha: number }
+  anticipos?: { totalAProveedores: number; totalDeClientes: number }
+  /** Hacienda valuada por categoría (`valorTotal: null` = sin precio). */
+  hacienda?: Array<{ categoria: string; cabezas: number; valorTotal: number | null }>
+  /** Insumos valuados por ámbito: agricola / ganadero / ambos. */
+  insumos?: Array<{ ambito: string; valuado: number; huecos: number }>
+  granosNetoFinal?: number | null
+  sementerasCosto?: number | null
+}
+
+export interface ValorPropuesto { renglon: string; importe: number; detalle: string }
+
+const esCaja = (nombre: string) => /caja/i.test(nombre)
+const esGalicia = (nombre: string) => /galicia/i.test(nombre)
+/** Las categorías de recría las nombra el módulo productivo con «Recria»; el resto es cría. */
+export const esRecria = (categoria: string) => /recr[ií]a/i.test(categoria)
+
+/**
+ * Reparte lo que calcularon los papeles en los renglones del balance propio. **No suma nada que no
+ * esté**: un papel ausente no propone, y una parte que el papel no pudo valuar se dice en `detalle`.
+ */
+export function propuestaDelSistema(d: DatosDeLosPapeles): ValorPropuesto[] {
+  const out: ValorPropuesto[] = []
+  const poner = (renglon: string, importe: number, detalle: string) => {
+    if (Math.abs(importe) >= 0.005) out.push({ renglon, importe: Math.round(importe * 100) / 100, detalle })
+  }
+  if (d.saldos) {
+    const galicia = d.saldos.filter(x => esGalicia(x.nombre) && x.saldo != null)
+    if (galicia.length) poner("banco_galicia", galicia.reduce((a, x) => a + (x.saldo ?? 0), 0), "saldo al cierre del extracto (papel 07)")
+    const cajas = d.saldos.filter(x => esCaja(x.nombre))
+    const conSaldo = cajas.filter(x => x.saldo != null)
+    if (conSaldo.length) poner("caja", conSaldo.reduce((a, x) => a + (x.saldo ?? 0), 0),
+      `cajas del sistema (papel 07)${conSaldo.length < cajas.length ? ` — ${cajas.length - conSaldo.length} sin saldo` : ""}`)
+  }
+  if (d.cuentasAPagar) poner("proveedores", d.cuentasAPagar.total,
+    `facturas impagas al cierre (papel 03)${d.cuentasAPagar.totalSinDato ? ` — aparte, $${d.cuentasAPagar.totalSinDato.toFixed(2)} sin dato de pago` : ""}`)
+  if (d.cuentasACobrar) poner("deudores_ventas", d.cuentasACobrar.total,
+    `ventas sin cobrar al cierre (papel 04)${d.cuentasACobrar.totalSinDato ? ` — aparte, $${d.cuentasACobrar.totalSinDato.toFixed(2)} sin dato de cobro` : ""}`)
+  if (d.cheques) poner("cheques_pendientes", d.cheques.total,
+    `cheques emitidos sin debitar al cierre (04.1)${d.cheques.totalSinFecha ? ` — aparte, $${d.cheques.totalSinFecha.toFixed(2)} sin fecha de débito` : ""}`)
+  if (d.anticipos) {
+    poner("anticipos_proveedores", d.anticipos.totalAProveedores, "anticipos a proveedores al cierre (04.2)")
+    poner("anticipos_clientes", d.anticipos.totalDeClientes, "anticipos de clientes al cierre (04.2)")
+  }
+  if (d.hacienda) {
+    for (const [renglon, filtro, nombre] of [["stock_recria", true, "recría"], ["stock_cria", false, "cría"]] as const) {
+      const filas = d.hacienda.filter(h => esRecria(h.categoria) === filtro && h.cabezas > 0)
+      if (!filas.length) continue
+      const valuadas = filas.filter(h => h.valorTotal != null)
+      const sinPrecio = filas.filter(h => h.valorTotal == null)
+      poner(renglon, valuadas.reduce((a, h) => a + (h.valorTotal ?? 0), 0),
+        `${nombre}: ${filas.reduce((a, h) => a + h.cabezas, 0)} cabezas valuadas a mercado (papel de hacienda)`
+        + (sinPrecio.length ? ` — SIN precio: ${sinPrecio.map(h => `${h.categoria} (${h.cabezas})`).join(", ")}` : ""))
+    }
+  }
+  if (d.insumos) {
+    const MAPA: Record<string, string> = { agricola: "insumos_agricolas", ganadero: "insumos_ganaderos", ambos: "insumos_otros" }
+    for (const g of d.insumos) {
+      const renglon = MAPA[g.ambito] ?? "insumos_otros"
+      poner(renglon, g.valuado, `stock de insumos (${g.ambito})${g.huecos ? ` — ${g.huecos} producto(s) sin precio` : ""}`)
+    }
+  }
+  if (d.granosNetoFinal != null) poner("cereales", d.granosNetoFinal, "granos al cierre, neto de calidad y gastos (papel de granos)")
+  if (d.sementerasCosto != null) poner("sementeras_agricolas", d.sementerasCosto, "costo de las órdenes ejecutadas (papel de sementeras)")
+  return out
+}
+
+/**
+ * 🎚️ **Default del dato real**: en la versión JMS, un renglón vacío toma el valor del sistema.
+ * Campo lleno = «acá mando yo». La versión contador NO toma nada: es lo que dice el contador.
+ */
+export function valoresEfectivos(valores: ValorFoto[], version: Version): ValorFoto[] {
+  const propios = valores.filter(v => v.version === version)
+  if (version !== "jms") return propios
+  const tiene = new Set(propios.map(v => v.renglon))
+  const delSistema = valores.filter(v => v.version === "sistema" && !tiene.has(v.renglon)).map(v => ({ ...v, version: "jms" as Version }))
+  return [...propios, ...delSistema]
+}
+
+/** Lo guardado contra lo que el sistema dice hoy: el aviso, sin pisar nada. */
+export interface CambioDelSistema { renglon: string; guardado: number | null; hoy: number | null }
+
+export function cambiosContraLoGuardado(guardado: ValorFoto[], propuesta: ValorPropuesto[]): CambioDelSistema[] {
+  const antes = new Map(guardado.filter(v => v.version === "sistema").map(v => [v.renglon, v.importe]))
+  const ahora = new Map(propuesta.map(p => [p.renglon, p.importe]))
+  const out: CambioDelSistema[] = []
+  for (const r of new Set([...antes.keys(), ...ahora.keys()])) {
+    const a = antes.get(r) ?? null, h = ahora.get(r) ?? null
+    if (a === null || h === null ? a !== h : Math.abs(a - h) >= 0.01) out.push({ renglon: r, guardado: a, hoy: h })
+  }
+  return out
 }
