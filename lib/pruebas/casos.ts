@@ -38,6 +38,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
@@ -5761,6 +5762,24 @@ export function correrCasos(): Resultado[] {
     chequear("Conciliación — fecha de pago", "Escribe la fecha del movimiento SÓLO donde la factura no tiene (no pisa la que hay), y sin fecha no escribe nada",
       "msa · 2026-07-13 · a,b · sólo vacías · sin fecha: nada", `${conFecha.sch} · ${(conFecha.v as any)?.fecha_pago} · ${(conFecha.ids as string[])?.join(",")} · ${conFecha.soloVacias ? "sólo vacías" : "PISA"} · sin fecha: ${sinFechaPidio ? "ESCRIBIÓ" : "nada"}`,
       conFecha.sch === "msa" && (conFecha.v as any)?.fecha_pago === "2026-07-13" && conFecha.soloVacias === true && !sinFechaPidio, "A-BUG-191")
+  }
+
+
+  // ══ Stock de insumos: búsqueda, categorías y «sólo con stock» (A-FEAT-1243) ══════════════════
+  {
+    const st = [
+      { producto: "Maíz granel", observaciones: null, cantidad: 12000, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Ivermectina", observaciones: "vencimiento dic", cantidad: 0, categorias_insumo: { nombre: "Veterinario" } },
+      { producto: "Núcleo vitamínico", observaciones: null, cantidad: 300, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Gas oil", observaciones: null, cantidad: 1500, categorias_insumo: null },
+    ]
+    const a = filtrarStock(st, { busqueda: "nucleo", categorias: new Set(), soloConStock: false }).map(x => x.producto)
+    const b = filtrarStock(st, { busqueda: "", categorias: new Set(["Alimento"]), soloConStock: false }).length
+    const c = filtrarStock(st, { busqueda: "", categorias: new Set(), soloConStock: true }).length
+    const d = filtrarStock(st, { busqueda: "", categorias: new Set(["(sin categoría)"]), soloConStock: false }).map(x => x.producto)
+    chequear("Stock de insumos — filtros", "Busca sin tildes, filtra por categoría, «sólo con stock» saca el de 0, y lo sin categoría tiene su chip",
+      "Núcleo vitamínico · 2 · 3 · Gas oil", `${a.join(",")} · ${b} · ${c} · ${d.join(",")}`,
+      a.join(",") === "Núcleo vitamínico" && b === 2 && c === 3 && d.join(",") === "Gas oil", "A-FEAT-1243")
   }
 
   return r
