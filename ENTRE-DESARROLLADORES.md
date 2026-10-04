@@ -359,6 +359,13 @@ aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Só
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
 
+## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/77` (aviso ANTES): una columna en los extractos
+
+`nro_resumen varchar(30)` en `public.msa_galicia`, `public.pam_galicia`, `public.pam_galicia_cc` y
+`ma.ma_galicia`: el débito que paga un resumen de tarjeta queda atado a ese resumen (A-DEC-1002). Mismo
+nombre que en las tablas de tarjeta. **No toca RLS, roles ni permisos.** Rama `jms/tarjeta-conciliacion`.
+🔙 `scripts/77-pago-de-resumen-tarjeta-deshacer.sql`.
+
 ## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/75` (aviso ANTES): dos tablas NUEVAS con RLS
 
 `public.balance_fotos` y `public.balance_foto_valores` — el **balance propio** de JMS (A-FEAT-1190 /

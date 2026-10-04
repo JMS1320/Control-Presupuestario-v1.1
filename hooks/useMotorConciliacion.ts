@@ -133,7 +133,7 @@ export function useMotorConciliacion() {
   const [error, setError] = useState<string | null>(null)
   const [resultados, setResultados] = useState<any>(null)
 
-  const { data: cashFlowData, cargarDatos: recargarCashFlow } = useMultiCashFlowData()
+  const { data: cashFlowData, cargarDatos: recargarCashFlow, cargarPagadoConTarjeta } = useMultiCashFlowData()
   const { cargarReglasActivas } = useReglasConciliacion()
 
   // Helper: valor contable/interno es válido si no está vacío ni es "No Lleva"
@@ -453,6 +453,20 @@ export function useMotorConciliacion() {
       // pago de sueldo en la BD, se corrió el motor sin refrescar, y no lo encontró porque en la
       // foto seguía conciliado. Ver A-BUG-37.
       const datosCF = (await recargarCashFlow()) ?? cashFlowData
+      /**
+       * 💳 **Una tarjeta busca primero en lo pagado CON TARJETA** (facturas y cuotas en `credito`) y
+       * después en el resto del Cash Flow — el mismo motor, con el pool que le corresponde a la cuenta
+       * (A-DEC-1002). Antes la tarjeta tenía su propio buscador de facturas antes de llegar acá.
+       */
+      const poolTarjeta = cuenta.tipo === 'tarjeta' ? await cargarPagadoConTarjeta(cuenta.empresa) : []
+      /**
+       * 🔒 **Lo que ya se usó en esta corrida no se ofrece otra vez.** Sin esto, dos movimientos del
+       * mismo importe —los dos cargos de Chubb del mismo día— podían conciliarse contra la MISMA
+       * factura. El buscador propio de la tarjeta lo cuidaba; ahora lo cuida el motor, para todas las
+       * cuentas.
+       */
+      const usadosEnCorrida = new Set<string>()
+      const sinUsar = (filas: typeof datosCF) => filas.filter(f => !usadosEnCorrida.has(String(f.id)))
 
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)
@@ -478,8 +492,10 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          const matchCF = buscarMatchCashFlow(movimiento, datosCF)
+          let matchCF = poolTarjeta.length ? buscarMatchCashFlow(movimiento, sinUsar(poolTarjeta)) : { match: false }
+          if (!matchCF.match) matchCF = buscarMatchCashFlow(movimiento, sinUsar(datosCF))
           if (matchCF.match) {
+            usadosEnCorrida.add(String(matchCF.cashFlowRow.id))
             resultado = {
               movimiento_id: movimiento.id,
               tipo_match: 'cash_flow',

@@ -914,58 +914,14 @@ ${texto.trim()}` : texto.trim()
     const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
     setConciliandoNr(nr)
     try {
-      // 1) Auto-conciliar contra facturas en estado 'credito' por monto (tolerancia centavos)
-      const { data: facturas } = await supabase.schema('msa')
-        .from('comprobantes_arca')
-        .select('id, cuit, imp_total, cuenta_contable, nro_cuenta, denominacion_emisor')
-        .eq('estado', 'credito')
-      let pool = [...(facturas || [])]
-      const matchedIds = new Set<string>()
-      let conc = 0, amb = 0
-      for (const m of pend) {
-        const d = Number(m.debitos) || 0
-        if (d <= 0) continue
-        const cands = pool.filter((f: any) => Math.abs((Number(f.imp_total) || 0) - d) <= 1)
-        if (cands.length === 1) {
-          const f: any = cands[0]
-          const cuit = (f.cuit || '').replace(/[-\s]/g, '')
-          const { data: prov } = cuit
-            ? await supabase.from('proveedores').select('razon_social').eq('cuit', cuit).maybeSingle()
-            : { data: null }
-          const upd: Record<string, any> = {
-            comprobante_arca_id: f.id,
-            detalle: null,
-            estado: 'conciliado',
-            proveedor_nombre: prov?.razon_social || f.denominacion_emisor || null,
-            comprobantes_pagados: f.denominacion_emisor || null,
-          }
-          if (f.cuenta_contable) upd.categ = f.cuenta_contable
-          if (f.nro_cuenta) upd.nro_cuenta = f.nro_cuenta
-          const { error: errMov } = await dbCuenta().from(tablaActiva).update(upd).eq('id', m.id)
-          if (errMov) { console.error('Error conciliando movimiento tarjeta:', errMov); continue } // no concilia si falla el update
-          await supabase.schema('msa').from('comprobantes_arca')
-            .update({ estado: 'conciliado', fecha_vencimiento: m.fecha, monto_a_abonar: d })
-            .eq('id', f.id)
-          actualizarLocal(m.id, upd)
-          pool = pool.filter((x: any) => x.id !== f.id)
-          matchedIds.add(m.id)
-          conc++
-        } else if (cands.length > 1) {
-          amb++
-        }
-      }
-
-      // 2) Motor de reglas sobre lo que quedó pendiente
-      const restantes = pend.filter((m: any) => !matchedIds.has(m.id))
-      setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: restantes.length })
-      if (restantes.length > 0) await ejecutarConciliacion(cuenta, restantes as any)
+      /**
+       * ⚠️ Cambió 2026-10-03 (A-DEC-1002): el resumen se concilia con **el mismo motor** que la cuenta
+       * corriente —facturas y templates (primero lo pagado con tarjeta), anticipos, sueldos y reglas—.
+       * Hasta acá tenía un buscador propio de facturas antes del motor, con otra forma de registrar.
+       */
+      setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: pend.length })
+      await ejecutarConciliacion(cuenta, pend as any)
       recargar()
-      alert(
-        `Resumen ${etiqueta}:\n` +
-        `✅ ${conc} conciliada(s) contra factura crédito\n` +
-        (amb ? `⚠️ ${amb} con varias facturas del mismo monto (resolver a mano)\n` : '') +
-        `— ${restantes.length} pasaron al motor de reglas`
-      )
     } finally {
       setConciliandoNr(null)
     }
