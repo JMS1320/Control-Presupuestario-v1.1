@@ -7,6 +7,24 @@
 
 ---
 
+## 🧪 <a id="guia-pruebas-2026-10-04"></a>GUÍA DE PRUEBAS — tanda del 3 y 4 de octubre (tarjeta, Arre Beef, balance propio)
+
+> La vista operable de lo que espera tu prueba de esta tanda. Los pasos de cada uno viven en su fila;
+> acá van **el orden, dónde, y los números que tienen que salir**. También está publicada como página
+> («Pruebas del 4 de octubre») con los links a cada vista previa.
+
+| # | Qué | Dónde se prueba | Qué tiene que salir | Test |
+|---|---|---|---|---|
+| 1 | 💳 **Tarjeta por resumen** | vista previa de la rama `jms/tarjeta-conciliacion` → Extracto → VISA Business MSA | resumen 28/05/2026: **«Vincular pago»** (débito 08/06, $2.047.532,73) · tocar la fecha filtra la tabla · **Conciliar** usa el motor de la cuenta corriente · Chubb: **«+ Crear uno acá»** propone **CHUBB SEGUROS** · los dos cargos de Chubb del mismo día no van contra el mismo comprobante | [A-TEST-1183](#a-test-1183) *(en esa rama)* |
+| 2 | 🐂 **Liquidación al gancho (Arre Beef)** | desarrollo → Ingresos → MSA → Ventas → las dos ventas de Arre Beef → liquidar juntas | columnas **Kg gancho 1.606 / 1.748** y **$/kg gancho**; poné **5.024,12** y Kg pie **3.000 / 3.260** → importes **8.068.736,72** y **8.782.161,76**, $/kg pie **2.689,58 / 2.693,92**; Kilos ✓; Subtotal salta **−$1.900.000** | [A-FEAT-1234](#a-feat-1234) |
+| 3 | 📸 **Balance propio, fotos 2024 y 2025** | desarrollo → Reportes → «📸 Balance propio» → MSA → 30/06/2025 | JMS: ganancia **$182.646.939,01** (corriente) y **$153.874.397,67** (total), US$ **190.839,32 / 163.719,69** · Contador: activo − pasivo **$778.501.410,70** | [A-TEST-1182](#a-test-1182) |
+| 4 | 📸 **La foto del 30/06/2026 desde los papeles** | desarrollo → Reportes → Papeles de trabajo → MSA 2026 → Armar el libro + Traer stock y precios → cuadro celeste | Galicia **−2.261.369,97** · anticipos de clientes **≈ $133,8 M** · retenciones de Ganancias **$2.504.350,46** · impuesto al cheque **$3.017.008,28** (100 % computable) · avisos: tarjeta sin resumen de junio, FCI pide cuotapartes, 7 meses sin extracto → **Guardar** → aparece la foto 30/06/2026 con la columna Sistema | [A-TEST-1182](#a-test-1182) |
+| 5 | 🧾 **Impuesto al cheque** | mismo lugar, cuadro arriba del celeste; y el Excel, solapa **08.1** | por mes y por concepto; total feb–jun **$3.017.008,28**; en la solapa, cambiar el % recalcula | [A-TEST-1182](#a-test-1182) |
+| 6 | 📑 **Templates sugeridos jul-25 → ene-26** | carpeta de comunicación → Balance → «…TEMPLATES_SUGERIDOS.xlsx» | revisar primero **Gastos Reintegro JMS ($22,8 M)** y **Otros Gastos ($6,1 M)**; decidir qué se carga | [A-DAT-68](#a-dat-68) |
+
+**Cómo contestar:** en la app, cada proceso muestra su cartel de pruebas — ✅ anduvo · 🟡 anduvo en
+parte · 🔴 falló, con lugar para una nota. Lo leo al abrir la próxima sesión.
+
 ## 🧪 GUÍA DE PRUEBAS — la tanda del EXPORT DE BALANCE *(2026-09-30)*
 
 > **Esto es la vista operable de los 10 `A-TEST` que esperan, para correrlos de una sentada.**
