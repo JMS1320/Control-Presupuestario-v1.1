@@ -2453,8 +2453,25 @@ export function correrCasos(): Resultado[] {
     juntasAB?.cabezas === 10 && juntasAB?.kgNetos === 3354 && juntasAB?.neto === 18750900, "A-FEAT-1225")
   const preVacas = precargaDesdeVenta({ fecha: "2026-09-03", cliente: "Arre Beef SA", cuit: "30666277550", categoria: "Vaca CUT/Descarte",
     cabezas: 7, kgTotales: 3640, pctDesbaste: 0, precioKg: 5949.49, kgCarne: 1748 })
-  chequear("Liquidación de hacienda", "La precarga de una venta al gancho trae los kilos de carne",
-    "1748", String(preVacas.linea.kilos), preVacas.linea.kilos === 1748, "A-FEAT-1225")
+  // ⚠️ Cambió 2026-10-03 (A-FEAT-1234): el papel del frigorífico viene en kilo VIVO; los de carne van aparte.
+  chequear("Liquidación de hacienda", "🥩 La precarga al gancho trae los kilos VIVOS (como el papel) y los de carne como kilos gancho",
+    "3640 vivos · 1748 gancho · misma plata", `${preVacas.linea.kilos} vivos · ${preVacas.linea.kgGancho} gancho · ${Math.round(preVacas.linea.kilos * preVacas.linea.precio)}`,
+    preVacas.linea.kilos === 3640 && preVacas.linea.kgGancho === 1748 && Math.abs(preVacas.linea.kilos * preVacas.linea.precio - 1748 * 5949.49) < 20, "A-FEAT-1234")
+  // El papel REAL de Arre Beef (03/09/2026): 3.000 + 3.260 kg pie, 1.606 + 1.748 kg gancho a $5.024,12.
+  const papelAB = calcularLiqHacienda({
+    lineas: [{ razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579, kgGancho: 1606 },
+      { razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 7, clasificacion: "Vaca", kilos: 3260, precio: 2693.915, kgGancho: 1748 }],
+    comisionPct: 0, redondeo: 0, ivaPct: 10.5, retenciones: [], comisionMonto: null, ivaMonto: null,
+  })
+  const avAB = compararConVenta(juntasAB!, papelAB, 3354)
+  const kilosAB = avAB.find(a => a.tema === "Kilos"), subAB = avAB.find(a => a.tema === "Subtotal")
+  chequear("Liquidación de hacienda", "🥩 Arre Beef: kilos gancho OK (3.354) y SALTA el precio — $5.024,12 contra $5.590,73 de la venta (−$1,9 M)",
+    "kilos ok · subtotal aviso con 5.024,12", `kilos ${kilosAB?.nivel} · subtotal ${subAB?.nivel} · ${subAB?.mensaje.match(/gancho ([\d.,]+)/)?.[1]}`,
+    kilosAB?.nivel === "ok" && subAB?.nivel === "aviso" && /gancho 5\.024,1/.test(subAB?.mensaje ?? "") && Math.round(subAB?.diferencia ?? 0) === -1900000, "A-FEAT-1234")
+  const sinGancho = compararConVenta(juntasAB!, papelAB)
+  chequear("Liquidación de hacienda", "Venta al gancho sin kilos gancho cargados: lo pide, no compara vivos contra carne",
+    "aviso de kilos gancho", sinGancho.find(a => a.tema === "Kilos")?.mensaje.slice(0, 40) ?? "",
+    /cargá los kilos gancho/.test(sinGancho.find(a => a.tema === "Kilos")?.mensaje ?? ""), "A-FEAT-1234")
 
   // ══ ✅ MARCAR CUOTAS COBRADAS — el mismo cambio desde Cobros y desde el Cash Flow ═════════
   const tres = [

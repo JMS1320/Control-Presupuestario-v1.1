@@ -52,7 +52,9 @@ export function ventaParaComparar(ventas: { cabezas: number; kgTotales: number; 
   const cabezas = ventas.reduce((s, v) => s + (Number(v.cabezas) || 0), 0)
   const kgNetos = ventas.reduce((s, v) => s + kgQueSeCobran(v), 0)
   const neto = ventas.reduce((s, v) => s + (Number(v.neto) || 0), 0)
-  return { cabezas, kgNetos, neto, precioKg: kgNetos > 0 ? neto / kgNetos : 0 }
+  // Al gancho sólo si TODAS lo son: mezclado, los kilos no se pueden comparar en una sola unidad.
+  const alGancho = ventas.every(v => (Number(v.kgCarne) || 0) > 0)
+  return { cabezas, kgNetos, neto, precioKg: kgNetos > 0 ? neto / kgNetos : 0, alGancho }
 }
 
 /** Peso promedio por cabeza. Sin cabezas, cero (no se divide por cero ni se inventa). */
@@ -99,6 +101,13 @@ export interface LineaLiqHacienda {
   kilos: number
   /** $ por kilo. */
   precio: number
+  /**
+   * 🥩 Los **kilos gancho** de la línea, cuando la venta fue al gancho (A-FEAT-1234, 2026-10-03). El papel
+   * del frigorífico expresa la plata en kilo VIVO (Arre Beef: 3.000 kg pie × $2.689,58) pero el precio se
+   * pacta por kilo GANCHO (1.606 kg × $5.024,12): con este dato la comparación con la venta se hace en la
+   * misma unidad. Vacío en una venta en pie.
+   */
+  kgGancho?: number | null
 }
 
 /** Una retención impresa en el papel (IIBB, Ganancias…). `importe` en positivo: se descuenta. */
@@ -224,6 +233,8 @@ export interface VentaParaLiquidar {
   precioKg: number
   /** El neto que guardó Productivo (kilos netos × precio, menos CZ y flete). */
   neto: number
+  /** true = las ventas son al gancho: `kgNetos` son kilos de CARNE y `precioKg` es por kilo gancho. */
+  alGancho?: boolean
 }
 
 const fmt2 = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -240,8 +251,40 @@ const fmt2 = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2
  * ésa es la única diferencia que se explica sola. Más que eso se avisa, con el monto y con la
  * diferencia por kilo, que es como se pacta.
  */
-export function compararConVenta(venta: VentaParaLiquidar, calc: LiqHaciendaCalculo): AvisoLiq[] {
+export function compararConVenta(venta: VentaParaLiquidar, calc: LiqHaciendaCalculo, kgGanchoLiq?: number): AvisoLiq[] {
   const avisos: AvisoLiq[] = []
+  /**
+   * 🥩 **Venta al gancho** (A-FEAT-1234): el papel viene en kilo vivo, la venta en kilo gancho. Se compara
+   * en GANCHO: kilos gancho del papel contra los de carne de la venta, y el precio por kilo gancho. La
+   * plata (subtotal) se compara igual, y la diferencia salta (usuario: *«sí, debe saltar la diferencia»*).
+   */
+  if (venta.alGancho) {
+    avisos.push(venta.cabezas === calc.cabezas
+      ? { nivel: 'ok', tema: 'Cabezas', mensaje: 'Cabezas: ' + calc.cabezas + ', igual que la venta' }
+      : { nivel: 'aviso', tema: 'Cabezas', diferencia: calc.cabezas - venta.cabezas,
+          mensaje: 'Cabezas: la liquidación trae ' + calc.cabezas + ' y la venta ' + venta.cabezas })
+    const kgG = Number(kgGanchoLiq) || 0
+    if (kgG <= 0) {
+      avisos.push({ nivel: 'aviso', tema: 'Kilos',
+        mensaje: 'La venta es al gancho: cargá los kilos gancho de cada línea para comparar kilos y precio en la misma unidad' })
+    } else {
+      const difKgG = r2(kgG - venta.kgNetos)
+      avisos.push(Math.abs(difKgG) < 0.5
+        ? { nivel: 'ok', tema: 'Kilos', mensaje: 'Kilos gancho: coinciden con los de la venta (' + fmt2(kgG) + ')' }
+        : { nivel: 'aviso', tema: 'Kilos', diferencia: difKgG,
+            mensaje: 'Kilos gancho: la liquidación trae ' + (difKgG > 0 ? 'más' : 'menos') + ' que la venta' })
+    }
+    const difSubG = r2(calc.netoGravado - venta.neto)
+    const precioG = kgG > 0 ? calc.netoGravado / kgG : null
+    const tol = 0.5 * (precioG ?? venta.precioKg)
+    avisos.push(Math.abs(difSubG) <= tol
+      ? { nivel: 'ok', tema: 'Subtotal', mensaje: 'Subtotal después de comisión: igual al neto de la venta' }
+      : { nivel: 'aviso', tema: 'Subtotal', diferencia: difSubG,
+          mensaje: 'Subtotal después de comisión: ' + (difSubG > 0 ? 'más' : 'menos') + ' que el neto de la venta'
+            + (precioG != null ? ' (precio por kg gancho ' + fmt2(precioG) + ' contra ' + fmt2(venta.precioKg) + ' de la venta: '
+              + (precioG - venta.precioKg > 0 ? '+' : '') + fmt2(r2(precioG - venta.precioKg)) + ' $/kg)' : '') })
+    return avisos
+  }
 
   avisos.push(venta.cabezas === calc.cabezas
     ? { nivel: 'ok', tema: 'Cabezas', mensaje: 'Cabezas: ' + calc.cabezas + ', igual que la venta' }
@@ -286,9 +329,18 @@ export function precargaDesdeVenta(v: {
       razonSocial: v.cliente || '', cuit: v.cuit || '',
       cabezas: Number(v.cabezas) || 0,
       clasificacion: v.categoria || '',
-      // Al gancho, los kilos de carne; en pie, los vivos menos desbaste (kgQueSeCobran).
-      kilos: Math.round(kgQueSeCobran(v)),
-      precio: Number(v.precioKg) || 0,
+      /**
+       * ⚠️ Cambió 2026-10-03 (A-FEAT-1234): al gancho se precargan los kilos VIVOS —el papel del
+       * frigorífico viene en kilo vivo— con el precio vivo equivalente (misma plata), y los de carne van
+       * en `kgGancho` para comparar. En pie, los vivos menos desbaste, como siempre.
+       */
+      ...((Number(v.kgCarne) || 0) > 0 && (Number(v.kgTotales) || 0) > 0
+        ? {
+            kilos: Math.round(Number(v.kgTotales)),
+            precio: Math.round(Number(v.kgCarne) * (Number(v.precioKg) || 0) / Number(v.kgTotales) * 100) / 100,
+            kgGancho: Number(v.kgCarne),
+          }
+        : { kilos: Math.round(kgQueSeCobran(v)), precio: Number(v.precioKg) || 0 }),
     },
     // pct_cz es FRACCIÓN en la venta; la comisión del papel va en PORCENTAJE.
     comisionPct: Math.round((Number(v.pctCz) || 0) * 100 * 1000) / 1000,

@@ -1870,8 +1870,13 @@ Si el consignatario liquidó varias ventas en un solo papel —por ejemplo, vaca
 **tildá las ventas** y apretá **Liquidar las N juntas**. Abre con una línea por venta y compara la
 liquidación contra las ventas sumadas.
 
-📌 Si la venta fue **al gancho** (por kilo de carne), la precarga trae los **kilos de carne**, no los
-vivos.
+📌 Si la venta fue **al gancho** (por kilo de carne), la tabla muestra **dos kilos por línea**: **Kg pie**
+—como viene el papel del frigorífico— y **Kg gancho**, que es contra lo que se compara la venta. La
+precarga trae los vivos de la venta en *Kg pie* (con el precio que da la misma plata) y los de carne en
+*Kg gancho*; corregí las dos con lo que diga el papel. Si el precio real por kilo gancho fue otro, el
+aviso de **Subtotal** te dice cuánto y cuánto por kilo (Arre Beef: $5.024,12 contra $5.590,73 de la venta).
+
+⚠️ Sin probar todavía → A-FEAT-1234
 
 ### Cargar una venta histórica (anterior al stock de la app)
 Para una venta que se hizo antes de que la app llevara el stock —por ejemplo, la de enero de 2026—:
