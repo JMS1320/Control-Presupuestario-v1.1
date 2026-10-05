@@ -3606,8 +3606,10 @@ function SubTabStockInsumos() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
-  /** 🧾 A-BUG-1244 — la compra desde la que se abre la vinculación con su factura. */
-  const [vincularCompraId, setVincularCompraId] = useState<string | null>(null)
+  /** 🧾 A-BUG-1244 — las compras desde las que se abre la vinculación con su factura. */
+  const [vincularCompraIds, setVincularCompraIds] = useState<string[] | null>(null)
+  /** Compras tildadas en la lista para vincularlas juntas. */
+  const [selCompras, setSelCompras] = useState<Set<string>>(new Set())
   /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
   const [insumoMedir, setInsumoMedir] = useState<
     { id: string; producto: string; unidad_medida: string | null } | null>(null)
@@ -4117,6 +4119,14 @@ function SubTabStockInsumos() {
                 </Button>
               )}
             </div>
+            {selCompras.size > 0 && (
+              <span className="flex items-center gap-2 ml-2">
+                <Button size="sm" className="h-7 text-xs" onClick={() => setVincularCompraIds([...selCompras])}>
+                  🧾 Vincular {selCompras.size} seleccionada{selCompras.size === 1 ? '' : 's'} con su factura
+                </Button>
+                <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setSelCompras(new Set())}>limpiar</button>
+              </span>
+            )}
             <span className="text-xs text-muted-foreground ml-auto">
               {movimientosFiltrados.length} de {movimientos.filter(m => {
                 const cat = (m.stock_insumos as any)?.categorias_insumo
@@ -4136,7 +4146,7 @@ function SubTabStockInsumos() {
               <TableHead className="text-right">Monto Total</TableHead>
               <TableHead>Proveedor</TableHead>
               <TableHead>Obs.</TableHead>
-              <TableHead className="w-8" title="Vincular con su factura"></TableHead>
+              <TableHead className="w-8" title="Tildá compras para vincularlas juntas con su factura">🧾</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -4202,8 +4212,13 @@ function SubTabStockInsumos() {
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
                   <TableCell>
                     {m.tipo === 'compra' && (
-                      <button type="button" title="Vincular con su factura (precio, descuento y moneda)"
-                        className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraId(m.id)}>🧾</button>
+                      <span className="flex items-center gap-1">
+                        <input type="checkbox" title="Seleccionar para vincular junto con otras"
+                          checked={selCompras.has(m.id)}
+                          onChange={e => setSelCompras(prev => { const n = new Set(prev); e.target.checked ? n.add(m.id) : n.delete(m.id); return n })} />
+                        <button type="button" title="Vincular sólo ésta con su factura (precio, descuento y moneda)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                      </span>
                     )}
                   </TableCell>
                 </TableRow>
@@ -4501,8 +4516,8 @@ function SubTabStockInsumos() {
           onCerrar={() => { setInsumoMedir(null); cargarDatos() }} />
       )}
 
-      <ModalVincularCompras abierto={!!vincularCompraId} compraId={vincularCompraId}
-        onCerrar={() => setVincularCompraId(null)} onGuardado={() => cargarDatos()} />
+      <ModalVincularCompras abierto={!!vincularCompraIds?.length} compraIds={vincularCompraIds}
+        onCerrar={() => setVincularCompraIds(null)} onGuardado={() => { setSelCompras(new Set()); cargarDatos() }} />
       {insumoFacturas && (
         <PanelEntregasFacturas insumo={insumoFacturas}
           onCerrar={() => { setInsumoFacturas(null); cargarDatos() }} />

@@ -3,8 +3,8 @@
 /**
  * 🧾 Vincular una factura con sus compras de insumos — A-BUG-1244.
  *
- * Se abre desde la FACTURA (Egresos → menú ⋯) o desde la COMPRA (Productivo → Insumos → movimientos).
- * Lista las compras del proveedor cerca de la fecha, cada una con su % de descuento pactado, muestra
+ * Se abre desde la FACTURA (Egresos → menú ⋯) o desde una o varias COMPRAS (Productivo → Insumos →
+ * movimientos). Lista las compras del proveedor cerca de la fecha, cada una con su % de descuento, muestra
  * el control contra el neto de la factura, y al confirmar:
  *   · crea / actualiza los vínculos (`productivo.entrega_factura`) con el precio EN PESOS,
  *   · reescribe el precio de la compra (moneda, precio en esa moneda, TC y `costo_unitario` en pesos),
@@ -39,15 +39,19 @@ const fmt = (n: number, d = 2) => n.toLocaleString('es-AR', { minimumFractionDig
 const primeraPalabra = (s: string) => (s || '').trim().split(/\s+/)[0] || ''
 
 export function ModalVincularCompras({
-  abierto, onCerrar, onGuardado, facturaId, compraId,
+  abierto, onCerrar, onGuardado, facturaId, compraIds,
 }: {
   abierto: boolean
   onCerrar: () => void
   onGuardado?: () => void
   /** Abierto desde la factura. */
   facturaId?: string | null
-  /** Abierto desde una compra: se elige la factura acá adentro. */
-  compraId?: string | null
+  /**
+   * Abierto desde una o varias compras: se elige la factura acá adentro.
+   * ⚠️ Sólo esas vienen tildadas. Usuario 2026-10-05: *«¿por qué si toco en 1 se abriría con las 7? No
+   * sabemos cómo van a facturar; tal vez hacen 3 facturas para los 7 insumos»*.
+   */
+  compraIds?: string[] | null
 }) {
   const [factura, setFactura] = useState<FacturaLeida | null>(null)
   const [candidatas, setCandidatas] = useState<FacturaLeida[]>([])
@@ -78,9 +82,9 @@ export function ModalVincularCompras({
         if (facturaId) {
           const { data } = await arca().select(COLS).eq('id', facturaId).single()
           if (data) elegirFactura(aFactura(data))
-        } else if (compraId) {
+        } else if (compraIds?.length) {
           const { data: m } = await supabase.schema('productivo').from('movimientos_insumos')
-            .select('fecha, proveedor, cuit').eq('id', compraId).single()
+            .select('fecha, proveedor, cuit').eq('id', compraIds[0]).single()
           if (m) {
             const q = arca().select(COLS).gte('fecha_emision', sumarDias(m.fecha, -60)).lte('fecha_emision', sumarDias(m.fecha, 90))
             const { data } = m.cuit ? await q.eq('cuit', m.cuit) : await q.ilike('denominacion_emisor', `%${primeraPalabra(m.proveedor || '')}%`)
@@ -92,7 +96,7 @@ export function ModalVincularCompras({
       } finally { setCargando(false) }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abierto, facturaId, compraId])
+  }, [abierto, facturaId, (compraIds || []).join(',')])
 
   // ── Elegida la factura: sus compras candidatas ──
   const elegirFactura = async (f: FacturaLeida) => {
@@ -126,13 +130,12 @@ export function ModalVincularCompras({
       }
     }).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.producto.localeCompare(b.producto))
     setCompras(lista)
-    // Tildadas: las ya vinculadas a esta factura; si no hay ninguna, las de la misma fecha que la más cercana.
-    const yaVinc = lista.filter(c => c.vinculoId)
-    const fechaCercana = lista.length ? lista.reduce((best, c) =>
-      Math.abs(+new Date(c.fecha) - +new Date(f.fecha)) < Math.abs(+new Date(best) - +new Date(f.fecha)) ? c.fecha : best, lista[0].fecha) : ''
+    // Tildadas: SÓLO las que eligió el usuario y las ya vinculadas a esta factura. No se adivina por
+    // fecha: un proveedor puede facturar 7 entregas en 3 facturas.
+    const elegidas = new Set(compraIds || [])
     setRenglones(lista.map(c => ({
       compraId: c.id,
-      incluir: yaVinc.length ? !!c.vinculoId : (c.fecha === fechaCercana && !c.otraFactura) || c.id === compraId,
+      incluir: !!c.vinculoId || elegidas.has(c.id),
       pctDescuento: 0,
     })))
   }
@@ -207,7 +210,7 @@ export function ModalVincularCompras({
         <TestsDelProceso proceso="productivo/vincular-compras" pantalla="productivo" />
         {cargando && <p className="text-sm text-gray-500">Cargando…</p>}
 
-        {!factura && !cargando && compraId && (
+        {!factura && !cargando && !!compraIds?.length && (
           <div className="space-y-1 text-sm">
             <p className="text-gray-600">Elegí la factura de este proveedor:</p>
             {candidatas.length === 0 && <p className="text-amber-700">No encontré facturas de este proveedor entre 60 días antes y 90 después de la compra.</p>}
