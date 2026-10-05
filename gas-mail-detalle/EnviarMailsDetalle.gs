@@ -6,7 +6,7 @@
  * Sin horarios: se corre a MANO (o desde un botón). En lote. Los primeros los revisás en Borradores
  * de Gmail y los mandás vos. Cuando veas que todo anda bien → cambiar createDraft por sendEmail (abajo).
  *
- * CONFIGURAR (una vez): SUPABASE_URL acá abajo, y la key en las PROPIEDADES DEL SCRIPT
+ * CONFIGURAR (una vez): la key en las PROPIEDADES DEL SCRIPT
  * (Configuración del proyecto ⚙ → Propiedades del script → SUPABASE_KEY).
  *
  * ⚠️ 2026-09-28 / 2026-10-05 — TIENE QUE SER LA **SERVICE ROLE KEY**, no la anon. Desde que se cerró
@@ -15,7 +15,8 @@
  * La key NO va escrita en el código: va en las propiedades, que no se copian al repo.
  */
 
-var SUPABASE_URL = 'https://TU_PROJECT_REF.supabase.co';
+// La dirección no es secreta (es la misma que usa la app en el navegador). La KEY sí: va en las propiedades.
+var SUPABASE_URL = 'https://lyojiaglcictmboqwxfm.supabase.co';
 var SUPABASE_KEY = PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY');
 
 /**
