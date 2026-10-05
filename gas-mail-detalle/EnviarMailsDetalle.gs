@@ -94,3 +94,19 @@ function base64ToPdfBlob_(b64, nombre) {
   var bytes = Utilities.base64Decode(b64);
   return Utilities.newBlob(bytes, 'application/pdf', nombre);
 }
+
+/**
+ * Diagnóstico: qué clave está leyendo el script, SIN mostrarla. Ejecutarla desde el editor.
+ * Tiene que decir «service_role» (o «sb_secret_»). Con la pública, Supabase contesta 42501.
+ */
+function verRolDeLaKey() {
+  var k = PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY');
+  if (!k) { Logger.log('La propiedad SUPABASE_KEY no existe o tiene otro nombre'); return; }
+  if (k.indexOf('sb_secret_') === 0) { Logger.log('Clave SECRETA nueva (sb_secret_): correcta'); return; }
+  if (k.indexOf('sb_publishable_') === 0) { Logger.log('Es la PUBLICA (sb_publishable_): hay que poner la secreta'); return; }
+  var parte = k.split('.')[1];
+  while (parte.length % 4) parte += '=';
+  var datos = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parte)).getDataAsString());
+  Logger.log('Rol de la clave: ' + datos.role + '   (tiene que decir service_role)');
+  Logger.log('Uso en el código: ' + (SUPABASE_KEY === k ? 'el código usa la propiedad' : 'el código NO usa la propiedad: hay otra línea con la clave escrita'));
+}
