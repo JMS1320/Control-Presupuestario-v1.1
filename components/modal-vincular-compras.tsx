@@ -227,6 +227,13 @@ export function ModalVincularCompras({
           <div className="space-y-3 text-sm">
             <div className="flex flex-wrap items-center gap-4 rounded bg-gray-50 p-2">
               <span><b>FC {factura.numero}</b> · {factura.proveedor} · {factura.fecha.split('-').reverse().join('/')}</span>
+              {/* Abierta desde compras, la factura se pudo haber elegido sola (era la única candidata): se puede cambiar. */}
+              {!!compraIds?.length && (
+                <button type="button" className="text-xs text-blue-700 underline"
+                  onClick={() => { setFactura(null); setCompras([]); setRenglones([]); setMarcadas(new Set()) }}>
+                  cambiar factura{candidatas.length > 1 ? ` (${candidatas.length} posibles)` : ''}
+                </button>
+              )}
               <span>Neto: <b>{sim} {fmt(factura.neto)}</b></span>
               {usd && (
                 <label className="flex items-center gap-1">TC

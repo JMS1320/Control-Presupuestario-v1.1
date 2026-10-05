@@ -5182,7 +5182,7 @@ Para que el **precio de cada compra** sea el real (el de la factura), con el des
 
 **Dónde se abre** (es la misma ventana):
 - desde la **factura**: *Egresos → Facturas* → menú **⋯** de la fila → **🧾 Vincular con compras de insumos**;
-- desde las **compras**: *Productivo → Insumos → Ver Movimientos* → tildá las compras al final de cada fila y **«🧾 Vincular N seleccionadas»** (o el 🧾 de una sola). Si hay varias facturas del proveedor, te pide elegir.
+- desde las **compras**: *Productivo → Insumos → Ver Movimientos* → tildá las compras al final de cada fila y **«🧾 Vincular N seleccionadas»** (o el 🧾 de una sola). Si hay varias facturas del proveedor, te pide elegir; si hay una sola, la elige directo — y con **«cambiar factura»** volvés a la lista.
 
 **Qué hacés:**
 1. Tildá las compras que cubre la factura. Vienen tildadas **sólo** las que elegiste (o las ya vinculadas): el proveedor puede facturar varias entregas en facturas distintas, así que la app no adivina.
