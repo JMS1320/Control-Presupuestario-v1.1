@@ -43,6 +43,9 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
@@ -5887,6 +5890,72 @@ export function correrCasos(): Resultado[] {
     chequear("Impuesto al cheque", "Lo computable va a la foto como crédito; el mes sin extracto se pide; anticipos en 0 no se proponen",
       "impuesto_cheque 575 · 1 falta · sin anticipos", `impuesto_cheque ${v.find(x => x.renglon === "impuesto_cheque")?.importe} · ${faltan.length} falta · ${v.some(x => x.renglon === "anticipos_ganancias") ? "con" : "sin"} anticipos`,
       v.find(x => x.renglon === "impuesto_cheque")?.importe === 575 && faltan.length === 1 && !v.some(x => x.renglon === "anticipos_ganancias"), "A-FEAT-1190")
+  }
+
+
+  // ══ Cash Flow: tipo de comprobante, número y ventana hacia atrás (A-FEAT-170 / A-FEAT-1237) ══
+  {
+    const et = [
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 1 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 3 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 11 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 7 }),
+      etiquetaTipoComprobante({ origen: "TEMPLATE" }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: null, facturas_agrupadas: 3 }),
+      etiquetaTipoComprobante({ origen: "VENTA", tipo_comprobante: 60 }),
+    ]
+    chequear("Cash Flow — filtros", "El chip de comprobante nombra tipo y letra (FC A, NC A, FC C, ND B) y separa lo que no es factura",
+      "FC A · NC A · FC C · ND B · Sin comprobante · Grupo (tipos mezclados) · Liquidación", et.join(" · "),
+      et.join("|") === "FC A|NC A|FC C|ND B|Sin comprobante|Grupo (tipos mezclados)|Liquidación", "A-FEAT-170")
+    const f = { comprobante_display: "FC A 00001-00012842", numero_desde: 12842, punto_venta: 1 }
+    chequear("Cash Flow — filtros", "Buscar por número encuentra «12842», «00012842» y «0001-00012842»; con menos de 3 dígitos no busca",
+      "sí · sí · sí · no · no", [coincideNumeroComprobante(f, "12842"), coincideNumeroComprobante(f, "00012842"), coincideNumeroComprobante(f, "0001-00012842"), coincideNumeroComprobante(f, "99999"), coincideNumeroComprobante(f, "12")].map(x => x ? "sí" : "no").join(" · "),
+      coincideNumeroComprobante(f, "12842") && coincideNumeroComprobante(f, "00012842") && coincideNumeroComprobante(f, "0001-00012842") && !coincideNumeroComprobante(f, "99999") && !coincideNumeroComprobante(f, "12"), "A-FEAT-170")
+    const d2s = desdeVentana("2026-10-04", "semana", 2), d1m = desdeVentana("2026-10-04", "mes", 1), d3m = desdeVentana("2026-03-31", "mes", 3)
+    chequear("Cash Flow — filtros", "La ventana: 2 semanas antes del 04/10 es el 20/09; 1 mes, el 04/09; lo de antes se esconde, lo sin fecha no",
+      "2026-09-20 · 2026-09-04 · fuera · adentro · sin fecha adentro", `${d2s} · ${d1m} · ${pasaVentana("2026-09-01", d1m) ? "adentro" : "fuera"} · ${pasaVentana("2026-11-15", d1m) ? "adentro" : "fuera"} · sin fecha ${pasaVentana(null, d1m) ? "adentro" : "fuera"}`,
+      d2s === "2026-09-20" && d1m === "2026-09-04" && !pasaVentana("2026-09-01", d1m) && pasaVentana("2026-11-15", d1m) && pasaVentana(null, d1m) && d3m === "2025-12-31", "A-FEAT-1237")
+  }
+
+
+  // ══ A-BUG-191: al conciliar, la fecha de pago es la del movimiento — completa, no pisa ═══════
+  {
+    // Un cliente falso que anota qué se le pidió (cero escritura real: § lib/pruebas).
+    const pedido: Record<string, unknown> = {}
+    const falso = { schema: (sch: string) => ({ from: (t: string) => ({
+      update: (v: unknown) => { Object.assign(pedido, { sch, t, v }); return {
+        in: (_c: string, ids: string[]) => { pedido.ids = ids; return {
+          is: (col: string, val: unknown) => { pedido.soloVacias = col === "fecha_pago" && val === null; return Promise.resolve({ count: 2, error: null }) },
+        } },
+      } },
+    }) }) }
+    // El pedido se arma sincrónico: se mira apenas se llama (los casos no esperan promesas).
+    void completarFechaPago(falso, "msa", ["a", "b"], "2026-07-13T00:00:00")
+    const conFecha = { ...pedido }
+    for (const k of Object.keys(pedido)) delete pedido[k]
+    void completarFechaPago(falso, "msa", ["a"], null)
+    const sinFechaPidio = Object.keys(pedido).length > 0
+    chequear("Conciliación — fecha de pago", "Escribe la fecha del movimiento SÓLO donde la factura no tiene (no pisa la que hay), y sin fecha no escribe nada",
+      "msa · 2026-07-13 · a,b · sólo vacías · sin fecha: nada", `${conFecha.sch} · ${(conFecha.v as any)?.fecha_pago} · ${(conFecha.ids as string[])?.join(",")} · ${conFecha.soloVacias ? "sólo vacías" : "PISA"} · sin fecha: ${sinFechaPidio ? "ESCRIBIÓ" : "nada"}`,
+      conFecha.sch === "msa" && (conFecha.v as any)?.fecha_pago === "2026-07-13" && conFecha.soloVacias === true && !sinFechaPidio, "A-BUG-191")
+  }
+
+
+  // ══ Stock de insumos: búsqueda, categorías y «sólo con stock» (A-FEAT-1243) ══════════════════
+  {
+    const st = [
+      { producto: "Maíz granel", observaciones: null, cantidad: 12000, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Ivermectina", observaciones: "vencimiento dic", cantidad: 0, categorias_insumo: { nombre: "Veterinario" } },
+      { producto: "Núcleo vitamínico", observaciones: null, cantidad: 300, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Gas oil", observaciones: null, cantidad: 1500, categorias_insumo: null },
+    ]
+    const a = filtrarStock(st, { busqueda: "nucleo", categorias: new Set(), soloConStock: false }).map(x => x.producto)
+    const b = filtrarStock(st, { busqueda: "", categorias: new Set(["Alimento"]), soloConStock: false }).length
+    const c = filtrarStock(st, { busqueda: "", categorias: new Set(), soloConStock: true }).length
+    const d = filtrarStock(st, { busqueda: "", categorias: new Set(["(sin categoría)"]), soloConStock: false }).map(x => x.producto)
+    chequear("Stock de insumos — filtros", "Busca sin tildes, filtra por categoría, «sólo con stock» saca el de 0, y lo sin categoría tiene su chip",
+      "Núcleo vitamínico · 2 · 3 · Gas oil", `${a.join(",")} · ${b} · ${c} · ${d.join(",")}`,
+      a.join(",") === "Núcleo vitamínico" && b === 2 && c === 3 && d.join(",") === "Gas oil", "A-FEAT-1243")
   }
 
   return r

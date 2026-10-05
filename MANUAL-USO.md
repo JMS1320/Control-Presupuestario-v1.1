@@ -2957,6 +2957,23 @@ sí tenemos y la que usabas para chequear totales contra el contador.
 
 ⚠️ Sin probar todavía → A-TEST-1161
 
+## 🔎 Cash Flow → filtrar por comprobante, por número y por fecha hacia atrás *(2026-10-04)*
+
+En la barra de chips, arriba de la tabla:
+- **Comprobante:** un chip por tipo (*FC A, NC A, FC C…*, *Liquidación*, *Sin comprobante*). Click
+  prende o apaga; **ctrl+click** deja sólo ése.
+- **Desde:** *todo* o *1, 2, 3 semanas / meses* para atrás. Esconde lo anterior; lo que viene se sigue
+  viendo.
+- La **búsqueda rápida** también encuentra por **número de comprobante**.
+
+**Modo PAGOS**: si bajás con filas seleccionadas, el panel aparece **fijo abajo**, con los mismos
+botones, para no tener que volver arriba.
+
+**Monto de una cuota de template**: al cambiarlo desde el Cash Flow te pregunta si propagarlo a las
+cuotas futuras, igual que en Templates.
+
+⚠️ Sin probar todavía → A-FEAT-170, A-FEAT-1237, A-FEAT-149, A-FEAT-1238
+
 ## 🧾 Cash Flow → el aviso de notas de crédito sin aplicar *(2026-09-29)*
 
 Arriba de la grilla del Cash Flow puede aparecer un **cartel ámbar**. Aparece **sólo si hay algo**:

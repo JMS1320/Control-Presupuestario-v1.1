@@ -1,5 +1,6 @@
 "use client"
 
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -261,6 +262,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Historial
   const [modalHistorial, setModalHistorial] = useState(false)
+  /**
+   * 🐄 A-BUG-1239 — el historial tiene una vista sólo CABEZA POR CABEZA. Nota del usuario 2026-09-16:
+   * *«esta vista no me permite ver los datos 1 x 1 de cada cabeza… debería una sección en sí que se pueda
+   * ver sin la molestia de los otros títulos que ocupan mucho lugar»*. Los segmentadores no se desmontan
+   * (se ocultan): así no se pierde lo que estaba armado.
+   */
+  const [vistaHist, setVistaHist] = useState<'todo' | 'cabezas'>('todo')
+  const [buscaCaravana, setBuscaCaravana] = useState('')
   // Segmentadores (múltiples: uno por población). Cada uno reporta sus secciones y su config.
   const segNextId = useRef(1)
   const [segmentadorIds, setSegmentadorIds] = useState<number[]>([0])
@@ -2056,6 +2065,19 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               aun colapsados, le ocupaban toda la pantalla y scrollear a mano no alcanzaba.
               Con esto se salta directo, sin rediseñar nada de lo que ya funciona. */}
           <div className="sticky top-0 z-20 -mt-1 flex flex-wrap items-center gap-1 border-b bg-white/95 px-1 py-1.5 backdrop-blur">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400">Vista</span>
+            {([['todo', 'Completa'], ['cabezas', 'Cabeza por cabeza']] as const).map(([v, txt]) => (
+              <button key={v} type="button" onClick={() => {
+                setVistaHist(v)
+                if (v === 'cabezas') setTimeout(() => document.getElementById('car-hist')?.scrollIntoView({ block: 'start' }), 0)
+              }}
+                className={`rounded border px-2 py-0.5 text-[11px] ${vistaHist === v ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                {txt}
+              </button>
+            ))}
+            <input type="text" value={buscaCaravana} onChange={e => setBuscaCaravana(e.target.value)}
+              placeholder="Buscar caravana…" className="h-6 w-36 rounded border px-2 text-[11px]" />
+            <span className="mx-1 h-4 w-px bg-gray-200" />
             <span className="text-[10px] uppercase tracking-wide text-gray-400">Ir a</span>
             {[
               ["seg-hist", "Segmentadores"],
@@ -2070,6 +2092,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             ))}
           </div>
 
+          <TestsDelProceso proceso="productivo/pesadas" pantalla="productivo" />
+          {/* En «Cabeza por cabeza» se ocultan segmentadores y análisis — sin desmontarlos. */}
+          <div className={vistaHist === 'cabezas' ? 'hidden' : ''}>
           {/* ── Segmentadores (uno por población; ej. Machos y Hembras a la vez) ── */}
           <div id="seg-hist" className="scroll-mt-10" />
           {segmentadorIds.map((id, i) => (
@@ -2099,6 +2124,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             segConfigs={segmentadorIds.map(id => segConfigsRef.current[id]).filter(Boolean) as SegConfig[]}
             onRestoreSegConfigs={restaurarSegmentadores}
           />
+          </div>
 
           <div id="car-hist" className="scroll-mt-10" />
           {todasFechas.length === 0 ? (
@@ -2121,6 +2147,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                 <TableBody>
                   {terneros
                     .filter(t => t.pesadas_terneros.length > 0)
+                    .filter(t => !buscaCaravana.trim() || `${t.caravana_oficial ?? ''} ${t.caravana_interna ?? ''}`.toLowerCase().includes(buscaCaravana.trim().toLowerCase()))
                     .map(t => (
                       <TableRow key={t.id} className="text-sm">
                         <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
@@ -2130,10 +2157,17 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                         </TableCell>
                         {todasFechas.map(f => {
                           const pesada = t.pesadas_terneros.find(p => p.fecha === f)
+                          // En «Cabeza por cabeza», al lado del peso: cuánto cambió contra SU pesada anterior.
+                          const anterior = pesada && vistaHist === 'cabezas'
+                            ? t.pesadas_terneros.filter(p => p.fecha < f).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+                            : undefined
+                          const delta = anterior && pesada ? pesada.peso_kg - anterior.peso_kg : null
                           return (
                             <TableCell key={f} className="text-center text-xs">
                               {pesada
-                                ? <span className="font-medium text-green-700">{pesada.peso_kg.toFixed(1).replace('.', ',')}</span>
+                                ? <span className="font-medium text-green-700">{pesada.peso_kg.toFixed(1).replace('.', ',')}
+                                    {delta != null && <span className={`ml-1 text-[10px] font-normal ${delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>({delta >= 0 ? '+' : ''}{delta.toFixed(1).replace('.', ',')})</span>}
+                                  </span>
                                 : <span className="text-gray-300">—</span>
                               }
                             </TableCell>

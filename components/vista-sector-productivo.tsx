@@ -2,6 +2,9 @@
 
 
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
+import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -3645,6 +3648,10 @@ function SubTabStockInsumos() {
   // Filtros del listado de movimientos
   const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
   const [busquedaMov, setBusquedaMov] = useState('')
+  // 🔎 A-FEAT-1243 — filtros de la tabla de STOCK (los movimientos ya tenían los suyos)
+  const [busquedaStock, setBusquedaStock] = useState('')
+  const [catsStock, setCatsStock] = useState<Set<string>>(new Set())
+  const [soloConStock, setSoloConStock] = useState(false)
 
   // Recalcular stock de un insumo desde sus movimientos
   const recalcularStockInsumo = async (insumoStockId: string) => {
@@ -3981,6 +3988,9 @@ function SubTabStockInsumos() {
     return ambitoReal === 'ambos' || ambitoReal === filtroTipo
   }
   const stockFiltrado = stock.filter(s => deEsteAmbito((s.categorias_insumo as any)?.ambito, s.categorias_insumo?.nombre))
+  /** Lo que muestra la TABLA de stock: el ámbito + los filtros de A-FEAT-1243. Los modales siguen usando `stockFiltrado`. */
+  const stockVisible = filtrarStock(stockFiltrado, { busqueda: busquedaStock, categorias: catsStock, soloConStock })
+  const catsDisponiblesStock = Array.from(new Set(stockFiltrado.map(s => s.categorias_insumo?.nombre || '(sin categoría)'))).sort()
   const categoriasFiltradas = categorias.filter(c => deEsteAmbito((c as any).ambito, c.nombre))
   const movimientosFiltrados = movimientos.filter(m => {
     const cat = (m.stock_insumos as any)?.categorias_insumo
@@ -4053,6 +4063,27 @@ function SubTabStockInsumos() {
       </div>
 
       {!verMovimientos ? (
+        <>
+        <TestsDelProceso proceso="productivo/stock" pantalla="productivo" />
+        {/* 🔎 A-FEAT-1243 — filtros del stock */}
+        <div className="flex items-center gap-3 flex-wrap pb-2">
+          <Input placeholder="Buscar producto u observación..." value={busquedaStock}
+            onChange={e => setBusquedaStock(e.target.value)} className="h-8 w-64 text-sm" />
+          <div className="flex flex-wrap items-center gap-1">
+            {catsDisponiblesStock.map(c => (
+              <button key={c} type="button" title={tituloChip(c)}
+                onClick={(ev) => toggleChip<string>(fn => setCatsStock(prev => fn(prev.size ? prev : new Set(catsDisponiblesStock))), c, esSoloEste(ev))}
+                className={`text-xs px-2 py-0.5 rounded-full border ${catsStock.size === 0 || catsStock.has(c) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}>
+                {c}
+              </button>
+            ))}
+            {catsStock.size > 0 && <button type="button" className="text-[10px] underline text-gray-400 ml-1" onClick={() => setCatsStock(new Set())}>todas</button>}
+          </div>
+          <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={soloConStock} onChange={e => setSoloConStock(e.target.checked)} /> sólo con stock
+          </label>
+          <span className="text-xs text-gray-400">{stockVisible.length} de {stockFiltrado.length}</span>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -4065,14 +4096,14 @@ function SubTabStockInsumos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stockFiltrado.length === 0 ? (
+            {stockVisible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  Sin registros de stock de insumos.
+                  {stockFiltrado.length === 0 ? 'Sin registros de stock de insumos.' : 'Ningún insumo con esos filtros.'}
                 </TableCell>
               </TableRow>
             ) : (
-              stockFiltrado.map(s => (
+              stockVisible.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.producto}</TableCell>
                   <TableCell>{s.categorias_insumo?.nombre || '-'}</TableCell>
@@ -4101,6 +4132,7 @@ function SubTabStockInsumos() {
             )}
           </TableBody>
         </Table>
+        </>
       ) : (
         <>
           {/* Filtros de movimientos */}
