@@ -35,7 +35,7 @@ import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
   plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
-  lineaAlGancho, importeDeLinea, precioPieDerivado,
+  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado,
   type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
@@ -65,14 +65,16 @@ const r2 = (n: number) => Math.round(n * 100) / 100
 type TotalId = 'bruto' | 'neto' | 'importe'
 type Verificacion = 'ok' | 'distinto' | null
 
-interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string; kgGancho: string; precioGancho: string }
+/** `mandaPie`: el usuario cargó el $/kg VIVO y el gancho se deriva (A-FEAT-1234, 2026-10-05). */
+interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string; kgGancho: string; precioGancho: string; mandaPie?: boolean }
 interface RetUI { concepto: string; alicuota: string; importe: string }
 interface PlazoUI { dias: string; pct: string; vencimiento: string; importe: string; estado?: 'a cobrar' | 'cobrado' }
 
 const lineaVacia = (): LineaUI => ({ razonSocial: '', cuit: '', cabezas: '', clasificacion: '', kilos: '', precio: '', kgGancho: '', precioGancho: '' })
 const RET_IIBB: RetUI = { concepto: 'INGRESOS BRUTOS Pcia BS AS', alicuota: '0,75', importe: '' }
 
-const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: number; clasificacion: string; kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null }): LineaUI => ({
+const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: number; clasificacion: string; kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean }): LineaUI => ({
+  mandaPie: !!l.mandaPie,
   razonSocial: l.razonSocial || '', cuit: l.cuit || '',
   cabezas: l.cabezas ? String(l.cabezas) : '',
   clasificacion: l.clasificacion || '',
@@ -222,8 +224,11 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
       razonSocial: l.razonSocial, cuit: l.cuit, clasificacion: l.clasificacion,
       cabezas: parsearAR(l.cabezas), kilos: parsearAR(l.kilos), precio: parsearAR(l.precio),
       ...(l.kgGancho.trim() ? { kgGancho: parsearAR(l.kgGancho) } : {}),
-      ...(l.precioGancho.trim() ? { precioGancho: parsearAR(l.precioGancho) } : {}),
-    })).map(l => lineaAlGancho(l) ? { ...l, precio: precioPieDerivado(l) } : l),
+      ...(!l.mandaPie && l.precioGancho.trim() ? { precioGancho: parsearAR(l.precioGancho) } : {}),
+      ...(l.mandaPie ? { mandaPie: true } : {}),
+    })).map(l => !lineaAlGancho(l) ? l
+      // El que manda queda como se cargó; el otro se guarda derivado, para que la comparación y la huella lo tengan.
+      : l.mandaPie ? { ...l, precioGancho: precioGanchoDerivado(l) } : { ...l, precio: precioPieDerivado(l) }),
     comisionPct: parsearPct(comisionPct),
     redondeo: parsearAR(redondeo),
     ivaPct: parsearPct(ivaPct),
@@ -268,6 +273,10 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
 
   const setLinea = (i: number, campo: keyof LineaUI, v: string) =>
     setLineas(ls => ls.map((l, k) => (k === i ? { ...l, [campo]: v } : l)))
+  /** 🥩 Cargar un precio en una línea al gancho: el que se escribe pasa a mandar y el otro se deriva. */
+  const setPrecioQueManda = (i: number, cual: 'pie' | 'gancho', v: string) =>
+    setLineas(ls => ls.map((l, k) => (k !== i ? l
+      : cual === 'pie' ? { ...l, precio: v, mandaPie: true } : { ...l, precioGancho: v, mandaPie: false })))
   const setRet = (i: number, campo: keyof RetUI, v: string) =>
     setRets(rs => rs.map((r, k) => (k === i ? { ...r, [campo]: v } : r)))
   const setPlazo = (i: number, campo: keyof PlazoUI, v: string) =>
@@ -479,10 +488,13 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                       <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0" value={l.kilos} onChange={ev => setLinea(i, 'kilos', ev.target.value)} onBlur={ev => setLinea(i, 'kilos', reformatear(ev.target.value, 0))} /></td>
                       <td className="p-1 text-right tabular-nums text-gray-500">{e.cabezas > 0 ? fmtAR(e.kilos / e.cabezas, 0) : '—'}</td>
                       {verGancho && <td className="p-1 w-24"><Input type="text" className="text-right" placeholder="0" value={l.kgGancho} onChange={ev => setLinea(i, 'kgGancho', ev.target.value)} onBlur={ev => setLinea(i, 'kgGancho', reformatear(ev.target.value, 1))} /></td>}
-                      {verGancho && <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precioGancho} onChange={ev => setLinea(i, 'precioGancho', ev.target.value)} onBlur={ev => setLinea(i, 'precioGancho', reformatear(ev.target.value))} /></td>}
-                      {lineaAlGancho(e)
-                        ? <td className="p-1 w-28 text-right tabular-nums text-gray-500" title="Conversión del papel: importe ÷ kg pie">{fmtAR(e.precio, 3)}</td>
-                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatear(ev.target.value))} /></td>}
+                      {/* 🥩 Los dos precios se pueden cargar: el que escribís manda (negro) y el otro se calcula solo (gris). */}
+                      {verGancho && (l.mandaPie && lineaAlGancho(e)
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg gancho. Escribí acá para que mande el precio gancho." value={fmtAR(precioGanchoDerivado(e), 2)} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precioGancho} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} onBlur={ev => setLinea(i, 'precioGancho', reformatear(ev.target.value))} /></td>)}
+                      {lineaAlGancho(e) && !l.mandaPie
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg pie. Escribí acá el precio del kilo vivo (como liquida el frigorífico) y el gancho se recalcula." value={fmtAR(e.precio, 3)} onChange={ev => setPrecioQueManda(i, 'pie', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => verGancho ? setPrecioQueManda(i, 'pie', ev.target.value) : setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatear(ev.target.value))} /></td>}
                       <td className="p-1 text-right tabular-nums">{fmtAR(importeDeLinea(e))}</td>
                       <td className="p-1">{lineas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setLineas(ls => ls.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>}</td>
                     </tr>

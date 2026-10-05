@@ -115,21 +115,39 @@ export interface LineaLiqHacienda {
    * (importe ÷ kg pie), que es como lo expresa el papel del frigorífico.
    */
   precioGancho?: number | null
+  /**
+   * 🥩 **Manda el precio por kilo VIVO** (usuario 2026-10-05: *«liquidar las ventas a Arre Beef me tiene
+   * que permitir poner el precio del kilo vivo, que es como ellos lo liquidan, y lógicamente el precio kg
+   * carne se deberá modificar solo»*). Con esto el importe es **kg pie × $/kg pie** —el papel— y el precio
+   * gancho se deriva (importe ÷ kg gancho). El que se carga a mano manda; el otro se calcula.
+   */
+  mandaPie?: boolean
 }
 
-/** ¿La línea trae el dato real al gancho (kilos y precio)? */
-export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null }) =>
-  (Number(l.kgGancho) || 0) > 0 && (Number(l.precioGancho) || 0) > 0
+type LineaPrecio = { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean }
 
-/** El importe de una línea: al gancho, kg gancho × precio gancho; si no, kilos × precio. */
-export function importeDeLinea(l: { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null }): number {
-  return lineaAlGancho(l) ? Number(l.kgGancho) * Number(l.precioGancho) : (Number(l.kilos) || 0) * (Number(l.precio) || 0)
+/** ¿La línea es al gancho? Kilos gancho y un precio que mande (el gancho, o el vivo con `mandaPie`). */
+export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean; precio?: number }) =>
+  (Number(l.kgGancho) || 0) > 0 && ((Number(l.precioGancho) || 0) > 0 || (!!l.mandaPie && (Number(l.precio) || 0) > 0))
+
+/** El importe de una línea: manda el precio cargado a mano — vivo (kg pie × $/kg pie) o gancho (kg gancho × $/kg gancho). */
+export function importeDeLinea(l: LineaPrecio): number {
+  if (l.mandaPie || !lineaAlGancho(l)) return (Number(l.kilos) || 0) * (Number(l.precio) || 0)
+  return Number(l.kgGancho) * Number(l.precioGancho)
 }
 
-/** El precio por kilo VIVO de una línea al gancho: la conversión del papel (importe ÷ kg pie). */
-export function precioPieDerivado(l: { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null }): number {
+/** El precio por kilo VIVO de una línea al gancho: el cargado si manda, si no la conversión (importe ÷ kg pie). */
+export function precioPieDerivado(l: LineaPrecio): number {
   const k = Number(l.kilos) || 0
+  if (l.mandaPie) return Number(l.precio) || 0
   return lineaAlGancho(l) && k > 0 ? importeDeLinea(l) / k : Number(l.precio) || 0
+}
+
+/** El precio por kilo GANCHO: el cargado si manda, si no se deriva del vivo (importe ÷ kg gancho). */
+export function precioGanchoDerivado(l: LineaPrecio): number {
+  const kg = Number(l.kgGancho) || 0
+  if (!l.mandaPie) return Number(l.precioGancho) || 0
+  return kg > 0 ? importeDeLinea(l) / kg : 0
 }
 
 /** Una retención impresa en el papel (IIBB, Ganancias…). `importe` en positivo: se descuenta. */
