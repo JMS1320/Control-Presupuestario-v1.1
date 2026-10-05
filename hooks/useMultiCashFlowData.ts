@@ -596,17 +596,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
   // Mapear ventas (comprobantes_venta 'a cobrar') a formato Cash Flow.
   //
-  // El ingreso que TODAVÍA se espera en banco:
-  //     imp_total − retenciones sufridas − anticipos de cobro ya vinculados
-  // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
-  // fila, así que si no se restan la misma plata se cuenta dos veces.
+  // El ingreso que TODAVÍA se espera en banco = `cobroEsperado()`, la MISMA cuenta que el Extracto,
+  // Comprobantes y Liquidaciones (A-BUG-1231, 2026-10-05). Antes acá había una resta propia
+  // —imp_total − retenciones sufridas − anticipos— que en granos se salteaba la comisión, el
+  // almacenaje, las retenciones impresas y el IVA RG 2300: proyectaba $895.737,28 de más en las 3
+  // liquidaciones de AFA a cobrar. Lo imputado aparte (retenciones sufridas, anticipos, compensaciones)
+  // se sigue restando: los anticipos ya entraron y tienen su fila, sin restarlos se contaría dos veces.
   const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>, imputacionesPorComp: Map<string, Imputacion[]> = new Map()): CashFlowRow[] => {
     return comprobantes.flatMap(c => {
       // 🐂 La liquidación de hacienda va aparte: en cuotas y con su propia cuenta de cobro.
       if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0, imputacionesPorComp.get(c.id) || [])
       const total = Number(c.imp_total) || 0
       const imputado = imputadoPorComp.get(c.id) || 0
-      const netoACobrar = total - imputado
+      const cobro = cobroEsperado(c, imputado)
+      const netoACobrar = cobro.pagoCondiciones
+      const descuentos = total - netoACobrar
       return {
         id: c.id,
         origen: 'VENTA' as const,
@@ -621,7 +625,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.cuit_cliente || '',
         nombre_proveedor: c.denominacion_cliente || '',
         detalle: `Venta ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
-          + (imputado > 0 ? ` (neto: total ${total} − ret/anticipos ${imputado})` : ''),
+          + (descuentos > 0.005 ? ` (neto: total ${total} − ret/anticipos/comisión/IVA retenido ${Math.round(descuentos * 100) / 100})` : ''),
         debitos: 0,
         creditos: netoACobrar,   // Cobro = crédito (dinero entra al banco)
         saldo_cta_cte: 0,
@@ -638,9 +642,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    *
    * Dos cosas cambian respecto de una factura de venta:
    *   1. **Cuánto se cobra** sale de `cobroEsperado()`, la cuenta de toda la app: total − retenciones
-   *      impresas (IIBB) − lo imputado aparte. La resta de arriba no descuenta la retención impresa,
-   *      y en la liquidación de Genta proyectaba $675.905 de más. (Para el resto de las ventas esa
-   *      resta sigue igual: cambiarla es A-BUG-1231, que el usuario dejó como tema aparte.)
+   *      impresas (IIBB) − lo imputado aparte. (Desde A-BUG-1231 las demás ventas usan la misma
+   *      cuenta: ya no hay una resta propia del Cash Flow.)
    *   2. **Cuándo**: si el papel trae plazos (30/60/90), una fila por cuota, cada una en su fecha.
    *      Lo imputado aparte (anticipos, certificados) va a la cuota de SU FECHA (`repartirEnCuotas`):
    *      la retención de Ganancias del pago del 03/09 baja la cuota del 03/09, no «la primera».
@@ -895,7 +898,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: ventasACobrar, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, ret_iva, ret_iibb')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, subtotal_neto, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb')
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
@@ -929,7 +932,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           // Para las cuotas (liquidaciones con plazos): TODO lo cobrado, con su fecha — también el banco.
           imputacionesPorComp.set(id, imputacionesDeCobro(lineas))
           // El total que se resta a una venta SIN cuotas sigue como antes: sin el banco directo
-          // (ése la saca del Cash Flow por estado). Cambiarlo es A-BUG-1231.
+          // (ése la saca del Cash Flow por estado).
           imputadoPorComp.set(id, lineas.filter(l => l.medio !== 'banco').reduce((acc, l) => acc + l.monto, 0))
         }
       }

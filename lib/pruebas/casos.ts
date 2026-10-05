@@ -2128,6 +2128,19 @@ export function correrCasos(): Resultado[] {
     "-6,5%", `${difSanpa.porcentaje.toFixed(1)}%`,
     Math.abs(difSanpa.porcentaje + 6.5) < 0.1 && !difSanpa.exacto, "A-FEAT-167")
 
+  // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══
+  // AFA 31274417: el Cash Flow proyectaba el total ($6.080.286,72); el banco acredita $5.332.648,89.
+  const afa31274417 = cobroEsperado({ tipo_comprobante: 332, imp_total: 6080286.72, subtotal_neto: 5618121.12,
+    iva: 589902.72, comision_neto: 115599.20, comision_iva: 12137.92, almacenaje_neto: 0, almacenaje_iva: 0,
+    ret_iva: 275126.10, ret_iibb: 42135.91 }, 0)
+  chequear("Cobro de venta", "💸 Granos AFA 31274417: se proyecta lo que acredita el banco, no el total",
+    "5332648.89", afa31274417.pagoCondiciones.toFixed(2),
+    Math.abs(afa31274417.pagoCondiciones - 5332648.89) < 0.005, "A-BUG-1231")
+  // 🧾 Una factura A con IVA desglosado se cobra ENTERA: el IVA RG 2300 es sólo de granos.
+  const facturaA = cobroEsperado({ tipo_comprobante: 1, imp_total: 121000, imp_neto_gravado: 100000, iva: 21000 }, 5000)
+  chequear("Cobro de venta", "🧾 Factura A con IVA: se cobra total − retenciones, sin restar el IVA",
+    "116000", String(facturaA.pagoCondiciones), facturaA.pagoCondiciones === 116000 && facturaA.ivaRg2300 === 0, "A-BUG-1231")
+
   chequear("Cobro de venta", "Un cobro que coincide exacto se marca exacto",
     "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
     diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
