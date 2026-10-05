@@ -428,3 +428,11 @@ un error tuyo: la pantalla vieja siguió recibiendo cosas que ya no se mostraban
 **Qué hago**: dos filas nuevas en `WIDGETS` (`revisiones`, sección `principal`; `echeqs-en-fecha`, sección
 `cashflow`) y las agrego a `WIDGETS_POR_DEFECTO`. No toco nada más del registro ni del configurador.
 Si preferís otra sección para el permiso de alguna, cambiala sin avisar. Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-05 · PARA JAVIER — 3 columnas nuevas en `productivo.movimientos_insumos` (aviso, no hay nada que hacer)
+
+`moneda` (text, default `'ARS'`, check ARS/USD), `costo_unitario_moneda` (numeric) y `tipo_cambio`
+(numeric). Motivo: las compras en dólares se cargaban en `costo_unitario`, que toda la app lee como
+pesos. `costo_unitario` **sigue en pesos**; las columnas nuevas guardan el original. Sin cambios de
+RLS, permisos ni vistas (la tabla se expone directa). Script: `scripts/78-moneda-compras-insumos.sql`
+(+ `-deshacer`). Rama `jms/compras-factura`. Al leerlo, borrá esta entrada.
