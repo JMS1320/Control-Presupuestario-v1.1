@@ -263,9 +263,16 @@ export function ModalVincularCompras({
                     const rc = calc.renglones.find(x => x.compra.id === c.id)
                     return (
                       <tr key={c.id} className={r?.incluir ? '' : 'text-gray-400'}>
-                        <td className="p-1"><input type="checkbox" checked={!!r?.incluir} onChange={e => setRenglon(c.id, { incluir: e.target.checked })} /></td>
+                        <td className="p-1"><input type="checkbox" checked={!!r?.incluir} onChange={e => {
+                          // ⚠️ Ya vinculada a OTRA factura: se puede (una entrega se puede facturar en partes,
+                          // el caso Longo), pero no sin confirmarlo — si no, es revincular sin darse cuenta.
+                          if (e.target.checked && c.otraFactura && !confirm(
+                            `${c.producto} (${c.fecha.split('-').reverse().join('/')}) ya está vinculada a otra factura.\n\n` +
+                            'Vincularla también a ésta sólo corresponde si el proveedor la facturó en partes. ¿Seguir?')) return
+                          setRenglon(c.id, { incluir: e.target.checked })
+                        }} /></td>
                         <td className="p-1">{c.fecha.split('-').reverse().join('/')}</td>
-                        <td className="p-1">{c.producto}{c.otraFactura && <span className="ml-1 text-[10px] text-amber-700">(ya vinculada a otra FC)</span>}</td>
+                        <td className="p-1">{c.producto}{c.vinculoId && <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800">✓ vinculada a esta FC</span>}{c.otraFactura && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">⚠ ya vinculada a otra FC</span>}</td>
                         <td className="p-1 text-right tabular-nums">{fmt(c.cantidad, 2)} {c.unidad || ''}</td>
                         <td className="p-1 text-right tabular-nums">{c.precioPactado != null ? fmt(c.precioPactado) : <span className="text-red-600">sin precio</span>}</td>
                         <td className="p-1 text-right">

@@ -3610,6 +3610,12 @@ function SubTabStockInsumos() {
   const [vincularCompraIds, setVincularCompraIds] = useState<string[] | null>(null)
   /** Compras tildadas en la lista para vincularlas juntas. */
   const [selCompras, setSelCompras] = useState<Set<string>>(new Set())
+  /**
+   * 🧾 A-BUG-1244 — a qué factura(s) está vinculada cada compra, para VERLO en la lista y no revincular
+   * sin darse cuenta. Usuario 2026-10-05: *«no veo los insumos como vinculados; debe poder verse, si no
+   * hay riesgo de revincularlos»*.
+   */
+  const [facturasDeMov, setFacturasDeMov] = useState<Record<string, string[]>>({})
   /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
   const [insumoMedir, setInsumoMedir] = useState<
     { id: string; producto: string; unidad_medida: string | null } | null>(null)
@@ -3799,6 +3805,23 @@ function SubTabStockInsumos() {
       if (catRes.data) setCategorias(catRes.data)
       if (stockRes.data) setStock(stockRes.data)
       if (movRes.data) setMovimientos(movRes.data)
+      // 🧾 Las facturas de cada compra (el número corto), para mostrarlas en la fila.
+      const idsCompras = (movRes.data || []).filter((m: any) => m.tipo === 'compra').map((m: any) => m.id)
+      if (idsCompras.length) {
+        const { data: vincs } = await supabase.schema('productivo').from('entrega_factura')
+          .select('movimiento_id, factura_id, origen').in('movimiento_id', idsCompras)
+        const idsFac = [...new Set((vincs || []).filter((v: any) => (v.origen ?? 'arca') === 'arca').map((v: any) => v.factura_id))]
+        const { data: facs } = idsFac.length
+          ? await supabase.schema('msa').from('comprobantes_arca').select('id, punto_venta, numero_desde').in('id', idsFac)
+          : { data: [] as any[] }
+        const nro = new Map((facs || []).map((f: any) => [f.id, `FC ${Number(f.punto_venta || 0)}-${Number(f.numero_desde || 0)}`]))
+        const mapa: Record<string, string[]> = {}
+        for (const v of (vincs || []) as any[]) {
+          const etq = (v.origen ?? 'arca') === 'arca' ? (nro.get(v.factura_id) ?? 'FC') : 'template'
+          ;(mapa[v.movimiento_id] ||= []).includes(etq) || mapa[v.movimiento_id].push(etq)
+        }
+        setFacturasDeMov(mapa)
+      } else setFacturasDeMov({})
     } catch (err) {
       console.error('Error cargando insumos:', err)
       toast.error('Error al cargar datos de insumos')
@@ -4211,7 +4234,16 @@ function SubTabStockInsumos() {
                   <TableCell>{celdaEditable('proveedor', m.proveedor || '-')}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
                   <TableCell>
-                    {m.tipo === 'compra' && (
+                    {m.tipo === 'compra' && (facturasDeMov[m.id]?.length ? (
+                      // Ya vinculada: se VE a qué factura, y no se puede tildar para vincular de nuevo.
+                      // El 🧾 la abre igual (para revisar o corregir), y la ventana avisa si es otra factura.
+                      <span className="flex items-center gap-1 whitespace-nowrap">
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+                          title="Ya vinculada a esta(s) factura(s)">✓ {facturasDeMov[m.id].join(', ')}</span>
+                        <button type="button" title="Abrir la vinculación (revisar o corregir)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                      </span>
+                    ) : (
                       <span className="flex items-center gap-1">
                         <input type="checkbox" title="Seleccionar para vincular junto con otras"
                           checked={selCompras.has(m.id)}
@@ -4219,7 +4251,7 @@ function SubTabStockInsumos() {
                         <button type="button" title="Vincular sólo ésta con su factura (precio, descuento y moneda)"
                           className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
                       </span>
-                    )}
+                    ))}
                   </TableCell>
                 </TableRow>
                 )
