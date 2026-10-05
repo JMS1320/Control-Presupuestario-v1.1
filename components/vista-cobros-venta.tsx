@@ -16,6 +16,7 @@ import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta, factu
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { ModalRetencionesVenta } from "./modal-retenciones-venta"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -64,6 +65,12 @@ export function VistaCobrosVenta() {
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [expandida, setExpandida] = useState<string | null>(null)
+  /**
+   * 🧾 A-FEAT-1256 — cargar las retenciones recibidas desde Cobros, con el MISMO modal que Comprobantes.
+   * Usuario 2026-10-05: *«en cobros debo poder meter las retenciones recibidas tal como en comprobantes…
+   * el signo de % retenciones ya está en la vista; si eso lo convertís en un botón, listo»*.
+   */
+  const [retencionesDe, setRetencionesDe] = useState<Factura | null>(null)
 
   const cargar = async () => {
     setLoading(true)
@@ -348,7 +355,11 @@ export function VistaCobrosVenta() {
                             })()}
                           </div>
                           <div>
-                            <div className="text-xs font-medium text-orange-700 flex items-center gap-1 mb-1"><Percent className="h-3.5 w-3.5" />Retenciones ({rets.length + (impresas(f) > 0 ? 1 : 0)})</div>
+                            <button type="button" onClick={() => setRetencionesDe(f)}
+                              title="Cargar o ver las retenciones recibidas de este comprobante"
+                              className="text-xs font-medium text-orange-700 flex items-center gap-1 mb-1 rounded px-1 -mx-1 hover:bg-orange-50 hover:underline">
+                              <Percent className="h-3.5 w-3.5" />Retenciones ({rets.length + (impresas(f) > 0 ? 1 : 0)}) · cargar
+                            </button>
                             {impresas(f) > 0 && (
                               <div className="text-xs flex justify-between border-b py-0.5">
                                 <span>IMPRESA EN LA LIQUIDACIÓN{Number(f.ret_iibb) ? ' · IIBB' : ''}{Number(f.ret_iva) ? ' · IVA' : ''}</span>
@@ -481,6 +492,12 @@ export function VistaCobrosVenta() {
           </TableBody>
         </Table>
       </div>
+      <ModalRetencionesVenta
+        open={!!retencionesDe}
+        comprobante={retencionesDe}
+        onClose={() => setRetencionesDe(null)}
+        onGuardado={cargar}
+      />
     </div>
   )
 }
