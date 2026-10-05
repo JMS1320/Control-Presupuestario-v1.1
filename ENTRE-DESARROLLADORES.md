@@ -258,7 +258,8 @@ instante y el type-check sigue en verde»*. Precedente: `A-SEC-04`.
 (`A-BUG-1217`). La app sigue andando normal: usa `authenticated`, que sí tiene permisos.
 
 **Qué falta, y NO toca la seguridad:** que el Apps Script use la **service role key** en vez de la
-anon. Lo hace JMS en el script; **no se re-abre `anon`**.
+anon. Lo hace JMS en el script; **no se re-abre `anon`**. ✅ **Hecho 2026-10-05** — el script lee la key
+de sus propiedades y los borradores volvieron a salir.
 
 ❓ **Lo único que necesitamos de vos**: si hay **otros consumidores externos** apuntando a la base
 con la anon key —otro GAS, un n8n, un script suelto—, decilo, porque están rotos igual y **callados**.
