@@ -23,12 +23,16 @@
  * ⚖️ **El descuento SÍ va por factura**: es lineal y es una condición comercial de ese comprobante.
  */
 
+import type { ConversionMoneda } from './moneda-factura'
+
 /** Una factura dentro de un grupo de pago. */
 export interface SubFactura {
   comprobante: string
   fecha?: string | null
   imp_total: number
   descuento_aplicado?: number | null
+  /** 💵 Factura en moneda extranjera: `imp_total` ya va en pesos; esto es el original y el TC. */
+  conversion?: ConversionMoneda | null
 }
 
 export interface LineaDetalle {
@@ -36,6 +40,8 @@ export interface LineaDetalle {
   fecha: string
   imp_total: number
   descuento: number
+  /** 💵 A-BUG-1245 — para mostrar en el cuadro 1 el total en dólares, el TC y el equivalente en pesos. */
+  conversion?: ConversionMoneda | null
 }
 
 const t = (s: string | null | undefined) => (s ?? '').trim()
@@ -97,6 +103,7 @@ export function lineasDelDetalle(
     descuento_aplicado?: number | null
     origen?: string
     facturas?: SubFactura[] | null
+    conversion?: ConversionMoneda | null
   }>,
   proveedor: string,
 ): LineaDetalle[] {
@@ -110,6 +117,7 @@ export function lineasDelDetalle(
           fecha: fechaES(f.fecha) || fechaES(i.fecha),
           imp_total: Number(f.imp_total) || 0,
           descuento: Number(f.descuento_aplicado) || 0,
+          conversion: f.conversion ?? null,
         })
       }
       continue
@@ -122,6 +130,7 @@ export function lineasDelDetalle(
       fecha: fechaES(i.fecha),
       imp_total: Number(i.imp_total) || 0,
       descuento: Number(i.descuento_aplicado) || 0,
+      conversion: i.conversion ?? null,
     })
   }
 

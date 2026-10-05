@@ -2206,8 +2206,12 @@ export function correrCasos(): Resultado[] {
       String(aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 })), aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 }) === 1000, "A-BUG-1245")
     const linea = textoConversion([{ comprobante: "FC 6447", conversion: conversionDe(agro) }])[0] ?? ""
     chequear("Pago en dólares", "📄 El detalle (PDF y mail) dice moneda, TC del pago y resultado en pesos",
-      "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80", linea,
-      linea === "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80", "A-BUG-1245")
+      "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 = $7.046.020,80", linea,
+      linea === "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 = $7.046.020,80", "A-BUG-1245")
+    // El PDF usa la fuente WinAnsi: un carácter fuera de latin-1 (como «→» o «⚠») rompe la línea entera.
+    chequear("Pago en dólares", "📄 El texto de la conversión es todo latin-1 (no se corta en el PDF)",
+      "latin-1", [...linea].every(ch => ch.charCodeAt(0) < 256) ? "latin-1" : "tiene caracteres fuera",
+      [...linea].every(ch => ch.charCodeAt(0) < 256), "A-BUG-1245")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

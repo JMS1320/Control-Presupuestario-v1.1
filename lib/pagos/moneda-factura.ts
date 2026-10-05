@@ -144,13 +144,14 @@ const nf = (n: number, d = 2) => n.toLocaleString('es-AR', { minimumFractionDigi
 
 /**
  * El renglón que explica la conversión — **el mismo texto en el PDF y en el mail**.
- * Ej.: «FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80».
+ * Ej.: «FC 6447 en USD 4.635,54 · TC del pago 1.520,00 = $7.046.020,80».
+ * ⚠️ Sin «→»: no existe en la fuente del PDF (WinAnsi) y rompe la línea entera (como el «⚠», A-BUG-150).
  */
 export function textoConversion(items: Array<{ comprobante: string; conversion?: ConversionMoneda | null }>): string[] {
   return items
     .filter(i => i.conversion)
     .map(i => {
       const c = i.conversion!
-      return `${i.comprobante} en ${c.moneda} ${nf(c.totalOrig)} · TC del pago ${nf(c.tc)} → $${nf(r2(c.totalOrig * c.tc))}`
+      return `${i.comprobante} en ${c.moneda} ${nf(c.totalOrig)} · TC del pago ${nf(c.tc)} = $${nf(r2(c.totalOrig * c.tc))}`
     })
 }

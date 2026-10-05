@@ -9,7 +9,7 @@
  * importes**. Partirlo daría tres renglones sin plata — peor que agruparlos.
  */
 
-import { totalEnPesos } from './moneda-factura'
+import { totalEnPesos, conversionDe } from './moneda-factura'
 import { supabase } from '@/lib/supabase'
 import type { SubFactura } from './lineas-detalle-pago'
 
@@ -48,6 +48,7 @@ export async function facturasDelGrupo(
       fecha: f.fecha_emision ?? null,
       // 💵 A-BUG-1245 — una factura en dólares del grupo se lista en pesos, como el resto del papel.
       imp_total: totalEnPesos(f),
+      conversion: conversionDe(f),
       descuento_aplicado: f.descuento_aplicado ?? null,
     }))
   } catch {
