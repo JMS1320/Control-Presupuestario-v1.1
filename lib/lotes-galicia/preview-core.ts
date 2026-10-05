@@ -5,7 +5,7 @@
  * (HTML) → "Unexpected token '<'". Compartiendo la función se elimina ese fetch frágil).
  */
 
-import { aPagarEnPesos } from '@/lib/pagos/moneda-factura'
+import { aPagarEnPesos, esMonedaExtranjera, tcDeFactura } from '@/lib/pagos/moneda-factura'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { PreviewLoteOutput, ItemPreview, Empresa } from './types'
 import { validarCBU, validarAlias, diasDesde, motivoSugerido, empresaToSchema } from './helpers'
@@ -22,6 +22,8 @@ interface ItemRaw {
   descripcion?: string
   moneda?: string
   bloqueante?: string
+  /** Avisos que trae el ítem desde su carga (ej. la conversión de una factura en dólares). */
+  avisos?: string[]
   // ── Solo sueldos: cuenta del empleado ya resuelta ──
   empleado_id?: string
   cuenta_destino_id?: string | null
@@ -56,7 +58,7 @@ export async function computarPreview(
     if (raw.tipo === 'sueldo') return construirPreviewSueldo(raw)
 
     const prov = raw.cuit ? provMap.get(raw.cuit) : null
-    const warnings: string[] = []
+    const warnings: string[] = [...(raw.avisos ?? [])]
     let bloqueante: string | null = raw.bloqueante || null
 
     if (raw.moneda && !['ARS', 'PES', '$'].includes(raw.moneda)) {
@@ -214,11 +216,16 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
       .in('id', porTipo['fc'])
     ;(data || []).forEach((f: any) => {
       // 💵 A-BUG-1245 — en dólares, lo que se transfiere EN PESOS (antes tomaba el saldo en USD como pesos).
+      // Por eso el ítem va como ARS: la transferencia ES en pesos, y el bloqueo «sólo ARS» (que existía
+      // porque el monto era en dólares) ya no aplica. La factura en dólares queda dicha en el aviso.
       const monto = aPagarEnPesos(f)
+      const conv = esMonedaExtranjera(f.moneda)
+        ? [`Factura en ${f.moneda} ${Number(f.imp_total).toLocaleString('es-AR', { minimumFractionDigits: 2 })} · se transfiere en pesos al TC ${tcDeFactura(f).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`]
+        : []
       out.push({
         tipo: 'fc', id: f.id, schema: schemaEmpresa, cuit: f.cuit,
         razon_social: f.denominacion_emisor, monto,
-        descripcion: `FC ${f.numero_desde || ''}`.trim(), moneda: f.moneda || 'ARS',
+        descripcion: `FC ${f.numero_desde || ''}`.trim(), moneda: 'ARS', avisos: conv,
       })
     })
   }
