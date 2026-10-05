@@ -33,7 +33,7 @@
  * empieza a mentir.
  */
 
-import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas } from "@/lib/productivo/reposicion"
+import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
@@ -2169,6 +2169,13 @@ export function correrCasos(): Resultado[] {
     chequear("Reposición desde Excel", "📟 Una columna «IDV» del lector también se lee y cruza con la oficial",
       "b", planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join(),
       planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join() === "b", "A-FEAT-1251")
+    // La hembra SIN IDENTIFICAR: 73 tildadas + 1 sin identificar → destino con 74 cabezas y 1 a identificar;
+    // después «sólo identificar» la que resultó ser: el stock no se mueve y el descuadre vuelve a 0.
+    const paso1 = descuadreDestino({ cabezasHoy: 0, identificadasHoy: 0, tildadas: 73, sinIdentificar: 1, soloIdentificar: false })
+    const paso2 = descuadreDestino({ cabezasHoy: 74, identificadasHoy: 73, tildadas: 1, sinIdentificar: 0, soloIdentificar: true })
+    chequear("Reposición desde Excel", "🐄 73 + 1 sin identificar mueve 74 y deja 1 a identificar; completarla por diferencia lo cierra",
+      "74/73 dif 1 → 74/74 dif 0", `${paso1.cabezas}/${paso1.identificadas} dif ${paso1.dif} → ${paso2.cabezas}/${paso2.identificadas} dif ${paso2.dif}`,
+      paso1.cabezas === 74 && paso1.dif === 1 && paso2.cabezas === 74 && paso2.dif === 0, "A-FEAT-1251")
     // Pieza 2: lo tildado a mano en el cambio de categoría se vuelve la marca rep.
     const aj = ajusteDeMarcas([{ id: "a", es_rep: true }, { id: "b", es_rep: false }, { id: "c", es_rep: true }], new Set(["a", "b"]))
     chequear("Reposición desde Excel", "🔁 Cambio de categoría: la selección final pasa a la planilla de recría",

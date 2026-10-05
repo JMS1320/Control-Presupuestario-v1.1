@@ -123,3 +123,17 @@ export function ajusteDeMarcas(
 export function cierraPlan(p: PlanReposicion, leidas: number): boolean {
   return p.yaBien.length + p.marcar.length + p.noEncontradas.length + p.ambiguas.length + p.repetidas.length === leidas
 }
+
+/**
+ * 🧮 Destino de un cambio de categoría: cabezas (stock) contra individuos identificados, DESPUÉS de
+ * guardar. `dif > 0` = cabezas sin identificar (se completan por diferencia); `dif < 0` = más
+ * individuos que cabezas, que no tiene explicación: se avisa fuerte.
+ *  · `soloIdentificar`: la cabeza ya se movió → el stock no cambia, sólo suman identificadas.
+ */
+export function descuadreDestino(a: {
+  cabezasHoy: number; identificadasHoy: number; tildadas: number; sinIdentificar: number; soloIdentificar: boolean
+}): { cabezas: number; identificadas: number; dif: number } {
+  const cabezas = a.cabezasHoy + (a.soloIdentificar ? 0 : a.tildadas + a.sinIdentificar)
+  const identificadas = a.identificadasHoy + a.tildadas
+  return { cabezas, identificadas, dif: cabezas - identificadas }
+}

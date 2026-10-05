@@ -1,7 +1,7 @@
 "use client"
 
 
-import { ajusteDeMarcas } from "@/lib/productivo/reposicion"
+import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -1083,6 +1083,18 @@ function TabHacienda() {
    * mover la categoría — así la planilla de recría y el cambio no quedan diciendo cosas distintas.
    */
   const [modoRepCambio, setModoRepCambio] = useState(false)
+  /**
+   * 🐄 A-FEAT-1251 — la hembra SIN IDENTIFICAR. Pedido del usuario 2026-10-05: *«¿el sistema está
+   * preparado para pasar una cabeza sin identificar? luego identificaríamos por caravana las que no
+   * entraron y sacaríamos por diferencia ésta»*.
+   *  · `sinIdentCambio`: cabezas que se mueven además de las tildadas (stock sí, individuo todavía no).
+   *  · `soloIdentificarCambio`: «completar por diferencia» — la cabeza YA se movió; sólo se le cambia la
+   *    categoría al individuo, sin movimiento de stock.
+   *  · `identificadasDestino`: cuántos individuos activos hay en el destino, para mostrar el descuadre.
+   */
+  const [sinIdentCambio, setSinIdentCambio] = useState('')
+  const [soloIdentificarCambio, setSoloIdentificarCambio] = useState(false)
+  const [identificadasDestino, setIdentificadasDestino] = useState<number | null>(null)
 
   const cargarTernerosParaCambio = async (categoriaId: string) => {
     const { data } = await supabase.schema('productivo').from('terneros')
@@ -1263,6 +1275,13 @@ function TabHacienda() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
+  // 🐄 A-FEAT-1251 — individuos ya identificados en el destino del cambio de categoría
+  useEffect(() => {
+    if (nuevoMov.tipo !== 'cambio_categoria' || !nuevoMov.categoria_destino_id) { setIdentificadasDestino(null); return }
+    supabase.schema('productivo').from('terneros').select('id', { count: 'exact', head: true })
+      .eq('activo', true).eq('categoria_id', nuevoMov.categoria_destino_id)
+      .then(({ count }) => setIdentificadasDestino(count ?? null))
+  }, [nuevoMov.tipo, nuevoMov.categoria_destino_id])
   const resetNuevoMov = () => {
     setNuevoMov({
       fecha: hoyArgentina(),
@@ -1280,6 +1299,8 @@ function TabHacienda() {
     setTernerosParaCambio([])
     setTernerosSeleccionadosCambio(new Set())
     setModoRepCambio(false)
+    setSinIdentCambio('')
+    setSoloIdentificarCambio(false)
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
@@ -1303,10 +1324,30 @@ function TabHacienda() {
   }
 
   const guardarMovimiento = async () => {
-    const N = parseInt(nuevoMov.cantidad)
+    let N = parseInt(nuevoMov.cantidad)
 
     // ── Cambio de Categoría ───────────────────────────────────────────────
     if (nuevoMov.tipo === 'cambio_categoria') {
+      const sinIdent = parseInt(sinIdentCambio) || 0
+      // Con individuos, lo que se mueve es lo tildado + las cabezas sin identificar (A-FEAT-1251).
+      if (ternerosParaCambio.length > 0) N = ternerosSeleccionadosCambio.size + sinIdent
+
+      // 🔎 «Completar por diferencia»: la cabeza ya se movió — sólo se identifica el individuo.
+      if (soloIdentificarCambio) {
+        if (!nuevoMov.categoria_destino_id || ternerosSeleccionadosCambio.size === 0) {
+          toast.error('Elegí la categoría destino y el animal a identificar'); return
+        }
+        const { error: eId } = await supabase.schema('productivo').from('terneros')
+          .update({ categoria_id: nuevoMov.categoria_destino_id })
+          .in('id', [...ternerosSeleccionadosCambio])
+        if (eId) { toast.error('No se pudo identificar: ' + eId.message); return }
+        toast.success(`${ternerosSeleccionadosCambio.size} identificado(s) en el destino — sin movimiento de stock`)
+        setMostrarModalMov(false)
+        resetNuevoMov()
+        cargarDatos()
+        return
+      }
+
       if (!nuevoMov.categoria_id || !nuevoMov.categoria_destino_id || !N) {
         toast.error('Categoría origen, destino y cantidad son obligatorios')
         return
@@ -1358,7 +1399,8 @@ function TabHacienda() {
       const { data: movDestino, error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
         fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_destino_id,
         tipo: 'cambio_categoria', cantidad: N,
-        observaciones: nuevoMov.observaciones || `Cambio categ ← ${catOrigen?.nombre || ''}`
+        observaciones: (nuevoMov.observaciones || `Cambio categ ← ${catOrigen?.nombre || ''}`)
+          + (sinIdent > 0 ? ` · incluye ${sinIdent} sin identificar` : '')
       }).select().single()
       if (e2) { toast.error('Error al guardar ingreso: ' + e2.message); return }
 
@@ -1411,6 +1453,11 @@ function TabHacienda() {
       }
 
       toast.success(`Cambio de categoría registrado${identificados.length > 0 ? ` (${identificados.length} identificados)` : ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
+      if (sinIdent > 0) {
+        toast.warning(
+          `${sinIdent} ${sinIdent === 1 ? 'cabeza se movió' : 'cabezas se movieron'} sin identificar. Cuando sepas cuál es, ` +
+          `Cambio de Categoría → «Sólo identificar (la cabeza ya se movió)».`, { duration: 9000 })
+      }
       if (sinCaravanas) {
         toast.warning(
           `${N} ${N === 1 ? 'cabeza entró' : 'cabezas entraron'} a ${catDestino?.nombre} sin caravana. ` +
@@ -2914,7 +2961,40 @@ function TabHacienda() {
                         </label>
                       ))}
                     </div>
-                    <p className="text-xs text-blue-600">Cantidad: {ternerosSeleccionadosCambio.size}</p>
+                    <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-blue-100">
+                      <label className="flex items-center gap-1 text-xs text-gray-700" title="Cabezas que se mueven además de las tildadas: el stock se mueve, el individuo se identifica después.">
+                        + cabezas sin identificar
+                        <Input type="text" value={sinIdentCambio} disabled={soloIdentificarCambio}
+                          onChange={e => setSinIdentCambio(e.target.value.replace(/\D/g, ''))} className="h-6 w-12 text-center text-xs" placeholder="0" />
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer"
+                        title="Completar por diferencia: la cabeza YA se movió antes. Sólo se le cambia la categoría al animal tildado, sin movimiento de stock.">
+                        <input type="checkbox" checked={soloIdentificarCambio}
+                          onChange={e => {
+                            setSoloIdentificarCambio(e.target.checked)
+                            if (e.target.checked) { setSinIdentCambio(''); setModoRepCambio(false); setTernerosSeleccionadosCambio(new Set()) }
+                          }} />
+                        Sólo identificar (la cabeza ya se movió)
+                      </label>
+                    </div>
+                    <p className="text-xs text-blue-600">
+                      {soloIdentificarCambio
+                        ? <>Identificar: {ternerosSeleccionadosCambio.size} — no mueve stock</>
+                        : <>Se mueven: {ternerosSeleccionadosCambio.size + (parseInt(sinIdentCambio) || 0)} cabezas ({ternerosSeleccionadosCambio.size} identificadas{(parseInt(sinIdentCambio) || 0) > 0 ? ` + ${parseInt(sinIdentCambio)} sin identificar` : ''})</>}
+                    </p>
+                    {nuevoMov.categoria_destino_id && identificadasDestino != null && (() => {
+                      // 🧮 Control a la vista: cabezas (stock) vs. individuos identificados en el destino, antes y después.
+                      const cabezas = stock.find(x => String(x.categoria_id) === String(nuevoMov.categoria_destino_id))?.cantidad ?? 0
+                      const { cabezas: cabezasDesp, identificadas: identDesp, dif } = descuadreDestino({
+                        cabezasHoy: cabezas, identificadasHoy: identificadasDestino, tildadas: ternerosSeleccionadosCambio.size,
+                        sinIdentificar: parseInt(sinIdentCambio) || 0, soloIdentificar: soloIdentificarCambio })
+                      return (
+                        <p className={`text-xs ${dif === 0 ? 'text-emerald-700' : dif > 0 ? 'text-amber-700' : 'text-red-700 font-semibold'}`}>
+                          Destino después de guardar: {cabezasDesp} cabezas · {identDesp} identificadas
+                          {dif === 0 ? ' ✓' : dif > 0 ? ` → faltan identificar ${dif}` : ` → ⚠️ ${-dif} identificadas de MÁS que cabezas: revisá antes de guardar`}
+                        </p>
+                      )
+                    })()}
                     {modoRepCambio && (() => {
                       const aj = ajusteDeMarcas(ternerosParaCambio.filter(t => t.sexo === 'Hembra').map(t => ({ id: t.id, es_rep: !!t.es_torito })), ternerosSeleccionadosCambio)
                       return (aj.marcar.length || aj.desmarcar.length)
