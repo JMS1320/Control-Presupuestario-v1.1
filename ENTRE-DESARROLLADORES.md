@@ -416,3 +416,14 @@ Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **
 
 No toca filas, permisos, RLS ni vistas. Tiene deshacer con freno. Si algo tuyo enumera los estados
 de pago de un anticipo o hace `select *` y valida columnas, sumale estos dos.
+
+## 📨 2026-10-05 · PARA JAVIER — voy a sumar 2 tarjetas a tu registro de widgets (`lib/widgets/registro.ts`)
+
+Al pasar Principal a tarjetas (A-FEAT-88, 17/09) quedaron **afuera dos paneles** que estaban en la pantalla
+fija: **🚩 las marcas «para revisar» (Alt+R)** —el usuario tiene 13 abiertas y dejó de verlas— y
+**los echeq en fecha de cobro** (A-FEAT-1182, que se sumó a la pantalla vieja después de tu cambio). No es
+un error tuyo: la pantalla vieja siguió recibiendo cosas que ya no se mostraban.
+
+**Qué hago**: dos filas nuevas en `WIDGETS` (`revisiones`, sección `principal`; `echeqs-en-fecha`, sección
+`cashflow`) y las agrego a `WIDGETS_POR_DEFECTO`. No toco nada más del registro ni del configurador.
+Si preferís otra sección para el permiso de alguna, cambiala sin avisar. Al leerlo, borrá esta entrada.
