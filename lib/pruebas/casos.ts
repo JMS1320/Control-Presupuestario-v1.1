@@ -33,6 +33,8 @@
  * empieza a mentir.
  */
 
+import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
+import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -2212,6 +2214,24 @@ export function correrCasos(): Resultado[] {
     chequear("Pago en dólares", "📄 El texto de la conversión es todo latin-1 (no se corta en el PDF)",
       "latin-1", [...linea].every(ch => ch.charCodeAt(0) < 256) ? "latin-1" : "tiene caracteres fuera",
       [...linea].every(ch => ch.charCodeAt(0) < 256), "A-BUG-1245")
+  }
+
+  // ══ ✉️ El mail del Detalle de pago: nuestro nombre en el asunto, facturas cortas y sin repetir al proveedor ══
+  {
+    const prov = "AGRO CENTROS REGION NUCLEO S.A."
+    const una = facturasCortas([{ comprobante: "FC 6447 - AGRO CENTROS REGION NUCLEO S.A." }], prov)
+    chequear("Mail de detalle de pago", "✉️ La factura va corta y sin el proveedor", "FC 6447", una.join(", "),
+      una.join(", ") === "FC 6447", "A-FEAT-1254")
+    const grupo = facturasCortas([
+      { comprobante: "FC 1-00003-00006447 - AGRO", facturas: [{ comprobante: "FC 1-3-6447", imp_total: 1 }, { comprobante: "FC 1-3-6448", imp_total: 1 }] },
+      { comprobante: "Anticipo", origen: "ANTICIPO" },
+      { comprobante: "FC 1-00003-00006449 - AGRO CENTROS REGION NUCLEO S.A." },
+    ], prov)
+    chequear("Mail de detalle de pago", "✉️ Un grupo se abre en sus facturas, sin ceros, sin anticipos y sin repetir al proveedor",
+      "FC 1-3-6447, FC 1-3-6448, FC 1-3-6449", grupo.join(", "),
+      grupo.join(", ") === "FC 1-3-6447, FC 1-3-6448, FC 1-3-6449", "A-FEAT-1254")
+    chequear("Mail de detalle de pago", "✉️ El asunto lleva nuestro nombre, no el del proveedor", "Martinez Sobrado Agro SRL",
+      NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")], NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")] === "Martinez Sobrado Agro SRL", "A-FEAT-1254")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

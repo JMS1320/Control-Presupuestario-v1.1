@@ -11,6 +11,8 @@ import { generarCertificadoRetencion } from './certificado-retencion'
 import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } from './medios-pago'
 import { calcularCuenta, armarDesglose, textoDesvio, textoCierre, type ItemPago } from './cuenta-detalle-pago'
 import { textoConversion } from './moneda-factura'
+import { facturasCortas } from './lineas-detalle-pago'
+import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from '@/lib/empresas'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf)
@@ -135,7 +137,9 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     // Qué se está pagando. Sólo la identificación del comprobante —la nota interna no sale de la
     // empresa— y **sin los anticipos cuando hay factura**: un anticipo aplicado no es otra cosa que
     // se pague, es un MEDIO de esa factura, y ya aparece como tal en el desglose.
-    const fcs = [...new Set(c.itemsBruto.map(i => etiquetaComprobante(i)))].join(', ')
+    // ✉️ Cortas: sin el proveedor (el mail ya es para él) y sin los ceros de relleno.
+    const listaFcs = facturasCortas(c.itemsBruto as any, proveedor)
+    const fcs = listaFcs.length ? listaFcs.join(', ') : [...new Set(c.itemsBruto.map(i => etiquetaComprobante(i)))].join(', ')
 
     // ⚠️ **Avisa, no bloquea.** Un pago parcial o a cuenta puede ser a propósito, y un bloqueo duro
     // convertiría una decisión del usuario en un error del sistema. Pero tampoco sale en silencio.
@@ -148,11 +152,14 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
 
     let cuenta = armarDesglose(c, mediosPago)
     cuenta += `\nFecha de pago: ${fmtF(fechaPagoReal)}`
-    const asunto = `Detalle de pago — ${proveedor}`
+    // ✉️ El asunto lleva NUESTRO nombre y la(s) factura(s): se sobreentiende que las emitió el proveedor
+    // (usuario 2026-10-05). Con muchas facturas, las tres primeras y cuántas más.
+    const fcsAsunto = listaFcs.length > 3 ? `${listaFcs.slice(0, 3).join(', ')} y ${listaFcs.length - 3} más` : fcs
+    const asunto = `Detalle de pago — ${NOMBRE_PARA_TERCEROS[empresaDeSchema(schemaName)]}${fcsAsunto ? ` — ${fcsAsunto}` : ''}`
     const cierre = textoCierre(mediosPago)
 
     // 💵 A-BUG-1245 — factura en moneda extranjera: el mail dice el TC con que se pasó a pesos, igual que el PDF.
-    const conv = textoConversion(items as ItemPago[])
+    const conv = textoConversion((items as ItemPago[]).map(i => ({ ...i, comprobante: facturasCortas([i as any], proveedor)[0] ?? i.comprobante })))
     const textoConv = conv.length ? `\nImportes en pesos. Conversión:\n${conv.map(l => '· ' + l).join('\n')}\n` : ''
     const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${textoConv}${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
 

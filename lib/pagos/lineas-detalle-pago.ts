@@ -74,6 +74,32 @@ const SEP_NOTA = ' · '
  * vienen igual escritos. Y si al sacarlo **no queda nada**, se devuelve la etiqueta entera: perder
  * el renglón es peor que repetir el nombre.
  */
+/**
+ * ✉️ Las facturas que se pagan, **cortas**: sin el proveedor y sin los ceros de relleno — para el
+ * asunto y el cuerpo del mail (pedido del usuario 2026-10-05: *«la FC pagada abreviada, sin ceros…
+ * y que no repita el proveedor para cada factura»*). `FC 6447 - AGRO CENTROS…` → `FC 6447`;
+ * `FC 1-00003-00006447` → `FC 1-3-6447`. Un grupo se abre en sus facturas. Los anticipos no van:
+ * no son algo que se pague, son un medio (ya están en el desglose).
+ */
+export function facturasCortas(
+  items: Array<{ comprobante?: string | null; origen?: string; facturas?: SubFactura[] | null }>,
+  proveedor: string,
+): string[] {
+  const sinCeros = (x: string) => x.replace(/\b0+(?=\d)/g, '')
+  const out: string[] = []
+  for (const i of items) {
+    if (i.origen === 'ANTICIPO') continue
+    const partes = i.facturas && i.facturas.length
+      ? i.facturas.map(f => f.comprobante)
+      : etiquetaLimpia(i.comprobante).split(SEP_COMPROBANTES)
+    for (const p of partes) {
+      const e = sinCeros(sinElProveedor(t(p), proveedor))
+      if (e && !out.includes(e)) out.push(e)
+    }
+  }
+  return out
+}
+
 export function sinElProveedor(etiqueta: string, proveedor: string): string {
   const e = t(etiqueta)
   const p = t(proveedor)

@@ -96,6 +96,23 @@ export const DATOS_FISCALES: Record<Empresa, { razonSocial: string; cuit: string
   MA:  { razonSocial: 'MERCEDES ARECO', cuit: '27066824611' },
 }
 
+/**
+ * ✉️ Cómo nos nombramos ante un tercero (asunto del mail de Detalle de pago). Pedido del usuario
+ * 2026-10-05: *«en el asunto NO hay que poner el proveedor, hay que poner el nuestro»*. No es la razón
+ * social en mayúsculas de los reportes fiscales: es el nombre como se escribe en un mail.
+ */
+export const NOMBRE_PARA_TERCEROS: Record<Empresa, string> = {
+  MSA: 'Martinez Sobrado Agro SRL',
+  PAM: 'Sucesión de Plácido Alberto Martínez',
+  MA: 'Mercedes Areco',
+}
+
+/** La empresa de un schema (`msa` → `MSA`). Lo que no se reconoce cae en MSA, que es la que paga por la app. */
+export function empresaDeSchema(schema: string | null | undefined): Empresa {
+  const s = String(schema || '').toLowerCase()
+  return s === 'pam' ? 'PAM' : s === 'ma' ? 'MA' : 'MSA'
+}
+
 /** CUIT con guiones para encabezados: `30617786016` → `30-61778601-6`. */
 export function cuitFormateado(cuit: string | null): string {
   if (!cuit) return ''
