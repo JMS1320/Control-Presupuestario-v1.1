@@ -38,6 +38,12 @@ export interface PlanReposicion {
   ambiguas: { dato: string; candidatas: HembraRep[] }[]
   /** Datos que aparecen dos veces en la planilla (o dos datos que apuntan al mismo animal). */
   repetidas: string[]
+  /**
+   * ⚠️ Están en la planilla de hembras pero en el sistema son **MACHOS** (usuario 2026-10-05: *«por lo
+   * menos la app me debería decir: estás marcando N caravanas a hembras reposición que son machos»*).
+   * No se marcan: o la planilla está mal, o el sexo se cargó mal al destete — eso se corrige aparte.
+   */
+  sonMachos: { dato: string; animal: HembraRep }[]
 }
 
 const digitos = (s: string | null | undefined) => String(s ?? '').replace(/\D/g, '')
@@ -81,14 +87,20 @@ export function caravanasDeHoja(filas: unknown[][]): { caravanas: string[]; colu
   return { caravanas: out, columnas: nombres }
 }
 
-export function planReposicion(caravanas: string[], hembras: HembraRep[]): PlanReposicion {
+export function planReposicion(caravanas: string[], hembras: HembraRep[], machos: HembraRep[] = []): PlanReposicion {
+  const sonMachos: PlanReposicion['sonMachos'] = []
   const enLista = new Map<string, HembraRep>()
   const noEncontradas: string[] = []
   const ambiguas: PlanReposicion['ambiguas'] = []
   const repetidas: string[] = []
   for (const dato of caravanas) {
     const c = candidatasDe(dato, hembras)
-    if (c.length === 0) { noEncontradas.push(dato); continue }
+    if (c.length === 0) {
+      const m = candidatasDe(dato, machos)
+      if (m.length === 1) sonMachos.push({ dato, animal: m[0] })
+      else noEncontradas.push(dato)
+      continue
+    }
     if (c.length > 1) { ambiguas.push({ dato, candidatas: c }); continue }
     if (enLista.has(c[0].id)) { repetidas.push(dato); continue }
     enLista.set(c[0].id, c[0])
@@ -98,7 +110,7 @@ export function planReposicion(caravanas: string[], hembras: HembraRep[]): PlanR
   // Una ambigua NO desmarca a sus candidatas: puede ser cualquiera de ellas, y desmarcar sería adivinar.
   const enDuda = new Set(ambiguas.flatMap(a => a.candidatas.map(h => h.id)))
   const desmarcar = hembras.filter(h => h.es_rep && !enLista.has(h.id) && !enDuda.has(h.id))
-  return { marcar, desmarcar, yaBien, noEncontradas, ambiguas, repetidas }
+  return { marcar, desmarcar, yaBien, noEncontradas, ambiguas, repetidas, sonMachos }
 }
 
 /**
@@ -121,7 +133,7 @@ export function ajusteDeMarcas(
  * (no encontrada / ambigua) o repetida. Si no suma lo leído, el plan se contradice: frena.
  */
 export function cierraPlan(p: PlanReposicion, leidas: number): boolean {
-  return p.yaBien.length + p.marcar.length + p.noEncontradas.length + p.ambiguas.length + p.repetidas.length === leidas
+  return p.yaBien.length + p.marcar.length + p.noEncontradas.length + p.ambiguas.length + p.repetidas.length + p.sonMachos.length === leidas
 }
 
 /**

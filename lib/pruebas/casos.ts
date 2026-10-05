@@ -2164,6 +2164,12 @@ export function correrCasos(): Resultado[] {
     chequear("Reposición desde Excel", "⚠️ Una caravana que coincide con dos animales no se adivina ni desmarca a nadie",
       "ambigua 1 · quitar 0", `ambigua ${amb.ambiguas.length} · quitar ${amb.desmarcar.length}`,
       amb.ambiguas.length === 1 && amb.desmarcar.length === 0, "A-FEAT-1251")
+    // Una caravana de la planilla de hembras que en el sistema es MACHO: se avisa, no se marca, y el plan cierra.
+    const conMacho = planReposicion(["032 010012326428", "032 010055555555"], hembras, [H("m", "032 010055555555", "900", false)])
+    chequear("Reposición desde Excel", "🚹 Una caravana de la planilla que en el sistema es MACHO se avisa y no se marca",
+      "machos 1 · no encontradas 0 · cierra", `machos ${conMacho.sonMachos.length} · no encontradas ${conMacho.noEncontradas.length} · ${cierraPlan(conMacho, 2) ? 'cierra' : 'no cierra'}`,
+      conMacho.sonMachos.length === 1 && conMacho.sonMachos[0].animal.id === "m" && conMacho.noEncontradas.length === 0
+        && !conMacho.marcar.some(h => h.id === "m") && cierraPlan(conMacho, 2), "A-FEAT-1251")
     // La planilla del lector trae «IDV» (sin el cero): también se lee y cruza.
     const lector = caravanasDeHoja([["Fecha", "IDV", "Peso"], ["01/10/2026", "32010012326429", 240]])
     chequear("Reposición desde Excel", "📟 Una columna «IDV» del lector también se lee y cruza con la oficial",

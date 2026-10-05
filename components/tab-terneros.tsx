@@ -2431,6 +2431,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       <ModalConfirmarReposicion abierto={modalRepExcel} onCerrar={() => setModalRepExcel(false)} onAplicado={cargar}
         hembras={terneros
           .filter(t => t.activo && t.sexo === 'Hembra' && !/cut|descarte/i.test(t.categorias_hacienda?.nombre || ''))
+          .map(t => ({ id: t.id, caravana_oficial: t.caravana_oficial, caravana_interna: t.caravana_interna, es_rep: !!t.es_torito }))}
+        machos={terneros
+          .filter(t => t.activo && t.sexo === 'Macho')
           .map(t => ({ id: t.id, caravana_oficial: t.caravana_oficial, caravana_interna: t.caravana_interna, es_rep: !!t.es_torito }))} />
     </div>
   )

@@ -33,11 +33,13 @@ function Lista({ titulo, items, color }: { titulo: string; items: string[]; colo
 }
 
 export function ModalConfirmarReposicion({
-  abierto, onCerrar, hembras, onAplicado,
+  abierto, onCerrar, hembras, machos = [], onAplicado,
 }: {
   abierto: boolean
   onCerrar: () => void
   hembras: HembraRep[]
+  /** Para avisar si la planilla de hembras trae caravanas que el sistema tiene como machos. */
+  machos?: HembraRep[]
   onAplicado: () => void
 }) {
   const [archivo, setArchivo] = useState('')
@@ -57,7 +59,7 @@ export function ModalConfirmarReposicion({
           setArchivo(`${f.name} · hoja «${nombre}»`)
           setColumnas(r.columnas)
           setLeidas(r.caravanas.length)
-          setPlan(planReposicion(r.caravanas, hembras))
+          setPlan(planReposicion(r.caravanas, hembras, machos))
           return
         }
       }
@@ -86,7 +88,7 @@ export function ModalConfirmarReposicion({
   }
 
   const totalRep = plan ? plan.yaBien.length + plan.marcar.length : 0
-  const sinCruzar = plan ? plan.noEncontradas.length + plan.ambiguas.length : 0
+  const sinCruzar = plan ? plan.noEncontradas.length + plan.ambiguas.length + plan.sonMachos.length : 0
   return (
     <Dialog open={abierto} onOpenChange={v => { if (!v) onCerrar() }}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -109,10 +111,19 @@ export function ModalConfirmarReposicion({
             </div>
             {/* Control: lo que queda marcado + lo que no se pudo cruzar + repetidas = lo leído. */}
             {cierraPlan(plan, leidas)
-              ? <p className="text-xs text-emerald-700">✓ Cierra: {totalRep} quedan rep + {sinCruzar} sin cruzar + {plan.repetidas.length} repetidas = {leidas} leídas.</p>
+              ? <p className="text-xs text-emerald-700">✓ Cierra: {totalRep} quedan rep + {sinCruzar} sin cruzar{plan.sonMachos.length ? ` (${plan.sonMachos.length} machos)` : ''} + {plan.repetidas.length} repetidas = {leidas} leídas.</p>
               : <p className="text-sm font-semibold text-red-700">⚠️ No cierra contra las {leidas} leídas — no guardes y avisame.</p>}
             <Lista titulo="➕ A marcar como rep" items={plan.marcar.map(etiqueta)} color="border-pink-200" />
             <Lista titulo="➖ Tienen rep y NO están en la planilla: se les quita" items={plan.desmarcar.map(etiqueta)} color="border-gray-300" />
+            {plan.sonMachos.length > 0 && (
+              <div className="rounded border-2 border-red-300 bg-red-50 p-2">
+                <p className="text-sm font-semibold text-red-800">
+                  🚹 Estás marcando {plan.sonMachos.length} {plan.sonMachos.length === 1 ? 'caravana' : 'caravanas'} como hembra de reposición, pero en el sistema {plan.sonMachos.length === 1 ? 'es MACHO' : 'son MACHOS'}. No se marcan.
+                </p>
+                <div className="mt-1 font-mono text-xs leading-5">{plan.sonMachos.map((x, i) => <div key={i}>{x.dato} → {etiqueta(x.animal)}</div>)}</div>
+                <p className="mt-1 text-xs text-red-700">O la planilla está mal, o el sexo se cargó mal al destete. Si es hembra, hay que corregir el sexo del animal (eso mueve el stock por sexo) — no lo hace esta ventana.</p>
+              </div>
+            )}
             <Lista titulo="⚠️ No encontradas en el sistema" items={plan.noEncontradas} color="border-amber-300 bg-amber-50/50" />
             <Lista titulo="⚠️ Ambiguas (coinciden con más de una — no se tocan)"
               items={plan.ambiguas.map(a => `${a.dato} → ${a.candidatas.map(etiqueta).join(' / ')}`)} color="border-amber-300 bg-amber-50/50" />
