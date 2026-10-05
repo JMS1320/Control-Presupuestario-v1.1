@@ -10,6 +10,7 @@ import { generarPDFDetallePago, etiquetaComprobante } from './pdf-detalle-pago'
 import { generarCertificadoRetencion } from './certificado-retencion'
 import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } from './medios-pago'
 import { calcularCuenta, armarDesglose, textoDesvio, textoCierre, type ItemPago } from './cuenta-detalle-pago'
+import { textoConversion } from './moneda-factura'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
   const bytes = new Uint8Array(buf)
@@ -150,7 +151,10 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     const asunto = `Detalle de pago — ${proveedor}`
     const cierre = textoCierre(mediosPago)
 
-    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
+    // 💵 A-BUG-1245 — factura en moneda extranjera: el mail dice el TC con que se pasó a pesos, igual que el PDF.
+    const conv = textoConversion(items as ItemPago[])
+    const textoConv = conv.length ? `\nImportes en pesos. Conversión:\n${conv.map(l => '· ' + l).join('\n')}\n` : ''
+    const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${textoConv}${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
 
     const { error } = await supabase.from('mails_pago').insert({
       proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,

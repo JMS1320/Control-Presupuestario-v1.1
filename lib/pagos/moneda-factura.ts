@@ -83,3 +83,74 @@ export function calcularVinculacionPago(e: EntradaVinculacionPago): CalculoVincu
     montoAAbonarSiQueda: esExtranjera ? r2(saldoPesos / tc) : saldoPesos,
   }
 }
+
+/** Una factura tal como la traen el Cash Flow, el lote de Galicia y el detalle de pago. */
+export interface FacturaConMoneda {
+  moneda?: string | null
+  tc_pago?: number | string | null
+  tipo_cambio?: number | string | null
+  imp_total?: number | string | null
+  monto_a_abonar?: number | string | null
+  monto_sicore?: number | string | null
+  descuento_aplicado?: number | string | null
+}
+
+/**
+ * 💵 **Lo que se TRANSFIERE, en pesos** — A-BUG-1245 (2026-10-05).
+ *
+ * 🧨 El caso: Agro Centros, FC USD 4.635,54 a TC 1.520 con retención de $111.983,01. El Cash Flow
+ * decía **$6.934.037,79** (bien) pero el **lote de Galicia** decía **$4.561,87** —el saldo en
+ * DÓLARES tomado como pesos— y el Detalle de pago mezclaba las dos monedas.
+ *
+ * En moneda extranjera la cuenta exacta es `total × TC − retención − descuento` (la retención y el
+ * descuento ya están en pesos). Reconvertir `monto_a_abonar` (USD redondeado a 2 decimales) da
+ * centavos de más ($4,61 en el caso testigo), así que se usa la exacta **siempre que el saldo
+ * guardado coincida** con ella; si no coincide —hubo un pago a cuenta que bajó el saldo—, manda el
+ * saldo guardado.
+ */
+export function aPagarEnPesos(f: FacturaConMoneda): number {
+  const aAbonar = Number(f.monto_a_abonar ?? f.imp_total) || 0
+  if (!esMonedaExtranjera(f.moneda)) return aAbonar
+  const tc = tcDeFactura(f)
+  const exacto = r2((Number(f.imp_total) || 0) * tc - (Number(f.monto_sicore) || 0) - (Number(f.descuento_aplicado) || 0))
+  const viaSaldo = r2(aAbonar * tc)
+  return Math.abs(exacto - viaSaldo) <= tc * 0.01 ? exacto : viaSaldo
+}
+
+/** El total de la factura en pesos (al TC del pago). */
+export function totalEnPesos(f: FacturaConMoneda): number {
+  return r2((Number(f.imp_total) || 0) * tcDeFactura(f))
+}
+
+/** Para mostrar la conversión en el detalle de pago (PDF y mail). `null` si la factura es en pesos. */
+export interface ConversionMoneda {
+  moneda: string
+  tc: number
+  totalOrig: number
+  aPagarOrig: number
+}
+
+export function conversionDe(f: FacturaConMoneda): ConversionMoneda | null {
+  if (!esMonedaExtranjera(f.moneda)) return null
+  return {
+    moneda: String(f.moneda),
+    tc: tcDeFactura(f),
+    totalOrig: Number(f.imp_total) || 0,
+    aPagarOrig: Number(f.monto_a_abonar ?? f.imp_total) || 0,
+  }
+}
+
+const nf = (n: number, d = 2) => n.toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d })
+
+/**
+ * El renglón que explica la conversión — **el mismo texto en el PDF y en el mail**.
+ * Ej.: «FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80».
+ */
+export function textoConversion(items: Array<{ comprobante: string; conversion?: ConversionMoneda | null }>): string[] {
+  return items
+    .filter(i => i.conversion)
+    .map(i => {
+      const c = i.conversion!
+      return `${i.comprobante} en ${c.moneda} ${nf(c.totalOrig)} · TC del pago ${nf(c.tc)} → $${nf(r2(c.totalOrig * c.tc))}`
+    })
+}

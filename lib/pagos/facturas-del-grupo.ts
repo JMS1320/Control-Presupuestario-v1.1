@@ -9,6 +9,7 @@
  * importes**. Partirlo daría tres renglones sin plata — peor que agruparlos.
  */
 
+import { totalEnPesos } from './moneda-factura'
 import { supabase } from '@/lib/supabase'
 import type { SubFactura } from './lineas-detalle-pago'
 
@@ -29,7 +30,7 @@ export async function facturasDelGrupo(
     const { data, error } = await supabase
       .schema(schema as any)
       .from('comprobantes_arca')
-      .select('tipo_comprobante, punto_venta, numero_desde, fecha_emision, imp_total, descuento_aplicado')
+      .select('tipo_comprobante, punto_venta, numero_desde, fecha_emision, imp_total, descuento_aplicado, moneda, tc_pago, tipo_cambio')
       .in('id', ids)
     if (error || !data) return []
 
@@ -45,7 +46,8 @@ export async function facturasDelGrupo(
     return data.map((f: any) => ({
       comprobante: `FC ${f.tipo_comprobante}-${Number(f.punto_venta ?? 0)}-${Number(f.numero_desde ?? 0)}`,
       fecha: f.fecha_emision ?? null,
-      imp_total: Number(f.imp_total) || 0,
+      // 💵 A-BUG-1245 — una factura en dólares del grupo se lista en pesos, como el resto del papel.
+      imp_total: totalEnPesos(f),
       descuento_aplicado: f.descuento_aplicado ?? null,
     }))
   } catch {

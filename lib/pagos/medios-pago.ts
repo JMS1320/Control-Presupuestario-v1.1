@@ -9,6 +9,7 @@
 
 import { supabase } from "@/lib/supabase"
 import { restosComoMedios } from "./cuenta-detalle-pago"
+import { aPagarEnPesos } from "./moneda-factura"
 
 export interface MedioPago {
   tipo: 'anticipo' | 'echeq' | 'transferencia'
@@ -140,7 +141,7 @@ export async function obtenerMediosPagoFactura(schema: string, facturaIds: strin
   // Se descuenta lo ya cubierto por cheques y extracto DE ESA MISMA FACTURA: `guardarChequeFactura`
   // libra justamente por `monto_a_abonar`, así que sumar los dos lo contaría dos veces.
   const { data: fcs } = await supabase.schema(schema).from('comprobantes_arca')
-    .select('id, monto_a_abonar, fecha_pago, grupo_pago_id').in('id', facturaIds)
+    .select('id, monto_a_abonar, fecha_pago, grupo_pago_id, moneda, imp_total, tc_pago, tipo_cambio, monto_sicore, descuento_aplicado').in('id', facturaIds)
 
   /**
    * 🐞 **A-BUG-145 — un pago es UN renglón.**
@@ -161,7 +162,10 @@ export async function obtenerMediosPagoFactura(schema: string, facturaIds: strin
    */
   // El agrupado vive en `cuenta-detalle-pago.ts` (aritmética pura): así lo usan también el
   // ensayo y los casos, en vez de tener cada uno su copia. Ver el motivo allá.
-  medios.push(...restosComoMedios((fcs ?? []) as any[], cubierto))
+  // 💵 A-BUG-1245 — el resto de una factura en dólares se transfiere EN PESOS: sin esto el desglose
+  // decía «Transferencia $4.561,87» (los USD como pesos) en el Detalle de pago de Agro Centros.
+  const fcsEnPesos = ((fcs ?? []) as any[]).map(f => ({ ...f, monto_a_abonar: aPagarEnPesos(f) }))
+  medios.push(...restosComoMedios(fcsEnPesos, cubierto))
 
   return medios
 }

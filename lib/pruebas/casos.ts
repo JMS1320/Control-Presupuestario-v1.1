@@ -137,7 +137,7 @@ import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
-import { calcularVinculacionPago, tcDeFactura } from "@/lib/pagos/moneda-factura"
+import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -2186,6 +2186,28 @@ export function correrCasos(): Resultado[] {
     const aj = ajusteDeMarcas([{ id: "a", es_rep: true }, { id: "b", es_rep: false }, { id: "c", es_rep: true }], new Set(["a", "b"]))
     chequear("Reposición desde Excel", "🔁 Cambio de categoría: la selección final pasa a la planilla de recría",
       "+b −c", `+${aj.marcar.join()} −${aj.desmarcar.join()}`, aj.marcar.join() === "b" && aj.desmarcar.join() === "c", "A-FEAT-1251")
+  }
+
+  // ══ 💵 A-BUG-1245 — factura en DÓLARES: lote de Galicia y detalle de pago en PESOS (Agro Centros, 2026-10-05) ══
+  {
+    const agro = { moneda: "USD", tc_pago: 1520, tipo_cambio: 1522, imp_total: 4635.54, monto_a_abonar: 4561.87, monto_sicore: 111983.01, descuento_aplicado: null }
+    chequear("Pago en dólares", "💵 Lo que se transfiere sale en pesos y exacto: 4.635,54 × 1.520 − 111.983,01 (no los USD 4.561,87 como pesos)",
+      "6934037.79", aPagarEnPesos(agro).toFixed(2), aPagarEnPesos(agro).toFixed(2) === "6934037.79", "A-BUG-1245")
+    chequear("Pago en dólares", "💵 El total de la factura en pesos usa el TC del PAGO (1.520), no el de la factura (1.522)",
+      "7046020.80", totalEnPesos(agro).toFixed(2), totalEnPesos(agro).toFixed(2) === "7046020.80", "A-BUG-1245")
+    chequear("Pago en dólares", "🧮 En pesos cierra: total − retención = transferencia",
+      "0.00", (totalEnPesos(agro) - 111983.01 - aPagarEnPesos(agro)).toFixed(2),
+      Math.abs(totalEnPesos(agro) - 111983.01 - aPagarEnPesos(agro)) < 0.005, "A-BUG-1245")
+    // Con un pago a cuenta que bajó el saldo, manda el saldo guardado (no la cuenta desde el total).
+    const parcial = { ...agro, monto_a_abonar: 2000 }
+    chequear("Pago en dólares", "Si un pago a cuenta bajó el saldo, se transfiere el saldo × TC",
+      "3040000.00", aPagarEnPesos(parcial).toFixed(2), aPagarEnPesos(parcial).toFixed(2) === "3040000.00", "A-BUG-1245")
+    chequear("Pago en dólares", "Una factura en pesos no cambia", "1000",
+      String(aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 })), aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 }) === 1000, "A-BUG-1245")
+    const linea = textoConversion([{ comprobante: "FC 6447", conversion: conversionDe(agro) }])[0] ?? ""
+    chequear("Pago en dólares", "📄 El detalle (PDF y mail) dice moneda, TC del pago y resultado en pesos",
+      "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80", linea,
+      linea === "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 → $7.046.020,80", "A-BUG-1245")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

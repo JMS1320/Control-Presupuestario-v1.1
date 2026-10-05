@@ -22,6 +22,7 @@
  */
 
 import type { MedioPago } from "./medios-pago"
+import type { ConversionMoneda } from "./moneda-factura"
 
 export interface ItemPago {
   comprobante: string
@@ -31,6 +32,8 @@ export interface ItemPago {
   monto_a_abonar: number
   /** `ARCA` | `ANTICIPO` | `TEMPLATE`. Un ANTICIPO **no es una factura**: es un medio de pago. */
   origen?: string
+  /** 💵 Factura en moneda extranjera: los importes de arriba YA están en pesos; esto es para mostrar de dónde salen (A-BUG-1245). */
+  conversion?: ConversionMoneda | null
 }
 
 export interface Cuenta {

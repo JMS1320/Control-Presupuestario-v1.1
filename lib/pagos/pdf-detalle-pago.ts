@@ -11,6 +11,7 @@
 //    10/08/2026: decía $520.978,69 sobre una factura de $548.398,62, justo el descuento de menos).
 //    El desglose por medios de abajo ya usaba este criterio; la tabla principal no.
 
+import { textoConversion, type ConversionMoneda } from './moneda-factura'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { MedioPago } from './medios-pago'
@@ -44,6 +45,8 @@ export const generarPDFDetallePago = async (
     /** 'ARCA' | 'ANTICIPO' | 'TEMPLATE'. Un ANTICIPO **no es una factura**: no suma al bruto
      *  (A-BUG-105), es un MEDIO de pago de la factura a la que está aplicado. */
     origen?: string
+    /** 💵 A-BUG-1245 — factura en moneda extranjera: importes ya en pesos, esto explica la conversión. */
+    conversion?: ConversionMoneda | null
   }>,
   anticipo?: {
     monto: number
@@ -267,7 +270,17 @@ export const generarPDFDetallePago = async (
       if (cuenta.dif > 1) mBody.push(['Saldo pendiente', '', fmt(cuenta.dif)])
       else if (cuenta.dif < -1) mBody.push(['Pagado a cuenta', '', fmt(-cuenta.dif)])
 
-      const startY2 = ((doc as any).lastAutoTable?.finalY ?? 56) + 8
+      // 💵 A-BUG-1245 — factura en moneda extranjera: se dice en el papel a qué TC se pasó a pesos.
+      const conv = textoConversion(items)
+      let yConv = ((doc as any).lastAutoTable?.finalY ?? 56) + 5
+      if (conv.length) {
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.text('Importes en pesos. Conversión:', 15, yConv)
+        for (const linea of conv) { yConv += 4.5; doc.text('· ' + linea, 17, yConv) }
+        yConv += 1
+      }
+      const startY2 = (conv.length ? yConv : ((doc as any).lastAutoTable?.finalY ?? 56)) + 8
       doc.setFontSize(11)
       doc.setFont('helvetica', 'bold')
       doc.text('Desglose del pago', 15, startY2)

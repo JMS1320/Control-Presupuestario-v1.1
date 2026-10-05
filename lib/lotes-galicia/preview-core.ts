@@ -5,6 +5,7 @@
  * (HTML) → "Unexpected token '<'". Compartiendo la función se elimina ese fetch frágil).
  */
 
+import { aPagarEnPesos } from '@/lib/pagos/moneda-factura'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { PreviewLoteOutput, ItemPreview, Empresa } from './types'
 import { validarCBU, validarAlias, diasDesde, motivoSugerido, empresaToSchema } from './helpers'
@@ -209,10 +210,11 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
   // FC ARCA
   if (porTipo['fc']?.length) {
     const { data } = await supabaseAdmin.schema(schemaEmpresa).from('comprobantes_arca')
-      .select('id, cuit, denominacion_emisor, monto_a_abonar, imp_total, numero_desde, moneda, tipo_comprobante_desc, grupo_pago_id')
+      .select('id, cuit, denominacion_emisor, monto_a_abonar, imp_total, numero_desde, moneda, tipo_comprobante_desc, grupo_pago_id, tc_pago, tipo_cambio, monto_sicore, descuento_aplicado')
       .in('id', porTipo['fc'])
     ;(data || []).forEach((f: any) => {
-      const monto = Number(f.monto_a_abonar ?? f.imp_total ?? 0)
+      // 💵 A-BUG-1245 — en dólares, lo que se transfiere EN PESOS (antes tomaba el saldo en USD como pesos).
+      const monto = aPagarEnPesos(f)
       out.push({
         tipo: 'fc', id: f.id, schema: schemaEmpresa, cuit: f.cuit,
         razon_social: f.denominacion_emisor, monto,
@@ -269,7 +271,7 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
       .in('id', porTipo['grupo'])
     for (const g of grupos || []) {
       const fcGrupo = await supabaseAdmin.schema(schemaEmpresa).from('comprobantes_arca')
-        .select('cuit, monto_a_abonar, imp_total').eq('grupo_pago_id', g.id)
+        .select('cuit, monto_a_abonar, imp_total, moneda, tc_pago, tipo_cambio, monto_sicore, descuento_aplicado').eq('grupo_pago_id', g.id)
       const cuotasGrupo = await supabaseAdmin.from('cuotas_egresos_sin_factura')
         .select('id, egreso_id, monto').eq('grupo_pago_id', g.id)
       const cuitsFc = [...new Set((fcGrupo.data || []).map((f: any) => f.cuit))]
@@ -294,7 +296,7 @@ async function cargarItems(empresa: Empresa, items: Array<{ tipo: string; id: st
       //
       // `monto_a_abonar` es el saldo real de cada factura (total − retención − descuento). Se cae a
       // `monto_total` sólo si el grupo no devolvió miembros, para no exportar 0 en silencio.
-      const montoFc = (fcGrupo.data || []).reduce((s: number, f: any) => s + Number(f.monto_a_abonar ?? f.imp_total ?? 0), 0)
+      const montoFc = (fcGrupo.data || []).reduce((s: number, f: any) => s + aPagarEnPesos(f), 0)
       const montoCuotas = (cuotasGrupo.data || []).reduce((s: number, c: any) => s + Number(c.monto || 0), 0)
       const montoMiembros = Math.round((montoFc + montoCuotas) * 100) / 100
       out.push({

@@ -1,6 +1,7 @@
 "use client"
 
 
+import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe } from "@/lib/pagos/moneda-factura"
 import { hoyArgentina } from "@/lib/fechas"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
@@ -1346,10 +1347,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
           fecha_pago: f.fecha_pago,   // A-BUG-152
-          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          // 💵 A-BUG-1245 — en dólares los importes van EN PESOS al TC del pago, y la conversión se muestra.
+          imp_total: esMonedaExtranjera(fa.moneda) ? totalEnPesos(fa) : (fa.imp_total ?? f.debitos ?? 0),
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
-          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          monto_a_abonar: esMonedaExtranjera(fa.moneda) ? aPagarEnPesos(fa) : (fa.monto_a_abonar ?? f.debitos ?? 0),
+          conversion: conversionDe(fa),
           // 🐞 A-BUG-149 — faltaba, y por eso VER el PDF no daba lo mismo que encolarlo: sin
           // `origen`, un ANTICIPO se suma al bruto como si fuera una factura (A-BUG-105).
           // `encolarMailsSeleccionados` sí lo pasaba, **con el comentario del bug al lado**.
@@ -1400,17 +1403,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
       }
       const items = fs.map(f => {
-        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
+        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number; moneda?: string | null; tc_pago?: number | null; tipo_cambio?: number | null }
         return {
           facturas: subsB.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
           fecha_pago: f.fecha_pago,   // A-BUG-152
-          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          // 💵 A-BUG-1245 — ídem el PDF: en pesos, con la conversión a la vista.
+          imp_total: esMonedaExtranjera(fa.moneda) ? totalEnPesos(fa) : (fa.imp_total ?? f.debitos ?? 0),
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
-          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          monto_a_abonar: esMonedaExtranjera(fa.moneda) ? aPagarEnPesos(fa) : (fa.monto_a_abonar ?? f.debitos ?? 0),
+          conversion: conversionDe(fa),
           origen: f.origen,   // para que el mail no sume un ANTICIPO como si fuera factura (A-BUG-105)
         }
       })

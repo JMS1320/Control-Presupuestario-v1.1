@@ -1,6 +1,7 @@
 "use client"
 
 
+import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
@@ -6045,6 +6046,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       monto_sicore: f.monto_sicore as number | null,
       descuento_aplicado: f.descuento_aplicado as number | null,
       monto_a_abonar: montoPagoEnPesos(f as never),
+      conversion: conversionDe(f as never),   // 💵 A-BUG-1245 — mismo renglón de conversión que el Cash Flow
     }
   })
   // Mapea un grupo de templates (egresos sin factura) a los items del detalle
