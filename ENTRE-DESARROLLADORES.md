@@ -436,3 +436,11 @@ Si preferís otra sección para el permiso de alguna, cambiala sin avisar. Al le
 pesos. `costo_unitario` **sigue en pesos**; las columnas nuevas guardan el original. Sin cambios de
 RLS, permisos ni vistas (la tabla se expone directa). Script: `scripts/78-moneda-compras-insumos.sql`
 (+ `-deshacer`). Rama `jms/compras-factura`. Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-05 · PARA JAVIER — un TRIGGER nuevo en `msa.comprobantes_arca` (aviso, no hay nada que hacer)
+
+`trg_costo_compras_sigue_tc` (AFTER UPDATE OF `tc_pago`, `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`
+(`security definer`, `search_path = ''`). Cuando cambia el TC de pago de una factura en dólares, recalcula
+en pesos el costo de las compras de insumos vinculadas a ella (movimiento, vínculo y el costo del stock si era
+el de esa compra). No cambia RLS ni permisos. Script `scripts/79-costo-compras-sigue-tc-pago.sql` (+ `-deshacer`).
+Al leerlo, borrá esta entrada.
