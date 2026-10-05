@@ -495,6 +495,9 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
 ### Marcar reposición (grilla Recría, botón 🐂 Reposición) ✅
 - Reusa la columna `es_torito` como flag de **reposición** (macho→torito, hembra→ternera rep).
 - Chips de filtro por grupo + columnas ordenables + **"Seleccionar N más pesadas"** (respeta el chip activo) → **Marcar / Quitar**. La escritura la dispara el usuario.
+- **📥 Confirmar hembras desde Excel**: subís la planilla de las confirmadas (columna «Caravana» o «IDV»; oficial con o sin el cero, o interna). Te muestra qué queda **ya marcado, a marcar, a quitar y sin cruzar** antes de guardar; al confirmar, las hembras con «rep» son exactamente las de la planilla. Los toritos no se tocan.
+- **Pasarlas de categoría**: en *Hacienda → Cambio de Categoría*, con origen Ternera Recría, el botón **«♀ Sólo las de reposición»** preselecciona las marcadas. Podés tildar o destildar a mano; al guardar, **primero** se actualiza la marca «rep» del Registro de Terneros con tu selección y después se mueve la categoría.
+  → A-TEST-1185
 
 ### Importar pesadas (Excel) 🟡
 - Columnas: **Fecha** (una sola por archivo, DD/MM/AAAA), **Peso** (kg), y la identificación del animal:

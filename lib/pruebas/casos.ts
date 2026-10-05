@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
@@ -2127,6 +2128,52 @@ export function correrCasos(): Resultado[] {
   chequear("Cobro de venta", "⚠️ Sin retenciones cargadas, la diferencia da ~6,5% y hay que avisarlo",
     "-6,5%", `${difSanpa.porcentaje.toFixed(1)}%`,
     Math.abs(difSanpa.porcentaje + 6.5) < 0.1 && !difSanpa.exacto, "A-FEAT-167")
+
+  // ══ 🐄 A-FEAT-1251 — confirmar la reposición desde un Excel ══════════════════════════════════
+  {
+    const H = (id: string, of: string | null, int: string | null, rep: boolean) => ({ id, caravana_oficial: of, caravana_interna: int, es_rep: rep })
+    const hembras = [
+      H("a", "032 010012326428", "187", true),   // en la planilla y ya rep
+      H("b", "032 010012326429", "307", false),  // en la planilla, falta marcarla
+      H("c", "032 010012326431", "180", true),   // rep y NO está en la planilla → se le quita
+      H("d", "032 010012326433", "300", false),  // ni rep ni en la planilla → no se toca
+      H("e", "032 010012399428", "216", true),   // termina igual que «a» si se escribe la cola corta
+    ]
+    // Planilla real-ish: encabezado, oficial sin el cero (Excel se lo comió), interna, una que no existe, una repetida.
+    const hoja: unknown[][] = [
+      ["Nro", "Caravana", "Peso"],
+      [1, "32010012326428", 250],
+      [2, "307", 240],
+      [3, "032 010012399428", 260],
+      [4, "032 010099999999", 230],
+      [5, "187", 250],
+    ]
+    const { caravanas } = caravanasDeHoja(hoja)
+    chequear("Reposición desde Excel", "🐄 Lee sólo la columna «Caravana» (no confunde el peso con una caravana interna)",
+      "5", String(caravanas.length), caravanas.length === 5 && !caravanas.includes("250"), "A-FEAT-1251")
+    const plan = planReposicion(caravanas, hembras)
+    chequear("Reposición desde Excel", "🐄 Marca la que falta, quita la que sobra y avisa la que no existe",
+      "marcar b · quitar c · no encontrada 1 · repetida 1",
+      `marcar ${plan.marcar.map(h => h.id)} · quitar ${plan.desmarcar.map(h => h.id)} · no encontrada ${plan.noEncontradas.length} · repetida ${plan.repetidas.length}`,
+      plan.marcar.map(h => h.id).join() === "b" && plan.desmarcar.map(h => h.id).join() === "c"
+        && plan.noEncontradas.length === 1 && plan.repetidas.length === 1 && plan.yaBien.length === 2, "A-FEAT-1251")
+    chequear("Reposición desde Excel", "🧮 El plan cierra contra lo leído", "true", String(cierraPlan(plan, caravanas.length)),
+      cierraPlan(plan, caravanas.length), "A-FEAT-1251")
+    // Una cola que coincide con dos caravanas NO se adivina: queda ambigua y no desmarca a ninguna.
+    const amb = planReposicion(["326428"], [H("x", "032 010012326428", null, true), H("y", "032 020012326428", null, true)])
+    chequear("Reposición desde Excel", "⚠️ Una caravana que coincide con dos animales no se adivina ni desmarca a nadie",
+      "ambigua 1 · quitar 0", `ambigua ${amb.ambiguas.length} · quitar ${amb.desmarcar.length}`,
+      amb.ambiguas.length === 1 && amb.desmarcar.length === 0, "A-FEAT-1251")
+    // La planilla del lector trae «IDV» (sin el cero): también se lee y cruza.
+    const lector = caravanasDeHoja([["Fecha", "IDV", "Peso"], ["01/10/2026", "32010012326429", 240]])
+    chequear("Reposición desde Excel", "📟 Una columna «IDV» del lector también se lee y cruza con la oficial",
+      "b", planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join(),
+      planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join() === "b", "A-FEAT-1251")
+    // Pieza 2: lo tildado a mano en el cambio de categoría se vuelve la marca rep.
+    const aj = ajusteDeMarcas([{ id: "a", es_rep: true }, { id: "b", es_rep: false }, { id: "c", es_rep: true }], new Set(["a", "b"]))
+    chequear("Reposición desde Excel", "🔁 Cambio de categoría: la selección final pasa a la planilla de recría",
+      "+b −c", `+${aj.marcar.join()} −${aj.desmarcar.join()}`, aj.marcar.join() === "b" && aj.desmarcar.join() === "c", "A-FEAT-1251")
+  }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══
   // AFA 31274417: el Cash Flow proyectaba el total ($6.080.286,72); el banco acredita $5.332.648,89.

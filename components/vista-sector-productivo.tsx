@@ -1,6 +1,7 @@
 "use client"
 
 
+import { ajusteDeMarcas } from "@/lib/productivo/reposicion"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -1074,12 +1075,18 @@ function TabHacienda() {
   const [busquedaTernero, setBusquedaTernero] = useState('')
 
   // Cambio categoría — selector de terneros individuales
-  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null }[]>([])
+  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, es_torito: boolean | null }[]>([])
   const [ternerosSeleccionadosCambio, setTernerosSeleccionadosCambio] = useState<Set<string>>(new Set())
+  /**
+   * 🐄 A-FEAT-1251 — «Sólo las de reposición»: preselecciona las hembras marcadas rep. Mientras está
+   * prendido, lo que el usuario tilde o destilde a mano se vuelve la marca rep AL GUARDAR, antes de
+   * mover la categoría — así la planilla de recría y el cambio no quedan diciendo cosas distintas.
+   */
+  const [modoRepCambio, setModoRepCambio] = useState(false)
 
   const cargarTernerosParaCambio = async (categoriaId: string) => {
     const { data } = await supabase.schema('productivo').from('terneros')
-      .select('id, caravana_interna, caravana_oficial, sexo')
+      .select('id, caravana_interna, caravana_oficial, sexo, es_torito')
       .eq('activo', true)
       .eq('categoria_id', categoriaId)
       .order('caravana_oficial', { ascending: true })
@@ -1272,6 +1279,7 @@ function TabHacienda() {
     setBusquedaTernero('')
     setTernerosParaCambio([])
     setTernerosSeleccionadosCambio(new Set())
+    setModoRepCambio(false)
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
@@ -1323,6 +1331,19 @@ function TabHacienda() {
           `¿Seguir sin cargar las caravanas?`
         )
         if (!seguir) return
+      }
+
+      // 🐄 A-FEAT-1251 — PRIMERO la marca rep de la planilla de recría, después el movimiento.
+      if (modoRepCambio) {
+        const hembrasCambio = ternerosParaCambio.filter(t => t.sexo === 'Hembra').map(t => ({ id: t.id, es_rep: !!t.es_torito }))
+        const aj = ajusteDeMarcas(hembrasCambio, ternerosSeleccionadosCambio)
+        const prodRep = supabase.schema('productivo')
+        const r1 = aj.marcar.length ? await prodRep.from('terneros').update({ es_torito: true }).in('id', aj.marcar) : { error: null }
+        const r2 = aj.desmarcar.length ? await prodRep.from('terneros').update({ es_torito: false }).in('id', aj.desmarcar) : { error: null }
+        const eRep = r1.error || r2.error
+        if (eRep) { toast.error('No se pudo actualizar la marca de reposición (no se movió nada): ' + eRep.message); return }
+        if (aj.marcar.length || aj.desmarcar.length)
+          toast.info(`Reposición actualizada en la planilla de recría: +${aj.marcar.length} / −${aj.desmarcar.length}`)
       }
 
       // Egreso de categoría origen
@@ -2829,6 +2850,7 @@ function TabHacienda() {
                       setNuevoMov(p => ({ ...p, categoria_id: v }))
                       setTernerosParaCambio([])
                       setTernerosSeleccionadosCambio(new Set())
+                      setModoRepCambio(false)
                       if (esCatTernero(v)) cargarTernerosParaCambio(v)
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
@@ -2856,12 +2878,23 @@ function TabHacienda() {
                     <div className="flex items-center justify-between">
                       <Label className="text-blue-700 font-medium">Seleccionar individuos ({ternerosSeleccionadosCambio.size} de {ternerosParaCambio.length})</Label>
                       <div className="flex gap-2">
+                        {ternerosParaCambio.some(t => t.sexo === 'Hembra' && t.es_torito) && (
+                          <Button variant="outline" size="sm" className={`h-6 text-xs ${modoRepCambio ? 'bg-pink-600 text-white border-pink-600' : 'border-pink-400 text-pink-700'}`}
+                            title="Preselecciona las hembras marcadas «rep». Lo que tildes o destildes se vuelve la marca rep al guardar."
+                            onClick={() => {
+                              const ids = ternerosParaCambio.filter(t => t.sexo === 'Hembra' && t.es_torito).map(t => t.id)
+                              setTernerosSeleccionadosCambio(new Set(ids)); setModoRepCambio(true)
+                              setNuevoMov(p => ({ ...p, cantidad: String(ids.length) }))
+                            }}>
+                            ♀ Sólo las de reposición ({ternerosParaCambio.filter(t => t.sexo === 'Hembra' && t.es_torito).length})
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm" className="h-6 text-xs"
-                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setModoRepCambio(false); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
                           Todos
                         </Button>
                         <Button variant="outline" size="sm" className="h-6 text-xs"
-                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setModoRepCambio(false); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
                           Ninguno
                         </Button>
                       </div>
@@ -2882,6 +2915,12 @@ function TabHacienda() {
                       ))}
                     </div>
                     <p className="text-xs text-blue-600">Cantidad: {ternerosSeleccionadosCambio.size}</p>
+                    {modoRepCambio && (() => {
+                      const aj = ajusteDeMarcas(ternerosParaCambio.filter(t => t.sexo === 'Hembra').map(t => ({ id: t.id, es_rep: !!t.es_torito })), ternerosSeleccionadosCambio)
+                      return (aj.marcar.length || aj.desmarcar.length)
+                        ? <p className="text-xs text-pink-700">♀ Al guardar, la planilla de recría queda igual a esta selección: <b>+{aj.marcar.length}</b> rep · <b>−{aj.desmarcar.length}</b> rep.</p>
+                        : <p className="text-xs text-pink-700">♀ La selección coincide con las marcadas rep en la planilla de recría.</p>
+                    })()}
                   </div>
                 ) : (
                   <>

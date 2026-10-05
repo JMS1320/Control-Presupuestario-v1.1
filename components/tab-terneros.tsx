@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Upload, CheckCircle2, AlertCircle, Baby, Scale, History, ChevronRight, ChevronLeft, Download, Info } from "lucide-react"
 import * as XLSX from "xlsx"
+import { ModalConfirmarReposicion } from "./modal-confirmar-reposicion"
 import {
   normalizarCaravana, categoriaDeTernero, CATEGORIAS_TERNERO, type CategoriaTernero,
 } from "@/lib/productivo/caravanas"
@@ -298,6 +299,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [selReposicion, setSelReposicion] = useState<Set<string>>(new Set())
   const [guardandoRep, setGuardandoRep] = useState(false)
   const [nMasPesadas, setNMasPesadas] = useState('40')
+  // 🐄 A-FEAT-1251 — confirmar la reposición subiendo la planilla de las hembras confirmadas
+  const [modalRepExcel, setModalRepExcel] = useState(false)
   const [filtroGrupo, setFiltroGrupo] = useState<null | 'machos' | 'hembras' | 'toritos' | 'terneras_rep'>(null)
   const [sort, setSort] = useState<{ col: string | null; dir: 'asc' | 'desc' }>({ col: null, dir: 'desc' })
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
@@ -1249,6 +1252,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     <span className="text-amber-700">más pesadas {filtroGrupo ? `(de ${filtroGrupo === 'terneras_rep' ? 'terneras rep' : filtroGrupo})` : '(usá un chip de arriba para acotar sexo)'}</span>
                   </span>
                   <span className="ml-auto flex items-center gap-2">
+                    <button type="button" onClick={() => setModalRepExcel(true)} className="px-2 py-1 rounded bg-white border border-pink-400 text-pink-700 hover:bg-pink-50">📥 Confirmar hembras desde Excel</button>
                     <span className="text-amber-800 font-medium">{selReposicion.size} sel.</span>
                     <button type="button" onClick={() => setSelReposicion(new Set())} className="text-xs text-amber-700 hover:underline">Limpiar</button>
                     <Button size="sm" disabled={guardandoRep || selReposicion.size === 0} onClick={() => aplicarReposicion(true)} className="bg-amber-600 hover:bg-amber-700 text-white">✓ Marcar reposición</Button>
@@ -2424,6 +2428,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
         </DialogContent>
       </Dialog>
 
+      <ModalConfirmarReposicion abierto={modalRepExcel} onCerrar={() => setModalRepExcel(false)} onAplicado={cargar}
+        hembras={terneros
+          .filter(t => t.activo && t.sexo === 'Hembra' && !/cut|descarte/i.test(t.categorias_hacienda?.nombre || ''))
+          .map(t => ({ id: t.id, caravana_oficial: t.caravana_oficial, caravana_interna: t.caravana_interna, es_rep: !!t.es_torito }))} />
     </div>
   )
 }
