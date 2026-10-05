@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
@@ -2260,6 +2261,25 @@ export function correrCasos(): Resultado[] {
     const sinPrecio = calcularVinculo(fac, [...compras, { ...C("x", "Sin precio", 1, 0), precioPactado: null }], [{ compraId: "x", incluir: true, pctDescuento: 0 }])
     chequear("Factura ↔ compras", "Una compra sin precio no se puede vincular (no se valúa en cero)", "sinPrecio 1 · no cierra",
       `sinPrecio ${sinPrecio.sinPrecio} · ${sinPrecio.cierra ? "cierra" : "no cierra"}`, sinPrecio.sinPrecio === 1 && !sinPrecio.cierra, "A-BUG-1244")
+  }
+
+  // ══ 💱 A-FEAT-1255 — NC esperada por diferencia de cambio (Agro Centros FC 6447) ══
+  {
+    const fac = { id: "f", cuit: "33716360429", proveedor: "AGRO CENTROS", numero: "FC 3-6447", fecha_pago: "2026-10-05", imp_total: 4635.54, tipo_cambio: 1522, tc_pago: 1520 }
+    const e = esperadaDe(fac)
+    chequear("NC por diferencia de cambio", "💱 Pagada a 1.520 una factura a 1.522: se espera una NC por USD 4.635,54 × 2",
+      "NC 9271.08", `${e?.clase} ${e?.monto}`, e?.clase === "NC" && e?.monto === 9271.08, "A-FEAT-1255")
+    chequear("NC por diferencia de cambio", "Pagada al mismo TC no se espera nada", "null",
+      String(esperadaDe({ ...fac, tc_pago: 1522 })), esperadaDe({ ...fac, tc_pago: 1522 }) === null, "A-FEAT-1255")
+    chequear("NC por diferencia de cambio", "Pagada a MÁS se espera una ND", "ND",
+      String(esperadaDe({ ...fac, tc_pago: 1525 })?.clase), esperadaDe({ ...fac, tc_pago: 1525 })?.clase === "ND", "A-FEAT-1255")
+    const nc = { id: "nc", cuit: "33716360429", fecha: "2026-10-12", numero: "NC 3-120", clase: "NC" as const, importePesos: 9271.07 }
+    const otraCuit = { ...nc, id: "x", cuit: "30111111111" }
+    const [m] = emparejar([fac], [otraCuit, nc])
+    chequear("NC por diferencia de cambio", "🔁 La NC del mismo proveedor por ese importe la cumple (la de otro CUIT no)", "nc",
+      String(m.recibida?.id), m.recibida?.id === "nc", "A-FEAT-1255")
+    const [sin] = emparejar([fac], [{ ...nc, importePesos: 5000 }])
+    chequear("NC por diferencia de cambio", "Una NC por otro importe no la cumple: sigue esperada", "null", String(sin.recibida), sin.recibida === null, "A-FEAT-1255")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

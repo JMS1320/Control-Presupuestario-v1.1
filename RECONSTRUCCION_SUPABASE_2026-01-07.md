@@ -12795,6 +12795,14 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-05 · EL COSTO DE LAS COMPRAS EN USD SIGUE AL TC DEL PAGO (trigger) — A-FEAT-1255
+
+Script `scripts/79-costo-compras-sigue-tc-pago.sql` (deshacer: `79-…-deshacer.sql`): función
+`productivo.costo_compras_sigue_tc()` (`security definer`, `search_path = ''`) y trigger
+`trg_costo_compras_sigue_tc` AFTER UPDATE OF `tc_pago`, `tipo_cambio` ON `msa.comprobantes_arca`. El SQL
+completo está en el script. Aplicado a mano una vez sobre la FC 6447 de Agro Centros (7 compras de 1.522 a
+1.520: total $5.830.812,44 → $5.823.150,40), con OK del usuario. Avisado a Javier antes.
+
 ### 2026-10-05 · MONEDA DE LAS COMPRAS DE INSUMOS (`productivo.movimientos_insumos`) — A-BUG-1244
 
 ```sql

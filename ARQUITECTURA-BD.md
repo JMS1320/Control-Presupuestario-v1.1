@@ -699,6 +699,20 @@ de la cuota elegida, y es un acto explícito del usuario, fila por fila.
 
 ---
 
+## 6f. Compras de insumos en dólares: el costo sigue al TC del PAGO (2026-10-05)
+
+- `productivo.movimientos_insumos`: **`costo_unitario` siempre en pesos** (lo leen consumo, margen, panel de
+  entregas); al lado `moneda` (ARS/USD), `costo_unitario_moneda` (el precio en esa moneda) y `tipo_cambio`.
+- El vínculo con la factura es `productivo.entrega_factura` (`precio_unitario` en pesos; `notas` con el
+  pactado, el % de descuento y el TC — la huella).
+- 🔁 **Trigger `trg_costo_compras_sigue_tc`** en `msa.comprobantes_arca` (AFTER UPDATE OF `tc_pago`,
+  `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`: recalcula en pesos, al `tc_pago` (o al de la
+  factura si se borra), las compras USD vinculadas: el movimiento, el vínculo y el costo de
+  `stock_insumos` **si era el de esa compra**. Es trigger porque `tc_pago` se escribe desde 6 lugares.
+- Criterio (usuario): **el costo del insumo es lo que se pagó**; la factura (subdiario, IVA) sigue con su
+  TC hasta que llega la NC por diferencia de cambio, que la app espera sola (A-FEAT-1255).
+- Scripts `78-moneda-compras-insumos.sql` y `79-costo-compras-sigue-tc-pago.sql`.
+
 ## 7. Referencias
 
 - **Columnas completas** → `ESTRUCTURA_BD_COLUMNAS.md` (apéndice auto-generado).

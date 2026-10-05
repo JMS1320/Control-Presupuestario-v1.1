@@ -443,4 +443,5 @@ RLS, permisos ni vistas (la tabla se expone directa). Script: `scripts/78-moneda
 (`security definer`, `search_path = ''`). Cuando cambia el TC de pago de una factura en dólares, recalcula
 en pesos el costo de las compras de insumos vinculadas a ella (movimiento, vínculo y el costo del stock si era
 el de esa compra). No cambia RLS ni permisos. Script `scripts/79-costo-compras-sigue-tc-pago.sql` (+ `-deshacer`).
+Y una fila más en tu registro de widgets: `nc-diferencia-cambio` (sección `egresos`), también en el default.
 Al leerlo, borrá esta entrada.

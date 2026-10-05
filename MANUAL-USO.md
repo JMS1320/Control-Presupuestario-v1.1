@@ -5187,11 +5187,17 @@ Para que el **precio de cada compra** sea el real (el de la factura), con el des
 **Qué hacés:**
 1. Tildá las compras que cubre la factura. Vienen tildadas **sólo** las que elegiste (o las ya vinculadas): el proveedor puede facturar varias entregas en facturas distintas, así que la app no adivina.
 2. Si hay **descuento pactado**, poné el **%** en cada renglón — o marcá varios en la última columna y aplicá el % a todos juntos. Si marcás los que llevan descuento, la ventana te **sugiere el % que hace cerrar**.
-3. Si la factura es en **dólares**, revisá el **TC** (propone el de la factura).
+3. Si la factura es en **dólares**, revisá el **TC**: propone el **del pago** si ya la pagaste (el costo real es lo que se pagó), o el de la factura si todavía no. Si la pagás después, el costo de las compras se pasa solo al TC del pago.
 4. Mirá el **control**: compras vinculadas contra el **neto de la factura**. Verde = cierra; ámbar = diferencia (podés guardar igual).
 5. **Vincular**: el precio de cada compra pasa a ser el real, en pesos al TC, con el dólar guardado al lado; el pactado y el % quedan anotados en el vínculo. Si el insumo no tenía costo en el stock, toma éste.
 
 → A-TEST-1187
+
+### 💱 NC esperadas por diferencia de cambio (Principal)
+
+Cuando pagás una factura en dólares a un TC distinto del suyo, el proveedor te debe una **NC** (pagaste a menos) o vos le debés una **ND**. La tarjeta **«NC esperadas por diferencia de cambio»** de Principal muestra cuánto se espera de cada proveedor (total USD × diferencia de TC) hasta que llega; cuando la importás de ARCA la reconoce sola y pasa a «ya llegaron». Si tu inicio está configurado, agregala desde el configurador.
+
+→ A-TEST-1188
 
 ## 🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)
 

@@ -247,18 +247,20 @@ interface ClienteSb {
 }
 
 const COLS_ARCA =
-  'id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total, moneda, tipo_cambio'
+  'id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total, moneda, tipo_cambio, tc_pago'
 const COLS_CUOTA = 'id, fecha_pago, fecha_estimada, monto, descripcion, categ'
 
 /**
- * 💵 A-BUG-1244 — una factura en dólares se lee **en pesos, al TC de la factura**: los vínculos guardan
+ * 💵 A-BUG-1244 — una factura en dólares se lee **en pesos**, al TC del PAGO si ya se pagó (A-FEAT-1255:
+ * el costo real es lo que se pagó; el trigger del script 79 lleva las compras a ese TC) y si no al de la
+ * factura. Los vínculos guardan
  * su precio en pesos (es lo que lee el consumo), así que comparar contra el neto en USD daba un control
  * que «cerraba» dólar contra dólar mientras el costo quedaba 1.522 veces de menos.
  */
 const deArca = (rows: unknown[] | null): FacturaCompra[] =>
   ((rows ?? []) as Record<string, unknown>[]).map(f => {
     const ext = !!f.moneda && f.moneda !== 'PES' && f.moneda !== 'ARS'
-    const tc = ext ? (Number(f.tipo_cambio) || 1) : 1
+    const tc = ext ? (Number(f.tc_pago) || Number(f.tipo_cambio) || 1) : 1
     return {
       id: String(f.id),
       fecha: String(f.fecha_emision ?? ''),

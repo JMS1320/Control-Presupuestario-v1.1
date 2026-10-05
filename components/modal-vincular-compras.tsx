@@ -24,6 +24,8 @@ import { calcularVinculo, pctQueCierra, type CompraParaVincular, type RenglonVin
 interface FacturaLeida {
   id: string; fecha: string; proveedor: string; cuit: string; numero: string
   moneda: string; tcFactura: number; neto: number
+  /** TC del pago, si ya se pagó. Es el que manda para el costo (A-FEAT-1255: «lo real es lo que se pagó»). */
+  tcPago: number | null
 }
 interface CompraLeida extends CompraParaVincular {
   stockId: string
@@ -63,12 +65,13 @@ export function ModalVincularCompras({
   const [guardando, setGuardando] = useState(false)
 
   const arca = () => supabase.schema('msa').from('comprobantes_arca')
-  const COLS = 'id, fecha_emision, denominacion_emisor, cuit, punto_venta, numero_desde, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, moneda, tipo_cambio'
+  const COLS = 'id, fecha_emision, denominacion_emisor, cuit, punto_venta, numero_desde, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, moneda, tipo_cambio, tc_pago'
   const aFactura = (f: any): FacturaLeida => ({
     id: f.id, fecha: f.fecha_emision, proveedor: f.denominacion_emisor || '', cuit: f.cuit || '',
     numero: `${Number(f.punto_venta || 0)}-${Number(f.numero_desde || 0)}`,
     moneda: !f.moneda || f.moneda === 'PES' ? 'ARS' : f.moneda,
     tcFactura: Number(f.tipo_cambio) || 1,
+    tcPago: Number(f.tc_pago) || null,
     neto: (Number(f.imp_neto_gravado) || 0) + (Number(f.imp_neto_no_gravado) || 0) + (Number(f.imp_op_exentas) || 0),
   })
 
@@ -101,7 +104,8 @@ export function ModalVincularCompras({
   // ── Elegida la factura: sus compras candidatas ──
   const elegirFactura = async (f: FacturaLeida) => {
     setFactura(f)
-    setTc(f.moneda === 'ARS' ? '' : fmt(f.tcFactura))
+    // El TC que propone: el del PAGO si ya se pagó (es el costo real), si no el de la factura. Editable.
+    setTc(f.moneda === 'ARS' ? '' : fmt(f.tcPago ?? f.tcFactura))
     const prod = supabase.schema('productivo')
     const desde = sumarDias(f.fecha, -120), hasta = sumarDias(f.fecha, 60)
     const SEL = 'id, fecha, cantidad, costo_unitario, costo_unitario_moneda, moneda, proveedor, cuit, insumo_stock_id, stock_insumos(producto, unidad_medida)'
@@ -154,7 +158,8 @@ export function ModalVincularCompras({
 
   const usd = factura && factura.moneda !== 'ARS'
   const tcNum = parse(tc)
-  const tcDistinto = usd && factura && Math.abs(tcNum - factura.tcFactura) > 0.001
+  const tcPropuesto = factura ? (factura.tcPago ?? factura.tcFactura) : 0
+  const tcDistinto = usd && factura && Math.abs(tcNum - tcPropuesto) > 0.001
   const puedeGuardar = !!calc && calc.renglones.length > 0 && calc.sinPrecio === 0 && (!usd || tcNum > 0)
 
   const guardar = async () => {
@@ -238,12 +243,14 @@ export function ModalVincularCompras({
               {usd && (
                 <label className="flex items-center gap-1">TC
                   <Input type="text" value={tc} onChange={e => setTc(e.target.value)} className="h-7 w-24 text-right" />
-                  <span className="text-xs text-gray-500">(factura: {fmt(factura.tcFactura)})</span>
+                  <span className="text-xs text-gray-500">
+                    ({factura.tcPago ? `pago: ${fmt(factura.tcPago)} · ` : 'sin pagar · '}factura: {fmt(factura.tcFactura)})
+                  </span>
                 </label>
               )}
             </div>
             {tcDistinto && (
-              <p className="text-xs text-amber-700">⚠️ El TC es distinto al de la factura: el costo en pesos sale con el tuyo, pero el control del panel de entregas compara con el de la factura y va a mostrar la diferencia.</p>
+              <p className="text-xs text-amber-700">⚠️ El TC no es el {factura!.tcPago ? 'del pago' : 'de la factura'}: el costo sale con el tuyo, pero el control del panel de entregas compara con el {factura!.tcPago ? 'del pago' : 'de la factura'} y va a mostrar la diferencia. Y si después cambia el TC del pago, el costo se recalcula con ése.</p>
             )}
 
             <div className="overflow-x-auto">
