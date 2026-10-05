@@ -17,6 +17,7 @@ import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
 import { PanelEntregasFacturas } from "./panel-entregas-facturas"
+import { ModalVincularCompras } from "./modal-vincular-compras"
 // Parser único del proyecto: coma decimal y punto de miles, como manda
 // CLAUDE.md § Convención Inputs Monetarios (es-AR).
 import { parseNumeroAR } from "@/lib/format/numero"
@@ -120,6 +121,10 @@ interface MovimientoInsumo {
   observaciones: string | null
   created_at: string
   stock_insumos?: { producto: string; categorias_insumo?: { nombre: string } }
+  /** 💵 A-BUG-1244 — moneda de compra; `costo_unitario` sigue en pesos. */
+  moneda?: string | null
+  costo_unitario_moneda?: number | null
+  tipo_cambio?: number | null
 }
 
 interface OrdenAplicacionRodeo {
@@ -3601,6 +3606,8 @@ function SubTabStockInsumos() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
+  /** 🧾 A-BUG-1244 — la compra desde la que se abre la vinculación con su factura. */
+  const [vincularCompraId, setVincularCompraId] = useState<string | null>(null)
   /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
   const [insumoMedir, setInsumoMedir] = useState<
     { id: string; producto: string; unidad_medida: string | null } | null>(null)
@@ -4129,12 +4136,13 @@ function SubTabStockInsumos() {
               <TableHead className="text-right">Monto Total</TableHead>
               <TableHead>Proveedor</TableHead>
               <TableHead>Obs.</TableHead>
+              <TableHead className="w-8" title="Vincular con su factura"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {movimientosFiltrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   Sin movimientos de insumos registrados.
                 </TableCell>
               </TableRow>
@@ -4182,10 +4190,22 @@ function SubTabStockInsumos() {
                   </TableCell>
                   <TableCell>{m.stock_insumos?.producto || '-'}</TableCell>
                   <TableCell className="text-right">{celdaEditable('cantidad', formatoNumero(m.cantidad), 'number')}</TableCell>
-                  <TableCell className="text-right">{celdaEditable('costo_unitario', formatoMoneda(m.costo_unitario), 'number')}</TableCell>
+                  <TableCell className="text-right">
+                    {celdaEditable('costo_unitario', formatoMoneda(m.costo_unitario), 'number')}
+                    {/* 💵 A-BUG-1244 — la compra en dólares: el original y el TC con que se pasó a pesos */}
+                    {m.moneda === 'USD' && m.costo_unitario_moneda != null && (
+                      <div className="text-[10px] text-gray-500">USD {Number(m.costo_unitario_moneda).toLocaleString('es-AR', { maximumFractionDigits: 4 })}{m.tipo_cambio ? ` · TC ${Number(m.tipo_cambio).toLocaleString('es-AR')}` : ''}</div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
                   <TableCell>{celdaEditable('proveedor', m.proveedor || '-')}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
+                  <TableCell>
+                    {m.tipo === 'compra' && (
+                      <button type="button" title="Vincular con su factura (precio, descuento y moneda)"
+                        className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraId(m.id)}>🧾</button>
+                    )}
+                  </TableCell>
                 </TableRow>
                 )
               })
@@ -4481,6 +4501,8 @@ function SubTabStockInsumos() {
           onCerrar={() => { setInsumoMedir(null); cargarDatos() }} />
       )}
 
+      <ModalVincularCompras abierto={!!vincularCompraId} compraId={vincularCompraId}
+        onCerrar={() => setVincularCompraId(null)} onGuardado={() => cargarDatos()} />
       {insumoFacturas && (
         <PanelEntregasFacturas insumo={insumoFacturas}
           onCerrar={() => { setInsumoFacturas(null); cargarDatos() }} />

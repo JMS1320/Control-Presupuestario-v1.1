@@ -247,19 +247,29 @@ interface ClienteSb {
 }
 
 const COLS_ARCA =
-  'id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total'
+  'id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, imp_neto_gravado, imp_total, moneda, tipo_cambio'
 const COLS_CUOTA = 'id, fecha_pago, fecha_estimada, monto, descripcion, categ'
 
+/**
+ * 💵 A-BUG-1244 — una factura en dólares se lee **en pesos, al TC de la factura**: los vínculos guardan
+ * su precio en pesos (es lo que lee el consumo), así que comparar contra el neto en USD daba un control
+ * que «cerraba» dólar contra dólar mientras el costo quedaba 1.522 veces de menos.
+ */
 const deArca = (rows: unknown[] | null): FacturaCompra[] =>
-  ((rows ?? []) as Record<string, unknown>[]).map(f => ({
-    id: String(f.id),
-    fecha: String(f.fecha_emision ?? ''),
-    proveedor: String(f.denominacion_emisor ?? ''),
-    numero: `${String(f.punto_venta ?? 0).padStart(4, '0')}-${String(f.numero_desde ?? 0).padStart(8, '0')}`,
-    neto: Number(f.imp_neto_gravado) || 0,
-    total: Number(f.imp_total) || 0,
-    origen: 'arca',
-  }))
+  ((rows ?? []) as Record<string, unknown>[]).map(f => {
+    const ext = !!f.moneda && f.moneda !== 'PES' && f.moneda !== 'ARS'
+    const tc = ext ? (Number(f.tipo_cambio) || 1) : 1
+    return {
+      id: String(f.id),
+      fecha: String(f.fecha_emision ?? ''),
+      proveedor: String(f.denominacion_emisor ?? ''),
+      numero: `${String(f.punto_venta ?? 0).padStart(4, '0')}-${String(f.numero_desde ?? 0).padStart(8, '0')}`
+        + (ext ? ` (${String(f.moneda)})` : ''),
+      neto: Math.round((Number(f.imp_neto_gravado) || 0) * tc * 100) / 100,
+      total: Math.round((Number(f.imp_total) || 0) * tc * 100) / 100,
+      origen: 'arca' as const,
+    }
+  })
 
 /** ⚠️ En un template el **monto ES el neto**: no hay IVA discriminado que descontar. */
 const deTemplate = (rows: unknown[] | null): FacturaCompra[] =>

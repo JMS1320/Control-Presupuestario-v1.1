@@ -5176,6 +5176,23 @@ dos facturas. Eso va por el panel de *Facturas*, que es el único que sabe expre
 
 ---
 
+## 🧾 Vincular una factura con sus compras — con descuento y moneda
+
+Para que el **precio de cada compra** sea el real (el de la factura), con el descuento pactado y en la moneda en que se compró.
+
+**Dónde se abre** (es la misma ventana):
+- desde la **factura**: *Egresos → Facturas* → menú **⋯** de la fila → **🧾 Vincular con compras de insumos**;
+- desde la **compra**: *Productivo → Insumos → Ver Movimientos* → **🧾** al final de la fila (si hay varias facturas del proveedor, te pide elegir).
+
+**Qué hacés:**
+1. Tildá las compras que cubre la factura (vienen propuestas las de la fecha más cercana).
+2. Si hay **descuento pactado**, poné el **%** en cada renglón — o marcá varios en la última columna y aplicá el % a todos juntos. Si marcás los que llevan descuento, la ventana te **sugiere el % que hace cerrar**.
+3. Si la factura es en **dólares**, revisá el **TC** (propone el de la factura).
+4. Mirá el **control**: compras vinculadas contra el **neto de la factura**. Verde = cierra; ámbar = diferencia (podés guardar igual).
+5. **Vincular**: el precio de cada compra pasa a ser el real, en pesos al TC, con el dólar guardado al lado; el pactado y el % quedan anotados en el vínculo. Si el insumo no tenía costo en el stock, toma éste.
+
+→ A-TEST-1187
+
 ## 🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)
 
 **Cuándo hace falta**: cuando lo facturado y lo entregado **no coinciden**, que es lo normal.

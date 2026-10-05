@@ -1,6 +1,7 @@
 "use client"
 
 
+import { ModalVincularCompras } from "./modal-vincular-compras"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
@@ -773,6 +774,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
+  /** 🧾 A-BUG-1244 — la factura que se está vinculando con sus compras de insumos. */
+  const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
@@ -7573,6 +7576,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {/* 🧾 A-BUG-1244 — vincular la factura con las compras de insumos (precio, descuento, moneda) */}
+                                {schemaName === 'msa' && (
+                                  <DropdownMenuItem onClick={() => setFacturaVincularCompras(factura.id)}>
+                                    🧾 Vincular con compras de insumos
+                                  </DropdownMenuItem>
+                                )}
                                 {(factura.sicore || factura.tc_pago || factura.descuento_aplicado || factura.estado === 'pagar' || factura.estado === 'preparado' || factura.estado === 'echeq') && (
                                   <DropdownMenuItem
                                     className="text-orange-600"
@@ -12383,6 +12392,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
+        onCerrar={() => setFacturaVincularCompras(null)} />
     </div>
   )
 }

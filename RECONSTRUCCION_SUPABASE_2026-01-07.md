@@ -12795,6 +12795,22 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-05 · MONEDA DE LAS COMPRAS DE INSUMOS (`productivo.movimientos_insumos`) — A-BUG-1244
+
+```sql
+ALTER TABLE productivo.movimientos_insumos
+  ADD COLUMN IF NOT EXISTS moneda text NOT NULL DEFAULT 'ARS',
+  ADD COLUMN IF NOT EXISTS costo_unitario_moneda numeric,
+  ADD COLUMN IF NOT EXISTS tipo_cambio numeric;
+ALTER TABLE productivo.movimientos_insumos
+  ADD CONSTRAINT movimientos_insumos_moneda_chk CHECK (moneda IN ('ARS', 'USD'));
+```
+
+Script `scripts/78-moneda-compras-insumos.sql` (deshacer: `78-moneda-compras-insumos-deshacer.sql`).
+`costo_unitario` **sigue en pesos** (lo leen consumo, margen y el panel de entregas); las columnas nuevas
+guardan el original y el TC, que se cargan al vincular la factura. Sin vistas (la tabla se expone directa).
+Verificado con `EXPLAIN UPDATE` sobre las tres columnas, sin escribir datos. Avisado a Javier antes.
+
 ### 2026-10-03 · EL BALANCE PROPIO (`public.balance_fotos` + `public.balance_foto_valores`) — A-FEAT-1190
 
 Script `scripts/75-balance-propio.sql` (deshacer: `75-balance-propio-deshacer.sql`, borra las fotos): dos tablas nuevas — `balance_fotos` (una por `empresa` + `fecha_cierre`, único; `tc`, `tc_fuente`, `notas`) y `balance_foto_valores` (`foto_id` FK cascade, `renglon`, `version` ∈ contador/jms/sistema/senasa, `importe` en pesos, `origen` ∈ manual/planilla/sistema, `valor_sistema`, `detalle`; único `foto_id+renglon+version`). RLS `ver_segun_permiso`/`escribir_segun_permiso`; `revoke` a `anon`; registradas en `recurso_tablas` con recurso `extracto` y **`restringe_lectura = true`** (el rol `contable` no las ve — verificado: admin ve 75 filas, contable 0). Datos: `scripts/76-balance-propio-carga-msa-2025.sql` (fotos MSA 30/06/24 y 30/06/25). Avisado a Javier antes.

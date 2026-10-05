@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
@@ -2232,6 +2233,33 @@ export function correrCasos(): Resultado[] {
       grupo.join(", ") === "FC 1-3-6447, FC 1-3-6448, FC 1-3-6449", "A-FEAT-1254")
     chequear("Mail de detalle de pago", "✉️ El asunto lleva nuestro nombre, no el del proveedor", "Martinez Sobrado Agro SRL",
       NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")], NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")] === "Martinez Sobrado Agro SRL", "A-FEAT-1254")
+  }
+
+  // ══ 🧾 A-BUG-1244 — factura ↔ compras con descuento pactado y moneda (Agro Centros FC 6447, 2026-10-05) ══
+  {
+    const C = (id: string, producto: string, cantidad: number, precio: number) => ({ id, fecha: "2026-09-30", producto, unidad: null, cantidad, precioPactado: precio })
+    const compras = [
+      C("semilla", "Maiz Nufeed", 15, 115), C("glifo", "Glifosato", 180, 4.9), C("para", "Paraquat", 100, 3.8),
+      C("24d", "24D", 60, 5.2), C("smeto", "S-Metolacloro", 40, 6.8), C("atra", "Atrazina", 30, 6.1), C("mso", "Coadyuvante", 10, 12),
+    ]
+    const fac = { moneda: "USD", neto: 3831.02, tc: 1522 }
+    const sinDesc = calcularVinculo(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: 0 })))
+    chequear("Factura ↔ compras", "🧾 Con los precios pactados no cierra: sobran USD 42,98 contra el neto",
+      "3874.00 · dif -42.98", `${sinDesc.total.toFixed(2)} · dif ${sinDesc.dif.toFixed(2)}`,
+      sinDesc.total === 3874 && sinDesc.dif === -42.98 && !sinDesc.cierra, "A-BUG-1244")
+    const conDesc = calcularVinculo(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: c.id === "semilla" ? 0 : 2 })))
+    chequear("Factura ↔ compras", "🧾 Con el 2 % en los agroquímicos (no en la semilla) cierra al centavo",
+      "3831.02 ✓", `${conDesc.total.toFixed(2)} ${conDesc.cierra ? "✓" : "✗"}`, conDesc.total === 3831.02 && conDesc.cierra, "A-BUG-1244")
+    const atra = conDesc.renglones.find(r => r.compra.id === "atra")!
+    chequear("Factura ↔ compras", "💵 El precio queda en pesos al TC (6,10 −2 % = 5,978 USD × 1.522) y la nota guarda el pactado",
+      "9098.516 · Pactado USD 6,10 −2% = USD 5,978 · TC 1.522,00", `${atra.precioPesos} · ${atra.nota}`,
+      atra.precioPesos === 9098.516 && atra.nota === "Pactado USD 6,10 −2% = USD 5,978 · TC 1.522,00", "A-BUG-1244")
+    const elegidos = new Set(compras.filter(c => c.id !== "semilla").map(c => c.id))
+    const sug = pctQueCierra(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: 0 })), elegidos)
+    chequear("Factura ↔ compras", "🧾 Elegidos los agroquímicos, el % que hace cerrar es el 2 %", "2", String(sug), sug === 2, "A-BUG-1244")
+    const sinPrecio = calcularVinculo(fac, [...compras, { ...C("x", "Sin precio", 1, 0), precioPactado: null }], [{ compraId: "x", incluir: true, pctDescuento: 0 }])
+    chequear("Factura ↔ compras", "Una compra sin precio no se puede vincular (no se valúa en cero)", "sinPrecio 1 · no cierra",
+      `sinPrecio ${sinPrecio.sinPrecio} · ${sinPrecio.cierra ? "cierra" : "no cierra"}`, sinPrecio.sinPrecio === 1 && !sinPrecio.cierra, "A-BUG-1244")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══
