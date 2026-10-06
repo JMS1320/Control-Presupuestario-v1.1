@@ -523,6 +523,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         return false // Prevenir guardado propio del hook
       }
 
+      /**
+       * 💰 A-FEAT-1238 — el monto de una CUOTA DE TEMPLATE se cambia con el mismo modal que en Templates
+       * (pregunta si propagar a las cuotas futuras). 🐛 2026-10-05: la tanda lo había puesto en
+       * `guardarCambio` de ESTE archivo, que la grilla ya no usa — las celdas se editan con este hook —,
+       * y el usuario cambió Autónomos MA sin que preguntara. Es el caso «se arregló un camino de los dos».
+       */
+      if (celda.columna === 'debitos' && filaActual?.origen === 'TEMPLATE') {
+        const nuevo = parseFloat(String(celda.valor).replace(/\./g, '').replace(',', '.')) || 0
+        if (nuevo > 0) {
+          setPropagacionCF({ cuotaId: filaActual.id, nuevoMonto: nuevo })
+          return false // lo guarda el modal
+        }
+      }
+
       // Validación especial para categorías en Cash Flow
       if (celda.columna === 'categ') {
         const categIngresado = String(celda.valor).toUpperCase()
@@ -3872,10 +3886,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               abierto={true}
               cuotaId={propagacionCF.cuotaId}
               nuevoMonto={propagacionCF.nuevoMonto}
-              onCancelar={() => { setPropagacionCF(null); setCeldaEnEdicion(null) }}
+              onCancelar={() => { setPropagacionCF(null); setCeldaEnEdicion(null); hookEditorRef.current?.setCeldaEnEdicion(null) }}
               onGuardado={async (r) => {
                 setPropagacionCF(null)
                 setCeldaEnEdicion(null)
+                hookEditorRef.current?.setCeldaEnEdicion(null)
                 await cargarDatos()
                 toast.success(r.tipo === 'propagado'
                   ? (r.cuotasModificadas > 0
