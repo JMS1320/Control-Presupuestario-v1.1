@@ -3,53 +3,48 @@
 > Único lugar donde se documentan los pendientes (bugs, testing, features, operacional, seguridad, datos).
 > Reemplaza a `PENDIENTES_GENERAL.md`, `PENDIENTES_PUSH_A_MAIN.md`, `PENDIENTES-PROXIMA-SESION.md` y a las secciones de pendientes sueltas en `CLAUDE.md`.
 
-**Última actualización:** 2026-10-04 — reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
+**Última actualización:** 2026-10-05 — guía de pruebas vigente arriba (reemplaza las del 4/10); se mergeó la tanda del 4/10. reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
 
 > **Cómo leerlo**: 🔵 🔴 🟠 = por hacer · 🟢 🟡 = hecho, espera tu prueba · ✅ = cerrado (va al archivo del final).
 > Los desplegables («Abrir», «🟢 Hecho, esperando tu prueba») se abren con un click. La guía de pruebas vigente es la primera sección.
 
 ---
 
-## 🧪 <a id="guia-pruebas-tanda-2026-10-04"></a>GUÍA DE PRUEBAS — tanda sin supervisión del 4 de octubre (rama `jms/tanda-2026-10-04`, sin mergear)
+## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 5 de octubre (todo en `desarrollo`, salvo la tarjeta)
 
-> Publicada también como página («Tanda del 4 de octubre»), con el link a la vista previa de la rama y las
-> explicaciones de [A-BUG-1240](#a-bug-1240) y [A-BUG-1231](#a-bug-1231).
+> **Reemplaza** a las dos guías del 4/10. Lo que probaste el 5/10 ya salió: el **pago en dólares** de Agro Centros (lote, detalle PDF y mail ✅), la **barra de pagos** ✅, **cabeza por cabeza** ✅, **filtros de stock** ✅ y la **tarjeta de NC esperada** ✅. Los pasos de cada uno viven en su fila; acá va el orden y los números.
+
+### 🔴 Primero esto — regulariza datos de hoy
 
 | # | Qué | Dónde | Qué tiene que pasar | Pendiente |
 |---|---|---|---|---|
-| 1 | ⏪ Ventana hacia atrás | Cash Flow → chips «Desde» | **2 sem** → «desde el 20/09» y se van las anteriores; **todo** las devuelve | [A-FEAT-1237](#a-feat-1237) |
-| 2 | 🔎 Comprobante y número | Cash Flow → chips «Comprobante» + búsqueda | ctrl+click en una NC deja sólo ésas; el número de una factura la encuentra | [A-FEAT-170](#a-feat-170) |
-| 3 | 🎯 Barra de pagos | Cash Flow → Modo PAGOS, 3 filas tildadas, bajar | aparece abajo con «3 filas seleccionadas» y todos los botones | [A-FEAT-149](#a-feat-149) |
-| 4 | 💰 Monto de template | Cash Flow → editar el débito de un template | aparece «Modificar Monto»; «NO, sólo esta» no cambia la cuota siguiente | [A-FEAT-1238](#a-feat-1238) |
-| 5 | 📅 Fecha de pago | conciliar una factura con el motor o como grupo | en Egresos, fecha de pago = la del movimiento | [A-BUG-191](#a-bug-191) |
-| 6 | 🔎 Stock | Productivo → Insumos → Stock & Movimientos | buscador, ctrl+click en una categoría, «sólo con stock» | [A-FEAT-1243](#a-feat-1243) |
-| 7 | 🐄 Pesadas | Recría / Engorde → Historial → «Cabeza por cabeza» | baja directo a la tabla, con (+kg) por animal; buscar caravana | [A-BUG-1239](#a-bug-1239) |
+| 1 | ✅ **Cerrar las ventas saldadas** | Ingresos → Cobros | **Genta 11-75880** → «✓ Pasar a cobrada» → queda **conciliada** (sus 4 créditos ya lo están). **Sanpa 10-21**: su crédito del **11/08** está en *auditar* → Extracto → «OK a mano» → la venta pasa sola a **conciliada** | [A-BUG-1247](#a-bug-1247) |
+| 2 | 🔗 **Vincular a su venta** Sanpa **10-20** y Provinvest **10-9** | vínculo factura ↔ venta de arrendamiento | después se completa el detalle de su cobro con la cuota (`npx tsx scripts/regularizar-detalle-cobros.mts`) | [A-FEAT-1257](#a-feat-1257) |
 
-**Para tu OK**: completar las 115 facturas conciliadas sin fecha de pago (A-BUG-191) · guardar los estudios de pesadas en la base (A-BUG-1240) · el arreglo del Cash Flow en granos (A-BUG-1231, te lo recuerdo).
+### Lo demás
 
-## 🧪 <a id="guia-pruebas-2026-10-04"></a>GUÍA DE PRUEBAS — tanda del 3 y 4 de octubre (tarjeta, Arre Beef, balance propio)
-
-> La vista operable de lo que espera tu prueba de esta tanda. Los pasos de cada uno viven en su fila;
-> acá van **el orden, dónde, y los números que tienen que salir**. También está publicada como página
-> («Pruebas del 4 de octubre») con los links a cada vista previa.
-
-| # | Qué | Dónde se prueba | Qué tiene que salir | Test |
+| # | Qué | Dónde | Qué tiene que salir | Pendiente |
 |---|---|---|---|---|
-| 1 | 💳 **Tarjeta por resumen** | vista previa de la rama `jms/tarjeta-conciliacion` → Extracto → VISA Business MSA | resumen 28/05/2026: **«Vincular pago»** (débito 08/06, $2.047.532,73) · tocar la fecha filtra la tabla · **Conciliar** usa el motor de la cuenta corriente · Chubb: **«+ Crear uno acá»** propone **CHUBB SEGUROS** · los dos cargos de Chubb del mismo día no van contra el mismo comprobante | [A-TEST-1183](#a-test-1183) *(en esa rama)* |
-| 2 | 🐂 **Liquidación al gancho (Arre Beef)** | desarrollo → Ingresos → MSA → Ventas → las dos ventas de Arre Beef → liquidar juntas | columnas **Kg gancho 1.606 / 1.748** y **$/kg gancho**; poné **5.024,12** y Kg pie **3.000 / 3.260** → importes **8.068.736,72** y **8.782.161,76**, $/kg pie **2.689,58 / 2.693,92**; Kilos ✓; Subtotal salta **−$1.900.000** | [A-FEAT-1234](#a-feat-1234) |
-| 3 | 📸 **Balance propio, fotos 2024 y 2025** | desarrollo → Reportes → «📸 Balance propio» → MSA → 30/06/2025 | JMS: ganancia **$182.646.939,01** (corriente) y **$153.874.397,67** (total), US$ **190.839,32 / 163.719,69** · Contador: activo − pasivo **$778.501.410,70** | [A-TEST-1182](#a-test-1182) |
-| 4 | 📸 **La foto del 30/06/2026 desde los papeles** | desarrollo → Reportes → Papeles de trabajo → MSA 2026 → Armar el libro + Traer stock y precios → cuadro celeste | Galicia **−2.261.369,97** · anticipos de clientes **≈ $133,8 M** · retenciones de Ganancias **$2.504.350,46** · impuesto al cheque **$3.017.008,28** (100 % computable) · avisos: tarjeta sin resumen de junio, FCI pide cuotapartes, 7 meses sin extracto → **Guardar** → aparece la foto 30/06/2026 con la columna Sistema | [A-TEST-1182](#a-test-1182) |
-| 5 | 🧾 **Impuesto al cheque** | mismo lugar, cuadro arriba del celeste; y el Excel, solapa **08.1** | por mes y por concepto; total feb–jun **$3.017.008,28**; en la solapa, cambiar el % recalcula | [A-TEST-1182](#a-test-1182) |
-| 6 | 📑 **Templates sugeridos jul-25 → ene-26** | carpeta de comunicación → Balance → «…TEMPLATES_SUGERIDOS.xlsx» | revisar primero **Gastos Reintegro JMS ($22,8 M)** y **Otros Gastos ($6,1 M)**; decidir qué se carga | [A-DAT-68](#a-dat-68) |
-| 7 | 📑 **Templates sugeridos de PAM (CA y CC)** | carpeta de comunicación → Balance → «Extractos_PAM_TEMPLATES_SUGERIDOS.xlsx» | controles en verde (cadena de saldos y enganche al centavo: CA **226.566,67**, CC **110.335,60**); gasto sugerido **$23.816.943,24**; decidir qué se carga | [A-DAT-68](#a-dat-68) |
-| 8 | 🔁 **Movimientos de PAM que son de MSA (jul-25 → ene-26)** | carpeta de comunicación → Balance → «Extractos_PAM_jul25-ene26_TEMPLATES_DE_MSA.xlsx» | 4 **Retiro PAM** ($2.450.000) · 2 **Aporte PAM** ($4.600.000 — ⚠️ el de «San Manuel Srl» del 27/01 es dudoso) · 8 impuestos **a revisar** ($1.113.519,25) · ningún RET 3 PAM | [A-DAT-68](#a-dat-68) |
-| 9 | 💸 **Cash Flow: ventas de granos** | desarrollo → Cash Flow → ventas de Agricultores Federados | **$5.332.648,89 · $1.064.735,50 · $35.367,08** (antes el total); Sanpa sin cambios | [A-TEST-1184](#a-test-1184) |
-| 10 | 🌙 **Tanda sin supervisión del 4/10** (pendientes, Cash Flow, extracto, productivo) | ✅ **mergeada a `desarrollo` 2026-10-05** — está abajo | su propia guía, en esa rama, arriba de PENDIENTES; y la página «Pruebas del 4 de octubre» | — |
+| 3 | 💰 **Monto de template → pregunta si propaga** (arreglado hoy: no andaba) | Cash Flow → editar el importe de Autónomos MA → Enter | se abre «Modificar monto»: sólo esta cuota o también las siguientes | [A-FEAT-1238](#a-feat-1238) |
+| 4 | 🧾 **Retenciones desde Cobros** | Ingresos → Cobros → abrir un comprobante → «% Retenciones · cargar» | el mismo modal de Comprobantes; si completa el saldo, la venta se cierra sola | [A-FEAT-1256](#a-feat-1256) |
+| 5 | 🐄 **Reposición desde Excel** (+ sin identificar + aviso de machos) | Recría → Registro de Terneros → 🐂 Reposición → «📥 Confirmar hembras desde Excel» | quedan **74** con rep; los machos de la planilla salen en rojo; en Cambio de Categoría «♀ Sólo las de reposición» + «+1 sin identificar» | [A-TEST-1185](#a-test-1185) |
+| 6 | 🐂 **Arre Beef: precio del kilo VIVO** | Ingresos → Ventas → liquidar Arre Beef | **2.689,58** $/kg pie en los toros → gancho **5.024,12** (gris), importe **8.068.740,00**; el aviso de −$1,9 M sigue | [A-FEAT-1234](#a-feat-1234) |
+| 7 | 🧾 **Factura ↔ compras** | Insumos → Ver Movimientos | las 7 de Agro Centros dicen **«✓ FC 3-6447»**, TC **1.520** (Atrazina $9.086,56); reabrir la ventana → vienen tildadas como vinculadas | [A-TEST-1187](#a-test-1187) |
+| 8 | 💱 **Costo al TC del pago** (no probado escribiendo) | el **próximo** pago en dólares con compras vinculadas | al cargar el TC del pago, el costo de esas compras pasa **solo** a ese TC; y cuando llegue la NC de Agro Centros ($9.271,08), la tarjeta la pasa a «ya llegaron» | [A-TEST-1188](#a-test-1188) |
+| 9 | ✉️ **Mail del detalle** | el próximo pago → borrador en Gmail | asunto **«Detalle de pago — Martinez Sobrado Agro SRL — FC …»**, sin repetir el proveedor | [A-FEAT-1254](#a-feat-1254) |
+| 10 | 💸 **Ventas de granos en el Cash Flow** | Cash Flow → Agricultores Federados | **$5.332.648,89 · $1.064.735,50 · $35.367,08** | [A-TEST-1184](#a-test-1184) |
+| 11 | 📅 **Fecha de pago al conciliar** | en la **próxima tanda de conciliación** | la factura conciliada toma la fecha del movimiento (y no pisa una que ya tenía) | [A-BUG-191](#a-bug-191) |
+| 12 | 🏦 **Lote Galicia** | el **próximo** lote, tal cual sale de la app | si el banco lo rechaza: pasar al formato nuevo (Monto numérico, Concepto, 30 por archivo) | [A-BUG-1246](#a-bug-1246) |
+| 13 | 🚩 **Tarjetas en Principal** | Principal | «Para revisar (Alt+R)» con tus **13** marcas · «Echeqs en fecha» | [A-BUG-1242](#a-bug-1242) |
+| 14 | 💳 **Tarjeta por resumen** | vista previa de la rama `jms/tarjeta-conciliacion` → Extracto → VISA Business MSA | resumen 28/05/2026: **«Vincular pago»** (débito 08/06, $2.047.532,73) · tocar la fecha filtra la tabla · **Conciliar** usa el motor de la cuenta corriente · Chubb: **«+ Crear uno acá»** propone **CHUBB SEGUROS** · los dos cargos de Chubb del mismo día no van contra el mismo comprobante | [A-TEST-1183](#a-test-1183) *(en esa rama)* |
+| 15 | 📸 **Balance propio, fotos 2024 y 2025** | desarrollo → Reportes → «📸 Balance propio» → MSA → 30/06/2025 | JMS: ganancia **$182.646.939,01** (corriente) y **$153.874.397,67** (total), US$ **190.839,32 / 163.719,69** · Contador: activo − pasivo **$778.501.410,70** | [A-TEST-1182](#a-test-1182) |
+| 16 | 📸 **La foto del 30/06/2026 desde los papeles** | desarrollo → Reportes → Papeles de trabajo → MSA 2026 → Armar el libro + Traer stock y precios → cuadro celeste | Galicia **−2.261.369,97** · anticipos de clientes **≈ $133,8 M** · retenciones de Ganancias **$2.504.350,46** · impuesto al cheque **$3.017.008,28** (100 % computable) · avisos: tarjeta sin resumen de junio, FCI pide cuotapartes, 7 meses sin extracto → **Guardar** → aparece la foto 30/06/2026 con la columna Sistema | [A-TEST-1182](#a-test-1182) |
+| 17 | 🧾 **Impuesto al cheque** | mismo lugar, cuadro arriba del celeste; y el Excel, solapa **08.1** | por mes y por concepto; total feb–jun **$3.017.008,28**; en la solapa, cambiar el % recalcula | [A-TEST-1182](#a-test-1182) |
+| 18 | 📑 **Templates sugeridos** (MSA · PAM · PAM→MSA) | carpeta de comunicación → Balance (3 Excel) | revisar y decidir qué se carga; PAM→MSA: San Manuel del 27/01 es dudoso | [A-DAT-68](#a-dat-68) |
 
-**Esperan tu OK (no son pruebas, son decisiones):** completar la fecha de pago de las **115 facturas** que no la tienen ([A-BUG-191](#a-bug-191)) · guardar los **estudios de pesadas** en la base y no en el navegador (A-BUG-1240 — su fila está en la rama de la tanda hasta que se mergee).
+**Esperan tu OK o tus datos (no son pruebas):** corregir el **sexo** con movimiento al destete ([A-FEAT-1252](#a-feat-1252)) · **silo**: crear los insumos, propio o comprado, la ración por cabeza ([A-FEAT-1253](#a-feat-1253)) · **Portal** automático al importar ([A-BUG-1243](#a-bug-1243)) · **estudios de pesadas** en la base ([A-BUG-1240](#a-bug-1240)) · completar la fecha de pago de las **115 facturas** ([A-BUG-191](#a-bug-191)) · **mergear la tarjeta** cuando la pruebes.
 
-**Cómo contestar:** en la app, cada proceso muestra su cartel de pruebas — ✅ anduvo · 🟡 anduvo en
-parte · 🔴 falló, con lugar para una nota. Lo leo al abrir la próxima sesión.
+**Cómo contestar:** en la app, cada proceso muestra su cartel de pruebas — ✅ anduvo · 🟡 anduvo en parte · 🔴 falló, con lugar para una nota. Lo leo al abrir la próxima sesión.
 
 ## 🧪 GUÍA DE PRUEBAS — la tanda del EXPORT DE BALANCE *(2026-09-30)*
 
