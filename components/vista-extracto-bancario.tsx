@@ -1,5 +1,6 @@
 "use client"
 
+import { cerrarVentaSiSaldada } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import React, { useState, useEffect, useMemo, useRef } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -1109,7 +1110,13 @@ ${texto.trim()}` : texto.trim()
       const { error } = await dbCuenta().from(tablaActiva).update(upd).eq('id', movimiento.id)
       if (error) throw error
       actualizarLocal(movimiento.id, upd)
-      toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : ''))
+      // ✅ A-BUG-1247 — con este crédito conciliado, la venta se cierra si su detalle cierra (antes quedaba «a cobrar»).
+      let cerrada: string | null = null
+      if (movimiento.comprobante_venta_id) {
+        try { cerrada = await cerrarVentaSiSaldada(supabase, movimiento.comprobante_venta_id) } catch { /* el movimiento ya quedó; la venta se cierra desde Cobros */ }
+      }
+      toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
+        + (cerrada ? ` — la venta quedó ${cerrada === 'conciliado' ? 'conciliada' : 'cobrada'}` : ''))
     } catch (err) {
       toast.error('No se pudo confirmar: ' + (err as Error).message)
     } finally { setConfirmandoOk(null) }
@@ -5226,7 +5233,9 @@ ${marca}` : marca
                             <span className="text-gray-500">ret. {formatCurrency(v.__cobro.retenciones)}</span>
                           )}
                           {v.__mismoCuit && <Badge variant="secondary" className="text-[10px]">mismo CUIT</Badge>}
-                          {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px]">ya marcada cobrada</Badge>}
+                          {/* Cobrada pero sin conciliar es lo NORMAL acá: se la ofrece para conciliar. Antes decía
+                              «ya marcada cobrada» y parecía un error (usuario 2026-10-05, Provinvest FC 10-9). */}
+                          {v.estado === 'cobrado' && <Badge variant="outline" className="text-[10px] text-gray-500" title="Figura cobrada en Cobros; falta conciliar el banco">cobrada · sin conciliar</Badge>}
                           <span className={d.exacto ? 'text-green-700 font-semibold' : 'text-amber-700'}>
                             {d.exacto ? 'coincide exacto'
                               : d.diferencia < 0

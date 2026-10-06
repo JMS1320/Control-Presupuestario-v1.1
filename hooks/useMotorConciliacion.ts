@@ -1,5 +1,6 @@
 "use client"
 
+import { imputacionParaElBanco } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { useState } from "react"
 import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
@@ -626,8 +627,20 @@ export function useMotorConciliacion() {
               (movimiento as any).detalle,   // lo que el usuario ya escribió nunca se pisa
             )
 
+            /**
+             * 🏷️ A-BUG-1247 — un cobro de VENTA toma la imputación de la venta (cuenta, número, centro),
+             * como el camino manual. Antes copiaba el rótulo de la fila del Cash Flow, que para una venta
+             * es el literal «VENTAS» — no es una cuenta del plan (Sanpa FC 10-20 y 10-21, 2026-10-05).
+             */
+            let impVentaCF: Record<string, string> | null = null
+            if (matchCF.cashFlowRow.origen === 'VENTA') {
+              const { data: vta } = await supabase.schema('msa').from('comprobantes_venta')
+                .select('cuenta_contable, nro_cuenta, centro_costo').eq('id', String(matchCF.cashFlowRow.id).split('#')[0]).maybeSingle()
+              if (vta) impVentaCF = await imputacionParaElBanco(supabase, vta as any)
+            }
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
-              categ: sinCateg ? null : matchCF.cashFlowRow.categ,
+              categ: sinCateg ? null : (matchCF.cashFlowRow.origen === 'VENTA' ? (impVentaCF?.categ ?? null) : matchCF.cashFlowRow.categ),
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: columnas.detalle,
               estado: estadoFinalConCateg,
@@ -635,7 +648,8 @@ export function useMotorConciliacion() {
               proveedor_nombre: columnas.proveedor_nombre,
               comprobantes_pagados: columnas.comprobantes_pagados,
               ...extraIdsCF,
-              ...extraCF
+              ...extraCF,
+              ...(impVentaCF?.nro_cuenta ? { nro_cuenta: impVentaCF.nro_cuenta } : {}),
             })
 
             // Actualizar estado de la cuota/factura origen si el match fue definitivo

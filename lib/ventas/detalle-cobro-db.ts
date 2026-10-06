@@ -6,7 +6,8 @@
  * (ver A-FEAT-1219/1220 para PAM y MA).
  */
 
-import type { FuentesCobro } from './detalle-cobro'
+import { armarDetalleCobro, type FuentesCobro } from './detalle-cobro'
+import { TIPOS_LIQ_HACIENDA } from './cobro-esperado'
 
 type Cliente = { from: (t: string) => any; schema: (s: string) => any }
 
@@ -267,4 +268,37 @@ export async function compensarConFactura(
   if (eF) throw eF
   await vincularPagoACuenta(supabase, { ...(ant as any), monto, sinMovimiento: true }, { id: venta.id },
     { saldada: venta.saldoPesos - monto < 1, movimientoConciliado: false })
+}
+
+/**
+ * ✅ **A-BUG-1247 — la venta se cierra cuando su DETALLE cierra, venga por donde venga el último peso.**
+ *
+ * El estado de la venta sólo cambiaba en dos caminos (asignar el cobro a mano desde el Extracto y
+ * vincular un pago a cuenta). Los demás —completar el saldo con una **retención** desde Cobros,
+ * confirmar con **«OK a mano»** un cobro que el motor mandó a auditar— dejaban la venta en «a cobrar»
+ * con saldo cero, y **el Cash Flow la seguía esperando**. Casos del 2026-10-05: Sanpa FC 10-21
+ * ($40.306.014 esperados que entraron el 11/08) y FC 10-20 (conciliada con «OK a mano»).
+ *
+ * Mismo saldo que Cobros: total − retenciones impresas (hacienda) − Σ detalle. Si cierra:
+ *   · `conciliado` si todos los créditos del banco atados a la venta están conciliados;
+ *   · `cobrado` si no (falta conciliar el banco — es otro paso).
+ * Una liquidación con cuotas no se toca: su estado lo deciden las cuotas. Devuelve el estado nuevo
+ * (o `null` si no cambió).
+ */
+export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string): Promise<'cobrado' | 'conciliado' | null> {
+  const { data: v } = await supabase.schema('msa').from('comprobantes_venta')
+    .select('id, cuit_cliente, estado, plazos, imp_total, tipo_comprobante, ret_iva, ret_iibb').eq('id', compId).maybeSingle()
+  if (!v || (Array.isArray(v.plazos) && v.plazos.length) || !['a cobrar', 'cobrado'].includes(v.estado)) return null
+  const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }])).get(v.id)
+    || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
+  const impresas = TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0
+  const d = armarDetalleCobro(fuentes as FuentesCobro, (Number(v.imp_total) || 0) - impresas)
+  if (!d.cierra) return null
+  const { data: movs } = await supabase.from('msa_galicia').select('estado').eq('comprobante_venta_id', v.id)
+  const todosConciliados = ((movs || []) as any[]).length > 0 && ((movs || []) as any[]).every(m => m.estado === 'conciliado')
+  const nuevo = todosConciliados ? 'conciliado' : 'cobrado'
+  if (nuevo === v.estado) return null
+  const { error } = await supabase.schema('msa').from('comprobantes_venta').update({ estado: nuevo }).eq('id', v.id)
+  if (error) throw error
+  return nuevo
 }

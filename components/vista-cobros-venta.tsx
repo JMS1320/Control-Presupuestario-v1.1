@@ -12,7 +12,7 @@ import { toast } from "sonner"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
-import { cargarFuentesCobro, pagosACuentaSinVincular, vincularPagoACuenta, facturasDelClienteParaCompensar, compensarConFactura } from "@/lib/ventas/detalle-cobro-db"
+import { cargarFuentesCobro, cerrarVentaSiSaldada, pagosACuentaSinVincular, vincularPagoACuenta, facturasDelClienteParaCompensar, compensarConFactura } from "@/lib/ventas/detalle-cobro-db"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
@@ -264,6 +264,19 @@ export function VistaCobrosVenta() {
     }
   }
 
+  /** ✅ A-BUG-1247 — la venta saldada (el detalle cierra) se cierra: `cobrado`, o `conciliado` si el banco ya lo está. */
+  const pasarACobrada = async (f: Factura) => {
+    setMarcando(f.id)
+    try {
+      const nuevo = await cerrarVentaSiSaldada(supabase, f.id)
+      if (!nuevo) throw new Error('El detalle no cierra (o ya estaba cerrada): no se cambió nada')
+      toast.success(`${f.nro_comprobante} pasó a ${nuevo === 'conciliado' ? 'conciliada' : 'cobrada'} — el Cash Flow ya no la espera`)
+      await cargar()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    } finally { setMarcando(null) }
+  }
+
   const filtradas = facturas.filter(f => {
     const q = normalizarBusqueda(busqueda)
     if (!q) return true
@@ -382,6 +395,17 @@ export function VistaCobrosVenta() {
                               ? <>Detalle: {fmt(d.detalle.total)} de {fmt(d.detalle.esperado)} que dice el papel — <b>faltan {fmt(d.detalle.saldo)}</b> (por cobrar, o algo sin cargar: una retención, un echeq, una factura del cliente descontada)</>
                               : <>⚠️ El detalle suma {fmt(d.detalle.total)}, <b>{fmt(-d.detalle.saldo)} más</b> de lo que dice el papel ({fmt(d.detalle.esperado)}): revisá si hay algo cargado dos veces</>}
                         </div>
+                        {/* ✅ A-BUG-1247 — el detalle cierra pero la venta sigue «a cobrar»: nada recalcula el estado
+                            cuando lo completa una retención (o una compensación). Mientras siga así, el Cash Flow la
+                            sigue esperando. Caso Sanpa FC 21: $40.306.014 esperados que entraron el 11/08. */}
+                        {d.detalle.cierra && f.estado === 'a cobrar' && !(f.plazos && f.plazos.length) && (
+                          <div className="mt-1 flex items-center gap-2 text-[11px] text-amber-800">
+                            <span>El detalle cierra pero la venta sigue «a cobrar» — el Cash Flow la sigue esperando.</span>
+                            <Button size="sm" className="h-6 text-[11px]" disabled={marcando === f.id} onClick={() => pasarACobrada(f)}>
+                              ✓ Pasar a cobrada
+                            </Button>
+                          </div>
+                        )}
 
                         {/* 🔗 Pagos a cuenta del cliente que todavía no están vinculados a ningún comprobante. */}
                         {sinVincular.length > 0 && (
@@ -496,7 +520,16 @@ export function VistaCobrosVenta() {
         open={!!retencionesDe}
         comprobante={retencionesDe}
         onClose={() => setRetencionesDe(null)}
-        onGuardado={cargar}
+        onGuardado={async () => {
+          // ✅ A-BUG-1247 — si la retención completó el saldo, la venta se cierra sola.
+          if (retencionesDe) {
+            try {
+              const nuevo = await cerrarVentaSiSaldada(supabase, retencionesDe.id)
+              if (nuevo) toast.success(`${retencionesDe.nro_comprobante} quedó ${nuevo === 'conciliado' ? 'conciliada' : 'cobrada'}: el detalle cierra`)
+            } catch (e) { toast.error('No se pudo cerrar la venta: ' + (e as Error).message) }
+          }
+          await cargar()
+        }}
       />
     </div>
   )
