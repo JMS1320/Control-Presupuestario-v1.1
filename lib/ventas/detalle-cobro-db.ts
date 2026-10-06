@@ -339,8 +339,9 @@ export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha
   const { data: v } = await supabase.schema('msa').from('comprobantes_venta')
     .select('id, cuit_cliente, imp_total, tipo_comprobante, ret_iva, ret_iibb, plazos').eq('id', compId).maybeSingle()
   let falta = 0
-  // Una liquidación en CUOTAS: cada cobro es su cuota (ya lo dice «comprobante pagado»), no un «parcial».
-  if (v && !(Array.isArray((v as any).plazos) && (v as any).plazos.length)) {
+  // Una liquidación en VARIAS cuotas: cada cobro es su cuota (ya lo dice «comprobante pagado»), no un
+  // «parcial». Con una sola cuota (100 %) sí: un adelanto es un cobro parcial (Genta 11-75880).
+  if (v && !(Array.isArray((v as any).plazos) && (v as any).plazos.length > 1)) {
     const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }])).get(v.id)
       || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
     const impresas = TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0
