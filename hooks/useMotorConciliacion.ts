@@ -1,6 +1,6 @@
 "use client"
 
-import { imputacionParaElBanco } from "@/lib/ventas/detalle-cobro-db"
+import { imputacionParaElBanco, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { useState } from "react"
 import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
@@ -651,6 +651,10 @@ export function useMotorConciliacion() {
               ...extraCF,
               ...(impVentaCF?.nro_cuenta ? { nro_cuenta: impVentaCF.nro_cuenta } : {}),
             })
+            // 📝 A-FEAT-1257 — el detalle de un cobro de venta dice qué se cobró (cuota / cabezas).
+            if (matchCF.cashFlowRow.origen === 'VENTA') {
+              try { await anotarQueSeCobro(supabase, movimiento.id, String(matchCF.cashFlowRow.id).split('#')[0]) } catch { /* se completa después */ }
+            }
 
             // Actualizar estado de la cuota/factura origen si el match fue definitivo
             if (estadoFinal === 'conciliado') {

@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
@@ -2283,6 +2284,24 @@ export function correrCasos(): Resultado[] {
       String(m.recibida?.id), m.recibida?.id === "nc", "A-FEAT-1255")
     const [sin] = emparejar([fac], [{ ...nc, importePesos: 5000 }])
     chequear("NC por diferencia de cambio", "Una NC por otro importe no la cumple: sigue esperada", "null", String(sin.recibida), sin.recibida === null, "A-FEAT-1255")
+  }
+
+  // ══ 📝 A-FEAT-1257 — el detalle del cobro dice qué se cobró ══
+  {
+    chequear("Qué se cobró", "📝 Arrendamiento saldado: «Cuota 1/4»", "Cuota 1/4",
+      String(textoQueSeCobro({ cuotas: [{ numero: 1, de: 4 }], cabezas: [], falta: 0 })),
+      textoQueSeCobro({ cuotas: [{ numero: 1, de: 4 }], cabezas: [], falta: 0 }) === "Cuota 1/4", "A-FEAT-1257")
+    const parcial = textoQueSeCobro({ cuotas: [{ numero: 2, de: 4 }], cabezas: [], falta: 5000 })
+    chequear("Qué se cobró", "📝 Cobro parcial: lo dice, con lo que falta", "Cobro parcial cuota 2/4 (falta $5.000,00)",
+      String(parcial), parcial === "Cobro parcial cuota 2/4 (falta $5.000,00)", "A-FEAT-1257")
+    const arre = textoQueSeCobro({ cuotas: [], cabezas: [{ cantidad: 3, categoria: "Toro" }, { cantidad: 7, categoria: "Vaca CUT" }], falta: 0 })
+    chequear("Qué se cobró", "📝 Hacienda: las cabezas por categoría y el total", "3 Toro + 7 Vaca CUT = 10 cab.",
+      String(arre), arre === "3 Toro + 7 Vaca CUT = 10 cab.", "A-FEAT-1257")
+    chequear("Qué se cobró", "📝 No pisa lo que escribió el usuario: lo agrega al final, y no lo repite",
+      "Adelanto Genta · 120 cab. Ternero", String(detalleConQueSeCobro(detalleConQueSeCobro("Adelanto Genta", "120 cab. Ternero"), "120 cab. Ternero")),
+      detalleConQueSeCobro(detalleConQueSeCobro("Adelanto Genta", "120 cab. Ternero"), "120 cab. Ternero") === "Adelanto Genta · 120 cab. Ternero", "A-FEAT-1257")
+    chequear("Qué se cobró", "Sin vínculo con la venta no se inventa nada", "null",
+      String(textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 })), textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 }) === null, "A-FEAT-1257")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

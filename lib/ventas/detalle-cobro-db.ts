@@ -8,6 +8,7 @@
 
 import { armarDetalleCobro, type FuentesCobro } from './detalle-cobro'
 import { TIPOS_LIQ_HACIENDA } from './cobro-esperado'
+import { textoQueSeCobro, detalleConQueSeCobro, type QueSeCobro } from './que-se-cobro'
 
 type Cliente = { from: (t: string) => any; schema: (s: string) => any }
 
@@ -301,4 +302,70 @@ export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string): P
   const { error } = await supabase.schema('msa').from('comprobantes_venta').update({ estado: nuevo }).eq('id', v.id)
   if (error) throw error
   return nuevo
+}
+
+/**
+ * 📝 A-FEAT-1257 — qué se cobró en un comprobante de venta: la(s) cuota(s) del contrato de
+ * arrendamiento o las cabezas de hacienda, más lo que falta cobrar. Sale del vínculo factura ↔ venta
+ * (`public.ventas_facturas`). `null` si la factura no está vinculada a ninguna venta.
+ */
+export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha?: string | null): Promise<QueSeCobro | null> {
+  const { data: vfs } = await supabase.from('ventas_facturas').select('venta_tipo, venta_id').eq('comprobante_id', compId)
+  const vincs = (vfs || []) as { venta_tipo: string; venta_id: string }[]
+  if (!vincs.length) return null
+  const cuotas: QueSeCobro['cuotas'] = []
+  const cabezas: QueSeCobro['cabezas'] = []
+  const idsArr = vincs.filter(v => v.venta_tipo === 'arrendamiento').map(v => v.venta_id)
+  if (idsArr.length) {
+    const { data: vas } = await supabase.from('ventas_arrendamiento').select('cuota_id').in('id', idsArr)
+    const idsCuota = ((vas || []) as any[]).map(v => v.cuota_id).filter(Boolean)
+    if (idsCuota.length) {
+      const { data: cus } = await supabase.from('cuotas_arrendamiento').select('id, numero_cuota, contrato_id').in('id', idsCuota)
+      for (const c of (cus || []) as any[]) {
+        const { count } = await supabase.from('cuotas_arrendamiento').select('id', { count: 'exact', head: true })
+          .eq('contrato_id', c.contrato_id).is('cuota_padre_id', null)
+        if (!cuotas.some(x => x.numero === c.numero_cuota)) cuotas.push({ numero: Number(c.numero_cuota), de: Number(count) || 0 })
+      }
+    }
+  }
+  const idsGan = vincs.filter(v => v.venta_tipo === 'ganaderia').map(v => v.venta_id)
+  if (idsGan.length) {
+    const { data: svs } = await supabase.schema('productivo').from('stock_ventas')
+      .select('cantidad, categorias_hacienda(nombre)').in('id', idsGan)
+    for (const s of (svs || []) as any[]) cabezas.push({ cantidad: Number(s.cantidad) || 0, categoria: s.categorias_hacienda?.nombre || '' })
+  }
+  cuotas.sort((a, b) => a.numero - b.numero)
+  // Lo que falta: el mismo saldo que Cobros.
+  const { data: v } = await supabase.schema('msa').from('comprobantes_venta')
+    .select('id, cuit_cliente, imp_total, tipo_comprobante, ret_iva, ret_iibb, plazos').eq('id', compId).maybeSingle()
+  let falta = 0
+  // Una liquidación en CUOTAS: cada cobro es su cuota (ya lo dice «comprobante pagado»), no un «parcial».
+  if (v && !(Array.isArray((v as any).plazos) && (v as any).plazos.length)) {
+    const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }])).get(v.id)
+      || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
+    const impresas = TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0
+    const d = armarDetalleCobro(fuentes as FuentesCobro, (Number(v.imp_total) || 0) - impresas)
+    // A la fecha del cobro, no a hoy: un adelanto de febrero ERA parcial aunque hoy la venta esté saldada.
+    const cobrado = hastaFecha
+      ? d.lineas.filter(l => l.fecha && l.fecha <= hastaFecha).reduce((s, l) => s + l.monto, 0)
+      : d.total
+    falta = d.esperado - cobrado
+    // Menos de $1 es redondeo del emisor (Genta cerró con $0,02): cuenta como cobrado.
+    if (falta < 1) falta = 0
+  }
+  return { cuotas, cabezas, falta }
+}
+
+/** Escribe en el detalle del movimiento qué se cobró (sin pisar lo que haya escrito el usuario). Devuelve el texto o null. */
+export async function anotarQueSeCobro(supabase: Cliente, movId: string, compId: string): Promise<string | null> {
+  const { data: m } = await supabase.from('msa_galicia').select('detalle, fecha').eq('id', movId).maybeSingle()
+  const q = await queSeCobroDe(supabase, compId, (m as any)?.fecha ?? null)
+  const texto = q ? textoQueSeCobro(q) : null
+  if (!texto) return null
+  const nuevo = detalleConQueSeCobro((m as any)?.detalle, texto)
+  if (nuevo !== ((m as any)?.detalle || null)) {
+    const { error } = await supabase.from('msa_galicia').update({ detalle: nuevo }).eq('id', movId)
+    if (error) throw error
+  }
+  return texto
 }

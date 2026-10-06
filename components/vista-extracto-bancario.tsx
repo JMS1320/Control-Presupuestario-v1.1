@@ -1,6 +1,6 @@
 "use client"
 
-import { cerrarVentaSiSaldada } from "@/lib/ventas/detalle-cobro-db"
+import { cerrarVentaSiSaldada, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import React, { useState, useEffect, useMemo, useRef } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -1114,6 +1114,8 @@ ${texto.trim()}` : texto.trim()
       let cerrada: string | null = null
       if (movimiento.comprobante_venta_id) {
         try { cerrada = await cerrarVentaSiSaldada(supabase, movimiento.comprobante_venta_id) } catch { /* el movimiento ya quedó; la venta se cierra desde Cobros */ }
+        // 📝 A-FEAT-1257 — y el detalle dice qué se cobró.
+        try { await anotarQueSeCobro(supabase, movimiento.id, movimiento.comprobante_venta_id) } catch { /* se completa después */ }
       }
       toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
         + (cerrada ? ` — la venta quedó ${cerrada === 'conciliado' ? 'conciliada' : 'cobrada'}` : ''))
@@ -2538,6 +2540,11 @@ ${marca}` : marca
           if (errVenta) throw errVenta
         }
 
+        // 📝 A-FEAT-1257 — el detalle dice qué se cobró: la cuota del arrendamiento o las cabezas de hacienda.
+        try {
+          const qsc = await anotarQueSeCobro(supabase, movimientoAsignando.id, ventaElegida.id)
+          if (qsc) updateVenta.detalle = [updateVenta.detalle, qsc].filter(Boolean).join(' · ')
+        } catch { /* el cobro ya quedó asignado; el detalle se puede completar después */ }
         actualizarLocal(movimientoAsignando.id, updateVenta)
         toast.success(dif.exacto
           ? `Cobro asignado a ${ventaElegida.nro_comprobante}`
