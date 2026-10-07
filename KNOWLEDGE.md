@@ -1602,6 +1602,47 @@ llevar una sección de **"qué hay que creer para que esto valga"**, ordenada de
 
 ---
 
+## Los Excel de trabajo con el usuario: SU planilla completa, y el control a la vista `#metodo #excel #control #2026-10-07`
+
+Cuando se le arma un Excel que **usa movimientos de una planilla suya** (un extracto, una carga, una
+propuesta), tiene dos reglas que él fijó el 2026-10-07 mientras revisaba la carga del histórico
+(→ [A-DAT-68](PENDIENTES.md#a-dat-68)):
+
+**1 · Cada movimiento va con TODA su planilla, tal cual, y lo nuestro como columnas anexas.**
+*«En los reportes, al quitar los datos que te di yo, me cuesta más auditar… siempre que se usa un
+movimiento, que vaya con la info completa.»* Un derivado que se queda con 6 columnas «relevantes» le
+saca justo lo que él usa para reconocer el movimiento (la leyenda, el comprobante, su detalle).
+- **Colores fijos**: gris = su planilla · verde = la propuesta (prefijo `Propuesta:`) · amarillo =
+  **sus** columnas agregadas sobre nuestros Excel (prefijo `JMS:`), que **se arrastran** a la versión
+  siguiente · azul = lo que ya está cargado en la app.
+- **Primera columna: el número de fila de su planilla.** Es la llave para ir y volver.
+- **Nombre nuevo en cada versión** (`_v2_completo`, `_v3`): no se pisa un archivo que él puede tener
+  abierto o anotado.
+- **No arrastrar columnas vacías**: las que Excel da por «usadas» por formato no son suyas (salieron 4
+  `JMS: (sin título)` vacías en la v2 de sugeridos y preguntó por qué).
+
+**2 · El CONTROL al pie o en el resumen, con fórmulas vivas, del todo a las partes.** Es el que él
+mismo agregó en la solapa resumen de los sugeridos: *«así debemos trabajar»*.
+- Fórmulas que apuntan a los **subtotales** de cada solapa, no números pegados.
+- **Todo − partes = lo propuesto**, y eso contra lo que informa el resumen **= 0**.
+- **Débitos y créditos en columnas separadas, nunca netos.** Mostrar un mismo dato de dos maneras en
+  la misma planilla (neto en unas filas, separado en otras) es inconsistente — lo marcó al revisar la
+  tanda 1.
+- Lo que **no** se carga también es un renglón del control: nada desaparece.
+
+🔧 **Cómo se empareja un movimiento derivado con su fila** (`scripts/excels_planilla_completa.py`):
+por clave **fecha + débito + crédito + un dato que lo distinga** (descripción y detalle, o el saldo),
+consumiendo en orden de aparición; si el último dato fue editado en el derivado, segundo intento sin
+él. El archivo dice **cuántos se emparejaron, cuántos sin fila y cuántas filas de la planilla quedaron
+sin usar** — las tres tienen que cerrar. Antes de confiar en el segundo intento, mirar que no haya
+dos movimientos del mismo día e importe con distinto detalle (ahí sí se podrían cruzar).
+
+⚠️ **Trampa de openpyxl** que costó un control roto: un texto que empieza con `=` se guarda como
+fórmula (`#¿NOMBRE?`), y `ws.append([])` **no** avanza `max_row` — si se calcula la fila del control
+con `max_row` después de un renglón vacío, queda corrida en uno.
+
+---
+
 ## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
 
 Cuando mejora un dato de origen —una pesada, un precio— hay que saber qué se mueve. Y **medido y
