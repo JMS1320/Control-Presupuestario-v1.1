@@ -20,6 +20,8 @@
  * ## ⚠️ Sólo LEE
  * Esta pantalla no escribe una sola fila. Genera un archivo y nada más.
  */
+import { PendientesBalance } from "./pendientes-balance"
+import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
@@ -72,6 +74,8 @@ const EMPRESAS = [
 export function PapelesDeBalance() {
   const [empresa, setEmpresa] = useState<(typeof EMPRESAS)[number]>(EMPRESAS[0])
   const [anioCierre, setAnioCierre] = useState(2026)
+  /** 📌 A-FEAT-1258 — los pendientes a revisar, para que viajen al export. */
+  const [pendientes, setPendientes] = useState<PendienteBalance[]>([])
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
   /**
@@ -522,12 +526,16 @@ export function PapelesDeBalance() {
                 bancarios ?? undefined,
                 sueldos ?? undefined,
                 cuentasCorrientes ?? undefined,
+                pendientes,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
             </Button>
           )}
         </div>
+
+        {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
+        <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
 
         <p className="text-xs text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 mt-0.5 shrink-0" />

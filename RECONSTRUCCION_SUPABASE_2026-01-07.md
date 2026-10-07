@@ -12795,6 +12795,18 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-07 · PENDIENTES A REVISAR DE LOS PAPELES (`public.balance_pendientes`) — A-FEAT-1258
+
+Script `scripts/80-balance-pendientes.sql` (deshacer: `80-…-deshacer.sql`, borra los pendientes): tabla
+`balance_pendientes` (`empresa`, `anio_cierre`, `texto`, `estado` abierto/resuelto, `resolucion`, `creado_por`,
+`created_at`, `resuelto_at`). RLS `ver_segun_permiso`/`escribir_segun_permiso`, `revoke` a `anon`, registrada en
+`recurso_tablas` (recurso `extracto`, `restringe_lectura = true`) — mismo patrón que el script 75. Avisado a Javier.
+
+### 2026-10-07 · CUENTA Y TEMPLATE DE PLAZO FIJO (datos) — A-DAT-68
+
+Datos, no estructura: cuenta `PLAZO FIJO` (Plazos Fijos, financiero, *MOVIMIENTOS FINANCIEROS*) y template
+`Plazo Fijo Banco Galicia` (MSA, bidireccional, agrupadora *Inversiones*) con 4 cuotas «anterior» de jul–oct 2025.
+
 ### 2026-10-05 · EL COSTO DE LAS COMPRAS EN USD SIGUE AL TC DEL PAGO (trigger) — A-FEAT-1255
 
 Script `scripts/79-costo-compras-sigue-tc-pago.sql` (deshacer: `79-…-deshacer.sql`): función

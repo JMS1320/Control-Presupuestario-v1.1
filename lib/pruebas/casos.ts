@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
@@ -2302,6 +2303,21 @@ export function correrCasos(): Resultado[] {
       detalleConQueSeCobro(detalleConQueSeCobro("Adelanto Genta", "120 cab. Ternero"), "120 cab. Ternero") === "Adelanto Genta · 120 cab. Ternero", "A-FEAT-1257")
     chequear("Qué se cobró", "Sin vínculo con la venta no se inventa nada", "null",
       String(textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 })), textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 }) === null, "A-FEAT-1257")
+  }
+
+  // ══ 📌 A-FEAT-1258 — pendientes a revisar en el export de los papeles ══
+  {
+    const P = (id: string, texto: string, estado: "abierto" | "resuelto", created: string, resuelto: string | null = null, resolucion: string | null = null) =>
+      ({ id, empresa: "MSA", anio_cierre: 2026, texto, estado, resolucion, created_at: created, resuelto_at: resuelto })
+    const filas = hojaDePendientes([
+      P("r", "Rescate FIMA 04/08", "resuelto", "2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z", "Va como venta de USS"),
+      P("b", "Plazo fijo: desglosar intereses", "abierto", "2026-10-07T11:00:00Z"),
+      P("a", "Revisar caja", "abierto", "2026-10-07T09:00:00Z"),
+    ], "MSA — pendientes")
+    chequear("Pendientes del balance", "📌 El export lista primero los ABIERTOS (por fecha) y después los resueltos con su nota",
+      "Revisar caja · Plazo fijo… · Rescate (resuelto)", filas.slice(4).map(f => String(f[1])).join(" · "),
+      filas.slice(4).map(f => f[1]).join("|") === "Revisar caja|Plazo fijo: desglosar intereses|Rescate FIMA 04/08"
+        && filas[6][3] === "resuelto" && filas[6][4] === "Va como venta de USS" && String(filas[1][0]).startsWith("2 pendiente"), "A-FEAT-1258")
   }
 
   // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══

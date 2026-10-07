@@ -23,6 +23,7 @@
 import { createRequire } from "node:module"
 import { readFileSync, writeFileSync } from "node:fs"
 import { createClient } from "@supabase/supabase-js"
+import { hojaDePendientes } from "../lib/balance/pendientes-balance"
 
 const require = createRequire(import.meta.url)
 const XLSX = require("xlsx") as typeof import("xlsx")
@@ -158,15 +159,10 @@ wsPf["!cols"] = [{ wch: 11 }, { wch: 38 }, { wch: 14 }, { wch: 18 }, { wch: 20 }
 for (const [addr, cell] of Object.entries(wsPf)) { const c = cell as any; if (!addr.startsWith("!") && typeof c.v === "number") c.z = "#,##0.00" }
 XLSX.utils.book_append_sheet(wb, wsPf, "Detalle Plazos Fijos")
 
-// ── Solapa «Pendientes a revisar» — lo que falta chequear antes de entregar (la lista crece) ──
-const wsPend = XLSX.utils.aoa_to_sheet([
-  ["Pendientes a revisar antes de entregar"],
-  [],
-  ["#", "Tema", "Qué falta", "Dónde se registró"],
-  [1, "Plazos fijos", `Desglosar en los cobros los intereses (${fmt(r2(totCob - totC))} en total) y los impuestos que los componen, si los hubo.`, "PENDIENTES.md · A-DAT-81"],
-  [2, "Rescate FIMA 04/08/2025 ($45.431.590,72)", "Figura como «Venta dólares vía GSEC FIMA» (CATEG USS). No está en el detalle de FCI: definir cómo se informa.", "PENDIENTES.md · A-DAT-81"],
-])
-wsPend["!cols"] = [{ wch: 4 }, { wch: 34 }, { wch: 90 }, { wch: 26 }]
+// ── Solapa «Pendientes a revisar» — de la MISMA tabla que la pantalla de papeles (A-FEAT-1258) ──
+const { data: pends } = await sb.from("balance_pendientes").select("*").eq("empresa", "MSA").eq("anio_cierre", 2026)
+const wsPend = XLSX.utils.aoa_to_sheet(hojaDePendientes((pends || []) as any, "MSA — pendientes a revisar del ejercicio 2025/26"))
+wsPend["!cols"] = [{ wch: 4 }, { wch: 90 }, { wch: 11 }, { wch: 10 }, { wch: 50 }, { wch: 11 }]
 XLSX.utils.book_append_sheet(wb, wsPend, "Pendientes a revisar")
 writeFileSync(SALIDA, XLSX.write(wb, { type: "buffer", bookType: "xlsx" }))
 console.log(`\nExcel: ${SALIDA}\n  ${movs.length} movimientos · suscripciones ${fmt(totS)} · rescates ${fmt(totR)} · neto ${fmt(r2(totS - totR))}`)

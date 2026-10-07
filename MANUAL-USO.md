@@ -5193,6 +5193,16 @@ dos facturas. Eso va por el panel de *Facturas*, que es el único que sabe expre
 
 ---
 
+## 📌 Papeles de trabajo → Pendientes a revisar
+
+En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está el cuadro **«📌 Pendientes a revisar»** de la empresa y el año que elegiste. Sirve para anotar lo que falta chequear antes de dar el balance por cerrado.
+
+- **Anotar**: escribí el pendiente y **+ Anotar** (o Enter).
+- **Resolver**: «resolver» → escribí cómo se resolvió → **✓ Resolver**. No se borra: queda en «ver los resueltos», con su nota, y se puede reabrir.
+- **En el export**: el Excel de los papeles trae la solapa **«00 Pendientes a revisar»** (los abiertos primero), y el Excel para el contador también.
+
+→ A-TEST-1189
+
 ## 🧾 Vincular una factura con sus compras — con descuento y moneda
 
 Para que el **precio de cada compra** sea el real (el de la factura), con el descuento pactado y en la moneda en que se compró.
