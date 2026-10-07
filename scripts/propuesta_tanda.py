@@ -4,7 +4,8 @@
 Lee el libro v2 (`sugeridos_v2.py`): las marcas «Tanda» de la solapa 01 y «JMS: tanda» de la 03, y arma un
 Excel APARTE con cómo se cargaría cada template. **No escribe en la base.**
 
-    python scripts/propuesta_tanda.py 1
+    python scripts/propuesta_tanda.py 1             → arma el Excel (no escribe)
+    python scripts/propuesta_tanda.py 1 --aplicar   → además carga la tanda (con OK del usuario)
 
 Cada movimiento va con TODA la planilla del usuario (gris) + la propuesta del libro (verde) + sus columnas
 (amarillo) + lo de la tanda (azul: template destino, cuota a la que va, aviso). Modo por template: «una cuota
@@ -87,12 +88,12 @@ def tpl_de(nombre):
     c = [t for t in tpls if t['nombre_referencia'] == nombre]
     c.sort(key=lambda t: -sum(1 for q in cuotas_app if q['egreso_id'] == t['id']))
     return c[0] if c else None
-usadas = set()
+usadas = set(); ULTIMA_ID = [None]
 def accion(tpl, ym):
     for q in cuotas_app:
         if tpl and q['egreso_id'] == tpl['id'] and q['fecha_estimada'].startswith(ym) and float(q['monto']) == 0 and q['id'] not in usadas:
-            usadas.add(q['id']); return f"actualizar la cuota en $0 del {dmy(q['fecha_estimada'])}"
-    return 'crear'
+            usadas.add(q['id']); ULTIMA_ID[0] = q['id']; return f"actualizar la cuota en $0 del {dmy(q['fecha_estimada'])}"
+    ULTIMA_ID[0] = None; return 'crear'
 
 cuotas = []
 for nombre in templates:
@@ -105,7 +106,7 @@ for nombre in templates:
             cuotas.append({'n': k, 'tpl': nombre, 'fecha': m['fecha'], 'monto': m['deb'] or m['cre'], 'tipo': tipo,
                            'desc': m['det'] + (' (devolución / anulación)' if tipo == 'ingreso' else '') + ' — histórico',
                            'accion': accion(tpl, m['fecha'][:7]) if tipo == 'egreso' else 'crear', 'movs': [m], 'modo': 'una cuota por pago'})
-            m['cuota'] = k
+            m['cuota'] = k; cuotas[-1]['cuota_id'] = ULTIMA_ID[0] if tipo == 'egreso' else None
     else:
         por_mes = collections.defaultdict(list)
         for m in suyos: por_mes[m['fecha'][:7]].append(m)
@@ -118,6 +119,7 @@ for nombre in templates:
                                'desc': f"{nombre} {MESES[int(ym[5:7]) - 1]} {ym[:4]}" + (' devoluciones' if tipo == 'ingreso' else '') + f" ({len(ms)} mov.) — histórico",
                                'accion': accion(tpl, ym) if tipo == 'egreso' else 'crear', 'movs': ms, 'modo': 'total del mes'})
                 for m in ms: m['cuota'] = k
+                cuotas[-1]['cuota_id'] = ULTIMA_ID[0] if tipo == 'egreso' else None
 
 wb = openpyxl.Workbook(); wb.remove(wb.active)
 def pintar_cab(ws, rangos):
@@ -210,3 +212,30 @@ nd = round(sum(m['deb'] for m in movs if m['aviso']), 2); nc = round(sum(m['cre'
 cd = round(sum(m['deb'] for c in cuotas for m in c['movs']), 2); cc = round(sum(m['cre'] for c in cuotas for m in c['movs']), 2)
 print('Excel:', SALIDA)
 print(f'templates {len(templates)} · movimientos {len(movs)} · cuotas {len(cuotas)} · control débitos {round(td-nd-cd,2)} créditos {round(tc-nc-cc,2)}')
+
+# ── --aplicar: carga la tanda en la app (con OK del usuario). Estado «anterior», fecha = la del movimiento
+# (o fin de mes en los «total del mes»). Las cuotas en $0 del mes se ACTUALIZAN en vez de duplicarse.
+if '--aplicar' in sys.argv:
+    def escribir(metodo, tabla, params, cuerpo):
+        url = env['NEXT_PUBLIC_SUPABASE_URL'] + '/rest/v1/' + tabla + ('?' + urllib.parse.urlencode(params) if params else '')
+        req = urllib.request.Request(url, data=json.dumps(cuerpo).encode(), method=metodo, headers={
+            'apikey': env['SUPABASE_SERVICE_ROLE_KEY'], 'Authorization': 'Bearer ' + env['SUPABASE_SERVICE_ROLE_KEY'],
+            'Content-Type': 'application/json', 'Prefer': 'return=representation'})
+        return json.loads(urllib.request.urlopen(req).read())
+    # No duplicar: si el template ya tiene cuotas «anterior» en jul–ene con monto, se frena
+    ya = [q for q in cuotas_app if q['estado'] == 'anterior' and float(q['monto']) != 0]
+    if ya: sys.exit(f'⛔ ya hay {len(ya)} cuotas «anterior» con monto en jul–ene de estos templates: no se carga (¿ya se aplicó?)')
+    creadas = actualizadas = 0
+    for c in cuotas:
+        tpl = tpl_de(c['tpl'])
+        cuerpo = {'fecha_estimada': c['fecha'], 'fecha_vencimiento': c['fecha'], 'monto': c['monto'], 'estado': 'anterior',
+                  'tipo_movimiento': c['tipo'], 'descripcion': c['desc']}
+        if c.get('cuota_id'):
+            r = escribir('PATCH', 'cuotas_egresos_sin_factura', {'id': 'eq.' + c['cuota_id']}, cuerpo); actualizadas += len(r)
+        else:
+            r = escribir('POST', 'cuotas_egresos_sin_factura', None, dict(cuerpo, egreso_id=tpl['id'])); creadas += len(r)
+    print(f'✅ tanda {TANDA} cargada: {creadas} cuotas creadas · {actualizadas} cuotas en $0 actualizadas')
+    sobran = [q for q in cuotas_app if float(q['monto']) == 0 and q['id'] not in usadas]
+    for q in sobran:
+        t = next(t for t in tpls if t['id'] == q['egreso_id'])
+        print(f"   queda en $0: {t['nombre_referencia']} {dmy(q['fecha_estimada'])} ({q['estado']})")
