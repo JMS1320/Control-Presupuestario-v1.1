@@ -445,3 +445,11 @@ en pesos el costo de las compras de insumos vinculadas a ella (movimiento, vínc
 el de esa compra). No cambia RLS ni permisos. Script `scripts/79-costo-compras-sigue-tc-pago.sql` (+ `-deshacer`).
 Y una fila más en tu registro de widgets: `nc-diferencia-cambio` (sección `egresos`), también en el default.
 Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-07 · PARA JAVIER — tabla nueva `public.balance_pendientes` (aviso, no hay nada que hacer)
+
+Pendientes a revisar de los papeles de trabajo del balance (A-FEAT-1258). **Mismo patrón que el balance
+propio (script 75)**: RLS `ver_segun_permiso` / `escribir_segun_permiso` con `puede_ver`/`puede_escribir`,
+`revoke` a `anon`, registrada en `recurso_tablas` con recurso `extracto` y `restringe_lectura = true` (el rol
+`contable` no la ve). Script `scripts/80-balance-pendientes.sql` (+ `-deshacer`). Al leerlo, borrá esta entrada.
+
