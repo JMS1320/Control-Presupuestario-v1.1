@@ -171,11 +171,12 @@ for nombre, marca in templates.items():
     ws00.append([nombre, marca, 'una cuota por pago' if nombre in POR_PAGO else 'total del mes', len(cs),
                  sum(1 for c in cs if c['accion'] == 'crear'), sum(1 for c in cs if c['accion'] != 'crear'), deb, cre, round(deb - cre, 2),
                  f"{tpl['categ']} · año {tpl['año']}" if tpl else '⚠ NO EXISTE'])
-ws00.append([]); b = ws00.max_row + 1
+ws00.append([None])
 ws00.append(['CONTROL', None, None, None, None, None, 'Débitos', 'Créditos'])
+b = ws00.max_row   # la fila del título CONTROL: las cuentas van en b+1 … b+5 (antes se contaba una fila de menos)
 ws00.append(['Movimientos de la tanda (02)', None, None, None, None, None, f"='02 Movimientos'!{cD}{t02}", f"='02 Movimientos'!{cC}{t02}"])
-ws00.append(['− los que no se cargan (avisos)', None, None, None, None, None, f"='02 Movimientos'!{cD}{no02}", f"='02 Movimientos'!{cC}{no02}"])
-ws00.append(['= a cargar, por diferencia', None, None, None, None, None, f'=G{b+1}-G{b+2}', f'=H{b+1}-H{b+2}'])
+ws00.append(['menos: los que no se cargan (avisos)', None, None, None, None, None, f"='02 Movimientos'!{cD}{no02}", f"='02 Movimientos'!{cC}{no02}"])
+ws00.append(['a cargar, por diferencia (movimientos − no se cargan)', None, None, None, None, None, f'=G{b+1}-G{b+2}', f'=H{b+1}-H{b+2}'])
 ws00.append(['Cuotas propuestas (01)', None, None, None, None, None, f"='01 Cuotas propuestas'!K{t01}", f"='01 Cuotas propuestas'!L{t01}"])
 ws00.append(['control (tiene que dar 0)', None, None, None, None, None, f'=G{b+3}-G{b+4}', f'=H{b+3}-H{b+4}'])
 for f in (b, b + 5): ws00[f'A{f}'].font = NEGRITA
