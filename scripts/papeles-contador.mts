@@ -123,6 +123,51 @@ for (const [addr, cell] of Object.entries(ws)) {
 }
 const wb = XLSX.utils.book_new()
 XLSX.utils.book_append_sheet(wb, ws, "Detalle FCI")
+
+// ── Solapa «Detalle Plazos Fijos» (2026-10-07) — de la planilla; feb–jun no hubo plazos fijos ──
+// Cada constitución se empareja con el cobro siguiente: la diferencia son los intereses (menos
+// impuestos, si los hubo — pendiente de desglosar, ver solapa de pendientes).
+const pf: { fecha: string; desc: string; constit: number; cobro: number }[] = []
+for (let i = 3; i < aoa.length; i++) {
+  const r = aoa[i] as unknown[]
+  const f = r[col["Fecha"]]
+  if (!(f instanceof Date) || !/plazo fijo/i.test(tx(r[col["Descripción"]]))) continue
+  pf.push({ fecha: f.toISOString().slice(0, 10), desc: tx(r[col["Descripción"]]), constit: num(r[col["Débitos"]]), cobro: num(r[col["Créditos"]]) })
+}
+pf.sort((a, b) => a.fecha.localeCompare(b.fecha))
+const filasPf: (string | number)[][] = [
+  ["MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6"],
+  ["Detalle de plazos fijos — ejercicio 01/07/2025 al 30/06/2026"],
+  [],
+  ["Fecha", "Descripción del banco", "Plazo fijo", "Constitución", "Cobro al vencimiento", "Intereses (cobro − constitución)"],
+]
+let nPf = 0, abierto: number | null = null
+for (const m of pf) {
+  const [y, mo, d] = m.fecha.split("-")
+  if (m.constit) { nPf++; abierto = m.constit }
+  const etiqueta = `Plazo fijo ${String(nPf).padStart(2, "0")}`
+  const interes = m.cobro && abierto != null ? r2(m.cobro - abierto) : ""
+  if (m.cobro) abierto = null
+  filasPf.push([`${d}/${mo}/${y}`, m.desc, etiqueta, m.constit || "", m.cobro || "", interes])
+}
+const totC = r2(pf.reduce((s, m) => s + m.constit, 0)), totCob = r2(pf.reduce((s, m) => s + m.cobro, 0))
+filasPf.push([], ["TOTAL", `${pf.length} movimientos`, "", totC, totCob, r2(totCob - totC)])
+filasPf.push([], ["⚠ Los cobros incluyen los intereses; si hubo impuestos (retención de Ganancias, etc.), falta desglosarlos — ver «Pendientes a revisar»."])
+const wsPf = XLSX.utils.aoa_to_sheet(filasPf)
+wsPf["!cols"] = [{ wch: 11 }, { wch: 38 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 26 }]
+for (const [addr, cell] of Object.entries(wsPf)) { const c = cell as any; if (!addr.startsWith("!") && typeof c.v === "number") c.z = "#,##0.00" }
+XLSX.utils.book_append_sheet(wb, wsPf, "Detalle Plazos Fijos")
+
+// ── Solapa «Pendientes a revisar» — lo que falta chequear antes de entregar (la lista crece) ──
+const wsPend = XLSX.utils.aoa_to_sheet([
+  ["Pendientes a revisar antes de entregar"],
+  [],
+  ["#", "Tema", "Qué falta", "Dónde se registró"],
+  [1, "Plazos fijos", `Desglosar en los cobros los intereses (${fmt(r2(totCob - totC))} en total) y los impuestos que los componen, si los hubo.`, "PENDIENTES.md · A-DAT-81"],
+  [2, "Rescate FIMA 04/08/2025 ($45.431.590,72)", "Figura como «Venta dólares vía GSEC FIMA» (CATEG USS). No está en el detalle de FCI: definir cómo se informa.", "PENDIENTES.md · A-DAT-81"],
+])
+wsPend["!cols"] = [{ wch: 4 }, { wch: 34 }, { wch: 90 }, { wch: 26 }]
+XLSX.utils.book_append_sheet(wb, wsPend, "Pendientes a revisar")
 writeFileSync(SALIDA, XLSX.write(wb, { type: "buffer", bookType: "xlsx" }))
 console.log(`\nExcel: ${SALIDA}\n  ${movs.length} movimientos · suscripciones ${fmt(totS)} · rescates ${fmt(totR)} · neto ${fmt(r2(totS - totR))}`)
 
