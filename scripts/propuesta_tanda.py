@@ -19,7 +19,8 @@ TANDA = sys.argv[1] if len(sys.argv) > 1 else '1'
 RAIZ = 'D:/Users/josem/Documents/Jose/Automatizarr/Claude/Control-Presupuestario-v1.1/'
 DIR = RAIZ + '- Comunicacion JMS Claude - Archivos/Balance/'
 V2 = DIR + 'Extracto_2025-07_a_2026-01_TEMPLATES_SUGERIDOS_v2_completo.xlsx'
-SALIDA = DIR + f'Tanda {TANDA} - propuesta de carga v2 completo.xlsx'
+ANTERIOR = DIR + f'Tanda {TANDA} - propuesta de carga v2 completo.xlsx'   # de acá se traen tus respuestas («Orden de trabajo»)
+SALIDA = DIR + f'Tanda {TANDA} - propuesta de carga v3.xlsx'
 VERDE = PatternFill('solid', fgColor='E2EFDA'); AMARILLO = PatternFill('solid', fgColor='FFF2CC')
 GRIS = PatternFill('solid', fgColor='EDEDED'); AZUL = PatternFill('solid', fgColor='DDEBF7'); NEGRITA = Font(bold=True)
 MONEDA = '#,##0.00'
@@ -69,6 +70,8 @@ for row in s02.iter_rows(min_row=2, values_only=True):
         destino = str(row[iTpl]); origen = '02 · sugerido'
         if destino == 'UATRE' and 'uatre' not in str(row[iDet] or '').lower():
             aviso = '⚠ NO es UATRE (compra con débito): no se carga en esta tanda'
+        if destino == 'CZ Ganadera' and re.search(r'smart\s*fa', str(row[iDet] or ''), re.I):
+            aviso = '⚠ Smart Farming: es factura, no va a template (respuesta v2)'
     if not destino: continue
     movs.append({'row': row, 'tpl': destino, 'origen': origen, 'aviso': aviso, 'fecha': iso(row[iF]),
                  'deb': r2(row[iDeb]), 'cre': r2(row[iCre]), 'det': str(row[iDet] or row[iD] or '').strip()})
@@ -107,12 +110,14 @@ for nombre in templates:
         por_mes = collections.defaultdict(list)
         for m in suyos: por_mes[m['fecha'][:7]].append(m)
         for ym in sorted(por_mes):
-            ms = por_mes[ym]; deb = round(sum(m['deb'] for m in ms), 2); cre = round(sum(m['cre'] for m in ms), 2)
-            neto = round(deb - cre, 2); k = len(cuotas) + 1
-            cuotas.append({'n': k, 'tpl': nombre, 'fecha': ultimo(ym), 'monto': abs(neto), 'tipo': 'egreso' if neto >= 0 else 'ingreso',
-                           'desc': f"{nombre} {MESES[int(ym[5:7]) - 1]} {ym[:4]} ({len(ms)} mov." + (f", neto de devoluciones {cre:,.2f}" if cre else '') + ') — histórico',
-                           'accion': accion(tpl, ym), 'movs': ms, 'modo': 'total del mes'})
-            for m in ms: m['cuota'] = k
+            # Sin netear (respuesta v2): los débitos del mes en una cuota egreso y los créditos en otra ingreso.
+            for tipo, ms in (('egreso', [m for m in por_mes[ym] if m['deb']]), ('ingreso', [m for m in por_mes[ym] if not m['deb'] and m['cre']])):
+                if not ms: continue
+                k = len(cuotas) + 1; monto = round(sum(m['deb'] or m['cre'] for m in ms), 2)
+                cuotas.append({'n': k, 'tpl': nombre, 'fecha': ultimo(ym), 'monto': monto, 'tipo': tipo,
+                               'desc': f"{nombre} {MESES[int(ym[5:7]) - 1]} {ym[:4]}" + (' devoluciones' if tipo == 'ingreso' else '') + f" ({len(ms)} mov.) — histórico",
+                               'accion': accion(tpl, ym) if tipo == 'egreso' else 'crear', 'movs': ms, 'modo': 'total del mes'})
+                for m in ms: m['cuota'] = k
 
 wb = openpyxl.Workbook(); wb.remove(wb.active)
 def pintar_cab(ws, rangos):
@@ -145,24 +150,37 @@ ws02.freeze_panes = 'B2'
 
 # 01 · cuotas propuestas (con las filas de la planilla que la forman)
 ws01 = wb.create_sheet('01 Cuotas propuestas', 0)
-ws01.append(['Cuota Nº', 'Template', 'Modo', 'Fecha', 'Tipo', 'Monto', 'Descripción de la cuota', 'Qué se hace en la app', 'Movimientos', 'Filas de tu planilla', 'Débitos que la forman', 'Créditos que la forman'])
-pintar_cab(ws01, [(1, 12, AZUL)])
+# Tus respuestas de la v2, por fila de planilla (la numeración de cuotas cambió al separar débitos y créditos)
+resp = {}
+try:
+    wa = openpyxl.load_workbook(ANTERIOR, data_only=True)['01 Cuotas propuestas']
+    ha = [c.value for c in wa[1]]
+    iN = next(i for i, h in enumerate(ha) if h and 'orden de trabajo' in str(h).lower())
+    for r in wa.iter_rows(min_row=2, values_only=True):
+        if isinstance(r[0], int) and r[iN]:
+            for f in str(r[9] or '').split(','): resp[f.strip()] = str(r[iN])
+except Exception as e: print('sin respuestas v2:', e)
+ws01.append(['Cuota Nº', 'Template', 'Modo', 'Fecha', 'Tipo', 'Débito (egreso)', 'Crédito (ingreso)', 'Descripción de la cuota', 'Qué se hace en la app', 'Movimientos', 'Filas de tu planilla', 'Débitos que la forman', 'Créditos que la forman', 'Tu respuesta en la v2'])
+pintar_cab(ws01, [(1, 13, AZUL), (14, 14, AMARILLO)])
 for c in cuotas:
-    ws01.append([c['n'], c['tpl'], c['modo'], datetime.datetime.strptime(c['fecha'], '%Y-%m-%d'), c['tipo'], c['monto'], c['desc'], c['accion'],
-                 len(c['movs']), ', '.join(str(m['row'][0]) for m in c['movs']), round(sum(m['deb'] for m in c['movs']), 2), round(sum(m['cre'] for m in c['movs']), 2)])
+    filas = [str(m['row'][0]) for m in c['movs']]
+    ws01.append([c['n'], c['tpl'], c['modo'], datetime.datetime.strptime(c['fecha'], '%Y-%m-%d'), c['tipo'],
+                 c['monto'] if c['tipo'] == 'egreso' else None, c['monto'] if c['tipo'] == 'ingreso' else None, c['desc'], c['accion'],
+                 len(c['movs']), ', '.join(filas), round(sum(m['deb'] for m in c['movs']), 2), round(sum(m['cre'] for m in c['movs']), 2),
+                 ' / '.join(dict.fromkeys(resp[f] for f in filas if f in resp))])
 u01 = ws01.max_row
-ws01.append([]); ws01.append(['TOTAL', None, None, None, None, None, None, None, f'=SUM(I2:I{u01})', None, f'=SUM(K2:K{u01})', f'=SUM(L2:L{u01})']); t01 = ws01.max_row
+ws01.append([]); ws01.append(['TOTAL', None, None, None, None, f'=SUM(F2:F{u01})', f'=SUM(G2:G{u01})', None, None, f'=SUM(J2:J{u01})', None, f'=SUM(L2:L{u01})', f'=SUM(M2:M{u01})']); t01 = ws01.max_row
 for row in ws01.iter_rows(min_row=2):
     for c in row:
         if isinstance(c.value, datetime.datetime): c.number_format = 'DD/MM/YYYY'
         elif isinstance(c.value, float): c.number_format = MONEDA
-for j, w in enumerate([8, 26, 18, 11, 8, 15, 70, 36, 11, 30, 18, 18], start=1): ws01.column_dimensions[L(j)].width = w
+for j, w in enumerate([8, 26, 18, 11, 8, 15, 15, 60, 36, 11, 30, 18, 18, 50], start=1): ws01.column_dimensions[L(j)].width = w
 
 # 00 · resumen + CONTROL
 ws00 = wb.create_sheet('00 Resumen', 0)
-ws00.append([f'TANDA {TANDA} — propuesta de carga del histórico jul-2025 → ene-2026 en templates MSA (estado «anterior»). NO cargado: es para revisar. v2: cada movimiento con tu planilla completa.'])
+ws00.append([f'TANDA {TANDA} — propuesta de carga del histórico jul-2025 → ene-2026 en templates MSA (estado «anterior»). NO cargado: es para revisar. v3: débitos y créditos sin netear, sin Smart Farming; cada movimiento con tu planilla completa.'])
 ws00.append([])
-ws00.append(['Template', 'Lo que marcaste', 'Modo propuesto', 'Cuotas', 'a crear', 'a actualizar (la de $0 del mes)', 'Débitos', 'Créditos', 'Neto', 'Template en la app'])
+ws00.append(['Template', 'Lo que marcaste', 'Modo propuesto', 'Cuotas', 'a crear', 'a actualizar (la de $0 del mes)', 'Débitos', 'Créditos', 'Neto (sólo referencia)', 'Template en la app'])
 pintar_cab(ws00, [])
 for c in ws00[3]: c.font = NEGRITA
 for nombre, marca in templates.items():
@@ -177,9 +195,10 @@ b = ws00.max_row   # la fila del título CONTROL: las cuentas van en b+1 … b+5
 ws00.append(['Movimientos de la tanda (02)', None, None, None, None, None, f"='02 Movimientos'!{cD}{t02}", f"='02 Movimientos'!{cC}{t02}"])
 ws00.append(['menos: los que no se cargan (avisos)', None, None, None, None, None, f"='02 Movimientos'!{cD}{no02}", f"='02 Movimientos'!{cC}{no02}"])
 ws00.append(['a cargar, por diferencia (movimientos − no se cargan)', None, None, None, None, None, f'=G{b+1}-G{b+2}', f'=H{b+1}-H{b+2}'])
-ws00.append(['Cuotas propuestas (01)', None, None, None, None, None, f"='01 Cuotas propuestas'!K{t01}", f"='01 Cuotas propuestas'!L{t01}"])
+ws00.append(['Cuotas propuestas (01): débito y crédito de las cuotas', None, None, None, None, None, f"='01 Cuotas propuestas'!F{t01}", f"='01 Cuotas propuestas'!G{t01}"])
 ws00.append(['control (tiene que dar 0)', None, None, None, None, None, f'=G{b+3}-G{b+4}', f'=H{b+3}-H{b+4}'])
-for f in (b, b + 5): ws00[f'A{f}'].font = NEGRITA
+ws00.append(['control interno: cuotas vs. movimientos que las forman (tiene que dar 0)', None, None, None, None, None, f"='01 Cuotas propuestas'!F{t01}-'01 Cuotas propuestas'!L{t01}", f"='01 Cuotas propuestas'!G{t01}-'01 Cuotas propuestas'!M{t01}"])
+for f in (b, b + 5, b + 6): ws00[f'A{f}'].font = NEGRITA
 for row in ws00.iter_rows(min_row=4):
     for c in row:
         if isinstance(c.value, float) or (isinstance(c.value, str) and c.value.startswith('=')): c.number_format = MONEDA
