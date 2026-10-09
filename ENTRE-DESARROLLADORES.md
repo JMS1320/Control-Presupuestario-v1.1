@@ -54,6 +54,11 @@
 `recurso_tablas`. Copian el patrón de permisos que ya tiene `sueldos` — si al cerrar A-SEC-14 le ponés
 `restringe_lectura` a sueldos, **sumá estas dos**. Reversible entero con el `-deshacer`.
 
+➕ **Y un cambio de tipo, mismo día** (`scripts/82-dias-trabajados-con-medios.sql`): `sueldos.periodos.dias_trabajados`
+pasa de **integer a numeric** (los jornales admiten medio día). Como la vista `public.sueldos_periodos` depende de la
+columna, el script la **recrea con la misma definición y los mismos GRANTs** (authenticated y service_role, nada a
+anon) dentro de una transacción. Si tenés algo que lea esa vista, no cambia nada: mismas columnas.
+
 📌 Borrá esta entrada cuando la leas.
 
 
