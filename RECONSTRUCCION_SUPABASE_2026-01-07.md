@@ -12795,6 +12795,14 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-09 · PLANILLA DE ASISTENCIA (`sueldos.asistencia` + `public.feriados`) — A-FEAT-1259
+
+Script `scripts/81-planilla-asistencia.sql` (deshacer: `81-…-deshacer.sql`, borra marcas y feriados): tabla
+`sueldos.asistencia` (una marca P/F/M/V/L por empleado y día, único `empleado_id`+`fecha`) con su vista
+`public.sueldos_asistencia`, y `public.feriados` con los nacionales 2025–2027 precargados (puentes con
+`cuenta = false`). RLS `solo_usuarios_habilitados` (`tiene_rol()`), igual que el resto de `sueldos`; `revoke` a
+`anon`. Avisado a Javier antes de aplicarlo. Aplicado el 2026-10-09 y verificado: 56 feriados, 49 cuentan.
+
 ### 2026-10-07 · PENDIENTES A REVISAR DE LOS PAPELES (`public.balance_pendientes`) — A-FEAT-1258
 
 Script `scripts/80-balance-pendientes.sql` (deshacer: `80-…-deshacer.sql`, borra los pendientes): tabla

@@ -506,13 +506,50 @@ mensaje que nombra el campo**, en vez de mandarse a la BD a ver qué pasa.
 
 ---
 
+## 🗓️ Planilla de asistencia — los francos trabajados salen solos *(2026-10-09, A-FEAT-1259)*
+
+Reemplaza la carga a mano de los **francos** en el ✏️. Diseño del usuario (2026-10-09): *«la planilla se llena con
+los francos trabajados y se da un click para llenar el resto con presente»*.
+
+**Las marcas** (`sueldos.asistencia`, una por empleado y día): **P** presente · **F** franco tomado (día libre
+entero) · **½** medio día trabajado (`M` en la base) · **V** vacaciones · **L** licencia. Se marcan sólo las
+excepciones y **«Llenar con P» — por empleado —** completa lo vacío.
+
+**La regla** (`lib/sueldos/asistencia.ts`): cada día tiene un esperado — **lunes a viernes 1, sábado ½,
+domingo y feriado 0** — y se compara con lo marcado (P 1 · ½ 0,5 · F 0):
+
+> **francos trabajados = Σ (trabajado − esperado)** = *francos que le correspondían − francos que se tomó*.
+
+- Mes con 4 sábados y 4 domingos → le corresponden **6**. Si se tomó eso, da 0; si se tomó más, **negativo, y
+  resta del sueldo** a valor franco (confirmado por el usuario).
+- **Feriado = domingo**, aunque caiga sábado. Sale de `public.feriados` con `cuenta = true`.
+- **V y L no suman ni restan**: el día queda fuera de las dos cuentas.
+- **Día vacío**: el mes queda **incompleto** y no se pasa al sueldo hasta completarlo.
+- **Días fuera del contrato** (`fecha_ingreso` / `fecha_egreso`): no existen para la planilla.
+- Es para **todos los empleados**; sólo los `ab_francos` pasan el resultado al sueldo. A los `por_dia` se les
+  muestra los días trabajados (Σ trabajado), **sin escribirlos**: `dias_trabajados` es entero y la planilla
+  admite medios días — decisión pendiente del usuario.
+
+**Pasar al sueldo**: escribe `francos_cantidad` en el período y recalcula `bruto_calculado` y `saldo_pendiente` con
+**la misma fórmula del modal ✏️**, que se mudó a `lib/sueldos/bruto.ts` para que haya una sola. Sólo en el **mes de
+trabajo** (como todo lo que modifica sueldos), con la planilla guardada, y mostrando antes qué cambia (francos y
+bruto, de → a). No propaga a meses siguientes: cada mes tiene su planilla.
+
+🔁 **El control**: la columna *«En el sueldo»* compara los francos del período con los de la planilla — ✓ si
+coinciden, ≠ si no. Es el mismo número por dos caminos; si alguien edita los francos a mano en el ✏️, se ve.
+
+🔗 Cuando exista el **parte diario** ([A-FEAT-123](PENDIENTES.md#a-feat-123)), la planilla se puede precargar de
+ahí: es el control *jornadas del parte ↔ días que liquida sueldos* que ese diseño preveía.
+
+---
+
 ## ⚠️ Pendientes / Evolución futura
 
 - **Coria e Pucheta**: Completar parámetros A, B, francos desde ✏️ (bruto actual = $0)
 - **Ignacio Pucheta**: Completar CUIT cuando esté disponible
 - **IPC real**: Cargar datos en `public.indices_ipc` para calcular `sueldo_x_ipc` real (por ahora = bruto_calculado)
 - **plano_ipc (JMS)**: Implementar lógica IPC completa (pendiente, solo varios disponible)
-- **Planilla de asistencia**: Reemplazar ingreso manual de francos/días por importación de planilla
+- ~~**Planilla de asistencia**: Reemplazar ingreso manual de francos/días por importación de planilla~~ → ⚠️ cambió 2026-10-09: **hecha como planilla en la app**, no como importación (ver § Planilla de asistencia) — A-FEAT-1259
 - **Cerrar períodos**: Cambiar estado `proyectado → cerrado` al pagar sueldo mensual
 - **Aguinaldo**: Agregar lógica semestral (Jun/Dic)
 - **Recibos**: Generar PDF recibo de sueldo por empleado

@@ -179,6 +179,8 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 - **pagos**: `id uuid, periodo_id uuid, empleado_id uuid, tipo varchar, fecha date, monto numeric, cuenta_destino_id uuid, descripcion text, created_at tstz, estado varchar, medio_pago text, grupo_pago_id uuid, visible_contable boolean`
 - **componentes_salario**: `id uuid, empleado_id uuid, campana_id uuid, tipo_componente varchar, monto numeric, vigente_desde date, vigente_hasta date, created_at tstz`
 - **cuentas_empleado**: `id uuid, empleado_id uuid, banco varchar, alias varchar, activo boolean`
+- **asistencia** *(2026-10-09, A-FEAT-1259)*: `id uuid, empleado_id uuid → empleados (on delete cascade), fecha date, marca text CHECK in ('P','F','M','V','L'), updated_at tstz` · UNIQUE (empleado_id, fecha). Vista `public.sueldos_asistencia` (mismas columnas)
+- **public.feriados** *(2026-10-09, A-FEAT-1259)*: `fecha date PK, nombre text, tipo text CHECK in ('inamovible','trasladable','puente','manual'), cuenta boolean default true, created_at tstz`
 
 ---
 

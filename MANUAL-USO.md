@@ -1595,6 +1595,28 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 ### Alta de empleado
 - Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.
 
+## 🗓️ Sueldos → Planilla de asistencia *(2026-10-09)*
+
+Para cargar los francos del mes sin hacer la cuenta a mano.
+
+1. En **Sueldos**, poné el mes y apretá **«Planilla de Asistencia»** (arriba, al lado de «Gestión de Nómina»;
+   también está dentro de Gestión de Nómina).
+2. Marcá sólo las excepciones de cada empleado. Clic en la celda para cambiarla, o tecleá la letra:
+   **F** franco tomado · **½** medio día trabajado (tecla M o 1) · **V** vacaciones · **L** licencia ·
+   **Supr** la borra.
+3. Apretá **«Llenar con P»** en la fila de cada empleado: los días vacíos quedan como presentes.
+4. A la derecha ves lo que le **correspondía**, lo que se **tomó** y los **francos trabajados** (en verde; en
+   rojo si es negativo). Si quedan días vacíos dice *«faltan N días»*.
+5. **«Guardar planilla»**.
+6. **«Pasar francos al sueldo»**: te muestra qué cambia (francos y bruto, de → a) y con **Confirmar** lo
+   escribe en el sueldo del mes. Sólo funciona en el **mes de trabajo**.
+
+Los colores: **amarillo** sábado (medio día), **gris** domingo, **rosa** feriado. Los **feriados** del mes están
+abajo: podés agregar uno, o hacer que uno **no cuente**. Los puentes turísticos vienen cargados pero no cuentan:
+si diste el día, tocá «contarlo como feriado».
+
+> → [A-TEST-1190](PENDIENTES.md#a-test-1190)
+
 ## 👷 Sueldos → los pagos del mes, por empleado *(2026-09-11)*
 
 La lista de **Pagos registrados** viene **agrupada por empleado y cerrada**. De cada uno ves, sin

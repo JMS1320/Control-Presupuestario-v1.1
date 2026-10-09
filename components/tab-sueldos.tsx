@@ -6,6 +6,8 @@ import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
 import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
+import { brutoSegunTipo } from "@/lib/sueldos/bruto"
+import { PlanillaAsistencia } from "@/components/planilla-asistencia"
 import { descargarPagosDeSueldos, type PagoParaExportar } from "@/lib/sueldos/export-pagos"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, Fragment } from "react"
@@ -341,6 +343,8 @@ export function TabSueldos() {
 
   // Modal Gestión de Nómina
   const [modalNomina, setModalNomina] = useState(false)
+  // 🗓️ Planilla de asistencia (A-FEAT-1259)
+  const [planillaAbierta, setPlanillaAbierta] = useState(false)
   const [nominaVista, setNominaVista] = useState<'menu' | 'baja'>('menu')
   const [empleadosActivos, setEmpleadosActivos] = useState<Empleado[]>([])
   const [bajaFechas, setBajaFechas] = useState<Record<string, string>>({})
@@ -688,16 +692,11 @@ export function TabSueldos() {
 
   const num = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
 
-  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0, aguinaldoA = 0, aguinaldoB = 0) => {
-    const extras = varios + vacaciones + premio + aguinaldoA + aguinaldoB
-    switch (tipo) {
-      case 'ab_francos':   return (a + b) + (valorFranco * francos) + extras
-      case 'por_dia':      return vdia * dias + extras
-      case 'por_hora_ipc': return vhora * horas + extras
-      case 'plano_ipc':    return a + extras
-      default:             return (edPeriodo?.bruto_calculado ?? 0) + extras
-    }
-  }
+  // 💰 La fórmula vive en `lib/sueldos/bruto.ts` (la usa también la planilla de asistencia). Con un tipo
+  // desconocido se conserva el bruto anterior, como antes.
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0, aguinaldoA = 0, aguinaldoB = 0) =>
+    brutoSegunTipo(tipo, a, b, francos, valorFranco, vdia, dias, vhora, horas, varios, vacaciones, premio, aguinaldoA, aguinaldoB)
+      ?? (edPeriodo?.bruto_calculado ?? 0) + varios + vacaciones + premio + aguinaldoA + aguinaldoB
 
   const abrirEdicion = (p: Periodo, forzar = false) => {
     if (!esMesLockeado && !forzar) return  // solo se edita el mes de trabajo (salvo revisión de campaña)
@@ -1257,6 +1256,10 @@ export function TabSueldos() {
           <Button variant="outline" onClick={abrirNomina}>
             <Users className="h-4 w-4 mr-2" />
             Gestión de Nómina
+          </Button>
+          <Button variant="outline" onClick={() => setPlanillaAbierta(true)} title="Marcar francos y presentes del mes; calcula los francos trabajados">
+            <CalendarDays className="h-4 w-4 mr-2" />
+            Planilla de Asistencia
           </Button>
           <Button onClick={() => abrirAnticipo()} disabled={!esMesLockeado} title={!esMesLockeado ? 'Mové el mes de trabajo a este mes para registrar' : undefined}>
             <Plus className="h-4 w-4 mr-2" />
@@ -2373,6 +2376,16 @@ export function TabSueldos() {
       </Dialog>
 
       {/* ── Modal Gestión de Nómina ───────────────────────────────────────── */}
+      <PlanillaAsistencia
+        abierto={planillaAbierta}
+        onCerrar={() => setPlanillaAbierta(false)}
+        anio={mesActual.anio}
+        mes={mesActual.mes}
+        periodos={periodos as any}
+        esMesDeTrabajo={esMesLockeado}
+        onAplicado={cargar}
+      />
+
       <Dialog open={modalNomina} onOpenChange={setModalNomina}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -2417,21 +2430,21 @@ export function TabSueldos() {
                 </div>
               </button>
 
-              {/* Planilla de asistencia — placeholder */}
-              <div className="flex items-start gap-4 p-4 rounded-lg border border-dashed bg-gray-50 opacity-60 cursor-not-allowed">
-                <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <CalendarDays className="h-5 w-5 text-gray-400" />
+              {/* Planilla de asistencia (A-FEAT-1259) */}
+              <button
+                onClick={() => { setModalNomina(false); setPlanillaAbierta(true) }}
+                className="flex items-start gap-4 p-4 rounded-lg border hover:border-green-400 hover:bg-green-50 transition-colors text-left"
+              >
+                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CalendarDays className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-sm text-gray-500">Planilla de Asistencia</p>
-                    <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">Próximamente</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Importar planilla mensual de francos, días y horas trabajadas por empleado.
+                  <p className="font-semibold text-sm">Planilla de Asistencia</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Marcar francos, medios días, vacaciones y licencias del mes; calcula los francos trabajados y los pasa al sueldo.
                   </p>
                 </div>
-              </div>
+              </button>
 
             </div>
           )}

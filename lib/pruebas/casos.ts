@@ -34,6 +34,8 @@
  */
 
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
+import { resumirMes, llenarConPresente, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
+import { brutoDelPeriodo, brutoSegunTipo } from "@/lib/sueldos/bruto"
 import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
@@ -5991,6 +5993,70 @@ export function correrCasos(): Resultado[] {
     chequear("Stock de insumos — filtros", "Busca sin tildes, filtra por categoría, «sólo con stock» saca el de 0, y lo sin categoría tiene su chip",
       "Núcleo vitamínico · 2 · 3 · Gas oil", `${a.join(",")} · ${b} · ${c} · ${d.join(",")}`,
       a.join(",") === "Núcleo vitamínico" && b === 2 && c === 3 && d.join(",") === "Gas oil", "A-FEAT-1243")
+  }
+
+  // ══ Planilla de asistencia: francos trabajados (A-FEAT-1259) ═══════════════════════════════════
+  // Febrero 2026: 28 días, empieza domingo → 4 sábados y 4 domingos. Sin feriados (salvo el caso que los pone),
+  // es el ejemplo del usuario: «4 sáb y 4 dom → se debería haber tomado 6 francos».
+  {
+    const sinFer = new Set<string>()
+    const feb = diasDelMes(2026, 2)
+    const todoP: Record<string, Marca> = Object.fromEntries(feb.map(d => [d, "P" as Marca]))
+    const lo_normal: Record<string, Marca> = Object.fromEntries(feb.map(d => {
+      const t = tipoDia(d, sinFer); return [d, (t === "sabado" ? "M" : t === "domingo" ? "F" : "P") as Marca]
+    }))
+    const a = resumirMes(2026, 2, lo_normal, sinFer)
+    chequear("Asistencia — francos", "Mes de 4 sáb + 4 dom: le corresponden 6; si se tomó medio sábado y el domingo, francos trabajados = 0",
+      "corresp 6 · tomados 6 · trabajados 0", `corresp ${a.corresponden} · tomados ${a.tomados} · trabajados ${a.francosTrabajados}`,
+      a.corresponden === 6 && a.tomados === 6 && a.francosTrabajados === 0 && a.completo, "A-FEAT-1259")
+
+    const b = resumirMes(2026, 2, todoP, sinFer)
+    const cMarcas = { ...lo_normal, "2026-02-10": "F" as Marca }                 // martes: falta
+    const c = resumirMes(2026, 2, cMarcas, sinFer)
+    const dMarcas = { ...lo_normal, "2026-02-08": "P" as Marca, "2026-02-14": "P" as Marca }   // trabajó un domingo y un sábado entero
+    const d = resumirMes(2026, 2, dMarcas, sinFer)
+    chequear("Asistencia — francos", "Todo presente suma 6; faltar un martes resta 1; domingo entero +1 y sábado entero +½",
+      "6 · −1 · 1,5", `${b.francosTrabajados} · ${c.francosTrabajados} · ${d.francosTrabajados}`,
+      b.francosTrabajados === 6 && c.francosTrabajados === -1 && d.francosTrabajados === 1.5, "A-FEAT-1259")
+
+    // Feriado = domingo. Carnaval 16 y 17/02 (lunes y martes): con P en esos días suman 1 cada uno.
+    const conFer = new Set(["2026-02-16", "2026-02-17"])
+    const e = resumirMes(2026, 2, lo_normal, conFer)
+    // Un sábado feriado también es domingo: el 14/02 marcado ½ suma ½ (en vez de 0).
+    const f = resumirMes(2026, 2, lo_normal, new Set(["2026-02-14"]))
+    chequear("Asistencia — feriados", "Feriado trabajado vale como domingo (+1); un sábado feriado con ½ suma ½",
+      "corresp 8 · trabajados 2 · sábado feriado ½", `corresp ${e.corresponden} · trabajados ${e.francosTrabajados} · sábado feriado ${f.francosTrabajados}`,
+      e.corresponden === 8 && e.francosTrabajados === 2 && f.francosTrabajados === 0.5, "A-FEAT-1259")
+
+    // V y L no suman ni restan: una semana de vacaciones de lunes a domingo no cambia el resultado.
+    const gMarcas = { ...lo_normal }
+    for (const dd of ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08"]) gMarcas[dd] = "V"
+    gMarcas["2026-02-20"] = "L"
+    const g = resumirMes(2026, 2, gMarcas, sinFer)
+    chequear("Asistencia — V y L", "Vacaciones y licencia quedan fuera de la cuenta: no suman ni restan",
+      "trabajados 0 · V 7 · L 1", `trabajados ${g.francosTrabajados} · V ${g.vacaciones} · L ${g.licencias}`,
+      g.francosTrabajados === 0 && g.vacaciones === 7 && g.licencias === 1, "A-FEAT-1259")
+
+    // Vacíos: el mes queda incompleto. Y llenar con P no pisa lo marcado ni sale del contrato.
+    const h = resumirMes(2026, 2, { "2026-02-01": "F" }, sinFer)
+    const contrato = { fecha_ingreso: "2026-02-15" }
+    const lleno = llenarConPresente(2026, 2, { "2026-02-15": "F" }, contrato)
+    const i = resumirMes(2026, 2, { "2026-02-15": "F", ...lleno }, sinFer, contrato)
+    chequear("Asistencia — vacíos y contrato", "Con días vacíos el mes queda incompleto; «Llenar con P» respeta lo marcado y sólo llena los días del contrato",
+      "incompleto 27 · llena 13 · el 15 sigue F · días 14 · trabajados 2 (sáb 21 y 28 +½, dom 22 +1)", `${h.completo ? "completo" : "incompleto"} ${h.sinMarcar} · llena ${Object.keys(lleno).length} · el 15 sigue ${lleno["2026-02-15"] ?? "F"} · días ${i.dias} · trabajados ${i.francosTrabajados}`,
+      !h.completo && h.sinMarcar === 27 && Object.keys(lleno).length === 13 && !lleno["2026-02-15"] && i.dias === 14 && i.francosTrabajados === 2, "A-FEAT-1259")
+  }
+
+  // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════
+  {
+    const sigot = { monto_a: 1408347.10, monto_b: 191652.90, francos_cantidad: 0, valor_franco: null, valor_por_dia: null,
+      dias_trabajados: null, valor_por_hora: null, horas_mes: null, varios: 0, vacaciones: null, premio: null, aguinaldo_a: null, aguinaldo_b: null }
+    const conDos = brutoDelPeriodo("ab_francos", sigot, { francos_cantidad: 2 })
+    const conMenosUno = brutoDelPeriodo("ab_francos", sigot, { francos_cantidad: -1 })
+    const override = brutoDelPeriodo("ab_francos", { ...sigot, valor_franco: 70000 }, { francos_cantidad: 2 })
+    chequear("Sueldos — bruto", "A+B 1.600.000 con franco automático (÷25 = 64.000): 2 francos suman 128.000, −1 resta 64.000; con franco fijo 70.000 usa ese",
+      "1728000 · 1536000 · 1740000 · desconocido null", `${conDos} · ${conMenosUno} · ${override} · desconocido ${brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0)}`,
+      Math.abs((conDos ?? 0) - 1728000) < 0.01 && Math.abs((conMenosUno ?? 0) - 1536000) < 0.01 && override === 1740000 && brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0) === null, "A-FEAT-1259")
   }
 
   return r
