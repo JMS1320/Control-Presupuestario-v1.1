@@ -40,6 +40,23 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ Dos tablas nuevas para la planilla de asistencia de sueldos (2026-10-09) — aviso ANTES de aplicarlas
+
+**La BD es una sola, así que te aviso antes.** Es `scripts/81-planilla-asistencia.sql` (y su `-deshacer`), para
+[A-FEAT-1259](PENDIENTES.md#a-feat-1259):
+
+| Tabla | Qué guarda | Permisos |
+|---|---|---|
+| `sueldos.asistencia` (+ vista `public.sueldos_asistencia`) | una marca por empleado y día (P · F · ½ · V · L) | **igual que las demás de `sueldos`**: RLS `tiene_rol()`, vista con grants a `authenticated`, nada a `anon` |
+| `public.feriados` | feriados nacionales 2025–2027 precargados + los que se agreguen a mano | RLS `tiene_rol()`, nada a `anon` |
+
+✅ **Por qué no te afecta**: son tablas **nuevas**; no se toca ninguna existente, ninguna policy tuya ni
+`recurso_tablas`. Copian el patrón de permisos que ya tiene `sueldos` — si al cerrar A-SEC-14 le ponés
+`restringe_lectura` a sueldos, **sumá estas dos**. Reversible entero con el `-deshacer`.
+
+📌 Borrá esta entrada cuando la leas.
+
+
 ### 🗃️ Columnas nuevas en la BD (2026-09-30) — aviso, no hay nada que hacer
 
 **La BD es una sola, así que te aviso aunque no te toque nada.** Se agregaron columnas **nullable**, sin
