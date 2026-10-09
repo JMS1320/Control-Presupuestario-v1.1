@@ -716,7 +716,8 @@ export function TabSueldos() {
     setEdAPropio(fmt(ap.aPropio))
     setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
     setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
-    setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
+    // 🗓️ Admite medio día (script 82): se muestra con coma, como los francos.
+    setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados).replace('.', ',') : '')
     setEdValorHora(p.valor_por_hora !== null ? fmt(p.valor_por_hora) : '')
     setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
     setEdVarios(p.varios !== null && p.varios !== 0 ? fmt(p.varios) : '')
@@ -822,7 +823,7 @@ export function TabSueldos() {
     const francos   = num(edFrancos)
     const vf        = num(edValorFranco)
     const vdia      = num(edValorDia)
-    const dias      = parseInt(edDias) || 0
+    const dias      = num(edDias)   // admite medio día (10,5) — A-FEAT-1259
     const vhora     = num(edValorHora)
     const horas     = parseInt(edHoras) || 0
     const varios    = num(edVarios)
@@ -930,7 +931,7 @@ export function TabSueldos() {
         edPeriodo.empleado?.tipo_empleado,
         num(edMontoA), num(edMontoB), num(edFrancos),
         num(edValorFranco),
-        num(edValorDia), parseInt(edDias) || 0,
+        num(edValorDia), num(edDias),
         num(edValorHora), parseInt(edHoras) || 0,
         num(edVarios), num(edVacaciones), num(edPremio),
         num(edAguinaldoA), num(edAguinaldoB),
@@ -1766,7 +1767,7 @@ export function TabSueldos() {
                     <Label>Días trabajados</Label>
                     <Input
                       type="text"
-                      placeholder="0"
+                      placeholder="0 (admite 10,5)"
                       value={edDias}
                       onChange={e => setEdDias(e.target.value)}
                     />

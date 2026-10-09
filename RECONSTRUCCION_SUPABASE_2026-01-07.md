@@ -12795,6 +12795,13 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-09 · `sueldos.periodos.dias_trabajados` → NUMERIC (medio día) — A-FEAT-1259
+
+Script `scripts/82-dias-trabajados-con-medios.sql` (deshacer: `82-…-deshacer.sql`, redondea los medios días): la
+vista `public.sueldos_periodos` depende de la columna, así que se la **dropea, se cambia el tipo y se la recrea con
+la misma definición y los mismos GRANTs** (authenticated y service_role con los 7 privilegios; nada a `anon`), todo
+en una transacción. Verificado después: vista en numeric, mismos grants, 128 filas. Avisado a Javier.
+
 ### 2026-10-09 · PLANILLA DE ASISTENCIA (`sueldos.asistencia` + `public.feriados`) — A-FEAT-1259
 
 Script `scripts/81-planilla-asistencia.sql` (deshacer: `81-…-deshacer.sql`, borra marcas y feriados): tabla

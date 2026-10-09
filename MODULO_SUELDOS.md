@@ -111,7 +111,7 @@ El usuario los actualiza desde el botón ✏️ en la tabla del mes.
 | `francos_cantidad` | NUMERIC | `ab_francos` | Días trabajados (admite decimales, ej: 2.5) |
 | `valor_franco` | NUMERIC | `ab_francos` | NULL = usa (A+B)/25; si hay valor = override manual |
 | `valor_por_dia` | NUMERIC | `por_dia` | |
-| `dias_trabajados` | INTEGER | `por_dia` | |
+| `dias_trabajados` | NUMERIC | `por_dia` | ⚠️ cambió 2026-10-09 (script 82): era INTEGER; ahora admite **medio día** (10,5) — lo pasa la planilla de asistencia |
 | `valor_por_hora` | NUMERIC | `por_hora_ipc` | |
 | `horas_mes` | INTEGER | `por_hora_ipc` | |
 | `varios` | NUMERIC | todos | Combustible, reintegros, etc. |
@@ -526,9 +526,15 @@ domingo y feriado 0** — y se compara con lo marcado (P 1 · ½ 0,5 · F 0):
 - **V y L no suman ni restan**: el día queda fuera de las dos cuentas.
 - **Día vacío**: el mes queda **incompleto** y no se pasa al sueldo hasta completarlo.
 - **Días fuera del contrato** (`fecha_ingreso` / `fecha_egreso`): no existen para la planilla.
-- Es para **todos los empleados**; sólo los `ab_francos` pasan el resultado al sueldo. A los `por_dia` se les
-  muestra los días trabajados (Σ trabajado), **sin escribirlos**: `dias_trabajados` es entero y la planilla
-  admite medios días — decisión pendiente del usuario.
+- Es para **todos los empleados**, y cada tipo pasa al sueldo lo suyo:
+  - **`ab_francos`** → los **francos trabajados** (`francos_cantidad`).
+  - **`por_dia`** (jornal: Elvio, Vulcano) → los **días trabajados** = Σ trabajado (P 1 · ½ 0,5), cualquier día de
+    la semana (`dias_trabajados`). **Los francos no se usan para ellos.** Decisión del usuario 2026-10-09: *«servirá
+    para ver cuántos días trabajaron por mes y multiplicar por el monto diario… si tienen 10,5 u 11 se computa eso»*.
+    Por eso `dias_trabajados` pasó a NUMERIC (script 82).
+  - los demás (`por_hora_ipc`, `plano_ipc`) → sólo registro.
+- **«Llenar con F»** (también por empleado) es el caso al revés: se marcan los días que vino y el resto queda F.
+  Pedido del usuario el mismo día.
 
 **Pasar al sueldo**: escribe `francos_cantidad` en el período y recalcula `bruto_calculado` y `saldo_pendiente` con
 **la misma fórmula del modal ✏️**, que se mudó a `lib/sueldos/bruto.ts` para que haya una sola. Sólo en el **mes de

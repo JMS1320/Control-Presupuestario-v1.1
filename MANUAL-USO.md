@@ -1604,11 +1604,13 @@ Para cargar los francos del mes sin hacer la cuenta a mano.
 2. Marcá sólo las excepciones de cada empleado. Clic en la celda para cambiarla, o tecleá la letra:
    **F** franco tomado · **½** medio día trabajado (tecla M o 1) · **V** vacaciones · **L** licencia ·
    **Supr** la borra.
-3. Apretá **«Llenar con P»** en la fila de cada empleado: los días vacíos quedan como presentes.
-4. A la derecha ves lo que le **correspondía**, lo que se **tomó** y los **francos trabajados** (en verde; en
-   rojo si es negativo). Si quedan días vacíos dice *«faltan N días»*.
+3. Apretá **«Llenar con P»** en la fila de cada empleado: los días vacíos quedan como presentes. Si es más fácil
+   al revés —marcar los días que vino—, marcalos con P y apretá **«Llenar con F»**: el resto queda como franco.
+4. A la derecha, en **«Va al sueldo»** (verde): los **francos trabajados** (en rojo si es negativo) para los que
+   cobran A + B + francos, o los **días trabajados** (admite 10,5) para los de jornal. Al lado, lo que le
+   correspondía y lo que se tomó. Si quedan días vacíos dice *«faltan N días»*.
 5. **«Guardar planilla»**.
-6. **«Pasar francos al sueldo»**: te muestra qué cambia (francos y bruto, de → a) y con **Confirmar** lo
+6. **«Pasar al sueldo»**: te muestra qué cambia (francos o días, y el bruto, de → a) y con **Confirmar** lo
    escribe en el sueldo del mes. Sólo funciona en el **mes de trabajo**.
 
 Los colores: **amarillo** sábado (medio día), **gris** domingo, **rosa** feriado. Los **feriados** del mes están

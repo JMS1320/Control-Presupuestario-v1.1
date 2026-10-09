@@ -34,7 +34,7 @@
  */
 
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
-import { resumirMes, llenarConPresente, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
+import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
 import { brutoDelPeriodo, brutoSegunTipo } from "@/lib/sueldos/bruto"
 import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
@@ -6045,6 +6045,24 @@ export function correrCasos(): Resultado[] {
     chequear("Asistencia — vacíos y contrato", "Con días vacíos el mes queda incompleto; «Llenar con P» respeta lo marcado y sólo llena los días del contrato",
       "incompleto 27 · llena 13 · el 15 sigue F · días 14 · trabajados 2 (sáb 21 y 28 +½, dom 22 +1)", `${h.completo ? "completo" : "incompleto"} ${h.sinMarcar} · llena ${Object.keys(lleno).length} · el 15 sigue ${lleno["2026-02-15"] ?? "F"} · días ${i.dias} · trabajados ${i.francosTrabajados}`,
       !h.completo && h.sinMarcar === 27 && Object.keys(lleno).length === 13 && !lleno["2026-02-15"] && i.dias === 14 && i.francosTrabajados === 2, "A-FEAT-1259")
+  }
+
+  // ══ Planilla: «Llenar con F» y el jornal (A-FEAT-1259, 2026-10-09) ══════════════════════════════
+  // Pedido del usuario: «que se pueda anotar también presente y llenar resto con F, por casos al revés».
+  // Y los de jornal (Elvio, Vulcano): «cuántos días trabajaron por mes × el monto diario… si tienen 10,5 u 11 se computa eso».
+  {
+    const sinFer = new Set<string>()
+    // Jornalero en febrero 2026: vino 10 días enteros y uno medio; el resto F.
+    const vino: Record<string, Marca> = { "2026-02-02": "P", "2026-02-03": "P", "2026-02-04": "P", "2026-02-05": "P", "2026-02-06": "P",
+      "2026-02-09": "P", "2026-02-10": "P", "2026-02-11": "P", "2026-02-12": "P", "2026-02-13": "P", "2026-02-14": "M" }
+    const resto = llenarCon(2026, 2, vino, {}, "F")
+    const r = resumirMes(2026, 2, { ...vino, ...resto }, sinFer)
+    const jornal = { monto_a: null, monto_b: null, francos_cantidad: null, valor_franco: null, valor_por_dia: 60000,
+      dias_trabajados: null, valor_por_hora: null, horas_mes: null, varios: 0, vacaciones: null, premio: null, aguinaldo_a: null, aguinaldo_b: null }
+    const bruto = brutoDelPeriodo("por_dia", jornal, { dias_trabajados: r.diasTrabajados })
+    chequear("Asistencia — llenar con F y jornal", "«Llenar con F» pone F en los 17 vacíos sin tocar lo marcado; el jornalero suma 10,5 días y cobra 10,5 × 60.000",
+      "F 17 · completo · 10,5 días · 630000", `F ${Object.keys(resto).length} · ${r.completo ? "completo" : "incompleto"} · ${String(r.diasTrabajados).replace(".", ",")} días · ${bruto}`,
+      Object.keys(resto).length === 17 && Object.values(resto).every(m => m === "F") && r.completo && r.diasTrabajados === 10.5 && bruto === 630000, "A-FEAT-1259")
   }
 
   // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════

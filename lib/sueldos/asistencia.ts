@@ -74,7 +74,8 @@ export interface ResumenMes {
   tomados: number
   /** = corresponden − tomados. **Lo que va al sueldo**: negativo resta. */
   francosTrabajados: number
-  /** Σ trabajado (P = 1, ½ = 0,5): para los que cobran por día. */
+  /** Σ trabajado (P = 1, ½ = 0,5), cualquier día de la semana: **lo que va al sueldo de los que cobran por jornal**
+   *  (valor del día × días). Para ellos los francos no se usan. */
   diasTrabajados: number
   vacaciones: number
   licencias: number
@@ -101,13 +102,18 @@ export function resumirMes(anio: number, mes: number, marcas: Record<string, Mar
   return r
 }
 
-/** «Llenar con presente»: P en los días vacíos del contrato. Lo ya marcado no se toca. Devuelve SÓLO lo nuevo. */
-export function llenarConPresente(anio: number, mes: number, marcas: Record<string, Marca | undefined>,
-                                  contrato: Contrato = {}): Record<string, Marca> {
+/**
+ * «Llenar con P» (o «Llenar con F», el caso al revés: se marcan los días que vino y el resto es franco).
+ * Pone la marca en los días VACÍOS del contrato; lo ya marcado no se toca. Devuelve SÓLO lo nuevo.
+ */
+export function llenarCon(anio: number, mes: number, marcas: Record<string, Marca | undefined>,
+                          contrato: Contrato = {}, marca: Marca = "P"): Record<string, Marca> {
   const nuevas: Record<string, Marca> = {}
-  for (const f of diasDelMes(anio, mes)) if (enContrato(f, contrato) && !marcas[f]) nuevas[f] = "P"
+  for (const f of diasDelMes(anio, mes)) if (enContrato(f, contrato) && !marcas[f]) nuevas[f] = marca
   return nuevas
 }
+export const llenarConPresente = (anio: number, mes: number, marcas: Record<string, Marca | undefined>, contrato: Contrato = {}) =>
+  llenarCon(anio, mes, marcas, contrato, "P")
 
 /** Número de francos en es-AR, sin ceros de más: 6 · 2,5 · −1. */
 export const fmtFrancos = (n: number) =>

@@ -6,14 +6,15 @@
  * Una fila por empleado con los días del mes. Se marcan sólo las excepciones (F · ½ · V · L) y «Llenar con P»
  * —por empleado— completa lo vacío con presente. Al lado, los francos trabajados que salen del cálculo
  * (`lib/sueldos/asistencia.ts`) y los que tiene hoy el sueldo: el mismo número por dos caminos.
- * «Pasar al sueldo» escribe los francos en el período y recalcula el bruto con la MISMA fórmula que el modal ✏️
+ * «Pasar al sueldo» escribe en el período lo que corresponde a cada tipo —los FRANCOS trabajados a los de A + B +
+ * francos; los DÍAS trabajados (admite ½) a los de jornal— y recalcula el bruto con la MISMA fórmula que el modal ✏️
  * (`lib/sueldos/bruto.ts`). Sólo en el mes de trabajo, como todo lo que modifica sueldos.
  */
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import {
-  MARCAS, etiquetaMarca, diasDelMes, tipoDia, enContrato, resumirMes, llenarConPresente, fmtFrancos,
+  MARCAS, etiquetaMarca, diasDelMes, tipoDia, enContrato, resumirMes, llenarCon, fmtFrancos,
   type Marca, type TipoDia,
 } from "@/lib/sueldos/asistencia"
 import { brutoDelPeriodo, type ParamsPeriodo } from "@/lib/sueldos/bruto"
@@ -107,8 +108,8 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
     const m: Record<string, Marca | undefined> = { P: "P", F: "F", M: "M", "½": "M", "1": "M", V: "V", L: "L", DELETE: undefined, BACKSPACE: undefined }
     if (k in m) { e.preventDefault(); marcar(empId, fecha, m[k]) }
   }
-  const llenar = (p: PeriodoAsistencia) =>
-    setMarcas(prev => ({ ...prev, [p.empleado_id]: { ...(prev[p.empleado_id] || {}), ...llenarConPresente(anio, mes, prev[p.empleado_id] || {}, p.empleado) } }))
+  const llenar = (p: PeriodoAsistencia, marca: Marca) =>
+    setMarcas(prev => ({ ...prev, [p.empleado_id]: { ...(prev[p.empleado_id] || {}), ...llenarCon(anio, mes, prev[p.empleado_id] || {}, p.empleado, marca) } }))
   const limpiar = (p: PeriodoAsistencia) => setMarcas(prev => ({ ...prev, [p.empleado_id]: {} }))
 
   const guardar = async () => {
@@ -129,11 +130,14 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
   // ── Resumen por empleado y lo que se pasaría al sueldo ──
   const filas = periodos.map(p => {
     const res = resumirMes(anio, mes, marcas[p.empleado_id] || {}, setFeriadosQueCuentan, p.empleado)
-    const usaFrancos = p.empleado.tipo_empleado === "ab_francos"
-    const enSueldo = p.francos_cantidad == null ? null : Number(p.francos_cantidad)
-    const distinto = usaFrancos && res.completo && (enSueldo == null || Math.abs(enSueldo - res.francosTrabajados) > 0.001)
-    const brutoNuevo = distinto ? brutoDelPeriodo(p.empleado.tipo_empleado, p, { francos_cantidad: res.francosTrabajados }) : null
-    return { p, res, usaFrancos, enSueldo, distinto, brutoNuevo }
+    // Qué va al sueldo según cómo cobra: francos (A + B + francos) o días (jornal). Los demás, sólo registro.
+    const campo = p.empleado.tipo_empleado === "ab_francos" ? "francos_cantidad" as const
+                : p.empleado.tipo_empleado === "por_dia" ? "dias_trabajados" as const : null
+    const valor = campo === "francos_cantidad" ? res.francosTrabajados : res.diasTrabajados
+    const enSueldo = !campo || p[campo] == null ? null : Number(p[campo])
+    const distinto = !!campo && res.completo && (enSueldo == null || Math.abs(enSueldo - valor) > 0.001)
+    const brutoNuevo = distinto ? brutoDelPeriodo(p.empleado.tipo_empleado, p, { [campo!]: valor }) : null
+    return { p, res, campo, valor, enSueldo, distinto, brutoNuevo }
   })
   const aPasar = filas.filter(f => f.distinto && f.brutoNuevo != null)
 
@@ -142,7 +146,7 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
     for (const f of aPasar) {
       const bruto = r2(f.brutoNuevo!)
       const { error: e } = await supabase.from("sueldos_periodos").update({
-        francos_cantidad: f.res.francosTrabajados, bruto_calculado: bruto, saldo_pendiente: r2(bruto - (f.p.anticipos_descontados ?? 0)),
+        [f.campo!]: f.valor, bruto_calculado: bruto, saldo_pendiente: r2(bruto - (f.p.anticipos_descontados ?? 0)),
       }).eq("id", f.p.id)
       if (e) { setError(`No se pasó el sueldo de ${f.p.empleado.nombre}: ${e.message}`); setGuardando(false); return }
     }
@@ -204,18 +208,19 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
                   })}
                   <th className="px-2 py-1 text-right" title="Francos que le correspondían por los sábados, domingos y feriados del mes">Corresp.</th>
                   <th className="px-2 py-1 text-right" title="Francos que se tomó (F = 1, ½ = medio)">Tomados</th>
-                  <th className="px-2 py-1 text-right bg-green-50" title="Corresponden − tomados: lo que va al sueldo. Negativo resta">Francos trab.</th>
+                  <th className="px-2 py-1 text-right bg-green-50" title="Lo que va al sueldo: francos trabajados (corresponden − tomados; negativo resta) o, en los de jornal, los días trabajados">Va al sueldo</th>
                   <th className="px-2 py-1 text-right" title="Lo que tiene hoy el período de sueldo">En el sueldo</th>
                   <th className="px-2 py-1"></th>
                 </tr>
               </thead>
               <tbody>
-                {filas.map(({ p, res, usaFrancos, enSueldo, distinto }) => (
+                {filas.map(({ p, res, campo, enSueldo, distinto }) => (
                   <tr key={p.id} className="border-t">
                     <td className="sticky left-0 bg-white px-2 py-1">
                       <div className="font-medium">{p.empleado.nombre}</div>
                       <div className="flex gap-1 mt-0.5">
-                        <button className="text-[10px] px-1.5 rounded bg-green-100 hover:bg-green-200 text-green-800" onClick={() => llenar(p)} title="Pone P en los días vacíos de este empleado">Llenar con P</button>
+                        <button className="text-[10px] px-1.5 rounded bg-green-100 hover:bg-green-200 text-green-800" onClick={() => llenar(p, "P")} title="Pone P en los días vacíos de este empleado">Llenar con P</button>
+                        <button className="text-[10px] px-1.5 rounded bg-red-50 hover:bg-red-100 text-red-700" onClick={() => llenar(p, "F")} title="Al revés: marcaste los días que vino y el resto es franco — pone F en los vacíos">Llenar con F</button>
                         <button className="text-[10px] px-1.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600" onClick={() => limpiar(p)} title="Vacía la fila (no se guarda hasta «Guardar»)">Limpiar</button>
                       </div>
                     </td>
@@ -236,12 +241,15 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
                     })}
                     <td className="px-2 text-right">{fmtFrancos(res.corresponden)}</td>
                     <td className="px-2 text-right">{fmtFrancos(res.tomados)}</td>
-                    <td className={`px-2 text-right font-bold bg-green-50 ${res.francosTrabajados < 0 ? "text-red-700" : ""}`}>
-                      {res.completo ? fmtFrancos(res.francosTrabajados) : <span className="text-amber-600 font-normal" title="Hay días sin marcar">faltan {res.sinMarcar} días</span>}
+                    <td className={`px-2 text-right font-bold bg-green-50 ${campo === "francos_cantidad" && res.francosTrabajados < 0 ? "text-red-700" : ""}`}>
+                      {!res.completo ? <span className="text-amber-600 font-normal" title="Hay días sin marcar">faltan {res.sinMarcar} días</span>
+                        : campo === "dias_trabajados" ? <span title="Cobra por jornal: van los DÍAS trabajados (no francos)">{fmtFrancos(res.diasTrabajados)} días</span>
+                        : campo === "francos_cantidad" ? fmtFrancos(res.francosTrabajados)
+                        : <span className="font-normal text-gray-400" title="Su sueldo no usa francos ni días: sólo registro">{fmtFrancos(res.diasTrabajados)} días</span>}
                     </td>
                     <td className="px-2 text-right">
-                      {!usaFrancos ? <span className="text-gray-400" title="No cobra por francos">{p.empleado.tipo_empleado === "por_dia" ? `${fmtFrancos(res.diasTrabajados)} días trab.` : "—"}</span>
-                        : <>{enSueldo == null ? "vacío" : fmtFrancos(enSueldo)} {res.completo && (distinto ? <span className="text-amber-600" title="La planilla y el sueldo no coinciden">≠</span> : <span className="text-green-600">✓</span>)}</>}
+                      {!campo ? <span className="text-gray-400" title="Su sueldo no usa francos ni días">—</span>
+                        : <>{enSueldo == null ? "vacío" : fmtFrancos(enSueldo)}{campo === "dias_trabajados" ? " días" : ""} {res.completo && (distinto ? <span className="text-amber-600" title="La planilla y el sueldo no coinciden">≠</span> : <span className="text-green-600">✓</span>)}</>}
                     </td>
                     <td className="px-2 text-gray-500 whitespace-nowrap">{res.vacaciones ? `V ${res.vacaciones} ` : ""}{res.licencias ? `L ${res.licencias}` : ""}</td>
                   </tr>
@@ -257,8 +265,8 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
           </Button>
           <Button variant="outline" onClick={() => setConfirmarPase(true)}
             disabled={!aPasar.length || hayCambios || !esMesDeTrabajo || guardando}
-            title={!esMesDeTrabajo ? "Sólo en el mes de trabajo de sueldos" : hayCambios ? "Primero guardá la planilla" : !aPasar.length ? "No hay francos distintos para pasar (o el mes está incompleto)" : undefined}>
-            Pasar francos al sueldo{aPasar.length ? ` (${aPasar.length})` : ""}
+            title={!esMesDeTrabajo ? "Sólo en el mes de trabajo de sueldos" : hayCambios ? "Primero guardá la planilla" : !aPasar.length ? "No hay nada distinto para pasar (o el mes está incompleto)" : undefined}>
+            Pasar al sueldo{aPasar.length ? ` (${aPasar.length})` : ""}
           </Button>
           {!esMesDeTrabajo && <span className="text-xs text-gray-500">La planilla se puede llenar; pasar al sueldo sólo en el mes de trabajo.</span>}
         </div>
@@ -268,7 +276,7 @@ export function PlanillaAsistencia({ abierto, onCerrar, anio, mes, periodos, esM
             <div className="font-semibold">Se van a cambiar estos sueldos:</div>
             {aPasar.map(f => (
               <div key={f.p.id}>
-                <b>{f.p.empleado.nombre}</b>: francos {f.enSueldo == null ? "vacío" : fmtFrancos(f.enSueldo)} → <b>{fmtFrancos(f.res.francosTrabajados)}</b>
+                <b>{f.p.empleado.nombre}</b>: {f.campo === "dias_trabajados" ? "días trabajados" : "francos"} {f.enSueldo == null ? "vacío" : fmtFrancos(f.enSueldo)} → <b>{fmtFrancos(f.valor)}</b>
                 {" · "}bruto {fmtMoneda(Number(f.p.bruto_calculado) || 0)} → <b>{fmtMoneda(r2(f.brutoNuevo!))}</b>
               </div>
             ))}
