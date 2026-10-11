@@ -3,7 +3,7 @@
 > Único lugar donde se documentan los pendientes (bugs, testing, features, operacional, seguridad, datos).
 > Reemplaza a `PENDIENTES_GENERAL.md`, `PENDIENTES_PUSH_A_MAIN.md`, `PENDIENTES-PROXIMA-SESION.md` y a las secciones de pendientes sueltas en `CLAUDE.md`.
 
-**Última actualización:** 2026-10-05 — guía de pruebas vigente arriba (reemplaza las del 4/10); se mergeó la tanda del 4/10. reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
+**Última actualización:** 2026-10-11 — planilla de asistencia de sueldos en `desarrollo` (A-FEAT-1259, filas 19-20 de la guía). Antes, 2026-10-05 — guía de pruebas vigente arriba (reemplaza las del 4/10); se mergeó la tanda del 4/10. reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
 
 > **Cómo leerlo**: 🔵 🔴 🟠 = por hacer · 🟢 🟡 = hecho, espera tu prueba · ✅ = cerrado (va al archivo del final).
 > Los desplegables («Abrir», «🟢 Hecho, esperando tu prueba») se abren con un click. La guía de pruebas vigente es la primera sección.
@@ -11,6 +11,8 @@
 ---
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 5 de octubre (todo en `desarrollo`, salvo la tarjeta)
+
+> ↻ **Al 11/10 se sumaron dos filas (19 y 20)**: los pendientes de los papeles y la **planilla de asistencia**, las dos ya en `desarrollo`. La carga del histórico (rama `jms/historico-templates`) no se prueba en la app: se revisa en los Excel de la carpeta Balance.
 
 > **Reemplaza** a las dos guías del 4/10. Lo que probaste el 5/10 ya salió: el **pago en dólares** de Agro Centros (lote, detalle PDF y mail ✅), la **barra de pagos** ✅, **cabeza por cabeza** ✅, **filtros de stock** ✅ y la **tarjeta de NC esperada** ✅. Los pasos de cada uno viven en su fila; acá va el orden y los números.
 
@@ -41,6 +43,8 @@
 | 16 | 📸 **La foto del 30/06/2026 desde los papeles** | desarrollo → Reportes → Papeles de trabajo → MSA 2026 → Armar el libro + Traer stock y precios → cuadro celeste | Galicia **−2.261.369,97** · anticipos de clientes **≈ $133,8 M** · retenciones de Ganancias **$2.504.350,46** · impuesto al cheque **$3.017.008,28** (100 % computable) · avisos: tarjeta sin resumen de junio, FCI pide cuotapartes, 7 meses sin extracto → **Guardar** → aparece la foto 30/06/2026 con la columna Sistema | [A-TEST-1182](#a-test-1182) |
 | 17 | 🧾 **Impuesto al cheque** | mismo lugar, cuadro arriba del celeste; y el Excel, solapa **08.1** | por mes y por concepto; total feb–jun **$3.017.008,28**; en la solapa, cambiar el % recalcula | [A-TEST-1182](#a-test-1182) |
 | 18 | 📑 **Templates sugeridos** (MSA · PAM · PAM→MSA) | carpeta de comunicación → Balance (3 Excel) | revisar y decidir qué se carga; PAM→MSA: San Manuel del 27/01 es dudoso | [A-DAT-68](#a-dat-68) |
+| 19 | 📌 **Pendientes a revisar de los papeles** | desarrollo → Reportes → Papeles de trabajo → MSA 2026 | el cuadro «📌 Pendientes a revisar» con los anotados (cotejo 08.1, cuotas en $0 del histórico, plazos fijos, rescate USS); anotar uno y resolverlo; sale en el export como «00 Pendientes a revisar» | [A-TEST-1189](#a-test-1189) |
+| 20 | 🗓️ **Planilla de asistencia** (nuevo 09/10) | desarrollo → Sueldos → «Planilla de Asistencia» (mes de trabajo) | Sigot: F en sus francos + «Llenar con P» → «Va al sueldo» = francos trabajados (octubre todo P = **7,5**) → Guardar → Pasar al sueldo → reabrir: **✓**. Elvio/Vulcano: P los días que vino + «Llenar con F» → días (admite 10,5) × valor del día | [A-TEST-1190](#a-test-1190) |
 
 **Esperan tu OK o tus datos (no son pruebas):** corregir el **sexo** con movimiento al destete ([A-FEAT-1252](#a-feat-1252)) · **silo**: crear los insumos, propio o comprado, la ración por cabeza ([A-FEAT-1253](#a-feat-1253)) · **Portal** automático al importar ([A-BUG-1243](#a-bug-1243)) · **estudios de pesadas** en la base ([A-BUG-1240](#a-bug-1240)) · completar la fecha de pago de las **115 facturas** ([A-BUG-191](#a-bug-191)) · **mergear la tarjeta** cuando la pruebes.
 
