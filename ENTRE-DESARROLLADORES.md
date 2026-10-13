@@ -40,6 +40,26 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ Una columna nueva en `public.notas_para_claude` (2026-10-13) — aviso ANTES de aplicarla
+
+`sin_supervision boolean not null default false` — la marca con la que JMS autoriza a Claude a
+desarrollar una nota sin esperarlo ([A-FEAT-1266](PENDIENTES.md#a-feat-1266)). Script
+`scripts/83-notas-sin-supervision.sql` (+ `-deshacer`).
+
+✅ **Por qué no te afecta**: no toca RLS, policies ni `recurso_tablas`; los grants de esa tabla son a
+nivel tabla, así que la columna los hereda; no hay vistas sobre ella; las filas que existen quedan en
+`false`.
+
+🔐 **Y otro aviso el mismo día, éste sí en tu archivo — `middleware.ts`** ([A-BUG-1248](PENDIENTES.md#a-bug-1248)):
+voy a sumarle a la CSP **una directiva `frame-src https://drive.google.com`**. Hoy no hay `frame-src`,
+así que cae en `default-src 'self'` y la app no puede mostrar el visor de Drive embebido: «👁 ver» en
+*Subdiarios → PDFs sin vincular* da «Este contenido está bloqueado» con todos los archivos. No se toca
+`frame-ancestors 'none'` ni `X-Frame-Options: DENY` (la app sigue sin poder ser embebida por nadie) ni
+ninguna otra directiva. Si preferís otro camino (por ejemplo servir el PDF por una ruta propia),
+revertilo sin avisar.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Dos tablas nuevas para la planilla de asistencia de sueldos (2026-10-09) — aviso ANTES de aplicarlas
 
 **La BD es una sola, así que te aviso antes.** Es `scripts/81-planilla-asistencia.sql` (y su `-deshacer`), para
