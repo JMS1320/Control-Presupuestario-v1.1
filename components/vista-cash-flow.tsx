@@ -204,7 +204,6 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
   // 🚦 A-FEAT-1260 — la marca de cuenta contable de cada fila (regla en `lib/pagos/cuenta-de-fila.ts`)
-  const categsDelPlan = useMemo(() => new Set(cuentas.map(c => c.categ.toLowerCase())), [cuentas])
   const [marcaCuentaAbierta, setMarcaCuentaAbierta] = useState<string | null>(null)
   const [guardandoMarcaCuenta, setGuardandoMarcaCuenta] = useState(false)
 
@@ -499,6 +498,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       Object.entries(updateData).forEach(([key, val]) => {
         let campoLocal = key
         if (key === 'monto_a_abonar') campoLocal = 'debitos'
+        // La cuenta de la factura es la columna CATEG de esta grilla (sin esto no se refrescaba)
+        else if (key === 'cuenta_contable') campoLocal = 'categ'
         // ANTICIPO: monto/monto_restante mapean a la columna editada (debitos o creditos)
         else if (key === 'monto' || key === 'monto_restante') campoLocal = campo
         actualizarLocal(filaId, campoLocal, val)
@@ -573,9 +574,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    *
    * 🔑 **No es un camino nuevo de escritura.** Una factura se imputa por la MISMA ruta que usa
    * Egresos → Asignación (`/api/arca-asignar`): guarda el número y el nombre de la cuenta **y la
-   * lleva a los movimientos del extracto ya conciliados** (§ 🔁 La propagación del dato). La edición
-   * de la columna CATEG de esta pantalla escribe sólo el texto y no propaga; por eso la marca no
-   * pasa por ahí.
+   * lleva a los movimientos del extracto ya conciliados** (§ 🔁 La propagación del dato). Sólo
+   * facturas: los templates no llevan marca.
    */
   const asignarCuentaDesdeMarca = async (
     fila: CashFlowRow,
@@ -599,12 +599,6 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         else if ((r.propagacion?.propagados ?? 0) > 0) {
           toast.success(`Cuenta asignada. Llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
         } else toast.success(`Cuenta asignada: ${cuenta.categ}`)
-      } else {
-        // Template con categoría por cuota: el camino de siempre de esta pantalla.
-        const ok = await actualizarRegistro(fila.id, 'categ', cuenta.categ, 'TEMPLATE', fila.egreso_id)
-        if (!ok) return
-        actualizarLocal(fila.id, 'categ', cuenta.categ)
-        toast.success(`Cuenta asignada: ${cuenta.categ}`)
       }
       setMarcaCuentaAbierta(null)
     } catch (err: any) {
@@ -614,13 +608,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
   }
 
-  /** El punto de la columna fija: verde tiene · ámbar a medias / fuera del plan · rojo no tiene. */
+  /** El punto de la columna fija, sólo en facturas: verde tiene · rojo no tiene · ámbar quedó incompleta. */
   const renderizarMarcaCuenta = (fila: CashFlowRow) => {
-    const c = cuentaDeFila(fila, categsDelPlan)
+    const c = cuentaDeFila(fila)
     const color = COLOR_CUENTA[c.estado]
     if (!color) return <span className="inline-block h-2.5 w-2.5 shrink-0" />
     // La ruta de asignación escribe sólo en MSA: en PAM y MA la marca informa y no asigna.
-    const puedeAca = c.asignable && (fila.origen !== 'ARCA' || esFilaMsa(fila))
+    const puedeAca = c.asignable && esFilaMsa(fila)
     const titulo = c.asignable && !puedeAca
       ? `${c.titulo.replace(/ — tocá.*$/, '')} — las facturas de PAM y MA todavía no se asignan desde acá`
       : c.titulo
@@ -644,7 +638,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <SelectorCuentaContable
             value={c.estado === 'con' ? fila.categ : null}
             onSelect={(cuenta) => asignarCuentaDesdeMarca(fila, cuenta)}
-            cuitProveedor={fila.origen === 'ARCA' ? fila.cuit_proveedor || null : null}
+            cuitProveedor={fila.cuit_proveedor || null}
             modo="inline"
             autoFocus
             mostrarSinAsignar={false}
@@ -4459,7 +4453,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                               // 🚦 A-FEAT-1260: la marca de cuenta contable va en la columna que queda fija
                               <div className="flex items-center gap-1">
                                 {renderizarMarcaCuenta(fila)}
-                                {renderizarCelda(fila, col)}
+                                <div>
+                                  {renderizarCelda(fila, col)}
+                                  {/* A-DEC-1004: la emisión, debajo de la estimada y sin columna nueva (sólo facturas) */}
+                                  {fila.origen === 'ARCA' && fila.fecha_emision && (
+                                    <div className="px-1 -mt-0.5 text-[10px] leading-3 text-gray-400" title="Fecha de emisión de la factura">
+                                      em. {formatearFecha(fila.fecha_emision)}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             ) : renderizarCelda(fila, col)}
                           </td>

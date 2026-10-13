@@ -3042,30 +3042,31 @@ y ahí suele haber más que en MSA.
 
 ⚠️ Sin probar todavía → A-TEST-1160
 
-## 🚦 Cash Flow → el punto de la cuenta contable *(2026-10-13)*
+## 🚦 Cash Flow → el punto de la cuenta contable y la fecha de emisión *(2026-10-13)*
 
-Al lado de la **fecha estimada** —la columna que queda fija a la izquierda— cada fila tiene un
-**punto de color** que dice si tiene cuenta contable, sin correr la grilla hasta la columna CATEG.
+Al lado de la **fecha estimada** —la columna que queda fija a la izquierda— cada **factura** tiene
+un **punto de color** que dice si tiene cuenta contable, sin correr la grilla hasta la columna CATEG.
 
 | Lo que ves | Qué significa | Qué hacer |
 |---|---|---|
 | **● verde** | tiene cuenta contable | nada (tocándolo podés cambiarla) |
 | **● rojo** | **no tiene** cuenta contable | tocá el punto y elegila |
-| **● ámbar** en una factura | tiene escrito el **nombre** de una cuenta, pero no quedó asignada a una cuenta del plan | tocá el punto y elegila: queda completa |
-| **● ámbar** en un template | su categoría **no está en el plan de cuentas** (el presupuesto la toma como gasto sin clasificar) | se corrige desde **Templates** |
+| **● ámbar** | es una factura vieja cuya cuenta quedó **incompleta** | tocá el punto y confirmala |
 | **● gris** | es un **pago agrupado**: cada factura tiene su cuenta | se asignan en *Egresos → Asignación* |
-| *(sin punto)* | sueldo, venta o anticipo: su cuenta se resuelve en otro lado | nada |
+| *(sin punto)* | no es una factura (template, sueldo, venta, anticipo) | nada |
 
 **Para poner la cuenta:** tocá el punto → se abre el buscador de cuentas de siempre (arriba te
 sugiere las que ya usaste con ese proveedor) → elegí una. Se guarda en el momento y el punto pasa a
 verde. Si la factura **ya estaba conciliada**, la cuenta viaja también a su movimiento del extracto
-y te lo avisa.
+y te lo avisa. Ponerla con **Ctrl+Click en CATEG** hace exactamente lo mismo.
+
+📅 **La fecha de emisión** de cada factura está **debajo de la fecha estimada**, en gris chico
+(«em. 30/09/2026»). No es una columna más y no se edita.
 
 📌 Pasando el mouse por el punto te dice qué cuenta tiene, o por qué no se puede cambiar desde ahí.
 
-📌 **Límites de hoy:** las facturas de **PAM y MA** muestran el punto pero todavía no se asignan
-desde acá, y la cuenta de un **template** se cambia desde Templates (salvo los que llevan la
-categoría por cuota).
+📌 **Límite de hoy:** las facturas de **PAM y MA** muestran el punto pero todavía no se asignan
+desde acá.
 
 ⚠️ Sin probar todavía → A-TEST-1191
 

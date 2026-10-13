@@ -5,21 +5,15 @@
  * ponerla, es un momento propicio para hacerlo. Tal vez algo chico que alerte que tiene o no tiene
  * cuenta contable. A la izquierda junto con lo que queda siempre a la vista»*.
  *
- * 🔑 **«Tener cuenta» no es lo mismo en una factura que en un template**, y por eso hay regla:
+ * 🔑 **Es sólo para FACTURAS** (precisión del usuario, mismo día: *«esto es sólo para facturas, así
+ * que con templates no hay que hacer nada: al ser templates ya están asignados»*). Templates,
+ * sueldos, ventas y anticipos no llevan marca.
  *
- * | Origen | Tiene cuenta cuando… | Por qué |
- * |---|---|---|
- * | factura (ARCA) | tiene el **número** de cuenta del plan | es lo que mira Egresos → Asignación, y lo que viaja al extracto y a los papeles del balance |
- * | template | su categoría **existe en el plan de cuentas** | § 🏷️ de `CLAUDE.md`: fuera del plan se asume gasto y queda «sin clasificar» |
- *
- * 🟡 **El estado del medio existe a propósito** (`a-medias`): una factura puede tener escrito el
- * NOMBRE de la cuenta y no el número —es lo que deja la edición de la columna CATEG de esta misma
- * pantalla, que escribe sólo el texto—. Mostrarla en verde sería decir que está imputada cuando la
- * pantalla de asignación la sigue contando como pendiente.
- *
- * ⚪ Lo que no es factura ni template (sueldos, ventas, anticipos) no lleva marca: su cuenta se
- * resuelve en otro lado y marcarlo en rojo sería inventarle un problema (mismo criterio que
- * `lib/facturas/archivo-digital.ts`).
+ * 🔗 **La cuenta y su número son una sola cosa** (`lib/facturas/nro-de-cuenta.ts`, A-BUG-1249): la
+ * pantalla muestra el nombre y nada más. El estado `a-medias` existe sólo para las facturas viejas
+ * que quedaron con el nombre y sin el número (las que entraron antes del arreglo): mostrarlas en
+ * verde sería decir que están imputadas cuando Egresos → Asignación las sigue contando como
+ * pendientes. Cuando se completen, ese estado deja de aparecer.
  */
 
 export interface FilaConCuenta {
@@ -30,11 +24,9 @@ export interface FilaConCuenta {
   nro_cuenta?: string | null
   /** `> 1` = varias facturas pagadas juntas: cada una puede tener una cuenta distinta. */
   facturas_agrupadas?: number | null
-  /** Templates: la categoría va por cuota (se puede cambiar acá) y no por template. */
-  es_multi_cuenta?: boolean | null
 }
 
-export type EstadoCuenta = 'con' | 'a-medias' | 'sin' | 'fuera-del-plan' | 'grupo' | 'no-aplica'
+export type EstadoCuenta = 'con' | 'a-medias' | 'sin' | 'grupo' | 'no-aplica'
 
 export interface CuentaDeFila {
   estado: EstadoCuenta
@@ -51,10 +43,7 @@ function textoDeCuenta(categ?: string | null): string | null {
   return SIN.has(t.toUpperCase()) ? null : t
 }
 
-/**
- * @param categsDelPlan las categorías del plan de cuentas, **en minúsculas**.
- */
-export function cuentaDeFila(fila: FilaConCuenta, categsDelPlan: ReadonlySet<string>): CuentaDeFila {
+export function cuentaDeFila(fila: FilaConCuenta): CuentaDeFila {
   const texto = textoDeCuenta(fila.categ)
 
   if (fila.origen === 'ARCA') {
@@ -67,30 +56,16 @@ export function cuentaDeFila(fila: FilaConCuenta, categsDelPlan: ReadonlySet<str
       }
     }
     if (fila.nro_cuenta) {
-      return { estado: 'con', titulo: `Cuenta contable: ${texto ?? fila.nro_cuenta} (${fila.nro_cuenta})`, asignable: true }
+      return { estado: 'con', titulo: `Cuenta contable: ${texto ?? fila.nro_cuenta} — tocá para cambiarla`, asignable: true }
     }
     if (texto) {
       return {
         estado: 'a-medias',
-        titulo: `Dice «${texto}» pero no tiene el número de cuenta del plan — tocá para asignarla`,
+        titulo: `Cuenta contable: ${texto} (quedó incompleta) — tocá para confirmarla`,
         asignable: true,
       }
     }
     return { estado: 'sin', titulo: 'Sin cuenta contable — tocá para ponerla', asignable: true }
-  }
-
-  if (fila.origen === 'TEMPLATE') {
-    const porCuota = !!fila.es_multi_cuenta
-    const donde = porCuota ? 'tocá para ponerla' : 'se cambia desde Templates'
-    if (!texto) return { estado: 'sin', titulo: `Template sin cuenta contable — ${donde}`, asignable: porCuota }
-    if (categsDelPlan.has(texto.toLowerCase())) {
-      return { estado: 'con', titulo: `Cuenta contable: ${texto}`, asignable: porCuota }
-    }
-    return {
-      estado: 'fuera-del-plan',
-      titulo: `«${texto}» no está en el plan de cuentas: el presupuesto la toma como gasto sin clasificar — ${donde}`,
-      asignable: porCuota,
-    }
   }
 
   return { estado: 'no-aplica', titulo: '', asignable: false }
@@ -101,7 +76,6 @@ export const COLOR_CUENTA: Record<EstadoCuenta, string | null> = {
   'con': 'bg-emerald-400',
   'a-medias': 'bg-amber-400',
   'sin': 'bg-red-500',
-  'fuera-del-plan': 'bg-amber-400',
   'grupo': 'bg-gray-300',
   'no-aplica': null,
 }
