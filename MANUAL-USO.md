@@ -2216,6 +2216,16 @@ importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
 
 > Diseño y motivos → `PENDIENTES.md` § P-34.
 
+### 🌙 «Claude puede arrancar con esto sin esperarme» *(2026-10-13)*
+Al **Finalizar** la nota hay un tilde con ese texto. Si lo marcás, Claude puede **desarrollar ese
+pedido sin esperarte** y dejártelo listo para probar; en la lista de notas esas llevan una 🌙.
+Si no lo marcás, la nota queda anotada como pendiente y espera a que lo charlen.
+
+- Arranca **siempre destildado**: el permiso se da nota por nota.
+- Marcarlo **no** autoriza a tocar datos, la base ni permisos: eso te lo sigue preguntando.
+
+⚠️ Sin probar todavía → A-TEST-1192
+
 Un botón **📝 fijo abajo a la derecha**, en toda la app, para dejar un bug o una idea **en el momento
 y el lugar donde pasa** — en vez de acordarte tres días después.
 

@@ -796,6 +796,30 @@ funcione no me debés preguntar cosas mientras… trabajar en una sub rama por p
 si avanza sin reglas, lo que vuelve no se puede revisar. Las dos cosas se resuelven separando lo
 reversible (se hace y se anota) de lo irreversible (se salta).*
 
+#### 🌙 La marca en la NOTA — el permiso viaja con el pedido *(2026-10-13)*
+*Pedido del usuario: **«todo lo que tiene (\*) significa que podés empezar a trabajar sobre eso sin mi
+supervisión. Pero mejor agregá a notas la marca… eso me relaja a mí para poder darte mejoras y que
+vos ya sepas cuáles poder arrancar sin mí»**.*
+
+> **Una nota de la app marcada 🌙 «Claude puede arrancar con esto sin esperarme» ES un ítem de la
+> lista del punto 1: se desarrolla sin preguntar, con los mismos seis límites.**
+> 📍 **Acá:** `public.notas_para_claude.sin_supervision = true`. Las notas anteriores a la marca
+> valen igual si su título termina en **`(*)`**.
+
+- **Al abrir sesión**, la consulta de la bandeja trae esa columna y las marcadas **se listan aparte**:
+  son las que se pueden arrancar; las demás se registran y esperan.
+- **La marca autoriza a DESARROLLAR, no a lo irreversible.** Datos reales, estructura de la base,
+  permisos y merges siguen con el punto 3: se salta y se escribe por qué, o se pregunta.
+- **«Si tenés dudas me podés preguntar, pero si no avanzá»** (usuario, mismo día): una duda que no
+  cambia el resultado se resuelve por lo conservador y se anota (punto 4); una que sí lo cambia se
+  pregunta **sin frenar el resto**.
+- **Y cada nota se cierra igual que siempre** (§ 📝): pendiente con ID, commit, nota marcada como
+  leída con su destino.
+
+*Motivo: sin la marca, cada mejora que el usuario deja queda esperando una conversación para saber
+si se puede empezar — y el cuello de botella vuelve a ser su tiempo. Con la marca el permiso se da
+en el momento en que se le ocurre el pedido, que es cuando tiene claro cuánto le importa.*
+
 ### 📝 Una nota de la app se CIERRA en el mismo momento en que se procesa (REGLA)
 *Pedida por el usuario 2026-10-04, al aparecer **38 notas sin cerrar** (del 04/09 al 29/09) — una de
 ellas marcada «urgente para el 1/10», que se leyó el 4/10: **«claramente hay que regularizar el

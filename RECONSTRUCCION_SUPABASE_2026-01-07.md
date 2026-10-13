@@ -12795,6 +12795,13 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-13 · `public.notas_para_claude.sin_supervision` — A-FEAT-1266
+
+Script `scripts/83-notas-sin-supervision.sql` (deshacer: `83-…-deshacer.sql`): columna `sin_supervision boolean
+not null default false` — la marca con la que el usuario autoriza a Claude a desarrollar una nota sin esperarlo.
+Sin cambios de RLS ni de permisos (los grants de la tabla son a nivel tabla; no hay vistas sobre ella).
+Verificado: 67 notas, todas en `false`; escritura probada con `EXPLAIN INSERT`, sin escribir datos. Avisado a Javier.
+
 ### 2026-10-09 · `sueldos.periodos.dias_trabajados` → NUMERIC (medio día) — A-FEAT-1259
 
 Script `scripts/82-dias-trabajados-con-medios.sql` (deshacer: `82-…-deshacer.sql`, redondea los medios días): la

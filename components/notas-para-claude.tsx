@@ -35,6 +35,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Loader2, NotebookPen, Camera, Check, X, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { getRoleFromRoute } from "@/config/access-routes"
 import {
   instalarCinta, mirarCinta, confirmarCorte, reiniciarCorte, type EventoDiagnostico,
@@ -166,6 +167,8 @@ export function NotasParaClaude() {
   const [texto, setTexto] = useState("")
   const [imagen, setImagen] = useState("")
   const [titulo, setTitulo] = useState("")
+  // 🌙 A-FEAT-1266 — «podés arrancar sin mí»: arranca SIEMPRE destildada, el permiso se da nota por nota.
+  const [sinSupervision, setSinSupervision] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [notas, setNotas] = useState<any[]>([])
   const ctxRef = useRef(contextoActual())
@@ -303,6 +306,7 @@ export function NotasParaClaude() {
         estado: "finalizada",
         finalizada_at: new Date().toISOString(),
         usuario: await rolActual(), // el ROL, desde la sesión — A-SEC-04
+        sin_supervision: sinSupervision,
       })
       if (error) throw error
 
@@ -319,10 +323,12 @@ export function NotasParaClaude() {
       )
       if (e2) throw e2
 
-      toast.success(`Nota guardada con ${capturas.length} captura(s). Claude la va a ver al abrir sesión.`)
+      toast.success(sinSupervision
+        ? `Nota guardada con ${capturas.length} captura(s). 🌙 Claude puede arrancarla sin esperarte.`
+        : `Nota guardada con ${capturas.length} captura(s). Claude la va a ver al abrir sesión.`)
       reiniciarCorte() // lo de esta nota ya viajó: la próxima arranca limpia
       sueltosRef.current = []
-      setCapturas([]); setGrabando(false); setModalFinalizar(false); setTitulo("")
+      setCapturas([]); setGrabando(false); setModalFinalizar(false); setTitulo(""); setSinSupervision(false)
     } catch (e) {
       toast.error("No se pudo guardar: " + (e as Error).message)
     } finally {
@@ -498,6 +504,7 @@ export function NotasParaClaude() {
       <Dialog open={modalFinalizar} onOpenChange={setModalFinalizar}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Finalizar la nota</DialogTitle></DialogHeader>
+          <TestsDelProceso proceso="general/notas" pantalla="general" />
           <p className="text-sm text-gray-600">{capturas.length} captura(s) grabada(s).</p>
           {sueltosRef.current.length > 0 && (
             <p className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] leading-4 text-amber-800">
@@ -510,6 +517,17 @@ export function NotasParaClaude() {
             <Input className="mt-1" value={titulo} onChange={e => setTitulo(e.target.value)}
               placeholder={capturas[0]?.texto.slice(0, 60) || "Ej: el lote de pagos deja todo en pagar"} />
           </div>
+          <label className="flex cursor-pointer items-start gap-2 rounded border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-xs text-indigo-900">
+            <input type="checkbox" className="mt-0.5" checked={sinSupervision}
+              onChange={e => setSinSupervision(e.target.checked)} />
+            <span>
+              <strong>🌙 Claude puede arrancar con esto sin esperarme</strong>
+              <br />
+              <span className="text-[11px] text-indigo-700">
+                Lo desarrolla y lo deja para que lo pruebes. Nunca toca datos, la base ni permisos sin preguntarte.
+              </span>
+            </span>
+          </label>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setModalFinalizar(false)}>Volver</Button>
             <Button onClick={finalizar} disabled={guardando}>
@@ -535,7 +553,10 @@ export function NotasParaClaude() {
                     : "text-gray-500"}`}>
                     {n.estado === "finalizada" ? "sin leer" : n.estado}
                   </Badge>
-                  <span className="flex-1 truncate text-gray-800">{n.titulo}</span>
+                  <span className="flex-1 truncate text-gray-800">
+                    {n.sin_supervision && <span title="Claude puede arrancarla sin esperarte">🌙 </span>}
+                    {n.titulo}
+                  </span>
                   <span className="text-gray-400">{n.notas_capturas?.[0]?.count ?? 0} cap.</span>
                   <span className="text-gray-400">{String(n.created_at).slice(0, 10)}</span>
                   {n.resultado && <span className="w-full text-[11px] text-gray-500">→ {n.resultado}</span>}

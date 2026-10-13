@@ -492,7 +492,7 @@ motivo.
 
 | Tabla | Qué recibe | Se cierra con |
 |---|---|---|
-| `notas_para_claude` + `notas_capturas` | *"esto no anda"*, con captura y contexto (P-34) | `estado='leida'` + `resultado` |
+| `notas_para_claude` + `notas_capturas` | *"esto no anda"*, con captura y contexto (P-34) | `estado='leida'` + `resultado`. **`sin_supervision = true`** (2026-10-13, A-FEAT-1266) = el usuario autoriza a desarrollarla sin esperarlo |
 | `pendientes_comentarios` | comentario sobre un pendiente **que ya existe** | `leido_at` |
 | `pendientes_propuestos` | un pendiente **nuevo** que propone el usuario | `estado='incorporado'` + `pendiente_id_asignado` |
 
