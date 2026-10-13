@@ -478,6 +478,31 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     obs.observe(el)
     return () => obs.disconnect()
   }, [modoPagos])
+  /**
+   * ⌨️ A-FEAT-1261 — `Alt+P` entra al modo PAGOS (pedido del usuario 2026-10-06: «hacer un atajo
+   * para el botón pagos»). Mismo patrón que `Alt+N` y `Alt+R`.
+   *
+   * - **Sólo ENTRA**: si ya está activo no hace nada. Salir con el atajo borraría la selección de
+   *   facturas con una tecla, y eso se hace a propósito con «Cancelar PAGOS».
+   * - **Sólo si el Cash Flow está a la vista** (`offsetParent`): la pantalla puede seguir montada
+   *   detrás de otra, y activar el modo sin verlo sería peor que no tener atajo.
+   */
+  const botonPagosRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const atajo = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      if ((e.key || "").toLowerCase() !== "p") return
+      if (!botonPagosRef.current || botonPagosRef.current.offsetParent === null) return
+      e.preventDefault()
+      if (modoPagos) return
+      setModoPagos(true)
+      setFilasSeleccionadas(new Set())
+      setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
+      toast.success("Modo PAGOS activado. Selecciona filas con checkboxes")
+    }
+    document.addEventListener("keydown", atajo)
+    return () => document.removeEventListener("keydown", atajo)
+  }, [modoPagos])
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -3904,13 +3929,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 Filtros
               </Button>
               <Button
+                ref={botonPagosRef}
                 variant={modoPagos ? "default" : "outline"}
                 size="sm"
                 onClick={modoPagos ? desactivarModoPagos : activarModoPagos}
-                title="Ctrl+Click para activar modo PAGOS"
+                title="Ctrl+Click o Alt+P para activar modo PAGOS"
               >
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
+                {!modoPagos && <span className="ml-1.5 rounded border px-1 text-[10px] font-normal text-gray-400">Alt+P</span>}
               </Button>
               {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
                   CUOTA de esta pantalla.

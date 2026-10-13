@@ -34,6 +34,7 @@
  */
 
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
+import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
@@ -2949,6 +2950,16 @@ export function correrCasos(): Resultado[] {
       `${nroDeCuenta("", plan)} ${nroDeCuenta("No existe", plan)} ${nroDeCuenta("Sin Numero", plan)}`,
       nroDeCuenta("", plan) === null && nroDeCuenta("No existe", plan) === null && nroDeCuenta("Sin Numero", plan) === null,
       "A-BUG-1249")
+  }
+
+  {
+    // A-FEAT-1265 — el stock de la pantalla no trae las categorías en cero, y los ids llegan como texto o número.
+    const stockHoy = [{ categoria_id: 7, cantidad: 37 }, { categoria_id: "9", cantidad: 120 }]
+    chequear("Hacienda — cabezas de hoy", "Una categoría que no está en el stock tiene 0 cabezas; el id vale como texto o número",
+      "37 · 120 · 0 · 0",
+      `${cabezasHoy(stockHoy, "7")} · ${cabezasHoy(stockHoy, 9)} · ${cabezasHoy(stockHoy, "33")} · ${cabezasHoy(stockHoy, "")}`,
+      cabezasHoy(stockHoy, "7") === 37 && cabezasHoy(stockHoy, 9) === 120 && cabezasHoy(stockHoy, "33") === 0 && cabezasHoy(stockHoy, "") === 0,
+      "A-FEAT-1265")
   }
 
   /**

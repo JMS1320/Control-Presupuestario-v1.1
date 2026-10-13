@@ -2,6 +2,7 @@
 
 
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
+import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
@@ -2915,6 +2916,16 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* A-FEAT-1265: las cabezas de hoy, para no cargar más de las que hay */}
+                    {nuevoMov.categoria_id && (() => {
+                      const hoy = cabezasHoy(stock, nuevoMov.categoria_id)
+                      const pide = parseInt(nuevoMov.cantidad) || 0
+                      return (
+                        <p className={`mt-1 text-xs ${pide > hoy ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                          Hoy: <strong>{hoy}</strong> cabezas{pide > hoy ? ` — estás moviendo ${pide}, más de las que hay` : ''}
+                        </p>
+                      )
+                    })()}
                   </div>
                   <div>
                     <Label>Categoría Destino *</Label>
@@ -2926,6 +2937,11 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {nuevoMov.categoria_destino_id && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Hoy: <strong>{cabezasHoy(stock, nuevoMov.categoria_destino_id)}</strong> cabezas
+                      </p>
+                    )}
                   </div>
                 </div>
                 {ternerosParaCambio.length > 0 ? (
@@ -3095,6 +3111,17 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* A-FEAT-1265: las cabezas de hoy. Sólo avisa en lo que SACA cabezas (mortandad). */}
+                    {nuevoMov.categoria_id && (() => {
+                      const hoy = cabezasHoy(stock, nuevoMov.categoria_id)
+                      const pide = parseInt(nuevoMov.cantidad) || 0
+                      const saca = nuevoMov.tipo === 'mortandad' // la venta tiene su propio formulario
+                      return (
+                        <p className={`mt-1 text-xs ${saca && pide > hoy ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                          Hoy: <strong>{hoy}</strong> cabezas{saca && pide > hoy ? ` — estás sacando ${pide}, más de las que hay` : ''}
+                        </p>
+                      )
+                    })()}
                   </div>
                   <div>
                     <Label>Cantidad *</Label>
