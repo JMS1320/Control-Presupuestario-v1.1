@@ -3052,6 +3052,22 @@ y ahí suele haber más que en MSA.
 
 ⚠️ Sin probar todavía → A-TEST-1160
 
+## ⌨️ Atajos y ayudas chicas *(2026-10-13)*
+
+- **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón). Para salir,
+  «Cancelar PAGOS». → A-TEST-1194
+- **Sueldos → Pagos registrados → exportar sólo algunos**: abrí el empleado y **tildá** los pagos
+  que querés; el botón pasa a **«Exportar N pagos tildados»**. El tilde al lado del nombre tilda
+  todos los de ese empleado. Sin tildar nada exporta el mes entero. → A-TEST-1195
+- **Órdenes agrícolas → el insumo con el teclado**: parado en el campo, **escribí** para filtrar,
+  **flecha abajo** para recorrer, **Enter** para elegir y **Tab** para seguir. → A-TEST-1196
+- **Hacienda → Nuevo Movimiento**: debajo de cada categoría dice **«Hoy: N cabezas»**. Si cargás más
+  de las que hay te avisa en rojo, pero te deja guardar. → A-TEST-1197
+- **Subdiarios → Vincular PDFs**: mientras trabaja **podés seguir en otra pantalla de la app**; el
+  avance te sigue arriba a la derecha y al final llega el mail. **No cierres ni recargues la pestaña
+  del navegador** (te pregunta antes). Si te fuiste, la lista de «PDFs sin vincular» vuelve con
+  «📊 Contar»; **«👁 ver»** muestra el PDF ahí mismo. → A-TEST-1193
+
 ## 🚦 Cash Flow → el punto de la cuenta contable y la fecha de emisión *(2026-10-13)*
 
 Al lado de la **fecha estimada** —la columna que queda fija a la izquierda— cada **factura** tiene

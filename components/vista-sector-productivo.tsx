@@ -2869,6 +2869,7 @@ function TabHacienda() {
             <DialogTitle>Nuevo Movimiento Hacienda</DialogTitle>
             <DialogDescription>Registrar compra, venta, nacimiento, mortandad o cambio de categoría.</DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="ganaderia/movimiento" pantalla="ganaderia" />
           <div className="grid gap-3">
             {/* Fila 1: Fecha + Tipo — siempre visible */}
             <div className="grid grid-cols-2 gap-3">
@@ -7671,6 +7672,7 @@ function SubTabOrdenesAgricolas() {
             <DialogTitle>{modoVer ? 'Ver Orden Agrícola' : ordenEditandoId ? 'Editar Orden Agrícola' : 'Nueva Orden Agrícola'}</DialogTitle>
             <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Registrar aplicación de insumos en lotes / hectáreas.'}</DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="productivo/orden-agricola" pantalla="productivo" />
           <fieldset disabled={modoVer} className="contents">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">

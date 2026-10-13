@@ -617,7 +617,9 @@ export function TabSueldos() {
    * filtros, el Excel tiene que seguirlos — un export que baja de más es peor que no tenerlo.
    */
   const exportarPagos = () => {
-    const filas: PagoParaExportar[] = pagos.map(pg => {
+    // 📤 A-FEAT-1263 — con pagos tildados baja sólo ésos; sin ninguno, todo el mes (como siempre).
+    const aExportar = pagos.filter(pg => pagosElegidos.size === 0 || pagosElegidos.has(pg.id))
+    const filas: PagoParaExportar[] = aExportar.map(pg => {
       const periodo = periodos.find(x => x.id === pg.periodo_id)
       const cuenta = cuentas.find(c => c.id === pg.cuenta_destino_id)
       return {
@@ -635,8 +637,23 @@ export function TabSueldos() {
       }
     })
     if (filas.length === 0) { alert('No hay pagos para exportar en este mes.'); return }
-    descargarPagosDeSueldos(filas, `${MESES_LONG[mesActual.mes - 1]} ${mesActual.anio}`)
+    const mes = `${MESES_LONG[mesActual.mes - 1]} ${mesActual.anio}`
+    descargarPagosDeSueldos(filas, pagosElegidos.size > 0 ? `${mes} (${filas.length} de ${pagos.length} pagos)` : mes)
   }
+
+  /**
+   * 📤 A-FEAT-1263 — los pagos tildados para exportar. Pedido del usuario 2026-10-06: *«¿esto exporta
+   * todo? porque yo hoy saco un pago solo y precisaría hacer export de ese solo»*.
+   * Se guardan ids: si el mes cambia y esos pagos ya no están, `exportarPagos` filtra contra lo que hay
+   * en pantalla y el botón cuenta sólo los visibles — nunca exporta algo que no se ve.
+   */
+  const [pagosElegidos, setPagosElegidos] = useState<Set<string>>(new Set())
+  const elegidosVisibles = pagos.filter(pg => pagosElegidos.has(pg.id)).length
+  const tildarPagos = (ids: string[], tildar: boolean) => setPagosElegidos(prev => {
+    const s = new Set(prev)
+    ids.forEach(id => { if (tildar) s.add(id); else s.delete(id) })
+    return s
+  })
 
   // ── Editar / Eliminar pago ────────────────────────────────────────────────
 
@@ -1501,13 +1518,18 @@ export function TabSueldos() {
                 size="sm"
                 className="h-7 text-xs"
                 onClick={exportarPagos}
-                title="Bajar los pagos de este mes en Excel"
+                title={elegidosVisibles > 0
+                  ? 'Bajar en Excel sólo los pagos tildados'
+                  : 'Bajar TODOS los pagos de este mes en Excel — tildá los que quieras para bajar sólo ésos'}
               >
-                📗 Exportar a Excel
+                {elegidosVisibles > 0
+                  ? `📗 Exportar ${elegidosVisibles} ${elegidosVisibles === 1 ? 'pago tildado' : 'pagos tildados'}`
+                  : '📗 Exportar todo a Excel'}
               </Button>
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="px-4"><TestsDelProceso proceso="sueldos/pagos-registrados" pantalla="sueldos" /></div>
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -1540,7 +1562,14 @@ export function TabSueldos() {
                       })}
                     >
                       <TableCell className="text-gray-400 w-8">{abierto ? '▾' : '▸'}</TableCell>
-                      <TableCell className="font-medium">{grupo.nombre}</TableCell>
+                      <TableCell className="font-medium">
+                        {/* A-FEAT-1263: tilda todos los pagos del empleado, sin abrir ni cerrar el grupo */}
+                        <input type="checkbox" className="mr-2 align-middle" title="Tildar los pagos de este empleado para exportarlos"
+                          checked={grupo.pagos.length > 0 && grupo.pagos.every(p => pagosElegidos.has(p.id))}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => tildarPagos(grupo.pagos.map(p => p.id), e.target.checked)} />
+                        {grupo.nombre}
+                      </TableCell>
                       <TableCell colSpan={3} className="text-xs text-gray-500">
                         {grupo.cantidad} {grupo.cantidad === 1 ? 'pago' : 'pagos'}
                       </TableCell>
@@ -1550,8 +1579,12 @@ export function TabSueldos() {
 
                     {abierto && grupo.pagos.map(pago => (
                   <TableRow key={pago.id}>
-                    {/* Sangría: el renglón se lee como hijo de su empleado. */}
-                    <TableCell className="w-8"></TableCell>
+                    {/* Sangría: el renglón se lee como hijo de su empleado. Lleva el tilde para exportar (A-FEAT-1263). */}
+                    <TableCell className="w-8 text-center">
+                      <input type="checkbox" title="Tildar para exportar sólo este pago"
+                        checked={pagosElegidos.has(pago.id)}
+                        onChange={e => tildarPagos([pago.id], e.target.checked)} />
+                    </TableCell>
                     {/* El NOMBRE ya no se repite acá: está en la cabecera del grupo, y repetirlo
                         en cada fila era justo el ruido que hacía difícil encontrar un dato. */}
                     <TableCell className="text-sm tabular-nums text-gray-600">

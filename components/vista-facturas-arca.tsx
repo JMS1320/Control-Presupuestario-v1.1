@@ -6,6 +6,7 @@ import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import type { UserRole } from "@/lib/auth/roles"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -403,6 +404,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     estadoArchivoDigital(f) as 'con' | 'falta' | 'portal'
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+  /**
+   * ⏳ A-FEAT-1262 — mientras vincula, cerrar o recargar la pestaña del navegador SÍ corta el
+   * proceso (corre acá, tanda por tanda). Cambiar de pantalla adentro de la app no lo corta.
+   * El navegador pregunta antes de cerrar; es el único caso en que el proceso se pierde.
+   */
+  useEffect(() => {
+    if (!supervisandoArchivo) return
+    const avisar = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', avisar)
+    return () => window.removeEventListener('beforeunload', avisar)
+  }, [supervisandoArchivo])
 
   /**
    * De qué botón salió el listado de "PDFs sin vincular".
@@ -2091,7 +2103,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setSupervisandoArchivo(true)
     setOrigenListado('ocr')
     setHuerfanosSupervision([])
-    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
+    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar… (podés seguir trabajando)' : 'Supervisando archivo digital del período… (podés seguir trabajando)')
     const skip = new Set<string>()
     // Modo rápido: pre-cargar como "ya procesados" los archivos cuyos links ya están en una factura.
     if (soloNoAdjudicados) {
@@ -2102,7 +2114,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     try {
       for (let guard = 0; guard < 500; guard++) {
         tanda++
-        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
+        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados) · podés seguir trabajando`, { id: tId })
         /**
          * Una tanda, con reintento en tanda chica.
          *
@@ -6345,6 +6357,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Button>
               </div>
             </div>
+
+            <TestsDelProceso proceso="egresos/archivo-digital" pantalla="egresos" />
+            {/* ⏳ A-FEAT-1262 — nota del usuario 2026-10-13: «¿corre por detrás y puedo seguir trabajando
+                en otra cosa? Debería avisar si es así porque me dio miedo abortar el proceso». */}
+            {supervisandoArchivo && (
+              <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                <strong>⏳ Está trabajando en segundo plano: podés seguir en otra pantalla de la app.</strong>{' '}
+                El avance y el resultado te siguen en el cartel de arriba a la derecha, cada PDF queda vinculado
+                en el momento en que lo encuentra, y al terminar te llega el mail con el resumen.{' '}
+                <strong>Lo único que lo corta es cerrar o recargar la pestaña del navegador.</strong>{' '}
+                Si te vas de esta pantalla, al volver la lista de «PDFs sin vincular» la recuperás con «📊 Contar».
+              </div>
+            )}
 
             {/* 🗂️ Resumen de archivo digital (PDF) — chips clickeables que filtran la tabla */}
             {(() => {
