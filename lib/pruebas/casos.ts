@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
 import { brutoDelPeriodo, brutoSegunTipo } from "@/lib/sueldos/bruto"
@@ -2904,6 +2905,52 @@ export function correrCasos(): Resultado[] {
   chequear("Débitos / créditos", "Cash Flow: con los dos apagados no pasa nada (como Estado y Origen)",
     "false", String(pasaSentido(debito500k, new Set())),
     pasaSentido(debito500k, new Set()) === false, "A-FEAT-1224")
+
+  /**
+   * 🚦 **La marca de cuenta contable del Cash Flow — A-FEAT-1260.**
+   *
+   * El caso que importa es el del medio: una factura con el NOMBRE de la cuenta pero sin el número
+   * del plan **no puede salir en verde** — la pantalla de asignación la sigue contando como pendiente.
+   */
+  {
+    const plan = new Set(["honorarios", "arrendamientos venta"])
+    const e = (f: Parameters<typeof cuentaDeFila>[0]) => cuentaDeFila(f, plan)
+
+    chequear("Cuenta en Cash Flow", "Factura sin cuenta: roja y se puede poner acá",
+      "sin · asignable",
+      `${e({ origen: "ARCA", categ: "SIN_CATEG" }).estado} · ${e({ origen: "ARCA", categ: "SIN_CATEG" }).asignable ? "asignable" : "no"}`,
+      e({ origen: "ARCA", categ: "SIN_CATEG" }).estado === "sin" && e({ origen: "ARCA", categ: "SIN_CATEG" }).asignable,
+      "A-FEAT-1260")
+
+    chequear("Cuenta en Cash Flow", "🔑 Factura con el nombre pero SIN el número de cuenta no sale en verde",
+      "a-medias", e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: null }).estado,
+      e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: null }).estado === "a-medias", "A-FEAT-1260")
+
+    chequear("Cuenta en Cash Flow", "Factura con número de cuenta: tiene",
+      "con", e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: "5201" }).estado,
+      e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: "5201" }).estado === "con", "A-FEAT-1260")
+
+    const grupo = e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: "5201", facturas_agrupadas: 3 })
+    chequear("Cuenta en Cash Flow", "Un pago agrupado no afirma la cuenta de todas ni deja asignar de a varias",
+      "grupo · no", `${grupo.estado} · ${grupo.asignable ? "asignable" : "no"}`,
+      grupo.estado === "grupo" && !grupo.asignable, "A-FEAT-1260")
+
+    chequear("Cuenta en Cash Flow", "Template con categoría fuera del plan: se avisa",
+      "fuera-del-plan", e({ origen: "TEMPLATE", categ: "Cosas varias" }).estado,
+      e({ origen: "TEMPLATE", categ: "Cosas varias" }).estado === "fuera-del-plan", "A-FEAT-1260")
+
+    const tplNormal = e({ origen: "TEMPLATE", categ: "ARRENDAMIENTOS Venta" })
+    const tplPorCuota = e({ origen: "TEMPLATE", categ: "SIN_CATEG", es_multi_cuenta: true })
+    chequear("Cuenta en Cash Flow", "Template: la cuenta se cambia acá sólo si va por cuota",
+      "con · no | sin · asignable",
+      `${tplNormal.estado} · ${tplNormal.asignable ? "asignable" : "no"} | ${tplPorCuota.estado} · ${tplPorCuota.asignable ? "asignable" : "no"}`,
+      tplNormal.estado === "con" && !tplNormal.asignable && tplPorCuota.estado === "sin" && tplPorCuota.asignable,
+      "A-FEAT-1260")
+
+    const otros = ["SUELDO", "VENTA", "ANTICIPO"].map(o => e({ origen: o, categ: "Sueldos" }).estado)
+    chequear("Cuenta en Cash Flow", "Sueldos, ventas y anticipos no llevan marca",
+      "no-aplica ×3", otros.join(" "), otros.every(x => x === "no-aplica"), "A-FEAT-1260")
+  }
 
 
   /**

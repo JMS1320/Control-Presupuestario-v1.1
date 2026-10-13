@@ -16,6 +16,8 @@ import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
+import { cuentaDeFila, COLOR_CUENTA } from "@/lib/pagos/cuenta-de-fila"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -201,7 +203,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
-  
+  // 🚦 A-FEAT-1260 — la marca de cuenta contable de cada fila (regla en `lib/pagos/cuenta-de-fila.ts`)
+  const categsDelPlan = useMemo(() => new Set(cuentas.map(c => c.categ.toLowerCase())), [cuentas])
+  const [marcaCuentaAbierta, setMarcaCuentaAbierta] = useState<string | null>(null)
+  const [guardandoMarcaCuenta, setGuardandoMarcaCuenta] = useState(false)
+
   // Estados para edición legacy (mantener por compatibilidad modal categ)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
@@ -561,6 +567,93 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Guardar referencia al hook para usarla desde customValidations
   hookEditorRef.current = hookEditor
+
+  /**
+   * 🚦 A-FEAT-1260 — poner la cuenta contable desde la marca de la fila.
+   *
+   * 🔑 **No es un camino nuevo de escritura.** Una factura se imputa por la MISMA ruta que usa
+   * Egresos → Asignación (`/api/arca-asignar`): guarda el número y el nombre de la cuenta **y la
+   * lleva a los movimientos del extracto ya conciliados** (§ 🔁 La propagación del dato). La edición
+   * de la columna CATEG de esta pantalla escribe sólo el texto y no propaga; por eso la marca no
+   * pasa por ahí.
+   */
+  const asignarCuentaDesdeMarca = async (
+    fila: CashFlowRow,
+    cuenta: { categ: string; nro_cuenta: string } | null,
+  ) => {
+    if (!cuenta) return
+    setGuardandoMarcaCuenta(true)
+    try {
+      if (fila.origen === 'ARCA') {
+        const res = await fetch('/api/arca-asignar', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [fila.id], nro_cuenta: cuenta.nro_cuenta, cuenta_contable: cuenta.categ }),
+        })
+        const r = await res.json()
+        if (!r.success) throw new Error(r.message || 'No se pudo asignar la cuenta')
+        actualizarLocal(fila.id, 'categ', cuenta.categ)
+        actualizarLocal(fila.id, 'nro_cuenta', cuenta.nro_cuenta)
+        // 🧮 Lo que pasó con el extracto se ve (mismo aviso que en Asignación).
+        if (r.propagacion?.aviso) toast.warning(r.propagacion.aviso)
+        else if ((r.propagacion?.propagados ?? 0) > 0) {
+          toast.success(`Cuenta asignada. Llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
+        } else toast.success(`Cuenta asignada: ${cuenta.categ}`)
+      } else {
+        // Template con categoría por cuota: el camino de siempre de esta pantalla.
+        const ok = await actualizarRegistro(fila.id, 'categ', cuenta.categ, 'TEMPLATE', fila.egreso_id)
+        if (!ok) return
+        actualizarLocal(fila.id, 'categ', cuenta.categ)
+        toast.success(`Cuenta asignada: ${cuenta.categ}`)
+      }
+      setMarcaCuentaAbierta(null)
+    } catch (err: any) {
+      toast.error(`La cuenta NO se guardó: ${err?.message || err}`)
+    } finally {
+      setGuardandoMarcaCuenta(false)
+    }
+  }
+
+  /** El punto de la columna fija: verde tiene · ámbar a medias / fuera del plan · rojo no tiene. */
+  const renderizarMarcaCuenta = (fila: CashFlowRow) => {
+    const c = cuentaDeFila(fila, categsDelPlan)
+    const color = COLOR_CUENTA[c.estado]
+    if (!color) return <span className="inline-block h-2.5 w-2.5 shrink-0" />
+    // La ruta de asignación escribe sólo en MSA: en PAM y MA la marca informa y no asigna.
+    const puedeAca = c.asignable && (fila.origen !== 'ARCA' || esFilaMsa(fila))
+    const titulo = c.asignable && !puedeAca
+      ? `${c.titulo.replace(/ — tocá.*$/, '')} — las facturas de PAM y MA todavía no se asignan desde acá`
+      : c.titulo
+    const punto = <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
+    if (!puedeAca) {
+      return <span className="shrink-0 leading-none cursor-help" title={titulo}>{punto}</span>
+    }
+    return (
+      <Popover open={marcaCuentaAbierta === fila.id} onOpenChange={(o) => setMarcaCuentaAbierta(o ? fila.id : null)}>
+        <PopoverTrigger asChild>
+          <button type="button" className="shrink-0 leading-none hover:scale-125 transition-transform" title={titulo}
+            onClick={(e) => e.stopPropagation()}>
+            {punto}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[420px] p-3" onClick={(e) => e.stopPropagation()}>
+          <div className="text-xs text-gray-600 mb-2">
+            <div className="font-semibold text-gray-800 truncate">{fila.nombre_proveedor || fila.detalle}</div>
+            {c.titulo.replace(/ — tocá.*$/, '')}
+          </div>
+          <SelectorCuentaContable
+            value={c.estado === 'con' ? fila.categ : null}
+            onSelect={(cuenta) => asignarCuentaDesdeMarca(fila, cuenta)}
+            cuitProveedor={fila.origen === 'ARCA' ? fila.cuit_proveedor || null : null}
+            modo="inline"
+            autoFocus
+            mostrarSinAsignar={false}
+          />
+          {guardandoMarcaCuenta && <div className="mt-2 text-xs text-gray-500">Guardando…</div>}
+        </PopoverContent>
+      </Popover>
+    )
+  }
 
   // Abrir modal para editar TC de pago en facturas USD
   const abrirModalTcPago = (fila: CashFlowRow) => {
@@ -4146,6 +4239,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )}
 
           <TestsDelProceso proceso="cashflow/filtros" pantalla="cashflow" />
+          <TestsDelProceso proceso="cashflow/cuenta-contable" pantalla="cashflow" />
           {/* E1: barra de chips operativos (siempre visible) — Estado + Origen */}
           <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-white rounded-lg border">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -4361,7 +4455,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                                 : ''
                             }`}
                           >
-                            {renderizarCelda(fila, col)}
+                            {col.key === 'fecha_estimada' ? (
+                              // 🚦 A-FEAT-1260: la marca de cuenta contable va en la columna que queda fija
+                              <div className="flex items-center gap-1">
+                                {renderizarMarcaCuenta(fila)}
+                                {renderizarCelda(fila, col)}
+                              </div>
+                            ) : renderizarCelda(fila, col)}
                           </td>
                         ))}
                       </tr>
