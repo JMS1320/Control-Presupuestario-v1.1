@@ -159,6 +159,7 @@ import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ven
 import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
+import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
@@ -3160,6 +3161,12 @@ export function correrCasos(): Resultado[] {
   chequear("Echeqs múltiples", "🧾 BRIKI: la retención 226.924,96 sale de (11.570.247,93 − 224.000) × 2 % → mínimo 224.000 exacto (deducido daba 223.999,93); sin mínimo, base = neto",
     "11346247.93 · 224000 · exacto · adicional 0", `${echBriki.base} · ${echBriki.minimo} · ${echBriki.deducido ? "deducido" : "exacto"} · adicional ${echAdic.minimo}`,
     echBriki.base === 11346247.93 && echBriki.minimo === 224000 && !echBriki.deducido && echAdic.minimo === 0 && echAdic.base === 1000000, "A-BUG-1284")
+  // 🐞 A-BUG-1285 — el total del anticipo es su MONTO (puede traer percepciones), no neto + IVA.
+  const echTot = totalAnticipo(100, 90)
+  const echTotSin = totalAnticipo(0, 3435838.56)
+  chequear("Echeqs múltiples", "🧾 🧨 Anticipo de $100 con neto+IVA $90: el total es 100 y hay $10 de «otros» (antes el total era 90); sin monto, neto+IVA; si neto+IVA supera el monto, avisa",
+    "100 · otros 10 · sin monto 3435838.56 · avisa", `${echTot.total} · otros ${echTot.otros} · sin monto ${echTotSin.total} · ${totalAnticipo(80, 90).aviso ? "avisa" : "no avisa"}`,
+    echTot.total === 100 && echTot.otros === 10 && !echTot.aviso && echTotSin.total === 3435838.56 && echTotSin.otros === 0 && !!totalAnticipo(80, 90).aviso, "A-BUG-1285")
   // 🐞 A-BUG-1283 — desde la barra de PAGOS un anticipo pasaba a echeq sin modal. Antes la regla era
   // «todo lo que no es factura de MSA pendiente va directo» (así lo hacía el código viejo).
   const echLoteAnt = clasificarLoteEcheq([{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }], () => true)

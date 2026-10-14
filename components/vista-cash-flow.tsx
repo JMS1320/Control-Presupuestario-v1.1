@@ -34,6 +34,7 @@ import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosA
 import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
+import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
@@ -431,7 +432,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [descuentoSicoreAnticipo, setDescuentoSicoreAnticipo] = useState(0)
   const [datosSicoreAnticipo, setDatosSicoreAnticipo] = useState<{
     netoBase: number, minimoAplicado: number, baseImponible: number,
-    esRetencionAdicional: boolean, impTotal: number
+    esRetencionAdicional: boolean, impTotal: number,
+    /** A-BUG-1285: neto + IVA cargados, y lo que el monto del anticipo tiene además (percepciones, etc.). */
+    netoMasIva?: number, otros?: number, aviso?: string | null
   } | null>(null)
 
   // Estado modal TC de pago (facturas USD)
@@ -3426,7 +3429,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoNoGravado = parseCampo(camposSicore.neto_no_gravado)
     const opExentas = parseCampo(camposSicore.op_exentas)
     const iva = parseCampo(camposSicore.iva)
-    const impTotal = netoGravado + netoNoGravado + opExentas + iva
+    const netoMasIva = netoGravado + netoNoGravado + opExentas + iva
+    // 🐞 A-BUG-1285 — el total es el MONTO del anticipo, no neto + IVA: puede traer percepciones que no se
+    // cargan. La retención sigue saliendo del neto.
+    let montoAnt = Number((anticiposExistentes.find(a => a.id === anticipoSicoreId) ?? (echeqAnticipoCF.current?.id === anticipoSicoreId ? echeqAnticipoCF.current : null))?.monto) || 0
+    if (!montoAnt && anticipoSicoreId) {
+      const { data } = await supabase.from('anticipos_proveedores').select('monto').eq('id', anticipoSicoreId).maybeSingle()
+      montoAnt = Number((data as any)?.monto) || 0
+    }
+    const { total: impTotal, otros, aviso } = totalAnticipo(montoAnt, netoMasIva)
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
@@ -3446,7 +3457,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     setTipoSicoreAnticipo(tipo)
-    setDatosSicoreAnticipo({ netoBase, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, impTotal })
+    setDatosSicoreAnticipo({ netoBase, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, impTotal, netoMasIva, otros, aviso })
     setMontoSicoreAnticipo(baseImponible * tipo.porcentaje_retencion)
     setDescuentoSicoreAnticipo(0)
     setPasoSicoreAnticipo('calculo')
@@ -6228,7 +6239,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   {descuentoSicoreAnticipo > 0 && (
                     <div className="flex justify-between"><span className="text-gray-600">Descuento adicional:</span><span className="text-red-600">-${descuentoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   )}
-                  <div className="flex justify-between"><span className="text-gray-600">Importe total factura:</span><span>${datosSicoreAnticipo.impTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {!!datosSicoreAnticipo.otros && (
+                    <>
+                      <div className="flex justify-between"><span className="text-gray-600">Neto + IVA:</span><span>${(datosSicoreAnticipo.netoMasIva ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Otros (percepciones, etc.):</span><span>${datosSicoreAnticipo.otros.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                    </>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-600">Total del anticipo:</span><span>${datosSicoreAnticipo.impTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {datosSicoreAnticipo.aviso && <p className="text-xs text-amber-700">⚠️ {datosSicoreAnticipo.aviso}</p>}
                   <hr className="my-2"/>
                   <div className="flex justify-between text-lg font-bold"><span>Monto a pagar:</span><span className="text-green-600">${(datosSicoreAnticipo.impTotal - montoSicoreAnticipo - descuentoSicoreAnticipo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 </div>
