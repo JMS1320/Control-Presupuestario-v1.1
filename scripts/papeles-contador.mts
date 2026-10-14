@@ -159,6 +159,103 @@ wsPf["!cols"] = [{ wch: 11 }, { wch: 38 }, { wch: 14 }, { wch: 18 }, { wch: 20 }
 for (const [addr, cell] of Object.entries(wsPf)) { const c = cell as any; if (!addr.startsWith("!") && typeof c.v === "number") c.z = "#,##0.00" }
 XLSX.utils.book_append_sheet(wb, wsPf, "Detalle Plazos Fijos")
 
+// ── Solapas de IMPUESTOS BANCARIOS (2026-10-07) — movimiento por movimiento, tal cual el banco ──
+// Pedido del usuario: «el detalle de movimiento por movimiento tal cual lo informa el banco… segmentar por la
+// columna de descripción del banco… la suma de cada uno debajo y la suma total debajo». Ejercicio entero:
+// jul–ene de la planilla (todas sus columnas) y feb–jun del extracto de la app (las mismas 22 columnas).
+// CONTROL al pie: feb–jun contra las cuotas del template (mismo número por dos caminos); jul–ene contra las
+// cuotas «anterior» — hasta cargar la tanda 1 esa diferencia es justamente lo que falta cargar.
+const COLS_PLANILLA = (aoa[2] as unknown[]).map(h => tx(h))
+const aCampo = (h: string) => h.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  .replace(/adicionales(\d)/, "adicionales_$1").replace(/[^a-z0-9_]+/g, "_").replace(/^_|_$/g, "")
+const IMPUESTOS = [
+  { hoja: "Detalle Imp. Deb-Cred", titulo: "Impuesto a los débitos y créditos bancarios (Ley 25.413)", re: /25413/i, tpl: "70399536" },
+  { hoja: "Detalle IVA bancario", titulo: "IVA sobre comisiones bancarias", re: /^(reintegro )?iva$/i, tpl: "e36bd1e0" },
+  { hoja: "Detalle IIBB bancario", titulo: "Ingresos Brutos percibido por el banco", re: /ing\.? ?brutos/i, tpl: "a2df331d" },
+  { hoja: "Detalle Percepción IVA", titulo: "Percepción de IVA", re: /percep\.? ?iva/i, tpl: "95c57d45" },
+  { hoja: "Detalle Sellos", titulo: "Impuesto de sellos", re: /sellos/i, tpl: "58c942b9" },
+]
+const { data: appImp, error: eImp } = await sb.from("msa_galicia").select("*").gte("fecha", "2026-02-01").lte("fecha", "2026-06-30").order("fecha").order("orden")
+if (eImp) throw eImp
+const { data: tplsImp } = await sb.from("egresos_sin_factura").select("id, nombre_referencia").eq("responsable", "MSA")
+const iDeb = COLS_PLANILLA.indexOf("Débitos"), iCre = COLS_PLANILLA.indexOf("Créditos"), iDesc = COLS_PLANILLA.indexOf("Descripción")
+const colL = (j: number) => XLSX.utils.encode_col(j)
+const cD = colL(iDeb + 1), cC = colL(iCre + 1), cOr = colL(COLS_PLANILLA.length + 1)
+for (const imp of IMPUESTOS) {
+  type Fila = { fecha: string; celdas: unknown[]; fila: number | ""; origen: string; orden: number }
+  const filasImp: Fila[] = []
+  for (let i = 3; i < aoa.length; i++) {
+    const r = aoa[i] as unknown[]; const f = r[col["Fecha"]]
+    if (!(f instanceof Date) || !imp.re.test(tx(r[iDesc]))) continue
+    const celdas = COLS_PLANILLA.map((_, j) => j === col["Fecha"] ? f.toISOString().slice(0, 10).split("-").reverse().join("/") : (r[j] ?? ""))
+    filasImp.push({ fecha: f.toISOString().slice(0, 10), celdas, fila: i + 1, origen: "planilla jul–ene", orden: -i })
+  }
+  for (const [k, m] of (appImp || []).entries()) {
+    if (!imp.re.test(String(m.descripcion || "").trim())) continue
+    const celdas = COLS_PLANILLA.map(h => {
+      if (h === "Fecha") return String(m.fecha).split("-").reverse().join("/")
+      const v = (m as any)[aCampo(h)]
+      return h === "Débitos" || h === "Créditos" || h === "Saldo" ? (Number(v) || "") : (v ?? "")
+    })
+    filasImp.push({ fecha: m.fecha, celdas, fila: "", origen: "extracto app feb–jun", orden: k })
+  }
+  // Segmentado por la descripción del banco: primero los grupos de débitos (de mayor a menor), al final los de créditos
+  const grupos = new Map<string, Fila[]>()
+  for (const f of filasImp.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.orden - b.orden)) {
+    const k = tx(f.celdas[iDesc]); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k)!.push(f)
+  }
+  const suma = (fs: Fila[], j: number) => r2(fs.reduce((s, f) => s + num(f.celdas[j]), 0))
+  const orden = [...grupos.entries()].sort((a, b) => (suma(b[1], iDeb) - suma(b[1], iCre)) - (suma(a[1], iDeb) - suma(a[1], iCre)))
+  const hoja: unknown[][] = [
+    ["MARTINEZ SOBRADO AGRO SRL — CUIT 30-61778601-6"],
+    [`${imp.titulo} — detalle movimiento por movimiento, ejercicio 01/07/2025 al 30/06/2026, segmentado por la descripción del banco`],
+    [],
+    ["Fila de tu planilla", ...COLS_PLANILLA, "De dónde sale"],
+  ]
+  const subtot: number[] = []
+  for (const [desc, fs] of orden) {
+    hoja.push([`▸ ${desc}`])
+    const desde = hoja.length + 1
+    for (const f of fs) hoja.push([f.fila, ...f.celdas, f.origen])
+    const hasta = hoja.length
+    const st: unknown[] = [`Subtotal «${desc}» (${fs.length} mov.)`]
+    st[iDeb + 1] = { t: "n", f: `SUM(${cD}${desde}:${cD}${hasta})` }; st[iCre + 1] = { t: "n", f: `SUM(${cC}${desde}:${cC}${hasta})` }
+    hoja.push(st); subtot.push(hoja.length); hoja.push([])
+  }
+  const tot: unknown[] = [`TOTAL ${imp.titulo} (${filasImp.length} mov.)`]
+  tot[iDeb + 1] = { t: "n", f: subtot.map(n => `${cD}${n}`).join("+") || "0" }; tot[iCre + 1] = { t: "n", f: subtot.map(n => `${cC}${n}`).join("+") || "0" }
+  hoja.push(tot); const fTot = hoja.length
+  // CONTROL
+  const tpl = (tplsImp || []).find((t: any) => t.id.startsWith(imp.tpl))
+  const { data: cq } = tpl ? await sb.from("cuotas_egresos_sin_factura").select("fecha_estimada, monto, tipo_movimiento")
+    .eq("egreso_id", tpl.id).gte("fecha_estimada", "2025-07-01").lte("fecha_estimada", "2026-06-30") : { data: [] as any[] }
+  const cuotaSum = (desde: string, hasta: string, tipo: string) => r2((cq || []).filter((c: any) => c.fecha_estimada >= desde && c.fecha_estimada <= hasta && c.tipo_movimiento === tipo).reduce((s: number, c: any) => s + Number(c.monto), 0))
+  const filaC = (txt: string, d: unknown, c: unknown) => { const r: unknown[] = [txt]; r[iDeb + 1] = d; r[iCre + 1] = c; return r }
+  const rango = (c: string) => `${c}5:${c}${fTot - 1}`
+  const porOrigen = (c: string, o: string) => ({ t: "n", f: `SUMIFS(${rango(c)},${cOr}5:${cOr}${fTot - 1},"${o}")` })
+  hoja.push([], filaC("CONTROL", "Débitos", "Créditos")); const b = hoja.length
+  hoja.push(filaC("Total del detalle (suma de los subtotales)", { t: "n", f: `${cD}${fTot}` }, { t: "n", f: `${cC}${fTot}` }))
+  hoja.push(filaC("  de eso, jul–ene (tu planilla)", porOrigen(cD, "planilla jul–ene"), porOrigen(cC, "planilla jul–ene")))
+  hoja.push(filaC("  de eso, feb–jun (extracto de la app)", porOrigen(cD, "extracto app feb–jun"), porOrigen(cC, "extracto app feb–jun")))
+  hoja.push(filaC("control: total − jul–ene − feb–jun (tiene que dar 0)", { t: "n", f: `${cD}${b + 1}-${cD}${b + 2}-${cD}${b + 3}` }, { t: "n", f: `${cC}${b + 1}-${cC}${b + 2}-${cC}${b + 3}` }))
+  hoja.push(filaC(`Cuotas del template «${tpl?.nombre_referencia ?? "—"}» en la app, feb–jun (egreso / ingreso)`, cuotaSum("2026-02-01", "2026-06-30", "egreso"), cuotaSum("2026-02-01", "2026-06-30", "ingreso")))
+  hoja.push(filaC("control feb–jun: extracto − cuotas (tiene que dar 0)", { t: "n", f: `${cD}${b + 3}-${cD}${b + 5}` }, { t: "n", f: `${cC}${b + 3}-${cC}${b + 5}` }))
+  hoja.push(filaC("Cuotas del template en la app, jul–ene (histórico «anterior»)", cuotaSum("2025-07-01", "2026-01-31", "egreso"), cuotaSum("2025-07-01", "2026-01-31", "ingreso")))
+  hoja.push(filaC("diferencia jul–ene: planilla − cuotas (da 0 cuando esté cargada la tanda 1)", { t: "n", f: `${cD}${b + 2}-${cD}${b + 7}` }, { t: "n", f: `${cC}${b + 2}-${cC}${b + 7}` }))
+  const wsI = XLSX.utils.aoa_to_sheet(hoja as any[][])
+  wsI["!cols"] = [{ wch: 52 }, ...COLS_PLANILLA.map((h, j) => ({ wch: j === iDesc ? 40 : h === "Fecha" ? 11 : j === iDeb || j === iCre ? 16 : 14 })), { wch: 20 }]
+  for (const [addr, cell] of Object.entries(wsI)) {
+    if (addr.startsWith("!")) continue
+    const c = cell as any
+    if ((typeof c.v === "number" || c.f) && !/^A\d/.test(addr)) c.z = "#,##0.00"
+  }
+  XLSX.utils.book_append_sheet(wb, wsI, imp.hoja)
+  const dJ = suma(filasImp.filter(f => f.fila !== ""), iDeb), cJ = suma(filasImp.filter(f => f.fila !== ""), iCre)
+  const dF = suma(filasImp.filter(f => f.fila === ""), iDeb), cF = suma(filasImp.filter(f => f.fila === ""), iCre)
+  console.log(`${imp.hoja}: ${filasImp.length} mov. · ${orden.map(([d, fs]) => `${d} (${fs.length})`).join(" · ")}`)
+  console.log(`   jul–ene ${fmt(dJ)} / ${fmt(cJ)} · feb–jun ${fmt(dF)} / ${fmt(cF)} · cuotas feb–jun ${fmt(cuotaSum("2026-02-01", "2026-06-30", "egreso"))} / ${fmt(cuotaSum("2026-02-01", "2026-06-30", "ingreso"))}`)
+}
+
 // ── Solapa «Pendientes a revisar» — de la MISMA tabla que la pantalla de papeles (A-FEAT-1258) ──
 const { data: pends } = await sb.from("balance_pendientes").select("*").eq("empresa", "MSA").eq("anio_cierre", 2026)
 const wsPend = XLSX.utils.aoa_to_sheet(hojaDePendientes((pends || []) as any, "MSA — pendientes a revisar del ejercicio 2025/26"))
