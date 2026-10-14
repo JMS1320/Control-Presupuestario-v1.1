@@ -3054,8 +3054,12 @@ y ahí suele haber más que en MSA.
 
 ## ⌨️ Atajos y ayudas chicas *(2026-10-13)*
 
-- **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón). Para salir,
-  «Cancelar PAGOS». → A-TEST-1194
+- **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
+  `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **Volver una factura a pendiente** (desde PAGOS o desde el menú de la fila): te pregunta si la
+  **reseteás** —anula la retención, borra el descuento y la fecha de pago, y vuelve al importe
+  original— o si la pasás a pendiente y nada más. Si después la vas a pagar de nuevo, reseteala.
+  → A-TEST-1199
 - **Sueldos → Pagos registrados → exportar sólo algunos**: abrí el empleado y **tildá** los pagos
   que querés; el botón pasa a **«Exportar N pagos tildados»**. El tilde al lado del nombre tilda
   todos los de ese empleado. Sin tildar nada exporta el mes entero. → A-TEST-1195

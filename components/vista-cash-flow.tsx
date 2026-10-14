@@ -117,6 +117,20 @@ const TIPOS_COMPROBANTE_C = [11, 12, 13]
 const admiteSicore = (f: { tipo_comprobante?: number | null }): boolean =>
   !TIPOS_COMPROBANTE_C.includes(Number(f.tipo_comprobante))
 
+/**
+ * ↩️ Los dos carteles de «volver a pendiente» — los mismos desde el menú de la fila y desde el lote
+ * de PAGOS (A-BUG-1253). Resetear es OPCIONAL; lo que pasa si no se resetea se dice antes.
+ */
+const TEXTO_RESETEAR = (n: number) =>
+  `${n > 1 ? `${n} facturas vuelven` : 'La factura vuelve'} a pendiente. ¿RESETEAR${n > 1 ? 'LAS' : 'LA'}?\n\n` +
+  `Resetear hace:\n• anula la retención SICORE\n• borra el descuento aplicado\n• borra la fecha de pago\n• el importe vuelve al original\n\n` +
+  `ACEPTAR = resetear\nCANCELAR = NO resetear (después te pregunto si igual ${n > 1 ? 'las' : 'la'} paso a pendiente)`
+const TEXTO_SIN_RESETEAR =
+  `¿Pasar a pendiente SIN resetear?\n\n` +
+  `Queda guardado lo del pago anterior: la retención, el descuento, el importe a transferir y la fecha de pago.\n` +
+  `⚠️ Si después la volvés a pasar a pagar así, SICORE calcula como si ya hubiera retenido este mes.\n\n` +
+  `ACEPTAR = pasar a pendiente y nada más\nCANCELAR = no cambiar nada`
+
 /** Estados que significan que la plata sale: exigen fecha de pago antes de seguir. */
 const ESTADOS_QUE_PAGAN = ['pagar', 'preparado', 'programado', 'pagado', 'debito']
 
@@ -482,8 +496,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    * ⌨️ A-FEAT-1261 — `Alt+P` entra al modo PAGOS (pedido del usuario 2026-10-06: «hacer un atajo
    * para el botón pagos»). Mismo patrón que `Alt+N` y `Alt+R`.
    *
-   * - **Sólo ENTRA**: si ya está activo no hace nada. Salir con el atajo borraría la selección de
-   *   facturas con una tecla, y eso se hace a propósito con «Cancelar PAGOS».
+   * - **Entra y SALE** (corregido por el usuario el mismo día: «Alt+P debería abrir pero también
+   *   cerrar pagos»). Para no perder una selección con una tecla, si hay filas tildadas pregunta antes.
    * - **Sólo si el Cash Flow está a la vista** (`offsetParent`): la pantalla puede seguir montada
    *   detrás de otra, y activar el modo sin verlo sería peor que no tener atajo.
    */
@@ -494,7 +508,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if ((e.key || "").toLowerCase() !== "p") return
       if (!botonPagosRef.current || botonPagosRef.current.offsetParent === null) return
       e.preventDefault()
-      if (modoPagos) return
+      if (modoPagos) {
+        if (filasSeleccionadas.size > 0 && !window.confirm(`Tenés ${filasSeleccionadas.size} fila(s) tildada(s). ¿Salir de PAGOS igual?`)) return
+        desactivarModoPagos()
+        return
+      }
       setModoPagos(true)
       setFilasSeleccionadas(new Set())
       setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
@@ -502,7 +520,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
     document.addEventListener("keydown", atajo)
     return () => document.removeEventListener("keydown", atajo)
-  }, [modoPagos])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoPagos, filasSeleccionadas])
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -1026,7 +1045,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // Revertir FC (ARCA) a 'pendiente' = RESET completo (anula SICORE v2 + limpia sicore/tc/descuento +
       // restaura monto_a_abonar), igual que "Resetear" del Modal. Sin esto quedaba pendiente con datos SICORE.
-      if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
+      resetAPendiente: if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
         const fila = filaParaCambioEstado
         // Miembros a resetear: si es fila-grupo, todos; si es individual, ella sola.
         const ids = (fila.facturas_agrupadas && fila.facturas_agrupadas > 1 && fila.ids_grupo?.length) ? fila.ids_grupo : [fila.id]
@@ -1060,7 +1079,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )
           modoAnticipo = mantener ? 'mantener' : 'eliminar'
         } else {
-          if (!window.confirm(msg + `\n\n¿Continuar?`)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+          // Resetear es OPCIONAL (pedido del usuario 2026-10-13): «tal vez la querés pasar a pendiente y punto».
+          if (!window.confirm(TEXTO_RESETEAR(ids.length))) {
+            if (!window.confirm(TEXTO_SIN_RESETEAR)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+            break resetAPendiente // sigue abajo: cambia el estado y nada más
+          }
         }
 
         try {
@@ -1885,6 +1908,47 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
         setProcesandoLote(false)
         return
+      }
+
+      /**
+       * ↩️ **Volver a «pendiente» desde el lote: se PREGUNTA si resetear** (A-BUG-1253).
+       *
+       * El lote cambiaba el estado y nada más: la factura quedaba «pendiente» con la retención
+       * viva, el descuento y el importe del pago anterior (caso Alcorta 13/10/2026 — lo encontró el
+       * usuario). El menú de la fila sí reseteaba. Ahora los dos caminos preguntan lo mismo.
+       *
+       * 🔑 **Es opcional, a pedido del usuario**: *«tal vez la querés pasar a pendiente y punto»*.
+       * Pero no resetear tiene una consecuencia y por eso se dice antes de aceptar.
+       */
+      if (cambiarEstadoLote && valorEstadoLote === 'pendiente') {
+        const aVolver = todasFilas.filter(f => f.origen === 'ARCA' && esFilaMsa(f) && f.estado !== 'pendiente')
+        const idsAVolver = [...new Set(aVolver.flatMap(f =>
+          (f.facturas_agrupadas && f.facturas_agrupadas > 1 && f.ids_grupo?.length) ? f.ids_grupo : [f.id]))]
+        if (idsAVolver.length > 0) {
+          const resetear = window.confirm(TEXTO_RESETEAR(idsAVolver.length))
+          if (resetear) {
+            for (const id of idsAVolver) {
+              const estadoQ = await estadoQuincenaDeFactura('msa', id)
+              if (estadoQ === 'declarada') {
+                toast.error('🔒 Una de las retenciones ya fue declarada a AFIP: no se resetea nada. Rectificá la DDJJ para modificar.')
+                setProcesandoLote(false)
+                return
+              }
+            }
+            try {
+              // 'mantener': el lote nunca borra un anticipo vinculado (eso se decide desde la fila).
+              for (const id of idsAVolver) await resetearRetencionFactura('msa', id, { modoAnticipo: 'mantener' })
+              toast.success(`${idsAVolver.length} factura(s) reseteada(s): sin retención, sin descuento y con su importe original`)
+            } catch (e: any) {
+              toast.error('Error al resetear: ' + (e?.message ?? e))
+              setProcesandoLote(false)
+              return
+            }
+          } else if (!window.confirm(TEXTO_SIN_RESETEAR)) {
+            setProcesandoLote(false)
+            return
+          }
+        }
       }
 
       if (cambiarEstadoLote) {
@@ -3998,11 +4062,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 variant={modoPagos ? "default" : "outline"}
                 size="sm"
                 onClick={modoPagos ? desactivarModoPagos : activarModoPagos}
-                title="Ctrl+Click o Alt+P para activar modo PAGOS"
+                title="Ctrl+Click o Alt+P para entrar al modo PAGOS · Alt+P también sale"
               >
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
-                {!modoPagos && <span className="ml-1.5 rounded border px-1 text-[10px] font-normal text-gray-400">Alt+P</span>}
+                <span className={`ml-1.5 rounded border px-1 text-[10px] font-normal ${modoPagos ? 'border-white/40 text-white/80' : 'text-gray-400'}`}>Alt+P</span>
               </Button>
               {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
                   CUOTA de esta pantalla.
