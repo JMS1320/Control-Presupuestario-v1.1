@@ -4,6 +4,9 @@
  *
  * Regla del usuario 2026-10-14: *«para vincular cross company debe haber warning de por medio, nunca
  * algo automático o sin warning. Si difieren CUITs no debería suceder de forma automática tampoco»*.
+ * ⚠️ Precisada el mismo día: *«los templates sí se pueden conciliar cross company; lo que me refería
+ * es a las facturas… las cosas que no coinciden en CUIT nunca deben conciliarse salvo que yo lo
+ * fuerce»*. O sea: **otra empresa** frena sólo a las **facturas**; **otro CUIT** frena a todo.
  *
  * 🧨 El caso: dos **comisiones del banco** de MSA ($20.000 y $48.000) quedaron enganchadas a
  * facturas de **MA** sólo porque el importe coincidía. El motor admite a propósito que una cuenta
@@ -32,6 +35,8 @@ export function cuitDistinto(cuitBanco: string | null | undefined, cuitFila: str
 }
 
 export interface FilaVinculable {
+  /** `ARCA` = factura. Sólo a las facturas las frena ser de otra empresa; un template no. */
+  origen?: string | null
   empresas?: readonly string[] | null
   cuit_proveedor?: string | null
 }
@@ -39,8 +44,8 @@ export interface FilaVinculable {
 /** Lo que impide vincular SIN preguntar. Vacío = se puede vincular solo. */
 export function motivosParaPreguntar(fila: FilaVinculable, empresaCuenta: string | null | undefined, cuitBanco: string | null | undefined): string[] {
   const motivos: string[] = []
-  if (esDeOtraEmpresa(fila.empresas, empresaCuenta)) {
-    motivos.push(`es de ${(fila.empresas ?? []).join('/')} y la cuenta es de ${empresaCuenta}: se registraría como retiro`)
+  if ((fila.origen ?? 'ARCA') === 'ARCA' && esDeOtraEmpresa(fila.empresas, empresaCuenta)) {
+    motivos.push(`la factura es de ${(fila.empresas ?? []).join('/')} y la cuenta es de ${empresaCuenta}: se registraría como retiro`)
   }
   if (cuitDistinto(cuitBanco, fila.cuit_proveedor)) {
     motivos.push(`el banco informa el CUIT ${digitos(cuitBanco)} y la factura/template es de ${digitos(fila.cuit_proveedor)}`)

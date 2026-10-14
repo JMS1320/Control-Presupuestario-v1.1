@@ -2061,7 +2061,7 @@ ${texto.trim()}` : texto.trim()
         const empresas: string[] = Array.isArray(elegida.empresas) && elegida.empresas.length > 0
           ? elegida.empresas : (elegida.empresa ? [elegida.empresa] : [])
         const motivos = motivosParaPreguntar(
-          { empresas, cuit_proveedor: elegida.cuit ?? elegida.cuit_proveedor ?? null },
+          { origen: tabAsignar === 'arca' ? 'ARCA' : 'TEMPLATE', empresas, cuit_proveedor: elegida.cuit ?? elegida.cuit_proveedor ?? null },
           cuentaActivaObj?.empresa, extraerCuitBancario(movimientoAsignando))
         if (motivos.length > 0 && !window.confirm(
           `⚠️ Ojo antes de vincular:\n\n• ${motivos.join('\n• ')}\n\n¿Vincular igual?`)) return

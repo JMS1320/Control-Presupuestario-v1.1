@@ -909,10 +909,15 @@ export function correrCasos(): Resultado[] {
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
 
   // A-BUG-1256: nada de otra empresa ni de otro CUIT se vincula solo.
-  const comisionMA = { empresas: ["MA"], cuit_proveedor: "27114789033" }   // Espada Faraldo (MA), caso real
+  const comisionMA = { origen: "ARCA", empresas: ["MA"], cuit_proveedor: "27114789033" }   // Espada Faraldo (MA), caso real
   chequear("Conciliación — otra empresa / otro CUIT", "🔴 Una factura de MA no se vincula sola a un movimiento de una cuenta de MSA",
     "pregunta", puedeVincularseSola(comisionMA, "MSA", null) ? "se vincula sola" : "pregunta",
     !puedeVincularseSola(comisionMA, "MSA", null) && motivosParaPreguntar(comisionMA, "MSA", null)[0].includes("retiro"), "A-BUG-1256")
+  chequear("Conciliación — otra empresa / otro CUIT", "Un TEMPLATE de PAM pagado desde MSA sí se vincula solo (pedido del usuario); con CUIT distinto, no",
+    "sola · pregunta",
+    `${puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: null }, "MSA", null) ? "sola" : "pregunta"} · ${puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: "20044390222" }, "MSA", "30617786016") ? "sola" : "pregunta"}`,
+    puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: null }, "MSA", null)
+      && !puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: "20044390222" }, "MSA", "30617786016"), "A-BUG-1256")
   chequear("Conciliación — otra empresa / otro CUIT", "CUIT del banco distinto al de la factura → pregunta; banco sin CUIT o mismo CUIT → no opina; template MSA/PAM desde MSA → no es de otra",
     "pregunta · sola · sola · sola",
     [puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "30712118179"),
