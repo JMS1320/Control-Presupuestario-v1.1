@@ -479,7 +479,8 @@ y el Cash Flow proyectaba una sola fecha). Ahora:
 - **El Excel de emisión** (panel ECHEQs → Emitidos → 🏦): formato de la plantilla del banco
   (`Plantilla_Emision250.xlsx`), una fila por echeq; cláusula elegida con su explicación; motivo *Factura*
   si el echeq paga una factura, *Orden de pago* si no; mail de pagos del proveedor.
-- ⏳ **Templates**: falta la columna que ate un cheque a una cuota de template.
+- 🧊 **Templates**: futuro en evaluación (decisión del usuario 2026-10-14). Falta la columna que ate un cheque a una
+  cuota de template; hoy un template en ECHEQ se marca con aviso de que no registra cheque.
 
 ## 12. Pendientes / mejoras identificadas
 
