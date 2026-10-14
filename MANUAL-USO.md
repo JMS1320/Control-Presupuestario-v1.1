@@ -3068,6 +3068,10 @@ y ahí suele haber más que en MSA.
   **reseteás** —anula la retención, borra el descuento y la fecha de pago, y vuelve al importe
   original— o si la pasás a pendiente y nada más. Si después la vas a pagar de nuevo, reseteala.
   → A-TEST-1199
+- **Sueldos → Pagos registrados → archivo para el banco**: abrí el empleado, **tildá** los pagos que
+  vas a transferir y apretá **«🏦 Archivo para el banco (N)»**. Se abre la misma pantalla del lote
+  que en Cash Flow, sólo con esos pagos: revisás CBU/alias e importes, ponés la fecha y generás. Sale
+  un Excel por grupo de archivo. Los pagos por caja no entran. → A-TEST-1204
 - **Sueldos → Pagos registrados → exportar sólo algunos**: abrí el empleado y **tildá** los pagos
   que querés; el botón pasa a **«Exportar N pagos tildados»**. El tilde al lado del nombre tilda
   todos los de ese empleado. Sin tildar nada exporta el mes entero. → A-TEST-1195

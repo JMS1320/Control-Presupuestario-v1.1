@@ -10,6 +10,9 @@ import { brutoSegunTipo } from "@/lib/sueldos/bruto"
 import { PlanillaAsistencia } from "@/components/planilla-asistencia"
 import { descargarPagosDeSueldos, type PagoParaExportar } from "@/lib/sueldos/export-pagos"
 import { hoyArgentina } from "@/lib/fechas"
+import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
@@ -654,6 +657,26 @@ export function TabSueldos() {
     ids.forEach(id => { if (tildar) s.add(id); else s.delete(id) })
     return s
   })
+
+  /**
+   * 🏦 A-FEAT-1273 — el archivo del BANCO con los pagos tildados. Es el mismo modal que abre el Cash
+   * Flow (un Excel por grupo de archivo, con el CBU/alias de la cuenta del empleado): acá sólo se
+   * elige qué pagos van. Sin tildar no va ninguno — el mes trae también los ya transferidos.
+   */
+  const [loteBanco, setLoteBanco] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  const abrirArchivoBanco = () => {
+    const sel = pagosParaElBanco(pagos as any, pagosElegidos)
+    if (sel.ids.length === 0) {
+      alert(sel.fueraPorCaja > 0
+        ? 'Los pagos tildados se pagaron por caja: no van al archivo del banco.'
+        : 'Tildá los pagos que querés mandar al banco.')
+      return
+    }
+    if (sel.fueraPorCaja > 0) {
+      alert(`${sel.fueraPorCaja} de los pagos tildados se ${sel.fueraPorCaja === 1 ? 'pagó' : 'pagaron'} por caja y no ${sel.fueraPorCaja === 1 ? 'va' : 'van'} al archivo del banco. Sigo con los otros ${sel.ids.length}.`)
+    }
+    setLoteBanco({ open: true, items: sel.ids.map(id => ({ tipo: 'sueldo' as const, id })) })
+  }
 
   // ── Editar / Eliminar pago ────────────────────────────────────────────────
 
@@ -1512,6 +1535,22 @@ export function TabSueldos() {
               <CardTitle className="text-sm">
                 Pagos registrados — {MESES_LONG[mesActual.mes - 1]} {mesActual.anio}
               </CardTitle>
+              <div className="flex items-center gap-2">
+              {/* 🏦 El archivo para el banco, sólo con los pagos tildados (A-FEAT-1273). */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={elegidosVisibles === 0}
+                onClick={abrirArchivoBanco}
+                title={elegidosVisibles > 0
+                  ? 'Armar el archivo para el banco con los pagos tildados (te muestra el detalle antes de generar)'
+                  : 'Tildá los pagos que querés transferir y armo el archivo para el banco sólo con ésos'}
+              >
+                {elegidosVisibles > 0
+                  ? `🏦 Archivo para el banco (${elegidosVisibles})`
+                  : '🏦 Archivo para el banco'}
+              </Button>
               {/* 📗 El listado a Excel, con el formato canónico del sistema (A-FEAT-1217). */}
               <Button
                 variant="outline"
@@ -1526,6 +1565,7 @@ export function TabSueldos() {
                   ? `📗 Exportar ${elegidosVisibles} ${elegidosVisibles === 1 ? 'pago tildado' : 'pagos tildados'}`
                   : '📗 Exportar todo a Excel'}
               </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -2116,6 +2156,15 @@ export function TabSueldos() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 🏦 Archivo para el banco con los pagos tildados (A-FEAT-1273) — el mismo modal del Cash Flow */}
+      <ModalExportarLote
+        open={loteBanco.open}
+        onClose={() => setLoteBanco({ open: false, items: [] })}
+        empresa="MSA"
+        items={loteBanco.items}
+        userRole="admin"
+      />
 
       {/* ── Modal Pago repartido (A-FEAT-1212) ── */}
       {repartirPeriodo && (

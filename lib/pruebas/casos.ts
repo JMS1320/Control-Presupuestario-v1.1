@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
@@ -902,6 +903,19 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-FEAT-1273: el archivo del banco desde Sueldos lleva SÓLO los pagos tildados y pagados por banco.
+  const PAGOS_MES = [
+    { id: "p1", medio_pago: "banco" }, { id: "p2", medio_pago: null },
+    { id: "p3", medio_pago: "caja_general" }, { id: "p4", medio_pago: "banco" },
+  ]
+  const selBanco = pagosParaElBanco(PAGOS_MES, new Set(["p1", "p2", "p3", "no-esta-en-el-mes"]))
+  chequear("Sueldos — archivo del banco", "🔴 Al banco van sólo los tildados (no el mes entero) y sin los pagados por caja",
+    "p1,p2 · 1 por caja", `${selBanco.ids.join(",")} · ${selBanco.fueraPorCaja} por caja`,
+    selBanco.ids.join(",") === "p1,p2" && selBanco.fueraPorCaja === 1, "A-FEAT-1273")
+  chequear("Sueldos — archivo del banco", "Sin nada tildado no va ningún pago",
+    "0", String(pagosParaElBanco(PAGOS_MES, new Set()).ids.length),
+    pagosParaElBanco(PAGOS_MES, new Set()).ids.length === 0, "A-FEAT-1273")
 
   // A-BUG-1255: ARCA trae la moneda de una factura en pesos como «$». No es moneda extranjera.
   const convPesos = textoConversion([{ comprobante: "FC 2077", conversion: conversionDe({ moneda: "$", imp_total: 1537055, tipo_cambio: 1 }) }])
