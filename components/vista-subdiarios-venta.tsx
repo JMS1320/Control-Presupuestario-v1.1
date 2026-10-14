@@ -22,7 +22,10 @@ import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/li
 import { useCarpetaPorDefecto } from "@/hooks/useCarpetaPorDefecto"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
-import { filasRetenciones } from "@/lib/ventas/retenciones-export"
+import { hojaRetenciones } from "@/lib/ventas/retenciones-export"
+import { cargarRetencionesSubdiario } from "@/lib/ventas/retenciones-export-db"
+
+type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
 interface Props {
   /** PAM incluida para cuando exista `pam.comprobantes_venta` (hoy la tabla no está creada). */
@@ -61,6 +64,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   const [comprobantes, setComprobantes] = useState<any[]>([])
   const [tipos, setTipos] = useState<TipoComp[]>([])
   const [cargando, setCargando] = useState(false)
+  const [retPreview, setRetPreview] = useState<RetencionesDelSubdiario | null>(null)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
 
   // Modal alta/edición
@@ -95,7 +99,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   }, [tipos])
 
   const cargarPeriodo = async () => {
-    if (!periodoConsulta) { setComprobantes([]); return }
+    if (!periodoConsulta) { setComprobantes([]); setRetPreview(null); return }
     setCargando(true)
     try {
       const [mes, año] = periodoConsulta.split('/')
@@ -109,6 +113,10 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
       if (error) throw error
       setComprobantes(data || [])
       setSeleccionados(new Set())
+      // 🧾 A-FEAT-1278: vista previa de las retenciones (el aviso de «sin fecha» se ve antes de exportar).
+      setRetPreview(null)
+      cargarRetencionesSubdiario(supabase, empresa, parseInt(año), parseInt(mes), data || [])
+        .then(setRetPreview).catch(() => setRetPreview(null))
     } catch (err) {
       toast.error('Error cargando período: ' + (err as Error).message)
     } finally {
@@ -295,13 +303,24 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
         return
       }
 
+      // 🧾 A-FEAT-1278: los certificados sin fecha se avisan ANTES de exportar. Avisa y deja seguir —
+      // salen con la fecha del cobro o del comprobante, marcados (§ 🚦: discrepancia, no contradicción).
+      const retenciones = await cargarRetencionesSubdiario(supabase, empresa, parseInt(año), parseInt(mes), filas)
+      setRetPreview(retenciones)
+      const sinFecha = retenciones.avisos.length + retenciones.sinUbicar.length
+      if (sinFecha > 0 && !confirm(
+        `⚠️ Hay ${sinFecha} certificado(s) de retención SIN FECHA:\n\n` +
+        [...retenciones.avisos, ...retenciones.sinUbicar.map(r => `Ret. ${r.tipo} de ${r.cliente || 'cliente sin nombre'} — ${r.aviso}`)].map(a => '• ' + a).join('\n') +
+        `\n\nSalen marcados en la solapa RETENCIONES. ¿Exportar igual?`
+      )) return
+
       const destino = await elegirCarpetaDestino(carpetaPorDefecto, setCarpetaPorDefecto)
       if (destino.cancelado) {
         alert('📁 Descarga cancelada')
         return
       }
 
-      await generarExcelConCarpeta(filas, periodoConsulta, destino.directorio)
+      await generarExcelConCarpeta(filas, periodoConsulta, destino.directorio, retenciones)
       await generarPDFConCarpeta(filas, periodoConsulta, destino.directorio)
 
       alert(
@@ -324,7 +343,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   }
 
   // ── Excel ──────────────────────────────────────────────────────────────────
-  const generarExcelConCarpeta = async (filas: any[], periodo: string, directorio: any = null) => {
+  const generarExcelConCarpeta = async (filas: any[], periodo: string, directorio: any = null, retenciones: RetencionesDelSubdiario | null = null) => {
     try {
       const { mes, año } = rangoDelPeriodo(periodo)
 
@@ -391,40 +410,14 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
       XLSX.utils.book_append_sheet(wb, ws, `LIBRO IVA VENTAS ${mes}-${año}`)
 
       /**
-       * 🧾 A-FEAT-1227 — segunda hoja: las RETENCIONES RECIBIDAS del mes, para que el contador las
-       * cruce con *Mis Retenciones* de ARCA. Certificados por su fecha (sólo MSA: la tabla no
-       * existe en PAM/MA) + las impresas en los comprobantes de este subdiario. Si la lectura falla,
-       * la hoja lo dice — no se omite en silencio.
+       * 🧾 A-FEAT-1227 / A-FEAT-1278 — segunda hoja: las RETENCIONES RECIBIDAS en dos apartados (de las
+       * ventas del subdiario · sufridas en el mes), agrupadas por tipo, con el control contra ARCA.
+       * La lectura es la misma que la de la vista previa (`cargarRetencionesSubdiario`).
        */
-      const mm = mes.padStart(2, '0')
-      const ultimo = String(new Date(parseInt(año), parseInt(mes), 0).getDate()).padStart(2, '0')
-      let certificados: any[] = []
-      let errorCert: string | null = null
-      if (empresa === 'MSA') {
-        const { data: certs, error: eC } = await supabase.schema('msa').from('retenciones_recibidas')
-          .select('fecha, tipo, monto, nro_certificado, denominacion_cliente, cuit_cliente, comprobante_venta_id')
-          .gte('fecha', `${año}-${mm}-01`).lte('fecha', `${año}-${mm}-${ultimo}`)
-        if (eC) errorCert = eC.message
-        const idsComp = [...new Set((certs || []).map((c: any) => c.comprobante_venta_id).filter(Boolean))]
-        const { data: compsCert } = idsComp.length
-          ? await supabase.schema('msa').from('comprobantes_venta').select('id, nro_comprobante').in('id', idsComp)
-          : { data: [] as any[] }
-        const nroPorId = new Map((compsCert || []).map((c: any) => [c.id, c.nro_comprobante]))
-        certificados = (certs || []).map((c: any) => ({ ...c, comprobante: nroPorId.get(c.comprobante_venta_id) || '' }))
-      }
-      const ret = filasRetenciones(certificados, filas.map(c => ({
-        fecha: c.fecha_liquidacion || null,
-        nro: c.nro_comprobante || [c.punto_venta, c.numero_desde].filter(Boolean).join('-') || null,
-        cliente: c.denominacion_cliente || null, cuit: c.cuit_cliente || null,
-        ret_iva: c.ret_iva, ret_iibb: c.ret_iibb,
-      })))
-      const filasHoja: any[] = ret.filas.map(f => ({ ...f, Importe: fmtNum(f.Importe) }))
-      if (errorCert) filasHoja.unshift({ Fecha: '⚠️ No se pudieron leer los certificados: ' + errorCert })
-      if (ret.filas.length === 0 && !errorCert) filasHoja.push({ Fecha: 'Sin retenciones recibidas en el período' })
-      filasHoja.push({}, ...Object.entries(ret.porTipo).map(([t, v]) => ({ Fecha: `Total ${t}`, Importe: fmtNum(v) })),
-        { Fecha: 'TOTAL RETENCIONES', Importe: fmtNum(ret.total) })
-      if (empresa !== 'MSA') filasHoja.push({}, { Fecha: `Nota: los certificados se cargan sólo en MSA; acá van sólo las impresas en los comprobantes de ${empresa}.` })
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filasHoja), `RETENCIONES ${mes}-${año}`)
+      const ret = retenciones ?? await cargarRetencionesSubdiario(supabase, empresa, parseInt(año), parseInt(mes), filas)
+      const wsRet = XLSX.utils.aoa_to_sheet(hojaRetenciones(ret, `${mes.padStart(2, '0')}/${año}`, ret.notas) as any[][])
+      wsRet['!cols'] = [{ wch: 12 }, { wch: 34 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 60 }]
+      XLSX.utils.book_append_sheet(wb, wsRet, `RETENCIONES ${mes}-${año}`)
 
       const filename = await generarNombreUnico(directorio, nombreBaseReporte(periodo), 'xlsx')
       if (directorio) {
@@ -723,6 +716,48 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
               etiquetaSinCredito="Monotributo (Fac C)"
               mostrarOtrosTributos={false}
             />
+
+            {/* 🧾 A-FEAT-1278 — vista previa de la solapa RETENCIONES del Excel: los dos apartados por
+                tipo, y los certificados sin fecha avisados ANTES de exportar. */}
+            {retPreview && (
+              <div className="border rounded p-3 text-sm space-y-2">
+                <div className="font-semibold">🧾 Retenciones recibidas <span className="font-normal text-gray-500">— salen en la solapa RETENCIONES del Excel</span></div>
+                {retPreview.notas.map((n, i) => <div key={i} className="text-xs text-gray-600">{n}</div>)}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {([['De las ventas del subdiario', 'aunque la retención sea de otro mes', retPreview.deLasVentas],
+                     ['Sufridas en el mes', 'aunque la venta sea de otro mes — es lo que se cruza con ARCA', retPreview.delMes]] as const).map(([titulo, sub, ap]) => (
+                    <div key={titulo} className="bg-gray-50 rounded p-2">
+                      <div className="font-medium">{titulo}</div>
+                      <div className="text-xs text-gray-500 mb-1">{sub}</div>
+                      {ap.grupos.length === 0
+                        ? <div className="text-xs text-gray-500">Sin retenciones</div>
+                        : <>
+                            {ap.grupos.map(g => (
+                              <div key={g.tipo} className="flex justify-between">
+                                <span>Ret. {g.tipo} <span className="text-gray-500 text-xs">({g.filas.length})</span></span>
+                                <span className="whitespace-nowrap">{fmtMoney(g.total)}</span>
+                              </div>
+                            ))}
+                            <div className="flex justify-between border-t mt-1 pt-1 font-semibold">
+                              <span>Total</span><span className="whitespace-nowrap">{fmtMoney(ap.total)}</span>
+                            </div>
+                          </>}
+                    </div>
+                  ))}
+                </div>
+                {(retPreview.avisos.length > 0 || retPreview.sinUbicar.length > 0) && (
+                  <div className="bg-amber-50 border border-amber-300 rounded p-2 text-xs space-y-0.5">
+                    <div className="font-semibold text-amber-800">
+                      ⚠️ {retPreview.avisos.length + retPreview.sinUbicar.length} certificado(s) sin fecha — cargá la fecha real en Comprobantes → Retenciones
+                    </div>
+                    {retPreview.avisos.map((a, i) => <div key={i}>• {a}</div>)}
+                    {retPreview.sinUbicar.map((r, i) => (
+                      <div key={`s${i}`}>• Ret. {r.tipo} {fmtMoney(r.importe)} de {r.cliente || 'cliente sin nombre'} — {r.aviso}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Confirmar DDJJ */}
             {esAdmin && comprobantes.some(c => c.ddjj_iva === 'Imputado') && (

@@ -1991,9 +1991,25 @@ banco. Una cuota **✓ conciliada** no se desmarca desde acá ni desde el Cash F
 desconciliando su movimiento en el Extracto.
 
 ### Las retenciones en el Excel del Subdiario de Ventas
-El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, con las retenciones
-recibidas del mes: los certificados (por su fecha) y las que vienen impresas en los comprobantes del
-subdiario, con el total por tipo. Sirve para que el contador las compare con *Mis Retenciones* de ARCA.
+El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, en dos apartados, cada
+uno agrupado por tipo (Ret. Ganancias, Ret. IIBB…) con su subtotal:
+- **De las ventas del subdiario**: todo lo que te retuvieron sobre las facturas y liquidaciones de ese
+  subdiario, aunque la retención sea de otro mes (la factura de septiembre cobrada en octubre).
+- **Sufridas en el mes**: todo lo que te retuvieron en ese mes, aunque la venta sea de otro mes. Es lo
+  que el contador compara con *Mis Retenciones* de ARCA: al final hay un **Control contra ARCA** donde
+  pegás el total de ARCA de cada tipo y la diferencia se calcula sola.
+
+Una retención que está en los dos apartados lo dice en la columna *También en el otro apartado*.
+
+Antes de exportar, la pantalla del subdiario muestra los totales de los dos apartados. Si un
+certificado **no tiene fecha**, sale igual —con la fecha del cobro de su comprobante o, si no tiene
+cobro, con la del comprobante— pero marcado, y la app te avisa antes de generar el Excel. Lo mejor es
+cargarle la fecha real en **Comprobantes → %** (retenciones).
+
+En **PAM** y **MA** todavía no se pueden cargar certificados: la hoja trae sólo lo impreso en los
+comprobantes y lo aclara.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1211`.
 
 Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
 su venta, y el consignatario queda registrado como cliente.

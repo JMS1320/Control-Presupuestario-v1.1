@@ -154,7 +154,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
-import { filasRetenciones } from "@/lib/ventas/retenciones-export"
+import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
@@ -3001,18 +3001,57 @@ export function correrCasos(): Resultado[] {
     "136646475", String(trasUno[0].aCobrar), trasUno[0].aCobrar === 136646475, "A-FEAT-1228")
 
 
-  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227) ══════════════════════
-  const hojaRet = filasRetenciones(
-    [{ fecha: "2026-09-03", tipo: "ganancias", monto: 583395.25, nro_certificado: null, denominacion_cliente: "GENTA", cuit_cliente: "30526554562", comprobante: "11-86270" }],
-    [{ fecha: "2026-08-10", nro: "11-86270", cliente: "GENTA", cuit: "30526554562", ret_iva: 0, ret_iibb: 675905.18 },
-     { fecha: "2026-08-15", nro: "FC 1", cliente: "X", cuit: "1", ret_iva: null, ret_iibb: null }],
-  )
-  chequear("Retenciones en el subdiario", "🧾 Certificado + impresa: 2 filas (la FC sin retenciones no suma una vacía), ordenadas por fecha",
-    "2 · 2026-08-10 IIBB · 2026-09-03 Ganancias", `${hojaRet.filas.length} · ${hojaRet.filas.map(f => f.Fecha + " " + f.Tipo).join(" · ")}`,
-    hojaRet.filas.length === 2 && hojaRet.filas[0].Tipo === "IIBB" && hojaRet.filas[1].Tipo === "Ganancias", "A-FEAT-1227")
-  chequear("Retenciones en el subdiario", "Totales por tipo y total general",
-    "IIBB 675905.18 · Ganancias 583395.25 · 1259300.43", `IIBB ${hojaRet.porTipo.IIBB} · Ganancias ${hojaRet.porTipo.Ganancias} · ${hojaRet.total}`,
-    hojaRet.porTipo.IIBB === 675905.18 && hojaRet.porTipo.Ganancias === 583395.25 && hojaRet.total === 1259300.43, "A-FEAT-1227")
+  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227 → A-FEAT-1278) ══════════
+  // Dos apartados: de las ventas del subdiario (cualquier fecha) y sufridas en el mes (cualquier venta).
+  // El caso del usuario: la factura de septiembre, cobrada —y retenida— en octubre.
+  const retEntrada = {
+    desde: "2026-09-01", hasta: "2026-09-30", idsSubdiario: ["fc-sep", "liq-sep"],
+    certificados: [
+      { id: "c1", fecha: "2026-10-05", tipo: "ganancias", monto: 100000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c2", fecha: "2026-09-10", tipo: "iibb", monto: 5000, comprobante_venta_id: "fc-ago", denominacion_cliente: "AFA" },
+      { id: "c3", fecha: "2026-09-20", tipo: "ganancias", monto: 7000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c4", fecha: null, tipo: "ganancias", monto: 3000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c5", fecha: null, tipo: "iibb", monto: 2000, comprobante_venta_id: null, denominacion_cliente: "SUELTO" },
+    ],
+    comprobantes: [
+      { id: "fc-sep", fecha: "2026-09-15", nro: "10-20", cliente: "SANPA", cuit: "1", ret_iva: null, ret_iibb: null },
+      { id: "liq-sep", fecha: "2026-09-12", nro: "11-86270", cliente: "GENTA", cuit: "2", ret_iva: 0, ret_iibb: 675905.18 },
+      { id: "fc-ago", fecha: "2026-08-20", nro: "10-19", cliente: "AFA", cuit: "3", ret_iva: null, ret_iibb: null },
+    ],
+    cobrosPorComprobante: { "fc-sep": ["2026-09-28"] },
+  }
+  const retSep = armarRetencionesSubdiario(retEntrada)
+  const totTipo = (ap: typeof retSep.delMes, t: string) => ap.grupos.find(g => g.tipo === t)?.total ?? 0
+  chequear("Retenciones en el subdiario", "🧨 La retención de OCTUBRE sobre una venta de SEPTIEMBRE sale en el subdiario de septiembre (apartado de las ventas) y NO en «sufridas en el mes»",
+    "en ventas · no en el mes", `${retSep.deLasVentas.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) ? "en ventas" : "no en ventas"} · ${retSep.delMes.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) ? "en el mes" : "no en el mes"}`,
+    retSep.deLasVentas.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) && !retSep.delMes.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")), "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "La retención de septiembre sobre una venta de AGOSTO sale en «sufridas en el mes» y no en el apartado de las ventas",
+    "IIBB del mes 680905.18 · IIBB de las ventas 675905.18", `IIBB del mes ${totTipo(retSep.delMes, "IIBB")} · IIBB de las ventas ${totTipo(retSep.deLasVentas, "IIBB")}`,
+    totTipo(retSep.delMes, "IIBB") === 680905.18 && totTipo(retSep.deLasVentas, "IIBB") === 675905.18, "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "Agrupadas por tipo, Ganancias primero; de las ventas: Ganancias 100.000 + 7.000 + 3.000 (sin fecha) = 110.000",
+    "Ganancias,IIBB · 110000 · total 785905.18", `${retSep.deLasVentas.grupos.map(g => g.tipo).join(",")} · ${totTipo(retSep.deLasVentas, "Ganancias")} · total ${retSep.deLasVentas.total}`,
+    retSep.deLasVentas.grupos.map(g => g.tipo).join(",") === "Ganancias,IIBB" && totTipo(retSep.deLasVentas, "Ganancias") === 110000 && retSep.deLasVentas.total === 785905.18, "A-FEAT-1278")
+  const sinFechaSep = retSep.delMes.grupos.flatMap(g => g.filas).find(f => f.importe === 3000)
+  chequear("Retenciones en el subdiario", "🧨 Un certificado SIN FECHA no se pierde: sale con la fecha de su cobro (28/09), con aviso, y marcado en los dos apartados",
+    "2026-09-28 · con aviso · en ambos · 1 aviso", `${sinFechaSep?.fecha} · ${sinFechaSep?.aviso ? "con aviso" : "sin aviso"} · ${sinFechaSep?.enAmbos ? "en ambos" : "no"} · ${retSep.avisos.length} aviso`,
+    sinFechaSep?.fecha === "2026-09-28" && !!sinFechaSep?.aviso && sinFechaSep?.enAmbos === true && retSep.avisos.length === 1, "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "Sin fecha ni comprobante: no cae en ningún apartado, pero se muestra en «sin ubicar»",
+    "1 sin ubicar · SUELTO", `${retSep.sinUbicar.length} sin ubicar · ${retSep.sinUbicar[0]?.cliente}`,
+    retSep.sinUbicar.length === 1 && retSep.sinUbicar[0].cliente === "SUELTO", "A-FEAT-1278")
+  const fSinCobro = fechaDelCertificado({ fecha: null }, { fecha: "2026-09-15" }, [])
+  const fVarios = fechaDelCertificado({ fecha: null }, { fecha: "2026-09-15" }, ["2026-09-28", "2026-09-03"])
+  chequear("Retenciones en el subdiario", "Sin fecha y sin cobro → la del comprobante; con varios cobros → el último, diciendo cuántos",
+    "2026-09-15 · 2026-09-28 (2 cobros)", `${fSinCobro.fecha} · ${fVarios.fecha} (${fVarios.aviso.includes("2 cobros") ? "2 cobros" : fVarios.aviso})`,
+    fSinCobro.fecha === "2026-09-15" && !!fSinCobro.aviso && fVarios.fecha === "2026-09-28" && fVarios.aviso.includes("2 cobros"), "A-FEAT-1278")
+  // La hoja: los subtotales son fórmulas que suman su bloque, y el control contra ARCA resta la celda vacía.
+  const aoaRet = hojaRetenciones(retSep, "09/2026")
+  const celdas = aoaRet.flat().filter((c): c is { t: "n"; v: number; f: string } => !!c && typeof c === "object")
+  const subGan = aoaRet.findIndex(r => r[0] === "Subtotal Ret. Ganancias")
+  const filaSub = aoaRet[subGan]?.[6] as { f: string; v: number } | undefined
+  const sumados = filaSub ? (() => { const [d, h] = filaSub.f.replace("SUM(G", "").replace(")", "").split(":G").map(Number); return aoaRet.slice(d - 1, h).reduce((s, r) => s + (typeof r[6] === "number" ? r[6] : 0), 0) })() : -1
+  chequear("Retenciones en el subdiario", "La hoja: el subtotal de Ganancias es una fórmula que abarca exactamente sus filas (suman 110.000), y hay control contra ARCA",
+    "110000 · con control ARCA", `${sumados} · ${aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")) ? "con control ARCA" : "sin control"}`,
+    sumados === 110000 && celdas.every(c => c.f.length > 0) && aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")), "A-FEAT-1278")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto
