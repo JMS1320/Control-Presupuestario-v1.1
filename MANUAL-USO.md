@@ -929,11 +929,12 @@ completar uno que quedó a medias.
 ### Los echeqs de un pago en varios, en el Cash Flow
 Cada echeq es una fila, en su fecha de cobro y por su monto («… · echeq 2/3»). Son de **sólo
 lectura**: el pago ya está hecho. Lo único que se cambia ahí es la **fecha de cobro** de cada echeq;
-el estado del pago se maneja desde la factura o el anticipo, y no entran a las acciones en lote.
+se pueden tildar, pero sólo para el **Excel echeqs**: las demás acciones en lote los dejan afuera.
 
 ### El Excel de emisión para el banco
-En **Cash Flow → 📝 ECHEQs → Emitidos**, tildá los echeqs que vas a emitir y apretá
-**🏦 Excel de emisión**. Elegí la **cláusula** (con la explicación de cada una), revisá el **motivo**
+En el **Cash Flow**, tildá las filas de los echeqs (o la factura/anticipo pagado con echeq) y en la
+barra de PAGOS apretá **📝 Excel echeqs**. También desde **📝 ECHEQs → Emitidos**: tildá y
+**🏦 Excel de emisión**. Los echeqs tildados no entran a las otras acciones de la barra (ya están pagados). Elegí la **cláusula** (con la explicación de cada una), revisá el **motivo**
 de cada echeq (*Factura* si paga una factura, *Orden de pago* si no) y **Generar Excel**: sale con el
 formato de la plantilla del banco, listo para cargar al emitir. Si algún dato haría que el banco lo
 rechace (un CUIT incompleto, un monto en cero), no se genera y te dice cuál.

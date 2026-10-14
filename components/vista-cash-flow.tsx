@@ -548,7 +548,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   useEffect(() => {
     if (!modoPagos) { estadoLoteAMano.current = false; return }
     if (estadoLoteAMano.current) return
-    const estados = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)?.estado).filter(Boolean)
+    // Los echeqs de un pago en varios no cuentan para sugerir el estado: no entran al cambio de estado (A-FEAT-1282).
+    const estados = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)).filter(f => f && f.origen_tabla !== 'msa.cheques').map(f => f!.estado).filter(Boolean)
     const sugerido = estadoSugeridoParaLote(estados as string[])
     if (sugerido && sugerido !== valorEstadoLote) setValorEstadoLote(sugerido)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1752,8 +1753,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
-    // Los echeqs de un pago en varios no se seleccionan (A-FEAT-1282).
-    const idsVisibles = new Set(datosFiltradosPagos.filter(f => f.origen_tabla !== 'msa.cheques').map(f => f.id))
+    const idsVisibles = new Set(datosFiltradosPagos.map(f => f.id))
     setFilasSeleccionadas(idsVisibles)
     toast.success(`${idsVisibles.size} filas seleccionadas`)
   }
@@ -1764,7 +1764,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.3: Comprobante de pago PDF sobre las filas seleccionadas (agrupa por proveedor). Reusa lib/pagos/pdf-detalle-pago.
   const generarPDFPagosSeleccionados = async () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const fmtFecha = (s?: string | null) => {
       if (!s) return ''
@@ -1825,7 +1825,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Reusa lib/pagos/encolar-mail-detalle (misma lógica que el modal de pagos). Cash Flow = schema 'msa'.
   // Sirve para mandar el detalle a proveedores YA pagados (el modal de pagos no muestra pagadas).
   const encolarMailsSeleccionados = async () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const fmtFecha = (s?: string | null) => {
       if (!s) return ''
@@ -1898,9 +1898,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     toast.success(`✉ ${ok} mail(s) encolado(s)${sinMail ? ` · ${sinMail} sin email` : ''}${err ? ` · ${err} error(es)` : ''}. Revisá "✉ Mails de detalle".`)
   }
 
+  /**
+   * 🏦 A-FEAT-1282 — el Excel de EMISIÓN de echeqs desde la barra de PAGOS, como el lote de transferencias.
+   * Toma los echeqs de lo tildado: las filas de un echeq (pago en varios) y las facturas/anticipos en
+   * estado echeq (sus cheques). Pedido del usuario al ver las 3 filas de BRIKI.
+   */
+  const [echeqsExcelPagos, setEcheqsExcelPagos] = useState<any[] | null>(null)
+  const exportarExcelEcheqs = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const idsCheques = filas.filter(f => f.origen_tabla === 'msa.cheques').map(f => f.id)
+    const idsPadres = filas.filter(f => f.origen_tabla !== 'msa.cheques' && f.estado === 'echeq' && (f.origen === 'ARCA' || f.origen === 'ANTICIPO')).map(f => f.id)
+    if (!idsCheques.length && !idsPadres.length) { toast.error('Tildá echeqs (o facturas/anticipos pagados con echeq)'); return }
+    const filtros = [idsCheques.length ? `id.in.(${idsCheques.join(',')})` : '', idsPadres.length ? `factura_id.in.(${idsPadres.join(',')}),anticipo_id.in.(${idsPadres.join(',')})` : ''].filter(Boolean).join(',')
+    const { data, error } = await supabase.schema('msa').from('cheques').select('*').or(filtros).order('fecha_cobro')
+    if (error) { toast.error('No se pudieron leer los echeqs: ' + error.message); return }
+    if (!data?.length) { toast.error('Lo tildado no tiene echeqs registrados'); return }
+    setEcheqsExcelPagos(data)
+  }
+  const cantEcheqsTildados = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && (f.origen_tabla === 'msa.cheques' || (f.estado === 'echeq' && (f.origen === 'ARCA' || f.origen === 'ANTICIPO')))).length
+
   // E2.4: Exportar lote Galicia sobre las filas seleccionadas. Reusa el módulo lotes-galicia (CBU/mail/agendar proveedores).
   const exportarLoteSeleccionados = () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const items: ItemSeleccionado[] = []
     for (const f of filas) {
@@ -1924,7 +1943,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
   const agruparSeleccionados = async () => {
-    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     // Las filas que YA son un grupo no se pueden meter dentro de otro grupo: se descartan acá.
     const yaAgrupadas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) > 1)
     const filas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) <= 1)
@@ -2016,11 +2035,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
-    // 📝 A-FEAT-1282 — un echeq de un pago en varios no entra a las acciones en lote (ya está pagado).
-    if (data.find(f => f.id === filaId)?.origen_tabla === 'msa.cheques') {
-      toast.info('Es un echeq de un pago en varios: el pago ya está hecho. Sólo se puede cambiar su fecha de cobro.')
-      return
-    }
+    // 📝 A-FEAT-1282 — un echeq de un pago en varios SÍ se tilda, pero sólo para el «Excel echeqs»: las
+    // demás acciones en lote lo dejan afuera (ya está pagado). Pedido del usuario: *«si no los selecciono,
+    // ¿cómo exporto el Excel?»*.
     setFilasSeleccionadas(prev => {
       const nueva = new Set(prev)
       if (nueva.has(filaId)) {
@@ -2067,7 +2084,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const hoy = hoyArgentina()
       const seleccionadas = Array.from(filasSeleccionadas)
         .map(id => data.find(f => f.id === id))
-        .filter(Boolean) as CashFlowRow[]
+        .filter(f => f && f.origen_tabla !== 'msa.cheques') as CashFlowRow[]  // los echeqs de un pago en varios no entran (A-FEAT-1282)
       // La decisión vive en `lib/pagos/preguntar-fecha-pago.ts`: ahí se prueba, y ahí está escrito
       // que ante la duda SE PREGUNTA (no preguntar de menos escribe una fecha mala en SICORE).
       if (hayQuePreguntarFechaPago(seleccionadas, hoy)) {
@@ -2107,7 +2124,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
 
       // Separar filas: las ARCA→'pagar' necesitan evaluación SICORE; el resto va directo
-      const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(Boolean)
+      const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(f => f && f.origen_tabla !== 'msa.cheques')
 
       /** La fecha de pago que le corresponde a cada fila según lo elegido en el paso 1. */
       const fechaPagoDe = (f: CashFlowRow): string =>
@@ -4274,6 +4291,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     >
                       🏦 Exportar lote Galicia
                     </Button>
+                    <Button
+                      size="sm"
+                      onClick={exportarExcelEcheqs}
+                      className="text-xs bg-amber-600 hover:bg-amber-700"
+                      disabled={cantEcheqsTildados === 0}
+                      title="Excel de emisión de echeqs para el banco, con lo tildado"
+                    >
+                      📝 Excel echeqs ({cantEcheqsTildados})
+                    </Button>
                     {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
                     {filaGrupoSeleccionada ? (
                       <Button
@@ -4944,7 +4970,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     */}
                     {/* ☑️ A-FEAT-1268 — el tilde del encabezado tilda todo lo que se ve con los filtros puestos. */}
                     {modoPagos && (() => {
-                      const idsVisibles = datosFiltradosPagos.filter(f => f.origen_tabla !== 'msa.cheques').map(f => f.id)
+                      const idsVisibles = datosFiltradosPagos.map(f => f.id)
                       const estado = estadoTildeTodas(idsVisibles, filasSeleccionadas)
                       return (
                         <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
@@ -5216,6 +5242,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           </CardContent>
         </Card>
       )}
+      <ModalExportarEcheqs open={!!echeqsExcelPagos} onClose={() => setEcheqsExcelPagos(null)} cheques={echeqsExcelPagos ?? []} />
       <ModalExportarEcheqs open={mostrarExcelEcheqs} onClose={() => { setMostrarExcelEcheqs(false); setEcheqsParaExcel(new Set()) }}
         cheques={cheques.filter(c => echeqsParaExcel.has(c.id))} />
 
