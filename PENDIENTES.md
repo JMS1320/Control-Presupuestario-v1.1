@@ -12,6 +12,8 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 5 de octubre (todo en `desarrollo`, salvo la tarjeta)
 
+> ↻ **Al 14/10 se sumaron las filas 40 a 42** (retenciones del subdiario en Excel y PDF, Cobros y retenciones de PAM y MA, 3 decimales en la liquidación de hacienda), en la rama `jms/cobros-pam-ma` — que sale de `jms/planilla-asistencia` y la incluye. La base de PAM/MA ya está lista (`scripts/84` corrido). El IVA a mano de la liquidación ya está ✅ probado.
+>
 > ↻ **Al 13/10 se sumaron las filas 21 y siguientes** (las notas de la app con `(*)`), en la rama `jms/planilla-asistencia`, todavía sin mergear a `desarrollo`.
 >
 > ↻ **Al 11/10 se sumaron dos filas (19 y 20)**: los pendientes de los papeles y la **planilla de asistencia**, las dos ya en `desarrollo`. La carga del histórico (rama `jms/historico-templates`) no se prueba en la app: se revisa en los Excel de la carpeta Balance.
