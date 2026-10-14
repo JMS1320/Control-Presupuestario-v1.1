@@ -60,7 +60,7 @@ import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuen
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
-import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
+import { calcularCuenta, etiquetaComprobante, restosComoMedios } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
@@ -152,7 +152,7 @@ import { filasRetenciones } from "@/lib/ventas/retenciones-export"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
-import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion } from "@/lib/pagos/moneda-factura"
+import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -878,6 +878,38 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle de pago", "Con 3 renglones la cuenta CERRABA igual — por eso el bug sobrevivió",
     "cierra, y está mal igual", `dif $${n2(cTres.dif)} con ${tresTransferencias.length} renglones`,
     Math.abs(cTres.dif) <= 1 && tresTransferencias.length === 3, "A-BUG-145")
+
+  // A-BUG-1254: una NOTA DE CRÉDITO del grupo resta de la transferencia. Números reales del pago
+  // de ALCORTA del 13/10/2026: el mail anunciaba $3.289.256,72 y la transferencia es $3.162.587,93.
+  const G = "grupo-alcorta-1310"
+  const ALCORTA_NC = [
+    { id: "a", comprobante: "FC 6377", imp_total: 2344321.33, monto_sicore: 30237.96, descuento_aplicado: 117216.06, monto_a_abonar: 2196867.31, origen: "ARCA", grupo_pago_id: G },
+    { id: "b", comprobante: "FC 6389", imp_total: 1079293.71, monto_sicore: 16947.59, descuento_aplicado: 53964.68, monto_a_abonar: 1008381.44, origen: "ARCA", grupo_pago_id: G },
+    { id: "c", comprobante: "FC 6383", imp_total: 89915.65, monto_sicore: 1411.90, descuento_aplicado: 4495.78, monto_a_abonar: 84007.97, origen: "ARCA", grupo_pago_id: G },
+    { id: "d", comprobante: "NC 820", imp_total: -133335.56, monto_sicore: null, descuento_aplicado: -6666.77, monto_a_abonar: -126668.79, origen: "ARCA", grupo_pago_id: G },
+  ]
+  const mediosNC = restosComoMedios(ALCORTA_NC)
+  chequear("Detalle de pago", "🔴 La nota de crédito del grupo RESTA de la transferencia anunciada",
+    "1 medio de $3.162.587,93", `${mediosNC.length} medio(s) de $${n2(mediosNC[0]?.monto ?? 0)}`,
+    mediosNC.length === 1 && cerca(mediosNC[0].monto, 3162587.93, 0.01), "A-BUG-1254")
+  const cNC = calcularCuenta(ALCORTA_NC, mediosNC, "arca")
+  chequear("Detalle de pago", "…y con eso la cuenta cierra: $3.380.195,13, sin «pagado de más»",
+    "cierra", cNC.desviado ? `no cierra por $${n2(cNC.dif)}` : "cierra",
+    !cNC.desviado && cerca(cNC.totalCancelado, 3380195.13, 0.01), "A-BUG-1254")
+  chequear("Detalle de pago", "El renglón dice qué cubre: 3 facturas menos 1 nota de crédito",
+    "Transferencia (3 facturas, menos 1 nota de crédito)", String(mediosNC[0]?.detalle),
+    mediosNC[0]?.detalle === "Transferencia (3 facturas, menos 1 nota de crédito)", "A-BUG-1254")
+  const soloNC = restosComoMedios([ALCORTA_NC[3]])
+  chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
+    "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-BUG-1255: ARCA trae la moneda de una factura en pesos como «$». No es moneda extranjera.
+  const convPesos = textoConversion([{ comprobante: "FC 2077", conversion: conversionDe({ moneda: "$", imp_total: 1537055, tipo_cambio: 1 }) }])
+  chequear("Detalle de pago", "🔴 Una factura en pesos (moneda «$») NO lleva el renglón de conversión",
+    "0 renglones", `${convPesos.length} renglón(es)`,
+    convPesos.length === 0 && !esMonedaExtranjera("$") && !esMonedaExtranjera("PES") && !esMonedaExtranjera(null), "A-BUG-1255")
+  chequear("Detalle de pago", "…y una en dólares lo sigue llevando",
+    "extranjera", esMonedaExtranjera("USD") ? "extranjera" : "pesos", esMonedaExtranjera("USD") && esMonedaExtranjera("DOL"), "A-BUG-1255")
 
   // A-BUG-149: un ANTICIPO no es una factura. Es el caso IGLESIAS que dio nombre a A-BUG-105.
   const conAnticipo = [

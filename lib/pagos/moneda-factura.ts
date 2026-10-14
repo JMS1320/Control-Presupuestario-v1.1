@@ -16,8 +16,17 @@
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
+/**
+ * 🧨 **A-BUG-1255 — «$» también es pesos.** ARCA exporta la moneda de una factura en pesos como
+ * **`$`** (456 de las 498 de MSA al 2026-10-13; `PES` son sólo 37). Acá se preguntaba «¿no es PES ni
+ * ARS?», así que **casi todas** pasaban por moneda extranjera — con TC 1, por eso ningún importe
+ * cambió — y desde A-BUG-1245 el mail y el PDF del Detalle de pago les agregaban *«Importes en pesos.
+ * Conversión: FC 2077 en $ 1.537.055,00 · TC del pago 1,00»*. Lo vio el usuario en un mail encolado.
+ */
+const MONEDAS_PESOS = new Set(['', '$', 'PES', 'ARS', 'PESOS'])
+
 export function esMonedaExtranjera(moneda: string | null | undefined): boolean {
-  return !!moneda && moneda !== 'PES' && moneda !== 'ARS'
+  return !MONEDAS_PESOS.has(String(moneda ?? '').trim().toUpperCase())
 }
 
 /** El TC con que se pasa la factura a pesos: el del pago; si no hay, el de la factura. En pesos, 1. */

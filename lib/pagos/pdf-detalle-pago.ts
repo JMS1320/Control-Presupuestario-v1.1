@@ -61,7 +61,8 @@ export const generarPDFDetallePago = async (
   try {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const pageW = doc.internal.pageSize.getWidth()
-    const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+    // El signo va ANTES del peso: una nota de crédito salía «$-133.335,56» (A-BUG-1254).
+    const fmt = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
     const nf2 = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtFechaStr = (f: string) => {
       const d = new Date(f + 'T12:00:00')

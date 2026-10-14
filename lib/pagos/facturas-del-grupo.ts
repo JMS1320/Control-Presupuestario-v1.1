@@ -10,6 +10,7 @@
  */
 
 import { totalEnPesos, conversionDe } from './moneda-factura'
+import { abreviaturaComprobante } from './notas-credito'
 import { supabase } from '@/lib/supabase'
 import type { SubFactura } from './lineas-detalle-pago'
 
@@ -44,7 +45,8 @@ export async function facturasDelGrupo(
      * hace difícil leer el número de un vistazo.
      */
     return data.map((f: any) => ({
-      comprobante: `FC ${f.tipo_comprobante}-${Number(f.punto_venta ?? 0)}-${Number(f.numero_desde ?? 0)}`,
+      // 🧾 A-BUG-1254 — una nota de crédito del grupo se rotula NC, no FC (el papel lo lee el proveedor).
+      comprobante: `${abreviaturaComprobante(f.tipo_comprobante)} ${f.tipo_comprobante}-${Number(f.punto_venta ?? 0)}-${Number(f.numero_desde ?? 0)}`,
       fecha: f.fecha_emision ?? null,
       // 💵 A-BUG-1245 — una factura en dólares del grupo se lista en pesos, como el resto del papel.
       imp_total: totalEnPesos(f),
