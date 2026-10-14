@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
@@ -907,6 +908,19 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-DEC-1005 / A-FEAT-1269: el Detalle del Cash Flow muestra sólo lo del usuario.
+  chequear("Cash Flow — Detalle propio", "🔴 La repetición guardada «FC 406 - PAIS DIEGO LUIS» se ve en blanco; la nota propia se ve",
+    "(vacío) · Drenaje Abseso Yegua",
+    `${detallePropioCF("FC 406 - PAIS DIEGO LUIS", "PAIS DIEGO LUIS", 406) ?? "(vacío)"} · ${detallePropioCF("Drenaje Abseso Yegua", "PAIS DIEGO LUIS", 406)}`,
+    detallePropioCF("FC 406 - PAIS DIEGO LUIS", "PAIS DIEGO LUIS", 406) === null && detallePropioCF("Drenaje Abseso Yegua", "PAIS DIEGO LUIS", 406) === "Drenaje Abseso Yegua"
+      && detallePropioCF("   ", "X") === null, "A-DEC-1005")
+  const notasGrupo = detallePropioDeGrupo([
+    { id: "a", etiqueta: "6377", detalle: "Ecegon IATF" }, { id: "b", etiqueta: "6383", detalle: "" }, { id: "c", etiqueta: "820", detalle: "devolución" },
+  ])
+  chequear("Cash Flow — Detalle propio", "Un grupo muestra la nota de cada factura que tiene una, con su número",
+    "6377: Ecegon IATF | 820: devolución", String(notasGrupo),
+    notasGrupo === "6377: Ecegon IATF | 820: devolución" && detallePropioDeGrupo([{ id: "a", etiqueta: "1", detalle: "" }]) === null, "A-FEAT-1269")
 
   // A-BUG-1256: nada de otra empresa ni de otro CUIT se vincula solo.
   const comisionMA = { origen: "ARCA", empresas: ["MA"], cuit_proveedor: "27114789033" }   // Espada Faraldo (MA), caso real

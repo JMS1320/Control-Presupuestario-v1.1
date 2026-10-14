@@ -714,6 +714,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     guardarColumnas({ orden, anchos: colsUsuario?.anchos ?? {} })
   }
 
+  /** ✏️ A-FEAT-1269 — el Detalle de un grupo, una nota por factura. */
+  const [detalleGrupo, setDetalleGrupo] = useState<{ fila: CashFlowRow; items: { id: string; etiqueta: string; detalle: string; original: string }[] } | null>(null)
+  const [guardandoDetalleGrupo, setGuardandoDetalleGrupo] = useState(false)
+  const guardarDetalleGrupo = async () => {
+    if (!detalleGrupo) return
+    const cambios = detalleGrupo.items.filter(i => i.detalle.trim() !== i.original.trim())
+    if (cambios.length === 0) { setDetalleGrupo(null); return }
+    setGuardandoDetalleGrupo(true)
+    try {
+      const schema = schemaDeFila(detalleGrupo.fila.ids_grupo?.length ? { origen_tabla: detalleGrupo.fila.origen_tabla?.replace('grupos_pago', 'comprobantes_arca') } : detalleGrupo.fila)
+      for (const c of cambios) {
+        const { error, count } = await supabase.schema(schema as any).from('comprobantes_arca')
+          .update({ detalle: c.detalle.trim() || null }, { count: 'exact' }).eq('id', c.id)
+        if (error) throw error
+        if (count === 0) throw new Error(`no se encontró ${c.etiqueta}: no se guardó`)
+      }
+      toast.success(`Detalle guardado en ${cambios.length} factura(s)`)
+      setDetalleGrupo(null)
+      await cargarDatos()
+    } catch (e) {
+      toast.error('No se pudo guardar el detalle: ' + (e as Error).message)
+    } finally {
+      setGuardandoDetalleGrupo(false)
+    }
+  }
+
   // 📎 A-FEAT-1276 — vincular el PDF archivado desde la ❌ de la columna del archivo.
   const [vincularArchivo, setVincularArchivo] = useState<{ id: string; schema: string; titulo: string } | null>(null)
   useEffect(() => {
@@ -735,6 +761,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         if (key === 'monto_a_abonar') campoLocal = 'debitos'
         // La cuenta de la factura es la columna CATEG de esta grilla (sin esto no se refrescaba)
         else if (key === 'cuenta_contable') campoLocal = 'categ'
+        // ✏️ A-DEC-1005 — en una factura lo editado es la nota propia; el texto armado queda como estaba
+        else if (key === 'detalle' && data.find(f => f.id === filaId)?.origen === 'ARCA') campoLocal = 'detalle_propio'
         // ANTICIPO: monto/monto_restante mapean a la columna editada (debitos o creditos)
         else if (key === 'monto' || key === 'monto_restante') campoLocal = campo
         actualizarLocal(filaId, campoLocal, val)
@@ -991,8 +1019,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     event.preventDefault()
     event.stopPropagation()
     
+    // ✏️ A-FEAT-1269 — el Detalle de un GRUPO se edita factura por factura, para no pisar las notas
+    // de las otras (antes el mismo texto se copiaba a todas).
+    if (columna.key === 'detalle' && fila.origen === 'ARCA' && (fila.facturas_agrupadas ?? 0) > 1 && fila.detalles_grupo?.length) {
+      event.preventDefault()
+      event.stopPropagation()
+      setDetalleGrupo({ fila, items: fila.detalles_grupo.map(i => ({ ...i, original: i.detalle })) })
+      return
+    }
+
     // Usar hook unificado para ALL campos editables
-    const valor = fila[columna.key as keyof CashFlowRow]
+    // ✏️ A-BUG-1250 — en una factura se edita sólo lo del usuario: antes la celda abría con el texto
+    // armado («FC nro - proveedor · nota») y lo guardaba entero.
+    const valor = (columna.key === 'detalle' && fila.origen === 'ARCA')
+      ? (fila.detalle_propio ?? '')
+      : fila[columna.key as keyof CashFlowRow]
     console.log('🔄 Cash Flow: Usando hook unificado para:', columna.key)
     
     // Determinar tabla según origen de datos
@@ -3681,7 +3722,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
-    const valor = fila[columna.key as keyof CashFlowRow]
+    // ✏️ A-DEC-1005 — en una factura, el Detalle muestra sólo lo que escribió el usuario (en blanco si nada).
+    const valor = (columna.key === 'detalle' && fila.origen === 'ARCA')
+      ? (fila.detalle_propio ?? '')
+      // `detalles_grupo` (lista) no es una columna: se excluye del tipo para que la celda lo pueda pintar.
+      : fila[columna.key as keyof CashFlowRow] as Exclude<CashFlowRow[keyof CashFlowRow], unknown[] | object>
 
     // Empresa: no se edita acá (sale de dónde vive la factura o del responsable del template).
     // Se muestran TODAS las que tiene, incluidas las que no son empresa (`Duhau`): esconder una
@@ -6265,6 +6310,37 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ✏️ A-FEAT-1269 — Detalle de un grupo: una nota por factura */}
+      <Dialog open={!!detalleGrupo} onOpenChange={v => { if (!v && !guardandoDetalleGrupo) setDetalleGrupo(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>✏️ Detalle del grupo</DialogTitle>
+            <DialogDescription>
+              {detalleGrupo?.fila.nombre_proveedor} — cada factura tiene su propia nota. Lo que dejes en blanco queda en blanco.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {detalleGrupo?.items.map((it, i) => (
+              <div key={it.id} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-sm text-gray-600">{it.etiqueta}</span>
+                <Input
+                  value={it.detalle}
+                  autoFocus={i === 0}
+                  onChange={e => setDetalleGrupo(prev => prev && ({ ...prev, items: prev.items.map(x => x.id === it.id ? { ...x, detalle: e.target.value } : x) }))}
+                  onKeyDown={e => { if (e.key === 'Enter') guardarDetalleGrupo() }}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetalleGrupo(null)} disabled={guardandoDetalleGrupo}>Cancelar</Button>
+            <Button onClick={guardarDetalleGrupo} disabled={guardandoDetalleGrupo}>
+              {guardandoDetalleGrupo ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

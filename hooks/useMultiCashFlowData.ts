@@ -10,6 +10,7 @@ import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
+import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -168,6 +169,10 @@ export interface CashFlowRow {
   comprobante_display?: string | null
   // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
   detalle_usuario?: string | null
+  /** ✏️ Lo que muestra y edita la columna Detalle en una factura: sólo lo del usuario (A-DEC-1005). */
+  detalle_propio?: string | null
+  /** En una fila de grupo, la nota de cada factura — se editan por separado (A-FEAT-1269). */
+  detalles_grupo?: DetalleDeFactura[]
   // Empleado (solo para sueldos)
   empleado_id?: string | null
   /**
@@ -251,6 +256,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: f.denominacion_emisor || '',
         detalle: f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f),
         detalle_usuario: f.detalle || null,
+        detalle_propio: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde),
         debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -339,6 +345,16 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: primera.denominacion_emisor || '',
         detalle: detallesCombinados,
         detalle_usuario: fs.map(f => f.detalle).filter(Boolean).join(' | ') || null,
+        detalles_grupo: fs.map(f => ({
+          id: f.id,
+          etiqueta: `${tipoComprobanteAbrev(f.tipo_comprobante)} ${f.numero_desde || ''}`.trim(),
+          detalle: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde) ?? '',
+        })),
+        detalle_propio: detallePropioDeGrupo(fs.map(f => ({
+          id: f.id,
+          etiqueta: String(f.numero_desde || ''),
+          detalle: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde) ?? '',
+        }))),
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,

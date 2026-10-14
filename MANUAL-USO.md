@@ -3071,6 +3071,9 @@ y ahí suele haber más que en MSA.
   → A-TEST-1206
 - **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
   `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **Cash Flow → Detalle**: en una factura muestra **sólo tu nota** (en blanco si no escribiste nada);
+  el comprobante y el proveedor ya están en sus columnas. Ctrl+Click para escribir. En un **grupo**, se
+  abre un cuadrito con una nota por factura. → A-TEST-1210
 - **Cash Flow → columnas a tu medida**: arrastrá el **borde derecho** de un encabezado para cambiar el
   ancho, o el **encabezado** entero para cambiarlo de lugar. Queda guardado en tu cuenta. Para volver
   a lo de siempre: **«↺ Columnas como venían»**, arriba a la derecha de la tabla. → A-TEST-1208
