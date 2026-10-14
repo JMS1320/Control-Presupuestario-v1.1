@@ -3543,6 +3543,9 @@ fecha, mismo monto, mismo beneficiario— se queda sin candidato.
   empresa** (facturas, templates, sueldos y grupos). Si la empresa no es la de la cuenta aparece
   **⇄**: eso significa que se va a registrar como **retiro por pago a terceros** (`RET 3 PAM` /
   `RET 3 MA`), que es lo correcto cuando MSA paga algo facturado a otra empresa.
+- **Lo de otra empresa (o de otro CUIT que el que informa el banco) nunca se vincula solo.** La
+  conciliación automática lo deja sin vincular; lo vinculás a mano y, antes de guardar, la app te
+  avisa **«⚠️ Ojo antes de vincular…»** con el motivo. Aceptás si corresponde. → A-TEST-1209
 - **Las propuestas ya funcionan.** Antes buscaban al proveedor por **la primera palabra** del
   nombre — `LA MERCURE` buscaba `la` y traía de todo, y un proveedor cuya primera palabra el banco
   no escribe no aparecía nunca. Y **los ingresos no recibían ninguna propuesta**.

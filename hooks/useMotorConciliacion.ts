@@ -13,6 +13,7 @@ import {
 } from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
+import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
@@ -301,7 +302,7 @@ export function useMotorConciliacion() {
    * `datos` se pasa por parámetro y no se toma del estado a propósito: el motor lo recarga justo
    * antes de correr, y `setData` recién se ve en el próximo render (A-BUG-37).
    */
-  const buscarMatchCashFlow = (movimiento: MovimientoBancario, datos: typeof cashFlowData): any => {
+  const buscarMatchCashFlow = (movimiento: MovimientoBancario, datos: typeof cashFlowData, empresaCuenta?: string): any => {
     // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
     const mov = movimiento as any
     const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
@@ -311,7 +312,12 @@ export function useMotorConciliacion() {
     const cuitBancario = extraerCuitBancario(movimiento)
 
     // Base: los haberes se buscan sólo contra sueldos; el resto, contra todo el Cash Flow.
-    const base = esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos
+    //
+    // 🔀 A-BUG-1256 — y el motor NUNCA vincula solo algo de OTRA empresa ni de OTRO CUIT que el que
+    // informa el banco: eso se hace a mano y con aviso (regla del usuario 2026-10-14). Dos comisiones
+    // del banco de MSA quedaron pegadas a facturas de MA sólo por coincidir el importe.
+    const base = (esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos)
+      .filter(cf => puedeVincularseSola(cf as any, empresaCuenta, cuitBancario))
 
     // El CUIT **prioriza, no excluye**. Antes el pool se reemplazaba por las filas de ese CUIT y el
     // fallback sólo se disparaba si no había NINGÚN candidato — o sea, por falta de CANDIDATOS y no
@@ -480,7 +486,7 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          const matchCF = buscarMatchCashFlow(movimiento, datosCF)
+          const matchCF = buscarMatchCashFlow(movimiento, datosCF, cuenta.empresa)
           if (matchCF.match) {
             resultado = {
               movimiento_id: movimiento.id,

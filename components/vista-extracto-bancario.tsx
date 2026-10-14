@@ -65,7 +65,8 @@ import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConcili
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
 import { supabase } from "@/lib/supabase"
 import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
-import { proveedorDelMovimiento } from "@/lib/conciliacion/proveedor-del-movimiento"
+import { proveedorDelMovimiento, extraerCuitBancario } from "@/lib/conciliacion/proveedor-del-movimiento"
+import { motivosParaPreguntar } from "@/lib/conciliacion/cruce-empresa"
 import { detalleCompleto } from "@/lib/templates/identificador-cuota"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
 import { toast } from "sonner"
@@ -2050,6 +2051,22 @@ ${texto.trim()}` : texto.trim()
 
   const ejecutarAsignacion = async () => {
     if (!movimientoAsignando) return
+    /**
+     * 🔀 A-BUG-1256 — vincular con algo de OTRA empresa o de otro CUIT se puede, pero nunca sin
+     * aviso (regla del usuario 2026-10-14). Se pregunta ANTES de escribir nada.
+     */
+    {
+      const elegida: any = tabAsignar === 'arca' ? arcaElegida : tabAsignar === 'template' ? templateElegido : null
+      if (elegida) {
+        const empresas: string[] = Array.isArray(elegida.empresas) && elegida.empresas.length > 0
+          ? elegida.empresas : (elegida.empresa ? [elegida.empresa] : [])
+        const motivos = motivosParaPreguntar(
+          { empresas, cuit_proveedor: elegida.cuit ?? elegida.cuit_proveedor ?? null },
+          cuentaActivaObj?.empresa, extraerCuitBancario(movimientoAsignando))
+        if (motivos.length > 0 && !window.confirm(
+          `⚠️ Ojo antes de vincular:\n\n• ${motivos.join('\n• ')}\n\n¿Vincular igual?`)) return
+      }
+    }
     setGuardandoAsignacion(true)
     // Avisos que la asignación junta por el camino y muestra al final. Antes, soltar o pisar algo
     // pasaba en silencio (A-BUG-42): nada destructivo debería ser invisible.

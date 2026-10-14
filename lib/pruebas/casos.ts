@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
@@ -906,6 +907,22 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-BUG-1256: nada de otra empresa ni de otro CUIT se vincula solo.
+  const comisionMA = { empresas: ["MA"], cuit_proveedor: "27114789033" }   // Espada Faraldo (MA), caso real
+  chequear("Conciliación — otra empresa / otro CUIT", "🔴 Una factura de MA no se vincula sola a un movimiento de una cuenta de MSA",
+    "pregunta", puedeVincularseSola(comisionMA, "MSA", null) ? "se vincula sola" : "pregunta",
+    !puedeVincularseSola(comisionMA, "MSA", null) && motivosParaPreguntar(comisionMA, "MSA", null)[0].includes("retiro"), "A-BUG-1256")
+  chequear("Conciliación — otra empresa / otro CUIT", "CUIT del banco distinto al de la factura → pregunta; banco sin CUIT o mismo CUIT → no opina; template MSA/PAM desde MSA → no es de otra",
+    "pregunta · sola · sola · sola",
+    [puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "30712118179"),
+     puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20103619115" }, "MSA", null),
+     puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "20103619115"),
+     puedeVincularseSola({ empresas: ["MSA", "PAM"], cuit_proveedor: null }, "MSA", null)].map(x => x ? "sola" : "pregunta").join(" · "),
+    !puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "30712118179")
+      && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20103619115" }, "MSA", null)
+      && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "20103619115")
+      && puedeVincularseSola({ empresas: ["MSA", "PAM"], cuit_proveedor: null }, "MSA", null), "A-BUG-1256")
 
   // A-FEAT-1277: columnas del Cash Flow en el orden del usuario.
   const COLS = [{ key: "empresas" }, { key: "fecha" }, { key: "detalle" }, { key: "debitos" }]
