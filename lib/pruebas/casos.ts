@@ -151,7 +151,7 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones } from "@/lib/ventas/retenciones-export"
@@ -2856,6 +2856,12 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "🥩 Sin «manda el vivo», el gancho cargado sigue mandando como antes",
     "8068736.72", importeDeLinea({ ...lineaPieAB, mandaPie: false, precioGancho: 5024.12 }).toFixed(2),
     importeDeLinea({ ...lineaPieAB, mandaPie: false, precioGancho: 5024.12 }).toFixed(2) === "8068736.72", "A-FEAT-1234")
+  // 💲 A-BUG-1279 (2026-10-14): el papel imprime 2 decimales pero calcula con 3. Sólo con 2.689,579 y
+  // 2.693,915 dan los brutos del papel (8.068.737 y 8.782.162,90); y el campo los tiene que conservar.
+  chequear("Liquidación de hacienda", "💲 🧨 Con 3 decimales el bruto da el del papel (8.068.737 y 8.782.162,90), y el precio NO se redondea a 2 al mostrarlo",
+    "8068737.00 · 8782162.90 · 2.689,579 · 5.024,12", `${importeDeLinea({ kilos: 3000, precio: 2689.579 }).toFixed(2)} · ${importeDeLinea({ kilos: 3260, precio: 2693.915 }).toFixed(2)} · ${formatoPrecio(2689.579)} · ${formatoPrecio(5024.12)}`,
+    importeDeLinea({ kilos: 3000, precio: 2689.579 }).toFixed(2) === "8068737.00" && importeDeLinea({ kilos: 3260, precio: 2693.915 }).toFixed(2) === "8782162.90"
+      && formatoPrecio(2689.579) === "2.689,579" && formatoPrecio(5024.12) === "5.024,12", "A-BUG-1279")
   // El papel REAL de Arre Beef (03/09/2026): 3.000 + 3.260 kg pie, 1.606 + 1.748 kg gancho a $5.024,12.
   const papelAB = calcularLiqHacienda({
     lineas: [{ razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579, kgGancho: 1606 },

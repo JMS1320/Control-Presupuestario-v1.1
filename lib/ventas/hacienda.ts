@@ -126,6 +126,16 @@ export interface LineaLiqHacienda {
 
 type LineaPrecio = { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean }
 
+/**
+ * 💲 Un precio por kilo se muestra con **hasta 3 decimales** (A-BUG-1279, 2026-10-14). El frigorífico
+ * imprime 2 pero calcula con 3: Arre Beef dice *$2.689,58 × 3.000 kg = $8.068.737*, y eso sólo cierra
+ * con **2.689,579** (con ,58 da 8.068.740). El campo redondeaba a 2 al salir y no dejaba cargarlo.
+ * Usuario: *«en precio, ya sea de carne o de peso vivo, debería poder poner 3 decimales aunque luego
+ * no se vea»*. Con 2 o menos se sigue viendo con 2.
+ */
+export const formatoPrecio = (n: number) =>
+  n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
+
 /** ¿La línea es al gancho? Kilos gancho y un precio que mande (el gancho, o el vivo con `mandaPie`). */
 export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean; precio?: number }) =>
   (Number(l.kgGancho) || 0) > 0 && ((Number(l.precioGancho) || 0) > 0 || (!!l.mandaPie && (Number(l.precio) || 0) > 0))

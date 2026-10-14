@@ -31,11 +31,12 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
   plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
-  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado,
+  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio,
   type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
@@ -61,6 +62,8 @@ const fmtAR = (n: number, dec = 2) => n.toLocaleString('es-AR', { minimumFractio
 const fmtPct = (n: number) => String(n).replace('.', ',')
 /** Al salir de un campo de monto, se reescribe en formato es-AR (1.234.567,89). Vacío queda vacío. */
 const reformatear = (v: string, dec = 2) => (v.trim() ? fmtAR(parsearAR(v), dec) : '')
+/** Los precios por kilo admiten 3 decimales (A-BUG-1279): el frigorífico calcula con 3 aunque imprima 2. */
+const reformatearPrecio = (v: string) => (v.trim() ? formatoPrecio(parsearAR(v)) : '')
 const r2 = (n: number) => Math.round(n * 100) / 100
 type TotalId = 'bruto' | 'neto' | 'importe'
 type Verificacion = 'ok' | 'distinto' | null
@@ -79,9 +82,9 @@ const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: numb
   cabezas: l.cabezas ? String(l.cabezas) : '',
   clasificacion: l.clasificacion || '',
   kilos: l.kilos ? fmtAR(l.kilos, 0) : '',
-  precio: l.precio ? fmtAR(l.precio, 2) : '',
+  precio: l.precio ? formatoPrecio(l.precio) : '',
   kgGancho: l.kgGancho ? fmtAR(l.kgGancho, 1) : '',
-  precioGancho: l.precioGancho ? fmtAR(l.precioGancho, 2) : '',
+  precioGancho: l.precioGancho ? formatoPrecio(l.precioGancho) : '',
 })
 
 export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comprobanteId, onGuardado }: Props) {
@@ -423,6 +426,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                 : <>Liquidación sin venta asociada. Cargala como figura en el papel.</>}
           </DialogDescription>
         </DialogHeader>
+        <TestsDelProceso proceso="ingresos/liquidacion-hacienda" pantalla="ingresos" />
 
         {cargando ? (
           <div className="flex items-center justify-center py-12 text-gray-500"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Abriendo la liquidación…</div>
@@ -490,11 +494,11 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                       {verGancho && <td className="p-1 w-24"><Input type="text" className="text-right" placeholder="0" value={l.kgGancho} onChange={ev => setLinea(i, 'kgGancho', ev.target.value)} onBlur={ev => setLinea(i, 'kgGancho', reformatear(ev.target.value, 1))} /></td>}
                       {/* 🥩 Los dos precios se pueden cargar: el que escribís manda (negro) y el otro se calcula solo (gris). */}
                       {verGancho && (l.mandaPie && lineaAlGancho(e)
-                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg gancho. Escribí acá para que mande el precio gancho." value={fmtAR(precioGanchoDerivado(e), 2)} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} /></td>
-                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precioGancho} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} onBlur={ev => setLinea(i, 'precioGancho', reformatear(ev.target.value))} /></td>)}
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg gancho. Escribí acá para que mande el precio gancho." value={formatoPrecio(precioGanchoDerivado(e))} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precioGancho} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} onBlur={ev => setLinea(i, 'precioGancho', reformatearPrecio(ev.target.value))} /></td>)}
                       {lineaAlGancho(e) && !l.mandaPie
-                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg pie. Escribí acá el precio del kilo vivo (como liquida el frigorífico) y el gancho se recalcula." value={fmtAR(e.precio, 3)} onChange={ev => setPrecioQueManda(i, 'pie', ev.target.value)} /></td>
-                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => verGancho ? setPrecioQueManda(i, 'pie', ev.target.value) : setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatear(ev.target.value))} /></td>}
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg pie. Escribí acá el precio del kilo vivo (como liquida el frigorífico) y el gancho se recalcula." value={formatoPrecio(e.precio)} onChange={ev => setPrecioQueManda(i, 'pie', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => verGancho ? setPrecioQueManda(i, 'pie', ev.target.value) : setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatearPrecio(ev.target.value))} /></td>}
                       <td className="p-1 text-right tabular-nums">{fmtAR(importeDeLinea(e))}</td>
                       <td className="p-1">{lineas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setLineas(ls => ls.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>}</td>
                     </tr>
