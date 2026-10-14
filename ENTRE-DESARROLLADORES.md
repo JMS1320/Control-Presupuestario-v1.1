@@ -43,7 +43,9 @@
 ### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
 
 `scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y
-[A-FEAT-24](PENDIENTES.md#a-feat-24). Todavía **no** está corrido; se corre con JMS presente.
+[A-FEAT-24](PENDIENTES.md#a-feat-24). ✅ **Corrido 2026-10-14** con JMS presente. Ojo con algo que encontré: el
+schema `pam` tiene privilegios por defecto que le daban a `authenticated` REFERENCES/TRIGGER/**TRUNCATE** sobre
+tablas nuevas; en ésta los saqué. Puede valer revisar esos default privileges en tu cierre de A-SEC-14.
 
 | Qué | Permisos |
 |---|---|

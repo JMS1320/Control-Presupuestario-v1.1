@@ -57,6 +57,9 @@ begin
     execute format('grant all on %I.retenciones_recibidas to service_role', s);
   end loop;
 end $$;
+-- ⚠️ `pam` tiene privilegios por defecto que agregan REFERENCES/TRIGGER/TRUNCATE a `authenticated` (visto al
+-- correrlo el 2026-10-14): se sacan para que quede igual que msa.
+revoke references, trigger, truncate on pam.retenciones_recibidas from authenticated;
 
 -- Si la de MSA está mapeada a un recurso, las nuevas siguen el mismo criterio (con su empresa).
 insert into public.recurso_tablas (schema_nombre, tabla, recurso, motivo)

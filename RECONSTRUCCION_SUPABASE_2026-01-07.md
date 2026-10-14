@@ -12795,7 +12795,7 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
-### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24 · ⏳ ESCRITO, SIN CORRER
+### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24
 
 Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros
 vinculados). Dos cosas, las dos aditivas:
@@ -12804,7 +12804,11 @@ vinculados). Dos cosas, las dos aditivas:
   `escribir_segun_permiso` como las de scripts/62, nada a `anon`.
 - `comprobante_venta_id uuid` (FK a la venta de su empresa) en `public.pam_galicia`, `public.pam_galicia_cc` y
   `ma.ma_galicia` — el espejo de `msa_galicia.comprobante_venta_id`.
-⚠️ Hay que correrlo **antes** de mergear la rama `jms/cobros-pam-ma`: el código ya escribe esas columnas.
+✅ **Corrido 2026-10-14** con el usuario presente. Verificado: 12 columnas iguales en `msa`/`pam`/`ma`, el vínculo en
+los 4 extractos Galicia, RLS activa con las mismas dos policies, nada a `anon`. ⚠️ **Trampa encontrada**: `pam` tiene
+privilegios por defecto que le daban a `authenticated` también REFERENCES, TRIGGER y **TRUNCATE** sobre la tabla nueva
+(`ma` y `msa` no): se revocaron para dejarla igual que MSA. **Al crear una tabla en `pam`, mirar los grants.**
+Escrituras de la app probadas con `explain`, sin escribir datos.
 
 ### 2026-10-13 · `public.notas_para_claude.sin_supervision` — A-FEAT-1266
 
