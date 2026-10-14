@@ -5535,7 +5535,8 @@ encima de la etiqueta de al lado** — se leía `E18xtracto Bancario`, `P2roduct
 
 ### Cómo se usa
 
-1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Cmd+B`** (`Ctrl+B` en Windows).
+1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Alt + M`** (lo dice debajo del ☰).
+   ⚠️ *Cambió 2026-10-14*: antes era `Ctrl+B`; el usuario pidió un solo atajo, de la familia Alt+letra.
 2. **Navegar**: click en la sección. **El menú se cierra solo** al elegir.
 3. **Cerrar sin elegir**: el mismo botón ☰ —que **con el menú abierto está adentro del menú**,
    arriba de todo— o `Cmd+B` otra vez. El botón acompaña al menú en vez de quedar flotando en el

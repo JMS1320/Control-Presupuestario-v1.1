@@ -3,7 +3,7 @@
 > Único lugar donde se documentan los pendientes (bugs, testing, features, operacional, seguridad, datos).
 > Reemplaza a `PENDIENTES_GENERAL.md`, `PENDIENTES_PUSH_A_MAIN.md`, `PENDIENTES-PROXIMA-SESION.md` y a las secciones de pendientes sueltas en `CLAUDE.md`.
 
-**Última actualización:** 2026-10-11 — planilla de asistencia de sueldos en `desarrollo` (A-FEAT-1259, filas 19-20 de la guía). Antes, 2026-10-05 — guía de pruebas vigente arriba (reemplaza las del 4/10); se mergeó la tanda del 4/10. reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
+**Última actualización:** 2026-10-14 — sesión 13-14/10 en `jms/planilla-asistencia` (sin mergear): SICORE con NC en grupo y procesar el grupo junto, mail de detalle con NC y sin «TC 1», archivo del banco desde Sueldos, PAGOS (tildar todo, barra, estado propuesto), Alt+M, vincular PDF desde Cash Flow, columnas a mano, Detalle en blanco, conciliación entre empresas. Guía: filas 21-39. Antes, 2026-10-11 — planilla de asistencia de sueldos en `desarrollo` (A-FEAT-1259, filas 19-20 de la guía). Antes, 2026-10-05 — guía de pruebas vigente arriba (reemplaza las del 4/10); se mergeó la tanda del 4/10. reorganizado: lo **por hacer** a la vista, lo **hecho esperando tu prueba** en un desplegable debajo de cada tabla, y lo **hecho y cerrado** al final, en «✅ HECHO — archivo».
 
 > **Cómo leerlo**: 🔵 🔴 🟠 = por hacer · 🟢 🟡 = hecho, espera tu prueba · ✅ = cerrado (va al archivo del final).
 > Los desplegables («Abrir», «🟢 Hecho, esperando tu prueba») se abren con un click. La guía de pruebas vigente es la primera sección.

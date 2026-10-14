@@ -1681,6 +1681,13 @@ El sistema anterior (`seccion_regla` en `egresos_sin_factura`) tenía un único 
 
 El mismo template necesita códigos distintos según la cuenta bancaria que ejecuta el pago.
 
+> ⚠️ **Cambió 2026-10-14 — qué se puede vincular SOLO entre empresas** (A-BUG-1256, regla del usuario).
+> Dos comisiones del banco de MSA quedaron enganchadas a facturas de MA sólo por coincidir el importe.
+> Desde entonces (`lib/conciliacion/cruce-empresa.ts`): un **template** de otra empresa se sigue
+> conciliando solo (con su `RET 3`); una **factura** de otra empresa, **nunca sola** — se vincula a mano
+> y la app avisa antes de guardar; y **cualquier cosa con un CUIT distinto** al que informa el banco
+> tampoco se vincula sola, salvo que el usuario lo fuerce a mano con el aviso.
+
 ### 24.2 — Estructura de la tabla
 
 ```sql
