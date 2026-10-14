@@ -1211,6 +1211,19 @@ vinculó **20 de 20**, incluidas dos fotos `.jpeg`.)*
 **El nombre del archivo sirve para otra cosa:** para la sugerencia ⭐ del panel de abajo, que es para
 vincular **a mano**. Nunca para vincular solo.
 
+#### 📎 Desde el Cash Flow, una factura sola
+
+En el **Cash Flow**, la **❌ roja** de la columna 📎 es un botón. Al tocarla se abre **«Vincular el PDF
+archivado»** para esa factura:
+
+- Mira la **carpeta del mes donde está imputada** (si todavía no está en ningún subdiario, la del mes
+  de emisión). Si la guardaste en otro lado, cambiá el mes arriba.
+- Lista los archivos de esa carpeta que **ninguna factura usa**; con ⭐ los que nombran al proveedor.
+- **👁 ver** te muestra el archivo ahí mismo. Si es, **Vincular**: la ❌ pasa a 📎.
+
+Si después imputás la factura a otro mes, mové el PDF a la carpeta de ese mes en Drive: el vínculo
+sigue valiendo y el audit del mes nuevo lo cuenta como vinculado. → A-TEST-1207
+
 #### El panel «🖼️ PDFs sin vincular» — acá vinculás a mano
 
 Aparece cuando quedan archivos sin asociar. Cada fila trae el archivo, una **⭐ sugerencia** (por

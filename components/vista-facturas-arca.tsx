@@ -60,6 +60,7 @@ import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subd
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo } from "@/lib/facturas/vincular-archivo"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
@@ -479,31 +480,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Sugiere qué factura "falta" del período corresponde a un PDF huérfano, por NOMBRE de archivo
   // (sin OCR): coincide palabras del proveedor + desempata por la fecha del nombre (MM-DD).
   const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
-    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    const arch = norm(nombreArchivo)
     // Candidatas = TODA factura sin PDF, incluidas las de Portal (2026-09-03).
     // Las `fc=No` ya entraban (`categoriaArchivo` sólo aparta las de Portal), y las de Portal se
     // sumaron porque nada impide que alguien haya bajado esa factura del sitio y la haya dejado en
     // la carpeta: excluirlas hacía que el archivo correcto no apareciera nunca como sugerencia.
     const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
-    const conScore = faltantes.map(f => {
-      const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
-      const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
-      return { f, hits }
-    }).filter(x => x.hits > 0)
+    // La cuenta del parecido vive en `lib/facturas/vincular-archivo.ts`: la usa también el Cash Flow.
+    const conScore = faltantes.map(f => ({ f, hits: coincidenciasDeNombre(nombreArchivo, f.denominacion_emisor) }))
+      .filter(x => x.hits > 0)
     if (conScore.length === 0) return []
     const maxHits = Math.max(...conScore.map(x => x.hits))
     let candidatos = conScore.filter(x => x.hits === maxHits).map(x => x.f)
     // Si el nombre trae fecha (MM-DD al inicio), EXIGIR que coincida con la emisión del candidato.
     // Evita sugerir una factura de otra fecha (ej. un duplicado "04-01" contra la única faltante,
     // que es del 04-09). Si ninguna coincide la fecha → sin sugerencia (probable duplicado).
-    const m = nombreArchivo.match(/^(\d{2})-(\d{2})/)
-    if (m) {
-      candidatos = candidatos.filter(f => {
-        const fe = f.fecha_emision || '' // YYYY-MM-DD
-        return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
-      })
-    }
+    candidatos = candidatos.filter(f => fechaDelNombreCoincide(nombreArchivo, f.fecha_emision) !== false)
     return candidatos
   }
 
@@ -527,7 +518,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const vincularHuerfano = async (factura: FacturaArca, h: { archivo: string; url: string }) => {
     try {
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
-        .update({ pdf_drive_url: h.url, pdf_estado: 'descargado', pdf_observaciones: `Vinculado manualmente desde supervisión (archivo: ${h.archivo})` })
+        .update(datosDelVinculo(h, 'supervisión'))
         .eq('id', factura.id)
       if (error) { toast.error('No se pudo vincular: ' + error.message); return }
       setHuerfanosSupervision(prev => prev.filter(x => x.url !== h.url))

@@ -21,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { ModalVincularArchivo } from "@/components/modal-vincular-archivo"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
 import { PanelBoletasArba } from "@/components/panel-boletas-arba"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -661,6 +662,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  // 📎 A-FEAT-1276 — vincular el PDF archivado desde la ❌ de la columna del archivo.
+  const [vincularArchivo, setVincularArchivo] = useState<{ id: string; schema: string; titulo: string } | null>(null)
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
     setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
@@ -3679,6 +3682,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             >
               {icono}
             </a>
+          ) : estado === 'falta' ? (
+            // 📎 A-FEAT-1276 — la ❌ es un botón: abre la carpeta del mes para vincular el PDF a mano.
+            <button
+              type="button"
+              className={clase}
+              title={`${titulo} — click para buscarlo en la carpeta del mes y vincularlo`}
+              onClick={e => {
+                e.stopPropagation()
+                setVincularArchivo({ id: fila.id, schema: schemaDeFila(fila), titulo: `${fila.nombre_proveedor || ''} · ${fila.detalle || ''}`.trim() })
+              }}
+            >
+              {icono}
+            </button>
           ) : (
             <span className={clase} title={estado === 'grupo' ? `${titulo} (son ${cuantas})` : titulo}>
               {icono}
@@ -6154,6 +6170,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )}
         </DialogContent>
       </Dialog>
+
+      <ModalVincularArchivo
+        factura={vincularArchivo}
+        onClose={() => setVincularArchivo(null)}
+        onVinculado={(id, url) => actualizarLocal(id, 'pdf_drive_url', url)}
+      />
 
       {/* E2.4: Export lote Galicia (módulo reusado) */}
       <ModalExportarLote

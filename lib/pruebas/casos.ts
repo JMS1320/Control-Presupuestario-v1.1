@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -904,6 +905,22 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-FEAT-1276: vincular el PDF desde el Cash Flow — qué carpeta y qué archivo se sugiere.
+  const pImputada = periodoDeArchivo({ "año_contable": 2026, mes_contable: 11, fecha_emision: "2026-10-01" })
+  const pSinImputar = periodoDeArchivo({ "año_contable": null, mes_contable: null, fecha_emision: "2026-10-01" })
+  chequear("Archivo digital — vincular desde Cash Flow", "🔴 Busca en el mes donde está IMPUTADA; si no está imputada, en el de emisión",
+    "2026-11 imputada · 2026-10 provisional",
+    `${pImputada.anio}-${pImputada.mes} ${pImputada.imputada ? "imputada" : "?"} · ${pSinImputar.anio}-${pSinImputar.mes} ${pSinImputar.imputada ? "?" : "provisional"}`,
+    pImputada.anio === 2026 && pImputada.mes === 11 && pImputada.imputada && pSinImputar.mes === 10 && !pSinImputar.imputada, "A-FEAT-1276")
+  const ordenados = archivosParaFactura([
+    { archivo: "10-05 Otro proveedor.pdf", url: "u1" },
+    { archivo: "09-30 Alcorta 6370.pdf", url: "u2" },
+    { archivo: "10-01 Alcorta 6377.pdf", url: "u3" },
+  ], { denominacion_emisor: "ALCORTA EDMUNDO ERNESTO", fecha_emision: "2026-10-01" })
+  chequear("Archivo digital — vincular desde Cash Flow", "⭐ arriba el del proveedor CON la fecha de la factura; el de otro día no se sugiere pero se lista",
+    "u3⭐ · u1 · u2", ordenados.map(a => a.url + (a.sugerido ? "⭐" : "")).join(" · "),
+    ordenados[0].url === "u3" && ordenados[0].sugerido && ordenados.filter(a => a.sugerido).length === 1 && ordenados.length === 3, "A-FEAT-1276")
 
   // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
   const VIS = ["a", "b", "c"]

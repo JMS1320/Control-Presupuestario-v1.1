@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { periodoDeArchivo } from '@/lib/facturas/vincular-archivo'
 
 export const runtime = 'nodejs'
 
@@ -30,13 +31,8 @@ function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): strin
 }
 
 // Archivo por PERÍODO CONTABLE (no emisión); si no está imputada, emisión como provisional.
-function periodoArchivo(factura: any): { anio: number; mes: number } {
-  const ac = factura['año_contable']
-  const mc = factura['mes_contable']
-  if (ac && mc) return { anio: Number(ac), mes: Number(mc) }
-  const f = new Date(`${factura.fecha_emision}T12:00:00`)
-  return { anio: f.getFullYear(), mes: f.getMonth() + 1 }
-}
+// La regla vive en `lib/facturas/vincular-archivo.ts`: el Cash Flow busca en la misma carpeta.
+const periodoArchivo = (factura: any) => periodoDeArchivo(factura)
 
 export async function POST(request: Request) {
   // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
