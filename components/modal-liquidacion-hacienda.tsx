@@ -36,7 +36,7 @@ import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
   plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
-  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio,
+  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio,
   type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
@@ -529,7 +529,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>Comisión venta y garantía{comisionMonto.trim() && <span className="ml-1 text-[10px] text-amber-700" title="Monto tipeado a mano: manda sobre el %">✎ manual · {fmtAR(calc.comisionPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={comisionPct} onChange={e => { setComisionPct(e.target.value); setComisionMonto('') }} placeholder="0" disabled={!!comisionMonto.trim()} />
               <Input type="text" className="text-right" value={comisionMonto} onChange={e => setComisionMonto(e.target.value)}
-                onBlur={e => setComisionMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.comision)}
+                onFocus={() => { if (!comisionMonto.trim()) setComisionMonto(fmtAR(calc.comision)) }}
+                onBlur={e => setComisionMonto(montoTipeadoOVacio(e.target.value, calc.comision))} placeholder={fmtAR(calc.comision)}
                 title="Vacío: se calcula con el %. Si la comisión del papel se calcula sobre otra cosa, tipeá el monto." />
               <span>Ajuste por redondeo (con signo)</span>
               <span />
@@ -539,7 +540,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>I.V.A.{ivaMonto.trim() && <span className="ml-1 text-[10px] text-amber-700">✎ manual · {fmtAR(calc.ivaPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={ivaPct} onChange={e => { setIvaPct(e.target.value); setIvaMonto('') }} disabled={!!ivaMonto.trim()} />
               <Input type="text" className="text-right" value={ivaMonto} onChange={e => setIvaMonto(e.target.value)}
-                onBlur={e => setIvaMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.iva)}
+                onFocus={() => { if (!ivaMonto.trim()) setIvaMonto(fmtAR(calc.iva)) }}
+                onBlur={e => setIvaMonto(montoTipeadoOVacio(e.target.value, calc.iva))} placeholder={fmtAR(calc.iva)}
                 title="Vacío: se calcula con el %. Con valor, manda el tipeado." />
             </div>
             <p className="text-xs text-gray-500">Precio después de comisión: <b>{calc.kilos ? fmtAR(calc.precioPostComision) : '—'} $/kg</b></p>

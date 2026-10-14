@@ -136,6 +136,20 @@ type LineaPrecio = { kilos: number; precio: number; kgGancho?: number | null; pr
 export const formatoPrecio = (n: number) =>
   n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
 
+/**
+ * ✍️ A-BUG-1280 — un monto que se calcula solo (IVA, comisión) se corrige ESCRIBIENDO SOBRE el número.
+ * Usuario 2026-10-14, con Arre Beef: *«el IVA no me permite editarlo… debe ser con 48 y no con 49…
+ * sólo yo cambiar el monto»*. Antes el calculado era sólo el texto gris de la caja vacía: no se podía
+ * cambiar un ,49 por ,48. Ahora al entrar a la caja aparece el calculado, editable; al salir, si quedó
+ * igual al calculado la caja vuelve a vacía («usá el calculado»), y si cambió, queda como monto a mano.
+ */
+export function montoTipeadoOVacio(texto: string, calculado: number): string {
+  if (!texto.trim()) return ''
+  const n = parseFloat(String(texto).replace(/\./g, '').replace(',', '.')) || 0
+  if (Math.abs(n - calculado) < 0.005) return ''
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 /** ¿La línea es al gancho? Kilos gancho y un precio que mande (el gancho, o el vivo con `mandaPie`). */
 export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean; precio?: number }) =>
   (Number(l.kgGancho) || 0) > 0 && ((Number(l.precioGancho) || 0) > 0 || (!!l.mandaPie && (Number(l.precio) || 0) > 0))
