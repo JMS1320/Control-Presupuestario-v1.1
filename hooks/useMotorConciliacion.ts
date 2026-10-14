@@ -318,6 +318,9 @@ export function useMotorConciliacion() {
     // del banco de MSA quedaron pegadas a facturas de MA sólo por coincidir el importe.
     const base = (esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos)
       .filter(cf => puedeVincularseSola(cf as any, empresaCuenta, cuitBancario))
+      // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios no se concilia sola: su id es el del
+      // cheque, no el de la factura/anticipo. Conciliar cada débito contra su echeq es A-DEC-17.
+      .filter(cf => (cf as any).origen_tabla !== 'msa.cheques')
 
     // El CUIT **prioriza, no excluye**. Antes el pool se reemplazaba por las filas de ese CUIT y el
     // fallback sólo se disparaba si no había NINGÚN candidato — o sea, por falta de CANDIDATOS y no

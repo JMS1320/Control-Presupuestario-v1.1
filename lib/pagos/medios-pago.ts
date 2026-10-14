@@ -45,19 +45,21 @@ export async function obtenerMediosPagoAnticipo(schema: string, anticipoIds: str
     .select('id, monto, fecha_pago, metodo_pago, estado_pago').in('id', anticipoIds)
   const { data: chs } = await supabase.schema(schema).from('cheques')
     .select('monto, banco, numero, fecha_emision, fecha_cobro, anticipo_id').in('anticipo_id', anticipoIds)
-  const porAnticipo = new Map<string, Record<string, unknown>>()
-  for (const c of (chs ?? [])) porAnticipo.set(c.anticipo_id as string, c as Record<string, unknown>)
+  // 📝 A-FEAT-1282 — un anticipo puede ir en VARIOS echeqs: van todos, uno por renglón. Antes un Map
+  // de un cheque por anticipo se quedaba con el último y el detalle mostraba uno solo.
+  const porAnticipo = new Map<string, Record<string, unknown>[]>()
+  for (const c of (chs ?? [])) porAnticipo.set(c.anticipo_id as string, [...(porAnticipo.get(c.anticipo_id as string) ?? []), c as Record<string, unknown>])
 
-  return (ants ?? []).map(a => {
-    const chq = porAnticipo.get(a.id as string)
-    if (chq) return { tipo: 'echeq' as const, monto: (chq.monto as number) || (a.monto as number) || 0,
-      fecha: (chq.fecha_emision as string) || null, detalle: rotuloEcheq(chq) }
+  return (ants ?? []).flatMap((a): MedioPago[] => {
+    const chqs = porAnticipo.get(a.id as string) ?? []
+    if (chqs.length) return chqs.map(chq => ({ tipo: 'echeq' as const, monto: (chq.monto as number) || (chqs.length === 1 ? (a.monto as number) : 0) || 0,
+      fecha: (chq.fecha_emision as string) || null, detalle: rotuloEcheq(chq) }))
     if (a.metodo_pago === 'echeq' || a.estado_pago === 'echeq') {
-      return { tipo: 'echeq' as const, monto: (a.monto as number) || 0,
-        fecha: (a.fecha_pago as string) || null, detalle: 'ECHEQ' }
+      return [{ tipo: 'echeq' as const, monto: (a.monto as number) || 0,
+        fecha: (a.fecha_pago as string) || null, detalle: 'ECHEQ' }]
     }
-    return { tipo: 'transferencia' as const, monto: (a.monto as number) || 0,
-      fecha: (a.fecha_pago as string) || null, detalle: 'Transferencia' }
+    return [{ tipo: 'transferencia' as const, monto: (a.monto as number) || 0,
+      fecha: (a.fecha_pago as string) || null, detalle: 'Transferencia' }]
   })
 }
 
@@ -87,18 +89,21 @@ export async function obtenerMediosPagoFactura(schema: string, facturaIds: strin
   // El camino es factura ← anticipo → cheque, de dos saltos, y acá se daba uno solo: el echeq
   // existía en la base y el desglose no lo veía nunca.
   const idsAnt = (ants ?? []).map(a => a.id as string).filter(Boolean)
-  const chqDeAnticipo = new Map<string, Record<string, unknown>>()
+  // 📝 A-FEAT-1282 — varios echeqs por anticipo: van todos (antes el Map se quedaba con uno).
+  const chqDeAnticipo = new Map<string, Record<string, unknown>[]>()
   if (idsAnt.length) {
     const { data } = await supabase.schema(schema).from('cheques')
       .select('monto, banco, numero, fecha_emision, fecha_cobro, anticipo_id').in('anticipo_id', idsAnt)
-    for (const c of (data ?? [])) chqDeAnticipo.set(c.anticipo_id as string, c as Record<string, unknown>)
+    for (const c of (data ?? [])) chqDeAnticipo.set(c.anticipo_id as string, [...(chqDeAnticipo.get(c.anticipo_id as string) ?? []), c as Record<string, unknown>])
   }
 
   for (const a of (ants ?? [])) {
-    const chq = chqDeAnticipo.get(a.id as string)
-    if (chq) {
-      medios.push({ tipo: 'echeq', monto: (chq.monto as number) || (a.monto as number) || 0,
-        fecha: (chq.fecha_emision as string) || null, detalle: rotuloEcheq(chq) })
+    const chqs = chqDeAnticipo.get(a.id as string) ?? []
+    if (chqs.length) {
+      for (const chq of chqs) {
+        medios.push({ tipo: 'echeq', monto: (chq.monto as number) || (chqs.length === 1 ? (a.monto as number) : 0) || 0,
+          fecha: (chq.fecha_emision as string) || null, detalle: rotuloEcheq(chq) })
+      }
     } else if (a.metodo_pago === 'echeq' || a.estado_pago === 'echeq') {
       // Marcado como echeq pero SIN cheque cargado: se dice que es un echeq y no se inventan banco
       // ni fechas. Quien consume esta función avisa que faltan datos.

@@ -907,9 +907,14 @@ perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apa
 ### Cargar el echeq de un anticipo
 1. En **Cash Flow**, sobre la fila del anticipo: **Shift+Click** en la columna de débitos.
 2. Elegí **📝 ECHEQ**.
-3. Se abre el modal pidiendo **banco, número, fecha de emisión y fecha de cobro**.
-   ⚠️ **La fecha de cobro es la que importa**: de ahí sale cuándo el Cash Flow descuenta esa plata.
-   Sin ella, el pago queda proyectado en el día equivocado.
+3. Se abre el modal pidiendo **banco, fecha de emisión** y los echeqs: **cuántos**, cómo se reparte
+   el total (**partes iguales**, **por %** o **por montos**, que son partes del total) y la **fecha de
+   cobro de cada uno** (no hay plazos por defecto: los ponés vos). El número es opcional; si lo dejás
+   vacío lo asigna el banco. Abajo ves cuánto es cada parte del total.
+   ⚠️ **Las fechas de cobro son las que importan**: de ahí sale cuándo el Cash Flow descuenta esa
+   plata. Con varios echeqs, cada uno aparece en el Cash Flow en su fecha, como una fila propia.
+   La retención SICORE se descuenta de cada echeq en la misma proporción (en partes iguales si los
+   echeqs son iguales). Vale igual para una **factura** (Shift+Click → 📝 ECHEQ).
 4. Después pregunta por la retención:
    - **«Sí, aplicar retención»** si SICORE va contra este anticipo;
    - **«No, continuar sin retención»** si ya está calculada contra la factura, o si no corresponde.
@@ -919,6 +924,20 @@ perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apa
 
 Volver a elegir ECHEQ sobre un anticipo que ya lo tiene **no duplica nada** — sirve justamente para
 completar uno que quedó a medias.
+
+### Los echeqs de un pago en varios, en el Cash Flow
+Cada echeq es una fila, en su fecha de cobro y por su monto («… · echeq 2/3»). Son de **sólo
+lectura**: el pago ya está hecho. Lo único que se cambia ahí es la **fecha de cobro** de cada echeq;
+el estado del pago se maneja desde la factura o el anticipo, y no entran a las acciones en lote.
+
+### El Excel de emisión para el banco
+En **Cash Flow → 📝 ECHEQs → Emitidos**, tildá los echeqs que vas a emitir y apretá
+**🏦 Excel de emisión**. Elegí la **cláusula** (con la explicación de cada una), revisá el **motivo**
+de cada echeq (*Factura* si paga una factura, *Orden de pago* si no) y **Generar Excel**: sale con el
+formato de la plantilla del banco, listo para cargar al emitir. Si algún dato haría que el banco lo
+rechace (un CUIT incompleto, un monto en cero), no se genera y te dice cuál.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1214`.
 
 ### Lo que verifica el mail antes de encolarse
 El cuerpo termina en **Total cancelado**:

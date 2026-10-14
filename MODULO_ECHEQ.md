@@ -462,6 +462,25 @@ registrado»*, que no es lo mismo. Es una consulta, no una pantalla.
 
 ---
 
+## 11 ter. Un pago en VARIOS echeqs y el Excel de emisión (2026-10-14, A-FEAT-1282)
+
+⚠️ **Cambió 2026-10-14**: hasta acá un pago era **un** echeq (el registro deduplicaba por factura/anticipo
+y el Cash Flow proyectaba una sola fecha). Ahora:
+
+- **El plan**: cantidad de echeqs, reparto (*iguales* / *%* / *montos*, que son **partes del total**) y la
+  fecha de cobro de cada uno. Se carga en el modal «Pago con ECHEQ» del Cash Flow (sólo ahí, a pedido del
+  usuario). Cuenta en `lib/pagos/echeqs-multiples.ts`.
+- **El registro**: una fila de `msa.cheques` por echeq, con su parte del **neto** a librar y su parte de
+  la **retención** y del **descuento** (mismos pesos): Σ monto + Σ monto_sicore + Σ descuento = total. El
+  centavo de redondeo va al último. La factura/anticipo guarda la fecha del **último** echeq.
+- **El Cash Flow**: con 2+ echeqs vigentes, la fila de la factura/anticipo se reemplaza por una fila por
+  echeq (`lib/cashflow/echeqs-en-filas.ts`), `origen_tabla = 'msa.cheques'`, sólo lectura salvo la fecha
+  de cobro (que va a `cheques.fecha_cobro`); no entran al lote ni al motor de conciliación.
+- **El Excel de emisión** (panel ECHEQs → Emitidos → 🏦): formato de la plantilla del banco
+  (`Plantilla_Emision250.xlsx`), una fila por echeq; cláusula elegida con su explicación; motivo *Factura*
+  si el echeq paga una factura, *Orden de pago* si no; mail de pagos del proveedor.
+- ⏳ **Templates**: falta la columna que ate un cheque a una cuota de template.
+
 ## 12. Pendientes / mejoras identificadas
 
 | Feature | Prioridad | Descripción |

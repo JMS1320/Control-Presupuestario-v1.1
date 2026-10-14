@@ -39,6 +39,9 @@ import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencion
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
+import { problemasDelPlan, ultimaFechaCobro } from "@/lib/pagos/echeqs-multiples"
+import { EditorPlanEcheqs, planVacio, planDesdeUI, type PlanEcheqsUI } from "./editor-plan-echeqs"
+import { ModalExportarEcheqs } from "./modal-exportar-echeqs"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -250,6 +253,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [mostrarPanelEcheqs, setMostrarPanelEcheqs] = useState(false)
   const [cheques, setCheques] = useState<any[]>([])
   const [cargandoCheques, setCargandoCheques] = useState(false)
+  // 🏦 A-FEAT-1282 — los echeqs tildados para el Excel de emisión del banco.
+  const [echeqsParaExcel, setEcheqsParaExcel] = useState<Set<string>>(new Set())
+  const [mostrarExcelEcheqs, setMostrarExcelEcheqs] = useState(false)
 
   const cargarCheques = async () => {
     setCargandoCheques(true)
@@ -387,6 +393,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const echeqPendienteCF = useRef<EcheqDatos | null>(null)   // datos del cheque a registrar al finalizar
   const echeqLoteActivo = useRef<boolean>(false)             // echeq de varias FC vía lote (usa la cola SICORE)
   const echeqLoteFacturas = useRef<CashFlowRow[]>([])        // FC ARCA a procesar como echeq en lote
+  // 📝 A-FEAT-1282 — varios echeqs por pago: cantidad, reparto y fecha de cobro de cada uno.
+  const [planEcheqCF, setPlanEcheqCF] = useState<PlanEcheqsUI>(planVacio())
+  const totalEcheqCF = useRef<number | null>(null)           // total del pago (para «por montos»); null en lote
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -1113,6 +1122,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   const cambiarEstado = async (nuevoEstado: string) => {
     if (!filaParaCambioEstado) return
+    // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios: el estado es el del pago, no del echeq.
+    if (filaParaCambioEstado.origen_tabla === 'msa.cheques') {
+      setFilaParaCambioEstado(null)
+      toast.info('Es un echeq de un pago en varios: el estado se maneja desde la factura/anticipo (panel ECHEQs). Acá sólo cambia su fecha de cobro.')
+      return
+    }
     
     try {
       setGuardandoCambio(true)
@@ -1135,6 +1150,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         echeqAnticipoCF.current = null
         setEcheqOrigenCF('factura')
         setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || hoyArgentina(), fechaCobro: '' })
+        setPlanEcheqCF(planVacio())
+        // El total del pago: lo que falta pagar + lo que ya se retuvo/descontó (las partes son del total).
+        totalEcheqCF.current = (Number(filaParaCambioEstado.debitos) || 0) + (Number(filaParaCambioEstado.monto_sicore) || 0) + (Number(filaParaCambioEstado.descuento_aplicado) || 0)
         setMostrarModalEcheqCF(true)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
@@ -1730,7 +1748,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Seleccionar/Deseleccionar todas las filas visibles
   const seleccionarTodasVisibles = () => {
-    const idsVisibles = new Set(datosFiltradosPagos.map(f => f.id))
+    // Los echeqs de un pago en varios no se seleccionan (A-FEAT-1282).
+    const idsVisibles = new Set(datosFiltradosPagos.filter(f => f.origen_tabla !== 'msa.cheques').map(f => f.id))
     setFilasSeleccionadas(idsVisibles)
     toast.success(`${idsVisibles.size} filas seleccionadas`)
   }
@@ -1993,6 +2012,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
+    // 📝 A-FEAT-1282 — un echeq de un pago en varios no entra a las acciones en lote (ya está pagado).
+    if (data.find(f => f.id === filaId)?.origen_tabla === 'msa.cheques') {
+      toast.info('Es un echeq de un pago en varios: el pago ya está hecho. Sólo se puede cambiar su fecha de cobro.')
+      return
+    }
     setFilasSeleccionadas(prev => {
       const nueva = new Set(prev)
       if (nueva.has(filaId)) {
@@ -2133,6 +2157,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           setEcheqOrigenCF('factura')
           const hoy = hoyArgentina()
           setEcheqFormCF({ banco: '', numero: '', fechaEmision: (cambiarFechaVenc && valorFechaLote) || arcaFacturas[0].fecha_pago || hoy, fechaCobro: '' })
+          setPlanEcheqCF(planVacio())
+          totalEcheqCF.current = null
           setMostrarModalEcheqCF(true)
         } else {
           toast.success(`${noArca.length} registros → echeq`)
@@ -3266,10 +3292,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Confirmar el modal ECHEQ → arranca el MISMO flujo SICORE que "pagar", con el pending en 'echeq'.
   // La retención se calcula igual; el cheque + método de pago se estampan al finalizar (finalize/cancelar).
   const confirmarEcheqCF = async () => {
-    if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro) {
-      toast.error('Completá banco, fecha de emisión y fecha de cobro.'); return
+    const plan = planDesdeUI(planEcheqCF)
+    const problemas = problemasDelPlan(plan, totalEcheqCF.current ?? 0)
+    if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemas.length) {
+      toast.error(problemas[0] || 'Completá banco y fecha de emisión.'); return
     }
-    const datos: EcheqDatos = { ...echeqFormCF }
+    // 📝 A-FEAT-1282 — con varios echeqs viaja el plan; la factura/anticipo se estampa con la fecha
+    // del ÚLTIMO (hasta ahí no termina de salir el pago). Con uno solo, igual que siempre.
+    const varios = plan.echeqs.length > 1
+    const datos: EcheqDatos = {
+      ...echeqFormCF,
+      numero: varios ? '' : (plan.echeqs[0].numero || ''),
+      fechaCobro: ultimaFechaCobro(plan),
+      plan: varios ? plan : null,
+    }
     echeqPendienteCF.current = datos
     setMostrarModalEcheqCF(false)
 
@@ -3384,16 +3420,51 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     // Si el pago del anticipo es con ECHEQ, cierra en estado 'echeq' + registra el cheque (neto)
     const esEcheq = !!(echeqPendienteCF.current && echeqAnticipoCF.current?.id === anticipoSicoreId)
+    // 🧾 A-FEAT-1282 — neto e IVA del anticipo se GUARDAN (antes se pedían para calcular y se perdían);
+    // son los mismos campos que el modal de Pagos y los usa SICORE al vincular la factura.
+    const parseCampo = (v: string) => parseFloat(String(v || '').replace(/\./g, '').replace(',', '.')) || 0
     const { error } = await supabase.from('anticipos_proveedores').update({
       estado_pago: esEcheq ? 'echeq' : 'pagar',
       sicore: quincena,
       monto_sicore: montoSicoreAnticipo,
       tipo_sicore: tipoSicoreAnticipo.tipo,
       monto_restante: saldoFinal,
+      neto_gravado: parseCampo(camposSicore.neto_gravado),
+      neto_no_gravado: parseCampo(camposSicore.neto_no_gravado),
+      op_exentas: parseCampo(camposSicore.op_exentas),
+      iva: parseCampo(camposSicore.iva),
+      imp_total: datosSicoreAnticipo.impTotal,
       ...(esEcheq ? { metodo_pago: 'echeq', fecha_cobro_echeq: echeqPendienteCF.current!.fechaCobro, fecha_pago: echeqPendienteCF.current!.fechaEmision } : {}),
     }).eq('id', anticipoSicoreId)
 
     if (error) { toast.error('Error guardando SICORE: ' + error.message); return }
+    /**
+     * 🧾 A-FEAT-1282 — la retención del anticipo se REGISTRA en SICORE (sale en la declaración y en el
+     * certificado). Desde el Cash Flow no se registraba: sólo quedaba anotada en el anticipo, mientras
+     * que el mismo pago hecho desde Pagos sí la registraba. Mismos datos que Pagos (A-BUG-194: la base
+     * y el mínimo son los del cálculo, no los del régimen).
+     */
+    if (anticipo && montoSicoreAnticipo > 0) {
+      await registrarEnSicoreRetenciones('msa', {
+        origen: 'anticipo',
+        quincena,
+        fecha_pago: String(anticipoSicoreFecha || hoyArgentina()).split('T')[0],
+        anticipo_id: anticipo.id,
+        factura_id: anticipo.factura_id || null,
+        grupo_pago_id: null,
+        cuit_emisor: anticipo.cuit_proveedor,
+        denominacion_emisor: anticipo.nombre_proveedor,
+        tipo_sicore: tipoSicoreAnticipo.tipo,
+        alicuota: tipoSicoreAnticipo.porcentaje_retencion,
+        neto_gravado_pagado: datosSicoreAnticipo.netoBase,
+        total_pagado: Math.round(((anticipo.monto || 0) - descuentoSicoreAnticipo) * 100) / 100,
+        descuento_aplicado: descuentoSicoreAnticipo,
+        minimo_no_imponible: datosSicoreAnticipo.minimoAplicado,
+        base_imponible: datosSicoreAnticipo.baseImponible,
+        retencion: Math.round(montoSicoreAnticipo * 100) / 100,
+        pago: saldoFinal,
+      })
+    }
     if (esEcheq && anticipo) {
       await guardarChequeAnticipo('msa', { id: anticipo.id, nombre_proveedor: anticipo.nombre_proveedor, cuit_proveedor: anticipo.cuit_proveedor }, echeqPendienteCF.current!, saldoFinal, { quincena, monto: montoSicoreAnticipo, tipo: tipoSicoreAnticipo.tipo })
       echeqPendienteCF.current = null
@@ -3678,6 +3749,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       echeqFilaCF.current = null
       setEcheqOrigenCF('anticipo')
       setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || hoyArgentina(), fechaCobro: '' })
+      setPlanEcheqCF(planVacio())
+      totalEcheqCF.current = Number(anticipo.monto) || 0
       setMostrarModalEcheqCF(true)
       return
     }
@@ -4777,7 +4850,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     */}
                     {/* ☑️ A-FEAT-1268 — el tilde del encabezado tilda todo lo que se ve con los filtros puestos. */}
                     {modoPagos && (() => {
-                      const idsVisibles = datosFiltradosPagos.map(f => f.id)
+                      const idsVisibles = datosFiltradosPagos.filter(f => f.origen_tabla !== 'msa.cheques').map(f => f.id)
                       const estado = estadoTildeTodas(idsVisibles, filasSeleccionadas)
                       return (
                         <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
@@ -4969,6 +5042,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 ))}
               </div>
               <div className="flex gap-2">
+                {vistaEcheqs === 'emitidos' && (
+                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700" disabled={echeqsParaExcel.size === 0} onClick={() => setMostrarExcelEcheqs(true)}
+                    title="Tildá los echeqs a emitir y generá el Excel con el formato del banco">
+                    🏦 Excel de emisión ({echeqsParaExcel.size})
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={cargarCheques} disabled={cargandoCheques}>
                   {cargandoCheques ? <Loader2 className="h-4 w-4 animate-spin" /> : '↺ Actualizar'}
                 </Button>
@@ -4986,6 +5065,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
+                      <th className="p-3 text-center font-medium" title="Para el Excel de emisión">🏦</th>
                       <th className="p-3 text-left font-medium">Nro ECHEQ</th>
                       <th className="p-3 text-left font-medium">Banco</th>
                       <th className="p-3 text-left font-medium">Beneficiario</th>
@@ -5005,6 +5085,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       const vencido = ch.fecha_cobro && ch.fecha_cobro < hoy && ch.estado === 'vigente'
                       return (
                         <tr key={ch.id} className={`border-b hover:bg-gray-50 ${vencido ? 'bg-red-50' : ''}`}>
+                          <td className="p-3 text-center">
+                            <input type="checkbox" checked={echeqsParaExcel.has(ch.id)}
+                              onChange={() => setEcheqsParaExcel(prev => { const n = new Set(prev); if (n.has(ch.id)) n.delete(ch.id); else n.add(ch.id); return n })} />
+                          </td>
                           <td className="p-3 font-mono text-xs">{ch.numero || <span className="text-gray-400 italic">sin nro</span>}</td>
                           <td className="p-3">{ch.banco}</td>
                           <td className="p-3">{ch.beneficiario_nombre || '-'}</td>
@@ -5038,6 +5122,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           </CardContent>
         </Card>
       )}
+      <ModalExportarEcheqs open={mostrarExcelEcheqs} onClose={() => { setMostrarExcelEcheqs(false); setEcheqsParaExcel(new Set()) }}
+        cheques={cheques.filter(c => echeqsParaExcel.has(c.id))} />
 
       {/* Modal cambio de estado (Shift+Click débitos/créditos) */}
       {filaParaCambioEstado && (
@@ -5870,7 +5956,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       {/* Modal ECHEQ (facturas y anticipos) — paridad con el Modal de Pagos */}
       <Dialog open={mostrarModalEcheqCF} onOpenChange={(open) => { if (!open) { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []} }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>📝 Pago con ECHEQ</DialogTitle>
             <DialogDescription>Completar datos del cheque electrónico ({echeqOrigenCF === 'anticipo' ? 'anticipo' : 'factura'})</DialogDescription>
@@ -5886,24 +5972,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1">Número de ECHEQ</label>
-              <input type="text" className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Ej: 000012345" value={echeqFormCF.numero} onChange={e => setEcheqFormCF(prev => ({ ...prev, numero: e.target.value }))} />
-            </div>
-            <div>
               <label className="text-sm font-medium block mb-1">Fecha de emisión *</label>
               <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaEmision} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaEmision: e.target.value }))} />
               {echeqFormCF.fechaEmision && (
                 <p className="text-xs text-blue-600 mt-1">→ Quincena SICORE: {generarQuincenaSicore(echeqFormCF.fechaEmision)}</p>
               )}
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1">Fecha de cobro *</label>
-              <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaCobro} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaCobro: e.target.value }))} />
-            </div>
+            {/* 📝 A-FEAT-1282 — uno o varios echeqs, con su fecha de cobro cada uno. */}
+            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} total={totalEcheqCF.current} varios={echeqLoteActivo.current} />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>
-            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar ECHEQ</Button>
+            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemasDelPlan(planDesdeUI(planEcheqCF), totalEcheqCF.current ?? 0).length > 0} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar {planEcheqCF.echeqs.length > 1 ? `${planEcheqCF.echeqs.length} ECHEQs` : 'ECHEQ'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

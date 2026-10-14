@@ -11,6 +11,7 @@ import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/haci
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
+import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -103,6 +104,12 @@ export interface CashFlowRow {
   id: string
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
   origen_tabla: string // Para identificar tabla específica al editar
+  /**
+   * 📝 A-FEAT-1282 — fila de UN echeq de un pago en varios echeqs: el id de la factura/anticipo que
+   * paga (el `id` de la fila es el del cheque, `origen_tabla = 'msa.cheques'`). Sólo lectura, salvo
+   * la fecha de cobro. Ver `lib/cashflow/echeqs-en-filas.ts`.
+   */
+  echeq_de?: string
   /**
    * De qué empresa(s) es la fila. Es una LISTA porque un template puede ser `MSA/PAM` y tiene
    * que aparecer al filtrar cualquiera de las dos. Las facturas siempre traen una sola (la del
@@ -1078,7 +1085,23 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // 7. Combinar y ordenar por fecha_estimada
       const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
       const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
+      // 📝 A-FEAT-1282 — un pago en VARIOS echeqs se proyecta echeq por echeq, cada uno en su fecha.
+      // Echeqs sólo hay en MSA; se buscan los de las facturas y anticipos que están en 'echeq'.
+      const idsEnEcheq = [...filasArca, ...filasAnticipos]
+        .filter(f => f.estado === 'echeq' && !(f.ids_grupo && f.ids_grupo.length) && (f.origen === 'ANTICIPO' || String(f.origen_tabla).startsWith('msa.')))
+        .map(f => f.id)
+      let chequesDeFilas: any[] = []
+      if (idsEnEcheq.length) {
+        const lista = idsEnEcheq.join(',')
+        const { data: chs, error: eChs } = await supabase.schema('msa').from('cheques')
+          .select('id, monto, fecha_cobro, estado, numero, factura_id, anticipo_id')
+          .or(`factura_id.in.(${lista}),anticipo_id.in.(${lista})`)
+        // Si no se pueden leer, el pago se ve como siempre (una fila) — no se inventa nada.
+        if (eChs) console.error('Cash Flow: no se pudieron leer los echeqs', eChs)
+        chequesDeFilas = chs || []
+      }
+      const [filasArcaEcheq, filasAnticiposEcheq] = [partirFilasEnEcheqs(filasArca, chequesDeFilas), partirFilasEnEcheqs(filasAnticipos, chequesDeFilas)]
+      const todasLasFilas = [...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros
@@ -1135,6 +1158,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const esPagoDeSueldo = filaOrigen?.origen_tabla === 'sueldos.pagos'
       || filaOrigen?.origen_tabla === 'msa.grupos_pago'
     if (origen === 'SUELDO' && !esPagoDeSueldo) return false
+    /**
+     * 📝 A-FEAT-1282 — la fila de UN echeq (pago en varios): sólo se puede cambiar su fecha de cobro,
+     * que va a `msa.cheques.fecha_cobro`. Todo lo demás se dice que no, en vez de escribir con el id
+     * del cheque sobre la tabla de facturas o anticipos.
+     */
+    if (filaOrigen?.origen_tabla === 'msa.cheques') {
+      if (campo !== 'fecha_estimada' && campo !== 'fecha_vencimiento') {
+        toast.error('Es un echeq de un pago en varios: acá sólo se cambia su fecha de cobro. El pago se maneja desde su factura/anticipo.')
+        return false
+      }
+      const { error, count } = await supabase.schema('msa').from('cheques').update({ fecha_cobro: valor }, { count: 'exact' }).eq('id', id)
+      if (error || count === 0) { toast.error('No se pudo cambiar la fecha del echeq' + (error ? ': ' + error.message : '')); return false }
+      setData(prev => prev.map(f => (f.id === id ? { ...f, fecha_estimada: valor } : f)))
+      return true
+    }
     try {
       // Preparar objeto de actualización, con las dos reglas de arrastre (ver `conArrastreDeFechas`)
       let updateData: any = conArrastreDeFechas(campo, valor)
@@ -1366,6 +1404,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     // Lo que se guardó de verdad: sólo esto se pinta al final.
     const guardadas: typeof actualizaciones = []
     const fallidas: Array<{ id: string; motivo: string }> = []
+    // 📝 A-FEAT-1282 — las filas de UN echeq (pago en varios) no se tocan en lote: su id es el del cheque.
+    const esEcheq = (id: string) => data.find(f => f.id === id)?.origen_tabla === 'msa.cheques'
+    for (const u of actualizaciones.filter(u => esEcheq(u.id))) fallidas.push({ id: u.id, motivo: 'es un echeq de un pago en varios (sólo se cambia su fecha de cobro, de a uno)' })
+    actualizaciones = actualizaciones.filter(u => !esEcheq(u.id))
     try {
       // Agrupar por origen para hacer updates eficientes
       const arcaUpdates = actualizaciones.filter(u => u.origen === 'ARCA')

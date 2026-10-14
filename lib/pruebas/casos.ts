@@ -156,6 +156,8 @@ import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
+import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION } from "@/lib/pagos/echeqs-multiples"
+import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
@@ -3091,6 +3093,52 @@ export function correrCasos(): Resultado[] {
     !extractoEsDe("pam_galicia", "msa") && extractoEsDe("ma_galicia", "ma") && extractoEsDe("msa_galicia", "msa"), "A-FEAT-24")
   chequear("Cobros de PAM y MA", "Los 4 extractos Galicia llevan el vínculo, ninguno repetido",
     "4", String(new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size), TODOS_LOS_EXTRACTOS.length === 4 && new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size === 4, "A-FEAT-24")
+
+  // ══ 📝 PAGAR CON VARIOS ECHEQS y el Excel de emisión (A-FEAT-1282) ═══════════════════════════
+  // El caso del usuario: un anticipo pagado en 3 echeqs, retención SICORE repartida en partes iguales.
+  const echPlanIguales = { modo: "iguales" as const, echeqs: [{ fechaCobro: "2026-10-29" }, { fechaCobro: "2026-11-13" }, { fechaCobro: "2026-12-13" }] }
+  const echTres = calcularEcheqs(echPlanIguales, 3000000 - 100000, 100000)
+  chequear("Echeqs múltiples", "📝 3 echeqs iguales de $3.000.000 con $100.000 de retención: cada uno 966.666,67/66,67/66,66 y la retención 33.333,33/33/34",
+    "966666.67 · 966666.67 · 966666.66 · ret 33333.33/33333.33/33333.34", `${echTres.map(e => e.monto).join(" · ")} · ret ${echTres.map(e => e.retencion).join("/")}`,
+    echTres[0].monto === 966666.67 && echTres[2].monto === 966666.66 && echTres[2].retencion === 33333.34, "A-FEAT-1282")
+  const echSumaTres = echTres.reduce((s2, e) => s2 + e.monto + e.retencion, 0)
+  chequear("Echeqs múltiples", "🧮 Identidad: Σ echeqs + Σ retención = total del pago, al centavo",
+    "3000000.00", echSumaTres.toFixed(2), echSumaTres.toFixed(2) === "3000000.00", "A-FEAT-1282")
+  const echPlanMontos = { modo: "montos" as const, echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }, { fechaCobro: "2026-11-13", parte: 2000000 }] }
+  const echPorMontos = calcularEcheqs(echPlanMontos, 2910000, 90000)
+  chequear("Echeqs múltiples", "Por montos (partes del total 1M + 2M): la retención va en la misma proporción (30.000 y 60.000)",
+    "970000 · 1940000 · 30000 · 60000", `${echPorMontos[0].monto} · ${echPorMontos[1].monto} · ${echPorMontos[0].retencion} · ${echPorMontos[1].retencion}`,
+    echPorMontos[0].monto === 970000 && echPorMontos[1].monto === 1940000 && echPorMontos[0].retencion === 30000 && echPorMontos[1].retencion === 60000, "A-FEAT-1282")
+  chequear("Echeqs múltiples", "🛑 Montos que no suman el total, % que no suman 100 y un echeq sin fecha frenan el plan",
+    "3 problemas", `${problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length + problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 50 }, { fechaCobro: "2026-11-29", parte: 30 }] }, 3000000).length + problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }, 1).length} problemas`,
+    problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length === 1
+      && problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 50 }, { fechaCobro: "2026-11-29", parte: 30 }] }, 3000000).length === 1
+      && problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }, 1).length === 1
+      && problemasDelPlan(echPlanIguales, 3000000).length === 0, "A-FEAT-1282")
+  chequear("Echeqs múltiples", "La factura/anticipo se estampa con la fecha del ÚLTIMO echeq",
+    "2026-12-13", ultimaFechaCobro(echPlanIguales), ultimaFechaCobro(echPlanIguales) === "2026-12-13", "A-FEAT-1282")
+  const echExcel = filasEmision([{ cuit: "30-70814129-8", monto: 966666.67, fechaCobro: "2026-10-29", motivo: motivoPorDefecto(false), descripcion1: "Anticipo X (1/3)", mail: "a@b.com; c@d.com", clausula: "No a la orden" }])
+  chequear("Echeqs múltiples", "🏦 Excel del banco: encabezado de la plantilla, CUIT sin guiones, fecha DD/MM/AAAA como texto, motivo «Orden de pago» si no es factura, un solo mail, descripción 2 completada",
+    "Tipo de documento · 30708141298 · 29/10/2026 · Orden de pago · a@b.com · Anticipo X (1/3) · sin problemas",
+    `${echExcel.filas[0][0]} · ${echExcel.filas[1][1]} · ${echExcel.filas[1][3]} · ${echExcel.filas[1][4]} · ${echExcel.filas[1][7]} · ${echExcel.filas[1][6]} · ${echExcel.problemas.length ? echExcel.problemas[0] : "sin problemas"}`,
+    echExcel.filas[0].join("|") === ENCABEZADO_EMISION.join("|") && echExcel.filas[1][1] === 30708141298 && echExcel.filas[1][3] === "29/10/2026"
+      && echExcel.filas[1][4] === "Orden de pago" && echExcel.filas[1][7] === "a@b.com" && echExcel.filas[1][6] === "Anticipo X (1/3)" && !echExcel.problemas.length
+      && motivoPorDefecto(true) === "Factura", "A-FEAT-1282")
+  chequear("Echeqs múltiples", "🛑 Excel: un CUIT incompleto o una cláusula fuera de la lista del banco se avisan (no se genera)",
+    "2 problemas", `${filasEmision([{ cuit: "3070", monto: 1, fechaCobro: "2026-10-29", motivo: "Factura", clausula: "Libre" }]).problemas.length} problemas`,
+    filasEmision([{ cuit: "3070", monto: 1, fechaCobro: "2026-10-29", motivo: "Factura", clausula: "Libre" }]).problemas.length === 2, "A-FEAT-1282")
+  // El Cash Flow: un anticipo con 3 echeqs pasa a 3 filas, cada una en su fecha; con 1 echeq no cambia.
+  const echFilaAnt = { id: "ant1", origen: "ANTICIPO", debitos: 2900000, fecha_estimada: "2026-12-13", detalle: "ANTICIPO: X" }
+  const echChs = [
+    { id: "c1", monto: 966666.67, fecha_cobro: "2026-10-29", estado: "vigente", factura_id: null, anticipo_id: "ant1" },
+    { id: "c2", monto: 966666.67, fecha_cobro: "2026-11-13", estado: "vigente", factura_id: null, anticipo_id: "ant1" },
+    { id: "c3", monto: 966666.66, fecha_cobro: "2026-12-13", estado: "cobrado", factura_id: null, anticipo_id: "ant1" },
+  ]
+  const echPartidas = partirFilasEnEcheqs([echFilaAnt], echChs)
+  chequear("Echeqs múltiples", "📈 🧨 Cash Flow: el anticipo en 3 echeqs se proyecta echeq por echeq (el cobrado ya no), y con UN echeq la fila sigue igual",
+    "2 filas · 2026-10-29 966666.67 · 2026-11-13 · sólo lectura · 1 fila", `${echPartidas.length} filas · ${echPartidas[0]?.fecha_estimada} ${echPartidas[0]?.debitos} · ${echPartidas[1]?.fecha_estimada} · ${echPartidas[0]?.origen_tabla === "msa.cheques" && echPartidas[0]?.echeq_de === "ant1" ? "sólo lectura" : "?"} · ${partirFilasEnEcheqs([echFilaAnt], [echChs[0]]).length} fila`,
+    echPartidas.length === 2 && echPartidas[0].fecha_estimada === "2026-10-29" && echPartidas[0].debitos === 966666.67 && echPartidas[1].fecha_estimada === "2026-11-13"
+      && echPartidas[0].origen_tabla === "msa.cheques" && echPartidas[0].echeq_de === "ant1" && partirFilasEnEcheqs([echFilaAnt], [echChs[0]])[0].id === "ant1", "A-FEAT-1282")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto
