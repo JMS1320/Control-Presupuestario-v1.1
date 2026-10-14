@@ -158,6 +158,7 @@ import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaR
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
 import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
+import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
@@ -3145,6 +3146,12 @@ export function correrCasos(): Resultado[] {
     "2026-10-29 · 2026-11-13 · 2026-12-13 · 2027-01-05 · 60", `${fechaMasDias("2026-10-14", 15)} · ${fechaMasDias("2026-10-14", 30)} · ${fechaMasDias("2026-10-14", 60)} · ${fechaMasDias("2026-12-06", 30)} · ${diasEntre("2026-10-14", "2026-12-13")}`,
     fechaMasDias("2026-10-14", 15) === "2026-10-29" && fechaMasDias("2026-10-14", 30) === "2026-11-13" && fechaMasDias("2026-10-14", 60) === "2026-12-13"
       && fechaMasDias("2026-12-06", 30) === "2027-01-05" && diasEntre("2026-10-14", "2026-12-13") === 60 && fechaMasDias("", 10) === "", "A-FEAT-1282")
+  // 🐞 A-BUG-1284 — reconstruir la retención de BRIKI que quedó sin registrar en SICORE.
+  const echBriki = baseDesdeRetencion(11570247.93, 226924.96, 0.02, 224000)
+  const echAdic = baseDesdeRetencion(1000000, 20000, 0.02, 224000)
+  chequear("Echeqs múltiples", "🧾 BRIKI: la retención 226.924,96 sale de (11.570.247,93 − 224.000) × 2 % → mínimo 224.000 exacto (deducido daba 223.999,93); sin mínimo, base = neto",
+    "11346247.93 · 224000 · exacto · adicional 0", `${echBriki.base} · ${echBriki.minimo} · ${echBriki.deducido ? "deducido" : "exacto"} · adicional ${echAdic.minimo}`,
+    echBriki.base === 11346247.93 && echBriki.minimo === 224000 && !echBriki.deducido && echAdic.minimo === 0 && echAdic.base === 1000000, "A-BUG-1284")
   // 🐞 A-BUG-1283 — desde la barra de PAGOS un anticipo pasaba a echeq sin modal. Antes la regla era
   // «todo lo que no es factura de MSA pendiente va directo» (así lo hacía el código viejo).
   const echLoteAnt = clasificarLoteEcheq([{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }], () => true)

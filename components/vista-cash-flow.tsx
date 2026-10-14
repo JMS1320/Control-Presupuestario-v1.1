@@ -33,6 +33,7 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
@@ -3434,8 +3435,23 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const confirmarSicoreAnticipo = async () => {
     if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
-    const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
-    const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
+    /**
+     * 🐞 A-BUG-1284 (2026-10-14) — el anticipo se buscaba SÓLO en la lista del modal «💵 Anticipos»,
+     * que se carga al abrir ese modal. Entrando desde la fila del Cash Flow o desde PAGOS la lista
+     * estaba vacía: el saldo se calculaba sobre $0 (quedaba NEGATIVO, −retención), y como «no había
+     * anticipo» no se registraban ni los echeqs ni la retención en SICORE — sin ningún aviso. Caso
+     * real: BRIKI $14.000.000, el Cash Flow mostraba un solo pago por el total. Mismo agujero que
+     * A-BUG-103 cerró en `cambiarEstadoPagoAnticipo`, en otra función. Ahora: la lista, el anticipo en
+     * proceso, o la base; y si no aparece, NO se guarda nada.
+     */
+    let anticipo: any = anticiposExistentes.find(a => a.id === anticipoSicoreId)
+      ?? (echeqAnticipoCF.current?.id === anticipoSicoreId ? echeqAnticipoCF.current : undefined)
+    if (!anticipo) {
+      const { data } = await supabase.from('anticipos_proveedores').select('*').eq('id', anticipoSicoreId).maybeSingle()
+      anticipo = data ?? undefined
+    }
+    if (!anticipo) { toast.error('No se encontró el anticipo: no se guardó la retención'); return }
+    const saldoFinal = (anticipo.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     // Si el pago del anticipo es con ECHEQ, cierra en estado 'echeq' + registra el cheque (neto)
     const esEcheq = !!(echeqPendienteCF.current && echeqAnticipoCF.current?.id === anticipoSicoreId)
     // 🧾 A-FEAT-1282 — neto e IVA del anticipo se GUARDAN (antes se pedían para calcular y se perdían);
@@ -3735,6 +3751,53 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
   }
 
+  /**
+   * 🐞 A-BUG-1284 — registra en SICORE la retención de un anticipo que la tiene anotada (`sicore`,
+   * `monto_sicore`, `tipo_sicore`) pero no tiene su fila en `sicore_retenciones`. Reconstruye la base
+   * desde lo guardado: base = retención ÷ alícuota del régimen; mínimo = neto − base. Si falta el neto
+   * o el régimen, NO inventa: avisa.
+   */
+  const registrarRetencionAnticipoSiFalta = async (anticipo: any) => {
+    const { count } = await supabase.schema('msa').from('sicore_retenciones')
+      .select('id', { count: 'exact', head: true }).eq('anticipo_id', anticipo.id)
+    if ((count ?? 0) > 0) return
+    // Los regímenes se cargan al abrir el modal SICORE: si no se abrió, se leen de la base.
+    let tipo: any = tiposSicore.find(t => t.tipo === anticipo.tipo_sicore)
+    if (!tipo) {
+      const { data } = await supabase.from('tipos_sicore_config').select('*').eq('tipo', anticipo.tipo_sicore).maybeSingle()
+      tipo = data ? { ...data, porcentaje_retencion: Number((data as any).porcentaje_retencion) } : undefined
+    }
+    const neto = (Number(anticipo.neto_gravado) || 0) + (Number(anticipo.neto_no_gravado) || 0) + (Number(anticipo.op_exentas) || 0)
+    const retencion = Number(anticipo.monto_sicore) || 0
+    if (!tipo || !(tipo.porcentaje_retencion > 0) || !(neto > 0)) {
+      toast.warning('La retención del anticipo no está registrada en SICORE y faltan datos para hacerlo solo (régimen o neto): revisalo en SICORE.')
+      return
+    }
+    // Base y mínimo reconstruidos desde lo guardado (`baseDesdeRetencion`): el mínimo exacto del régimen si cierra.
+    const { base, minimo } = baseDesdeRetencion(neto, retencion, tipo.porcentaje_retencion, Number(tipo.minimo_no_imponible) || 0)
+    const descuento = Number(anticipo.descuento_aplicado) || 0
+    await registrarEnSicoreRetenciones('msa', {
+      origen: 'anticipo',
+      quincena: anticipo.sicore,
+      fecha_pago: String(anticipo.fecha_pago || hoyArgentina()).slice(0, 10),
+      anticipo_id: anticipo.id,
+      factura_id: anticipo.factura_id || null,
+      grupo_pago_id: null,
+      cuit_emisor: anticipo.cuit_proveedor,
+      denominacion_emisor: anticipo.nombre_proveedor,
+      tipo_sicore: tipo.tipo,
+      alicuota: tipo.porcentaje_retencion,
+      neto_gravado_pagado: neto,
+      total_pagado: Math.round(((Number(anticipo.monto) || 0) - descuento) * 100) / 100,
+      descuento_aplicado: descuento,
+      minimo_no_imponible: minimo,
+      base_imponible: base,
+      retencion,
+      pago: Math.round(((Number(anticipo.monto) || 0) - retencion - descuento) * 100) / 100,
+    })
+    toast.info(`Se registró en SICORE la retención del anticipo ($${retencion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}), que había quedado sin registrar.`)
+  }
+
   // Estampa el echeq en un anticipo ya con SICORE resuelto: estado='echeq' + método/fechas + registra cheque (neto).
   const finalizarEcheqAnticipo = async (anticipo: any, saldoNeto: number, sicore: { quincena: string | null; monto: number | null; tipo: string | null } | null) => {
     const datos = echeqPendienteCF.current
@@ -3778,6 +3841,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (anticipo?.sicore && anticipo?.monto_sicore) {
         // Ya tiene SICORE: actualizar estado + recalcular saldo
         const saldo = (anticipo.monto || 0) - (anticipo.monto_sicore || 0)
+        // 🐞 A-BUG-1284 — si la retención quedó anotada en el anticipo pero NO registrada en SICORE
+        // (lo que dejaba el bug), se registra ahora con los datos guardados.
+        await registrarRetencionAnticipoSiFalta(anticipo)
         if (esEcheq) {
           await finalizarEcheqAnticipo(anticipo, saldo, { quincena: anticipo.sicore, monto: anticipo.monto_sicore, tipo: anticipo.tipo_sicore })
           toast.success('Anticipo → echeq (SICORE ya aplicado)')
