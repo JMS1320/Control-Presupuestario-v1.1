@@ -2006,8 +2006,12 @@ certificado **no tiene fecha**, sale igual —con la fecha del cobro de su compr
 cobro, con la del comprobante— pero marcado, y la app te avisa antes de generar el Excel. Lo mejor es
 cargarle la fecha real en **Comprobantes → %** (retenciones).
 
-En **PAM** y **MA** todavía no se pueden cargar certificados: la hoja trae sólo lo impreso en los
-comprobantes y lo aclara.
+El **PDF** del subdiario trae lo mismo en su última página, **RETENCIONES RECIBIDAS**: cada retención con
+fecha, cliente, CUIT, comprobante de venta, certificado e importe, agrupadas por tipo.
+
+En **PAM** y **MA** los certificados se cargan desde el botón **%** (Comprobantes o Cobros) una vez
+aplicado el cambio de base del 14/10; mientras tanto la hoja trae sólo lo impreso en los comprobantes
+y lo aclara.
 
 ⚠️ Sin probar por vos todavía → `A-TEST-1211`.
 

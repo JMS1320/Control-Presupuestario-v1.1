@@ -173,6 +173,32 @@ export function armarRetencionesSubdiario(e: {
   return { deLasVentas: agrupar(deLasVentas), delMes: agrupar(delMes), avisos, sinUbicar }
 }
 
+/**
+ * 📄 Un apartado como tabla para el PDF del subdiario (A-FEAT-1281, 2026-10-14). Pedido del usuario:
+ * *«quiero que entre también en el PDF… y debe poner el detalle de la retención: a qué comprobante de
+ * ventas está vinculado, el cliente, la fecha, todo»*. Mismo contenido que la solapa del Excel —agrupado
+ * por tipo, con subtotales—, pero en texto (un PDF no recalcula). `negritas` son los índices de las filas
+ * de título de tipo y de subtotal/total.
+ */
+export function tablaRetencionesPdf(ap: ApartadoRet): { filas: string[][]; negritas: number[] } {
+  const filas: string[][] = []
+  const negritas: number[] = []
+  const vacio = ['', '', '', '', '', '', '', '']
+  if (!ap.grupos.length) return { filas: [['Sin retenciones', ...vacio.slice(1)]], negritas: [] }
+  for (const g of ap.grupos) {
+    negritas.push(filas.length)
+    filas.push([`Ret. ${g.tipo}`, ...vacio.slice(1)])
+    for (const f of g.filas) {
+      filas.push([fechaAR(f.fecha), f.cliente, f.cuit, f.comprobante, f.certificado, f.origen, fmtImporte(f.importe), f.aviso || (f.enAmbos ? 'También en el otro apartado' : '')])
+    }
+    negritas.push(filas.length)
+    filas.push([`Subtotal Ret. ${g.tipo}`, '', '', '', '', '', fmtImporte(g.total), ''])
+  }
+  negritas.push(filas.length)
+  filas.push(['TOTAL', '', '', '', '', '', fmtImporte(ap.total), ''])
+  return { filas, negritas }
+}
+
 /** Una celda con fórmula para SheetJS (`aoa_to_sheet` la respeta): el valor calculado va igual, por si no recalcula. */
 export interface CeldaFormula { t: 'n'; v: number; f: string }
 const formula = (f: string, v: number): CeldaFormula => ({ t: 'n', v, f })

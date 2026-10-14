@@ -22,7 +22,7 @@ import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/li
 import { useCarpetaPorDefecto } from "@/hooks/useCarpetaPorDefecto"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
-import { hojaRetenciones } from "@/lib/ventas/retenciones-export"
+import { hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { cargarRetencionesSubdiario } from "@/lib/ventas/retenciones-export-db"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
@@ -321,7 +321,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
       }
 
       await generarExcelConCarpeta(filas, periodoConsulta, destino.directorio, retenciones)
-      await generarPDFConCarpeta(filas, periodoConsulta, destino.directorio)
+      await generarPDFConCarpeta(filas, periodoConsulta, destino.directorio, retenciones)
 
       alert(
         `📊 Reportes generados para período ${periodoConsulta}\n\n📥 Descargando:\n` +
@@ -432,7 +432,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   }
 
   // ── PDF ────────────────────────────────────────────────────────────────────
-  const generarPDFConCarpeta = async (filas: any[], periodo: string, directorio: any = null) => {
+  const generarPDFConCarpeta = async (filas: any[], periodo: string, directorio: any = null, retenciones: RetencionesDelSubdiario | null = null) => {
     try {
       const doc = new jsPDF('landscape', 'mm', 'a4')
       const { fechaInicio, fechaFin } = encabezadoPdf(doc, 'VENTAS', periodo)
@@ -556,6 +556,44 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
           columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 50, halign: 'right' } },
         })
       }
+
+      /**
+       * 🧾 A-FEAT-1281 — página de RETENCIONES RECIBIDAS, con el detalle de cada una (comprobante de venta,
+       * cliente, CUIT, fecha, certificado): los mismos dos apartados que la solapa del Excel.
+       */
+      const ret = retenciones ?? await cargarRetencionesSubdiario(supabase, empresa, parseInt(rangoDelPeriodo(periodo).año), parseInt(rangoDelPeriodo(periodo).mes), filas)
+      doc.addPage('a4', 'landscape')
+      encabezadoPdf(doc, 'RETENCIONES RECIBIDAS', periodo)
+      let y = 30
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'normal')
+      for (const n of ret.notas) { doc.text(n, 20, y); y += 5 }
+      const sinFecha = [...ret.avisos, ...ret.sinUbicar.map(r => `Ret. ${r.tipo} de ${r.cliente || 'cliente sin nombre'} — ${r.aviso}`)]
+      if (sinFecha.length) {
+        doc.setTextColor(180, 90, 0)
+        doc.text(`ATENCIÓN: ${sinFecha.length} certificado(s) SIN FECHA (cargá la fecha real en Comprobantes > Retenciones):`, 20, y); y += 4
+        for (const a of sinFecha) { doc.text('• ' + a, 22, y); y += 4 }
+        doc.setTextColor(0, 0, 0)
+      }
+      const apartadoPdf = (titulo: string, ap: typeof ret.delMes) => {
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'bold')
+        doc.text(titulo, 20, y + 4)
+        const t = tablaRetencionesPdf(ap)
+        autoTable(doc, {
+          head: [['Fecha', 'Cliente', 'C.U.I.T.', 'Comprobante de venta', 'Certificado', 'Origen', 'Importe', 'Observación']],
+          // Título de tipo, subtotal y total: el texto ocupa las 6 primeras columnas (no se parte en dos renglones).
+          body: t.filas.map((r, i) => t.negritas.includes(i) ? [{ content: r[0], colSpan: 6 }, r[6], r[7]] : r) as any,
+          startY: y + 7,
+          styles: { fontSize: 7, cellPadding: 1 },
+          headStyles: { fillColor: [66, 139, 202], fontSize: 7 },
+          columnStyles: { 0: { cellWidth: 18 }, 1: { cellWidth: 48 }, 2: { cellWidth: 22 }, 3: { cellWidth: 30 }, 4: { cellWidth: 28 }, 5: { cellWidth: 32 }, 6: { cellWidth: 26, halign: 'right' }, 7: { cellWidth: 40 } },
+          didParseCell: (d: any) => { if (d.section === 'body' && t.negritas.includes(d.row.index)) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.fillColor = [235, 241, 250] } },
+        })
+        y = (doc as any).lastAutoTable.finalY + 8
+      }
+      apartadoPdf('RETENCIONES DE LAS VENTAS DEL SUBDIARIO — aunque la retención sea de otro mes', ret.deLasVentas)
+      apartadoPdf('RETENCIONES SUFRIDAS EN EL MES — aunque la venta sea de otro mes', ret.delMes)
 
       const filename = await generarNombreUnico(directorio, nombreBaseReporte(periodo), 'pdf')
       if (directorio) {

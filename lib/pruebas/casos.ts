@@ -154,7 +154,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
-import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones } from "@/lib/ventas/retenciones-export"
+import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
@@ -3063,6 +3063,13 @@ export function correrCasos(): Resultado[] {
   chequear("Retenciones en el subdiario", "Sin fecha y sin cobro → la del comprobante; con varios cobros → el último, diciendo cuántos",
     "2026-09-15 · 2026-09-28 (2 cobros)", `${fSinCobro.fecha} · ${fVarios.fecha} (${fVarios.aviso.includes("2 cobros") ? "2 cobros" : fVarios.aviso})`,
     fSinCobro.fecha === "2026-09-15" && !!fSinCobro.aviso && fVarios.fecha === "2026-09-28" && fVarios.aviso.includes("2 cobros"), "A-FEAT-1278")
+  // 📄 A-FEAT-1281 — el PDF: cada retención con su comprobante de venta, cliente, CUIT y fecha; título y subtotal por tipo.
+  const pdfVentas = tablaRetencionesPdf(retSep.deLasVentas)
+  const filaOct = pdfVentas.filas.find(r => r[0] === "05/10/2026")
+  chequear("Retenciones en el subdiario", "📄 PDF: la retención trae fecha, cliente, comprobante de venta e importe; con «Ret. Ganancias», su subtotal y el TOTAL en negrita",
+    "05/10/2026 · SANPA · 10-20 · 100.000,00 · Ret. Ganancias · TOTAL 785.905,18", `${filaOct?.[0]} · ${filaOct?.[1]} · ${filaOct?.[3]} · ${filaOct?.[6]} · ${pdfVentas.filas[0][0]} · ${pdfVentas.filas[pdfVentas.filas.length - 1][0]} ${pdfVentas.filas[pdfVentas.filas.length - 1][6]}`,
+    filaOct?.[1] === "SANPA" && filaOct?.[3] === "10-20" && filaOct?.[6] === "100.000,00" && pdfVentas.filas[0][0] === "Ret. Ganancias"
+      && pdfVentas.negritas.includes(0) && pdfVentas.negritas.includes(pdfVentas.filas.length - 1) && pdfVentas.filas[pdfVentas.filas.length - 1][6] === "785.905,18", "A-FEAT-1281")
   // La hoja: los subtotales son fórmulas que suman su bloque, y el control contra ARCA resta la celda vacía.
   const aoaRet = hojaRetenciones(retSep, "09/2026")
   const celdas = aoaRet.flat().filter((c): c is { t: "n"; v: number; f: string } => !!c && typeof c === "object")
