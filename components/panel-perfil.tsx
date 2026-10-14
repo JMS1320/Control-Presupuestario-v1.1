@@ -6,6 +6,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { Ayuda } from "@/components/ayuda"
 import { seccionesPorIds } from "@/components/layout-app"
 import { SelectorImagenPerfil } from "@/components/selector-imagen-perfil"
@@ -128,7 +129,8 @@ export function PanelPerfil({
     const anterior = prefs
     const nuevas = { ...prefs, [clave]: valor }
     setPrefs(nuevas) // optimista: el interruptor tiene que moverse cuando se lo toca
-    const { error } = await supabase.auth.updateUser({ data: { preferencias: nuevas } })
+    // Sólo el campo tocado, sobre las preferencias vigentes de la cuenta (A-FEAT-1277).
+    const { error } = await guardarPreferencias({ [clave]: valor } as Partial<Preferencias>)
     if (error) {
       setPrefs(anterior)
       toast.error("No se pudo guardar la preferencia.")

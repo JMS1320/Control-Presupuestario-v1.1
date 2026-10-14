@@ -3071,6 +3071,9 @@ y ahí suele haber más que en MSA.
   → A-TEST-1206
 - **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
   `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **Cash Flow → columnas a tu medida**: arrastrá el **borde derecho** de un encabezado para cambiar el
+  ancho, o el **encabezado** entero para cambiarlo de lugar. Queda guardado en tu cuenta. Para volver
+  a lo de siempre: **«↺ Columnas como venían»**, arriba a la derecha de la tabla. → A-TEST-1208
 - **PAGOS → tildar todo lo que se ve**: la casilla del encabezado de la columna de tildes tilda todas
   las filas que quedan con tus filtros, y otro click las destilda. La barra azul de abajo está desde que
   entrás a PAGOS, aunque no hayas tildado nada. → A-TEST-1205

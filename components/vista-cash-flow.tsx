@@ -22,6 +22,9 @@ import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { ModalVincularArchivo } from "@/components/modal-vincular-archivo"
+import { ordenarColumnas, moverColumna, anchoValido, type ColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
 import { PanelBoletasArba } from "@/components/panel-boletas-arba"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -662,6 +665,55 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  /**
+   * 📐 A-FEAT-1277 — columnas con el ancho y el orden que dejó el usuario, guardados en su cuenta.
+   * Arrastrar el encabezado cambia el orden; arrastrar su borde derecho, el ancho. Se guarda al
+   * soltar (una escritura por gesto, no una por pixel).
+   */
+  const [colsUsuario, setColsUsuario] = useState<ColumnasUsuario | null>(null)
+  const [anchoVivo, setAnchoVivo] = useState<{ key: string; px: number } | null>(null)
+  const [colArrastrada, setColArrastrada] = useState<string | null>(null)
+  const [colEncima, setColEncima] = useState<{ key: string; lado: 'antes' | 'despues' } | null>(null)
+  // Mientras se arrastra el BORDE, el encabezado no tiene que empezar a moverse de lugar.
+  const redimensionando = useRef(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setColsUsuario(leerPreferencias(data.user).columnasCashFlow))
+  }, [])
+  const columnasVista = ordenarColumnas(columnasDefinicion, colsUsuario?.orden ?? [])
+  const anchoDe = (key: string): number | null =>
+    anchoVivo?.key === key ? anchoVivo.px : (colsUsuario?.anchos[key] ?? null)
+  const guardarColumnas = async (nuevas: ColumnasUsuario | null) => {
+    const antes = colsUsuario
+    setColsUsuario(nuevas)
+    const { error } = await guardarPreferencias({ columnasCashFlow: nuevas })
+    if (error) { setColsUsuario(antes); toast.error('No se pudo guardar el acomodo de columnas: ' + error) }
+  }
+  const empezarAncho = (e: React.MouseEvent, key: string) => {
+    e.preventDefault(); e.stopPropagation()
+    redimensionando.current = true
+    const th = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const inicioX = e.clientX
+    const inicioPx = th.getBoundingClientRect().width
+    let ultimo = inicioPx
+    const mover = (ev: MouseEvent) => { ultimo = anchoValido(inicioPx + ev.clientX - inicioX); setAnchoVivo({ key, px: ultimo }) }
+    const soltar = () => {
+      document.removeEventListener('mousemove', mover)
+      document.removeEventListener('mouseup', soltar)
+      redimensionando.current = false
+      setAnchoVivo(null)
+      if (Math.abs(ultimo - inicioPx) < 2) return
+      guardarColumnas({ orden: colsUsuario?.orden ?? [], anchos: { ...(colsUsuario?.anchos ?? {}), [key]: ultimo } })
+    }
+    document.addEventListener('mousemove', mover)
+    document.addEventListener('mouseup', soltar)
+  }
+  const soltarColumna = (destino: string) => {
+    if (!colArrastrada || !colEncima) { setColArrastrada(null); setColEncima(null); return }
+    const orden = moverColumna(columnasVista.map(c => c.key), colArrastrada, destino, colEncima.lado)
+    setColArrastrada(null); setColEncima(null)
+    guardarColumnas({ orden, anchos: colsUsuario?.anchos ?? {} })
+  }
+
   // 📎 A-FEAT-1276 — vincular el PDF archivado desde la ❌ de la columna del archivo.
   const [vincularArchivo, setVincularArchivo] = useState<{ id: string; schema: string; titulo: string } | null>(null)
   useEffect(() => {
@@ -4650,6 +4702,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             )}
           </div>
 
+          {/* 📐 A-FEAT-1277 — volver a las columnas de siempre, sólo si se tocaron */}
+          {colsUsuario && (
+            <div className="mb-1 flex justify-end">
+              <button
+                type="button"
+                className="text-xs text-gray-500 underline hover:text-gray-700"
+                title="Volver al orden y los anchos de siempre"
+                onClick={() => guardarColumnas(null)}
+              >
+                ↺ Columnas como venían
+              </button>
+            </div>
+          )}
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-auto max-h-[600px]">
@@ -4694,10 +4759,27 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       debajo. Y el `z` del encabezado tiene que ser mayor que el de la celda, o el
                       `thead sticky` se lo come al scrollear en vertical.
                     */}
-                    {columnasDefinicion.map((col) => (
-                      <th 
-                        key={col.key} 
-                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width} ${
+                    {columnasVista.map((col) => {
+                      // 📐 A-FEAT-1277 — se arrastra para cambiar el orden; el borde derecho, para el ancho.
+                      const px = anchoDe(col.key)
+                      const marca = colEncima?.key === col.key && colArrastrada && colArrastrada !== col.key
+                        ? (colEncima.lado === 'antes' ? 'shadow-[inset_3px_0_0_#3b82f6]' : 'shadow-[inset_-3px_0_0_#3b82f6]') : ''
+                      return (
+                      <th
+                        key={col.key}
+                        draggable
+                        onDragStart={e => { if (redimensionando.current) { e.preventDefault(); return } setColArrastrada(col.key); e.dataTransfer.effectAllowed = 'move' }}
+                        onDragOver={e => {
+                          if (!colArrastrada) return
+                          e.preventDefault()
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          setColEncima({ key: col.key, lado: e.clientX < r.left + r.width / 2 ? 'antes' : 'despues' })
+                        }}
+                        onDrop={e => { e.preventDefault(); soltarColumna(col.key) }}
+                        onDragEnd={() => { setColArrastrada(null); setColEncima(null) }}
+                        title="Arrastrá para cambiar de lugar · arrastrá el borde derecho para cambiar el ancho"
+                        style={px ? { width: px, minWidth: px, maxWidth: px } : undefined}
+                        className={`relative p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-grab ${px ? '' : col.width} ${marca} ${colArrastrada === col.key ? 'opacity-50' : ''} ${
                           // Con el selector puesto, la fecha arranca DESPUÉS de él (w-16 = 4rem),
                           // o las dos columnas fijas se superponen en el borde izquierdo.
                           col.key === 'fecha_estimada'
@@ -4706,8 +4788,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         }`}
                       >
                         {col.label}
+                        <span
+                          onMouseDown={e => empezarAncho(e, col.key)}
+                          onClick={e => e.stopPropagation()}
+                          draggable={false}
+                          onDragStart={e => { e.preventDefault(); e.stopPropagation() }}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300"
+                          title="Arrastrá para cambiar el ancho"
+                        />
                       </th>
-                    ))}
+                      )
+                    })}
                   </tr>
                 </thead>
 
@@ -4715,7 +4806,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(modoPagos ? datosFiltradosPagos : datosOperativos).length === 0 ? (
                     <tr>
-                      <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
+                      <td colSpan={columnasVista.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
                         <br />
                         <span className="text-xs">
@@ -4761,9 +4852,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         )}
                         
                         {/* Columnas de datos */}
-                        {columnasDefinicion.map((col) => (
+                        {columnasVista.map((colBase) => {
+                          // 📐 A-FEAT-1277 — con ancho propio, la celda lo respeta y el contenido lo llena.
+                          const pxCol = anchoDe(colBase.key)
+                          const col = (pxCol ? { ...colBase, width: 'w-full' } : colBase) as typeof colBase
+                          return (
                           <td key={col.key}
-                            className={`p-3 text-sm ${
+                            style={pxCol ? { width: pxCol, minWidth: pxCol, maxWidth: pxCol } : undefined}
+                            className={`p-3 text-sm ${pxCol ? 'overflow-hidden' : ''} ${
                               /**
                                * ⚠️ El fondo sale de `fondoFila`, no de un `bg-white` fijo: la grilla
                                * (y en ámbar las de USD). Con el blanco fijo, la columna pegada se veía
@@ -4791,7 +4887,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                               </div>
                             ) : renderizarCelda(fila, col)}
                           </td>
-                        ))}
+                          )
+                        })}
                       </tr>
                       )
                     })

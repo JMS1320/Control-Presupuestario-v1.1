@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -905,6 +906,23 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-FEAT-1277: columnas del Cash Flow en el orden del usuario.
+  const COLS = [{ key: "empresas" }, { key: "fecha" }, { key: "detalle" }, { key: "debitos" }]
+  const enSuOrden = ordenarColumnas(COLS, ["debitos", "empresas", "ya-no-existe"]).map(c => c.key).join(",")
+  chequear("Cash Flow — columnas a mano", "🔴 Respeta el orden guardado, ignora una columna que ya no existe y una NUEVA entra en su lugar de siempre",
+    "debitos,fecha,detalle,empresas… (fecha y detalle en su lugar)", enSuOrden,
+    enSuOrden === "debitos,fecha,detalle,empresas", "A-FEAT-1277")
+  chequear("Cash Flow — columnas a mano", "Mover una columna antes / después de otra",
+    "detalle,empresas,fecha · empresas,fecha,detalle",
+    `${moverColumna(["empresas", "fecha", "detalle"], "detalle", "empresas", "antes").join(",")} · ${moverColumna(["detalle", "empresas", "fecha"], "detalle", "fecha", "despues").join(",")}`,
+    moverColumna(["empresas", "fecha", "detalle"], "detalle", "empresas", "antes").join(",") === "detalle,empresas,fecha"
+      && moverColumna(["detalle", "empresas", "fecha"], "detalle", "fecha", "despues").join(",") === "empresas,fecha,detalle", "A-FEAT-1277")
+  const leido = leerColumnasUsuario({ orden: ["a", 3], anchos: { a: 9000, b: "x", c: 10 } })
+  chequear("Cash Flow — columnas a mano", "Lo guardado se lee sin confiar: anchos fuera de rango se acotan (40–800), lo mal tipado se descarta",
+    "orden a · a=800 · c=40", `orden ${leido?.orden.join(",")} · a=${leido?.anchos.a} · c=${leido?.anchos.c} · b=${leido?.anchos.b}`,
+    leido?.orden.join(",") === "a" && leido?.anchos.a === 800 && leido?.anchos.c === 40 && leido?.anchos.b === undefined
+      && leerColumnasUsuario({ orden: [], anchos: {} }) === null, "A-FEAT-1277")
 
   // A-FEAT-1276: vincular el PDF desde el Cash Flow — qué carpeta y qué archivo se sugiere.
   const pImputada = periodoDeArchivo({ "año_contable": 2026, mes_contable: 11, fecha_emision: "2026-10-01" })
