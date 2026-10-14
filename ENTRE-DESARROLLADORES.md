@@ -40,6 +40,20 @@
 
 ## 📨 PARA JAVIER
 
+### 🌿 Tus ramas ya mergeadas (2026-10-14) — las borrás vos si querés
+
+Hicimos limpieza de ramas: JMS borró las suyas que ya estaban 100 % en `desarrollo`. **Las tuyas no las
+tocamos** (regla: cada uno borra las propias). Estas están enteramente contenidas en `desarrollo`:
+`feature/inicio-widgets`, `feature/login-google`, `feature/perfil-imagen-preferencias`,
+`feature/permisos-granulares`, `home-dashboard`. Si ya no las usás, borralas; si alguna te sirve de base,
+dejala.
+
+➕ También se borró `vercel/react-server-components-cve-*` (la creó el bot de Vercel en enero para subir
+Next 15.2.4 → 15.2.8; la app ya está en 16.1.1). Y queda **sin mergear a propósito** `jms/vistas-seguras`:
+son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
 
 `scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y
