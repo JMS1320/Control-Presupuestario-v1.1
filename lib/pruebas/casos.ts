@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
@@ -903,6 +904,18 @@ export function correrCasos(): Resultado[] {
   const soloNC = restosComoMedios([ALCORTA_NC[3]])
   chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
     "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
+  const VIS = ["a", "b", "c"]
+  chequear("PAGOS — tildar todo lo filtrado", "Tres estados: ninguna / algunas / todas (una tildada que no se ve no cuenta)",
+    "ninguna · algunas · todas",
+    `${estadoTildeTodas(VIS, new Set(["fuera"]))} · ${estadoTildeTodas(VIS, new Set(["a"]))} · ${estadoTildeTodas(VIS, new Set(["a", "b", "c", "fuera"]))}`,
+    estadoTildeTodas(VIS, new Set(["fuera"])) === "ninguna" && estadoTildeTodas(VIS, new Set(["a"])) === "algunas"
+      && estadoTildeTodas(VIS, new Set(["a", "b", "c", "fuera"])) === "todas", "A-FEAT-1268")
+  const trasClick = seleccionTrasClickTodas(VIS, new Set(["a", "fuera"]))
+  chequear("PAGOS — tildar todo lo filtrado", "🔴 Click con algunas: tilda SÓLO las que se ven (suelta la que no se ve); con todas: suelta todo",
+    "a,b,c · 0", `${[...trasClick].sort().join(",")} · ${seleccionTrasClickTodas(VIS, new Set(VIS)).size}`,
+    [...trasClick].sort().join(",") === "a,b,c" && seleccionTrasClickTodas(VIS, new Set(VIS)).size === 0, "A-FEAT-1268")
 
   // A-FEAT-1273: el archivo del banco desde Sueldos lleva SÓLO los pagos tildados y pagados por banco.
   const PAGOS_MES = [

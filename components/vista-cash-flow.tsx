@@ -33,6 +33,7 @@ import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
+import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
@@ -4513,10 +4514,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )}
           {/*
             🎯 A-FEAT-149 — la barra que te sigue: el MISMO panel (contador, totales y todos los botones),
-            fijo abajo, sólo cuando hay algo seleccionado y el panel de arriba ya no se ve. Abajo y no
-            arriba porque el encabezado de la tabla ya es sticky arriba.
+            fijo abajo, cuando el panel de arriba ya no se ve. Abajo y no arriba porque el encabezado de
+            la tabla ya es sticky arriba.
+            ⚠️ A-FEAT-1274 (2026-10-14) — antes aparecía recién con la primera fila tildada, y así
+            «Seleccionar todas» no estaba a mano justo cuando todavía no había nada tildado. Ahora
+            está desde que se entra a PAGOS.
           */}
-          {modoPagos && filasSeleccionadas.size > 0 && !panelPagosVisible && (
+          {modoPagos && !panelPagosVisible && (
             <div className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-300 bg-blue-50/95 backdrop-blur shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
               style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
               <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
@@ -4645,11 +4649,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       trabaja mirando las columnas del final —importes, medio de pago— y ahí había que
                       volver al principio para poder tildar la fila.
                     */}
-                    {modoPagos && (
-                      <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
-                        Sel.
-                      </th>
-                    )}
+                    {/* ☑️ A-FEAT-1268 — el tilde del encabezado tilda todo lo que se ve con los filtros puestos. */}
+                    {modoPagos && (() => {
+                      const idsVisibles = datosFiltradosPagos.map(f => f.id)
+                      const estado = estadoTildeTodas(idsVisibles, filasSeleccionadas)
+                      return (
+                        <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
+                          <Checkbox
+                            aria-label="Tildar todo lo que se ve"
+                            title={estado === 'todas'
+                              ? 'Destildar todo'
+                              : `Tildar las ${idsVisibles.length} filas que se ven con los filtros puestos`}
+                            checked={estado === 'todas' ? true : estado === 'algunas' ? 'indeterminate' : false}
+                            onCheckedChange={() => setFilasSeleccionadas(seleccionTrasClickTodas(idsVisibles, filasSeleccionadas))}
+                            disabled={idsVisibles.length === 0}
+                          />
+                        </th>
+                      )
+                    })()}
                     
                     {/*
                       📅 **A-FEAT-156 — la FECHA Estimada queda fija al ir hacia la derecha.**

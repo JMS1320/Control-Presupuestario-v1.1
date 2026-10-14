@@ -1,6 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import type { UserRole } from "@/lib/auth/roles"
 import {
   Sidebar,
@@ -81,11 +82,33 @@ function BotonMenu({ className }: { className?: string }) {
       size="icon"
       className={`h-9 w-9 shrink-0 ${className ?? ""}`}
       onClick={toggleSidebar}
+      title="Abrir / cerrar el menú (Alt+M)"
     >
       <Menu />
       <span className="sr-only">Abrir el menú</span>
     </Button>
   )
+}
+
+/**
+ * ⌨️ **Alt+M abre y cierra el menú lateral** (A-FEAT-1275). Nota del usuario 2026-10-14: *«abrir el
+ * menú lateral preciso un atajo»*. Alt+letra como Alt+P (PAGOS), Alt+R (revisión) y Alt+N (nota).
+ * El menú ya traía Ctrl+B de fábrica, pero nadie lo sabía y no sigue la familia de los otros.
+ * Se monta UNA vez (no en el botón, que aparece en dos lugares y abriría y cerraría a la vez).
+ */
+function AtajoMenu() {
+  const { toggleSidebar } = useSidebar()
+  useEffect(() => {
+    const atajo = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      if ((e.key || "").toLowerCase() !== "m") return
+      e.preventDefault()
+      toggleSidebar()
+    }
+    document.addEventListener("keydown", atajo)
+    return () => document.removeEventListener("keydown", atajo)
+  }, [toggleSidebar])
+  return null
 }
 
 /**
@@ -221,6 +244,7 @@ export function LayoutApp({
       defaultOpen={prefs.menuAbierto}
       className={prefs.explicaciones ? undefined : "sin-explicaciones"}
     >
+      <AtajoMenu />
       <MenuLateral
         userRole={userRole}
         secciones={visibles}

@@ -3054,8 +3054,13 @@ y ahí suele haber más que en MSA.
 
 ## ⌨️ Atajos y ayudas chicas *(2026-10-13)*
 
+- **`Alt + M`** (en cualquier pantalla): abre y cierra el menú lateral. `Ctrl + B` hace lo mismo.
+  → A-TEST-1206
 - **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
   `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **PAGOS → tildar todo lo que se ve**: la casilla del encabezado de la columna de tildes tilda todas
+  las filas que quedan con tus filtros, y otro click las destilda. La barra azul de abajo está desde que
+  entrás a PAGOS, aunque no hayas tildado nada. → A-TEST-1205
 - **PAGOS propone el paso siguiente**: si tildás facturas **pendientes** el estado propuesto es
   **Pagar**; si están en **pagar**, propone **Pagado**. Lo podés cambiar; si lo cambiás a mano no te
   lo vuelve a tocar hasta que salgas de PAGOS. → A-TEST-1201
