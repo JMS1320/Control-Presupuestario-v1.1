@@ -151,7 +151,7 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones } from "@/lib/ventas/retenciones-export"
@@ -2866,6 +2866,15 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "✍️ Corregir el IVA de 1.769.344,49 a ,48 queda como monto a mano; dejarlo igual vuelve a «calculado»",
     "1.769.344,48 · (vacío) · (vacío)", `${montoTipeadoOVacio("1.769.344,48", 1769344.49)} · ${montoTipeadoOVacio("1.769.344,49", 1769344.49) || "(vacío)"} · ${montoTipeadoOVacio("", 1769344.49) || "(vacío)"}`,
     montoTipeadoOVacio("1.769.344,48", 1769344.49) === "1.769.344,48" && montoTipeadoOVacio("1.769.344,49", 1769344.49) === "" && montoTipeadoOVacio("", 1769344.49) === "", "A-BUG-1280")
+  // 🧨 El bug de la primera prueba: al salir de la caja se comparaba contra el cálculo que YA usaba lo tipeado.
+  const entradaAB48 = { lineas: [
+    { razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579 },
+    { razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 7, clasificacion: "Vaca", kilos: 3260, precio: 2693.915 },
+  ], comisionPct: 0, redondeo: 0, ivaPct: 10.5, retenciones: [], ivaMonto: 1769344.48 } as any
+  chequear("Liquidación de hacienda", "✍️ 🧨 Con ,48 tipeado, la app sigue calculando ,49 sin él — y por eso ,48 NO se borra al salir (antes se comparaba contra ,48 mismo)",
+    "1769344.49 · 1.769.344,48 · antes: (vacío)", `${montoCalculado(entradaAB48, "iva").toFixed(2)} · ${montoTipeadoOVacio("1.769.344,48", montoCalculado(entradaAB48, "iva"))} · antes: ${montoTipeadoOVacio("1.769.344,48", calcularLiqHacienda(entradaAB48).iva) || "(vacío)"}`,
+    montoCalculado(entradaAB48, "iva").toFixed(2) === "1769344.49" && montoTipeadoOVacio("1.769.344,48", montoCalculado(entradaAB48, "iva")) === "1.769.344,48"
+      && montoTipeadoOVacio("1.769.344,48", calcularLiqHacienda(entradaAB48).iva) === "", "A-BUG-1280")
   // El papel REAL de Arre Beef (03/09/2026): 3.000 + 3.260 kg pie, 1.606 + 1.748 kg gancho a $5.024,12.
   const papelAB = calcularLiqHacienda({
     lineas: [{ razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579, kgGancho: 1606 },

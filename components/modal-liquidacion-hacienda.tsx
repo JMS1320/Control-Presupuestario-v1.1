@@ -36,7 +36,7 @@ import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
   plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
-  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio,
+  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado,
   type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
@@ -241,6 +241,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
   }), [lineas, comisionPct, redondeo, ivaPct, rets, comisionMonto, ivaMonto])
 
   const calc = useMemo(() => calcularLiqHacienda(entrada), [entrada])
+  // Lo que calcula la app SIN el monto tipeado: contra esto se decide si el tipeado es «a mano» (A-BUG-1280).
+  const ivaAuto = useMemo(() => montoCalculado(entrada as any, 'iva'), [entrada])
+  const comisionAuto = useMemo(() => montoCalculado(entrada as any, 'comision'), [entrada])
 
   const plazosNum: PlazoCobro[] = plazos.map(p => ({
     dias: parsearAR(p.dias), pct: parsearPct(p.pct), vencimiento: p.vencimiento, importe: parsearAR(p.importe),
@@ -529,8 +532,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>Comisión venta y garantía{comisionMonto.trim() && <span className="ml-1 text-[10px] text-amber-700" title="Monto tipeado a mano: manda sobre el %">✎ manual · {fmtAR(calc.comisionPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={comisionPct} onChange={e => { setComisionPct(e.target.value); setComisionMonto('') }} placeholder="0" disabled={!!comisionMonto.trim()} />
               <Input type="text" className="text-right" value={comisionMonto} onChange={e => setComisionMonto(e.target.value)}
-                onFocus={() => { if (!comisionMonto.trim()) setComisionMonto(fmtAR(calc.comision)) }}
-                onBlur={e => setComisionMonto(montoTipeadoOVacio(e.target.value, calc.comision))} placeholder={fmtAR(calc.comision)}
+                onFocus={() => { if (!comisionMonto.trim()) setComisionMonto(fmtAR(comisionAuto)) }}
+                onBlur={e => setComisionMonto(montoTipeadoOVacio(e.target.value, comisionAuto))} placeholder={fmtAR(calc.comision)}
                 title="Vacío: se calcula con el %. Si la comisión del papel se calcula sobre otra cosa, tipeá el monto." />
               <span>Ajuste por redondeo (con signo)</span>
               <span />
@@ -540,8 +543,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>I.V.A.{ivaMonto.trim() && <span className="ml-1 text-[10px] text-amber-700">✎ manual · {fmtAR(calc.ivaPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={ivaPct} onChange={e => { setIvaPct(e.target.value); setIvaMonto('') }} disabled={!!ivaMonto.trim()} />
               <Input type="text" className="text-right" value={ivaMonto} onChange={e => setIvaMonto(e.target.value)}
-                onFocus={() => { if (!ivaMonto.trim()) setIvaMonto(fmtAR(calc.iva)) }}
-                onBlur={e => setIvaMonto(montoTipeadoOVacio(e.target.value, calc.iva))} placeholder={fmtAR(calc.iva)}
+                onFocus={() => { if (!ivaMonto.trim()) setIvaMonto(fmtAR(ivaAuto)) }}
+                onBlur={e => setIvaMonto(montoTipeadoOVacio(e.target.value, ivaAuto))} placeholder={fmtAR(calc.iva)}
                 title="Vacío: se calcula con el %. Con valor, manda el tipeado." />
             </div>
             <p className="text-xs text-gray-500">Precio después de comisión: <b>{calc.kilos ? fmtAR(calc.precioPostComision) : '—'} $/kg</b></p>

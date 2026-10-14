@@ -142,7 +142,14 @@ export const formatoPrecio = (n: number) =>
  * sólo yo cambiar el monto»*. Antes el calculado era sólo el texto gris de la caja vacía: no se podía
  * cambiar un ,49 por ,48. Ahora al entrar a la caja aparece el calculado, editable; al salir, si quedó
  * igual al calculado la caja vuelve a vacía («usá el calculado»), y si cambió, queda como monto a mano.
+ * ⚠️ `calculado` es el de la APP, SIN el monto tipeado (`montoCalculado`): comparado contra el cálculo
+ * que ya usa lo tipeado, siempre da igual y la caja se vaciaba al salir (pasó en la primera prueba).
  */
+/** Lo que calcula la app para la comisión o el IVA, ignorando el monto tipeado de ESE campo. */
+export function montoCalculado(e: LiqHaciendaEntrada, campo: 'iva' | 'comision'): number {
+  return calcularLiqHacienda(campo === 'iva' ? { ...e, ivaMonto: null } : { ...e, comisionMonto: null })[campo]
+}
+
 export function montoTipeadoOVacio(texto: string, calculado: number): string {
   if (!texto.trim()) return ''
   const n = parseFloat(String(texto).replace(/\./g, '').replace(',', '.')) || 0
