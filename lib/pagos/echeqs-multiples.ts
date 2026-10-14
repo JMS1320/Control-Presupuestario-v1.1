@@ -203,3 +203,21 @@ export function clasificarLoteEcheq<T extends { id: string; origen: string; esta
   const abrirAnticipo = anticipos.length === 1 && facturasModal.length === 0 ? anticipos[0] : null
   return { facturasPamMa, facturasModal, facturasYaEnEcheq, anticiposSinTocar: abrirAnticipo ? [] : anticipos, abrirAnticipo, templates }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 📅 Plazo en DÍAS como alternativa a la fecha — pedido del usuario 2026-10-14
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * La fecha de cobro a N días de la emisión (*«agregame ponerle el plazo en días como opción a poner la
+ * fecha manualmente»*). Se cuenta en días de calendario y se calcula en UTC sobre la fecha pelada,
+ * para que el huso horario no la corra un día (§ 🕐 de CLAUDE.md: es un DÍA, no un instante).
+ */
+export function fechaMasDias(fechaISO: string, dias: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaISO || '') || !Number.isFinite(dias)) return ''
+  const [a, m, d] = fechaISO.split('-').map(Number)
+  return new Date(Date.UTC(a, m - 1, d + Math.trunc(dias))).toISOString().slice(0, 10)
+}
+
+// La cuenta inversa (los días entre emisión y cobro) NO se repite acá: es `diasEntre` de
+// `lib/templates/editar-campana.ts`, que ya la hace en UTC.

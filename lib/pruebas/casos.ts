@@ -156,7 +156,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
-import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq } from "@/lib/pagos/echeqs-multiples"
+import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
@@ -3140,6 +3140,11 @@ export function correrCasos(): Resultado[] {
     echPartidas.length === 2 && echPartidas[0].fecha_estimada === "2026-10-29" && echPartidas[0].debitos === 966666.67 && echPartidas[1].fecha_estimada === "2026-11-13"
       && echPartidas[0].origen_tabla === "msa.cheques" && echPartidas[0].echeq_de === "ant1" && partirFilasEnEcheqs([echFilaAnt], [echChs[0]])[0].id === "ant1", "A-FEAT-1282")
 
+  // 📅 Plazo en días como alternativa a la fecha (usuario 2026-10-14): a N días de la emisión, sin que el huso lo corra.
+  chequear("Echeqs múltiples", "📅 A 15, 30 y 60 días de la emisión del 14/10 (cruzando fin de mes y de año), y la cuenta inversa",
+    "2026-10-29 · 2026-11-13 · 2026-12-13 · 2027-01-05 · 60", `${fechaMasDias("2026-10-14", 15)} · ${fechaMasDias("2026-10-14", 30)} · ${fechaMasDias("2026-10-14", 60)} · ${fechaMasDias("2026-12-06", 30)} · ${diasEntre("2026-10-14", "2026-12-13")}`,
+    fechaMasDias("2026-10-14", 15) === "2026-10-29" && fechaMasDias("2026-10-14", 30) === "2026-11-13" && fechaMasDias("2026-10-14", 60) === "2026-12-13"
+      && fechaMasDias("2026-12-06", 30) === "2027-01-05" && diasEntre("2026-10-14", "2026-12-13") === 60 && fechaMasDias("", 10) === "", "A-FEAT-1282")
   // 🐞 A-BUG-1283 — desde la barra de PAGOS un anticipo pasaba a echeq sin modal. Antes la regla era
   // «todo lo que no es factura de MSA pendiente va directo» (así lo hacía el código viejo).
   const echLoteAnt = clasificarLoteEcheq([{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }], () => true)

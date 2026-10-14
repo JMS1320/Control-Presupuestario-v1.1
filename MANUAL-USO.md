@@ -909,7 +909,8 @@ perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apa
 2. Elegí **📝 ECHEQ**.
 3. Se abre el modal pidiendo **banco, fecha de emisión** y los echeqs: **cuántos**, cómo se reparte
    el total (**partes iguales**, **por %** o **por montos**, que son partes del total) y la **fecha de
-   cobro de cada uno** (no hay plazos por defecto: los ponés vos). El número es opcional; si lo dejás
+   cobro de cada uno** (no hay plazos por defecto: los ponés vos), ya sea como **plazo en días** desde la
+   emisión (la fecha se calcula sola) o como **fecha**. El número es opcional; si lo dejás
    vacío lo asigna el banco. Abajo ves cuánto es cada parte del total.
    ⚠️ **Las fechas de cobro son las que importan**: de ahí sale cuándo el Cash Flow descuenta esa
    plata. Con varios echeqs, cada uno aparece en el Cash Flow en su fecha, como una fila propia.

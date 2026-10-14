@@ -5997,7 +5997,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               )}
             </div>
             {/* 📝 A-FEAT-1282 — uno o varios echeqs, con su fecha de cobro cada uno. */}
-            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} total={totalEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
+            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} fechaEmision={echeqFormCF.fechaEmision} total={totalEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>

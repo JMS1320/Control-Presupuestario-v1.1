@@ -6,16 +6,22 @@
  * partes del TOTAL) y la fecha de cobro de cada uno. La cuenta vive en `lib/pagos/echeqs-multiples.ts`.
  *
  * Sin plazos por default (usuario: *«no pongas 15, 30 y 60 porque eso varía»*): las fechas las pone él.
+ * Y cada echeq se puede cargar por **fecha** o por **plazo en días** desde la emisión (usuario 2026-10-14:
+ * *«agregame ponerle el plazo en días como opción a poner la fecha manualmente»*): con días, la fecha se
+ * calcula y sigue a la fecha de emisión si ésta cambia; con fecha a mano, los días se muestran en gris.
  */
 
-import { pesosDelPlan, repartirMonto, problemasDelPlan, type ModoReparto, type PlanEcheqs } from "@/lib/pagos/echeqs-multiples"
+import { useEffect } from "react"
+import { pesosDelPlan, repartirMonto, problemasDelPlan, fechaMasDias, type ModoReparto, type PlanEcheqs } from "@/lib/pagos/echeqs-multiples"
+import { diasEntre } from "@/lib/templates/editar-campana"
 
 export interface PlanEcheqsUI {
   modo: ModoReparto
-  echeqs: { fechaCobro: string; parte: string; numero: string }[]
+  /** `dias`: plazo desde la emisión, si se cargó así (si no, '' y manda la fecha). */
+  echeqs: { fechaCobro: string; dias: string; parte: string; numero: string }[]
 }
 
-export const planVacio = (fechaCobro = ''): PlanEcheqsUI => ({ modo: 'iguales', echeqs: [{ fechaCobro, parte: '', numero: '' }] })
+export const planVacio = (fechaCobro = ''): PlanEcheqsUI => ({ modo: 'iguales', echeqs: [{ fechaCobro, dias: '', parte: '', numero: '' }] })
 
 const parsearAR = (s: string) => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0
 const fmt = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -28,8 +34,10 @@ export function planDesdeUI(p: PlanEcheqsUI): PlanEcheqs {
   }
 }
 
-export function EditorPlanEcheqs({ plan, onChange, total, varios }: {
+export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }: {
   plan: PlanEcheqsUI
+  /** Desde dónde se cuentan los días de plazo. */
+  fechaEmision: string
   onChange: (p: PlanEcheqsUI) => void
   /** Total del pago (antes de la retención), para mostrar las partes y validar «montos». `null` si no se sabe (lote). */
   total: number | null
@@ -37,13 +45,27 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios }: {
   varios?: boolean
 }) {
   const n = plan.echeqs.length
+  // Los echeqs cargados por plazo siguen a la fecha de emisión si ésta cambia.
+  useEffect(() => {
+    if (!plan.echeqs.some(e => e.dias.trim())) return
+    const echeqs = plan.echeqs.map(e => (e.dias.trim() ? { ...e, fechaCobro: fechaMasDias(fechaEmision, Number(e.dias)) } : e))
+    if (echeqs.some((e, i) => e.fechaCobro !== plan.echeqs[i].fechaCobro)) onChange({ ...plan, echeqs })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fechaEmision])
+  const setDias = (i: number, v: string) => {
+    const limpio = v.replace(/\D/g, '')
+    onChange({ ...plan, echeqs: plan.echeqs.map((e, j) => (j === i
+      ? { ...e, dias: limpio, fechaCobro: limpio ? fechaMasDias(fechaEmision, Number(limpio)) : '' }
+      : e)) })
+  }
   const setCantidad = (c: number) => {
     const k = Math.max(1, Math.min(250, Math.floor(c) || 1))
-    const echeqs = Array.from({ length: k }, (_, i) => plan.echeqs[i] ?? { fechaCobro: '', parte: '', numero: '' })
+    const echeqs = Array.from({ length: k }, (_, i) => plan.echeqs[i] ?? { fechaCobro: '', dias: '', parte: '', numero: '' })
     onChange({ ...plan, echeqs, modo: k === 1 ? 'iguales' : plan.modo })
   }
+  // Una fecha puesta a mano deja de seguir a la emisión: borra el plazo cargado.
   const setEcheq = (i: number, campo: 'fechaCobro' | 'parte' | 'numero', v: string) =>
-    onChange({ ...plan, echeqs: plan.echeqs.map((e, j) => (j === i ? { ...e, [campo]: v } : e)) })
+    onChange({ ...plan, echeqs: plan.echeqs.map((e, j) => (j === i ? { ...e, [campo]: v, ...(campo === 'fechaCobro' ? { dias: '' } : {}) } : e)) })
 
   const planCalc = planDesdeUI(plan)
   const partes = total != null ? repartirMonto(total, pesosDelPlan(planCalc)) : []
@@ -76,7 +98,8 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios }: {
         <thead>
           <tr className="text-xs text-gray-500">
             {n > 1 && <th className="text-left font-normal">#</th>}
-            <th className="text-left font-normal">Fecha de cobro *</th>
+            <th className="text-left font-normal" title="Días desde la fecha de emisión. Si lo cargás, la fecha se calcula sola.">Plazo (días)</th>
+            <th className="text-left font-normal">o fecha de cobro *</th>
             {plan.modo === 'porcentaje' && <th className="text-right font-normal">%</th>}
             {plan.modo === 'montos' && <th className="text-right font-normal">Monto (parte del total)</th>}
             <th className="text-left font-normal">Nº echeq <span className="text-gray-400">(opcional)</span></th>
@@ -87,7 +110,12 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios }: {
           {plan.echeqs.map((e, i) => (
             <tr key={i}>
               {n > 1 && <td className="pr-1 text-gray-500">{i + 1}</td>}
-              <td className="pr-1"><input type="date" className="border rounded px-1.5 py-1 text-sm" value={e.fechaCobro} onChange={ev => setEcheq(i, 'fechaCobro', ev.target.value)} /></td>
+              <td className="pr-1">
+                <input type="text" inputMode="numeric" className={`w-16 border rounded px-1.5 py-1 text-sm text-right ${e.dias ? '' : 'text-gray-400'}`}
+                  placeholder={e.fechaCobro && fechaEmision ? String(diasEntre(fechaEmision, e.fechaCobro)) : 'días'}
+                  value={e.dias} onChange={ev => setDias(i, ev.target.value)} disabled={!fechaEmision} title={fechaEmision ? '' : 'Primero la fecha de emisión'} />
+              </td>
+              <td className="pr-1"><input type="date" className={`border rounded px-1.5 py-1 text-sm ${e.dias ? 'text-gray-500' : ''}`} value={e.fechaCobro} onChange={ev => setEcheq(i, 'fechaCobro', ev.target.value)} /></td>
               {plan.modo !== 'iguales' && (
                 <td className="pr-1"><input type="text" className="w-28 border rounded px-1.5 py-1 text-sm text-right" placeholder={plan.modo === 'porcentaje' ? '33,33' : '0,00'} value={e.parte} onChange={ev => setEcheq(i, 'parte', ev.target.value)} /></td>
               )}
