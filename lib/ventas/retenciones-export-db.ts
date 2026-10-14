@@ -3,12 +3,13 @@
  * `retenciones-export.ts`; acá sólo se junta lo que está en la base. **La usan la vista previa y el
  * export**, para que el aviso de «sin fecha» que se ve en pantalla sea el mismo que sale en el Excel.
  *
- * ⚠️ PAM y MA todavía no tienen dónde cargar certificados (A-FEAT-1219) ni cobros vinculados al
- * extracto (A-FEAT-24). Se consulta igual el schema de cada empresa: el día que la tabla exista, entra
- * sola. Mientras tanto se devuelve una nota — no se omite en silencio.
+ * 🏢 PAM y MA tienen certificados y cobros vinculados desde `scripts/84` (A-FEAT-1219 / A-FEAT-24). Si
+ * la tabla de certificados de una empresa no existe (el script sin correr), se devuelve una nota — no
+ * se omite en silencio.
  */
 
 import { armarRetencionesSubdiario, type CertificadoRet, type ComprobanteRet, type ResultadoRetenciones } from './retenciones-export'
+import { extractosDelSchema } from './extractos-empresa'
 
 type Cliente = { from: (t: string) => any; schema: (s: string) => any }
 
@@ -64,16 +65,17 @@ export async function cargarRetencionesSubdiario(
     for (const c of data || []) comps.set(c.id, c)
   }
 
-  // Cobros de los comprobantes con certificados sin fecha: pagos a cuenta vinculados y, en MSA, los
-  // créditos del extracto conciliados directo (sin pago a cuenta, para no contar el mismo cobro dos veces).
+  // Cobros de los comprobantes con certificados sin fecha: pagos a cuenta vinculados y los créditos
+  // de los extractos de la empresa conciliados directo (sin pago a cuenta, para no contar el mismo
+  // cobro dos veces).
   const cobrosPorComprobante: Record<string, string[]> = {}
   const idsSinFecha = [...new Set(certificados.filter(c => !c.fecha && c.comprobante_venta_id).map(c => c.comprobante_venta_id as string))]
   if (idsSinFecha.length) {
     const { data: ants } = await supabase.from('anticipos_proveedores')
       .select('id, fecha_pago, comprobante_venta_id').eq('tipo', 'cobro').in('comprobante_venta_id', idsSinFecha)
     for (const a of ants || []) if (a.fecha_pago) (cobrosPorComprobante[a.comprobante_venta_id] ||= []).push(a.fecha_pago)
-    if (schema === 'msa') {
-      const { data: movs } = await supabase.from('msa_galicia')
+    for (const e of extractosDelSchema(schema)) {
+      const { data: movs } = await (e.schema ? supabase.schema(e.schema) : supabase).from(e.tabla)
         .select('fecha, anticipo_id, comprobante_venta_id').in('comprobante_venta_id', idsSinFecha)
       for (const m of movs || []) if (m.fecha && !m.anticipo_id) (cobrosPorComprobante[m.comprobante_venta_id] ||= []).push(m.fecha)
     }

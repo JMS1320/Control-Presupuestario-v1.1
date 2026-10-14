@@ -40,6 +40,21 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
+
+`scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y
+[A-FEAT-24](PENDIENTES.md#a-feat-24). Todavía **no** está corrido; se corre con JMS presente.
+
+| Qué | Permisos |
+|---|---|
+| tablas nuevas `pam.retenciones_recibidas` y `ma.retenciones_recibidas` (copia de la de MSA) | las mismas policies que puso tu `scripts/62` a la de MSA (`ver_segun_permiso` / `escribir_segun_permiso`), nada a `anon`; si `msa.retenciones_recibidas` está en `recurso_tablas`, se copia el mapeo con su empresa (hoy no figura) |
+| columna `comprobante_venta_id` en `public.pam_galicia`, `public.pam_galicia_cc` y `ma.ma_galicia` | heredan grants y RLS de su tabla |
+
+✅ **Por qué no te afecta**: no se toca ninguna policy existente, ni `recurso_tablas` de otras tablas, ni
+roles. Si al cerrar A-SEC-14 mapeás `msa.retenciones_recibidas` a un recurso, **sumá las dos nuevas**.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Una columna nueva en `public.notas_para_claude` (2026-10-13) — aviso ANTES de aplicarla
 
 `sin_supervision boolean not null default false` — la marca con la que JMS autoriza a Claude a

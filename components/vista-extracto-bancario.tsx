@@ -18,6 +18,7 @@ import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { cargarFuentesCobro, vincularPagoACuenta, imputacionParaElBanco, detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
+import { TODOS_LOS_EXTRACTOS, extractoEsDe } from "@/lib/ventas/extractos-empresa"
 import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -457,6 +458,13 @@ export function VistaExtractoBancario() {
   const schemaActivo = cuentaActivaObj?.schema_bd || 'public'
   // Cliente Supabase apuntando al schema de la cuenta activa (tarjetas/cajas viven en msa/pam/ma, no en public)
   const dbCuenta = () => (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+  /**
+   * 🏢 A-FEAT-24 — los extractos Galicia de las 3 empresas tienen el vínculo con la venta
+   * (`comprobante_venta_id`, `scripts/84`). La venta atada a un movimiento es de la empresa de la cuenta.
+   */
+  const extractoConVenta = TODOS_LOS_EXTRACTOS.some(e => e.tabla === tablaActiva)
+  const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
+  const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   /**
@@ -1104,7 +1112,7 @@ ${texto.trim()}` : texto.trim()
           .eq('tipo', 'cobro').eq('fecha_pago', movimiento.fecha).eq('cuit_proveedor', cuit).is('comprobante_venta_id', null)
         const ant = ((ants || []) as any[]).find(a => Math.abs((Number(a.monto) || 0) - (Number(movimiento.creditos) || 0)) < 1)
         if (ant) {
-          await vincularPagoACuenta(supabase, { ...ant, monto: Number(ant.monto) || 0 }, { id: movimiento.comprobante_venta_id }, { saldada: false, movimientoConciliado: true })
+          await vincularPagoACuenta(supabase, { ...ant, monto: Number(ant.monto) || 0 }, { id: movimiento.comprobante_venta_id }, { saldada: false, movimientoConciliado: true }, schemaVentaCuenta)
           upd.anticipo_id = ant.id
         }
       }
@@ -1114,9 +1122,9 @@ ${texto.trim()}` : texto.trim()
       // ✅ A-BUG-1247 — con este crédito conciliado, la venta se cierra si su detalle cierra (antes quedaba «a cobrar»).
       let cerrada: string | null = null
       if (movimiento.comprobante_venta_id) {
-        try { cerrada = await cerrarVentaSiSaldada(supabase, movimiento.comprobante_venta_id) } catch { /* el movimiento ya quedó; la venta se cierra desde Cobros */ }
+        try { cerrada = await cerrarVentaSiSaldada(supabase, movimiento.comprobante_venta_id, schemaVentaCuenta) } catch { /* el movimiento ya quedó; la venta se cierra desde Cobros */ }
         // 📝 A-FEAT-1257 — y el detalle dice qué se cobró.
-        try { await anotarQueSeCobro(supabase, movimiento.id, movimiento.comprobante_venta_id) } catch { /* se completa después */ }
+        try { await anotarQueSeCobro(supabase, movimiento.id, movimiento.comprobante_venta_id, schemaVentaCuenta, extractoActivo) } catch { /* se completa después */ }
       }
       toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
         + (cerrada ? ` — la venta quedó ${cerrada === 'conciliado' ? 'conciliada' : 'cobrada'}` : ''))
@@ -1731,9 +1739,12 @@ ${texto.trim()}` : texto.trim()
          * la liquidación de enero en 5 partes. Las retenciones no entran acá: `pagoCondiciones` ya las
          * descuenta. El propio movimiento, si ya estaba atado, no se cuenta contra sí mismo.
          */
-        const fuentesComp = sch === 'msa'
-          ? await cargarFuentesCobro(supabase, (comps ?? []).map((c: any) => ({ id: c.id, cuit_cliente: c.cuit_cliente })))
-          : new Map()
+        // Las 3 empresas desde A-FEAT-24. Si el extracto de una todavía no tiene el vínculo
+        // (`scripts/84` sin correr), sus ventas se ofrecen igual, sin descontar lo ya cobrado.
+        let fuentesComp: Map<string, any> = new Map()
+        try {
+          fuentesComp = await cargarFuentesCobro(supabase, (comps ?? []).map((c: any) => ({ id: c.id, cuit_cliente: c.cuit_cliente })), sch)
+        } catch { /* sin vínculo en el extracto: nada cobrado que descontar */ }
         const yaCobrado = (id: string) => lineasDeCobro((fuentesComp.get(id) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
           .filter(l => l.medio !== 'retencion' && l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
           .reduce((acc, l) => acc + l.monto, 0)
@@ -1965,8 +1976,9 @@ ${texto.trim()}` : texto.trim()
    * $1,2 M quedó reclamado por dos movimientos bancarios distintos. Sólo la rama de sueldos
    * limpiaba, y le faltaba la venta.
    *
-   * `comprobante_venta_id` va aparte porque **la columna sólo existe en `public.msa_galicia`**
-   * (→ A-FEAT-24): mandarla en PAM o MA haría fallar el UPDATE entero.
+   * `comprobante_venta_id` va aparte porque **la columna existe sólo en los extractos Galicia**
+   * (las 3 empresas desde A-FEAT-24, `scripts/84`): mandarla en una caja o una tarjeta haría
+   * fallar el UPDATE entero.
    */
   /**
    * Suelta la cuota que el movimiento tenía vinculada **sin borrarla** (A-BUG-42).
@@ -2016,7 +2028,7 @@ ${texto.trim()}` : texto.trim()
    */
   const soltarCuotaDeVenta = async (): Promise<string | null> => {
     const compId = (movimientoAsignando as any)?.comprobante_venta_id
-    if (!compId || tablaActiva !== 'msa_galicia') return null
+    if (!compId || !extractoConVenta) return null
     // Su pago a cuenta, si se había vinculado con él, vuelve a quedar suelto: si no, la misma plata
     // seguiría contando en el comprobante viejo (A-FEAT-1228).
     const antId = (movimientoAsignando as any)?.anticipo_id
@@ -2024,6 +2036,8 @@ ${texto.trim()}` : texto.trim()
       await supabase.from('anticipos_proveedores').update({ comprobante_venta_id: null, estado: 'pendiente_vincular' })
         .eq('id', antId).eq('comprobante_venta_id', compId)
     }
+    // Las cuotas (`plazos`) son de la liquidación de hacienda: sólo MSA.
+    if (schemaVentaCuenta !== 'msa') return null
     const { data: comp } = await supabase.schema('msa').from('comprobantes_venta')
       .select('id, nro_comprobante, plazos').eq('id', compId).maybeSingle()
     const plazos: PlazoCobro[] = Array.isArray((comp as any)?.plazos) ? (comp as any).plazos : []
@@ -2045,7 +2059,7 @@ ${texto.trim()}` : texto.trim()
       // Si el movimiento deja de estar en auditar, el motivo de revisión ya no aplica.
       motivo_revision: null,
     }
-    if (tablaActiva === 'msa_galicia') base.comprobante_venta_id = null
+    if (extractoConVenta) base.comprobante_venta_id = null
     return base
   }
 
@@ -2438,6 +2452,12 @@ ${marca}` : marca
          * Dejar sólo uno de los dos es lo que produjo *«la misma plata en dos estados»* en sueldos
          * ([A-DAT-50]) y en la factura de Provinvest, que figuraba cobrada con el extracto pendiente.
          */
+        // 🏢 A-FEAT-24 — el crédito de una cuenta de PAM o MA sólo se ata a una venta de SU empresa (la
+        // base no lo deja de otra forma). Se frena acá, con el motivo, en vez del error de la base.
+        if (!extractoConVenta) throw new Error('Esta cuenta no tiene el vínculo con ventas: el cobro se asigna desde el extracto Galicia de la empresa')
+        if (tablaActiva !== 'msa_galicia' && !extractoEsDe(tablaActiva, ventaElegida.__schema)) {
+          throw new Error(`Un cobro de la cuenta de ${cuentaActivaObj?.empresa} no se puede atar a una venta de ${ventaElegida.__empresa}`)
+        }
         const cobro = ventaElegida.__cobro
         const acreditado = Number(movimientoAsignando.creditos) || 0
         const dif = diferenciaContraElBanco(acreditado, cobro)
@@ -2499,7 +2519,7 @@ ${marca}` : marca
          * dos veces: en el detalle por el banco y en la lista de «sin vincular».
          */
         let anticipoDelMov: any = null
-        if (ventaElegida.__schema === 'msa') {
+        {
           const cuitMov = String(movimientoAsignando.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
           const q = (movimientoAsignando as any).anticipo_id
             ? supabase.from('anticipos_proveedores').select('id, monto, fecha_pago, cuit_proveedor, nro_cuenta, estado_pago, comprobante_venta_id').eq('id', (movimientoAsignando as any).anticipo_id)
@@ -2512,7 +2532,7 @@ ${marca}` : marca
         if (anticipoDelMov) {
           // Con cuotas, el estado del comprobante lo decide `conciliarCuota` (abajo), no el pago a cuenta.
           await vincularPagoACuenta(supabase, { ...anticipoDelMov, monto: Number(anticipoDelMov.monto) || 0 },
-            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada: saldada && !esCuota, movimientoConciliado: true })
+            { id: ventaElegida.id, nro_cuenta: ventaElegida.nro_cuenta }, { saldada: saldada && !esCuota, movimientoConciliado: true }, ventaElegida.__schema)
           updateVenta.anticipo_id = anticipoDelMov.id
           avisosAsignacion.push(`ℹ️ Se vinculó también su pago a cuenta (${formatCurrency(Number(anticipoDelMov.monto))}).`)
         }
@@ -2559,7 +2579,7 @@ ${marca}` : marca
 
         // 📝 A-FEAT-1257 — el detalle dice qué se cobró: la cuota del arrendamiento o las cabezas de hacienda.
         try {
-          const qsc = await anotarQueSeCobro(supabase, movimientoAsignando.id, ventaElegida.id)
+          const qsc = await anotarQueSeCobro(supabase, movimientoAsignando.id, ventaElegida.id, ventaElegida.__schema, extractoActivo)
           if (qsc) updateVenta.detalle = [updateVenta.detalle, qsc].filter(Boolean).join(' · ')
         } catch { /* el cobro ya quedó asignado; el detalle se puede completar después */ }
         actualizarLocal(movimientoAsignando.id, updateVenta)

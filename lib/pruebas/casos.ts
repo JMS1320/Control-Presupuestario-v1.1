@@ -155,6 +155,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones } from "@/lib/ventas/retenciones-export"
+import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
@@ -3052,6 +3053,18 @@ export function correrCasos(): Resultado[] {
   chequear("Retenciones en el subdiario", "La hoja: el subtotal de Ganancias es una fórmula que abarca exactamente sus filas (suman 110.000), y hay control contra ARCA",
     "110000 · con control ARCA", `${sumados} · ${aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")) ? "con control ARCA" : "sin control"}`,
     sumados === 110000 && celdas.every(c => c.f.length > 0) && aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")), "A-FEAT-1278")
+
+  // ══ 🏢 Cobros de PAM y MA: cada empresa con SUS extractos (A-FEAT-24) ═══════════════════════
+  // El vínculo cobro ↔ venta sólo se escribe en un extracto de la empresa de la venta (la FK no deja
+  // atar un crédito de PAM a una venta de MSA). Antes de A-FEAT-24 sólo `msa_galicia` lo tenía.
+  chequear("Cobros de PAM y MA", "PAM tiene sus DOS cuentas (CA y CC); MA la suya en el schema ma",
+    "pam_galicia,pam_galicia_cc · ma.ma_galicia", `${extractosDelSchema("pam").map(e => e.tabla).join(",")} · ${extractosDelSchema("ma").map(e => `${e.schema}.${e.tabla}`).join(",")}`,
+    extractosDelSchema("pam").length === 2 && extractosDelSchema("ma")[0]?.schema === "ma", "A-FEAT-24")
+  chequear("Cobros de PAM y MA", "🧨 Un crédito de PAM NO se ata a una venta de MSA, y uno de MA sí a una de MA",
+    "pam→msa no · ma→ma sí · msa→msa sí", `pam→msa ${extractoEsDe("pam_galicia", "msa") ? "sí" : "no"} · ma→ma ${extractoEsDe("ma_galicia", "ma") ? "sí" : "no"} · msa→msa ${extractoEsDe("msa_galicia", "msa") ? "sí" : "no"}`,
+    !extractoEsDe("pam_galicia", "msa") && extractoEsDe("ma_galicia", "ma") && extractoEsDe("msa_galicia", "msa"), "A-FEAT-24")
+  chequear("Cobros de PAM y MA", "Los 4 extractos Galicia llevan el vínculo, ninguno repetido",
+    "4", String(new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size), TODOS_LOS_EXTRACTOS.length === 4 && new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size === 4, "A-FEAT-24")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto

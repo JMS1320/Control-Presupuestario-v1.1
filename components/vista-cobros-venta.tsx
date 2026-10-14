@@ -17,6 +17,7 @@ import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { ModalRetencionesVenta } from "./modal-retenciones-venta"
+import { extractosDelSchema } from "@/lib/ventas/extractos-empresa"
 
 /**
  * Control de cobros de ventas: cada factura/liquidación de venta contra sus cobros.
@@ -26,6 +27,11 @@ import { ModalRetencionesVenta } from "./modal-retenciones-venta"
  *   contaba el banco, y los pagos a cuenta vinculados no restaban.
  *   Saldo = imp_total − retenciones impresas (hacienda) − Σ detalle. Saldo 0 = cobrada.
  *   Con cuotas (plazos), el saldo es lo que queda por entrar en las cuotas no cobradas.
+ *
+ * 🏢 Las tres empresas desde 2026-10-14 (A-FEAT-24 / A-FEAT-1219): cada una lee SU tabla de
+ * comprobantes, SUS extractos y SUS certificados. Se quedan en MSA, a propósito: las cuotas de
+ * hacienda (`plazos` existe sólo en MSA), el echeq recibido (su cartera es de MSA) y la compensación
+ * con una factura del cliente.
  */
 
 interface Factura {
@@ -48,7 +54,9 @@ interface Ret { id: string; tipo: string; monto: number; cuenta_contable: string
 const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const fmtFecha = (s: string | null) => { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}` }
 
-export function VistaCobrosVenta() {
+export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {}) {
+  const schema = empresa.toLowerCase()
+  const esMsa = schema === 'msa'
   const [facturas, setFacturas] = useState<Factura[]>([])
   const [cobrosPorFac, setCobrosPorFac] = useState<Map<string, Cobro[]>>(new Map())
   const [retsPorFac, setRetsPorFac] = useState<Map<string, Ret[]>>(new Map())
@@ -75,25 +83,30 @@ export function VistaCobrosVenta() {
   const cargar = async () => {
     setLoading(true)
     try {
-      const { data: facs } = await supabase.schema('msa').from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada, tipo_comprobante, ret_iva, ret_iibb, plazos')
+      const { data: facs, error: eFacs } = await supabase.schema(schema).from('comprobantes_venta')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada, tipo_comprobante, ret_iva, ret_iibb' + (esMsa ? ', plazos' : ''))
         .neq('estado', 'anterior')
         .order('fecha_liquidacion', { ascending: false, nullsFirst: false })
-      const lista = (facs as Factura[]) || []
+      if (eFacs) throw eFacs
+      const lista = ((facs as any[]) || []).map(f => ({ plazos: null, ...f })) as Factura[]
       setFacturas(lista)
       const ids = lista.map(f => f.id)
 
       const cMap = new Map<string, Cobro[]>()
       const rMap = new Map<string, Ret[]>()
       if (ids.length > 0) {
-        const [{ data: cobros }, { data: rets }] = await Promise.all([
-          supabase.from('msa_galicia')
+        const [porExtracto, { data: rets, error: eRets }] = await Promise.all([
+          Promise.all(extractosDelSchema(schema).map(e => (e.schema ? supabase.schema(e.schema) : supabase).from(e.tabla)
             .select('id, fecha, creditos, concepto, detalle, comprobante_venta_id')
-            .in('comprobante_venta_id', ids),
-          supabase.schema('msa').from('retenciones_recibidas')
+            .in('comprobante_venta_id', ids))),
+          supabase.schema(schema).from('retenciones_recibidas')
             .select('id, tipo, monto, cuenta_contable, comprobante_venta_id, fecha')
             .in('comprobante_venta_id', ids),
         ])
+        // Sin el extracto o los certificados, todo diría «cobrado $0»: se avisa en vez de mentir.
+        const eCobros = porExtracto.find(r => r.error)?.error || eRets
+        if (eCobros) throw eCobros
+        const cobros = porExtracto.flatMap(r => (r.data as any[]) || [])
         ;(cobros || []).forEach((c: any) => {
           const arr = cMap.get(c.comprobante_venta_id) || []; arr.push(c); cMap.set(c.comprobante_venta_id, arr)
         })
@@ -103,13 +116,15 @@ export function VistaCobrosVenta() {
       }
       setCobrosPorFac(cMap)
       setRetsPorFac(rMap)
-      setFuentes(await cargarFuentesCobro(supabase, lista.map(f => ({ id: f.id, cuit_cliente: f.cuit_cliente }))))
+      setFuentes(await cargarFuentesCobro(supabase, lista.map(f => ({ id: f.id, cuit_cliente: f.cuit_cliente })), schema))
+    } catch (err) {
+      toast.error(`No se pudieron leer los cobros de ${empresa}: ` + ((err as any)?.message || String(err)))
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => { cargar() }, [schema])
 
   /**
    * 🐂 A-FEAT-1225 — en una liquidación de HACIENDA la retención viene IMPRESA en el papel
@@ -166,7 +181,7 @@ export function VistaCobrosVenta() {
       // Menos de $1 de diferencia es redondeo del emisor: cierra igual (como en el Extracto).
       const saldada = d.detalle.saldo - (Number(a.monto) || 0) < 1
       const r = await vincularPagoACuenta(supabase, { ...a, monto: Number(a.monto) || 0 }, { id: f.id },
-        { saldada, movimientoConciliado: a.estado_pago === 'conciliado' })
+        { saldada, movimientoConciliado: a.estado_pago === 'conciliado' }, schema)
       // Si con esto se completó, las cuotas que quedaban abiertas pasan a cobradas (un echeq endosado no
       // tiene movimiento del banco con el que conciliarlas).
       if (saldada && (f.plazos || []).length) {
@@ -268,7 +283,7 @@ export function VistaCobrosVenta() {
   const pasarACobrada = async (f: Factura) => {
     setMarcando(f.id)
     try {
-      const nuevo = await cerrarVentaSiSaldada(supabase, f.id)
+      const nuevo = await cerrarVentaSiSaldada(supabase, f.id, schema)
       if (!nuevo) throw new Error('El detalle no cierra (o ya estaba cerrada): no se cambió nada')
       toast.success(`${f.nro_comprobante} pasó a ${nuevo === 'conciliado' ? 'conciliada' : 'cobrada'} — el Cash Flow ya no la espera`)
       await cargar()
@@ -425,8 +440,9 @@ export function VistaCobrosVenta() {
                           </div>
                         )}
 
-                        {/* 🔁 Un echeq del cliente que se endosó: no pasa por el banco. */}
-                        <div className="mt-2" onClick={e => e.stopPropagation()}>
+                        {/* 🔁 Un echeq del cliente que se endosó: no pasa por el banco. Echeq y compensación,
+                            sólo MSA: la cartera de echeqs y la compensación con compras son de MSA. */}
+                        {esMsa && <div className="mt-2" onClick={e => e.stopPropagation()}>
                           {echeqForm ? (
                             <div className="flex flex-wrap items-end gap-2 rounded border bg-white p-2 text-xs">
                               <label className="grid gap-0.5">Fecha<Input type="date" className="h-7 text-xs w-36" value={echeqForm.fecha} onChange={e => setEcheqForm({ ...echeqForm, fecha: e.target.value })} /></label>
@@ -465,7 +481,7 @@ export function VistaCobrosVenta() {
                               + Compensar con una factura del cliente
                             </Button>
                           )}
-                        </div>
+                        </div>}
 
                         {/* 📅 Las cuotas del papel, con «cobrada» por cuota — lo mismo que el verde del Cash Flow. */}
                         {(f.plazos || []).length > 0 && (
@@ -520,11 +536,12 @@ export function VistaCobrosVenta() {
         open={!!retencionesDe}
         comprobante={retencionesDe}
         onClose={() => setRetencionesDe(null)}
+        empresa={empresa}
         onGuardado={async () => {
           // ✅ A-BUG-1247 — si la retención completó el saldo, la venta se cierra sola.
           if (retencionesDe) {
             try {
-              const nuevo = await cerrarVentaSiSaldada(supabase, retencionesDe.id)
+              const nuevo = await cerrarVentaSiSaldada(supabase, retencionesDe.id, schema)
               if (nuevo) toast.success(`${retencionesDe.nro_comprobante} quedó ${nuevo === 'conciliado' ? 'conciliada' : 'cobrada'}: el detalle cierra`)
             } catch (e) { toast.error('No se pudo cerrar la venta: ' + (e as Error).message) }
           }

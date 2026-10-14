@@ -12795,6 +12795,17 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24 · ⏳ ESCRITO, SIN CORRER
+
+Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros
+vinculados). Dos cosas, las dos aditivas:
+- `pam.retenciones_recibidas` y `ma.retenciones_recibidas`: `like msa.retenciones_recibidas including all`, FK
+  a `comprobantes_venta` de su empresa (`on delete set null`), policies `ver_segun_permiso` /
+  `escribir_segun_permiso` como las de scripts/62, nada a `anon`.
+- `comprobante_venta_id uuid` (FK a la venta de su empresa) en `public.pam_galicia`, `public.pam_galicia_cc` y
+  `ma.ma_galicia` — el espejo de `msa_galicia.comprobante_venta_id`.
+⚠️ Hay que correrlo **antes** de mergear la rama `jms/cobros-pam-ma`: el código ya escribe esas columnas.
+
 ### 2026-10-13 · `public.notas_para_claude.sin_supervision` — A-FEAT-1266
 
 Script `scripts/83-notas-sin-supervision.sql` (deshacer: `83-…-deshacer.sql`): columna `sin_supervision boolean

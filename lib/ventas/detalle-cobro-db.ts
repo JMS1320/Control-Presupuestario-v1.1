@@ -2,13 +2,16 @@
  * 💰 Lectura y escritura del DETALLE DEL COBRO — A-FEAT-1228. La cuenta vive en `detalle-cobro.ts`;
  * acá sólo se junta lo que está en la base y se escribe el vínculo de un pago a cuenta.
  *
- * ⚠️ Sólo MSA: `msa_galicia.comprobante_venta_id` y `retenciones_recibidas` existen sólo ahí
- * (ver A-FEAT-1219/1220 para PAM y MA).
+ * 🏢 Las tres empresas desde 2026-10-14 (A-FEAT-24 / A-FEAT-1219, `scripts/84`): cada función recibe
+ * el `schema` de la venta (`'msa'` por default, que era el único) y lee SUS extractos
+ * (`extractos-empresa.ts`) y SUS certificados. Lo que sigue siendo sólo MSA es a propósito: el
+ * extracto de echeqs de terceros y la compensación con una factura del cliente.
  */
 
 import { armarDetalleCobro, type FuentesCobro } from './detalle-cobro'
 import { TIPOS_LIQ_HACIENDA } from './cobro-esperado'
 import { textoQueSeCobro, detalleConQueSeCobro, type QueSeCobro } from './que-se-cobro'
+import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS, type Extracto } from './extractos-empresa'
 
 type Cliente = { from: (t: string) => any; schema: (s: string) => any }
 
@@ -16,21 +19,26 @@ const TIPO_CBTE: Record<number, string> = { 1: 'FC A', 6: 'FC B', 11: 'FC C', 2:
 
 /** Las fuentes del detalle de cada comprobante. `comps` necesita el CUIT del cliente (para las compensaciones). */
 export async function cargarFuentesCobro(
-  supabase: Cliente, comps: { id: string; cuit_cliente: string | null }[],
+  supabase: Cliente, comps: { id: string; cuit_cliente: string | null }[], schema = 'msa',
 ): Promise<Map<string, FuentesCobro>> {
   const salida = new Map<string, FuentesCobro>()
   const ids = comps.map(c => c.id)
   comps.forEach(c => salida.set(c.id, { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }))
   if (!ids.length) return salida
 
-  const [{ data: movs }, { data: ants }, { data: rets }] = await Promise.all([
-    supabase.from('msa_galicia').select('id, fecha, creditos, anticipo_id, comprobante_venta_id').in('comprobante_venta_id', ids),
+  const [movsPorExtracto, { data: ants }, { data: rets }] = await Promise.all([
+    Promise.all(extractosDelSchema(schema).map(e => cliente(supabase, e).from(e.tabla)
+      .select('id, fecha, creditos, anticipo_id, comprobante_venta_id').in('comprobante_venta_id', ids))),
     supabase.from('anticipos_proveedores')
       .select('id, fecha_pago, monto, metodo_pago, estado_pago, descripcion, comprobante_venta_id')
       .eq('tipo', 'cobro').in('comprobante_venta_id', ids),
-    supabase.schema('msa').from('retenciones_recibidas')
+    supabase.schema(schema).from('retenciones_recibidas')
       .select('id, tipo, monto, fecha, nro_certificado, comprobante_venta_id').in('comprobante_venta_id', ids),
   ])
+  // Si el extracto no se pudo leer, el detalle diría «cobrado $0»: mejor que la pantalla muestre el error.
+  const errMov = (movsPorExtracto as any[]).find(r => r.error)?.error
+  if (errMov) throw errMov
+  const movs = (movsPorExtracto as any[]).flatMap(r => r.data || [])
   for (const m of (movs || []) as any[]) salida.get(m.comprobante_venta_id)?.movimientos.push(m)
   for (const a of (ants || []) as any[]) salida.get(a.comprobante_venta_id)?.anticipos.push(a)
   for (const r of (rets || []) as any[]) salida.get(r.comprobante_venta_id)?.retenciones.push(r)
@@ -42,7 +50,7 @@ export async function cargarFuentesCobro(
       .select('id, anticipo_id, factura_arca_id, monto_aplicado, fecha_aplicacion').in('anticipo_id', antIds)
     const facIds = [...new Set(((apps || []) as any[]).map(a => a.factura_arca_id).filter(Boolean))]
     const { data: facs } = facIds.length
-      ? await supabase.schema('msa').from('comprobantes_arca')
+      ? await supabase.schema(schema).from('comprobantes_arca')
           .select('id, cuit, tipo_comprobante, numero_desde, fecha_emision').in('id', facIds)
       : { data: [] }
     const facPorId = new Map(((facs || []) as any[]).map(f => [f.id, f]))
@@ -77,9 +85,7 @@ export async function pagosACuentaSinVincular(supabase: Cliente, cuit: string) {
   return (data || []) as { id: string; fecha_pago: string | null; monto: number; metodo_pago: string | null; estado_pago: string | null; descripcion: string | null; cuit_proveedor: string; nro_cuenta: string | null }[]
 }
 
-const TABLAS_BANCARIAS: { tabla: string; schema?: string }[] = [
-  { tabla: 'msa_galicia' }, { tabla: 'pam_galicia' }, { tabla: 'pam_galicia_cc' }, { tabla: 'ma_galicia', schema: 'ma' },
-]
+const cliente = (supabase: Cliente, e: Extracto) => (e.schema ? supabase.schema(e.schema) : supabase)
 
 /**
  * 🔗 **Vincula un pago a cuenta (anticipo de cobro) a un comprobante de venta** — EL camino, usado
@@ -98,12 +104,13 @@ export async function vincularPagoACuenta(
   anticipo: { id: string; monto: number; fecha_pago: string | null; cuit_proveedor: string; nro_cuenta?: string | null; estado_pago?: string | null; sinMovimiento?: boolean },
   comp: { id: string; nro_cuenta?: string | null },
   opciones: { saldada: boolean; movimientoConciliado?: boolean },
+  schema = 'msa',
 ): Promise<{ extractoActualizado: boolean }> {
   const updateComp: Record<string, any> = {}
   if (opciones.saldada) updateComp.estado = opciones.movimientoConciliado ? 'conciliado' : 'cobrado'
   if (!comp.nro_cuenta && anticipo.nro_cuenta) updateComp.nro_cuenta = anticipo.nro_cuenta
   if (Object.keys(updateComp).length) {
-    const { error } = await supabase.schema('msa').from('comprobantes_venta').update(updateComp).eq('id', comp.id)
+    const { error } = await supabase.schema(schema).from('comprobantes_venta').update(updateComp).eq('id', comp.id)
     if (error) throw error
   }
 
@@ -117,8 +124,9 @@ export async function vincularPagoACuenta(
   // movimiento que buscar (y buscarlo podría atar uno ajeno del mismo importe).
   if (anticipo.estado_pago === 'endosado' || anticipo.estado_pago === 'en_cartera' || anticipo.sinMovimiento) return { extractoActualizado: false }
 
-  for (const { tabla, schema } of TABLAS_BANCARIAS) {
-    const client = schema ? supabase.schema(schema) : supabase
+  for (const e of TODOS_LOS_EXTRACTOS) {
+    const { tabla } = e
+    const client = cliente(supabase, e)
     let { data: movs } = await client.from(tabla).select('id, creditos, estado').eq('anticipo_id', anticipo.id).limit(1)
     if (!movs || movs.length === 0) {
       const { data: porCuit } = await client.from(tabla)
@@ -129,12 +137,13 @@ export async function vincularPagoACuenta(
       if (match) movs = [match]
     }
     if (movs && movs.length > 0) {
-      // `comprobante_venta_id` existe sólo en `msa_galicia` (A-FEAT-24): en las otras se ata sólo el anticipo.
+      // El vínculo con la venta, sólo en un extracto de SU empresa (la FK no deja atar un crédito de
+      // PAM a una venta de MSA); en otro, se ata sólo el anticipo, como antes de A-FEAT-24.
       const upd: Record<string, any> = { anticipo_id: anticipo.id, estado: 'conciliado', motivo_revision: null }
-      if (tabla === 'msa_galicia') {
+      if (extractoEsDe(tabla, schema)) {
         upd.comprobante_venta_id = comp.id
         // Deja de ser «ANTICIPO COBRO»: toma la imputación de su comprobante (si la tiene).
-        const { data: c } = await supabase.schema('msa').from('comprobantes_venta')
+        const { data: c } = await supabase.schema(schema).from('comprobantes_venta')
           .select('cuenta_contable, nro_cuenta, centro_costo').eq('id', comp.id).maybeSingle()
         const imp = c ? await imputacionParaElBanco(supabase, c as any) : null
         if (imp) Object.assign(upd, imp)
@@ -178,28 +187,36 @@ export async function imputacionParaElBanco(
 }
 
 /**
- * Propaga la imputación de un comprobante de venta a TODOS sus movimientos del banco
- * (`msa_galicia.comprobante_venta_id` — la única tabla con ese vínculo). Se llama al guardar la
- * cuenta del comprobante, desde cualquiera de sus pantallas. Devuelve cuántos movimientos tocó.
+ * Propaga la imputación de un comprobante de venta a TODOS sus movimientos del banco (los
+ * extractos de su empresa, por `comprobante_venta_id`). Se llama al guardar la cuenta del
+ * comprobante, desde cualquiera de sus pantallas. Devuelve cuántos movimientos tocó.
  */
 export async function propagarImputacionDeVenta(
   supabase: Cliente, compId: string,
   comp: { cuenta_contable?: string | null; nro_cuenta?: string | null; centro_costo?: string | null },
+  schema = 'msa',
 ): Promise<number> {
   const imp = await imputacionParaElBanco(supabase, comp)
   if (!imp) return 0
-  const { error, count } = await supabase.from('msa_galicia').update(imp, { count: 'exact' }).eq('comprobante_venta_id', compId)
-  if (error) throw error
-  // Y la entrada de un echeq de ese cliente en el extracto de echeqs (A-FEAT-1230).
-  const { error: eE } = await supabase.schema('msa').from('echeqs_terceros').update(imp).eq('comprobante_venta_id', compId)
-  if (eE) throw eE
-  // Y los que todavía dicen «ANTICIPO COBRO: …» en el detalle dejan de decirlo.
-  const { data: conPrefijo } = await supabase.from('msa_galicia').select('id, detalle')
-    .eq('comprobante_venta_id', compId).ilike('detalle', 'ANTICIPO COBRO:%')
-  for (const m of (conPrefijo || []) as any[]) {
-    await supabase.from('msa_galicia').update({ detalle: detalleSinAnticipo(m.detalle) }).eq('id', m.id)
+  let total = 0
+  for (const e of extractosDelSchema(schema)) {
+    const db = cliente(supabase, e)
+    const { error, count } = await db.from(e.tabla).update(imp, { count: 'exact' }).eq('comprobante_venta_id', compId)
+    if (error) throw error
+    total += count || 0
+    // Y los que todavía dicen «ANTICIPO COBRO: …» en el detalle dejan de decirlo.
+    const { data: conPrefijo } = await db.from(e.tabla).select('id, detalle')
+      .eq('comprobante_venta_id', compId).ilike('detalle', 'ANTICIPO COBRO:%')
+    for (const m of (conPrefijo || []) as any[]) {
+      await db.from(e.tabla).update({ detalle: detalleSinAnticipo(m.detalle) }).eq('id', m.id)
+    }
   }
-  return count || 0
+  // Y la entrada de un echeq de ese cliente en el extracto de echeqs (A-FEAT-1230) — sólo MSA lo tiene.
+  if (schema === 'msa') {
+    const { error: eE } = await supabase.schema('msa').from('echeqs_terceros').update(imp).eq('comprobante_venta_id', compId)
+    if (eE) throw eE
+  }
+  return total
 }
 
 /** «ANTICIPO COBRO: Adelanto» → «Adelanto». El movimiento deja de ser un anticipo cuando tiene su comprobante. */
@@ -286,20 +303,24 @@ export async function compensarConFactura(
  * Una liquidación con cuotas no se toca: su estado lo deciden las cuotas. Devuelve el estado nuevo
  * (o `null` si no cambió).
  */
-export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string): Promise<'cobrado' | 'conciliado' | null> {
-  const { data: v } = await supabase.schema('msa').from('comprobantes_venta')
+export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string, schema = 'msa'): Promise<'cobrado' | 'conciliado' | null> {
+  const { data: v } = await supabase.schema(schema).from('comprobantes_venta')
     .select('id, cuit_cliente, estado, plazos, imp_total, tipo_comprobante, ret_iva, ret_iibb').eq('id', compId).maybeSingle()
   if (!v || (Array.isArray(v.plazos) && v.plazos.length) || !['a cobrar', 'cobrado'].includes(v.estado)) return null
-  const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }])).get(v.id)
+  const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }], schema)).get(v.id)
     || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
   const impresas = TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0
   const d = armarDetalleCobro(fuentes as FuentesCobro, (Number(v.imp_total) || 0) - impresas)
   if (!d.cierra) return null
-  const { data: movs } = await supabase.from('msa_galicia').select('estado').eq('comprobante_venta_id', v.id)
-  const todosConciliados = ((movs || []) as any[]).length > 0 && ((movs || []) as any[]).every(m => m.estado === 'conciliado')
+  const movs: any[] = []
+  for (const e of extractosDelSchema(schema)) {
+    const { data } = await cliente(supabase, e).from(e.tabla).select('estado').eq('comprobante_venta_id', v.id)
+    movs.push(...((data || []) as any[]))
+  }
+  const todosConciliados = movs.length > 0 && movs.every(m => m.estado === 'conciliado')
   const nuevo = todosConciliados ? 'conciliado' : 'cobrado'
   if (nuevo === v.estado) return null
-  const { error } = await supabase.schema('msa').from('comprobantes_venta').update({ estado: nuevo }).eq('id', v.id)
+  const { error } = await supabase.schema(schema).from('comprobantes_venta').update({ estado: nuevo }).eq('id', v.id)
   if (error) throw error
   return nuevo
 }
@@ -309,7 +330,7 @@ export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string): P
  * arrendamiento o las cabezas de hacienda, más lo que falta cobrar. Sale del vínculo factura ↔ venta
  * (`public.ventas_facturas`). `null` si la factura no está vinculada a ninguna venta.
  */
-export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha?: string | null): Promise<QueSeCobro | null> {
+export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha?: string | null, schema = 'msa'): Promise<QueSeCobro | null> {
   const { data: vfs } = await supabase.from('ventas_facturas').select('venta_tipo, venta_id').eq('comprobante_id', compId)
   const vincs = (vfs || []) as { venta_tipo: string; venta_id: string }[]
   if (!vincs.length) return null
@@ -336,13 +357,13 @@ export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha
   }
   cuotas.sort((a, b) => a.numero - b.numero)
   // Lo que falta: el mismo saldo que Cobros.
-  const { data: v } = await supabase.schema('msa').from('comprobantes_venta')
+  const { data: v } = await supabase.schema(schema).from('comprobantes_venta')
     .select('id, cuit_cliente, imp_total, tipo_comprobante, ret_iva, ret_iibb, plazos').eq('id', compId).maybeSingle()
   let falta = 0
   // Una liquidación en VARIAS cuotas: cada cobro es su cuota (ya lo dice «comprobante pagado»), no un
   // «parcial». Con una sola cuota (100 %) sí: un adelanto es un cobro parcial (Genta 11-75880).
   if (v && !(Array.isArray((v as any).plazos) && (v as any).plazos.length > 1)) {
-    const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }])).get(v.id)
+    const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }], schema)).get(v.id)
       || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
     const impresas = TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0
     const d = armarDetalleCobro(fuentes as FuentesCobro, (Number(v.imp_total) || 0) - impresas)
@@ -358,14 +379,18 @@ export async function queSeCobroDe(supabase: Cliente, compId: string, hastaFecha
 }
 
 /** Escribe en el detalle del movimiento qué se cobró (sin pisar lo que haya escrito el usuario). Devuelve el texto o null. */
-export async function anotarQueSeCobro(supabase: Cliente, movId: string, compId: string): Promise<string | null> {
-  const { data: m } = await supabase.from('msa_galicia').select('detalle, fecha').eq('id', movId).maybeSingle()
-  const q = await queSeCobroDe(supabase, compId, (m as any)?.fecha ?? null)
+export async function anotarQueSeCobro(
+  supabase: Cliente, movId: string, compId: string,
+  schema = 'msa', extracto: Extracto = { tabla: 'msa_galicia' },
+): Promise<string | null> {
+  const db = cliente(supabase, extracto)
+  const { data: m } = await db.from(extracto.tabla).select('detalle, fecha').eq('id', movId).maybeSingle()
+  const q = await queSeCobroDe(supabase, compId, (m as any)?.fecha ?? null, schema)
   const texto = q ? textoQueSeCobro(q) : null
   if (!texto) return null
   const nuevo = detalleConQueSeCobro((m as any)?.detalle, texto)
   if (nuevo !== ((m as any)?.detalle || null)) {
-    const { error } = await supabase.from('msa_galicia').update({ detalle: nuevo }).eq('id', movId)
+    const { error } = await db.from(extracto.tabla).update({ detalle: nuevo }).eq('id', movId)
     if (error) throw error
   }
   return texto

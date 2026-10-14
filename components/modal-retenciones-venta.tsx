@@ -37,12 +37,15 @@ const TIPOS = [
 const fmtAR = (n: number) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const parseAR = (v: string) => parseFloat(String(v).replace(/\./g, '').replace(',', '.')) || 0
 
-export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }: {
+export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado, empresa = 'MSA' }: {
   open: boolean
   onClose: () => void
   comprobante: Comprobante | null
   onGuardado?: () => void
+  /** De quién es el comprobante: los certificados van a SU schema (PAM y MA desde A-FEAT-1219). */
+  empresa?: string
 }) {
+  const schema = empresa.toLowerCase()
   const [retenciones, setRetenciones] = useState<Retencion[]>([])
   const [cargando, setCargando] = useState(false)
   const [guardando, setGuardando] = useState(false)
@@ -57,7 +60,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
   const cargar = async () => {
     if (!comprobante) return
     setCargando(true)
-    const { data, error } = await supabase.schema('msa').from('retenciones_recibidas')
+    const { data, error } = await supabase.schema(schema).from('retenciones_recibidas')
       .select('id, tipo, monto, cuenta_contable, fecha, nro_certificado')
       .eq('comprobante_venta_id', comprobante.id)
       .order('created_at', { ascending: true })
@@ -74,7 +77,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
   // Default por tipo: prefijar la cuenta usada por última vez para ese tipo
   const onCambiarTipo = async (nuevoTipo: string) => {
     setTipo(nuevoTipo)
-    const { data } = await supabase.schema('msa').from('retenciones_recibidas')
+    const { data } = await supabase.schema(schema).from('retenciones_recibidas')
       .select('cuenta_contable').eq('tipo', nuevoTipo).not('cuenta_contable', 'is', null)
       .order('created_at', { ascending: false }).limit(1).maybeSingle()
     if (data?.cuenta_contable) setCuenta(data.cuenta_contable)
@@ -86,7 +89,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
     if (!m) { toast.error('Ingresá el monto'); return }
     if (!cuenta) { toast.error('Elegí la cuenta contable'); return }
     setGuardando(true)
-    const { error } = await supabase.schema('msa').from('retenciones_recibidas').insert({
+    const { error } = await supabase.schema(schema).from('retenciones_recibidas').insert({
       tipo,
       monto: m,
       cuenta_contable: cuenta,
@@ -106,7 +109,7 @@ export function ModalRetencionesVenta({ open, onClose, comprobante, onGuardado }
 
   const borrar = async (r: Retencion) => {
     if (!window.confirm('¿Borrar esta retención?')) return
-    const { error } = await supabase.schema('msa').from('retenciones_recibidas').delete().eq('id', r.id)
+    const { error } = await supabase.schema(schema).from('retenciones_recibidas').delete().eq('id', r.id)
     if (error) { toast.error('Error al borrar: ' + error.message); return }
     toast.success('Retención borrada')
     cargar()
