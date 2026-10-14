@@ -156,7 +156,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
-import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION } from "@/lib/pagos/echeqs-multiples"
+import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
@@ -3139,6 +3139,21 @@ export function correrCasos(): Resultado[] {
     "2 filas · 2026-10-29 966666.67 · 2026-11-13 · sólo lectura · 1 fila", `${echPartidas.length} filas · ${echPartidas[0]?.fecha_estimada} ${echPartidas[0]?.debitos} · ${echPartidas[1]?.fecha_estimada} · ${echPartidas[0]?.origen_tabla === "msa.cheques" && echPartidas[0]?.echeq_de === "ant1" ? "sólo lectura" : "?"} · ${partirFilasEnEcheqs([echFilaAnt], [echChs[0]]).length} fila`,
     echPartidas.length === 2 && echPartidas[0].fecha_estimada === "2026-10-29" && echPartidas[0].debitos === 966666.67 && echPartidas[1].fecha_estimada === "2026-11-13"
       && echPartidas[0].origen_tabla === "msa.cheques" && echPartidas[0].echeq_de === "ant1" && partirFilasEnEcheqs([echFilaAnt], [echChs[0]])[0].id === "ant1", "A-FEAT-1282")
+
+  // 🐞 A-BUG-1283 — desde la barra de PAGOS un anticipo pasaba a echeq sin modal. Antes la regla era
+  // «todo lo que no es factura de MSA pendiente va directo» (así lo hacía el código viejo).
+  const echLoteAnt = clasificarLoteEcheq([{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }], () => true)
+  const echViejoDirecto = [{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }].filter(f => !(f.origen === "ARCA" && f.estado !== "echeq")).length
+  chequear("Echeqs múltiples", "🐞 🧨 PAGOS → ECHEQ con un ANTICIPO abre su modal (antes iba directo a «echeq» sin cheque)",
+    "abre a1 · antes: 1 directo", `${echLoteAnt.abrirAnticipo ? "abre " + echLoteAnt.abrirAnticipo.id : "no abre"} · antes: ${echViejoDirecto} directo`,
+    echLoteAnt.abrirAnticipo?.id === "a1" && echLoteAnt.templates.length === 0 && echViejoDirecto === 1, "A-BUG-1283")
+  const echLoteMix = clasificarLoteEcheq([
+    { id: "a1", origen: "ANTICIPO", estado: "pendiente" }, { id: "a2", origen: "ANTICIPO", estado: "pendiente" },
+    { id: "f1", origen: "ARCA", estado: "pagar" }, { id: "f2", origen: "ARCA", estado: "echeq" }, { id: "t1", origen: "TEMPLATE", estado: "pendiente" },
+  ], () => true)
+  chequear("Echeqs múltiples", "Varios anticipos o mezclados no se tocan; una factura ya en echeq tampoco; la pendiente va al modal; el template se marca (con aviso)",
+    "sin abrir · 2 sin tocar · modal f1 · ya f2 · template t1", `${echLoteMix.abrirAnticipo ? "abre" : "sin abrir"} · ${echLoteMix.anticiposSinTocar.length} sin tocar · modal ${echLoteMix.facturasModal.map(f => f.id).join(",")} · ya ${echLoteMix.facturasYaEnEcheq.map(f => f.id).join(",")} · template ${echLoteMix.templates.map(f => f.id).join(",")}`,
+    !echLoteMix.abrirAnticipo && echLoteMix.anticiposSinTocar.length === 2 && echLoteMix.facturasModal[0]?.id === "f1" && echLoteMix.facturasYaEnEcheq[0]?.id === "f2" && echLoteMix.templates[0]?.id === "t1", "A-BUG-1283")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto

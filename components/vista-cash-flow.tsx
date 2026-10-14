@@ -39,7 +39,7 @@ import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencion
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
-import { problemasDelPlan, ultimaFechaCobro } from "@/lib/pagos/echeqs-multiples"
+import { problemasDelPlan, ultimaFechaCobro, clasificarLoteEcheq } from "@/lib/pagos/echeqs-multiples"
 import { EditorPlanEcheqs, planVacio, planDesdeUI, type PlanEcheqsUI } from "./editor-plan-echeqs"
 import { ModalExportarEcheqs } from "./modal-exportar-echeqs"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
@@ -2139,13 +2139,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // ECHEQ en lote: las FC ARCA pasan por el flujo echeq+SICORE (modal + cheque); el resto va directo.
       if (cambiarEstadoLote && valorEstadoLote === 'echeq') {
+        /**
+         * 🐞 A-BUG-1283 (2026-10-14) — desde la barra de PAGOS, un ANTICIPO pasaba a «echeq» sin modal ni
+         * cheque (*«simplemente lo pasa, no me da ningún modal»*): el mismo bug que A-BUG-103 arregló en
+         * el menú de la fila. Qué pasa con cada fila lo decide `clasificarLoteEcheq` (con su caso).
+         */
+        const lote = clasificarLoteEcheq(todasFilas, esFilaMsa)
         // ECHEQ es sólo MSA (`msa.cheques`): una FC de PAM/MA en la selección se avisa y no entra
-        const arcaNoMsa = todasFilas.filter(f => f.origen === 'ARCA' && !esFilaMsa(f))
-        if (arcaNoMsa.length > 0) {
-          toast.error(`${arcaNoMsa.length} factura(s) de PAM/MA no pueden pagarse por ECHEQ (es sólo de MSA). Quedan sin tocar.`)
+        if (lote.facturasPamMa.length > 0) {
+          toast.error(`${lote.facturasPamMa.length} factura(s) de PAM/MA no pueden pagarse por ECHEQ (es sólo de MSA). Quedan sin tocar.`)
         }
-        const arcaFacturas = todasFilas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq' && esFilaMsa(f))
-        const noArca = todasFilas.filter(f => !(f.origen === 'ARCA' && f.estado !== 'echeq') && !arcaNoMsa.includes(f))
+        if (lote.abrirAnticipo) {
+          setProcesandoLote(false)
+          desactivarModoPagos()
+          await cambiarEstadoPagoAnticipo(lote.abrirAnticipo.id, 'echeq')
+          return
+        }
+        if (lote.anticiposSinTocar.length) toast.error(`Los anticipos se pagan con echeq de a uno (cada uno con su retención y sus echeqs): ${lote.anticiposSinTocar.length} anticipo(s) quedaron sin tocar.`)
+        // Una factura que YA está en echeq no se vuelve a marcar en silencio: para rehacer su echeq se pasa
+        // antes a pendiente (así se reabre el modal).
+        if (lote.facturasYaEnEcheq.length) toast.info(`${lote.facturasYaEnEcheq.length} factura(s) ya estaban en echeq: no se tocaron. Para rehacer el echeq, pasala antes a pendiente.`)
+        if (lote.templates.length) toast.warning(`${lote.templates.length} template(s) quedan en echeq SIN registrar el cheque: los templates todavía no tienen pago con echeqs (A-FEAT-1282).`)
+        const arcaFacturas = lote.facturasModal
+        const noArca = lote.templates
         noArca.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen as 'ARCA' | 'TEMPLATE', campo: 'estado', valor: 'echeq' }))
         if (actualizaciones.length > 0) await actualizarBatch(actualizaciones)
         if (arcaFacturas.length > 0) {
@@ -2158,10 +2174,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           const hoy = hoyArgentina()
           setEcheqFormCF({ banco: '', numero: '', fechaEmision: (cambiarFechaVenc && valorFechaLote) || arcaFacturas[0].fecha_pago || hoy, fechaCobro: '' })
           setPlanEcheqCF(planVacio())
-          totalEcheqCF.current = null
+          // Una sola factura: se conoce su total, así que se puede repartir también «por montos».
+          const unica = arcaFacturas.length === 1 ? arcaFacturas[0] : null
+          totalEcheqCF.current = unica ? (Number(unica.debitos) || 0) + (Number(unica.monto_sicore) || 0) + (Number(unica.descuento_aplicado) || 0) : null
           setMostrarModalEcheqCF(true)
         } else {
-          toast.success(`${noArca.length} registros → echeq`)
+          if (noArca.length) toast.success(`${noArca.length} registros → echeq`)
           desactivarModoPagos()
         }
         setProcesandoLote(false)
@@ -5979,7 +5997,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               )}
             </div>
             {/* 📝 A-FEAT-1282 — uno o varios echeqs, con su fecha de cobro cada uno. */}
-            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} total={totalEcheqCF.current} varios={echeqLoteActivo.current} />
+            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} total={totalEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>

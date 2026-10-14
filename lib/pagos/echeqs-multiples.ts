@@ -180,3 +180,26 @@ export function filasEmision(echeqs: EcheqAEmitir[]): { filas: (string | number)
 /** Nombre del archivo: `Galicia MSA Echeqs 20261014.xlsx` (mismo criterio que el lote de transferencias). */
 export const nombreArchivoEmision = (empresa: string, fechaISO: string) =>
   `Galicia ${empresa} Echeqs ${fechaISO.replace(/-/g, '')}.xlsx`
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 🧭 Qué hace la barra de PAGOS con cada fila al elegir ECHEQ — A-BUG-1283 (2026-10-14)
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Antes todo lo que no era factura de MSA pendiente pasaba a «echeq» directo, sin modal ni cheque —
+ * un ANTICIPO incluido (usuario: *«simplemente lo pasa, no me da ningún modal»*). Ahora:
+ *   · un anticipo SOLO → abre el modal (de a uno: cada uno tiene su retención y sus echeqs);
+ *   · anticipos junto con otras cosas, o varios → no se tocan, y se avisa;
+ *   · facturas de MSA no en echeq → modal; ya en echeq → no se tocan, y se avisa;
+ *   · facturas de PAM/MA → no se tocan (echeq es sólo MSA);
+ *   · templates → se marcan como antes, avisando que sin cheque (falta A-FEAT-1282 para templates).
+ */
+export function clasificarLoteEcheq<T extends { id: string; origen: string; estado: string }>(filas: T[], esMsa: (f: T) => boolean) {
+  const facturasPamMa = filas.filter(f => f.origen === 'ARCA' && !esMsa(f))
+  const facturasModal = filas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq' && esMsa(f))
+  const facturasYaEnEcheq = filas.filter(f => f.origen === 'ARCA' && f.estado === 'echeq' && esMsa(f))
+  const anticipos = filas.filter(f => f.origen === 'ANTICIPO')
+  const templates = filas.filter(f => f.origen === 'TEMPLATE')
+  const abrirAnticipo = anticipos.length === 1 && facturasModal.length === 0 ? anticipos[0] : null
+  return { facturasPamMa, facturasModal, facturasYaEnEcheq, anticiposSinTocar: abrirAnticipo ? [] : anticipos, abrirAnticipo, templates }
+}
