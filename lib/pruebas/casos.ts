@@ -55,7 +55,7 @@ import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
-import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
+import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
@@ -352,6 +352,48 @@ export function correrCasos(): Resultado[] {
   const minimoConsumido = r2(pasos.reduce((s, p) => s + p.minimoAplicado, 0))
   chequear("SICORE", "El mínimo se consume una sola vez entre las tres",
     `$${n2(MIN_BIENES)}`, `$${n2(minimoConsumido)}`, cerca(minimoConsumido, MIN_BIENES, 0.01), "A-BUG-137")
+
+  /**
+   * 🏛️ **Una NOTA DE CRÉDITO dentro del grupo — A-BUG-1251** (Alcorta 13/10/2026).
+   * FC 6377 · 6383 · 6389 + NC 820, todas con 5 % de pronto pago. La NC tiene que RESTAR.
+   */
+  {
+    const GRUPO_NC = [1840582.89, 70594.96, 847379.38, -104684.94]
+    const pasosNC = simularSecuencia(GRUPO_NC, MIN_BIENES, ALIC_BIENES)
+    const retenidoNC = r2(pasosNC.reduce((s, p) => s + p.retencion, 0))
+    chequear("SICORE", "🔑 Con una nota de crédito en el grupo, la retención baja: 48.597,45 y no 50.691,15",
+      "$48.597,45", `$${n2(retenidoNC)}`, cerca(retenidoNC, 48597.45, 0.01), "A-BUG-1251")
+
+    chequear("SICORE", "Y cierra de atrás para adelante: (neto del grupo − mínimo) × 2 %",
+      `$${n2(retencionDelGrupo(GRUPO_NC, MIN_BIENES, ALIC_BIENES))}`, `$${n2(retenidoNC)}`,
+      cerca(retenidoNC, retencionDelGrupo(GRUPO_NC, MIN_BIENES, ALIC_BIENES), 0.01), "A-BUG-1251")
+
+    // El paso del descuento: la base de la NC NO se lleva a cero (era el bug).
+    chequear("SICORE", "🔑 Al aplicarle el descuento, la base de la nota de crédito sigue siendo negativa",
+      "-104684.94", String(baseTrasDescuento(-104684.94, 0, true)),
+      baseTrasDescuento(-104684.94, 0, true) === -104684.94, "A-BUG-1251")
+
+    chequear("SICORE", "En una factura común el descuento sigue dando lo de siempre (nunca base negativa)",
+      "1616582.89 · 0",
+      `${baseTrasDescuento(1840582.89, 224000, false)} · ${baseTrasDescuento(100000, 224000, false)}`,
+      baseTrasDescuento(1840582.89, 224000, false) === 1616582.89 && baseTrasDescuento(100000, 224000, false) === 0,
+      "A-BUG-1251")
+
+    // De qué factura se descuenta: la del mismo grupo y de mayor retención.
+    const vigentes = [
+      { id: "otra", retencion: 90000, grupo_pago_id: "otro-grupo" },
+      { id: "6377", retencion: 32331.66, grupo_pago_id: "g" },
+      { id: "6383", retencion: 1411.90, grupo_pago_id: "g" },
+      { id: "6389", retencion: 16947.59, grupo_pago_id: "g" },
+    ]
+    chequear("SICORE", "Lo que resta la nota de crédito se descuenta de la factura del MISMO grupo con mayor retención",
+      "6377", destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id ?? "null",
+      destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id === "6377", "A-BUG-1251")
+
+    chequear("SICORE", "Si ninguna retención alcanza a absorberla, no se netea (y la pantalla avisa)",
+      "null", String(destinoDeNotaDeCredito([{ id: "x", retencion: 500 }], -2093.70, "g")),
+      destinoDeNotaDeCredito([{ id: "x", retencion: 500 }], -2093.70, "g") === null, "A-BUG-1251")
+  }
 
   // La primera no retiene pero NO es el final: si el circuito se corta ahí, se retienen $0.
   chequear("SICORE", "La primera no retiene, y las dos siguientes sí",

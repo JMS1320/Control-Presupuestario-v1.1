@@ -31,7 +31,7 @@ import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { calcularRetencion } from "@/lib/sicore/minimo"
+import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito } from "@/lib/sicore/minimo"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
@@ -2587,7 +2587,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const impIva = (facturaEnProceso.iva || 0) * tc
 
     const inputNum = parseFloat(descuentoInputValor.replace(/\./g, '').replace(',', '.')) || 0
-    const pct = descuentoTipoInput === 'pct' ? inputNum / 100 : (impTotal > 0 ? inputNum / impTotal : 0)
+    const pct = descuentoTipoInput === 'pct' ? inputNum / 100 : (impTotal !== 0 ? inputNum / Math.abs(impTotal) : 0)
     const r2 = (n: number) => Math.round(n * 100) / 100
     const descGravado = r2(impGravado * pct)
     const descIva = r2(impIva * pct)
@@ -2601,7 +2601,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // Recalcular base SICORE sobre el neto ajustado (solo si aplica retención)
     const netoAjustado = r2((impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento))
     if (!datosSicoreCalculo.sinRetencion && tipoSeleccionado) {
-      const baseAjustada = Math.max(0, r2(netoAjustado - datosSicoreCalculo.minimoAplicado))
+      // La MISMA regla que el cálculo inicial (A-BUG-1251): acá había un `Math.max(0, …)` propio que
+      // llevaba a cero la base de una nota de crédito, y la NC dejaba de restar.
+      const baseAjustada = baseTrasDescuento(netoAjustado, datosSicoreCalculo.minimoAplicado, datosSicoreCalculo.esRetencionAdicional)
       setMontoRetencion(r2(baseAjustada * tipoSeleccionado.porcentaje_retencion))
       setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
     } else {
@@ -2616,7 +2618,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setDatosSicoreCalculo({
         ...datosSicoreCalculo,
         netoFactura: netoAjustado,
-        ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoAjustado } : {}),
+        ...(datosSicoreCalculo.minimoAplicado !== 0 ? { minimoAplicado: netoAjustado } : {}),
       })
     }
   }
@@ -2641,7 +2643,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setDatosSicoreCalculo({
           ...datosSicoreCalculo,
           netoFactura: netoOriginal,
-          ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoOriginal } : {}),
+          ...(datosSicoreCalculo.minimoAplicado !== 0 ? { minimoAplicado: netoOriginal } : {}),
         })
       }
     }
@@ -2665,9 +2667,71 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
     try {
       // SICORE se calcula sobre lo pagado: usar TC de pago
+      /**
+       * 🏛️ **Una NOTA DE CRÉDITO no lleva retención propia: lo que resta se descuenta de una factura**
+       * ya retenida del mismo proveedor, régimen y quincena (A-BUG-1251, Alcorta 13/10/2026).
+       *
+       * Con retención NEGATIVA guardada en la NC, el certificado, el detalle de pago y los listados
+       * de SICORE —que leen sólo retenciones positivas— habrían seguido mostrando lo retenido de más.
+       * Neteando en la factura, todos los renglones quedan positivos y suman lo que de verdad se retuvo.
+       *
+       * 🚦 Si no hay de dónde descontar (ninguna retención vigente de esa quincena la absorbe, o la
+       * factura destino está en dólares) **no se netea y se AVISA**: la NC queda sin retención, que es
+       * el comportamiento anterior, pero ya no en silencio.
+       */
+      const ajusteNC = montoRetencion < 0 ? montoRetencion : 0
+      const retencionPropia = montoRetencion < 0 ? 0 : montoRetencion
+      let avisoNC: string | null = null
+      if (ajusteNC < 0 && tipoSeleccionado) {
+        const fechaNC = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || hoyArgentina()
+        const { data: vigentes, error: errVig } = await supabase.schema('msa').from('sicore_retenciones')
+          .select('id, factura_id, retencion, base_imponible, pago, numero_desde, grupo_pago_id, estado_quincena')
+          .eq('cuit_emisor', facturaEnProceso.cuit_proveedor)
+          .eq('tipo_sicore', tipoSeleccionado.tipo)
+          .eq('quincena', generarQuincenaSicore(fechaNC))
+          .eq('anulado', false)
+          .not('factura_id', 'is', null)
+        if (errVig) throw errVig
+        const abiertas = (vigentes ?? []).filter(v => (v.estado_quincena ?? 'abierta') === 'abierta')
+        const destino = destinoDeNotaDeCredito(
+          abiertas.map(v => ({ id: v.id as string, retencion: Number(v.retencion) || 0, grupo_pago_id: v.grupo_pago_id as string | null })),
+          ajusteNC, facturaEnProceso.grupo_pago_id ?? null,
+        )
+        const fila = destino ? abiertas.find(v => v.id === destino.id) : null
+        const { data: fcDestino } = fila
+          ? await supabase.schema('msa').from('comprobantes_arca')
+              .select('id, monto_a_abonar, monto_sicore, tc_pago, tipo_cambio, moneda').eq('id', fila.factura_id).single()
+          : { data: null }
+        const enPesos = fcDestino && fcDestino.moneda !== 'USD' && ((fcDestino.tc_pago ?? fcDestino.tipo_cambio ?? 1) <= 1.01)
+        const m2 = (n: number) => Math.round(n * 100) / 100
+        const plata = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        if (fila && fcDestino && enPesos) {
+          const baseNC = datosSicoreCalculo?.baseImponible ?? 0 // negativa
+          const nuevaRet = m2((Number(fila.retencion) || 0) + ajusteNC)
+          const { error: e1, count: c1 } = await supabase.schema('msa').from('sicore_retenciones')
+            .update({
+              retencion: nuevaRet,
+              base_imponible: m2((Number(fila.base_imponible) || 0) + baseNC),
+              pago: m2((Number(fila.pago) || 0) - ajusteNC),
+            }, { count: 'exact' }).eq('id', fila.id)
+          if (e1) throw e1
+          if (c1 === 0) throw new Error('No se encontró la retención de la factura para descontarle la nota de crédito')
+          const { error: e2, count: c2 } = await supabase.schema('msa').from('comprobantes_arca')
+            .update({
+              monto_sicore: nuevaRet,
+              monto_a_abonar: m2((Number(fcDestino.monto_a_abonar) || 0) - ajusteNC),
+            }, { count: 'exact' }).eq('id', fcDestino.id)
+          if (e2) throw e2
+          if (c2 === 0) throw new Error('No se encontró la factura para descontarle la nota de crédito')
+          avisoNC = `Nota de crédito: $${plata(-ajusteNC)} menos de retención en la FC ${fila.numero_desde ?? ''} (queda en $${plata(nuevaRet)}).`
+        } else {
+          avisoNC = `⚠️ Esta nota de crédito debería bajar la retención en $${plata(-ajusteNC)}, pero no hay una factura retenida en esta quincena de la cual descontarlo. Quedó SIN ese ajuste: revisalo.`
+        }
+      }
+
       const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
       const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
-      const saldoPesos = impTotalPesos - montoRetencion - descuentoAdicional
+      const saldoPesos = impTotalPesos - retencionPropia - descuentoAdicional
       // monto_a_abonar se guarda en la moneda de la factura:
       // - ARS (tc=1): saldoPesos / 1 = saldoPesos ✓
       // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
@@ -2698,9 +2762,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       await supabase.schema('msa').from('comprobantes_arca')
         .update({
           monto_a_abonar: montoAAbona,
-          descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
-          ...(montoRetencion > 0
-            ? { sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado?.tipo ?? null }
+          descuento_aplicado: descuentoAdicional !== 0 ? descuentoAdicional : null,
+          ...(retencionPropia > 0
+            ? { sicore: quincena, monto_sicore: retencionPropia, tipo_sicore: tipoSeleccionado?.tipo ?? null }
             : { sicore: null, monto_sicore: null, tipo_sicore: null }),
         })
         .eq('id', guardadoPendienteCF.filaId)
@@ -2717,7 +2781,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // 3. Registrar en SICORE v2 (sicore_retenciones) SOLO si hay retención real (paridad con el Modal).
       //    "Sin retención + descuento" no genera registro SICORE (solo estampa el descuento en la FC).
-      if (tipoSeleccionado && montoRetencion > 0) {
+      if (tipoSeleccionado && retencionPropia > 0) {
         const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
         // Sin `as any` (A-BUG-148) — ver el motivo en `registrarConsumoDeMinimoCF`.
         await registrarEnSicoreRetenciones('msa', {
@@ -2739,8 +2803,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           descuento_aplicado: descuentoAdicional,
           minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
           base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
-          retencion: montoRetencion,
-          pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
+          retencion: retencionPropia,
+          pago: Math.round((totalPagado - retencionPropia) * 100) / 100,
         })
       }
 
@@ -2756,15 +2820,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           id: guardadoPendienteCF.filaId,
           nombre_proveedor: facturaEnProceso.nombre_proveedor,
           cuit_proveedor: facturaEnProceso.cuit_proveedor,
-        }, datos, saldoPesos, montoRetencion > 0 ? { quincena, monto: montoRetencion, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
+        }, datos, saldoPesos, retencionPropia > 0 ? { quincena, monto: retencionPropia, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
         if (!echeqLoteActivo.current) { echeqPendienteCF.current = null; echeqFilaCF.current = null }
       }
 
       toast.success(
-        tipoSeleccionado && montoRetencion > 0
-          ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`
-          : `✅ Pago aplicado${descuentoAdicional > 0 ? ` con descuento $${descuentoAdicional.toLocaleString('es-AR')}` : ''} (sin retención)`
+        tipoSeleccionado && retencionPropia > 0
+          ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${retencionPropia.toLocaleString('es-AR')}`
+          : `✅ Pago aplicado${descuentoAdicional !== 0 ? ` con descuento $${descuentoAdicional.toLocaleString('es-AR')}` : ''} (sin retención)`
       )
+      if (avisoNC) (avisoNC.startsWith('⚠️') ? toast.warning : toast.success)(avisoNC, { duration: 15000 })
 
       // Limpiar modal
       setMostrarModalSicore(false)
@@ -5702,7 +5767,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       <td className="text-right">${fmt(impIva)}</td>
                       <td className="text-right font-medium">${fmt(impTotal)}</td>
                     </tr>
-                    {descuentoDesglose && descuentoDesglose.total > 0 && (
+                    {descuentoDesglose && descuentoDesglose.total !== 0 && (
                       <tr className="text-orange-700">
                         <td className="py-0.5">Descuento</td>
                         <td className="text-right">-${fmt(descuentoDesglose.gravado)}</td>
@@ -5726,6 +5791,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <div className="flex justify-between"><span className="text-gray-500">Monto no imponible:</span><span>${fmt(datosSicoreCalculo.minimoAplicado)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Base imponible:</span><span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
+                  {montoRetencion < 0 && (
+                    <div className="mt-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-900">
+                      Es una <strong>nota de crédito</strong>: al confirmar, estos ${fmt(-montoRetencion)} se <strong>descuentan de la
+                      retención de una factura del mismo grupo</strong>. La nota de crédito queda sin retención propia, y lo que
+                      se transfiere de más va en esa factura. El total del grupo es el mismo.
+                    </div>
+                  )}
                   {(datosSicoreCalculo.netoPrevio ?? 0) > 0 && !datosSicoreCalculo.esRetencionAdicional && (
                     <div className="mt-1 pt-1 border-t border-gray-200 space-y-0.5">
                       <div className="flex justify-between text-amber-700"><span>Pagos previos en el mes (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
@@ -5763,11 +5835,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     className="border rounded px-2 py-1 text-xs flex-1 bg-white"
                   />
                   <button onClick={aplicarDescuentoSicoreCF} className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded">Aplicar</button>
-                  {descuentoDesglose && descuentoDesglose.total > 0 && (
+                  {descuentoDesglose && descuentoDesglose.total !== 0 && (
                     <button onClick={limpiarDescuentoSicoreCF} className="text-gray-400 hover:text-red-500 text-xs px-2 py-1">✕</button>
                   )}
                 </div>
-                {descuentoDesglose && descuentoDesglose.total > 0 && (
+                {descuentoDesglose && descuentoDesglose.total !== 0 && (
                   <p className="text-xs text-orange-700">Desc: Grav ${fmt(descuentoDesglose.gravado)} + IVA ${fmt(descuentoDesglose.iva)} = ${fmt(descuentoDesglose.total)}</p>
                 )}
               </div>

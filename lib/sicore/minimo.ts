@@ -128,3 +128,49 @@ export function retencionDelGrupo(netos: number[], minimoRegimen: number, alicuo
   const total = r2(netos.reduce((s, n) => s + n, 0))
   return r2(Math.max(0, r2(total - minimoRegimen)) * alicuota)
 }
+
+/**
+ * 🧾 La base DESPUÉS de aplicar un descuento — con la misma regla que `calcularRetencion` (A-BUG-1251).
+ *
+ * El paso del descuento del Cash Flow hacía su propia cuenta: `max(0, neto − mínimo)`. Con importes
+ * positivos da lo mismo; con una **nota de crédito** (neto negativo) llevaba la base a cero y la NC
+ * dejaba de restar. Caso Alcorta 13/10/2026: NC 820 por −110.194,67 pasó de «−2.203,89» a «0,00»
+ * al aplicarle el 5 % — y el grupo retuvo $2.093,70 de más.
+ *
+ * - **Retención adicional** (el mínimo del mes ya se consumió): la base es el neto, tal cual —
+ *   positivo o negativo.
+ * - **Con mínimo**: lo que supere al mínimo aplicado; nunca negativa.
+ */
+export function baseTrasDescuento(netoAjustado: number, minimoAplicado: number, esRetencionAdicional: boolean): number {
+  if (esRetencionAdicional) return r2(netoAjustado)
+  return Math.max(0, r2(netoAjustado - minimoAplicado))
+}
+
+export interface RetencionVigente {
+  id: string
+  retencion: number
+  grupo_pago_id?: string | null
+}
+
+/**
+ * 🔁 ¿De qué factura se descuenta lo que resta una NOTA DE CRÉDITO? (A-BUG-1251)
+ *
+ * Una NC no lleva retención propia: lo que resta (`ajuste`, negativo) se descuenta de la retención
+ * de una factura ya retenida del mismo proveedor, régimen y quincena. Así cada renglón de SICORE,
+ * el certificado y el detalle de pago siguen siendo positivos y suman lo que de verdad se retuvo.
+ *
+ * Se elige, en orden: del **mismo grupo de pago** antes que de afuera, y la de **mayor retención**
+ * (es la que seguro alcanza). `null` si ninguna alcanza a absorber el ajuste — ahí no se netea y la
+ * pantalla lo avisa: no se deja una retención negativa ni se reparte en silencio.
+ */
+export function destinoDeNotaDeCredito(
+  vigentes: readonly RetencionVigente[], ajuste: number, grupoPagoId?: string | null,
+): RetencionVigente | null {
+  const falta = r2(Math.abs(ajuste))
+  if (falta === 0) return null
+  const alcanzan = vigentes.filter(v => r2(v.retencion) >= falta)
+  if (alcanzan.length === 0) return null
+  const delGrupo = grupoPagoId ? alcanzan.filter(v => v.grupo_pago_id === grupoPagoId) : []
+  const candidatas = delGrupo.length > 0 ? delGrupo : alcanzan
+  return [...candidatas].sort((a, b) => b.retencion - a.retencion)[0]
+}
