@@ -397,6 +397,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // 📝 A-FEAT-1282 — varios echeqs por pago: cantidad, reparto y fecha de cobro de cada uno.
   const [planEcheqCF, setPlanEcheqCF] = useState<PlanEcheqsUI>(planVacio())
   const totalEcheqCF = useRef<number | null>(null)           // total del pago (para «por montos»); null en lote
+  const retencionYaEcheqCF = useRef<number | null>(null)     // retención YA aplicada → el total es el saldo neto
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -1152,8 +1153,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setEcheqOrigenCF('factura')
         setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || hoyArgentina(), fechaCobro: '' })
         setPlanEcheqCF(planVacio())
-        // El total del pago: lo que falta pagar + lo que ya se retuvo/descontó (las partes son del total).
-        totalEcheqCF.current = (Number(filaParaCambioEstado.debitos) || 0) + (Number(filaParaCambioEstado.monto_sicore) || 0) + (Number(filaParaCambioEstado.descuento_aplicado) || 0)
+        // Si la factura YA tiene la retención, se reparte el SALDO (lo que falta pagar); si no, el total
+        // (la retención se calcula después y se descuenta en proporción).
+        totalEcheqCF.current = Number(filaParaCambioEstado.debitos) || 0
+        retencionYaEcheqCF.current = filaParaCambioEstado.sicore ? (Number(filaParaCambioEstado.monto_sicore) || 0) : null
         setMostrarModalEcheqCF(true)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
@@ -2177,7 +2180,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           setPlanEcheqCF(planVacio())
           // Una sola factura: se conoce su total, así que se puede repartir también «por montos».
           const unica = arcaFacturas.length === 1 ? arcaFacturas[0] : null
-          totalEcheqCF.current = unica ? (Number(unica.debitos) || 0) + (Number(unica.monto_sicore) || 0) + (Number(unica.descuento_aplicado) || 0) : null
+          totalEcheqCF.current = unica ? (Number(unica.debitos) || 0) : null
+          retencionYaEcheqCF.current = unica?.sicore ? (Number(unica.monto_sicore) || 0) : null
           setMostrarModalEcheqCF(true)
         } else {
           if (noArca.length) toast.success(`${noArca.length} registros → echeq`)
@@ -3312,7 +3316,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // La retención se calcula igual; el cheque + método de pago se estampan al finalizar (finalize/cancelar).
   const confirmarEcheqCF = async () => {
     const plan = planDesdeUI(planEcheqCF)
-    const problemas = problemasDelPlan(plan, totalEcheqCF.current ?? 0)
+    const problemas = problemasDelPlan(plan)
     if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemas.length) {
       toast.error(problemas[0] || 'Completá banco y fecha de emisión.'); return
     }
@@ -3831,7 +3835,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setEcheqOrigenCF('anticipo')
       setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || hoyArgentina(), fechaCobro: '' })
       setPlanEcheqCF(planVacio())
-      totalEcheqCF.current = Number(anticipo.monto) || 0
+      // 🎚️ Con la retención YA aplicada se reparte el SALDO (monto − retención − descuento): los montos
+      // que se ven son los de cada echeq. Sin retención todavía, el total (se calcula después).
+      const retYa = anticipo.sicore && Number(anticipo.monto_sicore) > 0 ? Number(anticipo.monto_sicore) : null
+      retencionYaEcheqCF.current = retYa
+      totalEcheqCF.current = retYa != null
+        ? Math.round(((Number(anticipo.monto) || 0) - retYa - (Number(anticipo.descuento_aplicado) || 0)) * 100) / 100
+        : Number(anticipo.monto) || 0
       setMostrarModalEcheqCF(true)
       return
     }
@@ -6063,11 +6073,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               )}
             </div>
             {/* 📝 A-FEAT-1282 — uno o varios echeqs, con su fecha de cobro cada uno. */}
-            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} fechaEmision={echeqFormCF.fechaEmision} total={totalEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
+            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} fechaEmision={echeqFormCF.fechaEmision} total={totalEcheqCF.current} retencionYaAplicada={retencionYaEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>
-            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemasDelPlan(planDesdeUI(planEcheqCF), totalEcheqCF.current ?? 0).length > 0} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar {planEcheqCF.echeqs.length > 1 ? `${planEcheqCF.echeqs.length} ECHEQs` : 'ECHEQ'}</Button>
+            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemasDelPlan(planDesdeUI(planEcheqCF)).length > 0} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar {planEcheqCF.echeqs.length > 1 ? `${planEcheqCF.echeqs.length} ECHEQs` : 'ECHEQ'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -12,7 +12,7 @@
  */
 
 import { useEffect } from "react"
-import { pesosDelPlan, repartirMonto, problemasDelPlan, fechaMasDias, type ModoReparto, type PlanEcheqs } from "@/lib/pagos/echeqs-multiples"
+import { pesosDelPlan, repartirMonto, problemasDelPlan, avisosDelPlan, fechaMasDias, type ModoReparto, type PlanEcheqs } from "@/lib/pagos/echeqs-multiples"
 import { diasEntre } from "@/lib/templates/editar-campana"
 
 export interface PlanEcheqsUI {
@@ -34,7 +34,7 @@ export function planDesdeUI(p: PlanEcheqsUI): PlanEcheqs {
   }
 }
 
-export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }: {
+export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision, retencionYaAplicada }: {
   plan: PlanEcheqsUI
   /** Desde dónde se cuentan los días de plazo. */
   fechaEmision: string
@@ -43,6 +43,12 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }
   total: number | null
   /** Pagando varias facturas a la vez: cada una se parte igual, y «por montos» no aplica. */
   varios?: boolean
+  /**
+   * La retención SICORE YA aplicada (anticipo o factura que ya la tiene): entonces `total` es el SALDO a
+   * pagar y lo que se muestra es el monto exacto de cada echeq. Usuario 2026-10-14: *«lo mejor sería que
+   * ya reconozca la retención, ya que está vinculada, y me dé ya los montos del saldo»*.
+   */
+  retencionYaAplicada?: number | null
 }) {
   const n = plan.echeqs.length
   // Los echeqs cargados por plazo siguen a la fecha de emisión si ésta cambia.
@@ -69,7 +75,9 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }
 
   const planCalc = planDesdeUI(plan)
   const partes = total != null ? repartirMonto(total, pesosDelPlan(planCalc)) : []
-  const problemas = problemasDelPlan(planCalc, total ?? 0)
+  const problemas = problemasDelPlan(planCalc)
+  const avisos = total != null ? avisosDelPlan(planCalc, total) : []
+  const yaNeto = retencionYaAplicada != null && retencionYaAplicada > 0
 
   return (
     <div className="space-y-2">
@@ -92,7 +100,9 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }
           </div>
         )}
       </div>
-      {n > 1 && <p className="text-xs text-gray-500">Las partes son del <b>total</b> del pago; la retención SICORE se descuenta de cada echeq en la misma proporción.</p>}
+      {yaNeto
+        ? <p className="text-xs text-green-700">✓ La retención SICORE ya está aplicada (${fmt(retencionYaAplicada!)}): se reparte el <b>saldo a pagar</b>, y cada monto es lo que va escrito en el echeq.</p>
+        : n > 1 && <p className="text-xs text-gray-500">Las partes son del <b>total</b> del pago; la retención SICORE (que se calcula después) se descuenta de cada echeq en la misma proporción.</p>}
 
       <table className="w-full text-sm">
         <thead>
@@ -101,9 +111,9 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }
             <th className="text-left font-normal" title="Días desde la fecha de emisión. Si lo cargás, la fecha se calcula sola.">Plazo (días)</th>
             <th className="text-left font-normal">o fecha de cobro *</th>
             {plan.modo === 'porcentaje' && <th className="text-right font-normal">%</th>}
-            {plan.modo === 'montos' && <th className="text-right font-normal">Monto (parte del total)</th>}
+            {plan.modo === 'montos' && <th className="text-right font-normal">{yaNeto ? 'Monto del echeq' : 'Monto (parte del total)'}</th>}
             <th className="text-left font-normal">Nº echeq <span className="text-gray-400">(opcional)</span></th>
-            {total != null && n > 1 && <th className="text-right font-normal">Parte del total</th>}
+            {total != null && n > 1 && <th className="text-right font-normal">{yaNeto ? 'Monto del echeq' : 'Parte del total'}</th>}
           </tr>
         </thead>
         <tbody>
@@ -125,7 +135,10 @@ export function EditorPlanEcheqs({ plan, onChange, total, varios, fechaEmision }
           ))}
         </tbody>
       </table>
-      {total != null && n > 1 && <p className="text-xs text-gray-500 text-right">Total del pago: <b>${fmt(total)}</b></p>}
+      {total != null && <p className="text-xs text-gray-500 text-right">{yaNeto ? 'Saldo a pagar' : 'Total del pago'}: <b>${fmt(total)}</b></p>}
+      {avisos.length > 0 && (
+        <ul className="text-xs text-amber-700 list-disc pl-4">{avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>
+      )}
       {problemas.length > 0 && (
         <ul className="text-xs text-red-700 list-disc pl-4">{problemas.map((p, i) => <li key={i}>{p}</li>)}</ul>
       )}

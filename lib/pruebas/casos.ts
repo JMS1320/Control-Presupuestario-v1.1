@@ -156,7 +156,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
-import { calcularEcheqs, problemasDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
+import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
@@ -3110,12 +3110,20 @@ export function correrCasos(): Resultado[] {
   chequear("Echeqs múltiples", "Por montos (partes del total 1M + 2M): la retención va en la misma proporción (30.000 y 60.000)",
     "970000 · 1940000 · 30000 · 60000", `${echPorMontos[0].monto} · ${echPorMontos[1].monto} · ${echPorMontos[0].retencion} · ${echPorMontos[1].retencion}`,
     echPorMontos[0].monto === 970000 && echPorMontos[1].monto === 1940000 && echPorMontos[0].retencion === 30000 && echPorMontos[1].retencion === 60000, "A-FEAT-1282")
-  chequear("Echeqs múltiples", "🛑 Montos que no suman el total, % que no suman 100 y un echeq sin fecha frenan el plan",
-    "3 problemas", `${problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length + problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 50 }, { fechaCobro: "2026-11-29", parte: 30 }] }, 3000000).length + problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }, 1).length} problemas`,
-    problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length === 1
-      && problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 50 }, { fechaCobro: "2026-11-29", parte: 30 }] }, 3000000).length === 1
-      && problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }, 1).length === 1
-      && problemasDelPlan(echPlanIguales, 3000000).length === 0, "A-FEAT-1282")
+  // ⚠️ Cambió 2026-10-14 (*«esa restricción no debe existir»*): que las partes no sumen AVISA, no frena;
+  // lo único que frena es un echeq sin fecha.
+  const echAvisos = avisosDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length
+    + avisosDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 33.33 }, { fechaCobro: "2026-11-29", parte: 33.33 }, { fechaCobro: "2026-12-29", parte: 33.33 }] }, 1).length
+  const echFrenan = problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }).length
+    + problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 33.33 }, { fechaCobro: "2026-11-29", parte: 33.33 }, { fechaCobro: "2026-12-29", parte: 33.33 }] }).length
+  chequear("Echeqs múltiples", "⚠️ Montos que no suman o 33,33 % ×3 AVISAN y no frenan; sólo frena un echeq sin fecha",
+    "2 avisos · 0 frenan · sin fecha frena", `${echAvisos} avisos · ${echFrenan} frenan · ${problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }).length ? "sin fecha frena" : "?"}`,
+    echAvisos === 2 && echFrenan === 0 && problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }).length === 1 && problemasDelPlan(echPlanIguales).length === 0, "A-FEAT-1282")
+  // Con 33,33 % × 3 se reparte igual (proporción): 1/3 cada uno, y la suma cierra con el saldo.
+  const echPct = calcularEcheqs({ modo: "porcentaje", echeqs: [{ fechaCobro: "a", parte: 33.33 }, { fechaCobro: "b", parte: 33.33 }, { fechaCobro: "c", parte: 33.33 }] }, 13773075.04)
+  chequear("Echeqs múltiples", "BRIKI con 33,33 % × 3 sobre el saldo 13.773.075,04: 4.591.025,01 / 4.591.025,01 / 4.591.025,02 — suman el saldo exacto",
+    "4591025.01 · 4591025.01 · 4591025.02 · 13773075.04", `${echPct.map(e => e.monto).join(" · ")} · ${echPct.reduce((s2, e) => s2 + e.monto, 0).toFixed(2)}`,
+    echPct[0].monto === 4591025.01 && echPct[2].monto === 4591025.02 && echPct.reduce((s2, e) => s2 + e.monto, 0).toFixed(2) === "13773075.04", "A-FEAT-1282")
   chequear("Echeqs múltiples", "La factura/anticipo se estampa con la fecha del ÚLTIMO echeq",
     "2026-12-13", ultimaFechaCobro(echPlanIguales), ultimaFechaCobro(echPlanIguales) === "2026-12-13", "A-FEAT-1282")
   const echExcel = filasEmision([{ cuit: "30-70814129-8", monto: 966666.67, fechaCobro: "2026-10-29", motivo: motivoPorDefecto(false), descripcion1: "Anticipo X (1/3)", mail: "a@b.com; c@d.com", clausula: "No a la orden" }])
