@@ -31,7 +31,8 @@ import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito } from "@/lib/sicore/minimo"
+import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
+import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
@@ -522,6 +523,140 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     return () => document.removeEventListener("keydown", atajo)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modoPagos, filasSeleccionadas])
+
+  /**
+   * ➡️ A-FEAT-1272 — el estado que propone PAGOS sale de lo tildado: pendiente → pagar, pagar → pagado
+   * (regla en `lib/pagos/estado-sugerido-lote.ts`). Si el usuario lo cambia a mano, no se le pisa.
+   */
+  const estadoLoteAMano = useRef(false)
+  useEffect(() => {
+    if (!modoPagos) { estadoLoteAMano.current = false; return }
+    if (estadoLoteAMano.current) return
+    const estados = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)?.estado).filter(Boolean)
+    const sugerido = estadoSugeridoParaLote(estados as string[])
+    if (sugerido && sugerido !== valorEstadoLote) setValorEstadoLote(sugerido)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoPagos, filasSeleccionadas, data])
+
+  /**
+   * 🏛️ A-FEAT-1271 — **PROCESAR EL GRUPO JUNTO**: la app repite sola, en las facturas que siguen del
+   * mismo proveedor, lo que el usuario eligió en la primera (régimen y % de descuento).
+   *
+   * Pedido del usuario 2026-10-13: *«sería bueno que me permita procesar las 4 juntas como opción.
+   * En este caso las 4 son de bienes y va el 5 % a todas»*.
+   *
+   * 🔑 **No es un camino nuevo de cálculo ni de guardado**: este efecto hace exactamente los mismos
+   * tres pasos que hace el usuario con el mouse —elegir el régimen, aplicar el descuento, confirmar—
+   * llamando a las mismas funciones, factura por factura y en el mismo orden. Si mañana cambia cómo se
+   * calcula o se guarda una retención, «juntas» cambia con eso, porque no tiene cuenta propia.
+   *
+   * 🧮 **Y termina con su control** (A-FEAT-1270): la suma de lo retenido comprobante por comprobante
+   * contra la retención del grupo calculada de una vez — `(neto del grupo − mínimo) × alícuota`.
+   *
+   * Se detiene solo si aparece un comprobante de otro proveedor, si falta el régimen, o si el usuario
+   * aprieta «Detener» o «Cancelar»: ahí el circuito sigue a mano, como siempre.
+   */
+  const autoGrupo = useRef<null | {
+    cuit: string; tipo: string; pct: number; pctTexto: string
+    minimoDisponible: number; alicuota: number
+    ids: string[]; netos: number[]; hecho: Set<string>
+  }>(null)
+  const [procesarJuntas, setProcesarJuntas] = useState(false)
+  const [autoGrupoActivo, setAutoGrupoActivo] = useState(false)
+  const detenerAutoGrupo = () => { autoGrupo.current = null; setAutoGrupoActivo(false); setProcesarJuntas(false) }
+  useEffect(() => {
+    const a = autoGrupo.current
+    if (!a) return
+    const plata = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const cerrarConControl = async () => {
+      const ids = [...a.ids]
+      const netos = [...a.netos]
+      detenerAutoGrupo()
+      const { data: filas, error } = await supabase.schema('msa').from('comprobantes_arca')
+        .select('monto_sicore, monto_a_abonar').in('id', ids)
+      if (error || !filas) {
+        toast.warning(`Grupo procesado (${ids.length} comprobantes), pero no se pudo leer el resultado para controlarlo: ${error?.message ?? ''}`)
+        return
+      }
+      const retenido = Math.round(filas.reduce((s, f) => s + (Number(f.monto_sicore) || 0), 0) * 100) / 100
+      const aTransferir = Math.round(filas.reduce((s, f) => s + (Number(f.monto_a_abonar) || 0), 0) * 100) / 100
+      const esperado = retencionDelGrupo(netos, a.minimoDisponible, a.alicuota)
+      if (Math.abs(retenido - esperado) <= 0.05) {
+        toast.success(
+          `Grupo procesado: ${ids.length} comprobantes · retención $${plata(retenido)} ✓ · a transferir $${plata(aTransferir)}`,
+          { duration: 20000 })
+      } else {
+        toast.error(
+          `⚠️ Grupo procesado, pero el control NO cierra: se retuvo $${plata(retenido)} y el grupo calculado de una vez da $${plata(esperado)}. ` +
+          `Revisalo antes de pagar (a transferir: $${plata(aTransferir)}).`,
+          { duration: 60000 })
+      }
+    }
+
+    // Fin de la cola: no hay modal, ni factura en curso, ni nada esperando.
+    if (!mostrarModalSicore && !facturaEnProceso) {
+      if (!guardadoPendienteCF && colaLoteSicore.length === 0 && a.ids.length > 0) void cerrarConControl()
+      return
+    }
+    if (!mostrarModalSicore || !facturaEnProceso) return
+    // Otro proveedor: el grupo terminó; lo que sigue lo decide el usuario.
+    if (facturaEnProceso.cuit_proveedor !== a.cuit) { void cerrarConControl(); return }
+
+    const id = facturaEnProceso.id
+    if (a.hecho.has(`${id}:fin`)) return
+
+    if (pasoSicore === 'tipo') {
+      if (a.hecho.has(`${id}:tipo`)) return
+      const tipo = tiposSicore.find(t => t.tipo === a.tipo)
+      if (!tipo) { detenerAutoGrupo(); toast.warning('No se encontró el régimen elegido: seguí a mano.'); return }
+      a.hecho.add(`${id}:tipo`)
+      void calcularRetencionSicoreCF(facturaEnProceso, tipo)
+      return
+    }
+
+    if (pasoSicore === 'calculo' && datosSicoreCalculo && tipoSeleccionado?.tipo === a.tipo) {
+      if (a.pct > 0 && !a.hecho.has(`${id}:desc`)) {
+        // Primero se carga el porcentaje en el campo (como si lo tipeara) y recién después se aplica.
+        if (descuentoTipoInput !== 'pct' || descuentoInputValor !== a.pctTexto) {
+          setDescuentoTipoInput('pct')
+          setDescuentoInputValor(a.pctTexto)
+          return
+        }
+        a.hecho.add(`${id}:desc`)
+        aplicarDescuentoSicoreCF()
+        return
+      }
+      if (a.pct > 0 && !descuentoDesglose) return // todavía no se reflejó el descuento
+      a.hecho.add(`${id}:fin`)
+      a.ids.push(id)
+      a.netos.push(datosSicoreCalculo.netoFactura)
+      void finalizarProcesoSicoreCF()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGrupoActivo, mostrarModalSicore, pasoSicore, facturaEnProceso, datosSicoreCalculo, descuentoDesglose,
+      descuentoInputValor, descuentoTipoInput, tipoSeleccionado, guardadoPendienteCF, colaLoteSicore])
+
+  /** Confirmar la primera del grupo: si está tildado «las que siguen igual», arma el piloto y sigue. */
+  const confirmarSicoreCF = () => {
+    // Sólo si de verdad quedan más de este proveedor: un tilde que quedó de antes no arranca nada.
+    const siguenDelProveedor = facturaEnProceso ? colaLoteSicore.filter(f => f.cuit_proveedor === facturaEnProceso.cuit_proveedor).length : 0
+    if (procesarJuntas && siguenDelProveedor === 0) setProcesarJuntas(false)
+    if (procesarJuntas && siguenDelProveedor > 0 && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && !autoGrupo.current) {
+      const pctTexto = descuentoDesglose && descuentoTipoInput === 'pct' ? descuentoInputValor : ''
+      const pct = parseFloat(pctTexto.replace(/\./g, '').replace(',', '.')) || 0
+      const d = datosSicoreCalculo
+      autoGrupo.current = {
+        cuit: facturaEnProceso.cuit_proveedor, tipo: tipoSeleccionado.tipo, pct, pctTexto: pct > 0 ? pctTexto : '',
+        minimoDisponible: d.esRetencionAdicional ? 0 : Math.max(0, (d.minimoTipo ?? 0) - (d.ignorarPrevios ? 0 : (d.netoPrevio ?? 0))),
+        alicuota: tipoSeleccionado.porcentaje_retencion,
+        ids: [facturaEnProceso.id], netos: [d.netoFactura],
+        hecho: new Set([`${facturaEnProceso.id}:tipo`, `${facturaEnProceso.id}:desc`, `${facturaEnProceso.id}:fin`]),
+      }
+      setAutoGrupoActivo(true)
+    }
+    void finalizarProcesoSicoreCF()
+  }
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -2959,6 +3094,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const pending = freshPending !== undefined ? freshPending : guardadoPendienteCF
     const cola = freshCola !== undefined ? freshCola : colaLoteSicore
 
+    // Cancelar de verdad corta también el «procesar juntas» (A-FEAT-1271).
+    if (!continuarSinSicore && autoGrupo.current) detenerAutoGrupo()
     if (pending && !continuarSinSicore) {
       // Restaurar estado anterior en BD y limpiar cola entera (aborta también el echeq lote)
       await actualizarRegistro(pending.filaId, 'estado', pending.estadoAnterior, 'ARCA')
@@ -3923,7 +4060,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   {cambiarEstadoLote && (
                     <div className="flex items-center gap-2">
                       <Label className="text-sm">Estado:</Label>
-                      <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
+                      <Select value={valorEstadoLote} onValueChange={(v) => { estadoLoteAMano.current = true; setValorEstadoLote(v) }}>
                         <SelectTrigger className="w-40">
                           <SelectValue />
                         </SelectTrigger>
@@ -5908,8 +6045,36 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 )}
               </div>
 
+              {/* 🏛️ A-FEAT-1271 — procesar el grupo junto. Sólo cuando quedan más del MISMO proveedor en la cola. */}
+              {(() => {
+                const siguen = colaLoteSicore.filter(f => f.cuit_proveedor === facturaEnProceso.cuit_proveedor).length
+                if (autoGrupoActivo) {
+                  return (
+                    <div className="flex items-center justify-between gap-2 rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
+                      <span>⏳ Procesando el grupo solo, con el mismo régimen y descuento…</span>
+                      <button type="button" className="rounded border border-blue-300 bg-white px-2 py-0.5" onClick={detenerAutoGrupo}>Detener</button>
+                    </div>
+                  )
+                }
+                if (siguen === 0) return null
+                const descuentoPorMonto = !!descuentoDesglose && descuentoTipoInput !== 'pct'
+                return (
+                  <label className={`flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${descuentoPorMonto ? 'border-gray-200 text-gray-400' : 'border-blue-200 bg-blue-50 text-blue-900 cursor-pointer'}`}>
+                    <input type="checkbox" className="mt-0.5" checked={procesarJuntas && !descuentoPorMonto} disabled={descuentoPorMonto}
+                      onChange={e => setProcesarJuntas(e.target.checked)} />
+                    <span>
+                      <strong>Procesar igual {siguen === 1 ? 'la que sigue' : `las ${siguen} que siguen`} de este proveedor</strong>
+                      <br />
+                      {descuentoPorMonto
+                        ? 'Sólo se puede con descuento en % (o sin descuento): un importe fijo no vale igual para todas.'
+                        : `Mismo régimen${descuentoDesglose ? ` y mismo ${descuentoInputValor} %` : ', sin descuento'}, sin preguntar una por una. Al final te muestra el total del grupo y su control.`}
+                    </span>
+                  </label>
+                )
+              })()}
+
               <div className="flex gap-2 pt-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={finalizarProcesoSicoreCF}>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmarSicoreCF} disabled={autoGrupoActivo}>
                   ✅ Confirmar y pasar a Pagar
                 </Button>
                 {/* Sin retención y sin descuento: pasa a pagar sin estampar la quincena en la FC.

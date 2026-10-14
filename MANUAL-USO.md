@@ -3056,6 +3056,14 @@ y ahí suele haber más que en MSA.
 
 - **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
   `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **PAGOS propone el paso siguiente**: si tildás facturas **pendientes** el estado propuesto es
+  **Pagar**; si están en **pagar**, propone **Pagado**. Lo podés cambiar; si lo cambiás a mano no te
+  lo vuelve a tocar hasta que salgas de PAGOS. → A-TEST-1201
+- **Varias facturas del mismo proveedor → procesarlas juntas en SICORE**: en la pantalla de
+  retención de la primera, elegí el régimen, aplicá el descuento en **%** y tildá **«Procesar igual
+  las N que siguen de este proveedor»**. La app repite lo mismo en las demás y al final te muestra
+  la retención total del grupo, con su control, y lo que hay que transferir. Si los regímenes o los
+  descuentos no son iguales, no lo tildes y seguí una por una. → A-TEST-1200
 - **Volver una factura a pendiente** (desde PAGOS o desde el menú de la fila): te pregunta si la
   **reseteás** —anula la retención, borra el descuento y la fecha de pago, y vuelve al importe
   original— o si la pasás a pendiente y nada más. Si después la vas a pagar de nuevo, reseteala.

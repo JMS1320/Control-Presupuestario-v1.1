@@ -34,6 +34,7 @@
  */
 
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
+import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
@@ -3002,6 +3003,20 @@ export function correrCasos(): Resultado[] {
       `${cabezasHoy(stockHoy, "7")} · ${cabezasHoy(stockHoy, 9)} · ${cabezasHoy(stockHoy, "33")} · ${cabezasHoy(stockHoy, "")}`,
       cabezasHoy(stockHoy, "7") === 37 && cabezasHoy(stockHoy, 9) === 120 && cabezasHoy(stockHoy, "33") === 0 && cabezasHoy(stockHoy, "") === 0,
       "A-FEAT-1265")
+  }
+
+  {
+    // A-FEAT-1272 — el estado que propone PAGOS es el paso siguiente de lo tildado.
+    const s = estadoSugeridoParaLote
+    chequear("PAGOS — estado propuesto", "🔑 Todo en pendiente propone pagar; todo en pagar propone pagado",
+      "pagar · pagado", `${s(["pendiente", "pendiente"])} · ${s(["pagar"])}`,
+      s(["pendiente", "pendiente"]) === "pagar" && s(["pagar"]) === "pagado", "A-FEAT-1272")
+    chequear("PAGOS — estado propuesto", "Mezclado, vacío o en otro estado: no propone nada (queda lo que estaba)",
+      "null null null", `${s(["pendiente", "pagar"])} ${s([])} ${s(["conciliado"])}`,
+      s(["pendiente", "pagar"]) === null && s([]) === null && s(["conciliado"]) === null, "A-FEAT-1272")
+    chequear("PAGOS — estado propuesto", "Pagar, preparado y programado juntos proponen pagado",
+      "pagado", String(s(["pagar", "preparado", "programado"])),
+      s(["pagar", "preparado", "programado"]) === "pagado", "A-FEAT-1272")
   }
 
   /**
