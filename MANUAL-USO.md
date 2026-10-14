@@ -3054,7 +3054,7 @@ y ahí suele haber más que en MSA.
 
 ## ⌨️ Atajos y ayudas chicas *(2026-10-13)*
 
-- **`Alt + M`** (en cualquier pantalla): abre y cierra el menú lateral. `Ctrl + B` hace lo mismo.
+- **`Alt + M`** (en cualquier pantalla): abre y cierra el menú lateral (lo dice debajo del ☰).
   → A-TEST-1206
 - **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
   `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194

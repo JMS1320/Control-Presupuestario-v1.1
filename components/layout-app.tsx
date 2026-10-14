@@ -77,23 +77,27 @@ export function seccionesPorIds(ids: string[]) {
 function BotonMenu({ className }: { className?: string }) {
   const { toggleSidebar } = useSidebar()
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className={`h-9 w-9 shrink-0 ${className ?? ""}`}
-      onClick={toggleSidebar}
-      title="Abrir / cerrar el menú (Alt+M)"
-    >
-      <Menu />
-      <span className="sr-only">Abrir el menú</span>
-    </Button>
+    // El atajo, a la vista debajo del ícono — como los Alt+R y Alt+N de los botones flotantes.
+    <div className={`flex shrink-0 flex-col items-center ${className ?? ""}`}>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9"
+        onClick={toggleSidebar}
+        title="Abrir / cerrar el menú (Alt+M)"
+      >
+        <Menu />
+        <span className="sr-only">Abrir el menú</span>
+      </Button>
+      <span className="-mt-1 select-none text-[10px] leading-none text-gray-400">Alt+M</span>
+    </div>
   )
 }
 
 /**
  * ⌨️ **Alt+M abre y cierra el menú lateral** (A-FEAT-1275). Nota del usuario 2026-10-14: *«abrir el
  * menú lateral preciso un atajo»*. Alt+letra como Alt+P (PAGOS), Alt+R (revisión) y Alt+N (nota).
- * El menú ya traía Ctrl+B de fábrica, pero nadie lo sabía y no sigue la familia de los otros.
+ * El menú traía Ctrl+B de fábrica: se APAGÓ (usuario 2026-10-14: «un solo atajo»).
  * Se monta UNA vez (no en el botón, que aparece en dos lugares y abriría y cerraría a la vez).
  */
 function AtajoMenu() {

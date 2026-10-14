@@ -25,6 +25,7 @@ const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_ATAJO_ACTIVO = false
 
 type SidebarContext = {
   state: "expanded" | "collapsed"
@@ -97,9 +98,12 @@ const SidebarProvider = React.forwardRef<
     }, [isMobile, setOpen, setOpenMobile])
 
     // Adds a keyboard shortcut to toggle the sidebar.
+    // ⚠️ APAGADO (A-FEAT-1275, usuario 2026-10-14: «un solo atajo»): el menú se abre con Alt+M, que
+    // vive en `layout-app.tsx` junto con Alt+P / Alt+R / Alt+N. Ctrl+B de fábrica queda desactivado.
     React.useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
         if (
+          SIDEBAR_ATAJO_ACTIVO &&
           event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
           (event.metaKey || event.ctrlKey)
         ) {
