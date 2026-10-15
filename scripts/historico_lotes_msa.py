@@ -222,8 +222,55 @@ for r in range(ini, s0.max_row + 1):
     for j in (3, 4): s0.cell(r, j).number_format = '#,##0.00'
 s0.column_dimensions['A'].width = 60
 # en Red Vial el importe va sólo en la primera fila
-wb.save(SALIDA)
+if '--aplicar-lote1' not in sys.argv:
+    wb.save(SALIDA)
 cnt = collections.Counter(f['Lote'] for f in filas)
 print(SALIDA); print(dict(cnt))
 print('mov únicos', len({f['Fila de tu planilla'] for f in filas}))
 print('lote1 cuotas que no cierran', [f for f in filas if f['Lote'].startswith('1') and f['Control de la cuota'] not in ('', 0, 0.0)][:3])
+
+# ══ APLICAR EL LOTE 1 (con OK del usuario, 15/10: «dale, aplicá el lote 1») ═════════════════════════════
+# Una cuota por movimiento: la cuota mensual NO se borra — queda con el primer movimiento del mes (fecha e
+# importe de ése) y se crea una cuota nueva por cada uno de los demás. Cada movimiento se vincula a la suya y
+# pasa a «conciliado»; la cuota sigue «anterior» (histórico: no va al Cash Flow). Antes: FOTO para deshacer.
+if '--aplicar-lote1' in sys.argv:
+    H_W = {'apikey': env['SUPABASE_SERVICE_ROLE_KEY'], 'Authorization': 'Bearer ' + env['SUPABASE_SERVICE_ROLE_KEY'],
+           'Content-Type': 'application/json', 'Prefer': 'return=representation'}
+    def escribir(metodo, tabla, params, cuerpo):
+        url = env['NEXT_PUBLIC_SUPABASE_URL'] + '/rest/v1/' + tabla + ('?' + urllib.parse.urlencode(params, safe='(),.*:') if params else '')
+        return json.loads(urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(cuerpo).encode(), method=metodo, headers=H_W)).read())
+    plan = {cid: sorted(fs, key=lambda f: mov[f]['orden']) for cid, fs in filas_de_cuota.items() if fs}
+    ids_mov = [mov[f]['id'] for fs in plan.values() for f in fs]
+    assert len(ids_mov) == 486 and len(set(ids_mov)) == 486, len(ids_mov)
+    # Freno: que no se haya aplicado ya (todos siguen históricos y sin vínculo)
+    ya = [m for m in hist if m['id'] in set(ids_mov)]
+    estado_hoy = rest('msa_galicia', {'select': 'id,estado,template_cuota_id', 'estado': 'neq.historico', 'fecha': 'lt.2026-02-01'})
+    if estado_hoy: raise SystemExit(f'⛔ ya hay {len(estado_hoy)} movimientos jul–ene que no están «historico»: ¿ya se aplicó? No sigo.')
+    # FOTO
+    foto_cuotas = rest('cuotas_egresos_sin_factura', {'select': '*', 'id': 'in.(' + ','.join(plan) + ')'})
+    foto_movs = []
+    for d in range(0, len(ids_mov), 150):
+        foto_movs += rest('msa_galicia', {'select': '*', 'id': 'in.(' + ','.join(ids_mov[d:d + 150]) + ')'})
+    json.dump({'cuotas': foto_cuotas, 'movimientos': foto_movs}, open(DIR + 'Lote 1 - foto antes de aplicar.json', 'w', encoding='utf-8'), ensure_ascii=False, default=str)
+    assert len(foto_cuotas) == len(plan) and len(foto_movs) == 486
+    cuota_by_id = {c['id']: c for c in foto_cuotas}
+    creadas, actualizadas, vinculados = [], 0, 0
+    for cid, fs in plan.items():
+        c = cuota_by_id[cid]; t = tpls[c['egreso_id']]; ing = c['tipo_movimiento'] == 'ingreso'
+        for k, f in enumerate(fs):
+            m = mov[f]; imp = m['cre'] if ing else m['deb']
+            cuerpo = {'fecha_estimada': iso(m['fecha']), 'fecha_vencimiento': iso(m['fecha']), 'monto': imp, 'estado': 'anterior',
+                      'tipo_movimiento': c['tipo_movimiento'], 'descripcion': f"{t['nombre_referencia']} — {m['descripcion']} — histórico tanda 1"}
+            if k == 0:
+                if len(fs) > 1 or abs(r2(c['monto']) - imp) > 0.005 or c['fecha_estimada'] != iso(m['fecha']):
+                    escribir('PATCH', 'cuotas_egresos_sin_factura', {'id': 'eq.' + cid}, cuerpo); actualizadas += 1
+                cuota_id = cid
+            else:
+                cuota_id = escribir('POST', 'cuotas_egresos_sin_factura', None, dict(cuerpo, egreso_id=c['egreso_id']))[0]['id']; creadas.append(cuota_id)
+            upd = {'estado': 'conciliado', 'template_id': c['egreso_id'], 'template_cuota_id': cuota_id, 'categ': t['categ'],
+                   'contable': norm(m['cont_p']) or None, 'interno': norm(m['int_p']) or None}
+            r = escribir('PATCH', 'msa_galicia', {'id': 'eq.' + m['id'], 'estado': 'eq.historico'}, upd)
+            if len(r) != 1: raise SystemExit(f'⛔ el movimiento {m["id"]} no se actualizó (¿cambió de estado?). Lo hecho hasta acá está en la foto.')
+            vinculados += 1
+    json.dump(creadas, open(DIR + 'Lote 1 - cuotas creadas.json', 'w'))
+    print(f'✅ lote 1: {actualizadas} cuotas mensuales reaprovechadas · {len(creadas)} cuotas nuevas · {vinculados} movimientos vinculados')
