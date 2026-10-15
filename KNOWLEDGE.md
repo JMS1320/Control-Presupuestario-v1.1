@@ -1641,6 +1641,35 @@ dos movimientos del mismo día e importe con distinto detalle (ahí sí se podr�
 fórmula (`#¿NOMBRE?`), y `ws.append([])` **no** avanza `max_row` — si se calcula la fila del control
 con `max_row` después de un renglón vacío, queda corrida en uno.
 
+### 🛑 Sugerir por PARECIDO falló: se clasifica con SUS filtros, por CATEG `#metodo #2026-10-15`
+
+⚠️ **cambió 2026-10-15** — el Excel *«TEMPLATES SUGERIDOS»* (`templates-sugeridos-2025.mts` /
+`sugeridos_v2.py`) clasificaba con tres confianzas: **alta** (la misma descripción del banco siempre
+fue al mismo template en feb–jun), **media** (el detalle se parece al nombre del template) y **baja**
+(el importe ±25 % del promedio). **Media y baja no sirven** y no se usan más para cargar:
+- **«Gastos Reintegro JMS» sugería $22,8 M** y eran sueldos de JMS y AMS, **pagos de facturas ya
+  cargadas** (se habrían duplicado) y un reintegro. El filtro del usuario sobre los pagos a José daba
+  ~$12 M: **ese control —su filtro contra el total propuesto— lo tendría que haber hecho yo antes de
+  mostrárselo.**
+- El motivo es de método: no miraba **a quién se le pagó** (la leyenda con nombre y CUIT), **no
+  respetaba su CATEG/Detalle** aunque decían bien qué era cada cosa, y **no cruzaba contra facturas
+  ni Sueldos**.
+
+**El método que vale** (usuario: *«riguroso, casi como cuando yo lo hago a mano y filtro la data
+existente»*):
+1. **Por CATEG**, desglosando adentro: su CATEG es la base del procesamiento.
+2. **Filtros explícitos** sobre sus columnas (CATEG, Detalle, beneficiario y CUIT, descripción del
+   banco), **escritos en el Excel** para que él los repita con el autofiltro.
+3. **Cruce contra facturas y Sueldos** antes de proponer: lo que ya está ahí no va a un template.
+4. **Movimientos de a uno, nunca agrupados** — también en las propuestas.
+5. Lo que no se resuelve con un filtro claro **se pregunta**; no se sugiere.
+6. **Chequeo inverso** en las CATEG que no se procesan (ej. **VET**: todo son facturas de la
+   veterinaria): verificar que adentro no haya nada que **no** sea de esa categoría.
+7. **El control en dos direcciones**: cuota → movimientos que la forman (diferencia 0), y su
+   planilla filtrada → cuotas (nada que su filtro identifique queda afuera). Es lo que hace
+   `scripts/revision_cargado_historico.py`, que además **inventaría lo «anterior»** separando lo de cada
+   carga de lo que ya existía — cada tanda marca su descripción (`— histórico tanda N`).
+
 ---
 
 ## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
