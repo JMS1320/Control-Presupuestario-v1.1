@@ -180,6 +180,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -6474,6 +6475,28 @@ export function correrCasos(): Resultado[] {
     chequear("Asistencia — llenar con F y jornal", "«Llenar con F» pone F en los 17 vacíos sin tocar lo marcado; el jornalero suma 10,5 días y cobra 10,5 × 60.000",
       "F 17 · completo · 10,5 días · 630000", `F ${Object.keys(resto).length} · ${r.completo ? "completo" : "incompleto"} · ${String(r.diasTrabajados).replace(".", ",")} días · ${bruto}`,
       Object.keys(resto).length === 17 && Object.values(resto).every(m => m === "F") && r.completo && r.diasTrabajados === 10.5 && bruto === 630000, "A-FEAT-1259")
+  }
+
+  // ══ 📜 Extracto histórico jul-25 → ene-26 (A-DEC-1009) ══════════════════════════════════════════
+  {
+    // 🧨 Antes, desvincular devolvía SIEMPRE la cuota a «pendiente»: una cuota «anterior» revivía en el Cash Flow.
+    const antesSiempre = (_e: string) => "pendiente"
+    chequear("Extracto histórico", "🧨 Desvincular un movimiento de una cuota «anterior» la deja «anterior» (antes volvía a pendiente y reaparecía en el Cash Flow); una conciliada sí vuelve a pendiente",
+      "anterior · pendiente · pendiente · antes: pendiente", `${estadoCuotaAlDesvincular("anterior")} · ${estadoCuotaAlDesvincular("conciliado")} · ${estadoCuotaAlDesvincular(null)} · antes: ${antesSiempre("anterior")}`,
+      estadoCuotaAlDesvincular("anterior") === "anterior" && estadoCuotaAlDesvincular(" Anterior ") === "anterior" && estadoCuotaAlDesvincular("conciliado") === "pendiente" && estadoCuotaAlDesvincular(null) === "pendiente", "A-DEC-1009")
+    const filas = [
+      { estado: "conciliado", categ: "Expensas Libertad", revisado: true },
+      { estado: "pendiente", categ: null, revisado: false },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "auditar", categ: "", revisado: true },
+    ]
+    const e = contarEstadisticasExtracto(filas)
+    // 🧨 Antes «Sin CATEG» contaba también los históricos (que no tienen categoría hasta revisar su lote).
+    const sinCategAntes = filas.filter(m => !m.categ || m.categ === "").length
+    chequear("Extracto histórico", "🧨 Los históricos se cuentan aparte y no inflan «Sin CATEG» ni «sin revisar» (antes Sin CATEG daba 4 con 2 históricos)",
+      "total 5 · históricos 2 · sin categ 2 · sin revisar 1 · antes 4", `total ${e.total} · históricos ${e.historicos} · sin categ ${e.sin_categ} · sin revisar ${e.sin_revisar} · antes ${sinCategAntes}`,
+      e.total === 5 && e.historicos === 2 && e.sin_categ === 2 && e.sin_revisar === 1 && e.conciliados === 1 && e.pendientes === 1 && e.auditar === 1 && sinCategAntes === 4 && esHistorico("Historico") && !esHistorico("pendiente"), "A-DEC-1009")
   }
 
   // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════

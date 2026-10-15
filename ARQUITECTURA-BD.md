@@ -318,6 +318,7 @@ son las vaquillonas del año siguiente.
 - **Bancos** agregan: `origen, concepto, grupo_de_conceptos, numero_de_terminal, leyendas_adicionales_1..4, tipo_de_movimiento, numero_de_comprobante, observaciones_cliente`.
 - **Tarjetas** agregan: `referencia, cuota, comprobante, debitos_usd, creditos_usd, nro_resumen, fecha_cierre, fecha_vencimiento, tarjeta_adicional, titular_adicional, tipo_fila`.
 - **Cajas** son las más simples (no tienen la familia completa: solo `comprobante_arca_id, template_id, template_cuota_id, nro_cuenta`).
+- **`estado`**: `conciliado` · `pendiente` (lo único que toma el motor) · `auditar`. **`msa_galicia` admite además `historico`** (scripts/85, 2026-10-15, ⏳ sin correr): el extracto jul-25 → ene-26 cargado **sin clasificar** — sin `categ`, así que no entra en ningún número; se clasifica de a lotes y pasa a `conciliado`. Lógica en `lib/conciliacion/estado-historico.ts` → [A-DEC-1009](PENDIENTES.md#a-dec-1009).
 
 ### 4.2 Familia de conciliación (columnas de linkeo)
 En las tablas de movimiento, al conciliar se llenan (según contra qué se concilie):

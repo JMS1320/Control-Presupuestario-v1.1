@@ -54,6 +54,16 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ Nuevo estado «historico» en `public.msa_galicia` (2026-10-15) — aviso ANTES de aplicarlo
+
+`scripts/85-extracto-estado-historico.sql` (+ `-deshacer`), para [A-DEC-1009](PENDIENTES.md#a-dec-1009) /
+[A-DAT-68](PENDIENTES.md#a-dat-68): el extracto de MSA jul-2025 → ene-2026 se va a cargar entero como histórico.
+**Qué cambia**: sólo el check `msa_galicia_estado_check`, que pasa a admitir también `historico`. Aditivo, no toca
+filas, sin RLS ni permisos nuevos. **Todavía NO corrido**: se corre con JMS presente. Si algo tuyo filtra por
+`estado` del extracto (conciliado/pendiente/auditar), avisá: los históricos no son pendientes ni entran al motor.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
 
 `scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { filtroDeSentidoYMonto, type Sentido } from "@/lib/movimientos/sentido"
+import { contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 
 export interface MovimientoBancario {
   id: string
@@ -15,7 +16,7 @@ export interface MovimientoBancario {
   categ: string | null
   detalle: string | null
   centro_de_costo: string | null
-  estado: 'conciliado' | 'pendiente' | 'auditar'
+  estado: 'conciliado' | 'pendiente' | 'auditar' | 'historico'
   numero_de_comprobante: string | null
   observaciones_cliente: string | null
   motivo_revision: string | null
@@ -42,6 +43,8 @@ export interface EstadisticasMovimientos {
   conciliados: number
   pendientes: number
   auditar: number
+  /** 📜 A-DEC-1009 — extracto histórico cargado sin clasificar (jul-25 → ene-26). */
+  historicos: number
   sin_categ: number
   sin_revisar: number
 }
@@ -53,6 +56,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     conciliados: 0,
     pendientes: 0,
     auditar: 0,
+    historicos: 0,
     sin_categ: 0,
     sin_revisar: 0
   })
@@ -70,7 +74,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
 
   // Cargar movimientos bancarios
   const cargarMovimientos = async (filtros?: {
-    estado?: 'conciliado' | 'pendiente' | 'auditar' | 'Todos'
+    estado?: 'conciliado' | 'pendiente' | 'auditar' | 'historico' | 'Todos'
     limite?: number
     busqueda?: string
     fechaDesde?: string
@@ -139,7 +143,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       if (filtros?.categEspecial === 'invalida') {
         query = query.ilike('categ', 'INVALIDA:%')
       } else if (filtros?.categEspecial === 'sin_categ') {
-        query = query.or('categ.is.null,categ.eq.')
+        // Un histórico sin categoría es su estado normal hasta que se revisa su lote: no es «sin CATEG».
+        query = query.or('categ.is.null,categ.eq.').neq('estado', 'historico')
       } else if (filtros?.categ) {
         query = query.ilike('categ', `%${filtros.categ}%`)
       }
@@ -215,22 +220,25 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
   // Cargar estadísticas
   const cargarEstadisticas = async () => {
     try {
-      const { data, error } = await (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
-        .from(tabla)
-        .select('estado, categ, revisado')
-
-      if (error) {
-        throw new Error(`Error cargando estadísticas: ${error.message}`)
+      /**
+       * Paginado: la API devuelve como máximo 1.000 filas por consulta, y el extracto de MSA ya las
+       * pasa (1.032 al 15/10, 1.892 con el histórico). Sin esto los contadores se cortaban en 1.000.
+       */
+      const data: Array<{ estado: string | null; categ: string | null; revisado: boolean | null }> = []
+      for (let desde = 0; ; desde += 1000) {
+        const { data: pag, error } = await (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
+          .from(tabla)
+          .select('estado, categ, revisado')
+          .order('id', { ascending: true })
+          .range(desde, desde + 999)
+        if (error) {
+          throw new Error(`Error cargando estadísticas: ${error.message}`)
+        }
+        data.push(...(pag ?? []))
+        if (!pag || pag.length < 1000) break
       }
 
-      const stats = {
-        total: data?.length || 0,
-        conciliados: data?.filter(m => m.estado === 'conciliado').length || 0,
-        pendientes: data?.filter(m => m.estado === 'pendiente').length || 0,
-        auditar: data?.filter(m => m.estado === 'auditar').length || 0,
-        sin_categ: data?.filter(m => !m.categ || m.categ === '').length || 0,
-        sin_revisar: data?.filter(m => !m.revisado).length || 0
-      }
+      const stats = contarEstadisticasExtracto(data)
 
       setEstadisticas(stats)
 

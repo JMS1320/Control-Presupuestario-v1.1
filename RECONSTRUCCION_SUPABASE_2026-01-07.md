@@ -12795,6 +12795,13 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-15 · estado «historico» en `public.msa_galicia` — A-DEC-1009 (⏳ escrito, sin correr)
+
+Script `scripts/85-extracto-estado-historico.sql` (deshacer: `85-…-deshacer.sql`, falla si quedó alguna fila
+«historico»). Sólo amplía el check `msa_galicia_estado_check`: conciliado / pendiente / auditar (+ mayúsculas)
+**+ `historico`**. Es el estado del extracto jul-2025 → ene-2026 cargado sin clasificar (A-DAT-68): no entra
+al motor (que toma sólo `pendiente`) ni a ningún número (sin `categ`). Aditivo, no toca filas.
+
 ### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24
 
 Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros

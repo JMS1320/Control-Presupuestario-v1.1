@@ -3522,6 +3522,21 @@ de todo el extracto, no de las filas que entraron por el límite.
 
 ⚠️ Sin probar por vos todavía → `A-TEST-117`.
 
+## 📜 Extracto → los movimientos históricos *(2026-10-15)*
+
+El extracto de MSA de **julio 2025 a enero 2026** se carga entero como **histórico**, para tener la
+cadena de saldos y el saldo de inicio del ejercicio. Entra **sin clasificar**: sin categoría y sin
+códigos, con tu planilla (CATEG, detalle, contable, interno) en la nota del movimiento.
+
+- En **Filtros rápidos** aparece **«Históricos (n)»** cuando hay alguno: muestra sólo esos. Su estado
+  se ve como **«histórico»**, en gris.
+- **No entran en ningún número** (dashboard, papeles) hasta que se revisa su lote y se vinculan a su
+  cuota. **«Sin CATEG»** no los cuenta: no tener categoría es su estado normal hasta entonces.
+- Si reasignás un movimiento que estaba vinculado a una **cuota «anterior»**, la cuota **sigue
+  «anterior»**: no vuelve al Cash Flow.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1215`.
+
 ## ↕️ Extracto → sólo débitos o sólo créditos *(2026-10-01)*
 
 En la misma barra, al lado de **📝 Notas**, hay otro selector:
