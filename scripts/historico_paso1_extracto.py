@@ -129,7 +129,11 @@ fin = s1.max_row
 s1.append(['TOTAL'] + [f'=SUM({L(ic[k])}2:{L(ic[k])}{fin})' if k in ('debitos', 'creditos') else None for k in cols] +
           [f'=COUNTIF({L(len(cols) + 2)}2:{L(len(cols) + 2)}{fin},"<>0")'])
 s1.freeze_panes = 'B2'
-wb.save(SALIDA)
+try:
+    wb.save(SALIDA)
+except PermissionError:
+    # El usuario lo tiene abierto: se guarda al lado, sin pisar el suyo.
+    SALIDA = SALIDA.replace('.xlsx', ' (copia al cargar).xlsx'); wb.save(SALIDA)
 print(SALIDA)
 for nombre, da, debe, ok in controles: print(('✓' if ok else '✗'), nombre, '→', da)
 print('débitos', tot_deb, 'créditos', tot_cre, '| saltos', saltos[:5])
