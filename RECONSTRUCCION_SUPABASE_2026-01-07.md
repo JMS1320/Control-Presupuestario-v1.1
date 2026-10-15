@@ -12795,7 +12795,7 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
-### 2026-10-15 · estado «historico» en `public.msa_galicia` — A-DEC-1009 (⏳ escrito, sin correr)
+### 2026-10-15 · estado «historico» en `public.msa_galicia` — A-DEC-1009 (✅ corrido 2026-10-15)
 
 Script `scripts/85-extracto-estado-historico.sql` (deshacer: `85-…-deshacer.sql`, falla si quedó alguna fila
 «historico»). Sólo amplía el check `msa_galicia_estado_check`: conciliado / pendiente / auditar (+ mayúsculas)

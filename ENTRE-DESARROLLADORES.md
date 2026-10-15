@@ -59,7 +59,7 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 `scripts/85-extracto-estado-historico.sql` (+ `-deshacer`), para [A-DEC-1009](PENDIENTES.md#a-dec-1009) /
 [A-DAT-68](PENDIENTES.md#a-dat-68): el extracto de MSA jul-2025 → ene-2026 se va a cargar entero como histórico.
 **Qué cambia**: sólo el check `msa_galicia_estado_check`, que pasa a admitir también `historico`. Aditivo, no toca
-filas, sin RLS ni permisos nuevos. **Todavía NO corrido**: se corre con JMS presente. Si algo tuyo filtra por
+filas, sin RLS ni permisos nuevos. ✅ **Corrido 2026-10-15** con JMS presente (1.032 filas intactas). Si algo tuyo filtra por
 `estado` del extracto (conciliado/pendiente/auditar), avisá: los históricos no son pendientes ni entran al motor.
 
 📌 Borrá esta entrada cuando la leas.
