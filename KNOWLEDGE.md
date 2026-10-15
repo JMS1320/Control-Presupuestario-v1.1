@@ -1672,6 +1672,29 @@ existente»*):
 
 ---
 
+## Los códigos CONTABLE / INTERNO del extracto — qué significa cada uno `#codigos #extracto #2026-10-15`
+
+Son los que el usuario pone (o la regla pone por él) en las columnas **Contable** e **Interno** de cada movimiento. Viven **en el
+movimiento del extracto**, no en el template ni en la cuota (→ [A-DEC-1009](PENDIENTES.md#a-dec-1009)). Definiciones dadas por el
+usuario; **son distintos aunque se parezcan — no se normalizan entre sí**:
+
+| Código | Qué es |
+|---|---|
+| **RET 1 PAM** | transferencia **directa** de MSA a PAM (retiro) |
+| **RET i PAM** | MSA paga **impuestos** de PAM (también es retiro) |
+| **RET 3 PAM** | MSA paga a **terceros** por cuenta de PAM (parecido a impuestos, pero impuestos es el específico RET i) |
+| **RET 3 MA / RET i MA** | lo mismo, por cuenta de MA |
+| **AP 1** | aporte: PAM le pone plata a MSA |
+| **CTA MA / CTA JMS / CTA AMS** | cuenta corriente del socio (lo toma el papel de cuentas corrientes) |
+| **DIST MA** (interno) | distribución a MA |
+| **LIB** | gastos de Libertad |
+
+⚠️ **Lo que SÍ se normaliza es la escritura** de un mismo código: `DITRI MA` / `DISTRI MA` → `DIST MA`, `JMS CTA` → `CTA JMS`,
+`AMS CTA` → `CTA AMS`, `CUENTA JMS` → `CTA JMS`. Mapear `RET i PAM` a `RET 1 PAM` fue un error (corregido 2026-10-15): son
+dos cosas distintas. Y la regla por responsable de la app marca RET 3 a impuestos → [A-DEC-1010](PENDIENTES.md#a-dec-1010).
+
+---
+
 ## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
 
 Cuando mejora un dato de origen —una pesada, un precio— hay que saber qué se mueve. Y **medido y

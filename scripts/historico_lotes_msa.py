@@ -20,7 +20,7 @@ FUENTE = DIR + 'Extracto MSA - Control Presupuestario.xlsx'
 V2 = DIR + 'Extracto MSA - Control Presupuestario - TRABAJO v2.xlsx'
 VIEJA = RAIZ + '- Comunicacion JMS Claude - Archivos/Balance/extracto desde julio del 2025 hasta enero 26 parcial. galicia MSA cta cte pesos.xlsx'
 TANDA1 = DIR + 'Tanda 1 - propuesta de carga v3.xlsx'
-SALIDA = DIR + 'Lotes del historico MSA - para revisar v1.xlsx'
+SALIDA = DIR + 'Lotes del historico MSA - para revisar v2.xlsx'   # v2: RET i PAM ya no se cambia a RET 1 PAM
 
 env = {}
 for l in open(RAIZ + '.env.local', encoding='utf-8'):
@@ -62,7 +62,8 @@ for m in hist:
               'cont_p': s(g('Contable')), 'int_p': s(g('Interno'))}
 
 # ── Normalización de la ESCRITURA de sus códigos (no del criterio) ────────────────────────────────────
-NORM = {'DITRI MA': 'DIST MA', 'DISTRI MA': 'DIST MA', 'JMS CTA': 'CTA JMS', 'AMS CTA': 'CTA AMS', 'CUENTA JMS': 'CTA JMS', 'RET I PAM': 'RET 1 PAM', 'RET i PAM': 'RET 1 PAM'}
+# ⚠️ Sólo la ESCRITURA de un mismo código. RET 1 / RET i / RET 3 son códigos DISTINTOS (glosario: KNOWLEDGE § Los códigos contable).
+NORM = {'DITRI MA': 'DIST MA', 'DISTRI MA': 'DIST MA', 'JMS CTA': 'CTA JMS', 'AMS CTA': 'CTA AMS', 'CUENTA JMS': 'CTA JMS'}
 norm = lambda c: NORM.get(c, NORM.get(c.upper(), c)) if c else ''
 
 # ── Templates y cuotas de la app ──────────────────────────────────────────────────────────────────────
@@ -204,7 +205,7 @@ for lt, sh in hojas.items():
         for c in row:
             if cols[c.column - 1] in ('Débito', 'Crédito', 'Control de la cuota') and isinstance(c.value, float): c.number_format = '#,##0.00'
 s0.append(['LOTES DEL EXTRACTO HISTÓRICO MSA jul-2025 → ene-2026 — PARA REVISAR. Nada de esto está aplicado: los 860 movimientos están en la app como «histórico», sin clasificar.'])
-s0.append(['Cada solapa es un lote, con los movimientos de a uno. Tus códigos contable/interno se respetan; sólo se normaliza la escritura (DITRI MA → DIST MA, JMS CTA → CTA JMS, AMS CTA → CTA AMS, RET i PAM → RET 1 PAM). Anotá en «JMS: decisión / nota».'])
+s0.append(['Cada solapa es un lote, con los movimientos de a uno. Tus códigos contable/interno se respetan; sólo se normaliza la escritura (DITRI MA → DIST MA, JMS CTA → CTA JMS, AMS CTA → CTA AMS). RET 1, RET i y RET 3 son códigos distintos y quedan como los tenés. Anotá en «JMS: decisión / nota».'])
 s0.append([])
 s0.append(['Lote', 'Movimientos', 'Débitos', 'Créditos'])
 for c in s0[4]: c.font = B; c.fill = AZUL

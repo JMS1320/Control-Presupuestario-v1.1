@@ -124,7 +124,7 @@ d(560, '11/09/25', 245180.63, 'TEMPLATE · Red Vial Cuota Cholo 1 (agrupa las pa
 d(208, '17/12/25', 260407.91, 'TEMPLATE · Red Vial Cuota Cholo 1 (agrupa las partidas MSA de San Pedro)', 'Impuesto Red Vial', 'Pago a Municipalidad de San Pedro «Red VIAL MSA SP Cuota 4 de 4». Mismo criterio que la 3 de 4.')
 d(559, '11/09/25', 545029.96, 'PREGUNTA · Red Vial de PAM pagada por MSA', 'Impuesto Red Vial',
   'Pago a Municipalidad de San Pedro «Red Vial PAM 3/4», tu código RET i PAM. En feb–jun las de PAM fueron a Red Vial Cuota Tapera 1 / Tapera 3 con RET 3 PAM.',
-  '¿A cuál de los templates de PAM va (Tapera 1, Tapera 3, otro)? Códigos RET 3 PAM (A-DEC-1009).')
+  '¿A cuál de los templates de PAM va (Tapera 1, Tapera 3, otro)? Código: tu RET i PAM (MSA paga impuestos de PAM); en feb–jun la regla puso RET 3 PAM → A-DEC-1010.')
 d(206, '18/12/25', 820669.30, 'TEMPLATE · Inmobiliario Complementario Cuota MSA', 'Impuesto inmobiliario Complementario',
   f'Débito Ministerio de Hacienda «INMOBILIARIO COMP - MSA CUOTA 4/4 - Adicional». {PREC}. En la base no hay boletas ARBA de 2025: no hay doble carga.')
 d(204, '18/12/25', 1511909.80, 'TEMPLATE · Inmobiliario Cuota Rojas (agrupa las partidas MSA)', 'Impuesto inmobiliario',
