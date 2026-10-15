@@ -130,6 +130,13 @@ for a in ants:
 # ── 5. Facturas: por el CUIT de la leyenda ────────────────────────────────────────────────────────────────
 fcs = rest('comprobantes_arca', {'select': 'id,cuit,denominacion_emisor,fecha_emision,tipo_comprobante,punto_venta,numero_desde,imp_total,monto_sicore,estado',
                                   'and': '(fecha_emision.gte.2024-10-01,fecha_emision.lte.2026-01-31)'}, 'msa')
+# ⚠️ v2: las facturas de jul–nov 2025 viven en el SUBDIARIO HISTÓRICO (msa.comprobantes_historico), no en
+# comprobantes_arca (que arranca en dic-25). La v1 sólo miraba ARCA y daba «no está» a pagos de facturas cargadas.
+for x in rest('comprobantes_historico', {'select': 'id,nro_doc_emisor,denominacion_emisor,fecha,tipo,punto_de_venta,numero_desde,imp_total',
+                                          'and': '(fecha.gte.2024-10-01,fecha.lte.2025-11-30)'}, 'msa'):
+    fcs.append({'id': x['id'], 'cuit': s(x['nro_doc_emisor']), 'denominacion_emisor': x['denominacion_emisor'], 'fecha_emision': x['fecha'],
+                'tipo_comprobante': x['tipo'], 'punto_venta': x['punto_de_venta'], 'numero_desde': x['numero_desde'], 'imp_total': x['imp_total'],
+                'monto_sicore': 0, 'estado': 'subdiario histórico'})
 por_cuit = collections.defaultdict(list)
 for x in fcs: por_cuit[re.sub(r'\D', '', s(x['cuit']))].append(x)
 usadas_fc = set(); info_cuit = {}
@@ -182,6 +189,31 @@ for i, m in movs.items():
     cuenta[ws.cell(i, C['App: ¿ya está?']).value] += 1
     for n, v in previas.get(clave(m), {}).items():
         if v not in (None, ''): ws.cell(i, C[n], v)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from historico_msa_decisiones import D as DECISIONES
+PROCESADAS = {'AP 1', 'BANC', 'CRED P', 'DIST MA', 'FCI', 'FIJOS BS AS', 'FIJOS GRAL', 'FIJOS SP', 'IMP', 'RET', 'SUELD', 'USS', 'VER'}   # vuelta 1 (15/10)
+decididas = set()
+for x in DECISIONES:
+    m = movs[x['fila']]
+    imp = m['deb'] if m['deb'] else -m['cre']
+    if m['fecha'].strftime('%d/%m/%y') != x['fecha'] or abs(imp - x['importe']) > 0.01:
+        raise SystemExit(f'⚠ decisión de la fila {x["fila"]} no coincide con la planilla ({m["fecha"]:%d/%m/%y} {imp}): no sigo')
+    if x['fila'] in decididas: raise SystemExit(f'⚠ fila {x["fila"]} decidida dos veces')
+    decididas.add(x['fila'])
+    ws.cell(x['fila'], C['Propuesta: destino'], x['destino']); ws.cell(x['fila'], C['Propuesta: cuenta'], x['cuenta'] or None)
+    ws.cell(x['fila'], C['Propuesta: cómo se identificó'], x['criterio']); ws.cell(x['fila'], C['Aviso'], x['aviso'] or None)
+for i, m in movs.items():
+    if ej(m) != '25/26' or m['categ'] not in PROCESADAS or i in decididas: continue
+    t_ = ws.cell(i, C['App: ¿ya está?']).value
+    if t_ in ('Cuota del histórico', 'Sueldo'):
+        ws.cell(i, C['Propuesta: destino'], 'YA ESTÁ · ' + ('cuota del histórico' if t_ == 'Cuota del histórico' else 'en Sueldos'))
+        ws.cell(i, C['Propuesta: cómo se identificó'], 'Ya cargado: ver «App: qué es».')
+    else:
+        ws.cell(i, C['Propuesta: destino'], 'NO SE PROCESA · en esta vuelta (en SUELD pediste sólo JMS, AMS y Manuel)' if m['categ'] == 'SUELD' else 'NO SE PROCESA · en esta vuelta')
+sin = [i for i, m in movs.items() if ej(m) == '25/26' and m['categ'] in PROCESADAS and not ws.cell(i, C['Propuesta: destino']).value]
+if sin: raise SystemExit(f'⚠ filas de CATEG procesadas sin destino: {sin}')
+fuera = [x['fila'] for x in DECISIONES if movs[x['fila']]['categ'] not in PROCESADAS]
+if fuera: raise SystemExit(f'⚠ decisiones en CATEG no procesadas: {fuera}')
 ws.auto_filter.ref = f'A{HR}:{L(C["JMS: nota"])}{ultima_fila_mov}'
 
 # ── 7. Resumen por CATEG (fórmulas sobre la hoja) ─────────────────────────────────────────────────────────
@@ -228,6 +260,44 @@ for row in rs.iter_rows(min_row=ini, max_row=rs.max_row):
         if cell.column >= 3 and isinstance(cell.value, str) and cell.value.startswith('=SUMIFS'): cell.number_format = '#,##0.00'
 for r in (tot + 3, tot + 4):
     for j in (3, 4): rs.cell(r, j).number_format = '#,##0.00'
+# ── Propuesta por CATEG y por DESTINO (sólo las CATEG procesadas) ──
+rd = wb.create_sheet('Propuesta por destino')
+cDES = C['Propuesta: destino']
+PREF = ['TEMPLATE', 'SUELDOS', 'YA ESTÁ', 'NO VA', 'PREGUNTA', 'NO SE PROCESA']
+rd.append([f'PROPUESTA — CATEG procesadas en esta vuelta: {", ".join(sorted(PROCESADAS))}. Cada movimiento tiene su criterio en «Propuesta: cómo se identificó». Nada de esto está cargado: es para que lo revises. Fórmulas sobre la hoja.'])
+rd.append([])
+rd.append(['1 · Por CATEG'] + [f'{p} · cant.' for p in PREF] + ['Movimientos', 'Control (tiene que dar 0)'] + [f'{p} · débitos' for p in PREF] + [f'{p} · créditos' for p in PREF])
+h1r = rd.max_row
+for cell in rd[h1r]: cell.font = B; cell.fill = AZUL
+i1 = h1r + 1
+for cat in sorted(PROCESADAS):
+    n = rd.max_row + 1
+    crit = f'{rng(cCAT)},$A{n},{rng(cEJ)},"25/26"'
+    fila = [cat] + [f'=COUNTIFS({crit},{rng(cDES)},"{p} ·*")' for p in PREF]
+    fila += [f'=COUNTIFS({crit})', f'=H{n}-SUM(B{n}:G{n})']
+    fila += [f'=SUMIFS({rng(cDEB)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF] + [f'=SUMIFS({rng(cCRE)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF]
+    rd.append(fila)
+f1 = rd.max_row
+rd.append(['TOTAL'] + [f'=SUM({L(j)}{i1}:{L(j)}{f1})' for j in range(2, 22)])
+rd.append([])
+rd.append(['2 · Por destino (template, sueldo, pregunta…)', 'Movimientos', 'Débitos', 'Créditos'])
+h2r = rd.max_row
+for cell in rd[h2r]: cell.font = B; cell.fill = AZUL
+dest = sorted({s(ws.cell(i, cDES).value) for i in movs if ws.cell(i, cDES).value}, key=lambda x: (PREF.index(x.split(' ·')[0]) if x.split(' ·')[0] in PREF else 9, x))
+i2 = h2r + 1
+for x in dest:
+    n = rd.max_row + 1
+    rd.append([x, f'=COUNTIFS({rng(cDES)},$A{n})', f'=SUMIFS({rng(cDEB)},{rng(cDES)},$A{n})', f'=SUMIFS({rng(cCRE)},{rng(cDES)},$A{n})'])
+f2 = rd.max_row
+rd.append(['TOTAL', f'=SUM(B{i2}:B{f2})', f'=SUM(C{i2}:C{f2})', f'=SUM(D{i2}:D{f2})'])
+rd.append(['Control: el total por destino tiene que ser igual al de la sección 1', f'=B{rd.max_row}-H{f1 + 1}'])
+for row in rd.iter_rows(min_row=i1):
+    for cell in row:
+        if isinstance(cell.value, str) and cell.value.startswith('=SUMIFS'): cell.number_format = '#,##0.00'
+for j in range(10, 22): rd.cell(f1 + 1, j).number_format = '#,##0.00'
+for j in (3, 4): rd.cell(f2 + 1, j).number_format = '#,##0.00'
+rd.column_dimensions['A'].width = 60
+rd.freeze_panes = f'B{h1r + 1}'
 rs.freeze_panes = f'B{hr + 1}'
 rs.column_dimensions['A'].width = 22
 wb.save(SALIDA)
