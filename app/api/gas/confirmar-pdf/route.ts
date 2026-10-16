@@ -8,7 +8,7 @@ import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
-import { periodoDeArchivo } from '@/lib/facturas/vincular-archivo'
+import { periodoDeArchivo, subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 
 export const runtime = 'nodejs'
 
@@ -21,13 +21,6 @@ function carpetaDe(e: Empresa): string | undefined {
     case 'PAM': return process.env.GAS_FOLDER_ID_PAM
     case 'MA': return process.env.GAS_FOLDER_ID_MA
   }
-}
-function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
-  const campania = empresa === 'MSA'
-    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
-    : String(anio)
-  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
-  return [campania, aaMm]
 }
 
 // Archivo por PERÍODO CONTABLE (no emisión); si no está imputada, emisión como provisional.
@@ -89,7 +82,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         _token: token, accion: 'confirmar', file_url: log.drive_url,
         gmail_message_id: log.gmail_message_id ?? undefined,
-        carpeta_drive_id: carpeta, subcarpetas: (() => { const { anio, mes } = periodoArchivo(f); return computarSubcarpetas(empresa, anio, mes) })(),
+        carpeta_drive_id: carpeta, subcarpetas: (() => { const { anio, mes } = periodoArchivo(f); return subcarpetasDelMes(empresa, anio, mes) })(),
         cuit_emisor: f.cuit, punto_venta: f.punto_venta, numero_desde: f.numero_desde,
         tipo_comprobante_desc: f.tipo_comprobante_desc || 'Factura A',
         fecha_emision: f.fecha_emision, denominacion_emisor: f.denominacion_emisor || '',

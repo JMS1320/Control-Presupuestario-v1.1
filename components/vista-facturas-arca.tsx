@@ -52,6 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
+import type { FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -1973,9 +1974,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (!ids || ids.length === 0) return
       cancelarPdfRef.current = false
       setBuscandoPdfs(true)
+      // A-FEAT-1287: el período de cada una, para mirar primero su carpeta. Si no se puede leer,
+      // el lote sigue igual y va directo al mail (como antes).
+      const { data: conPeriodo } = await supabase.schema(empresa.toLowerCase())
+        .from('comprobantes_arca')
+        .select('id, año_contable, mes_contable, fecha_emision, pdf_drive_url')
+        .in('id', ids)
       await buscarPdfLote({
         empresa: empresa as 'MSA' | 'PAM' | 'MA',
         facturaIds: ids,
+        // la «ñ» de `año_contable` confunde al tipado del select: se declara a mano
+        facturas: (conPeriodo as unknown as FacturaParaCarpeta[] | null) || undefined,
         onProgreso: setProgresoPdf,
         delayMs: 1500,
         isCancelled: () => cancelarPdfRef.current,
@@ -12156,10 +12165,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Buscar PDFs en Gmail</DialogTitle>
+            <DialogTitle>Buscar PDFs</DialogTitle>
             <DialogDescription>
               Elegí qué facturas buscar. Vienen marcadas las pendientes (estado "Buscar"). Podés agregar/quitar a mano y acotar por fecha de emisión.
+              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail.
             </DialogDescription>
+            <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
           </DialogHeader>
 
           {(() => {
@@ -12314,7 +12325,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       onClick={async () => {
                         const ids = Array.from(seleccionPdf)
                         if (ids.length === 0) return
-                        if (!window.confirm(`Vas a buscar PDFs de ${ids.length} factura(s) en tu Gmail.\nTarda ~5-10s por factura y corre en segundo plano.\n\n¿Continuar?`)) return
+                        if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\nPrimero se mira la carpeta del mes en Drive (y la del mes siguiente); las que no estén se buscan en tu Gmail (~5-10s cada una).\nCorre en segundo plano.\n\n¿Continuar?`)) return
                         cancelarPdfRef.current = false
                         setBuscandoPdfs(true)
                         // Cerrar el modal al arrancar: la búsqueda corre en 2do plano y el avance
@@ -12324,6 +12335,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           const res = await buscarPdfLote({
                             empresa: empresa as 'MSA' | 'PAM' | 'MA',
                             facturaIds: ids,
+                            // A-FEAT-1287: con el período, el lote mira PRIMERO la carpeta del mes
+                            facturas: facturas.filter(f => seleccionPdf.has(f.id)),
                             onProgreso: setProgresoPdf,
                             delayMs: 1500,
                             isCancelled: () => cancelarPdfRef.current,

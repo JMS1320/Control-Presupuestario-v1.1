@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
+import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
@@ -76,13 +77,6 @@ function carpetaDe(e: Empresa): string | undefined {
     case 'MA': return process.env.GAS_FOLDER_ID_MA
   }
 }
-function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
-  const campania = empresa === 'MSA'
-    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
-    : String(anio)
-  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
-  return [campania, aaMm]
-}
 
 interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string }
 
@@ -104,6 +98,7 @@ export async function POST(request: Request) {
       empresa: Empresa; anio: number; mes: number
       skip_file_ids?: string[]; max_files?: number
       finalizar?: boolean; resumen?: unknown
+      factura_ids?: string[]
     }
     const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
@@ -115,7 +110,7 @@ export async function POST(request: Request) {
     }
     const schema = schemaDe(empresa)
     const periodo = `${anio}-${String(mes).padStart(2, '0')}`
-    const subcarpetas = computarSubcarpetas(empresa, anio, mes)
+    const subcarpetas = subcarpetasDelMes(empresa, anio, mes)
 
     // Cierre: deja el log + manda el mail con el resumen acumulado por el cliente.
     if (body.finalizar) {
@@ -126,15 +121,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: g.status === 'ok', finalizado: true })
     }
 
-    // Facturas del período contable
-    const { data: facturas, error } = await supabase
-      .schema(schema)
-      .from('comprobantes_arca')
-      .select('id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total')
-      .eq('año_contable', anio)
-      .eq('mes_contable', mes)
+    /**
+     * Qué facturas se buscan en la carpeta:
+     * - **sin `factura_ids`** (Subdiarios): las imputadas a ESTE período, como siempre.
+     * - **con `factura_ids`** (el buscador de PDFs, A-FEAT-1287): esas facturas, estén imputadas o no
+     *   y sea éste su mes o el siguiente — el buscador mira la carpeta ANTES de salir al mail. En
+     *   este modo se saltean además los archivos que ya están vinculados a CUALQUIER factura de la
+     *   empresa: no pueden ser de éstas, y leerlos es lo único caro (el OCR).
+     */
+    const porIds = Array.isArray(body.factura_ids) && body.factura_ids.length > 0
+    const columnas = 'id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total'
+    const { data: facturas, error } = porIds
+      ? await supabase.schema(schema).from('comprobantes_arca').select(columnas).in('id', body.factura_ids!)
+      : await supabase.schema(schema).from('comprobantes_arca').select(columnas)
+          .eq('año_contable', anio)
+          .eq('mes_contable', mes)
     if (error) {
       return NextResponse.json({ ok: false, error: `Error cargando facturas: ${error.message}` }, { status: 500 })
+    }
+    const skipExtra: string[] = []
+    if (porIds) {
+      const { data: vinculadas, error: errV } = await supabase.schema(schema).from('comprobantes_arca')
+        .select('pdf_drive_url').not('pdf_drive_url', 'is', null).limit(10000)
+      if (errV) {
+        return NextResponse.json({ ok: false, error: `Error cargando los archivos ya vinculados: ${errV.message}` }, { status: 500 })
+      }
+      for (const v of vinculadas || []) {
+        const m = String(v.pdf_drive_url || '').match(/[-\w]{25,}/)
+        if (m) skipExtra.push(m[0])
+      }
     }
 
     const payload = (facturas || []).map((f) => ({
@@ -148,7 +163,7 @@ export async function POST(request: Request) {
     const audit = (await pedirAlGas(url, {
       _token: token, accion: 'auditar', empresa, periodo,
       carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
-      skip_file_ids: body.skip_file_ids || [], max_files: cuantos,
+      skip_file_ids: [...(body.skip_file_ids || []), ...skipExtra], max_files: cuantos,
     }, `tanda de ${cuantos} archivo(s)`)) as {
       status?: string; existe?: boolean; observaciones?: string
       matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]

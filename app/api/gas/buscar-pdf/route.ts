@@ -30,6 +30,7 @@ import type {
   SchemaEmpresa,
 } from '@/lib/gas-pdf/types'
 import { gasStatusToFc } from '@/lib/gas-pdf/types'
+import { periodoDeArchivo, subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
@@ -43,28 +44,8 @@ function carpetaDriveDefault(empresa: Empresa): string | undefined {
   }
 }
 
-// Ruta de subcarpetas (bajo la carpeta de la empresa) donde el GAS archiva la FC.
-// MSA: campaña agrícola AAAA-AAAA (corte 1/7–30/6). PAM/MA: año calendario AAAA.
-// Dentro: subcarpeta del mes "aa-mm". Estas FC son de COMPRAS → van en el mes directo.
-// (Para ventas, a futuro, se agregaría 'ventas' como último nivel.)
-function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
-  const campania = empresa === 'MSA'
-    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
-    : String(anio)
-  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
-  return [campania, aaMm]
-}
-
-// El archivo se organiza por PERÍODO CONTABLE (mes/año en que se declara), NO por la emisión:
-// una FC de marzo declarada en mayo va a la carpeta de mayo. Si todavía no está imputada (sin
-// período contable), se usa la EMISIÓN como provisional (decisión acordada 2026-06-29).
-function periodoArchivo(factura: any): { anio: number; mes: number } {
-  const ac = factura['año_contable']
-  const mc = factura['mes_contable']
-  if (ac && mc) return { anio: Number(ac), mes: Number(mc) }
-  const f = new Date(`${factura.fecha_emision}T12:00:00`) // mediodía evita corrimiento por timezone
-  return { anio: f.getFullYear(), mes: f.getMonth() + 1 }
-}
+// Subcarpetas (campaña / aa-mm) y período: `lib/facturas/vincular-archivo.ts`, los mismos que usan
+// Subdiarios y el Cash Flow — buscar y guardar miran la misma carpeta.
 
 function empresaToSchema(e: Empresa): SchemaEmpresa {
   return e.toLowerCase() as SchemaEmpresa
@@ -227,7 +208,7 @@ export async function POST(request: Request) {
       patron_asunto: proveedor.patron_asunto || '',
       dias_busqueda: proveedor.dias_busqueda || 30,   // default 30 días (configurable por proveedor; UI batch → pendiente)
       carpeta_drive_id: carpetaId,
-      subcarpetas: (() => { const { anio, mes } = periodoArchivo(factura); return computarSubcarpetas(empresa, anio, mes) })(),
+      subcarpetas: (() => { const { anio, mes } = periodoDeArchivo(factura); return subcarpetasDelMes(empresa, anio, mes) })(),
       recolectores,                                  // catch-all: cada reenviador con su propio asunto (Jose/Andrés)
     }
 

@@ -36,7 +36,8 @@
 import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
-import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
+import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
+import { agruparPorCarpeta, controlDelLote } from "@/lib/gas-pdf/lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -980,6 +981,29 @@ export function correrCasos(): Resultado[] {
   chequear("Archivo digital — vincular desde Cash Flow", "⭐ arriba el del proveedor CON la fecha de la factura; el de otro día no se sugiere pero se lista",
     "u3⭐ · u1 · u2", ordenados.map(a => a.url + (a.sugerido ? "⭐" : "")).join(" · "),
     ordenados[0].url === "u3" && ordenados[0].sugerido && ordenados.filter(a => a.sugerido).length === 1 && ordenados.length === 3, "A-FEAT-1276")
+
+  // A-FEAT-1287: el buscador de PDFs mira primero la carpeta del mes y la del siguiente.
+  const carpetas = agruparPorCarpeta([
+    { id: "dic", "año_contable": null, mes_contable: null, fecha_emision: "2025-12-30" },
+    { id: "imp", "año_contable": 2026, mes_contable: 1, fecha_emision: "2025-12-15" },
+    { id: "ya", "año_contable": null, mes_contable: null, fecha_emision: "2025-12-01", pdf_drive_url: "https://drive.google.com/x" },
+  ])
+  const vistaCarpetas = carpetas.map(c => `${c.anio}-${c.mes}:${c.ids.join("+")}`).join(" · ")
+  chequear("Buscador de PDFs — carpeta primero", "🔴 Cada factura se busca en SU mes y en el SIGUIENTE (diciembre pasa a enero del año que viene); la imputada usa el mes contable; la que ya tiene PDF no se busca",
+    "2025-12:dic · 2026-1:dic+imp · 2026-2:imp", vistaCarpetas,
+    vistaCarpetas === "2025-12:dic · 2026-1:dic+imp · 2026-2:imp", "A-FEAT-1287")
+  chequear("Buscador de PDFs — carpeta primero", "La carpeta del mes: MSA por campaña (corta el 1/7), PAM y MA por año",
+    "2025-2026/26-06 · 2026-2027/26-07 · 2026/26-07",
+    `${subcarpetasDelMes("MSA", 2026, 6).join("/")} · ${subcarpetasDelMes("MSA", 2026, 7).join("/")} · ${subcarpetasDelMes("PAM", 2026, 7).join("/")}`,
+    subcarpetasDelMes("MSA", 2026, 6).join("/") === "2025-2026/26-06" && subcarpetasDelMes("MSA", 2026, 7).join("/") === "2026-2027/26-07"
+      && subcarpetasDelMes("PAM", 2026, 7).join("/") === "2026/26-07", "A-FEAT-1287")
+  const base = { total: 10, procesadas: 10, enCarpeta: 6, encontradas: 1, paraRevisar: 1, noEncontradas: 1, sinFuente: 1, otros: 0, errores: 0 }
+  const cOk = controlDelLote(base)
+  const cMal = controlDelLote({ ...base, sinFuente: 0 })
+  const cCancel = controlDelLote({ ...base, procesadas: 4, enCarpeta: 4, encontradas: 0, paraRevisar: 0, noEncontradas: 0, sinFuente: 0, cancelado: true })
+  chequear("Buscador de PDFs — control del lote", "🔴 Cada factura cae en UN casillero: si una no se contó, el control NO cierra (cancelado: cierra contra las procesadas)",
+    "cierra · no cierra (9 de 10) · cancelado cierra 4", `${cOk.cierra ? "cierra" : "no"} · ${cMal.cierra ? "cierra" : `no cierra (${cMal.suma} de ${cMal.esperado})`} · cancelado ${cCancel.cierra ? "cierra" : "no"} ${cCancel.esperado}`,
+    cOk.cierra && !cMal.cierra && cMal.suma === 9 && cCancel.cierra && cCancel.esperado === 4, "A-FEAT-1287")
 
   // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
   const VIS = ["a", "b", "c"]

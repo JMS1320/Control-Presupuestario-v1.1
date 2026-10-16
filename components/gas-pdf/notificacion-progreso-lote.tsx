@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import type { ProgresoLote } from '@/lib/gas-pdf/client'
 import { Loader2, CheckCircle2, AlertTriangle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { controlDelLote } from '@/lib/gas-pdf/lote'
 
 interface Props {
   progreso: ProgresoLote | null
@@ -44,6 +45,8 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
   if (!progreso || !visible) return null
 
   const pct = progreso.total > 0 ? Math.round((progreso.procesadas / progreso.total) * 100) : 0
+  // 🧮 Cada factura del lote cae en UN casillero; si la suma no da, la app perdió una (A-FEAT-1287)
+  const control = progreso.finalizado ? controlDelLote(progreso) : null
 
   return (
     <div className="fixed top-4 right-4 z-50 w-80 bg-white border-2 border-blue-200 rounded-lg shadow-xl p-4">
@@ -55,7 +58,8 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
             <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
           )}
           <span className="text-sm font-semibold">
-            {progreso.finalizado ? 'Búsqueda completada' : 'Buscando PDFs…'}
+            {progreso.finalizado ? 'Búsqueda completada'
+              : progreso.fase === 'carpeta' ? 'Mirando la carpeta del mes en Drive…' : 'Buscando PDFs en el mail…'}
           </span>
         </div>
         <button onClick={() => { setVisible(false); onCerrar() }} className="text-gray-400 hover:text-gray-600">
@@ -77,9 +81,13 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
 
       {/* Resumen */}
       <div className="grid grid-cols-2 gap-1 text-xs">
+        <div className="flex items-center gap-1" title="Ya estaban archivadas en Drive (su mes o el siguiente): se vincularon sin ir al mail">
+          <span className="text-blue-600 font-bold">🗂</span>
+          <span>{progreso.enCarpeta} ya en la carpeta</span>
+        </div>
         <div className="flex items-center gap-1">
           <span className="text-green-600 font-bold">✓</span>
-          <span>{progreso.encontradas} encontradas</span>
+          <span>{progreso.encontradas} bajadas del mail</span>
         </div>
         <div className="flex items-center gap-1">
           <span className="text-yellow-600 font-bold">⚠</span>
@@ -93,7 +101,35 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
           <span className="text-red-600 font-bold">!</span>
           <span>{progreso.errores} errores</span>
         </div>
+        {progreso.sinFuente > 0 && (
+          <div className="flex items-center gap-1 col-span-2" title="El proveedor no tiene mail cargado y no hubo reenvío donde buscar. Cargá el mail en Config PDFs o desde el buscador">
+            <span className="text-orange-500 font-bold">✉</span>
+            <span>{progreso.sinFuente} sin mail del proveedor (no se buscaron)</span>
+          </div>
+        )}
+        {progreso.otros > 0 && (
+          <div className="flex items-center gap-1 col-span-2">
+            <span className="text-gray-500 font-bold">·</span>
+            <span>{progreso.otros} sin búsqueda (ej. Portal)</span>
+          </div>
+        )}
       </div>
+
+      {progreso.errorCarpeta && (
+        <div className="mt-2 text-[11px] text-orange-700 bg-orange-50 border border-orange-200 rounded p-2">
+          🗂️ No se pudo leer una carpeta — esas facturas se buscaron igual en el mail. {progreso.errorCarpeta}
+        </div>
+      )}
+
+      {control && (
+        control.cierra ? (
+          <div className="mt-2 text-[11px] text-green-700">✓ Control: las {control.esperado} facturas del lote están contadas.</div>
+        ) : (
+          <div className="mt-2 text-xs font-semibold text-red-700 bg-red-50 border-2 border-red-300 rounded p-2">
+            ⛔ El control no cierra: {control.suma} contadas de {control.esperado}. Es un error de la app — avisá con una nota.
+          </div>
+        )
+      )}
 
       {/* Estado del mail resumen (solo al finalizar) — antes fallaba en silencio */}
       {progreso.finalizado && (

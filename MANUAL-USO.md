@@ -1300,6 +1300,43 @@ siempre, aunque después no toques nada — y éste es la foto final.)*
 
 ---
 
+### 📧 Buscador de PDFs — que cada factura encuentre su PDF *(2026-10-16)*
+
+**Dónde:** Egresos → Facturas → botón **Buscar PDFs** (arriba, junto a Importar).
+
+**Para qué sirve.** Que no tengas que salir a buscar el PDF de cada factura. Elegís las facturas y el
+buscador hace dos cosas, **en este orden**:
+
+1. **Mira la carpeta del mes en Drive** —la del mes donde está imputada, o la de emisión si todavía no
+   la imputaste— **y también la del mes siguiente**. Si el PDF ya está (porque alguien lo subió), lo
+   vincula y no sale al mail.
+2. **Las que no estaban, las busca en tu Gmail**: primero en los mails del proveedor (si tiene el mail
+   cargado) y después en los reenvíos de Jose y Andrés. Si la encuentra, la guarda en la carpeta del mes
+   con el nombre estándar y queda vinculada.
+
+En los dos casos el resultado es el mismo: la factura queda con su 📎, que se ve en **Subdiarios** y en
+el **Cash Flow**.
+
+**Mientras corre**, arriba a la derecha aparece un cartel que dice en qué paso está (*«Mirando la carpeta
+del mes…»* o *«Buscando PDFs en el mail…»*). Podés seguir trabajando.
+
+**Al terminar**, el cartel muestra cuántas cayeron en cada casillero:
+
+| Casillero | Qué significa | Qué hacés |
+|---|---|---|
+| 🗂 **ya en la carpeta** | estaba archivada; se vinculó | nada |
+| ✓ **bajadas del mail** | la encontró en el mail y la archivó | nada |
+| ⚠ **para revisar** | llegó un mail que parece, pero no se pudo confirmar | la confirmás con ✓ en la grilla |
+| ○ **no encontradas** | se buscó y no llegó | la pedís al proveedor |
+| ✉ **sin mail del proveedor** | no se buscó: el proveedor no tiene mail cargado | le cargás el mail y volvés a buscar |
+
+Abajo, un **control**: *«✓ las N facturas del lote están contadas»*. Si sale en rojo, es un error de la
+app — mandá una nota.
+
+⚠️ Sin probar todavía → A-TEST-1217
+
+---
+
 ### 📋 Pendientes de desarrollo — verlos desde la app 🟡 (2026-08-19, sin testear)
 
 **Dónde:** **Principal → botón "Pendientes"**. Sólo admin. Es **lectura**: para cambiar un pendiente

@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
+import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
@@ -23,13 +24,6 @@ function carpetaDe(e: Empresa): string | undefined {
     case 'PAM': return process.env.GAS_FOLDER_ID_PAM
     case 'MA': return process.env.GAS_FOLDER_ID_MA
   }
-}
-function computarSubcarpetas(empresa: Empresa, anio: number, mes: number): string[] {
-  const campania = empresa === 'MSA'
-    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
-    : String(anio)
-  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
-  return [campania, aaMm]
 }
 const fileIdDe = (u?: string | null) => { const m = String(u || '').match(/[-\w]{25,}/); return m ? m[0] : null }
 
@@ -53,7 +47,7 @@ export async function POST(request: Request) {
     const carpeta = carpetaDe(empresa)
     if (!carpeta) return NextResponse.json({ ok: false, error: `Sin GAS_FOLDER_ID_${empresa}` }, { status: 500 })
     const schema = schemaDe(empresa)
-    const subcarpetas = computarSubcarpetas(empresa, anio, mes)
+    const subcarpetas = subcarpetasDelMes(empresa, anio, mes)
 
     // 1) Listar archivos de la carpeta (sin OCR)
     const r = await fetch(url, {

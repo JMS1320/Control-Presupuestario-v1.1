@@ -59,6 +59,32 @@ export function periodoDeArchivo(factura: Record<string, unknown>): { anio: numb
   return { anio: Number(f.slice(0, 4)) || 0, mes: Number(f.slice(5, 7)) || 0, imputada: false }
 }
 
+/**
+ * 🗂️ La ruta de subcarpetas de un mes bajo la carpeta de la empresa: **campaña / aa-mm**. MSA usa la
+ * campaña agrícola (1/7–30/6, `2025-2026`); PAM y MA el año calendario. Vivía copiada en cuatro
+ * rutas de `app/api/gas/` — si una cambiaba, buscar y guardar miraban carpetas distintas.
+ */
+export function subcarpetasDelMes(empresa: 'MSA' | 'PAM' | 'MA', anio: number, mes: number): string[] {
+  const campania = empresa === 'MSA'
+    ? (mes >= 7 ? `${anio}-${anio + 1}` : `${anio - 1}-${anio}`)
+    : String(anio)
+  const aaMm = `${String(anio).slice(-2)}-${String(mes).padStart(2, '0')}`
+  return [campania, aaMm]
+}
+
+/**
+ * 🔎 Dónde puede estar YA archivada una factura (A-FEAT-1287): el mes de `periodoDeArchivo` **y el
+ * siguiente**. Una factura de fin de mes suele imputarse al otro, y el empleado la guarda donde va
+ * contablemente; sin mirar el siguiente, se la saldría a buscar al mail teniéndola en Drive
+ * (decisión del usuario 2026-10-16).
+ */
+export function mesesDondeBuscar(factura: Record<string, unknown>): Array<{ anio: number; mes: number }> {
+  const { anio, mes } = periodoDeArchivo(factura)
+  if (!anio || !mes) return []
+  const sig = mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 }
+  return [{ anio, mes }, sig]
+}
+
 /** Lo que se guarda en la factura al vincular a mano. Mismo texto desde las dos pantallas. */
 export function datosDelVinculo(a: ArchivoDeCarpeta, desde: 'supervisión' | 'Cash Flow') {
   return {
