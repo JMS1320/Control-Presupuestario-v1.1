@@ -52,7 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import type { FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -755,7 +755,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [previewData, setPreviewData] = useState<any>(null)
   const [origenFactura, setOrigenFactura] = useState<string>('')  // 'ARCA' | 'No Informada'
   const [pasoImportacion, setPasoImportacion] = useState<'origen' | 'archivo' | 'imputacion'>('origen')
-  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null }>>([])
+  // buscar_pdf (A-FEAT-1287): al terminar la importación se busca el PDF de las tildadas — todas por default
+  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean }>>([])
   const [cuentasContablesImport, setCuentasContablesImport] = useState<any[]>([])
   
   // Estados para edición inline
@@ -1961,14 +1962,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       fila: f.fila,
       fc: '',   // Sin valor por defecto
       cuenta_contable: f.cuenta_contable_sugerida || null,
+      buscar_pdf: true,  // A-FEAT-1287: por default se buscan todas (usuario 2026-10-16)
     })))
+    // El mail de cada proveedor, para ofrecer cargar el que falta en la misma pantalla
+    if (!esContable) await cargarMailesProveedores(nuevas.map((f: any) => cuitLimpio(f.cuit)))
     setPasoImportacion('imputacion')
   }
 
-  // Auto-disparo de búsqueda de PDFs después del import.
-  // ⚠️ APAGADO por defecto. Se activa con env var NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true'
-  // (configurar en Vercel SOLO cuando el GAS esté deployado).
-  // Busca SOLO las facturas recién importadas en estado 'Buscar' (IDs que devuelve el import).
+  // Búsqueda de PDFs después del import: la piden las filas tildadas «Buscar PDF» en la imputación
+  // (A-FEAT-1287 — antes dependía de NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT, que nunca se prendió).
+  // Busca SOLO las facturas recién importadas, primero en la carpeta del mes y después en el mail.
   const dispararBusquedaPostImport = async (ids: string[]) => {
     try {
       if (!ids || ids.length === 0) return
@@ -2010,6 +2013,41 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
     setProvPorCuit(mapa)
     setProvEditMail({})
+  }
+
+  const cuitLimpio = (c: unknown) => String(c ?? '').replace(/[-\s]/g, '')
+
+  /**
+   * A-FEAT-1287: los mails de proveedor cargados en la imputación de la importación. Se guardan
+   * DESPUÉS de importar porque un proveedor nuevo recién existe entonces. Mismo criterio que el
+   * buscador: si no tenía mail, se lo habilita para búsqueda. Nada en silencio: si uno falla, se dice.
+   */
+  const guardarMailsDeImportacion = async (mails: Record<string, string>) => {
+    const conMail = Object.entries(mails).map(([c, m]) => [cuitLimpio(c), m.trim()] as const).filter(([, m]) => m)
+    if (conMail.length === 0) return
+    const { data: provs, error } = await supabase.from('proveedores')
+      .select('id, cuit, email_facturacion').in('cuit', conMail.map(([c]) => c))
+    if (error) { toast.error('No se pudieron guardar los mails de proveedor: ' + error.message); return }
+    let guardados = 0
+    const fallas: string[] = []
+    for (const [cuit, mail] of conMail) {
+      const p = (provs || []).find((x: any) => cuitLimpio(x.cuit) === cuit)
+      if (!p) { fallas.push(`${cuit} (el proveedor no se creó)`); continue }
+      const payload: any = { proveedor_id: p.id, email_facturacion: mail }
+      if (!p.email_facturacion) { payload.gas_habilitado = true; payload.fc_modo = 'mail' }
+      try {
+        const r = await fetch('/api/gas/config-proveedor', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+        })
+        const d = await r.json()
+        if (d.ok) guardados++; else fallas.push(`${cuit} (${d.error || 'error'})`)
+      } catch (e) {
+        fallas.push(`${cuit} (${(e as Error).message})`)
+      }
+    }
+    setProvEditMail({})
+    if (guardados > 0) toast.success(`Mail de ${guardados} proveedor(es) guardado: sus facturas ya se pueden buscar.`)
+    if (fallas.length > 0) toast.error('No se guardó el mail de: ' + fallas.join(' · '), { duration: 20000 })
   }
 
   // Guarda el mail del proveedor (por CUIT) desde el modal Buscar PDFs vía el endpoint de config.
@@ -2069,9 +2107,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         setOrigenFactura('')
         setPasoImportacion('origen')
         setImputacionData([])
-        // Auto-disparo de búsqueda de PDFs (solo las recién importadas) — APAGADO salvo env var en 'true'
-        if (process.env.NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT === 'true') {
-          dispararBusquedaPostImport(resultado.idsBuscar || [])
+        // A-FEAT-1287: se busca el PDF de las filas tildadas en la imputación (reemplaza el
+        // interruptor NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT, que dejaba la búsqueda siempre apagada).
+        // Primero se guardan los mails que se cargaron ahí: los proveedores nuevos recién existen
+        // ahora (el import los crea al final), y sin el mail esa factura no tendría dónde buscarse.
+        if (!esContable) {
+          const tildadas = idsParaBuscarTrasImportar(imputacionData, resultado.idsPorFila)
+          await guardarMailsDeImportacion({ ...provEditMail })
+          if (tildadas.length > 0) dispararBusquedaPostImport(tildadas)
         }
       }
     } catch (error) {
@@ -8175,13 +8218,23 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       <button
                         key={val}
                         type="button"
-                        onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, fc: val })))}
+                        // «No» y «Portal» = no llega por mail: se destilda la búsqueda (se puede volver a tildar)
+                        onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, fc: val, buscar_pdf: val === 'No' || val === 'Portal' ? false : d.buscar_pdf })))}
                         className="px-2 py-0.5 border rounded hover:bg-blue-50 text-xs"
                       >
                         {val}
                       </button>
                     ))}
                   </div>
+                  {!esContable && (
+                    <div className="flex items-center gap-1 ml-4" title="Al terminar de importar se busca el PDF de las tildadas: primero en la carpeta del mes en Drive, después en el mail">
+                      <span>Buscar PDF:</span>
+                      <button type="button" className="px-2 py-0.5 border rounded hover:bg-blue-50 text-xs"
+                        onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, buscar_pdf: true })))}>Todas</button>
+                      <button type="button" className="px-2 py-0.5 border rounded hover:bg-blue-50 text-xs"
+                        onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, buscar_pdf: false })))}>Ninguna</button>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 ml-4">
                     <span>Cuenta:</span>
                     <select
@@ -8224,6 +8277,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <th className="text-right p-2 font-medium text-gray-600 w-[100px]">Monto</th>
                         <th className="text-center p-2 font-medium text-gray-600 w-[90px]">FC</th>
                         <th className="text-left p-2 font-medium text-gray-600 w-[250px]">Cuenta Contable</th>
+                        {!esContable && (
+                          <th className="text-left p-2 font-medium text-gray-600 w-[230px]" title="Tildada = al importar se busca su PDF (carpeta del mes y después el mail). Sin mail del proveedor sólo se busca en la carpeta y en los reenvíos">
+                            Buscar PDF · mail del proveedor
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -8244,8 +8302,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   className="border rounded px-1 py-0.5 text-xs w-full"
                                   value={imp?.fc || ''}
                                   onChange={(e) => {
+                                    const v = e.target.value
                                     setImputacionData(prev => prev.map(d =>
-                                      d.fila === f.fila ? { ...d, fc: e.target.value } : d
+                                      d.fila === f.fila ? { ...d, fc: v, buscar_pdf: v === 'No' || v === 'Portal' ? false : d.buscar_pdf } : d
                                     ))
                                   }}
                                 >
@@ -8285,6 +8344,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   })()}
                                 </select>
                               </td>
+                              {!esContable && (() => {
+                                const cuit = cuitLimpio(f.cuit)
+                                const prov = provPorCuit[cuit]
+                                return (
+                                  <td className="p-2">
+                                    <div className="flex items-center gap-2">
+                                      <input type="checkbox" className="h-3.5 w-3.5"
+                                        checked={imp?.buscar_pdf ?? true}
+                                        onChange={(e) => setImputacionData(prev => prev.map(d =>
+                                          d.fila === f.fila ? { ...d, buscar_pdf: e.target.checked } : d))} />
+                                      {prov?.email_facturacion ? (
+                                        <span className="text-[11px] text-gray-500 truncate" title={prov.email_facturacion}>{prov.email_facturacion}</span>
+                                      ) : (
+                                        <input type="text" placeholder="mail del proveedor (opcional)"
+                                          className="border rounded px-1 py-0.5 text-[11px] w-full"
+                                          value={provEditMail[cuit] ?? ''}
+                                          onChange={(e) => { const v = e.target.value; setProvEditMail(prev => ({ ...prev, [cuit]: v })) }}
+                                          title={prov ? 'Este proveedor no tiene mail: si lo cargás, se guarda en su ficha y su factura se busca en el mail' : 'Proveedor nuevo: se crea al importar, y con el mail que pongas acá'} />
+                                      )}
+                                    </div>
+                                  </td>
+                                )
+                              })()}
                             </tr>
                           )
                         })}

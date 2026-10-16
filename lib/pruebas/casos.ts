@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar } from "@/lib/gas-pdf/lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -1004,6 +1004,12 @@ export function correrCasos(): Resultado[] {
   chequear("Buscador de PDFs — control del lote", "🔴 Cada factura cae en UN casillero: si una no se contó, el control NO cierra (cancelado: cierra contra las procesadas)",
     "cierra · no cierra (9 de 10) · cancelado cierra 4", `${cOk.cierra ? "cierra" : "no"} · ${cMal.cierra ? "cierra" : `no cierra (${cMal.suma} de ${cMal.esperado})`} · cancelado ${cCancel.cierra ? "cierra" : "no"} ${cCancel.esperado}`,
     cOk.cierra && !cMal.cierra && cMal.suma === 9 && cCancel.cierra && cCancel.esperado === 4, "A-FEAT-1287")
+
+  const aBuscar = idsParaBuscarTrasImportar(
+    [{ fila: 2, buscar_pdf: true }, { fila: 3, buscar_pdf: false }, { fila: 4, buscar_pdf: true }],
+    { 2: "id-a", 3: "id-b" })
+  chequear("Buscador de PDFs — desde la importación", "🔴 Se buscan sólo las filas TILDADAS que se crearon (destildada no; la que no se importó no tiene id)",
+    "id-a", aBuscar.join(","), aBuscar.join(",") === "id-a" && idsParaBuscarTrasImportar([{ fila: 2, buscar_pdf: true }], undefined).length === 0, "A-FEAT-1287")
 
   // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
   const VIS = ["a", "b", "c"]

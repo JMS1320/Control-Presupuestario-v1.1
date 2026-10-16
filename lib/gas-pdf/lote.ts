@@ -59,3 +59,14 @@ export function controlDelLote(p: ContadoresLote): { cierra: boolean; suma: numb
   const esperado = p.cancelado ? p.procesadas : p.total
   return { cierra: suma === esperado && p.procesadas === esperado, suma, esperado }
 }
+
+/**
+ * 📥 Al terminar una importación: los ids a buscar son los de las filas **tildadas** que **sí** se
+ * crearon (una fila que falló o ya existía no tiene id y no se busca). A-FEAT-1287.
+ */
+export function idsParaBuscarTrasImportar(
+  imputacion: ReadonlyArray<{ fila: number; buscar_pdf: boolean }>,
+  idsPorFila: Record<number, string> | undefined,
+): string[] {
+  return imputacion.filter(d => d.buscar_pdf).map(d => idsPorFila?.[d.fila]).filter((x): x is string => !!x)
+}

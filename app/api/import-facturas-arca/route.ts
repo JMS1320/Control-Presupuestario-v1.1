@@ -545,6 +545,9 @@ export async function POST(req: Request) {
     const errores: string[] = []
     const proveedoresVistos = new Map<string, string>() // cuit limpio → razon_social (auto-crear proveedores faltantes)
     const idsImportadosBuscar: string[] = [] // IDs de las facturas nuevas en estado 'Buscar' (para auto-disparo acotado)
+    // A-FEAT-1287: fila del Excel → id de la factura creada. La pantalla de imputación tilda «buscar
+    // PDF» por fila, y con esto sabe qué ids mandar al buscador al terminar.
+    const idsPorFila: Record<number, string> = {}
 
     // 🔗 La cuenta y su número son una sola cosa (A-BUG-1249): el plan se lee una vez para que
     // toda factura que entre con cuenta —por regla de CUIT o elegida en la vista previa— lleve su número.
@@ -650,6 +653,7 @@ export async function POST(req: Request) {
           }
           // Recolectar ID si quedó en estado 'Buscar' (para auto-disparo acotado a las recién importadas)
           if (filaParaBBDD.fc === 'Buscar' && data?.[0]?.id) idsImportadosBuscar.push(data[0].id)
+          if (data?.[0]?.id) idsPorFila[filaNum] = data[0].id
           // Vinculación con anticipos: se hace manualmente desde Vista Principal (alerta "Anticipos sin vincular")
           // o desde Cash Flow, vía el flujo con confirmación de useVinculacionAnticipo.
         }
@@ -700,6 +704,7 @@ export async function POST(req: Request) {
       ignoredCount: filasIgnoradas,
       proveedoresCreados,
       idsBuscar: idsImportadosBuscar, // IDs de las nuevas en 'Buscar' — para auto-disparo acotado
+      idsPorFila, // A-FEAT-1287: para buscar el PDF de las filas tildadas en la imputación
       errores: errores,
       summary: {
         totalFilas: filasCSV.length,

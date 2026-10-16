@@ -1333,6 +1333,18 @@ del mes…»* o *«Buscando PDFs en el mail…»*). Podés seguir trabajando.
 Abajo, un **control**: *«✓ las N facturas del lote están contadas»*. Si sale en rojo, es un error de la
 app — mandá una nota.
 
+#### Al importar de ARCA, ya sale buscado
+
+En el paso **Imputación** de la importación hay una columna **«Buscar PDF · mail del proveedor»**:
+
+- La casilla viene **tildada en todas**. Al terminar de importar, el buscador arranca solo con las
+  tildadas —el mismo de arriba: primero la carpeta, después el mail—. Arriba tenés **Todas / Ninguna**.
+- Si a una factura le ponés FC **No** o **Portal**, la casilla se destilda sola (no llega por mail). La
+  podés volver a tildar.
+- Si el proveedor **no tiene mail**, aparece un campo para escribirlo. Lo que pongas se guarda en la
+  ficha del proveedor al importar (aunque sea un proveedor nuevo) y esa factura ya se busca en su mail.
+  Si lo dejás vacío, igual se mira la carpeta y los reenvíos de Jose y Andrés.
+
 ⚠️ Sin probar todavía → A-TEST-1217
 
 ---
