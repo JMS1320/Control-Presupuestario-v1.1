@@ -58,6 +58,7 @@ import {
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
@@ -6486,6 +6487,90 @@ export function correrCasos(): Resultado[] {
     chequear("Sueldos — bruto", "A+B 1.600.000 con franco automático (÷25 = 64.000): 2 francos suman 128.000, −1 resta 64.000; con franco fijo 70.000 usa ese",
       "1728000 · 1536000 · 1740000 · desconocido null", `${conDos} · ${conMenosUno} · ${override} · desconocido ${brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0)}`,
       Math.abs((conDos ?? 0) - 1728000) < 0.01 && Math.abs((conMenosUno ?? 0) - 1536000) < 0.01 && override === 1740000 && brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0) === null, "A-FEAT-1259")
+  }
+
+  // ══ Libro IVA Compras en archivo de texto para ARCA (A-FEAT-1286, 2026-10-16) ════════════════════
+  // Los renglones de 2023 son los que ARCA ACEPTÓ del sistema viejo (marzo 2023, MSA): el generador
+  // tiene que escribir lo mismo. Única diferencia permitida: el «código de operación» (posición 239),
+  // que el sistema viejo llenaba con A/E y el diseño pide «0» cuando hay alícuota o es Factura C.
+  {
+    const MSA = { cuit: "30617786016", razonSocial: "MARTINEZ SOBRADO AGRO SRL" }
+    const sinCodOp = (l: string) => l.slice(0, 238) + l.slice(239)
+    const GARMENDIA_2023 = "202303200010000500000000000000000361                8000000000020242193637GARMENDIA SANTIAGO            000000091645884000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000PES00010000001A00000001590548400000000000000000000000000                              000000000000000"
+    const GARMENDIA_ALI_2023 = "001000050000000000000000036180000000000202421936370000000757404000005000000015905484"
+    const VIGIL_2023 = "202303050110000200000000000000000213                8000000000020342964444VIGIL FRANCISCO TOMAS         000000010232400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000PES00010000000E00000000000000000000000000000000000000000                              000000000000000"
+    const garmendia: FilaCompraArca = { fecha_emision: "2023-03-20", tipo_comprobante: 1, punto_venta: 5, numero_desde: 361, cuit: "20242193637",
+      denominacion_emisor: "GARMENDIA SANTIAGO", moneda: "$", tipo_cambio: 1, imp_total: 916458.84, imp_neto_gravado: 757404, iva: 159054.84,
+      neto_grav_iva_21: 757404, iva_21: 159054.84 }
+    const vigil: FilaCompraArca = { fecha_emision: "2023-03-05", tipo_comprobante: 11, punto_venta: 2, numero_desde: 213, cuit: "20342964444",
+      denominacion_emisor: "VIGIL FRANCISCO TOMAS", moneda: "PES", tipo_cambio: 1, imp_total: 102324 }
+    const a2023 = armarLibroComprasArca([garmendia, vigil], "A", MSA)
+    const garmendiaIgual = sinCodOp(a2023.cbte[0]) === sinCodOp(GARMENDIA_2023) && a2023.alicuotas[0] === GARMENDIA_ALI_2023
+    chequear("Libro IVA ARCA", "Factura A: escribe el mismo renglón que ARCA aceptó en 2023 (comprobante y alícuota)",
+      "igual al de 2023 (salvo el código de operación)", garmendiaIgual ? "igual" : `distinto:\n${a2023.cbte[0]}\n${a2023.alicuotas[0]}`,
+      garmendiaIgual, "A-FEAT-1286")
+    const vigilIgual = sinCodOp(a2023.cbte[1]) === sinCodOp(VIGIL_2023)
+    chequear("Libro IVA ARCA", "Factura C: sólo el total, 0 alícuotas y ningún renglón en el archivo de alícuotas",
+      "igual al de 2023 · 1 renglón de alícuota en total", `${vigilIgual ? "igual" : "distinto: " + a2023.cbte[1]} · ${a2023.alicuotas.length} renglón de alícuota en total`,
+      vigilIgual && a2023.alicuotas.length === 1, "A-FEAT-1286")
+
+    // Versión B = A + el campo TurIVA (15 ceros) al final.
+    const b = armarLibroComprasArca([garmendia], "B", MSA)
+    const bOk = a2023.cbte[0].length === 325 && b.cbte[0].length === 340 && b.cbte[0] === a2023.cbte[0] + "0".repeat(15)
+    chequear("Libro IVA ARCA", "Versión A mide 325 y B 340: B es A con 15 ceros al final",
+      "325 · 340 · B = A + 15 ceros", `${a2023.cbte[0].length} · ${b.cbte[0].length} · ${b.cbte[0] === a2023.cbte[0] + "0".repeat(15) ? "B = A + 15 ceros" : "distinto"}`,
+      bOk, "A-FEAT-1286")
+
+    // Octubre 2026 real (MSA, imputado al mes): Factura B con otros tributos, 2 alícuotas, NC en negativo, exento.
+    const oct: FilaCompraArca[] = [
+      { id: "inc", fecha_emision: "2025-12-21", tipo_comprobante: 6, punto_venta: 16537, numero_desde: 423238, cuit: "30687310434", denominacion_emisor: "INC S. A.", moneda: "$", tipo_cambio: 1, imp_total: 136980.70, otros_tributos: 19400.70 },
+      { id: "alto", fecha_emision: "2026-10-01", tipo_comprobante: 1, punto_venta: 3, numero_desde: 2771, cuit: "33717582549", denominacion_emisor: "ALTO CORTE PRODUCCIONES", moneda: "$", tipo_cambio: 1, imp_total: 57715.50, imp_neto_gravado: 51477.34, iva: 6238.18, neto_grav_iva_10_5: 43543.45, iva_10_5: 4572.06, neto_grav_iva_21: 7933.89, iva_21: 1666.12 },
+      { id: "alc", fecha_emision: "2026-10-02", tipo_comprobante: 3, punto_venta: 10, numero_desde: 820, cuit: "20103619115", denominacion_emisor: "ALCORTA EDMUNDO ERNESTO", moneda: "$", tipo_cambio: 1, imp_total: -133335.56, imp_neto_gravado: -110194.67, iva: -23140.88, neto_grav_iva_21: -110194.67, iva_21: -23140.88 },
+      { id: "agua", fecha_emision: "2026-10-02", tipo_comprobante: 1, punto_venta: 1, numero_desde: 33305, cuit: "30615803762", denominacion_emisor: "COOPERATIVA DE PROVISION DE AGUA POTABLE DE RIO TALA", moneda: "PES", tipo_cambio: 1, imp_total: 16295.23, imp_neto_gravado: 9523.80, imp_op_exentas: 4200, iva: 2571.43, neto_grav_iva_27: 9523.80, iva_27: 2571.43 },
+    ]
+    const ao = armarLibroComprasArca(oct, "A", MSA)
+    const nc = leerCbte(ao.cbte[2])
+    const inc = leerCbte(ao.cbte[0])
+    chequear("Libro IVA ARCA", "La nota de crédito (negativa en la app) va en positivo, y la B lleva su «otros tributos» tal cual",
+      "NC total 133.335,56 · INC otros 19.400,70 · 0 alícuotas", `NC total ${n2(nc.total)} · INC otros ${n2(inc.otrosTributos)} · ${inc.cantidadAlicuotas} alícuotas`,
+      nc.total === 133335.56 && !ao.cbte[2].includes("-") && inc.otrosTributos === 19400.70 && inc.cantidadAlicuotas === 0, "A-FEAT-1286")
+    const ordenAli = ao.alicuotas.map(l => `${parseInt(l.slice(8, 28), 10)}:${l.slice(65, 69)}`).join(" ")
+    chequear("Libro IVA ARCA", "Alto Corte sale con 2 renglones de alícuota (10,5% y 21%), en el orden del archivo de comprobantes",
+      "2771:0004 2771:0005 820:0005 33305:0006", ordenAli,
+      ordenAli === "2771:0004 2771:0005 820:0005 33305:0006", "A-FEAT-1286")
+
+    const ctl = controlarArchivo(oct, ao, "A")
+    const tot = ctl.renglones.find(x => x.concepto === "Total")!
+    chequear("Libro IVA ARCA", "Control: releído, el archivo da lo mismo que el subdiario (con la NC restando)",
+      "cierra · total 77.655,87", `${ctl.ok ? "cierra" : "NO cierra: " + ctl.problemas.join("; ")} · total ${n2(tot.archivo)}`,
+      ctl.ok && Math.abs(tot.archivo - 77655.87) < 0.005, "A-FEAT-1286")
+    // Si el archivo se corrompe, el control lo tiene que ver (un caso que pasa siempre no prueba nada).
+    const roto = { ...ao, cbte: ao.cbte.map((l, i) => i === 1 ? l.slice(0, 104) + "000000005771551" + l.slice(119) : l) }
+    const ctlRoto = controlarArchivo(oct, roto, "A")
+    chequear("Libro IVA ARCA", "Control: si un total del archivo cambia un centavo, NO cierra",
+      "no cierra", ctlRoto.ok ? "cierra (mal)" : "no cierra", !ctlRoto.ok, "A-FEAT-1286")
+    // Alto Corte: total vs partes difiere 0,02 (viene así de ARCA) → no se avisa; un tipo 0 sí.
+    const avisosTipo0 = armarLibroComprasArca([{ ...oct[1], tipo_comprobante: 0 }], "A", MSA).avisos.filter(x => x.motivo.includes("Tipo")).length
+    chequear("Libro IVA ARCA", "Un redondeo de centavos del emisor no se avisa; un comprobante tipo 0 sí",
+      "0 avisos · 1 aviso", `${ao.avisos.length} avisos · ${avisosTipo0} aviso`,
+      ao.avisos.length === 0 && avisosTipo0 === 1, "A-FEAT-1286")
+
+    // Dólares: se informa en la moneda original con su cotización (4 enteros + 6 decimales).
+    const usd = leerCbte(armarLibroComprasArca([{ ...oct[1], moneda: "USD", tipo_cambio: 1390 }], "A", MSA).cbte[0])
+    chequear("Libro IVA ARCA", "Comprobante en dólares: moneda DOL, cotización 1390, importes en dólares",
+      "DOL · 1390 · 57.715,50", `${usd.moneda} · ${usd.tipoCambio} · ${n2(usd.total)}`,
+      usd.moneda === "DOL" && usd.tipoCambio === 1390 && usd.total === 57715.5, "A-FEAT-1286")
+
+    // Tipo 063 (liquidación A): sin intermediario, ARCA pide la CUIT del informante como corredor.
+    const liq = armarLibroComprasArca([{ ...oct[1], tipo_comprobante: 63 }], "A", MSA).cbte[0]
+    chequear("Libro IVA ARCA", "Liquidación (063): «CUIT emisor/corredor» = la nuestra; en una factura común, ceros",
+      "30617786016 · 00000000000", `${liq.slice(269, 280)} · ${ao.cbte[1].slice(269, 280)}`,
+      liq.slice(269, 280) === "30617786016" && ao.cbte[1].slice(269, 280) === "00000000000", "A-FEAT-1286")
+
+    // ANSI: lo que no existe en un byte se reemplaza; el ancho es fijo.
+    const t = textoArca("PEÑA “LA ÚNICA”", 20)
+    chequear("Libro IVA ARCA", "Nombre: conserva Ñ y tildes (existen en ANSI), cambia las comillas tipográficas y rellena a 20",
+      "«PEÑA ?LA ÚNICA?     »", `«${t}»`, t === "PEÑA ?LA ÚNICA?     " && t.length === 20, "A-FEAT-1286")
   }
 
   return r

@@ -57,6 +57,7 @@ import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
+import { ModalArchivosArca } from "@/components/modal-archivos-arca"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -676,6 +677,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [tcPagoInputPagos, setTcPagoInputPagos] = useState('')
   const [colaUSDSinTC, setColaUSDSinTC] = useState<FacturaArca[]>([])
   
+  // 📤 Archivos para ARCA (Libro IVA Compras en texto para IVA Simple) — A-FEAT-1286, sólo MSA
+  const [mostrarArchivosArca, setMostrarArchivosArca] = useState(false)
+
   // Estados para configuración de carpetas con persistencia
   const [carpetaPorDefecto, setCarpetaPorDefectoState] = useState<any>(null)
   
@@ -6167,6 +6171,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     📊 Generar PDF + Excel ({facturasPeriodo.length} facturas)
                   </Button>
                 )}
+
+                {/* Archivos de texto para IVA Simple — sólo MSA (PAM y MA no están inscriptas en IVA) */}
+                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && (
+                  <Button
+                    onClick={() => setMostrarArchivosArca(true)}
+                    variant="outline"
+                    className="w-full border-sky-600 text-sky-700 hover:bg-sky-50"
+                  >
+                    📤 Archivos para ARCA ({facturasPeriodo.length} facturas)
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -6274,6 +6289,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               resultado={verificarCuadratura(facturasPeriodo, TIPOS_SIN_CREDITO_COMPRAS)}
               etiquetaSinCredito="Fac B y C (sin crédito fiscal)"
             />
+            {empresa === 'MSA' && (
+              <ModalArchivosArca
+                abierto={mostrarArchivosArca}
+                onCerrar={() => setMostrarArchivosArca(false)}
+                periodo={periodoConsulta}
+                schemaName={schemaName}
+                carpetaPorDefecto={carpetaPorDefecto}
+                setCarpetaPorDefecto={setCarpetaPorDefecto}
+              />
+            )}
           </CardContent>
         </Card>
         )

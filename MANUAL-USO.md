@@ -1169,6 +1169,37 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 📤 Archivos para ARCA — el Libro IVA Compras para importar en IVA Simple *(sólo MSA)*
+
+**Para qué sirve.** Para cargar en **IVA Simple** (Portal IVA) las facturas del mes **de una vez**, con un
+archivo, en vez de una por una. Sirve sobre todo para lo que ARCA no trae solo: los tickets, lo
+imputado a otro mes que el de su fecha, lo cargado a mano.
+
+**Dónde:** Egresos → Facturas → **Subdiarios** → *Consultar período* → elegís el período → botón
+**📤 Archivos para ARCA**, debajo de *📊 Generar PDF + Excel*. Sólo aparece en **MSA** (PAM y MA no
+están inscriptas en IVA).
+
+**Qué hace:**
+1. Toma **lo imputado a ese mes** en el subdiario: las mismas facturas que el PDF y el Excel.
+2. Te muestra el **control**: lo que dice el archivo contra lo que dice el subdiario (comprobantes, total,
+   neto, IVA, no gravado, exento, otros tributos). Si cierra, ✓ verde. Si no cierra, **no deja descargar**:
+   sería un error de la app.
+3. Si hay comprobantes raros (un tipo 0, un IVA sin separar por alícuota, un total que no da la suma de
+   sus partes), los lista en amarillo. **Salen igual en el archivo**: es para que los mires.
+4. **📥 Descargar A y B** baja 4 archivos de texto a la carpeta que elijas:
+   - `ARCA COMPRAS AA-MM A - COMPROBANTES.txt` y `… A - ALICUOTAS.txt` → formato de 2023.
+   - `ARCA COMPRAS AA-MM B - COMPROBANTES.txt` y `… B - ALICUOTAS.txt` → con el campo nuevo de ARCA.
+
+**En IVA Simple:** Libro Compras → importar → subís el par de **comprobantes** y **alícuotas** de una
+versión, y elegís *«los importes están expresados en la moneda original del comprobante»*. Probá
+primero la **A**; si el portal se queja del largo de los renglones, usá la **B**.
+
+**Qué va en el archivo:** los datos tal como están en la app, sin tocarlos. *Otros tributos* va a *Otros
+tributos*; las Facturas C llevan sólo el total; el tipo de documento es siempre CUIT; las notas de
+crédito van en positivo (el tipo de comprobante ya dice que restan).
+
+⚠️ Sin probar todavía → A-TEST-1216
+
 ### 🗂️ Archivo digital — vincular cada factura con su PDF ✅ *(reescrito 2026-09-03)*
 
 **Dónde:** Egresos → Facturas → **Subdiarios** → *Consultar período* → elegís el período. Arriba, a la
