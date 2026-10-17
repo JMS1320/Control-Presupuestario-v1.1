@@ -1693,6 +1693,33 @@ usuario; **son distintos aunque se parezcan — no se normalizan entre sí**:
 `AMS CTA` → `CTA AMS`, `CUENTA JMS` → `CTA JMS`. Mapear `RET i PAM` a `RET 1 PAM` fue un error (corregido 2026-10-15): son
 dos cosas distintas. Y la regla por responsable de la app marca RET 3 a impuestos → [A-DEC-1010](PENDIENTES.md#a-dec-1010).
 
+### ⚠️ Ampliado 2026-10-16 — CONTABLE e INTERNO son dos niveles, y qué es cada código (definido por el usuario)
+
+**Contable** = lo que va al contador. **Interno** = lo real (*«contable es contable y real es mi propio balance»*), y **se
+escribe sólo cuando lo real difiere de lo contable** (*«así lo vengo manejando»*): interno vacío = lo real es igual a lo
+contable. Lo real de un socio = movimientos con contable del socio **+** movimientos con interno `DIST <socio>`, cada
+movimiento una sola vez → reparto de dividendos, [A-FEAT-1288](PENDIENTES.md#a-feat-1288).
+
+- **`CTA MA` (contable) = la cuenta corriente de MA con MSA.** Debe: todo lo que MSA le pagó en los papeles —transferencia
+  directa, pagos a terceros por su cuenta, sus impuestos personales—. Haber: sus **facturas** (arrendamiento rural: *«algo
+  real, no dividendo»*) y su **sueldo** de gerente (todavía no está en la app). El saldo es el dividendo aproximado
+  (*«si cobró 100, facturó 80 y tiene 10 de sueldo, tiene 10 de dividendos»*). Por eso empezó a usar `CTA MA` en vez de
+  `RET`: *«si finalmente el retiro es el saldo de la cuenta corriente, nunca fue un retiro»*.
+- **Los subtipos 1 / 3 / i NO hacen falta en el contable** (decisión 2026-10-16, con la simulación del Excel *«Simulacion
+  cuenta corriente MA»*): existían para agrupar el reporte al contador cuando todo era Excel, y **la cuenta de la app de cada
+  movimiento ya da ese desglose** — el desglose por subtipo salió 100% de la cuenta, sin mirar el código. Al usuario le
+  resulta más claro para el contador **«CTA MA» desglosado por cuenta** que por RET 1/3/i.
+- **Tiguan** (y casos así): automotor de **MSA en los papeles** → MSA se toma el gasto, contable **vacío** (no entra en
+  `CTA MA`), interno **`DIST MA`**. Internamente el **sueldo de MA también cuenta como dividendo**.
+- **`LIB` (contable) = gastos de Libertad**, que **contablemente se reparten 50% MSA y 50% MA** (antes PAM). El cálculo:
+  (1) el **total gastado** en Libertad, lo haya pagado quien sea (ej. 100); (2) cuánto pagó cada uno (ej. MSA 70, MA 30);
+  (3) contablemente cada uno se toma 50 de gasto; (4) lo que MSA pagó **por encima de su 50%** (70 − 50 = 20) **es un retiro
+  de MA → va a `CTA MA`** (después se verá si contra factura o contra dividendo). **Internamente MA toma el 100%**: todo LIB
+  es `DIST MA`. ⚠️ Necesita el total gastado **incluido lo que pagó MA de su bolsillo**, que no está en el extracto de MSA.
+  🔵 **Abierto, no cambiar nada por ahora**: si MSA se podrá seguir tomando el 50% de Libertad de acá en adelante; y si
+  **Expensas Cochera Posadas** (hoy contable `RET 3 PAM`, interno `DIST MA`) debería tratarse como LIB porque *«no la paga
+  MA sola»*.
+
 ---
 
 ## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
