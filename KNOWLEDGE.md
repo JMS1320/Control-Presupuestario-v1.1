@@ -1719,6 +1719,10 @@ movimiento una sola vez → reparto de dividendos, [A-FEAT-1288](PENDIENTES.md#a
   🔵 **Abierto, no cambiar nada por ahora**: si MSA se podrá seguir tomando el 50% de Libertad de acá en adelante; y si
   **Expensas Cochera Posadas** (hoy contable `RET 3 PAM`, interno `DIST MA`) debería tratarse como LIB porque *«no la paga
   MA sola»*.
+- **PAM deja de tener contabilidad y MA la absorbe** (usuario, 2026-10-16: *«PAM no tendrá más contabilidad y MA lo
+  absorberá»*). Por eso hay movimientos con contable **PAM** (`RET 3 PAM`: inmobiliario, Red Vial, cochera Posadas) e
+  interno **`DIST MA`**: en los papeles todavía son de PAM y en lo real ya son de MA. Las plantillas de Libertad y Posadas
+  tienen responsable PAM por lo mismo. 🔵 Falta definir **desde cuándo** y cómo pasan a contable MA.
 
 ---
 
