@@ -60,8 +60,8 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 **saldos del ejercicio anterior** que el balance toma como gasto (rama `jms/saldos-ejercicio-anterior`). **Qué cambia**:
 una tabla nueva, con **RLS igual a `balance_pendientes`** (políticas `puede_ver` / `puede_escribir`, sin `anon`,
 `authenticated` select/insert/update, `service_role` all) y su fila en `recurso_tablas` → recurso **`extracto`**,
-**lectura restringida** (el rol `contable` no la ve, como el balance propio). No toca tablas existentes. Si tu modelo de
-permisos necesita algo más para una tabla nueva, avisá antes de que la corra.
+**lectura restringida** (el rol `contable` no la ve, como el balance propio). No toca tablas existentes. ✅ **Corrido 2026-10-18** con JMS presente
+(RLS activa, 2 políticas, recurso mapeado). Si tu modelo de permisos necesita algo más para una tabla nueva, avisá.
 
 📌 Borrá esta entrada cuando la leas.
 
