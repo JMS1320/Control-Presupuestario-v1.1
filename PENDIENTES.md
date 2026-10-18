@@ -12,6 +12,8 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 14 de octubre (todo en `desarrollo`, salvo la tarjeta)
 
+> ↻ **Al 18/10 — tres pruebas nuevas, en ramas SIN MERGEAR** (`jms/historico-templates-2` y `jms/saldos-ejercicio-anterior`, que sale de la anterior y lleva todo): **[A-TEST-1215](#a-test-1215)** filtro «Históricos» del extracto MSA · **[A-TEST-1218](#a-test-1218)** el libro de templates sin las cuotas desactivadas ($57,7 M afuera) y las impagas como deuda en 04 · **[A-TEST-1219](#a-test-1219)** saldos del ejercicio anterior ($7.115.206,05 de MSA 2026). Se prueban en la vista previa de la rama o después del merge. Lo abierto del histórico (Alondra, Posadas, PAM, LIB, tanda de códigos y campañas, impuestos anuales de PAM/MA) está en [A-DEC-1009](#a-dec-1009) y [A-DEC-1010](#a-dec-1010).
+>
 > ↻ **Al 14/10 (cierre) TODO lo de abajo está en `desarrollo`** (`787a571`): las filas 21-39 (notas de la app del 13/10), 40-42 (retenciones del subdiario, Cobros y retenciones de PAM y MA —la base ya está lista—, 3 decimales en la liquidación de hacienda) y 43 (varios echeqs + Excel de emisión). Ya probado y ✅: el IVA a mano de la liquidación y los echeqs completos (flujo con BRIKI y el Excel aceptado por el banco, 15/10).
 >
 > ↻ **Al 11/10 se sumaron dos filas (19 y 20)**: los pendientes de los papeles y la **planilla de asistencia**, las dos ya en `desarrollo`. La carga del histórico (rama `jms/historico-templates`) no se prueba en la app: se revisa en los Excel de la carpeta Balance.
