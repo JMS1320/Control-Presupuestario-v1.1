@@ -209,6 +209,55 @@ for row in rs.iter_rows(min_row=4):
 for cta in ('CA', 'CC'):
     for j in range(3, 5): rs.cell(fila_ctrl[cta], j).number_format = '#,##0.00'
 rs.column_dimensions['A'].width = 24
+
+# ── 7. v2+: la PROPUESTA en las CATEG elegidas (scripts/historico_pam_propuesta.py) ─────────────────────
+PROCESADAS = {'IMP', 'FIJOS BS AS', 'FCI', 'BANC', 'DIST MA', 'DIST HNOS'}     # usuario 2026-10-18
+if int(V) >= 2:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from historico_pam_propuesta import proponer
+    for i, m in movs.items():
+        if m['categ'] not in PROCESADAS: continue
+        dest, cta, crit, aviso = proponer(m, marca.get(i))
+        if i in marca and marca[i][0] == 'Contrapartida en MSA':
+            aviso = (aviso + ' · ' if aviso else '') + 'Tiene contrapartida en MSA: ver «App: qué es».'
+        ws.cell(i, C['Propuesta: destino'], dest); ws.cell(i, C['Propuesta: cuenta'], cta or None)
+        ws.cell(i, C['Propuesta: cómo se identificó'], crit); ws.cell(i, C['Aviso'], aviso or None)
+    rd = wb.create_sheet('Propuesta por destino')
+    cDES = C['Propuesta: destino']
+    PREF = ['TEMPLATE', 'VINCULAR', 'PREGUNTA']
+    rd.append([f'PROPUESTA — CATEG de esta vuelta: {", ".join(sorted(PROCESADAS))}, de las dos cuentas. Nada está cargado: es para que lo revises y marques en «JMS: decisión / nota». Sin contable ni interno. Fórmulas sobre la hoja.'])
+    rd.append([])
+    rd.append(['1 · Por cuenta y CATEG', 'Cuenta'] + [f'{p} · cant.' for p in PREF] + ['Movimientos', 'Control (tiene que dar 0)'] + [f'{p} · débitos' for p in PREF] + [f'{p} · créditos' for p in PREF])
+    h1 = rd.max_row
+    for cell in rd[h1]: cell.font = B; cell.fill = AZUL
+    i1 = h1 + 1
+    for cta in ('CA', 'CC'):
+        for cat in sorted({m['categ'] for m in movs.values() if m['cuenta'] == cta and m['categ'] in PROCESADAS}):
+            n = rd.max_row + 1
+            crit = f'{rng(cCAT)},$A{n},{rng(cCTA)},$B{n}'
+            fila = [cat, cta] + [f'=COUNTIFS({crit},{rng(cDES)},"{p} ·*")' for p in PREF]
+            fila += [f'=COUNTIFS({crit})', f'=F{n}-SUM(C{n}:E{n})']
+            fila += [f'=SUMIFS({rng(cDEB)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF] + [f'=SUMIFS({rng(cCRE)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF]
+            rd.append(fila)
+    f1 = rd.max_row
+    rd.append(['TOTAL', ''] + [f'=SUM({L(j)}{i1}:{L(j)}{f1})' for j in range(3, 14)])
+    rd.append([])
+    rd.append(['2 · Por destino', 'Movimientos', 'Débitos', 'Créditos'])
+    h2 = rd.max_row
+    for cell in rd[h2]: cell.font = B; cell.fill = AZUL
+    dest = sorted({s(ws.cell(i, cDES).value) for i in movs if ws.cell(i, cDES).value}, key=lambda x: (PREF.index(x.split(' ·')[0]) if x.split(' ·')[0] in PREF else 9, x))
+    i2 = h2 + 1
+    for x in dest:
+        n = rd.max_row + 1
+        rd.append([x, f'=COUNTIFS({rng(cDES)},$A{n})', f'=SUMIFS({rng(cDEB)},{rng(cDES)},$A{n})', f'=SUMIFS({rng(cCRE)},{rng(cDES)},$A{n})'])
+    f2 = rd.max_row
+    rd.append(['TOTAL', f'=SUM(B{i2}:B{f2})', f'=SUM(C{i2}:C{f2})', f'=SUM(D{i2}:D{f2})'])
+    rd.append(['Control: el total por destino tiene que ser igual al de la sección 1', f'=B{rd.max_row}-F{f1 + 1}'])
+    for row in rd.iter_rows(min_row=i1):
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.startswith(('=SUMIFS', '=SUM(')): cell.number_format = '#,##0.00'
+    rd.column_dimensions['A'].width = 70
+    print('propuesta:', collections.Counter(s(ws.cell(i, cDES).value).split(' ·')[0] for i in movs if ws.cell(i, cDES).value))
 ws.auto_filter.ref = None
 wb.save(SALIDA)
 print(SALIDA)
