@@ -2629,6 +2629,18 @@ en la solapa de **provisión**. No hay que marcar nada a mano.
 | **05 Provisión** | los que son del ejercicio por fecha pero entraron después |
 | **Sin subdiario** | los que no tienen período asignado. **Si tiene filas, hay que imputarlos** |
 
+### 🧾 Templates: qué cuotas cuentan como gasto y cuáles como deuda *(2026-10-18)*
+
+- **Las cuotas desactivadas no son gasto.** Cuando un impuesto se puede pagar anual o en cuotas y
+  elegiste una forma, la otra queda desactivada: el libro **no la suma** y la lista al pie de la
+  solapa **Templates**, bajo «NO INCLUIDAS», con su total.
+- **Las cuotas impagas del ejercicio son gasto y además deuda**, igual que una factura impaga: siguen
+  en el total de **Templates** y aparecen también en **04 Cuentas a pagar**, en el bloque «Cuotas de
+  templates impagas al cierre», con el **total deuda al cierre** (facturas + templates).
+- En la pantalla, el recuadro de templates dice cuántas quedaron afuera y cuántas son deuda.
+
+→ A-TEST-1218
+
 ### 🚦 Cuándo te frena y cuándo sólo te avisa
 
 **Te frena** —dice *«todavía no se puede entregar»*— sólo cuando el sistema **se contradice a sí

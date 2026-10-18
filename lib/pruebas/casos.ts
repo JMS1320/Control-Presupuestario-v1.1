@@ -3756,6 +3756,27 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · templates", "🧮 El detalle y el resumen por mes dan EXACTAMENTE lo mismo",
       `${sumaDetalle}`, `${muchas.totalDebitos}`,
       Math.abs(sumaDetalle - muchas.totalDebitos) < 0.01, "A-FEAT-1184")
+
+    // 🧨 A-BUG-1289 — el caso real: Rojas 2026 tiene «Anual» (desactivado, estimado en $20.941.123)
+    //    y «Cuota» (la que se paga). Antes el libro sumaba las dos y el inmobiliario salía doble.
+    const rojas = armarTemplatesDelEjercicio([
+      { ...base, id: "anual", concepto: "Inmobiliario Anual Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-08", estado: "desactivado", monto: 20941123 },
+      { ...base, id: "c1", concepto: "Inmobiliario Cuota Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-17", estado: "conciliado", monto: 2096673.6 },
+    ], ej)
+    chequear("Balance · templates", "🛑 Una cuota DESACTIVADA no es gasto: queda afuera del total y en su lista",
+      "gasto 2096673.6 · 1 no incluida por 20941123",
+      `gasto ${rojas.totalDebitos} · ${rojas.noIncluidas?.length ?? "?"} no incluida por ${rojas.totalNoIncluidas ?? "?"}`,
+      rojas.totalDebitos === 2096673.6 && rojas.noIncluidas?.length === 1 && rojas.totalNoIncluidas === 20941123, "A-BUG-1289")
+
+    // 💳 Una cuota PENDIENTE del ejercicio es gasto (venció) Y deuda al cierre, como una factura impaga.
+    const impaga = armarTemplatesDelEjercicio([
+      { ...base, id: "p", fecha: "2026-05-10", estado: "pendiente", monto: 45843.7 },
+      { ...base, id: "q", fecha: "2026-04-10", estado: "conciliado", monto: 1000 },
+    ], ej)
+    chequear("Balance · templates", "💳 Una cuota PENDIENTE sigue en el gasto y además es deuda al cierre",
+      "gasto 46843.7 · deuda 45843.7 (1 cuota)",
+      `gasto ${impaga.totalDebitos} · deuda ${impaga.totalImpagas ?? "?"} (${impaga.impagasAlCierre?.length ?? "?"} cuota)`,
+      impaga.totalDebitos === 46843.7 && impaga.totalImpagas === 45843.7 && impaga.impagasAlCierre?.length === 1, "A-BUG-1289")
   }
 
   /**

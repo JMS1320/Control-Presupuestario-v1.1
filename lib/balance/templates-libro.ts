@@ -84,7 +84,29 @@ export interface TemplatesDelEjercicio {
   sinCategoria: CuotaTemplate[]
   /** Cuotas **sin fecha de ningún tipo**: no se pueden asignar a un período. */
   sinFecha: CuotaTemplate[]
+  /**
+   * 🛑 **Las DESACTIVADAS del ejercicio: NO son gasto** (A-BUG-1289).
+   *
+   * Un impuesto que se puede pagar anual o en cuotas tiene dos templates; el que no se usa queda
+   * `desactivado` — y su importe suele ser una estimación (`$20.941.123`). Hasta el 2026-10-18 el
+   * libro las sumaba igual: **35 cuotas por $57,7 M** en el 25/26 de MSA, el inmobiliario de Rojas
+   * contado dos veces. Ahora quedan afuera del gasto **y se listan** (§ 🧮 nada se descarta en silencio).
+   */
+  noIncluidas: CuotaTemplate[]
+  totalNoIncluidas: number
+  /**
+   * 💳 **Las IMPAGAS del ejercicio: son gasto Y deuda al cierre**, igual que una factura impaga
+   * (usuario 2026-10-18: *«las cuotas pendientes deberán figurar como deuda al igual que las
+   * facturas»*). Siguen dentro del gasto —venció en el ejercicio— y además van al papel 04.
+   */
+  impagasAlCierre: CuotaTemplate[]
+  totalImpagas: number
 }
+
+/** Estados que dicen «esta cuota no se usa»: no es gasto. */
+export const ESTADOS_TEMPLATE_EXCLUIDOS = ["desactivado"]
+/** Estados que dicen «esta cuota no se pagó»: gasto del ejercicio y deuda al cierre. */
+export const ESTADOS_TEMPLATE_IMPAGOS = ["pendiente", "pagar", "preparado", "programado"]
 
 const n = (v: unknown): number => {
   const x = typeof v === "string" ? parseFloat(v) : (v as number)
@@ -132,11 +154,17 @@ export function armarTemplatesDelEjercicio(
 
   const detalle: CuotaTemplate[] = []
   const sinFecha: CuotaTemplate[] = []
+  const noIncluidas: CuotaTemplate[] = []
+  const excluida = (c: CuotaTemplate) => ESTADOS_TEMPLATE_EXCLUIDOS.includes((c.estado || "").toLowerCase())
   for (const c of cuotas) {
-    if (!c.fecha) { sinFecha.push(c); continue }
-    if (posicion.has(c.fecha.slice(0, 7))) detalle.push(c)
+    // Una desactivada sin fecha no es un hueco: no se iba a usar igual.
+    if (!c.fecha) { if (!excluida(c)) sinFecha.push(c); continue }
+    if (!posicion.has(c.fecha.slice(0, 7))) continue
     // Lo que cae fuera del ejercicio es de otro período: no se reporta, no es un hueco.
+    if (excluida(c)) { noIncluidas.push(c); continue }      // A-BUG-1289: no es gasto, pero se ve
+    detalle.push(c)
   }
+  const impagasAlCierre = detalle.filter(c => ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase()))
 
   const sinCategoria = detalle.filter(c => !c.categ)
 
@@ -182,5 +210,7 @@ export function armarTemplatesDelEjercicio(
     totalDebitos: redondear(porMes.reduce((x, f) => x + f.totalDebitos, 0)),
     totalCreditos: redondear(porMes.reduce((x, f) => x + f.totalCreditos, 0)),
     sinCategoria, sinFecha,
+    noIncluidas, totalNoIncluidas: redondear(noIncluidas.reduce((x, c) => x + c.monto, 0)),
+    impagasAlCierre, totalImpagas: redondear(impagasAlCierre.reduce((x, c) => x + c.monto, 0)),
   }
 }

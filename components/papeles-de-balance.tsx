@@ -61,6 +61,7 @@ import {
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -487,6 +488,7 @@ export function PapelesDeBalance() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <TestsDelProceso proceso="reporte/papeles-balance" pantalla="reporte" />
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Empresa</label>
@@ -626,6 +628,13 @@ export function PapelesDeBalance() {
                     )}
                     {templates.sinFecha.length > 0 && (
                       <span className="text-amber-700"> · {templates.sinFecha.length} sin fecha</span>
+                    )}
+                    {/* A-BUG-1289: lo que se saca del gasto y lo que además es deuda, a la vista */}
+                    {templates.noIncluidas.length > 0 && (
+                      <span> · {templates.noIncluidas.length} desactivada(s) NO incluidas (${fmt(templates.totalNoIncluidas)})</span>
+                    )}
+                    {templates.impagasAlCierre.length > 0 && (
+                      <span> · {templates.impagasAlCierre.length} impaga(s) al cierre (${fmt(templates.totalImpagas)}), también en cuentas a pagar</span>
                     )}
                   </div>
                 </div>
