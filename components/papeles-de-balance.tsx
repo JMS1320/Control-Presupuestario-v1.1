@@ -21,6 +21,8 @@
  * Esta pantalla no escribe una sola fila. Genera un archivo y nada más.
  */
 import { PendientesBalance } from "./pendientes-balance"
+import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
+import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
@@ -77,6 +79,8 @@ export function PapelesDeBalance() {
   const [anioCierre, setAnioCierre] = useState(2026)
   /** 📌 A-FEAT-1258 — los pendientes a revisar, para que viajen al export. */
   const [pendientes, setPendientes] = useState<PendienteBalance[]>([])
+  /** ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: gasto de este ejercicio, viajan al export. */
+  const [ajustes, setAjustes] = useState<AjusteBalance[]>([])
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
   /**
@@ -529,6 +533,7 @@ export function PapelesDeBalance() {
                 sueldos ?? undefined,
                 cuentasCorrientes ?? undefined,
                 pendientes,
+                saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
@@ -538,6 +543,8 @@ export function PapelesDeBalance() {
 
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
+        {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
+        <SaldosEjercicioAnterior empresa={empresa.id} anioCierre={anioCierre} onCambio={setAjustes} />
 
         <p className="text-xs text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 mt-0.5 shrink-0" />
@@ -632,6 +639,9 @@ export function PapelesDeBalance() {
                     {/* A-BUG-1289: lo que se saca del gasto y lo que además es deuda, a la vista */}
                     {templates.noIncluidas.length > 0 && (
                       <span> · {templates.noIncluidas.length} desactivada(s) NO incluidas (${fmt(templates.totalNoIncluidas)})</span>
+                    )}
+                    {saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre).total > 0 && (
+                      <span> · más <strong>${fmt(saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre).total)}</strong> de saldos del ejercicio anterior</span>
                     )}
                     {templates.impagasAlCierre.length > 0 && (
                       <span> · {templates.impagasAlCierre.length} impaga(s) al cierre (${fmt(templates.totalImpagas)}), también en cuentas a pagar</span>

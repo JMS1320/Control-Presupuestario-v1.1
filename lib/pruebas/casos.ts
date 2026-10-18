@@ -136,6 +136,7 @@ import {
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
@@ -3777,6 +3778,24 @@ export function correrCasos(): Resultado[] {
       "gasto 46843.7 · deuda 45843.7 (1 cuota)",
       `gasto ${impaga.totalDebitos} · deuda ${impaga.totalImpagas ?? "?"} (${impaga.impagasAlCierre?.length ?? "?"} cuota)`,
       impaga.totalDebitos === 46843.7 && impaga.totalImpagas === 45843.7 && impaga.impagasAlCierre?.length === 1, "A-BUG-1289")
+
+    // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
+    //    $7.115.206,05; uno anulado no suma, y los de otra empresa u otro ejercicio no se mezclan.
+    const aj = (id: string, concepto: string, monto: number, extra: Record<string, unknown> = {}) => ({
+      id, empresa: "MSA", anio_cierre: 2026, accion: "saldo_anterior", concepto, categ: "Impuesto inmobiliario",
+      monto, motivo: "Saldo que dejó el balance 2025", origen_anio_cierre: 2025, created_at: "2026-10-18", anulado_at: null, ...extra })
+    const saldos = saldosDelEjercicioAnterior([
+      aj("a", "Inmobiliario MSA 2025", 3154059.75),
+      aj("b", "Complementario MSA 2025", 1519054.8, { categ: "Impuesto inmobiliario Complementario" }),
+      aj("c", "Red Vial Rojas 2025", 2442091.5, { categ: "Impuesto Red Vial" }),
+      aj("d", "cargado de más", 999, { anulado_at: "2026-10-18" }),
+      aj("e", "de PAM", 500, { empresa: "PAM" }),
+      aj("f", "de otro ejercicio", 700, { anio_cierre: 2027 }),
+    ], "MSA", 2026)
+    chequear("Balance · saldos ej. anterior", "✍️ Suman los vigentes del ejercicio; el anulado y los ajenos no",
+      "3 vigentes · total 7115206.05 · 1 anulado",
+      `${saldos.vigentes.length} vigentes · total ${saldos.total} · ${saldos.anulados.length} anulado`,
+      saldos.vigentes.length === 3 && saldos.total === 7115206.05 && saldos.anulados.length === 1, "A-FEAT-1207")
   }
 
   /**

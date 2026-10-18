@@ -34,6 +34,7 @@ import type {
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
+import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
@@ -1776,6 +1777,8 @@ export function armarWorkbook(
   cuentasCorrientes?: PapelDeCuentasCorrientes,
   /** 📌 Los pendientes a revisar que anotó el usuario en la pantalla (A-FEAT-1258). */
   pendientes?: PendienteBalance[],
+  /** ✍️ Los saldos del ejercicio anterior: gasto de este ejercicio (A-FEAT-1207). */
+  saldosAnteriores?: SaldosAnteriores,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1863,6 +1866,17 @@ export function armarWorkbook(
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
       COLS_TEMPLATES_POR_MES(templates.columnas.length))
   }
+  // ✍️ A-FEAT-1207 — va pegada a los templates: es gasto del ejercicio que no viene de una cuota.
+  if (saldosAnteriores && (saldosAnteriores.vigentes.length > 0 || saldosAnteriores.anulados.length > 0)) {
+    const filas = hojaDeSaldosAnteriores(saldosAnteriores, libro.ejercicio.etiqueta)
+    if (templates) {
+      filas.push([])
+      filas.push(["GASTO DE TEMPLATES DEL EJERCICIO", "cuotas (solapa Templates, neto)", money(templates.totalDebitos - templates.totalCreditos)])
+      filas.push(["", "+ saldos del ejercicio anterior", saldosAnteriores.total])
+      filas.push(["", "= total", money(templates.totalDebitos - templates.totalCreditos + saldosAnteriores.total)])
+    }
+    hoja(wb, "Saldos ej. anterior", filas)
+  }
   if (hacienda) {
     hoja(wb, "02 Hacienda",
       hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre),
@@ -1923,9 +1937,10 @@ export function descargarLibroDiario(
   sueldos?: Parameters<typeof armarWorkbook>[8],
   cuentasCorrientes?: Parameters<typeof armarWorkbook>[9],
   pendientes?: PendienteBalance[],
+  saldosAnteriores?: SaldosAnteriores,
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

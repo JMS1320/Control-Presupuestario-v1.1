@@ -2641,6 +2641,20 @@ en la solapa de **provisión**. No hay que marcar nada a mano.
 
 → A-TEST-1218
 
+### ✍️ Saldos del ejercicio anterior *(2026-10-18)*
+
+Lo que el balance anterior dejó para tomar como gasto en éste. Ejemplo: el inmobiliario 2025 se pagó anual en
+abril; el balance 24/25 tomó la mitad y la otra mitad es gasto del 25/26.
+
+1. En el cuadro **«✍️ Saldos del ejercicio anterior»** (abajo de «Pendientes a revisar») apretá **+ Anotar un saldo**.
+2. Poné el **concepto**, el **importe** (con coma decimal), la **cuenta** del gasto y, si querés, el motivo
+   (por defecto: «Saldo que dejó el balance» del año anterior). **Anotar saldo.**
+3. Suma al gasto del ejercicio: el recuadro de templates lo dice, y el Excel trae la solapa **«Saldos ej. anterior»**
+   con el total y el **gasto de templates del ejercicio = cuotas + saldos**.
+4. Si te equivocaste, **anular** con un motivo: deja de sumar y queda listado como anulado.
+
+→ A-TEST-1219
+
 ### 🚦 Cuándo te frena y cuándo sólo te avisa
 
 **Te frena** —dice *«todavía no se puede entregar»*— sólo cuando el sistema **se contradice a sí
