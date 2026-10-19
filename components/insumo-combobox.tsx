@@ -92,7 +92,25 @@ export function InsumoCombobox({
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setCreando(false) }}>
       <PopoverTrigger asChild>
         <Button variant="outline" role="combobox" disabled={disabled}
-          className={cn("justify-between font-normal h-8 text-xs", className)}>
+          className={cn("justify-between font-normal h-8 text-xs", className)}
+          /**
+           * ⌨️ A-FEAT-1264 — todo con el teclado (pedido del usuario 2026-10-06: «parado sobre el
+           * insumo, si escribo debe empezar a filtrar… si aprieto abajo debe bajar sobre las opciones…
+           * Enter y lo seleccione y seguir moviéndome con Tab»).
+           *
+           * Parado en el campo (llegando con Tab), **escribir** abre la lista ya filtrada por esa
+           * letra y **flecha abajo** la abre entera. Adentro, flechas y Enter son los del buscador;
+           * al elegir, el foco vuelve a este campo y Tab sigue a la dosis.
+           */
+          onKeyDown={(e) => {
+            if (open || e.ctrlKey || e.altKey || e.metaKey) return
+            if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); return }
+            if (e.key.length === 1 && e.key !== ' ') {
+              e.preventDefault()
+              setBusqueda(e.key)
+              setOpen(true)
+            }
+          }}>
           <span className="truncate">{seleccionado ? seleccionado.producto : "Seleccionar insumo"}</span>
           <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
         </Button>

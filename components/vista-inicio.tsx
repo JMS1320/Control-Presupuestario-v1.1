@@ -1,5 +1,6 @@
 "use client"
 
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { useRef, useState } from "react"
 import { toast } from "sonner"
 import { LayoutGrid, GripVertical, X, Plus, RotateCcw } from "lucide-react"
@@ -64,12 +65,9 @@ export function VistaInicio({
     const antesTam = tamanos
     setElegidos(nuevosIds)
     setTamanos(nuevosTamanos)
-    // Se manda el objeto entero: `updateUser` REEMPLAZA la clave, no la mergea.
-    const { error } = await supabase.auth.updateUser({
-      data: {
-        preferencias: { ...preferencias, widgets: nuevosIds, widgetsTamano: nuevosTamanos },
-      },
-    })
+    // Sobre las preferencias VIGENTES de la cuenta, no sobre las de cuando se cargó la página:
+    // si no, mover un widget borraba las columnas del Cash Flow acomodadas después (A-FEAT-1277).
+    const { error } = await guardarPreferencias({ widgets: nuevosIds, widgetsTamano: nuevosTamanos })
     if (error) {
       setElegidos(antesIds)
       setTamanos(antesTam)

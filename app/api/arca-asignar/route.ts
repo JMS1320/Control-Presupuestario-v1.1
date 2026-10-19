@@ -44,10 +44,13 @@ export async function PATCH(request: Request) {
     const { error, count } = await supabase
       .schema("msa")
       .from("comprobantes_arca")
-      .update(updateData)
+      .update(updateData, { count: "exact" })
       .in("id", ids)
 
     if (error) throw new Error(error.message)
+    // Un UPDATE que no encuentra la fila no falla: toca 0 y devuelve OK. Esta ruta escribe sólo en
+    // MSA, así que una factura de PAM o MA caería acá — se dice en vez de festejar (A-FEAT-1267).
+    if (count === 0) throw new Error("No se encontró ninguna de esas facturas en MSA: la cuenta NO se guardó")
 
     /**
      * 🔗 **Propagar a los movimientos conciliados — por UN solo camino** (A-BUG-1221).

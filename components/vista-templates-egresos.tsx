@@ -1,6 +1,7 @@
 "use client"
 
 
+import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -172,7 +173,6 @@ export function VistaTemplatesEgresos() {
     nuevoMonto: 0,
     datosEdicion: null
   })
-  const [montoPropagacionPersonalizado, setMontoPropagacionPersonalizado] = useState('')
   const [guardandoEnProgreso, setGuardandoEnProgreso] = useState(false)
 
   // Estado para modal Pago Manual (templates abiertos)
@@ -903,87 +903,6 @@ export function VistaTemplatesEgresos() {
       console.error('Error guardando cambio:', error)
       alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
     }
-  }
-
-  // Funciones para modal propagación (3 opciones)
-  const handlePropagacionSi = async () => {
-    if (!modalPropagacion.datosEdicion) return
-    setGuardandoEnProgreso(true)
-
-    try {
-      // Determinar monto a propagar (personalizado o el mismo de la cuota)
-      const montoParaPropagar = montoPropagacionPersonalizado
-        ? parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || modalPropagacion.nuevoMonto
-        : modalPropagacion.nuevoMonto
-
-      // 1. Propagar a cuotas futuras
-      const resultPropagacion = await ejecutarPropagacion({
-        templateId: 'template',
-        cuotaModificadaId: modalPropagacion.cuotaId,
-        nuevoMonto: montoParaPropagar,
-        aplicarATodasLasFuturas: true
-      })
-
-      // 2. Guardar la cuota actual (siempre con el monto original editado)
-      const { error } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update({ monto: modalPropagacion.nuevoMonto })
-        .eq('id', modalPropagacion.cuotaId)
-
-      if (error) throw error
-
-      // 3. Recargar y cerrar
-      await cargarCuotas()
-      setCeldaEnEdicion(null)
-      setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
-      setMontoPropagacionPersonalizado('')
-
-      if (resultPropagacion.success && resultPropagacion.cuotasModificadas > 0) {
-        const montoMsg = montoParaPropagar !== modalPropagacion.nuevoMonto
-          ? ` (con monto $${montoParaPropagar.toLocaleString('es-AR')})`
-          : ''
-        alert(`✅ Monto actualizado + ${resultPropagacion.cuotasModificadas} cuotas futuras propagadas${montoMsg}`)
-      } else {
-        alert('✅ Monto actualizado (no había cuotas futuras)')
-      }
-    } catch (error) {
-      alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
-    } finally {
-      setGuardandoEnProgreso(false)
-    }
-  }
-
-  const handlePropagacionNo = async () => {
-    if (!modalPropagacion.datosEdicion) return
-    setGuardandoEnProgreso(true)
-
-    try {
-      // Solo guardar la cuota actual (sin propagar)
-      const { error } = await supabase
-        .from('cuotas_egresos_sin_factura')
-        .update({ monto: modalPropagacion.nuevoMonto })
-        .eq('id', modalPropagacion.cuotaId)
-
-      if (error) throw error
-
-      actualizarCuotaLocal(modalPropagacion.cuotaId, 'monto', modalPropagacion.nuevoMonto)
-      setCeldaEnEdicion(null)
-      setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
-      setMontoPropagacionPersonalizado('')
-      alert('✅ Solo esta cuota actualizada')
-    } catch (error) {
-      alert(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
-    } finally {
-      setGuardandoEnProgreso(false)
-    }
-  }
-
-  const handlePropagacionCancelar = () => {
-    // No hacer nada, solo cerrar modal y limpiar edición
-    setCeldaEnEdicion(null)
-    setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
-    setMontoPropagacionPersonalizado('')
-    setGuardandoEnProgreso(false)
   }
 
   // Cargar templates abiertos para Pago Manual
@@ -2180,71 +2099,32 @@ export function VistaTemplatesEgresos() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Propagación de Cuotas - 3 opciones */}
-      <Dialog open={modalPropagacion.isOpen} onOpenChange={() => {}}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>💰 Modificar Monto</DialogTitle>
-            <DialogDescription>
-              Monto cuota actual: <strong>${modalPropagacion.nuevoMonto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</strong>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4 space-y-4">
-            <p className="text-sm text-gray-600">
-              ¿Desea propagar a las cuotas futuras de este template?
-            </p>
-
-            {/* Input para monto personalizado de propagación */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">
-                Monto a propagar (opcional):
-              </label>
-              <Input
-                type="text"
-                placeholder={`Dejar vacío = $${modalPropagacion.nuevoMonto.toLocaleString('es-AR')}`}
-                value={montoPropagacionPersonalizado}
-                onChange={(e) => setMontoPropagacionPersonalizado(e.target.value)}
-                className="w-full"
-                disabled={guardandoEnProgreso}
-              />
-              <p className="text-xs text-gray-500">
-                Si ingresa un monto diferente, la cuota actual quedará en ${modalPropagacion.nuevoMonto.toLocaleString('es-AR')}
-                y las futuras en el monto ingresado.
-              </p>
-            </div>
-
-            <ul className="text-sm text-gray-500 list-disc pl-5 space-y-1">
-              <li><strong>SÍ, propagar:</strong> Cuotas futuras con monto {montoPropagacionPersonalizado ? `$${(parseFloat(montoPropagacionPersonalizado.replace(/\./g, '').replace(',', '.')) || 0).toLocaleString('es-AR')}` : 'igual'}</li>
-              <li><strong>NO, solo esta:</strong> Solo se modificará esta cuota</li>
-              <li><strong>Cancelar:</strong> No hacer ningún cambio</li>
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              onClick={handlePropagacionCancelar}
-              disabled={guardandoEnProgreso}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handlePropagacionNo}
-              disabled={guardandoEnProgreso}
-            >
-              {guardandoEnProgreso ? 'Guardando...' : 'NO, solo esta'}
-            </Button>
-            <Button
-              onClick={handlePropagacionSi}
-              disabled={guardandoEnProgreso}
-            >
-              {guardandoEnProgreso ? 'Guardando...' : 'SÍ, propagar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Propagación de Cuotas — componente compartido con el Cash Flow (A-FEAT-1238) */}
+      <ModalPropagarMontoCuota
+        abierto={modalPropagacion.isOpen}
+        cuotaId={modalPropagacion.cuotaId}
+        nuevoMonto={modalPropagacion.nuevoMonto}
+        onCancelar={() => {
+          setCeldaEnEdicion(null)
+          setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
+        }}
+        onGuardado={async (r) => {
+          setCeldaEnEdicion(null)
+          setModalPropagacion({ isOpen: false, cuotaId: '', nuevoMonto: 0, datosEdicion: null })
+          if (r.tipo === 'propagado') {
+            await cargarCuotas()
+            if (r.cuotasModificadas > 0) {
+              const montoMsg = r.montoPropagado !== r.nuevoMonto ? ` (con monto $${r.montoPropagado.toLocaleString('es-AR')})` : ''
+              alert(`✅ Monto actualizado + ${r.cuotasModificadas} cuotas futuras propagadas${montoMsg}`)
+            } else {
+              alert('✅ Monto actualizado (no había cuotas futuras)')
+            }
+          } else {
+            actualizarCuotaLocal(modalPropagacion.cuotaId, 'monto', r.nuevoMonto)
+            alert('✅ Solo esta cuota actualizada')
+          }
+        }}
+      />
 
       {/* Modal para validación de categorías */}
       <Dialog open={validandoCateg.isOpen} onOpenChange={() => cerrarModalCategTemplates()}>

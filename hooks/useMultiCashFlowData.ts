@@ -10,6 +10,8 @@ import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
+import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
+import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -103,6 +105,12 @@ export interface CashFlowRow {
   origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
   origen_tabla: string // Para identificar tabla específica al editar
   /**
+   * 📝 A-FEAT-1282 — fila de UN echeq de un pago en varios echeqs: el id de la factura/anticipo que
+   * paga (el `id` de la fila es el del cheque, `origen_tabla = 'msa.cheques'`). Sólo lectura, salvo
+   * la fecha de cobro. Ver `lib/cashflow/echeqs-en-filas.ts`.
+   */
+  echeq_de?: string
+  /**
    * De qué empresa(s) es la fila. Es una LISTA porque un template puede ser `MSA/PAM` y tiene
    * que aparecer al filtrar cualquiera de las dos. Las facturas siempre traen una sola (la del
    * schema donde viven). Puede incluir tokens que no son empresa (`Duhau`): se muestran pero no
@@ -168,6 +176,10 @@ export interface CashFlowRow {
   comprobante_display?: string | null
   // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
   detalle_usuario?: string | null
+  /** ✏️ Lo que muestra y edita la columna Detalle en una factura: sólo lo del usuario (A-DEC-1005). */
+  detalle_propio?: string | null
+  /** En una fila de grupo, la nota de cada factura — se editan por separado (A-FEAT-1269). */
+  detalles_grupo?: DetalleDeFactura[]
   // Empleado (solo para sueldos)
   empleado_id?: string | null
   /**
@@ -251,6 +263,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: f.denominacion_emisor || '',
         detalle: f.detalle ? `${generarDetalleBase(f)} · ${f.detalle}` : generarDetalleBase(f),
         detalle_usuario: f.detalle || null,
+        detalle_propio: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde),
         debitos: debitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -339,6 +352,16 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: primera.denominacion_emisor || '',
         detalle: detallesCombinados,
         detalle_usuario: fs.map(f => f.detalle).filter(Boolean).join(' | ') || null,
+        detalles_grupo: fs.map(f => ({
+          id: f.id,
+          etiqueta: `${tipoComprobanteAbrev(f.tipo_comprobante)} ${f.numero_desde || ''}`.trim(),
+          detalle: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde) ?? '',
+        })),
+        detalle_propio: detallePropioDeGrupo(fs.map(f => ({
+          id: f.id,
+          etiqueta: String(f.numero_desde || ''),
+          detalle: detallePropio(f.detalle, f.denominacion_emisor, f.numero_desde) ?? '',
+        }))),
         debitos: totalDebitos,
         creditos: 0,
         saldo_cta_cte: 0,
@@ -596,17 +619,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
   // Mapear ventas (comprobantes_venta 'a cobrar') a formato Cash Flow.
   //
-  // El ingreso que TODAVÍA se espera en banco:
-  //     imp_total − retenciones sufridas − anticipos de cobro ya vinculados
-  // Las retenciones nunca entran al banco; los anticipos ya entraron y se muestran en su propia
-  // fila, así que si no se restan la misma plata se cuenta dos veces.
+  // El ingreso que TODAVÍA se espera en banco = `cobroEsperado()`, la MISMA cuenta que el Extracto,
+  // Comprobantes y Liquidaciones (A-BUG-1231, 2026-10-05). Antes acá había una resta propia
+  // —imp_total − retenciones sufridas − anticipos— que en granos se salteaba la comisión, el
+  // almacenaje, las retenciones impresas y el IVA RG 2300: proyectaba $895.737,28 de más en las 3
+  // liquidaciones de AFA a cobrar. Lo imputado aparte (retenciones sufridas, anticipos, compensaciones)
+  // se sigue restando: los anticipos ya entraron y tienen su fila, sin restarlos se contaría dos veces.
   const mapearVentas = (comprobantes: any[], imputadoPorComp: Map<string, number>, imputacionesPorComp: Map<string, Imputacion[]> = new Map()): CashFlowRow[] => {
     return comprobantes.flatMap(c => {
       // 🐂 La liquidación de hacienda va aparte: en cuotas y con su propia cuenta de cobro.
       if (TIPOS_LIQ_HACIENDA.has(Number(c.tipo_comprobante))) return filasLiqHacienda(c, imputadoPorComp.get(c.id) || 0, imputacionesPorComp.get(c.id) || [])
       const total = Number(c.imp_total) || 0
       const imputado = imputadoPorComp.get(c.id) || 0
-      const netoACobrar = total - imputado
+      const cobro = cobroEsperado(c, imputado)
+      const netoACobrar = cobro.pagoCondiciones
+      const descuentos = total - netoACobrar
       return {
         id: c.id,
         origen: 'VENTA' as const,
@@ -621,7 +648,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         cuit_proveedor: c.cuit_cliente || '',
         nombre_proveedor: c.denominacion_cliente || '',
         detalle: `Venta ${c.nro_comprobante || ''} - ${c.denominacion_cliente || ''}`.trim()
-          + (imputado > 0 ? ` (neto: total ${total} − ret/anticipos ${imputado})` : ''),
+          + (descuentos > 0.005 ? ` (neto: total ${total} − ret/anticipos/comisión/IVA retenido ${Math.round(descuentos * 100) / 100})` : ''),
         debitos: 0,
         creditos: netoACobrar,   // Cobro = crédito (dinero entra al banco)
         saldo_cta_cte: 0,
@@ -638,9 +665,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    *
    * Dos cosas cambian respecto de una factura de venta:
    *   1. **Cuánto se cobra** sale de `cobroEsperado()`, la cuenta de toda la app: total − retenciones
-   *      impresas (IIBB) − lo imputado aparte. La resta de arriba no descuenta la retención impresa,
-   *      y en la liquidación de Genta proyectaba $675.905 de más. (Para el resto de las ventas esa
-   *      resta sigue igual: cambiarla es A-BUG-1231, que el usuario dejó como tema aparte.)
+   *      impresas (IIBB) − lo imputado aparte. (Desde A-BUG-1231 las demás ventas usan la misma
+   *      cuenta: ya no hay una resta propia del Cash Flow.)
    *   2. **Cuándo**: si el papel trae plazos (30/60/90), una fila por cuota, cada una en su fecha.
    *      Lo imputado aparte (anticipos, certificados) va a la cuota de SU FECHA (`repartirEnCuotas`):
    *      la retención de Ganancias del pago del 03/09 baja la cuota del 03/09, no «la primera».
@@ -895,7 +921,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const { data: ventasACobrar, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, ret_iva, ret_iibb')
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, subtotal_neto, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb')
         .neq('estado', 'conciliado')
         .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
@@ -929,7 +955,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
           // Para las cuotas (liquidaciones con plazos): TODO lo cobrado, con su fecha — también el banco.
           imputacionesPorComp.set(id, imputacionesDeCobro(lineas))
           // El total que se resta a una venta SIN cuotas sigue como antes: sin el banco directo
-          // (ése la saca del Cash Flow por estado). Cambiarlo es A-BUG-1231.
+          // (ése la saca del Cash Flow por estado).
           imputadoPorComp.set(id, lineas.filter(l => l.medio !== 'banco').reduce((acc, l) => acc + l.monto, 0))
         }
       }
@@ -1059,7 +1085,23 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       // 7. Combinar y ordenar por fecha_estimada
       const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
       const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
-      const todasLasFilas = [...filasArca, ...filasTemplates, ...filasAnticipos, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
+      // 📝 A-FEAT-1282 — un pago en VARIOS echeqs se proyecta echeq por echeq, cada uno en su fecha.
+      // Echeqs sólo hay en MSA; se buscan los de las facturas y anticipos que están en 'echeq'.
+      const idsEnEcheq = [...filasArca, ...filasAnticipos]
+        .filter(f => f.estado === 'echeq' && !(f.ids_grupo && f.ids_grupo.length) && (f.origen === 'ANTICIPO' || String(f.origen_tabla).startsWith('msa.')))
+        .map(f => f.id)
+      let chequesDeFilas: any[] = []
+      if (idsEnEcheq.length) {
+        const lista = idsEnEcheq.join(',')
+        const { data: chs, error: eChs } = await supabase.schema('msa').from('cheques')
+          .select('id, monto, fecha_cobro, estado, numero, factura_id, anticipo_id')
+          .or(`factura_id.in.(${lista}),anticipo_id.in.(${lista})`)
+        // Si no se pueden leer, el pago se ve como siempre (una fila) — no se inventa nada.
+        if (eChs) console.error('Cash Flow: no se pudieron leer los echeqs', eChs)
+        chequesDeFilas = chs || []
+      }
+      const [filasArcaEcheq, filasAnticiposEcheq] = [partirFilasEnEcheqs(filasArca, chequesDeFilas), partirFilasEnEcheqs(filasAnticipos, chequesDeFilas)]
+      const todasLasFilas = [...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros
@@ -1116,6 +1158,21 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const esPagoDeSueldo = filaOrigen?.origen_tabla === 'sueldos.pagos'
       || filaOrigen?.origen_tabla === 'msa.grupos_pago'
     if (origen === 'SUELDO' && !esPagoDeSueldo) return false
+    /**
+     * 📝 A-FEAT-1282 — la fila de UN echeq (pago en varios): sólo se puede cambiar su fecha de cobro,
+     * que va a `msa.cheques.fecha_cobro`. Todo lo demás se dice que no, en vez de escribir con el id
+     * del cheque sobre la tabla de facturas o anticipos.
+     */
+    if (filaOrigen?.origen_tabla === 'msa.cheques') {
+      if (campo !== 'fecha_estimada' && campo !== 'fecha_vencimiento') {
+        toast.error('Es un echeq de un pago en varios: acá sólo se cambia su fecha de cobro. El pago se maneja desde su factura/anticipo.')
+        return false
+      }
+      const { error, count } = await supabase.schema('msa').from('cheques').update({ fecha_cobro: valor }, { count: 'exact' }).eq('id', id)
+      if (error || count === 0) { toast.error('No se pudo cambiar la fecha del echeq' + (error ? ': ' + error.message : '')); return false }
+      setData(prev => prev.map(f => (f.id === id ? { ...f, fecha_estimada: valor } : f)))
+      return true
+    }
     try {
       // Preparar objeto de actualización, con las dos reglas de arrastre (ver `conArrastreDeFechas`)
       let updateData: any = conArrastreDeFechas(campo, valor)
@@ -1347,6 +1404,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     // Lo que se guardó de verdad: sólo esto se pinta al final.
     const guardadas: typeof actualizaciones = []
     const fallidas: Array<{ id: string; motivo: string }> = []
+    // 📝 A-FEAT-1282 — las filas de UN echeq (pago en varios) no se tocan en lote: su id es el del cheque.
+    const esEcheq = (id: string) => data.find(f => f.id === id)?.origen_tabla === 'msa.cheques'
+    for (const u of actualizaciones.filter(u => esEcheq(u.id))) fallidas.push({ id: u.id, motivo: 'es un echeq de un pago en varios (sólo se cambia su fecha de cobro, de a uno)' })
+    actualizaciones = actualizaciones.filter(u => !esEcheq(u.id))
     try {
       // Agrupar por origen para hacer updates eficientes
       const arcaUpdates = actualizaciones.filter(u => u.origen === 'ARCA')

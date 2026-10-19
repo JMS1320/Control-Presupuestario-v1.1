@@ -61,6 +61,8 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `reglas_ctas_import_arca` | ❌ | — | Reglas CUIT→cuenta contable al importar ARCA. |
 | `config_parseo_extracto` | ✅ | — | Config de parseo de extractos por cuenta bancaria. Ver § detalle abajo. |
 | `balance_fotos` + `balance_foto_valores` | ✅ | 8 + 9 | 📸 **El balance propio** (A-FEAT-1190, `scripts/75`, 2026-10-03): una **foto** por empresa y fecha de cierre (con su TC) y un importe en pesos por renglón y **versión** (contador / jms / sistema / senasa). **Dato duro**: no se recalcula; `valor_sistema` guarda lo que decía el sistema el día de la foto, para avisar si cambia. El catálogo de renglones y rubros vive en `lib/balance/balance-propio.ts`. Lectura **restringida** (recurso `extracto`): el rol `contable` no la ve |
+| `feriados` | ✅ | 56 | 🗓️ **Feriados** (A-FEAT-1259, `scripts/81`, 2026-10-09): `fecha` (PK), `nombre`, `tipo` inamovible/trasladable/puente/manual, **`cuenta`** = si la planilla de asistencia lo trata como domingo. Precargados los nacionales 2025–2027 (fuente api.argentinadatos.com); los **puentes** con `cuenta = false` (no son feriado para el empleador privado). Editables desde la planilla. RLS `tiene_rol()` como sueldos |
+| `balance_pendientes` | ✅ | 2 | 📌 **Pendientes a revisar de los papeles de trabajo** (A-FEAT-1258, `scripts/80`, 2026-10-07): por `empresa` + `anio_cierre`; `estado` abierto/resuelto con `resolucion` y `resuelto_at` (no se borran: queda la historia). Se anotan en *Reportes → Papeles de trabajo* y salen en el export («00 Pendientes a revisar») y en el Excel para el contador. Mismos permisos que `balance_fotos` (recurso `extracto`, lectura restringida) |
 | `anticipos_proveedores` | ❌ | 38 | ⚠️ **El nombre engaña: guarda las DOS puntas.** `tipo = 'pago'` es un anticipo **a un proveedor** (activo) y `tipo = 'cobro'` es un anticipo **de un cliente** (pasivo) — al 30/06/2026 los `cobro` eran **$133,8 M** (casi todo Pedro Genta) contra **$13,4 M** de `pago`. **Sumarlos mezcla activo con pasivo.** ⚠️ Y `empresa` está **en NULL en 15 filas** ($137,4 M): filtrar por empresa las hace desaparecer sin avisar → [A-DAT-73](PENDIENTES.md#a-dat-73). 🔑 El saldo se consume por **tres** vías: `anticipos_facturas` + `monto_sicore` + `descuento_aplicado`; `monto_restante` es **la foto de hoy**, no el saldo a una fecha. (visto 2026-09-30) |
 | `anticipos_facturas` | ❌ | — | N:N anticipo↔factura aplicada. |
 | `distribucion_socios` | ✅ | — | Config distribución por socio (dashboard). |
@@ -303,6 +305,7 @@ son las vaquillonas del año siguiente.
 | `pagos` | ❌ | 71 | Pagos (anticipos + finales), vinculables a grupo de pago + `visible_contable`. |
 | `componentes_salario` | ❌ | — | Componentes del salario por empleado/campaña (vigencias). |
 | `cuentas_empleado` | ❌ | — | Cuentas bancarias del empleado. |
+| `asistencia` | ✅ | 0 | 🗓️ **Planilla de asistencia** (A-FEAT-1259, `scripts/81`, 2026-10-09): **una marca por empleado y día** — `P` presente · `F` franco tomado · `M` medio día (se ve «½») · `V` vacaciones · `L` licencia; único (`empleado_id`, `fecha`); un día sin fila = sin marcar. Vista `public.sueldos_asistencia`. El cálculo de francos vive en `lib/sueldos/asistencia.ts`, no en la base |
 > Se accede vía vistas `public.sueldos_*` (mismo nombre con prefijo). FKs lógicas: periodos/pagos/componentes/cuentas → empleados; periodos/componentes → campanas; pagos → periodos.
 
 ---
@@ -489,7 +492,7 @@ motivo.
 
 | Tabla | Qué recibe | Se cierra con |
 |---|---|---|
-| `notas_para_claude` + `notas_capturas` | *"esto no anda"*, con captura y contexto (P-34) | `estado='leida'` + `resultado` |
+| `notas_para_claude` + `notas_capturas` | *"esto no anda"*, con captura y contexto (P-34) | `estado='leida'` + `resultado`. **`sin_supervision = true`** (2026-10-13, A-FEAT-1266) = el usuario autoriza a desarrollarla sin esperarlo |
 | `pendientes_comentarios` | comentario sobre un pendiente **que ya existe** | `leido_at` |
 | `pendientes_propuestos` | un pendiente **nuevo** que propone el usuario | `estado='incorporado'` + `pendiente_id_asignado` |
 
@@ -698,6 +701,20 @@ esa boleta grava al contribuyente y no a la parcela: su objeto imponible **es el
 de la cuota elegida, y es un acto explícito del usuario, fila por fila.
 
 ---
+
+## 6f. Compras de insumos en dólares: el costo sigue al TC del PAGO (2026-10-05)
+
+- `productivo.movimientos_insumos`: **`costo_unitario` siempre en pesos** (lo leen consumo, margen, panel de
+  entregas); al lado `moneda` (ARS/USD), `costo_unitario_moneda` (el precio en esa moneda) y `tipo_cambio`.
+- El vínculo con la factura es `productivo.entrega_factura` (`precio_unitario` en pesos; `notas` con el
+  pactado, el % de descuento y el TC — la huella).
+- 🔁 **Trigger `trg_costo_compras_sigue_tc`** en `msa.comprobantes_arca` (AFTER UPDATE OF `tc_pago`,
+  `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`: recalcula en pesos, al `tc_pago` (o al de la
+  factura si se borra), las compras USD vinculadas: el movimiento, el vínculo y el costo de
+  `stock_insumos` **si era el de esa compra**. Es trigger porque `tc_pago` se escribe desde 6 lugares.
+- Criterio (usuario): **el costo del insumo es lo que se pagó**; la factura (subdiario, IVA) sigue con su
+  TC hasta que llega la NC por diferencia de cambio, que la app espera sola (A-FEAT-1255).
+- Scripts `78-moneda-compras-insumos.sql` y `79-costo-compras-sigue-tc-pago.sql`.
 
 ## 7. Referencias
 

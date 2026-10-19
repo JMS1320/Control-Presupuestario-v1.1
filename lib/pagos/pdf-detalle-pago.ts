@@ -11,6 +11,7 @@
 //    10/08/2026: decía $520.978,69 sobre una factura de $548.398,62, justo el descuento de menos).
 //    El desglose por medios de abajo ya usaba este criterio; la tabla principal no.
 
+import type { ConversionMoneda } from './moneda-factura'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import type { MedioPago } from './medios-pago'
@@ -44,6 +45,8 @@ export const generarPDFDetallePago = async (
     /** 'ARCA' | 'ANTICIPO' | 'TEMPLATE'. Un ANTICIPO **no es una factura**: no suma al bruto
      *  (A-BUG-105), es un MEDIO de pago de la factura a la que está aplicado. */
     origen?: string
+    /** 💵 A-BUG-1245 — factura en moneda extranjera: importes ya en pesos, esto explica la conversión. */
+    conversion?: ConversionMoneda | null
   }>,
   anticipo?: {
     monto: number
@@ -58,7 +61,9 @@ export const generarPDFDetallePago = async (
   try {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
     const pageW = doc.internal.pageSize.getWidth()
-    const fmt = (n: number) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+    // El signo va ANTES del peso: una nota de crédito salía «$-133.335,56» (A-BUG-1254).
+    const fmt = (n: number) => `${n < 0 ? '-' : ''}$${Math.abs(n).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+    const nf2 = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     const fmtFechaStr = (f: string) => {
       const d = new Date(f + 'T12:00:00')
       return `${d.getDate().toString().padStart(2,'0')}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getFullYear()}`
@@ -133,10 +138,15 @@ export const generarPDFDetallePago = async (
      * ⚖️ El **descuento sí** se lista por factura: es lineal y es condición comercial de ese
      * comprobante.
      */
+    // 💵 A-BUG-1245 — factura en moneda extranjera: el cuadro 1 muestra el ORIGINAL, el TC y el
+    // equivalente en pesos (pedido del usuario: «la 1ª sección debería mostrarla en dólares, y mostrar
+    // TC y el equivalente en pesos»). Las demás columnas siguen en pesos, que es como se paga.
+    const hayConversion = !anticipo && items.some(i => i.conversion)
     const head: string[][] = [[
       'Comprobante',
       'Fecha',
-      'Total Factura',
+      ...(hayConversion ? ['Total moneda orig.', 'TC'] : []),
+      hayConversion ? 'Total Factura ($)' : 'Total Factura',
       ...(hayDescuento ? ['Descuento'] : []),
       ...(hayMedios ? [] : ['Monto Transferido', 'Total Cancelado']),
     ]]
@@ -184,9 +194,11 @@ export const generarPDFDetallePago = async (
       body = lineas.map(l => {
         // Sin desglose de medios, cada línea muestra lo suyo; el reparto del pago es del total.
         const montoTransferido = l.imp_total - l.descuento
+        const cv = l.conversion
         return [
           l.comprobante,
           l.fecha,
+          ...(hayConversion ? [cv ? `${cv.moneda} ${nf2(cv.totalOrig)}` : '-', cv ? nf2(cv.tc) : '-'] : []),
           fmt(l.imp_total),
           ...(hayDescuento ? [l.descuento ? fmt(l.descuento) : '-'] : []),
           ...(hayMedios ? [] : [fmt(montoTransferido), fmt(l.imp_total)]),
@@ -194,8 +206,13 @@ export const generarPDFDetallePago = async (
       })
       // 🐞 A-BUG-149 — los cuatro totales salían de sumar `items` a mano, y el bruto **incluía los
       //    anticipos**. Ahora salen de la cuenta compartida, igual que el cuerpo del mail.
+      // El total en la moneda original sólo si todas las líneas son de la misma moneda extranjera.
+      const monedas = [...new Set(lineas.map(l => l.conversion?.moneda ?? 'ARS'))]
+      const totalOrig = monedas.length === 1 && monedas[0] !== 'ARS'
+        ? `${monedas[0]} ${nf2(lineas.reduce((s, l) => s + (l.conversion?.totalOrig ?? 0), 0))}` : ''
       body.push([
         'TOTAL', '',
+        ...(hayConversion ? [totalOrig, ''] : []),
         fmt(cuenta.bruto),
         ...(hayDescuento ? [fmt(cuenta.descuento)] : []),
         ...(hayMedios ? [] : [fmt(cuenta.pagado), fmt(cuenta.pagado + cuenta.retencion + cuenta.descuento)]),
@@ -267,7 +284,17 @@ export const generarPDFDetallePago = async (
       if (cuenta.dif > 1) mBody.push(['Saldo pendiente', '', fmt(cuenta.dif)])
       else if (cuenta.dif < -1) mBody.push(['Pagado a cuenta', '', fmt(-cuenta.dif)])
 
-      const startY2 = ((doc as any).lastAutoTable?.finalY ?? 56) + 8
+      // 💵 A-BUG-1245 — la conversión ya está en el cuadro 1 (moneda original · TC · pesos). Sólo se
+      // aclara, en una línea, que el desglose es en pesos.
+      let yConv = ((doc as any).lastAutoTable?.finalY ?? 56)
+      if (hayConversion) {
+        yConv += 5
+        doc.setFontSize(8)
+        doc.setFont('helvetica', 'italic')
+        doc.text('Factura en moneda extranjera: los importes en pesos son al TC del pago.', 15, yConv)
+        doc.setFont('helvetica', 'normal')
+      }
+      const startY2 = yConv + 8
       doc.setFontSize(11)
       doc.setFont('helvetica', 'bold')
       doc.text('Desglose del pago', 15, startY2)

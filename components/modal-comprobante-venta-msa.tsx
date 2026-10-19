@@ -222,8 +222,8 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
           .update({ ...payload, updated_at: new Date().toISOString() })
           .eq('id', comprobanteInicial!.id)
         if (error) throw error
-        // 🏷️ La cuenta viaja a sus movimientos del banco (sólo MSA tiene ese vínculo).
-        if (schemaName === 'msa') await propagarImputacionDeVenta(supabase, comprobanteInicial!.id, payload as any)
+        // 🏷️ La cuenta viaja a sus movimientos del banco — las 3 empresas desde A-FEAT-24 (scripts/84).
+        await propagarImputacionDeVenta(supabase, comprobanteInicial!.id, payload as any, schemaName)
       } else {
         const { error } = await supabase
           .schema(schemaName)

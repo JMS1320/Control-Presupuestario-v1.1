@@ -86,7 +86,7 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 - **sueldos_empleados**: `id uuid, nombre varchar, tipo_empleado varchar, empresa varchar, cuit_empleado varchar, francos_dias_promedio int, dias_promedio int, horas_promedio int, activo boolean, created_at tstz, fecha_ingreso date, fecha_egreso date, sueldo_presupuesto numeric, premio_presupuesto numeric` _(**`sueldo_presupuesto` y `premio_presupuesto` NO están en el backup** — ALTER 2026-08-02, ver RECONSTRUCCION. Son SOLO para proyectar: el presupuesto los usa hacia adelante y NO se liquida con ellos. ⚠️ `public.sueldos_empleados` es una **vista espejo** de `sueldos.empleados`: agregar una columna a la tabla obliga a **recrear la vista** o el código no la ve.)_
 - **sueldos_componentes_salario**: `id uuid, empleado_id uuid, campana_id uuid, tipo_componente varchar, monto numeric, vigente_desde date, vigente_hasta date, created_at tstz`
 - **sueldos_cuentas_empleado**: `id uuid, empleado_id uuid, banco varchar, alias varchar, activo boolean`
-- **sueldos_periodos**: `id uuid, empleado_id uuid, campana_id uuid, anio int, mes int, fecha_inicio_periodo date, fecha_fin_periodo date, bruto_calculado numeric, sueldo_x_ipc numeric, sueldo_pagado numeric, anticipos_descontados numeric, saldo_pendiente numeric, estado varchar, observaciones text, created_at tstz, monto_a numeric, monto_b numeric, francos_cantidad numeric, cuota_alimentaria numeric, valor_por_dia numeric, dias_trabajados int, valor_por_hora numeric, horas_mes int, varios numeric, valor_franco numeric, vacaciones numeric, premio numeric`
+- **sueldos_periodos**: `id uuid, empleado_id uuid, campana_id uuid, anio int, mes int, fecha_inicio_periodo date, fecha_fin_periodo date, bruto_calculado numeric, sueldo_x_ipc numeric, sueldo_pagado numeric, anticipos_descontados numeric, saldo_pendiente numeric, estado varchar, observaciones text, created_at tstz, monto_a numeric, monto_b numeric, francos_cantidad numeric, cuota_alimentaria numeric, valor_por_dia numeric, dias_trabajados numeric *(era int hasta 2026-10-09, script 82: admite medio día)*, valor_por_hora numeric, horas_mes int, varios numeric, valor_franco numeric, vacaciones numeric, premio numeric`
 - **sueldos_pagos**: `id uuid, periodo_id uuid, empleado_id uuid, tipo varchar, fecha date, monto numeric, cuenta_destino_id uuid, descripcion text, created_at tstz, estado varchar, medio_pago text, grupo_pago_id uuid, visible_contable boolean`
 
 ---
@@ -167,7 +167,7 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### Insumos / maestros
 - **categorias_insumo**: `id uuid, nombre varchar, unidad_medida varchar, activo boolean, created_at ts, ambito text`  *(ambito: agricola/ganadero/ambos)*
 - **stock_insumos**: `id uuid, categoria_id uuid→categorias_insumo, producto varchar, cantidad numeric, costo_unitario numeric, observaciones text, updated_at ts, unidad_medida varchar`
-- **movimientos_insumos**: `id uuid, fecha date, insumo_stock_id uuid→stock_insumos, tipo varchar, cantidad numeric, costo_unitario numeric, monto_total numeric, destino_campo varchar, proveedor varchar, cuit varchar, observaciones text, created_at ts`
+- **movimientos_insumos**: `id uuid, fecha date, insumo_stock_id uuid→stock_insumos, tipo varchar, cantidad numeric, costo_unitario numeric, monto_total numeric, destino_campo varchar, proveedor varchar, cuit varchar, observaciones text, created_at ts, moneda text (ARS|USD, default ARS), costo_unitario_moneda numeric, tipo_cambio numeric` — 💵 `costo_unitario` siempre en **pesos**; el original y el TC al lado (A-BUG-1244, 2026-10-05)
 - **labores**: `id int, nombre varchar, activo boolean, orden_display int, created_at ts, tipo varchar`
 
 ---
@@ -176,10 +176,12 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 
 - **empleados**: `id uuid, nombre varchar, tipo_empleado varchar, empresa varchar, cuit_empleado varchar, francos_dias_promedio int, dias_promedio int, horas_promedio int, activo boolean, created_at tstz, fecha_ingreso date, fecha_egreso date`
 - **campanas**: `id uuid, etiqueta varchar, fecha_inicio date, fecha_fin date, activa boolean, created_at tstz`
-- **periodos**: `id uuid, empleado_id uuid, campana_id uuid, anio int, mes int, fecha_inicio_periodo date, fecha_fin_periodo date, bruto_calculado numeric, sueldo_x_ipc numeric, sueldo_pagado numeric, anticipos_descontados numeric, saldo_pendiente numeric, estado varchar, observaciones text, created_at tstz, monto_a numeric, monto_b numeric, francos_cantidad numeric, valor_por_dia numeric, dias_trabajados int, valor_por_hora numeric, horas_mes int, varios numeric, valor_franco numeric, vacaciones numeric, premio numeric`
+- **periodos**: `id uuid, empleado_id uuid, campana_id uuid, anio int, mes int, fecha_inicio_periodo date, fecha_fin_periodo date, bruto_calculado numeric, sueldo_x_ipc numeric, sueldo_pagado numeric, anticipos_descontados numeric, saldo_pendiente numeric, estado varchar, observaciones text, created_at tstz, monto_a numeric, monto_b numeric, francos_cantidad numeric, valor_por_dia numeric, dias_trabajados numeric *(era int hasta 2026-10-09, script 82: admite medio día)*, valor_por_hora numeric, horas_mes int, varios numeric, valor_franco numeric, vacaciones numeric, premio numeric`
 - **pagos**: `id uuid, periodo_id uuid, empleado_id uuid, tipo varchar, fecha date, monto numeric, cuenta_destino_id uuid, descripcion text, created_at tstz, estado varchar, medio_pago text, grupo_pago_id uuid, visible_contable boolean`
 - **componentes_salario**: `id uuid, empleado_id uuid, campana_id uuid, tipo_componente varchar, monto numeric, vigente_desde date, vigente_hasta date, created_at tstz`
 - **cuentas_empleado**: `id uuid, empleado_id uuid, banco varchar, alias varchar, activo boolean`
+- **asistencia** *(2026-10-09, A-FEAT-1259)*: `id uuid, empleado_id uuid → empleados (on delete cascade), fecha date, marca text CHECK in ('P','F','M','V','L'), updated_at tstz` · UNIQUE (empleado_id, fecha). Vista `public.sueldos_asistencia` (mismas columnas)
+- **public.feriados** *(2026-10-09, A-FEAT-1259)*: `fecha date PK, nombre text, tipo text CHECK in ('inamovible','trasladable','puente','manual'), cuenta boolean default true, created_at tstz`
 
 ---
 

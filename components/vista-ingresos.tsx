@@ -20,12 +20,10 @@ import { EMPRESAS, COLOR_EMPRESA, type Empresa } from "@/lib/empresas"
 //
 // No todas las vistas aplican a las 3 empresas, y no por falta de ganas:
 //   · Ventas (granos) y Ganadería → SOLO MSA (decisión del usuario).
-//   · Cobros → SOLO MSA por un dato que no existe: `comprobante_venta_id` está
-//     únicamente en `public.msa_galicia`. Los extractos de PAM (`pam_galicia`,
-//     `pam_galicia_cc`) y MA (`ma.ma_galicia`) NO tienen esa columna, así que
-//     ahí un cobro no se puede vincular a una factura. Mostrar la solapa diría
-//     "cobrado $0" en todas las facturas, que miente peor que no estar.
-//     → PENDIENTES § A-FEAT-24.
+//   · Cobros → las 3 empresas desde 2026-10-14 (A-FEAT-24). ⚠️ Hasta ahí era SOLO
+//     MSA porque `comprobante_venta_id` existía únicamente en `public.msa_galicia`;
+//     `scripts/84` lo agregó a los extractos de PAM y MA. Sin ese script corrido, la
+//     solapa de PAM/MA muestra el error de lectura (no un «cobrado $0»).
 // ════════════════════════════════════════════════════════════════════════════
 
 type Vista = 'arrendamientos' | 'ventas' | 'comprobantes' | 'cobros' | 'subdiarios' | 'ganaderia'
@@ -34,7 +32,7 @@ const VISTAS: { id: Vista; label: string; icono: typeof Wheat; soloMsa?: boolean
   { id: 'arrendamientos', label: 'Arrendamientos', icono: Wheat },
   { id: 'ventas',         label: 'Ventas',         icono: Receipt,  soloMsa: true },
   { id: 'comprobantes',   label: 'Comprobantes',   icono: FileText },
-  { id: 'cobros',         label: 'Cobros',         icono: Landmark, soloMsa: true },
+  { id: 'cobros',         label: 'Cobros',         icono: Landmark },
   { id: 'subdiarios',     label: 'Subdiarios',     icono: BookOpen },
   { id: 'ganaderia',      label: 'Ganadería',      icono: Beef,     soloMsa: true },
 ]
@@ -112,15 +110,15 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: UserRole }) {
                 <VistaSubdiariosVenta empresa={empresa} userRole={userRole} />
               </TabsContent>
 
+              <TabsContent value="cobros" className="space-y-4">
+                <VistaCobrosVenta key={empresa} empresa={empresa} />
+              </TabsContent>
+
               {/* Sólo MSA — ver el comentario del encabezado */}
               {empresa === 'MSA' && (
                 <>
                   <TabsContent value="ventas" className="space-y-4">
                     <VistaVentasMsa userRole={userRole} />
-                  </TabsContent>
-
-                  <TabsContent value="cobros" className="space-y-4">
-                    <VistaCobrosVenta />
                   </TabsContent>
 
                   <TabsContent value="ganaderia" className="space-y-4">

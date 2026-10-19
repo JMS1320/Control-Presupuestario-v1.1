@@ -1,5 +1,7 @@
 "use client"
 
+import { imputacionParaElBanco, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { useState } from "react"
 import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { supabase } from "@/lib/supabase"
@@ -11,6 +13,7 @@ import {
 } from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
+import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
@@ -299,7 +302,7 @@ export function useMotorConciliacion() {
    * `datos` se pasa por parámetro y no se toma del estado a propósito: el motor lo recarga justo
    * antes de correr, y `setData` recién se ve en el próximo render (A-BUG-37).
    */
-  const buscarMatchCashFlow = (movimiento: MovimientoBancario, datos: typeof cashFlowData): any => {
+  const buscarMatchCashFlow = (movimiento: MovimientoBancario, datos: typeof cashFlowData, empresaCuenta?: string): any => {
     // Pre-filtro por haberes: si el banco indica acreditación de haberes, buscar solo sueldos
     const mov = movimiento as any
     const esHaberes = [movimiento.descripcion, mov.leyendas_adicionales_1, mov.leyendas_adicionales_2]
@@ -309,7 +312,15 @@ export function useMotorConciliacion() {
     const cuitBancario = extraerCuitBancario(movimiento)
 
     // Base: los haberes se buscan sólo contra sueldos; el resto, contra todo el Cash Flow.
-    const base = esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos
+    //
+    // 🔀 A-BUG-1256 — y el motor NUNCA vincula solo algo de OTRA empresa ni de OTRO CUIT que el que
+    // informa el banco: eso se hace a mano y con aviso (regla del usuario 2026-10-14). Dos comisiones
+    // del banco de MSA quedaron pegadas a facturas de MA sólo por coincidir el importe.
+    const base = (esHaberes ? datos.filter(cf => cf.origen === 'SUELDO') : datos)
+      .filter(cf => puedeVincularseSola(cf as any, empresaCuenta, cuitBancario))
+      // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios no se concilia sola: su id es el del
+      // cheque, no el de la factura/anticipo. Conciliar cada débito contra su echeq es A-DEC-17.
+      .filter(cf => (cf as any).origen_tabla !== 'msa.cheques')
 
     // El CUIT **prioriza, no excluye**. Antes el pool se reemplazaba por las filas de ese CUIT y el
     // fallback sólo se disparaba si no había NINGÚN candidato — o sea, por falta de CANDIDATOS y no
@@ -492,8 +503,8 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          let matchCF = poolTarjeta.length ? buscarMatchCashFlow(movimiento, sinUsar(poolTarjeta)) : { match: false }
-          if (!matchCF.match) matchCF = buscarMatchCashFlow(movimiento, sinUsar(datosCF))
+          let matchCF = poolTarjeta.length ? buscarMatchCashFlow(movimiento, sinUsar(poolTarjeta), cuenta.empresa) : { match: false }
+          if (!matchCF.match) matchCF = buscarMatchCashFlow(movimiento, sinUsar(datosCF), cuenta.empresa)
           if (matchCF.match) {
             usadosEnCorrida.add(String(matchCF.cashFlowRow.id))
             resultado = {
@@ -641,8 +652,20 @@ export function useMotorConciliacion() {
               (movimiento as any).detalle,   // lo que el usuario ya escribió nunca se pisa
             )
 
+            /**
+             * 🏷️ A-BUG-1247 — un cobro de VENTA toma la imputación de la venta (cuenta, número, centro),
+             * como el camino manual. Antes copiaba el rótulo de la fila del Cash Flow, que para una venta
+             * es el literal «VENTAS» — no es una cuenta del plan (Sanpa FC 10-20 y 10-21, 2026-10-05).
+             */
+            let impVentaCF: Record<string, string> | null = null
+            if (matchCF.cashFlowRow.origen === 'VENTA') {
+              const { data: vta } = await supabase.schema('msa').from('comprobantes_venta')
+                .select('cuenta_contable, nro_cuenta, centro_costo').eq('id', String(matchCF.cashFlowRow.id).split('#')[0]).maybeSingle()
+              if (vta) impVentaCF = await imputacionParaElBanco(supabase, vta as any)
+            }
+
             await actualizarMovimientoBD(cuenta, movimiento.id, {
-              categ: sinCateg ? null : matchCF.cashFlowRow.categ,
+              categ: sinCateg ? null : (matchCF.cashFlowRow.origen === 'VENTA' ? (impVentaCF?.categ ?? null) : matchCF.cashFlowRow.categ),
               centro_de_costo: matchCF.cashFlowRow.centro_costo,
               detalle: columnas.detalle,
               estado: estadoFinalConCateg,
@@ -650,8 +673,13 @@ export function useMotorConciliacion() {
               proveedor_nombre: columnas.proveedor_nombre,
               comprobantes_pagados: columnas.comprobantes_pagados,
               ...extraIdsCF,
-              ...extraCF
+              ...extraCF,
+              ...(impVentaCF?.nro_cuenta ? { nro_cuenta: impVentaCF.nro_cuenta } : {}),
             })
+            // 📝 A-FEAT-1257 — el detalle de un cobro de venta dice qué se cobró (cuota / cabezas).
+            if (matchCF.cashFlowRow.origen === 'VENTA') {
+              try { await anotarQueSeCobro(supabase, movimiento.id, String(matchCF.cashFlowRow.id).split('#')[0]) } catch { /* se completa después */ }
+            }
 
             // Actualizar estado de la cuota/factura origen si el match fue definitivo
             if (estadoFinal === 'conciliado') {
@@ -678,6 +706,8 @@ export function useMotorConciliacion() {
                   console.error('⚠️ La factura no se marcó como conciliada (no se encontró):',
                     matchCF.cashFlowRow.origen_tabla, idsArcaConciliar)
                 }
+                // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
+                await completarFechaPago(supabase, schemaDeFila(matchCF.cashFlowRow), idsArcaConciliar, movimiento.fecha)
               } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
                 // Igual que ARCA y templates: si es un grupo se concilian TODOS sus miembros.
                 // Antes la rama exigía `origen_tabla === 'sueldos.pagos'` y un grupo no lo cumple:

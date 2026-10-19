@@ -23,12 +23,16 @@
  * ⚖️ **El descuento SÍ va por factura**: es lineal y es una condición comercial de ese comprobante.
  */
 
+import type { ConversionMoneda } from './moneda-factura'
+
 /** Una factura dentro de un grupo de pago. */
 export interface SubFactura {
   comprobante: string
   fecha?: string | null
   imp_total: number
   descuento_aplicado?: number | null
+  /** 💵 Factura en moneda extranjera: `imp_total` ya va en pesos; esto es el original y el TC. */
+  conversion?: ConversionMoneda | null
 }
 
 export interface LineaDetalle {
@@ -36,6 +40,8 @@ export interface LineaDetalle {
   fecha: string
   imp_total: number
   descuento: number
+  /** 💵 A-BUG-1245 — para mostrar en el cuadro 1 el total en dólares, el TC y el equivalente en pesos. */
+  conversion?: ConversionMoneda | null
 }
 
 const t = (s: string | null | undefined) => (s ?? '').trim()
@@ -68,6 +74,32 @@ const SEP_NOTA = ' · '
  * vienen igual escritos. Y si al sacarlo **no queda nada**, se devuelve la etiqueta entera: perder
  * el renglón es peor que repetir el nombre.
  */
+/**
+ * ✉️ Las facturas que se pagan, **cortas**: sin el proveedor y sin los ceros de relleno — para el
+ * asunto y el cuerpo del mail (pedido del usuario 2026-10-05: *«la FC pagada abreviada, sin ceros…
+ * y que no repita el proveedor para cada factura»*). `FC 6447 - AGRO CENTROS…` → `FC 6447`;
+ * `FC 1-00003-00006447` → `FC 1-3-6447`. Un grupo se abre en sus facturas. Los anticipos no van:
+ * no son algo que se pague, son un medio (ya están en el desglose).
+ */
+export function facturasCortas(
+  items: Array<{ comprobante?: string | null; origen?: string; facturas?: SubFactura[] | null }>,
+  proveedor: string,
+): string[] {
+  const sinCeros = (x: string) => x.replace(/\b0+(?=\d)/g, '')
+  const out: string[] = []
+  for (const i of items) {
+    if (i.origen === 'ANTICIPO') continue
+    const partes = i.facturas && i.facturas.length
+      ? i.facturas.map(f => f.comprobante)
+      : etiquetaLimpia(i.comprobante).split(SEP_COMPROBANTES)
+    for (const p of partes) {
+      const e = sinCeros(sinElProveedor(t(p), proveedor))
+      if (e && !out.includes(e)) out.push(e)
+    }
+  }
+  return out
+}
+
 export function sinElProveedor(etiqueta: string, proveedor: string): string {
   const e = t(etiqueta)
   const p = t(proveedor)
@@ -97,6 +129,7 @@ export function lineasDelDetalle(
     descuento_aplicado?: number | null
     origen?: string
     facturas?: SubFactura[] | null
+    conversion?: ConversionMoneda | null
   }>,
   proveedor: string,
 ): LineaDetalle[] {
@@ -110,6 +143,7 @@ export function lineasDelDetalle(
           fecha: fechaES(f.fecha) || fechaES(i.fecha),
           imp_total: Number(f.imp_total) || 0,
           descuento: Number(f.descuento_aplicado) || 0,
+          conversion: f.conversion ?? null,
         })
       }
       continue
@@ -122,6 +156,7 @@ export function lineasDelDetalle(
       fecha: fechaES(i.fecha),
       imp_total: Number(i.imp_total) || 0,
       descuento: Number(i.descuento_aplicado) || 0,
+      conversion: i.conversion ?? null,
     })
   }
 

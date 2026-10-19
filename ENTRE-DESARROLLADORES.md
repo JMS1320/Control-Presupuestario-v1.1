@@ -40,6 +40,79 @@
 
 ## 📨 PARA JAVIER
 
+### 🌿 Tus ramas ya mergeadas (2026-10-14) — las borrás vos si querés
+
+Hicimos limpieza de ramas: JMS borró las suyas que ya estaban 100 % en `desarrollo`. **Las tuyas no las
+tocamos** (regla: cada uno borra las propias). Estas están enteramente contenidas en `desarrollo`:
+`feature/inicio-widgets`, `feature/login-google`, `feature/perfil-imagen-preferencias`,
+`feature/permisos-granulares`, `home-dashboard`. Si ya no las usás, borralas; si alguna te sirve de base,
+dejala.
+
+➕ También se borró `vercel/react-server-components-cve-*` (la creó el bot de Vercel en enero para subir
+Next 15.2.4 → 15.2.8; la app ya está en 16.1.1). Y queda **sin mergear a propósito** `jms/vistas-seguras`:
+son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
+
+`scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y
+[A-FEAT-24](PENDIENTES.md#a-feat-24). ✅ **Corrido 2026-10-14** con JMS presente. Ojo con algo que encontré: el
+schema `pam` tiene privilegios por defecto que le daban a `authenticated` REFERENCES/TRIGGER/**TRUNCATE** sobre
+tablas nuevas; en ésta los saqué. Puede valer revisar esos default privileges en tu cierre de A-SEC-14.
+
+| Qué | Permisos |
+|---|---|
+| tablas nuevas `pam.retenciones_recibidas` y `ma.retenciones_recibidas` (copia de la de MSA) | las mismas policies que puso tu `scripts/62` a la de MSA (`ver_segun_permiso` / `escribir_segun_permiso`), nada a `anon`; si `msa.retenciones_recibidas` está en `recurso_tablas`, se copia el mapeo con su empresa (hoy no figura) |
+| columna `comprobante_venta_id` en `public.pam_galicia`, `public.pam_galicia_cc` y `ma.ma_galicia` | heredan grants y RLS de su tabla |
+
+✅ **Por qué no te afecta**: no se toca ninguna policy existente, ni `recurso_tablas` de otras tablas, ni
+roles. Si al cerrar A-SEC-14 mapeás `msa.retenciones_recibidas` a un recurso, **sumá las dos nuevas**.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Una columna nueva en `public.notas_para_claude` (2026-10-13) — aviso ANTES de aplicarla
+
+`sin_supervision boolean not null default false` — la marca con la que JMS autoriza a Claude a
+desarrollar una nota sin esperarlo ([A-FEAT-1266](PENDIENTES.md#a-feat-1266)). Script
+`scripts/83-notas-sin-supervision.sql` (+ `-deshacer`).
+
+✅ **Por qué no te afecta**: no toca RLS, policies ni `recurso_tablas`; los grants de esa tabla son a
+nivel tabla, así que la columna los hereda; no hay vistas sobre ella; las filas que existen quedan en
+`false`.
+
+🔐 **Y otro aviso el mismo día, éste sí en tu archivo — `middleware.ts`** ([A-BUG-1248](PENDIENTES.md#a-bug-1248)):
+voy a sumarle a la CSP **una directiva `frame-src https://drive.google.com`**. Hoy no hay `frame-src`,
+así que cae en `default-src 'self'` y la app no puede mostrar el visor de Drive embebido: «👁 ver» en
+*Subdiarios → PDFs sin vincular* da «Este contenido está bloqueado» con todos los archivos. No se toca
+`frame-ancestors 'none'` ni `X-Frame-Options: DENY` (la app sigue sin poder ser embebida por nadie) ni
+ninguna otra directiva. Si preferís otro camino (por ejemplo servir el PDF por una ruta propia),
+revertilo sin avisar.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Dos tablas nuevas para la planilla de asistencia de sueldos (2026-10-09) — aviso ANTES de aplicarlas
+
+**La BD es una sola, así que te aviso antes.** Es `scripts/81-planilla-asistencia.sql` (y su `-deshacer`), para
+[A-FEAT-1259](PENDIENTES.md#a-feat-1259):
+
+| Tabla | Qué guarda | Permisos |
+|---|---|---|
+| `sueldos.asistencia` (+ vista `public.sueldos_asistencia`) | una marca por empleado y día (P · F · ½ · V · L) | **igual que las demás de `sueldos`**: RLS `tiene_rol()`, vista con grants a `authenticated`, nada a `anon` |
+| `public.feriados` | feriados nacionales 2025–2027 precargados + los que se agreguen a mano | RLS `tiene_rol()`, nada a `anon` |
+
+✅ **Por qué no te afecta**: son tablas **nuevas**; no se toca ninguna existente, ninguna policy tuya ni
+`recurso_tablas`. Copian el patrón de permisos que ya tiene `sueldos` — si al cerrar A-SEC-14 le ponés
+`restringe_lectura` a sueldos, **sumá estas dos**. Reversible entero con el `-deshacer`.
+
+➕ **Y un cambio de tipo, mismo día** (`scripts/82-dias-trabajados-con-medios.sql`): `sueldos.periodos.dias_trabajados`
+pasa de **integer a numeric** (los jornales admiten medio día). Como la vista `public.sueldos_periodos` depende de la
+columna, el script la **recrea con la misma definición y los mismos GRANTs** (authenticated y service_role, nada a
+anon) dentro de una transacción. Si tenés algo que lea esa vista, no cambia nada: mismas columnas.
+
+📌 Borrá esta entrada cuando la leas.
+
+
 ### 🗃️ Columnas nuevas en la BD (2026-09-30) — aviso, no hay nada que hacer
 
 **La BD es una sola, así que te aviso aunque no te toque nada.** Se agregaron columnas **nullable**, sin
@@ -258,7 +331,8 @@ instante y el type-check sigue en verde»*. Precedente: `A-SEC-04`.
 (`A-BUG-1217`). La app sigue andando normal: usa `authenticated`, que sí tiene permisos.
 
 **Qué falta, y NO toca la seguridad:** que el Apps Script use la **service role key** en vez de la
-anon. Lo hace JMS en el script; **no se re-abre `anon`**.
+anon. Lo hace JMS en el script; **no se re-abre `anon`**. ✅ **Hecho 2026-10-05** — el script lee la key
+de sus propiedades y los borradores volvieron a salir.
 
 ❓ **Lo único que necesitamos de vos**: si hay **otros consumidores externos** apuntando a la base
 con la anon key —otro GAS, un n8n, un script suelto—, decilo, porque están rotos igual y **callados**.
@@ -423,3 +497,39 @@ Cheques de terceros en cartera ([A-FEAT-1229](PENDIENTES.md#a-feat-1229)), en **
 
 No toca filas, permisos, RLS ni vistas. Tiene deshacer con freno. Si algo tuyo enumera los estados
 de pago de un anticipo o hace `select *` y valida columnas, sumale estos dos.
+
+## 📨 2026-10-05 · PARA JAVIER — voy a sumar 2 tarjetas a tu registro de widgets (`lib/widgets/registro.ts`)
+
+Al pasar Principal a tarjetas (A-FEAT-88, 17/09) quedaron **afuera dos paneles** que estaban en la pantalla
+fija: **🚩 las marcas «para revisar» (Alt+R)** —el usuario tiene 13 abiertas y dejó de verlas— y
+**los echeq en fecha de cobro** (A-FEAT-1182, que se sumó a la pantalla vieja después de tu cambio). No es
+un error tuyo: la pantalla vieja siguió recibiendo cosas que ya no se mostraban.
+
+**Qué hago**: dos filas nuevas en `WIDGETS` (`revisiones`, sección `principal`; `echeqs-en-fecha`, sección
+`cashflow`) y las agrego a `WIDGETS_POR_DEFECTO`. No toco nada más del registro ni del configurador.
+Si preferís otra sección para el permiso de alguna, cambiala sin avisar. Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-05 · PARA JAVIER — 3 columnas nuevas en `productivo.movimientos_insumos` (aviso, no hay nada que hacer)
+
+`moneda` (text, default `'ARS'`, check ARS/USD), `costo_unitario_moneda` (numeric) y `tipo_cambio`
+(numeric). Motivo: las compras en dólares se cargaban en `costo_unitario`, que toda la app lee como
+pesos. `costo_unitario` **sigue en pesos**; las columnas nuevas guardan el original. Sin cambios de
+RLS, permisos ni vistas (la tabla se expone directa). Script: `scripts/78-moneda-compras-insumos.sql`
+(+ `-deshacer`). Rama `jms/compras-factura`. Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-05 · PARA JAVIER — un TRIGGER nuevo en `msa.comprobantes_arca` (aviso, no hay nada que hacer)
+
+`trg_costo_compras_sigue_tc` (AFTER UPDATE OF `tc_pago`, `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`
+(`security definer`, `search_path = ''`). Cuando cambia el TC de pago de una factura en dólares, recalcula
+en pesos el costo de las compras de insumos vinculadas a ella (movimiento, vínculo y el costo del stock si era
+el de esa compra). No cambia RLS ni permisos. Script `scripts/79-costo-compras-sigue-tc-pago.sql` (+ `-deshacer`).
+Y una fila más en tu registro de widgets: `nc-diferencia-cambio` (sección `egresos`), también en el default.
+Al leerlo, borrá esta entrada.
+
+## 📨 2026-10-07 · PARA JAVIER — tabla nueva `public.balance_pendientes` (aviso, no hay nada que hacer)
+
+Pendientes a revisar de los papeles de trabajo del balance (A-FEAT-1258). **Mismo patrón que el balance
+propio (script 75)**: RLS `ver_segun_permiso` / `escribir_segun_permiso` con `puede_ver`/`puede_escribir`,
+`revoke` a `anon`, registrada en `recurso_tablas` con recurso `extracto` y `restringe_lectura = true` (el rol
+`contable` no la ve). Script `scripts/80-balance-pendientes.sql` (+ `-deshacer`). Al leerlo, borrá esta entrada.
+

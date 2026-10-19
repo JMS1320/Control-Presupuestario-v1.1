@@ -2,6 +2,9 @@ import type { ComponentType } from "react"
 import { AlertaExtractosDesactualizados } from "@/components/alerta-extractos-desactualizados"
 import { AlertaParseoPendiente } from "@/components/alerta-parseo-pendiente"
 import { AlertasFcVenta } from "@/components/alertas-fc-venta"
+import { PanelRevisiones } from "@/components/panel-revisiones"
+import { AlertaEcheqsEnFecha } from "@/components/alerta-echeqs-en-fecha"
+import { AlertaNcDiferenciaCambio } from "@/components/alerta-nc-diferencia-cambio"
 import { WidgetUltimoIPC } from "@/components/widgets/widget-ultimo-ipc"
 import { WidgetAlertasPagos } from "@/components/widgets/widget-alertas-pagos"
 import { WidgetAlertasVentas } from "@/components/widgets/widget-alertas-ventas"
@@ -115,6 +118,36 @@ export const WIDGETS: Widget[] = [
     ancho: "medio",
     Componente: WidgetAlertasVentas,
   },
+  /**
+   * ⚠️ 2026-10-05 — estos dos estaban en la pantalla fija y **quedaron afuera** al pasar a tarjetas: el
+   * usuario dejó de ver sus 13 marcas de Alt+R sin que nada lo avisara. Al sumar un aviso a Principal,
+   * va ACÁ (una fila); `vista-principal.tsx` ya no lo muestra nadie.
+   */
+  {
+    id: "revisiones",
+    titulo: "Para revisar (Alt+R)",
+    descripcion: "Lo que marcaste a mano desde cualquier pantalla para revisar.",
+    seccion: "principal",
+    ancho: "completo",
+    Componente: PanelRevisiones,
+  },
+  {
+    id: "echeqs-en-fecha",
+    titulo: "Echeqs en fecha de cobro",
+    descripcion: "Echeqs que ya llegaron a su fecha y nadie confirmó que salieran.",
+    seccion: "cashflow",
+    ancho: "completo",
+    Componente: AlertaEcheqsEnFecha,
+  },
+  {
+    // A-FEAT-1255 — facturas en dólares pagadas a otro TC: la NC/ND que se espera, hasta que llega.
+    id: "nc-diferencia-cambio",
+    titulo: "NC esperadas por diferencia de cambio",
+    descripcion: "Facturas en dólares pagadas a otro TC: la NC (o ND) que tiene que mandar el proveedor.",
+    seccion: "egresos",
+    ancho: "completo",
+    Componente: AlertaNcDiferenciaCambio,
+  },
 ]
 
 /**
@@ -129,6 +162,9 @@ export const WIDGETS_POR_DEFECTO = [
   "fc-venta",
   "alertas-pagos",
   "alertas-ventas",
+  "revisiones",
+  "echeqs-en-fecha",
+  "nc-diferencia-cambio",
 ]
 
 /**

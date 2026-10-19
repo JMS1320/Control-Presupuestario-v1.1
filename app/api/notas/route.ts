@@ -32,7 +32,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseAdmin
       .from("notas_para_claude")
-      .select("id, titulo, estado, resultado, created_at, notas_capturas(count)")
+      .select("id, titulo, estado, resultado, sin_supervision, created_at, notas_capturas(count)")
       .order("created_at", { ascending: false })
       .limit(30)
 

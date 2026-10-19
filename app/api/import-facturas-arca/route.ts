@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -545,6 +546,14 @@ export async function POST(req: Request) {
     const proveedoresVistos = new Map<string, string>() // cuit limpio → razon_social (auto-crear proveedores faltantes)
     const idsImportadosBuscar: string[] = [] // IDs de las facturas nuevas en estado 'Buscar' (para auto-disparo acotado)
 
+    // 🔗 La cuenta y su número son una sola cosa (A-BUG-1249): el plan se lee una vez para que
+    // toda factura que entre con cuenta —por regla de CUIT o elegida en la vista previa— lleve su número.
+    const { data: planCuentas, error: errorPlan } = await supabase
+      .from('cuentas_contables')
+      .select('categ, nro_cuenta')
+    if (errorPlan) errores.push(`No se pudo leer el plan de cuentas: las facturas entran con el nombre de la cuenta pero sin su número (${errorPlan.message})`)
+    const cuentasSinNumero = new Set<string>()
+
     // Procesar cada fila del CSV
     for (let indice = 0; indice < filasCSV.length; indice++) {
       const filaOriginal = filasCSV[indice]
@@ -601,6 +610,12 @@ export async function POST(req: Request) {
         }
         if (origenFactura) {
           (filaParaBBDD as any).origen_factura = origenFactura
+        }
+        // Después de la regla de CUIT y de la imputación: lo que haya quedado como cuenta, con su número.
+        if (filaParaBBDD.cuenta_contable) {
+          const nro = nroDeCuenta(filaParaBBDD.cuenta_contable, planCuentas ?? [])
+          ;(filaParaBBDD as any).nro_cuenta = nro
+          if (!nro && planCuentas) cuentasSinNumero.add(filaParaBBDD.cuenta_contable)
         }
 
         // Debug: Mostrar datos antes de insertar
@@ -672,6 +687,10 @@ export async function POST(req: Request) {
     const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían` +
       (proveedoresCreados > 0 ? ` · ${proveedoresCreados} proveedor(es) nuevo(s) creado(s)` : '')
 
+    // 🧮 Nada en silencio: una cuenta que no está en el plan (o no tiene número) se dice.
+    if (cuentasSinNumero.size > 0) {
+      errores.push(`Cuentas sin número en el plan (las facturas entraron con el nombre solo): ${[...cuentasSinNumero].join(', ')}`)
+    }
     console.log(`📈 Resultado: ${filasImportadas} importadas, ${filasIgnoradas} ignoradas, ${errores.length} errores`)
 
     return NextResponse.json({

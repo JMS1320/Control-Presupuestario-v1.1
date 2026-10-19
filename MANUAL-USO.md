@@ -496,6 +496,10 @@ Mejorar el Cash Flow para que **reemplace** al Modal de Pagos y usarlo como pane
 ### Marcar reposición (grilla Recría, botón 🐂 Reposición) ✅
 - Reusa la columna `es_torito` como flag de **reposición** (macho→torito, hembra→ternera rep).
 - Chips de filtro por grupo + columnas ordenables + **"Seleccionar N más pesadas"** (respeta el chip activo) → **Marcar / Quitar**. La escritura la dispara el usuario.
+- **📥 Confirmar hembras desde Excel**: subís la planilla de las confirmadas (columna «Caravana» o «IDV»; oficial con o sin el cero, o interna). Te muestra qué queda **ya marcado, a marcar, a quitar y sin cruzar** antes de guardar; al confirmar, las hembras con «rep» son exactamente las de la planilla. Los toritos no se tocan.
+- **Pasarlas de categoría**: en *Hacienda → Cambio de Categoría*, con origen Ternera Recría, el botón **«♀ Sólo las de reposición»** preselecciona las marcadas. Podés tildar o destildar a mano; al guardar, **primero** se actualiza la marca «rep» del Registro de Terneros con tu selección y después se mueve la categoría.
+- **Una cabeza sin identificar** (sin caravana, o con una que no coincide): en el mismo cambio, **«+ cabezas sin identificar»** la suma al stock que se mueve; el destino muestra **«faltan identificar N»**. Cuando sepas cuál es, otro Cambio de Categoría con **«Sólo identificar (la cabeza ya se movió)»**: le cambia la categoría al animal sin mover stock, y el destino queda ✓.
+  → A-TEST-1185
 
 ### Importar pesadas (Excel) 🟡
 - Columnas: **Fecha** (una sola por archivo, DD/MM/AAAA), **Peso** (kg), y la identificación del animal:
@@ -904,9 +908,15 @@ perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apa
 ### Cargar el echeq de un anticipo
 1. En **Cash Flow**, sobre la fila del anticipo: **Shift+Click** en la columna de débitos.
 2. Elegí **📝 ECHEQ**.
-3. Se abre el modal pidiendo **banco, número, fecha de emisión y fecha de cobro**.
-   ⚠️ **La fecha de cobro es la que importa**: de ahí sale cuándo el Cash Flow descuenta esa plata.
-   Sin ella, el pago queda proyectado en el día equivocado.
+3. Se abre el modal pidiendo **banco, fecha de emisión** y los echeqs: **cuántos**, cómo se reparte
+   el total (**partes iguales**, **por %** o **por montos**, que son partes del total) y la **fecha de
+   cobro de cada uno** (no hay plazos por defecto: los ponés vos), ya sea como **plazo en días** desde la
+   emisión (la fecha se calcula sola) o como **fecha**. El número es opcional; si lo dejás
+   vacío lo asigna el banco. Abajo ves cuánto es cada parte del total.
+   ⚠️ **Las fechas de cobro son las que importan**: de ahí sale cuándo el Cash Flow descuenta esa
+   plata. Con varios echeqs, cada uno aparece en el Cash Flow en su fecha, como una fila propia.
+   La retención SICORE se descuenta de cada echeq en la misma proporción (en partes iguales si los
+   echeqs son iguales). Vale igual para una **factura** (Shift+Click → 📝 ECHEQ).
 4. Después pregunta por la retención:
    - **«Sí, aplicar retención»** si SICORE va contra este anticipo;
    - **«No, continuar sin retención»** si ya está calculada contra la factura, o si no corresponde.
@@ -916,6 +926,21 @@ perdió la otra: **corregí el kilo a mano antes de mirar los rindes**, o el apa
 
 Volver a elegir ECHEQ sobre un anticipo que ya lo tiene **no duplica nada** — sirve justamente para
 completar uno que quedó a medias.
+
+### Los echeqs de un pago en varios, en el Cash Flow
+Cada echeq es una fila, en su fecha de cobro y por su monto («… · echeq 2/3»). Son de **sólo
+lectura**: el pago ya está hecho. Lo único que se cambia ahí es la **fecha de cobro** de cada echeq;
+se pueden tildar, pero sólo para el **Excel echeqs**: las demás acciones en lote los dejan afuera.
+
+### El Excel de emisión para el banco
+En el **Cash Flow**, tildá las filas de los echeqs (o la factura/anticipo pagado con echeq) y en la
+barra de PAGOS apretá **📝 Excel echeqs**. También desde **📝 ECHEQs → Emitidos**: tildá y
+**🏦 Excel de emisión**. Los echeqs tildados no entran a las otras acciones de la barra (ya están pagados). Elegí la **cláusula** (con la explicación de cada una), revisá el **motivo**
+de cada echeq (*Factura* si paga una factura, *Orden de pago* si no) y **Generar Excel**: sale con el
+formato de la plantilla del banco, listo para cargar al emitir. Si algún dato haría que el banco lo
+rechace (un CUIT incompleto, un monto en cero), no se genera y te dice cuál.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1214`.
 
 ### Lo que verifica el mail antes de encolarse
 El cuerpo termina en **Total cancelado**:
@@ -1208,6 +1233,19 @@ vinculó **20 de 20**, incluidas dos fotos `.jpeg`.)*
 **El nombre del archivo sirve para otra cosa:** para la sugerencia ⭐ del panel de abajo, que es para
 vincular **a mano**. Nunca para vincular solo.
 
+#### 📎 Desde el Cash Flow, una factura sola
+
+En el **Cash Flow**, la **❌ roja** de la columna 📎 es un botón. Al tocarla se abre **«Vincular el PDF
+archivado»** para esa factura:
+
+- Mira la **carpeta del mes donde está imputada** (si todavía no está en ningún subdiario, la del mes
+  de emisión). Si la guardaste en otro lado, cambiá el mes arriba.
+- Lista los archivos de esa carpeta que **ninguna factura usa**; con ⭐ los que nombran al proveedor.
+- **👁 ver** te muestra el archivo ahí mismo. Si es, **Vincular**: la ❌ pasa a 📎.
+
+Si después imputás la factura a otro mes, mové el PDF a la carpeta de ese mes en Drive: el vínculo
+sigue valiendo y el audit del mes nuevo lo cuenta como vinculado. → A-TEST-1207
+
 #### El panel «🖼️ PDFs sin vincular» — acá vinculás a mano
 
 Aparece cuando quedan archivos sin asociar. Cada fila trae el archivo, una **⭐ sugerencia** (por
@@ -1435,26 +1473,26 @@ Ingresos  →  [ MSA | PAM | MA ]
 
 | Vista | MSA | PAM | MA |
 |---|:-:|:-:|:-:|
-| Arrendamientos · Comprobantes · Subdiarios | ✅ | ✅ | ✅ |
-| Ventas (granos) · Ganadería · Cobros | ✅ | — | — |
+| Arrendamientos · Comprobantes · Cobros · Subdiarios | ✅ | ✅ | ✅ |
+| Ventas (granos) · Ganadería | ✅ | — | — |
 
 - **Ventas** y **Ganadería**: sólo MSA, por definición del negocio.
-- **Cobros**: sólo MSA porque el extracto de PAM y MA **no tiene la columna** que vincula un crédito
-  con una factura. Mostrarla diría "cobrado $0" siempre (ver `PENDIENTES.md` § A-FEAT-24).
+- **Cobros**: las tres empresas desde el 14/10/2026. En PAM y MA no aparecen *Registrar un echeq* ni
+  *Compensar con una factura del cliente*, que siguen siendo de MSA.
 
 **Qué es cada una:**
 - **Comprobantes** = la *lista* de facturas de venta (el equivalente a Facturas en Egresos). Acá está el botón **Importar**.
 - **Subdiarios** = la *DDJJ por mes contable*: cuánta venta hubo en cada período. Acá no se importa nada.
 
-**En PAM y MA, Comprobantes tiene menos botones**: no están *Nueva liquidación*, *Editar* ni
-*Retenciones*, porque esos formularios son del circuito de granos de MSA. Para cargar un comprobante
-a mano en esas empresas, usá **Nuevo comprobante** desde su **Subdiario**.
+**En PAM y MA, Comprobantes tiene menos botones**: no están *Nueva liquidación* ni *Editar*, porque
+esos formularios son del circuito de granos de MSA. **Retenciones (%)** sí está, en las tres. Para
+cargar un comprobante a mano en esas empresas, usá **Nuevo comprobante** desde su **Subdiario**.
 
 **Cómo probarlo:**
 1. Entrá a Ingresos: arriba las 3 empresas, debajo las vistas. Arranca en **MSA / Arrendamientos**.
 2. En **MSA** tienen que estar las **6** vistas y todo funcionar igual que antes (nada cambió).
-3. Pasá a **PAM**: quedan **3** vistas. Arrendamientos tiene que mostrar **sólo contratos de PAM** (hoy los 4 son de MSA → debería salir vacío).
-4. Si estabas parado en *Cobros* (MSA) y cambiás a PAM, te tiene que llevar a *Arrendamientos*, no dejarte en una solapa que no existe.
+3. Pasá a **PAM**: quedan **4** vistas. Arrendamientos tiene que mostrar **sólo contratos de PAM** (hoy los 4 son de MSA → debería salir vacío).
+4. Si estabas parado en *Ventas* (MSA) y cambiás a PAM, te tiene que llevar a *Arrendamientos*, no dejarte en una solapa que no existe.
 5. **MA → Comprobantes**: la lista tiene que salir vacía (0 comprobantes) y **no** mostrar los de MSA. ⚠️ Este es el punto clave: si aparecen los de MSA, hay un schema mal derivado.
 6. En **MA/PAM → Comprobantes** tiene que estar **Importar** y **no** estar *Nueva liquidación*.
 
@@ -1591,6 +1629,30 @@ El sistema tiene **un único mes editable a la vez** = el **"mes de trabajo"** (
 
 ### Alta de empleado
 - Los períodos del nuevo empleado se generan **según su fecha de alta (ingreso)**, en las campañas que correspondan desde su ingreso en adelante — **no** según la campaña activa.
+
+## 🗓️ Sueldos → Planilla de asistencia *(2026-10-09)*
+
+Para cargar los francos del mes sin hacer la cuenta a mano.
+
+1. En **Sueldos**, poné el mes y apretá **«Planilla de Asistencia»** (arriba, al lado de «Gestión de Nómina»;
+   también está dentro de Gestión de Nómina).
+2. Marcá sólo las excepciones de cada empleado. Clic en la celda para cambiarla, o tecleá la letra:
+   **F** franco tomado · **½** medio día trabajado (tecla M o 1) · **V** vacaciones · **L** licencia ·
+   **Supr** la borra.
+3. Apretá **«Llenar con P»** en la fila de cada empleado: los días vacíos quedan como presentes. Si es más fácil
+   al revés —marcar los días que vino—, marcalos con P y apretá **«Llenar con F»**: el resto queda como franco.
+4. A la derecha, en **«Va al sueldo»** (verde): los **francos trabajados** (en rojo si es negativo) para los que
+   cobran A + B + francos, o los **días trabajados** (admite 10,5) para los de jornal. Al lado, lo que le
+   correspondía y lo que se tomó. Si quedan días vacíos dice *«faltan N días»*.
+5. **«Guardar planilla»**.
+6. **«Pasar al sueldo»**: te muestra qué cambia (francos o días, y el bruto, de → a) y con **Confirmar** lo
+   escribe en el sueldo del mes. Sólo funciona en el **mes de trabajo**.
+
+Los colores: **amarillo** sábado (medio día), **gris** domingo, **rosa** feriado. Los **feriados** del mes están
+abajo: podés agregar uno, o hacer que uno **no cuente**. Los puentes turísticos vienen cargados pero no cuentan:
+si diste el día, tocá «contarlo como feriado».
+
+> → [A-TEST-1190](PENDIENTES.md#a-test-1190)
 
 ## 👷 Sueldos → los pagos del mes, por empleado *(2026-09-11)*
 
@@ -1951,9 +2013,29 @@ banco. Una cuota **✓ conciliada** no se desmarca desde acá ni desde el Cash F
 desconciliando su movimiento en el Extracto.
 
 ### Las retenciones en el Excel del Subdiario de Ventas
-El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, con las retenciones
-recibidas del mes: los certificados (por su fecha) y las que vienen impresas en los comprobantes del
-subdiario, con el total por tipo. Sirve para que el contador las compare con *Mis Retenciones* de ARCA.
+El Excel del **Subdiario de Ventas** trae una segunda hoja, **RETENCIONES**, en dos apartados, cada
+uno agrupado por tipo (Ret. Ganancias, Ret. IIBB…) con su subtotal:
+- **De las ventas del subdiario**: todo lo que te retuvieron sobre las facturas y liquidaciones de ese
+  subdiario, aunque la retención sea de otro mes (la factura de septiembre cobrada en octubre).
+- **Sufridas en el mes**: todo lo que te retuvieron en ese mes, aunque la venta sea de otro mes. Es lo
+  que el contador compara con *Mis Retenciones* de ARCA: al final hay un **Control contra ARCA** donde
+  pegás el total de ARCA de cada tipo y la diferencia se calcula sola.
+
+Una retención que está en los dos apartados lo dice en la columna *También en el otro apartado*.
+
+Antes de exportar, la pantalla del subdiario muestra los totales de los dos apartados. Si un
+certificado **no tiene fecha**, sale igual —con la fecha del cobro de su comprobante o, si no tiene
+cobro, con la del comprobante— pero marcado, y la app te avisa antes de generar el Excel. Lo mejor es
+cargarle la fecha real en **Comprobantes → %** (retenciones).
+
+El **PDF** del subdiario trae lo mismo en su última página, **RETENCIONES RECIBIDAS**: cada retención con
+fecha, cliente, CUIT, comprobante de venta, certificado e importe, agrupadas por tipo.
+
+En **PAM** y **MA** los certificados se cargan desde el botón **%** (Comprobantes o Cobros) una vez
+aplicado el cambio de base del 14/10; mientras tanto la hoja trae sólo lo impreso en los comprobantes
+y lo aclara.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1211`.
 
 Al guardar, la liquidación entra a **Comprobantes** y al subdiario como cualquier otra, queda vinculada a
 su venta, y el consignatario queda registrado como cliente.
@@ -2188,6 +2270,16 @@ importaste. Si subís un extracto que termina hace dos meses, el aviso sigue.
 ## 📝 Notas para Claude 🟡 *(nuevo 2026-08-11, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § P-34.
+
+### 🌙 «Claude puede arrancar con esto sin esperarme» *(2026-10-13)*
+Al **Finalizar** la nota hay un tilde con ese texto. Si lo marcás, Claude puede **desarrollar ese
+pedido sin esperarte** y dejártelo listo para probar; en la lista de notas esas llevan una 🌙.
+Si no lo marcás, la nota queda anotada como pendiente y espera a que lo charlen.
+
+- Arranca **siempre destildado**: el permiso se da nota por nota.
+- Marcarlo **no** autoriza a tocar datos, la base ni permisos: eso te lo sigue preguntando.
+
+⚠️ Sin probar todavía → A-TEST-1192
 
 Un botón **📝 fijo abajo a la derecha**, en toda la app, para dejar un bug o una idea **en el momento
 y el lugar donde pasa** — en vez de acordarte tres días después.
@@ -2979,6 +3071,23 @@ sí tenemos y la que usabas para chequear totales contra el contador.
 
 ⚠️ Sin probar todavía → A-TEST-1161
 
+## 🔎 Cash Flow → filtrar por comprobante, por número y por fecha hacia atrás *(2026-10-04)*
+
+En la barra de chips, arriba de la tabla:
+- **Comprobante:** un chip por tipo (*FC A, NC A, FC C…*, *Liquidación*, *Sin comprobante*). Click
+  prende o apaga; **ctrl+click** deja sólo ése.
+- **Desde:** *todo* o *1, 2, 3 semanas / meses* para atrás. Esconde lo anterior; lo que viene se sigue
+  viendo.
+- La **búsqueda rápida** también encuentra por **número de comprobante**.
+
+**Modo PAGOS**: si bajás con filas seleccionadas, el panel aparece **fijo abajo**, con los mismos
+botones, para no tener que volver arriba.
+
+**Monto de una cuota de template**: al cambiarlo desde el Cash Flow te pregunta si propagarlo a las
+cuotas futuras, igual que en Templates.
+
+⚠️ Sin probar todavía → A-FEAT-170, A-FEAT-1237, A-FEAT-149, A-FEAT-1238
+
 ## 🧾 Cash Flow → el aviso de notas de crédito sin aplicar *(2026-09-29)*
 
 Arriba de la grilla del Cash Flow puede aparecer un **cartel ámbar**. Aparece **sólo si hay algo**:
@@ -3022,6 +3131,77 @@ cuando esa pestaña se saque.
 y ahí suele haber más que en MSA.
 
 ⚠️ Sin probar todavía → A-TEST-1160
+
+## ⌨️ Atajos y ayudas chicas *(2026-10-13)*
+
+- **`Alt + M`** (en cualquier pantalla): abre y cierra el menú lateral (lo dice debajo del ☰).
+  → A-TEST-1206
+- **Cash Flow → `Alt + P`**: entra al modo PAGOS (lo mismo que Ctrl+Click en el botón) y con otro
+  `Alt + P` sale. Si tenés filas tildadas, antes de salir te pregunta. → A-TEST-1194
+- **Cash Flow → Detalle**: en una factura muestra **sólo tu nota** (en blanco si no escribiste nada);
+  el comprobante y el proveedor ya están en sus columnas. Ctrl+Click para escribir. En un **grupo**, se
+  abre un cuadrito con una nota por factura. → A-TEST-1210
+- **Cash Flow → columnas a tu medida**: arrastrá el **borde derecho** de un encabezado para cambiar el
+  ancho, o el **encabezado** entero para cambiarlo de lugar. Queda guardado en tu cuenta. Para volver
+  a lo de siempre: **«↺ Columnas como venían»**, arriba a la derecha de la tabla. → A-TEST-1208
+- **PAGOS → tildar todo lo que se ve**: la casilla del encabezado de la columna de tildes tilda todas
+  las filas que quedan con tus filtros, y otro click las destilda. La barra azul de abajo está desde que
+  entrás a PAGOS, aunque no hayas tildado nada. → A-TEST-1205
+- **PAGOS propone el paso siguiente**: si tildás facturas **pendientes** el estado propuesto es
+  **Pagar**; si están en **pagar**, propone **Pagado**. Lo podés cambiar; si lo cambiás a mano no te
+  lo vuelve a tocar hasta que salgas de PAGOS. → A-TEST-1201
+- **Varias facturas del mismo proveedor → procesarlas juntas en SICORE**: en la pantalla de
+  retención de la primera, elegí el régimen, aplicá el descuento en **%** y tildá **«Procesar igual
+  las N que siguen de este proveedor»**. La app repite lo mismo en las demás y al final te muestra
+  la retención total del grupo, con su control, y lo que hay que transferir. Si los regímenes o los
+  descuentos no son iguales, no lo tildes y seguí una por una. → A-TEST-1200
+- **Volver una factura a pendiente** (desde PAGOS o desde el menú de la fila): te pregunta si la
+  **reseteás** —anula la retención, borra el descuento y la fecha de pago, y vuelve al importe
+  original— o si la pasás a pendiente y nada más. Si después la vas a pagar de nuevo, reseteala.
+  → A-TEST-1199
+- **Sueldos → Pagos registrados → archivo para el banco**: abrí el empleado, **tildá** los pagos que
+  vas a transferir y apretá **«🏦 Archivo para el banco (N)»**. Se abre la misma pantalla del lote
+  que en Cash Flow, sólo con esos pagos: revisás CBU/alias e importes, ponés la fecha y generás. Sale
+  un Excel por grupo de archivo. Los pagos por caja no entran. → A-TEST-1204
+- **Sueldos → Pagos registrados → exportar sólo algunos**: abrí el empleado y **tildá** los pagos
+  que querés; el botón pasa a **«Exportar N pagos tildados»**. El tilde al lado del nombre tilda
+  todos los de ese empleado. Sin tildar nada exporta el mes entero. → A-TEST-1195
+- **Órdenes agrícolas → el insumo con el teclado**: parado en el campo, **escribí** para filtrar,
+  **flecha abajo** para recorrer, **Enter** para elegir y **Tab** para seguir. → A-TEST-1196
+- **Hacienda → Nuevo Movimiento**: debajo de cada categoría dice **«Hoy: N cabezas»**. Si cargás más
+  de las que hay te avisa en rojo, pero te deja guardar. → A-TEST-1197
+- **Subdiarios → Vincular PDFs**: mientras trabaja **podés seguir en otra pantalla de la app**; el
+  avance te sigue arriba a la derecha y al final llega el mail. **No cierres ni recargues la pestaña
+  del navegador** (te pregunta antes). Si te fuiste, la lista de «PDFs sin vincular» vuelve con
+  «📊 Contar»; **«👁 ver»** muestra el PDF ahí mismo. → A-TEST-1193
+
+## 🚦 Cash Flow → el punto de la cuenta contable y la fecha de emisión *(2026-10-13)*
+
+Al lado de la **fecha estimada** —la columna que queda fija a la izquierda— cada **factura** tiene
+un **punto de color** que dice si tiene cuenta contable, sin correr la grilla hasta la columna CATEG.
+
+| Lo que ves | Qué significa | Qué hacer |
+|---|---|---|
+| **● verde** | tiene cuenta contable | nada (tocándolo podés cambiarla) |
+| **● rojo** | **no tiene** cuenta contable | tocá el punto y elegila |
+| **● ámbar** | es una factura vieja cuya cuenta quedó **incompleta** | tocá el punto y confirmala |
+| **● gris** | es un **pago agrupado**: cada factura tiene su cuenta | se asignan en *Egresos → Asignación* |
+| *(sin punto)* | no es una factura (template, sueldo, venta, anticipo) | nada |
+
+**Para poner la cuenta:** tocá el punto → se abre el buscador de cuentas de siempre (arriba te
+sugiere las que ya usaste con ese proveedor) → elegí una. Se guarda en el momento y el punto pasa a
+verde. Si la factura **ya estaba conciliada**, la cuenta viaja también a su movimiento del extracto
+y te lo avisa. Ponerla con **Ctrl+Click en CATEG** hace exactamente lo mismo.
+
+📅 **La fecha de emisión** de cada factura está **debajo de la fecha estimada**, en gris chico
+(«em. 30/09/2026»). No es una columna más y no se edita.
+
+📌 Pasando el mouse por el punto te dice qué cuenta tiene, o por qué no se puede cambiar desde ahí.
+
+📌 **Límite de hoy:** las facturas de **PAM y MA** muestran el punto pero todavía no se asignan
+desde acá.
+
+⚠️ Sin probar todavía → A-TEST-1191
 
 ## 📎 Cash Flow → ver la factura *(2026-09-28)*
 
@@ -3433,6 +3613,10 @@ fecha, mismo monto, mismo beneficiario— se queda sin candidato.
   empresa** (facturas, templates, sueldos y grupos). Si la empresa no es la de la cuenta aparece
   **⇄**: eso significa que se va a registrar como **retiro por pago a terceros** (`RET 3 PAM` /
   `RET 3 MA`), que es lo correcto cuando MSA paga algo facturado a otra empresa.
+- **Una factura de otra empresa, o algo con otro CUIT que el que informa el banco, nunca se vincula
+  solo.** La conciliación automática lo deja sin vincular; lo vinculás a mano y, antes de guardar, la
+  app te avisa **«⚠️ Ojo antes de vincular…»** con el motivo. Aceptás si corresponde. Los
+  **templates** de otra empresa se siguen conciliando solos. → A-TEST-1209
 - **Las propuestas ya funcionan.** Antes buscaban al proveedor por **la primera palabra** del
   nombre — `LA MERCURE` buscaba `la` y traía de todo, y un proveedor cuya primera palabra el banco
   no escribe no aparecía nunca. Y **los ingresos no recibían ninguna propuesta**.
@@ -5198,6 +5382,39 @@ dos facturas. Eso va por el panel de *Facturas*, que es el único que sabe expre
 
 ---
 
+## 📌 Papeles de trabajo → Pendientes a revisar
+
+En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está el cuadro **«📌 Pendientes a revisar»** de la empresa y el año que elegiste. Sirve para anotar lo que falta chequear antes de dar el balance por cerrado.
+
+- **Anotar**: escribí el pendiente y **+ Anotar** (o Enter).
+- **Resolver**: «resolver» → escribí cómo se resolvió → **✓ Resolver**. No se borra: queda en «ver los resueltos», con su nota, y se puede reabrir.
+- **En el export**: el Excel de los papeles trae la solapa **«00 Pendientes a revisar»** (los abiertos primero), y el Excel para el contador también.
+
+→ A-TEST-1189
+
+## 🧾 Vincular una factura con sus compras — con descuento y moneda
+
+Para que el **precio de cada compra** sea el real (el de la factura), con el descuento pactado y en la moneda en que se compró.
+
+**Dónde se abre** (es la misma ventana):
+- desde la **factura**: *Egresos → Facturas* → menú **⋯** de la fila → **🧾 Vincular con compras de insumos**;
+- desde las **compras**: *Productivo → Insumos → Ver Movimientos* → tildá las compras al final de cada fila y **«🧾 Vincular N seleccionadas»** (o el 🧾 de una sola). Si hay varias facturas del proveedor, te pide elegir; si hay una sola, la elige directo — y con **«cambiar factura»** volvés a la lista.
+
+**Qué hacés:**
+1. Tildá las compras que cubre la factura. Vienen tildadas **sólo** las que elegiste (o las ya vinculadas): el proveedor puede facturar varias entregas en facturas distintas, así que la app no adivina.
+2. Si hay **descuento pactado**, poné el **%** en cada renglón — o marcá varios en la última columna y aplicá el % a todos juntos. Si marcás los que llevan descuento, la ventana te **sugiere el % que hace cerrar**.
+3. Si la factura es en **dólares**, revisá el **TC**: propone el **del pago** si ya la pagaste (el costo real es lo que se pagó), o el de la factura si todavía no. Si la pagás después, el costo de las compras se pasa solo al TC del pago.
+4. Mirá el **control**: compras vinculadas contra el **neto de la factura**. Verde = cierra; ámbar = diferencia (podés guardar igual).
+5. **Vincular**: el precio de cada compra pasa a ser el real, en pesos al TC, con el dólar guardado al lado; el pactado y el % quedan anotados en el vínculo. Si el insumo no tenía costo en el stock, toma éste.
+
+→ A-TEST-1187
+
+### 💱 NC esperadas por diferencia de cambio (Principal)
+
+Cuando pagás una factura en dólares a un TC distinto del suyo, el proveedor te debe una **NC** (pagaste a menos) o vos le debés una **ND**. La tarjeta **«NC esperadas por diferencia de cambio»** de Principal muestra cuánto se espera de cada proveedor (total USD × diferencia de TC) hasta que llega; cuando la importás de ARCA la reconoce sola y pasa a «ya llegaron». Si tu inicio está configurado, agregala desde el configurador.
+
+→ A-TEST-1188
+
 ## 🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)
 
 **Cuándo hace falta**: cuando lo facturado y lo entregado **no coinciden**, que es lo normal.
@@ -5385,7 +5602,8 @@ encima de la etiqueta de al lado** — se leía `E18xtracto Bancario`, `P2roduct
 
 ### Cómo se usa
 
-1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Cmd+B`** (`Ctrl+B` en Windows).
+1. **Abrir**: click en el botón ☰ (arriba a la izquierda) o **`Alt + M`** (lo dice debajo del ☰).
+   ⚠️ *Cambió 2026-10-14*: antes era `Ctrl+B`; el usuario pidió un solo atajo, de la familia Alt+letra.
 2. **Navegar**: click en la sección. **El menú se cierra solo** al elegir.
 3. **Cerrar sin elegir**: el mismo botón ☰ —que **con el menú abierto está adentro del menú**,
    arriba de todo— o `Cmd+B` otra vez. El botón acompaña al menú en vez de quedar flotando en el

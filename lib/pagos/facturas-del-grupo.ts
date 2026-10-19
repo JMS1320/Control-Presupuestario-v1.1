@@ -9,6 +9,8 @@
  * importes**. Partirlo daría tres renglones sin plata — peor que agruparlos.
  */
 
+import { totalEnPesos, conversionDe } from './moneda-factura'
+import { abreviaturaComprobante } from './notas-credito'
 import { supabase } from '@/lib/supabase'
 import type { SubFactura } from './lineas-detalle-pago'
 
@@ -29,7 +31,7 @@ export async function facturasDelGrupo(
     const { data, error } = await supabase
       .schema(schema as any)
       .from('comprobantes_arca')
-      .select('tipo_comprobante, punto_venta, numero_desde, fecha_emision, imp_total, descuento_aplicado')
+      .select('tipo_comprobante, punto_venta, numero_desde, fecha_emision, imp_total, descuento_aplicado, moneda, tc_pago, tipo_cambio')
       .in('id', ids)
     if (error || !data) return []
 
@@ -43,9 +45,12 @@ export async function facturasDelGrupo(
      * hace difícil leer el número de un vistazo.
      */
     return data.map((f: any) => ({
-      comprobante: `FC ${f.tipo_comprobante}-${Number(f.punto_venta ?? 0)}-${Number(f.numero_desde ?? 0)}`,
+      // 🧾 A-BUG-1254 — una nota de crédito del grupo se rotula NC, no FC (el papel lo lee el proveedor).
+      comprobante: `${abreviaturaComprobante(f.tipo_comprobante)} ${f.tipo_comprobante}-${Number(f.punto_venta ?? 0)}-${Number(f.numero_desde ?? 0)}`,
       fecha: f.fecha_emision ?? null,
-      imp_total: Number(f.imp_total) || 0,
+      // 💵 A-BUG-1245 — una factura en dólares del grupo se lista en pesos, como el resto del papel.
+      imp_total: totalEnPesos(f),
+      conversion: conversionDe(f),
       descuento_aplicado: f.descuento_aplicado ?? null,
     }))
   } catch {

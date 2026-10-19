@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
+import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 
 export interface CeldaEnEdicion {
   filaId: string
@@ -140,6 +141,25 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       const tabla = celdaEnEdicion.tableName || 'cuotas_egresos_sin_factura'
       const filtro = { id: celdaEnEdicion.filaId }
 
+      /**
+       * 🔗 **La cuenta y su número son una sola cosa** (A-BUG-1249, regla del usuario 2026-10-13).
+       *
+       * Esta celda escribía sólo el NOMBRE de la cuenta de la factura: quedaba sin número (y por eso
+       * seguía «sin asignar» en Egresos → Asignación) y el movimiento del extracto ya conciliado no
+       * se enteraba. Ahora el número sale del plan y viaja en el mismo guardado; la propagación al
+       * extracto va más abajo, cuando ya se sabe que la factura se guardó.
+       */
+      const cambiaCuentaDeFactura = tabla === 'comprobantes_arca' && 'cuenta_contable' in updateData
+      if (cambiaCuentaDeFactura) {
+        let nro: string | null = null
+        if (updateData.cuenta_contable) {
+          const { data: plan, error: errorPlan } = await supabase.from('cuentas_contables').select('categ, nro_cuenta')
+          if (errorPlan) throw new Error(`No se pudo leer el plan de cuentas: la cuenta NO se guardó (${errorPlan.message})`)
+          nro = nroDeCuenta(updateData.cuenta_contable, plan ?? [])
+        }
+        updateData.nro_cuenta = nro
+      }
+
       // Venc de templates: SÍ o SÍ por el RPC (único camino autorizado por el guardián de BD).
       // El RPC ya setea fecha_vencimiento + fecha_estimada.
       let error: any
@@ -186,6 +206,33 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       }
 
       toast.success('Campo actualizado correctamente')
+      // La factura ya quedó guardada (el conteo de arriba lo confirma): ahora la cuenta viaja a sus
+      // movimientos conciliados, por la misma ruta que usa Asignación. Si esto falla se AVISA — la
+      // factura quedó bien, lo que no se enteró es el extracto.
+      if (cambiaCuentaDeFactura && updateData.cuenta_contable && !updateData.nro_cuenta) {
+        // § 🧮 nada en silencio: quedó el nombre solo.
+        toast.warning(`«${updateData.cuenta_contable}» no tiene número en el plan de cuentas: la factura quedó con el nombre solo`)
+      } else if (cambiaCuentaDeFactura && celdaEnEdicion.origen === 'ARCA') {
+        try {
+          const res = await fetch('/api/arca-asignar', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ids: [celdaEnEdicion.filaId],
+              nro_cuenta: updateData.nro_cuenta,
+              cuenta_contable: updateData.cuenta_contable,
+            }),
+          })
+          const r = await res.json()
+          if (!r.success) throw new Error(r.message)
+          if (r.propagacion?.aviso) toast.warning(r.propagacion.aviso)
+          else if ((r.propagacion?.propagados ?? 0) > 0) {
+            toast.success(`La cuenta llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
+          }
+        } catch (e) {
+          toast.warning(`La cuenta se guardó en la factura, pero no se pudo llevar al extracto: ${e instanceof Error ? e.message : e}`)
+        }
+      }
       const celdaGuardada = { ...celdaEnEdicion }
       setCeldaEnEdicion(null)
       if (onLocalUpdate) {

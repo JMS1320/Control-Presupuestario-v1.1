@@ -31,10 +31,12 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
 import { toast } from "sonner"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { Plus, Trash2, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react"
 import {
   calcularLiqHacienda, retencionSugerida, compararConVenta, controlContraPapel, controlPlazos,
   plazosDesdeVenta, kgQueSeCobran, ventaParaComparar, precargaDesdeVenta, huellaLiquidacion,
+  lineaAlGancho, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado,
   type AvisoLiq, type PlazoCobro, type HuellaLiq,
 } from "@/lib/ventas/hacienda"
 import { cargarVentasHacienda, type VentaHaciendaDatos } from "@/lib/ventas/hacienda-db"
@@ -60,24 +62,29 @@ const fmtAR = (n: number, dec = 2) => n.toLocaleString('es-AR', { minimumFractio
 const fmtPct = (n: number) => String(n).replace('.', ',')
 /** Al salir de un campo de monto, se reescribe en formato es-AR (1.234.567,89). Vacío queda vacío. */
 const reformatear = (v: string, dec = 2) => (v.trim() ? fmtAR(parsearAR(v), dec) : '')
+/** Los precios por kilo admiten 3 decimales (A-BUG-1279): el frigorífico calcula con 3 aunque imprima 2. */
+const reformatearPrecio = (v: string) => (v.trim() ? formatoPrecio(parsearAR(v)) : '')
 const r2 = (n: number) => Math.round(n * 100) / 100
 type TotalId = 'bruto' | 'neto' | 'importe'
 type Verificacion = 'ok' | 'distinto' | null
 
-interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string; kgGancho: string }
+/** `mandaPie`: el usuario cargó el $/kg VIVO y el gancho se deriva (A-FEAT-1234, 2026-10-05). */
+interface LineaUI { razonSocial: string; cuit: string; cabezas: string; clasificacion: string; kilos: string; precio: string; kgGancho: string; precioGancho: string; mandaPie?: boolean }
 interface RetUI { concepto: string; alicuota: string; importe: string }
 interface PlazoUI { dias: string; pct: string; vencimiento: string; importe: string; estado?: 'a cobrar' | 'cobrado' }
 
-const lineaVacia = (): LineaUI => ({ razonSocial: '', cuit: '', cabezas: '', clasificacion: '', kilos: '', precio: '', kgGancho: '' })
+const lineaVacia = (): LineaUI => ({ razonSocial: '', cuit: '', cabezas: '', clasificacion: '', kilos: '', precio: '', kgGancho: '', precioGancho: '' })
 const RET_IIBB: RetUI = { concepto: 'INGRESOS BRUTOS Pcia BS AS', alicuota: '0,75', importe: '' }
 
-const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: number; clasificacion: string; kilos: number; precio: number; kgGancho?: number | null }): LineaUI => ({
+const lineaParaPantalla = (l: { razonSocial: string; cuit: string; cabezas: number; clasificacion: string; kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean }): LineaUI => ({
+  mandaPie: !!l.mandaPie,
   razonSocial: l.razonSocial || '', cuit: l.cuit || '',
   cabezas: l.cabezas ? String(l.cabezas) : '',
   clasificacion: l.clasificacion || '',
   kilos: l.kilos ? fmtAR(l.kilos, 0) : '',
-  precio: l.precio ? fmtAR(l.precio, 2) : '',
+  precio: l.precio ? formatoPrecio(l.precio) : '',
   kgGancho: l.kgGancho ? fmtAR(l.kgGancho, 1) : '',
+  precioGancho: l.precioGancho ? formatoPrecio(l.precioGancho) : '',
 })
 
 export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comprobanteId, onGuardado }: Props) {
@@ -220,7 +227,11 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
       razonSocial: l.razonSocial, cuit: l.cuit, clasificacion: l.clasificacion,
       cabezas: parsearAR(l.cabezas), kilos: parsearAR(l.kilos), precio: parsearAR(l.precio),
       ...(l.kgGancho.trim() ? { kgGancho: parsearAR(l.kgGancho) } : {}),
-    })),
+      ...(!l.mandaPie && l.precioGancho.trim() ? { precioGancho: parsearAR(l.precioGancho) } : {}),
+      ...(l.mandaPie ? { mandaPie: true } : {}),
+    })).map(l => !lineaAlGancho(l) ? l
+      // El que manda queda como se cargó; el otro se guarda derivado, para que la comparación y la huella lo tengan.
+      : l.mandaPie ? { ...l, precioGancho: precioGanchoDerivado(l) } : { ...l, precio: precioPieDerivado(l) }),
     comisionPct: parsearPct(comisionPct),
     redondeo: parsearAR(redondeo),
     ivaPct: parsearPct(ivaPct),
@@ -230,6 +241,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
   }), [lineas, comisionPct, redondeo, ivaPct, rets, comisionMonto, ivaMonto])
 
   const calc = useMemo(() => calcularLiqHacienda(entrada), [entrada])
+  // Lo que calcula la app SIN el monto tipeado: contra esto se decide si el tipeado es «a mano» (A-BUG-1280).
+  const ivaAuto = useMemo(() => montoCalculado(entrada as any, 'iva'), [entrada])
+  const comisionAuto = useMemo(() => montoCalculado(entrada as any, 'comision'), [entrada])
 
   const plazosNum: PlazoCobro[] = plazos.map(p => ({
     dias: parsearAR(p.dias), pct: parsearPct(p.pct), vencimiento: p.vencimiento, importe: parsearAR(p.importe),
@@ -265,6 +279,10 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
 
   const setLinea = (i: number, campo: keyof LineaUI, v: string) =>
     setLineas(ls => ls.map((l, k) => (k === i ? { ...l, [campo]: v } : l)))
+  /** 🥩 Cargar un precio en una línea al gancho: el que se escribe pasa a mandar y el otro se deriva. */
+  const setPrecioQueManda = (i: number, cual: 'pie' | 'gancho', v: string) =>
+    setLineas(ls => ls.map((l, k) => (k !== i ? l
+      : cual === 'pie' ? { ...l, precio: v, mandaPie: true } : { ...l, precioGancho: v, mandaPie: false })))
   const setRet = (i: number, campo: keyof RetUI, v: string) =>
     setRets(rs => rs.map((r, k) => (k === i ? { ...r, [campo]: v } : r)))
   const setPlazo = (i: number, campo: keyof PlazoUI, v: string) =>
@@ -411,6 +429,7 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                 : <>Liquidación sin venta asociada. Cargala como figura en el papel.</>}
           </DialogDescription>
         </DialogHeader>
+        <TestsDelProceso proceso="ingresos/liquidacion-hacienda" pantalla="ingresos" />
 
         {cargando ? (
           <div className="flex items-center justify-center py-12 text-gray-500"><Loader2 className="h-5 w-5 mr-2 animate-spin" />Abriendo la liquidación…</div>
@@ -459,8 +478,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                   <th className="text-left p-1">Comprador (razón social)</th><th className="text-left p-1">CUIT</th>
                   <th className="text-right p-1">Cabezas</th><th className="text-left p-1">Clasificación</th>
                   <th className="text-right p-1">{verGancho ? 'Kg pie' : 'Kilos'}</th><th className="text-right p-1">Prom.</th>
-                  {verGancho && <th className="text-right p-1" title="Kilos gancho del papel: con ellos se compara contra la venta al gancho">Kg gancho</th>}
-                  <th className="text-right p-1">Precio $/kg</th><th className="text-right p-1">Importe</th><th />
+                  {verGancho && <th className="text-right p-1" title="El dato real: kilos gancho del frigorífico">Kg gancho</th>}
+                  {verGancho && <th className="text-right p-1" title="El dato real: precio por kilo gancho">$/kg gancho</th>}
+                  <th className="text-right p-1">{verGancho ? '$/kg pie' : 'Precio $/kg'}</th><th className="text-right p-1">Importe</th><th />
                 </tr>
               </thead>
               <tbody>
@@ -475,8 +495,14 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                       <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0" value={l.kilos} onChange={ev => setLinea(i, 'kilos', ev.target.value)} onBlur={ev => setLinea(i, 'kilos', reformatear(ev.target.value, 0))} /></td>
                       <td className="p-1 text-right tabular-nums text-gray-500">{e.cabezas > 0 ? fmtAR(e.kilos / e.cabezas, 0) : '—'}</td>
                       {verGancho && <td className="p-1 w-24"><Input type="text" className="text-right" placeholder="0" value={l.kgGancho} onChange={ev => setLinea(i, 'kgGancho', ev.target.value)} onBlur={ev => setLinea(i, 'kgGancho', reformatear(ev.target.value, 1))} /></td>}
-                      <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatear(ev.target.value))} /></td>
-                      <td className="p-1 text-right tabular-nums">{fmtAR(e.kilos * e.precio)}</td>
+                      {/* 🥩 Los dos precios se pueden cargar: el que escribís manda (negro) y el otro se calcula solo (gris). */}
+                      {verGancho && (l.mandaPie && lineaAlGancho(e)
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg gancho. Escribí acá para que mande el precio gancho." value={formatoPrecio(precioGanchoDerivado(e))} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precioGancho} onChange={ev => setPrecioQueManda(i, 'gancho', ev.target.value)} onBlur={ev => setLinea(i, 'precioGancho', reformatearPrecio(ev.target.value))} /></td>)}
+                      {lineaAlGancho(e) && !l.mandaPie
+                        ? <td className="p-1 w-28"><Input type="text" className="text-right text-gray-500" title="Calculado: importe ÷ kg pie. Escribí acá el precio del kilo vivo (como liquida el frigorífico) y el gancho se recalcula." value={formatoPrecio(e.precio)} onChange={ev => setPrecioQueManda(i, 'pie', ev.target.value)} /></td>
+                        : <td className="p-1 w-28"><Input type="text" className="text-right" placeholder="0,00" value={l.precio} onChange={ev => verGancho ? setPrecioQueManda(i, 'pie', ev.target.value) : setLinea(i, 'precio', ev.target.value)} onBlur={ev => setLinea(i, 'precio', reformatearPrecio(ev.target.value))} /></td>}
+                      <td className="p-1 text-right tabular-nums">{fmtAR(importeDeLinea(e))}</td>
                       <td className="p-1">{lineas.length > 1 && <Button size="sm" variant="ghost" onClick={() => setLineas(ls => ls.filter((_, k) => k !== i))}><Trash2 className="h-3.5 w-3.5" /></Button>}</td>
                     </tr>
                   )
@@ -488,7 +514,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
                   <td className="p-1 text-right tabular-nums">{fmtAR(calc.cabezas, 0)}</td><td />
                   <td className="p-1 text-right tabular-nums">{fmtAR(calc.kilos, 0)}</td>
                   <td className="p-1 text-right tabular-nums">{calc.cabezas ? fmtAR(calc.promedio, 0) : '—'}</td>
-                  {verGancho && <td className="p-1 text-right tabular-nums">{fmtAR(kgGanchoTotal, 1)}</td>}<td />
+                  {verGancho && <td className="p-1 text-right tabular-nums">{fmtAR(kgGanchoTotal, 1)}</td>}
+                  {verGancho && <td />}<td />
                   <td className="p-1 text-right tabular-nums">{fmtAR(calc.bruto)}</td><td />
                 </tr>
               </tfoot>
@@ -505,7 +532,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>Comisión venta y garantía{comisionMonto.trim() && <span className="ml-1 text-[10px] text-amber-700" title="Monto tipeado a mano: manda sobre el %">✎ manual · {fmtAR(calc.comisionPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={comisionPct} onChange={e => { setComisionPct(e.target.value); setComisionMonto('') }} placeholder="0" disabled={!!comisionMonto.trim()} />
               <Input type="text" className="text-right" value={comisionMonto} onChange={e => setComisionMonto(e.target.value)}
-                onBlur={e => setComisionMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.comision)}
+                onFocus={() => { if (!comisionMonto.trim()) setComisionMonto(fmtAR(comisionAuto)) }}
+                onBlur={e => setComisionMonto(montoTipeadoOVacio(e.target.value, comisionAuto))} placeholder={fmtAR(calc.comision)}
                 title="Vacío: se calcula con el %. Si la comisión del papel se calcula sobre otra cosa, tipeá el monto." />
               <span>Ajuste por redondeo (con signo)</span>
               <span />
@@ -515,7 +543,8 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
               <span>I.V.A.{ivaMonto.trim() && <span className="ml-1 text-[10px] text-amber-700">✎ manual · {fmtAR(calc.ivaPctEfectivo, 3)} %</span>}</span>
               <Input type="text" className="text-right" value={ivaPct} onChange={e => { setIvaPct(e.target.value); setIvaMonto('') }} disabled={!!ivaMonto.trim()} />
               <Input type="text" className="text-right" value={ivaMonto} onChange={e => setIvaMonto(e.target.value)}
-                onBlur={e => setIvaMonto(reformatear(e.target.value))} placeholder={fmtAR(calc.iva)}
+                onFocus={() => { if (!ivaMonto.trim()) setIvaMonto(fmtAR(ivaAuto)) }}
+                onBlur={e => setIvaMonto(montoTipeadoOVacio(e.target.value, ivaAuto))} placeholder={fmtAR(calc.iva)}
                 title="Vacío: se calcula con el %. Con valor, manda el tipeado." />
             </div>
             <p className="text-xs text-gray-500">Precio después de comisión: <b>{calc.kilos ? fmtAR(calc.precioPostComision) : '—'} $/kg</b></p>

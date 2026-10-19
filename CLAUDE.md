@@ -772,6 +772,74 @@ tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a 
 variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
 está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
 dónde caen los commits**.*
+### 🌙 TRABAJAR SIN SUPERVISIÓN — el acuerdo para una tanda (REGLA)
+*Aprobada por el usuario 2026-10-04 ([A-DEC-1003](PENDIENTES.md#a-dec-1003)): **«¿es posible que
+trabajes sobre varios pendientes con una indicación clara mía pero sin mi supervisión? Para que
+funcione no me debés preguntar cosas mientras… trabajar en una sub rama por posibles errores»**.*
+
+> **El usuario da la lista; Claude la resuelve sin preguntar, en una rama aparte, sin tocar nada
+> irreversible, y deja escrito todo lo que decidió solo.**
+
+1. **La lista la da él**, con IDs y en orden. Sólo eso se toca; un hallazgo nuevo se anota en
+   `PENDIENTES.md` y no se desarrolla (§ 🚦).
+2. **Una sub-rama por tanda** (`jms/tanda-AAAA-MM-DD`) que **no se mergea** hasta que él la revise.
+3. **Nunca, sin él**: escribir datos reales, cambiar estructura de la base, RLS o permisos, mergear,
+   borrar. Si un pendiente lo necesita, **se salta y se escribe por qué**.
+4. **Una duda no frena la tanda**: se elige lo más conservador y reversible, y la decisión queda
+   anotada en el pendiente para que la confirme. Si la duda cambia el resultado, ese pendiente
+   **queda para después**.
+5. **Cada pendiente termina igual**: casos en `npm run probar`, `type-check:diff` y build en verde,
+   commit propio, y su `A-TEST` con *«Qué probar vos»*.
+6. **Al volver**: resumen de lo hecho, lo saltado con su motivo, y la guía de pruebas actualizada.
+
+*Motivo: el cuello de botella es el tiempo del usuario. Si cada duda lo espera, la tanda no avanza;
+si avanza sin reglas, lo que vuelve no se puede revisar. Las dos cosas se resuelven separando lo
+reversible (se hace y se anota) de lo irreversible (se salta).*
+
+#### 🌙 La marca en la NOTA — el permiso viaja con el pedido *(2026-10-13)*
+*Pedido del usuario: **«todo lo que tiene (\*) significa que podés empezar a trabajar sobre eso sin mi
+supervisión. Pero mejor agregá a notas la marca… eso me relaja a mí para poder darte mejoras y que
+vos ya sepas cuáles poder arrancar sin mí»**.*
+
+> **Una nota de la app marcada 🌙 «Claude puede arrancar con esto sin esperarme» ES un ítem de la
+> lista del punto 1: se desarrolla sin preguntar, con los mismos seis límites.**
+> 📍 **Acá:** `public.notas_para_claude.sin_supervision = true`. Las notas anteriores a la marca
+> valen igual si su título termina en **`(*)`**.
+
+- **Al abrir sesión**, la consulta de la bandeja trae esa columna y las marcadas **se listan aparte**:
+  son las que se pueden arrancar; las demás se registran y esperan.
+- **La marca autoriza a DESARROLLAR, no a lo irreversible.** Datos reales, estructura de la base,
+  permisos y merges siguen con el punto 3: se salta y se escribe por qué, o se pregunta.
+- **«Si tenés dudas me podés preguntar, pero si no avanzá»** (usuario, mismo día): una duda que no
+  cambia el resultado se resuelve por lo conservador y se anota (punto 4); una que sí lo cambia se
+  pregunta **sin frenar el resto**.
+- **Y cada nota se cierra igual que siempre** (§ 📝): pendiente con ID, commit, nota marcada como
+  leída con su destino.
+
+*Motivo: sin la marca, cada mejora que el usuario deja queda esperando una conversación para saber
+si se puede empezar — y el cuello de botella vuelve a ser su tiempo. Con la marca el permiso se da
+en el momento en que se le ocurre el pedido, que es cuando tiene claro cuánto le importa.*
+
+### 📝 Una nota de la app se CIERRA en el mismo momento en que se procesa (REGLA)
+*Pedida por el usuario 2026-10-04, al aparecer **38 notas sin cerrar** (del 04/09 al 29/09) — una de
+ellas marcada «urgente para el 1/10», que se leyó el 4/10: **«claramente hay que regularizar el
+tratado de una nota, para no olvidar darla como cerrada»**.*
+
+> **Los tres canales del usuario se miran al abrir sesión, y cada nota sale de la bandeja con su
+> destino escrito: pendiente con ID, o descartada con motivo. Nunca «la vi» sin marcarla.**
+> 📍 **Acá:** `public.notas_para_claude` → `estado='leida'`, `leida_at`, y `resultado` = el ID del
+> pendiente (o «ya atendida: A-XXX-NN», o el motivo del descarte). Mismo criterio para
+> `pendientes_comentarios.leido_at` y `pendientes_propuestos.estado`.
+
+- **Al abrir sesión**, la consulta de las tres bandejas va antes que cualquier otra cosa. Si hay algo,
+  se le dice al usuario en la primera respuesta.
+- **Se cierra en el mismo paso**: escribir la fila en `PENDIENTES.md`, commitear, y marcar la nota.
+  «La proceso y la marco después» es la misma apuesta que perdió el corte de luz (§ ⚡).
+- **Una nota que pide algo con fecha** («urgente para el…») se avisa aunque no se vaya a trabajar.
+
+*Motivo: la bandeja existía y se usaba; lo que faltaba era el paso de cerrarla. De las 38, 17 ya
+estaban resueltas sin marcar — y por eso las otras 21 quedaron escondidas entre ellas.*
+
 ### 📁 La carpeta de comunicación — se mira sin que lo pidan (REGLA)
 *Pedido del usuario 2026-09-06: **«recordá usarla siempre y ya no hace falta que yo te diga que ahí
 lo dejé»**.*

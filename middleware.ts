@@ -55,6 +55,10 @@ function cabecerasDeSeguridad(res: NextResponse, urlSupabase: string): NextRespo
       `img-src 'self' data: blob: ${urlSupabase}`,
       "font-src 'self' data:",
       `connect-src 'self' ${urlSupabase} ${urlSupabase.replace("https://", "wss://")}`,
+      // El visor de Google Drive embebido («👁 ver» de un PDF sin vincular, en Subdiarios). Sin esta
+      // línea cae en `default-src 'self'` y el navegador muestra «Este contenido está bloqueado»
+      // (A-BUG-1248). Es qué puede embeber la app; quién puede embeberla a ella sigue siendo nadie.
+      "frame-src https://drive.google.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

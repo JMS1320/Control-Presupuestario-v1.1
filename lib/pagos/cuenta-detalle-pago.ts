@@ -22,6 +22,7 @@
  */
 
 import type { MedioPago } from "./medios-pago"
+import type { ConversionMoneda } from "./moneda-factura"
 
 export interface ItemPago {
   comprobante: string
@@ -31,6 +32,8 @@ export interface ItemPago {
   monto_a_abonar: number
   /** `ARCA` | `ANTICIPO` | `TEMPLATE`. Un ANTICIPO **no es una factura**: es un medio de pago. */
   origen?: string
+  /** 💵 Factura en moneda extranjera: los importes de arriba YA están en pesos; esto es para mostrar de dónde salen (A-BUG-1245). */
+  conversion?: ConversionMoneda | null
 }
 
 export interface Cuenta {
@@ -76,35 +79,49 @@ export const money = (n: number) => `$${n.toLocaleString("es-AR", { minimumFract
  * Acá es aritmética pura: la usan la app y `npm run ensayo:detalle`, que es lo que evita que el
  * ensayo tenga su propia copia — la tuvo, y por eso siguió mostrando tres renglones después de
  * arreglar el bug (§ ♻️ Centralizar, no duplicar).
+ *
+ * ## 🧾 Una NOTA DE CRÉDITO del grupo RESTA de esa transferencia (A-BUG-1254)
+ * Su resto es **negativo** y se descartaba junto con los restos en cero, así que el renglón
+ * anunciaba la suma de las facturas **sin** restar la nota: caso ALCORTA 13/10/2026, *«Transferencia
+ * (3 facturas) $3.289.256,72»* contra una transferencia real de **$3.162.587,93** — la diferencia,
+ * $126.668,79, es exactamente la NC 820. El pago estaba bien; mentía el mail. Ahora se acumula con
+ * su signo y recién al final se descarta el pago que no deja nada a transferir.
  */
 export function restosComoMedios(
   filas: Array<{ id: string; monto_a_abonar?: number | null; fecha_pago?: string | null; grupo_pago_id?: string | null }>,
   cubierto: Map<string, number> = new Map(),
 ): MedioPago[] {
-  const porPago = new Map<string, { monto: number; fecha: string | null; facturas: number }>()
+  const porPago = new Map<string, { monto: number; fecha: string | null; facturas: number; notas: number }>()
 
   for (const f of filas) {
     const resto = Math.round((((f.monto_a_abonar ?? 0)) - (cubierto.get(f.id) ?? 0)) * 100) / 100
-    if (resto <= 0.01) continue
+    if (Math.abs(resto) <= 0.01) continue
     // Sin grupo, la clave es la factura: no se junta con nada.
     const clave = f.grupo_pago_id ?? `sola:${f.id}`
     const acum = porPago.get(clave)
     if (acum) {
       acum.monto = Math.round((acum.monto + resto) * 100) / 100
-      acum.facturas += 1
+      if (resto > 0) acum.facturas += 1; else acum.notas += 1
       if (!acum.fecha) acum.fecha = f.fecha_pago ?? null
     } else {
-      porPago.set(clave, { monto: resto, fecha: f.fecha_pago ?? null, facturas: 1 })
+      porPago.set(clave, { monto: resto, fecha: f.fecha_pago ?? null, facturas: resto > 0 ? 1 : 0, notas: resto > 0 ? 0 : 1 })
     }
   }
 
-  return Array.from(porPago.values()).map(r => ({
-    tipo: "transferencia" as const,
-    monto: r.monto,
-    fecha: r.fecha,
-    // Se dice cuántas facturas cubre: el proveedor ve UNA acreditación y así sabe qué cancela.
-    detalle: r.facturas > 1 ? `Transferencia (${r.facturas} facturas)` : "Transferencia",
-  }))
+  // Un pago que no deja nada a transferir (una nota sola, o notas que cubren todo) no es un medio.
+  return Array.from(porPago.values()).filter(r => r.monto > 0.01).map(r => {
+    // Se dice qué cubre: el proveedor ve UNA acreditación y así sabe qué cancela.
+    const partes = [
+      r.facturas > 1 || r.notas > 0 ? `${r.facturas} factura${r.facturas === 1 ? '' : 's'}` : '',
+      r.notas > 0 ? `menos ${r.notas} nota${r.notas === 1 ? '' : 's'} de crédito` : '',
+    ].filter(Boolean)
+    return {
+      tipo: "transferencia" as const,
+      monto: r.monto,
+      fecha: r.fecha,
+      detalle: partes.length ? `Transferencia (${partes.join(', ')})` : "Transferencia",
+    }
+  })
 }
 
 export const esAnticipo = (i: ItemPago) => i.origen === "ANTICIPO"

@@ -6,12 +6,18 @@
  * Sin horarios: se corre a MANO (o desde un botón). En lote. Los primeros los revisás en Borradores
  * de Gmail y los mandás vos. Cuando veas que todo anda bien → cambiar createDraft por sendEmail (abajo).
  *
- * CONFIGURAR (una vez): SUPABASE_URL y SUPABASE_KEY (anon o service role del proyecto).
- * NO commitear la key real en este archivo si el repo es público.
+ * CONFIGURAR (una vez): la key en las PROPIEDADES DEL SCRIPT
+ * (Configuración del proyecto ⚙ → Propiedades del script → SUPABASE_KEY).
+ *
+ * ⚠️ 2026-09-28 / 2026-10-05 — TIENE QUE SER LA **SERVICE ROLE KEY**, no la anon. Desde que se cerró
+ * `anon` (seguridad), con la anon el script falla con «Supabase 401 · 42501 · permission denied for
+ * table mails_pago». No se re-abre `anon`: el script usa la service role. Ver ENTRE-DESARROLLADORES.md.
+ * La key NO va escrita en el código: va en las propiedades, que no se copian al repo.
  */
 
-var SUPABASE_URL = 'https://TU_PROJECT_REF.supabase.co';
-var SUPABASE_KEY = 'TU_ANON_O_SERVICE_KEY';
+// La dirección no es secreta (es la misma que usa la app en el navegador). La KEY sí: va en las propiedades.
+var SUPABASE_URL = 'https://lyojiaglcictmboqwxfm.supabase.co';
+var SUPABASE_KEY = PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY');
 
 /**
  * Web app: la app llama a esta URL para preparar borradores.
@@ -88,4 +94,20 @@ function headers_() {
 function base64ToPdfBlob_(b64, nombre) {
   var bytes = Utilities.base64Decode(b64);
   return Utilities.newBlob(bytes, 'application/pdf', nombre);
+}
+
+/**
+ * Diagnóstico: qué clave está leyendo el script, SIN mostrarla. Ejecutarla desde el editor.
+ * Tiene que decir «service_role» (o «sb_secret_»). Con la pública, Supabase contesta 42501.
+ */
+function verRolDeLaKey() {
+  var k = PropertiesService.getScriptProperties().getProperty('SUPABASE_KEY');
+  if (!k) { Logger.log('La propiedad SUPABASE_KEY no existe o tiene otro nombre'); return; }
+  if (k.indexOf('sb_secret_') === 0) { Logger.log('Clave SECRETA nueva (sb_secret_): correcta'); return; }
+  if (k.indexOf('sb_publishable_') === 0) { Logger.log('Es la PUBLICA (sb_publishable_): hay que poner la secreta'); return; }
+  var parte = k.split('.')[1];
+  while (parte.length % 4) parte += '=';
+  var datos = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parte)).getDataAsString());
+  Logger.log('Rol de la clave: ' + datos.role + '   (tiene que decir service_role)');
+  Logger.log('Uso en el código: ' + (SUPABASE_KEY === k ? 'el código usa la propiedad' : 'el código NO usa la propiedad: hay otra línea con la clave escrita'));
 }

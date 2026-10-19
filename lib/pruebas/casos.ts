@@ -33,19 +33,41 @@
  * empieza a mentir.
  */
 
+import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
+import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
+import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
+import { archivosParaFactura, periodoDeArchivo } from "@/lib/facturas/vincular-archivo"
+import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
+import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
+import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
+import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
+import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
+import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
+import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
+import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
+import { brutoDelPeriodo, brutoSegunTipo } from "@/lib/sueldos/bruto"
+import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
+import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
+import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
+import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
+import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
+import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
+import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
-import { simularSecuencia, retencionDelGrupo, calcularRetencion } from "@/lib/sicore/minimo"
+import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
-import { calcularCuenta, etiquetaComprobante } from "@/lib/pagos/cuenta-detalle-pago"
+import { calcularCuenta, etiquetaComprobante, restosComoMedios } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
@@ -130,14 +152,19 @@ import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esper
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
-  kgQueSeCobran, ventaParaComparar, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
+  kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
-import { filasRetenciones } from "@/lib/ventas/retenciones-export"
+import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
+import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
+import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
+import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
+import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
+import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
-import { calcularVinculacionPago, tcDeFactura } from "@/lib/pagos/moneda-factura"
+import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -338,6 +365,48 @@ export function correrCasos(): Resultado[] {
   const minimoConsumido = r2(pasos.reduce((s, p) => s + p.minimoAplicado, 0))
   chequear("SICORE", "El mínimo se consume una sola vez entre las tres",
     `$${n2(MIN_BIENES)}`, `$${n2(minimoConsumido)}`, cerca(minimoConsumido, MIN_BIENES, 0.01), "A-BUG-137")
+
+  /**
+   * 🏛️ **Una NOTA DE CRÉDITO dentro del grupo — A-BUG-1251** (Alcorta 13/10/2026).
+   * FC 6377 · 6383 · 6389 + NC 820, todas con 5 % de pronto pago. La NC tiene que RESTAR.
+   */
+  {
+    const GRUPO_NC = [1840582.89, 70594.96, 847379.38, -104684.94]
+    const pasosNC = simularSecuencia(GRUPO_NC, MIN_BIENES, ALIC_BIENES)
+    const retenidoNC = r2(pasosNC.reduce((s, p) => s + p.retencion, 0))
+    chequear("SICORE", "🔑 Con una nota de crédito en el grupo, la retención baja: 48.597,45 y no 50.691,15",
+      "$48.597,45", `$${n2(retenidoNC)}`, cerca(retenidoNC, 48597.45, 0.01), "A-BUG-1251")
+
+    chequear("SICORE", "Y cierra de atrás para adelante: (neto del grupo − mínimo) × 2 %",
+      `$${n2(retencionDelGrupo(GRUPO_NC, MIN_BIENES, ALIC_BIENES))}`, `$${n2(retenidoNC)}`,
+      cerca(retenidoNC, retencionDelGrupo(GRUPO_NC, MIN_BIENES, ALIC_BIENES), 0.01), "A-BUG-1251")
+
+    // El paso del descuento: la base de la NC NO se lleva a cero (era el bug).
+    chequear("SICORE", "🔑 Al aplicarle el descuento, la base de la nota de crédito sigue siendo negativa",
+      "-104684.94", String(baseTrasDescuento(-104684.94, 0, true)),
+      baseTrasDescuento(-104684.94, 0, true) === -104684.94, "A-BUG-1251")
+
+    chequear("SICORE", "En una factura común el descuento sigue dando lo de siempre (nunca base negativa)",
+      "1616582.89 · 0",
+      `${baseTrasDescuento(1840582.89, 224000, false)} · ${baseTrasDescuento(100000, 224000, false)}`,
+      baseTrasDescuento(1840582.89, 224000, false) === 1616582.89 && baseTrasDescuento(100000, 224000, false) === 0,
+      "A-BUG-1251")
+
+    // De qué factura se descuenta: la del mismo grupo y de mayor retención.
+    const vigentes = [
+      { id: "otra", retencion: 90000, grupo_pago_id: "otro-grupo" },
+      { id: "6377", retencion: 32331.66, grupo_pago_id: "g" },
+      { id: "6383", retencion: 1411.90, grupo_pago_id: "g" },
+      { id: "6389", retencion: 16947.59, grupo_pago_id: "g" },
+    ]
+    chequear("SICORE", "Lo que resta la nota de crédito se descuenta de la factura del MISMO grupo con mayor retención",
+      "6377", destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id ?? "null",
+      destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id === "6377", "A-BUG-1251")
+
+    chequear("SICORE", "Si ninguna retención alcanza a absorberla, no se netea (y la pantalla avisa)",
+      "null", String(destinoDeNotaDeCredito([{ id: "x", retencion: 500 }], -2093.70, "g")),
+      destinoDeNotaDeCredito([{ id: "x", retencion: 500 }], -2093.70, "g") === null, "A-BUG-1251")
+  }
 
   // La primera no retiene pero NO es el final: si el circuito se corta ahí, se retienen $0.
   chequear("SICORE", "La primera no retiene, y las dos siguientes sí",
@@ -821,6 +890,130 @@ export function correrCasos(): Resultado[] {
   chequear("Detalle de pago", "Con 3 renglones la cuenta CERRABA igual — por eso el bug sobrevivió",
     "cierra, y está mal igual", `dif $${n2(cTres.dif)} con ${tresTransferencias.length} renglones`,
     Math.abs(cTres.dif) <= 1 && tresTransferencias.length === 3, "A-BUG-145")
+
+  // A-BUG-1254: una NOTA DE CRÉDITO del grupo resta de la transferencia. Números reales del pago
+  // de ALCORTA del 13/10/2026: el mail anunciaba $3.289.256,72 y la transferencia es $3.162.587,93.
+  const G = "grupo-alcorta-1310"
+  const ALCORTA_NC = [
+    { id: "a", comprobante: "FC 6377", imp_total: 2344321.33, monto_sicore: 30237.96, descuento_aplicado: 117216.06, monto_a_abonar: 2196867.31, origen: "ARCA", grupo_pago_id: G },
+    { id: "b", comprobante: "FC 6389", imp_total: 1079293.71, monto_sicore: 16947.59, descuento_aplicado: 53964.68, monto_a_abonar: 1008381.44, origen: "ARCA", grupo_pago_id: G },
+    { id: "c", comprobante: "FC 6383", imp_total: 89915.65, monto_sicore: 1411.90, descuento_aplicado: 4495.78, monto_a_abonar: 84007.97, origen: "ARCA", grupo_pago_id: G },
+    { id: "d", comprobante: "NC 820", imp_total: -133335.56, monto_sicore: null, descuento_aplicado: -6666.77, monto_a_abonar: -126668.79, origen: "ARCA", grupo_pago_id: G },
+  ]
+  const mediosNC = restosComoMedios(ALCORTA_NC)
+  chequear("Detalle de pago", "🔴 La nota de crédito del grupo RESTA de la transferencia anunciada",
+    "1 medio de $3.162.587,93", `${mediosNC.length} medio(s) de $${n2(mediosNC[0]?.monto ?? 0)}`,
+    mediosNC.length === 1 && cerca(mediosNC[0].monto, 3162587.93, 0.01), "A-BUG-1254")
+  const cNC = calcularCuenta(ALCORTA_NC, mediosNC, "arca")
+  chequear("Detalle de pago", "…y con eso la cuenta cierra: $3.380.195,13, sin «pagado de más»",
+    "cierra", cNC.desviado ? `no cierra por $${n2(cNC.dif)}` : "cierra",
+    !cNC.desviado && cerca(cNC.totalCancelado, 3380195.13, 0.01), "A-BUG-1254")
+  chequear("Detalle de pago", "El renglón dice qué cubre: 3 facturas menos 1 nota de crédito",
+    "Transferencia (3 facturas, menos 1 nota de crédito)", String(mediosNC[0]?.detalle),
+    mediosNC[0]?.detalle === "Transferencia (3 facturas, menos 1 nota de crédito)", "A-BUG-1254")
+  const soloNC = restosComoMedios([ALCORTA_NC[3]])
+  chequear("Detalle de pago", "Una nota de crédito sola no se anuncia como transferencia",
+    "0 medios", `${soloNC.length} medio(s)`, soloNC.length === 0, "A-BUG-1254")
+
+  // A-DEC-1005 / A-FEAT-1269: el Detalle del Cash Flow muestra sólo lo del usuario.
+  chequear("Cash Flow — Detalle propio", "🔴 La repetición guardada «FC 406 - PAIS DIEGO LUIS» se ve en blanco; la nota propia se ve",
+    "(vacío) · Drenaje Abseso Yegua",
+    `${detallePropioCF("FC 406 - PAIS DIEGO LUIS", "PAIS DIEGO LUIS", 406) ?? "(vacío)"} · ${detallePropioCF("Drenaje Abseso Yegua", "PAIS DIEGO LUIS", 406)}`,
+    detallePropioCF("FC 406 - PAIS DIEGO LUIS", "PAIS DIEGO LUIS", 406) === null && detallePropioCF("Drenaje Abseso Yegua", "PAIS DIEGO LUIS", 406) === "Drenaje Abseso Yegua"
+      && detallePropioCF("   ", "X") === null, "A-DEC-1005")
+  const notasGrupo = detallePropioDeGrupo([
+    { id: "a", etiqueta: "6377", detalle: "Ecegon IATF" }, { id: "b", etiqueta: "6383", detalle: "" }, { id: "c", etiqueta: "820", detalle: "devolución" },
+  ])
+  chequear("Cash Flow — Detalle propio", "Un grupo muestra la nota de cada factura que tiene una, con su número",
+    "6377: Ecegon IATF | 820: devolución", String(notasGrupo),
+    notasGrupo === "6377: Ecegon IATF | 820: devolución" && detallePropioDeGrupo([{ id: "a", etiqueta: "1", detalle: "" }]) === null, "A-FEAT-1269")
+
+  // A-BUG-1256: nada de otra empresa ni de otro CUIT se vincula solo.
+  const comisionMA = { origen: "ARCA", empresas: ["MA"], cuit_proveedor: "27114789033" }   // Espada Faraldo (MA), caso real
+  chequear("Conciliación — otra empresa / otro CUIT", "🔴 Una factura de MA no se vincula sola a un movimiento de una cuenta de MSA",
+    "pregunta", puedeVincularseSola(comisionMA, "MSA", null) ? "se vincula sola" : "pregunta",
+    !puedeVincularseSola(comisionMA, "MSA", null) && motivosParaPreguntar(comisionMA, "MSA", null)[0].includes("retiro"), "A-BUG-1256")
+  chequear("Conciliación — otra empresa / otro CUIT", "Un TEMPLATE de PAM pagado desde MSA sí se vincula solo (pedido del usuario); con CUIT distinto, no",
+    "sola · pregunta",
+    `${puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: null }, "MSA", null) ? "sola" : "pregunta"} · ${puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: "20044390222" }, "MSA", "30617786016") ? "sola" : "pregunta"}`,
+    puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: null }, "MSA", null)
+      && !puedeVincularseSola({ origen: "TEMPLATE", empresas: ["PAM"], cuit_proveedor: "20044390222" }, "MSA", "30617786016"), "A-BUG-1256")
+  chequear("Conciliación — otra empresa / otro CUIT", "CUIT del banco distinto al de la factura → pregunta; banco sin CUIT o mismo CUIT → no opina; template MSA/PAM desde MSA → no es de otra",
+    "pregunta · sola · sola · sola",
+    [puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "30712118179"),
+     puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20103619115" }, "MSA", null),
+     puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "20103619115"),
+     puedeVincularseSola({ empresas: ["MSA", "PAM"], cuit_proveedor: null }, "MSA", null)].map(x => x ? "sola" : "pregunta").join(" · "),
+    !puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "30712118179")
+      && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20103619115" }, "MSA", null)
+      && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "20103619115")
+      && puedeVincularseSola({ empresas: ["MSA", "PAM"], cuit_proveedor: null }, "MSA", null), "A-BUG-1256")
+
+  // A-FEAT-1277: columnas del Cash Flow en el orden del usuario.
+  const COLS = [{ key: "empresas" }, { key: "fecha" }, { key: "detalle" }, { key: "debitos" }]
+  const enSuOrden = ordenarColumnas(COLS, ["debitos", "empresas", "ya-no-existe"]).map(c => c.key).join(",")
+  chequear("Cash Flow — columnas a mano", "🔴 Respeta el orden guardado, ignora una columna que ya no existe y una NUEVA entra en su lugar de siempre",
+    "debitos,fecha,detalle,empresas… (fecha y detalle en su lugar)", enSuOrden,
+    enSuOrden === "debitos,fecha,detalle,empresas", "A-FEAT-1277")
+  chequear("Cash Flow — columnas a mano", "Mover una columna antes / después de otra",
+    "detalle,empresas,fecha · empresas,fecha,detalle",
+    `${moverColumna(["empresas", "fecha", "detalle"], "detalle", "empresas", "antes").join(",")} · ${moverColumna(["detalle", "empresas", "fecha"], "detalle", "fecha", "despues").join(",")}`,
+    moverColumna(["empresas", "fecha", "detalle"], "detalle", "empresas", "antes").join(",") === "detalle,empresas,fecha"
+      && moverColumna(["detalle", "empresas", "fecha"], "detalle", "fecha", "despues").join(",") === "empresas,fecha,detalle", "A-FEAT-1277")
+  const leido = leerColumnasUsuario({ orden: ["a", 3], anchos: { a: 9000, b: "x", c: 10 } })
+  chequear("Cash Flow — columnas a mano", "Lo guardado se lee sin confiar: anchos fuera de rango se acotan (40–800), lo mal tipado se descarta",
+    "orden a · a=800 · c=40", `orden ${leido?.orden.join(",")} · a=${leido?.anchos.a} · c=${leido?.anchos.c} · b=${leido?.anchos.b}`,
+    leido?.orden.join(",") === "a" && leido?.anchos.a === 800 && leido?.anchos.c === 40 && leido?.anchos.b === undefined
+      && leerColumnasUsuario({ orden: [], anchos: {} }) === null, "A-FEAT-1277")
+
+  // A-FEAT-1276: vincular el PDF desde el Cash Flow — qué carpeta y qué archivo se sugiere.
+  const pImputada = periodoDeArchivo({ "año_contable": 2026, mes_contable: 11, fecha_emision: "2026-10-01" })
+  const pSinImputar = periodoDeArchivo({ "año_contable": null, mes_contable: null, fecha_emision: "2026-10-01" })
+  chequear("Archivo digital — vincular desde Cash Flow", "🔴 Busca en el mes donde está IMPUTADA; si no está imputada, en el de emisión",
+    "2026-11 imputada · 2026-10 provisional",
+    `${pImputada.anio}-${pImputada.mes} ${pImputada.imputada ? "imputada" : "?"} · ${pSinImputar.anio}-${pSinImputar.mes} ${pSinImputar.imputada ? "?" : "provisional"}`,
+    pImputada.anio === 2026 && pImputada.mes === 11 && pImputada.imputada && pSinImputar.mes === 10 && !pSinImputar.imputada, "A-FEAT-1276")
+  const ordenados = archivosParaFactura([
+    { archivo: "10-05 Otro proveedor.pdf", url: "u1" },
+    { archivo: "09-30 Alcorta 6370.pdf", url: "u2" },
+    { archivo: "10-01 Alcorta 6377.pdf", url: "u3" },
+  ], { denominacion_emisor: "ALCORTA EDMUNDO ERNESTO", fecha_emision: "2026-10-01" })
+  chequear("Archivo digital — vincular desde Cash Flow", "⭐ arriba el del proveedor CON la fecha de la factura; el de otro día no se sugiere pero se lista",
+    "u3⭐ · u1 · u2", ordenados.map(a => a.url + (a.sugerido ? "⭐" : "")).join(" · "),
+    ordenados[0].url === "u3" && ordenados[0].sugerido && ordenados.filter(a => a.sugerido).length === 1 && ordenados.length === 3, "A-FEAT-1276")
+
+  // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
+  const VIS = ["a", "b", "c"]
+  chequear("PAGOS — tildar todo lo filtrado", "Tres estados: ninguna / algunas / todas (una tildada que no se ve no cuenta)",
+    "ninguna · algunas · todas",
+    `${estadoTildeTodas(VIS, new Set(["fuera"]))} · ${estadoTildeTodas(VIS, new Set(["a"]))} · ${estadoTildeTodas(VIS, new Set(["a", "b", "c", "fuera"]))}`,
+    estadoTildeTodas(VIS, new Set(["fuera"])) === "ninguna" && estadoTildeTodas(VIS, new Set(["a"])) === "algunas"
+      && estadoTildeTodas(VIS, new Set(["a", "b", "c", "fuera"])) === "todas", "A-FEAT-1268")
+  const trasClick = seleccionTrasClickTodas(VIS, new Set(["a", "fuera"]))
+  chequear("PAGOS — tildar todo lo filtrado", "🔴 Click con algunas: tilda SÓLO las que se ven (suelta la que no se ve); con todas: suelta todo",
+    "a,b,c · 0", `${[...trasClick].sort().join(",")} · ${seleccionTrasClickTodas(VIS, new Set(VIS)).size}`,
+    [...trasClick].sort().join(",") === "a,b,c" && seleccionTrasClickTodas(VIS, new Set(VIS)).size === 0, "A-FEAT-1268")
+
+  // A-FEAT-1273: el archivo del banco desde Sueldos lleva SÓLO los pagos tildados y pagados por banco.
+  const PAGOS_MES = [
+    { id: "p1", medio_pago: "banco" }, { id: "p2", medio_pago: null },
+    { id: "p3", medio_pago: "caja_general" }, { id: "p4", medio_pago: "banco" },
+  ]
+  const selBanco = pagosParaElBanco(PAGOS_MES, new Set(["p1", "p2", "p3", "no-esta-en-el-mes"]))
+  chequear("Sueldos — archivo del banco", "🔴 Al banco van sólo los tildados (no el mes entero) y sin los pagados por caja",
+    "p1,p2 · 1 por caja", `${selBanco.ids.join(",")} · ${selBanco.fueraPorCaja} por caja`,
+    selBanco.ids.join(",") === "p1,p2" && selBanco.fueraPorCaja === 1, "A-FEAT-1273")
+  chequear("Sueldos — archivo del banco", "Sin nada tildado no va ningún pago",
+    "0", String(pagosParaElBanco(PAGOS_MES, new Set()).ids.length),
+    pagosParaElBanco(PAGOS_MES, new Set()).ids.length === 0, "A-FEAT-1273")
+
+  // A-BUG-1255: ARCA trae la moneda de una factura en pesos como «$». No es moneda extranjera.
+  const convPesos = textoConversion([{ comprobante: "FC 2077", conversion: conversionDe({ moneda: "$", imp_total: 1537055, tipo_cambio: 1 }) }])
+  chequear("Detalle de pago", "🔴 Una factura en pesos (moneda «$») NO lleva el renglón de conversión",
+    "0 renglones", `${convPesos.length} renglón(es)`,
+    convPesos.length === 0 && !esMonedaExtranjera("$") && !esMonedaExtranjera("PES") && !esMonedaExtranjera(null), "A-BUG-1255")
+  chequear("Detalle de pago", "…y una en dólares lo sigue llevando",
+    "extranjera", esMonedaExtranjera("USD") ? "extranjera" : "pesos", esMonedaExtranjera("USD") && esMonedaExtranjera("DOL"), "A-BUG-1255")
 
   // A-BUG-149: un ANTICIPO no es una factura. Es el caso IGLESIAS que dio nombre a A-BUG-105.
   const conAnticipo = [
@@ -2129,6 +2322,201 @@ export function correrCasos(): Resultado[] {
     "-6,5%", `${difSanpa.porcentaje.toFixed(1)}%`,
     Math.abs(difSanpa.porcentaje + 6.5) < 0.1 && !difSanpa.exacto, "A-FEAT-167")
 
+  // ══ 🐄 A-FEAT-1251 — confirmar la reposición desde un Excel ══════════════════════════════════
+  {
+    const H = (id: string, of: string | null, int: string | null, rep: boolean) => ({ id, caravana_oficial: of, caravana_interna: int, es_rep: rep })
+    const hembras = [
+      H("a", "032 010012326428", "187", true),   // en la planilla y ya rep
+      H("b", "032 010012326429", "307", false),  // en la planilla, falta marcarla
+      H("c", "032 010012326431", "180", true),   // rep y NO está en la planilla → se le quita
+      H("d", "032 010012326433", "300", false),  // ni rep ni en la planilla → no se toca
+      H("e", "032 010012399428", "216", true),   // termina igual que «a» si se escribe la cola corta
+    ]
+    // Planilla real-ish: encabezado, oficial sin el cero (Excel se lo comió), interna, una que no existe, una repetida.
+    const hoja: unknown[][] = [
+      ["Nro", "Caravana", "Peso"],
+      [1, "32010012326428", 250],
+      [2, "307", 240],
+      [3, "032 010012399428", 260],
+      [4, "032 010099999999", 230],
+      [5, "187", 250],
+    ]
+    const { caravanas } = caravanasDeHoja(hoja)
+    chequear("Reposición desde Excel", "🐄 Lee sólo la columna «Caravana» (no confunde el peso con una caravana interna)",
+      "5", String(caravanas.length), caravanas.length === 5 && !caravanas.includes("250"), "A-FEAT-1251")
+    const plan = planReposicion(caravanas, hembras)
+    chequear("Reposición desde Excel", "🐄 Marca la que falta, quita la que sobra y avisa la que no existe",
+      "marcar b · quitar c · no encontrada 1 · repetida 1",
+      `marcar ${plan.marcar.map(h => h.id)} · quitar ${plan.desmarcar.map(h => h.id)} · no encontrada ${plan.noEncontradas.length} · repetida ${plan.repetidas.length}`,
+      plan.marcar.map(h => h.id).join() === "b" && plan.desmarcar.map(h => h.id).join() === "c"
+        && plan.noEncontradas.length === 1 && plan.repetidas.length === 1 && plan.yaBien.length === 2, "A-FEAT-1251")
+    chequear("Reposición desde Excel", "🧮 El plan cierra contra lo leído", "true", String(cierraPlan(plan, caravanas.length)),
+      cierraPlan(plan, caravanas.length), "A-FEAT-1251")
+    // Una cola que coincide con dos caravanas NO se adivina: queda ambigua y no desmarca a ninguna.
+    const amb = planReposicion(["326428"], [H("x", "032 010012326428", null, true), H("y", "032 020012326428", null, true)])
+    chequear("Reposición desde Excel", "⚠️ Una caravana que coincide con dos animales no se adivina ni desmarca a nadie",
+      "ambigua 1 · quitar 0", `ambigua ${amb.ambiguas.length} · quitar ${amb.desmarcar.length}`,
+      amb.ambiguas.length === 1 && amb.desmarcar.length === 0, "A-FEAT-1251")
+    // Una caravana de la planilla de hembras que en el sistema es MACHO: se avisa, no se marca, y el plan cierra.
+    const conMacho = planReposicion(["032 010012326428", "032 010055555555"], hembras, [H("m", "032 010055555555", "900", false)])
+    chequear("Reposición desde Excel", "🚹 Una caravana de la planilla que en el sistema es MACHO se avisa y no se marca",
+      "machos 1 · no encontradas 0 · cierra", `machos ${conMacho.sonMachos.length} · no encontradas ${conMacho.noEncontradas.length} · ${cierraPlan(conMacho, 2) ? 'cierra' : 'no cierra'}`,
+      conMacho.sonMachos.length === 1 && conMacho.sonMachos[0].animal.id === "m" && conMacho.noEncontradas.length === 0
+        && !conMacho.marcar.some(h => h.id === "m") && cierraPlan(conMacho, 2), "A-FEAT-1251")
+    // La planilla del lector trae «IDV» (sin el cero): también se lee y cruza.
+    const lector = caravanasDeHoja([["Fecha", "IDV", "Peso"], ["01/10/2026", "32010012326429", 240]])
+    chequear("Reposición desde Excel", "📟 Una columna «IDV» del lector también se lee y cruza con la oficial",
+      "b", planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join(),
+      planReposicion(lector.caravanas, hembras).marcar.map(h => h.id).join() === "b", "A-FEAT-1251")
+    // La hembra SIN IDENTIFICAR: 73 tildadas + 1 sin identificar → destino con 74 cabezas y 1 a identificar;
+    // después «sólo identificar» la que resultó ser: el stock no se mueve y el descuadre vuelve a 0.
+    const paso1 = descuadreDestino({ cabezasHoy: 0, identificadasHoy: 0, tildadas: 73, sinIdentificar: 1, soloIdentificar: false })
+    const paso2 = descuadreDestino({ cabezasHoy: 74, identificadasHoy: 73, tildadas: 1, sinIdentificar: 0, soloIdentificar: true })
+    chequear("Reposición desde Excel", "🐄 73 + 1 sin identificar mueve 74 y deja 1 a identificar; completarla por diferencia lo cierra",
+      "74/73 dif 1 → 74/74 dif 0", `${paso1.cabezas}/${paso1.identificadas} dif ${paso1.dif} → ${paso2.cabezas}/${paso2.identificadas} dif ${paso2.dif}`,
+      paso1.cabezas === 74 && paso1.dif === 1 && paso2.cabezas === 74 && paso2.dif === 0, "A-FEAT-1251")
+    // Pieza 2: lo tildado a mano en el cambio de categoría se vuelve la marca rep.
+    const aj = ajusteDeMarcas([{ id: "a", es_rep: true }, { id: "b", es_rep: false }, { id: "c", es_rep: true }], new Set(["a", "b"]))
+    chequear("Reposición desde Excel", "🔁 Cambio de categoría: la selección final pasa a la planilla de recría",
+      "+b −c", `+${aj.marcar.join()} −${aj.desmarcar.join()}`, aj.marcar.join() === "b" && aj.desmarcar.join() === "c", "A-FEAT-1251")
+  }
+
+  // ══ 💵 A-BUG-1245 — factura en DÓLARES: lote de Galicia y detalle de pago en PESOS (Agro Centros, 2026-10-05) ══
+  {
+    const agro = { moneda: "USD", tc_pago: 1520, tipo_cambio: 1522, imp_total: 4635.54, monto_a_abonar: 4561.87, monto_sicore: 111983.01, descuento_aplicado: null }
+    chequear("Pago en dólares", "💵 Lo que se transfiere sale en pesos y exacto: 4.635,54 × 1.520 − 111.983,01 (no los USD 4.561,87 como pesos)",
+      "6934037.79", aPagarEnPesos(agro).toFixed(2), aPagarEnPesos(agro).toFixed(2) === "6934037.79", "A-BUG-1245")
+    chequear("Pago en dólares", "💵 El total de la factura en pesos usa el TC del PAGO (1.520), no el de la factura (1.522)",
+      "7046020.80", totalEnPesos(agro).toFixed(2), totalEnPesos(agro).toFixed(2) === "7046020.80", "A-BUG-1245")
+    chequear("Pago en dólares", "🧮 En pesos cierra: total − retención = transferencia",
+      "0.00", (totalEnPesos(agro) - 111983.01 - aPagarEnPesos(agro)).toFixed(2),
+      Math.abs(totalEnPesos(agro) - 111983.01 - aPagarEnPesos(agro)) < 0.005, "A-BUG-1245")
+    // Con un pago a cuenta que bajó el saldo, manda el saldo guardado (no la cuenta desde el total).
+    const parcial = { ...agro, monto_a_abonar: 2000 }
+    chequear("Pago en dólares", "Si un pago a cuenta bajó el saldo, se transfiere el saldo × TC",
+      "3040000.00", aPagarEnPesos(parcial).toFixed(2), aPagarEnPesos(parcial).toFixed(2) === "3040000.00", "A-BUG-1245")
+    chequear("Pago en dólares", "Una factura en pesos no cambia", "1000",
+      String(aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 })), aPagarEnPesos({ moneda: "PES", imp_total: 1200, monto_a_abonar: 1000 }) === 1000, "A-BUG-1245")
+    const linea = textoConversion([{ comprobante: "FC 6447", conversion: conversionDe(agro) }])[0] ?? ""
+    chequear("Pago en dólares", "📄 El detalle (PDF y mail) dice moneda, TC del pago y resultado en pesos",
+      "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 = $7.046.020,80", linea,
+      linea === "FC 6447 en USD 4.635,54 · TC del pago 1.520,00 = $7.046.020,80", "A-BUG-1245")
+    // El PDF usa la fuente WinAnsi: un carácter fuera de latin-1 (como «→» o «⚠») rompe la línea entera.
+    chequear("Pago en dólares", "📄 El texto de la conversión es todo latin-1 (no se corta en el PDF)",
+      "latin-1", [...linea].every(ch => ch.charCodeAt(0) < 256) ? "latin-1" : "tiene caracteres fuera",
+      [...linea].every(ch => ch.charCodeAt(0) < 256), "A-BUG-1245")
+  }
+
+  // ══ ✉️ El mail del Detalle de pago: nuestro nombre en el asunto, facturas cortas y sin repetir al proveedor ══
+  {
+    const prov = "AGRO CENTROS REGION NUCLEO S.A."
+    const una = facturasCortas([{ comprobante: "FC 6447 - AGRO CENTROS REGION NUCLEO S.A." }], prov)
+    chequear("Mail de detalle de pago", "✉️ La factura va corta y sin el proveedor", "FC 6447", una.join(", "),
+      una.join(", ") === "FC 6447", "A-FEAT-1254")
+    const grupo = facturasCortas([
+      { comprobante: "FC 1-00003-00006447 - AGRO", facturas: [{ comprobante: "FC 1-3-6447", imp_total: 1 }, { comprobante: "FC 1-3-6448", imp_total: 1 }] },
+      { comprobante: "Anticipo", origen: "ANTICIPO" },
+      { comprobante: "FC 1-00003-00006449 - AGRO CENTROS REGION NUCLEO S.A." },
+    ], prov)
+    chequear("Mail de detalle de pago", "✉️ Un grupo se abre en sus facturas, sin ceros, sin anticipos y sin repetir al proveedor",
+      "FC 1-3-6447, FC 1-3-6448, FC 1-3-6449", grupo.join(", "),
+      grupo.join(", ") === "FC 1-3-6447, FC 1-3-6448, FC 1-3-6449", "A-FEAT-1254")
+    chequear("Mail de detalle de pago", "✉️ El asunto lleva nuestro nombre, no el del proveedor", "Martinez Sobrado Agro SRL",
+      NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")], NOMBRE_PARA_TERCEROS[empresaDeSchema("msa")] === "Martinez Sobrado Agro SRL", "A-FEAT-1254")
+  }
+
+  // ══ 🧾 A-BUG-1244 — factura ↔ compras con descuento pactado y moneda (Agro Centros FC 6447, 2026-10-05) ══
+  {
+    const C = (id: string, producto: string, cantidad: number, precio: number) => ({ id, fecha: "2026-09-30", producto, unidad: null, cantidad, precioPactado: precio })
+    const compras = [
+      C("semilla", "Maiz Nufeed", 15, 115), C("glifo", "Glifosato", 180, 4.9), C("para", "Paraquat", 100, 3.8),
+      C("24d", "24D", 60, 5.2), C("smeto", "S-Metolacloro", 40, 6.8), C("atra", "Atrazina", 30, 6.1), C("mso", "Coadyuvante", 10, 12),
+    ]
+    const fac = { moneda: "USD", neto: 3831.02, tc: 1522 }
+    const sinDesc = calcularVinculo(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: 0 })))
+    chequear("Factura ↔ compras", "🧾 Con los precios pactados no cierra: sobran USD 42,98 contra el neto",
+      "3874.00 · dif -42.98", `${sinDesc.total.toFixed(2)} · dif ${sinDesc.dif.toFixed(2)}`,
+      sinDesc.total === 3874 && sinDesc.dif === -42.98 && !sinDesc.cierra, "A-BUG-1244")
+    const conDesc = calcularVinculo(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: c.id === "semilla" ? 0 : 2 })))
+    chequear("Factura ↔ compras", "🧾 Con el 2 % en los agroquímicos (no en la semilla) cierra al centavo",
+      "3831.02 ✓", `${conDesc.total.toFixed(2)} ${conDesc.cierra ? "✓" : "✗"}`, conDesc.total === 3831.02 && conDesc.cierra, "A-BUG-1244")
+    const atra = conDesc.renglones.find(r => r.compra.id === "atra")!
+    chequear("Factura ↔ compras", "💵 El precio queda en pesos al TC (6,10 −2 % = 5,978 USD × 1.522) y la nota guarda el pactado",
+      "9098.516 · Pactado USD 6,10 −2% = USD 5,978 · TC 1.522,00", `${atra.precioPesos} · ${atra.nota}`,
+      atra.precioPesos === 9098.516 && atra.nota === "Pactado USD 6,10 −2% = USD 5,978 · TC 1.522,00", "A-BUG-1244")
+    const elegidos = new Set(compras.filter(c => c.id !== "semilla").map(c => c.id))
+    const sug = pctQueCierra(fac, compras, compras.map(c => ({ compraId: c.id, incluir: true, pctDescuento: 0 })), elegidos)
+    chequear("Factura ↔ compras", "🧾 Elegidos los agroquímicos, el % que hace cerrar es el 2 %", "2", String(sug), sug === 2, "A-BUG-1244")
+    const sinPrecio = calcularVinculo(fac, [...compras, { ...C("x", "Sin precio", 1, 0), precioPactado: null }], [{ compraId: "x", incluir: true, pctDescuento: 0 }])
+    chequear("Factura ↔ compras", "Una compra sin precio no se puede vincular (no se valúa en cero)", "sinPrecio 1 · no cierra",
+      `sinPrecio ${sinPrecio.sinPrecio} · ${sinPrecio.cierra ? "cierra" : "no cierra"}`, sinPrecio.sinPrecio === 1 && !sinPrecio.cierra, "A-BUG-1244")
+  }
+
+  // ══ 💱 A-FEAT-1255 — NC esperada por diferencia de cambio (Agro Centros FC 6447) ══
+  {
+    const fac = { id: "f", cuit: "33716360429", proveedor: "AGRO CENTROS", numero: "FC 3-6447", fecha_pago: "2026-10-05", imp_total: 4635.54, tipo_cambio: 1522, tc_pago: 1520 }
+    const e = esperadaDe(fac)
+    chequear("NC por diferencia de cambio", "💱 Pagada a 1.520 una factura a 1.522: se espera una NC por USD 4.635,54 × 2",
+      "NC 9271.08", `${e?.clase} ${e?.monto}`, e?.clase === "NC" && e?.monto === 9271.08, "A-FEAT-1255")
+    chequear("NC por diferencia de cambio", "Pagada al mismo TC no se espera nada", "null",
+      String(esperadaDe({ ...fac, tc_pago: 1522 })), esperadaDe({ ...fac, tc_pago: 1522 }) === null, "A-FEAT-1255")
+    chequear("NC por diferencia de cambio", "Pagada a MÁS se espera una ND", "ND",
+      String(esperadaDe({ ...fac, tc_pago: 1525 })?.clase), esperadaDe({ ...fac, tc_pago: 1525 })?.clase === "ND", "A-FEAT-1255")
+    const nc = { id: "nc", cuit: "33716360429", fecha: "2026-10-12", numero: "NC 3-120", clase: "NC" as const, importePesos: 9271.07 }
+    const otraCuit = { ...nc, id: "x", cuit: "30111111111" }
+    const [m] = emparejar([fac], [otraCuit, nc])
+    chequear("NC por diferencia de cambio", "🔁 La NC del mismo proveedor por ese importe la cumple (la de otro CUIT no)", "nc",
+      String(m.recibida?.id), m.recibida?.id === "nc", "A-FEAT-1255")
+    const [sin] = emparejar([fac], [{ ...nc, importePesos: 5000 }])
+    chequear("NC por diferencia de cambio", "Una NC por otro importe no la cumple: sigue esperada", "null", String(sin.recibida), sin.recibida === null, "A-FEAT-1255")
+  }
+
+  // ══ 📝 A-FEAT-1257 — el detalle del cobro dice qué se cobró ══
+  {
+    chequear("Qué se cobró", "📝 Arrendamiento saldado: «Cuota 1/4»", "Cuota 1/4",
+      String(textoQueSeCobro({ cuotas: [{ numero: 1, de: 4 }], cabezas: [], falta: 0 })),
+      textoQueSeCobro({ cuotas: [{ numero: 1, de: 4 }], cabezas: [], falta: 0 }) === "Cuota 1/4", "A-FEAT-1257")
+    const parcial = textoQueSeCobro({ cuotas: [{ numero: 2, de: 4 }], cabezas: [], falta: 5000 })
+    chequear("Qué se cobró", "📝 Cobro parcial: lo dice, con lo que falta", "Cobro parcial cuota 2/4 (falta $5.000,00)",
+      String(parcial), parcial === "Cobro parcial cuota 2/4 (falta $5.000,00)", "A-FEAT-1257")
+    const arre = textoQueSeCobro({ cuotas: [], cabezas: [{ cantidad: 3, categoria: "Toro" }, { cantidad: 7, categoria: "Vaca CUT" }], falta: 0 })
+    chequear("Qué se cobró", "📝 Hacienda: las cabezas por categoría y el total", "3 Toro + 7 Vaca CUT = 10 cab.",
+      String(arre), arre === "3 Toro + 7 Vaca CUT = 10 cab.", "A-FEAT-1257")
+    chequear("Qué se cobró", "📝 No pisa lo que escribió el usuario: lo agrega al final, y no lo repite",
+      "Adelanto Genta · 120 cab. Ternero", String(detalleConQueSeCobro(detalleConQueSeCobro("Adelanto Genta", "120 cab. Ternero"), "120 cab. Ternero")),
+      detalleConQueSeCobro(detalleConQueSeCobro("Adelanto Genta", "120 cab. Ternero"), "120 cab. Ternero") === "Adelanto Genta · 120 cab. Ternero", "A-FEAT-1257")
+    chequear("Qué se cobró", "Sin vínculo con la venta no se inventa nada", "null",
+      String(textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 })), textoQueSeCobro({ cuotas: [], cabezas: [], falta: 0 }) === null, "A-FEAT-1257")
+  }
+
+  // ══ 📌 A-FEAT-1258 — pendientes a revisar en el export de los papeles ══
+  {
+    const P = (id: string, texto: string, estado: "abierto" | "resuelto", created: string, resuelto: string | null = null, resolucion: string | null = null) =>
+      ({ id, empresa: "MSA", anio_cierre: 2026, texto, estado, resolucion, created_at: created, resuelto_at: resuelto })
+    const filas = hojaDePendientes([
+      P("r", "Rescate FIMA 04/08", "resuelto", "2026-10-07T10:00:00Z", "2026-10-08T10:00:00Z", "Va como venta de USS"),
+      P("b", "Plazo fijo: desglosar intereses", "abierto", "2026-10-07T11:00:00Z"),
+      P("a", "Revisar caja", "abierto", "2026-10-07T09:00:00Z"),
+    ], "MSA — pendientes")
+    chequear("Pendientes del balance", "📌 El export lista primero los ABIERTOS (por fecha) y después los resueltos con su nota",
+      "Revisar caja · Plazo fijo… · Rescate (resuelto)", filas.slice(4).map(f => String(f[1])).join(" · "),
+      filas.slice(4).map(f => f[1]).join("|") === "Revisar caja|Plazo fijo: desglosar intereses|Rescate FIMA 04/08"
+        && filas[6][3] === "resuelto" && filas[6][4] === "Va como venta de USS" && String(filas[1][0]).startsWith("2 pendiente"), "A-FEAT-1258")
+  }
+
+  // ══ 💸 A-BUG-1231 — el Cash Flow usa la MISMA cuenta (datos reales de la base, 2026-10-05) ══
+  // AFA 31274417: el Cash Flow proyectaba el total ($6.080.286,72); el banco acredita $5.332.648,89.
+  const afa31274417 = cobroEsperado({ tipo_comprobante: 332, imp_total: 6080286.72, subtotal_neto: 5618121.12,
+    iva: 589902.72, comision_neto: 115599.20, comision_iva: 12137.92, almacenaje_neto: 0, almacenaje_iva: 0,
+    ret_iva: 275126.10, ret_iibb: 42135.91 }, 0)
+  chequear("Cobro de venta", "💸 Granos AFA 31274417: se proyecta lo que acredita el banco, no el total",
+    "5332648.89", afa31274417.pagoCondiciones.toFixed(2),
+    Math.abs(afa31274417.pagoCondiciones - 5332648.89) < 0.005, "A-BUG-1231")
+  // 🧾 Una factura A con IVA desglosado se cobra ENTERA: el IVA RG 2300 es sólo de granos.
+  const facturaA = cobroEsperado({ tipo_comprobante: 1, imp_total: 121000, imp_neto_gravado: 100000, iva: 21000 }, 5000)
+  chequear("Cobro de venta", "🧾 Factura A con IVA: se cobra total − retenciones, sin restar el IVA",
+    "116000", String(facturaA.pagoCondiciones), facturaA.pagoCondiciones === 116000 && facturaA.ivaRg2300 === 0, "A-BUG-1231")
+
   chequear("Cobro de venta", "Un cobro que coincide exacto se marca exacto",
     "exacto", diferenciaContraElBanco(47001471, provinvest).exacto ? "exacto" : "difiere",
     diferenciaContraElBanco(47001471, provinvest).exacto === true, "A-FEAT-167")
@@ -2457,7 +2845,41 @@ export function correrCasos(): Resultado[] {
   // ⚠️ Cambió 2026-10-03 (A-FEAT-1234): el papel del frigorífico viene en kilo VIVO; los de carne van aparte.
   chequear("Liquidación de hacienda", "🥩 La precarga al gancho trae los kilos VIVOS (como el papel) y los de carne como kilos gancho",
     "3640 vivos · 1748 gancho · misma plata", `${preVacas.linea.kilos} vivos · ${preVacas.linea.kgGancho} gancho · ${Math.round(preVacas.linea.kilos * preVacas.linea.precio)}`,
-    preVacas.linea.kilos === 3640 && preVacas.linea.kgGancho === 1748 && Math.abs(preVacas.linea.kilos * preVacas.linea.precio - 1748 * 5949.49) < 20, "A-FEAT-1234")
+    preVacas.linea.kilos === 3640 && preVacas.linea.kgGancho === 1748 && preVacas.linea.precioGancho === 5949.49
+      && Math.abs(preVacas.linea.kilos * preVacas.linea.precio - 1748 * 5949.49) < 0.01, "A-FEAT-1234")
+  // El dato real manda: con kg y precio gancho, el importe es gancho × precio gancho, y el $/kg pie se deriva.
+  const lineaRealAB = { kilos: 3000, precio: 0, kgGancho: 1606, precioGancho: 5024.12 }
+  chequear("Liquidación de hacienda", "🥩 Al gancho el importe sale del dato real (1.606 × 5.024,12 = 8.068.736,72) y el $/kg pie es su conversión (2.689,58)",
+    "8068736.72 · 2689.58", `${importeDeLinea(lineaRealAB).toFixed(2)} · ${precioPieDerivado(lineaRealAB).toFixed(2)}`,
+    importeDeLinea(lineaRealAB).toFixed(2) === "8068736.72" && precioPieDerivado(lineaRealAB).toFixed(2) === "2689.58", "A-FEAT-1234")
+  // 2026-10-05: el frigorífico liquida por kilo VIVO — se carga el $/kg pie y el gancho se recalcula solo.
+  const lineaPieAB = { kilos: 3000, precio: 2689.58, kgGancho: 1606, mandaPie: true }
+  chequear("Liquidación de hacienda", "🥩 Cargando el $/kg VIVO (como liquida Arre Beef) el importe es pie × precio y el $/kg gancho se deriva",
+    "8068740.00 · 5024.12", `${importeDeLinea(lineaPieAB).toFixed(2)} · ${precioGanchoDerivado(lineaPieAB).toFixed(2)}`,
+    importeDeLinea(lineaPieAB).toFixed(2) === "8068740.00" && precioGanchoDerivado(lineaPieAB).toFixed(2) === "5024.12"
+      && precioPieDerivado(lineaPieAB) === 2689.58, "A-FEAT-1234")
+  chequear("Liquidación de hacienda", "🥩 Sin «manda el vivo», el gancho cargado sigue mandando como antes",
+    "8068736.72", importeDeLinea({ ...lineaPieAB, mandaPie: false, precioGancho: 5024.12 }).toFixed(2),
+    importeDeLinea({ ...lineaPieAB, mandaPie: false, precioGancho: 5024.12 }).toFixed(2) === "8068736.72", "A-FEAT-1234")
+  // 💲 A-BUG-1279 (2026-10-14): el papel imprime 2 decimales pero calcula con 3. Sólo con 2.689,579 y
+  // 2.693,915 dan los brutos del papel (8.068.737 y 8.782.162,90); y el campo los tiene que conservar.
+  chequear("Liquidación de hacienda", "💲 🧨 Con 3 decimales el bruto da el del papel (8.068.737 y 8.782.162,90), y el precio NO se redondea a 2 al mostrarlo",
+    "8068737.00 · 8782162.90 · 2.689,579 · 5.024,12", `${importeDeLinea({ kilos: 3000, precio: 2689.579 }).toFixed(2)} · ${importeDeLinea({ kilos: 3260, precio: 2693.915 }).toFixed(2)} · ${formatoPrecio(2689.579)} · ${formatoPrecio(5024.12)}`,
+    importeDeLinea({ kilos: 3000, precio: 2689.579 }).toFixed(2) === "8068737.00" && importeDeLinea({ kilos: 3260, precio: 2693.915 }).toFixed(2) === "8782162.90"
+      && formatoPrecio(2689.579) === "2.689,579" && formatoPrecio(5024.12) === "5.024,12", "A-BUG-1279")
+  // ✍️ A-BUG-1280 (2026-10-14): el IVA calculado se corrige escribiendo sobre él (Arre Beef: ,49 → ,48).
+  chequear("Liquidación de hacienda", "✍️ Corregir el IVA de 1.769.344,49 a ,48 queda como monto a mano; dejarlo igual vuelve a «calculado»",
+    "1.769.344,48 · (vacío) · (vacío)", `${montoTipeadoOVacio("1.769.344,48", 1769344.49)} · ${montoTipeadoOVacio("1.769.344,49", 1769344.49) || "(vacío)"} · ${montoTipeadoOVacio("", 1769344.49) || "(vacío)"}`,
+    montoTipeadoOVacio("1.769.344,48", 1769344.49) === "1.769.344,48" && montoTipeadoOVacio("1.769.344,49", 1769344.49) === "" && montoTipeadoOVacio("", 1769344.49) === "", "A-BUG-1280")
+  // 🧨 El bug de la primera prueba: al salir de la caja se comparaba contra el cálculo que YA usaba lo tipeado.
+  const entradaAB48 = { lineas: [
+    { razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579 },
+    { razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 7, clasificacion: "Vaca", kilos: 3260, precio: 2693.915 },
+  ], comisionPct: 0, redondeo: 0, ivaPct: 10.5, retenciones: [], ivaMonto: 1769344.48 } as any
+  chequear("Liquidación de hacienda", "✍️ 🧨 Con ,48 tipeado, la app sigue calculando ,49 sin él — y por eso ,48 NO se borra al salir (antes se comparaba contra ,48 mismo)",
+    "1769344.49 · 1.769.344,48 · antes: (vacío)", `${montoCalculado(entradaAB48, "iva").toFixed(2)} · ${montoTipeadoOVacio("1.769.344,48", montoCalculado(entradaAB48, "iva"))} · antes: ${montoTipeadoOVacio("1.769.344,48", calcularLiqHacienda(entradaAB48).iva) || "(vacío)"}`,
+    montoCalculado(entradaAB48, "iva").toFixed(2) === "1769344.49" && montoTipeadoOVacio("1.769.344,48", montoCalculado(entradaAB48, "iva")) === "1.769.344,48"
+      && montoTipeadoOVacio("1.769.344,48", calcularLiqHacienda(entradaAB48).iva) === "", "A-BUG-1280")
   // El papel REAL de Arre Beef (03/09/2026): 3.000 + 3.260 kg pie, 1.606 + 1.748 kg gancho a $5.024,12.
   const papelAB = calcularLiqHacienda({
     lineas: [{ razonSocial: "Arre Beef SA", cuit: "30666277550", cabezas: 3, clasificacion: "Toro", kilos: 3000, precio: 2689.579, kgGancho: 1606 },
@@ -2604,18 +3026,162 @@ export function correrCasos(): Resultado[] {
     "136646475", String(trasUno[0].aCobrar), trasUno[0].aCobrar === 136646475, "A-FEAT-1228")
 
 
-  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227) ══════════════════════
-  const hojaRet = filasRetenciones(
-    [{ fecha: "2026-09-03", tipo: "ganancias", monto: 583395.25, nro_certificado: null, denominacion_cliente: "GENTA", cuit_cliente: "30526554562", comprobante: "11-86270" }],
-    [{ fecha: "2026-08-10", nro: "11-86270", cliente: "GENTA", cuit: "30526554562", ret_iva: 0, ret_iibb: 675905.18 },
-     { fecha: "2026-08-15", nro: "FC 1", cliente: "X", cuit: "1", ret_iva: null, ret_iibb: null }],
-  )
-  chequear("Retenciones en el subdiario", "🧾 Certificado + impresa: 2 filas (la FC sin retenciones no suma una vacía), ordenadas por fecha",
-    "2 · 2026-08-10 IIBB · 2026-09-03 Ganancias", `${hojaRet.filas.length} · ${hojaRet.filas.map(f => f.Fecha + " " + f.Tipo).join(" · ")}`,
-    hojaRet.filas.length === 2 && hojaRet.filas[0].Tipo === "IIBB" && hojaRet.filas[1].Tipo === "Ganancias", "A-FEAT-1227")
-  chequear("Retenciones en el subdiario", "Totales por tipo y total general",
-    "IIBB 675905.18 · Ganancias 583395.25 · 1259300.43", `IIBB ${hojaRet.porTipo.IIBB} · Ganancias ${hojaRet.porTipo.Ganancias} · ${hojaRet.total}`,
-    hojaRet.porTipo.IIBB === 675905.18 && hojaRet.porTipo.Ganancias === 583395.25 && hojaRet.total === 1259300.43, "A-FEAT-1227")
+  // ══ 🧾 Retenciones recibidas en el export del subdiario (A-FEAT-1227 → A-FEAT-1278) ══════════
+  // Dos apartados: de las ventas del subdiario (cualquier fecha) y sufridas en el mes (cualquier venta).
+  // El caso del usuario: la factura de septiembre, cobrada —y retenida— en octubre.
+  const retEntrada = {
+    desde: "2026-09-01", hasta: "2026-09-30", idsSubdiario: ["fc-sep", "liq-sep"],
+    certificados: [
+      { id: "c1", fecha: "2026-10-05", tipo: "ganancias", monto: 100000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c2", fecha: "2026-09-10", tipo: "iibb", monto: 5000, comprobante_venta_id: "fc-ago", denominacion_cliente: "AFA" },
+      { id: "c3", fecha: "2026-09-20", tipo: "ganancias", monto: 7000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c4", fecha: null, tipo: "ganancias", monto: 3000, comprobante_venta_id: "fc-sep", denominacion_cliente: "SANPA" },
+      { id: "c5", fecha: null, tipo: "iibb", monto: 2000, comprobante_venta_id: null, denominacion_cliente: "SUELTO" },
+    ],
+    comprobantes: [
+      { id: "fc-sep", fecha: "2026-09-15", nro: "10-20", cliente: "SANPA", cuit: "1", ret_iva: null, ret_iibb: null },
+      { id: "liq-sep", fecha: "2026-09-12", nro: "11-86270", cliente: "GENTA", cuit: "2", ret_iva: 0, ret_iibb: 675905.18 },
+      { id: "fc-ago", fecha: "2026-08-20", nro: "10-19", cliente: "AFA", cuit: "3", ret_iva: null, ret_iibb: null },
+    ],
+    cobrosPorComprobante: { "fc-sep": ["2026-09-28"] },
+  }
+  const retSep = armarRetencionesSubdiario(retEntrada)
+  const totTipo = (ap: typeof retSep.delMes, t: string) => ap.grupos.find(g => g.tipo === t)?.total ?? 0
+  chequear("Retenciones en el subdiario", "🧨 La retención de OCTUBRE sobre una venta de SEPTIEMBRE sale en el subdiario de septiembre (apartado de las ventas) y NO en «sufridas en el mes»",
+    "en ventas · no en el mes", `${retSep.deLasVentas.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) ? "en ventas" : "no en ventas"} · ${retSep.delMes.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) ? "en el mes" : "no en el mes"}`,
+    retSep.deLasVentas.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")) && !retSep.delMes.grupos.some(g => g.filas.some(f => f.fecha === "2026-10-05")), "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "La retención de septiembre sobre una venta de AGOSTO sale en «sufridas en el mes» y no en el apartado de las ventas",
+    "IIBB del mes 680905.18 · IIBB de las ventas 675905.18", `IIBB del mes ${totTipo(retSep.delMes, "IIBB")} · IIBB de las ventas ${totTipo(retSep.deLasVentas, "IIBB")}`,
+    totTipo(retSep.delMes, "IIBB") === 680905.18 && totTipo(retSep.deLasVentas, "IIBB") === 675905.18, "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "Agrupadas por tipo, Ganancias primero; de las ventas: Ganancias 100.000 + 7.000 + 3.000 (sin fecha) = 110.000",
+    "Ganancias,IIBB · 110000 · total 785905.18", `${retSep.deLasVentas.grupos.map(g => g.tipo).join(",")} · ${totTipo(retSep.deLasVentas, "Ganancias")} · total ${retSep.deLasVentas.total}`,
+    retSep.deLasVentas.grupos.map(g => g.tipo).join(",") === "Ganancias,IIBB" && totTipo(retSep.deLasVentas, "Ganancias") === 110000 && retSep.deLasVentas.total === 785905.18, "A-FEAT-1278")
+  const sinFechaSep = retSep.delMes.grupos.flatMap(g => g.filas).find(f => f.importe === 3000)
+  chequear("Retenciones en el subdiario", "🧨 Un certificado SIN FECHA no se pierde: sale con la fecha de su cobro (28/09), con aviso, y marcado en los dos apartados",
+    "2026-09-28 · con aviso · en ambos · 1 aviso", `${sinFechaSep?.fecha} · ${sinFechaSep?.aviso ? "con aviso" : "sin aviso"} · ${sinFechaSep?.enAmbos ? "en ambos" : "no"} · ${retSep.avisos.length} aviso`,
+    sinFechaSep?.fecha === "2026-09-28" && !!sinFechaSep?.aviso && sinFechaSep?.enAmbos === true && retSep.avisos.length === 1, "A-FEAT-1278")
+  chequear("Retenciones en el subdiario", "Sin fecha ni comprobante: no cae en ningún apartado, pero se muestra en «sin ubicar»",
+    "1 sin ubicar · SUELTO", `${retSep.sinUbicar.length} sin ubicar · ${retSep.sinUbicar[0]?.cliente}`,
+    retSep.sinUbicar.length === 1 && retSep.sinUbicar[0].cliente === "SUELTO", "A-FEAT-1278")
+  const fSinCobro = fechaDelCertificado({ fecha: null }, { fecha: "2026-09-15" }, [])
+  const fVarios = fechaDelCertificado({ fecha: null }, { fecha: "2026-09-15" }, ["2026-09-28", "2026-09-03"])
+  chequear("Retenciones en el subdiario", "Sin fecha y sin cobro → la del comprobante; con varios cobros → el último, diciendo cuántos",
+    "2026-09-15 · 2026-09-28 (2 cobros)", `${fSinCobro.fecha} · ${fVarios.fecha} (${fVarios.aviso.includes("2 cobros") ? "2 cobros" : fVarios.aviso})`,
+    fSinCobro.fecha === "2026-09-15" && !!fSinCobro.aviso && fVarios.fecha === "2026-09-28" && fVarios.aviso.includes("2 cobros"), "A-FEAT-1278")
+  // 📄 A-FEAT-1281 — el PDF: cada retención con su comprobante de venta, cliente, CUIT y fecha; título y subtotal por tipo.
+  const pdfVentas = tablaRetencionesPdf(retSep.deLasVentas)
+  const filaOct = pdfVentas.filas.find(r => r[0] === "05/10/2026")
+  chequear("Retenciones en el subdiario", "📄 PDF: la retención trae fecha, cliente, comprobante de venta e importe; con «Ret. Ganancias», su subtotal y el TOTAL en negrita",
+    "05/10/2026 · SANPA · 10-20 · 100.000,00 · Ret. Ganancias · TOTAL 785.905,18", `${filaOct?.[0]} · ${filaOct?.[1]} · ${filaOct?.[3]} · ${filaOct?.[6]} · ${pdfVentas.filas[0][0]} · ${pdfVentas.filas[pdfVentas.filas.length - 1][0]} ${pdfVentas.filas[pdfVentas.filas.length - 1][6]}`,
+    filaOct?.[1] === "SANPA" && filaOct?.[3] === "10-20" && filaOct?.[6] === "100.000,00" && pdfVentas.filas[0][0] === "Ret. Ganancias"
+      && pdfVentas.negritas.includes(0) && pdfVentas.negritas.includes(pdfVentas.filas.length - 1) && pdfVentas.filas[pdfVentas.filas.length - 1][6] === "785.905,18", "A-FEAT-1281")
+  // La hoja: los subtotales son fórmulas que suman su bloque, y el control contra ARCA resta la celda vacía.
+  const aoaRet = hojaRetenciones(retSep, "09/2026")
+  const celdas = aoaRet.flat().filter((c): c is { t: "n"; v: number; f: string } => !!c && typeof c === "object")
+  const subGan = aoaRet.findIndex(r => r[0] === "Subtotal Ret. Ganancias")
+  const filaSub = aoaRet[subGan]?.[6] as { f: string; v: number } | undefined
+  const sumados = filaSub ? (() => { const [d, h] = filaSub.f.replace("SUM(G", "").replace(")", "").split(":G").map(Number); return aoaRet.slice(d - 1, h).reduce((s, r) => s + (typeof r[6] === "number" ? r[6] : 0), 0) })() : -1
+  chequear("Retenciones en el subdiario", "La hoja: el subtotal de Ganancias es una fórmula que abarca exactamente sus filas (suman 110.000), y hay control contra ARCA",
+    "110000 · con control ARCA", `${sumados} · ${aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")) ? "con control ARCA" : "sin control"}`,
+    sumados === 110000 && celdas.every(c => c.f.length > 0) && aoaRet.some(r => String(r[0] || "").startsWith("CONTROL CONTRA ARCA")), "A-FEAT-1278")
+
+  // ══ 🏢 Cobros de PAM y MA: cada empresa con SUS extractos (A-FEAT-24) ═══════════════════════
+  // El vínculo cobro ↔ venta sólo se escribe en un extracto de la empresa de la venta (la FK no deja
+  // atar un crédito de PAM a una venta de MSA). Antes de A-FEAT-24 sólo `msa_galicia` lo tenía.
+  chequear("Cobros de PAM y MA", "PAM tiene sus DOS cuentas (CA y CC); MA la suya en el schema ma",
+    "pam_galicia,pam_galicia_cc · ma.ma_galicia", `${extractosDelSchema("pam").map(e => e.tabla).join(",")} · ${extractosDelSchema("ma").map(e => `${e.schema}.${e.tabla}`).join(",")}`,
+    extractosDelSchema("pam").length === 2 && extractosDelSchema("ma")[0]?.schema === "ma", "A-FEAT-24")
+  chequear("Cobros de PAM y MA", "🧨 Un crédito de PAM NO se ata a una venta de MSA, y uno de MA sí a una de MA",
+    "pam→msa no · ma→ma sí · msa→msa sí", `pam→msa ${extractoEsDe("pam_galicia", "msa") ? "sí" : "no"} · ma→ma ${extractoEsDe("ma_galicia", "ma") ? "sí" : "no"} · msa→msa ${extractoEsDe("msa_galicia", "msa") ? "sí" : "no"}`,
+    !extractoEsDe("pam_galicia", "msa") && extractoEsDe("ma_galicia", "ma") && extractoEsDe("msa_galicia", "msa"), "A-FEAT-24")
+  chequear("Cobros de PAM y MA", "Los 4 extractos Galicia llevan el vínculo, ninguno repetido",
+    "4", String(new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size), TODOS_LOS_EXTRACTOS.length === 4 && new Set(TODOS_LOS_EXTRACTOS.map(e => e.tabla)).size === 4, "A-FEAT-24")
+
+  // ══ 📝 PAGAR CON VARIOS ECHEQS y el Excel de emisión (A-FEAT-1282) ═══════════════════════════
+  // El caso del usuario: un anticipo pagado en 3 echeqs, retención SICORE repartida en partes iguales.
+  const echPlanIguales = { modo: "iguales" as const, echeqs: [{ fechaCobro: "2026-10-29" }, { fechaCobro: "2026-11-13" }, { fechaCobro: "2026-12-13" }] }
+  const echTres = calcularEcheqs(echPlanIguales, 3000000 - 100000, 100000)
+  chequear("Echeqs múltiples", "📝 3 echeqs iguales de $3.000.000 con $100.000 de retención: cada uno 966.666,67/66,67/66,66 y la retención 33.333,33/33/34",
+    "966666.67 · 966666.67 · 966666.66 · ret 33333.33/33333.33/33333.34", `${echTres.map(e => e.monto).join(" · ")} · ret ${echTres.map(e => e.retencion).join("/")}`,
+    echTres[0].monto === 966666.67 && echTres[2].monto === 966666.66 && echTres[2].retencion === 33333.34, "A-FEAT-1282")
+  const echSumaTres = echTres.reduce((s2, e) => s2 + e.monto + e.retencion, 0)
+  chequear("Echeqs múltiples", "🧮 Identidad: Σ echeqs + Σ retención = total del pago, al centavo",
+    "3000000.00", echSumaTres.toFixed(2), echSumaTres.toFixed(2) === "3000000.00", "A-FEAT-1282")
+  const echPlanMontos = { modo: "montos" as const, echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }, { fechaCobro: "2026-11-13", parte: 2000000 }] }
+  const echPorMontos = calcularEcheqs(echPlanMontos, 2910000, 90000)
+  chequear("Echeqs múltiples", "Por montos (partes del total 1M + 2M): la retención va en la misma proporción (30.000 y 60.000)",
+    "970000 · 1940000 · 30000 · 60000", `${echPorMontos[0].monto} · ${echPorMontos[1].monto} · ${echPorMontos[0].retencion} · ${echPorMontos[1].retencion}`,
+    echPorMontos[0].monto === 970000 && echPorMontos[1].monto === 1940000 && echPorMontos[0].retencion === 30000 && echPorMontos[1].retencion === 60000, "A-FEAT-1282")
+  // ⚠️ Cambió 2026-10-14 (*«esa restricción no debe existir»*): que las partes no sumen AVISA, no frena;
+  // lo único que frena es un echeq sin fecha.
+  const echAvisos = avisosDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }, 3000000).length
+    + avisosDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 33.33 }, { fechaCobro: "2026-11-29", parte: 33.33 }, { fechaCobro: "2026-12-29", parte: 33.33 }] }, 1).length
+  const echFrenan = problemasDelPlan({ modo: "montos", echeqs: [{ fechaCobro: "2026-10-29", parte: 1000000 }] }).length
+    + problemasDelPlan({ modo: "porcentaje", echeqs: [{ fechaCobro: "2026-10-29", parte: 33.33 }, { fechaCobro: "2026-11-29", parte: 33.33 }, { fechaCobro: "2026-12-29", parte: 33.33 }] }).length
+  chequear("Echeqs múltiples", "⚠️ Montos que no suman o 33,33 % ×3 AVISAN y no frenan; sólo frena un echeq sin fecha",
+    "2 avisos · 0 frenan · sin fecha frena", `${echAvisos} avisos · ${echFrenan} frenan · ${problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }).length ? "sin fecha frena" : "?"}`,
+    echAvisos === 2 && echFrenan === 0 && problemasDelPlan({ modo: "iguales", echeqs: [{ fechaCobro: "" }] }).length === 1 && problemasDelPlan(echPlanIguales).length === 0, "A-FEAT-1282")
+  // Con 33,33 % × 3 se reparte igual (proporción): 1/3 cada uno, y la suma cierra con el saldo.
+  const echPct = calcularEcheqs({ modo: "porcentaje", echeqs: [{ fechaCobro: "a", parte: 33.33 }, { fechaCobro: "b", parte: 33.33 }, { fechaCobro: "c", parte: 33.33 }] }, 13773075.04)
+  chequear("Echeqs múltiples", "BRIKI con 33,33 % × 3 sobre el saldo 13.773.075,04: 4.591.025,01 / 4.591.025,01 / 4.591.025,02 — suman el saldo exacto",
+    "4591025.01 · 4591025.01 · 4591025.02 · 13773075.04", `${echPct.map(e => e.monto).join(" · ")} · ${echPct.reduce((s2, e) => s2 + e.monto, 0).toFixed(2)}`,
+    echPct[0].monto === 4591025.01 && echPct[2].monto === 4591025.02 && echPct.reduce((s2, e) => s2 + e.monto, 0).toFixed(2) === "13773075.04", "A-FEAT-1282")
+  chequear("Echeqs múltiples", "La factura/anticipo se estampa con la fecha del ÚLTIMO echeq",
+    "2026-12-13", ultimaFechaCobro(echPlanIguales), ultimaFechaCobro(echPlanIguales) === "2026-12-13", "A-FEAT-1282")
+  const echExcel = filasEmision([{ cuit: "30-70814129-8", monto: 966666.67, fechaCobro: "2026-10-29", motivo: motivoPorDefecto(false), descripcion1: "Anticipo X (1/3)", mail: "a@b.com; c@d.com", clausula: "No a la orden" }])
+  chequear("Echeqs múltiples", "🏦 Excel del banco: encabezado de la plantilla, CUIT sin guiones, fecha DD/MM/AAAA como texto, motivo «Orden de pago» si no es factura, un solo mail, descripción 2 completada",
+    "Tipo de documento · 30708141298 · 29/10/2026 · Orden de pago · a@b.com · Anticipo X (1/3) · sin problemas",
+    `${echExcel.filas[0][0]} · ${echExcel.filas[1][1]} · ${echExcel.filas[1][3]} · ${echExcel.filas[1][4]} · ${echExcel.filas[1][7]} · ${echExcel.filas[1][6]} · ${echExcel.problemas.length ? echExcel.problemas[0] : "sin problemas"}`,
+    echExcel.filas[0].join("|") === ENCABEZADO_EMISION.join("|") && echExcel.filas[1][1] === 30708141298 && echExcel.filas[1][3] === "29/10/2026"
+      && echExcel.filas[1][4] === "Orden de pago" && echExcel.filas[1][7] === "a@b.com" && echExcel.filas[1][6] === "Anticipo X (1/3)" && !echExcel.problemas.length
+      && motivoPorDefecto(true) === "Factura", "A-FEAT-1282")
+  chequear("Echeqs múltiples", "🛑 Excel: un CUIT incompleto o una cláusula fuera de la lista del banco se avisan (no se genera)",
+    "2 problemas", `${filasEmision([{ cuit: "3070", monto: 1, fechaCobro: "2026-10-29", motivo: "Factura", clausula: "Libre" }]).problemas.length} problemas`,
+    filasEmision([{ cuit: "3070", monto: 1, fechaCobro: "2026-10-29", motivo: "Factura", clausula: "Libre" }]).problemas.length === 2, "A-FEAT-1282")
+  // El Cash Flow: un anticipo con 3 echeqs pasa a 3 filas, cada una en su fecha; con 1 echeq no cambia.
+  const echFilaAnt = { id: "ant1", origen: "ANTICIPO", debitos: 2900000, fecha_estimada: "2026-12-13", detalle: "ANTICIPO: X" }
+  const echChs = [
+    { id: "c1", monto: 966666.67, fecha_cobro: "2026-10-29", estado: "vigente", factura_id: null, anticipo_id: "ant1" },
+    { id: "c2", monto: 966666.67, fecha_cobro: "2026-11-13", estado: "vigente", factura_id: null, anticipo_id: "ant1" },
+    { id: "c3", monto: 966666.66, fecha_cobro: "2026-12-13", estado: "cobrado", factura_id: null, anticipo_id: "ant1" },
+  ]
+  const echPartidas = partirFilasEnEcheqs([echFilaAnt], echChs)
+  chequear("Echeqs múltiples", "📈 🧨 Cash Flow: el anticipo en 3 echeqs se proyecta echeq por echeq (el cobrado ya no), y con UN echeq la fila sigue igual",
+    "2 filas · 2026-10-29 966666.67 · 2026-11-13 · sólo lectura · 1 fila", `${echPartidas.length} filas · ${echPartidas[0]?.fecha_estimada} ${echPartidas[0]?.debitos} · ${echPartidas[1]?.fecha_estimada} · ${echPartidas[0]?.origen_tabla === "msa.cheques" && echPartidas[0]?.echeq_de === "ant1" ? "sólo lectura" : "?"} · ${partirFilasEnEcheqs([echFilaAnt], [echChs[0]]).length} fila`,
+    echPartidas.length === 2 && echPartidas[0].fecha_estimada === "2026-10-29" && echPartidas[0].debitos === 966666.67 && echPartidas[1].fecha_estimada === "2026-11-13"
+      && echPartidas[0].origen_tabla === "msa.cheques" && echPartidas[0].echeq_de === "ant1" && partirFilasEnEcheqs([echFilaAnt], [echChs[0]])[0].id === "ant1", "A-FEAT-1282")
+
+  // 📅 Plazo en días como alternativa a la fecha (usuario 2026-10-14): a N días de la emisión, sin que el huso lo corra.
+  chequear("Echeqs múltiples", "📅 A 15, 30 y 60 días de la emisión del 14/10 (cruzando fin de mes y de año), y la cuenta inversa",
+    "2026-10-29 · 2026-11-13 · 2026-12-13 · 2027-01-05 · 60", `${fechaMasDias("2026-10-14", 15)} · ${fechaMasDias("2026-10-14", 30)} · ${fechaMasDias("2026-10-14", 60)} · ${fechaMasDias("2026-12-06", 30)} · ${diasEntre("2026-10-14", "2026-12-13")}`,
+    fechaMasDias("2026-10-14", 15) === "2026-10-29" && fechaMasDias("2026-10-14", 30) === "2026-11-13" && fechaMasDias("2026-10-14", 60) === "2026-12-13"
+      && fechaMasDias("2026-12-06", 30) === "2027-01-05" && diasEntre("2026-10-14", "2026-12-13") === 60 && fechaMasDias("", 10) === "", "A-FEAT-1282")
+  // 🐞 A-BUG-1284 — reconstruir la retención de BRIKI que quedó sin registrar en SICORE.
+  const echBriki = baseDesdeRetencion(11570247.93, 226924.96, 0.02, 224000)
+  const echAdic = baseDesdeRetencion(1000000, 20000, 0.02, 224000)
+  chequear("Echeqs múltiples", "🧾 BRIKI: la retención 226.924,96 sale de (11.570.247,93 − 224.000) × 2 % → mínimo 224.000 exacto (deducido daba 223.999,93); sin mínimo, base = neto",
+    "11346247.93 · 224000 · exacto · adicional 0", `${echBriki.base} · ${echBriki.minimo} · ${echBriki.deducido ? "deducido" : "exacto"} · adicional ${echAdic.minimo}`,
+    echBriki.base === 11346247.93 && echBriki.minimo === 224000 && !echBriki.deducido && echAdic.minimo === 0 && echAdic.base === 1000000, "A-BUG-1284")
+  // 🐞 A-BUG-1285 — el total del anticipo es su MONTO (puede traer percepciones), no neto + IVA.
+  const echTot = totalAnticipo(100, 90)
+  const echTotSin = totalAnticipo(0, 3435838.56)
+  chequear("Echeqs múltiples", "🧾 🧨 Anticipo de $100 con neto+IVA $90: el total es 100 y hay $10 de «otros» (antes el total era 90); sin monto, neto+IVA; si neto+IVA supera el monto, avisa",
+    "100 · otros 10 · sin monto 3435838.56 · avisa", `${echTot.total} · otros ${echTot.otros} · sin monto ${echTotSin.total} · ${totalAnticipo(80, 90).aviso ? "avisa" : "no avisa"}`,
+    echTot.total === 100 && echTot.otros === 10 && !echTot.aviso && echTotSin.total === 3435838.56 && echTotSin.otros === 0 && !!totalAnticipo(80, 90).aviso, "A-BUG-1285")
+  // 🐞 A-BUG-1283 — desde la barra de PAGOS un anticipo pasaba a echeq sin modal. Antes la regla era
+  // «todo lo que no es factura de MSA pendiente va directo» (así lo hacía el código viejo).
+  const echLoteAnt = clasificarLoteEcheq([{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }], () => true)
+  const echViejoDirecto = [{ id: "a1", origen: "ANTICIPO", estado: "pendiente" }].filter(f => !(f.origen === "ARCA" && f.estado !== "echeq")).length
+  chequear("Echeqs múltiples", "🐞 🧨 PAGOS → ECHEQ con un ANTICIPO abre su modal (antes iba directo a «echeq» sin cheque)",
+    "abre a1 · antes: 1 directo", `${echLoteAnt.abrirAnticipo ? "abre " + echLoteAnt.abrirAnticipo.id : "no abre"} · antes: ${echViejoDirecto} directo`,
+    echLoteAnt.abrirAnticipo?.id === "a1" && echLoteAnt.templates.length === 0 && echViejoDirecto === 1, "A-BUG-1283")
+  const echLoteMix = clasificarLoteEcheq([
+    { id: "a1", origen: "ANTICIPO", estado: "pendiente" }, { id: "a2", origen: "ANTICIPO", estado: "pendiente" },
+    { id: "f1", origen: "ARCA", estado: "pagar" }, { id: "f2", origen: "ARCA", estado: "echeq" }, { id: "t1", origen: "TEMPLATE", estado: "pendiente" },
+  ], () => true)
+  chequear("Echeqs múltiples", "Varios anticipos o mezclados no se tocan; una factura ya en echeq tampoco; la pendiente va al modal; el template se marca (con aviso)",
+    "sin abrir · 2 sin tocar · modal f1 · ya f2 · template t1", `${echLoteMix.abrirAnticipo ? "abre" : "sin abrir"} · ${echLoteMix.anticiposSinTocar.length} sin tocar · modal ${echLoteMix.facturasModal.map(f => f.id).join(",")} · ya ${echLoteMix.facturasYaEnEcheq.map(f => f.id).join(",")} · template ${echLoteMix.templates.map(f => f.id).join(",")}`,
+    !echLoteMix.abrirAnticipo && echLoteMix.anticiposSinTocar.length === 2 && echLoteMix.facturasModal[0]?.id === "f1" && echLoteMix.facturasYaEnEcheq[0]?.id === "f2" && echLoteMix.templates[0]?.id === "t1", "A-BUG-1283")
 
   // ══ ↕️ SÓLO DÉBITOS / SÓLO CRÉDITOS (A-FEAT-1224) ═══════════════════════════════════════════
   // Pedido del usuario 2026-10-01. Y el hallazgo que vino con él: el «Rango de Montos» del Extracto
@@ -2684,6 +3250,73 @@ export function correrCasos(): Resultado[] {
     "false", String(pasaSentido(debito500k, new Set())),
     pasaSentido(debito500k, new Set()) === false, "A-FEAT-1224")
 
+  /**
+   * 🚦 **La marca de cuenta contable del Cash Flow — A-FEAT-1260.** Sólo facturas.
+   * 🔗 **Y la cuenta con su número, que son una sola cosa — A-BUG-1249.**
+   */
+  {
+    const e = cuentaDeFila
+
+    chequear("Cuenta en Cash Flow", "Factura sin cuenta: roja y se puede poner acá",
+      "sin · asignable",
+      `${e({ origen: "ARCA", categ: "SIN_CATEG" }).estado} · ${e({ origen: "ARCA", categ: "SIN_CATEG" }).asignable ? "asignable" : "no"}`,
+      e({ origen: "ARCA", categ: "SIN_CATEG" }).estado === "sin" && e({ origen: "ARCA", categ: "SIN_CATEG" }).asignable,
+      "A-FEAT-1260")
+
+    chequear("Cuenta en Cash Flow", "Factura vieja con el nombre pero sin el número no sale en verde",
+      "a-medias", e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: null }).estado,
+      e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: null }).estado === "a-medias", "A-FEAT-1260")
+
+    const conCuenta = e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: "5201" })
+    chequear("Cuenta en Cash Flow", "Factura con su cuenta: verde, y el cartel muestra el nombre y no el número",
+      "con · Cuenta contable: Honorarios — tocá para cambiarla",
+      `${conCuenta.estado} · ${conCuenta.titulo}`,
+      conCuenta.estado === "con" && !conCuenta.titulo.includes("5201"), "A-FEAT-1260")
+
+    const grupo = e({ origen: "ARCA", categ: "Honorarios", nro_cuenta: "5201", facturas_agrupadas: 3 })
+    chequear("Cuenta en Cash Flow", "Un pago agrupado no afirma la cuenta de todas ni deja asignar de a varias",
+      "grupo · no", `${grupo.estado} · ${grupo.asignable ? "asignable" : "no"}`,
+      grupo.estado === "grupo" && !grupo.asignable, "A-FEAT-1260")
+
+    const otros = ["TEMPLATE", "SUELDO", "VENTA", "ANTICIPO"].map(o => e({ origen: o, categ: "SIN_CATEG" }).estado)
+    chequear("Cuenta en Cash Flow", "🔑 Templates, sueldos, ventas y anticipos NO llevan marca (es sólo para facturas)",
+      "no-aplica ×4", otros.join(" "), otros.every(x => x === "no-aplica"), "A-FEAT-1260")
+
+    const plan = [{ categ: "Honorarios", nro_cuenta: 5201 }, { categ: "Sin Numero", nro_cuenta: null }]
+    chequear("Cuenta y número", "🔑 El nombre de la cuenta trae su número (sin importar mayúsculas ni espacios)",
+      "5201 · 5201", `${nroDeCuenta("Honorarios", plan)} · ${nroDeCuenta("  HONORARIOS ", plan)}`,
+      nroDeCuenta("Honorarios", plan) === "5201" && nroDeCuenta("  HONORARIOS ", plan) === "5201", "A-BUG-1249")
+
+    chequear("Cuenta y número", "Sin nombre, fuera del plan o sin número cargado: no inventa un número",
+      "null null null",
+      `${nroDeCuenta("", plan)} ${nroDeCuenta("No existe", plan)} ${nroDeCuenta("Sin Numero", plan)}`,
+      nroDeCuenta("", plan) === null && nroDeCuenta("No existe", plan) === null && nroDeCuenta("Sin Numero", plan) === null,
+      "A-BUG-1249")
+  }
+
+  {
+    // A-FEAT-1265 — el stock de la pantalla no trae las categorías en cero, y los ids llegan como texto o número.
+    const stockHoy = [{ categoria_id: 7, cantidad: 37 }, { categoria_id: "9", cantidad: 120 }]
+    chequear("Hacienda — cabezas de hoy", "Una categoría que no está en el stock tiene 0 cabezas; el id vale como texto o número",
+      "37 · 120 · 0 · 0",
+      `${cabezasHoy(stockHoy, "7")} · ${cabezasHoy(stockHoy, 9)} · ${cabezasHoy(stockHoy, "33")} · ${cabezasHoy(stockHoy, "")}`,
+      cabezasHoy(stockHoy, "7") === 37 && cabezasHoy(stockHoy, 9) === 120 && cabezasHoy(stockHoy, "33") === 0 && cabezasHoy(stockHoy, "") === 0,
+      "A-FEAT-1265")
+  }
+
+  {
+    // A-FEAT-1272 — el estado que propone PAGOS es el paso siguiente de lo tildado.
+    const s = estadoSugeridoParaLote
+    chequear("PAGOS — estado propuesto", "🔑 Todo en pendiente propone pagar; todo en pagar propone pagado",
+      "pagar · pagado", `${s(["pendiente", "pendiente"])} · ${s(["pagar"])}`,
+      s(["pendiente", "pendiente"]) === "pagar" && s(["pagar"]) === "pagado", "A-FEAT-1272")
+    chequear("PAGOS — estado propuesto", "Mezclado, vacío o en otro estado: no propone nada (queda lo que estaba)",
+      "null null null", `${s(["pendiente", "pagar"])} ${s([])} ${s(["conciliado"])}`,
+      s(["pendiente", "pagar"]) === null && s([]) === null && s(["conciliado"]) === null, "A-FEAT-1272")
+    chequear("PAGOS — estado propuesto", "Pagar, preparado y programado juntos proponen pagado",
+      "pagado", String(s(["pagar", "preparado", "programado"])),
+      s(["pagar", "preparado", "programado"]) === "pagado", "A-FEAT-1272")
+  }
 
   /**
    * 📎 **El archivo digital de una factura, visto desde el Cash Flow — A-FEAT-1185.**
@@ -5735,6 +6368,154 @@ export function correrCasos(): Resultado[] {
     const p4 = pagosDeResumenes([...res, { nr: "R06", cierre: "2026-06-25", vencimiento: "2026-07-06", total: 1900000 }], deb, su, "2026-10-03")
     chequear("Tarjeta — pago del resumen", "Un resumen vencido sin débito en la cuenta corriente se marca y se dice",
       "vencido_sin_pago", String(p4.get("R06")?.estado), p4.get("R06")?.estado === "vencido_sin_pago" && (p4.get("R06")?.avisos.length ?? 0) === 1, "A-DEC-1002")
+  }
+
+
+  // ══ Cash Flow: tipo de comprobante, número y ventana hacia atrás (A-FEAT-170 / A-FEAT-1237) ══
+  {
+    const et = [
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 1 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 3 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 11 }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: 7 }),
+      etiquetaTipoComprobante({ origen: "TEMPLATE" }),
+      etiquetaTipoComprobante({ origen: "ARCA", tipo_comprobante: null, facturas_agrupadas: 3 }),
+      etiquetaTipoComprobante({ origen: "VENTA", tipo_comprobante: 60 }),
+    ]
+    chequear("Cash Flow — filtros", "El chip de comprobante nombra tipo y letra (FC A, NC A, FC C, ND B) y separa lo que no es factura",
+      "FC A · NC A · FC C · ND B · Sin comprobante · Grupo (tipos mezclados) · Liquidación", et.join(" · "),
+      et.join("|") === "FC A|NC A|FC C|ND B|Sin comprobante|Grupo (tipos mezclados)|Liquidación", "A-FEAT-170")
+    const f = { comprobante_display: "FC A 00001-00012842", numero_desde: 12842, punto_venta: 1 }
+    chequear("Cash Flow — filtros", "Buscar por número encuentra «12842», «00012842» y «0001-00012842»; con menos de 3 dígitos no busca",
+      "sí · sí · sí · no · no", [coincideNumeroComprobante(f, "12842"), coincideNumeroComprobante(f, "00012842"), coincideNumeroComprobante(f, "0001-00012842"), coincideNumeroComprobante(f, "99999"), coincideNumeroComprobante(f, "12")].map(x => x ? "sí" : "no").join(" · "),
+      coincideNumeroComprobante(f, "12842") && coincideNumeroComprobante(f, "00012842") && coincideNumeroComprobante(f, "0001-00012842") && !coincideNumeroComprobante(f, "99999") && !coincideNumeroComprobante(f, "12"), "A-FEAT-170")
+    const d2s = desdeVentana("2026-10-04", "semana", 2), d1m = desdeVentana("2026-10-04", "mes", 1), d3m = desdeVentana("2026-03-31", "mes", 3)
+    chequear("Cash Flow — filtros", "La ventana: 2 semanas antes del 04/10 es el 20/09; 1 mes, el 04/09; lo de antes se esconde, lo sin fecha no",
+      "2026-09-20 · 2026-09-04 · fuera · adentro · sin fecha adentro", `${d2s} · ${d1m} · ${pasaVentana("2026-09-01", d1m) ? "adentro" : "fuera"} · ${pasaVentana("2026-11-15", d1m) ? "adentro" : "fuera"} · sin fecha ${pasaVentana(null, d1m) ? "adentro" : "fuera"}`,
+      d2s === "2026-09-20" && d1m === "2026-09-04" && !pasaVentana("2026-09-01", d1m) && pasaVentana("2026-11-15", d1m) && pasaVentana(null, d1m) && d3m === "2025-12-31", "A-FEAT-1237")
+  }
+
+
+  // ══ A-BUG-191: al conciliar, la fecha de pago es la del movimiento — completa, no pisa ═══════
+  {
+    // Un cliente falso que anota qué se le pidió (cero escritura real: § lib/pruebas).
+    const pedido: Record<string, unknown> = {}
+    const falso = { schema: (sch: string) => ({ from: (t: string) => ({
+      update: (v: unknown) => { Object.assign(pedido, { sch, t, v }); return {
+        in: (_c: string, ids: string[]) => { pedido.ids = ids; return {
+          is: (col: string, val: unknown) => { pedido.soloVacias = col === "fecha_pago" && val === null; return Promise.resolve({ count: 2, error: null }) },
+        } },
+      } },
+    }) }) }
+    // El pedido se arma sincrónico: se mira apenas se llama (los casos no esperan promesas).
+    void completarFechaPago(falso, "msa", ["a", "b"], "2026-07-13T00:00:00")
+    const conFecha = { ...pedido }
+    for (const k of Object.keys(pedido)) delete pedido[k]
+    void completarFechaPago(falso, "msa", ["a"], null)
+    const sinFechaPidio = Object.keys(pedido).length > 0
+    chequear("Conciliación — fecha de pago", "Escribe la fecha del movimiento SÓLO donde la factura no tiene (no pisa la que hay), y sin fecha no escribe nada",
+      "msa · 2026-07-13 · a,b · sólo vacías · sin fecha: nada", `${conFecha.sch} · ${(conFecha.v as any)?.fecha_pago} · ${(conFecha.ids as string[])?.join(",")} · ${conFecha.soloVacias ? "sólo vacías" : "PISA"} · sin fecha: ${sinFechaPidio ? "ESCRIBIÓ" : "nada"}`,
+      conFecha.sch === "msa" && (conFecha.v as any)?.fecha_pago === "2026-07-13" && conFecha.soloVacias === true && !sinFechaPidio, "A-BUG-191")
+  }
+
+
+  // ══ Stock de insumos: búsqueda, categorías y «sólo con stock» (A-FEAT-1243) ══════════════════
+  {
+    const st = [
+      { producto: "Maíz granel", observaciones: null, cantidad: 12000, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Ivermectina", observaciones: "vencimiento dic", cantidad: 0, categorias_insumo: { nombre: "Veterinario" } },
+      { producto: "Núcleo vitamínico", observaciones: null, cantidad: 300, categorias_insumo: { nombre: "Alimento" } },
+      { producto: "Gas oil", observaciones: null, cantidad: 1500, categorias_insumo: null },
+    ]
+    const a = filtrarStock(st, { busqueda: "nucleo", categorias: new Set(), soloConStock: false }).map(x => x.producto)
+    const b = filtrarStock(st, { busqueda: "", categorias: new Set(["Alimento"]), soloConStock: false }).length
+    const c = filtrarStock(st, { busqueda: "", categorias: new Set(), soloConStock: true }).length
+    const d = filtrarStock(st, { busqueda: "", categorias: new Set(["(sin categoría)"]), soloConStock: false }).map(x => x.producto)
+    chequear("Stock de insumos — filtros", "Busca sin tildes, filtra por categoría, «sólo con stock» saca el de 0, y lo sin categoría tiene su chip",
+      "Núcleo vitamínico · 2 · 3 · Gas oil", `${a.join(",")} · ${b} · ${c} · ${d.join(",")}`,
+      a.join(",") === "Núcleo vitamínico" && b === 2 && c === 3 && d.join(",") === "Gas oil", "A-FEAT-1243")
+  }
+
+  // ══ Planilla de asistencia: francos trabajados (A-FEAT-1259) ═══════════════════════════════════
+  // Febrero 2026: 28 días, empieza domingo → 4 sábados y 4 domingos. Sin feriados (salvo el caso que los pone),
+  // es el ejemplo del usuario: «4 sáb y 4 dom → se debería haber tomado 6 francos».
+  {
+    const sinFer = new Set<string>()
+    const feb = diasDelMes(2026, 2)
+    const todoP: Record<string, Marca> = Object.fromEntries(feb.map(d => [d, "P" as Marca]))
+    const lo_normal: Record<string, Marca> = Object.fromEntries(feb.map(d => {
+      const t = tipoDia(d, sinFer); return [d, (t === "sabado" ? "M" : t === "domingo" ? "F" : "P") as Marca]
+    }))
+    const a = resumirMes(2026, 2, lo_normal, sinFer)
+    chequear("Asistencia — francos", "Mes de 4 sáb + 4 dom: le corresponden 6; si se tomó medio sábado y el domingo, francos trabajados = 0",
+      "corresp 6 · tomados 6 · trabajados 0", `corresp ${a.corresponden} · tomados ${a.tomados} · trabajados ${a.francosTrabajados}`,
+      a.corresponden === 6 && a.tomados === 6 && a.francosTrabajados === 0 && a.completo, "A-FEAT-1259")
+
+    const b = resumirMes(2026, 2, todoP, sinFer)
+    const cMarcas = { ...lo_normal, "2026-02-10": "F" as Marca }                 // martes: falta
+    const c = resumirMes(2026, 2, cMarcas, sinFer)
+    const dMarcas = { ...lo_normal, "2026-02-08": "P" as Marca, "2026-02-14": "P" as Marca }   // trabajó un domingo y un sábado entero
+    const d = resumirMes(2026, 2, dMarcas, sinFer)
+    chequear("Asistencia — francos", "Todo presente suma 6; faltar un martes resta 1; domingo entero +1 y sábado entero +½",
+      "6 · −1 · 1,5", `${b.francosTrabajados} · ${c.francosTrabajados} · ${d.francosTrabajados}`,
+      b.francosTrabajados === 6 && c.francosTrabajados === -1 && d.francosTrabajados === 1.5, "A-FEAT-1259")
+
+    // Feriado = domingo. Carnaval 16 y 17/02 (lunes y martes): con P en esos días suman 1 cada uno.
+    const conFer = new Set(["2026-02-16", "2026-02-17"])
+    const e = resumirMes(2026, 2, lo_normal, conFer)
+    // Un sábado feriado también es domingo: el 14/02 marcado ½ suma ½ (en vez de 0).
+    const f = resumirMes(2026, 2, lo_normal, new Set(["2026-02-14"]))
+    chequear("Asistencia — feriados", "Feriado trabajado vale como domingo (+1); un sábado feriado con ½ suma ½",
+      "corresp 8 · trabajados 2 · sábado feriado ½", `corresp ${e.corresponden} · trabajados ${e.francosTrabajados} · sábado feriado ${f.francosTrabajados}`,
+      e.corresponden === 8 && e.francosTrabajados === 2 && f.francosTrabajados === 0.5, "A-FEAT-1259")
+
+    // V y L no suman ni restan: una semana de vacaciones de lunes a domingo no cambia el resultado.
+    const gMarcas = { ...lo_normal }
+    for (const dd of ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08"]) gMarcas[dd] = "V"
+    gMarcas["2026-02-20"] = "L"
+    const g = resumirMes(2026, 2, gMarcas, sinFer)
+    chequear("Asistencia — V y L", "Vacaciones y licencia quedan fuera de la cuenta: no suman ni restan",
+      "trabajados 0 · V 7 · L 1", `trabajados ${g.francosTrabajados} · V ${g.vacaciones} · L ${g.licencias}`,
+      g.francosTrabajados === 0 && g.vacaciones === 7 && g.licencias === 1, "A-FEAT-1259")
+
+    // Vacíos: el mes queda incompleto. Y llenar con P no pisa lo marcado ni sale del contrato.
+    const h = resumirMes(2026, 2, { "2026-02-01": "F" }, sinFer)
+    const contrato = { fecha_ingreso: "2026-02-15" }
+    const lleno = llenarConPresente(2026, 2, { "2026-02-15": "F" }, contrato)
+    const i = resumirMes(2026, 2, { "2026-02-15": "F", ...lleno }, sinFer, contrato)
+    chequear("Asistencia — vacíos y contrato", "Con días vacíos el mes queda incompleto; «Llenar con P» respeta lo marcado y sólo llena los días del contrato",
+      "incompleto 27 · llena 13 · el 15 sigue F · días 14 · trabajados 2 (sáb 21 y 28 +½, dom 22 +1)", `${h.completo ? "completo" : "incompleto"} ${h.sinMarcar} · llena ${Object.keys(lleno).length} · el 15 sigue ${lleno["2026-02-15"] ?? "F"} · días ${i.dias} · trabajados ${i.francosTrabajados}`,
+      !h.completo && h.sinMarcar === 27 && Object.keys(lleno).length === 13 && !lleno["2026-02-15"] && i.dias === 14 && i.francosTrabajados === 2, "A-FEAT-1259")
+  }
+
+  // ══ Planilla: «Llenar con F» y el jornal (A-FEAT-1259, 2026-10-09) ══════════════════════════════
+  // Pedido del usuario: «que se pueda anotar también presente y llenar resto con F, por casos al revés».
+  // Y los de jornal (Elvio, Vulcano): «cuántos días trabajaron por mes × el monto diario… si tienen 10,5 u 11 se computa eso».
+  {
+    const sinFer = new Set<string>()
+    // Jornalero en febrero 2026: vino 10 días enteros y uno medio; el resto F.
+    const vino: Record<string, Marca> = { "2026-02-02": "P", "2026-02-03": "P", "2026-02-04": "P", "2026-02-05": "P", "2026-02-06": "P",
+      "2026-02-09": "P", "2026-02-10": "P", "2026-02-11": "P", "2026-02-12": "P", "2026-02-13": "P", "2026-02-14": "M" }
+    const resto = llenarCon(2026, 2, vino, {}, "F")
+    const r = resumirMes(2026, 2, { ...vino, ...resto }, sinFer)
+    const jornal = { monto_a: null, monto_b: null, francos_cantidad: null, valor_franco: null, valor_por_dia: 60000,
+      dias_trabajados: null, valor_por_hora: null, horas_mes: null, varios: 0, vacaciones: null, premio: null, aguinaldo_a: null, aguinaldo_b: null }
+    const bruto = brutoDelPeriodo("por_dia", jornal, { dias_trabajados: r.diasTrabajados })
+    chequear("Asistencia — llenar con F y jornal", "«Llenar con F» pone F en los 17 vacíos sin tocar lo marcado; el jornalero suma 10,5 días y cobra 10,5 × 60.000",
+      "F 17 · completo · 10,5 días · 630000", `F ${Object.keys(resto).length} · ${r.completo ? "completo" : "incompleto"} · ${String(r.diasTrabajados).replace(".", ",")} días · ${bruto}`,
+      Object.keys(resto).length === 17 && Object.values(resto).every(m => m === "F") && r.completo && r.diasTrabajados === 10.5 && bruto === 630000, "A-FEAT-1259")
+  }
+
+  // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════
+  {
+    const sigot = { monto_a: 1408347.10, monto_b: 191652.90, francos_cantidad: 0, valor_franco: null, valor_por_dia: null,
+      dias_trabajados: null, valor_por_hora: null, horas_mes: null, varios: 0, vacaciones: null, premio: null, aguinaldo_a: null, aguinaldo_b: null }
+    const conDos = brutoDelPeriodo("ab_francos", sigot, { francos_cantidad: 2 })
+    const conMenosUno = brutoDelPeriodo("ab_francos", sigot, { francos_cantidad: -1 })
+    const override = brutoDelPeriodo("ab_francos", { ...sigot, valor_franco: 70000 }, { francos_cantidad: 2 })
+    chequear("Sueldos — bruto", "A+B 1.600.000 con franco automático (÷25 = 64.000): 2 francos suman 128.000, −1 resta 64.000; con franco fijo 70.000 usa ese",
+      "1728000 · 1536000 · 1740000 · desconocido null", `${conDos} · ${conMenosUno} · ${override} · desconocido ${brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0)}`,
+      Math.abs((conDos ?? 0) - 1728000) < 0.01 && Math.abs((conMenosUno ?? 0) - 1536000) < 0.01 && override === 1740000 && brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0) === null, "A-FEAT-1259")
   }
 
   return r

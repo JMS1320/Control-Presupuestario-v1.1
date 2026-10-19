@@ -33,6 +33,7 @@ import type {
 } from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
+import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
@@ -1053,6 +1054,11 @@ const etiquetaEstado = (e: EstadoParte): string => ({
   "lo carga el usuario": "LO CARGA EL USUARIO",
 }[e])
 
+/** La solapa de pendientes: número, texto largo, fechas y la resolución. */
+const COLS_PENDIENTES: Columna[] = [
+  { ancho: 4 }, { ancho: 80 }, { ancho: 11 }, { ancho: 10 }, { ancho: 50 }, { ancho: 11 },
+]
+
 const COLS_INDICE: Columna[] = [
   { ancho: 7 },                     // #
   { ancho: 46 },                    // Papel
@@ -1727,6 +1733,8 @@ export function armarWorkbook(
   sueldos?: SueldosDelEjercicio,
   /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
   cuentasCorrientes?: PapelDeCuentasCorrientes,
+  /** 📌 Los pendientes a revisar que anotó el usuario en la pantalla (A-FEAT-1258). */
+  pendientes?: PendienteBalance[],
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1743,6 +1751,11 @@ export function armarWorkbook(
     bancarios: bancarios ?? null,
   })
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
+  // 📌 A-FEAT-1258 — los pendientes a revisar van pegados al índice: también contestan «¿qué falta?».
+  if (pendientes && pendientes.length) {
+    hoja(wb, "00 Pendientes a revisar", hojaDePendientes(pendientes,
+      `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
+  }
   hoja(wb, "Control", hojaDeControl(libro))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
@@ -1866,9 +1879,10 @@ export function descargarLibroDiario(
   bancarios?: Parameters<typeof armarWorkbook>[7],
   sueldos?: Parameters<typeof armarWorkbook>[8],
   cuentasCorrientes?: Parameters<typeof armarWorkbook>[9],
+  pendientes?: PendienteBalance[],
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes)
+    bancarios, sueldos, cuentasCorrientes, pendientes)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

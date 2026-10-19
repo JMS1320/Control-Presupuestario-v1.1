@@ -104,12 +104,13 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
       if (error) throw error
       setLiquidaciones((data || []) as LiquidacionMsa[])
 
-      // Retenciones imputadas aparte (retenciones_recibidas) por comprobante — sólo MSA
+      // Retenciones imputadas aparte (retenciones_recibidas) por comprobante — las 3 empresas desde
+      // A-FEAT-1219 (cada una en su schema).
       const compIds = (data || []).map((c: any) => c.id)
       const rMap = new Map<string, number>()
-      if (esMsa && compIds.length > 0) {
+      if (compIds.length > 0) {
         const { data: rets } = await supabase
-          .schema('msa').from('retenciones_recibidas')
+          .schema(schemaName).from('retenciones_recibidas')
           .select('comprobante_venta_id, monto').in('comprobante_venta_id', compIds)
         ;(rets || []).forEach((r: any) => {
           if (!r.comprobante_venta_id) return
@@ -350,18 +351,16 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
                           )}
                           {esAdmin && (
                             <>
-                              {/* Retenciones y edición pasan por modales atados a MSA
-                                  (`retenciones_recibidas`, `ventas`, `ventas_comprobantes`).
-                                  Fuera de MSA se ocultan para no escribir en el schema equivocado. */}
+                              {/* Retenciones: las 3 empresas, cada una en su schema (A-FEAT-1219).
+                                  La edición sigue sólo en MSA: pasa por el modal de granos
+                                  (`ventas`, `ventas_comprobantes`), que PAM y MA no tienen por diseño. */}
+                              <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
+                                <Percent className="h-3.5 w-3.5 text-orange-600" />
+                              </Button>
                               {esMsa && (
-                                <>
-                                  <Button size="sm" variant="ghost" onClick={() => setRetencionesDe(l as any)} title="Retenciones recibidas">
-                                    <Percent className="h-3.5 w-3.5 text-orange-600" />
-                                  </Button>
-                                  <Button size="sm" variant="ghost" onClick={() => abrirEdicion(l)} title="Editar">
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
+                                <Button size="sm" variant="ghost" onClick={() => abrirEdicion(l)} title="Editar">
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
                               )}
                               <Button size="sm" variant="ghost" onClick={() => eliminar(l)} title="Eliminar" className="text-red-600 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -400,6 +399,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
         comprobante={retencionesDe}
         onClose={() => setRetencionesDe(null)}
         onGuardado={cargar}
+        empresa={empresa}
       />
     </div>
   )

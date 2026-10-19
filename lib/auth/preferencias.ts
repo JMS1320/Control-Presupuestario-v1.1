@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js"
+import { leerColumnasUsuario, type ColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 
 /**
  * Preferencias personales: lo que cada uno configura **de su propia cuenta**.
@@ -55,6 +56,11 @@ export type Preferencias = {
    * cambiar el default de uno no le llegaría nunca a quien ya abrió la pantalla una vez.
    */
   widgetsTamano: Record<string, { ancho: 1 | 2; alto: number }>
+  /**
+   * 📐 El ancho y el orden de las columnas del Cash Flow que dejó el usuario (A-FEAT-1277).
+   * `null` = las de siempre. Disperso: sólo lo que tocó (ver `lib/cashflow/columnas-usuario.ts`).
+   */
+  columnasCashFlow: ColumnasUsuario | null
 }
 
 /**
@@ -73,6 +79,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   explicaciones: true,
   widgets: null,
   widgetsTamano: {},
+  columnasCashFlow: null,
 }
 
 /**
@@ -124,5 +131,6 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
       ? (p.widgets as unknown[]).filter((w): w is string => typeof w === "string")
       : null,
     widgetsTamano: leerTamanos(p.widgetsTamano),
+    columnasCashFlow: leerColumnasUsuario(p.columnasCashFlow),
   }
 }

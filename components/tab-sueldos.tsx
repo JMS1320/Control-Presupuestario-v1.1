@@ -6,8 +6,13 @@ import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
 import { ModalPagoRepartido } from "@/components/modal-pago-repartido"
+import { brutoSegunTipo } from "@/lib/sueldos/bruto"
+import { PlanillaAsistencia } from "@/components/planilla-asistencia"
 import { descargarPagosDeSueldos, type PagoParaExportar } from "@/lib/sueldos/export-pagos"
 import { hoyArgentina } from "@/lib/fechas"
+import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
+import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { useState, useEffect, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
@@ -341,6 +346,8 @@ export function TabSueldos() {
 
   // Modal Gestión de Nómina
   const [modalNomina, setModalNomina] = useState(false)
+  // 🗓️ Planilla de asistencia (A-FEAT-1259)
+  const [planillaAbierta, setPlanillaAbierta] = useState(false)
   const [nominaVista, setNominaVista] = useState<'menu' | 'baja'>('menu')
   const [empleadosActivos, setEmpleadosActivos] = useState<Empleado[]>([])
   const [bajaFechas, setBajaFechas] = useState<Record<string, string>>({})
@@ -613,7 +620,9 @@ export function TabSueldos() {
    * filtros, el Excel tiene que seguirlos — un export que baja de más es peor que no tenerlo.
    */
   const exportarPagos = () => {
-    const filas: PagoParaExportar[] = pagos.map(pg => {
+    // 📤 A-FEAT-1263 — con pagos tildados baja sólo ésos; sin ninguno, todo el mes (como siempre).
+    const aExportar = pagos.filter(pg => pagosElegidos.size === 0 || pagosElegidos.has(pg.id))
+    const filas: PagoParaExportar[] = aExportar.map(pg => {
       const periodo = periodos.find(x => x.id === pg.periodo_id)
       const cuenta = cuentas.find(c => c.id === pg.cuenta_destino_id)
       return {
@@ -631,7 +640,42 @@ export function TabSueldos() {
       }
     })
     if (filas.length === 0) { alert('No hay pagos para exportar en este mes.'); return }
-    descargarPagosDeSueldos(filas, `${MESES_LONG[mesActual.mes - 1]} ${mesActual.anio}`)
+    const mes = `${MESES_LONG[mesActual.mes - 1]} ${mesActual.anio}`
+    descargarPagosDeSueldos(filas, pagosElegidos.size > 0 ? `${mes} (${filas.length} de ${pagos.length} pagos)` : mes)
+  }
+
+  /**
+   * 📤 A-FEAT-1263 — los pagos tildados para exportar. Pedido del usuario 2026-10-06: *«¿esto exporta
+   * todo? porque yo hoy saco un pago solo y precisaría hacer export de ese solo»*.
+   * Se guardan ids: si el mes cambia y esos pagos ya no están, `exportarPagos` filtra contra lo que hay
+   * en pantalla y el botón cuenta sólo los visibles — nunca exporta algo que no se ve.
+   */
+  const [pagosElegidos, setPagosElegidos] = useState<Set<string>>(new Set())
+  const elegidosVisibles = pagos.filter(pg => pagosElegidos.has(pg.id)).length
+  const tildarPagos = (ids: string[], tildar: boolean) => setPagosElegidos(prev => {
+    const s = new Set(prev)
+    ids.forEach(id => { if (tildar) s.add(id); else s.delete(id) })
+    return s
+  })
+
+  /**
+   * 🏦 A-FEAT-1273 — el archivo del BANCO con los pagos tildados. Es el mismo modal que abre el Cash
+   * Flow (un Excel por grupo de archivo, con el CBU/alias de la cuenta del empleado): acá sólo se
+   * elige qué pagos van. Sin tildar no va ninguno — el mes trae también los ya transferidos.
+   */
+  const [loteBanco, setLoteBanco] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  const abrirArchivoBanco = () => {
+    const sel = pagosParaElBanco(pagos as any, pagosElegidos)
+    if (sel.ids.length === 0) {
+      alert(sel.fueraPorCaja > 0
+        ? 'Los pagos tildados se pagaron por caja: no van al archivo del banco.'
+        : 'Tildá los pagos que querés mandar al banco.')
+      return
+    }
+    if (sel.fueraPorCaja > 0) {
+      alert(`${sel.fueraPorCaja} de los pagos tildados se ${sel.fueraPorCaja === 1 ? 'pagó' : 'pagaron'} por caja y no ${sel.fueraPorCaja === 1 ? 'va' : 'van'} al archivo del banco. Sigo con los otros ${sel.ids.length}.`)
+    }
+    setLoteBanco({ open: true, items: sel.ids.map(id => ({ tipo: 'sueldo' as const, id })) })
   }
 
   // ── Editar / Eliminar pago ────────────────────────────────────────────────
@@ -688,16 +732,11 @@ export function TabSueldos() {
 
   const num = (v: string) => parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0
 
-  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0, aguinaldoA = 0, aguinaldoB = 0) => {
-    const extras = varios + vacaciones + premio + aguinaldoA + aguinaldoB
-    switch (tipo) {
-      case 'ab_francos':   return (a + b) + (valorFranco * francos) + extras
-      case 'por_dia':      return vdia * dias + extras
-      case 'por_hora_ipc': return vhora * horas + extras
-      case 'plano_ipc':    return a + extras
-      default:             return (edPeriodo?.bruto_calculado ?? 0) + extras
-    }
-  }
+  // 💰 La fórmula vive en `lib/sueldos/bruto.ts` (la usa también la planilla de asistencia). Con un tipo
+  // desconocido se conserva el bruto anterior, como antes.
+  const calcularBruto = (tipo: string, a: number, b: number, francos: number, valorFranco: number, vdia: number, dias: number, vhora: number, horas: number, varios: number, vacaciones = 0, premio = 0, aguinaldoA = 0, aguinaldoB = 0) =>
+    brutoSegunTipo(tipo, a, b, francos, valorFranco, vdia, dias, vhora, horas, varios, vacaciones, premio, aguinaldoA, aguinaldoB)
+      ?? (edPeriodo?.bruto_calculado ?? 0) + varios + vacaciones + premio + aguinaldoA + aguinaldoB
 
   const abrirEdicion = (p: Periodo, forzar = false) => {
     if (!esMesLockeado && !forzar) return  // solo se edita el mes de trabajo (salvo revisión de campaña)
@@ -717,7 +756,8 @@ export function TabSueldos() {
     setEdAPropio(fmt(ap.aPropio))
     setEdFrancos(p.francos_cantidad !== null ? String(p.francos_cantidad).replace('.', ',') : '')
     setEdValorDia(p.valor_por_dia !== null ? fmt(p.valor_por_dia) : '')
-    setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados) : '')
+    // 🗓️ Admite medio día (script 82): se muestra con coma, como los francos.
+    setEdDias(p.dias_trabajados !== null ? String(p.dias_trabajados).replace('.', ',') : '')
     setEdValorHora(p.valor_por_hora !== null ? fmt(p.valor_por_hora) : '')
     setEdHoras(p.horas_mes !== null ? String(p.horas_mes) : '')
     setEdVarios(p.varios !== null && p.varios !== 0 ? fmt(p.varios) : '')
@@ -823,7 +863,7 @@ export function TabSueldos() {
     const francos   = num(edFrancos)
     const vf        = num(edValorFranco)
     const vdia      = num(edValorDia)
-    const dias      = parseInt(edDias) || 0
+    const dias      = num(edDias)   // admite medio día (10,5) — A-FEAT-1259
     const vhora     = num(edValorHora)
     const horas     = parseInt(edHoras) || 0
     const varios    = num(edVarios)
@@ -931,7 +971,7 @@ export function TabSueldos() {
         edPeriodo.empleado?.tipo_empleado,
         num(edMontoA), num(edMontoB), num(edFrancos),
         num(edValorFranco),
-        num(edValorDia), parseInt(edDias) || 0,
+        num(edValorDia), num(edDias),
         num(edValorHora), parseInt(edHoras) || 0,
         num(edVarios), num(edVacaciones), num(edPremio),
         num(edAguinaldoA), num(edAguinaldoB),
@@ -1258,6 +1298,10 @@ export function TabSueldos() {
             <Users className="h-4 w-4 mr-2" />
             Gestión de Nómina
           </Button>
+          <Button variant="outline" onClick={() => setPlanillaAbierta(true)} title="Marcar francos y presentes del mes; calcula los francos trabajados">
+            <CalendarDays className="h-4 w-4 mr-2" />
+            Planilla de Asistencia
+          </Button>
           <Button onClick={() => abrirAnticipo()} disabled={!esMesLockeado} title={!esMesLockeado ? 'Mové el mes de trabajo a este mes para registrar' : undefined}>
             <Plus className="h-4 w-4 mr-2" />
             Registrar Anticipo
@@ -1491,19 +1535,41 @@ export function TabSueldos() {
               <CardTitle className="text-sm">
                 Pagos registrados — {MESES_LONG[mesActual.mes - 1]} {mesActual.anio}
               </CardTitle>
+              <div className="flex items-center gap-2">
+              {/* 🏦 El archivo para el banco, sólo con los pagos tildados (A-FEAT-1273). */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={elegidosVisibles === 0}
+                onClick={abrirArchivoBanco}
+                title={elegidosVisibles > 0
+                  ? 'Armar el archivo para el banco con los pagos tildados (te muestra el detalle antes de generar)'
+                  : 'Tildá los pagos que querés transferir y armo el archivo para el banco sólo con ésos'}
+              >
+                {elegidosVisibles > 0
+                  ? `🏦 Archivo para el banco (${elegidosVisibles})`
+                  : '🏦 Archivo para el banco'}
+              </Button>
               {/* 📗 El listado a Excel, con el formato canónico del sistema (A-FEAT-1217). */}
               <Button
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
                 onClick={exportarPagos}
-                title="Bajar los pagos de este mes en Excel"
+                title={elegidosVisibles > 0
+                  ? 'Bajar en Excel sólo los pagos tildados'
+                  : 'Bajar TODOS los pagos de este mes en Excel — tildá los que quieras para bajar sólo ésos'}
               >
-                📗 Exportar a Excel
+                {elegidosVisibles > 0
+                  ? `📗 Exportar ${elegidosVisibles} ${elegidosVisibles === 1 ? 'pago tildado' : 'pagos tildados'}`
+                  : '📗 Exportar todo a Excel'}
               </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            <div className="px-4"><TestsDelProceso proceso="sueldos/pagos-registrados" pantalla="sueldos" /></div>
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -1536,7 +1602,14 @@ export function TabSueldos() {
                       })}
                     >
                       <TableCell className="text-gray-400 w-8">{abierto ? '▾' : '▸'}</TableCell>
-                      <TableCell className="font-medium">{grupo.nombre}</TableCell>
+                      <TableCell className="font-medium">
+                        {/* A-FEAT-1263: tilda todos los pagos del empleado, sin abrir ni cerrar el grupo */}
+                        <input type="checkbox" className="mr-2 align-middle" title="Tildar los pagos de este empleado para exportarlos"
+                          checked={grupo.pagos.length > 0 && grupo.pagos.every(p => pagosElegidos.has(p.id))}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => tildarPagos(grupo.pagos.map(p => p.id), e.target.checked)} />
+                        {grupo.nombre}
+                      </TableCell>
                       <TableCell colSpan={3} className="text-xs text-gray-500">
                         {grupo.cantidad} {grupo.cantidad === 1 ? 'pago' : 'pagos'}
                       </TableCell>
@@ -1546,8 +1619,12 @@ export function TabSueldos() {
 
                     {abierto && grupo.pagos.map(pago => (
                   <TableRow key={pago.id}>
-                    {/* Sangría: el renglón se lee como hijo de su empleado. */}
-                    <TableCell className="w-8"></TableCell>
+                    {/* Sangría: el renglón se lee como hijo de su empleado. Lleva el tilde para exportar (A-FEAT-1263). */}
+                    <TableCell className="w-8 text-center">
+                      <input type="checkbox" title="Tildar para exportar sólo este pago"
+                        checked={pagosElegidos.has(pago.id)}
+                        onChange={e => tildarPagos([pago.id], e.target.checked)} />
+                    </TableCell>
                     {/* El NOMBRE ya no se repite acá: está en la cabecera del grupo, y repetirlo
                         en cada fila era justo el ruido que hacía difícil encontrar un dato. */}
                     <TableCell className="text-sm tabular-nums text-gray-600">
@@ -1763,7 +1840,7 @@ export function TabSueldos() {
                     <Label>Días trabajados</Label>
                     <Input
                       type="text"
-                      placeholder="0"
+                      placeholder="0 (admite 10,5)"
                       value={edDias}
                       onChange={e => setEdDias(e.target.value)}
                     />
@@ -2080,6 +2157,15 @@ export function TabSueldos() {
         </DialogContent>
       </Dialog>
 
+      {/* 🏦 Archivo para el banco con los pagos tildados (A-FEAT-1273) — el mismo modal del Cash Flow */}
+      <ModalExportarLote
+        open={loteBanco.open}
+        onClose={() => setLoteBanco({ open: false, items: [] })}
+        empresa="MSA"
+        items={loteBanco.items}
+        userRole="admin"
+      />
+
       {/* ── Modal Pago repartido (A-FEAT-1212) ── */}
       {repartirPeriodo && (
         <ModalPagoRepartido
@@ -2373,6 +2459,16 @@ export function TabSueldos() {
       </Dialog>
 
       {/* ── Modal Gestión de Nómina ───────────────────────────────────────── */}
+      <PlanillaAsistencia
+        abierto={planillaAbierta}
+        onCerrar={() => setPlanillaAbierta(false)}
+        anio={mesActual.anio}
+        mes={mesActual.mes}
+        periodos={periodos as any}
+        esMesDeTrabajo={esMesLockeado}
+        onAplicado={cargar}
+      />
+
       <Dialog open={modalNomina} onOpenChange={setModalNomina}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -2417,21 +2513,21 @@ export function TabSueldos() {
                 </div>
               </button>
 
-              {/* Planilla de asistencia — placeholder */}
-              <div className="flex items-start gap-4 p-4 rounded-lg border border-dashed bg-gray-50 opacity-60 cursor-not-allowed">
-                <div className="h-10 w-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                  <CalendarDays className="h-5 w-5 text-gray-400" />
+              {/* Planilla de asistencia (A-FEAT-1259) */}
+              <button
+                onClick={() => { setModalNomina(false); setPlanillaAbierta(true) }}
+                className="flex items-start gap-4 p-4 rounded-lg border hover:border-green-400 hover:bg-green-50 transition-colors text-left"
+              >
+                <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <CalendarDays className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-sm text-gray-500">Planilla de Asistencia</p>
-                    <span className="text-xs bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full">Próximamente</span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Importar planilla mensual de francos, días y horas trabajadas por empleado.
+                  <p className="font-semibold text-sm">Planilla de Asistencia</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Marcar francos, medios días, vacaciones y licencias del mes; calcula los francos trabajados y los pasa al sueldo.
                   </p>
                 </div>
-              </div>
+              </button>
 
             </div>
           )}

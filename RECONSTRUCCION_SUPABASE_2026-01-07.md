@@ -12795,6 +12795,79 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24
+
+Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros
+vinculados). Dos cosas, las dos aditivas:
+- `pam.retenciones_recibidas` y `ma.retenciones_recibidas`: `like msa.retenciones_recibidas including all`, FK
+  a `comprobantes_venta` de su empresa (`on delete set null`), policies `ver_segun_permiso` /
+  `escribir_segun_permiso` como las de scripts/62, nada a `anon`.
+- `comprobante_venta_id uuid` (FK a la venta de su empresa) en `public.pam_galicia`, `public.pam_galicia_cc` y
+  `ma.ma_galicia` — el espejo de `msa_galicia.comprobante_venta_id`.
+✅ **Corrido 2026-10-14** con el usuario presente. Verificado: 12 columnas iguales en `msa`/`pam`/`ma`, el vínculo en
+los 4 extractos Galicia, RLS activa con las mismas dos policies, nada a `anon`. ⚠️ **Trampa encontrada**: `pam` tiene
+privilegios por defecto que le daban a `authenticated` también REFERENCES, TRIGGER y **TRUNCATE** sobre la tabla nueva
+(`ma` y `msa` no): se revocaron para dejarla igual que MSA. **Al crear una tabla en `pam`, mirar los grants.**
+Escrituras de la app probadas con `explain`, sin escribir datos.
+
+### 2026-10-13 · `public.notas_para_claude.sin_supervision` — A-FEAT-1266
+
+Script `scripts/83-notas-sin-supervision.sql` (deshacer: `83-…-deshacer.sql`): columna `sin_supervision boolean
+not null default false` — la marca con la que el usuario autoriza a Claude a desarrollar una nota sin esperarlo.
+Sin cambios de RLS ni de permisos (los grants de la tabla son a nivel tabla; no hay vistas sobre ella).
+Verificado: 67 notas, todas en `false`; escritura probada con `EXPLAIN INSERT`, sin escribir datos. Avisado a Javier.
+
+### 2026-10-09 · `sueldos.periodos.dias_trabajados` → NUMERIC (medio día) — A-FEAT-1259
+
+Script `scripts/82-dias-trabajados-con-medios.sql` (deshacer: `82-…-deshacer.sql`, redondea los medios días): la
+vista `public.sueldos_periodos` depende de la columna, así que se la **dropea, se cambia el tipo y se la recrea con
+la misma definición y los mismos GRANTs** (authenticated y service_role con los 7 privilegios; nada a `anon`), todo
+en una transacción. Verificado después: vista en numeric, mismos grants, 128 filas. Avisado a Javier.
+
+### 2026-10-09 · PLANILLA DE ASISTENCIA (`sueldos.asistencia` + `public.feriados`) — A-FEAT-1259
+
+Script `scripts/81-planilla-asistencia.sql` (deshacer: `81-…-deshacer.sql`, borra marcas y feriados): tabla
+`sueldos.asistencia` (una marca P/F/M/V/L por empleado y día, único `empleado_id`+`fecha`) con su vista
+`public.sueldos_asistencia`, y `public.feriados` con los nacionales 2025–2027 precargados (puentes con
+`cuenta = false`). RLS `solo_usuarios_habilitados` (`tiene_rol()`), igual que el resto de `sueldos`; `revoke` a
+`anon`. Avisado a Javier antes de aplicarlo. Aplicado el 2026-10-09 y verificado: 56 feriados, 49 cuentan.
+
+### 2026-10-07 · PENDIENTES A REVISAR DE LOS PAPELES (`public.balance_pendientes`) — A-FEAT-1258
+
+Script `scripts/80-balance-pendientes.sql` (deshacer: `80-…-deshacer.sql`, borra los pendientes): tabla
+`balance_pendientes` (`empresa`, `anio_cierre`, `texto`, `estado` abierto/resuelto, `resolucion`, `creado_por`,
+`created_at`, `resuelto_at`). RLS `ver_segun_permiso`/`escribir_segun_permiso`, `revoke` a `anon`, registrada en
+`recurso_tablas` (recurso `extracto`, `restringe_lectura = true`) — mismo patrón que el script 75. Avisado a Javier.
+
+### 2026-10-07 · CUENTA Y TEMPLATE DE PLAZO FIJO (datos) — A-DAT-68
+
+Datos, no estructura: cuenta `PLAZO FIJO` (Plazos Fijos, financiero, *MOVIMIENTOS FINANCIEROS*) y template
+`Plazo Fijo Banco Galicia` (MSA, bidireccional, agrupadora *Inversiones*) con 4 cuotas «anterior» de jul–oct 2025.
+
+### 2026-10-05 · EL COSTO DE LAS COMPRAS EN USD SIGUE AL TC DEL PAGO (trigger) — A-FEAT-1255
+
+Script `scripts/79-costo-compras-sigue-tc-pago.sql` (deshacer: `79-…-deshacer.sql`): función
+`productivo.costo_compras_sigue_tc()` (`security definer`, `search_path = ''`) y trigger
+`trg_costo_compras_sigue_tc` AFTER UPDATE OF `tc_pago`, `tipo_cambio` ON `msa.comprobantes_arca`. El SQL
+completo está en el script. Aplicado a mano una vez sobre la FC 6447 de Agro Centros (7 compras de 1.522 a
+1.520: total $5.830.812,44 → $5.823.150,40), con OK del usuario. Avisado a Javier antes.
+
+### 2026-10-05 · MONEDA DE LAS COMPRAS DE INSUMOS (`productivo.movimientos_insumos`) — A-BUG-1244
+
+```sql
+ALTER TABLE productivo.movimientos_insumos
+  ADD COLUMN IF NOT EXISTS moneda text NOT NULL DEFAULT 'ARS',
+  ADD COLUMN IF NOT EXISTS costo_unitario_moneda numeric,
+  ADD COLUMN IF NOT EXISTS tipo_cambio numeric;
+ALTER TABLE productivo.movimientos_insumos
+  ADD CONSTRAINT movimientos_insumos_moneda_chk CHECK (moneda IN ('ARS', 'USD'));
+```
+
+Script `scripts/78-moneda-compras-insumos.sql` (deshacer: `78-moneda-compras-insumos-deshacer.sql`).
+`costo_unitario` **sigue en pesos** (lo leen consumo, margen y el panel de entregas); las columnas nuevas
+guardan el original y el TC, que se cargan al vincular la factura. Sin vistas (la tabla se expone directa).
+Verificado con `EXPLAIN UPDATE` sobre las tres columnas, sin escribir datos. Avisado a Javier antes.
+
 ### 2026-10-03 · EL PAGO DE LA TARJETA ATADO A SU RESUMEN (`nro_resumen` en los extractos) — A-DEC-1002
 
 ```sql

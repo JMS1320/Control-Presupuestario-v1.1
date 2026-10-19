@@ -1,11 +1,14 @@
 "use client"
 
 
+import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe } from "@/lib/pagos/moneda-factura"
 import { hoyArgentina } from "@/lib/fechas"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante, type UnidadVentana } from "@/lib/pagos/filtros-cash-flow"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 import { ModalCancelacionNC } from "@/components/modal-cancelacion-nc"
+import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
 import { armarCancelacionPorCuit, facturasConDescuentoParaNC, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
@@ -13,9 +16,15 @@ import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
+import { cuentaDeFila, COLOR_CUENTA } from "@/lib/pagos/cuenta-de-fila"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { RangoDeFechas } from "@/components/rango-de-fechas"
 import { encolarMailDetalle } from "@/lib/pagos/encolar-mail-detalle"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { ModalVincularArchivo } from "@/components/modal-vincular-archivo"
+import { ordenarColumnas, moverColumna, anchoValido, type ColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { PanelMailsPago } from "@/components/panel-mails-pago"
 import { PanelBoletasArba } from "@/components/panel-boletas-arba"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -24,10 +33,17 @@ import { desagruparPago } from "@/lib/pagos/desagrupar"
 import { resetearRetencionFactura, estadoQuincenaDeFactura, anticiposVinculadosAFactura } from "@/lib/sicore/resetear-retencion"
 import { generarQuincenaSicore, quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
+import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
+import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { calcularRetencion } from "@/lib/sicore/minimo"
+import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
+import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
+import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/lib/pagos/echeq"
+import { problemasDelPlan, ultimaFechaCobro, clasificarLoteEcheq } from "@/lib/pagos/echeqs-multiples"
+import { EditorPlanEcheqs, planVacio, planDesdeUI, type PlanEcheqsUI } from "./editor-plan-echeqs"
+import { ModalExportarEcheqs } from "./modal-exportar-echeqs"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -112,6 +128,20 @@ const TIPOS_COMPROBANTE_C = [11, 12, 13]
 const admiteSicore = (f: { tipo_comprobante?: number | null }): boolean =>
   !TIPOS_COMPROBANTE_C.includes(Number(f.tipo_comprobante))
 
+/**
+ * ↩️ Los dos carteles de «volver a pendiente» — los mismos desde el menú de la fila y desde el lote
+ * de PAGOS (A-BUG-1253). Resetear es OPCIONAL; lo que pasa si no se resetea se dice antes.
+ */
+const TEXTO_RESETEAR = (n: number) =>
+  `${n > 1 ? `${n} facturas vuelven` : 'La factura vuelve'} a pendiente. ¿RESETEAR${n > 1 ? 'LAS' : 'LA'}?\n\n` +
+  `Resetear hace:\n• anula la retención SICORE\n• borra el descuento aplicado\n• borra la fecha de pago\n• el importe vuelve al original\n\n` +
+  `ACEPTAR = resetear\nCANCELAR = NO resetear (después te pregunto si igual ${n > 1 ? 'las' : 'la'} paso a pendiente)`
+const TEXTO_SIN_RESETEAR =
+  `¿Pasar a pendiente SIN resetear?\n\n` +
+  `Queda guardado lo del pago anterior: la retención, el descuento, el importe a transferir y la fecha de pago.\n` +
+  `⚠️ Si después la volvés a pasar a pagar así, SICORE calcula como si ya hubiera retenido este mes.\n\n` +
+  `ACEPTAR = pasar a pendiente y nada más\nCANCELAR = no cambiar nada`
+
 /** Estados que significan que la plata sale: exigen fecha de pago antes de seguir. */
 const ESTADOS_QUE_PAGAN = ['pagar', 'preparado', 'programado', 'pagado', 'debito']
 
@@ -182,6 +212,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [filtros, setFiltros] = useState<CashFlowFilters | undefined>({ empresasFacturas: ['MSA', 'PAM'], empresasTemplates: ['MSA', 'PAM', 'MA'] })
   const [mostrarFiltros, setMostrarFiltros] = useState(false)
   const [busquedaRapida, setBusquedaRapida] = useState('')
+  /** 💰 A-FEAT-1238 — el modal de propagación del monto de una cuota de template (compartido con Templates). */
+  const [propagacionCF, setPropagacionCF] = useState<{ cuotaId: string; nuevoMonto: number } | null>(null)
   
   // Estados para filtros específicos
   const [fechaDesde, setFechaDesde] = useState('')
@@ -196,7 +228,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   
   // Hook para validación de cuentas contables
   const { cuentas } = useCuentasContables()
-  
+  // 🚦 A-FEAT-1260 — la marca de cuenta contable de cada fila (regla en `lib/pagos/cuenta-de-fila.ts`)
+  const [marcaCuentaAbierta, setMarcaCuentaAbierta] = useState<string | null>(null)
+  const [guardandoMarcaCuenta, setGuardandoMarcaCuenta] = useState(false)
+
   // Estados para edición legacy (mantener por compatibilidad modal categ)
   const [celdaEnEdicion, setCeldaEnEdicion] = useState<CeldaEnEdicion | null>(null)
   const [guardandoCambio, setGuardandoCambio] = useState(false)
@@ -220,6 +255,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [mostrarPanelEcheqs, setMostrarPanelEcheqs] = useState(false)
   const [cheques, setCheques] = useState<any[]>([])
   const [cargandoCheques, setCargandoCheques] = useState(false)
+  // 🏦 A-FEAT-1282 — los echeqs tildados para el Excel de emisión del banco.
+  const [echeqsParaExcel, setEcheqsParaExcel] = useState<Set<string>>(new Set())
+  const [mostrarExcelEcheqs, setMostrarExcelEcheqs] = useState(false)
 
   const cargarCheques = async () => {
     setCargandoCheques(true)
@@ -357,6 +395,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const echeqPendienteCF = useRef<EcheqDatos | null>(null)   // datos del cheque a registrar al finalizar
   const echeqLoteActivo = useRef<boolean>(false)             // echeq de varias FC vía lote (usa la cola SICORE)
   const echeqLoteFacturas = useRef<CashFlowRow[]>([])        // FC ARCA a procesar como echeq en lote
+  // 📝 A-FEAT-1282 — varios echeqs por pago: cantidad, reparto y fecha de cobro de cada uno.
+  const [planEcheqCF, setPlanEcheqCF] = useState<PlanEcheqsUI>(planVacio())
+  const totalEcheqCF = useRef<number | null>(null)           // total del pago (para «por montos»); null en lote
+  const retencionYaEcheqCF = useRef<number | null>(null)     // retención YA aplicada → el total es el saldo neto
   const [confirmCambioQuincena, setConfirmCambioQuincena] = useState<{
     filaId: string, quincenaAnterior: string, quincenahNueva: string
   } | null>(null)
@@ -390,7 +432,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [descuentoSicoreAnticipo, setDescuentoSicoreAnticipo] = useState(0)
   const [datosSicoreAnticipo, setDatosSicoreAnticipo] = useState<{
     netoBase: number, minimoAplicado: number, baseImponible: number,
-    esRetencionAdicional: boolean, impTotal: number
+    esRetencionAdicional: boolean, impTotal: number,
+    /** A-BUG-1285: neto + IVA cargados, y lo que el monto del anticipo tiene además (percepciones, etc.). */
+    netoMasIva?: number, otros?: number, aviso?: string | null
   } | null>(null)
 
   // Estado modal TC de pago (facturas USD)
@@ -452,7 +496,267 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    */
   const [chipsSentido, setChipsSentido] = useState<Set<Columna>>(new Set<Columna>(['debitos', 'creditos']))
   const [verDebitosVencidos, setVerDebitosVencidos] = useState(false) // débitos auto: ocultar los ya vencidos (se asumen pagados)
+  /**
+   * 🔎 A-FEAT-170 — chips por TIPO DE COMPROBANTE. `null` = todos (así un tipo que aparece después
+   * de recargar no queda escondido sin que nadie lo haya apagado).
+   */
+  const [chipsTipo, setChipsTipo] = useState<Set<string> | null>(null)
+  /** 🎯 A-FEAT-149 — ¿se ve el panel de PAGOS de arriba? Si no, aparece la barra fija de abajo. */
+  const panelPagosRef = useRef<HTMLDivElement>(null)
+  const [panelPagosVisible, setPanelPagosVisible] = useState(true)
+  useEffect(() => {
+    if (!modoPagos) { setPanelPagosVisible(true); return }
+    const el = panelPagosRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const obs = new IntersectionObserver(([e]) => setPanelPagosVisible(e.isIntersecting), { threshold: 0 })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [modoPagos])
+  /**
+   * ⌨️ A-FEAT-1261 — `Alt+P` entra al modo PAGOS (pedido del usuario 2026-10-06: «hacer un atajo
+   * para el botón pagos»). Mismo patrón que `Alt+N` y `Alt+R`.
+   *
+   * - **Entra y SALE** (corregido por el usuario el mismo día: «Alt+P debería abrir pero también
+   *   cerrar pagos»). Para no perder una selección con una tecla, si hay filas tildadas pregunta antes.
+   * - **Sólo si el Cash Flow está a la vista** (`offsetParent`): la pantalla puede seguir montada
+   *   detrás de otra, y activar el modo sin verlo sería peor que no tener atajo.
+   */
+  const botonPagosRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const atajo = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return
+      if ((e.key || "").toLowerCase() !== "p") return
+      if (!botonPagosRef.current || botonPagosRef.current.offsetParent === null) return
+      e.preventDefault()
+      if (modoPagos) {
+        if (filasSeleccionadas.size > 0 && !window.confirm(`Tenés ${filasSeleccionadas.size} fila(s) tildada(s). ¿Salir de PAGOS igual?`)) return
+        desactivarModoPagos()
+        return
+      }
+      setModoPagos(true)
+      setFilasSeleccionadas(new Set())
+      setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
+      toast.success("Modo PAGOS activado. Selecciona filas con checkboxes")
+    }
+    document.addEventListener("keydown", atajo)
+    return () => document.removeEventListener("keydown", atajo)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoPagos, filasSeleccionadas])
+
+  /**
+   * ➡️ A-FEAT-1272 — el estado que propone PAGOS sale de lo tildado: pendiente → pagar, pagar → pagado
+   * (regla en `lib/pagos/estado-sugerido-lote.ts`). Si el usuario lo cambia a mano, no se le pisa.
+   */
+  const estadoLoteAMano = useRef(false)
+  useEffect(() => {
+    if (!modoPagos) { estadoLoteAMano.current = false; return }
+    if (estadoLoteAMano.current) return
+    // Los echeqs de un pago en varios no cuentan para sugerir el estado: no entran al cambio de estado (A-FEAT-1282).
+    const estados = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)).filter(f => f && f.origen_tabla !== 'msa.cheques').map(f => f!.estado).filter(Boolean)
+    const sugerido = estadoSugeridoParaLote(estados as string[])
+    if (sugerido && sugerido !== valorEstadoLote) setValorEstadoLote(sugerido)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoPagos, filasSeleccionadas, data])
+
+  /**
+   * 🏛️ A-FEAT-1271 — **PROCESAR EL GRUPO JUNTO**: la app repite sola, en las facturas que siguen del
+   * mismo proveedor, lo que el usuario eligió en la primera (régimen y % de descuento).
+   *
+   * Pedido del usuario 2026-10-13: *«sería bueno que me permita procesar las 4 juntas como opción.
+   * En este caso las 4 son de bienes y va el 5 % a todas»*.
+   *
+   * 🔑 **No es un camino nuevo de cálculo ni de guardado**: este efecto hace exactamente los mismos
+   * tres pasos que hace el usuario con el mouse —elegir el régimen, aplicar el descuento, confirmar—
+   * llamando a las mismas funciones, factura por factura y en el mismo orden. Si mañana cambia cómo se
+   * calcula o se guarda una retención, «juntas» cambia con eso, porque no tiene cuenta propia.
+   *
+   * 🧮 **Y termina con su control** (A-FEAT-1270): la suma de lo retenido comprobante por comprobante
+   * contra la retención del grupo calculada de una vez — `(neto del grupo − mínimo) × alícuota`.
+   *
+   * Se detiene solo si aparece un comprobante de otro proveedor, si falta el régimen, o si el usuario
+   * aprieta «Detener» o «Cancelar»: ahí el circuito sigue a mano, como siempre.
+   */
+  const autoGrupo = useRef<null | {
+    cuit: string; tipo: string; pct: number; pctTexto: string
+    minimoDisponible: number; alicuota: number
+    ids: string[]; netos: number[]; hecho: Set<string>
+  }>(null)
+  const [procesarJuntas, setProcesarJuntas] = useState(false)
+  const [autoGrupoActivo, setAutoGrupoActivo] = useState(false)
+  const detenerAutoGrupo = () => { autoGrupo.current = null; setAutoGrupoActivo(false); setProcesarJuntas(false) }
+  useEffect(() => {
+    const a = autoGrupo.current
+    if (!a) return
+    const plata = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+    const cerrarConControl = async () => {
+      const ids = [...a.ids]
+      const netos = [...a.netos]
+      detenerAutoGrupo()
+      const { data: filas, error } = await supabase.schema('msa').from('comprobantes_arca')
+        .select('monto_sicore, monto_a_abonar').in('id', ids)
+      if (error || !filas) {
+        toast.warning(`Grupo procesado (${ids.length} comprobantes), pero no se pudo leer el resultado para controlarlo: ${error?.message ?? ''}`)
+        return
+      }
+      const retenido = Math.round(filas.reduce((s, f) => s + (Number(f.monto_sicore) || 0), 0) * 100) / 100
+      const aTransferir = Math.round(filas.reduce((s, f) => s + (Number(f.monto_a_abonar) || 0), 0) * 100) / 100
+      const esperado = retencionDelGrupo(netos, a.minimoDisponible, a.alicuota)
+      if (Math.abs(retenido - esperado) <= 0.05) {
+        toast.success(
+          `Grupo procesado: ${ids.length} comprobantes · retención $${plata(retenido)} ✓ · a transferir $${plata(aTransferir)}`,
+          { duration: 20000 })
+      } else {
+        toast.error(
+          `⚠️ Grupo procesado, pero el control NO cierra: se retuvo $${plata(retenido)} y el grupo calculado de una vez da $${plata(esperado)}. ` +
+          `Revisalo antes de pagar (a transferir: $${plata(aTransferir)}).`,
+          { duration: 60000 })
+      }
+    }
+
+    // Fin de la cola: no hay modal, ni factura en curso, ni nada esperando.
+    if (!mostrarModalSicore && !facturaEnProceso) {
+      if (!guardadoPendienteCF && colaLoteSicore.length === 0 && a.ids.length > 0) void cerrarConControl()
+      return
+    }
+    if (!mostrarModalSicore || !facturaEnProceso) return
+    // Otro proveedor: el grupo terminó; lo que sigue lo decide el usuario.
+    if (facturaEnProceso.cuit_proveedor !== a.cuit) { void cerrarConControl(); return }
+
+    const id = facturaEnProceso.id
+    if (a.hecho.has(`${id}:fin`)) return
+
+    if (pasoSicore === 'tipo') {
+      if (a.hecho.has(`${id}:tipo`)) return
+      const tipo = tiposSicore.find(t => t.tipo === a.tipo)
+      if (!tipo) { detenerAutoGrupo(); toast.warning('No se encontró el régimen elegido: seguí a mano.'); return }
+      a.hecho.add(`${id}:tipo`)
+      void calcularRetencionSicoreCF(facturaEnProceso, tipo)
+      return
+    }
+
+    if (pasoSicore === 'calculo' && datosSicoreCalculo && tipoSeleccionado?.tipo === a.tipo) {
+      if (a.pct > 0 && !a.hecho.has(`${id}:desc`)) {
+        // Primero se carga el porcentaje en el campo (como si lo tipeara) y recién después se aplica.
+        if (descuentoTipoInput !== 'pct' || descuentoInputValor !== a.pctTexto) {
+          setDescuentoTipoInput('pct')
+          setDescuentoInputValor(a.pctTexto)
+          return
+        }
+        a.hecho.add(`${id}:desc`)
+        aplicarDescuentoSicoreCF()
+        return
+      }
+      if (a.pct > 0 && !descuentoDesglose) return // todavía no se reflejó el descuento
+      a.hecho.add(`${id}:fin`)
+      a.ids.push(id)
+      a.netos.push(datosSicoreCalculo.netoFactura)
+      void finalizarProcesoSicoreCF()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoGrupoActivo, mostrarModalSicore, pasoSicore, facturaEnProceso, datosSicoreCalculo, descuentoDesglose,
+      descuentoInputValor, descuentoTipoInput, tipoSeleccionado, guardadoPendienteCF, colaLoteSicore])
+
+  /** Confirmar la primera del grupo: si está tildado «las que siguen igual», arma el piloto y sigue. */
+  const confirmarSicoreCF = () => {
+    // Sólo si de verdad quedan más de este proveedor: un tilde que quedó de antes no arranca nada.
+    const siguenDelProveedor = facturaEnProceso ? colaLoteSicore.filter(f => f.cuit_proveedor === facturaEnProceso.cuit_proveedor).length : 0
+    if (procesarJuntas && siguenDelProveedor === 0) setProcesarJuntas(false)
+    if (procesarJuntas && siguenDelProveedor > 0 && facturaEnProceso && tipoSeleccionado && datosSicoreCalculo && !autoGrupo.current) {
+      const pctTexto = descuentoDesglose && descuentoTipoInput === 'pct' ? descuentoInputValor : ''
+      const pct = parseFloat(pctTexto.replace(/\./g, '').replace(',', '.')) || 0
+      const d = datosSicoreCalculo
+      autoGrupo.current = {
+        cuit: facturaEnProceso.cuit_proveedor, tipo: tipoSeleccionado.tipo, pct, pctTexto: pct > 0 ? pctTexto : '',
+        minimoDisponible: d.esRetencionAdicional ? 0 : Math.max(0, (d.minimoTipo ?? 0) - (d.ignorarPrevios ? 0 : (d.netoPrevio ?? 0))),
+        alicuota: tipoSeleccionado.porcentaje_retencion,
+        ids: [facturaEnProceso.id], netos: [d.netoFactura],
+        hecho: new Set([`${facturaEnProceso.id}:tipo`, `${facturaEnProceso.id}:desc`, `${facturaEnProceso.id}:fin`]),
+      }
+      setAutoGrupoActivo(true)
+    }
+    void finalizarProcesoSicoreCF()
+  }
+  /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
+  const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
+  /**
+   * 📐 A-FEAT-1277 — columnas con el ancho y el orden que dejó el usuario, guardados en su cuenta.
+   * Arrastrar el encabezado cambia el orden; arrastrar su borde derecho, el ancho. Se guarda al
+   * soltar (una escritura por gesto, no una por pixel).
+   */
+  const [colsUsuario, setColsUsuario] = useState<ColumnasUsuario | null>(null)
+  const [anchoVivo, setAnchoVivo] = useState<{ key: string; px: number } | null>(null)
+  const [colArrastrada, setColArrastrada] = useState<string | null>(null)
+  const [colEncima, setColEncima] = useState<{ key: string; lado: 'antes' | 'despues' } | null>(null)
+  // Mientras se arrastra el BORDE, el encabezado no tiene que empezar a moverse de lugar.
+  const redimensionando = useRef(false)
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setColsUsuario(leerPreferencias(data.user).columnasCashFlow))
+  }, [])
+  const columnasVista = ordenarColumnas(columnasDefinicion, colsUsuario?.orden ?? [])
+  const anchoDe = (key: string): number | null =>
+    anchoVivo?.key === key ? anchoVivo.px : (colsUsuario?.anchos[key] ?? null)
+  const guardarColumnas = async (nuevas: ColumnasUsuario | null) => {
+    const antes = colsUsuario
+    setColsUsuario(nuevas)
+    const { error } = await guardarPreferencias({ columnasCashFlow: nuevas })
+    if (error) { setColsUsuario(antes); toast.error('No se pudo guardar el acomodo de columnas: ' + error) }
+  }
+  const empezarAncho = (e: React.MouseEvent, key: string) => {
+    e.preventDefault(); e.stopPropagation()
+    redimensionando.current = true
+    const th = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+    const inicioX = e.clientX
+    const inicioPx = th.getBoundingClientRect().width
+    let ultimo = inicioPx
+    const mover = (ev: MouseEvent) => { ultimo = anchoValido(inicioPx + ev.clientX - inicioX); setAnchoVivo({ key, px: ultimo }) }
+    const soltar = () => {
+      document.removeEventListener('mousemove', mover)
+      document.removeEventListener('mouseup', soltar)
+      redimensionando.current = false
+      setAnchoVivo(null)
+      if (Math.abs(ultimo - inicioPx) < 2) return
+      guardarColumnas({ orden: colsUsuario?.orden ?? [], anchos: { ...(colsUsuario?.anchos ?? {}), [key]: ultimo } })
+    }
+    document.addEventListener('mousemove', mover)
+    document.addEventListener('mouseup', soltar)
+  }
+  const soltarColumna = (destino: string) => {
+    if (!colArrastrada || !colEncima) { setColArrastrada(null); setColEncima(null); return }
+    const orden = moverColumna(columnasVista.map(c => c.key), colArrastrada, destino, colEncima.lado)
+    setColArrastrada(null); setColEncima(null)
+    guardarColumnas({ orden, anchos: colsUsuario?.anchos ?? {} })
+  }
+
+  /** ✏️ A-FEAT-1269 — el Detalle de un grupo, una nota por factura. */
+  const [detalleGrupo, setDetalleGrupo] = useState<{ fila: CashFlowRow; items: { id: string; etiqueta: string; detalle: string; original: string }[] } | null>(null)
+  const [guardandoDetalleGrupo, setGuardandoDetalleGrupo] = useState(false)
+  const guardarDetalleGrupo = async () => {
+    if (!detalleGrupo) return
+    const cambios = detalleGrupo.items.filter(i => i.detalle.trim() !== i.original.trim())
+    if (cambios.length === 0) { setDetalleGrupo(null); return }
+    setGuardandoDetalleGrupo(true)
+    try {
+      const schema = schemaDeFila(detalleGrupo.fila.ids_grupo?.length ? { origen_tabla: detalleGrupo.fila.origen_tabla?.replace('grupos_pago', 'comprobantes_arca') } : detalleGrupo.fila)
+      for (const c of cambios) {
+        const { error, count } = await supabase.schema(schema as any).from('comprobantes_arca')
+          .update({ detalle: c.detalle.trim() || null }, { count: 'exact' }).eq('id', c.id)
+        if (error) throw error
+        if (count === 0) throw new Error(`no se encontró ${c.etiqueta}: no se guardó`)
+      }
+      toast.success(`Detalle guardado en ${cambios.length} factura(s)`)
+      setDetalleGrupo(null)
+      await cargarDatos()
+    } catch (e) {
+      toast.error('No se pudo guardar el detalle: ' + (e as Error).message)
+    } finally {
+      setGuardandoDetalleGrupo(false)
+    }
+  }
+
+  // 📎 A-FEAT-1276 — vincular el PDF archivado desde la ❌ de la columna del archivo.
+  const [vincularArchivo, setVincularArchivo] = useState<{ id: string; schema: string; titulo: string } | null>(null)
   useEffect(() => {
     if (chipsInit || !data || data.length === 0) return
     setChipsEstados(new Set(data.map(f => f.estado).filter(e => e !== 'pagado')))
@@ -470,6 +774,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       Object.entries(updateData).forEach(([key, val]) => {
         let campoLocal = key
         if (key === 'monto_a_abonar') campoLocal = 'debitos'
+        // La cuenta de la factura es la columna CATEG de esta grilla (sin esto no se refrescaba)
+        else if (key === 'cuenta_contable') campoLocal = 'categ'
+        // ✏️ A-DEC-1005 — en una factura lo editado es la nota propia; el texto armado queda como estaba
+        else if (key === 'detalle' && data.find(f => f.id === filaId)?.origen === 'ARCA') campoLocal = 'detalle_propio'
         // ANTICIPO: monto/monto_restante mapean a la columna editada (debitos o creditos)
         else if (key === 'monto' || key === 'monto_restante') campoLocal = campo
         actualizarLocal(filaId, campoLocal, val)
@@ -500,6 +808,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         return false // Prevenir guardado propio del hook
       }
 
+      /**
+       * 💰 A-FEAT-1238 — el monto de una CUOTA DE TEMPLATE se cambia con el mismo modal que en Templates
+       * (pregunta si propagar a las cuotas futuras). 🐛 2026-10-05: la tanda lo había puesto en
+       * `guardarCambio` de ESTE archivo, que la grilla ya no usa — las celdas se editan con este hook —,
+       * y el usuario cambió Autónomos MA sin que preguntara. Es el caso «se arregló un camino de los dos».
+       */
+      if (celda.columna === 'debitos' && filaActual?.origen === 'TEMPLATE') {
+        const nuevo = parseFloat(String(celda.valor).replace(/\./g, '').replace(',', '.')) || 0
+        if (nuevo > 0) {
+          setPropagacionCF({ cuotaId: filaActual.id, nuevoMonto: nuevo })
+          return false // lo guarda el modal
+        }
+      }
+
       // Validación especial para categorías en Cash Flow
       if (celda.columna === 'categ') {
         const categIngresado = String(celda.valor).toUpperCase()
@@ -524,6 +846,86 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Guardar referencia al hook para usarla desde customValidations
   hookEditorRef.current = hookEditor
+
+  /**
+   * 🚦 A-FEAT-1260 — poner la cuenta contable desde la marca de la fila.
+   *
+   * 🔑 **No es un camino nuevo de escritura.** Una factura se imputa por la MISMA ruta que usa
+   * Egresos → Asignación (`/api/arca-asignar`): guarda el número y el nombre de la cuenta **y la
+   * lleva a los movimientos del extracto ya conciliados** (§ 🔁 La propagación del dato). Sólo
+   * facturas: los templates no llevan marca.
+   */
+  const asignarCuentaDesdeMarca = async (
+    fila: CashFlowRow,
+    cuenta: { categ: string; nro_cuenta: string } | null,
+  ) => {
+    if (!cuenta) return
+    setGuardandoMarcaCuenta(true)
+    try {
+      if (fila.origen === 'ARCA') {
+        const res = await fetch('/api/arca-asignar', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [fila.id], nro_cuenta: cuenta.nro_cuenta, cuenta_contable: cuenta.categ }),
+        })
+        const r = await res.json()
+        if (!r.success) throw new Error(r.message || 'No se pudo asignar la cuenta')
+        actualizarLocal(fila.id, 'categ', cuenta.categ)
+        actualizarLocal(fila.id, 'nro_cuenta', cuenta.nro_cuenta)
+        // 🧮 Lo que pasó con el extracto se ve (mismo aviso que en Asignación).
+        if (r.propagacion?.aviso) toast.warning(r.propagacion.aviso)
+        else if ((r.propagacion?.propagados ?? 0) > 0) {
+          toast.success(`Cuenta asignada. Llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
+        } else toast.success(`Cuenta asignada: ${cuenta.categ}`)
+      }
+      setMarcaCuentaAbierta(null)
+    } catch (err: any) {
+      toast.error(`La cuenta NO se guardó: ${err?.message || err}`)
+    } finally {
+      setGuardandoMarcaCuenta(false)
+    }
+  }
+
+  /** El punto de la columna fija, sólo en facturas: verde tiene · rojo no tiene · ámbar quedó incompleta. */
+  const renderizarMarcaCuenta = (fila: CashFlowRow) => {
+    const c = cuentaDeFila(fila)
+    const color = COLOR_CUENTA[c.estado]
+    if (!color) return <span className="inline-block h-2.5 w-2.5 shrink-0" />
+    // La ruta de asignación escribe sólo en MSA: en PAM y MA la marca informa y no asigna.
+    const puedeAca = c.asignable && esFilaMsa(fila)
+    const titulo = c.asignable && !puedeAca
+      ? `${c.titulo.replace(/ — tocá.*$/, '')} — las facturas de PAM y MA todavía no se asignan desde acá`
+      : c.titulo
+    const punto = <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
+    if (!puedeAca) {
+      return <span className="shrink-0 leading-none cursor-help" title={titulo}>{punto}</span>
+    }
+    return (
+      <Popover open={marcaCuentaAbierta === fila.id} onOpenChange={(o) => setMarcaCuentaAbierta(o ? fila.id : null)}>
+        <PopoverTrigger asChild>
+          <button type="button" className="shrink-0 leading-none hover:scale-125 transition-transform" title={titulo}
+            onClick={(e) => e.stopPropagation()}>
+            {punto}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[420px] p-3" onClick={(e) => e.stopPropagation()}>
+          <div className="text-xs text-gray-600 mb-2">
+            <div className="font-semibold text-gray-800 truncate">{fila.nombre_proveedor || fila.detalle}</div>
+            {c.titulo.replace(/ — tocá.*$/, '')}
+          </div>
+          <SelectorCuentaContable
+            value={c.estado === 'con' ? fila.categ : null}
+            onSelect={(cuenta) => asignarCuentaDesdeMarca(fila, cuenta)}
+            cuitProveedor={fila.cuit_proveedor || null}
+            modo="inline"
+            autoFocus
+            mostrarSinAsignar={false}
+          />
+          {guardandoMarcaCuenta && <div className="mt-2 text-xs text-gray-500">Guardando…</div>}
+        </PopoverContent>
+      </Popover>
+    )
+  }
 
   // Abrir modal para editar TC de pago en facturas USD
   const abrirModalTcPago = (fila: CashFlowRow) => {
@@ -632,8 +1034,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     event.preventDefault()
     event.stopPropagation()
     
+    // ✏️ A-FEAT-1269 — el Detalle de un GRUPO se edita factura por factura, para no pisar las notas
+    // de las otras (antes el mismo texto se copiaba a todas).
+    if (columna.key === 'detalle' && fila.origen === 'ARCA' && (fila.facturas_agrupadas ?? 0) > 1 && fila.detalles_grupo?.length) {
+      event.preventDefault()
+      event.stopPropagation()
+      setDetalleGrupo({ fila, items: fila.detalles_grupo.map(i => ({ ...i, original: i.detalle })) })
+      return
+    }
+
     // Usar hook unificado para ALL campos editables
-    const valor = fila[columna.key as keyof CashFlowRow]
+    // ✏️ A-BUG-1250 — en una factura se edita sólo lo del usuario: antes la celda abría con el texto
+    // armado («FC nro - proveedor · nota») y lo guardaba entero.
+    const valor = (columna.key === 'detalle' && fila.origen === 'ARCA')
+      ? (fila.detalle_propio ?? '')
+      : fila[columna.key as keyof CashFlowRow]
     console.log('🔄 Cash Flow: Usando hook unificado para:', columna.key)
     
     // Determinar tabla según origen de datos
@@ -713,6 +1128,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   const cambiarEstado = async (nuevoEstado: string) => {
     if (!filaParaCambioEstado) return
+    // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios: el estado es el del pago, no del echeq.
+    if (filaParaCambioEstado.origen_tabla === 'msa.cheques') {
+      setFilaParaCambioEstado(null)
+      toast.info('Es un echeq de un pago en varios: el estado se maneja desde la factura/anticipo (panel ECHEQs). Acá sólo cambia su fecha de cobro.')
+      return
+    }
     
     try {
       setGuardandoCambio(true)
@@ -735,6 +1156,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         echeqAnticipoCF.current = null
         setEcheqOrigenCF('factura')
         setEcheqFormCF({ banco: '', numero: '', fechaEmision: filaParaCambioEstado.fecha_pago || hoyArgentina(), fechaCobro: '' })
+        setPlanEcheqCF(planVacio())
+        // Si la factura YA tiene la retención, se reparte el SALDO (lo que falta pagar); si no, el total
+        // (la retención se calcula después y se descuenta en proporción).
+        totalEcheqCF.current = Number(filaParaCambioEstado.debitos) || 0
+        retencionYaEcheqCF.current = filaParaCambioEstado.sicore ? (Number(filaParaCambioEstado.monto_sicore) || 0) : null
         setMostrarModalEcheqCF(true)
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
@@ -877,7 +1303,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // Revertir FC (ARCA) a 'pendiente' = RESET completo (anula SICORE v2 + limpia sicore/tc/descuento +
       // restaura monto_a_abonar), igual que "Resetear" del Modal. Sin esto quedaba pendiente con datos SICORE.
-      if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
+      resetAPendiente: if (nuevoEstado === 'pendiente' && filaParaCambioEstado.origen === 'ARCA' && filaParaCambioEstado.estado !== 'pendiente') {
         const fila = filaParaCambioEstado
         // Miembros a resetear: si es fila-grupo, todos; si es individual, ella sola.
         const ids = (fila.facturas_agrupadas && fila.facturas_agrupadas > 1 && fila.ids_grupo?.length) ? fila.ids_grupo : [fila.id]
@@ -911,7 +1337,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )
           modoAnticipo = mantener ? 'mantener' : 'eliminar'
         } else {
-          if (!window.confirm(msg + `\n\n¿Continuar?`)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+          // Resetear es OPCIONAL (pedido del usuario 2026-10-13): «tal vez la querés pasar a pendiente y punto».
+          if (!window.confirm(TEXTO_RESETEAR(ids.length))) {
+            if (!window.confirm(TEXTO_SIN_RESETEAR)) { setFilaParaCambioEstado(null); setGuardandoCambio(false); return }
+            break resetAPendiente // sigue abajo: cambia el estado y nada más
+          }
         }
 
         try {
@@ -1055,6 +1485,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         toast.error('Para cambiar el total de un grupo, modifique los montos de sus componentes individuales desde Templates.')
         setCeldaEnEdicion(null)
         return
+      }
+    }
+
+    /**
+     * 💰 A-FEAT-1238 — el monto de una CUOTA DE TEMPLATE se cambia con el mismo modal que en
+     * Templates: pregunta si propagar a las futuras, y con qué monto. Antes se guardaba directo.
+     */
+    if (celdaEnEdicion.columna === 'debitos') {
+      const filaTpl = data.find(f => f.id === celdaEnEdicion.filaId)
+      if (filaTpl?.origen === 'TEMPLATE') {
+        const nuevo = parseFloat(String(celdaEnEdicion.valor).replace(/\./g, '').replace(',', '.')) || 0
+        if (nuevo > 0) {
+          setPropagacionCF({ cuotaId: filaTpl.id, nuevoMonto: nuevo })
+          return
+        }
       }
     }
 
@@ -1217,6 +1662,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           normalizarBusqueda(fila.cuit_proveedor).includes(q) ||
           normalizarBusqueda(fila.categ).includes(q) ||
           normalizarBusqueda(fila.detalle).includes(q) ||
+          normalizarBusqueda(fila.comprobante_display || '').includes(q) ||
+          coincideNumeroComprobante(fila, busquedaRapida) ||   // A-FEAT-170: buscar por número
           normalizarMonto(fila.debitos).includes(q) ||
           normalizarMonto(fila.creditos).includes(q)
         )
@@ -1228,10 +1675,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const origenesDisponibles = Array.from(new Set(data.map(f => f.origen))).sort()
   // Débitos automáticos: los anteriores a hoy se asumen pagados. Ocultar los previos a (hoy − 7 días) salvo que se pidan.
   const corteDebitoStr = (() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] })()
+  const tiposDisponibles = Array.from(new Set(data.map(f => etiquetaTipoComprobante(f)))).sort()
+  const tiposActivos = chipsTipo ?? new Set(tiposDisponibles)
+  const desdeV = ventana ? desdeVentana(hoyArgentina(), ventana.unidad, ventana.n) : null
   const datosOperativos = !chipsInit
     ? datosConBusqueda
     : datosConBusqueda.filter(fila => {
         if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
+        if (!tiposActivos.has(etiquetaTipoComprobante(fila))) return false   // A-FEAT-170
+        if (!pasaVentana(fila.fecha_estimada, desdeV)) return false          // A-FEAT-1237
         if (!pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
@@ -1248,6 +1700,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setChipsEstados(new Set(estadosDisponibles))
     setChipsOrigenes(new Set(origenesDisponibles))
     setChipsSentido(new Set<Columna>(['debitos', 'creditos']))   // A-FEAT-1224
+    setChipsTipo(null)                                           // A-FEAT-170
+    setVentana(null)                                             // A-FEAT-1237
   }
   // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
   const subtotales = calcularSubtotales(datosOperativos)
@@ -1313,7 +1767,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.3: Comprobante de pago PDF sobre las filas seleccionadas (agrupa por proveedor). Reusa lib/pagos/pdf-detalle-pago.
   const generarPDFPagosSeleccionados = async () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const fmtFecha = (s?: string | null) => {
       if (!s) return ''
@@ -1346,10 +1800,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
           fecha_pago: f.fecha_pago,   // A-BUG-152
-          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          // 💵 A-BUG-1245 — en dólares los importes van EN PESOS al TC del pago, y la conversión se muestra.
+          imp_total: esMonedaExtranjera(fa.moneda) ? totalEnPesos(fa) : (fa.imp_total ?? f.debitos ?? 0),
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
-          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          monto_a_abonar: esMonedaExtranjera(fa.moneda) ? aPagarEnPesos(fa) : (fa.monto_a_abonar ?? f.debitos ?? 0),
+          conversion: conversionDe(fa),
           // 🐞 A-BUG-149 — faltaba, y por eso VER el PDF no daba lo mismo que encolarlo: sin
           // `origen`, un ANTICIPO se suma al bruto como si fuera una factura (A-BUG-105).
           // `encolarMailsSeleccionados` sí lo pasaba, **con el comentario del bug al lado**.
@@ -1372,7 +1828,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Reusa lib/pagos/encolar-mail-detalle (misma lógica que el modal de pagos). Cash Flow = schema 'msa'.
   // Sirve para mandar el detalle a proveedores YA pagados (el modal de pagos no muestra pagadas).
   const encolarMailsSeleccionados = async () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const fmtFecha = (s?: string | null) => {
       if (!s) return ''
@@ -1400,17 +1856,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         }
       }
       const items = fs.map(f => {
-        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number }
+        const fa = f as unknown as { comprobante_display?: string; imp_total?: number; monto_sicore?: number | null; descuento_aplicado?: number | null; monto_a_abonar?: number; moneda?: string | null; tc_pago?: number | null; tipo_cambio?: number | null }
         return {
           facturas: subsB.get(f.id) ?? null,
           comprobante: f.detalle || fa.comprobante_display || '-',
           fecha: fmtFecha(f.fecha_estimada),
           fecha_estimada: f.fecha_estimada,
           fecha_pago: f.fecha_pago,   // A-BUG-152
-          imp_total: fa.imp_total ?? f.debitos ?? 0,
+          // 💵 A-BUG-1245 — ídem el PDF: en pesos, con la conversión a la vista.
+          imp_total: esMonedaExtranjera(fa.moneda) ? totalEnPesos(fa) : (fa.imp_total ?? f.debitos ?? 0),
           monto_sicore: fa.monto_sicore ?? null,
           descuento_aplicado: fa.descuento_aplicado ?? null,
-          monto_a_abonar: fa.monto_a_abonar ?? f.debitos ?? 0,
+          monto_a_abonar: esMonedaExtranjera(fa.moneda) ? aPagarEnPesos(fa) : (fa.monto_a_abonar ?? f.debitos ?? 0),
+          conversion: conversionDe(fa),
           origen: f.origen,   // para que el mail no sume un ANTICIPO como si fuera factura (A-BUG-105)
         }
       })
@@ -1443,9 +1901,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     toast.success(`✉ ${ok} mail(s) encolado(s)${sinMail ? ` · ${sinMail} sin email` : ''}${err ? ` · ${err} error(es)` : ''}. Revisá "✉ Mails de detalle".`)
   }
 
+  /**
+   * 🏦 A-FEAT-1282 — el Excel de EMISIÓN de echeqs desde la barra de PAGOS, como el lote de transferencias.
+   * Toma los echeqs de lo tildado: las filas de un echeq (pago en varios) y las facturas/anticipos en
+   * estado echeq (sus cheques). Pedido del usuario al ver las 3 filas de BRIKI.
+   */
+  const [echeqsExcelPagos, setEcheqsExcelPagos] = useState<any[] | null>(null)
+  const exportarExcelEcheqs = async () => {
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const idsCheques = filas.filter(f => f.origen_tabla === 'msa.cheques').map(f => f.id)
+    const idsPadres = filas.filter(f => f.origen_tabla !== 'msa.cheques' && f.estado === 'echeq' && (f.origen === 'ARCA' || f.origen === 'ANTICIPO')).map(f => f.id)
+    if (!idsCheques.length && !idsPadres.length) { toast.error('Tildá echeqs (o facturas/anticipos pagados con echeq)'); return }
+    const filtros = [idsCheques.length ? `id.in.(${idsCheques.join(',')})` : '', idsPadres.length ? `factura_id.in.(${idsPadres.join(',')}),anticipo_id.in.(${idsPadres.join(',')})` : ''].filter(Boolean).join(',')
+    const { data, error } = await supabase.schema('msa').from('cheques').select('*').or(filtros).order('fecha_cobro')
+    if (error) { toast.error('No se pudieron leer los echeqs: ' + error.message); return }
+    if (!data?.length) { toast.error('Lo tildado no tiene echeqs registrados'); return }
+    setEcheqsExcelPagos(data)
+  }
+  const cantEcheqsTildados = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && (f.origen_tabla === 'msa.cheques' || (f.estado === 'echeq' && (f.origen === 'ARCA' || f.origen === 'ANTICIPO')))).length
+
   // E2.4: Exportar lote Galicia sobre las filas seleccionadas. Reusa el módulo lotes-galicia (CBU/mail/agendar proveedores).
   const exportarLoteSeleccionados = () => {
-    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const filas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     if (filas.length === 0) { toast.error('Seleccioná al menos una fila'); return }
     const items: ItemSeleccionado[] = []
     for (const f of filas) {
@@ -1469,7 +1946,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
   const agruparSeleccionados = async () => {
-    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id))
+    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
     // Las filas que YA son un grupo no se pueden meter dentro de otro grupo: se descartan acá.
     const yaAgrupadas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) > 1)
     const filas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) <= 1)
@@ -1561,6 +2038,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
 
   const toggleFilaSeleccionada = (filaId: string) => {
+    // 📝 A-FEAT-1282 — un echeq de un pago en varios SÍ se tilda, pero sólo para el «Excel echeqs»: las
+    // demás acciones en lote lo dejan afuera (ya está pagado). Pedido del usuario: *«si no los selecciono,
+    // ¿cómo exporto el Excel?»*.
     setFilasSeleccionadas(prev => {
       const nueva = new Set(prev)
       if (nueva.has(filaId)) {
@@ -1607,7 +2087,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const hoy = hoyArgentina()
       const seleccionadas = Array.from(filasSeleccionadas)
         .map(id => data.find(f => f.id === id))
-        .filter(Boolean) as CashFlowRow[]
+        .filter(f => f && f.origen_tabla !== 'msa.cheques') as CashFlowRow[]  // los echeqs de un pago en varios no entran (A-FEAT-1282)
       // La decisión vive en `lib/pagos/preguntar-fecha-pago.ts`: ahí se prueba, y ahí está escrito
       // que ante la duda SE PREGUNTA (no preguntar de menos escribe una fecha mala en SICORE).
       if (hayQuePreguntarFechaPago(seleccionadas, hoy)) {
@@ -1647,7 +2127,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
 
       // Separar filas: las ARCA→'pagar' necesitan evaluación SICORE; el resto va directo
-      const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(Boolean)
+      const todasFilas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id)!).filter(f => f && f.origen_tabla !== 'msa.cheques')
 
       /** La fecha de pago que le corresponde a cada fila según lo elegido en el paso 1. */
       const fechaPagoDe = (f: CashFlowRow): string =>
@@ -1683,13 +2163,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // ECHEQ en lote: las FC ARCA pasan por el flujo echeq+SICORE (modal + cheque); el resto va directo.
       if (cambiarEstadoLote && valorEstadoLote === 'echeq') {
+        /**
+         * 🐞 A-BUG-1283 (2026-10-14) — desde la barra de PAGOS, un ANTICIPO pasaba a «echeq» sin modal ni
+         * cheque (*«simplemente lo pasa, no me da ningún modal»*): el mismo bug que A-BUG-103 arregló en
+         * el menú de la fila. Qué pasa con cada fila lo decide `clasificarLoteEcheq` (con su caso).
+         */
+        const lote = clasificarLoteEcheq(todasFilas, esFilaMsa)
         // ECHEQ es sólo MSA (`msa.cheques`): una FC de PAM/MA en la selección se avisa y no entra
-        const arcaNoMsa = todasFilas.filter(f => f.origen === 'ARCA' && !esFilaMsa(f))
-        if (arcaNoMsa.length > 0) {
-          toast.error(`${arcaNoMsa.length} factura(s) de PAM/MA no pueden pagarse por ECHEQ (es sólo de MSA). Quedan sin tocar.`)
+        if (lote.facturasPamMa.length > 0) {
+          toast.error(`${lote.facturasPamMa.length} factura(s) de PAM/MA no pueden pagarse por ECHEQ (es sólo de MSA). Quedan sin tocar.`)
         }
-        const arcaFacturas = todasFilas.filter(f => f.origen === 'ARCA' && f.estado !== 'echeq' && esFilaMsa(f))
-        const noArca = todasFilas.filter(f => !(f.origen === 'ARCA' && f.estado !== 'echeq') && !arcaNoMsa.includes(f))
+        if (lote.abrirAnticipo) {
+          setProcesandoLote(false)
+          desactivarModoPagos()
+          await cambiarEstadoPagoAnticipo(lote.abrirAnticipo.id, 'echeq')
+          return
+        }
+        if (lote.anticiposSinTocar.length) toast.error(`Los anticipos se pagan con echeq de a uno (cada uno con su retención y sus echeqs): ${lote.anticiposSinTocar.length} anticipo(s) quedaron sin tocar.`)
+        // Una factura que YA está en echeq no se vuelve a marcar en silencio: para rehacer su echeq se pasa
+        // antes a pendiente (así se reabre el modal).
+        if (lote.facturasYaEnEcheq.length) toast.info(`${lote.facturasYaEnEcheq.length} factura(s) ya estaban en echeq: no se tocaron. Para rehacer el echeq, pasala antes a pendiente.`)
+        if (lote.templates.length) toast.warning(`${lote.templates.length} template(s) quedan en echeq SIN registrar el cheque: los templates todavía no tienen pago con echeqs (A-FEAT-1282).`)
+        const arcaFacturas = lote.facturasModal
+        const noArca = lote.templates
         noArca.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen as 'ARCA' | 'TEMPLATE', campo: 'estado', valor: 'echeq' }))
         if (actualizaciones.length > 0) await actualizarBatch(actualizaciones)
         if (arcaFacturas.length > 0) {
@@ -1701,13 +2197,59 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           setEcheqOrigenCF('factura')
           const hoy = hoyArgentina()
           setEcheqFormCF({ banco: '', numero: '', fechaEmision: (cambiarFechaVenc && valorFechaLote) || arcaFacturas[0].fecha_pago || hoy, fechaCobro: '' })
+          setPlanEcheqCF(planVacio())
+          // Una sola factura: se conoce su total, así que se puede repartir también «por montos».
+          const unica = arcaFacturas.length === 1 ? arcaFacturas[0] : null
+          totalEcheqCF.current = unica ? (Number(unica.debitos) || 0) : null
+          retencionYaEcheqCF.current = unica?.sicore ? (Number(unica.monto_sicore) || 0) : null
           setMostrarModalEcheqCF(true)
         } else {
-          toast.success(`${noArca.length} registros → echeq`)
+          if (noArca.length) toast.success(`${noArca.length} registros → echeq`)
           desactivarModoPagos()
         }
         setProcesandoLote(false)
         return
+      }
+
+      /**
+       * ↩️ **Volver a «pendiente» desde el lote: se PREGUNTA si resetear** (A-BUG-1253).
+       *
+       * El lote cambiaba el estado y nada más: la factura quedaba «pendiente» con la retención
+       * viva, el descuento y el importe del pago anterior (caso Alcorta 13/10/2026 — lo encontró el
+       * usuario). El menú de la fila sí reseteaba. Ahora los dos caminos preguntan lo mismo.
+       *
+       * 🔑 **Es opcional, a pedido del usuario**: *«tal vez la querés pasar a pendiente y punto»*.
+       * Pero no resetear tiene una consecuencia y por eso se dice antes de aceptar.
+       */
+      if (cambiarEstadoLote && valorEstadoLote === 'pendiente') {
+        const aVolver = todasFilas.filter(f => f.origen === 'ARCA' && esFilaMsa(f) && f.estado !== 'pendiente')
+        const idsAVolver = [...new Set(aVolver.flatMap(f =>
+          (f.facturas_agrupadas && f.facturas_agrupadas > 1 && f.ids_grupo?.length) ? f.ids_grupo : [f.id]))]
+        if (idsAVolver.length > 0) {
+          const resetear = window.confirm(TEXTO_RESETEAR(idsAVolver.length))
+          if (resetear) {
+            for (const id of idsAVolver) {
+              const estadoQ = await estadoQuincenaDeFactura('msa', id)
+              if (estadoQ === 'declarada') {
+                toast.error('🔒 Una de las retenciones ya fue declarada a AFIP: no se resetea nada. Rectificá la DDJJ para modificar.')
+                setProcesandoLote(false)
+                return
+              }
+            }
+            try {
+              // 'mantener': el lote nunca borra un anticipo vinculado (eso se decide desde la fila).
+              for (const id of idsAVolver) await resetearRetencionFactura('msa', id, { modoAnticipo: 'mantener' })
+              toast.success(`${idsAVolver.length} factura(s) reseteada(s): sin retención, sin descuento y con su importe original`)
+            } catch (e: any) {
+              toast.error('Error al resetear: ' + (e?.message ?? e))
+              setProcesandoLote(false)
+              return
+            }
+          } else if (!window.confirm(TEXTO_SIN_RESETEAR)) {
+            setProcesandoLote(false)
+            return
+          }
+        }
       }
 
       if (cambiarEstadoLote) {
@@ -2410,7 +2952,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const impIva = (facturaEnProceso.iva || 0) * tc
 
     const inputNum = parseFloat(descuentoInputValor.replace(/\./g, '').replace(',', '.')) || 0
-    const pct = descuentoTipoInput === 'pct' ? inputNum / 100 : (impTotal > 0 ? inputNum / impTotal : 0)
+    const pct = descuentoTipoInput === 'pct' ? inputNum / 100 : (impTotal !== 0 ? inputNum / Math.abs(impTotal) : 0)
     const r2 = (n: number) => Math.round(n * 100) / 100
     const descGravado = r2(impGravado * pct)
     const descIva = r2(impIva * pct)
@@ -2424,7 +2966,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     // Recalcular base SICORE sobre el neto ajustado (solo si aplica retención)
     const netoAjustado = r2((impGravado - descGravado) + (impNoGravado - descNoGravado) + (impExento - descExento))
     if (!datosSicoreCalculo.sinRetencion && tipoSeleccionado) {
-      const baseAjustada = Math.max(0, r2(netoAjustado - datosSicoreCalculo.minimoAplicado))
+      // La MISMA regla que el cálculo inicial (A-BUG-1251): acá había un `Math.max(0, …)` propio que
+      // llevaba a cero la base de una nota de crédito, y la NC dejaba de restar.
+      const baseAjustada = baseTrasDescuento(netoAjustado, datosSicoreCalculo.minimoAplicado, datosSicoreCalculo.esRetencionAdicional)
       setMontoRetencion(r2(baseAjustada * tipoSeleccionado.porcentaje_retencion))
       setDatosSicoreCalculo({ ...datosSicoreCalculo, netoFactura: netoAjustado, baseImponible: baseAjustada })
     } else {
@@ -2439,7 +2983,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setDatosSicoreCalculo({
         ...datosSicoreCalculo,
         netoFactura: netoAjustado,
-        ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoAjustado } : {}),
+        ...(datosSicoreCalculo.minimoAplicado !== 0 ? { minimoAplicado: netoAjustado } : {}),
       })
     }
   }
@@ -2464,7 +3008,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setDatosSicoreCalculo({
           ...datosSicoreCalculo,
           netoFactura: netoOriginal,
-          ...(datosSicoreCalculo.minimoAplicado > 0 ? { minimoAplicado: netoOriginal } : {}),
+          ...(datosSicoreCalculo.minimoAplicado !== 0 ? { minimoAplicado: netoOriginal } : {}),
         })
       }
     }
@@ -2488,9 +3032,71 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
     try {
       // SICORE se calcula sobre lo pagado: usar TC de pago
+      /**
+       * 🏛️ **Una NOTA DE CRÉDITO no lleva retención propia: lo que resta se descuenta de una factura**
+       * ya retenida del mismo proveedor, régimen y quincena (A-BUG-1251, Alcorta 13/10/2026).
+       *
+       * Con retención NEGATIVA guardada en la NC, el certificado, el detalle de pago y los listados
+       * de SICORE —que leen sólo retenciones positivas— habrían seguido mostrando lo retenido de más.
+       * Neteando en la factura, todos los renglones quedan positivos y suman lo que de verdad se retuvo.
+       *
+       * 🚦 Si no hay de dónde descontar (ninguna retención vigente de esa quincena la absorbe, o la
+       * factura destino está en dólares) **no se netea y se AVISA**: la NC queda sin retención, que es
+       * el comportamiento anterior, pero ya no en silencio.
+       */
+      const ajusteNC = montoRetencion < 0 ? montoRetencion : 0
+      const retencionPropia = montoRetencion < 0 ? 0 : montoRetencion
+      let avisoNC: string | null = null
+      if (ajusteNC < 0 && tipoSeleccionado) {
+        const fechaNC = facturaEnProceso.fecha_pago || facturaEnProceso.fecha_vencimiento || facturaEnProceso.fecha_estimada || hoyArgentina()
+        const { data: vigentes, error: errVig } = await supabase.schema('msa').from('sicore_retenciones')
+          .select('id, factura_id, retencion, base_imponible, pago, numero_desde, grupo_pago_id, estado_quincena')
+          .eq('cuit_emisor', facturaEnProceso.cuit_proveedor)
+          .eq('tipo_sicore', tipoSeleccionado.tipo)
+          .eq('quincena', generarQuincenaSicore(fechaNC))
+          .eq('anulado', false)
+          .not('factura_id', 'is', null)
+        if (errVig) throw errVig
+        const abiertas = (vigentes ?? []).filter(v => (v.estado_quincena ?? 'abierta') === 'abierta')
+        const destino = destinoDeNotaDeCredito(
+          abiertas.map(v => ({ id: v.id as string, retencion: Number(v.retencion) || 0, grupo_pago_id: v.grupo_pago_id as string | null })),
+          ajusteNC, facturaEnProceso.grupo_pago_id ?? null,
+        )
+        const fila = destino ? abiertas.find(v => v.id === destino.id) : null
+        const { data: fcDestino } = fila
+          ? await supabase.schema('msa').from('comprobantes_arca')
+              .select('id, monto_a_abonar, monto_sicore, tc_pago, tipo_cambio, moneda').eq('id', fila.factura_id).single()
+          : { data: null }
+        const enPesos = fcDestino && fcDestino.moneda !== 'USD' && ((fcDestino.tc_pago ?? fcDestino.tipo_cambio ?? 1) <= 1.01)
+        const m2 = (n: number) => Math.round(n * 100) / 100
+        const plata = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        if (fila && fcDestino && enPesos) {
+          const baseNC = datosSicoreCalculo?.baseImponible ?? 0 // negativa
+          const nuevaRet = m2((Number(fila.retencion) || 0) + ajusteNC)
+          const { error: e1, count: c1 } = await supabase.schema('msa').from('sicore_retenciones')
+            .update({
+              retencion: nuevaRet,
+              base_imponible: m2((Number(fila.base_imponible) || 0) + baseNC),
+              pago: m2((Number(fila.pago) || 0) - ajusteNC),
+            }, { count: 'exact' }).eq('id', fila.id)
+          if (e1) throw e1
+          if (c1 === 0) throw new Error('No se encontró la retención de la factura para descontarle la nota de crédito')
+          const { error: e2, count: c2 } = await supabase.schema('msa').from('comprobantes_arca')
+            .update({
+              monto_sicore: nuevaRet,
+              monto_a_abonar: m2((Number(fcDestino.monto_a_abonar) || 0) - ajusteNC),
+            }, { count: 'exact' }).eq('id', fcDestino.id)
+          if (e2) throw e2
+          if (c2 === 0) throw new Error('No se encontró la factura para descontarle la nota de crédito')
+          avisoNC = `Nota de crédito: $${plata(-ajusteNC)} menos de retención en la FC ${fila.numero_desde ?? ''} (queda en $${plata(nuevaRet)}).`
+        } else {
+          avisoNC = `⚠️ Esta nota de crédito debería bajar la retención en $${plata(-ajusteNC)}, pero no hay una factura retenida en esta quincena de la cual descontarlo. Quedó SIN ese ajuste: revisalo.`
+        }
+      }
+
       const tc = facturaEnProceso.tc_pago ?? facturaEnProceso.tipo_cambio ?? 1
       const impTotalPesos = (facturaEnProceso.imp_total || 0) * tc
-      const saldoPesos = impTotalPesos - montoRetencion - descuentoAdicional
+      const saldoPesos = impTotalPesos - retencionPropia - descuentoAdicional
       // monto_a_abonar se guarda en la moneda de la factura:
       // - ARS (tc=1): saldoPesos / 1 = saldoPesos ✓
       // - USD: saldoPesos / tc → número "funcional" que × tc = pesos reales ✓
@@ -2521,9 +3127,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       await supabase.schema('msa').from('comprobantes_arca')
         .update({
           monto_a_abonar: montoAAbona,
-          descuento_aplicado: descuentoAdicional > 0 ? descuentoAdicional : null,
-          ...(montoRetencion > 0
-            ? { sicore: quincena, monto_sicore: montoRetencion, tipo_sicore: tipoSeleccionado?.tipo ?? null }
+          descuento_aplicado: descuentoAdicional !== 0 ? descuentoAdicional : null,
+          ...(retencionPropia > 0
+            ? { sicore: quincena, monto_sicore: retencionPropia, tipo_sicore: tipoSeleccionado?.tipo ?? null }
             : { sicore: null, monto_sicore: null, tipo_sicore: null }),
         })
         .eq('id', guardadoPendienteCF.filaId)
@@ -2540,7 +3146,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       // 3. Registrar en SICORE v2 (sicore_retenciones) SOLO si hay retención real (paridad con el Modal).
       //    "Sin retención + descuento" no genera registro SICORE (solo estampa el descuento en la FC).
-      if (tipoSeleccionado && montoRetencion > 0) {
+      if (tipoSeleccionado && retencionPropia > 0) {
         const totalPagado = Math.round((impTotalPesos - descuentoAdicional) * 100) / 100
         // Sin `as any` (A-BUG-148) — ver el motivo en `registrarConsumoDeMinimoCF`.
         await registrarEnSicoreRetenciones('msa', {
@@ -2562,8 +3168,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           descuento_aplicado: descuentoAdicional,
           minimo_no_imponible: datosSicoreCalculo?.minimoAplicado ?? 0,
           base_imponible: datosSicoreCalculo?.baseImponible ?? 0,
-          retencion: montoRetencion,
-          pago: Math.round((totalPagado - montoRetencion) * 100) / 100,
+          retencion: retencionPropia,
+          pago: Math.round((totalPagado - retencionPropia) * 100) / 100,
         })
       }
 
@@ -2579,15 +3185,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           id: guardadoPendienteCF.filaId,
           nombre_proveedor: facturaEnProceso.nombre_proveedor,
           cuit_proveedor: facturaEnProceso.cuit_proveedor,
-        }, datos, saldoPesos, montoRetencion > 0 ? { quincena, monto: montoRetencion, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
+        }, datos, saldoPesos, retencionPropia > 0 ? { quincena, monto: retencionPropia, tipo: tipoSeleccionado?.tipo ?? null } : null, descuentoAdicional)
         if (!echeqLoteActivo.current) { echeqPendienteCF.current = null; echeqFilaCF.current = null }
       }
 
       toast.success(
-        tipoSeleccionado && montoRetencion > 0
-          ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${montoRetencion.toLocaleString('es-AR')}`
-          : `✅ Pago aplicado${descuentoAdicional > 0 ? ` con descuento $${descuentoAdicional.toLocaleString('es-AR')}` : ''} (sin retención)`
+        tipoSeleccionado && retencionPropia > 0
+          ? `✅ SICORE aplicado. Quincena: ${quincena} | Retención: $${retencionPropia.toLocaleString('es-AR')}`
+          : `✅ Pago aplicado${descuentoAdicional !== 0 ? ` con descuento $${descuentoAdicional.toLocaleString('es-AR')}` : ''} (sin retención)`
       )
+      if (avisoNC) (avisoNC.startsWith('⚠️') ? toast.warning : toast.success)(avisoNC, { duration: 15000 })
 
       // Limpiar modal
       setMostrarModalSicore(false)
@@ -2653,6 +3260,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const pending = freshPending !== undefined ? freshPending : guardadoPendienteCF
     const cola = freshCola !== undefined ? freshCola : colaLoteSicore
 
+    // Cancelar de verdad corta también el «procesar juntas» (A-FEAT-1271).
+    if (!continuarSinSicore && autoGrupo.current) detenerAutoGrupo()
     if (pending && !continuarSinSicore) {
       // Restaurar estado anterior en BD y limpiar cola entera (aborta también el echeq lote)
       await actualizarRegistro(pending.filaId, 'estado', pending.estadoAnterior, 'ARCA')
@@ -2726,10 +3335,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Confirmar el modal ECHEQ → arranca el MISMO flujo SICORE que "pagar", con el pending en 'echeq'.
   // La retención se calcula igual; el cheque + método de pago se estampan al finalizar (finalize/cancelar).
   const confirmarEcheqCF = async () => {
-    if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro) {
-      toast.error('Completá banco, fecha de emisión y fecha de cobro.'); return
+    const plan = planDesdeUI(planEcheqCF)
+    const problemas = problemasDelPlan(plan)
+    if (!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemas.length) {
+      toast.error(problemas[0] || 'Completá banco y fecha de emisión.'); return
     }
-    const datos: EcheqDatos = { ...echeqFormCF }
+    // 📝 A-FEAT-1282 — con varios echeqs viaja el plan; la factura/anticipo se estampa con la fecha
+    // del ÚLTIMO (hasta ahí no termina de salir el pago). Con uno solo, igual que siempre.
+    const varios = plan.echeqs.length > 1
+    const datos: EcheqDatos = {
+      ...echeqFormCF,
+      numero: varios ? '' : (plan.echeqs[0].numero || ''),
+      fechaCobro: ultimaFechaCobro(plan),
+      plan: varios ? plan : null,
+    }
     echeqPendienteCF.current = datos
     setMostrarModalEcheqCF(false)
 
@@ -2810,7 +3429,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const netoNoGravado = parseCampo(camposSicore.neto_no_gravado)
     const opExentas = parseCampo(camposSicore.op_exentas)
     const iva = parseCampo(camposSicore.iva)
-    const impTotal = netoGravado + netoNoGravado + opExentas + iva
+    const netoMasIva = netoGravado + netoNoGravado + opExentas + iva
+    // 🐞 A-BUG-1285 — el total es el MONTO del anticipo, no neto + IVA: puede traer percepciones que no se
+    // cargan. La retención sigue saliendo del neto.
+    let montoAnt = Number((anticiposExistentes.find(a => a.id === anticipoSicoreId) ?? (echeqAnticipoCF.current?.id === anticipoSicoreId ? echeqAnticipoCF.current : null))?.monto) || 0
+    if (!montoAnt && anticipoSicoreId) {
+      const { data } = await supabase.from('anticipos_proveedores').select('monto').eq('id', anticipoSicoreId).maybeSingle()
+      montoAnt = Number((data as any)?.monto) || 0
+    }
+    const { total: impTotal, otros, aviso } = totalAnticipo(montoAnt, netoMasIva)
     const netoBase = netoGravado + netoNoGravado + opExentas
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
 
@@ -2830,7 +3457,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     setTipoSicoreAnticipo(tipo)
-    setDatosSicoreAnticipo({ netoBase, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, impTotal })
+    setDatosSicoreAnticipo({ netoBase, minimoAplicado, baseImponible, esRetencionAdicional: yaRetuvo, impTotal, netoMasIva, otros, aviso })
     setMontoSicoreAnticipo(baseImponible * tipo.porcentaje_retencion)
     setDescuentoSicoreAnticipo(0)
     setPasoSicoreAnticipo('calculo')
@@ -2840,20 +3467,70 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const confirmarSicoreAnticipo = async () => {
     if (!anticipoSicoreId || !tipoSicoreAnticipo || !datosSicoreAnticipo) return
     const quincena = generarQuincenaSicore(anticipoSicoreFecha || new Date().toISOString())
-    const anticipo = anticiposExistentes.find(a => a.id === anticipoSicoreId)
-    const saldoFinal = (anticipo?.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
+    /**
+     * 🐞 A-BUG-1284 (2026-10-14) — el anticipo se buscaba SÓLO en la lista del modal «💵 Anticipos»,
+     * que se carga al abrir ese modal. Entrando desde la fila del Cash Flow o desde PAGOS la lista
+     * estaba vacía: el saldo se calculaba sobre $0 (quedaba NEGATIVO, −retención), y como «no había
+     * anticipo» no se registraban ni los echeqs ni la retención en SICORE — sin ningún aviso. Caso
+     * real: BRIKI $14.000.000, el Cash Flow mostraba un solo pago por el total. Mismo agujero que
+     * A-BUG-103 cerró en `cambiarEstadoPagoAnticipo`, en otra función. Ahora: la lista, el anticipo en
+     * proceso, o la base; y si no aparece, NO se guarda nada.
+     */
+    let anticipo: any = anticiposExistentes.find(a => a.id === anticipoSicoreId)
+      ?? (echeqAnticipoCF.current?.id === anticipoSicoreId ? echeqAnticipoCF.current : undefined)
+    if (!anticipo) {
+      const { data } = await supabase.from('anticipos_proveedores').select('*').eq('id', anticipoSicoreId).maybeSingle()
+      anticipo = data ?? undefined
+    }
+    if (!anticipo) { toast.error('No se encontró el anticipo: no se guardó la retención'); return }
+    const saldoFinal = (anticipo.monto || 0) - montoSicoreAnticipo - descuentoSicoreAnticipo
     // Si el pago del anticipo es con ECHEQ, cierra en estado 'echeq' + registra el cheque (neto)
     const esEcheq = !!(echeqPendienteCF.current && echeqAnticipoCF.current?.id === anticipoSicoreId)
+    // 🧾 A-FEAT-1282 — neto e IVA del anticipo se GUARDAN (antes se pedían para calcular y se perdían);
+    // son los mismos campos que el modal de Pagos y los usa SICORE al vincular la factura.
+    const parseCampo = (v: string) => parseFloat(String(v || '').replace(/\./g, '').replace(',', '.')) || 0
     const { error } = await supabase.from('anticipos_proveedores').update({
       estado_pago: esEcheq ? 'echeq' : 'pagar',
       sicore: quincena,
       monto_sicore: montoSicoreAnticipo,
       tipo_sicore: tipoSicoreAnticipo.tipo,
       monto_restante: saldoFinal,
+      neto_gravado: parseCampo(camposSicore.neto_gravado),
+      neto_no_gravado: parseCampo(camposSicore.neto_no_gravado),
+      op_exentas: parseCampo(camposSicore.op_exentas),
+      iva: parseCampo(camposSicore.iva),
+      imp_total: datosSicoreAnticipo.impTotal,
       ...(esEcheq ? { metodo_pago: 'echeq', fecha_cobro_echeq: echeqPendienteCF.current!.fechaCobro, fecha_pago: echeqPendienteCF.current!.fechaEmision } : {}),
     }).eq('id', anticipoSicoreId)
 
     if (error) { toast.error('Error guardando SICORE: ' + error.message); return }
+    /**
+     * 🧾 A-FEAT-1282 — la retención del anticipo se REGISTRA en SICORE (sale en la declaración y en el
+     * certificado). Desde el Cash Flow no se registraba: sólo quedaba anotada en el anticipo, mientras
+     * que el mismo pago hecho desde Pagos sí la registraba. Mismos datos que Pagos (A-BUG-194: la base
+     * y el mínimo son los del cálculo, no los del régimen).
+     */
+    if (anticipo && montoSicoreAnticipo > 0) {
+      await registrarEnSicoreRetenciones('msa', {
+        origen: 'anticipo',
+        quincena,
+        fecha_pago: String(anticipoSicoreFecha || hoyArgentina()).split('T')[0],
+        anticipo_id: anticipo.id,
+        factura_id: anticipo.factura_id || null,
+        grupo_pago_id: null,
+        cuit_emisor: anticipo.cuit_proveedor,
+        denominacion_emisor: anticipo.nombre_proveedor,
+        tipo_sicore: tipoSicoreAnticipo.tipo,
+        alicuota: tipoSicoreAnticipo.porcentaje_retencion,
+        neto_gravado_pagado: datosSicoreAnticipo.netoBase,
+        total_pagado: Math.round(((anticipo.monto || 0) - descuentoSicoreAnticipo) * 100) / 100,
+        descuento_aplicado: descuentoSicoreAnticipo,
+        minimo_no_imponible: datosSicoreAnticipo.minimoAplicado,
+        base_imponible: datosSicoreAnticipo.baseImponible,
+        retencion: Math.round(montoSicoreAnticipo * 100) / 100,
+        pago: saldoFinal,
+      })
+    }
     if (esEcheq && anticipo) {
       await guardarChequeAnticipo('msa', { id: anticipo.id, nombre_proveedor: anticipo.nombre_proveedor, cuit_proveedor: anticipo.cuit_proveedor }, echeqPendienteCF.current!, saldoFinal, { quincena, monto: montoSicoreAnticipo, tipo: tipoSicoreAnticipo.tipo })
       echeqPendienteCF.current = null
@@ -3106,6 +3783,53 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
   }
 
+  /**
+   * 🐞 A-BUG-1284 — registra en SICORE la retención de un anticipo que la tiene anotada (`sicore`,
+   * `monto_sicore`, `tipo_sicore`) pero no tiene su fila en `sicore_retenciones`. Reconstruye la base
+   * desde lo guardado: base = retención ÷ alícuota del régimen; mínimo = neto − base. Si falta el neto
+   * o el régimen, NO inventa: avisa.
+   */
+  const registrarRetencionAnticipoSiFalta = async (anticipo: any) => {
+    const { count } = await supabase.schema('msa').from('sicore_retenciones')
+      .select('id', { count: 'exact', head: true }).eq('anticipo_id', anticipo.id)
+    if ((count ?? 0) > 0) return
+    // Los regímenes se cargan al abrir el modal SICORE: si no se abrió, se leen de la base.
+    let tipo: any = tiposSicore.find(t => t.tipo === anticipo.tipo_sicore)
+    if (!tipo) {
+      const { data } = await supabase.from('tipos_sicore_config').select('*').eq('tipo', anticipo.tipo_sicore).maybeSingle()
+      tipo = data ? { ...data, porcentaje_retencion: Number((data as any).porcentaje_retencion) } : undefined
+    }
+    const neto = (Number(anticipo.neto_gravado) || 0) + (Number(anticipo.neto_no_gravado) || 0) + (Number(anticipo.op_exentas) || 0)
+    const retencion = Number(anticipo.monto_sicore) || 0
+    if (!tipo || !(tipo.porcentaje_retencion > 0) || !(neto > 0)) {
+      toast.warning('La retención del anticipo no está registrada en SICORE y faltan datos para hacerlo solo (régimen o neto): revisalo en SICORE.')
+      return
+    }
+    // Base y mínimo reconstruidos desde lo guardado (`baseDesdeRetencion`): el mínimo exacto del régimen si cierra.
+    const { base, minimo } = baseDesdeRetencion(neto, retencion, tipo.porcentaje_retencion, Number(tipo.minimo_no_imponible) || 0)
+    const descuento = Number(anticipo.descuento_aplicado) || 0
+    await registrarEnSicoreRetenciones('msa', {
+      origen: 'anticipo',
+      quincena: anticipo.sicore,
+      fecha_pago: String(anticipo.fecha_pago || hoyArgentina()).slice(0, 10),
+      anticipo_id: anticipo.id,
+      factura_id: anticipo.factura_id || null,
+      grupo_pago_id: null,
+      cuit_emisor: anticipo.cuit_proveedor,
+      denominacion_emisor: anticipo.nombre_proveedor,
+      tipo_sicore: tipo.tipo,
+      alicuota: tipo.porcentaje_retencion,
+      neto_gravado_pagado: neto,
+      total_pagado: Math.round(((Number(anticipo.monto) || 0) - descuento) * 100) / 100,
+      descuento_aplicado: descuento,
+      minimo_no_imponible: minimo,
+      base_imponible: base,
+      retencion,
+      pago: Math.round(((Number(anticipo.monto) || 0) - retencion - descuento) * 100) / 100,
+    })
+    toast.info(`Se registró en SICORE la retención del anticipo ($${retencion.toLocaleString('es-AR', { minimumFractionDigits: 2 })}), que había quedado sin registrar.`)
+  }
+
   // Estampa el echeq en un anticipo ya con SICORE resuelto: estado='echeq' + método/fechas + registra cheque (neto).
   const finalizarEcheqAnticipo = async (anticipo: any, saldoNeto: number, sicore: { quincena: string | null; monto: number | null; tipo: string | null } | null) => {
     const datos = echeqPendienteCF.current
@@ -3138,6 +3862,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       echeqFilaCF.current = null
       setEcheqOrigenCF('anticipo')
       setEcheqFormCF({ banco: '', numero: '', fechaEmision: anticipo.fecha_pago || hoyArgentina(), fechaCobro: '' })
+      setPlanEcheqCF(planVacio())
+      // 🎚️ Con la retención YA aplicada se reparte el SALDO (monto − retención − descuento): los montos
+      // que se ven son los de cada echeq. Sin retención todavía, el total (se calcula después).
+      const retYa = anticipo.sicore && Number(anticipo.monto_sicore) > 0 ? Number(anticipo.monto_sicore) : null
+      retencionYaEcheqCF.current = retYa
+      totalEcheqCF.current = retYa != null
+        ? Math.round(((Number(anticipo.monto) || 0) - retYa - (Number(anticipo.descuento_aplicado) || 0)) * 100) / 100
+        : Number(anticipo.monto) || 0
       setMostrarModalEcheqCF(true)
       return
     }
@@ -3147,6 +3879,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (anticipo?.sicore && anticipo?.monto_sicore) {
         // Ya tiene SICORE: actualizar estado + recalcular saldo
         const saldo = (anticipo.monto || 0) - (anticipo.monto_sicore || 0)
+        // 🐞 A-BUG-1284 — si la retención quedó anotada en el anticipo pero NO registrada en SICORE
+        // (lo que dejaba el bug), se registra ahora con los datos guardados.
+        await registrarRetencionAnticipoSiFalta(anticipo)
         if (esEcheq) {
           await finalizarEcheqAnticipo(anticipo, saldo, { quincena: anticipo.sicore, monto: anticipo.monto_sicore, tipo: anticipo.tipo_sicore })
           toast.success('Anticipo → echeq (SICORE ya aplicado)')
@@ -3182,7 +3917,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
   const renderizarCelda = (fila: CashFlowRow, columna: typeof columnasDefinicion[number]) => {
-    const valor = fila[columna.key as keyof CashFlowRow]
+    // ✏️ A-DEC-1005 — en una factura, el Detalle muestra sólo lo que escribió el usuario (en blanco si nada).
+    const valor = (columna.key === 'detalle' && fila.origen === 'ARCA')
+      ? (fila.detalle_propio ?? '')
+      // `detalles_grupo` (lista) no es una columna: se excluye del tipo para que la celda lo pueda pintar.
+      : fila[columna.key as keyof CashFlowRow] as Exclude<CashFlowRow[keyof CashFlowRow], unknown[] | object>
 
     // Empresa: no se edita acá (sale de dónde vive la factura o del responsable del template).
     // Se muestran TODAS las que tiene, incluidas las que no son empresa (`Duhau`): esconder una
@@ -3235,6 +3974,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             >
               {icono}
             </a>
+          ) : estado === 'falta' ? (
+            // 📎 A-FEAT-1276 — la ❌ es un botón: abre la carpeta del mes para vincular el PDF a mano.
+            <button
+              type="button"
+              className={clase}
+              title={`${titulo} — click para buscarlo en la carpeta del mes y vincularlo`}
+              onClick={e => {
+                e.stopPropagation()
+                setVincularArchivo({ id: fila.id, schema: schemaDeFila(fila), titulo: `${fila.nombre_proveedor || ''} · ${fila.detalle || ''}`.trim() })
+              }}
+            >
+              {icono}
+            </button>
           ) : (
             <span className={clase} title={estado === 'grupo' ? `${titulo} (son ${cuantas})` : titulo}>
               {icono}
@@ -3478,6 +4230,187 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     )
   }
 
+  /** 💰 El contenido del panel de PAGOS: lo usan el panel de arriba y la barra fija de abajo (A-FEAT-149). */
+  const contenidoPanelPagos = (sufijo: 'arriba' | 'abajo') => (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  {/*
+                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
+                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
+                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
+                    justo lo que uno quiere notar antes de pagar.
+                  */}
+                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
+                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
+                    {totalSeleccionado.cantidad > 0 && (
+                      <span className="text-sm font-normal">
+                        {totalSeleccionado.debitos > 0 && (
+                          <span className="text-red-700 font-semibold tabular-nums">
+                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                        {totalSeleccionado.creditos > 0 && (
+                          <span className="text-green-700 font-semibold tabular-nums ml-3">
+                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={seleccionarTodasVisibles}
+                      className="text-xs"
+                    >
+                      Seleccionar todas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={deseleccionarTodas}
+                      className="text-xs"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      Deseleccionar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generarPDFPagosSeleccionados}
+                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      📄 Detalle PDF
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={encolarMailsSeleccionados}
+                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      ✉ Encolar mail detalle
+                    </Button>
+                    <PanelMailsPago />
+                    <Button
+                      size="sm"
+                      onClick={exportarLoteSeleccionados}
+                      className="text-xs bg-blue-600 hover:bg-blue-700"
+                      disabled={filasSeleccionadas.size === 0}
+                    >
+                      🏦 Exportar lote Galicia
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={exportarExcelEcheqs}
+                      className="text-xs bg-amber-600 hover:bg-amber-700"
+                      disabled={cantEcheqsTildados === 0}
+                      title="Excel de emisión de echeqs para el banco, con lo tildado"
+                    >
+                      📝 Excel echeqs ({cantEcheqsTildados})
+                    </Button>
+                    {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
+                    {filaGrupoSeleccionada ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
+                        className="text-xs border-red-500 text-red-700 hover:bg-red-50"
+                        title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
+                      >
+                        ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={agruparSeleccionados}
+                        className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
+                        disabled={filasSeleccionadas.size < 2}
+                        title="Seleccioná 2 o más filas del mismo proveedor"
+                      >
+                        🔗 Agrupar
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
+
+                <div className="flex items-center gap-4">
+                  {/* Checkboxes independientes */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`cambiar-fecha-${sufijo}`}
+                      checked={cambiarFechaVenc}
+                      onCheckedChange={setCambiarFechaVenc}
+                    />
+                    <Label htmlFor={`cambiar-fecha-${sufijo}`}>Cambiar fecha vencimiento</Label>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`cambiar-estado-${sufijo}`}
+                      checked={cambiarEstadoLote}
+                      onCheckedChange={setCambiarEstadoLote}
+                    />
+                    <Label htmlFor={`cambiar-estado-${sufijo}`}>Cambiar estado</Label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Inputs para ambas opciones */}
+                  {cambiarFechaVenc && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Fecha:</Label>
+                      <Input
+                        type="date"
+                        value={valorFechaLote}
+                        onChange={(e) => setValorFechaLote(e.target.value)}
+                        placeholder="Nueva fecha vencimiento"
+                        className="w-40"
+                      />
+                    </div>
+                  )}
+                  
+                  {cambiarEstadoLote && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Estado:</Label>
+                      <Select value={valorEstadoLote} onValueChange={(v) => { estadoLoteAMano.current = true; setValorEstadoLote(v) }}>
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ESTADOS_DISPONIBLES.map((estado) => (
+                            <SelectItem key={estado.value} value={estado.value}>
+                              {estado.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={aplicarCambiosLote}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {procesandoLote ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Aplicando...
+                      </>
+                    ) : (
+                      `Aplicar a ${filasSeleccionadas.size} filas`
+                    )}
+                  </Button>
+                </div>
+              </div>
+  )
+
   return (
     <div className="space-y-6">
       {/* Header con estadísticas */}
@@ -3580,13 +4513,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 Filtros
               </Button>
               <Button
+                ref={botonPagosRef}
                 variant={modoPagos ? "default" : "outline"}
                 size="sm"
                 onClick={modoPagos ? desactivarModoPagos : activarModoPagos}
-                title="Ctrl+Click para activar modo PAGOS"
+                title="Ctrl+Click o Alt+P para entrar al modo PAGOS · Alt+P también sale"
               >
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
+                <span className={`ml-1.5 rounded border px-1 text-[10px] font-normal ${modoPagos ? 'border-white/40 text-white/80' : 'text-gray-400'}`}>Alt+P</span>
               </Button>
               {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
                   CUOTA de esta pantalla.
@@ -3644,6 +4579,25 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <AvisoNotasCredito filas={data}
             onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)}
             onDescuentos={(ncId, cuit, prov, emp) => void abrirDescuentosNC(ncId, cuit, prov, emp)} />
+          {propagacionCF && (
+            <ModalPropagarMontoCuota
+              abierto={true}
+              cuotaId={propagacionCF.cuotaId}
+              nuevoMonto={propagacionCF.nuevoMonto}
+              onCancelar={() => { setPropagacionCF(null); setCeldaEnEdicion(null); hookEditorRef.current?.setCeldaEnEdicion(null) }}
+              onGuardado={async (r) => {
+                setPropagacionCF(null)
+                setCeldaEnEdicion(null)
+                hookEditorRef.current?.setCeldaEnEdicion(null)
+                await cargarDatos()
+                toast.success(r.tipo === 'propagado'
+                  ? (r.cuotasModificadas > 0
+                      ? `Monto actualizado y propagado a ${r.cuotasModificadas} cuota(s) futura(s)${r.montoPropagado !== r.nuevoMonto ? ` con $${r.montoPropagado.toLocaleString('es-AR')}` : ''}`
+                      : 'Monto actualizado (no había cuotas futuras)')
+                  : 'Sólo esta cuota actualizada')
+              }}
+            />
+          )}
           {cancelacionNC && (
             <ModalCancelacionNC
               inicial={cancelacionNC.datos}
@@ -3868,180 +4822,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
           )}
 
-          {/* Panel modo PAGOS */}
+          {/* Panel modo PAGOS — el contenido vive en `contenidoPanelPagos`, que también usa la barra de abajo (A-FEAT-149) */}
           {modoPagos && (
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  {/*
-                    💰 **El total de lo seleccionado, a la vista antes de apretar Pagar.**
-                    Pedido del usuario 2026-09-19. Se muestran débitos y créditos por separado —
-                    mezclarlos en un neto escondería que en la selección entró un ingreso, que es
-                    justo lo que uno quiere notar antes de pagar.
-                  */}
-                  <h4 className="font-medium text-blue-800 flex flex-wrap items-baseline gap-x-3">
-                    <span>💰 Modo PAGOS - {filasSeleccionadas.size} filas seleccionadas de {datosFiltradosPagos.length}</span>
-                    {totalSeleccionado.cantidad > 0 && (
-                      <span className="text-sm font-normal">
-                        {totalSeleccionado.debitos > 0 && (
-                          <span className="text-red-700 font-semibold tabular-nums">
-                            A pagar ${totalSeleccionado.debitos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                        {totalSeleccionado.creditos > 0 && (
-                          <span className="text-green-700 font-semibold tabular-nums ml-3">
-                            A cobrar ${totalSeleccionado.creditos.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={seleccionarTodasVisibles}
-                      className="text-xs"
-                    >
-                      Seleccionar todas
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={deseleccionarTodas}
-                      className="text-xs"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      Deseleccionar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={generarPDFPagosSeleccionados}
-                      className="text-xs border-green-500 text-green-700 hover:bg-green-50"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      📄 Detalle PDF
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={encolarMailsSeleccionados}
-                      className="text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      ✉ Encolar mail detalle
-                    </Button>
-                    <PanelMailsPago />
-                    <Button
-                      size="sm"
-                      onClick={exportarLoteSeleccionados}
-                      className="text-xs bg-blue-600 hover:bg-blue-700"
-                      disabled={filasSeleccionadas.size === 0}
-                    >
-                      🏦 Exportar lote Galicia
-                    </Button>
-                    {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
-                    {filaGrupoSeleccionada ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
-                        className="text-xs border-red-500 text-red-700 hover:bg-red-50"
-                        title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
-                      >
-                        ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={agruparSeleccionados}
-                        className="text-xs border-purple-500 text-purple-700 hover:bg-purple-50"
-                        disabled={filasSeleccionadas.size < 2}
-                        title="Seleccioná 2 o más filas del mismo proveedor"
-                      >
-                        🔗 Agrupar
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Filtro por origen: ahora está en la barra de chips (siempre visible), arriba de la tabla. */}
-
-                <div className="flex items-center gap-4">
-                  {/* Checkboxes independientes */}
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="cambiar-fecha"
-                      checked={cambiarFechaVenc}
-                      onCheckedChange={setCambiarFechaVenc}
-                    />
-                    <Label htmlFor="cambiar-fecha">Cambiar fecha vencimiento</Label>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="cambiar-estado"
-                      checked={cambiarEstadoLote}
-                      onCheckedChange={setCambiarEstadoLote}
-                    />
-                    <Label htmlFor="cambiar-estado">Cambiar estado</Label>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {/* Inputs para ambas opciones */}
-                  {cambiarFechaVenc && (
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">Fecha:</Label>
-                      <Input
-                        type="date"
-                        value={valorFechaLote}
-                        onChange={(e) => setValorFechaLote(e.target.value)}
-                        placeholder="Nueva fecha vencimiento"
-                        className="w-40"
-                      />
-                    </div>
-                  )}
-                  
-                  {cambiarEstadoLote && (
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">Estado:</Label>
-                      <Select value={valorEstadoLote} onValueChange={setValorEstadoLote}>
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ESTADOS_DISPONIBLES.map((estado) => (
-                            <SelectItem key={estado.value} value={estado.value}>
-                              {estado.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {procesandoLote ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Aplicando...
-                      </>
-                    ) : (
-                      `Aplicar a ${filasSeleccionadas.size} filas`
-                    )}
-                  </Button>
-                </div>
+            <div ref={panelPagosRef} className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <TestsDelProceso proceso="cashflow/pagos" pantalla="cashflow" />
+              {contenidoPanelPagos('arriba')}
+            </div>
+          )}
+          {/*
+            🎯 A-FEAT-149 — la barra que te sigue: el MISMO panel (contador, totales y todos los botones),
+            fijo abajo, cuando el panel de arriba ya no se ve. Abajo y no arriba porque el encabezado de
+            la tabla ya es sticky arriba.
+            ⚠️ A-FEAT-1274 (2026-10-14) — antes aparecía recién con la primera fila tildada, y así
+            «Seleccionar todas» no estaba a mano justo cuando todavía no había nada tildado. Ahora
+            está desde que se entra a PAGOS.
+          */}
+          {modoPagos && !panelPagosVisible && (
+            <div className="fixed inset-x-0 bottom-0 z-40 border-t border-blue-300 bg-blue-50/95 backdrop-blur shadow-[0_-4px_12px_rgba(0,0,0,0.08)]"
+              style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+              <div className="max-h-[45vh] overflow-y-auto px-4 py-3">
+                {contenidoPanelPagos('abajo')}
               </div>
             </div>
           )}
 
+          <TestsDelProceso proceso="cashflow/filtros" pantalla="cashflow" />
+          <TestsDelProceso proceso="cashflow/cuenta-contable" pantalla="cashflow" />
           {/* E1: barra de chips operativos (siempre visible) — Estado + Origen */}
           <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 p-3 bg-white rounded-lg border">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -4090,6 +4896,34 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               ))}
               <button onClick={() => setChipsSentido(new Set<Columna>(['debitos', 'creditos']))} className="text-[10px] underline text-gray-400 ml-1">ambos</button>
             </div>
+            {/* 🔎 A-FEAT-170 — por tipo de comprobante, con el mismo gesto (ctrl+click = sólo ése). */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Comprobante:</span>
+              {tiposDisponibles.map(t => (
+                <button
+                  key={t}
+                  onClick={(ev) => toggleChip<string>(fn => setChipsTipo(prev => fn(prev ?? new Set(tiposDisponibles))), t, esSoloEste(ev))}
+                  title={tituloChip(t)}
+                  className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${tiposActivos.has(t) ? 'bg-violet-600 text-white border-violet-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
+                >
+                  {t} ({data.filter(f => etiquetaTipoComprobante(f) === t).length})
+                </button>
+              ))}
+              <button onClick={() => setChipsTipo(null)} className="text-[10px] underline text-gray-400 ml-1">todos</button>
+            </div>
+            {/* ⏪ A-FEAT-1237 — desde hace 1, 2 o 3 semanas o meses (lo futuro se ve siempre). */}
+            <div className="flex flex-wrap items-center gap-1.5" title="Esconde lo que tiene fecha estimada anterior a esa ventana; lo que viene y lo que no tiene fecha se sigue viendo">
+              <span className="text-xs font-semibold text-gray-600 mr-1">Desde:</span>
+              <button onClick={() => setVentana(null)}
+                className={`text-xs px-2 py-0.5 rounded-full border ${!ventana ? 'bg-slate-700 text-white border-slate-700' : 'bg-gray-50 text-gray-500 border-gray-300'}`}>todo</button>
+              {(['semana', 'mes'] as const).map(u => [1, 2, 3].map(n => (
+                <button key={`${u}${n}`} onClick={() => setVentana(v => v && v.unidad === u && v.n === n ? null : { unidad: u, n })}
+                  className={`text-xs px-2 py-0.5 rounded-full border ${ventana?.unidad === u && ventana.n === n ? 'bg-slate-700 text-white border-slate-700' : 'bg-gray-50 text-gray-500 border-gray-300'}`}>
+                  {n} {u === 'semana' ? (n === 1 ? 'sem' : 'sem') : (n === 1 ? 'mes' : 'meses')}
+                </button>
+              )))}
+              {desdeV && <span className="text-[10px] text-gray-500">desde el {desdeV.split('-').reverse().join('/')}</span>}
+            </div>
             <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
               <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />
               ver débitos vencidos
@@ -4117,6 +4951,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             )}
           </div>
 
+          {/* 📐 A-FEAT-1277 — volver a las columnas de siempre, sólo si se tocaron */}
+          {colsUsuario && (
+            <div className="mb-1 flex justify-end">
+              <button
+                type="button"
+                className="text-xs text-gray-500 underline hover:text-gray-700"
+                title="Volver al orden y los anchos de siempre"
+                onClick={() => guardarColumnas(null)}
+              >
+                ↺ Columnas como venían
+              </button>
+            </div>
+          )}
           {/* Tabla Cash Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="overflow-auto max-h-[600px]">
@@ -4132,11 +4979,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       trabaja mirando las columnas del final —importes, medio de pago— y ahí había que
                       volver al principio para poder tildar la fila.
                     */}
-                    {modoPagos && (
-                      <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
-                        Sel.
-                      </th>
-                    )}
+                    {/* ☑️ A-FEAT-1268 — el tilde del encabezado tilda todo lo que se ve con los filtros puestos. */}
+                    {modoPagos && (() => {
+                      const idsVisibles = datosFiltradosPagos.map(f => f.id)
+                      const estado = estadoTildeTodas(idsVisibles, filasSeleccionadas)
+                      return (
+                        <th className="p-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sticky left-0 z-20 bg-gray-50">
+                          <Checkbox
+                            aria-label="Tildar todo lo que se ve"
+                            title={estado === 'todas'
+                              ? 'Destildar todo'
+                              : `Tildar las ${idsVisibles.length} filas que se ven con los filtros puestos`}
+                            checked={estado === 'todas' ? true : estado === 'algunas' ? 'indeterminate' : false}
+                            onCheckedChange={() => setFilasSeleccionadas(seleccionTrasClickTodas(idsVisibles, filasSeleccionadas))}
+                            disabled={idsVisibles.length === 0}
+                          />
+                        </th>
+                      )
+                    })()}
                     
                     {/*
                       📅 **A-FEAT-156 — la FECHA Estimada queda fija al ir hacia la derecha.**
@@ -4148,10 +5008,27 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       debajo. Y el `z` del encabezado tiene que ser mayor que el de la celda, o el
                       `thead sticky` se lo come al scrollear en vertical.
                     */}
-                    {columnasDefinicion.map((col) => (
-                      <th 
-                        key={col.key} 
-                        className={`p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${col.width} ${
+                    {columnasVista.map((col) => {
+                      // 📐 A-FEAT-1277 — se arrastra para cambiar el orden; el borde derecho, para el ancho.
+                      const px = anchoDe(col.key)
+                      const marca = colEncima?.key === col.key && colArrastrada && colArrastrada !== col.key
+                        ? (colEncima.lado === 'antes' ? 'shadow-[inset_3px_0_0_#3b82f6]' : 'shadow-[inset_-3px_0_0_#3b82f6]') : ''
+                      return (
+                      <th
+                        key={col.key}
+                        draggable
+                        onDragStart={e => { if (redimensionando.current) { e.preventDefault(); return } setColArrastrada(col.key); e.dataTransfer.effectAllowed = 'move' }}
+                        onDragOver={e => {
+                          if (!colArrastrada) return
+                          e.preventDefault()
+                          const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                          setColEncima({ key: col.key, lado: e.clientX < r.left + r.width / 2 ? 'antes' : 'despues' })
+                        }}
+                        onDrop={e => { e.preventDefault(); soltarColumna(col.key) }}
+                        onDragEnd={() => { setColArrastrada(null); setColEncima(null) }}
+                        title="Arrastrá para cambiar de lugar · arrastrá el borde derecho para cambiar el ancho"
+                        style={px ? { width: px, minWidth: px, maxWidth: px } : undefined}
+                        className={`relative p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-grab ${px ? '' : col.width} ${marca} ${colArrastrada === col.key ? 'opacity-50' : ''} ${
                           // Con el selector puesto, la fecha arranca DESPUÉS de él (w-16 = 4rem),
                           // o las dos columnas fijas se superponen en el borde izquierdo.
                           col.key === 'fecha_estimada'
@@ -4160,8 +5037,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         }`}
                       >
                         {col.label}
+                        <span
+                          onMouseDown={e => empezarAncho(e, col.key)}
+                          onClick={e => e.stopPropagation()}
+                          draggable={false}
+                          onDragStart={e => { e.preventDefault(); e.stopPropagation() }}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300"
+                          title="Arrastrá para cambiar el ancho"
+                        />
                       </th>
-                    ))}
+                      )
+                    })}
                   </tr>
                 </thead>
 
@@ -4169,7 +5055,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {(modoPagos ? datosFiltradosPagos : datosOperativos).length === 0 ? (
                     <tr>
-                      <td colSpan={columnasDefinicion.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
+                      <td colSpan={columnasVista.length + (modoPagos ? 1 : 0)} className="p-8 text-center text-gray-500">
                         {modoPagos ? 'No hay datos con los filtros seleccionados' : 'No hay datos para mostrar en Cash Flow'}
                         <br />
                         <span className="text-xs">
@@ -4215,9 +5101,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         )}
                         
                         {/* Columnas de datos */}
-                        {columnasDefinicion.map((col) => (
+                        {columnasVista.map((colBase) => {
+                          // 📐 A-FEAT-1277 — con ancho propio, la celda lo respeta y el contenido lo llena.
+                          const pxCol = anchoDe(colBase.key)
+                          const col = (pxCol ? { ...colBase, width: 'w-full' } : colBase) as typeof colBase
+                          return (
                           <td key={col.key}
-                            className={`p-3 text-sm ${
+                            style={pxCol ? { width: pxCol, minWidth: pxCol, maxWidth: pxCol } : undefined}
+                            className={`p-3 text-sm ${pxCol ? 'overflow-hidden' : ''} ${
                               /**
                                * ⚠️ El fondo sale de `fondoFila`, no de un `bg-white` fijo: la grilla
                                * (y en ámbar las de USD). Con el blanco fijo, la columna pegada se veía
@@ -4229,9 +5120,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                                 : ''
                             }`}
                           >
-                            {renderizarCelda(fila, col)}
+                            {col.key === 'fecha_estimada' ? (
+                              // 🚦 A-FEAT-1260: la marca de cuenta contable va en la columna que queda fija
+                              <div className="flex items-center gap-1">
+                                {renderizarMarcaCuenta(fila)}
+                                <div>
+                                  {renderizarCelda(fila, col)}
+                                  {/* A-DEC-1004: la emisión, debajo de la estimada y sin columna nueva (sólo facturas) */}
+                                  {fila.origen === 'ARCA' && fila.fecha_emision && (
+                                    <div className="px-1 -mt-0.5 text-[10px] leading-3 text-gray-400" title="Fecha de emisión de la factura">
+                                      em. {formatearFecha(fila.fecha_emision)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : renderizarCelda(fila, col)}
                           </td>
-                        ))}
+                          )
+                        })}
                       </tr>
                       )
                     })
@@ -4267,6 +5173,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 ))}
               </div>
               <div className="flex gap-2">
+                {vistaEcheqs === 'emitidos' && (
+                  <Button size="sm" className="bg-amber-600 hover:bg-amber-700" disabled={echeqsParaExcel.size === 0} onClick={() => setMostrarExcelEcheqs(true)}
+                    title="Tildá los echeqs a emitir y generá el Excel con el formato del banco">
+                    🏦 Excel de emisión ({echeqsParaExcel.size})
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={cargarCheques} disabled={cargandoCheques}>
                   {cargandoCheques ? <Loader2 className="h-4 w-4 animate-spin" /> : '↺ Actualizar'}
                 </Button>
@@ -4284,6 +5196,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
+                      <th className="p-3 text-center font-medium" title="Para el Excel de emisión">🏦</th>
                       <th className="p-3 text-left font-medium">Nro ECHEQ</th>
                       <th className="p-3 text-left font-medium">Banco</th>
                       <th className="p-3 text-left font-medium">Beneficiario</th>
@@ -4303,6 +5216,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       const vencido = ch.fecha_cobro && ch.fecha_cobro < hoy && ch.estado === 'vigente'
                       return (
                         <tr key={ch.id} className={`border-b hover:bg-gray-50 ${vencido ? 'bg-red-50' : ''}`}>
+                          <td className="p-3 text-center">
+                            <input type="checkbox" checked={echeqsParaExcel.has(ch.id)}
+                              onChange={() => setEcheqsParaExcel(prev => { const n = new Set(prev); if (n.has(ch.id)) n.delete(ch.id); else n.add(ch.id); return n })} />
+                          </td>
                           <td className="p-3 font-mono text-xs">{ch.numero || <span className="text-gray-400 italic">sin nro</span>}</td>
                           <td className="p-3">{ch.banco}</td>
                           <td className="p-3">{ch.beneficiario_nombre || '-'}</td>
@@ -4336,6 +5253,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           </CardContent>
         </Card>
       )}
+      <ModalExportarEcheqs open={!!echeqsExcelPagos} onClose={() => setEcheqsExcelPagos(null)} cheques={echeqsExcelPagos ?? []} />
+      <ModalExportarEcheqs open={mostrarExcelEcheqs} onClose={() => { setMostrarExcelEcheqs(false); setEcheqsParaExcel(new Set()) }}
+        cheques={cheques.filter(c => echeqsParaExcel.has(c.id))} />
 
       {/* Modal cambio de estado (Shift+Click débitos/créditos) */}
       {filaParaCambioEstado && (
@@ -5168,7 +6088,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
       {/* Modal ECHEQ (facturas y anticipos) — paridad con el Modal de Pagos */}
       <Dialog open={mostrarModalEcheqCF} onOpenChange={(open) => { if (!open) { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []} }}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>📝 Pago con ECHEQ</DialogTitle>
             <DialogDescription>Completar datos del cheque electrónico ({echeqOrigenCF === 'anticipo' ? 'anticipo' : 'factura'})</DialogDescription>
@@ -5184,24 +6104,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1">Número de ECHEQ</label>
-              <input type="text" className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Ej: 000012345" value={echeqFormCF.numero} onChange={e => setEcheqFormCF(prev => ({ ...prev, numero: e.target.value }))} />
-            </div>
-            <div>
               <label className="text-sm font-medium block mb-1">Fecha de emisión *</label>
               <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaEmision} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaEmision: e.target.value }))} />
               {echeqFormCF.fechaEmision && (
                 <p className="text-xs text-blue-600 mt-1">→ Quincena SICORE: {generarQuincenaSicore(echeqFormCF.fechaEmision)}</p>
               )}
             </div>
-            <div>
-              <label className="text-sm font-medium block mb-1">Fecha de cobro *</label>
-              <input type="date" className="w-full border rounded px-2 py-1.5 text-sm" value={echeqFormCF.fechaCobro} onChange={e => setEcheqFormCF(prev => ({ ...prev, fechaCobro: e.target.value }))} />
-            </div>
+            {/* 📝 A-FEAT-1282 — uno o varios echeqs, con su fecha de cobro cada uno. */}
+            <EditorPlanEcheqs plan={planEcheqCF} onChange={setPlanEcheqCF} fechaEmision={echeqFormCF.fechaEmision} total={totalEcheqCF.current} retencionYaAplicada={retencionYaEcheqCF.current} varios={echeqLoteActivo.current && totalEcheqCF.current == null} />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setMostrarModalEcheqCF(false); echeqPendienteCF.current = null; echeqFilaCF.current = null; echeqAnticipoCF.current = null; echeqLoteActivo.current = false; echeqLoteFacturas.current = []}}>Cancelar</Button>
-            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || !echeqFormCF.fechaCobro} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar ECHEQ</Button>
+            <Button disabled={!echeqFormCF.banco || !echeqFormCF.fechaEmision || problemasDelPlan(planDesdeUI(planEcheqCF)).length > 0} className="bg-amber-600 hover:bg-amber-700" onClick={confirmarEcheqCF}>Confirmar {planEcheqCF.echeqs.length > 1 ? `${planEcheqCF.echeqs.length} ECHEQs` : 'ECHEQ'}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -5325,7 +6239,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   {descuentoSicoreAnticipo > 0 && (
                     <div className="flex justify-between"><span className="text-gray-600">Descuento adicional:</span><span className="text-red-600">-${descuentoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                   )}
-                  <div className="flex justify-between"><span className="text-gray-600">Importe total factura:</span><span>${datosSicoreAnticipo.impTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {!!datosSicoreAnticipo.otros && (
+                    <>
+                      <div className="flex justify-between"><span className="text-gray-600">Neto + IVA:</span><span>${(datosSicoreAnticipo.netoMasIva ?? 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                      <div className="flex justify-between"><span className="text-gray-600">Otros (percepciones, etc.):</span><span>${datosSicoreAnticipo.otros.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                    </>
+                  )}
+                  <div className="flex justify-between"><span className="text-gray-600">Total del anticipo:</span><span>${datosSicoreAnticipo.impTotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
+                  {datosSicoreAnticipo.aviso && <p className="text-xs text-amber-700">⚠️ {datosSicoreAnticipo.aviso}</p>}
                   <hr className="my-2"/>
                   <div className="flex justify-between text-lg font-bold"><span>Monto a pagar:</span><span className="text-green-600">${(datosSicoreAnticipo.impTotal - montoSicoreAnticipo - descuentoSicoreAnticipo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</span></div>
                 </div>
@@ -5441,7 +6362,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       <td className="text-right">${fmt(impIva)}</td>
                       <td className="text-right font-medium">${fmt(impTotal)}</td>
                     </tr>
-                    {descuentoDesglose && descuentoDesglose.total > 0 && (
+                    {descuentoDesglose && descuentoDesglose.total !== 0 && (
                       <tr className="text-orange-700">
                         <td className="py-0.5">Descuento</td>
                         <td className="text-right">-${fmt(descuentoDesglose.gravado)}</td>
@@ -5465,6 +6386,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   <div className="flex justify-between"><span className="text-gray-500">Monto no imponible:</span><span>${fmt(datosSicoreCalculo.minimoAplicado)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Base imponible:</span><span className="font-medium">${fmt(datosSicoreCalculo.baseImponible)}</span></div>
                   <div className="flex justify-between"><span className="text-gray-500">Retención {(tipoSeleccionado.porcentaje_retencion * 100).toFixed(2).replace(".", ",")}%:</span><span className="font-bold text-red-600">${fmt(montoRetencion)}</span></div>
+                  {montoRetencion < 0 && (
+                    <div className="mt-1 rounded border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-900">
+                      Es una <strong>nota de crédito</strong>: al confirmar, estos ${fmt(-montoRetencion)} se <strong>descuentan de la
+                      retención de una factura del mismo grupo</strong>. La nota de crédito queda sin retención propia, y lo que
+                      se transfiere de más va en esa factura. El total del grupo es el mismo.
+                    </div>
+                  )}
                   {(datosSicoreCalculo.netoPrevio ?? 0) > 0 && !datosSicoreCalculo.esRetencionAdicional && (
                     <div className="mt-1 pt-1 border-t border-gray-200 space-y-0.5">
                       <div className="flex justify-between text-amber-700"><span>Pagos previos en el mes (sin retención):</span><span>${fmt(datosSicoreCalculo.netoPrevio ?? 0)}</span></div>
@@ -5502,17 +6430,45 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     className="border rounded px-2 py-1 text-xs flex-1 bg-white"
                   />
                   <button onClick={aplicarDescuentoSicoreCF} className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1 rounded">Aplicar</button>
-                  {descuentoDesglose && descuentoDesglose.total > 0 && (
+                  {descuentoDesglose && descuentoDesglose.total !== 0 && (
                     <button onClick={limpiarDescuentoSicoreCF} className="text-gray-400 hover:text-red-500 text-xs px-2 py-1">✕</button>
                   )}
                 </div>
-                {descuentoDesglose && descuentoDesglose.total > 0 && (
+                {descuentoDesglose && descuentoDesglose.total !== 0 && (
                   <p className="text-xs text-orange-700">Desc: Grav ${fmt(descuentoDesglose.gravado)} + IVA ${fmt(descuentoDesglose.iva)} = ${fmt(descuentoDesglose.total)}</p>
                 )}
               </div>
 
+              {/* 🏛️ A-FEAT-1271 — procesar el grupo junto. Sólo cuando quedan más del MISMO proveedor en la cola. */}
+              {(() => {
+                const siguen = colaLoteSicore.filter(f => f.cuit_proveedor === facturaEnProceso.cuit_proveedor).length
+                if (autoGrupoActivo) {
+                  return (
+                    <div className="flex items-center justify-between gap-2 rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-900">
+                      <span>⏳ Procesando el grupo solo, con el mismo régimen y descuento…</span>
+                      <button type="button" className="rounded border border-blue-300 bg-white px-2 py-0.5" onClick={detenerAutoGrupo}>Detener</button>
+                    </div>
+                  )
+                }
+                if (siguen === 0) return null
+                const descuentoPorMonto = !!descuentoDesglose && descuentoTipoInput !== 'pct'
+                return (
+                  <label className={`flex items-start gap-2 rounded border px-2 py-1.5 text-xs ${descuentoPorMonto ? 'border-gray-200 text-gray-400' : 'border-blue-200 bg-blue-50 text-blue-900 cursor-pointer'}`}>
+                    <input type="checkbox" className="mt-0.5" checked={procesarJuntas && !descuentoPorMonto} disabled={descuentoPorMonto}
+                      onChange={e => setProcesarJuntas(e.target.checked)} />
+                    <span>
+                      <strong>Procesar igual {siguen === 1 ? 'la que sigue' : `las ${siguen} que siguen`} de este proveedor</strong>
+                      <br />
+                      {descuentoPorMonto
+                        ? 'Sólo se puede con descuento en % (o sin descuento): un importe fijo no vale igual para todas.'
+                        : `Mismo régimen${descuentoDesglose ? ` y mismo ${descuentoInputValor} %` : ', sin descuento'}, sin preguntar una por una. Al final te muestra el total del grupo y su control.`}
+                    </span>
+                  </label>
+                )
+              })()}
+
               <div className="flex gap-2 pt-2">
-                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={finalizarProcesoSicoreCF}>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={confirmarSicoreCF} disabled={autoGrupoActivo}>
                   ✅ Confirmar y pasar a Pagar
                 </Button>
                 {/* Sin retención y sin descuento: pasa a pagar sin estampar la quincena en la FC.
@@ -5575,6 +6531,43 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ✏️ A-FEAT-1269 — Detalle de un grupo: una nota por factura */}
+      <Dialog open={!!detalleGrupo} onOpenChange={v => { if (!v && !guardandoDetalleGrupo) setDetalleGrupo(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>✏️ Detalle del grupo</DialogTitle>
+            <DialogDescription>
+              {detalleGrupo?.fila.nombre_proveedor} — cada factura tiene su propia nota. Lo que dejes en blanco queda en blanco.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {detalleGrupo?.items.map((it, i) => (
+              <div key={it.id} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-sm text-gray-600">{it.etiqueta}</span>
+                <Input
+                  value={it.detalle}
+                  autoFocus={i === 0}
+                  onChange={e => setDetalleGrupo(prev => prev && ({ ...prev, items: prev.items.map(x => x.id === it.id ? { ...x, detalle: e.target.value } : x) }))}
+                  onKeyDown={e => { if (e.key === 'Enter') guardarDetalleGrupo() }}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetalleGrupo(null)} disabled={guardandoDetalleGrupo}>Cancelar</Button>
+            <Button onClick={guardarDetalleGrupo} disabled={guardandoDetalleGrupo}>
+              {guardandoDetalleGrupo ? 'Guardando…' : 'Guardar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ModalVincularArchivo
+        factura={vincularArchivo}
+        onClose={() => setVincularArchivo(null)}
+        onVinculado={(id, url) => actualizarLocal(id, 'pdf_drive_url', url)}
+      />
 
       {/* E2.4: Export lote Galicia (módulo reusado) */}
       <ModalExportarLote

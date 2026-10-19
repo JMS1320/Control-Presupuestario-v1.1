@@ -1,9 +1,12 @@
 "use client"
 
 
+import { ModalVincularCompras } from "./modal-vincular-compras"
+import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import type { UserRole } from "@/lib/auth/roles"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -57,6 +60,7 @@ import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subd
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
+import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo } from "@/lib/facturas/vincular-archivo"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
@@ -401,6 +405,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     estadoArchivoDigital(f) as 'con' | 'falta' | 'portal'
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
+  /**
+   * ⏳ A-FEAT-1262 — mientras vincula, cerrar o recargar la pestaña del navegador SÍ corta el
+   * proceso (corre acá, tanda por tanda). Cambiar de pantalla adentro de la app no lo corta.
+   * El navegador pregunta antes de cerrar; es el único caso en que el proceso se pierde.
+   */
+  useEffect(() => {
+    if (!supervisandoArchivo) return
+    const avisar = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', avisar)
+    return () => window.removeEventListener('beforeunload', avisar)
+  }, [supervisandoArchivo])
 
   /**
    * De qué botón salió el listado de "PDFs sin vincular".
@@ -465,31 +480,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Sugiere qué factura "falta" del período corresponde a un PDF huérfano, por NOMBRE de archivo
   // (sin OCR): coincide palabras del proveedor + desempata por la fecha del nombre (MM-DD).
   const sugerirFacturasHuerfano = (nombreArchivo: string): FacturaArca[] => {
-    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-    const arch = norm(nombreArchivo)
     // Candidatas = TODA factura sin PDF, incluidas las de Portal (2026-09-03).
     // Las `fc=No` ya entraban (`categoriaArchivo` sólo aparta las de Portal), y las de Portal se
     // sumaron porque nada impide que alguien haya bajado esa factura del sitio y la haya dejado en
     // la carpeta: excluirlas hacía que el archivo correcto no apareciera nunca como sugerencia.
     const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
-    const conScore = faltantes.map(f => {
-      const palabras = norm(f.denominacion_emisor || '').split(/\s+/).filter(w => w.length >= 4)
-      const hits = palabras.filter(w => arch.indexOf(w) >= 0).length
-      return { f, hits }
-    }).filter(x => x.hits > 0)
+    // La cuenta del parecido vive en `lib/facturas/vincular-archivo.ts`: la usa también el Cash Flow.
+    const conScore = faltantes.map(f => ({ f, hits: coincidenciasDeNombre(nombreArchivo, f.denominacion_emisor) }))
+      .filter(x => x.hits > 0)
     if (conScore.length === 0) return []
     const maxHits = Math.max(...conScore.map(x => x.hits))
     let candidatos = conScore.filter(x => x.hits === maxHits).map(x => x.f)
     // Si el nombre trae fecha (MM-DD al inicio), EXIGIR que coincida con la emisión del candidato.
     // Evita sugerir una factura de otra fecha (ej. un duplicado "04-01" contra la única faltante,
     // que es del 04-09). Si ninguna coincide la fecha → sin sugerencia (probable duplicado).
-    const m = nombreArchivo.match(/^(\d{2})-(\d{2})/)
-    if (m) {
-      candidatos = candidatos.filter(f => {
-        const fe = f.fecha_emision || '' // YYYY-MM-DD
-        return fe.slice(5, 7) === m[1] && fe.slice(8, 10) === m[2]
-      })
-    }
+    candidatos = candidatos.filter(f => fechaDelNombreCoincide(nombreArchivo, f.fecha_emision) !== false)
     return candidatos
   }
 
@@ -513,7 +518,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const vincularHuerfano = async (factura: FacturaArca, h: { archivo: string; url: string }) => {
     try {
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
-        .update({ pdf_drive_url: h.url, pdf_estado: 'descargado', pdf_observaciones: `Vinculado manualmente desde supervisión (archivo: ${h.archivo})` })
+        .update(datosDelVinculo(h, 'supervisión'))
         .eq('id', factura.id)
       if (error) { toast.error('No se pudo vincular: ' + error.message); return }
       setHuerfanosSupervision(prev => prev.filter(x => x.url !== h.url))
@@ -772,6 +777,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
+  /** 🧾 A-BUG-1244 — la factura que se está vinculando con sus compras de insumos. */
+  const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
@@ -2087,7 +2094,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setSupervisandoArchivo(true)
     setOrigenListado('ocr')
     setHuerfanosSupervision([])
-    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar…' : 'Supervisando archivo digital del período…')
+    const tId = toast.loading(soloNoAdjudicados ? 'Re-supervisando solo los sin adjudicar… (podés seguir trabajando)' : 'Supervisando archivo digital del período… (podés seguir trabajando)')
     const skip = new Set<string>()
     // Modo rápido: pre-cargar como "ya procesados" los archivos cuyos links ya están en una factura.
     if (soloNoAdjudicados) {
@@ -2098,7 +2105,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     try {
       for (let guard = 0; guard < 500; guard++) {
         tanda++
-        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados)`, { id: tId })
+        toast.loading(`Supervisando… (tanda ${tanda}, ${skip.size} archivos revisados) · podés seguir trabajando`, { id: tId })
         /**
          * Una tanda, con reintento en tanda chica.
          *
@@ -6045,6 +6052,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       monto_sicore: f.monto_sicore as number | null,
       descuento_aplicado: f.descuento_aplicado as number | null,
       monto_a_abonar: montoPagoEnPesos(f as never),
+      conversion: conversionDe(f as never),   // 💵 A-BUG-1245 — mismo renglón de conversión que el Cash Flow
     }
   })
   // Mapea un grupo de templates (egresos sin factura) a los items del detalle
@@ -6340,6 +6348,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Button>
               </div>
             </div>
+
+            <TestsDelProceso proceso="egresos/archivo-digital" pantalla="egresos" />
+            {/* ⏳ A-FEAT-1262 — nota del usuario 2026-10-13: «¿corre por detrás y puedo seguir trabajando
+                en otra cosa? Debería avisar si es así porque me dio miedo abortar el proceso». */}
+            {supervisandoArchivo && (
+              <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                <strong>⏳ Está trabajando en segundo plano: podés seguir en otra pantalla de la app.</strong>{' '}
+                El avance y el resultado te siguen en el cartel de arriba a la derecha, cada PDF queda vinculado
+                en el momento en que lo encuentra, y al terminar te llega el mail con el resumen.{' '}
+                <strong>Lo único que lo corta es cerrar o recargar la pestaña del navegador.</strong>{' '}
+                Si te vas de esta pantalla, al volver la lista de «PDFs sin vincular» la recuperás con «📊 Contar».
+              </div>
+            )}
 
             {/* 🗂️ Resumen de archivo digital (PDF) — chips clickeables que filtran la tabla */}
             {(() => {
@@ -7571,6 +7592,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                {/* 🧾 A-BUG-1244 — vincular la factura con las compras de insumos (precio, descuento, moneda) */}
+                                {schemaName === 'msa' && (
+                                  <DropdownMenuItem onClick={() => setFacturaVincularCompras(factura.id)}>
+                                    🧾 Vincular con compras de insumos
+                                  </DropdownMenuItem>
+                                )}
                                 {(factura.sicore || factura.tc_pago || factura.descuento_aplicado || factura.estado === 'pagar' || factura.estado === 'preparado' || factura.estado === 'echeq') && (
                                   <DropdownMenuItem
                                     className="text-orange-600"
@@ -12381,6 +12408,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
+        onCerrar={() => setFacturaVincularCompras(null)} />
     </div>
   )
 }

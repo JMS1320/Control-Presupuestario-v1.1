@@ -108,6 +108,77 @@ export interface LineaLiqHacienda {
    * misma unidad. Vacío en una venta en pie.
    */
   kgGancho?: number | null
+  /**
+   * 🥩 **El precio por kilo GANCHO — el dato real** (usuario 2026-10-04: *«el kg al gancho es nuestro dato
+   * real, el otro dato es una conversión pero no puede faltar el dato real»*). Con kilos y precio gancho
+   * cargados, el importe de la línea es **kg gancho × precio gancho** y el precio por kilo vivo se deriva
+   * (importe ÷ kg pie), que es como lo expresa el papel del frigorífico.
+   */
+  precioGancho?: number | null
+  /**
+   * 🥩 **Manda el precio por kilo VIVO** (usuario 2026-10-05: *«liquidar las ventas a Arre Beef me tiene
+   * que permitir poner el precio del kilo vivo, que es como ellos lo liquidan, y lógicamente el precio kg
+   * carne se deberá modificar solo»*). Con esto el importe es **kg pie × $/kg pie** —el papel— y el precio
+   * gancho se deriva (importe ÷ kg gancho). El que se carga a mano manda; el otro se calcula.
+   */
+  mandaPie?: boolean
+}
+
+type LineaPrecio = { kilos: number; precio: number; kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean }
+
+/**
+ * 💲 Un precio por kilo se muestra con **hasta 3 decimales** (A-BUG-1279, 2026-10-14). El frigorífico
+ * imprime 2 pero calcula con 3: Arre Beef dice *$2.689,58 × 3.000 kg = $8.068.737*, y eso sólo cierra
+ * con **2.689,579** (con ,58 da 8.068.740). El campo redondeaba a 2 al salir y no dejaba cargarlo.
+ * Usuario: *«en precio, ya sea de carne o de peso vivo, debería poder poner 3 decimales aunque luego
+ * no se vea»*. Con 2 o menos se sigue viendo con 2.
+ */
+export const formatoPrecio = (n: number) =>
+  n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })
+
+/**
+ * ✍️ A-BUG-1280 — un monto que se calcula solo (IVA, comisión) se corrige ESCRIBIENDO SOBRE el número.
+ * Usuario 2026-10-14, con Arre Beef: *«el IVA no me permite editarlo… debe ser con 48 y no con 49…
+ * sólo yo cambiar el monto»*. Antes el calculado era sólo el texto gris de la caja vacía: no se podía
+ * cambiar un ,49 por ,48. Ahora al entrar a la caja aparece el calculado, editable; al salir, si quedó
+ * igual al calculado la caja vuelve a vacía («usá el calculado»), y si cambió, queda como monto a mano.
+ * ⚠️ `calculado` es el de la APP, SIN el monto tipeado (`montoCalculado`): comparado contra el cálculo
+ * que ya usa lo tipeado, siempre da igual y la caja se vaciaba al salir (pasó en la primera prueba).
+ */
+/** Lo que calcula la app para la comisión o el IVA, ignorando el monto tipeado de ESE campo. */
+export function montoCalculado(e: LiqHaciendaEntrada, campo: 'iva' | 'comision'): number {
+  return calcularLiqHacienda(campo === 'iva' ? { ...e, ivaMonto: null } : { ...e, comisionMonto: null })[campo]
+}
+
+export function montoTipeadoOVacio(texto: string, calculado: number): string {
+  if (!texto.trim()) return ''
+  const n = parseFloat(String(texto).replace(/\./g, '').replace(',', '.')) || 0
+  if (Math.abs(n - calculado) < 0.005) return ''
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** ¿La línea es al gancho? Kilos gancho y un precio que mande (el gancho, o el vivo con `mandaPie`). */
+export const lineaAlGancho = (l: { kgGancho?: number | null; precioGancho?: number | null; mandaPie?: boolean; precio?: number }) =>
+  (Number(l.kgGancho) || 0) > 0 && ((Number(l.precioGancho) || 0) > 0 || (!!l.mandaPie && (Number(l.precio) || 0) > 0))
+
+/** El importe de una línea: manda el precio cargado a mano — vivo (kg pie × $/kg pie) o gancho (kg gancho × $/kg gancho). */
+export function importeDeLinea(l: LineaPrecio): number {
+  if (l.mandaPie || !lineaAlGancho(l)) return (Number(l.kilos) || 0) * (Number(l.precio) || 0)
+  return Number(l.kgGancho) * Number(l.precioGancho)
+}
+
+/** El precio por kilo VIVO de una línea al gancho: el cargado si manda, si no la conversión (importe ÷ kg pie). */
+export function precioPieDerivado(l: LineaPrecio): number {
+  const k = Number(l.kilos) || 0
+  if (l.mandaPie) return Number(l.precio) || 0
+  return lineaAlGancho(l) && k > 0 ? importeDeLinea(l) / k : Number(l.precio) || 0
+}
+
+/** El precio por kilo GANCHO: el cargado si manda, si no se deriva del vivo (importe ÷ kg gancho). */
+export function precioGanchoDerivado(l: LineaPrecio): number {
+  const kg = Number(l.kgGancho) || 0
+  if (!l.mandaPie) return Number(l.precioGancho) || 0
+  return kg > 0 ? importeDeLinea(l) / kg : 0
 }
 
 /** Una retención impresa en el papel (IIBB, Ganancias…). `importe` en positivo: se descuenta. */
@@ -168,7 +239,8 @@ export function retencionSugerida(bruto: number, alicuotaPct: number): number {
 export function calcularLiqHacienda(e: LiqHaciendaEntrada): LiqHaciendaCalculo {
   const cabezas = e.lineas.reduce((s, l) => s + (Number(l.cabezas) || 0), 0)
   const kilos = e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0), 0)
-  const bruto = r2(e.lineas.reduce((s, l) => s + (Number(l.kilos) || 0) * (Number(l.precio) || 0), 0))
+  // Al gancho manda el dato real (kg gancho × precio gancho) — ver `importeDeLinea`.
+  const bruto = r2(e.lineas.reduce((s, l) => s + importeDeLinea(l), 0))
   const tipeado = (x: number | null | undefined) => x !== null && x !== undefined && Number.isFinite(Number(x))
   const comision = tipeado(e.comisionMonto) ? r2(Number(e.comisionMonto)) : r2(bruto * (Number(e.comisionPct) || 0) / 100)
   const redondeo = Number(e.redondeo) || 0
@@ -337,8 +409,9 @@ export function precargaDesdeVenta(v: {
       ...((Number(v.kgCarne) || 0) > 0 && (Number(v.kgTotales) || 0) > 0
         ? {
             kilos: Math.round(Number(v.kgTotales)),
-            precio: Math.round(Number(v.kgCarne) * (Number(v.precioKg) || 0) / Number(v.kgTotales) * 100) / 100,
+            precio: Number(v.kgCarne) * (Number(v.precioKg) || 0) / Math.round(Number(v.kgTotales)),
             kgGancho: Number(v.kgCarne),
+            precioGancho: Number(v.precioKg) || 0,
           }
         : { kilos: Math.round(kgQueSeCobran(v)), precio: Number(v.precioKg) || 0 }),
     },

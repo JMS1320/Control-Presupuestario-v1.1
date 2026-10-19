@@ -60,6 +60,18 @@ export interface ComprobanteVentaParaCobro {
  */
 export const TIPOS_LIQ_HACIENDA = new Set([60, 61])
 
+/**
+ * 🧾 **Factura común (A, B, C, M, FCE y sus notas)** — A-BUG-1231. En una factura el cliente paga el
+ * total con su IVA: no hay comisión, ni almacenaje, ni **IVA RG 2300** (eso es sólo de la liquidación
+ * de granos). Con la cuenta de granos, una factura A con el IVA desglosado daría **el total menos todo
+ * el IVA** — no pasaba porque las facturas de hoy tienen el IVA en cero, pero era una trampa armada.
+ *
+ *     se cobra = total − retenciones impresas − retenciones cargadas aparte
+ *
+ * Mismos códigos que `CODS_FACTURA` del modal de liquidaciones.
+ */
+export const TIPOS_FACTURA_COMUN = new Set([1, 2, 3, 6, 7, 8, 11, 12, 13, 51, 52, 53, 201, 202, 203, 206, 207, 208, 211, 212, 213])
+
 export interface CobroEsperado {
   /** Lo facturado. */
   totalOperacion: number
@@ -85,6 +97,12 @@ export function cobroEsperado(
   v: ComprobanteVentaParaCobro,
   retencionesAparte = 0,
 ): CobroEsperado {
+  if (TIPOS_FACTURA_COMUN.has(Number(v.tipo_comprobante))) {
+    const total = n(v.imp_total) || (n(v.imp_neto_gravado) + n(v.imp_neto_no_gravado) + n(v.imp_op_exentas) + n(v.iva))
+    const retenciones = n(v.ret_iva) + n(v.ret_iibb) + n(retencionesAparte)
+    const neto = total - retenciones
+    return { totalOperacion: total, deducciones: 0, retenciones, importeNeto: neto, ivaRg2300: 0, pagoCondiciones: neto }
+  }
   if (TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante))) {
     const total = n(v.imp_total) || (n(v.imp_neto_gravado) + n(v.iva))
     const retenciones = n(v.ret_iva) + n(v.ret_iibb) + n(retencionesAparte)

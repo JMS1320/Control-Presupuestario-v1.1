@@ -1,6 +1,11 @@
 "use client"
 
 
+import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
+import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
+import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -16,6 +21,7 @@ import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
 import { PanelEntregasFacturas } from "./panel-entregas-facturas"
+import { ModalVincularCompras } from "./modal-vincular-compras"
 // Parser único del proyecto: coma decimal y punto de miles, como manda
 // CLAUDE.md § Convención Inputs Monetarios (es-AR).
 import { parseNumeroAR } from "@/lib/format/numero"
@@ -119,6 +125,10 @@ interface MovimientoInsumo {
   observaciones: string | null
   created_at: string
   stock_insumos?: { producto: string; categorias_insumo?: { nombre: string } }
+  /** 💵 A-BUG-1244 — moneda de compra; `costo_unitario` sigue en pesos. */
+  moneda?: string | null
+  costo_unitario_moneda?: number | null
+  tipo_cambio?: number | null
 }
 
 interface OrdenAplicacionRodeo {
@@ -1074,12 +1084,30 @@ function TabHacienda() {
   const [busquedaTernero, setBusquedaTernero] = useState('')
 
   // Cambio categoría — selector de terneros individuales
-  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null }[]>([])
+  const [ternerosParaCambio, setTernerosParaCambio] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, es_torito: boolean | null }[]>([])
   const [ternerosSeleccionadosCambio, setTernerosSeleccionadosCambio] = useState<Set<string>>(new Set())
+  /**
+   * 🐄 A-FEAT-1251 — «Sólo las de reposición»: preselecciona las hembras marcadas rep. Mientras está
+   * prendido, lo que el usuario tilde o destilde a mano se vuelve la marca rep AL GUARDAR, antes de
+   * mover la categoría — así la planilla de recría y el cambio no quedan diciendo cosas distintas.
+   */
+  const [modoRepCambio, setModoRepCambio] = useState(false)
+  /**
+   * 🐄 A-FEAT-1251 — la hembra SIN IDENTIFICAR. Pedido del usuario 2026-10-05: *«¿el sistema está
+   * preparado para pasar una cabeza sin identificar? luego identificaríamos por caravana las que no
+   * entraron y sacaríamos por diferencia ésta»*.
+   *  · `sinIdentCambio`: cabezas que se mueven además de las tildadas (stock sí, individuo todavía no).
+   *  · `soloIdentificarCambio`: «completar por diferencia» — la cabeza YA se movió; sólo se le cambia la
+   *    categoría al individuo, sin movimiento de stock.
+   *  · `identificadasDestino`: cuántos individuos activos hay en el destino, para mostrar el descuadre.
+   */
+  const [sinIdentCambio, setSinIdentCambio] = useState('')
+  const [soloIdentificarCambio, setSoloIdentificarCambio] = useState(false)
+  const [identificadasDestino, setIdentificadasDestino] = useState<number | null>(null)
 
   const cargarTernerosParaCambio = async (categoriaId: string) => {
     const { data } = await supabase.schema('productivo').from('terneros')
-      .select('id, caravana_interna, caravana_oficial, sexo')
+      .select('id, caravana_interna, caravana_oficial, sexo, es_torito')
       .eq('activo', true)
       .eq('categoria_id', categoriaId)
       .order('caravana_oficial', { ascending: true })
@@ -1256,6 +1284,13 @@ function TabHacienda() {
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
+  // 🐄 A-FEAT-1251 — individuos ya identificados en el destino del cambio de categoría
+  useEffect(() => {
+    if (nuevoMov.tipo !== 'cambio_categoria' || !nuevoMov.categoria_destino_id) { setIdentificadasDestino(null); return }
+    supabase.schema('productivo').from('terneros').select('id', { count: 'exact', head: true })
+      .eq('activo', true).eq('categoria_id', nuevoMov.categoria_destino_id)
+      .then(({ count }) => setIdentificadasDestino(count ?? null))
+  }, [nuevoMov.tipo, nuevoMov.categoria_destino_id])
   const resetNuevoMov = () => {
     setNuevoMov({
       fecha: hoyArgentina(),
@@ -1272,6 +1307,9 @@ function TabHacienda() {
     setBusquedaTernero('')
     setTernerosParaCambio([])
     setTernerosSeleccionadosCambio(new Set())
+    setModoRepCambio(false)
+    setSinIdentCambio('')
+    setSoloIdentificarCambio(false)
   }
 
   // Categorías que corresponden a terneros (para vincular mortandad → baja caravana)
@@ -1295,10 +1333,30 @@ function TabHacienda() {
   }
 
   const guardarMovimiento = async () => {
-    const N = parseInt(nuevoMov.cantidad)
+    let N = parseInt(nuevoMov.cantidad)
 
     // ── Cambio de Categoría ───────────────────────────────────────────────
     if (nuevoMov.tipo === 'cambio_categoria') {
+      const sinIdent = parseInt(sinIdentCambio) || 0
+      // Con individuos, lo que se mueve es lo tildado + las cabezas sin identificar (A-FEAT-1251).
+      if (ternerosParaCambio.length > 0) N = ternerosSeleccionadosCambio.size + sinIdent
+
+      // 🔎 «Completar por diferencia»: la cabeza ya se movió — sólo se identifica el individuo.
+      if (soloIdentificarCambio) {
+        if (!nuevoMov.categoria_destino_id || ternerosSeleccionadosCambio.size === 0) {
+          toast.error('Elegí la categoría destino y el animal a identificar'); return
+        }
+        const { error: eId } = await supabase.schema('productivo').from('terneros')
+          .update({ categoria_id: nuevoMov.categoria_destino_id })
+          .in('id', [...ternerosSeleccionadosCambio])
+        if (eId) { toast.error('No se pudo identificar: ' + eId.message); return }
+        toast.success(`${ternerosSeleccionadosCambio.size} identificado(s) en el destino — sin movimiento de stock`)
+        setMostrarModalMov(false)
+        resetNuevoMov()
+        cargarDatos()
+        return
+      }
+
       if (!nuevoMov.categoria_id || !nuevoMov.categoria_destino_id || !N) {
         toast.error('Categoría origen, destino y cantidad son obligatorios')
         return
@@ -1325,6 +1383,19 @@ function TabHacienda() {
         if (!seguir) return
       }
 
+      // 🐄 A-FEAT-1251 — PRIMERO la marca rep de la planilla de recría, después el movimiento.
+      if (modoRepCambio) {
+        const hembrasCambio = ternerosParaCambio.filter(t => t.sexo === 'Hembra').map(t => ({ id: t.id, es_rep: !!t.es_torito }))
+        const aj = ajusteDeMarcas(hembrasCambio, ternerosSeleccionadosCambio)
+        const prodRep = supabase.schema('productivo')
+        const r1 = aj.marcar.length ? await prodRep.from('terneros').update({ es_torito: true }).in('id', aj.marcar) : { error: null }
+        const r2 = aj.desmarcar.length ? await prodRep.from('terneros').update({ es_torito: false }).in('id', aj.desmarcar) : { error: null }
+        const eRep = r1.error || r2.error
+        if (eRep) { toast.error('No se pudo actualizar la marca de reposición (no se movió nada): ' + eRep.message); return }
+        if (aj.marcar.length || aj.desmarcar.length)
+          toast.info(`Reposición actualizada en la planilla de recría: +${aj.marcar.length} / −${aj.desmarcar.length}`)
+      }
+
       // Egreso de categoría origen
       const { error: e1 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
         fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_id,
@@ -1337,7 +1408,8 @@ function TabHacienda() {
       const { data: movDestino, error: e2 } = await supabase.schema('productivo').from('movimientos_hacienda').insert({
         fecha: nuevoMov.fecha, categoria_id: nuevoMov.categoria_destino_id,
         tipo: 'cambio_categoria', cantidad: N,
-        observaciones: nuevoMov.observaciones || `Cambio categ ← ${catOrigen?.nombre || ''}`
+        observaciones: (nuevoMov.observaciones || `Cambio categ ← ${catOrigen?.nombre || ''}`)
+          + (sinIdent > 0 ? ` · incluye ${sinIdent} sin identificar` : '')
       }).select().single()
       if (e2) { toast.error('Error al guardar ingreso: ' + e2.message); return }
 
@@ -1390,6 +1462,11 @@ function TabHacienda() {
       }
 
       toast.success(`Cambio de categoría registrado${identificados.length > 0 ? ` (${identificados.length} identificados)` : ternerosSeleccionadosCambio.size > 0 ? ` (${ternerosSeleccionadosCambio.size} individuos actualizados)` : ''}`)
+      if (sinIdent > 0) {
+        toast.warning(
+          `${sinIdent} ${sinIdent === 1 ? 'cabeza se movió' : 'cabezas se movieron'} sin identificar. Cuando sepas cuál es, ` +
+          `Cambio de Categoría → «Sólo identificar (la cabeza ya se movió)».`, { duration: 9000 })
+      }
       if (sinCaravanas) {
         toast.warning(
           `${N} ${N === 1 ? 'cabeza entró' : 'cabezas entraron'} a ${catDestino?.nombre} sin caravana. ` +
@@ -2792,6 +2869,7 @@ function TabHacienda() {
             <DialogTitle>Nuevo Movimiento Hacienda</DialogTitle>
             <DialogDescription>Registrar compra, venta, nacimiento, mortandad o cambio de categoría.</DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="ganaderia/movimiento" pantalla="ganaderia" />
           <div className="grid gap-3">
             {/* Fila 1: Fecha + Tipo — siempre visible */}
             <div className="grid grid-cols-2 gap-3">
@@ -2829,6 +2907,7 @@ function TabHacienda() {
                       setNuevoMov(p => ({ ...p, categoria_id: v }))
                       setTernerosParaCambio([])
                       setTernerosSeleccionadosCambio(new Set())
+                      setModoRepCambio(false)
                       if (esCatTernero(v)) cargarTernerosParaCambio(v)
                     }}>
                       <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
@@ -2838,6 +2917,16 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* A-FEAT-1265: las cabezas de hoy, para no cargar más de las que hay */}
+                    {nuevoMov.categoria_id && (() => {
+                      const hoy = cabezasHoy(stock, nuevoMov.categoria_id)
+                      const pide = parseInt(nuevoMov.cantidad) || 0
+                      return (
+                        <p className={`mt-1 text-xs ${pide > hoy ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                          Hoy: <strong>{hoy}</strong> cabezas{pide > hoy ? ` — estás moviendo ${pide}, más de las que hay` : ''}
+                        </p>
+                      )
+                    })()}
                   </div>
                   <div>
                     <Label>Categoría Destino *</Label>
@@ -2849,6 +2938,11 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {nuevoMov.categoria_destino_id && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Hoy: <strong>{cabezasHoy(stock, nuevoMov.categoria_destino_id)}</strong> cabezas
+                      </p>
+                    )}
                   </div>
                 </div>
                 {ternerosParaCambio.length > 0 ? (
@@ -2856,12 +2950,23 @@ function TabHacienda() {
                     <div className="flex items-center justify-between">
                       <Label className="text-blue-700 font-medium">Seleccionar individuos ({ternerosSeleccionadosCambio.size} de {ternerosParaCambio.length})</Label>
                       <div className="flex gap-2">
+                        {ternerosParaCambio.some(t => t.sexo === 'Hembra' && t.es_torito) && (
+                          <Button variant="outline" size="sm" className={`h-6 text-xs ${modoRepCambio ? 'bg-pink-600 text-white border-pink-600' : 'border-pink-400 text-pink-700'}`}
+                            title="Preselecciona las hembras marcadas «rep». Lo que tildes o destildes se vuelve la marca rep al guardar."
+                            onClick={() => {
+                              const ids = ternerosParaCambio.filter(t => t.sexo === 'Hembra' && t.es_torito).map(t => t.id)
+                              setTernerosSeleccionadosCambio(new Set(ids)); setModoRepCambio(true)
+                              setNuevoMov(p => ({ ...p, cantidad: String(ids.length) }))
+                            }}>
+                            ♀ Sólo las de reposición ({ternerosParaCambio.filter(t => t.sexo === 'Hembra' && t.es_torito).length})
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm" className="h-6 text-xs"
-                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set(ternerosParaCambio.map(t => t.id))); setModoRepCambio(false); setNuevoMov(p => ({ ...p, cantidad: String(ternerosParaCambio.length) })) }}>
                           Todos
                         </Button>
                         <Button variant="outline" size="sm" className="h-6 text-xs"
-                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
+                          onClick={() => { setTernerosSeleccionadosCambio(new Set()); setModoRepCambio(false); setNuevoMov(p => ({ ...p, cantidad: '0' })) }}>
                           Ninguno
                         </Button>
                       </div>
@@ -2881,7 +2986,46 @@ function TabHacienda() {
                         </label>
                       ))}
                     </div>
-                    <p className="text-xs text-blue-600">Cantidad: {ternerosSeleccionadosCambio.size}</p>
+                    <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-blue-100">
+                      <label className="flex items-center gap-1 text-xs text-gray-700" title="Cabezas que se mueven además de las tildadas: el stock se mueve, el individuo se identifica después.">
+                        + cabezas sin identificar
+                        <Input type="text" value={sinIdentCambio} disabled={soloIdentificarCambio}
+                          onChange={e => setSinIdentCambio(e.target.value.replace(/\D/g, ''))} className="h-6 w-12 text-center text-xs" placeholder="0" />
+                      </label>
+                      <label className="flex items-center gap-1 text-xs text-gray-700 cursor-pointer"
+                        title="Completar por diferencia: la cabeza YA se movió antes. Sólo se le cambia la categoría al animal tildado, sin movimiento de stock.">
+                        <input type="checkbox" checked={soloIdentificarCambio}
+                          onChange={e => {
+                            setSoloIdentificarCambio(e.target.checked)
+                            if (e.target.checked) { setSinIdentCambio(''); setModoRepCambio(false); setTernerosSeleccionadosCambio(new Set()) }
+                          }} />
+                        Sólo identificar (la cabeza ya se movió)
+                      </label>
+                    </div>
+                    <p className="text-xs text-blue-600">
+                      {soloIdentificarCambio
+                        ? <>Identificar: {ternerosSeleccionadosCambio.size} — no mueve stock</>
+                        : <>Se mueven: {ternerosSeleccionadosCambio.size + (parseInt(sinIdentCambio) || 0)} cabezas ({ternerosSeleccionadosCambio.size} identificadas{(parseInt(sinIdentCambio) || 0) > 0 ? ` + ${parseInt(sinIdentCambio)} sin identificar` : ''})</>}
+                    </p>
+                    {nuevoMov.categoria_destino_id && identificadasDestino != null && (() => {
+                      // 🧮 Control a la vista: cabezas (stock) vs. individuos identificados en el destino, antes y después.
+                      const cabezas = stock.find(x => String(x.categoria_id) === String(nuevoMov.categoria_destino_id))?.cantidad ?? 0
+                      const { cabezas: cabezasDesp, identificadas: identDesp, dif } = descuadreDestino({
+                        cabezasHoy: cabezas, identificadasHoy: identificadasDestino, tildadas: ternerosSeleccionadosCambio.size,
+                        sinIdentificar: parseInt(sinIdentCambio) || 0, soloIdentificar: soloIdentificarCambio })
+                      return (
+                        <p className={`text-xs ${dif === 0 ? 'text-emerald-700' : dif > 0 ? 'text-amber-700' : 'text-red-700 font-semibold'}`}>
+                          Destino después de guardar: {cabezasDesp} cabezas · {identDesp} identificadas
+                          {dif === 0 ? ' ✓' : dif > 0 ? ` → faltan identificar ${dif}` : ` → ⚠️ ${-dif} identificadas de MÁS que cabezas: revisá antes de guardar`}
+                        </p>
+                      )
+                    })()}
+                    {modoRepCambio && (() => {
+                      const aj = ajusteDeMarcas(ternerosParaCambio.filter(t => t.sexo === 'Hembra').map(t => ({ id: t.id, es_rep: !!t.es_torito })), ternerosSeleccionadosCambio)
+                      return (aj.marcar.length || aj.desmarcar.length)
+                        ? <p className="text-xs text-pink-700">♀ Al guardar, la planilla de recría queda igual a esta selección: <b>+{aj.marcar.length}</b> rep · <b>−{aj.desmarcar.length}</b> rep.</p>
+                        : <p className="text-xs text-pink-700">♀ La selección coincide con las marcadas rep en la planilla de recría.</p>
+                    })()}
                   </div>
                 ) : (
                   <>
@@ -2968,6 +3112,17 @@ function TabHacienda() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {/* A-FEAT-1265: las cabezas de hoy. Sólo avisa en lo que SACA cabezas (mortandad). */}
+                    {nuevoMov.categoria_id && (() => {
+                      const hoy = cabezasHoy(stock, nuevoMov.categoria_id)
+                      const pide = parseInt(nuevoMov.cantidad) || 0
+                      const saca = nuevoMov.tipo === 'mortandad' // la venta tiene su propio formulario
+                      return (
+                        <p className={`mt-1 text-xs ${saca && pide > hoy ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                          Hoy: <strong>{hoy}</strong> cabezas{saca && pide > hoy ? ` — estás sacando ${pide}, más de las que hay` : ''}
+                        </p>
+                      )
+                    })()}
                   </div>
                   <div>
                     <Label>Cantidad *</Label>
@@ -3482,6 +3637,16 @@ function SubTabStockInsumos() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalMov, setMostrarModalMov] = useState(false)
   const [mostrarModalInsumo, setMostrarModalInsumo] = useState(false)
+  /** 🧾 A-BUG-1244 — las compras desde las que se abre la vinculación con su factura. */
+  const [vincularCompraIds, setVincularCompraIds] = useState<string[] | null>(null)
+  /** Compras tildadas en la lista para vincularlas juntas. */
+  const [selCompras, setSelCompras] = useState<Set<string>>(new Set())
+  /**
+   * 🧾 A-BUG-1244 — a qué factura(s) está vinculada cada compra, para VERLO en la lista y no revincular
+   * sin darse cuenta. Usuario 2026-10-05: *«no veo los insumos como vinculados; debe poder verse, si no
+   * hay riesgo de revincularlos»*.
+   */
+  const [facturasDeMov, setFacturasDeMov] = useState<Record<string, string[]>>({})
   /** El insumo cuyo saldo se está midiendo. Ver `panel-mediciones-insumo.tsx`. */
   const [insumoMedir, setInsumoMedir] = useState<
     { id: string; producto: string; unidad_medida: string | null } | null>(null)
@@ -3511,6 +3676,10 @@ function SubTabStockInsumos() {
   // Filtros del listado de movimientos
   const [filtroTipoMov, setFiltroTipoMov] = useState<Set<string>>(new Set())
   const [busquedaMov, setBusquedaMov] = useState('')
+  // 🔎 A-FEAT-1243 — filtros de la tabla de STOCK (los movimientos ya tenían los suyos)
+  const [busquedaStock, setBusquedaStock] = useState('')
+  const [catsStock, setCatsStock] = useState<Set<string>>(new Set())
+  const [soloConStock, setSoloConStock] = useState(false)
 
   // Recalcular stock de un insumo desde sus movimientos
   const recalcularStockInsumo = async (insumoStockId: string) => {
@@ -3671,6 +3840,23 @@ function SubTabStockInsumos() {
       if (catRes.data) setCategorias(catRes.data)
       if (stockRes.data) setStock(stockRes.data)
       if (movRes.data) setMovimientos(movRes.data)
+      // 🧾 Las facturas de cada compra (el número corto), para mostrarlas en la fila.
+      const idsCompras = (movRes.data || []).filter((m: any) => m.tipo === 'compra').map((m: any) => m.id)
+      if (idsCompras.length) {
+        const { data: vincs } = await supabase.schema('productivo').from('entrega_factura')
+          .select('movimiento_id, factura_id, origen').in('movimiento_id', idsCompras)
+        const idsFac = [...new Set((vincs || []).filter((v: any) => (v.origen ?? 'arca') === 'arca').map((v: any) => v.factura_id))]
+        const { data: facs } = idsFac.length
+          ? await supabase.schema('msa').from('comprobantes_arca').select('id, punto_venta, numero_desde').in('id', idsFac)
+          : { data: [] as any[] }
+        const nro = new Map((facs || []).map((f: any) => [f.id, `FC ${Number(f.punto_venta || 0)}-${Number(f.numero_desde || 0)}`]))
+        const mapa: Record<string, string[]> = {}
+        for (const v of (vincs || []) as any[]) {
+          const etq = (v.origen ?? 'arca') === 'arca' ? (nro.get(v.factura_id) ?? 'FC') : 'template'
+          ;(mapa[v.movimiento_id] ||= []).includes(etq) || mapa[v.movimiento_id].push(etq)
+        }
+        setFacturasDeMov(mapa)
+      } else setFacturasDeMov({})
     } catch (err) {
       console.error('Error cargando insumos:', err)
       toast.error('Error al cargar datos de insumos')
@@ -3830,6 +4016,9 @@ function SubTabStockInsumos() {
     return ambitoReal === 'ambos' || ambitoReal === filtroTipo
   }
   const stockFiltrado = stock.filter(s => deEsteAmbito((s.categorias_insumo as any)?.ambito, s.categorias_insumo?.nombre))
+  /** Lo que muestra la TABLA de stock: el ámbito + los filtros de A-FEAT-1243. Los modales siguen usando `stockFiltrado`. */
+  const stockVisible = filtrarStock(stockFiltrado, { busqueda: busquedaStock, categorias: catsStock, soloConStock })
+  const catsDisponiblesStock = Array.from(new Set(stockFiltrado.map(s => s.categorias_insumo?.nombre || '(sin categoría)'))).sort()
   const categoriasFiltradas = categorias.filter(c => deEsteAmbito((c as any).ambito, c.nombre))
   const movimientosFiltrados = movimientos.filter(m => {
     const cat = (m.stock_insumos as any)?.categorias_insumo
@@ -3902,6 +4091,27 @@ function SubTabStockInsumos() {
       </div>
 
       {!verMovimientos ? (
+        <>
+        <TestsDelProceso proceso="productivo/stock" pantalla="productivo" />
+        {/* 🔎 A-FEAT-1243 — filtros del stock */}
+        <div className="flex items-center gap-3 flex-wrap pb-2">
+          <Input placeholder="Buscar producto u observación..." value={busquedaStock}
+            onChange={e => setBusquedaStock(e.target.value)} className="h-8 w-64 text-sm" />
+          <div className="flex flex-wrap items-center gap-1">
+            {catsDisponiblesStock.map(c => (
+              <button key={c} type="button" title={tituloChip(c)}
+                onClick={(ev) => toggleChip<string>(fn => setCatsStock(prev => fn(prev.size ? prev : new Set(catsDisponiblesStock))), c, esSoloEste(ev))}
+                className={`text-xs px-2 py-0.5 rounded-full border ${catsStock.size === 0 || catsStock.has(c) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}>
+                {c}
+              </button>
+            ))}
+            {catsStock.size > 0 && <button type="button" className="text-[10px] underline text-gray-400 ml-1" onClick={() => setCatsStock(new Set())}>todas</button>}
+          </div>
+          <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+            <input type="checkbox" checked={soloConStock} onChange={e => setSoloConStock(e.target.checked)} /> sólo con stock
+          </label>
+          <span className="text-xs text-gray-400">{stockVisible.length} de {stockFiltrado.length}</span>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -3914,14 +4124,14 @@ function SubTabStockInsumos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stockFiltrado.length === 0 ? (
+            {stockVisible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  Sin registros de stock de insumos.
+                  {stockFiltrado.length === 0 ? 'Sin registros de stock de insumos.' : 'Ningún insumo con esos filtros.'}
                 </TableCell>
               </TableRow>
             ) : (
-              stockFiltrado.map(s => (
+              stockVisible.map(s => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.producto}</TableCell>
                   <TableCell>{s.categorias_insumo?.nombre || '-'}</TableCell>
@@ -3950,6 +4160,7 @@ function SubTabStockInsumos() {
             )}
           </TableBody>
         </Table>
+        </>
       ) : (
         <>
           {/* Filtros de movimientos */}
@@ -3991,6 +4202,14 @@ function SubTabStockInsumos() {
                 </Button>
               )}
             </div>
+            {selCompras.size > 0 && (
+              <span className="flex items-center gap-2 ml-2">
+                <Button size="sm" className="h-7 text-xs" onClick={() => setVincularCompraIds([...selCompras])}>
+                  🧾 Vincular {selCompras.size} seleccionada{selCompras.size === 1 ? '' : 's'} con su factura
+                </Button>
+                <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setSelCompras(new Set())}>limpiar</button>
+              </span>
+            )}
             <span className="text-xs text-muted-foreground ml-auto">
               {movimientosFiltrados.length} de {movimientos.filter(m => {
                 const cat = (m.stock_insumos as any)?.categorias_insumo
@@ -4010,12 +4229,13 @@ function SubTabStockInsumos() {
               <TableHead className="text-right">Monto Total</TableHead>
               <TableHead>Proveedor</TableHead>
               <TableHead>Obs.</TableHead>
+              <TableHead className="w-8" title="Tildá compras para vincularlas juntas con su factura">🧾</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {movimientosFiltrados.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   Sin movimientos de insumos registrados.
                 </TableCell>
               </TableRow>
@@ -4063,10 +4283,36 @@ function SubTabStockInsumos() {
                   </TableCell>
                   <TableCell>{m.stock_insumos?.producto || '-'}</TableCell>
                   <TableCell className="text-right">{celdaEditable('cantidad', formatoNumero(m.cantidad), 'number')}</TableCell>
-                  <TableCell className="text-right">{celdaEditable('costo_unitario', formatoMoneda(m.costo_unitario), 'number')}</TableCell>
+                  <TableCell className="text-right">
+                    {celdaEditable('costo_unitario', formatoMoneda(m.costo_unitario), 'number')}
+                    {/* 💵 A-BUG-1244 — la compra en dólares: el original y el TC con que se pasó a pesos */}
+                    {m.moneda === 'USD' && m.costo_unitario_moneda != null && (
+                      <div className="text-[10px] text-gray-500">USD {Number(m.costo_unitario_moneda).toLocaleString('es-AR', { maximumFractionDigits: 4 })}{m.tipo_cambio ? ` · TC ${Number(m.tipo_cambio).toLocaleString('es-AR')}` : ''}</div>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">{celdaEditable('monto_total', formatoMoneda(m.monto_total), 'number')}</TableCell>
                   <TableCell>{celdaEditable('proveedor', m.proveedor || '-')}</TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-[200px]">{celdaEditable('observaciones', m.observaciones || '-')}</TableCell>
+                  <TableCell>
+                    {m.tipo === 'compra' && (facturasDeMov[m.id]?.length ? (
+                      // Ya vinculada: se VE a qué factura, y no se puede tildar para vincular de nuevo.
+                      // El 🧾 la abre igual (para revisar o corregir), y la ventana avisa si es otra factura.
+                      <span className="flex items-center gap-1 whitespace-nowrap">
+                        <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
+                          title="Ya vinculada a esta(s) factura(s)">✓ {facturasDeMov[m.id].join(', ')}</span>
+                        <button type="button" title="Abrir la vinculación (revisar o corregir)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <input type="checkbox" title="Seleccionar para vincular junto con otras"
+                          checked={selCompras.has(m.id)}
+                          onChange={e => setSelCompras(prev => { const n = new Set(prev); e.target.checked ? n.add(m.id) : n.delete(m.id); return n })} />
+                        <button type="button" title="Vincular sólo ésta con su factura (precio, descuento y moneda)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                      </span>
+                    ))}
+                  </TableCell>
                 </TableRow>
                 )
               })
@@ -4362,6 +4608,8 @@ function SubTabStockInsumos() {
           onCerrar={() => { setInsumoMedir(null); cargarDatos() }} />
       )}
 
+      <ModalVincularCompras abierto={!!vincularCompraIds?.length} compraIds={vincularCompraIds}
+        onCerrar={() => setVincularCompraIds(null)} onGuardado={() => { setSelCompras(new Set()); cargarDatos() }} />
       {insumoFacturas && (
         <PanelEntregasFacturas insumo={insumoFacturas}
           onCerrar={() => { setInsumoFacturas(null); cargarDatos() }} />
@@ -7424,6 +7672,7 @@ function SubTabOrdenesAgricolas() {
             <DialogTitle>{modoVer ? 'Ver Orden Agrícola' : ordenEditandoId ? 'Editar Orden Agrícola' : 'Nueva Orden Agrícola'}</DialogTitle>
             <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Registrar aplicación de insumos en lotes / hectáreas.'}</DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="productivo/orden-agricola" pantalla="productivo" />
           <fieldset disabled={modoVer} className="contents">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
