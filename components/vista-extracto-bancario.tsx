@@ -5428,30 +5428,18 @@ ${marca}` : marca
             <TabsContent value="template" className="space-y-3 mt-3">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">¿No está el template?</span>
-                <button type="button" className="text-blue-700 underline" onClick={() => setCrearTemplateAbierto(v => !v)}>
-                  {crearTemplateAbierto ? 'Cerrar' : '+ Crear uno acá'}
+                {/* 🧩 A-FEAT-1294 — abre directo el formulario COMPLETO (ver lo existente, «parecido a…», entero
+                    o nada). Ya no pide antes una cuenta del plan: la cuenta es, por default, el nombre del template. */}
+                <button type="button" className="text-blue-700 underline" onClick={() => setModalNuevoTemplate(true)}>
+                  + Crear uno acá
                 </button>
               </div>
-              {crearTemplateAbierto && (
-                <div className="rounded border border-blue-200 bg-blue-50 p-2 space-y-2 text-xs">
-                  <div>Elegí la <strong>cuenta contable</strong> del template nuevo (tiene que existir en el plan de cuentas):</div>
-                  <SelectorCuentaContable
-                    value={cuentaNuevoTemplate}
-                    onSelect={(c) => setCuentaNuevoTemplate(c?.categ || '')}
-                    autoFocus={false}
-                    mostrarSinAsignar={false}
-                    className="w-full"
-                  />
-                  <Button size="sm" disabled={!cuentaNuevoTemplate} onClick={() => setModalNuevoTemplate(true)}>
-                    Seguir con «{cuentaNuevoTemplate || '…'}»
-                  </Button>
-                </div>
-              )}
               <ModalCrearTemplateFaltante
                 abierto={modalNuevoTemplate}
                 categ={cuentaNuevoTemplate}
                 empresaDestino={cuentaActivaObj?.empresa || 'MSA'}
                 motivo="conciliacion"
+                fechaMovimiento={(movimientoAsignando as any)?.fecha ? String((movimientoAsignando as any).fecha).slice(0, 10) : undefined}
                 nombreSugerido={(movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim() || undefined}
                 onCerrar={() => setModalNuevoTemplate(false)}
                 onCancelar={() => setModalNuevoTemplate(false)}

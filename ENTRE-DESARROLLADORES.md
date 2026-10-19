@@ -54,6 +54,16 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ Una columna nueva en `public.reglas_conciliacion` (2026-10-19) — aviso ANTES de aplicarla
+
+Para [A-FEAT-1293](PENDIENTES.md#a-feat-1293) (rama `jms/tarjeta-conciliacion`): la regla de conciliación pasa a elegir
+**el template**, no la cuenta (pedido de JMS). **Qué cambia**: `scripts/87` agrega **`template_id uuid` nullable** a
+`public.reglas_conciliacion`, con FK a `egresos_sin_factura(id) on delete set null`. **No toca RLS, roles, GRANTs ni
+filas existentes** (las reglas de hoy quedan con `null` y siguen funcionando por cuenta, como hasta ahora). Se corre
+con JMS presente; hay `-deshacer`. Si tu modelo de permisos mapea columnas o necesita algo para esto, avisá antes.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Tabla nueva `public.ajustes_balance` (2026-10-18) — aviso ANTES de aplicarla
 
 `scripts/86-ajustes-balance.sql` (+ `-deshacer`), para [A-FEAT-1207](PENDIENTES.md#a-feat-1207) en versión chica: los

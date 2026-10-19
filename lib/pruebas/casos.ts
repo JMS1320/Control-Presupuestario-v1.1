@@ -167,6 +167,7 @@ import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/v
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pagos/cancelacion-nc"
+import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6659,6 +6660,32 @@ export function correrCasos(): Resultado[] {
     const otroCuit = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), { ...med("nc", 3, 2, "2026-05-01", -100), cuit: "20111111112" }])
     chequear("NC con tarjeta", "Una NC sin factura del mismo proveedor a ≤ 3 días queda sin emparejar",
       "0 · 0", `${lejos.length} · ${otroCuit.length}`, lejos.length === 0 && otroCuit.length === 0, "A-FEAT-1292")
+  }
+
+  // ══ 🧩 CREAR TEMPLATE DESDE LA CONCILIACIÓN: entero o nada (A-FEAT-1294) ══════════════════════════
+  {
+    // La campaña sale de la fecha del MOVIMIENTO: Chubb de MA (anual) el 26/05/2026 → «2026»; un consumo
+    // de MSA (campaña jul–jun) del 15/10/2025 → «25/26», y uno del 15/03/2026 → también «25/26».
+    chequear("Template desde la conciliación", "La campaña sale de la periodicidad y la fecha del movimiento (anual → 2026; jul–jun → 25/26 a ambos lados del año)",
+      "2026 · 25/26 · 25/26 · 26/27 · MA anual · MSA bianual",
+      `${campanaDeFecha("anual", "2026-05-26")} · ${campanaDeFecha("bianual", "2025-10-15")} · ${campanaDeFecha("bianual", "2026-03-15")} · ${campanaDeFecha("bianual", "2026-07-01")} · MA ${periodicidadDeEmpresa("MA")} · MSA ${periodicidadDeEmpresa("MSA")}`,
+      campanaDeFecha("anual", "2026-05-26") === "2026" && campanaDeFecha("bianual", "2025-10-15") === "25/26"
+        && campanaDeFecha("bianual", "2026-03-15") === "25/26" && campanaDeFecha("bianual", "2026-07-01") === "26/27"
+        && periodicidadDeEmpresa("MA") === "anual" && periodicidadDeEmpresa("MSA") === "bianual", "A-FEAT-1294")
+
+    // Entero o nada: sin agrupadora no se crea (antes el «+ Crear uno acá» lo creaba sin agrupadora).
+    const chubb = { nombre_referencia: "Seguro Chalet", categ: "Seguro Chalet", responsable: "MA", cuenta_agrupadora: "Seguros",
+      periodicidad: "anual" as const, año: "2026", tipo: "egreso", aplica_generacion: true }
+    chequear("Template desde la conciliación", "🛑 Entero o nada: completo se puede; sin agrupadora o sin cuenta, no",
+      "completo: nada falta · sin agrupadora: agrupadora · sin cuenta: cuenta",
+      `completo: ${faltantesTemplateNuevo(chubb).join(",") || "nada falta"} · sin agrupadora: ${faltantesTemplateNuevo({ ...chubb, cuenta_agrupadora: " " }).join(",")} · sin cuenta: ${faltantesTemplateNuevo({ ...chubb, categ: "" }).join(",")}`,
+      faltantesTemplateNuevo(chubb).length === 0 && faltantesTemplateNuevo({ ...chubb, cuenta_agrupadora: " " }).join(",") === "agrupadora"
+        && faltantesTemplateNuevo({ ...chubb, categ: "" }).join(",") === "cuenta", "A-FEAT-1294")
+
+    // Chubb es de MA y lo paga la tarjeta de MSA: se avisa (no se frena).
+    chequear("Template desde la conciliación", "Un template de otra empresa que la cuenta que paga se avisa (MA pagado por MSA); la misma empresa no",
+      "true · false", `${esDeOtraEmpresa("MA", "MSA")} · ${esDeOtraEmpresa("msa", "MSA")}`,
+      esDeOtraEmpresa("MA", "MSA") && !esDeOtraEmpresa("msa", "MSA"), "A-FEAT-1294")
   }
 
   return r
