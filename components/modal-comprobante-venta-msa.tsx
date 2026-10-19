@@ -14,6 +14,7 @@ import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { supabase } from "@/lib/supabase"
 import { registrarContrapartes } from "@/lib/contrapartes/registrar"
+import { evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo } from "@/lib/subdiarios/estado-ddjj"
 import { toast } from "sonner"
 
 
@@ -177,6 +178,18 @@ export function ModalComprobanteVentaMsa({ open, onOpenChange, empresa, comproba
     if (!tipoComp) return toast.error('Falta tipo de comprobante')
     if (!cliente.cuit || !cliente.nombre) return toast.error('Falta cliente')
     if (impTotalCalc <= 0) return toast.error('El importe total debe ser > 0')
+
+    // 📨 A-FEAT-1295: el comprobante cae en el mes de emisión. Si ese mes —o el comprobante que se
+    // edita— ya se envió al contador o se presentó, advertir. El modal sólo lo abre el admin.
+    const [añoDest, mesDest] = fechaEmision.split('-')
+    const periodoDest = `${mesDest}/${añoDest}`
+    const decision = evaluarCambioDDJJ({
+      estadosAfectados: esEdicion ? [comprobanteInicial!.ddjj_iva] : [],
+      periodoDestino: periodoDest,
+      estadoPeriodoDestino: await consultarEstadoPeriodo(supabase, schemaName, 'comprobantes_venta', periodoDest),
+      esAdmin: true,
+    })
+    if (!confirmarDecision(decision)) return
 
     setGuardando(true)
     try {

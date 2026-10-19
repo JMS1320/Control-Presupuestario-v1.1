@@ -59,6 +59,7 @@ import {
 import { añosHastaElProximo } from "@/lib/fechas"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
+import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
@@ -6571,6 +6572,63 @@ export function correrCasos(): Resultado[] {
     const t = textoArca("PEÑA “LA ÚNICA”", 20)
     chequear("Libro IVA ARCA", "Nombre: conserva Ñ y tildes (existen en ANSI), cambia las comillas tipográficas y rellena a 20",
       "«PEÑA ?LA ÚNICA?     »", `«${t}»`, t === "PEÑA ?LA ÚNICA?     " && t.length === 20, "A-FEAT-1286")
+  }
+
+  // ── 📨 Estado «Enviado al contador» en los subdiarios (A-FEAT-1295) ──
+  {
+    const acc = (d: { accion: string }) => d.accion
+    const G = "Estado DDJJ"
+
+    const imputadoContable = evaluarCambioDDJJ({ estadosAfectados: ["Imputado"], esAdmin: false })
+    chequear(G, "Mover una factura «Imputado»: libre para cualquiera (como hasta hoy)",
+      "libre", acc(imputadoContable), acc(imputadoContable) === "libre", "A-FEAT-1295")
+
+    const enviadoContable = evaluarCambioDDJJ({ estadosAfectados: ["Imputado", "Enviado"], esAdmin: false })
+    chequear(G, "Rol contable sobre una factura «Enviado»: BLOQUEADO (decisión del usuario: Ulises no lo toca nunca)",
+      "bloquear", acc(enviadoContable), acc(enviadoContable) === "bloquear", "A-FEAT-1295")
+
+    const enviadoAdmin = evaluarCambioDDJJ({ estadosAfectados: ["Enviado"], esAdmin: true })
+    chequear(G, "Admin sobre una factura «Enviado»: ADVIERTE y deja seguir",
+      "advertir", acc(enviadoAdmin), acc(enviadoAdmin) === "advertir", "A-FEAT-1295")
+
+    const presentadoAdmin = evaluarCambioDDJJ({ estadosAfectados: ["DDJJ OK"], esAdmin: true })
+    chequear(G, "Admin sobre una factura presentada (DDJJ OK): ADVIERTE y deja seguir",
+      "advertir", acc(presentadoAdmin), acc(presentadoAdmin) === "advertir", "A-FEAT-1295")
+
+    const destinoContable = evaluarCambioDDJJ({ estadosAfectados: ["No"], periodoDestino: "09/2026", estadoPeriodoDestino: "Enviado", esAdmin: false })
+    chequear(G, "Rol contable imputando una factura nueva a un mes ya enviado: BLOQUEADO",
+      "bloquear", acc(destinoContable), acc(destinoContable) === "bloquear", "A-FEAT-1295")
+
+    const destinoAdmin = evaluarCambioDDJJ({ estadosAfectados: ["No"], periodoDestino: "09/2026", estadoPeriodoDestino: "Enviado", esAdmin: true })
+    const dice = destinoAdmin.accion === "advertir" && destinoAdmin.mensaje.includes("09/2026")
+    chequear(G, "Admin imputando a un mes ya enviado: ADVIERTE y el cartel nombra el mes",
+      "advertir, menciona 09/2026", destinoAdmin.accion === "advertir" ? destinoAdmin.mensaje.slice(0, 80) : destinoAdmin.accion, dice, "A-FEAT-1295")
+
+    const destinoLibre = evaluarCambioDDJJ({ estadosAfectados: ["No"], periodoDestino: "10/2026", estadoPeriodoDestino: "Imputado", esAdmin: false })
+    chequear(G, "Imputar a un mes que todavía no se envió: libre",
+      "libre", acc(destinoLibre), acc(destinoLibre) === "libre", "A-FEAT-1295")
+
+    const sellaContable = evaluarCambioDDJJ({ estadosAfectados: ["Imputado"], estadoNuevo: "Enviado", esAdmin: false })
+    const sellaAdmin = evaluarCambioDDJJ({ estadosAfectados: ["Imputado"], estadoNuevo: "Enviado", esAdmin: true })
+    chequear(G, "Marcar «Enviado» o «DDJJ OK»: sólo el admin (sin advertencia si lo marcado era «Imputado»)",
+      "contable: bloquear · admin: libre", `contable: ${acc(sellaContable)} · admin: ${acc(sellaAdmin)}`,
+      acc(sellaContable) === "bloquear" && acc(sellaAdmin) === "libre", "A-FEAT-1295")
+
+    const mes = [estadoDelPeriodo(["Imputado", "Enviado", "Imputado"]), estadoDelPeriodo(["Enviado", "DDJJ OK"]), estadoDelPeriodo(["Imputado"]), estadoDelPeriodo([])]
+    chequear(G, "Estado del MES = el más avanzado de sus facturas (una imputada tarde no «desenvía» el mes)",
+      "Enviado · DDJJ OK · Imputado · null", mes.join(" · "),
+      mes[0] === "Enviado" && mes[1] === "DDJJ OK" && mes[2] === "Imputado" && mes[3] === null, "A-FEAT-1295")
+
+    const lista = mesesEnviadosSinPresentar([
+      { año_contable: 2026, mes_contable: 9, ddjj_iva: "Enviado" },
+      { año_contable: 2026, mes_contable: 9, ddjj_iva: "Imputado" },
+      { año_contable: 2026, mes_contable: 3, ddjj_iva: "DDJJ OK" },
+      { año_contable: 2026, mes_contable: 3, ddjj_iva: "Enviado" },
+      { año_contable: 2025, mes_contable: 12, ddjj_iva: "Enviado" },
+      { año_contable: null, mes_contable: null, ddjj_iva: "Enviado" },
+    ])
+    chequear(G, "Lista de enviados sin presentar: ordenada, sin los meses ya presentados ni las filas sin período",
+      "12/2025, 09/2026", lista.join(", "), lista.join(", ") === "12/2025, 09/2026", "A-FEAT-1295")
   }
 
   return r

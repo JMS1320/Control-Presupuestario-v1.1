@@ -1169,6 +1169,42 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
 
+### 📨 El estado de un mes: Imputado → Enviado al contador → DDJJ OK *(Compras y Ventas)*
+
+Cada factura del subdiario tiene un **Estado DDJJ**. Vale igual en **Egresos → Subdiarios** (Compras) y
+en **Ingresos → Subdiarios** (Ventas):
+
+| Estado | Qué significa | Quién puede moverla |
+|---|---|---|
+| **No** | sin imputar a ningún mes | cualquiera |
+| **Imputado** | está en el subdiario de un mes, que todavía estás armando | cualquiera |
+| **📨 Enviado** | ya le mandaste ese mes al contador | **sólo vos (admin), con advertencia** |
+| **DDJJ OK** | el contador te avisó que lo presentó | **sólo vos (admin), con advertencia** |
+
+**Cuando le mandás el subdiario al contador:** abrí el mes y apretá **📨 Marcar enviado al contador**.
+Las facturas «Imputado» del mes pasan a «Enviado».
+
+**Cuando el contador te avisa que lo presentó:** apretá **✅ Confirmar DDJJ**. Pasa todo lo «Imputado» y
+lo «Enviado» del mes a «DDJJ OK».
+
+**Para no tener que acordarte:** arriba de Subdiarios aparece un recuadro azul con los meses
+**enviados que todavía no confirmaste**. Tocás el mes y se abre (en Ventas, después apretás
+*Consultar período*).
+
+**Qué pasa si querés cambiar algo de un mes enviado o presentado** —sacar una factura, pasarla a otro
+mes, imputar una que llegó tarde, editarla o borrarla—: la app te avisa con un cartel y te pregunta si
+seguís. Si seguís, acordate de avisarle al contador. El rol contable (Ulises) no puede: le aparece un
+candado.
+
+Una factura que imputás tarde a un mes ya enviado queda en «Imputado» (no «Enviado»): así se ve cuál
+le falta mandar. Volvé a apretar **📨 Marcar enviado** cuando se la mandes.
+
+**Para sacar una factura de un mes (desimputar), en Compras:** **🔧 Gestionar Facturas** → marcás las facturas →
+**Estado DDJJ = «No»** → **✅ Aplicar Cambios**. El período se borra solo: dejá *Período* en «Sin
+cambios» (si elegís un mes ahí, la vuelve a dejar imputada a ese mes).
+
+⚠️ Sin probar todavía → A-TEST-1220
+
 ### 📤 Archivos para ARCA — el Libro IVA Compras para importar en IVA Simple *(sólo MSA)*
 
 **Para qué sirve.** Para cargar en **IVA Simple** (Portal IVA) las facturas del mes **de una vez**, con un

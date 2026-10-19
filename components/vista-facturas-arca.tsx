@@ -58,6 +58,9 @@ import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guar
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
 import { ModalArchivosArca } from "@/components/modal-archivos-arca"
+import {
+  estaProtegido, evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarMesesEnviados,
+} from "@/lib/subdiarios/estado-ddjj"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -388,6 +391,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estados para gestión masiva de facturas
   const [mostrarGestionMasiva, setMostrarGestionMasiva] = useState(false)
+  // 📨 A-FEAT-1295: meses enviados al contador que todavía no figuran presentados.
+  const [mesesEnviados, setMesesEnviados] = useState<string[]>([])
+  const recargarMesesEnviados = () => {
+    consultarMesesEnviados(supabase, schemaName, 'comprobantes_arca').then(setMesesEnviados)
+  }
+  useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
   const [nuevoEstadoDDJJ, setNuevoEstadoDDJJ] = useState('')
   
@@ -943,6 +952,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (deps.sicore > 0) items.push(`• ${deps.sicore} retención(es) SICORE${deps.sicoreDdjjConfirmada ? ' (¡DDJJ ya confirmada!)' : ''}`)
     if (deps.conciliaciones > 0) items.push(`• ${deps.conciliaciones} movimiento(s) bancario(s) conciliado(s)`)
     if (deps.ddjjIva === 'DDJJ OK') items.push('• DDJJ IVA ya cerrada (estado "DDJJ OK")')
+    else if (deps.ddjjIva === 'Enviado') items.push('• Su período ya se envió al contador (estado "Enviado")')
     else if (deps.ddjjIva === 'Imputado') items.push('• Imputada en un período de DDJJ IVA')
     return items
   }
@@ -2316,6 +2326,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       setSubtotales(null)
       return
     }
+    recargarMesesEnviados()
 
     setCargandoSubdiarios(true)
     try {
@@ -2360,7 +2371,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       const filtrosEstado = []
       if (mostrarSinImputar) filtrosEstado.push('No')
-      if (mostrarImputadas) filtrosEstado.push('Imputado')
+      if (mostrarImputadas) filtrosEstado.push('Imputado', 'Enviado')
 
       if (filtrosEstado.length === 0) {
         console.log('❌ No hay filtros de estado seleccionados')
@@ -2389,13 +2400,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           console.log('🔍 Filtro aplicado: fecha <= período Y ddjj_iva = No')
         } else if (!mostrarSinImputar && mostrarImputadas) {
           // Solo imputadas del período específico (CON filtro fecha ya aplicado arriba)
-          query = query.eq('ddjj_iva', 'Imputado')
+          query = query.in('ddjj_iva', ['Imputado', 'Enviado'])
                .eq('año_contable', parseInt(año))
                .eq('mes_contable', parseInt(mes))
           console.log('🔍 Filtro aplicado: fecha <= período Y Imputado del período')
         } else if (mostrarSinImputar && mostrarImputadas) {
           // Ambos: Sin imputar + Imputadas del período (CON filtro fecha ya aplicado arriba)
-          query = query.or(`ddjj_iva.eq.No,and(ddjj_iva.eq.Imputado,año_contable.eq.${parseInt(año)},mes_contable.eq.${parseInt(mes)})`)
+          query = query.or(`ddjj_iva.eq.No,and(ddjj_iva.in.(Imputado,Enviado),año_contable.eq.${parseInt(año)},mes_contable.eq.${parseInt(mes)})`)
           console.log('🔍 Filtro aplicado: fecha <= período Y (No O Imputado del período)')
         }
       } else {
@@ -2424,7 +2435,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     try {
       const [mes, año] = periodoImputacion.split('/') // Formato: MM/YYYY
-      const facturasIds = Array.from(facturasSeleccionadas)
+      // 📨 A-FEAT-1295: una factura ya Enviada o presentada EN ESTE MISMO MES no se re-imputa —
+      // re-imputarla la bajaría a «Imputado» sin que nadie lo pidiera.
+      const yaEnElMes = new Set(facturasImputacion
+        .filter(f => estaProtegido(f.ddjj_iva) && f.año_contable === parseInt(año) && f.mes_contable === parseInt(mes))
+        .map(f => f.id))
+      const facturasIds = Array.from(facturasSeleccionadas).filter(id => !yaEnElMes.has(id))
+      if (facturasIds.length === 0) { alert('Las facturas elegidas ya están en ese mes.'); return }
       
       console.log('🔍 DEBUG ejecutarImputacion:', {
         periodoImputacion,
@@ -2472,13 +2489,40 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     }
   }
 
+  // 📨 A-FEAT-1295: el subdiario se le mandó al contador. No es presentarlo, pero desde acá el mes
+  // no se mueve sin advertencia, y el rol contable ya no lo toca.
+  const marcarEnviado = async () => {
+    if (!periodoConsulta) return
+    if (!confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [], estadoNuevo: 'Enviado', esAdmin: userRole === 'admin' }))) return
+    const imputadas = facturasPeriodo.filter(f => f.ddjj_iva === 'Imputado')
+    if (imputadas.length === 0) return
+    if (!window.confirm(
+      `¿Marcar el período ${periodoConsulta} como ENVIADO AL CONTADOR?\n\n` +
+      `${imputadas.length} factura(s) pasan a "Enviado". Desde ahí, moverlas o imputar otras a este mes ` +
+      `te va a pedir confirmación, y el rol contable ya no las puede modificar.\n\n` +
+      `Cuando el contador te avise que lo presentó, apretá "Confirmar DDJJ".`
+    )) return
+    const { error } = await supabase
+      .schema(schemaName)
+      .from('comprobantes_arca')
+      .update({ ddjj_iva: 'Enviado' })
+      .in('id', imputadas.map(f => f.id))
+    if (error) {
+      alert('Error al marcar enviado: ' + error.message)
+      return
+    }
+    await cargarFacturasPeriodo(periodoConsulta)
+    toast.success(`📨 ${periodoConsulta} marcado como enviado al contador (${imputadas.length} facturas)`)
+  }
+
   const confirmarDDJJ = async () => {
     if (!periodoConsulta) return
+    if (!confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [], estadoNuevo: 'DDJJ OK', esAdmin: userRole === 'admin' }))) return
 
     // Confirmar acción
     const confirmar = window.confirm(
       `¿Confirmar DDJJ para el período ${periodoConsulta}?\n\n` +
-      `Esto cambiará TODAS las facturas "Imputado" a "DDJJ OK" y el período quedará cerrado.\n\n` +
+      `Esto cambiará TODAS las facturas "Imputado" y "Enviado" a "DDJJ OK" y el período quedará cerrado.\n\n` +
       `⚠️ Esta acción NO se puede deshacer.`
     )
     
@@ -2494,7 +2538,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         .update({ ddjj_iva: 'DDJJ OK' })
         .eq('mes_contable', parseInt(mes))
         .eq('año_contable', parseInt(año))
-        .eq('ddjj_iva', 'Imputado')
+        .in('ddjj_iva', ['Imputado', 'Enviado'])
 
       if (error) {
         console.error('Error confirmando DDJJ:', error)
@@ -3219,28 +3263,18 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     // Validar permisos según rol y cambios de estado
     const facturasArray = Array.from(facturasSeleccionadasGestion)
     
-    // Detectar facturas DDJJ OK seleccionadas
-    const facturasDDJJOK = facturasPeriodo.filter(f =>
-      facturasArray.includes(f.id) && f.ddjj_iva === 'DDJJ OK'
-    )
-
-    // Verificar si se intenta modificar algo en facturas DDJJ OK
-    const cambiaEstado = nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios' && nuevoEstadoDDJJ !== 'DDJJ OK'
-    const cambiaPeriodo = nuevoPeriodo && nuevoPeriodo !== 'sin-cambios'
-    const intentaModificarDDJJOK = facturasDDJJOK.length > 0 && (cambiaEstado || cambiaPeriodo)
-
-    if (intentaModificarDDJJOK) {
-      // NON-ADMIN: bloqueo total para facturas DDJJ OK
-      if (rolUsuario !== 'admin') {
-        alert(`❌ Sin permisos: No se pueden modificar facturas con "DDJJ OK" (ya declaradas fiscalmente).\n\n${facturasDDJJOK.length} factura(s) seleccionada(s) tienen DDJJ confirmada.\n\nDeseleccioná esas facturas o consultá al administrador.`)
-        return
-      }
-
-      // ADMIN: confirmación simple
-      if (!window.confirm(`Período ya declarado. ${facturasDDJJOK.length} factura(s) con DDJJ presentada.\n\n¿Seguro querés modificar?`)) {
-        return
-      }
-    }
+    // 📨 A-FEAT-1295: lo enviado al contador o presentado (las facturas, o el mes al que van) sólo
+    // lo toca el admin, con advertencia. La regla vive en lib/subdiarios/estado-ddjj.ts.
+    const cambiaEstado = !!nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios'
+    const cambiaPeriodo = !!nuevoPeriodo && nuevoPeriodo !== 'sin-cambios'
+    const decision = evaluarCambioDDJJ({
+      estadosAfectados: facturasPeriodo.filter(f => facturasArray.includes(f.id)).map(f => f.ddjj_iva),
+      periodoDestino: cambiaPeriodo ? nuevoPeriodo : null,
+      estadoPeriodoDestino: cambiaPeriodo ? await consultarEstadoPeriodo(supabase, schemaName, 'comprobantes_arca', nuevoPeriodo) : null,
+      estadoNuevo: cambiaEstado ? nuevoEstadoDDJJ : null,
+      esAdmin: rolUsuario === 'admin',
+    })
+    if (!confirmarDecision(decision)) return
 
     const confirmar = window.confirm(
       `¿Confirmar cambios masivos?\n\n` +
@@ -6096,6 +6130,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
+          <TestsDelProceso proceso="subdiarios/estado-ddjj" pantalla="subdiarios" />
+          {/* 📨 A-FEAT-1295: lo mandado al contador que todavía no figura presentado */}
+          {mesesEnviados.length > 0 && (
+            <div className="rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+              <span className="font-semibold">📨 Enviados al contador, sin confirmar la presentación:</span>{' '}
+              {mesesEnviados.map((m, i) => (
+                <span key={m}>
+                  {i > 0 && ' · '}
+                  <button className="underline font-mono" onClick={() => { setPeriodoConsulta(m); cargarFacturasPeriodo(m) }}>{m}</button>
+                </span>
+              ))}
+              <div className="text-xs text-blue-800 mt-1">Cuando el contador te avise que lo presentó, abrí el mes y apretá «Confirmar DDJJ».</div>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Selector período consulta */}
             <div className="space-y-2">
@@ -6131,8 +6179,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   Imputar Facturas
                 </Button>
                 
-                {/* Botón Confirmar DDJJ - solo si hay facturas "Imputado" */}
-                {periodoConsulta && facturasPeriodo.some(f => f.ddjj_iva === 'Imputado') && (
+                {/* 📨 A-FEAT-1295: Enviado al contador — sólo admin, si hay facturas "Imputado" */}
+                {userRole === 'admin' && periodoConsulta && facturasPeriodo.some(f => f.ddjj_iva === 'Imputado') && (
+                  <Button
+                    onClick={marcarEnviado}
+                    variant="outline"
+                    className="w-full border-blue-500 text-blue-700 hover:bg-blue-50"
+                  >
+                    📨 Marcar enviado al contador {periodoConsulta}
+                  </Button>
+                )}
+
+                {/* Botón Confirmar DDJJ - sólo admin, si hay facturas "Imputado" o "Enviado" */}
+                {userRole === 'admin' && periodoConsulta && facturasPeriodo.some(f => f.ddjj_iva === 'Imputado' || f.ddjj_iva === 'Enviado') && (
                   <Button 
                     onClick={confirmarDDJJ}
                     variant="default"
@@ -6434,13 +6493,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <Checkbox
                           checked={(() => {
                             const esAdminGestion = userRole === 'admin'
-                            const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
+                            const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => !estaProtegido(f.ddjj_iva))
                             return seleccionables.length > 0 && facturasSeleccionadasGestion.size === seleccionables.length
                           })()}
                           onCheckedChange={(checked) => {
                             const esAdminGestion = userRole === 'admin'
                             if (checked) {
-                              const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => f.ddjj_iva !== 'DDJJ OK')
+                              const seleccionables = esAdminGestion ? facturasPeriodo : facturasPeriodo.filter(f => !estaProtegido(f.ddjj_iva))
                               setFacturasSeleccionadasGestion(new Set(seleccionables.map(f => f.id)))
                             } else {
                               setFacturasSeleccionadasGestion(new Set())
@@ -6506,17 +6565,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
                     const p = (v: any) => (Number(v) || 0) * tc // pesos
                     return (
-                    <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${factura.ddjj_iva === 'DDJJ OK' && mostrarGestionMasiva ? 'opacity-50' : ''}`}>
+                    <TableRow key={factura.id} className={`${esUSD ? 'bg-amber-50' : ''} ${estaProtegido(factura.ddjj_iva) && mostrarGestionMasiva ? 'opacity-50' : ''}`}>
                       {mostrarGestionMasiva && (
                         <TableCell>
-                          {factura.ddjj_iva === 'DDJJ OK' && !(userRole === 'admin') ? (
-                            <span title="DDJJ confirmada — solo admin puede modificar" className="text-xs">🔒</span>
+                          {estaProtegido(factura.ddjj_iva) && !(userRole === 'admin') ? (
+                            <span title="Enviada al contador o presentada — sólo el admin puede modificar" className="text-xs">🔒</span>
                           ) : (
                             <Checkbox
                               checked={facturasSeleccionadasGestion.has(factura.id)}
                               onCheckedChange={(checked) => {
-                                if (factura.ddjj_iva === 'DDJJ OK' && checked) {
-                                  toast.warning('DDJJ ya presentada — edición solo disponible para admin', { duration: 3000 })
+                                if (estaProtegido(factura.ddjj_iva) && checked) {
+                                  toast.warning(factura.ddjj_iva === 'Enviado'
+                                    ? 'Ya enviada al contador — al aplicar te va a pedir confirmación'
+                                    : 'DDJJ ya presentada — al aplicar te va a pedir confirmación', { duration: 3000 })
                                 }
                                 const nuevaSeleccion = new Set(facturasSeleccionadasGestion)
                                 if (checked) {
@@ -6605,8 +6666,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <Badge variant={
                           factura.ddjj_iva === 'DDJJ OK' ? 'default' :
                           factura.ddjj_iva === 'Imputado' ? 'secondary' : 'outline'
-                        }>
-                          {factura.ddjj_iva}
+                        } className={factura.ddjj_iva === 'Enviado' ? 'border-blue-400 text-blue-700 bg-blue-50' : ''}>
+                          {factura.ddjj_iva === 'Enviado' ? '📨 Enviado' : factura.ddjj_iva}
                         </Badge>
                       </TableCell>
                       <TableCell className={`sticky right-0 z-10 text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)] ${esUSD ? 'bg-amber-50' : 'bg-white'}`}>
@@ -6654,6 +6715,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <SelectItem value="sin-cambios">Sin cambios</SelectItem>
                         <SelectItem value="No">No</SelectItem>
                         <SelectItem value="Imputado">Imputado</SelectItem>
+                        <SelectItem value="Enviado">📨 Enviado al contador</SelectItem>
                         <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
                       </SelectContent>
                     </Select>
@@ -8482,12 +8544,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 <Select 
                   value={periodoImputacion} 
                   onValueChange={async (valor) => {
-                    // Validar si período está declarado
-                    const estaDeclarado = await validarPeriodoDeclarado(valor)
-                    if (estaDeclarado) {
-                      alert(`❌ El período ${valor} ya está declarado (DDJJ OK) y no se puede modificar.`)
-                      return
-                    }
+                    // 📨 A-FEAT-1295: un mes enviado al contador o presentado → sólo admin, con advertencia.
+                    const estadoMes = await consultarEstadoPeriodo(supabase, schemaName, 'comprobantes_arca', valor)
+                    const decision = evaluarCambioDDJJ({
+                      estadosAfectados: [], periodoDestino: valor, estadoPeriodoDestino: estadoMes, esAdmin: userRole === 'admin',
+                    })
+                    if (!confirmarDecision(decision)) return
                     setPeriodoImputacion(valor)
                   }}
                 >
@@ -8504,7 +8566,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Select>
                 {periodoImputacion && (
                   <p className="text-xs text-gray-500">
-                    ⚠️ Se validará que el período no esté declarado
+                    ⚠️ Si el período ya se envió al contador o se presentó, te va a pedir confirmación
                   </p>
                 )}
               </div>
@@ -8615,8 +8677,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           <TableCell>
                             <Badge variant={
                               factura.ddjj_iva === 'Imputado' ? 'secondary' : 'outline'
-                            }>
-                              {factura.ddjj_iva}
+                            } className={factura.ddjj_iva === 'Enviado' ? 'border-blue-400 text-blue-700 bg-blue-50' : ''}>
+                              {factura.ddjj_iva === 'Enviado' ? '📨 Enviado' : factura.ddjj_iva}
                             </Badge>
                           </TableCell>
                         </TableRow>

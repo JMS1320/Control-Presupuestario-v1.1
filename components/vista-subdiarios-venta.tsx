@@ -22,8 +22,12 @@ import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/li
 import { useCarpetaPorDefecto } from "@/hooks/useCarpetaPorDefecto"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { cargarRetencionesSubdiario } from "@/lib/ventas/retenciones-export-db"
+import {
+  evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarMesesEnviados,
+} from "@/lib/subdiarios/estado-ddjj"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -79,6 +83,13 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   const { carpetaPorDefecto, setCarpetaPorDefecto } = useCarpetaPorDefecto()
   const [generandoReportes, setGenerandoReportes] = useState(false)
 
+  // 📨 A-FEAT-1295: meses enviados al contador que todavía no figuran presentados.
+  const [mesesEnviados, setMesesEnviados] = useState<string[]>([])
+  const recargarMesesEnviados = () => {
+    consultarMesesEnviados(supabase, schemaName, 'comprobantes_venta').then(setMesesEnviados)
+  }
+  useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Cargar tipos de comprobante al montar
   useEffect(() => {
@@ -101,6 +112,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   const cargarPeriodo = async () => {
     if (!periodoConsulta) { setComprobantes([]); setRetPreview(null); return }
     setCargando(true)
+    recargarMesesEnviados()
     try {
       const [mes, año] = periodoConsulta.split('/')
       const { data, error } = await supabase
@@ -147,10 +159,12 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
     setModalAbierto(true)
   }
   const abrirEdicion = (c: any) => {
+    // El aviso de «enviado / presentado» lo da el modal al guardar (mira también el mes destino).
     setCompEditando(c as ComprobanteVenta)
     setModalAbierto(true)
   }
   const eliminar = async (c: any) => {
+    if (!confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [c.ddjj_iva], esAdmin }))) return
     if (!window.confirm(`¿Eliminar comprobante ${c.numero_desde || '(s/n)'} de ${c.denominacion_cliente || ''}?`)) return
     try {
       const { error } = await supabase
@@ -171,6 +185,14 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
     if (!periodoImputacion) return toast.error('Falta período de imputación')
     if (seleccionados.size === 0) return toast.error('Sin selección')
     const [mes, año] = periodoImputacion.split('/')
+    // 📨 A-FEAT-1295: comprobantes o mes destino enviados al contador / presentados → advertir.
+    const decision = evaluarCambioDDJJ({
+      estadosAfectados: comprobantes.filter(c => seleccionados.has(c.id)).map(c => c.ddjj_iva),
+      periodoDestino: periodoImputacion,
+      estadoPeriodoDestino: await consultarEstadoPeriodo(supabase, schemaName, 'comprobantes_venta', periodoImputacion),
+      esAdmin,
+    })
+    if (!confirmarDecision(decision)) return
     try {
       const { error } = await supabase
         .schema(schemaName)
@@ -191,10 +213,37 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
     }
   }
 
-  // Confirmar DDJJ del período (todas las imputadas → DDJJ OK)
-  const confirmarDDJJ = async () => {
+  // 📨 A-FEAT-1295: el subdiario se le mandó al contador. No es presentarlo, pero desde acá el mes
+  // no se mueve sin advertencia.
+  const marcarEnviado = async () => {
+    if (!confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [], estadoNuevo: 'Enviado', esAdmin }))) return
     const imputadas = comprobantes.filter(c => c.ddjj_iva === 'Imputado')
     if (imputadas.length === 0) return toast.error('No hay comprobantes con estado "Imputado" en el período')
+    if (!window.confirm(
+      `¿Marcar el período ${periodoConsulta} como ENVIADO AL CONTADOR?\n\n` +
+      `${imputadas.length} comprobante(s) pasan a "Enviado". Desde ahí, moverlos o imputar otros a este mes ` +
+      `te va a pedir confirmación.\n\n` +
+      `Cuando el contador te avise que lo presentó, apretá "Confirmar DDJJ".`
+    )) return
+    try {
+      const { error } = await supabase
+        .schema(schemaName)
+        .from('comprobantes_venta')
+        .update({ ddjj_iva: 'Enviado' })
+        .in('id', imputadas.map(c => c.id))
+      if (error) throw error
+      toast.success(`📨 ${periodoConsulta} marcado como enviado al contador (${imputadas.length} comprobantes)`)
+      await cargarPeriodo()
+    } catch (err) {
+      toast.error('Error: ' + (err as Error).message)
+    }
+  }
+
+  // Confirmar DDJJ del período (todas las imputadas o enviadas → DDJJ OK)
+  const confirmarDDJJ = async () => {
+    if (!confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [], estadoNuevo: 'DDJJ OK', esAdmin }))) return
+    const imputadas = comprobantes.filter(c => c.ddjj_iva === 'Imputado' || c.ddjj_iva === 'Enviado')
+    if (imputadas.length === 0) return toast.error('No hay comprobantes con estado "Imputado" o "Enviado" en el período')
     if (!window.confirm(
       `¿Confirmar DDJJ IVA del período ${periodoConsulta}?\n\n` +
       `${imputadas.length} comprobante(s) pasarán a estado "DDJJ OK" (no editables después).\n\n` +
@@ -619,6 +668,19 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* 📨 A-FEAT-1295: lo mandado al contador que todavía no figura presentado */}
+          {mesesEnviados.length > 0 && (
+            <div className="mb-3 rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
+              <span className="font-semibold">📨 Enviados al contador, sin confirmar la presentación:</span>{' '}
+              {mesesEnviados.map((m, i) => (
+                <span key={m}>
+                  {i > 0 && ' · '}
+                  <button className="underline font-mono" onClick={() => setPeriodoConsulta(m)}>{m}</button>
+                </span>
+              ))}
+              <div className="text-xs text-blue-800 mt-1">Tocá el mes y «Consultar período». Cuando el contador te avise que lo presentó, apretá «Confirmar DDJJ».</div>
+            </div>
+          )}
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Período</Label>
@@ -797,9 +859,15 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
               </div>
             )}
 
-            {/* Confirmar DDJJ */}
-            {esAdmin && comprobantes.some(c => c.ddjj_iva === 'Imputado') && (
-              <div className="border-t pt-3">
+            {esAdmin && <TestsDelProceso proceso="subdiarios/estado-ddjj" pantalla="subdiarios" />}
+            {/* 📨 Enviado al contador (A-FEAT-1295) y Confirmar DDJJ */}
+            {esAdmin && comprobantes.some(c => c.ddjj_iva === 'Imputado' || c.ddjj_iva === 'Enviado') && (
+              <div className="border-t pt-3 flex flex-wrap gap-2">
+                {comprobantes.some(c => c.ddjj_iva === 'Imputado') && (
+                  <Button onClick={marcarEnviado} variant="outline" className="border-blue-500 text-blue-700 hover:bg-blue-50">
+                    📨 Marcar enviado al contador {periodoConsulta}
+                  </Button>
+                )}
                 <Button onClick={confirmarDDJJ} className="bg-green-600 hover:bg-green-700">
                   <CheckCircle className="mr-2 h-4 w-4" />
                   Confirmar DDJJ IVA Ventas {periodoConsulta}
@@ -847,7 +915,6 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                             <Checkbox
                               checked={seleccionados.has(c.id)}
                               onCheckedChange={() => toggleSel(c.id)}
-                              disabled={c.ddjj_iva === 'DDJJ OK'}
                             />
                           </TableCell>
                         )}
@@ -870,22 +937,21 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                         <TableCell>
                           <Badge variant="outline" className={
                             c.ddjj_iva === 'DDJJ OK' ? 'bg-green-50 text-green-700' :
+                            c.ddjj_iva === 'Enviado' ? 'bg-blue-50 text-blue-700 border-blue-400' :
                             c.ddjj_iva === 'Imputado' ? 'bg-yellow-50 text-yellow-700' :
                             'bg-gray-50 text-gray-600'
                           }>
-                            {c.ddjj_iva || 'No'}
+                            {c.ddjj_iva === 'Enviado' ? '📨 Enviado' : (c.ddjj_iva || 'No')}
                           </Badge>
                         </TableCell>
                         {esAdmin && (
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => abrirEdicion(c)} title="Editar"
-                                disabled={c.ddjj_iva === 'DDJJ OK'}>
+                              <Button size="sm" variant="ghost" onClick={() => abrirEdicion(c)} title="Editar">
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
                               <Button size="sm" variant="ghost" onClick={() => eliminar(c)} title="Eliminar"
-                                className="text-red-600 hover:bg-red-50"
-                                disabled={c.ddjj_iva === 'DDJJ OK'}>
+                                className="text-red-600 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
