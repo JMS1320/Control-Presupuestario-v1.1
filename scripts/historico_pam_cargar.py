@@ -16,7 +16,7 @@ PASO 2 · el lote: lo que el usuario marcó en «… TRABAJO v3.xlsx» (11 CATEG
   campaña; su detalle ENTERO en la cuota; los ADICIONALES llevan «Cuota Adicional 2025»; sueldos con «pagado por PAM».
   Lo marcado «no» (PAM ya presentó 2025 y no tiene campañas siguientes) y Expensas Posadas (próxima tanda) quedan históricos.
 """
-import json, re, sys, datetime, collections, subprocess, calendar, urllib.request, urllib.parse
+import json, os, re, sys, datetime, collections, subprocess, calendar, urllib.request, urllib.parse
 import openpyxl
 from openpyxl.styles import PatternFill, Font
 
@@ -25,9 +25,19 @@ RAIZ = 'D:/Users/josem/Documents/Jose/Automatizarr/Claude/Control-Presupuestario
 DIR = RAIZ + '- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/'
 FUENTE = DIR + 'Extracto PAM - Control Presupuestario.xlsx'
 DECISIONES = DIR + 'Extracto PAM - Control Presupuestario - TRABAJO v3.xlsx'
-SALIDA = DIR + 'PAM - carga del historico - para revisar v2.xlsx'
+# ⚠️ NUNCA se pisa un archivo existente: el 18/10 una corrida pisó la v2 que el usuario ya había marcado y se perdieron
+# sus notas. Se toma la primera versión libre (vN), o la que se pida con --salida=… (y si existe, se frena).
+_pedida = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--salida=')), None)
+if _pedida:
+    SALIDA = _pedida
+else:
+    import os
+    _n = 2
+    while os.path.exists(DIR + f'PAM - carga del historico - para revisar v{_n}.xlsx'): _n += 1
+    SALIDA = DIR + f'PAM - carga del historico - para revisar v{_n}.xlsx'
 FOTO = DIR + 'PAM historico - foto y ids creados.json'
-TMP = DIR + 'PAM historico - parseo CA (temporal).json'
+import tempfile
+TMP = os.path.join(tempfile.gettempdir(), 'pam_historico_parseo_ca.json')
 
 env = {}
 for l in open(RAIZ + '.env.local', encoding='utf-8'):
@@ -361,8 +371,9 @@ for cta, regs in (('CA', reg_ca), ('CC', reg_cc)):
     sx.append(['Fila de tu planilla'] + ks); [setattr(c, 'font', B) for c in sx[1]]
     for r in regs: sx.append([r['_fila']] + [r[k] for k in ks])
     sx.freeze_panes = 'B2'
-try: wb.save(SALIDA)
-except PermissionError: SALIDA = SALIDA.replace('.xlsx', ' (copia).xlsx'); wb.save(SALIDA)
+import os
+if os.path.exists(SALIDA): raise SystemExit(f'⛔ {SALIDA} ya existe: no se pisa (puede tener notas del usuario)')
+wb.save(SALIDA)
 print(SALIDA)
 for n, da, debe, ok in controles: print(('✓' if ok else '✗'), n, '→', da)
 print(f'Paso 1: CA {len(reg_ca)} + CC {len(reg_cc)} · Paso 2: {len(plan)} cuotas nuevas para {len(por_mov)} mov · {len(vincular)} a vincular · {len(sueldos)} sueldos · quedan {dict(quedan)}')

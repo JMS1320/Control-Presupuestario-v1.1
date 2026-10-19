@@ -1618,6 +1618,10 @@ saca justo lo que él usa para reconocer el movimiento (la leyenda, el comproban
 - **Primera columna: el número de fila de su planilla.** Es la llave para ir y volver.
 - **Nombre nuevo en cada versión** (`_v2_completo`, `_v3`): no se pisa un archivo que él puede tener
   abierto o anotado.
+  ⚠️ **Y el script lo tiene que GARANTIZAR, no recordar** *(18/10)*: una corrida de prueba de
+  `historico_pam_cargar.py` volvió a guardar la «v2» **después** de que el usuario la marcó, y se perdieron sus
+  notas (una edición de detalle no se pudo recuperar). Desde ahí el script toma la primera versión libre y frena
+  si el archivo existe. Todo script que escriba un Excel de trabajo: **si existe, no se pisa**.
 - **No arrastrar columnas vacías**: las que Excel da por «usadas» por formato no son suyas (salieron 4
   `JMS: (sin título)` vacías en la v2 de sugeridos y preguntó por qué).
 
