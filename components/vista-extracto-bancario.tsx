@@ -1003,6 +1003,12 @@ ${texto.trim()}` : texto.trim()
       return
     }
     const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
+    // El botón del renglón graba directo en la base: se confirma como el Conciliar general (usuario 2026-10-19).
+    const ok = window.confirm(
+      `Se conciliarán los ${pend.length} movimiento(s) pendiente(s) del resumen ${etiqueta}.\n\n`
+      + `El resto de la tarjeta NO se toca.\n\n¿Continuar?`
+    )
+    if (!ok) return
     setConciliandoNr(nr)
     try {
       /**
