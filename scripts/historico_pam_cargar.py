@@ -164,10 +164,7 @@ ACA = {'proveedor': 'Automóvil Club Argentino', 'nombre_quien_cobra': 'Automóv
        'fecha_primera_cuota': None, 'monto_por_cuota': None, 'observaciones_template': 'Creado en el histórico PAM (18/10): cuota del ACA, débito automático', **SIN_CODIGOS}
 a_crear('ACA', '2025', tpl('Metrogas Libertad', '2026'), {**ACA, 'año': '2025', 'activo': False, 'aplica_generacion': False, 'template_origen_id': None})
 a_crear('ACA', '2026', tpl('Metrogas Libertad', '2026'), {**ACA, 'template_origen_id': None})
-a_crear('Sueldo Domesticas PAM', '2025', tpl('Metrogas Libertad', '2026'),
-        {'categ': 'Sueldo Domesticas', 'proveedor': None, 'nombre_quien_cobra': None, 'cuit_quien_cobra': None, 'centro_costo': 'Nazarenas',
-         'fecha_primera_cuota': None, 'monto_por_cuota': None, 'año': '2025', 'activo': False, 'aplica_generacion': False,
-         'template_origen_id': None, 'observaciones_template': 'Creado en el histórico PAM (18/10): sueldo de la doméstica de Nazarenas (a quién se le pagó, en el detalle)', **SIN_CODIGOS})
+# Domésticas: NO se cargan (usuario, v2 18/10: «sería un sueldo, es de 2025 ya presentado, no hace falta tenerlo»)
 RENOMBRAR = ('Retiro MA semestral PAM', 'Retiro MA mensual PAM')
 
 FIJOS = {'Comision Caja de Seguridad', 'Metrogas Libertad', 'AYSA Libertad', 'Expensas Libertad', 'ABL Libertad Cuota',
@@ -186,6 +183,10 @@ for i, d in sorted(decis.items()):
     cta, r = reg_por_fila[i]; anio = r['fecha'][:4]; dec = d['dec'].lower(); dest = d['dest']
     if dec.startswith('no'): quedan['«no» (PAM ya presentó 2025)'] += 1; continue
     if dec.startswith('proxima'): quedan['próxima tanda (Expensas Posadas)'] += 1; continue
+    if d['cat'] == 'DOM': quedan['domésticas: no se cargan (2025 ya presentado)'] += 1; continue
+    # Entre empresas el detalle dice DE QUIÉN A QUIÉN (usuario, v2 18/10: «hay varios interlocutores, debemos decir a quién»)
+    if d['cat'] == 'AP': r['detalle'] = 'Aporte PAM a MSA'
+    if d['cat'] == 'RET': r['detalle'] = 'Retiro de MSA a PAM'
     if dest.startswith('VINCULAR'): vincular.append(dict(fila=i, cta=cta, mov=r, cuota_id=d['app_id'])); continue
     if dest.startswith('SUELDOS') or d['cat'] == 'SUELD': sueldos.append(dict(fila=i, cta=cta, mov=r)); continue
     if i == 335:
