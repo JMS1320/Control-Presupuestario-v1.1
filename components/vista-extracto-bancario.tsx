@@ -29,6 +29,7 @@ import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -4255,6 +4256,8 @@ ${marca}` : marca
                 return (
                   <div className="mb-4 space-y-1">
                     <TestsDelProceso proceso="extracto/tarjeta" pantalla="extracto" />
+                    {/* 🧾 A-FEAT-1292 — NC pagadas con tarjeta: aplicadas, el motor encuentra la factura por su neto */}
+                    {cuentaActivaObj?.empresa && <AvisoNcTarjeta empresa={cuentaActivaObj.empresa} />}
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control · conciliado · pago)</p>
                     {resumenFiltro && (
                       <p className="text-xs text-blue-700">

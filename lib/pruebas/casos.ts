@@ -166,7 +166,7 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
-import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
+import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pagos/cancelacion-nc"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6621,6 +6621,44 @@ export function correrCasos(): Resultado[] {
     // Si no coincide nada, no inventa: sigue sin match.
     const nada = buscarConDobleAudit(buscarJuguete, [{ id: "otra", debitos: 1, fecha_estimada: "2026-07-05" }], enAuditar)
     chequear("Doble audit", "Si nada coincide, sigue sin match", "sin match", nada.match ? "match" : "sin match", !nada.match, "A-BUG-1290")
+  }
+
+  // ══ 💳 NC PAGADAS CON TARJETA, emparejadas con su factura (A-FEAT-1292) ═══════════════════════════
+  {
+    // Los comprobantes reales de Medicus en «crédito» (mar, abr y may 2026), fijos acá.
+    const med = (id: string, tipo: number, nro: number, fecha: string, total: number) =>
+      ({ id, cuit: "30546741253", tipo_comprobante: tipo, numero_desde: nro, denominacion_emisor: "MEDICUS",
+         imp_total: total, fecha_emision: fecha, detalle: `${tipo === 1 ? "FC" : "NC"} ${nro} - MEDICUS` })
+    const comp = [
+      med("fc-mar", 1, 609033, "2026-03-19", 830356.25), med("nc-mar", 3, 218470, "2026-03-19", -43088.28),
+      med("fc-abr", 1, 611162, "2026-04-22", 814342.23), med("nc-abr", 3, 219622, "2026-04-23", -42218.32),
+      med("fc-may", 1, 613071, "2026-05-21", 850818.25), med("nc-may", 3, 220552, "2026-05-21", -43790.18),
+    ]
+    const pares = paresCreditoNC(comp)
+    // 🧨 Con el modal de siempre (todo junto), las 3 NC se descontaban de la PRIMERA factura.
+    const todoJunto = planCancelacionNC({ tipo: "fc_con_nc", facturas: comp.filter(c => c.tipo_comprobante === 1),
+      disponibles: comp.filter(c => c.tipo_comprobante === 3), seleccionadas: new Set(["nc-mar", "nc-abr", "nc-may"]) })
+    chequear("NC con tarjeta", "🧨 Medicus: cada NC va con SU factura (neto = lo que cobra la tarjeta: 787.267,97 · 772.123,91 · 807.028,07); todo junto bajaba sólo la de marzo",
+      "fc-mar 787267.97 · fc-abr 772123.91 · fc-may 807028.07 · todo junto: fc-mar 701259.47",
+      `${pares.map(p => `${p.fc.id} ${p.neto}`).join(" · ")} · todo junto: ${todoJunto[0].id} ${todoJunto[0].cambios.monto_a_abonar}`,
+      pares.length === 3 && pares[0].fc.id === "fc-mar" && pares[0].neto === 787267.97 && pares[1].fc.id === "fc-abr" && pares[1].nc.id === "nc-abr"
+        && pares[1].neto === 772123.91 && pares[2].neto === 807028.07 && todoJunto[0].cambios.monto_a_abonar === 701259.47, "A-FEAT-1292")
+
+    // El plan de UN par: la factura baja al neto, NO cambia de estado (sigue «crédito») y conserva su detalle.
+    const planMay = planCancelacionNC({ tipo: "fc_con_nc", facturas: [pares[2].fc], disponibles: [pares[2].nc], seleccionadas: new Set([pares[2].nc.id]) })
+    chequear("NC con tarjeta", "La factura de mayo queda en 807.028,07, sin cambiar de estado, y su detalle se CONSERVA con lo nuevo al final",
+      "807028.07 · sin estado · «FC 613071 - MEDICUS · Descuento parcial NC 220552» · NC conciliado",
+      `${planMay[0].cambios.monto_a_abonar} · ${planMay[0].cambios.estado ?? "sin estado"} · «${planMay[0].cambios.detalle}» · NC ${planMay[1].cambios.estado}`,
+      planMay[0].cambios.monto_a_abonar === 807028.07 && planMay[0].cambios.estado === undefined
+        && planMay[0].cambios.detalle === "FC 613071 - MEDICUS · Descuento parcial NC 220552"
+        && planMay[1].cambios.estado === "conciliado" && planMay[1].cambios.detalle === "NC 220552 - MEDICUS · Cancela FC 613071", "A-FEAT-1292")
+
+    // Una NC sin factura cerca (> 3 días) no se empareja: no se adivina.
+    const lejos = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), med("nc", 3, 2, "2026-05-10", -100)])
+    // Y otro proveedor tampoco, aunque sea el mismo día.
+    const otroCuit = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), { ...med("nc", 3, 2, "2026-05-01", -100), cuit: "20111111112" }])
+    chequear("NC con tarjeta", "Una NC sin factura del mismo proveedor a ≤ 3 días queda sin emparejar",
+      "0 · 0", `${lejos.length} · ${otroCuit.length}`, lejos.length === 0 && otroCuit.length === 0, "A-FEAT-1292")
   }
 
   return r
