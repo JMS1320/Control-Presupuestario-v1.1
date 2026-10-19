@@ -25,7 +25,7 @@ RAIZ = 'D:/Users/josem/Documents/Jose/Automatizarr/Claude/Control-Presupuestario
 DIR = RAIZ + '- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/'
 FUENTE = DIR + 'Extracto PAM - Control Presupuestario.xlsx'
 DECISIONES = DIR + 'Extracto PAM - Control Presupuestario - TRABAJO v3.xlsx'
-SALIDA = DIR + 'PAM - carga del historico - para revisar.xlsx'
+SALIDA = DIR + 'PAM - carga del historico - para revisar v2.xlsx'
 FOTO = DIR + 'PAM historico - foto y ids creados.json'
 TMP = DIR + 'PAM historico - parseo CA (temporal).json'
 
@@ -265,6 +265,77 @@ for (n, a), (b, _) in sorted(CREAR.items()): s0.append([f'{n} [{a}] · PAM', f's
 s0.append([f'{RENOMBRAR[0]} · PAM', f'se renombra a «{RENOMBRAR[1]}»'])
 s0.column_dimensions['A'].width = 100; s0.column_dimensions['B'].width = 60
 
+s3 = wb.create_sheet('03 Templates que se crean')
+CAMPOS = [('categ', 'Cuenta (categ)'), ('centro_costo', 'Centro de costo'), ('cuenta_agrupadora', 'Agrupadora (dashboard)'),
+          ('responsable_interno', 'Responsable interno'), ('tipo', 'Tipo'), ('tipo_template', 'Fijo / abierto'), ('activo', 'Activo'),
+          ('proveedor', 'Proveedor'), ('codigo_contable', 'Código contable'), ('codigo_interno', 'Código interno')]
+s3.append(['Template', 'Campaña', 'Empresa', 'Copiado de'] + [n for _, n in CAMPOS])
+for c in s3[1]: c.font = B; c.fill = AZUL
+for (n, a), (b0, cambios) in sorted(CREAR.items()):
+    x = {**b0, **cambios}
+    s3.append([n, a, x['responsable'], f"{b0['nombre_referencia']} {b0['año']} ({b0['responsable']})"] + [x.get(k) for k, _ in CAMPOS])
+s3.freeze_panes = 'B2'
+# ── Por template: arriba el template con sus datos, debajo sus cuotas (pedido del usuario: ver la consistencia) ──
+s4 = wb.create_sheet('01 Por template', 1)
+GRIS = PatternFill('solid', fgColor='D9D9D9')
+CAB = ['Template', 'Campaña', 'Empresa', 'Qué pasa con el template'] + [n for _, n in CAMPOS]
+DET = ['', 'Fila de tu planilla', 'Cuenta', 'Fecha', 'Tu detalle', 'Débito', 'Crédito', 'Importe de la cuota', 'Ingreso / egreso', 'Descripción de la cuota']
+s4.append(['UNA FILA GRIS POR TEMPLATE (sus datos) y DEBAJO las cuotas que se le cargan. Al final de cada template, su total.'])
+grupos = collections.OrderedDict()
+for p in sorted(plan, key=lambda p: (p['nombre'], p['anio'] or '', p['mov']['fecha'])):
+    grupos.setdefault((p['nombre'], p['anio']), []).append(p)
+def datos_tpl(nombre, anio):
+    viejo = RENOMBRAR[0] if nombre == RENOMBRAR[1] else nombre
+    if (nombre, anio or '2026') in CREAR:
+        b0, cambios = CREAR[(nombre, anio or '2026')]
+        return {**b0, **cambios, 'año': (cambios.get('año') or b0['año'])}, f"SE CREA (copia de «{b0['nombre_referencia']}» {b0['año']} de {b0['responsable']})"
+    t0 = tpl(viejo, anio) if anio else tpl(viejo)
+    return t0, ('EXISTE — se RENOMBRA de «' + viejo + '»' if viejo != nombre else 'EXISTE')
+def cabecera(nombre, anio, x, que):
+    s4.append([]); s4.append(CAB); [setattr(c, 'font', B) for c in s4[s4.max_row]]
+    s4.append([nombre, x.get('año') if x else anio, x.get('responsable') if x else '', que] + [x.get(k) if x else None for k, _ in CAMPOS])
+    for c in s4[s4.max_row]: c.fill = GRIS; c.font = B
+    s4.append(DET); [setattr(c, 'font', B) for c in s4[s4.max_row]]
+    return s4.max_row + 1
+def total(desde):
+    h = s4.max_row
+    s4.append(['', 'TOTAL', None, None, None, f'=SUM(F{desde}:F{h})', f'=SUM(G{desde}:G{h})', f'=SUM(H{desde}:H{h})'])
+    for c in s4[s4.max_row]: c.font = B
+for (nombre, anio), ps in grupos.items():
+    x, que = datos_tpl(nombre, anio)
+    d0 = cabecera(nombre, anio, x, que)
+    for p in ps:
+        r = p['mov']
+        # en un movimiento por partida (Red Vial / inmobiliario) el débito del banco es el total, no el de esta cuota
+        varias = sum(1 for q in plan if q['fila'] == p['fila']) > 1
+        s4.append(['', p['fila'], p['cta'], r['fecha'], r['detalle'], None if varias else (r['debitos'] or None), None if varias else (r['creditos'] or None),
+                   p['monto'], p['tipo'], p['desc'] + (f"   [el movimiento es de {money(r['debitos'])} en total, por partida]" if varias else '')])
+    total(d0)
+for v in vincular:
+    d0 = cabecera(v['t']['nombre_referencia'], v['t']['año'], v['t'], 'EXISTE — la cuota YA está en la app: sólo se vincula' + ('' if v['t']['responsable'] == 'PAM' else f" ⚠️ template de {v['t']['responsable']}"))
+    r = v['mov']
+    s4.append(['', v['fila'], v['cta'], r['fecha'], r['detalle'], r['debitos'] or None, r['creditos'] or None, float(v['cuota']['monto']),
+               v['cuota'].get('tipo_movimiento'), v['cuota'].get('descripcion') or '(sin descripción; no se cambia)'])
+    total(d0)
+for e, me in sorted({(x['emp'], x['mes']) for x in sueldos}):
+    xs = [x for x in sueldos if (x['emp'], x['mes']) == (e, me)]
+    per = xs[0]['periodo']
+    s4.append([]); s4.append(['SUELDOS', 'Período', 'Hoy en la app', 'Qué pasa']); [setattr(c, 'font', B) for c in s4[s4.max_row]]
+    hoy = (f"monto A {money(float(per['monto_a'] or 0))} · premio {money(float(per['premio'] or 0))}") if per else 'no existe'
+    que = 'se CREA con lo pagado' if not per else ('se SUMA al campo Premio' if xs[0]['premio'] else 'se SUMA al monto A')
+    s4.append([e, f"{'Nov' if me == 11 else 'Dic'} 2025", hoy, que]); [setattr(c, 'fill', GRIS) for c in s4[s4.max_row]]
+    s4.append(DET); [setattr(c, 'font', B) for c in s4[s4.max_row]]
+    d0 = s4.max_row + 1
+    for x in xs:
+        r = x['mov']; s4.append(['', x['fila'], x['cta'], r['fecha'], r['detalle'], r['debitos'], None, r['debitos'], 'pago de sueldo',
+                                 ('Premio' if x['premio'] else 'Pago') + f" — {r['detalle']} — pagado por PAM (cta cte)"])
+    total(d0)
+s4.append([]); s4.append(['', 'TOTAL GENERAL (cuotas + vínculos + sueldos)', None, None, None, None, None, f'=SUMIF(B1:B{s4.max_row},"TOTAL",H1:H{s4.max_row})'])
+s4.append(['', 'Control: tiene que ser igual al total de los movimientos del lote', None, None, None, None, None,
+           r2(sum((reg_por_fila[f][1]['debitos'] or reg_por_fila[f][1]['creditos']) for f in set(p['fila'] for p in plan) | {v['fila'] for v in vincular} | {x['fila'] for x in sueldos}))])
+s4.append(['', 'Diferencia (tiene que dar 0)', None, None, None, None, None, f'=ROUND(H{s4.max_row - 1}-H{s4.max_row},2)'])
+for k, w in zip('ABCDEFGHIJKLMN', (34, 14, 10, 30, 34, 14, 14, 16, 16, 30, 16, 16, 14, 14)): s4.column_dimensions[k].width = w
+s4.freeze_panes = 'A2'
 s2 = wb.create_sheet('01 Lote - una fila por cuota')
 s2.append(['Fila de tu planilla', 'Cuenta', 'Fecha', 'Tu detalle', 'Débito', 'Crédito', 'Destino', 'Template', 'Campaña', 'Template: ¿existe?',
            'Importe de la cuota', 'Descripción de la cuota / pago'])
