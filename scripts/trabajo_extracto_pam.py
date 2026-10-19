@@ -211,7 +211,8 @@ for cta in ('CA', 'CC'):
 rs.column_dimensions['A'].width = 24
 
 # ── 7. v2+: la PROPUESTA en las CATEG elegidas (scripts/historico_pam_propuesta.py) ─────────────────────
-PROCESADAS = {'IMP', 'FIJOS BS AS', 'FCI', 'BANC', 'DIST MA', 'DIST HNOS'}     # usuario 2026-10-18
+PROCESADAS = {'IMP', 'FIJOS BS AS', 'FCI', 'BANC', 'DIST MA', 'DIST HNOS',     # usuario 2026-10-18 (v2)
+              'DOM', 'RET', 'AP', 'SUELD', 'JORN'}                                 # usuario 2026-10-18 (v3)
 if int(V) >= 2:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from historico_pam_propuesta import proponer
@@ -224,7 +225,7 @@ if int(V) >= 2:
         ws.cell(i, C['Propuesta: cómo se identificó'], crit); ws.cell(i, C['Aviso'], aviso or None)
     rd = wb.create_sheet('Propuesta por destino')
     cDES = C['Propuesta: destino']
-    PREF = ['TEMPLATE', 'VINCULAR', 'PREGUNTA']
+    PREF = ['TEMPLATE', 'VINCULAR', 'SUELDOS', 'PREGUNTA']
     rd.append([f'PROPUESTA — CATEG de esta vuelta: {", ".join(sorted(PROCESADAS))}, de las dos cuentas. Nada está cargado: es para que lo revises y marques en «JMS: decisión / nota». Sin contable ni interno. Fórmulas sobre la hoja.'])
     rd.append([])
     rd.append(['1 · Por cuenta y CATEG', 'Cuenta'] + [f'{p} · cant.' for p in PREF] + ['Movimientos', 'Control (tiene que dar 0)'] + [f'{p} · débitos' for p in PREF] + [f'{p} · créditos' for p in PREF])
@@ -236,11 +237,12 @@ if int(V) >= 2:
             n = rd.max_row + 1
             crit = f'{rng(cCAT)},$A{n},{rng(cCTA)},$B{n}'
             fila = [cat, cta] + [f'=COUNTIFS({crit},{rng(cDES)},"{p} ·*")' for p in PREF]
-            fila += [f'=COUNTIFS({crit})', f'=F{n}-SUM(C{n}:E{n})']
+            cMOV = L(3 + len(PREF))                                   # columna «Movimientos»
+            fila += [f'=COUNTIFS({crit})', f'={cMOV}{n}-SUM(C{n}:{L(2 + len(PREF))}{n})']
             fila += [f'=SUMIFS({rng(cDEB)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF] + [f'=SUMIFS({rng(cCRE)},{crit},{rng(cDES)},"{p} ·*")' for p in PREF]
             rd.append(fila)
     f1 = rd.max_row
-    rd.append(['TOTAL', ''] + [f'=SUM({L(j)}{i1}:{L(j)}{f1})' for j in range(3, 14)])
+    rd.append(['TOTAL', ''] + [f'=SUM({L(j)}{i1}:{L(j)}{f1})' for j in range(3, 5 + 3 * len(PREF))])
     rd.append([])
     rd.append(['2 · Por destino', 'Movimientos', 'Débitos', 'Créditos'])
     h2 = rd.max_row
@@ -252,7 +254,7 @@ if int(V) >= 2:
         rd.append([x, f'=COUNTIFS({rng(cDES)},$A{n})', f'=SUMIFS({rng(cDEB)},{rng(cDES)},$A{n})', f'=SUMIFS({rng(cCRE)},{rng(cDES)},$A{n})'])
     f2 = rd.max_row
     rd.append(['TOTAL', f'=SUM(B{i2}:B{f2})', f'=SUM(C{i2}:C{f2})', f'=SUM(D{i2}:D{f2})'])
-    rd.append(['Control: el total por destino tiene que ser igual al de la sección 1', f'=B{rd.max_row}-F{f1 + 1}'])
+    rd.append(['Control: el total por destino tiene que ser igual al de la sección 1', f'=B{rd.max_row}-{L(3 + len(PREF))}{f1 + 1}'])
     for row in rd.iter_rows(min_row=i1):
         for cell in row:
             if isinstance(cell.value, str) and cell.value.startswith(('=SUMIFS', '=SUM(')): cell.number_format = '#,##0.00'

@@ -75,4 +75,31 @@ def proponer(m, marca_app):
             return ('PREGUNTA · Red Vial PAM cuota 4/4', '', f'Tu detalle: «{det}». Como en MSA, va abierto por partida.', '¿Me pasás el detalle por partida (como el de la 3/4)?')
         if 'autonomos' in d: return ('PREGUNTA · autónomos (enero 2025)', '', 'Débito «AFIP AUTONOMOS».', '¿De quién son? En PAM no hay template de autónomos.')
         if det.strip().upper() == 'VER': return ('PREGUNTA · transferencia a AFIP', '', 'Tu detalle dice «VER».', '¿Qué se pagó?')
+    # ── v3 (18/10): DOM, RET, AP, SUELD, JORN ──
+    # Lo que va y viene con MSA: en MSA existen «Retiro PAM» y «Aporte PAM» (distribución, doble sentido); del
+    # lado de PAM no hay template. Se propone el espejo, uno por sentido, igual que en MSA.
+    ej_msa = 'MSA 25/26' if (m['fecha'].year, m['fecha'].month) >= (2025, 7) else 'MSA 24/25 (ya cerrado)'
+    if cat == 'RET':
+        return (tpl('Retiro de MSA (nuevo, espejo de «Retiro PAM» de MSA)', ABIERTO), 'Distribucion MSA',
+                f'Entra de MSA («SERVICIO PAGO A PROVEEDORES MARTINEZ SOBRADO»), tu detalle «{det}». Ejercicio de MSA: {ej_msa}.',
+                'Template nuevo de PAM: confirmar nombre y que sea uno solo para todo el año. La cuenta no está en el plan (como «Distribucion Mama» y las de los hermanos): hay que darla de alta.')
+    if cat == 'AP':
+        return (tpl('Aporte a MSA (nuevo, espejo de «Aporte PAM» de MSA)', ABIERTO), 'Aporte MSA',
+                f'Sale a MSA («MARTINEZ SOBRADO AG»), tu detalle «{det}». Ejercicio de MSA: {ej_msa}.',
+                'Template nuevo de PAM: confirmar nombre. La cuenta no está en el plan: hay que darla de alta.' + (' En MSA es del 24/25, que no está cargado en la app: sólo va del lado de PAM.' if ej_msa.endswith('cerrado)') else ''))
+    if cat == 'DOM':
+        quien = 'Mabel' if 'mabel' in d or 'sole' in d else ('Nadia' if 'nadia' in d or '27285708740' in d else 'doméstica NZ')
+        return (tpl('Sueldo Doméstica NZ (nuevo)', 2025), 'Sueldo Domestica', f'Transferencia a la doméstica de Nazarenas ({quien}), tu detalle «{det}».',
+                'En PAM no hay template de doméstica (MA tiene «Aportes Domesticas») y la cuenta no está en el plan. ¿Template nuevo de PAM, o va por Sueldos con la empleada cargada?')
+    if cat == 'SUELD':
+        quien = 'JMS' if 'jms' in d else ('AMS' if 'ams' in d else '?')
+        if 'premio' in d:
+            return ('PREGUNTA · premio JMS (USD 5.000)', '', f'Tu detalle: «{det}» ($7.250.000).',
+                    '¿Va por Sueldos como pago a JMS (tipo premio/aguinaldo), o es un gasto de PAM con template propio?')
+        return (f'SUELDOS · pago a {quien} desde PAM', 'Sueldos', f'Tu detalle «{det}». {quien} es empleado de MSA/PAM/MA en Sueldos; diciembre 2025 '
+                + ('no tiene período cargado para JMS.' if quien == 'JMS' else 'tiene período (saldo $1.575.213 pagado el 06/01 desde MSA).'),
+                '¿Es sueldo de diciembre, aguinaldo o un extra? Con eso creo el período/pago histórico, como hicimos con MSA.')
+    if cat == 'JORN':
+        return ('PREGUNTA · jornales (Chano, 2 días × 2 personas)', '', f'Tu detalle: «{det}» ($680.000).',
+                'En PAM no hay template de jornales; en el plan está «JORNALEROS - Labores Varias». ¿Qué trabajo fue? ¿Template nuevo «Jornales PAM» con esa cuenta?')
     return ('PREGUNTA · sin regla', '', f'Tu detalle: «{det}».', 'No supe a qué va.')
