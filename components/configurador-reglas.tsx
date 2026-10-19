@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
-import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { Loader2, Plus, Edit, Trash2, ArrowUp, ArrowDown, Settings, Eye, EyeOff, Copy } from "lucide-react"
 import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -39,6 +38,24 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
   useEffect(() => { if (cuentaBancariaId) setCuentaFiltro(cuentaBancariaId) }, [cuentaBancariaId])
   const [modalAbierto, setModalAbierto] = useState(false)
   const [reglaEditando, setReglaEditando] = useState<ReglaConciliacion | null>(null)
+
+  /**
+   * 🎯 A-FEAT-1293 — la regla elige el TEMPLATE, no la cuenta (usuario 2026-10-19: *«yo trabajo con los
+   * templates»*). Se cargan los activos para buscar; la cuenta de la regla se toma del template elegido.
+   */
+  const [templates, setTemplates] = useState<Array<{ id: string; nombre_referencia: string; responsable: string | null;
+    año: string | null; categ: string | null; cuenta_agrupadora: string | null }>>([])
+  const [busquedaTemplate, setBusquedaTemplate] = useState('')
+  useEffect(() => {
+    const cargar = async () => {
+      const { data } = await supabase.from('egresos_sin_factura')
+        .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora')
+        .eq('activo', true).order('nombre_referencia')
+      setTemplates((data || []) as unknown as typeof templates)
+    }
+    void cargar()
+  }, [])
+  const templatePorId = useMemo(() => new Map(templates.map(t => [t.id, t])), [templates])
 
   /** Las de la cuenta elegida, ordenadas — el `orden` decide cuál gana cuando dos matchean. */
   const reglasDeLaCuenta = useMemo(
@@ -87,7 +104,8 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
     codigo_interno: '',
     activo: true,
     llena_template: true,
-    cuenta_bancaria_id: 'msa_galicia'
+    cuenta_bancaria_id: 'msa_galicia',
+    template_id: ''
   })
 
   // Reset formulario
@@ -105,8 +123,10 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       codigo_interno: '',
       activo: true,
       llena_template: true,
-      cuenta_bancaria_id: cuentaFiltro
+      cuenta_bancaria_id: cuentaFiltro,
+      template_id: ''
     })
+    setBusquedaTemplate('')
     setReglaEditando(null)
   }
 
@@ -135,20 +155,30 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       codigo_interno: regla.codigo_interno || '',
       activo: regla.activo,
       llena_template: regla.llena_template,
-      cuenta_bancaria_id: regla.cuenta_bancaria_id
+      cuenta_bancaria_id: regla.cuenta_bancaria_id,
+      template_id: regla.template_id || ''
     })
+    setBusquedaTemplate('')
     setModalAbierto(true)
   }
 
   // Guardar regla
   const guardarRegla = async () => {
+    const elegido = formulario.template_id ? templatePorId.get(formulario.template_id) : undefined
+    // Una regla NUEVA tiene que elegir template (las viejas pueden seguir por cuenta hasta que se las edite).
+    if (!reglaEditando && formulario.llena_template && !elegido) {
+      alert('Elegí el template al que va a cargar la regla.')
+      return
+    }
     const datosRegla = {
       orden: parseInt(formulario.orden),
       tipo: formulario.tipo as any,
       columna_busqueda: formulario.columna_busqueda as any,
       texto_buscar: formulario.texto_buscar,
       tipo_match: formulario.tipo_match as any,
-      categ: formulario.categ,
+      // La cuenta sale del template elegido (y si no tiene, su nombre: «la cuenta es el template»).
+      categ: elegido ? (elegido.categ || elegido.nombre_referencia) : formulario.categ,
+      template_id: elegido ? elegido.id : null,
       centro_costo: formulario.centro_costo || null,
       detalle: formulario.detalle,
       codigo_contable: formulario.codigo_contable.trim() || null,
@@ -159,7 +189,8 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
     }
 
     // Si la regla se guarda como activa y llena template, validar que exista template apropiado
-    if (datosRegla.activo && datosRegla.llena_template) {
+    // (con template elegido ya existe: no hace falta buscarlo por cuenta).
+    if (datosRegla.activo && datosRegla.llena_template && !datosRegla.template_id) {
       const templateExiste = await verificarTemplateRegla(datosRegla.categ, datosRegla.cuenta_bancaria_id)
       if (!templateExiste) {
         const cuenta = CUENTAS_BANCARIAS.find(c => c.id === datosRegla.cuenta_bancaria_id)
@@ -229,8 +260,8 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       await toggleRegla(regla.id)
       return
     }
-    // Activar regla que no llena template → no requiere validación
-    if (!regla.llena_template) {
+    // Activar regla que no llena template, o que ya eligió su template → no requiere validación
+    if (!regla.llena_template || regla.template_id) {
       await toggleRegla(regla.id)
       return
     }
@@ -453,7 +484,11 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
 
                     {/* Resultado */}
                     <div className="text-right">
-                      <div className="font-medium text-blue-600">{regla.categ}</div>
+                      <div className="font-medium text-blue-600">
+                        {regla.template_id && templatePorId.get(regla.template_id)
+                          ? <>→ {templatePorId.get(regla.template_id)!.nombre_referencia} <span className="text-xs text-gray-500">({templatePorId.get(regla.template_id)!.responsable})</span></>
+                          : regla.categ}
+                      </div>
                       <div className="text-sm text-gray-500">{regla.detalle}</div>
                       {(regla.codigo_contable || regla.codigo_interno) && (
                         <div className="text-xs text-emerald-600 font-mono mt-0.5">
@@ -611,17 +646,50 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
             </div>
 
             <div>
-              <Label htmlFor="categ">CATEG (Cuenta Contable)</Label>
-              {/* Se elige del plan de cuentas, no se tipea. Regla del proyecto (CLAUDE.md
-                  § Centralizar): para ASIGNAR cuenta contable va siempre SelectorCuentaContable,
-                  que trae jerarquía y buscador. Escribirla a mano permitía inventar una categ
-                  inexistente y la regla quedaba imputando a una cuenta que no está en el plan. */}
-              <SelectorCuentaContable
-                value={formulario.categ}
-                onSelect={(c) => setFormulario(prev => ({ ...prev, categ: c?.categ || '' }))}
-                placeholder="Buscar cuenta contable…"
-                mostrarSinAsignar
-              />
+              <Label>Template al que carga</Label>
+              {/* 🎯 A-FEAT-1293 — se elige el TEMPLATE (usuario 2026-10-19). La cuenta de la regla sale de él.
+                  Si el template se renueva de campaña, el motor carga en el de la campaña del movimiento. */}
+              {(() => {
+                const elegido = formulario.template_id ? templatePorId.get(formulario.template_id) : undefined
+                const empresaCuenta = CUENTAS_BANCARIAS.find(c => c.id === formulario.cuenta_bancaria_id)?.empresa
+                const q = busquedaTemplate.trim().toLowerCase()
+                const resultados = q
+                  ? templates.filter(t => [t.nombre_referencia, t.cuenta_agrupadora, t.categ, t.responsable]
+                      .some(v => (v || '').toLowerCase().includes(q))).slice(0, 25)
+                  : []
+                return (
+                  <div className="space-y-1">
+                    {elegido ? (
+                      <div className="text-sm rounded border border-blue-200 bg-blue-50 px-2 py-1 flex items-center justify-between gap-2">
+                        <span>→ <b>{elegido.nombre_referencia}</b> · {elegido.responsable} · {elegido.año || 'sin campaña'}</span>
+                        <button type="button" className="text-xs underline" onClick={() => setFormulario(p => ({ ...p, template_id: '' }))}>cambiar</button>
+                      </div>
+                    ) : formulario.categ ? (
+                      <p className="text-xs text-amber-700">Regla vieja: hoy va por la cuenta «{formulario.categ}». Elegí el template para fijarlo.</p>
+                    ) : null}
+                    {elegido && empresaCuenta && elegido.responsable && elegido.responsable.toUpperCase() !== empresaCuenta && (
+                      <p className="text-xs text-amber-700">⚠️ El template es de {elegido.responsable} y la cuenta es de {empresaCuenta}.</p>
+                    )}
+                    {!elegido && (
+                      <>
+                        <Input value={busquedaTemplate} onChange={e => setBusquedaTemplate(e.target.value)}
+                          placeholder="Buscar template por nombre, agrupadora o empresa…" />
+                        {resultados.length > 0 && (
+                          <div className="max-h-40 overflow-y-auto rounded border divide-y">
+                            {resultados.map(t => (
+                              <button key={t.id} type="button"
+                                onClick={() => { setFormulario(p => ({ ...p, template_id: t.id })); setBusquedaTemplate('') }}
+                                className="w-full text-left px-2 py-1 text-xs hover:bg-gray-50">
+                                <b>{t.nombre_referencia}</b> · {t.responsable || '—'} · {t.año || 'sin campaña'} · {t.cuenta_agrupadora || 'sin agrupadora'}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
             <div>

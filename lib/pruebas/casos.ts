@@ -168,6 +168,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
+import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6686,6 +6687,30 @@ export function correrCasos(): Resultado[] {
     chequear("Template desde la conciliación", "Un template de otra empresa que la cuenta que paga se avisa (MA pagado por MSA); la misma empresa no",
       "true · false", `${esDeOtraEmpresa("MA", "MSA")} · ${esDeOtraEmpresa("msa", "MSA")}`,
       esDeOtraEmpresa("MA", "MSA") && !esDeOtraEmpresa("msa", "MSA"), "A-FEAT-1294")
+  }
+
+  // ══ 🎯 LA REGLA ELIGE EL TEMPLATE, y sigue a su familia al renovarse (A-FEAT-1293) ══════════════════
+  {
+    // Seguro Flota de MSA: la regla se creó apuntando al renglón 25/26. Un movimiento de agosto 2026 tiene que
+    // cargar en el 26/27 (la campaña se renovó), uno de marzo 2026 en el 25/26.
+    const flota2526 = { id: "sf-2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26", periodicidad: null, activo: true }
+    const flota2627 = { id: "sf-2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27", periodicidad: null, activo: true }
+    const accidentes = { id: "acc", nombre_referencia: "Seguro Accidentes de Trabajo", responsable: "MSA", año: "26/27", periodicidad: null, activo: true }
+    const otraEmpresa = { id: "sf-pam", nombre_referencia: "Seguro Flota", responsable: "PAM", año: "26/27", periodicidad: null, activo: true }
+    const todos = [flota2526, flota2627, accidentes, otraEmpresa]
+    const ago = templateParaFecha(flota2526, todos, "2026-08-04")
+    const mar = templateParaFecha(flota2526, todos, "2026-03-04")
+    // 🧨 Con el camino viejo (por cuenta + empresa) se tomaba EL PRIMERO de la cuenta: podía ser Accidentes.
+    chequear("Regla → template", "🎯 La regla apunta a Seguro Flota 25/26: un movimiento de ago-26 carga en el 26/27 (renovado) y uno de mar-26 en el 25/26; nunca en Accidentes ni en el de PAM",
+      "sf-2627 · sf-2526", `${ago?.id} · ${mar?.id}`, ago?.id === "sf-2627" && mar?.id === "sf-2526", "A-FEAT-1293")
+
+    // MA es anual: Seguro Chalet 2026 → un movimiento de 2027 sin renglón 2027 cae en el elegido (no se inventa).
+    const chalet = { id: "ch-2026", nombre_referencia: "Seguro Chalet", responsable: "MA", año: "2026", periodicidad: "anual", activo: true }
+    const sinRenovar = templateParaFecha(chalet, [chalet], "2027-01-10")
+    const inactivo = templateParaFecha({ ...chalet, activo: false }, [{ ...chalet, activo: false }], "2027-01-10")
+    chequear("Regla → template", "Sin renglón de esa campaña, carga en el elegido; si el elegido está desactivado y no hay otro, no carga (no inventa)",
+      "ch-2026 · null", `${sinRenovar?.id} · ${inactivo === null ? "null" : inactivo.id}`,
+      sinRenovar?.id === "ch-2026" && inactivo === null, "A-FEAT-1293")
   }
 
   return r

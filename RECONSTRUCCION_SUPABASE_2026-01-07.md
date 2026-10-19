@@ -3323,6 +3323,17 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-19 · `reglas_conciliacion.template_id` — la regla elige el template (A-FEAT-1293) — ⏳ SE CORRE CON JMS
+
+`scripts/87-reglas-template.sql` (+ `-deshacer`):
+
+```sql
+alter table public.reglas_conciliacion
+  add column if not exists template_id uuid references public.egresos_sin_factura(id) on delete set null;
+```
+
+Null = regla vieja (va por `categ` + empresa, como siempre). Con valor, el motor carga en ese template o en el de su familia (nombre + responsable) cuya campaña corresponde a la fecha del movimiento (`lib/conciliacion/template-de-regla.ts`).
+
 ### 2026-09-30 · `sueldos.periodos.cuota_alimentaria` + su vista (A-FEAT-1213)
 
 ```sql

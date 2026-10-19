@@ -18,6 +18,7 @@ import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
+import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -1022,6 +1023,29 @@ export function useMotorConciliacion() {
     fechaCuota?: string | null
   } | null> => {
     try {
+      /**
+       * 🎯 A-FEAT-1293 — si la regla ELIGIÓ un template, se carga en ése (o en el de su familia cuya
+       * campaña corresponde a la fecha del movimiento). El camino por `categ` de abajo queda para las
+       * reglas viejas, que no tienen template elegido.
+       */
+      if ((regla as any).template_id) {
+        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra'
+        const { data: elegido } = await supabase.from('egresos_sin_factura').select(COLS)
+          .eq('id', (regla as any).template_id).maybeSingle()
+        if (!elegido) {
+          console.warn(`⚠️ La regla «${regla.texto_buscar}» apunta a un template que ya no existe — cuota no creada`)
+          return null
+        }
+        const { data: familia } = await supabase.from('egresos_sin_factura').select(COLS)
+          .eq('nombre_referencia', (elegido as any).nombre_referencia).eq('activo', true)
+        const destino = templateParaFecha(elegido as any, (familia || []) as any[], movimiento.fecha)
+        if (!destino) {
+          console.warn(`⚠️ El template de la regla «${regla.texto_buscar}» no está activo para ${movimiento.fecha} — cuota no creada`)
+          return null
+        }
+        return await insertarCuotaDeRegla(destino as any, movimiento)
+      }
+
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
@@ -1061,6 +1085,15 @@ export function useMotorConciliacion() {
         if (coincide) template = coincide
       }
 
+      return await insertarCuotaDeRegla(template as any, movimiento)
+
+    } catch (err) {
+      console.error('Error en crearCuotaEnTemplate:', err)
+      return null
+    }
+
+    /** La cuota conciliada en el template ya elegido — la usan los dos caminos de arriba (A-FEAT-1293). */
+    async function insertarCuotaDeRegla(template: any, movimiento: MovimientoBancario) {
       // Determinar tipo_movimiento y monto desde el extracto
       const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
       const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
@@ -1098,20 +1131,16 @@ export function useMotorConciliacion() {
         return null
       }
 
-      console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
+      console.log(`✅ Cuota creada en template "${template.nombre_referencia ?? regla.categ}" (${tipoMovimiento} $${monto})`)
       return {
-        templateId: template.id,
-        cuotaId: cuota.id,
+        templateId: template.id as string,
+        cuotaId: cuota.id as string,
         responsable: (template as any).responsable ?? null,
         // 🧲 A-BUG-175 — el template entero y la fecha de la cuota viajan de vuelta: son lo que el
         //    movimiento necesita para heredar proveedor, comprobante y centro de costo.
         template: template as TemplateOrigen,
         fechaCuota: (cuota as any)?.fecha_estimada ?? movimiento.fecha ?? null,
       }
-
-    } catch (err) {
-      console.error('Error en crearCuotaEnTemplate:', err)
-      return null
     }
   }
 

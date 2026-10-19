@@ -64,7 +64,7 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, cuit varchar, razon_social varchar, nombre_fantasia varchar, activo boolean, cbu varchar, alias_cbu varchar, banco varchar, tipo_cuenta varchar, moneda_cuenta varchar, ultimo_uso_bancario tstz, email_pagos varchar, email_facturacion varchar, telefono varchar, contacto_nombre varchar, notas text, tags ARRAY, empresa_principal varchar, created_at tstz, updated_at tstz, es_proveedor boolean, es_cliente boolean, fc_modo varchar, patron_asunto varchar, dias_busqueda int, carpeta_drive_id varchar, gas_habilitado boolean, pdf_ultimo_intento tstz, mensaje_transferencia varchar`
 
 ### reglas_conciliacion
-`id uuid, orden int, tipo text, columna_busqueda text, texto_buscar text, tipo_match text, categ text, centro_costo text, detalle text, activo boolean, created_at tstz, updated_at tstz, llena_template boolean, cuenta_bancaria_id varchar, codigo_contable varchar, codigo_interno varchar`
+`id uuid, orden int, tipo text, columna_busqueda text, texto_buscar text, tipo_match text, categ text, centro_costo text, detalle text, activo boolean, created_at tstz, updated_at tstz, llena_template boolean, cuenta_bancaria_id varchar, codigo_contable varchar, codigo_interno varchar, template_id uuid` _(**`template_id`** 2026-10-19, script 87, A-FEAT-1293: el template que eligió el usuario; null = va por categ)_
 
 ### reglas_contable_interno
 `id uuid, orden int, activo boolean, created_at tstz, updated_at tstz, cuenta_bancaria_id varchar, tipo_regla varchar, template_id uuid, responsable varchar, codigo_contable varchar, codigo_interno varchar, descripcion varchar, empleado_id uuid`

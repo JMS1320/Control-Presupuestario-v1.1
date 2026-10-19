@@ -27,6 +27,8 @@ export interface ReglaConciliacion {
   // Control
   activo: boolean
   llena_template: boolean
+  /** A-FEAT-1293 — el template que eligió el usuario (null = regla vieja: va por categ + empresa). */
+  template_id?: string | null
   created_at: string
   updated_at: string
 }
