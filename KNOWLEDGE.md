@@ -1729,6 +1729,12 @@ movimiento una sola vez → reparto de dividendos, [A-FEAT-1288](PENDIENTES.md#a
   interno **`DIST MA`**: en los papeles todavía son de PAM y en lo real ya son de MA. Las plantillas de Libertad y Posadas
   tienen responsable PAM por lo mismo. 🔵 Falta definir **desde cuándo** y cómo pasan a contable MA.
 
+### Templates entre empresas — la regla al imputar *(usuario 2026-10-18, histórico PAM)*
+- **Un movimiento va a un template de SU empresa.** Usar uno de otra (o compartido, como «Retiro MA mensual» MSA/PAM) **se pregunta, nunca sin su OK**: *«verificar siempre esto — debés preguntar si se quiere usar uno cross compañía»*.
+- **Un template nuevo, si no se aclara, es del responsable de la empresa con la que se está trabajando.**
+- ⚠️ **Lo cruzado existe y está bien** cuando una empresa pagó por cuenta de otra: al 18/10 hay ~70 movimientos de MSA en templates de PAM/MA (Red Vial PAM 3/4, Expensas/AYSA Libertad, Autónomos y Lima de MA) y uno de PAM en uno de MA (Red Vial Lima); revisados, ninguno es un error. La regla pide que se **decida con él**, no que no exista.
+- **Entre empresas, el detalle dice DE QUIÉN A QUIÉN** (*«hay varios interlocutores, debemos decir a quién»*): «Aporte PAM a MSA», «Retiro de MSA a PAM».
+
 ---
 
 ## Medido y proyectado no se actualizan igual `#control #productivo #2026-08-27`
