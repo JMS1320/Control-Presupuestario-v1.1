@@ -696,10 +696,16 @@ ${texto.trim()}` : texto.trim()
     if (filtroSentido !== 'todos') items.push(ETIQUETA_SENTIDO[filtroSentido])
     if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
+    // 🧨 A-BUG-1291 — el resumen de la tarjeta acotaba la TABLA pero no estaba acá, así que «Conciliar»
+    // con un resumen elegido corría el motor sobre TODOS los pendientes de la tarjeta (2024 → hoy).
+    if (resumenFiltro) {
+      const cierre = (movimientos.find(m => (m as any).nro_resumen === resumenFiltro) as any)?.fecha_cierre
+      items.push(`resumen ${cierre ? fmt(String(cierre).slice(0, 10)) : resumenFiltro}`)
+    }
     return items
   }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
-      filtroSentido])
+      filtroSentido, resumenFiltro, movimientos])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -2993,6 +2999,7 @@ ${marca}` : marca
      */
     setFiltroRevisado('todas')
     setFiltroNota('todas')
+    setResumenFiltro(null) // A-BUG-1291: ahora es un filtro más, se limpia con los otros
     setFiltroSentido('todos')   // A-FEAT-1224 — si quedara puesto, es el bug A-BUG-155 otra vez
 
     // Reset completo: acá SÍ va el objeto mínimo — se limpió todo, no hay nada que preservar.
