@@ -137,6 +137,7 @@ import {
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
@@ -181,6 +182,7 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -3756,6 +3758,45 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · templates", "🧮 El detalle y el resumen por mes dan EXACTAMENTE lo mismo",
       `${sumaDetalle}`, `${muchas.totalDebitos}`,
       Math.abs(sumaDetalle - muchas.totalDebitos) < 0.01, "A-FEAT-1184")
+
+    // 🧨 A-BUG-1289 — el caso real: Rojas 2026 tiene «Anual» (desactivado, estimado en $20.941.123)
+    //    y «Cuota» (la que se paga). Antes el libro sumaba las dos y el inmobiliario salía doble.
+    const rojas = armarTemplatesDelEjercicio([
+      { ...base, id: "anual", concepto: "Inmobiliario Anual Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-08", estado: "desactivado", monto: 20941123 },
+      { ...base, id: "c1", concepto: "Inmobiliario Cuota Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-17", estado: "conciliado", monto: 2096673.6 },
+    ], ej)
+    chequear("Balance · templates", "🛑 Una cuota DESACTIVADA no es gasto: queda afuera del total y en su lista",
+      "gasto 2096673.6 · 1 no incluida por 20941123",
+      `gasto ${rojas.totalDebitos} · ${rojas.noIncluidas?.length ?? "?"} no incluida por ${rojas.totalNoIncluidas ?? "?"}`,
+      rojas.totalDebitos === 2096673.6 && rojas.noIncluidas?.length === 1 && rojas.totalNoIncluidas === 20941123, "A-BUG-1289")
+
+    // 💳 Una cuota PENDIENTE del ejercicio es gasto (venció) Y deuda al cierre, como una factura impaga.
+    const impaga = armarTemplatesDelEjercicio([
+      { ...base, id: "p", fecha: "2026-05-10", estado: "pendiente", monto: 45843.7 },
+      { ...base, id: "q", fecha: "2026-04-10", estado: "conciliado", monto: 1000 },
+    ], ej)
+    chequear("Balance · templates", "💳 Una cuota PENDIENTE sigue en el gasto y además es deuda al cierre",
+      "gasto 46843.7 · deuda 45843.7 (1 cuota)",
+      `gasto ${impaga.totalDebitos} · deuda ${impaga.totalImpagas ?? "?"} (${impaga.impagasAlCierre?.length ?? "?"} cuota)`,
+      impaga.totalDebitos === 46843.7 && impaga.totalImpagas === 45843.7 && impaga.impagasAlCierre?.length === 1, "A-BUG-1289")
+
+    // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
+    //    $7.115.206,05; uno anulado no suma, y los de otra empresa u otro ejercicio no se mezclan.
+    const aj = (id: string, concepto: string, monto: number, extra: Record<string, unknown> = {}) => ({
+      id, empresa: "MSA", anio_cierre: 2026, accion: "saldo_anterior", concepto, categ: "Impuesto inmobiliario",
+      monto, motivo: "Saldo que dejó el balance 2025", origen_anio_cierre: 2025, created_at: "2026-10-18", anulado_at: null, ...extra })
+    const saldos = saldosDelEjercicioAnterior([
+      aj("a", "Inmobiliario MSA 2025", 3154059.75),
+      aj("b", "Complementario MSA 2025", 1519054.8, { categ: "Impuesto inmobiliario Complementario" }),
+      aj("c", "Red Vial Rojas 2025", 2442091.5, { categ: "Impuesto Red Vial" }),
+      aj("d", "cargado de más", 999, { anulado_at: "2026-10-18" }),
+      aj("e", "de PAM", 500, { empresa: "PAM" }),
+      aj("f", "de otro ejercicio", 700, { anio_cierre: 2027 }),
+    ], "MSA", 2026)
+    chequear("Balance · saldos ej. anterior", "✍️ Suman los vigentes del ejercicio; el anulado y los ajenos no",
+      "3 vigentes · total 7115206.05 · 1 anulado",
+      `${saldos.vigentes.length} vigentes · total ${saldos.total} · ${saldos.anulados.length} anulado`,
+      saldos.vigentes.length === 3 && saldos.total === 7115206.05 && saldos.anulados.length === 1, "A-FEAT-1207")
   }
 
   /**
@@ -6504,6 +6545,28 @@ export function correrCasos(): Resultado[] {
     chequear("Asistencia — llenar con F y jornal", "«Llenar con F» pone F en los 17 vacíos sin tocar lo marcado; el jornalero suma 10,5 días y cobra 10,5 × 60.000",
       "F 17 · completo · 10,5 días · 630000", `F ${Object.keys(resto).length} · ${r.completo ? "completo" : "incompleto"} · ${String(r.diasTrabajados).replace(".", ",")} días · ${bruto}`,
       Object.keys(resto).length === 17 && Object.values(resto).every(m => m === "F") && r.completo && r.diasTrabajados === 10.5 && bruto === 630000, "A-FEAT-1259")
+  }
+
+  // ══ 📜 Extracto histórico jul-25 → ene-26 (A-DEC-1009) ══════════════════════════════════════════
+  {
+    // 🧨 Antes, desvincular devolvía SIEMPRE la cuota a «pendiente»: una cuota «anterior» revivía en el Cash Flow.
+    const antesSiempre = (_e: string) => "pendiente"
+    chequear("Extracto histórico", "🧨 Desvincular un movimiento de una cuota «anterior» la deja «anterior» (antes volvía a pendiente y reaparecía en el Cash Flow); una conciliada sí vuelve a pendiente",
+      "anterior · pendiente · pendiente · antes: pendiente", `${estadoCuotaAlDesvincular("anterior")} · ${estadoCuotaAlDesvincular("conciliado")} · ${estadoCuotaAlDesvincular(null)} · antes: ${antesSiempre("anterior")}`,
+      estadoCuotaAlDesvincular("anterior") === "anterior" && estadoCuotaAlDesvincular(" Anterior ") === "anterior" && estadoCuotaAlDesvincular("conciliado") === "pendiente" && estadoCuotaAlDesvincular(null) === "pendiente", "A-DEC-1009")
+    const filas = [
+      { estado: "conciliado", categ: "Expensas Libertad", revisado: true },
+      { estado: "pendiente", categ: null, revisado: false },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "auditar", categ: "", revisado: true },
+    ]
+    const e = contarEstadisticasExtracto(filas)
+    // 🧨 Antes «Sin CATEG» contaba también los históricos (que no tienen categoría hasta revisar su lote).
+    const sinCategAntes = filas.filter(m => !m.categ || m.categ === "").length
+    chequear("Extracto histórico", "🧨 Los históricos se cuentan aparte y no inflan «Sin CATEG» ni «sin revisar» (antes Sin CATEG daba 4 con 2 históricos)",
+      "total 5 · históricos 2 · sin categ 2 · sin revisar 1 · antes 4", `total ${e.total} · históricos ${e.historicos} · sin categ ${e.sin_categ} · sin revisar ${e.sin_revisar} · antes ${sinCategAntes}`,
+      e.total === 5 && e.historicos === 2 && e.sin_categ === 2 && e.sin_revisar === 1 && e.conciliados === 1 && e.pendientes === 1 && e.auditar === 1 && sinCategAntes === 4 && esHistorico("Historico") && !esHistorico("pendiente"), "A-DEC-1009")
   }
 
   // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════

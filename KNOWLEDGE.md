@@ -1618,6 +1618,10 @@ saca justo lo que él usa para reconocer el movimiento (la leyenda, el comproban
 - **Primera columna: el número de fila de su planilla.** Es la llave para ir y volver.
 - **Nombre nuevo en cada versión** (`_v2_completo`, `_v3`): no se pisa un archivo que él puede tener
   abierto o anotado.
+  ⚠️ **Y el script lo tiene que GARANTIZAR, no recordar** *(18/10)*: una corrida de prueba de
+  `historico_pam_cargar.py` volvió a guardar la «v2» **después** de que el usuario la marcó, y se perdieron sus
+  notas (una edición de detalle no se pudo recuperar). Desde ahí el script toma la primera versión libre y frena
+  si el archivo existe. Todo script que escriba un Excel de trabajo: **si existe, no se pisa**.
 - **No arrastrar columnas vacías**: las que Excel da por «usadas» por formato no son suyas (salieron 4
   `JMS: (sin título)` vacías en la v2 de sugeridos y preguntó por qué).
 
@@ -1640,6 +1644,96 @@ dos movimientos del mismo día e importe con distinto detalle (ahí sí se podr�
 ⚠️ **Trampa de openpyxl** que costó un control roto: un texto que empieza con `=` se guarda como
 fórmula (`#¿NOMBRE?`), y `ws.append([])` **no** avanza `max_row` — si se calcula la fila del control
 con `max_row` después de un renglón vacío, queda corrida en uno.
+
+### 🛑 Sugerir por PARECIDO falló: se clasifica con SUS filtros, por CATEG `#metodo #2026-10-15`
+
+⚠️ **cambió 2026-10-15** — el Excel *«TEMPLATES SUGERIDOS»* (`templates-sugeridos-2025.mts` /
+`sugeridos_v2.py`) clasificaba con tres confianzas: **alta** (la misma descripción del banco siempre
+fue al mismo template en feb–jun), **media** (el detalle se parece al nombre del template) y **baja**
+(el importe ±25 % del promedio). **Media y baja no sirven** y no se usan más para cargar:
+- **«Gastos Reintegro JMS» sugería $22,8 M** y eran sueldos de JMS y AMS, **pagos de facturas ya
+  cargadas** (se habrían duplicado) y un reintegro. El filtro del usuario sobre los pagos a José daba
+  ~$12 M: **ese control —su filtro contra el total propuesto— lo tendría que haber hecho yo antes de
+  mostrárselo.**
+- El motivo es de método: no miraba **a quién se le pagó** (la leyenda con nombre y CUIT), **no
+  respetaba su CATEG/Detalle** aunque decían bien qué era cada cosa, y **no cruzaba contra facturas
+  ni Sueldos**.
+
+**El método que vale** (usuario: *«riguroso, casi como cuando yo lo hago a mano y filtro la data
+existente»*):
+1. **Por CATEG**, desglosando adentro: su CATEG es la base del procesamiento.
+2. **Filtros explícitos** sobre sus columnas (CATEG, Detalle, beneficiario y CUIT, descripción del
+   banco), **escritos en el Excel** para que él los repita con el autofiltro.
+3. **Cruce contra facturas y Sueldos** antes de proponer: lo que ya está ahí no va a un template.
+4. **Movimientos de a uno, nunca agrupados** — también en las propuestas.
+5. Lo que no se resuelve con un filtro claro **se pregunta**; no se sugiere.
+6. **Chequeo inverso** en las CATEG que no se procesan (ej. **VET**: todo son facturas de la
+   veterinaria): verificar que adentro no haya nada que **no** sea de esa categoría.
+7. **El control en dos direcciones**: cuota → movimientos que la forman (diferencia 0), y su
+   planilla filtrada → cuotas (nada que su filtro identifique queda afuera). Es lo que hace
+   `scripts/revision_cargado_historico.py`, que además **inventaría lo «anterior»** separando lo de cada
+   carga de lo que ya existía — cada tanda marca su descripción (`— histórico tanda N`).
+
+---
+
+## Los códigos CONTABLE / INTERNO del extracto — qué significa cada uno `#codigos #extracto #2026-10-15`
+
+Son los que el usuario pone (o la regla pone por él) en las columnas **Contable** e **Interno** de cada movimiento. Viven **en el
+movimiento del extracto**, no en el template ni en la cuota (→ [A-DEC-1009](PENDIENTES.md#a-dec-1009)). Definiciones dadas por el
+usuario; **son distintos aunque se parezcan — no se normalizan entre sí**:
+
+| Código | Qué es |
+|---|---|
+| **RET 1 PAM** | transferencia **directa** de MSA a PAM (retiro) |
+| **RET i PAM** | MSA paga **impuestos** de PAM (también es retiro) |
+| **RET 3 PAM** | MSA paga a **terceros** por cuenta de PAM (parecido a impuestos, pero impuestos es el específico RET i) |
+| **RET 3 MA / RET i MA** | lo mismo, por cuenta de MA |
+| **AP 1** | aporte: PAM le pone plata a MSA |
+| **CTA MA / CTA JMS / CTA AMS** | cuenta corriente del socio (lo toma el papel de cuentas corrientes) |
+| **DIST MA** (interno) | distribución a MA |
+| **LIB** | gastos de Libertad |
+
+⚠️ **Lo que SÍ se normaliza es la escritura** de un mismo código: `DITRI MA` / `DISTRI MA` → `DIST MA`, `JMS CTA` → `CTA JMS`,
+`AMS CTA` → `CTA AMS`, `CUENTA JMS` → `CTA JMS`. Mapear `RET i PAM` a `RET 1 PAM` fue un error (corregido 2026-10-15): son
+dos cosas distintas. Y la regla por responsable de la app marca RET 3 a impuestos → [A-DEC-1010](PENDIENTES.md#a-dec-1010).
+
+### ⚠️ Ampliado 2026-10-16 — CONTABLE e INTERNO son dos niveles, y qué es cada código (definido por el usuario)
+
+**Contable** = lo que va al contador. **Interno** = lo real (*«contable es contable y real es mi propio balance»*), y **se
+escribe sólo cuando lo real difiere de lo contable** (*«así lo vengo manejando»*): interno vacío = lo real es igual a lo
+contable. Lo real de un socio = movimientos con contable del socio **+** movimientos con interno `DIST <socio>`, cada
+movimiento una sola vez → reparto de dividendos, [A-FEAT-1288](PENDIENTES.md#a-feat-1288).
+
+- **`CTA MA` (contable) = la cuenta corriente de MA con MSA.** Debe: todo lo que MSA le pagó en los papeles —transferencia
+  directa, pagos a terceros por su cuenta, sus impuestos personales—. Haber: sus **facturas** (arrendamiento rural: *«algo
+  real, no dividendo»*) y su **sueldo** de gerente (todavía no está en la app). El saldo es el dividendo aproximado
+  (*«si cobró 100, facturó 80 y tiene 10 de sueldo, tiene 10 de dividendos»*). Por eso empezó a usar `CTA MA` en vez de
+  `RET`: *«si finalmente el retiro es el saldo de la cuenta corriente, nunca fue un retiro»*.
+- **Los subtipos 1 / 3 / i NO hacen falta en el contable** (decisión 2026-10-16, con la simulación del Excel *«Simulacion
+  cuenta corriente MA»*): existían para agrupar el reporte al contador cuando todo era Excel, y **la cuenta de la app de cada
+  movimiento ya da ese desglose** — el desglose por subtipo salió 100% de la cuenta, sin mirar el código. Al usuario le
+  resulta más claro para el contador **«CTA MA» desglosado por cuenta** que por RET 1/3/i.
+- **Tiguan** (y casos así): automotor de **MSA en los papeles** → MSA se toma el gasto, contable **vacío** (no entra en
+  `CTA MA`), interno **`DIST MA`**. Internamente el **sueldo de MA también cuenta como dividendo**.
+- **`LIB` (contable) = gastos de Libertad**, que **contablemente se reparten 50% MSA y 50% MA** (antes PAM). El cálculo:
+  (1) el **total gastado** en Libertad, lo haya pagado quien sea (ej. 100); (2) cuánto pagó cada uno (ej. MSA 70, MA 30);
+  (3) contablemente cada uno se toma 50 de gasto; (4) lo que MSA pagó **por encima de su 50%** (70 − 50 = 20) **es un retiro
+  de MA → va a `CTA MA`** (después se verá si contra factura o contra dividendo). **Internamente MA toma el 100%**: todo LIB
+  es `DIST MA`. ⚠️ Necesita el total gastado **incluido lo que pagó MA de su bolsillo**, que no está en el extracto de MSA.
+  🔵 **Abierto, no cambiar nada por ahora**: si MSA se podrá seguir tomando el 50% de Libertad de acá en adelante; y si
+  **Expensas Cochera Posadas** (hoy contable `RET 3 PAM`, interno `DIST MA`) debería tratarse como LIB porque *«no la paga
+  MA sola»*.
+- **El DETALLE del usuario se respeta SIEMPRE** (usuario, 2026-10-18: *«yo doy un detalle que ayuda a entender muchas veces, así que respetalo siempre»*): al cargar o conciliar, el detalle del movimiento **no se toca**, y se copia **entero** a la descripción de la cuota o del pago (en Sueldos, la descripción del pago).
+- **PAM deja de tener contabilidad y MA la absorbe** (usuario, 2026-10-16: *«PAM no tendrá más contabilidad y MA lo
+  absorberá»*). Por eso hay movimientos con contable **PAM** (`RET 3 PAM`: inmobiliario, Red Vial, cochera Posadas) e
+  interno **`DIST MA`**: en los papeles todavía son de PAM y en lo real ya son de MA. Las plantillas de Libertad y Posadas
+  tienen responsable PAM por lo mismo. 🔵 Falta definir **desde cuándo** y cómo pasan a contable MA.
+
+### Templates entre empresas — la regla al imputar *(usuario 2026-10-18, histórico PAM)*
+- **Un movimiento va a un template de SU empresa.** Usar uno de otra (o compartido, como «Retiro MA mensual» MSA/PAM) **se pregunta, nunca sin su OK**: *«verificar siempre esto — debés preguntar si se quiere usar uno cross compañía»*.
+- **Un template nuevo, si no se aclara, es del responsable de la empresa con la que se está trabajando.**
+- ⚠️ **Lo cruzado existe y está bien** cuando una empresa pagó por cuenta de otra: al 18/10 hay ~70 movimientos de MSA en templates de PAM/MA (Red Vial PAM 3/4, Expensas/AYSA Libertad, Autónomos y Lima de MA) y uno de PAM en uno de MA (Red Vial Lima); revisados, ninguno es un error. La regla pide que se **decida con él**, no que no exista.
+- **Entre empresas, el detalle dice DE QUIÉN A QUIÉN** (*«hay varios interlocutores, debemos decir a quién»*): «Aporte PAM a MSA», «Retiro de MSA a PAM».
 
 ---
 

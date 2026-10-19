@@ -2630,6 +2630,32 @@ en la solapa de **provisión**. No hay que marcar nada a mano.
 | **05 Provisión** | los que son del ejercicio por fecha pero entraron después |
 | **Sin subdiario** | los que no tienen período asignado. **Si tiene filas, hay que imputarlos** |
 
+### 🧾 Templates: qué cuotas cuentan como gasto y cuáles como deuda *(2026-10-18)*
+
+- **Las cuotas desactivadas no son gasto.** Cuando un impuesto se puede pagar anual o en cuotas y
+  elegiste una forma, la otra queda desactivada: el libro **no la suma** y la lista al pie de la
+  solapa **Templates**, bajo «NO INCLUIDAS», con su total.
+- **Las cuotas impagas del ejercicio son gasto y además deuda**, igual que una factura impaga: siguen
+  en el total de **Templates** y aparecen también en **04 Cuentas a pagar**, en el bloque «Cuotas de
+  templates impagas al cierre», con el **total deuda al cierre** (facturas + templates).
+- En la pantalla, el recuadro de templates dice cuántas quedaron afuera y cuántas son deuda.
+
+→ A-TEST-1218
+
+### ✍️ Saldos del ejercicio anterior *(2026-10-18)*
+
+Lo que el balance anterior dejó para tomar como gasto en éste. Ejemplo: el inmobiliario 2025 se pagó anual en
+abril; el balance 24/25 tomó la mitad y la otra mitad es gasto del 25/26.
+
+1. En el cuadro **«✍️ Saldos del ejercicio anterior»** (abajo de «Pendientes a revisar») apretá **+ Anotar un saldo**.
+2. Poné el **concepto**, el **importe** (con coma decimal), la **cuenta** del gasto y, si querés, el motivo
+   (por defecto: «Saldo que dejó el balance» del año anterior). **Anotar saldo.**
+3. Suma al gasto del ejercicio: el recuadro de templates lo dice, y el Excel trae la solapa **«Saldos ej. anterior»**
+   con el total y el **gasto de templates del ejercicio = cuotas + saldos**.
+4. Si te equivocaste, **anular** con un motivo: deja de sumar y queda listado como anulado.
+
+→ A-TEST-1219
+
 ### 🚦 Cuándo te frena y cuándo sólo te avisa
 
 **Te frena** —dice *«todavía no se puede entregar»*— sólo cuando el sistema **se contradice a sí
@@ -3547,6 +3573,21 @@ nota y en color cuando sí).
 de todo el extracto, no de las filas que entraron por el límite.
 
 ⚠️ Sin probar por vos todavía → `A-TEST-117`.
+
+## 📜 Extracto → los movimientos históricos *(2026-10-15)*
+
+El extracto de MSA de **julio 2025 a enero 2026** se carga entero como **histórico**, para tener la
+cadena de saldos y el saldo de inicio del ejercicio. Entra **sin clasificar**: sin categoría y sin
+códigos, con tu planilla (CATEG, detalle, contable, interno) en la nota del movimiento.
+
+- En **Filtros rápidos** aparece **«Históricos (n)»** cuando hay alguno: muestra sólo esos. Su estado
+  se ve como **«histórico»**, en gris.
+- **No entran en ningún número** (dashboard, papeles) hasta que se revisa su lote y se vinculan a su
+  cuota. **«Sin CATEG»** no los cuenta: no tener categoría es su estado normal hasta entonces.
+- Si reasignás un movimiento que estaba vinculado a una **cuota «anterior»**, la cuota **sigue
+  «anterior»**: no vuelve al Cash Flow.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1215`.
 
 ## ↕️ Extracto → sólo débitos o sólo créditos *(2026-10-01)*
 

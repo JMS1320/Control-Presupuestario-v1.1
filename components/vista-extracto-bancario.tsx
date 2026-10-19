@@ -74,6 +74,8 @@ import { proveedorDelMovimiento, extraerCuitBancario } from "@/lib/conciliacion/
 import { motivosParaPreguntar } from "@/lib/conciliacion/cruce-empresa"
 import { detalleCompleto } from "@/lib/templates/identificador-cuota"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
+import { ESTADO_HISTORICO, esHistorico, estadoCuotaAlDesvincular } from "@/lib/conciliacion/estado-historico"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -217,7 +219,7 @@ export function VistaExtractoBancario() {
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar' | 'historico'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
@@ -2032,6 +2034,14 @@ ${texto.trim()}` : texto.trim()
     // Si es la MISMA cuota que se está eligiendo, no hay nada que soltar.
     if (cuotaNuevaId && cuotaNuevaId === anterior) return null
 
+    // 🛡️ A-DEC-1009 — una cuota «anterior» (histórico jul-25 → ene-26) no vuelve al Cash Flow al
+    // soltarla: sigue «anterior». Antes revivía como pendiente un pago de hace meses.
+    const { data: actual } = await supabase.from('cuotas_egresos_sin_factura').select('estado, monto').eq('id', anterior).maybeSingle()
+    if (actual && estadoCuotaAlDesvincular(actual.estado) === 'anterior') {
+      const montoAnt = Number(actual.monto || 0)
+      return `ℹ️ La cuota que estaba vinculada antes ($${montoAnt.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) es del histórico: se soltó el vínculo y sigue como «anterior» (no vuelve al Cash Flow).`
+    }
+
     const { data, error } = await supabase
       .from('cuotas_egresos_sin_factura')
       .update({ estado: 'pendiente' })
@@ -3339,6 +3349,9 @@ ${marca}` : marca
             </Card>
           </div>
 
+          {/* 🧪 Los tests del extracto histórico (A-DEC-1009), donde se prueba. */}
+          <TestsDelProceso proceso="extracto/historico" pantalla="extracto" />
+
           {/* Alerta CATEG inválida — valores que no corresponden a ninguna cuenta contable ni template */}
           {movimientosCategInvalida.length > 0 && (
             <Alert className="border-amber-300 bg-amber-50">
@@ -3392,6 +3405,7 @@ ${marca}` : marca
                     <SelectItem value="conciliado">Conciliados</SelectItem>
                     <SelectItem value="pendiente">Pendientes</SelectItem>
                     <SelectItem value="auditar">Para Auditar</SelectItem>
+                    <SelectItem value={ESTADO_HISTORICO}>Históricos (sin clasificar)</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -3497,6 +3511,22 @@ ${marca}` : marca
                 >
                   Auditar ({estadisticas.auditar})
                 </Button>
+                {/* 📜 A-DEC-1009 — el extracto histórico (jul-25 → ene-26), cargado sin clasificar. Sólo aparece si hay. */}
+                {estadisticas.historicos > 0 && (
+                  <Button
+                    variant={filtroEstado === ESTADO_HISTORICO && !filtroCategEspecial ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    title="Movimientos del extracto histórico cargados sin clasificar: no entran en ningún número hasta que se revisa su lote"
+                    onClick={() => {
+                      setFiltroEstado(ESTADO_HISTORICO)
+                      setFiltroCategEspecial(null)
+                      cargarMovimientos(construirFiltros({ estado: ESTADO_HISTORICO }))
+                    }}
+                  >
+                    Históricos ({estadisticas.historicos})
+                  </Button>
+                )}
                 <Button
                   variant={filtroCategEspecial === 'invalida' ? "default" : "outline"}
                   size="sm"
@@ -3931,6 +3961,7 @@ ${marca}` : marca
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="auditar">Auditar</SelectItem>
                         <SelectItem value="pendiente">Pendiente</SelectItem>
+                        <SelectItem value={ESTADO_HISTORICO}>Histórico (sin clasificar)</SelectItem>
                       </SelectContent>
                     </Select>
 
@@ -4390,8 +4421,9 @@ ${marca}` : marca
                               movimiento.estado === 'conciliado' ? 'default' :
                               movimiento.estado === 'auditar' ? 'secondary' :
                               'outline'
-                            }>
-                              {movimiento.estado}
+                            } className={esHistorico(movimiento.estado) ? 'text-gray-500 border-dashed' : undefined}
+                              title={esHistorico(movimiento.estado) ? 'Extracto histórico sin clasificar: no entra en ningún número hasta que se revisa su lote' : undefined}>
+                              {esHistorico(movimiento.estado) ? 'histórico' : movimiento.estado}
                             </Badge>
                           </TableCell>
                           {col('detalle') && (

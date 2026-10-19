@@ -54,6 +54,27 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ Tabla nueva `public.ajustes_balance` (2026-10-18) — aviso ANTES de aplicarla
+
+`scripts/86-ajustes-balance.sql` (+ `-deshacer`), para [A-FEAT-1207](PENDIENTES.md#a-feat-1207) en versión chica: los
+**saldos del ejercicio anterior** que el balance toma como gasto (rama `jms/saldos-ejercicio-anterior`). **Qué cambia**:
+una tabla nueva, con **RLS igual a `balance_pendientes`** (políticas `puede_ver` / `puede_escribir`, sin `anon`,
+`authenticated` select/insert/update, `service_role` all) y su fila en `recurso_tablas` → recurso **`extracto`**,
+**lectura restringida** (el rol `contable` no la ve, como el balance propio). No toca tablas existentes. ✅ **Corrido 2026-10-18** con JMS presente
+(RLS activa, 2 políticas, recurso mapeado). Si tu modelo de permisos necesita algo más para una tabla nueva, avisá.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Nuevo estado «historico» en `public.msa_galicia` (2026-10-15) — aviso ANTES de aplicarlo
+
+`scripts/85-extracto-estado-historico.sql` (+ `-deshacer`), para [A-DEC-1009](PENDIENTES.md#a-dec-1009) /
+[A-DAT-68](PENDIENTES.md#a-dat-68): el extracto de MSA jul-2025 → ene-2026 se va a cargar entero como histórico.
+**Qué cambia**: sólo el check `msa_galicia_estado_check`, que pasa a admitir también `historico`. Aditivo, no toca
+filas, sin RLS ni permisos nuevos. ✅ **Corrido 2026-10-15** con JMS presente (1.032 filas intactas). Si algo tuyo filtra por
+`estado` del extracto (conciliado/pendiente/auditar), avisá: los históricos no son pendientes ni entran al motor.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Cobros y retenciones para PAM y MA (2026-10-14) — aviso ANTES de aplicarlo
 
 `scripts/84-cobros-pam-ma.sql` (+ `-deshacer`), para [A-FEAT-1219](PENDIENTES.md#a-feat-1219) y

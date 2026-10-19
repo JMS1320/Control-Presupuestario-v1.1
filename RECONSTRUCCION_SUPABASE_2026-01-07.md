@@ -12795,6 +12795,22 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-18 · `public.ajustes_balance` — A-FEAT-1207, versión chica (✅ corrido 2026-10-18)
+
+Script `scripts/86-ajustes-balance.sql` (deshacer: `86-…-deshacer.sql`, borra la tabla). Tabla nueva para los ajustes
+del balance; hoy se usa sólo `accion = 'saldo_anterior'` (lo que el balance anterior dejó para tomar como gasto en
+éste). Motivo obligatorio (check), un ajuste se **anula** (`anulado_at` + `anulado_motivo`), no se borra. RLS con
+`puede_ver` / `puede_escribir`, nada a `anon`, `authenticated` select/insert/update; `recurso_tablas` → `extracto`
+con lectura restringida (igual que `balance_pendientes`). Corrido vía MCP con el usuario presente; verificado: RLS
+activa, 2 políticas, 1 fila en `recurso_tablas`. Primeras 3 filas: MSA 2026, $7.115.206,05. Avisado a Javier.
+
+### 2026-10-15 · estado «historico» en `public.msa_galicia` — A-DEC-1009 (✅ corrido 2026-10-15)
+
+Script `scripts/85-extracto-estado-historico.sql` (deshacer: `85-…-deshacer.sql`, falla si quedó alguna fila
+«historico»). Sólo amplía el check `msa_galicia_estado_check`: conciliado / pendiente / auditar (+ mayúsculas)
+**+ `historico`**. Es el estado del extracto jul-2025 → ene-2026 cargado sin clasificar (A-DAT-68): no entra
+al motor (que toma sólo `pendiente`) ni a ningún número (sin `categ`). Aditivo, no toca filas.
+
 ### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24
 
 Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros
