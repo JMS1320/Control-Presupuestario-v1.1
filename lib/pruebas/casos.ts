@@ -183,6 +183,7 @@ import {
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
+import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -6579,6 +6580,47 @@ export function correrCasos(): Resultado[] {
     chequear("Sueldos — bruto", "A+B 1.600.000 con franco automático (÷25 = 64.000): 2 francos suman 128.000, −1 resta 64.000; con franco fijo 70.000 usa ese",
       "1728000 · 1536000 · 1740000 · desconocido null", `${conDos} · ${conMenosUno} · ${override} · desconocido ${brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0)}`,
       Math.abs((conDos ?? 0) - 1728000) < 0.01 && Math.abs((conMenosUno ?? 0) - 1536000) < 0.01 && override === 1740000 && brutoSegunTipo("otro", 1, 1, 1, 1, 1, 1, 1, 1, 0) === null, "A-FEAT-1259")
+  }
+
+  // ══ 🔁 DOBLE AUDIT: lo que está a auditar en un extracto no se concilia solo desde otro (A-BUG-1290) ══
+  {
+    // Buscador de juguete con la regla del motor: mismo importe; fecha exacta = conciliado, si no, a auditar.
+    const movTarjeta = { debitos: 571179.49, fecha: "2026-07-05" }
+    const buscarJuguete = (pool: any[]) => {
+      const f = pool.find(c => c.debitos === movTarjeta.debitos)
+      return f ? { match: true, cashFlowRow: f, requiere_revision: f.fecha_estimada !== movTarjeta.fecha, motivo_revision: null as string | null }
+               : { match: false, requiere_revision: false, motivo_revision: null as string | null }
+    }
+    const cuotaJulio = { id: "cuota-seguro-julio", debitos: 571179.49, fecha_estimada: "2026-07-05" }
+    const cuotaAgosto = { id: "cuota-seguro-agosto", debitos: 571179.49, fecha_estimada: "2026-07-05" }
+    const enAuditar = new Map<string, VinculoEnAuditar>([["cuota-seguro-julio", { que: "extracto de la cuenta corriente de MSA", fecha: "2026-07-02" }]])
+
+    // 🧨 El caso real: con el código viejo (buscar directo) la cuota de julio, YA atada al débito del 02/07
+    //    a auditar, se conciliaba sola por coincidir importe y fecha.
+    const viejo = buscarJuguete([cuotaJulio])
+    const nuevo = buscarConDobleAudit(buscarJuguete, [cuotaJulio], enAuditar)
+    chequear("Doble audit", "🧨 Seguro Flota: la cuota de julio ya está a auditar en la cta cte → desde la tarjeta queda A AUDITAR, aunque coincida en todo (antes se conciliaba sola)",
+      "antes conciliado · ahora auditar con «Doble audit … 02/07 … cuenta corriente»",
+      `antes ${viejo.requiere_revision ? "auditar" : "conciliado"} · ahora ${nuevo.requiere_revision ? "auditar" : "conciliado"} con «${nuevo.motivo_revision}»`,
+      viejo.requiere_revision === false && nuevo.match && nuevo.requiere_revision === true
+        && String(nuevo.motivo_revision).startsWith("Doble audit") && String(nuevo.motivo_revision).includes("02/07/2026")
+        && String(nuevo.motivo_revision).includes("cuenta corriente de MSA"), "A-BUG-1290")
+
+    // La libre gana: si otra cuota del mismo importe está libre, se toma ésa y se concilia normal.
+    const conLibre = buscarConDobleAudit(buscarJuguete, [cuotaJulio, cuotaAgosto], enAuditar)
+    chequear("Doble audit", "Si hay una candidata LIBRE del mismo importe, gana la libre (la que está en audit no se toca)",
+      "cuota-seguro-agosto · conciliado", `${conLibre.cashFlowRow?.id} · ${conLibre.requiere_revision ? "auditar" : "conciliado"}`,
+      conLibre.cashFlowRow?.id === "cuota-seguro-agosto" && conLibre.requiere_revision === false, "A-BUG-1290")
+
+    // Sin nada a auditar, el motor se comporta igual que antes.
+    const sinAudit = buscarConDobleAudit(buscarJuguete, [cuotaJulio], new Map())
+    chequear("Doble audit", "Sin vínculos a auditar el resultado es el de siempre",
+      "cuota-seguro-julio · conciliado", `${sinAudit.cashFlowRow?.id} · ${sinAudit.requiere_revision ? "auditar" : "conciliado"}`,
+      sinAudit.cashFlowRow?.id === "cuota-seguro-julio" && sinAudit.requiere_revision === false, "A-BUG-1290")
+
+    // Si no coincide nada, no inventa: sigue sin match.
+    const nada = buscarConDobleAudit(buscarJuguete, [{ id: "otra", debitos: 1, fecha_estimada: "2026-07-05" }], enAuditar)
+    chequear("Doble audit", "Si nada coincide, sigue sin match", "sin match", nada.match ? "match" : "sin match", !nada.match, "A-BUG-1290")
   }
 
   return r

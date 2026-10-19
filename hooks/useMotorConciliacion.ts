@@ -17,6 +17,7 @@ import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
+import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -478,6 +479,15 @@ export function useMotorConciliacion() {
        */
       const usadosEnCorrida = new Set<string>()
       const sinUsar = (filas: typeof datosCF) => filas.filter(f => !usadosEnCorrida.has(String(f.id)))
+      /**
+       * 🔁 **Doble audit (A-BUG-1290)**: lo que ya está atado a un movimiento A AUDITAR en cualquier
+       * extracto se puede proponer, pero nunca se concilia solo — y si hay una candidata libre, gana
+       * la libre. Ver `lib/conciliacion/doble-audit.ts`.
+       */
+      const { enAuditar, tablasQueFallaron: tablasSinLeer } = await cargarVinculosEnAuditar(supabase)
+      if (tablasSinLeer.length) console.warn(`⚠️ Doble audit: no se pudieron leer ${tablasSinLeer.join(', ')}`)
+      const buscar = (mov: MovimientoBancario, pool: typeof datosCF) =>
+        buscarConDobleAudit((p: any[]) => buscarMatchCashFlow(mov, p, cuenta.empresa), sinUsar(pool), enAuditar)
 
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)
@@ -503,8 +513,8 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          let matchCF = poolTarjeta.length ? buscarMatchCashFlow(movimiento, sinUsar(poolTarjeta), cuenta.empresa) : { match: false }
-          if (!matchCF.match) matchCF = buscarMatchCashFlow(movimiento, sinUsar(datosCF), cuenta.empresa)
+          let matchCF = poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false }
+          if (!matchCF.match) matchCF = buscar(movimiento, datosCF)
           if (matchCF.match) {
             usadosEnCorrida.add(String(matchCF.cashFlowRow.id))
             resultado = {
