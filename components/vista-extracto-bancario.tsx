@@ -1002,7 +1002,7 @@ ${texto.trim()}` : texto.trim()
       alert('No hay movimientos pendientes para conciliar en este resumen.')
       return
     }
-    const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
+    const etiqueta = cierre ? String(cierre).slice(0, 10).split('-').reverse().join('/') : nr.slice(-6)
     // El botón del renglón graba directo en la base: se confirma como el Conciliar general (usuario 2026-10-19).
     const ok = window.confirm(
       `Se conciliarán los ${pend.length} movimiento(s) pendiente(s) del resumen ${etiqueta}.\n\n`
@@ -4269,7 +4269,7 @@ ${marca}` : marca
                             <button type="button" title="Ver sólo los movimientos de este resumen en la tabla de abajo"
                               onClick={() => setResumenFiltro(f => f === item.nr ? null : item.nr)}
                               className={`font-medium underline-offset-2 hover:underline ${resumenFiltro === item.nr ? 'text-blue-700 underline' : ''}`}>
-                              {item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}
+                              {item.cierre ? String(item.cierre).slice(0, 10).split('-').reverse().join('/') : item.nr.slice(-6)}
                             </button>
                             <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
                             {(() => {
