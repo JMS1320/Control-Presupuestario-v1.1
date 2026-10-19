@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar } from "@/lib/gas-pdf/lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -1010,6 +1010,13 @@ export function correrCasos(): Resultado[] {
     { 2: "id-a", 3: "id-b" })
   chequear("Buscador de PDFs — desde la importación", "🔴 Se buscan sólo las filas TILDADAS que se crearon (destildada no; la que no se importó no tiene id)",
     "id-a", aBuscar.join(","), aBuscar.join(",") === "id-a" && idsParaBuscarTrasImportar([{ fila: 2, buscar_pdf: true }], undefined).length === 0, "A-FEAT-1287")
+
+  const cands = candidatosParaBuscar([
+    { id: "si", fc: "Sí", estado: "pendiente" }, { id: "hist", fc: "SI", estado: "historico" },
+    { id: "bus", fc: "Buscar", estado: "pendiente" }, { id: "nul", fc: null, estado: "pendiente" },
+  ]).map(f => f.id).join(",")
+  chequear("Buscador de PDFs — qué ofrece el modal", "🔴 Sin el histórico (SI/NO/PEAJE grises) y con las pendientes («Buscar» o sin estado) arriba",
+    "bus,nul,si", cands, cands === "bus,nul,si", "A-FEAT-1287")
 
   // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
   const VIS = ["a", "b", "c"]

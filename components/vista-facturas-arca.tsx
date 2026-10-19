@@ -52,7 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -781,8 +781,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
   /** 🧾 A-BUG-1244 — la factura que se está vinculando con sus compras de insumos. */
   const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
-  const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
+  const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
+  // Todos los mails ya cargados en proveedores (facturación y pagos): se ofrecen al escribir, porque
+  // varios proveedores suelen mandar desde el mismo mail (un estudio, un sistema de facturación).
+  const [mailsConocidos, setMailsConocidos] = useState<string[]>([])
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
 
   // Modal Buscar PDFs: al cambiar el filtro de fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
@@ -2005,14 +2008,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const cargarMailesProveedores = async (cuits: string[]) => {
     const unicos = Array.from(new Set(cuits.filter(Boolean)))
     if (unicos.length === 0) { setProvPorCuit({}); return }
-    const { data } = await supabase
-      .from('proveedores')
-      .select('id, cuit, email_facturacion, gas_habilitado, fc_modo')
-      .in('cuit', unicos)
-    const mapa: Record<string, { id: string; email_facturacion: string | null; gas_habilitado: boolean | null; fc_modo: string | null }> = {}
-    ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
+    const [{ data }, { data: todos }] = await Promise.all([
+      supabase.from('proveedores')
+        .select('id, cuit, email_facturacion, email_pagos, gas_habilitado, fc_modo')
+        .in('cuit', unicos),
+      supabase.from('proveedores').select('email_facturacion, email_pagos'),
+    ])
+    const mapa: Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }> = {}
+    ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, email_pagos: p.email_pagos, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
     setProvPorCuit(mapa)
     setProvEditMail({})
+    setMailsConocidos(Array.from(new Set((todos || [])
+      .flatMap((p: any) => [p.email_facturacion, p.email_pagos])
+      .map((m: unknown) => String(m ?? '').trim().toLowerCase())
+      .filter(m => m.includes('@')))).sort())
   }
 
   const cuitLimpio = (c: unknown) => String(c ?? '').replace(/[-\s]/g, '')
@@ -2053,10 +2062,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Guarda el mail del proveedor (por CUIT) desde el modal Buscar PDFs vía el endpoint de config.
   // Si el proveedor no tenía mail, además lo habilita para búsqueda (gas_habilitado + fc_modo='mail')
   // para que el mail recién cargado se use de verdad; si no, quedaría cosmético.
-  const guardarMailProveedor = async (cuit: string) => {
+  // `valor` = la sugerencia aceptada con «usar» (A-FEAT-1287): se guarda directo, sin pasar por el input.
+  const guardarMailProveedor = async (cuit: string, valor?: string) => {
     const prov = provPorCuit[cuit]
     if (!prov) { toast.error('No existe el proveedor para ese CUIT (cargalo en Config PDFs)'); return }
-    const nuevo = (provEditMail[cuit] ?? '').trim()
+    const nuevo = (valor ?? provEditMail[cuit] ?? '').trim()
     const eraVacio = !prov.email_facturacion
     setGuardandoMailCuit(cuit)
     try {
@@ -7087,7 +7097,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   onClick={() => {
                     // Pre-seleccionar solo las auto-buscables (Buscar / null). El usuario puede
                     // agregar/quitar a mano (incluso forzar NO Mail / No) desde el modal.
-                    const auto = facturas.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)
+                    const auto = candidatosParaBuscar(facturas).filter(esPendienteDeBuscar).map(f => f.id)
                     setSeleccionPdf(new Set(auto))
                     setPdfDesde('')
                     setPdfHasta('')
@@ -8356,8 +8366,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                           d.fila === f.fila ? { ...d, buscar_pdf: e.target.checked } : d))} />
                                       {prov?.email_facturacion ? (
                                         <span className="text-[11px] text-gray-500 truncate" title={prov.email_facturacion}>{prov.email_facturacion}</span>
+                                      ) : prov?.email_pagos && provEditMail[cuit] === undefined ? (
+                                        // 💡 Sugerencia (mail de PAGOS): sólo cuenta si se acepta con «usar».
+                                        <span className="flex items-center gap-1 min-w-0">
+                                          <span className="text-[10px] text-gray-500 truncate" title="Es el mail de PAGOS de este proveedor. Si lo usás, se guarda como mail de facturas al importar.">
+                                            💡 {prov.email_pagos} <span className="text-gray-400">(de pagos)</span>
+                                          </span>
+                                          <button type="button"
+                                            onClick={() => setProvEditMail(prev => ({ ...prev, [cuit]: prov.email_pagos! }))}
+                                            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50">usar</button>
+                                          <button type="button" title="Escribir otro mail"
+                                            onClick={() => setProvEditMail(prev => ({ ...prev, [cuit]: '' }))}
+                                            className="shrink-0 text-[10px] text-gray-500 underline">otro</button>
+                                        </span>
                                       ) : (
-                                        <input type="text" placeholder="mail del proveedor (opcional)"
+                                        <input type="text" placeholder="mail del proveedor (opcional)" list="mails-conocidos-import"
                                           className="border rounded px-1 py-0.5 text-[11px] w-full"
                                           value={provEditMail[cuit] ?? ''}
                                           onChange={(e) => { const v = e.target.value; setProvEditMail(prev => ({ ...prev, [cuit]: v })) }}
@@ -8372,6 +8395,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         })}
                     </tbody>
                   </table>
+                  <datalist id="mails-conocidos-import">
+                    {mailsConocidos.map(m => <option key={m} value={m} />)}
+                  </datalist>
                 </div>
 
                 {/* Resultado de importación */}
@@ -12245,18 +12271,20 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
       <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-5xl h-[92vh] max-h-[92vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Buscar PDFs</DialogTitle>
             <DialogDescription>
-              Elegí qué facturas buscar. Vienen marcadas las pendientes (estado "Buscar"). Podés agregar/quitar a mano y acotar por fecha de emisión.
-              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail.
+              Vienen marcadas (y arriba de todo) las de estado FC «Buscar»; podés sumar o sacar a mano.
+              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail con el mail del proveedor.
             </DialogDescription>
             <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
           </DialogHeader>
 
           {(() => {
-            const candidatosFecha = facturas.filter(f => {
+            // Sin el histórico y con las pendientes primero → candidatosParaBuscar (A-FEAT-1287).
+            const esPendiente = esPendienteDeBuscar
+            const candidatosFecha = candidatosParaBuscar(facturas).filter(f => {
               const fe = f.fecha_emision || ''
               if (pdfDesde && fe < pdfDesde) return false
               if (pdfHasta && fe > pdfHasta) return false
@@ -12293,7 +12321,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <Button size="sm" variant="outline" disabled={buscandoPdfs}
                       onClick={() => setSeleccionPdf(new Set())}>Ninguna</Button>
                     <Button size="sm" variant="outline" disabled={buscandoPdfs}
-                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(f => f.fc === 'Buscar' || f.fc === null).map(f => f.id)))}>Solo "Buscar"</Button>
+                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(esPendiente).map(f => f.id)))}>Solo "Buscar"</Button>
                   </div>
                 </div>
 
@@ -12319,7 +12347,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </div>
                 )}
 
-                <div className="overflow-y-auto flex-1 -mx-1 px-1" style={{ maxHeight: '45vh' }}>
+                <datalist id="mails-conocidos">
+                  {mailsConocidos.map(m => <option key={m} value={m} />)}
+                </datalist>
+                <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
                   {candidatos.length === 0 ? (
                     <p className="text-sm text-gray-500 py-6 text-center">No hay facturas en ese rango.</p>
                   ) : (
@@ -12358,14 +12389,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 <span className="text-[10px] text-gray-400 italic" title="No existe el proveedor en la BD. Cargalo desde 'Config PDFs'.">sin proveedor</span>
                               ) : (
                                 <div className="flex items-center gap-1">
+                                  {/* 💡 Sugerencia: el mail de PAGOS del mismo proveedor. Sólo se usa con «usar»
+                                      (queda guardado como mail de facturas); sin ese OK, no se busca. */}
+                                  {!valorMail && !editando && prov.email_pagos ? (
+                                    <>
+                                      <span className="text-[10px] text-gray-500 truncate flex-1" title={`Es el mail de PAGOS de este proveedor. Si lo usás, queda guardado como mail de facturas.`}>
+                                        💡 {prov.email_pagos} <span className="text-gray-400">(de pagos)</span>
+                                      </span>
+                                      <button type="button" disabled={buscandoPdfs || guardandoMailCuit === cuit}
+                                        onClick={() => guardarMailProveedor(cuit, prov.email_pagos!)}
+                                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50">
+                                        {guardandoMailCuit === cuit ? <Loader2 className="h-3 w-3 animate-spin" /> : 'usar'}
+                                      </button>
+                                      <button type="button" title="Escribir otro mail"
+                                        onClick={() => setProvEditMail(prev => ({ ...prev, [cuit]: '' }))}
+                                        className="shrink-0 text-[10px] text-gray-500 underline">otro</button>
+                                    </>
+                                  ) : (
                                   <input
                                     type="email"
+                                    list="mails-conocidos"
                                     value={valorMail}
                                     disabled={buscandoPdfs || guardandoMailCuit === cuit}
                                     placeholder="⚠ sin mail — agregar"
                                     onChange={(e) => setProvEditMail(prev => ({ ...prev, [cuit]: e.target.value }))}
                                     className={`w-full text-[11px] border rounded px-1 py-0.5 ${!valorMail ? 'border-orange-300 placeholder-orange-500' : 'border-gray-200'}`}
                                   />
+                                  )}
                                   {cambiado && (
                                     <button type="button" title="Guardar mail"
                                       disabled={guardandoMailCuit === cuit}

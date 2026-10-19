@@ -70,3 +70,18 @@ export function idsParaBuscarTrasImportar(
 ): string[] {
   return imputacion.filter(d => d.buscar_pdf).map(d => idsPorFila?.[d.fila]).filter((x): x is string => !!x)
 }
+
+/** Pendiente de buscar = estado FC «Buscar» o sin estado. Son las que vienen marcadas y arriba. */
+export const esPendienteDeBuscar = (f: { fc?: string | null }) => f.fc === 'Buscar' || f.fc == null
+
+/**
+ * Las facturas que ofrece el modal Buscar PDFs: sin el histórico (comprobantes_historico, con fc
+ * «SI» / «NO» / «PEAJE» — no es un comprobante de ARCA y no tiene dónde guardar el PDF) y con las
+ * pendientes primero. Visto por el usuario 2026-10-19: aparecían «Sí» verde y «SI» gris mezclados.
+ */
+export function candidatosParaBuscar<T extends { fc?: string | null; estado?: string | null }>(facturas: readonly T[]): T[] {
+  return facturas
+    .filter(f => f.estado !== 'historico')
+    .slice()
+    .sort((a, b) => Number(esPendienteDeBuscar(b)) - Number(esPendienteDeBuscar(a)))
+}
