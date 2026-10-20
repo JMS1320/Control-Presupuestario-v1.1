@@ -168,7 +168,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
-import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
@@ -6863,6 +6863,18 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "En el Asignar de la tarjeta, la emitida el 1/4 (7 días antes del débito) sube y la del 1/7 (posterior) baja",
       "+18 «Emitida 7d antes ✓» · -40", `${abr.puntos} «${abr.sello?.texto}» · ${jul.puntos}`,
       abr.puntos === 18 && abr.sello?.texto === "Emitida 7d antes ✓" && jul.puntos === -40, "A-FEAT-1298")
+  }
+
+  // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════
+  {
+    // 🧨 Chubb de abril: la regla decía «Seguro Chalet», la cuenta también → se descartaba y la cuota quedaba
+    // con la descripción del banco «CHUBB SEGUROS 0000002962727-014-000».
+    const nueva = detalleDeRegla({ detalle: "Seguro Chalet", categ: "Seguro Chalet", template_id: "tpl" })
+    const vieja = detalleDeRegla({ detalle: "Comision Transferencias", categ: "Comision Transferencias", template_id: null })
+    const viejaAporta = detalleDeRegla({ detalle: "Percepcion de IVA Tarjeta", categ: "Percepcion IVA", template_id: null })
+    chequear("Regla → template", "Regla nueva: el detalle se copia aunque repita la cuenta; regla vieja: sólo si aporta (A-FEAT-138)",
+      "Seguro Chalet · null · Percepcion de IVA Tarjeta", `${nueva} · ${vieja} · ${viejaAporta}`,
+      nueva === "Seguro Chalet" && vieja === null && viejaAporta === "Percepcion de IVA Tarjeta", "A-DEC-1012")
   }
 
   return r

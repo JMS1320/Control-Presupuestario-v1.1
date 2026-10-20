@@ -71,3 +71,16 @@ export function unoPorFamilia<T extends TemplateDeFamilia>(lista: T[]): T[] {
   }
   return [...mejor.values()]
 }
+
+/**
+ * ✍️ A-DEC-1012 (a) — el detalle que el usuario escribió en una regla NUEVA (que elige template) se copia
+ * siempre, aunque repita la cuenta: desde el 19/10 la cuenta es el nombre del template y repetirlo es lo
+ * común (Chubb → «Seguro Chalet»). Usuario: *«ok, porque es una regla»*. Las reglas VIEJAS (sin template)
+ * siguen con A-FEAT-138: 60 de 68 traían el detalle = cuenta por default, y ése no aporta.
+ */
+export function detalleDeRegla(regla: { detalle?: string | null; categ?: string | null; template_id?: string | null }): string | null {
+  const d = (regla.detalle ?? "").trim()
+  if (!d) return null
+  if (regla.template_id) return d
+  return d.toLowerCase() === (regla.categ ?? "").trim().toLowerCase() ? null : d
+}

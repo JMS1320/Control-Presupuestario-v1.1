@@ -18,7 +18,7 @@ import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, detalleDeRegla } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta } from "@/lib/conciliacion/motivo-fecha"
@@ -908,7 +908,7 @@ export function useMotorConciliacion() {
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleQueAporta(regla.detalle, regla.categ),
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleDeRegla(regla as any),
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
@@ -1132,7 +1132,7 @@ export function useMotorConciliacion() {
            * cuya CATEG ya dice eso. Es la duplicación que prohíbe § 30.1 de `MODULO_CONCILIACION.md`.
            * **Vacío es la respuesta correcta** cuando no hay nada que agregar.
            */
-          detalle: detalleQueAporta(regla.detalle, regla.categ) || movimiento.descripcion || null
+          detalle: detalleDeRegla(regla as any) || movimiento.descripcion || null
         })
         .select('id')
         .single()
