@@ -1567,12 +1567,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return true
   }
 
-  // «Proveedor Portal» desde el informe del lote (A-FEAT-1287, 2026-10-20): se marca el PROVEEDOR
-  // (las próximas búsquedas lo saltean) y sus facturas del informe que siguen sin 📎 pasan a Portal.
+  // «Proveedor Portal» (A-FEAT-1287, 2026-10-20) — desde la lista de Buscar PDFs (antes de buscar) o
+  // desde el informe: se marca el PROVEEDOR (las próximas búsquedas lo saltean) y sus facturas
+  // cargadas que siguen sin 📎 pasan a Portal.
   const marcarProveedorPortal = async (it: { proveedor: string }, cuit: string): Promise<boolean> => {
-    const delInforme = (progresoPdf?.informe || []).map(i => facturas.find(f => f.id === i.factura_id))
-      .filter((f): f is FacturaArca => !!f && f.cuit === cuit && !f.pdf_drive_url && !['Confirmada', 'APP', 'OK', 'No'].includes(f.fc || ''))
-    if (!window.confirm(`¿${it.proveedor || 'Este proveedor'} manda sus facturas por portal?\n\nQueda marcado como Portal: la búsqueda deja de intentarlo y ${delInforme.length} factura(s) de este informe pasan a Portal.`)) return false
+    const delInforme = facturas
+      .filter(f => f.cuit === cuit && f.estado !== 'historico' && !f.pdf_drive_url && !['Confirmada', 'APP', 'OK', 'No', 'Portal'].includes(f.fc || ''))
+    if (!window.confirm(`¿${it.proveedor || 'Este proveedor'} manda sus facturas por portal?\n\nQueda marcado como Portal: la búsqueda deja de intentarlo y ${delInforme.length} factura(s) suya(s) sin 📎 pasan a Portal.`)) return false
     const r = await fetch('/api/gas/config-proveedor', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cuit, fc_modo: 'portal' }),
@@ -1584,6 +1585,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca').update({ fc: 'Portal' }).in('id', ids)
       if (error) { toast.error('El proveedor quedó en Portal, pero sus facturas no: ' + error.message); return true }
       setFacturas(prev => prev.map(f => ids.includes(f.id) ? { ...f, fc: 'Portal' } : f))
+      setSeleccionPdf(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n })
     }
     toast.success(`${it.proveedor || 'Proveedor'} quedó como Portal`)
     return true
@@ -12437,7 +12439,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             <td className={`p-1 whitespace-nowrap ${subdiarioDe(f).clave === 'sin' ? 'text-gray-400 italic' : ''}`}>{subdiarioDe(f).rotulo}</td>
                             <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
                             <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-                            <td className="p-1">{fcBadge(f.fc)}</td>
+                            <td className="p-1 whitespace-nowrap">
+                              {fcBadge(f.fc)}
+                              {prov && (
+                                <button type="button" disabled={buscandoPdfs}
+                                  title="Este proveedor factura por portal: queda como Portal con todas sus facturas sin 📎, y no se busca"
+                                  onClick={() => marcarProveedorPortal({ proveedor: f.denominacion_emisor || '' }, cuit)}
+                                  className="ml-1 text-[10px] px-1 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+                                  → Portal
+                                </button>
+                              )}
+                            </td>
                             <td className="p-1">
                               {!prov ? (
                                 <span className="text-[10px] text-gray-400 italic" title="No existe el proveedor en la BD. Cargalo desde 'Config PDFs'.">sin proveedor</span>
