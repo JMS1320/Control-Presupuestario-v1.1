@@ -13,6 +13,7 @@ import {
   campanaDeFecha, esDeOtraEmpresa, faltantesTemplateNuevo, periodicidadDeEmpresa, type Periodicidad,
 } from "@/lib/templates/nuevo-desde-conciliacion"
 import { hoyArgentina } from "@/lib/fechas"
+import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 
 /** Un template existente: para ver qué hay antes de crear, y para copiar sus datos («parecido a…»). */
 interface TemplateExistente {
@@ -91,6 +92,8 @@ export function ModalCrearTemplateFaltante({
   const [aplicaGeneracion, setAplicaGeneracion] = useState(false)
   const [naturaleza, setNaturaleza] = useState("egreso")
   const [responsableInterno, setResponsableInterno] = useState("")
+  /** A-FEAT-1297 — quién cobra (el proveedor del template). */
+  const [quienCobra, setQuienCobra] = useState<ProveedorSeleccionado>({ cuit: "", nombre: "" })
 
   // Al abrir desde la conciliación: lo que YA existe (para no crear duplicados) y el formulario limpio.
   useEffect(() => {
@@ -98,7 +101,7 @@ export function ModalCrearTemplateFaltante({
     setError(null); setParecido(null); setBusqueda(""); setCuentaTocada(false)
     setNombreReferencia(nombreSugerido || ""); setCuenta(nombreSugerido || "")
     setResponsable(empresaDestino); setPeriodicidad(periodicidadDeEmpresa(empresaDestino))
-    setCuentaAgrupadora(""); setCentroCosto(""); setAplicaGeneracion(false); setNaturaleza("egreso"); setResponsableInterno("")
+    setCuentaAgrupadora(""); setCentroCosto(""); setAplicaGeneracion(false); setNaturaleza("egreso"); setResponsableInterno(""); setQuienCobra({ cuit: "", nombre: "" })
     setDefaults({ nombre_referencia: nombreSugerido || "", cuenta_agrupadora: null, centro_costo: null,
       solo_conciliacion: false, es_bidireccional: false, tipo_template: "abierto" })
     const cargarExistentes = async () => {
@@ -132,6 +135,7 @@ export function ModalCrearTemplateFaltante({
     ? faltantesTemplateNuevo({
         nombre_referencia: nombreReferencia, categ: cuenta, responsable, cuenta_agrupadora: cuentaAgrupadora,
         periodicidad, año: campana, tipo: naturaleza, aplica_generacion: aplicaGeneracion,
+        nombre_quien_cobra: quienCobra.nombre, cuit_quien_cobra: quienCobra.cuit,
       })
     : []
   const agrupadoras = Array.from(new Set(existentes.map(t => t.cuenta_agrupadora).filter(Boolean))).sort() as string[]
@@ -237,6 +241,8 @@ export function ModalCrearTemplateFaltante({
             cuenta_agrupadora: cuentaAgrupadora.trim(),
             centro_costo: centroCosto.trim() || null,
             responsable_interno: responsableInterno.trim() || null,
+            nombre_quien_cobra: quienCobra.nombre.trim() || null,
+            cuit_quien_cobra: quienCobra.cuit.replace(/[-\s]/g, "") || null,
             tipo: naturaleza,
             tipo_template: "abierto",
             tipo_recurrencia: "abierto",
@@ -369,6 +375,11 @@ export function ModalCrearTemplateFaltante({
                 <Label>Centro de costo</Label>
                 <Input list="centros-existentes" value={centroCosto} onChange={e => setCentroCosto(e.target.value)} placeholder="(opcional)" />
                 <datalist id="centros-existentes">{centros.map(c => <option key={c} value={c} />)}</datalist>
+              </div>
+              <div className="col-span-2">
+                {/* A-FEAT-1297 — sin esto el movimiento quedaba sin proveedor (Seguro Chalet, 20/10). Si no está en
+                    el maestro se escribe el nombre a mano; el CUIT es opcional. */}
+                <ProveedorCombobox label="Quién cobra *" value={quienCobra} onChange={setQuienCobra} rol="proveedor" />
               </div>
               <div>
                 <Label>Responsable interno</Label>

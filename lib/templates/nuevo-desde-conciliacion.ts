@@ -34,6 +34,9 @@ export interface DatosTemplateNuevo {
   año: string
   tipo: string
   aplica_generacion: boolean
+  /** A-FEAT-1297 — quién cobra: el proveedor del template. Sin él, el movimiento queda sin proveedor. */
+  nombre_quien_cobra?: string | null
+  cuit_quien_cobra?: string | null
 }
 
 /** La periodicidad que corresponde a una empresa: MSA cierra al 30/06; PAM y MA al 31/12. */
@@ -60,6 +63,8 @@ export function faltantesTemplateNuevo(d: Partial<DatosTemplateNuevo>): string[]
   if (!d.cuenta_agrupadora?.trim()) f.push("agrupadora")
   if (!d.año?.trim()) f.push("campaña")
   if (!d.tipo?.trim()) f.push("naturaleza")
+  // A-FEAT-1297: el nombre alcanza (un proveedor puede no estar todavía en el maestro, sin CUIT a mano)
+  if (!d.nombre_quien_cobra?.trim()) f.push("quién cobra")
   return f
 }
 

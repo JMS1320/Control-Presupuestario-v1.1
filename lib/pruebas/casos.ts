@@ -6681,7 +6681,11 @@ export function correrCasos(): Resultado[] {
 
     // Entero o nada: sin agrupadora no se crea (antes el «+ Crear uno acá» lo creaba sin agrupadora).
     const chubb = { nombre_referencia: "Seguro Chalet", categ: "Seguro Chalet", responsable: "MA", cuenta_agrupadora: "Seguros",
-      periodicidad: "anual" as const, año: "2026", tipo: "egreso", aplica_generacion: true }
+      periodicidad: "anual" as const, año: "2026", tipo: "egreso", aplica_generacion: true, nombre_quien_cobra: "CHUBB SEGUROS" }
+    // 🧨 A-FEAT-1297: sin «quién cobra» Seguro Chalet se creó sin proveedor y el movimiento quedó sin él.
+    chequear("Template desde la conciliación", "Sin «quién cobra» no se crea (el nombre alcanza, el CUIT es opcional)",
+      "quién cobra · nada", `${faltantesTemplateNuevo({ ...chubb, nombre_quien_cobra: " " }).join(",")} · ${faltantesTemplateNuevo({ ...chubb, cuit_quien_cobra: null }).join(",") || "nada"}`,
+      faltantesTemplateNuevo({ ...chubb, nombre_quien_cobra: " " }).join(",") === "quién cobra" && faltantesTemplateNuevo({ ...chubb, cuit_quien_cobra: null }).length === 0, "A-FEAT-1297")
     chequear("Template desde la conciliación", "🛑 Entero o nada: completo se puede; sin agrupadora o sin cuenta, no",
       "completo: nada falta · sin agrupadora: agrupadora · sin cuenta: cuenta",
       `completo: ${faltantesTemplateNuevo(chubb).join(",") || "nada falta"} · sin agrupadora: ${faltantesTemplateNuevo({ ...chubb, cuenta_agrupadora: " " }).join(",")} · sin cuenta: ${faltantesTemplateNuevo({ ...chubb, categ: "" }).join(",")}`,
