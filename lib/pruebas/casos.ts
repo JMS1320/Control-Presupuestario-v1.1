@@ -173,6 +173,9 @@ import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
+import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
+import { armarRenglones } from "@/lib/polizas/renglones-pdf"
+import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
@@ -6917,6 +6920,144 @@ export function correrCasos(): Resultado[] {
     ], new Set(["pagadaCC"]))
     chequear("Doble audit", "En la tarjeta se ofrecen las facturas «anteriores» que nadie pagó todavía; una ya atada a otro movimiento no",
       "coop · medicus", pool.map(f => f.id).join(" · "), pool.map(f => f.id).join("|") === "coop|medicus", "A-DEC-1014")
+  }
+
+  // ══ 🛡️ PÓLIZAS DE SEGURO — lector, controles y reparto (A-FEAT-1309) ═══════════════════════════
+  {
+    // Textos REALES (recortados) de los PDFs de Federación Patronal del 2026, ya en renglones.
+    const FLOTA = [
+      "FRENTE DE PÓLIZA  Póliza impresa el dia  24-07-2026",
+      "SECCIÓN  AUTOMOTORES  PRODUCTO  AUTOMOTORES  PÓLIZA  35881289",
+      "Desde 12:00 Hs. del 29-07-2026  Hasta 12:00 Hs. del 29-07-2027",
+      "Endoso  Lugar de emisión  CÓDIGO POSTAL  2930",
+      "0  La Plata, Buenos Aires, Argentina  PROVINCIA  BUENOS AIRES",
+      "Póliza anterior  Fecha de emisión  CONDICIÓN DE IVA  INSCRIPTO",
+      "CUIT/DNI  30617786016 /",
+      "34160783  22-07-2026",
+      "PLAN DE PAGO DEL ENDOSO  PERÍODO FACTURADO",
+      "NÚMERO  VENCIMIENTO  IMPORTE  Números de Inscripción:",
+      "29-07-2026  29-01-2027",
+      "1/12  01-08-2026  $  556,094.00",
+      "2/12  01-09-2026  $  556,094.00",
+      "LIQUIDACION DEL PREMIO",
+      "3/12  01-10-2026  $  556,094.00",
+      "4/12  01-11-2026  $  556,094.00",
+      "PRIMA",
+      "5/12  01-12-2026  $  556,094.00",
+      "$  2,477,346.66",
+      "6/12  01-01-2027  $  556,094.09",
+      "I.V.A.  SELLADO  OTROS IMP. Y TASAS",
+      "$  627,502.00  $  39,564.00  $  39,218.88",
+      "PREMIO DEL ENDOSO",
+      "$  3,320,876.54",
+      "TOTAL:  $  3,336,564.09  MONEDA CONTRATO  TEA  CARGO FINANCIERO",
+      "PESOS  30.00%  $  137,245.00",
+      "FEDERACIÓN PATRONAL SEGUROS S.A.U.,CUIT: 33-70736658-9",
+      "Póliza  35881289 / 10  Póliza  35881289 /10",
+      "Modelo  VW TIGUAN 2.0 TSI EXCLUSIVE TIP L/12  Vigencia desde",
+      "Año  2012  Plan Pago  EN CASO DE SINIESTRO",
+      "Patente  LMW911  del conductor.",
+      "Póliza  35881289 / 13  Póliza  35881289 /13",
+      "Modelo  VW GOL TREND 1.6 5 P.  Vigencia desde",
+      "Año  2012  Plan Pago",
+      "Patente  LFO201  del conductor.",
+      "Póliza  35881289 / 4  Póliza  35881289 /4",
+      "Modelo  DEUTZ AGCO ALLIS  Vigencia desde",
+      "Año  2004  Plan Pago",
+      "Patente  AAA111  del conductor.",
+      "CERTIFICADO:  4",
+      "PREMIO:  1,448,236.19",
+      "CERTIFICADO:  10",
+      "PREMIO:  1,478,549.78",
+      "CERTIFICADO:  13  Pag.  26",
+      "PREMIO:  409,778.13",
+    ].join("\n")
+    const f = parsearPoliza(FLOTA)
+    // 🧨 La prima del frente comparte renglón con las cuotas: leer la de la cuota daba 556.094.
+    chequear("Pólizas", "Frente de la Flota: póliza, endoso 0, póliza anterior, vigencia, total y la PRIMA (no la cuota que está al lado)",
+      "35881289 · 0 · 34160783 · 2026-07-29→2027-07-29 · 3336564.09 · prima 2477346.66 · TEA 30 · cargo 137245",
+      `${f.poliza} · ${f.endoso} · ${f.polizaAnterior} · ${f.vigenciaDesde}→${f.vigenciaHasta} · ${f.total} · prima ${f.frente?.prima} · TEA ${f.frente?.tea} · cargo ${f.frente?.cargoFinanciero}`,
+      f.poliza === "35881289" && f.endoso === 0 && f.polizaAnterior === "34160783" && f.vigenciaDesde === "2026-07-29" && f.total === 3336564.09 && f.frente?.prima === 2477346.66 && f.frente?.cargoFinanciero === 137245, "A-FEAT-1309")
+    chequear("Pólizas", "Las 6 cuotas del endoso suman el total; el AAA111 (maquinaria sin patente) no se toma como patente",
+      "6 cuotas · última 556094.09 · cert 4 sin patente",
+      `${f.cuotasEndoso.length} cuotas · última ${f.cuotasEndoso.at(-1)?.importe} · cert 4 ${f.vehiculos.find(v => v.certificado === 4)?.patente ?? "sin patente"}`,
+      f.cuotasEndoso.length === 6 && f.cuotasEndoso.at(-1)?.importe === 556094.09 && f.vehiculos.find(v => v.certificado === 4)?.patente === null, "A-FEAT-1309")
+    const cf = controlarPoliza(f)
+    chequear("Pólizas", "Integridad de la Flota: cuotas = total y primas de los vehículos = total → no frena",
+      "frena=false", `frena=${cf.frena} (${cf.integridad.map(c => c.que + (c.ok ? " ✓" : " ✗")).join(", ")})`, !cf.frena && cf.integridad.length === 2, "A-FEAT-1309")
+
+    // El reparto: Tiguan → MA, Gol → JMS, el resto MSA, por la prima de cada vehículo.
+    const rep = repartoDeLaPoliza(f)
+    const cuota = repartirImporte(556094, rep)
+    const de = (r: string) => cuota.find(x => x.responsable === r)?.importe
+    const sumaCuota = Math.round(cuota.reduce((s, x) => s + x.importe, 0) * 100) / 100
+    chequear("Pólizas", "Reparto de la cuota de $556.094 de la Flota por la prima de cada vehículo — las partes suman exacto la cuota",
+      "MA 246424.96 · MSA 241372.69 · JMS 68296.35 · suma 556094",
+      `MA ${de("MA")} · MSA ${de("MSA")} · JMS ${de("JMS")} · suma ${sumaCuota}`,
+      rep?.base === "prima de cada vehículo" && sumaCuota === 556094 && de("MA") === 246424.96 && de("JMS") === 68296.35 && de("MSA") === 241372.69, "A-FEAT-1309")
+
+    // Si las primas no suman el total, el papel se contradice (o se leyó mal): FRENA.
+    const roto = controlarPoliza({ ...f, vehiculos: f.vehiculos.map(v => v.certificado === 10 ? { ...v, prima: 1478549.87 } : v) })
+    chequear("Pólizas", "Una prima mal leída (dígitos invertidos) hace que las primas no sumen el total → frena",
+      "frena=true", `frena=${roto.frena}`, roto.frena, "A-FEAT-1309")
+
+    // La factura original de una BAJA de Accidentes Personales: nota de crédito, conceptos que cierran.
+    const AP = [
+      "FACTURA ORIGINAL",
+      "SECCIÓN  12 - ACCIDENTES PERSONALES  PRODUCTO  A.P. PRESTACIONAL  PÓLIZA 10183421",
+      "Asegurado  Domicilio  Fecha de Emisión",
+      "SAN MANUEL S R L  ESTANCIA NAZARENA N* S/N  07-05-2026",
+      "CUIT/ DNI  Localidad  Endoso",
+      "30617786016 /  SAN PEDRO (BS. AS.)  2",
+      "IVA  Provincia  Período Facturado Desde",
+      "INSCRIPTO  BUENOS AIRES  07-05-2026",
+      "Asegurado nro.  Código Postal  Período Facturado Hasta",
+      "3938413  2930  06-02-2027",
+      "PLAN DE PAGO DEL ENDOSO  LIQUIDACIÓN DE PREMIO Y OTROS CONCEPTOS",
+      "NRO.  VENCIMIENTO  IMPORTE  PRIMA  $  -95,170.11",
+      "1/2  06-06-2026  $  -65,449.80",
+      "RECARGOS  $  -8,793.72",
+      "2/2  06-07-2026  $  -65,449.80  SUBTOTAL GRAVADO (PRECIO SIN IMPUESTOS)  $  -103,963.83",
+      "IVA  $  -21,832.40",
+      "SUB-TOTAL  $  -125,796.23",
+      "PERCEPCION IVA  $  -3,118.91",
+      "PERCEPCION IIBB BUENOS AIRES  $  -840.86",
+      "TASA SUPERINTENDENCIA  $  -623.78",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES  $  -519.82",
+      "MONTO TOTAL DEL PREMIO  $  -130,899.60",
+      "BAJA PERSONAL",
+      "Cert.  Documento  Apellido y Nombre  FE NACIMIENTO  BENEFICIARIO",
+      "3  DNI  33318934  BARRETO WILSON SEVERIANO  25-09-1988  CONTRATANTE/TOMADOR",
+      "NOMINA ACTIVA",
+      "Cert.  Documento  Apellido y Nombre  FE NACIMIENTO  BENEFICIARIO",
+      "1  DNI  27673775  PAZ ELVIO CRESENCIO  27-07-1978  CONTRATANTE/TOMADOR",
+      "2  DNI  16598383  VULCANO HERIBERTO FABIAN  25-11-1964  CONTRATANTE/TOMADOR",
+    ].join("\n")
+    const a = parsearPoliza(AP)
+    const ca = controlarPoliza(a)
+    chequear("Pólizas", "Baja de Accidentes Personales: endoso 2, nota de crédito, período, 7 conceptos que suman el total, subtotales que cierran",
+      "10183421 · 2 · NC · 2026-05-07→2027-02-06 · -130899.6 · 7 conceptos · frena=false",
+      `${a.poliza} · ${a.endoso} · ${a.esNotaCredito ? "NC" : "FC"} · ${a.periodoDesde}→${a.periodoHasta} · ${a.total} · ${a.conceptos.filter(c => !c.esSubtotal).length} conceptos · frena=${ca.frena}`,
+      a.poliza === "10183421" && a.endoso === 2 && a.esNotaCredito && a.periodoHasta === "2027-02-06" && a.total === -130899.6 && a.conceptos.filter(c => !c.esSubtotal).length === 7 && !ca.frena, "A-FEAT-1309")
+    const repAP = repartoDeLaPoliza(a)
+    chequear("Pólizas", "La nómina distingue baja y activas; Elvio Paz → MA, Vulcano → MSA; el reparto es entre las ACTIVAS (la baja no cuenta)",
+      "baja BARRETO · activas PAZ, VULCANO · MA 50% · MSA 50%",
+      `baja ${a.personas.filter(x => x.movimiento === "baja").map(x => x.nombre.split(" ")[0]).join()} · activas ${a.personas.filter(x => x.movimiento === "activa").map(x => x.nombre.split(" ")[0]).join(", ")} · ${repAP?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
+      repAP?.partes.length === 2 && repAP.partes.every(x => Math.abs(x.proporcion - 0.5) < 1e-9) && responsableDe({ documento: "20276737751" }).responsable === "MA", "A-FEAT-1309")
+
+    // Cotejo contra lo cargado: avisa, no frena. Número = póliza · punto de venta = endoso.
+    const bien = cotejarConComprobante(a, { numero: "10183421", punto_venta: "2", total: 130899.6, esNotaCredito: true })
+    const mal = cotejarConComprobante(a, { numero: "10183422", punto_venta: "2", total: 130899.6, esNotaCredito: false })
+    chequear("Pólizas", "Cotejo con el comprobante cargado: la NC bien cargada no avisa; con otro número y como factura, dos avisos",
+      "0 · 2", `${bien.length} · ${mal.length}`, bien.length === 0 && mal.length === 2, "A-FEAT-1309")
+
+    // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
+    const renglones = armarRenglones([
+      { s: "$", x: 300, y: 500, h: 8 }, { s: "627,502.00", x: 310, y: 500.5, h: 8 },
+      { s: "PRIMA", x: 100, y: 520, h: 8 }, { s: "I.V.A.", x: 100, y: 500, h: 8 },
+    ])
+    chequear("Pólizas", "Los textos del PDF se arman en renglones por su altura (medio punto de diferencia sigue siendo el mismo renglón)",
+      "PRIMA | I.V.A.  $  627,502.00", renglones.join(" | "), renglones.join(" | ") === "PRIMA | I.V.A.  $  627,502.00", "A-FEAT-1309")
   }
 
   return r
