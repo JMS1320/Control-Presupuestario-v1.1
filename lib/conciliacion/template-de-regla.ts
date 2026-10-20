@@ -67,7 +67,7 @@ export function templateParaFecha(
 /** El motivo de auditar cuando falta la campaña (A-DEC-1015). */
 export function motivoFaltaCampana(elegido: TemplateDeFamilia, fecha: string): string {
   return `Falta la campaña ${campanaParaFecha(elegido, fecha)} de «${elegido.nombre_referencia}» (${elegido.responsable ?? "?"}): `
-    + `creala con «Crear campaña» al asignarle template a este movimiento. No se cargó ninguna cuota.`
+    + `creala con el botón «📅 Crear campaña» de esta fila. No se cargó ninguna cuota.`
 }
 
 /**

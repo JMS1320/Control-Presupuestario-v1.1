@@ -1281,6 +1281,12 @@ ${texto.trim()}` : texto.trim()
    */
   const [confirmandoOk, setConfirmandoOk] = useState<string | null>(null)
   const confirmarAuditado = async (movimiento: any, silencioso = false): Promise<boolean> => {
+    // 📅 A-FEAT-1302 — «Falta la campaña»: no tiene cuota atada. Darle OK lo concilia de UN SOLO LADO
+    // (§ 2.1 de MODULO_CONCILIACION): hay que crear la campaña y asignarlo.
+    if (faltaCampanaDelMotivo(movimiento.motivo_revision)) {
+      if (!silencioso) toast.error('Falta la campaña: no tiene cuota para conciliar. Usá «📅 Crear campaña».')
+      return false
+    }
     setConfirmandoOk(movimiento.id)
     try {
       const previa = String(movimiento.nota_operador || '').trim()
@@ -4700,7 +4706,15 @@ ${marca}` : marca
                               <div className="flex items-center gap-1">
                                 <span className="truncate" title={movimiento.motivo_revision || ''}>{movimiento.motivo_revision || '-'}</span>
                                 {/* ✅ Un movimiento «para revisar» se da por bueno de un click. */}
-                                {String(movimiento.estado).toLowerCase() === 'auditar' && (
+                                {/* 📅 A-FEAT-1302 — falta la campaña: en vez del OK (que lo dejaría conciliado sin
+                                    cuota), el botón que la crea — abre Asignar → Template, donde está el asistente. */}
+                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-amber-800 border-amber-400 bg-amber-50 shrink-0"
+                                    title="Crea la campaña que falta (copiando el template) y le asigna la cuota de su mes"
+                                    onClick={(e) => { e.stopPropagation(); void abrirModalAsignar(movimiento) }}>
+                                    📅 Crear campaña
+                                  </Button>
+                                ) : String(movimiento.estado).toLowerCase() === 'auditar' && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-green-700 border-green-300 shrink-0"
                                     disabled={confirmandoOk === movimiento.id}
                                     title="Darlo por bueno: pasa a conciliado y el motivo queda en la nota"

@@ -425,7 +425,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
           configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
           año: valorAnio,
           periodicidad: state.datos_basicos.periodicidad,
-          aplica_generacion: state.datos_basicos.aplica_generacion,
+          aplica_generacion: esAbierto ? false : state.datos_basicos.aplica_generacion,
           // 🔁 Campaña creada desde el auditar: queda el vínculo con la anterior, como hace el generador.
           ...(copiarDe ? { template_origen_id: copiarDe } : {}),
           activo: true
@@ -634,11 +634,13 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
 
                 {state.datos_basicos.tipo_template === 'abierto' && (
                   <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded text-sm text-purple-800">
-                    📂 <strong>Template Abierto:</strong> No genera cuotas automáticas.
-                    Agregue cuotas manualmente desde "Pago Manual".
+                    📂 <strong>Template Abierto:</strong> sin campaña, sin cuotas precargadas y sin regeneración —
+                    cada movimiento que se concilia le carga su cuota.
                   </div>
                 )}
 
+                {/* 📅 A-DEC-1016 — periodicidad y regeneración son de la CAMPAÑA: un abierto no tiene, no se preguntan. */}
+                {state.datos_basicos.tipo_template !== 'abierto' && (<>
                 {/* Periodicidad: anual (calendario) vs bianual (campaña jul-jun) */}
                 <div className="mt-4">
                   <Label className="text-sm font-medium">Periodicidad *</Label>
@@ -676,6 +678,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
                     <span className="text-sm text-gray-500 ml-2">(se le crean las cuotas del próximo período al renovar). Destildar los que se cargan solos por conciliación.</span>
                   </Label>
                 </div>
+                </>)}
 
                 {/* Opción Bidireccional */}
                 <div className="mt-4 flex items-center space-x-2">
