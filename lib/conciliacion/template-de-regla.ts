@@ -14,6 +14,9 @@
  * banco** (`solo_conciliacion`: comisión, IVA, percepción), que no se presupuestan por campaña. Para el
  * resto no se carga: el motor deja el movimiento en auditar diciendo qué campaña falta.
  *
+ * ⚠️ *Y 2026-10-20 (A-DEC-1016)*: un template **abierto no tiene campaña** (*«la campaña sólo sirve
+ * para generar las cuotas al futuro»*); se vació en 60. Sin campaña → carga en el elegido, siempre.
+ *
  * La campaña de la fecha sale de `campanaDeFecha` (la misma que usa el alta desde la conciliación).
  */
 import { campanaDeFecha, type Periodicidad } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -64,7 +67,16 @@ export function templateParaFecha(
 /** El motivo de auditar cuando falta la campaña (A-DEC-1015). */
 export function motivoFaltaCampana(elegido: TemplateDeFamilia, fecha: string): string {
   return `Falta la campaña ${campanaParaFecha(elegido, fecha)} de «${elegido.nombre_referencia}» (${elegido.responsable ?? "?"}): `
-    + `creala (Templates → renovar campaña) y volvé a correr. No se cargó ninguna cuota.`
+    + `creala con «Crear campaña» al asignarle template a este movimiento. No se cargó ninguna cuota.`
+}
+
+/**
+ * 🔙 A-FEAT-1302 punto 3 — de un motivo «Falta la campaña…» saca qué falta (campaña, nombre, responsable),
+ * para que el auditar ofrezca crearla ahí mismo. Si el motivo es otro, `null`.
+ */
+export function faltaCampanaDelMotivo(motivo: string | null | undefined): { campana: string; nombre: string; responsable: string } | null {
+  const m = /^Falta la campaña (\S+) de «(.+)» \(([^)]*)\)/.exec(String(motivo ?? ""))
+  return m ? { campana: m[1], nombre: m[2], responsable: m[3] } : null
 }
 
 /**

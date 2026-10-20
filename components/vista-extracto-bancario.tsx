@@ -88,7 +88,7 @@ import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { cargarDetallesFijos, aplicarDetalleFijo, marcarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { elegirDetalleFijo, type DetalleFijo } from "@/lib/conciliacion/detalle-fijo"
-import { campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
+import { campanaNuevaPrimero, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
@@ -461,6 +461,8 @@ export function VistaExtractoBancario() {
   const [crearTemplateAbierto, setCrearTemplateAbierto] = useState(false)
   const [cuentaNuevoTemplate, setCuentaNuevoTemplate] = useState<string>('')
   const [modalNuevoTemplate, setModalNuevoTemplate] = useState(false)
+  /** 🔁 A-FEAT-1302 punto 3 — el template cuya campaña falta: el asistente lo copia con la del movimiento. */
+  const [copiarDeTemplate, setCopiarDeTemplate] = useState<string | null>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
   const [sueldoElegido, setSueldoElegido] = useState<any>(null)
   const [grupoElegido, setGrupoElegido] = useState<any>(null)
@@ -5628,6 +5630,31 @@ ${marca}` : marca
 
             {/* Tab Template */}
             <TabsContent value="template" className="space-y-3 mt-3">
+              {/* 🔁 A-FEAT-1302 punto 3 — el motor lo dejó en auditar porque falta la campaña de su template
+                  (A-DEC-1015): se crea ahí mismo, copiando el template, y el movimiento se ata a la cuota de su mes. */}
+              {(() => {
+                const falta = faltaCampanaDelMotivo((movimientoAsignando as any)?.motivo_revision)
+                if (!falta) return null
+                const n = (s: any) => String(s ?? '').trim().toLowerCase()
+                const familia = (templatesParaAsignar as any[])
+                  .filter(t => n(t.nombre_referencia) === n(falta.nombre) && n(t.responsable) === n(falta.responsable))
+                  .sort((a, b) => String(b.año ?? '').localeCompare(String(a.año ?? '')))
+                const yaExiste = familia.some(t => n(t.año) === n(falta.campana))
+                return (
+                  <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+                    <div>📅 Falta la campaña <b>{falta.campana}</b> de «{falta.nombre}» ({falta.responsable}).</div>
+                    {yaExiste ? (
+                      <div>Ya existe: elegila en la lista de abajo.</div>
+                    ) : familia[0] ? (
+                      <Button size="sm" className="h-7 text-xs" onClick={() => { setCopiarDeTemplate(familia[0].id); setModalNuevoTemplate(true) }}>
+                        Crear campaña {falta.campana} (copia de la {familia[0].año || 'sin campaña'})
+                      </Button>
+                    ) : (
+                      <div>No encuentro el template «{falta.nombre}» activo: crealo con «+ Crear uno acá».</div>
+                    )}
+                  </div>
+                )
+              })()}
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-500">¿No está el template?</span>
                 {/* 🧩 A-FEAT-1294 — abre directo el formulario COMPLETO (ver lo existente, «parecido a…», entero
@@ -5639,24 +5666,27 @@ ${marca}` : marca
               {/* 🧩 A-FEAT-1302 — el MISMO asistente de Templates, precargado con el movimiento (antes un modal
                   aparte que creaba el template sin cuotas). Fijo → sus cuotas quedan presupuestadas y el
                   movimiento se ata a la de su mes; abierto → sin cuotas, las carga cada movimiento. */}
-              <Dialog open={modalNuevoTemplate} onOpenChange={(o) => { if (!o) setModalNuevoTemplate(false) }}>
+              <Dialog open={modalNuevoTemplate} onOpenChange={(o) => { if (!o) { setModalNuevoTemplate(false); setCopiarDeTemplate(null) } }}>
                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>Crear template desde la conciliación</DialogTitle>
+                    <DialogTitle>{copiarDeTemplate ? 'Crear la campaña que falta' : 'Crear template desde la conciliación'}</DialogTitle>
                   </DialogHeader>
                   {modalNuevoTemplate && (
                     <WizardTemplatesEgresos
                       fechaReferencia={(movimientoAsignando as any)?.fecha ? String((movimientoAsignando as any).fecha).slice(0, 10) : undefined}
                       empresaCuenta={cuentaActivaObj?.empresa || 'MSA'}
+                      cuentaBancariaId={cuentaActivaObj?.id}
+                      copiarDe={copiarDeTemplate || undefined}
                       inicial={{
                         nombre_referencia: (movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim(),
                         responsable: cuentaActivaObj?.empresa || 'MSA',
                         monto_base: Number(movimientoAsignando?.debitos) || Number(movimientoAsignando?.creditos) || 0,
                         ...(cuentaNuevoTemplate ? { categ: cuentaNuevoTemplate } : {}),
                       }}
-                      onCancelar={() => setModalNuevoTemplate(false)}
+                      onCancelar={() => { setModalNuevoTemplate(false); setCopiarDeTemplate(null) }}
                       onCreado={async (templateId) => {
                         setModalNuevoTemplate(false)
+                        setCopiarDeTemplate(null)
                         setCrearTemplateAbierto(false)
                         setCuentaNuevoTemplate('')
                         const { data } = await supabase

@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { campanaDeFecha, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { generarCuotasTemplate } from "@/lib/templates/cuotas-del-template"
+import { reglasDelTemplateNuevo, type ReglaCodigo } from "@/lib/templates/codigos-del-template"
 import { hoyArgentina } from "@/lib/fechas"
 
 // Tipos para el wizard
@@ -44,6 +45,9 @@ interface DatosBasicos {
   aplica_generacion: boolean          // entra a la regeneración automática de cuotas
   /** Sólo si difiere del responsable (responsable = contable; interno vacío = coincide). */
   responsable_interno: string
+  /** 🏷️ Códigos para la cuenta que paga (regla Tipo A). Vacío = el copiado del template de origen. */
+  codigo_contable: string
+  codigo_interno: string
 }
 
 /** Un template existente: para no duplicar y para copiar sus datos («parecido a…»). */
@@ -62,6 +66,8 @@ interface TemplateExistente {
   responsable_interno: string | null
   es_bidireccional: boolean | null
   configuracion_reglas: any
+  cuit_quien_cobra: string | null
+  nombre_quien_cobra: string | null
 }
 
 /**
@@ -77,6 +83,13 @@ export interface WizardTemplatesProps {
   fechaReferencia?: string
   /** La empresa de la cuenta que paga, para avisar si el template es de otra. */
   empresaCuenta?: string
+  /** La cuenta bancaria que paga (desde el extracto): ahí se guardan los códigos contable/interno. */
+  cuentaBancariaId?: string
+  /**
+   * 🔁 A-FEAT-1302 punto 3 — **crear la campaña que falta** de un template existente: copia TODO de ése
+   * (nombre, cuenta, quién cobra, recurrencia, códigos) con la campaña de `fechaReferencia`.
+   */
+  copiarDe?: string
   onCreado?: (templateId: string) => void
   onCancelar?: () => void
 }
@@ -144,9 +157,11 @@ const DATOS_VACIOS: DatosBasicos = {
   periodicidad: 'anual',
   aplica_generacion: true,
   responsable_interno: '',
+  codigo_contable: '',
+  codigo_interno: '',
 }
 
-export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta, onCreado, onCancelar }: WizardTemplatesProps = {}) {
+export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta, cuentaBancariaId, copiarDe, onCreado, onCancelar }: WizardTemplatesProps = {}) {
   const [categoriasTemplates, setCategoriasTemplates] = useState<string[]>([])
   const [cuentasAgrupadoras, setCuentasAgrupadoras] = useState<string[]>([])
   /** `categ` (en mayúsculas) → tipo del plan de cuentas. Sólo para sugerir. */
@@ -159,6 +174,9 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
   /** La cuenta sigue al nombre mientras no se la toque (la cuenta ES el template — usuario 19/10). */
   const [categTocada, setCategTocada] = useState(!!inicial?.categ)
   const [guardando, setGuardando] = useState(false)
+  /** Las reglas de códigos del template de origen («Parecido a…» o la campaña que se copia). */
+  const [reglasOrigen, setReglasOrigen] = useState<ReglaCodigo[]>([])
+  const [copiaAplicada, setCopiaAplicada] = useState(false)
   const estadoInicial = (): WizardState => {
     const responsable = inicial?.responsable || ''
     // 📅 Desde la conciliación: el día de las cuotas es el del movimiento (se puede cambiar).
@@ -184,6 +202,11 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
   const [state, setState] = useState<WizardState>(estadoInicial)
   /** La campaña: la de la fecha del movimiento (o de hoy), según la periodicidad. */
   const campana = campanaDeFecha(state.datos_basicos.periodicidad, fechaReferencia || hoyArgentina())
+  /**
+   * 📅 A-DEC-1016 — un template **abierto no tiene campaña**: la campaña sólo sirve para generar cuotas
+   * al futuro, y el abierto no las tiene (usuario 2026-10-20). Se guarda vacía.
+   */
+  const campanaQueSeGuarda = state.datos_basicos.tipo_template === 'abierto' || state.datos_basicos.es_multi_cuenta ? '' : campana
 
   // Cargar categorías y cuentas agrupadoras existentes al inicializar
   useEffect(() => {
@@ -191,7 +214,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
       try {
         const { data } = await supabase
           .from('egresos_sin_factura')
-          .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora, centro_costo, tipo, tipo_template, periodicidad, aplica_generacion, responsable_interno, es_bidireccional, configuracion_reglas, activo')
+          .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora, centro_costo, tipo, tipo_template, periodicidad, aplica_generacion, responsable_interno, es_bidireccional, configuracion_reglas, cuit_quien_cobra, nombre_quien_cobra, activo')
           .order('categ')
 
         if (data) {
@@ -272,12 +295,25 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
    * regeneración, responsable interno, bidireccional y la recurrencia (día, meses). El nombre, la
    * cuenta, el monto y quién cobra quedan como están.
    */
-  const elegirParecido = (t: TemplateExistente) => {
+  const elegirParecido = async (t: TemplateExistente, completo = false) => {
     setParecido(t)
+    // 🏷️ Sus códigos contable/interno (reglas Tipo A, por cuenta bancaria) viajan al template nuevo.
+    const { data: reglas } = await supabase.from('reglas_contable_interno')
+      .select('cuenta_bancaria_id, codigo_contable, codigo_interno, descripcion, orden, activo')
+      .eq('tipo_regla', 'especifica').eq('template_id', t.id)
+    setReglasOrigen((reglas || []) as ReglaCodigo[])
     setState(prev => ({
       ...prev,
       datos_basicos: {
         ...prev.datos_basicos,
+        // 🔁 Crear la campaña que falta: es el MISMO template en otra campaña → se copia también lo propio.
+        ...(completo ? {
+          nombre_referencia: t.nombre_referencia,
+          categ: t.categ || prev.datos_basicos.categ,
+          responsable: t.responsable || prev.datos_basicos.responsable,
+          cuit_quien_cobra: t.cuit_quien_cobra || prev.datos_basicos.cuit_quien_cobra,
+          nombre_quien_cobra: t.nombre_quien_cobra || prev.datos_basicos.nombre_quien_cobra,
+        } : {}),
         cuenta_agrupadora: t.cuenta_agrupadora || prev.datos_basicos.cuenta_agrupadora,
         centro_costo: t.centro_costo || prev.datos_basicos.centro_costo,
         tipo: (t.tipo as TipoCuenta) || prev.datos_basicos.tipo,
@@ -289,7 +325,16 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
       },
       configuracion: t.configuracion_reglas?.tipo ? { ...prev.configuracion, ...t.configuracion_reglas } : prev.configuracion,
     }))
+    if (completo) setCategTocada(true)
   }
+  // 🔁 «Crear campaña» desde el auditar: apenas se cargan los templates, se copia el de origen.
+  useEffect(() => {
+    if (!copiarDe || copiaAplicada || existentes.length === 0) return
+    const origen = existentes.find(t => t.id === copiarDe)
+    if (origen) { setCopiaAplicada(true); void elegirParecido(origen, true) }
+  }, [copiarDe, copiaAplicada, existentes])
+  /** Los códigos copiados para la cuenta que paga: se muestran como valor por default. */
+  const reglaDeLaCuenta = cuentaBancariaId ? reglasOrigen.find(r => r.cuenta_bancaria_id === cuentaBancariaId) : undefined
   const textoParecido = busquedaParecido.trim().toLowerCase()
   const parecidos = textoParecido
     ? existentes.filter(t => [t.nombre_referencia, t.cuenta_agrupadora, t.categ, t.responsable]
@@ -298,7 +343,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
   /** ⚠️ Ya hay uno igual (mismo nombre, responsable y campaña): crearlo de nuevo lo duplicaría. */
   const duplicado = existentes.find(t =>
     (t.nombre_referencia || '').trim().toLowerCase() === state.datos_basicos.nombre_referencia.trim().toLowerCase()
-    && (t.responsable || '') === state.datos_basicos.responsable && (t.año || '') === campana)
+    && (t.responsable || '') === state.datos_basicos.responsable && (t.año || '') === campanaQueSeGuarda)
   const categFueraDelPlan = !!state.datos_basicos.categ.trim() && categsDelPlan.size > 0
     && !categsDelPlan.has(state.datos_basicos.categ.trim().toUpperCase())
 
@@ -358,7 +403,8 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
       const esMultiCuenta = state.datos_basicos.es_multi_cuenta
       // "año": anual = año calendario; bianual = etiqueta de campaña (jul-jun), p.ej. "26/27".
       // 📅 A-FEAT-1302 — la de la fecha del movimiento si viene de la conciliación; si no, la de hoy.
-      const valorAnio = campana
+      // 📅 A-DEC-1016 — abierto: sin campaña.
+      const valorAnio = campanaQueSeGuarda || null
       const { data: egresoData, error: egresoError } = await supabase
         .from('egresos_sin_factura')
         .insert({
@@ -380,12 +426,25 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
           año: valorAnio,
           periodicidad: state.datos_basicos.periodicidad,
           aplica_generacion: state.datos_basicos.aplica_generacion,
+          // 🔁 Campaña creada desde el auditar: queda el vínculo con la anterior, como hace el generador.
+          ...(copiarDe ? { template_origen_id: copiarDe } : {}),
           activo: true
         })
         .select()
         .single()
 
       if (egresoError) throw egresoError
+
+      // 2.b 🏷️ Códigos contable/interno: los del template de origen + lo escrito para la cuenta que paga.
+      const reglasNuevas = reglasDelTemplateNuevo({
+        origen: reglasOrigen, templateId: egresoData.id, cuentaBancariaId,
+        contable: state.datos_basicos.codigo_contable, interno: state.datos_basicos.codigo_interno,
+      })
+      if (reglasNuevas.length > 0) {
+        const { error: reglasError } = await supabase.from('reglas_contable_interno').insert(reglasNuevas)
+        // El template ya está creado: un error acá se avisa, no deshace todo.
+        if (reglasError) toast.error(`Template creado, pero no se guardaron los códigos contable/interno: ${reglasError.message}`)
+      }
 
       // 3. Crear cuotas generadas (solo si NO es abierto)
       if (state.cuotas_generadas.length > 0) {
@@ -428,7 +487,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
       setState({ paso: 1, datos_basicos: { ...DATOS_VACIOS },
         configuracion: { tipo: 'mensual', incluir_aguinaldo: false, ultimo_dia_mes: false, ultimo_dia_mes_cuotas: false },
         cuotas_generadas: [] })
-      setParecido(null); setBusquedaParecido(''); setCategTocada(false)
+      setParecido(null); setBusquedaParecido(''); setCategTocada(false); setReglasOrigen([])
     } catch (error) {
       console.error('Error guardando template:', error)
       toast.error(`Error al crear template: ${error instanceof Error ? error.message : 'Error desconocido'}`)
@@ -521,16 +580,22 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
                 {parecido && (
                   <p className="mt-1 text-xs text-blue-700">
                     Copiado de «{parecido.nombre_referencia}» ({parecido.responsable}): agrupadora, centro de costo, tipo, fijo/abierto,
-                    periodicidad, regeneración, responsable interno, bidireccional y recurrencia.
+                    periodicidad, regeneración, responsable interno, bidireccional y recurrencia
+                    {reglasOrigen.length > 0 ? `, y los códigos contable/interno de ${reglasOrigen.length} cuenta(s)` : ''}.
+                    {copiarDe && parecido.id === copiarDe ? ' Es la campaña nueva del mismo template: también nombre, cuenta, responsable y quién cobra.' : ''}
                   </p>
                 )}
               </div>
-              {fechaReferencia && (
+              {state.datos_basicos.tipo_template === 'abierto' ? (
                 <p className="text-xs text-gray-600">
-                  Campaña <b>{campana || '—'}</b> (la del movimiento del {fechaReferencia.split('-').reverse().join('/')}).
-                  {state.datos_basicos.tipo_template === 'fijo'
-                    ? ' Las cuotas quedan presupuestadas con sus vencimientos, y el movimiento se ata a la de su mes.'
-                    : ' Abierto: sin cuotas precargadas, las carga cada movimiento (comisiones, peajes, gastos que no se presupuestan uno por uno).'}
+                  Abierto: <b>sin campaña</b> y sin cuotas precargadas — las carga cada movimiento (comisiones, peajes,
+                  gastos que no se presupuestan uno por uno).
+                </p>
+              ) : (
+                <p className="text-xs text-gray-600">
+                  Campaña <b>{campana || '—'}</b>
+                  {fechaReferencia ? ` (la del movimiento del ${fechaReferencia.split('-').reverse().join('/')})` : ' (la de hoy)'}.
+                  {' '}Las cuotas quedan presupuestadas con sus vencimientos{fechaReferencia ? ', y el movimiento se ata a la de su mes' : ''}.
                 </p>
               )}
               {duplicado && (
@@ -806,6 +871,30 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
                     onChange={(e) => actualizarDatosBasicos('responsable_interno', e.target.value)}
                     placeholder="Sólo si difiere del responsable" />
                 </div>
+
+                {/* 🏷️ A-FEAT-1302 punto 2 — códigos contable/interno (regla Tipo A de la cuenta que paga).
+                    Vacío = el copiado del template de origen, que se ve como sugerencia. */}
+                {cuentaBancariaId ? (
+                  <div className="col-span-2 grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="codigo_contable">Código contable <span className="text-gray-400 font-normal">(para esta cuenta)</span></Label>
+                      <Input id="codigo_contable" value={state.datos_basicos.codigo_contable}
+                        onChange={(e) => actualizarDatosBasicos('codigo_contable', e.target.value)}
+                        placeholder={reglaDeLaCuenta?.codigo_contable ? `${reglaDeLaCuenta.codigo_contable} (copiado)` : 'Ej: RET 3 PAM, Desglosar…'} />
+                    </div>
+                    <div>
+                      <Label htmlFor="codigo_interno">Código interno <span className="text-gray-400 font-normal">(para esta cuenta)</span></Label>
+                      <Input id="codigo_interno" value={state.datos_basicos.codigo_interno}
+                        onChange={(e) => actualizarDatosBasicos('codigo_interno', e.target.value)}
+                        placeholder={reglaDeLaCuenta?.codigo_interno ? `${reglaDeLaCuenta.codigo_interno} (copiado)` : 'Vacío = coincide'} />
+                    </div>
+                  </div>
+                ) : reglasOrigen.length > 0 ? (
+                  <p className="col-span-2 text-xs text-gray-600">
+                    Códigos contable/interno: se copian los de «{parecido?.nombre_referencia}» ({reglasOrigen.length} cuenta(s)).
+                    Para cambiarlos: Conciliación → Contable/Interno.
+                  </p>
+                ) : null}
 
                 <div className="col-span-2">
                   <ProveedorCombobox

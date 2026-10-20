@@ -168,7 +168,8 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
-import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
+import { reglasDelTemplateNuevo } from "@/lib/templates/codigos-del-template"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
@@ -6753,6 +6754,46 @@ export function correrCasos(): Resultado[] {
     chequear("Regla → template", "El motivo dice qué campaña falta y de qué template",
       "Falta la campaña 2025 de «Internet NZ» (MA)…", motivoFaltaCampana(nz, "2025-12-02"),
       motivoFaltaCampana(nz, "2025-12-02").startsWith("Falta la campaña 2025 de «Internet NZ» (MA)"), "A-DEC-1015")
+
+    // 🔁 A-FEAT-1302 punto 3 — del motivo sale qué campaña crear (el botón del auditar). Otro motivo → nada.
+    const falta = faltaCampanaDelMotivo(motivoFaltaCampana({ ...nz, nombre_referencia: "Seguro (Chalet)" }, "2025-12-02"))
+    chequear("Regla → template", "🔁 El auditar lee del motivo qué campaña falta y de qué template (aunque el nombre tenga paréntesis); un motivo de importe no ofrece nada",
+      "2025 · Seguro (Chalet) · MA · null", `${falta?.campana} · ${falta?.nombre} · ${falta?.responsable} · ${faltaCampanaDelMotivo("Importe difiere $ 0,01")}`,
+      falta?.campana === "2025" && falta?.nombre === "Seguro (Chalet)" && falta?.responsable === "MA"
+        && faltaCampanaDelMotivo("Importe difiere $ 0,01") === null, "A-FEAT-1302")
+
+    // 📅 A-DEC-1016 — un abierto SIN campaña carga en sí mismo, en cualquier fecha (no queda en auditar).
+    const pf = { id: "pf", nombre_referencia: "Plazo Fijo Banco Galicia", responsable: "MSA", año: null, periodicidad: "anual", activo: true }
+    const pf2025 = templateParaFecha(pf, [pf], "2025-08-01")
+    chequear("Regla → template", "📅 Un abierto sin campaña (Plazo Fijo) carga en él mismo aunque el movimiento sea de 2025",
+      "pf", `${pf2025?.id}`, pf2025?.id === "pf", "A-DEC-1016")
+  }
+
+  // ══ 🏷️ LOS CÓDIGOS CONTABLE/INTERNO DE UN TEMPLATE NUEVO (A-FEAT-1302 punto 2) ═══════════════════════
+  {
+    const origen = [
+      { cuenta_bancaria_id: "msa_galicia", codigo_contable: "RET 3 MA", codigo_interno: "Gasto MSA", orden: 4 },
+      { cuenta_bancaria_id: "tarjeta_visa", codigo_contable: "RET 3 MA", codigo_interno: null },
+      { cuenta_bancaria_id: "pam_galicia", codigo_contable: "", codigo_interno: "", activo: true },
+    ]
+    // Copia: las 2 con código, al template nuevo; la vacía no (no aporta nada).
+    const copia = reglasDelTemplateNuevo({ origen, templateId: "nuevo" })
+    chequear("Códigos del template", "🏷️ «Parecido a…» copia los códigos de cada cuenta al template nuevo (una regla vacía no se copia)",
+      "2 reglas · nuevo · especifica", `${copia.length} reglas · ${copia[0]?.template_id} · ${copia[0]?.tipo_regla}`,
+      copia.length === 2 && copia.every(r => r.template_id === "nuevo" && r.tipo_regla === "especifica"), "A-FEAT-1302")
+    // Lo escrito pisa SÓLO la cuenta que paga y sólo el campo escrito (interno vacío = el copiado).
+    const pisada = reglasDelTemplateNuevo({ origen, templateId: "nuevo", cuentaBancariaId: "msa_galicia", contable: "Desglosar" })
+    const g = pisada.find(r => r.cuenta_bancaria_id === "msa_galicia")
+    const t = pisada.find(r => r.cuenta_bancaria_id === "tarjeta_visa")
+    chequear("Códigos del template", "✍️ Lo escrito en el asistente pisa la cuenta que paga (sólo el campo escrito); las otras cuentas quedan como el origen",
+      "Desglosar / Gasto MSA · RET 3 MA", `${g?.codigo_contable} / ${g?.codigo_interno} · ${t?.codigo_contable}`,
+      g?.codigo_contable === "Desglosar" && g?.codigo_interno === "Gasto MSA" && t?.codigo_contable === "RET 3 MA", "A-FEAT-1302")
+    // Sin origen, con códigos escritos: una regla nueva para la cuenta. Sin nada: ninguna.
+    const sola = reglasDelTemplateNuevo({ origen: [], templateId: "x", cuentaBancariaId: "msa_galicia", interno: "LIB" })
+    const nada = reglasDelTemplateNuevo({ origen: [], templateId: "x", cuentaBancariaId: "msa_galicia" })
+    chequear("Códigos del template", "Template nuevo sin origen: lo escrito crea la regla de la cuenta; sin escribir nada no se crea ninguna",
+      "1 (LIB) · 0", `${sola.length} (${sola[0]?.codigo_interno}) · ${nada.length}`,
+      sola.length === 1 && sola[0].codigo_interno === "LIB" && sola[0].codigo_contable === null && nada.length === 0, "A-FEAT-1302")
   }
 
   // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════
