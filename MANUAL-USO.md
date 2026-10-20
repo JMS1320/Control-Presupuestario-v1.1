@@ -1365,6 +1365,15 @@ Y el botón **📋 Ver informe por factura**: una línea por factura, agrupada p
 carpeta / bajada del mail / a revisar / no encontrada / sin mail del proveedor), con el link a cada
 archivo. Lo mismo te llega en el **mail resumen**. Con informe, el cartel no se cierra solo.
 
+Desde el informe también podés:
+- **✓ Confirmar** (en *Bajadas del mail* y *Ya estaban en la carpeta*): abrís el PDF y, si es ésa, pasa de APP a **Confirmada**.
+- **📋 Copiar pedido de facturas**: tildás las que querés reclamar (no encontradas, sin mail, errores) y se copia un texto
+  *«Facturas faltantes»* con una fila por factura — fecha · proveedor · comprobante · importe — para pegar en un mail o WhatsApp.
+- **Proveedor Portal**: el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas del informe sin 📎 pasan a Portal.
+
+Mientras mira la carpeta, el cartel dice qué mes está leyendo y cuántos archivos van. Si se corta la conexión, la factura
+queda como estaba y sale en *Errores* para reintentar.
+
 #### Los estados FC — qué quiere decir cada uno
 
 | Estado | Qué significa | Quién lo pone |
