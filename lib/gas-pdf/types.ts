@@ -13,6 +13,7 @@ export type FcEstado =
   | 'Portal'    // manual: proveedor solo manda por portal
   | 'APP'       // auto: GAS encontró y archivó
   | 'OK'        // manual: chequeado por el usuario
+  | 'Confirmada' // el usuario aprobó un VER (A-FEAT-1287, 2026-10-20) — distinto del «Sí» de Ulises
   | 'VER'       // auto: GAS encontró algo dudoso
   | 'NO Mail'   // auto: GAS buscó pero no encontró
   // Compat con valores viejos
@@ -62,6 +63,18 @@ export interface GasBuscarResponse {
   remitente?: string     // del mail matcheado
   cuerpo?: string        // cuerpo (recortado) del mail matcheado
   gmail_message_id?: string  // id del mail candidato (revisar) → para etiquetar/marcar leído al Confirmar
+  /** GAS ≥ 0.18.0, status 'revisar': TODOS los candidatos, para que el usuario elija (no se vincula ninguno) */
+  candidatos?: CandidatoGas[]
+}
+
+/** Un archivo candidato a revisar, archivado en _Revisar (mail) o ya en la carpeta del mes. */
+export interface CandidatoGas {
+  drive_url: string
+  observaciones?: string
+  monto_pdf?: number | null
+  asunto?: string
+  remitente?: string
+  gmail_message_id?: string
 }
 
 /** Input al endpoint /api/gas/buscar-pdf desde el cliente Next.js */
@@ -86,12 +99,14 @@ export interface ApiBuscarPdfOutput {
   cuerpo?: string
   proveedor?: string
   factura_label?: string
+  candidatos?: CandidatoGas[]
 }
 
 /** Un item del resumen del lote (lo arma el cliente, lo envía el GAS) */
 export interface ResumenItem {
   empresa: Empresa
-  status: GasStatus
+  /** 'carpeta' = ya estaba archivada y se vinculó sin ir al mail */
+  status: GasStatus | 'carpeta'
   factura?: string
   proveedor?: string
   asunto?: string
@@ -99,6 +114,7 @@ export interface ResumenItem {
   cuerpo?: string
   drive_url?: string
   observaciones?: string
+  candidatos?: Array<{ drive_url: string; observaciones?: string }>
 }
 
 /** Mapeo de status GAS → nuevo valor de fc y pdf_estado */

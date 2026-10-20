@@ -6,7 +6,13 @@ informados por ARCA, y archiva el PDF en Drive.
 Vive **fuera** de la app Next.js — corre en tu cuenta Google porque necesita
 acceso a TU Gmail / TU Drive.
 
-## Versión actual: **v0.9.14** (verificable con un GET a la URL `/exec` → `{version}`)
+## Versión actual: **v0.18.0** (verificable con un GET a la URL `/exec` → `{version}`)
+
+> **0.18.0 (2026-10-20, A-FEAT-1287)** — un archivo es de la factura si coinciden **CUIT + número + monto + tipo + fecha**
+> (`evaluarCoincidencia`, la misma para carpeta y mail); si fallan tipo o fecha queda a revisar con el motivo. Con más de un
+> candidato no se elige ninguno: se devuelven todos (`candidatos` en la respuesta del mail; `matched[].tambien` y `dudosos` en
+> `auditar`). Se prueba sin Google con `npm run probar:coincidencia`. El historial completo de versiones está en el `VERSION`
+> de `Main.gs`.
 
 > **OCR (v0.9.10)**: extracción **100% por la API REST de Drive** (`UrlFetchApp` + token). NO requiere
 > habilitar el servicio avanzado "Drive API" (daba `ReferenceError: Drive is not defined`). Scopes:

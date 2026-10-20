@@ -100,7 +100,8 @@ export async function POST(request: Request) {
     }
 
     // No re-buscar si ya tiene PDF o estado terminal
-    if (factura.fc === 'OK' || factura.fc === 'Portal') {
+    // «No» (no corresponde, lo pone el usuario) tampoco se busca — A-FEAT-1287, 2026-10-20
+    if (factura.fc === 'OK' || factura.fc === 'Portal' || factura.fc === 'No') {
       return NextResponse.json({
         ok: false, factura_id,
         error: `FC en estado '${factura.fc}', no se busca automáticamente`
@@ -260,18 +261,26 @@ export async function POST(request: Request) {
       .update({ pdf_ultimo_intento: ahora })
       .eq('id', proveedor.id)
 
-    await logBusqueda(supabase, {
-      factura_id, schema, lote_id,
-      resultado: gasResp.status === 'ok' ? 'descargado' : gasResp.status === 'revisar' ? 'revisar' : gasResp.status === 'no_encontrada' ? 'no_encontrado' : 'error',
-      drive_url: gasResp.drive_url,
-      observaciones: observacionesFinal ?? undefined,
-      tiempo_ms: gasResp.tiempo_ms ?? Date.now() - tStart,
-      cuit_emisor: factura.cuit,
-      numero_comprobante: `${factura.punto_venta}-${factura.numero_desde}`,
-      monto_factura: Number(factura.imp_total),
-      monto_pdf: gasResp.monto_pdf ?? null,
-      gmail_message_id: gasResp.gmail_message_id ?? null,  // candidato 'revisar' → para etiquetar el mail al Confirmar
-    })
+    // Varios candidatos (GAS ≥ 0.18.0): un renglón del log POR CANDIDATO, con su link, su motivo y su
+    // mail — es de donde el ✓ de VER saca la lista para que el usuario elija (A-FEAT-1287).
+    const variosCandidatos = gasResp.status === 'revisar' && (gasResp.candidatos?.length ?? 0) > 1
+    const filasLog = variosCandidatos
+      ? gasResp.candidatos!.map(c => ({ drive_url: c.drive_url, observaciones: c.observaciones, monto_pdf: c.monto_pdf ?? null, gmail_message_id: c.gmail_message_id ?? null }))
+      : [{ drive_url: gasResp.drive_url, observaciones: observacionesFinal ?? undefined, monto_pdf: gasResp.monto_pdf ?? null, gmail_message_id: gasResp.gmail_message_id ?? null }]
+    for (const fila of filasLog) {
+      await logBusqueda(supabase, {
+        factura_id, schema, lote_id,
+        resultado: gasResp.status === 'ok' ? 'descargado' : gasResp.status === 'revisar' ? 'revisar' : gasResp.status === 'no_encontrada' ? 'no_encontrado' : 'error',
+        drive_url: fila.drive_url,
+        observaciones: fila.observaciones,
+        tiempo_ms: gasResp.tiempo_ms ?? Date.now() - tStart,
+        cuit_emisor: factura.cuit,
+        numero_comprobante: `${factura.punto_venta}-${factura.numero_desde}`,
+        monto_factura: Number(factura.imp_total),
+        monto_pdf: fila.monto_pdf,
+        gmail_message_id: fila.gmail_message_id,  // candidato 'revisar' → para etiquetar el mail al Confirmar
+      })
+    }
 
     const out: ApiBuscarPdfOutput = {
       ok: true,
@@ -286,6 +295,7 @@ export async function POST(request: Request) {
       cuerpo: gasResp.cuerpo,
       proveedor: factura.denominacion_emisor || proveedor.razon_social || '',
       factura_label: `${factura.tipo_comprobante_desc || 'FC'} ${factura.punto_venta}-${factura.numero_desde}`,
+      candidatos: gasResp.candidatos,
     }
     return NextResponse.json(out)
 

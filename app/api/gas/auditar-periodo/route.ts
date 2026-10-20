@@ -12,6 +12,7 @@ import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { fcAlVincularDesdeCarpeta, type DecisionCarpeta } from '@/lib/gas-pdf/lote'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -78,7 +79,55 @@ function carpetaDe(e: Empresa): string | undefined {
   }
 }
 
-interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string }
+interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string; tambien?: string[] }
+interface DudosoItem extends MatchItem { motivos?: string[] }
+
+/**
+ * 🔗 Aplica lo que decidió el buscador de PDFs sobre la carpeta (A-FEAT-1287, 2026-10-20). Va en un
+ * paso aparte —y no tanda por tanda— porque recién al terminar de leer la carpeta se sabe si una
+ * factura tiene UN archivo o DOS: vincular el primero que aparece es justo lo que no hay que hacer.
+ * Escribe la factura (sólo si sigue sin 📎) y deja el rastro en el log de búsquedas, con un renglón
+ * por candidato para que el ✓ de VER pueda ofrecerlos.
+ */
+async function aplicarDecisiones(supabase: any, schema: string, decisiones: DecisionCarpeta[], loteId: string | null) {
+  const ids = decisiones.map(d => d.factura_id)
+  if (ids.length === 0) return { vinculadas: 0, aRevisar: 0 }
+  const { data: actuales, error } = await supabase.schema(schema).from('comprobantes_arca')
+    .select('id, fc, cuit, punto_venta, numero_desde, imp_total, pdf_drive_url').in('id', ids)
+  if (error) throw new Error(`Error cargando las facturas a vincular: ${error.message}`)
+  const porId = new Map<string, any>((actuales || []).map((f: any) => [f.id, f]))
+  const ahora = new Date().toISOString()
+  let vinculadas = 0, aRevisar = 0
+  for (const d of decisiones) {
+    const f = porId.get(d.factura_id)
+    if (!f || f.pdf_drive_url) continue   // ya tiene 📎: no se pisa
+    const base = {
+      factura_id: d.factura_id, factura_schema: schema, lote_id: loteId,
+      cuit_emisor: f.cuit, numero_comprobante: `${f.punto_venta}-${f.numero_desde}`, monto_factura: f.imp_total,
+    }
+    if (d.accion === 'vincular' && d.drive_url) {
+      const { error: e } = await supabase.schema(schema).from('comprobantes_arca').update({
+        fc: fcAlVincularDesdeCarpeta(f.fc), pdf_drive_url: d.drive_url, pdf_estado: 'descargado',
+        pdf_observaciones: `${d.motivo} (${d.archivo || 'archivo'})`, pdf_ultimo_intento: ahora,
+      }).eq('id', d.factura_id).is('pdf_drive_url', null)
+      if (e) throw new Error(`Error vinculando ${base.numero_comprobante}: ${e.message}`)
+      await supabase.from('arca_pdf_busqueda_log').insert({ ...base, resultado: 'descargado', drive_url: d.drive_url, observaciones: `[carpeta] ${d.motivo} — ${d.archivo || ''}` })
+      vinculadas++
+    } else {
+      const { error: e } = await supabase.schema(schema).from('comprobantes_arca').update({
+        fc: 'VER', pdf_estado: 'revisar', pdf_observaciones: d.motivo, pdf_ultimo_intento: ahora,
+      }).eq('id', d.factura_id).is('pdf_drive_url', null)
+      if (e) throw new Error(`Error marcando a revisar ${base.numero_comprobante}: ${e.message}`)
+      if (d.candidatos.length) {
+        await supabase.from('arca_pdf_busqueda_log').insert(d.candidatos.map(c => ({
+          ...base, resultado: 'revisar', drive_url: c.drive_url, observaciones: `[carpeta] ${c.motivo} — ${c.archivo}`,
+        })))
+      }
+      aRevisar++
+    }
+  }
+  return { vinculadas, aRevisar }
+}
 
 export async function POST(request: Request) {
   // Cliente de la SESIÓN, no service_role: así la RLS también gobierna esta ruta (A-SEC-01).
@@ -99,6 +148,8 @@ export async function POST(request: Request) {
       skip_file_ids?: string[]; max_files?: number
       finalizar?: boolean; resumen?: unknown
       factura_ids?: string[]
+      /** Buscador de PDFs: lo decidido al terminar de leer la carpeta (ver aplicarDecisiones) */
+      aplicar?: DecisionCarpeta[]; lote_id?: string
     }
     const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
@@ -109,6 +160,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: `Sin GAS_FOLDER_ID_${empresa}` }, { status: 500 })
     }
     const schema = schemaDe(empresa)
+    if (Array.isArray(body.aplicar)) {
+      const r = await aplicarDecisiones(supabase, schema, body.aplicar, body.lote_id || null)
+      return NextResponse.json({ ok: true, aplicado: true, ...r })
+    }
     const periodo = `${anio}-${String(mes).padStart(2, '0')}`
     const subcarpetas = subcarpetasDelMes(empresa, anio, mes)
 
@@ -130,7 +185,7 @@ export async function POST(request: Request) {
      *   empresa: no pueden ser de éstas, y leerlos es lo único caro (el OCR).
      */
     const porIds = Array.isArray(body.factura_ids) && body.factura_ids.length > 0
-    const columnas = 'id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total'
+    const columnas = 'id, cuit, punto_venta, numero_desde, denominacion_emisor, fc, pdf_drive_url, imp_total, tipo_comprobante_desc, fecha_emision'
     const { data: facturas, error } = porIds
       ? await supabase.schema(schema).from('comprobantes_arca').select(columnas).in('id', body.factura_ids!)
       : await supabase.schema(schema).from('comprobantes_arca').select(columnas)
@@ -156,6 +211,8 @@ export async function POST(request: Request) {
       factura_id: f.id, cuit: f.cuit, punto_venta: f.punto_venta,
       numero_desde: f.numero_desde, denominacion: f.denominacion_emisor, fc: f.fc,
       imp_total: f.imp_total, // para el chequeo de monto en el matcher (evita falsos positivos)
+      // GAS ≥ 0.18.0: tipo (FC/NC/ND) y fecha también tienen que coincidir (A-FEAT-1287)
+      tipo: f.tipo_comprobante_desc, fecha_emision: f.fecha_emision,
     }))
 
     // Una tanda
@@ -166,12 +223,23 @@ export async function POST(request: Request) {
       skip_file_ids: [...(body.skip_file_ids || []), ...skipExtra], max_files: cuantos,
     }, `tanda de ${cuantos} archivo(s)`)) as {
       status?: string; existe?: boolean; observaciones?: string
-      matched?: MatchItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]
+      matched?: MatchItem[]; dudosos?: DudosoItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]
       procesados?: number; restantes?: number; completo?: boolean
     }
 
     if (audit.existe === false) {
       return NextResponse.json({ ok: true, empresa, periodo, existe: false, observaciones: audit.observaciones, completo: true, total_facturas: payload.length, matched: [], huerfanos: [], sin_pdf: [] })
+    }
+
+    // Buscador de PDFs: NO se escribe tanda por tanda. Se devuelve lo hallado y el cliente decide al
+    // terminar la carpeta (dos archivos para una factura → no se vincula ninguno) y llama a `aplicar`.
+    if (porIds) {
+      return NextResponse.json({
+        ok: true, empresa, periodo, existe: true,
+        total_facturas: payload.length,
+        matched: audit.matched || [], dudosos: audit.dudosos || [], huerfanos: audit.huerfanos || [],
+        procesados: audit.procesados || 0, restantes: audit.restantes || 0, completo: !!audit.completo,
+      })
     }
 
     // Agregar link a las matched que no lo tenían (confirmadas por contenido).
@@ -183,8 +251,10 @@ export async function POST(request: Request) {
     const matchedSueltos: { archivo: string; url: string; file_id: string }[] = []
     for (const m of audit.matched || []) {
       if (!yaCubiertas.has(m.factura_id)) {
+        // Desde 2026-10-20 el estado FC acompaña al 📎 (antes quedaba en «Buscar» con el archivo puesto)
+        const fcActual = (facturas || []).find((f) => f.id === m.factura_id)?.fc
         await supabase.schema(schema).from('comprobantes_arca')
-          .update({ pdf_drive_url: m.drive_url, pdf_estado: 'descargado' })
+          .update({ pdf_drive_url: m.drive_url, pdf_estado: 'descargado', fc: fcAlVincularDesdeCarpeta(fcActual) })
           .eq('id', m.factura_id)
         yaCubiertas.add(m.factura_id)
         linksAgregados++

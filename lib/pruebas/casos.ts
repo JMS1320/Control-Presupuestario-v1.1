@@ -37,7 +37,8 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes } from "@/lib/gas-pdf/lote"
+import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -1011,12 +1012,71 @@ export function correrCasos(): Resultado[] {
   chequear("Buscador de PDFs — desde la importación", "🔴 Se buscan sólo las filas TILDADAS que se crearon (destildada no; la que no se importó no tiene id)",
     "id-a", aBuscar.join(","), aBuscar.join(",") === "id-a" && idsParaBuscarTrasImportar([{ fila: 2, buscar_pdf: true }], undefined).length === 0, "A-FEAT-1287")
 
+  const L = "https://drive.google.com/file/d/x"
   const cands = candidatosParaBuscar([
-    { id: "si", fc: "Sí", estado: "pendiente" }, { id: "hist", fc: "SI", estado: "historico" },
+    { id: "nomail", fc: "NO Mail", estado: "pendiente" },
+    { id: "si", fc: "Sí", estado: "pendiente" }, { id: "siclip", fc: "Sí", estado: "pendiente", pdf_drive_url: L },
+    { id: "hist", fc: "SI", estado: "historico" },
     { id: "bus", fc: "Buscar", estado: "pendiente" }, { id: "nul", fc: null, estado: "pendiente" },
+    { id: "portal", fc: "Portal", estado: "pendiente" }, { id: "no", fc: "No", estado: "pendiente" },
+    { id: "ver", fc: "VER", estado: "pendiente" }, { id: "busclip", fc: "Buscar", estado: "pendiente", pdf_drive_url: L },
   ]).map(f => f.id).join(",")
-  chequear("Buscador de PDFs — qué ofrece el modal", "🔴 Sin el histórico (SI/NO/PEAJE grises) y con las pendientes («Buscar» o sin estado) arriba",
-    "bus,nul,si", cands, cands === "bus,nul,si", "A-FEAT-1287")
+  chequear("Buscador de PDFs — qué ofrece el modal", "🔴 Sólo SIN 📎; nunca Portal, No ni VER; sin el histórico. Arriba (y marcadas) Buscar, sin estado y el «Sí» de Ulises sin 📎; NO Mail se ofrece al final",
+    "si,bus,nul,nomail", cands, cands === "si,bus,nul,nomail", "A-FEAT-1287")
+
+  // Rigor del vínculo desde la carpeta (usuario 2026-10-20): con dos archivos no se vincula ninguno.
+  const H = (factura_id: string, file_id: string, extra: object = {}) => ({ factura_id, file_id, drive_url: `u-${file_id}`, archivo: `${file_id}.pdf`, ...extra })
+  const dec = decidirVinculosCarpeta(["uno", "dos", "dud", "comp1", "comp2", "nada", "exdud"], [
+    H("uno", "f1"),
+    H("dos", "f2"), H("dos", "f3"),
+    H("comp1", "f4", { tambien: ["comp2"] }),
+    H("exdud", "f6"),
+  ], [
+    H("dud", "f5", { motivos: ["el archivo es nota de crédito y la factura es factura"] }),
+    H("exdud", "f7", { motivos: ["no se encontró la fecha 05/03/2026"] }),
+    H("uno", "f1", { motivos: ["no debería contar: es el mismo archivo exacto"] }),
+  ])
+  const vistaDec = dec.map(d => `${d.factura_id}:${d.accion}${d.accion === "revisar" ? d.candidatos.length : ""}`).join(" ")
+  chequear("Buscador de PDFs — dos candidatos en la carpeta", "🔴 Un archivo y exacto → se vincula. Dos (aunque uno sea dudoso) → ninguno, a revisar con los dos. Dudoso solo → a revisar con el motivo. Un archivo que cumple con dos facturas → a revisar en las dos. Sin hallazgo → no aparece (sigue al mail)",
+    "uno:vincular dos:revisar2 dud:revisar1 comp1:revisar1 comp2:revisar1 exdud:revisar2", vistaDec,
+    vistaDec === "uno:vincular dos:revisar2 dud:revisar1 comp1:revisar1 comp2:revisar1 exdud:revisar2"
+      && dec.find(d => d.factura_id === "dud")!.motivo.includes("nota de crédito"), "A-FEAT-1287")
+
+  const fcs = ["Buscar", null, "NO Mail", "Sí", "Confirmada", "Portal", "No"].map(v => fcAlVincularDesdeCarpeta(v)).join(",")
+  chequear("Buscador de PDFs — estado al vincular", "🔴 Lo que vincula la app pasa a APP (antes quedaba «Buscar» con 📎); lo que puso una persona se respeta",
+    "APP,APP,APP,Sí,Confirmada,Portal,No", fcs, fcs === "APP,APP,APP,Sí,Confirmada,Portal,No", "A-FEAT-1287")
+
+  const logs = [
+    { resultado: "revisar", drive_url: "b", lote_id: "L2", observaciones: "[carpeta] dudoso — b.pdf" },
+    { resultado: "revisar", drive_url: "a", lote_id: "L2", observaciones: "Uno de 2 candidatos" },
+    { resultado: "revisar", drive_url: "a", lote_id: "L2", observaciones: "repetido" },
+    { resultado: "no_encontrado", drive_url: null, lote_id: "L2" },
+    { resultado: "revisar", drive_url: "viejo", lote_id: "L1", observaciones: "de otra búsqueda" },
+  ]
+  const cl = candidatosDelLog(logs).map(c => `${c.drive_url}${c.deCarpeta ? "🗂" : ""}`).join(",")
+  chequear("Buscador de PDFs — el ✓ de VER ofrece los candidatos", "🔴 Los del ÚLTIMO lote, sin repetir; los de búsquedas viejas no; marca cuál ya estaba en la carpeta",
+    "b🗂,a", cl, cl === "b🗂,a", "A-FEAT-1287")
+
+  const inf = agruparInforme([
+    { factura_id: "1", factura: "FC 1", proveedor: "p", proceso: "no_encontrada", links: [] },
+    { factura_id: "2", factura: "FC 2", proveedor: "p", proceso: "carpeta", links: [{ url: "u", rotulo: "PDF" }] },
+    { factura_id: "3", factura: "FC 3", proveedor: "p", proceso: "revisar", links: [] },
+  ]).map(g => `${g.clave}:${g.items.length}`).join(" ")
+  chequear("Buscador de PDFs — el informe del lote", "Agrupado por proceso, en orden: carpeta → mail → a revisar → no encontradas…; sin grupos vacíos",
+    "carpeta:1 revisar:1 no_encontrada:1", inf, inf === "carpeta:1 revisar:1 no_encontrada:1", "A-FEAT-1287")
+
+  const subs = subdiariosPresentes([
+    { "año_contable": 2026, mes_contable: 9 }, { "año_contable": null, mes_contable: null },
+    { "año_contable": 2026, mes_contable: 10 }, { "año_contable": 2026, mes_contable: 9 },
+  ]).map(x => `${x.rotulo}(${x.cantidad})`).join(" · ")
+  chequear("Buscador de PDFs — columna y selector de subdiario", "Cada factura muestra dónde está imputada; el selector lista los subdiarios del más nuevo al más viejo y «sin imputar» al final",
+    "Oct 2026(1) · Sep 2026(2) · sin imputar(1)", subs,
+    subs === "Oct 2026(1) · Sep 2026(2) · sin imputar(1)" && subdiarioDe({ "año_contable": 2026, mes_contable: 13 }).clave === "sin", "A-FEAT-1287")
+
+  const sinColor = ["Buscar", "APP", "VER", "Confirmada", "Sí", "NO Mail", "Portal", "No"].filter(v => colorFc(v) === colorFc("inventado"))
+  chequear("Estados FC — el glosario", "Cada estado acordado tiene significado, quién lo pone y color (Confirmada distinto de Sí)",
+    "todos con color · Confirmada ≠ Sí", `${sinColor.length ? "sin color: " + sinColor.join(",") : "todos con color"} · ${colorFc("Confirmada") !== colorFc("Sí") ? "Confirmada ≠ Sí" : "iguales"}`,
+    sinColor.length === 0 && colorFc("Confirmada") !== colorFc("Sí") && ESTADOS_FC.every(e => e.significado && e.quien), "A-FEAT-1287")
 
   const opsUlises = opcionesFcManual(null, false).map(o => o.valor).join(",")
   const opsAdmin = opcionesFcManual(null, true).map(o => o.valor).join(",")

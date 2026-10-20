@@ -10,7 +10,7 @@ import type {
   FcEstado,
   ResumenItem,
 } from './types'
-import { agruparPorCarpeta, type FacturaParaCarpeta } from './lote'
+import { agruparPorCarpeta, decidirVinculosCarpeta, rotuloFactura, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
 
 export interface BuscarPdfLoteOptions {
   empresa: Empresa
@@ -61,6 +61,8 @@ export interface ProgresoLote {
   /** Resultado del envío del mail resumen al cerrar el lote (para no fallar en silencio) */
   resumenEnviado?: boolean
   resumenError?: string
+  /** El informe por factura, agrupable por proceso, con el link de cada archivo (A-FEAT-1287) */
+  informe?: ItemInforme[]
 }
 
 /** Inicia ProgresoLote vacío */
@@ -69,7 +71,7 @@ function nuevoProgreso(loteId: string, total: number): ProgresoLote {
     loteId, total,
     procesadas: 0, encontradas: 0, paraRevisar: 0, noEncontradas: 0, errores: 0,
     enCarpeta: 0, sinFuente: 0, otros: 0,
-    finalizado: false,
+    finalizado: false, informe: [],
   }
 }
 
@@ -132,6 +134,26 @@ function aResumenItem(out: ApiBuscarPdfOutput, empresa: Empresa): ResumenItem | 
     cuerpo: out.cuerpo,
     drive_url: out.drive_url,
     observaciones: out.observaciones,
+    candidatos: out.candidatos,
+  }
+}
+
+/** El renglón del informe para una factura que fue al mail. */
+function aItemInforme(out: ApiBuscarPdfOutput, f: FacturaParaCarpeta | undefined): ItemInforme {
+  const proceso: ItemInforme['proceso'] = !out.ok ? 'error'
+    : out.fc_nuevo === 'APP' ? 'mail'
+      : out.fc_nuevo === 'VER' ? 'revisar'
+        : out.fc_nuevo === 'NO Mail' ? 'no_encontrada'
+          : out.fc_nuevo === 'Buscar' ? 'sin_fuente' : 'otro'
+  const links = out.candidatos && out.candidatos.length > 1
+    ? out.candidatos.map((c, i) => ({ url: c.drive_url, rotulo: `candidato ${i + 1}` }))
+    : out.drive_url ? [{ url: out.drive_url, rotulo: proceso === 'revisar' ? 'candidato' : 'PDF' }] : []
+  return {
+    factura_id: out.factura_id,
+    factura: out.factura_label || rotuloFactura(f, out.factura_id),
+    proveedor: out.proveedor || f?.denominacion_emisor || '',
+    proceso, links,
+    detalle: out.observaciones || out.error,
   }
 }
 
@@ -174,6 +196,8 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   const timeout = opts.timeoutMsPorFactura ?? 60000
   let progreso = nuevoProgreso(loteId, opts.facturaIds.length)
   const resultados: ResumenItem[] = []
+  const informe: ItemInforme[] = []
+  const facturaDe = (id: string) => opts.facturas?.find(f => f.id === id)
   const debug: DebugItem[] = []   // 1 línea por factura (resultado + observación con queries) para el mail
 
   // ── 1 · Primero la carpeta (A-FEAT-1287) ──
@@ -181,10 +205,30 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   if (opts.facturas && opts.facturas.length > 0) {
     progreso = { ...progreso, fase: 'carpeta' }
     opts.onProgreso?.(progreso)
-    const deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled)
-    pendientes = opts.facturaIds.filter(id => !deCarpeta.vinculadas.has(id))
-    const n = opts.facturaIds.length - pendientes.length
-    progreso = { ...progreso, enCarpeta: n, procesadas: n, errorCarpeta: deCarpeta.error }
+    const deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled, loteId)
+    // Lo resuelto en la carpeta no sale al mail: lo vinculado y lo que quedó a revisar (tiene candidatos)
+    pendientes = opts.facturaIds.filter(id => !deCarpeta.vinculadas.has(id) && !deCarpeta.aRevisar.has(id))
+    for (const d of deCarpeta.decisiones) {
+      if (!deCarpeta.vinculadas.has(d.factura_id) && !deCarpeta.aRevisar.has(d.factura_id)) continue
+      const f = facturaDe(d.factura_id)
+      const item: ItemInforme = {
+        factura_id: d.factura_id, factura: rotuloFactura(f, d.factura_id), proveedor: f?.denominacion_emisor || '',
+        proceso: d.accion === 'vincular' ? 'carpeta' : 'revisar',
+        links: d.accion === 'vincular' && d.drive_url
+          ? [{ url: d.drive_url, rotulo: d.archivo || 'PDF' }]
+          : d.candidatos.map((c, i) => ({ url: c.drive_url, rotulo: d.candidatos.length > 1 ? `candidato ${i + 1}` : 'candidato' })),
+        detalle: d.accion === 'vincular' ? d.archivo : d.motivo,
+      }
+      informe.push(item)
+      resultados.push({
+        empresa: opts.empresa, status: d.accion === 'vincular' ? 'carpeta' : 'revisar',
+        factura: item.factura, proveedor: item.proveedor, drive_url: item.links[0]?.url,
+        observaciones: d.accion === 'vincular' ? `En la carpeta: ${d.archivo || ''}` : d.motivo,
+        candidatos: d.candidatos.length > 1 ? d.candidatos.map(c => ({ drive_url: c.drive_url, observaciones: `${c.archivo} — ${c.motivo}` })) : undefined,
+      })
+    }
+    const nV = deCarpeta.vinculadas.size, nR = deCarpeta.aRevisar.size
+    progreso = { ...progreso, enCarpeta: nV, paraRevisar: nR, procesadas: nV + nR, errorCarpeta: deCarpeta.error, informe: [...informe] }
   }
 
   // ── 2 · Lo que falta, al mail ──
@@ -206,6 +250,8 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     progreso = actualizarProgreso(progreso, out)
     const item = aResumenItem(out, opts.empresa)
     if (item) resultados.push(item)
+    informe.push(aItemInforme(out, facturaDe(facturaId)))
+    progreso = { ...progreso, informe: [...informe] }
     debug.push({ factura: out.factura_label, resultado: out.resultado_gas || (out.ok ? '?' : 'error'), obs: out.observaciones || out.error })
     opts.onProgreso?.(progreso)
 
@@ -226,29 +272,32 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
 
 /**
  * 🗂️ Mira las carpetas del mes de cada factura (y la del siguiente) y vincula lo que ya está
- * archivado. Usa el mismo lector que el «🔗 Vincular PDFs» de Subdiarios —CUIT + número + monto—,
- * sólo que acotado a ESTAS facturas. Nunca rompe el lote: si una carpeta no se puede leer, esas
- * facturas siguen al mail y el motivo queda en `error`.
+ * archivado. Usa el mismo lector que el «🔗 Vincular PDFs» de Subdiarios, con la regla de 2026-10-20:
+ * CUIT + número + monto + **tipo + fecha**.
+ *
+ * ⚠️ Lee la carpeta ENTERA antes de vincular: recién al final se sabe si una factura tiene un archivo
+ * o dos, y con dos no se vincula ninguno (`decidirVinculosCarpeta`). Nunca rompe el lote: si una
+ * carpeta no se puede leer, esas facturas siguen al mail y el motivo queda en `error`.
  */
 export async function vincularDesdeCarpetas(
   empresa: Empresa,
   facturas: FacturaParaCarpeta[],
   isCancelled?: () => boolean,
-): Promise<{ vinculadas: Set<string>; error?: string }> {
-  const vinculadas = new Set<string>()
+  loteId?: string,
+): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string }> {
+  const exactos: HallazgoCarpeta[] = []
+  const dudosos: HallazgoCarpeta[] = []
   let error: string | undefined
   for (const carpeta of agruparPorCarpeta(facturas)) {
     if (isCancelled?.()) break
-    const faltan = () => carpeta.ids.filter(id => !vinculadas.has(id))
-    if (faltan().length === 0) continue
     const skip = new Set<string>()
-    for (let guard = 0; guard < 200 && faltan().length > 0; guard++) {
+    for (let guard = 0; guard < 200; guard++) {
       if (isCancelled?.()) break
       const pedir = async (cuantos: number) => {
         try {
           const r = await fetch('/api/gas/auditar-periodo', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ empresa, anio: carpeta.anio, mes: carpeta.mes, factura_ids: faltan(), skip_file_ids: [...skip], max_files: cuantos }),
+            body: JSON.stringify({ empresa, anio: carpeta.anio, mes: carpeta.mes, factura_ids: carpeta.ids, skip_file_ids: [...skip], max_files: cuantos }),
           })
           const txt = await r.text()
           try { return JSON.parse(txt) } catch { return { ok: false, error: `HTTP ${r.status} — la respuesta no es JSON: ${txt.slice(0, 160)}` } }
@@ -264,13 +313,29 @@ export async function vincularDesdeCarpetas(
         break
       }
       if (data.existe === false) break
-      for (const m of (data.matched || [])) {
-        if (m.file_id) skip.add(m.file_id)
-        if (carpeta.ids.includes(m.factura_id)) vinculadas.add(m.factura_id)
-      }
+      for (const m of (data.matched || []) as HallazgoCarpeta[]) { if (m.file_id) skip.add(m.file_id); exactos.push(m) }
+      for (const d of (data.dudosos || []) as HallazgoCarpeta[]) dudosos.push(d)
       for (const h of (data.huerfanos || [])) if (h.file_id) skip.add(h.file_id)
       if (data.completo) break
     }
   }
-  return { vinculadas, error }
+
+  const decisiones = decidirVinculosCarpeta(facturas.map(f => f.id), exactos, dudosos)
+  const vinculadas = new Set<string>()
+  const aRevisar = new Set<string>()
+  if (decisiones.length > 0 && !isCancelled?.()) {
+    try {
+      const r = await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // anio/mes no se usan al aplicar, pero la ruta los exige
+        body: JSON.stringify({ empresa, anio: 1, mes: 1, aplicar: decisiones, lote_id: loteId }),
+      })
+      const data = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`)
+      for (const d of decisiones) (d.accion === 'vincular' ? vinculadas : aRevisar).add(d.factura_id)
+    } catch (e) {
+      error = `No se pudo guardar lo encontrado en la carpeta: ${(e as Error).message}`
+    }
+  }
+  return { vinculadas, aRevisar, decisiones, error }
 }

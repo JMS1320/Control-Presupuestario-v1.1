@@ -15,6 +15,7 @@
     "probar:romaneo": "node --experimental-strip-types scripts/probar-romaneo.mts",
     "probar:boletas": "node --experimental-strip-types scripts/probar-boletas.mts",
     "probar:arba": "node --experimental-strip-types scripts/probar-arba-descarga.mts",
+    "probar:coincidencia": "node --experimental-strip-types scripts/probar-coincidencia-fc.mts",
     "probar:mag": "node --experimental-strip-types scripts/probar-mag.mts",
     "probar:cinta": "node --experimental-strip-types scripts/probar-cinta.mts",
     "probar:mail": "node --experimental-strip-types scripts/probar-mail.mts",

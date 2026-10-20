@@ -1307,6 +1307,16 @@ siempre, aunque después no toques nada — y éste es la foto final.)*
 **Para qué sirve.** Que no tengas que salir a buscar el PDF de cada factura. Elegís las facturas y el
 buscador hace dos cosas, **en este orden**:
 
+**Qué facturas te ofrece.** Sólo las que **no tienen 📎** — nunca las de **Portal** ni las de **No**, y
+tampoco las que están en **VER** (esas ya tienen candidatos: se resuelven con el ✓). Vienen marcadas y
+arriba las de **Buscar**, las sin estado y las **Sí** de Ulises que todavía no tienen archivo; las **NO
+Mail** aparecen sin marcar, por si querés volver a buscarlas.
+
+**Cómo elegirlas.** Arriba hay un selector **Subdiario** (el mes donde está imputada, o *sin imputar*) y
+dos fechas de emisión **opcionales**, para las que todavía no están en un subdiario. La lista tiene una
+columna **Subdiario** que dice dónde está imputada cada una. El link *«¿Qué significa cada estado FC?»*
+abre la leyenda.
+
 1. **Mira la carpeta del mes en Drive** —la del mes donde está imputada, o la de emisión si todavía no
    la imputaste— **y también la del mes siguiente**. Si el PDF ya está (porque alguien lo subió), lo
    vincula y no sale al mail.
@@ -1314,8 +1324,19 @@ buscador hace dos cosas, **en este orden**:
    cargado) y después en los reenvíos de Jose y Andrés. Si la encuentra, la guarda en la carpeta del mes
    con el nombre estándar y queda vinculada.
 
-En los dos casos el resultado es el mismo: la factura queda con su 📎, que se ve en **Subdiarios** y en
-el **Cash Flow**.
+En los dos casos el resultado es el mismo: la factura queda con su 📎 y en estado **APP**, que se ve en
+**Subdiarios** y en el **Cash Flow**.
+
+**Cuándo vincula sola y cuándo te pregunta.** Un archivo es de la factura si coinciden **los cinco
+datos**: CUIT, número, importe, **tipo** (factura / nota de crédito / nota de débito) y **fecha**.
+- Coinciden los cinco y hay **un solo** archivo → se vincula (**APP**).
+- Hay **dos o más** archivos que podrían ser → **no vincula ninguno**: queda en **VER** con todos.
+- Coinciden CUIT, número e importe pero falla el tipo o la fecha → queda en **VER** con el motivo
+  (por ejemplo *«el archivo es nota de crédito y la factura es factura»*). Nunca se descarta.
+
+**Resolver un VER.** En la grilla, el **✓** al lado de VER abre la lista de candidatos: cada uno con
+**Abrir** y su motivo. Tocás **«Es ésta»** en el que corresponde y la factura queda **Confirmada** con ese
+archivo. Los que no elegís no se borran.
 
 **Mientras corre**, arriba a la derecha aparece un cartel que dice en qué paso está (*«Mirando la carpeta
 del mes…»* o *«Buscando PDFs en el mail…»*). Podés seguir trabajando.
@@ -1326,12 +1347,33 @@ del mes…»* o *«Buscando PDFs en el mail…»*). Podés seguir trabajando.
 |---|---|---|
 | 🗂 **ya en la carpeta** | estaba archivada; se vinculó | nada |
 | ✓ **bajadas del mail** | la encontró en el mail y la archivó | nada |
-| ⚠ **para revisar** | llegó un mail que parece, pero no se pudo confirmar | la confirmás con ✓ en la grilla |
+| ⚠ **para revisar** | apareció algo pero no se vinculó (dos candidatos, o falta un dato) | elegís con el ✓ en la grilla |
 | ○ **no encontradas** | se buscó y no llegó | la pedís al proveedor |
 | ✉ **sin mail del proveedor** | no se buscó: el proveedor no tiene mail cargado | le cargás el mail y volvés a buscar |
 
 Abajo, un **control**: *«✓ las N facturas del lote están contadas»*. Si sale en rojo, es un error de la
 app — mandá una nota.
+
+Y el botón **📋 Ver informe por factura**: una línea por factura, agrupada por lo que pasó (ya estaba en la
+carpeta / bajada del mail / a revisar / no encontrada / sin mail del proveedor), con el link a cada
+archivo. Lo mismo te llega en el **mail resumen**. Con informe, el cartel no se cierra solo.
+
+#### Los estados FC — qué quiere decir cada uno
+
+| Estado | Qué significa | Quién lo pone |
+|---|---|---|
+| **Buscar** | falta el archivo: hay que buscarlo | cualquiera (lo que no se marca queda así) |
+| **APP** | la app encontró el archivo y lo validó | la app |
+| **VER** | apareció algo dudoso o más de un candidato: hay que elegir | la app |
+| **Confirmada** | aprobaste un candidato que estaba en VER | vos |
+| **Sí** | Ulises la tiene. Sin 📎, la app igual la busca para vincularla | Ulises |
+| **NO Mail** | se buscó y no apareció; se puede volver a buscar | la app |
+| **Portal** | se baja del portal del proveedor: no se busca | cualquiera |
+| **No** | no hay factura o no corresponde | **sólo vos** |
+
+Ulises, en sus pantallas (Asignación de cuentas y la imputación al importar), ve **Buscar (no la
+tengo)**, **Sí (la tengo)** y **Portal**; «No» le aparece sólo al administrador. La misma leyenda está en
+Facturas ARCA, al lado de los botones.
 
 #### Al importar de ARCA, ya sale buscado
 

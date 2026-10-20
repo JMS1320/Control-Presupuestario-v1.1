@@ -52,7 +52,11 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
+import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
+import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
+import { InformeLote } from "@/components/gas-pdf/informe-lote"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -775,6 +779,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
   const [pdfDesde, setPdfDesde] = useState('')
   const [pdfHasta, setPdfHasta] = useState('')
+  // A-FEAT-1287: el subdiario donde está imputada ('' = todos · 'sin' = sin imputar · '2026-09')
+  const [pdfSubdiario, setPdfSubdiario] = useState('')
+  // ✓ de VER: elegir entre los candidatos · 📋 informe del último lote
+  const [elegirCandidato, setElegirCandidato] = useState<{ id: string; rotulo: string } | null>(null)
+  const [verInformeLote, setVerInformeLote] = useState(false)
   const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
@@ -795,6 +804,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         const fe = f.fecha_emision || ''
         if (pdfDesde && fe < pdfDesde) return false
         if (pdfHasta && fe > pdfHasta) return false
+        if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
         if (filtroTiposPdf.size > 0 && !filtroTiposPdf.has(f.fc ?? '(sin estado)')) return false
         return true
       }).map(f => f.id)
@@ -1532,27 +1542,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }
 
-  // Confirmar una factura en VER: el candidato en _Revisar ES esta factura → mueve + marca Sí + link.
-  const confirmarVer = async (factura: FacturaArca) => {
-    if (!confirm(`¿Confirmás que el PDF encontrado es la factura ${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}?\n\nSe mueve de _Revisar a la carpeta del mes y queda como "Sí".`)) return
-    setConfirmandoId(factura.id)
-    try {
-      const r = await fetch('/api/gas/confirmar-pdf', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ factura_id: factura.id, empresa }),
-      })
-      const data = await r.json()
-      if (!data.ok) { alert('No se pudo confirmar: ' + (data.error || '')); return }
-      setFacturas(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
-      setFacturasOriginales(prev => prev.map(x => x.id === factura.id ? { ...x, fc: 'Sí', pdf_drive_url: data.drive_url } : x))
-      toast.success(data.mail_etiquetado
-        ? 'Confirmada: archivo movido + mail etiquetado y marcado leído.'
-        : 'Confirmada: archivo movido. (El mail no se pudo etiquetar — sin id o ya no existe.)')
-    } catch (e) {
-      alert('Error confirmando: ' + (e as Error).message)
-    } finally {
-      setConfirmandoId(null)
-    }
+  // ✓ de una factura en VER: abre la lista de candidatos y el usuario elige (A-FEAT-1287). Antes
+  // confirmaba a ciegas el último del log y la dejaba en «Sí», que es el estado de Ulises: ahora
+  // queda en «Confirmada».
+  const confirmarVer = (factura: FacturaArca) => {
+    setElegirCandidato({ id: factura.id, rotulo: `${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}` })
+  }
+  const alConfirmarCandidato = (facturaId: string, driveUrl: string) => {
+    setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
+    setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
+    toast.success('Confirmada: la factura quedó vinculada a ese archivo.')
   }
 
   // Renderizar valor de celda según el tipo de columna
@@ -1561,23 +1560,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Columna FC: mostrar valor + ícono PDF si tiene URL
     if (columna === 'fc') {
-      const fcColor: Record<string, string> = {
-        'OK':      'bg-green-200 text-green-900',
-        'Sí':      'bg-green-100 text-green-800',
-        'APP':     'bg-blue-100 text-blue-800',
-        'VER':     'bg-yellow-100 text-yellow-800',
-        'Portal':  'bg-purple-100 text-purple-800',
-        'Buscar':  'bg-gray-100 text-gray-700',
-        'NO Mail': 'bg-orange-100 text-orange-800',
-        'No':      'bg-red-100 text-red-700',
-        'NO':      'bg-red-100 text-red-700',
-      }
+      // Colores y significado: el glosario único de estados FC (A-FEAT-1287)
       const v = (valor as string | null) ?? ''
-      const cls = fcColor[v] || 'bg-gray-100 text-gray-600'
+      const cls = colorFc(v)
       return (
         <div className="flex items-center gap-1.5">
           {v && (
-            <span className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cls}`}>
+            <span title={ayudaFc(v)} className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cls}`}>
               {v}
             </span>
           )}
@@ -1596,7 +1585,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           {v === 'VER' && (
             <button
               type="button"
-              title="Confirmar: el PDF encontrado ES esta factura → mover de _Revisar a la carpeta del mes + marcar Sí"
+              title="Ver los candidatos y elegir cuál es esta factura → queda Confirmada"
               onClick={(e) => { e.stopPropagation(); confirmarVer(factura) }}
               disabled={confirmandoId === factura.id}
               className="text-green-600 hover:text-green-800 disabled:opacity-40 text-xs font-bold leading-none"
@@ -1981,7 +1970,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       // el lote sigue igual y va directo al mail (como antes).
       const { data: conPeriodo } = await supabase.schema(empresa.toLowerCase())
         .from('comprobantes_arca')
-        .select('id, año_contable, mes_contable, fecha_emision, pdf_drive_url')
+        .select('id, año_contable, mes_contable, fecha_emision, pdf_drive_url, denominacion_emisor, tipo_comprobante_desc, punto_venta, numero_desde')
         .in('id', ids)
       await buscarPdfLote({
         empresa: empresa as 'MSA' | 'PAM' | 'MA',
@@ -6569,11 +6558,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                             return <span title="Falta el PDF en el archivo digital" className="text-red-600">❌</span>
                           })()}
                           {factura.fc && (
-                            <span className={`px-1 rounded text-[9px] ${
-                              { 'OK': 'bg-green-200 text-green-900', 'Sí': 'bg-green-100 text-green-800', 'APP': 'bg-blue-100 text-blue-800',
-                                'VER': 'bg-yellow-100 text-yellow-800', 'Portal': 'bg-purple-100 text-purple-700',
-                                'NO Mail': 'bg-orange-100 text-orange-700', 'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700' }[factura.fc] || 'bg-gray-100 text-gray-500'
-                            }`}>{factura.fc}</span>
+                            <span title={ayudaFc(factura.fc)} className={`px-1 rounded text-[9px] ${colorFc(factura.fc)}`}>{factura.fc}</span>
                           )}
                           {categoriaArchivo(factura) === 'con' && (
                             <button type="button" onClick={() => desvincularPdf(factura)}
@@ -7092,6 +7077,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     setSeleccionPdf(new Set(auto))
                     setPdfDesde('')
                     setPdfHasta('')
+                    setPdfSubdiario('')
                     setFiltroTiposPdf(new Set())
                     setModalBuscarPdf(true)
                     cargarMailesProveedores(facturas.map(f => f.cuit))
@@ -7128,6 +7114,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Button>
               </>
             )}
+            <LeyendaEstadosFc flotante />
 
             <Button variant="outline" onClick={() => setMostrarReglasImport(true)}
               title="Reglas que asignan cuenta contable y estado por CUIT al importar">
@@ -12227,10 +12214,23 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         progreso={progresoPdf}
         onCerrar={() => setProgresoPdf(null)}
         onCancelar={() => { cancelarPdfRef.current = true }}
+        onVerInforme={() => setVerInformeLote(true)}
         onVerDetalle={(loteId) => {
           setProgresoPdf(null)
           setModalHistorialPdf({ open: true, loteId })
         }}
+      />
+
+      {/* 📋 Informe por factura del último lote (A-FEAT-1287) */}
+      <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)} />
+
+      {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
+      <ModalElegirCandidato
+        open={!!elegirCandidato}
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        factura={elegirCandidato}
+        onClose={() => setElegirCandidato(null)}
+        onConfirmada={alConfirmarCandidato}
       />
 
       {/* Modal historial búsquedas PDF */}
@@ -12261,17 +12261,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           <DialogHeader>
             <DialogTitle>Buscar PDFs</DialogTitle>
             <DialogDescription>
-              Vienen marcadas (y arriba de todo) las de estado FC «Buscar»; podés sumar o sacar a mano.
-              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail con el mail del proveedor.
+              Sólo aparecen las que no tienen 📎 (nunca las de Portal ni las de No). Vienen marcadas y arriba las de «Buscar», sin estado y las «Sí» de Ulises sin archivo; podés sumar o sacar a mano.
+              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail. Si aparecen dos archivos para una factura, no se vincula ninguno: queda en VER para que elijas.
             </DialogDescription>
+            <LeyendaEstadosFc />
             <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
           </DialogHeader>
 
           {(() => {
             // Sin el histórico y con las pendientes primero → candidatosParaBuscar (A-FEAT-1287).
             const esPendiente = esPendienteDeBuscar
-            const candidatosFecha = candidatosParaBuscar(facturas).filter(f => {
+            const ofrecidas = candidatosParaBuscar(facturas)
+            // Selector por SUBDIARIO (dónde está imputada) + fechas opcionales para las que no lo están
+            const subdiarios = subdiariosPresentes(ofrecidas)
+            const candidatosFecha = ofrecidas.filter(f => {
               const fe = f.fecha_emision || ''
+              if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
               if (pdfDesde && fe < pdfDesde) return false
               if (pdfHasta && fe > pdfHasta) return false
               return true
@@ -12281,24 +12286,25 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             const candidatos = filtroTiposPdf.size === 0
               ? candidatosFecha
               : candidatosFecha.filter(f => filtroTiposPdf.has(f.fc ?? '(sin estado)'))
-            const fcBadge = (fc: string | null) => {
-              const map: Record<string, string> = {
-                'Buscar': 'bg-gray-100 text-gray-700', 'No': 'bg-red-100 text-red-700',
-                'NO Mail': 'bg-orange-100 text-orange-700', 'Portal': 'bg-purple-100 text-purple-700',
-                'APP': 'bg-blue-100 text-blue-700', 'VER': 'bg-yellow-100 text-yellow-800',
-                'Sí': 'bg-green-100 text-green-700', 'OK': 'bg-green-100 text-green-700',
-              }
-              return <span className={`px-1.5 py-0.5 rounded text-[10px] ${map[fc || ''] || 'bg-gray-100 text-gray-500'}`}>{fc ?? '(sin estado)'}</span>
-            }
+            const fcBadge = (fc: string | null) =>
+              <span title={ayudaFc(fc)} className={`px-1.5 py-0.5 rounded text-[10px] ${colorFc(fc)}`}>{fc ?? '(sin estado)'}</span>
             return (
               <>
                 <div className="flex flex-wrap items-end gap-3 border-b pb-3">
                   <div>
-                    <label className="text-xs text-gray-500 block mb-0.5">Desde (emisión)</label>
+                    <label className="text-xs text-gray-500 block mb-0.5">Subdiario</label>
+                    <select value={pdfSubdiario} onChange={e => setPdfSubdiario(e.target.value)} disabled={buscandoPdfs}
+                      className="h-8 text-xs border rounded px-1 bg-white">
+                      <option value="">Todos ({ofrecidas.length})</option>
+                      {subdiarios.map(s => <option key={s.clave} value={s.clave}>{s.rotulo} ({s.cantidad})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-0.5">Desde (emisión, opcional)</label>
                     <Input type="date" value={pdfDesde} onChange={e => setPdfDesde(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-0.5">Hasta (emisión)</label>
+                    <label className="text-xs text-gray-500 block mb-0.5">Hasta (emisión, opcional)</label>
                     <Input type="date" value={pdfHasta} onChange={e => setPdfHasta(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
                   </div>
                   <div className="flex gap-2">
@@ -12307,7 +12313,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <Button size="sm" variant="outline" disabled={buscandoPdfs}
                       onClick={() => setSeleccionPdf(new Set())}>Ninguna</Button>
                     <Button size="sm" variant="outline" disabled={buscandoPdfs}
-                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(esPendiente).map(f => f.id)))}>Solo "Buscar"</Button>
+                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(esPendiente).map(f => f.id)))} title="Buscar, sin estado y Sí sin 📎">Solo pendientes</Button>
                   </div>
                 </div>
 
@@ -12335,13 +12341,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
                 <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
                   {candidatos.length === 0 ? (
-                    <p className="text-sm text-gray-500 py-6 text-center">No hay facturas en ese rango.</p>
+                    <p className="text-sm text-gray-500 py-6 text-center">No hay facturas sin 📎 en ese subdiario o rango.</p>
                   ) : (
                     <table className="w-full text-xs">
                       <thead className="sticky top-0 bg-white border-b">
                         <tr className="text-left text-gray-500">
                           <th className="p-1 w-8"></th>
                           <th className="p-1">Emisión</th>
+                          <th className="p-1" title="Dónde está imputada (mes contable)">Subdiario</th>
                           <th className="p-1">Proveedor</th>
                           <th className="p-1 text-right">Importe</th>
                           <th className="p-1">Estado FC</th>
@@ -12364,6 +12371,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 }} />
                             </td>
                             <td className="p-1">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
+                            <td className={`p-1 whitespace-nowrap ${subdiarioDe(f).clave === 'sin' ? 'text-gray-400 italic' : ''}`}>{subdiarioDe(f).rotulo}</td>
                             <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
                             <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
                             <td className="p-1">{fcBadge(f.fc)}</td>

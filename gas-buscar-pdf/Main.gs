@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.17.0'  // 0.17.0 = A-FEAT-1287: el mail resumen del buscador cuenta las que YA ESTABAN en la carpeta (el lote mira la carpeta antes de salir al mail) y las que no se buscaron por falta del mail del proveedor. | 0.16.0 = A-BUG-129: CACHE DE DRIVE. Cada 'existe este archivo?' es un viaje a Google, y se hacian DOS POR LINK: 62 viajes para 31 boletas, 20-30 segundos de puro preguntar -- mas caro que bajar los PDFs, que era lo que parecia el problema. Ahora los nombres de cada carpeta se leen UNA vez por corrida. Y recien con eso tiene sentido darle mas tiempo: la ruta pasa de 45s a 55s. | 0.15.0 = A-BUG-128: PRIMERO EL NOMBRE, DESPUES LA DESCARGA. Se bajaba el PDF entero y recien al final se preguntaba si ya estaba, asi que cada re-corrida volvia a traer todo lo ya archivado para tirarlo -- con 31 boletas y 35s de presupuesto, cada pasada avanzaba ~10 y pagaba de nuevo las anteriores. El nombre sale de la TABLA DEL MAIL, no del archivo, asi que se puede saber antes de bajar. Mismo error que A-BUG-125, en el otro extremo del bucle. | 0.14.1 = la carpeta replica EXACTAMENTE como archiva el usuario, incluido el 'MSA - viene PAM': si la boleta es de una empresa pero llego en el mail de otra, la carpeta lo dice. Yo las habia fundido en una sola (el dueño) y me corrigio: son dos situaciones distintas al momento de pagar. Una boleta que llega por los dos lados queda en las dos carpetas, y asi la duplicacion se ve en el Drive y no solo en el informe. | 0.14.0 = los archivos se nombran con LA CONVENCION DEL USUARIO ('2026 - Inmob - Cuota 3 - Tango Parra 1.pdf') y se guardan en una SUBCARPETA POR RESPONSABLE (MSA / PAM / MA / _Sin asignar). El GAS no puede saber ni el nombre del campo ni el dueño -- viven en egresos_sin_factura -- asi que el mapa partida -> {nombre, responsable} viaja en el pedido desde la app. El dedup pasa a mirar la subcarpeta y no la raiz. | 0.13.0 = A-BUG-126 y A-BUG-127, los dos vistos en la corrida real del 08/09. 126: ARBA envuelve TODOS los links del mail en su rastreador lt.php -- tambien los del pie -- asi que se bajaban 4 de mas por mail (~25 descargas al pedo, y por eso se acababa el tiempo). Ahora se toman solo los anclados en 'Ingresar', y de paso la cantidad de links COINCIDE con la de filas de la tabla. 127: ARBA no siempre manda el nombre del archivo, y el nombre de emergencia numeraba POR POSICION dentro del mail ('ARBA 2026-C3 - 1.pdf'), asi que el 1 de un mail y el 1 de otro colisionaban y la segunda boleta se salteaba como 'ya estaba' -- el defecto de A-BUG-120 entrando por la puerta de al lado. Ahora el nombre lleva la partida (o el CUIT), y distingue complementario y aviso de debito. | 0.12.0 = A-BUG-125: 'Ver que hay' ya NO baja ningun PDF -- bajaba todos igual y recien despues miraba si tenia que guardarlos, asi que el paso que existe para mirar antes de tocar nada era tan caro como hacerlo de verdad, y moria por timeout. Ahora informa desde la TABLA del cuerpo del mail, que es gratis y dice mas. Ademas: la bajada real tiene presupuesto de tiempo y devuelve 'quedaron N' en vez de morir muda (volver a correrla continua, el dedup es por nombre), y la ventana de dias se pasa desde la pantalla. | 0.11.0 = A-FEAT-107: lee la TABLA del cuerpo del mail (objeto imponible + importe) y se la adjunta a cada PDF bajado. Es un SEGUNDO camino al mismo numero, independiente del PDF; y para el complementario -que no trae partida en el nombre del archivo- es la unica via de saber a que corresponde. Avisa cuando la cantidad de filas no coincide con la de links. | 0.10.2 = avisa cuando la busqueda llega al tope de 50 conversaciones: sin eso 'baje 40' sobre 40 encontradas y sobre 200 que habia es la misma frase y significan cosas distintas | 0.10.1 = FIX del nombre de archivo: ARBA nombra sus PDFs con la partida pero SIN el periodo (Deuda-Inmobiliario-0990158819-R.pdf), asi que el dedup por nombre salteaba la boleta de la cuota siguiente creyendo que ya estaba -- una boleta distinta, perdida en silencio. Ahora el nombre lleva la FECHA DEL MAIL adelante, y el indice desempata cuando un mail trae dos boletas de la misma partida | 0.10.0 = acción 'boletas_arba': baja del mail las boletas de ARBA siguiendo el link (que NO pide login: es un rastreador que redirige a un PDF público) y las archiva en Drive con dedup por nombre. Con solo_contar:true informa sin guardar nada. ⚠️ NO toca los templates: el importe de la boleta se guarda al lado y el usuario decide cuál aplicar | 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.18.0'  // 0.18.0 = A-FEAT-1287 RIGOR: un archivo es de la factura si coinciden CUIT + numero + monto + TIPO (FC/NC/ND) + FECHA. Si coinciden los tres primeros y falla tipo o fecha, queda A REVISAR con el motivo -- nunca se descarta. Vino de un caso real: una nota de credito se tomo por la factura. La carpeta devuelve TODAS las facturas que un archivo cumple (no la primera) y los dudosos aparte, para que la app no vincule cuando hay dos candidatos. El mail devuelve todos los candidatos a revisar (sin repetir el mismo adjunto reenviado dos veces) para que el usuario elija. El resumen suma la pila 'ya estaban en la carpeta' con su link. | 0.17.0 = A-FEAT-1287: el mail resumen del buscador cuenta las que YA ESTABAN en la carpeta (el lote mira la carpeta antes de salir al mail) y las que no se buscaron por falta del mail del proveedor. | 0.16.0 = A-BUG-129: CACHE DE DRIVE. Cada 'existe este archivo?' es un viaje a Google, y se hacian DOS POR LINK: 62 viajes para 31 boletas, 20-30 segundos de puro preguntar -- mas caro que bajar los PDFs, que era lo que parecia el problema. Ahora los nombres de cada carpeta se leen UNA vez por corrida. Y recien con eso tiene sentido darle mas tiempo: la ruta pasa de 45s a 55s. | 0.15.0 = A-BUG-128: PRIMERO EL NOMBRE, DESPUES LA DESCARGA. Se bajaba el PDF entero y recien al final se preguntaba si ya estaba, asi que cada re-corrida volvia a traer todo lo ya archivado para tirarlo -- con 31 boletas y 35s de presupuesto, cada pasada avanzaba ~10 y pagaba de nuevo las anteriores. El nombre sale de la TABLA DEL MAIL, no del archivo, asi que se puede saber antes de bajar. Mismo error que A-BUG-125, en el otro extremo del bucle. | 0.14.1 = la carpeta replica EXACTAMENTE como archiva el usuario, incluido el 'MSA - viene PAM': si la boleta es de una empresa pero llego en el mail de otra, la carpeta lo dice. Yo las habia fundido en una sola (el dueño) y me corrigio: son dos situaciones distintas al momento de pagar. Una boleta que llega por los dos lados queda en las dos carpetas, y asi la duplicacion se ve en el Drive y no solo en el informe. | 0.14.0 = los archivos se nombran con LA CONVENCION DEL USUARIO ('2026 - Inmob - Cuota 3 - Tango Parra 1.pdf') y se guardan en una SUBCARPETA POR RESPONSABLE (MSA / PAM / MA / _Sin asignar). El GAS no puede saber ni el nombre del campo ni el dueño -- viven en egresos_sin_factura -- asi que el mapa partida -> {nombre, responsable} viaja en el pedido desde la app. El dedup pasa a mirar la subcarpeta y no la raiz. | 0.13.0 = A-BUG-126 y A-BUG-127, los dos vistos en la corrida real del 08/09. 126: ARBA envuelve TODOS los links del mail en su rastreador lt.php -- tambien los del pie -- asi que se bajaban 4 de mas por mail (~25 descargas al pedo, y por eso se acababa el tiempo). Ahora se toman solo los anclados en 'Ingresar', y de paso la cantidad de links COINCIDE con la de filas de la tabla. 127: ARBA no siempre manda el nombre del archivo, y el nombre de emergencia numeraba POR POSICION dentro del mail ('ARBA 2026-C3 - 1.pdf'), asi que el 1 de un mail y el 1 de otro colisionaban y la segunda boleta se salteaba como 'ya estaba' -- el defecto de A-BUG-120 entrando por la puerta de al lado. Ahora el nombre lleva la partida (o el CUIT), y distingue complementario y aviso de debito. | 0.12.0 = A-BUG-125: 'Ver que hay' ya NO baja ningun PDF -- bajaba todos igual y recien despues miraba si tenia que guardarlos, asi que el paso que existe para mirar antes de tocar nada era tan caro como hacerlo de verdad, y moria por timeout. Ahora informa desde la TABLA del cuerpo del mail, que es gratis y dice mas. Ademas: la bajada real tiene presupuesto de tiempo y devuelve 'quedaron N' en vez de morir muda (volver a correrla continua, el dedup es por nombre), y la ventana de dias se pasa desde la pantalla. | 0.11.0 = A-FEAT-107: lee la TABLA del cuerpo del mail (objeto imponible + importe) y se la adjunta a cada PDF bajado. Es un SEGUNDO camino al mismo numero, independiente del PDF; y para el complementario -que no trae partida en el nombre del archivo- es la unica via de saber a que corresponde. Avisa cuando la cantidad de filas no coincide con la de links. | 0.10.2 = avisa cuando la busqueda llega al tope de 50 conversaciones: sin eso 'baje 40' sobre 40 encontradas y sobre 200 que habia es la misma frase y significan cosas distintas | 0.10.1 = FIX del nombre de archivo: ARBA nombra sus PDFs con la partida pero SIN el periodo (Deuda-Inmobiliario-0990158819-R.pdf), asi que el dedup por nombre salteaba la boleta de la cuota siguiente creyendo que ya estaba -- una boleta distinta, perdida en silencio. Ahora el nombre lleva la FECHA DEL MAIL adelante, y el indice desempata cuando un mail trae dos boletas de la misma partida | 0.10.0 = acción 'boletas_arba': baja del mail las boletas de ARBA siguiendo el link (que NO pide login: es un rastreador que redirige a un PDF público) y las archiva en Drive con dedup por nombre. Con solo_contar:true informa sin guardar nada. ⚠️ NO toca los templates: el importe de la boleta se guarda al lado y el usuario decide cuál aplicar | 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -128,33 +128,33 @@ function doPost(e) {
       })
     }
 
-    if (verificados.exactos.length > 1) {
-      // Múltiples matches — todos a "Revisar". NO se marca leído/etiqueta (necesita revisión).
-      const urls = verificados.exactos.map(c => archivarEnDrive(c, body, true))
-      const cand = verificados.exactos[0]
-      return responseJson({
-        status: 'revisar',
-        drive_url: urls[0],
-        confianza: 'media',
-        observaciones: `Múltiples PDFs candidatos (${verificados.exactos.length}). Archivados en /Revisar.`,
-        asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
-        gmail_message_id: cand.mensaje.getId(),
-        tiempo_ms: Date.now() - startTime
+    // v0.18.0 — más de un candidato (o uno dudoso): NO se elige. Se archivan TODOS en _Revisar
+    // (tope 3) y se devuelven en `candidatos`, cada uno con su motivo, para que el usuario elija.
+    // NO se marca leído ni se etiqueta (necesita revisión).
+    const aRevisar = verificados.exactos.concat(verificados.dudosos).slice(0, 3)
+    if (aRevisar.length > 0) {
+      const varios = aRevisar.length > 1
+      const candidatos = aRevisar.map(function (c) {
+        return {
+          drive_url: archivarEnDrive(c, body, true),
+          observaciones: (varios ? 'Uno de ' + aRevisar.length + ' candidatos — ' : '') + (c._observaciones || ''),
+          monto_pdf: c._montoExtraido || null,
+          asunto: c.asunto, remitente: c.remitente,
+          gmail_message_id: c.mensaje.getId(),
+        }
       })
-    }
-
-    if (verificados.dudosos.length > 0) {
-      // Match parcial (CUIT+nro pero monto difiere) → a "Revisar". NO se marca leído/etiqueta.
-      const cand = verificados.dudosos[0]
-      const driveUrl = archivarEnDrive(cand, body, true)
+      const cand = aRevisar[0]
       return responseJson({
         status: 'revisar',
-        drive_url: driveUrl,
-        confianza: 'baja',
-        observaciones: cand._observaciones || 'Match CUIT+nro pero monto difiere',
+        drive_url: candidatos[0].drive_url,
+        confianza: varios ? 'media' : 'baja',
+        observaciones: varios
+          ? 'Hay ' + aRevisar.length + ' archivos candidatos: no se vinculó ninguno, elegí cuál es.'
+          : candidatos[0].observaciones,
         monto_pdf: cand._montoExtraido || null,
         asunto: cand.asunto, remitente: cand.remitente, cuerpo: cuerpoMail(cand.mensaje),
-        gmail_message_id: cand.mensaje.getId(),
+        gmail_message_id: candidatos[0].gmail_message_id,
+        candidatos: candidatos,
         tiempo_ms: Date.now() - startTime
       })
     }
@@ -302,8 +302,8 @@ function normalizarTexto(s) {
 /**
  * Verifica cada candidato extrayendo texto del PDF.
  * Devuelve { exactos: [...], dudosos: [...], descartados: [...] }
- *   - exactos: CUIT + nro + monto (con tolerancia $1)
- *   - dudosos: CUIT + nro pero monto fuera de tolerancia (avisar)
+ *   - exactos: CUIT + nro + monto (tolerancia $1) + tipo + fecha  (v0.18.0, ver evaluarCoincidencia)
+ *   - dudosos: CUIT + nro y falla monto, tipo o fecha → a revisar con el motivo
  *   - descartados: no matchean CUIT o nro
  */
 function verificarCandidatos(candidatos, body) {
@@ -311,72 +311,48 @@ function verificarCandidatos(candidatos, body) {
   const dudosos = []
   const descartados = []
 
-  const cuitLimpio = String(body.cuit_emisor).replace(/\D/g, '')
-  const numeroFc = String(body.numero_desde).padStart(8, '0')
-  const ptoVenta = String(body.punto_venta).padStart(5, '0')
+  // El mismo adjunto suele llegar dos veces (el proveedor + el reenvío de Jose). No son dos
+  // candidatos: es uno. Se reconoce por el hash del archivo y se analiza una sola vez.
+  const vistos = {}
 
   // Eficiencia: primero los candidatos cuyo ASUNTO o NOMBRE DE ARCHIVO nombra al proveedor (más
   // probable que sean la factura) → OCR-ea la correcta antes y corta al primer match exacto.
   candidatos.sort(function (a, b) { return (nombraProveedor(b, body) ? 1 : 0) - (nombraProveedor(a, body) ? 1 : 0) })
   Logger.log('verificarCandidatos: ' + candidatos.length + ' candidato(s) a analizar')
 
+  const factura = {
+    cuit: body.cuit_emisor, punto_venta: body.punto_venta, numero_desde: body.numero_desde,
+    imp_total: body.imp_total, tipo: body.tipo_comprobante_desc, fecha_emision: body.fecha_emision,
+  }
+
   for (const cand of candidatos) {
     try {
+      let hash = ''
+      try { hash = cand.attachment.getHash() } catch (e) { hash = '' }
+      if (hash) {
+        if (vistos[hash]) continue
+        vistos[hash] = true
+      }
       const texto = extraerTextoPdf(cand.attachment)
+      const ev = evaluarCoincidencia(texto, factura)
+      cand._montoExtraido = ev.montoExtraido
 
-      // Match CUIT (acepta con o sin guiones)
-      const cuitEnPdf = texto.replace(/\D/g, '').indexOf(cuitLimpio) >= 0
-
-      // Match número FC — buscar patrones flexibles
-      // Posibles formatos en el PDF: "0010-00006115", "0010 00006115", "0010 - 00006115", "10-6115", etc.
-      const patrones = [
-        `${ptoVenta}-${numeroFc}`,
-        `${ptoVenta} ${numeroFc}`,
-        `${parseInt(body.punto_venta)}-${parseInt(body.numero_desde)}`,
-        String(body.numero_desde) // a veces solo aparece el número largo
-      ]
-      const numeroEnPdf = patrones.some(p => texto.includes(p))
-
-      if (!cuitEnPdf || !numeroEnPdf) {
-        const faltan = [!cuitEnPdf ? 'CUIT' : null, !numeroEnPdf ? 'número' : null].filter(Boolean).join(' + ')
-        cand._observaciones = `Descartado: no se halló ${faltan} en el texto extraído (${texto.length} chars OCR).`
-        descartados.push(cand)
+      if (ev.nivel === 'exacto') {
+        cand._observaciones = 'Coinciden CUIT + número + monto + tipo + fecha (PDF=' + ev.montoExtraido + ')'
+        exactos.push(cand)
+        // Corta acá: con los cinco datos coincidiendo, un segundo archivo distinto que también los
+        // cumpla sólo puede ser una copia del mismo comprobante (las copias exactas ya se saltean
+        // por hash). Seguir leyendo todos los adjuntos de meses de reenvíos no entra en el tiempo.
+        Logger.log('Match exacto → corto (no analizo el resto)')
+        return { exactos, dudosos, descartados }
+      }
+      if (ev.nivel === 'dudoso') {
+        cand._observaciones = 'A revisar: ' + ev.motivos.join(' · ')
+        dudosos.push(cand)
         continue
       }
-
-      // Match monto — extraer y comparar
-      const montoEsperado = parseFloat(body.imp_total)
-      const montosEnPdf = extraerMontosPdf(texto)
-      let montoMatch = false
-      let montoExtraido = null
-
-      for (const m of montosEnPdf) {
-        if (Math.abs(m - montoEsperado) <= 1.0) {
-          montoMatch = true
-          montoExtraido = m
-          break
-        }
-      }
-      // Si no matcheó por tolerancia exacta, igual marcamos el más cercano para reporte
-      if (!montoExtraido && montosEnPdf.length > 0) {
-        montoExtraido = montosEnPdf.reduce((prev, m) =>
-          Math.abs(m - montoEsperado) < Math.abs(prev - montoEsperado) ? m : prev
-        , montosEnPdf[0])
-      }
-
-      cand._montoExtraido = montoExtraido
-
-      if (montoMatch) {
-        cand._observaciones = `Match exacto: CUIT+nro+monto (PDF=${montoExtraido}, factura=${montoEsperado})`
-        exactos.push(cand)
-        Logger.log('Match exacto → corto (no analizo el resto)')
-        return { exactos, dudosos, descartados }  // early-stop: ya tenemos la factura
-      } else {
-        const diff = montoExtraido !== null ? Math.abs(montoExtraido - montoEsperado).toFixed(2) : '?'
-        cand._observaciones = `Match CUIT+nro pero monto difiere: PDF=${montoExtraido ?? '?'}, factura=${montoEsperado}, diferencia=$${diff}`
-        dudosos.push(cand)
-      }
-
+      cand._observaciones = 'Descartado: ' + ev.motivos.join(' · ') + ' (' + texto.length + ' chars OCR).'
+      descartados.push(cand)
     } catch (err) {
       Logger.log('Error verificando candidato: ' + err.toString())
       cand._observaciones = 'Error extrayendo texto: ' + err.toString()
@@ -386,6 +362,153 @@ function verificarCandidatos(candidatos, body) {
 
   Logger.log(`Verificados: ${exactos.length} exactos, ${dudosos.length} dudosos, ${descartados.length} descartados`)
   return { exactos, dudosos, descartados }
+}
+
+// ── RIGOR DEL VÍNCULO (v0.18.0, A-FEAT-1287) ─────────────────────────────────────────────────
+// Acordado con el usuario 2026-10-20: «los datos o coinciden todos o no coinciden». Un archivo es
+// de la factura si coinciden CUIT + número + monto + TIPO + FECHA. Si coinciden CUIT + número +
+// monto y falla tipo o fecha → 'dudoso' con el motivo (va a revisar, NUNCA se descarta).
+// Caso que lo originó: una nota de crédito se tomó por la factura (mismo CUIT, número parecido).
+//
+// `f` = { cuit, punto_venta, numero_desde, imp_total, tipo, fecha_emision }
+// Devuelve { nivel: 'exacto' | 'dudoso' | 'no', motivos: [..], base: bool, montoExtraido }
+//   - base = CUIT + número + monto.
+//   - 'dudoso' también cuando CUIT + número coinciden y el monto NO (el mail ya lo trataba así);
+//     la carpeta sólo usa los dudosos con base completa (ver auditarPeriodo).
+function evaluarCoincidencia(texto, f) {
+  texto = String(texto || '')
+  const textoNum = texto.replace(/\D/g, '')
+  const motivos = []
+
+  const cuit = String(f.cuit || '').replace(/\D/g, '')
+  const cuitOk = !cuit || textoNum.indexOf(cuit) >= 0
+
+  const pv5 = String(f.punto_venta).padStart(5, '0')
+  const pv4 = String(f.punto_venta).padStart(4, '0')
+  const nro8 = String(f.numero_desde).padStart(8, '0')
+  const numeroOk = texto.indexOf(pv5 + '-' + nro8) >= 0
+    || texto.indexOf(pv5 + ' ' + nro8) >= 0
+    || texto.indexOf(pv4 + '-' + nro8) >= 0
+    || texto.indexOf(nro8) >= 0
+    || textoNum.indexOf(pv5 + nro8) >= 0
+    || texto.indexOf(parseInt(f.punto_venta, 10) + '-' + parseInt(f.numero_desde, 10)) >= 0
+
+  if (!cuitOk) motivos.push('no está el CUIT')
+  if (!numeroOk) motivos.push('no está el número')
+  if (!cuitOk || !numeroOk) return { nivel: 'no', motivos: motivos, base: false, montoExtraido: null }
+
+  // Monto: valor absoluto (las NC vienen negativas), tolerancia $1.
+  let montoOk = true
+  let montoExtraido = null
+  if (f.imp_total !== undefined && f.imp_total !== null && f.imp_total !== '') {
+    const esperado = Math.abs(parseFloat(f.imp_total))
+    if (esperado > 0) {
+      const montos = extraerMontosPdf(texto)
+      montoOk = false
+      for (var i = 0; i < montos.length; i++) {
+        if (Math.abs(Math.abs(montos[i]) - esperado) <= 1.0) { montoOk = true; montoExtraido = montos[i]; break }
+      }
+      if (!montoOk && montos.length > 0) {
+        montoExtraido = montos.reduce(function (p, m) { return Math.abs(m - esperado) < Math.abs(p - esperado) ? m : p }, montos[0])
+      }
+      if (!montoOk) motivos.push('el monto no coincide (PDF ' + (montoExtraido === null ? '?' : montoExtraido) + ', factura ' + esperado + ')')
+    }
+  }
+
+  // Tipo: lo que dice el archivo contra lo que dice ARCA.
+  const tipoEsperado = tipoDocDeDescripcion(f.tipo)
+  const tipoLeido = tipoDocDeTexto(texto)
+  let tipoOk = true
+  if (tipoEsperado) {
+    if (!tipoLeido) { tipoOk = false; motivos.push('no se pudo leer el tipo de comprobante (se esperaba ' + nombreTipoDoc(tipoEsperado) + ')') }
+    else if (tipoLeido !== tipoEsperado) { tipoOk = false; motivos.push('el archivo es ' + nombreTipoDoc(tipoLeido) + ' y la factura es ' + nombreTipoDoc(tipoEsperado)) }
+  }
+
+  // Fecha de emisión, en varios formatos.
+  let fechaOk = true
+  if (f.fecha_emision) {
+    fechaOk = fechaEnTexto(texto, f.fecha_emision)
+    if (!fechaOk) motivos.push('no se encontró la fecha ' + String(f.fecha_emision).slice(0, 10).split('-').reverse().join('/'))
+  }
+
+  const base = montoOk
+  const nivel = (montoOk && tipoOk && fechaOk) ? 'exacto' : 'dudoso'
+  return { nivel: nivel, motivos: motivos, base: base, montoExtraido: montoExtraido }
+}
+
+// Tipo de documento según la descripción de ARCA («Factura A», «Nota de Crédito B»…). Recibos y
+// tickets van con las facturas: es el mismo grupo para distinguirlos de una nota de crédito.
+function tipoDocDeDescripcion(desc) {
+  const t = normalizarTexto(desc || '')
+  if (!t) return null
+  if (/nota\s*de\s*credito/.test(t)) return 'NC'
+  if (/nota\s*de\s*debito/.test(t)) return 'ND'
+  return 'FC'
+}
+
+// Tipo de documento según el TEXTO del archivo. La nota de crédito se mira primero: suele citar la
+// factura que anula («Comprobante asociado: Factura A …») y eso no la vuelve factura.
+function tipoDocDeTexto(texto) {
+  const t = normalizarTexto(texto || '').replace(/\s+/g, ' ')
+  if (/nota\s*de\s*cr[e]?dito/.test(t)) return 'NC'
+  if (/nota\s*de\s*d[e]?bito/.test(t)) return 'ND'
+  if (/factura|recibo|ticket/.test(t)) return 'FC'
+  return null
+}
+
+function nombreTipoDoc(t) {
+  return t === 'NC' ? 'nota de crédito' : t === 'ND' ? 'nota de débito' : 'factura'
+}
+
+// ¿Aparece la fecha (YYYY-MM-DD) en el texto, en alguno de los formatos habituales?
+//   05/03/2026 · 05-03-2026 · 05.03.2026 · 05/03/26 · 5/3/2026 · 2026-03-05 · 2026/03/05
+//   5 de marzo de 2026 · 05-mar-2026 · 05 mar 2026
+// Los numéricos se buscan sin espacios (el OCR mete «05 / 03 / 2026»).
+function fechaEnTexto(texto, fechaIso) {
+  const p = String(fechaIso).slice(0, 10).split('-')
+  if (p.length !== 3) return false
+  const yyyy = p[0], mm = p[1], dd = p[2]
+  const yy = yyyy.slice(2), d = String(parseInt(dd, 10)), m = String(parseInt(mm, 10))
+  const plano = normalizarTexto(texto || '')
+  const sinEsp = plano.replace(/\s+/g, '')
+  const numericos = [
+    dd + '/' + mm + '/' + yyyy, dd + '-' + mm + '-' + yyyy, dd + '.' + mm + '.' + yyyy,
+    d + '/' + m + '/' + yyyy, d + '-' + m + '-' + yyyy,
+    yyyy + '-' + mm + '-' + dd, yyyy + '/' + mm + '/' + dd,
+  ]
+  // Sin dígito pegado ADELANTE (si no, «5/3/2026» aparece dentro de «25/3/2026»).
+  const suelto = function (pat, tampocoAtras) {
+    var k = sinEsp.indexOf(pat)
+    while (k >= 0) {
+      const antes = k > 0 ? sinEsp.charAt(k - 1) : ''
+      const despues = sinEsp.charAt(k + pat.length)
+      if (!/\d/.test(antes) && !(tampocoAtras && /\d/.test(despues))) return true
+      k = sinEsp.indexOf(pat, k + 1)
+    }
+    return false
+  }
+  for (var i = 0; i < numericos.length; i++) if (suelto(numericos[i], false)) return true
+  // dd/mm/yy: tampoco con dígito pegado ATRÁS («05/03/20» dentro de «05/03/2026»).
+  const cortos = [dd + '/' + mm + '/' + yy, dd + '-' + mm + '-' + yy, dd + '.' + mm + '.' + yy]
+  for (var j = 0; j < cortos.length; j++) if (suelto(cortos[j], true)) return true
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+  const mes = meses[parseInt(mm, 10) - 1]
+  if (!mes) return false
+  const una = plano.replace(/\s+/g, ' ')
+  const textuales = [
+    d + ' de ' + mes + ' de ' + yyyy, d + ' de ' + mes + ' del ' + yyyy, dd + ' de ' + mes + ' de ' + yyyy,
+    dd + '-' + mes.slice(0, 3) + '-' + yyyy, dd + ' ' + mes.slice(0, 3) + ' ' + yyyy, d + ' ' + mes + ' ' + yyyy,
+    dd + '/' + mes.slice(0, 3) + '/' + yyyy,
+  ]
+  if (mes === 'septiembre') textuales.push(d + ' de setiembre de ' + yyyy)
+  for (var q = 0; q < textuales.length; q++) {
+    var t = una.indexOf(textuales[q])
+    while (t >= 0) {
+      if (t === 0 || !/[0-9]/.test(una.charAt(t - 1))) return true   // «5 de marzo» no vale dentro de «25 de marzo»
+      t = una.indexOf(textuales[q], t + 1)
+    }
+  }
+  return false
 }
 
 // Soft-match: entre los descartados, devuelve uno cuyo ASUNTO contenga (normalizado) una palabra
@@ -720,13 +843,14 @@ function enviarResumenMail(body) {
     const porEmpresa = {}
     resultados.forEach(function (r) {
       const emp = r.empresa || '—'
-      if (!porEmpresa[emp]) porEmpresa[emp] = { descargadas: [], revisar: [], faltan: [] }
-      const pila = r.status === 'ok' ? 'descargadas' : (r.status === 'revisar' ? 'revisar' : 'faltan')
+      if (!porEmpresa[emp]) porEmpresa[emp] = { carpeta: [], descargadas: [], revisar: [], faltan: [] }
+      // v0.18.0: 'carpeta' = ya estaba archivada y se vinculó sin ir al mail (con su link).
+      const pila = r.status === 'carpeta' ? 'carpeta' : r.status === 'ok' ? 'descargadas' : (r.status === 'revisar' ? 'revisar' : 'faltan')
       porEmpresa[emp][pila].push(r)
     })
     Object.keys(porEmpresa).sort().forEach(function (emp) {
       const g = porEmpresa[emp]
-      html += '<h3>' + esc(emp) + ' — ' + g.descargadas.length + ' descargada(s), '
+      html += '<h3>' + esc(emp) + ' — ' + (g.carpeta.length ? g.carpeta.length + ' ya en la carpeta, ' : '') + g.descargadas.length + ' descargada(s), '
         + g.revisar.length + ' a revisar, ' + g.faltan.length + ' no encontrada(s)</h3>'
 
       // ❌ No encontradas, AGRUPADAS POR MOTIVO: el motivo es lo que decide qué hacer con cada una.
@@ -766,7 +890,7 @@ function enviarResumenMail(body) {
         }
       }
 
-      ;[['descargadas', '✅ Descargadas'], ['revisar', '⚠️ A revisar (llegaron, no validaron)']].forEach(function (par) {
+      ;[['carpeta', '🗂️ Ya estaban en la carpeta (vinculadas)'], ['descargadas', '✅ Descargadas del mail'], ['revisar', '⚠️ A revisar (no se vinculó: elegí o confirmá en la app)']].forEach(function (par) {
         const lista = g[par[0]]
         if (lista.length === 0) return
         html += '<p><b>' + par[1] + ':</b></p><ul>'
@@ -774,7 +898,8 @@ function enviarResumenMail(body) {
           html += '<li>' + esc(r.factura || '') + ' — ' + esc(r.proveedor || '')
             + (r.drive_url ? ' (<a href="' + r.drive_url + '">PDF</a>)' : '')
             + (r.observaciones ? ' <i>' + esc(r.observaciones) + '</i>' : '')
-            + '<br><small><b>Asunto:</b> ' + esc(r.asunto || '') + ' — <b>De:</b> ' + esc(r.remitente || '') + '</small>'
+            + (Array.isArray(r.candidatos) && r.candidatos.length > 1 ? '<br><small>Candidatos: ' + r.candidatos.map(function (c, k) { return '<a href="' + c.drive_url + '">' + (k + 1) + '</a>' + (c.observaciones ? ' <i>' + esc(c.observaciones) + '</i>' : '') }).join(' · ') + '</small>' : '')
+            + (r.asunto || r.remitente ? '<br><small><b>Asunto:</b> ' + esc(r.asunto || '') + ' — <b>De:</b> ' + esc(r.remitente || '') + '</small>' : '')
             + (r.cuerpo ? '<br><pre style="white-space:pre-wrap;background:#f6f6f6;padding:6px;font-size:12px;">' + esc(r.cuerpo) + '</pre>' : '')
             + '</li>'
         })
@@ -845,6 +970,7 @@ function auditarPeriodo(body) {
   const maxFiles = body.max_files || 10
   const matched = []     // {factura_id, drive_url, archivo, file_id}
   const huerfanos = []   // {archivo, url, file_id}
+  const dudosos = []     // {factura_id, drive_url, archivo, file_id, motivos} — v0.18.0
   let procesados = 0
   let restantes = 0
 
@@ -861,13 +987,21 @@ function auditarPeriodo(body) {
     let texto = ''
     let ocrErr = ''
     try { texto = extraerTextoDeBlob(file.getBlob()) } catch (e) { texto = ''; ocrErr = String(e) }
-    const textoNum = texto.replace(/\D/g, '')
-    let match = null
+    // v0.18.0 — se evalúan TODAS las facturas, no la primera: si el archivo cumple con dos, o si
+    // otra factura también tiene candidato, la app tiene que saberlo para no vincular a ciegas.
+    const exactas = []
     for (var j = 0; j < facturas.length; j++) {
-      if (facturaCoincide(texto, textoNum, facturas[j])) { match = facturas[j]; break }
+      const ev = evaluarCoincidencia(texto, facturas[j])
+      if (ev.nivel === 'exacto') exactas.push(facturas[j].factura_id)
+      // En la carpeta, dudoso sólo si coincide CUIT + número + MONTO y falla tipo o fecha: con el
+      // número suelto de 8 dígitos y muchas facturas del mismo proveedor, «monto distinto» es ruido.
+      else if (ev.nivel === 'dudoso' && ev.base) {
+        dudosos.push({ factura_id: facturas[j].factura_id, drive_url: file.getUrl(), archivo: nombre, file_id: fileId, motivos: ev.motivos })
+      }
     }
-    if (match) {
-      matched.push({ factura_id: match.factura_id, drive_url: file.getUrl(), archivo: nombre, file_id: fileId })
+    if (exactas.length > 0) {
+      // `factura_id` = la primera (compatibilidad con Subdiarios); `tambien` = las demás que cumple.
+      matched.push({ factura_id: exactas[0], tambien: exactas.slice(1), drive_url: file.getUrl(), archivo: nombre, file_id: fileId })
     } else {
       // Diagnóstico: chars leídos por el OCR (0 = no se pudo extraer texto) + error si lo hubo.
       huerfanos.push({ archivo: nombre, url: file.getUrl(), file_id: fileId, chars: texto.length, ocr_error: ocrErr || undefined })
@@ -876,37 +1010,15 @@ function auditarPeriodo(body) {
 
   return responseJson({
     status: 'ok', existe: true,
-    matched: matched, huerfanos: huerfanos,
+    matched: matched, huerfanos: huerfanos, dudosos: dudosos,
     procesados: procesados, restantes: restantes, completo: restantes === 0
   })
 }
 
-// ¿El texto OCR de un archivo corresponde a esta factura? (CUIT + número presentes)
+// ¿El texto OCR de un archivo corresponde a esta factura? Desde v0.18.0 es un atajo a
+// evaluarCoincidencia (CUIT + número + monto + tipo + fecha): una sola regla para carpeta y mail.
 function facturaCoincide(texto, textoNum, f) {
-  const cuit = String(f.cuit || '').replace(/\D/g, '')
-  if (cuit && textoNum.indexOf(cuit) < 0) return false
-  const pv5 = String(f.punto_venta).padStart(5, '0')
-  const nro8 = String(f.numero_desde).padStart(8, '0')
-  const numeroOk = texto.indexOf(pv5 + '-' + nro8) >= 0                             // 00002-00002021
-    || texto.indexOf(pv5 + ' ' + nro8) >= 0                                         // 00002 00002021
-    || texto.indexOf(nro8) >= 0                                                     // 00002021 (ARCA "Comp. Nro:")
-    || textoNum.indexOf(pv5 + nro8) >= 0                                            // por si el OCR mete espacios/saltos
-    || texto.indexOf(parseInt(f.punto_venta, 10) + '-' + parseInt(f.numero_desde, 10)) >= 0  // 2-2021
-  if (!numeroOk) return false
-
-  // CHEQUEO DE MONTO (clave para evitar falsos positivos: CUIT compartido + un número que aparece por
-  // azar en otro comprobante). Si la factura trae imp_total, exigir que ese monto (en valor ABSOLUTO,
-  // las NC vienen negativas) aparezca en el PDF con tolerancia $1. Si el OCR no leyó un monto que
-  // coincida → NO es match (queda huérfano para asignar a mano). Si no viene imp_total, no se exige.
-  if (f.imp_total !== undefined && f.imp_total !== null && f.imp_total !== '') {
-    const esperado = Math.abs(parseFloat(f.imp_total))
-    if (esperado > 0) {
-      const montos = extraerMontosPdf(texto)
-      const hayMonto = montos.some(function (m) { return Math.abs(Math.abs(m) - esperado) <= 1.0 })
-      if (!hayMonto) return false
-    }
-  }
-  return true
+  return evaluarCoincidencia(texto, f).nivel === 'exacto'
 }
 
 // Deja un log datado del audit EN la carpeta del período (createFile nuevo por corrida — nunca reemplaza).

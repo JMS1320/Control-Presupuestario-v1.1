@@ -21,11 +21,13 @@ interface Props {
   progreso: ProgresoLote | null
   onCerrar: () => void
   onVerDetalle?: (loteId: string) => void
+  /** Abre el informe por factura, agrupado por proceso, con los links (A-FEAT-1287) */
+  onVerInforme?: () => void
   /** Cancela el lote en curso (la búsqueda corre en 2do plano; este es el único punto de corte) */
   onCancelar?: () => void
 }
 
-export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onCancelar }: Props) {
+export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onVerInforme, onCancelar }: Props) {
   const [visible, setVisible] = useState(true)
 
   // Reabrir al iniciar un lote nuevo (sin esto, tras el 1er auto-cierre visible queda en false
@@ -34,13 +36,15 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
     if (progreso?.loteId) setVisible(true)
   }, [progreso?.loteId])
 
-  // Auto-cierre: 8s si todo OK; 20s si el mail resumen falló (para que llegues a leer el error)
+  // Auto-cierre: 8s si todo OK; 20s si el mail resumen falló (para que llegues a leer el error).
+  // Con informe NO se cierra sola: el informe es lo que hay que leer al terminar (A-FEAT-1287).
+  const hayInforme = (progreso?.informe?.length ?? 0) > 0
   useEffect(() => {
-    if (!progreso?.finalizado) return
+    if (!progreso?.finalizado || hayInforme) return
     const ms = progreso.resumenError ? 20000 : 8000
     const t = setTimeout(() => { setVisible(false); onCerrar() }, ms)
     return () => clearTimeout(t)
-  }, [progreso?.finalizado, progreso?.resumenError, onCerrar])
+  }, [progreso?.finalizado, progreso?.resumenError, onCerrar, hayInforme])
 
   if (!progreso || !visible) return null
 
@@ -140,6 +144,12 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onC
         ) : progreso.resumenEnviado ? (
           <div className="mt-3 text-[11px] text-green-700">✉️ Mail resumen enviado.</div>
         ) : null
+      )}
+
+      {progreso.finalizado && onVerInforme && hayInforme && (
+        <Button size="sm" className="w-full mt-3 text-xs" onClick={onVerInforme}>
+          📋 Ver informe por factura
+        </Button>
       )}
 
       {progreso.finalizado && onVerDetalle && (

@@ -1,8 +1,16 @@
 /**
  * POST /api/gas/confirmar-pdf  (Confirmar VER)
  * El usuario confirma que el PDF candidato (en _Revisar) ES esa factura. Le pide al GAS que lo
- * mueva a la carpeta del mes + lo renombre, y marca la factura como Sí + guarda el link.
+ * mueva a la carpeta del mes + lo renombre, y marca la factura como **Confirmada** + guarda el link.
  * El candidato sale del log (arca_pdf_busqueda_log). Env: GAS_BUSCAR_PDF_URL, GAS_AUTH_TOKEN, GAS_FOLDER_ID_*.
+ *
+ * A-FEAT-1287 (2026-10-20):
+ * - **Confirmada**, no «Sí»: «Sí» es de Ulises (la tiene), y la aprobación del usuario no puede
+ *   confundirse con la suya.
+ * - Con varios candidatos, el usuario elige: llega `drive_url` y se confirma ESE. Sin `drive_url`, el
+ *   último del log (como antes).
+ * - Un candidato que ya estaba en la CARPETA del mes (log con «[carpeta]») no se mueve ni se
+ *   renombra: es el archivo que subió alguien, se vincula tal cual.
  */
 import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
@@ -41,7 +49,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'GAS_BUSCAR_PDF_URL o GAS_AUTH_TOKEN no configurados' }, { status: 500 })
     }
 
-    const { factura_id, empresa } = (await request.json()) as { factura_id: string; empresa: Empresa }
+    const { factura_id, empresa, drive_url: elegido } = (await request.json()) as { factura_id: string; empresa: Empresa; drive_url?: string }
     if (!factura_id || !empresa) {
       return NextResponse.json({ ok: false, error: 'Faltan factura_id / empresa' }, { status: 400 })
     }
@@ -63,16 +71,30 @@ export async function POST(request: Request) {
     }
 
     // Candidato en el log (último con drive_url). gmail_message_id permite etiquetar el mail al confirmar.
-    const { data: log } = await supabase
+    let q = supabase
       .from('arca_pdf_busqueda_log')
-      .select('drive_url, gmail_message_id')
+      .select('drive_url, gmail_message_id, observaciones')
       .eq('factura_id', factura_id)
       .not('drive_url', 'is', null)
+    if (elegido) q = q.eq('drive_url', elegido)
+    const { data: log } = await q
       .order('fecha_hora', { ascending: false })
       .limit(1)
       .maybeSingle()
     if (!log?.drive_url) {
       return NextResponse.json({ ok: false, error: 'No hay un PDF candidato en el log para confirmar' }, { status: 412 })
+    }
+
+    // Ya estaba en la carpeta: se vincula tal cual, sin pasar por el GAS.
+    if (String(log.observaciones || '').startsWith('[carpeta]')) {
+      const { error: errU } = await supabase.schema(schema).from('comprobantes_arca')
+        .update({
+          fc: 'Confirmada', pdf_drive_url: log.drive_url, pdf_estado: 'descargado',
+          pdf_observaciones: 'Confirmada por el usuario — archivo que ya estaba en la carpeta',
+        })
+        .eq('id', factura_id)
+      if (errU) return NextResponse.json({ ok: false, error: errU.message }, { status: 500 })
+      return NextResponse.json({ ok: true, drive_url: log.drive_url, mail_etiquetado: false, de_carpeta: true })
     }
 
     // GAS: mover de _Revisar a la carpeta del mes + renombrar + (si hay message id) etiquetar el mail
@@ -93,10 +115,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: gas.observaciones || 'El GAS no pudo mover el archivo' }, { status: 502 })
     }
 
-    // Confirmada → FC = Sí + link (ahora sí, porque está confirmada)
+    // Confirmada → FC = Confirmada + link (ahora sí, porque está confirmada)
     await supabase.schema(schema).from('comprobantes_arca')
       .update({
-        fc: 'Sí',
+        fc: 'Confirmada',
         pdf_drive_url: gas.drive_url,
         pdf_estado: 'descargado',
         pdf_observaciones: 'Confirmada manualmente — movida de _Revisar a la carpeta del mes',
