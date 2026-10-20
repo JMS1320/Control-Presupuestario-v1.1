@@ -60,6 +60,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### msa_galicia · pam_galicia · pam_galicia_cc  (extractos cta cte — misma estructura)
 `fecha date, descripcion text, origen text, debitos numeric, creditos numeric, grupo_de_conceptos text, concepto text, numero_de_terminal text, observaciones_cliente text, numero_de_comprobante text, leyendas_adicionales_1..4 text, tipo_de_movimiento text, saldo numeric, control numeric, categ text, detalle text, contable text, interno text, centro_de_costo text, cuenta text, orden numeric, id uuid, estado text, motivo_revision text, comprobante_arca_id uuid, nro_cuenta varchar, template_id uuid, template_cuota_id uuid, sueldo_pago_id uuid, revisado boolean, nota_operador text, anticipo_id uuid, proveedor_nombre varchar, comprobantes_pagados text`
 
+### detalles_por_proveedor
+`id uuid, cuit text, detalle text, monto_referencia numeric(16,2), activo boolean, creado_por text, created_at tstz, updated_at tstz` _(2026-10-20, script 88, A-FEAT-1296: detalle fijo por proveedor; varios renglones = varios suministros, se elige por monto)_
+
 ### proveedores
 `id uuid, cuit varchar, razon_social varchar, nombre_fantasia varchar, activo boolean, cbu varchar, alias_cbu varchar, banco varchar, tipo_cuenta varchar, moneda_cuenta varchar, ultimo_uso_bancario tstz, email_pagos varchar, email_facturacion varchar, telefono varchar, contacto_nombre varchar, notas text, tags ARRAY, empresa_principal varchar, created_at tstz, updated_at tstz, es_proveedor boolean, es_cliente boolean, fc_modo varchar, patron_asunto varchar, dias_busqueda int, carpeta_drive_id varchar, gas_habilitado boolean, pdf_ultimo_intento tstz, mensaje_transferencia varchar`
 

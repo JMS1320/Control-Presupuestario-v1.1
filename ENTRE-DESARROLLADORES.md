@@ -54,6 +54,17 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — aviso ANTES de aplicarla
+
+Para [A-FEAT-1296](PENDIENTES.md#a-feat-1296) (rama `jms/tarjeta-conciliacion`): el **detalle fijo por proveedor**
+que el usuario marca desde la conciliación (cuit, detalle, monto de referencia, activo). **Qué cambia**: `scripts/88`
+crea la tabla con RLS por `puede_ver` / `puede_escribir`, `revoke` a `anon`, `grant select, insert, update` a
+`authenticated`, y la registra en `recurso_tablas` con recurso **«extracto»** (`restringe_lectura = false`) — mismo
+patrón que `ajustes_balance` (script 86). No toca tablas ni filas existentes. Se corre con JMS presente; hay
+`-deshacer`. Si tu modelo de permisos necesita otra cosa, avisá antes.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Una columna nueva en `public.reglas_conciliacion` (2026-10-19) — ✅ APLICADA el 19/10 con JMS presente
 
 Para [A-FEAT-1293](PENDIENTES.md#a-feat-1293) (rama `jms/tarjeta-conciliacion`): la regla de conciliación pasa a elegir
