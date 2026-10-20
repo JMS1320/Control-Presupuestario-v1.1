@@ -219,8 +219,17 @@ function leerFactura(r: string[], p: PolizaLeida) {
     const cols = columnas(b[k])
     for (let j = 1; j < cols.length - 1; j++) {
       if (cols[j] !== "$" || !RE_IMPORTE.test(cols[j + 1])) continue
-      const rotulo = cols[j - 1]
-      if (RE_FECHA.test(rotulo) || RE_IMPORTE.test(rotulo) || /^TOTALES:?$/i.test(rotulo)) continue
+      let rotulo = cols[j - 1]
+      if (RE_FECHA.test(rotulo) || /^TOTALES:?$/i.test(rotulo)) continue
+      if (RE_IMPORTE.test(rotulo)) {
+        // 🧨 Flota 07/2025: «TOTALES:  $  3,457,835.12  $  13,439.15» y el rótulo de ese segundo
+        // importe («CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES») quedó solo en el renglón de abajo.
+        // Se busca un rótulo huérfano (sin importe) en los renglones vecinos; si no hay, se nombra
+        // igual: un importe sin rótulo NO se descarta, porque el control del total lo necesita.
+        const huerfano = [b[k + 1], b[k - 1]].find(x => x && !/\$|\d{2}-\d{2}-\d{4}/.test(x) && /^[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ .()\-]{6,}$/.test(x.trim()) && !/^(A debitar|cta\.|NRO\.|PLAN DE PAGO|LIQUIDACI)/i.test(x.trim()))
+        rotulo = huerfano?.trim() ?? "CONCEPTO SIN RÓTULO"
+        if (!huerfano) p.avisos.push(`Un importe de la liquidación (${cols[j + 1]}) no tiene rótulo legible.`)
+      }
       // «NRO.  VENCIMIENTO  IMPORTE  PRIMA» → el rótulo es la última columna antes del $.
       conceptos.push({
         concepto: rotulo.replace(/:$/, ""),
