@@ -514,9 +514,16 @@ export function VistaExtractoBancario() {
    * misma que la de la cuenta corriente) y los débitos de la cuenta corriente que pagan cada resumen.
    */
   const [resumenFiltro, setResumenFiltro] = useState<string | null>(null)
+  /**
+   * ☑️ A-FEAT-1310 — VARIOS resúmenes elegidos con su casilla, para conciliarlos juntos con el «Conciliar»
+   * de arriba, como alternativa al filtro de fechas (usuario 2026-10-20: *«seleccionar los resúmenes que
+   * quiero conciliar para conciliarlos juntos con el botón de arriba en vez de usar selector de fechas»*).
+   * Es un filtro más: acota la tabla y entra en `filtrosActivos`, así el botón corre SÓLO sobre ellos.
+   */
+  const [resumenesElegidos, setResumenesElegidos] = useState<Set<string>>(new Set())
   const [debitosTarjeta, setDebitosTarjeta] = useState<DebitoCtaCte[]>([])
   const [vinculandoNr, setVinculandoNr] = useState<string | null>(null)
-  useEffect(() => { setResumenFiltro(null) }, [tablaActiva, schemaActivo])
+  useEffect(() => { setResumenFiltro(null); setResumenesElegidos(new Set()) }, [tablaActiva, schemaActivo])
   const cargarDebitosTarjeta = useCallback(async () => {
     if (cuentaActivaObj?.tipo !== 'tarjeta') { setDebitosTarjeta([]); return }
     const bancos = CUENTAS_BANCARIAS.filter(c => c.empresa === cuentaActivaObj.empresa && (c.tipo ?? 'banco') === 'banco')
@@ -796,17 +803,25 @@ ${texto.trim()}` : texto.trim()
       const cierre = (movimientos.find(m => (m as any).nro_resumen === resumenFiltro) as any)?.fecha_cierre
       items.push(`resumen ${cierre ? fmt(String(cierre).slice(0, 10)) : resumenFiltro}`)
     }
+    if (resumenesElegidos.size > 0) {
+      const cierres = [...resumenesElegidos].map(nr => {
+        const c = (movimientos.find(m => (m as any).nro_resumen === nr) as any)?.fecha_cierre
+        return c ? fmt(String(c).slice(0, 10)) : nr.slice(-6)
+      })
+      items.push(`${resumenesElegidos.size} resumen(es): ${cierres.join(', ')}`)
+    }
     return items
   }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
-      filtroSentido, resumenFiltro, movimientos])
+      filtroSentido, resumenFiltro, resumenesElegidos, movimientos])
 
   const hayFiltros = filtrosActivos.length > 0
 
   const movimientosVisibles = useMemo(() => {
     // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
     const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen'
-      && (!resumenFiltro || (m as any).nro_resumen === resumenFiltro))
+      && (!resumenFiltro || (m as any).nro_resumen === resumenFiltro)
+      && (resumenesElegidos.size === 0 || resumenesElegidos.has((m as any).nro_resumen)))
     let lista = categsFiltro
       ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
       : base
@@ -860,7 +875,7 @@ ${texto.trim()}` : texto.trim()
     if (modoOkAuditar) lista = lista.filter(m => String(m.estado).toLowerCase() === 'auditar')
 
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, modoOkAuditar])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -3149,6 +3164,7 @@ ${marca}` : marca
      */
     setFiltroRevisado('todas')
     setFiltroNota('todas')
+    setResumenesElegidos(new Set())
     setResumenFiltro(null) // A-BUG-1291: ahora es un filtro más, se limpia con los otros
     setFiltroSentido('todos')   // A-FEAT-1224 — si quedara puesto, es el bug A-BUG-155 otra vez
 
@@ -4439,11 +4455,26 @@ ${marca}` : marca
                         La tabla muestra sólo el resumen elegido. <button type="button" className="underline" onClick={() => setResumenFiltro(null)}>Ver todos</button>
                       </p>
                     )}
+                    {/* ☑️ A-FEAT-1310 — varios resúmenes juntos con el «Conciliar» de arriba. */}
+                    {resumenesElegidos.size > 0 ? (
+                      <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                        ☑️ <b>{resumenesElegidos.size} resumen(es) elegido(s)</b>, con {(movimientos as any[]).filter(m => resumenesElegidos.has(m.nro_resumen) && m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length} pendiente(s):
+                        la tabla muestra sólo ésos y el <b>Conciliar</b> de arriba corre sobre ellos juntos.{' '}
+                        <button type="button" className="underline" onClick={() => setResumenesElegidos(new Set())}>Quitar selección</button>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400">Tildá varios resúmenes para conciliarlos juntos con el Conciliar de arriba (en vez de filtrar por fechas).</p>
+                    )}
                     {lista.map(item => {
                       const ok = item.dif != null && Math.abs(item.dif) < 0.5
                       return (
                         <div key={item.nr} className="border rounded flex items-center justify-between px-3 py-2 text-sm">
                           <span className="flex items-center gap-2">
+                            <input type="checkbox" className="h-4 w-4 cursor-pointer" title="Elegir este resumen para conciliarlo junto con otros (Conciliar de arriba)"
+                              checked={resumenesElegidos.has(item.nr)}
+                              onChange={() => setResumenesElegidos(prev => {
+                                const s = new Set(prev); if (s.has(item.nr)) s.delete(item.nr); else s.add(item.nr); return s
+                              })} />
                             <button type="button" title="Ver sólo los movimientos de este resumen en la tabla de abajo"
                               onClick={() => setResumenFiltro(f => f === item.nr ? null : item.nr)}
                               className={`font-medium underline-offset-2 hover:underline ${resumenFiltro === item.nr ? 'text-blue-700 underline' : ''}`}>
