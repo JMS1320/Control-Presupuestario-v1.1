@@ -20,6 +20,7 @@ import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { conFechaDeEmision } from "@/lib/conciliacion/pool-tarjeta"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -473,7 +474,8 @@ export function useMotorConciliacion() {
        * después en el resto del Cash Flow — el mismo motor, con el pool que le corresponde a la cuenta
        * (A-DEC-1002). Antes la tarjeta tenía su propio buscador de facturas antes de llegar acá.
        */
-      const poolTarjeta = cuenta.tipo === 'tarjeta' ? await cargarPagadoConTarjeta(cuenta.empresa) : []
+      // A-BUG-1298: las facturas pagadas con tarjeta se comparan por su fecha de emisión, no por la estimada
+      const poolTarjeta = cuenta.tipo === 'tarjeta' ? conFechaDeEmision(await cargarPagadoConTarjeta(cuenta.empresa)) : []
       /**
        * 🔒 **Lo que ya se usó en esta corrida no se ofrece otra vez.** Sin esto, dos movimientos del
        * mismo importe —los dos cargos de Chubb del mismo día— podían conciliarse contra la MISMA

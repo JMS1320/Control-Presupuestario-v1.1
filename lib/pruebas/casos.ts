@@ -172,6 +172,7 @@ import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { conFechaDeEmision } from "@/lib/conciliacion/pool-tarjeta"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6754,6 +6755,18 @@ export function correrCasos(): Resultado[] {
     const n = filas.filter(esFilaConciliable).length
     chequear("Doble audit", "Del resumen 28/05 (9 consumos + el pago + el total) pasan al motor 9: el pago se vincula aparte y el total no se concilia; una cuenta sin tipo_fila pasa entera",
       "9 · true", `${n} · ${esFilaConciliable({})}`, n === 9 && esFilaConciliable({}), "A-BUG-1297")
+  }
+
+  // ══ 📅 EN LA TARJETA, LA FACTURA SE COMPARA POR SU EMISIÓN (A-BUG-1298) ═══════════════════════════
+  {
+    // Medicus: FC emitida 21/05, estimada 05/06; el débito de la tarjeta es del 21/05. 🧨 Antes: 15 días → auditar.
+    const pool = conFechaDeEmision([
+      { id: "fc", origen: "ARCA", fecha_emision: "2026-05-21", fecha_estimada: "2026-06-05" },
+      { id: "cuota", origen: "TEMPLATE", fecha_emision: null, fecha_estimada: "2026-05-26" },
+    ])
+    chequear("Doble audit", "En la tarjeta, la FC de Medicus se compara por su emisión (21/05 = día del débito) y la cuota de un template sigue con su fecha",
+      "2026-05-21 · 2026-05-26", `${pool[0].fecha_estimada} · ${pool[1].fecha_estimada}`,
+      pool[0].fecha_estimada === "2026-05-21" && pool[1].fecha_estimada === "2026-05-26", "A-BUG-1298")
   }
 
   return r
