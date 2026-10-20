@@ -7051,6 +7051,35 @@ export function correrCasos(): Resultado[] {
     chequear("Pólizas", "Cotejo con el comprobante cargado: la NC bien cargada no avisa; con otro número y como factura, dos avisos",
       "0 · 2", `${bien.length} · ${mal.length}`, bien.length === 0 && mal.length === 2, "A-FEAT-1309")
 
+    // 🧨 Rótulo huérfano (Flota 07/2025): el importe de la CONTRIBUCIÓN quedó en el renglón de TOTALES y
+    // su rótulo abajo. Descartarlo dejaba la factura sin cerrar por $13.439,15 (y frenaba).
+    const huerf = parsearPoliza([
+      "FACTURA ORIGINAL",
+      "SECCIÓN  AUTOMOTORES  PRODUCTO  AUTOMOTORES  PÓLIZA  34160783",
+      "PLAN DE PAGO DEL ENDOSO  LIQUIDACIÓN DE PREMIO Y OTROS CONCEPTOS",
+      "NRO.  VENCIMIENTO  IMPORTE  PRIMA  $  100,000.00",
+      "1/1  01-08-2025  $  134,439.15",
+      "IVA  $  21,000.00",
+      "TOTALES:  $  134,439.15  $  13,439.15",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES",
+      "MONTO TOTAL DEL PREMIO  $  134,439.15",
+    ].join("\n"))
+    chequear("Pólizas", "Un importe cuyo rótulo quedó en el renglón de abajo se toma con ese rótulo y la factura cierra",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES 13439.15 · frena=false",
+      `${huerf.conceptos.at(-1)?.concepto} ${huerf.conceptos.at(-1)?.importe} · frena=${controlarPoliza(huerf).frena}`,
+      huerf.conceptos.at(-1)?.concepto === "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES" && !controlarPoliza(huerf).frena, "A-FEAT-1309")
+
+    // Los dos ejes (usuario 2026-10-20): Alondra contable e interno MA, Rojas Celia PAM, Tiguan contable MSA / interno MA.
+    const alondra = responsableDe({ documento: "47926088" })
+    const rojas = responsableDe({ documento: "27203615362" })
+    const tiguan = responsableDe({ patente: "LMW911" })
+    const repContableFlota = repartoDeLaPoliza(f, undefined, "contable")
+    chequear("Pólizas", "Responsable contable e interno por bien; la Flota por eje CONTABLE es toda MSA (el reparto interno es otro eje)",
+      "MA/MA · PAM/PAM · MSA/MA · Flota contable: MSA 100%",
+      `${alondra.contable}/${alondra.interno} · ${rojas.contable}/${rojas.interno} · ${tiguan.contable}/${tiguan.interno} · Flota contable: ${repContableFlota?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
+      alondra.contable === "MA" && alondra.interno === "MA" && rojas.contable === "PAM" && tiguan.contable === "MSA" && tiguan.interno === "MA"
+        && repContableFlota?.partes.length === 1 && repContableFlota.partes[0].responsable === "MSA", "A-FEAT-1309")
+
     // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
     const renglones = armarRenglones([
       { s: "$", x: 300, y: 500, h: 8 }, { s: "627,502.00", x: 310, y: 500.5, h: 8 },

@@ -124,18 +124,25 @@ export interface ReglaResponsable {
   /** Patente del vehículo (sin espacios) o DNI de la persona (8 dígitos; un CUIL se compara por su DNI). */
   patente?: string
   dni?: string
-  responsable: Responsable
+  /** A qué empresa corresponde CONTABLEMENTE (su código contable). */
+  contable: Responsable
+  /** A quién le corresponde INTERNAMENTE (código interno → Distribuciones si paga otra empresa). */
+  interno: Responsable
   motivo: string
 }
 
 /**
  * El dato de arranque, dicho por el usuario el 2026-10-20. Es el **default**: en la app cada bien
  * guarda su responsable y se puede cambiar (§ 🎚️ default del dato real, siempre editable).
+ * *«Vida colectivo: MSA contable e interno. Alondra: contable e interno MA. Rojas Celia: contable e
+ * interno PAM. De la flota todo MSA salvo Gol JMS y Tiguan MA a nivel interno.»* (el Voyage es MSA)
  */
 export const RESPONSABLES_INICIALES: ReglaResponsable[] = [
-  { patente: "LMW911", responsable: "MA", motivo: "Tiguan — interno de MA" },
-  { patente: "LFO201", responsable: "JMS", motivo: "Gol Trend — interno de JMS (seguro y automotor)" },
-  { dni: "27673775", responsable: "MA", motivo: "Elvio Paz — responsable interno MA" },
+  { patente: "LMW911", contable: "MSA", interno: "MA", motivo: "Tiguan — interno de MA" },
+  { patente: "LFO201", contable: "MSA", interno: "JMS", motivo: "Gol Trend — interno de JMS (seguro y automotor)" },
+  { dni: "27673775", contable: "MSA", interno: "MA", motivo: "Elvio Paz — responsable interno MA" },
+  { dni: "47926088", contable: "MA", interno: "MA", motivo: "Olivo Alondra Aylin — contable e interno MA" },
+  { dni: "20361536", contable: "PAM", interno: "PAM", motivo: "Rojas Celia Mabel — contable e interno PAM" },
 ]
 export const RESPONSABLE_POR_DEFECTO: Responsable = "MSA"
 
@@ -145,11 +152,14 @@ export function dniDe(documento: string): string {
   return d.length === 11 ? d.slice(2, 10) : d
 }
 
-export function responsableDe(bien: { patente?: string | null; documento?: string | null }, reglas = RESPONSABLES_INICIALES): { responsable: Responsable; motivo: string } {
+export type Eje = "contable" | "interno"
+
+export function responsableDe(bien: { patente?: string | null; documento?: string | null }, reglas = RESPONSABLES_INICIALES): { contable: Responsable; interno: Responsable; responsable: Responsable; motivo: string } {
   const pat = (bien.patente ?? "").replace(/\s/g, "").toUpperCase()
   const dni = bien.documento ? dniDe(bien.documento) : ""
   const r = reglas.find(x => (x.patente && pat && x.patente.toUpperCase() === pat) || (x.dni && dni && x.dni === dni))
-  return r ? { responsable: r.responsable, motivo: r.motivo } : { responsable: RESPONSABLE_POR_DEFECTO, motivo: "por defecto" }
+  if (r) return { contable: r.contable, interno: r.interno, responsable: r.interno, motivo: r.motivo }
+  return { contable: RESPONSABLE_POR_DEFECTO, interno: RESPONSABLE_POR_DEFECTO, responsable: RESPONSABLE_POR_DEFECTO, motivo: "por defecto" }
 }
 
 export interface ParteReparto {
@@ -159,6 +169,8 @@ export interface ParteReparto {
   bienes: string[]
 }
 export interface RepartoPoliza {
+  /** Por qué eje se repartió: contable (a qué empresa va el gasto) o interno (Distribuciones). */
+  eje: Eje
   /** De dónde sale la proporción: se muestra para que se note al pisarla. */
   base: "prima de cada vehículo" | "suma asegurada de cada persona" | "partes iguales por persona"
   partes: ParteReparto[]
@@ -170,7 +182,7 @@ const nombreVehiculo = (v: VehiculoAsegurado) => `${v.descripcion ?? v.tipo ?? "
  * La proporción de cada responsable en esta póliza. `null` si no hay bienes para repartir (una
  * factura sola, sin certificados ni nómina): entonces todo es del que paga.
  */
-export function repartoDeLaPoliza(p: PolizaLeida, reglas = RESPONSABLES_INICIALES): RepartoPoliza | null {
+export function repartoDeLaPoliza(p: PolizaLeida, reglas = RESPONSABLES_INICIALES, eje: Eje = "interno"): RepartoPoliza | null {
   const pesos = new Map<Responsable, { peso: number; bienes: string[] }>()
   const sumar = (resp: Responsable, peso: number, bien: string) => {
     const x = pesos.get(resp) ?? { peso: 0, bienes: [] }
@@ -180,21 +192,21 @@ export function repartoDeLaPoliza(p: PolizaLeida, reglas = RESPONSABLES_INICIALE
   const vehiculos = p.vehiculos.filter(v => (v.prima ?? 0) > 0)
   if (vehiculos.length) {
     base = "prima de cada vehículo"
-    for (const v of vehiculos) sumar(responsableDe({ patente: v.patente }, reglas).responsable, v.prima!, nombreVehiculo(v))
+    for (const v of vehiculos) sumar(responsableDe({ patente: v.patente }, reglas)[eje], v.prima!, nombreVehiculo(v))
   } else {
     // Las personas vigentes: la nómina activa; si el endoso es sólo una baja, no hay a quién repartir.
     const activas = p.personas.filter((x: PersonaAsegurada) => x.movimiento === "activa")
     if (!activas.length) return null
     const conSuma = activas.every(x => (x.sumaAsegurada ?? 0) > 0)
     base = conSuma ? "suma asegurada de cada persona" : "partes iguales por persona"
-    for (const x of activas) sumar(responsableDe({ documento: x.documento }, reglas).responsable, conSuma ? x.sumaAsegurada! : 1, x.nombre)
+    for (const x of activas) sumar(responsableDe({ documento: x.documento }, reglas)[eje], conSuma ? x.sumaAsegurada! : 1, x.nombre)
   }
   const total = [...pesos.values()].reduce((s, x) => s + x.peso, 0)
   if (total <= 0) return null
   const partes = [...pesos.entries()]
     .map(([responsable, x]) => ({ responsable, peso: r2(x.peso), proporcion: x.peso / total, bienes: x.bienes }))
     .sort((a, b) => b.proporcion - a.proporcion)
-  return { base, partes }
+  return { eje, base, partes }
 }
 
 /**
