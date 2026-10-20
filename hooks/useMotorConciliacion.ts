@@ -22,6 +22,7 @@ import { templateParaFecha, detalleDeRegla } from "@/lib/conciliacion/template-d
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta } from "@/lib/conciliacion/motivo-fecha"
+import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -495,6 +496,7 @@ export function useMotorConciliacion() {
        * la libre. Ver `lib/conciliacion/doble-audit.ts`.
        */
       const { enAuditar, tablasQueFallaron: tablasSinLeer } = await cargarVinculosEnAuditar(supabase)
+      const detallesFijos = await cargarDetallesFijos(supabase as any)  // A-FEAT-1296
       if (tablasSinLeer.length) console.warn(`⚠️ Doble audit: no se pudieron leer ${tablasSinLeer.join(', ')}`)
       const buscar = (mov: MovimientoBancario, pool: typeof datosCF) =>
         buscarConDobleAudit((p: any[]) => buscarMatchCashFlow(mov, p, cuenta.empresa), sinUsar(pool), enAuditar)
@@ -671,6 +673,19 @@ export function useMotorConciliacion() {
               provDesdeMaestro,
               (movimiento as any).detalle,   // lo que el usuario ya escribió nunca se pisa
             )
+            // 🏷️ A-FEAT-1296 — sin detalle propio, el detalle fijo del proveedor (va también a la factura)
+            if (!columnas.detalle && matchCF.cashFlowRow.origen === 'ARCA' && detallesFijos.length) {
+              const fijo = await aplicarDetalleFijo(supabase as any, detallesFijos, {
+                facturaId: String(matchCF.cashFlowRow.id),
+                tabla: String(matchCF.cashFlowRow.origen_tabla || `${String(cuenta.empresa).toLowerCase()}.comprobantes_arca`),
+                cuit: matchCF.cashFlowRow.cuit_proveedor,
+                monto: Number(movimiento.debitos) || Number(movimiento.creditos) || 0,
+                detalleFactura: (matchCF.cashFlowRow as any).detalle_usuario,
+                emisor: (matchCF.cashFlowRow as any).nombre_proveedor,
+                numero: (matchCF.cashFlowRow as any).numero_desde,
+              })
+              if (fijo) columnas.detalle = fijo
+            }
 
             /**
              * 🏷️ A-BUG-1247 — un cobro de VENTA toma la imputación de la venta (cuenta, número, centro),

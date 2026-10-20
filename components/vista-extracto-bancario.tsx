@@ -83,6 +83,8 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
+import { cargarDetallesFijos, aplicarDetalleFijo, marcarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
+import { elegirDetalleFijo, type DetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
@@ -283,6 +285,10 @@ export function VistaExtractoBancario() {
   // Edición inline detalle
   const [editandoDetalleId, setEditandoDetalleId] = useState<string | null>(null)
   const [editandoDetalleVal, setEditandoDetalleVal] = useState('')
+  /** 🏷️ A-FEAT-1296 — el tilde «usar siempre para este proveedor» de la celda Detalle, y los fijos marcados. */
+  const [fijarDetalle, setFijarDetalle] = useState(false)
+  const [detallesFijos, setDetallesFijos] = useState<DetalleFijo[]>([])
+  const [cuitPorFactura, setCuitPorFactura] = useState<Map<string, { cuit: string; schema: string }>>(new Map())
 
   // Estados para Combobox avanzado
   const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
@@ -614,6 +620,71 @@ ${texto.trim()}` : texto.trim()
       toast.success(`${ids.length} nota(s) borrada(s)`)
     }
   }
+
+  /**
+   * 🏷️ **A-FEAT-1296 — guardar el Detalle de un movimiento.** Además de la cuota del template (como siempre),
+   * ahora llega a **la factura** atada (el detalle es un dato multivista: antes «Luz Casco NZ Total» quedaba
+   * en el extracto y no en la factura). Con el tilde, queda como detalle fijo del proveedor.
+   */
+  const guardarDetalleCelda = async (movimiento: any, valor: string, fijar: boolean) => {
+    await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+      .from(tablaActiva).update({ detalle: valor }).eq('id', movimiento.id)
+    actualizarLocal(movimiento.id, { detalle: valor })
+    await propagarDetalleAlTemplate(movimiento, valor)
+    if (!movimiento.comprobante_arca_id) return
+    const fac = cuitPorFactura.get(movimiento.comprobante_arca_id) ?? await buscarFacturaDelMovimiento(movimiento.comprobante_arca_id)
+    if (!fac) return
+    const { error } = await supabase.schema(fac.schema).from('comprobantes_arca').update({ detalle: valor.trim() || null }).eq('id', movimiento.comprobante_arca_id)
+    if (error) toast.error('El detalle se guardó en el extracto pero NO llegó a la factura', { description: error.message })
+    if (fijar && valor.trim()) {
+      const err = await marcarDetalleFijo(supabase as any, fac.cuit, valor, Number(movimiento.debitos) || Number(movimiento.creditos) || 0)
+      if (err) toast.error('No se pudo guardar como detalle fijo', { description: err })
+      else {
+        toast.success(`«${valor.trim()}» queda como detalle fijo de ${movimiento.proveedor_nombre || 'este proveedor'}`)
+        setDetallesFijos(await cargarDetallesFijos(supabase as any))
+      }
+    }
+  }
+
+  /** El CUIT y el schema de la factura atada a un movimiento (puede ser de otra empresa que la cuenta). */
+  const buscarFacturaDelMovimiento = async (facturaId: string): Promise<{ cuit: string; schema: string } | null> => {
+    for (const empresa of EMPRESAS) {
+      const schema = schemaDeEmpresa(empresa)
+      const { data } = await supabase.schema(schema).from('comprobantes_arca').select('cuit').eq('id', facturaId).maybeSingle()
+      if (data) return { cuit: String((data as any).cuit || ''), schema }
+    }
+    return null
+  }
+
+  /** Dejar de usar un detalle fijo (el 📌 de la celda). No se borra: queda inactivo, con su historia. */
+  const desactivarDetalleFijo = async (f: DetalleFijo) => {
+    if (!window.confirm(`¿Dejar de usar «${f.detalle}» como detalle fijo?\n\nLo ya conciliado no cambia.`)) return
+    const { error } = await supabase.from('detalles_por_proveedor').update({ activo: false, updated_at: new Date().toISOString() }).eq('id', f.id)
+    if (error) { toast.error('No se pudo desactivar', { description: error.message }); return }
+    setDetallesFijos(await cargarDetallesFijos(supabase as any))
+  }
+
+  // Los fijos se cargan al entrar; si la tabla no existe todavía (script 88), queda vacío y nada cambia.
+  useEffect(() => { void cargarDetallesFijos(supabase as any).then(setDetallesFijos) }, [])
+
+  // Para sugerir: el CUIT de las facturas de los movimientos SIN detalle (sólo si hay fijos marcados).
+  useEffect(() => {
+    if (!detallesFijos.length) return
+    const ids = [...new Set((movimientos as any[]).filter(m => m.comprobante_arca_id && !(m.detalle || '').trim()).map(m => m.comprobante_arca_id as string))]
+      .filter(id => !cuitPorFactura.has(id))
+    if (!ids.length) return
+    void (async () => {
+      const nuevo = new Map(cuitPorFactura)
+      for (const empresa of EMPRESAS) {
+        const schema = schemaDeEmpresa(empresa)
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data } = await supabase.schema(schema).from('comprobantes_arca').select('id, cuit').in('id', ids.slice(i, i + 200))
+          for (const f of (data || []) as any[]) nuevo.set(f.id, { cuit: String(f.cuit || ''), schema })
+        }
+      }
+      setCuitPorFactura(nuevo)
+    })()
+  }, [movimientos, detallesFijos])
 
   const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
     const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
@@ -2305,7 +2376,7 @@ ${texto.trim()}` : texto.trim()
         const { data: facturaCompleta } = await supabase
           .schema(schemaFactura)
           .from('comprobantes_arca')
-          .select('cuenta_contable, nro_cuenta')
+          .select('cuenta_contable, nro_cuenta, detalle, numero_desde, denominacion_emisor')
           .eq('id', arcaElegida.id)
           .maybeSingle()
         const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
@@ -2367,6 +2438,18 @@ ${marca}` : marca
          * ✅ **Lo que el usuario escribió a mano se respeta siempre** — eso no cambia.
          */
         updateArca.detalle = movimientoAsignando.detalle?.trim() || null
+        // 🏷️ A-FEAT-1296 — sin detalle propio, el detalle fijo del proveedor (va también a la factura)
+        if (!updateArca.detalle) {
+          const fijos = await cargarDetallesFijos(supabase as any)
+          if (fijos.length) {
+            updateArca.detalle = await aplicarDetalleFijo(supabase as any, fijos, {
+              facturaId: arcaElegida.id, tabla: schemaFactura, cuit: arcaElegida.cuit,
+              monto: Number(movimientoAsignando.debitos) || Number(movimientoAsignando.creditos) || 0,
+              detalleFactura: (facturaCompleta as any)?.detalle, emisor: (facturaCompleta as any)?.denominacion_emisor,
+              numero: (facturaCompleta as any)?.numero_desde,
+            })
+          }
+        }
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
@@ -4472,32 +4555,53 @@ ${marca}` : marca
                                   onChange={(e) => setEditandoDetalleVal(e.target.value)}
                                   onKeyDown={async (e) => {
                                     if (e.key === 'Enter') {
-                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
-                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
+                                      await guardarDetalleCelda(movimiento, editandoDetalleVal, fijarDetalle)
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
                                   }}
                                   onBlur={async () => {
-                                    if (editandoDetalleVal !== (movimiento.detalle || '')) {
-                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
-                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
+                                    if (editandoDetalleVal !== (movimiento.detalle || '') || fijarDetalle) {
+                                      await guardarDetalleCelda(movimiento, editandoDetalleVal, fijarDetalle)
                                     }
                                     setEditandoDetalleId(null)
                                   }}
                                 />
-                              ) : (
-                                <span
-                                  className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
-                                  title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
-                                  onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || '') }}
-                                >
-                                  {movimiento.detalle || <span className="text-gray-300">—</span>}
-                                </span>
+                              ) : (() => {
+                                // 🏷️ A-FEAT-1296 — 📌 si es un detalle fijo; 💡 si está vacío y hay uno para sugerir.
+                                const det = (movimiento.detalle || '').trim()
+                                const fijo = det ? detallesFijos.find(f => f.detalle.trim().toLowerCase() === det.toLowerCase()) : undefined
+                                const fac = !det && (movimiento as any).comprobante_arca_id ? cuitPorFactura.get((movimiento as any).comprobante_arca_id) : undefined
+                                const sug = fac ? elegirDetalleFijo(detallesFijos, fac.cuit, Number(movimiento.debitos) || Number(movimiento.creditos) || 0) : null
+                                const sugerencias = sug ? (sug.elegido ? [sug.elegido] : sug.sugeridos.slice(0, 2)) : []
+                                return (
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <span
+                                      className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
+                                      title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
+                                      onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || ''); setFijarDetalle(false) }}
+                                    >
+                                      {movimiento.detalle || (sugerencias.length ? null : <span className="text-gray-300">—</span>)}
+                                    </span>
+                                    {fijo && (
+                                      <button type="button" title="Detalle fijo de este proveedor — click para dejar de usarlo"
+                                        className="text-[10px] shrink-0" onClick={() => desactivarDetalleFijo(fijo)}>📌</button>
+                                    )}
+                                    {sugerencias.map(s => (
+                                      <button key={s.id} type="button" title="Detalle fijo de este proveedor — click para ponerlo"
+                                        className="text-[10px] shrink-0 rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 truncate max-w-[140px]"
+                                        onClick={() => guardarDetalleCelda(movimiento, s.detalle, false)}>💡 {s.detalle}</button>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                              {editandoDetalleId === movimiento.id && (movimiento as any).comprobante_arca_id && (
+                                // onMouseDown + preventDefault: el tilde no le saca el foco al campo (si no, el blur guarda antes).
+                                <label className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5 cursor-pointer select-none"
+                                  onMouseDown={e => { e.preventDefault(); setFijarDetalle(v => !v) }}>
+                                  <input type="checkbox" readOnly checked={fijarDetalle} className="h-3 w-3" />
+                                  Usar siempre para {movimiento.proveedor_nombre || 'este proveedor'}
+                                </label>
                               )}
                             </TableCell>
                           )}

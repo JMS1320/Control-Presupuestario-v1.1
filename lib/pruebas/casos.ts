@@ -175,6 +175,7 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
+import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6875,6 +6876,35 @@ export function correrCasos(): Resultado[] {
     chequear("Regla → template", "Regla nueva: el detalle se copia aunque repita la cuenta; regla vieja: sólo si aporta (A-FEAT-138)",
       "Seguro Chalet · null · Percepcion de IVA Tarjeta", `${nueva} · ${vieja} · ${viejaAporta}`,
       nueva === "Seguro Chalet" && vieja === null && viejaAporta === "Percepcion de IVA Tarjeta", "A-DEC-1012")
+  }
+
+  // ══ 🏷️ DETALLE FIJO POR PROVEEDOR (A-FEAT-1296) ═══════════════════════════════════════════════════
+  {
+    const COOP = "30545813556", TEL = "30639453738"
+    const fijos = [
+      { id: "casco", cuit: COOP, detalle: "Luz Casco NZ Total", monto_referencia: 603027.68, activo: true },
+      { id: "port", cuit: COOP, detalle: "Luz Casa Porteria", monto_referencia: 56011.27, activo: true },
+      { id: "tel", cuit: TEL, detalle: "Flota Celulares", monto_referencia: 164259.82, activo: true },
+      { id: "viejo", cuit: TEL, detalle: "Celulares viejo", monto_referencia: null, activo: false },
+    ]
+    // Coopser de abril: 625.411,63 (casco) y 67.292,55 (portería) — los montos cambian pero guardan relación.
+    const casco = elegirDetalleFijo(fijos, "30-54581355-6", 625411.63)
+    const port = elegirDetalleFijo(fijos, COOP, 67292.55)
+    const tel = elegirDetalleFijo(fijos, TEL, 999999)
+    chequear("Detalle fijo", "Coopser elige el suministro por monto (casco / portería); Telecom con un solo fijo activo lo usa aunque el monto cambie",
+      "Luz Casco NZ Total · Luz Casa Porteria · Flota Celulares", `${casco.elegido?.detalle} · ${port.elegido?.detalle} · ${tel.elegido?.detalle}`,
+      casco.elegido?.id === "casco" && port.elegido?.id === "port" && tel.elegido?.id === "tel", "A-FEAT-1296")
+    // Un monto que no se parece a ninguno no elige: sugiere los dos.
+    const raro = elegirDetalleFijo(fijos, COOP, 300000)
+    const nada = elegirDetalleFijo(fijos, "20111111112", 1000)
+    chequear("Detalle fijo", "Si el monto no se parece a ningún suministro, no elige y sugiere; un proveedor sin fijos no devuelve nada",
+      "null + 2 sugeridos · null + 0", `${raro.elegido?.id ?? "null"} + ${raro.sugeridos.length} sugeridos · ${nada.elegido?.id ?? "null"} + ${nada.sugeridos.length}`,
+      raro.elegido === null && raro.sugeridos.length === 2 && nada.elegido === null && nada.sugeridos.length === 0, "A-FEAT-1296")
+    // Nunca pisa lo del usuario; el autogenerado sí se reemplaza.
+    const emisor = "COOPERATIVA DE PROVISION DE SERVICIOS ELECTRICOS PUBLICOS Y SOCIALES DE SAN PEDRO LTDA"
+    chequear("Detalle fijo", "Sólo se pone si el detalle está vacío o es el autogenerado «Factura 1-N - EMISOR»; lo escrito a mano manda",
+      "true · true · false", `${admiteDetalleFijo(null)} · ${admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237)} · ${admiteDetalleFijo("Luz galpón nuevo", emisor)}`,
+      admiteDetalleFijo(null) && admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237) && !admiteDetalleFijo("Luz galpón nuevo", emisor), "A-FEAT-1296")
   }
 
   return r
