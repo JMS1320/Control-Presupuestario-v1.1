@@ -4217,6 +4217,8 @@ el empleado sube los archivos a la carpeta. De ahí el orden **carpeta primero**
 
 🟠 **3ª vuelta (2026-10-20):** ✅ si **dos archivos** coinciden con una factura (ya pasó: una NC tomada por la FC) **no se vincula ninguno**: VER con los dos candidatos y elige el usuario · ✅ se conservan **dos niveles de vinculada**: «APP» (la app validó CUIT+número+importe) y «Sí» (la confirmó el usuario) — él decide hasta dónde lleva cada una · propuesta de rigor: sumar **tipo de comprobante** (FC/NC/ND) y **fecha**; si CUIT+número+importe coinciden pero tipo o fecha no → VER, nunca descarte · «No» lo pone **sólo el usuario** · el glosario de estados va **en la app** (leyenda en el buscador y en Facturas ARCA) · lista de los «No» para decidir: página privada con las 93 (agrupadas por motivo probable) → el usuario devuelve cuáles quedan.
 
+🟠 **Correcciones del usuario (2026-10-20):** «Sí» lo pone **Ulises** cuando la encuentra a mano, y va a seguir así → **no** sirve para la confirmación del usuario: hace falta un estado propio para «la confirmé yo» (propuesta: **Confirmada**, sólo admin, al aprobar un VER); hoy confirmar un VER escribe «Sí» y se mezcla con lo de Ulises · ✅ rigor tipo + fecha: de acuerdo (los datos coinciden todos o ninguno) — la fecha se busca en varios formatos y lo que caiga en VER se ve con su motivo en el reporte · «dónde vive» = en el modal Buscar PDFs, una columna con el **subdiario donde está imputada** la factura (mes/año contable; «sin imputar» si no tiene).
+
 <a id="a-test-1217"></a>**A-TEST-1217** — se escribe con sus pasos (y «Qué probar vos:») al terminar cada etapa.
 
 ---
