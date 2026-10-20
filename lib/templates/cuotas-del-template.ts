@@ -99,3 +99,24 @@ export function cuotaDelMovimiento<T extends { id: string; fecha_estimada?: stri
   const delMes = cuotas.filter(c => String(c.fecha_vencimiento || c.fecha_estimada || "").slice(0, 7) === mes)
   return delMes.length === 1 ? delMes[0] : null
 }
+
+/**
+ * 🔗 **A-FEAT-1302 — la regla usa la cuota PENDIENTE del mes en vez de crear otra.**
+ *
+ * Antes la conciliación por regla insertaba siempre una cuota nueva. Con las cuotas del cronograma ya
+ * cargadas (Seguro Chalet, Internet NZ, ACA: mensuales «pendientes hasta que se concilien», pedido del
+ * usuario 2026-10-20), eso dejaba el mes **duplicado**: la proyectada sin conciliar y la nueva conciliada.
+ *
+ * Elige entre las pendientes del mismo mes y año la de importe más cercano (Chubb tiene dos por mes del
+ * mismo importe: la primera conciliación toma una y la segunda la otra). Si no hay, `null`: se crea la
+ * cuota nueva como siempre.
+ */
+export function cuotaPendienteDelMes<T extends { id: string; fecha_estimada?: string | null; fecha_vencimiento?: string | null; monto?: number | string | null; estado?: string | null }>(
+  cuotas: T[], fechaMovimiento: string, monto: number,
+): T | null {
+  const mes = String(fechaMovimiento).slice(0, 7)
+  const libres = cuotas.filter(c => String(c.estado ?? '').toLowerCase() === 'pendiente'
+    && String(c.fecha_vencimiento || c.fecha_estimada || '').slice(0, 7) === mes)
+  if (!libres.length) return null
+  return [...libres].sort((a, b) => Math.abs((Number(a.monto) || 0) - monto) - Math.abs((Number(b.monto) || 0) - monto))[0]
+}

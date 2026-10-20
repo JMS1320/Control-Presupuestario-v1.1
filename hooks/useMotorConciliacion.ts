@@ -19,6 +19,7 @@ import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrig
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
+import { cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -1157,6 +1158,39 @@ export function useMotorConciliacion() {
       // Determinar tipo_movimiento y monto desde el extracto
       const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
       const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+      // 🔗 A-FEAT-1302 — si el template ya tiene la cuota PENDIENTE de este mes (cronograma cargado), se
+      // concilia ésa con el importe y la fecha reales; crear otra dejaba el mes duplicado.
+      const { data: delTemplate } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .select('id, fecha_estimada, fecha_vencimiento, monto, estado, detalle')
+        .eq('egreso_id', template.id)
+        .eq('estado', 'pendiente')
+      const pendiente = cuotaPendienteDelMes((delTemplate || []) as any[], movimiento.fecha, Number(monto) || 0)
+      if (pendiente) {
+        const { error: eUp } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update({
+            fecha_vencimiento: movimiento.fecha,
+            fecha_estimada: movimiento.fecha,
+            fecha_pago: movimiento.fecha,
+            monto,
+            estado: 'conciliado',
+            tipo_movimiento: tipoMovimiento,
+            ...((pendiente as any).detalle ? {} : { detalle: detalleDeRegla(regla as any) || movimiento.descripcion || null }),
+          })
+          .eq('id', pendiente.id)
+        if (!eUp) {
+          return {
+            templateId: template.id as string,
+            cuotaId: pendiente.id as string,
+            responsable: (template as any).responsable ?? null,
+            template: template as TemplateOrigen,
+            fechaCuota: movimiento.fecha ?? null,
+          }
+        }
+        console.error('No se pudo conciliar la cuota pendiente del mes; se crea una nueva:', eUp)
+      }
 
       // Crear cuota con estado conciliado directamente
       const { data: cuota, error } = await supabase

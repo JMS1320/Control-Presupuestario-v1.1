@@ -176,7 +176,7 @@ import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta,
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
-import { generarCuotasTemplate, cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
+import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -6958,6 +6958,23 @@ export function correrCasos(): Resultado[] {
     const ninguna = cuotaDelMovimiento(cuotas, "2026-01-05")
     chequear("Templates", "🔗 El movimiento del 02/12/2025 se ata a la cuota de diciembre (no se crea una extra); de otro año, ninguna",
       "c12 · null", `${elegida?.id} · ${ninguna === null ? "null" : ninguna.id}`, elegida?.id === "c12" && ninguna === null, "A-FEAT-1302")
+  }
+
+  // ══ 🔗 LA REGLA CONCILIA LA CUOTA PENDIENTE DEL MES, NO CREA OTRA (A-FEAT-1302) ═══════════════════════
+  {
+    // 🧨 Con las cuotas jun–dic de Seguro Chalet cargadas, conciliar junio insertaba una nueva: mes duplicado.
+    const chalet = [
+      { id: "jun-a", fecha_vencimiento: "2026-06-26", monto: 121636.43, estado: "pendiente" },
+      { id: "jun-b", fecha_vencimiento: "2026-06-26", monto: 121636.43, estado: "pendiente" },
+      { id: "jul-a", fecha_vencimiento: "2026-07-26", monto: 121636.43, estado: "pendiente" },
+      { id: "may-a", fecha_vencimiento: "2026-05-26", monto: 121636.43, estado: "conciliado" },
+    ]
+    const primera = cuotaPendienteDelMes(chalet, "2026-06-25", 121636.43)
+    const segunda = cuotaPendienteDelMes(chalet.filter(c => c.id !== primera?.id), "2026-06-25", 121636.43)
+    const mayo = cuotaPendienteDelMes(chalet, "2026-05-26", 121636.43)
+    chequear("Templates", "Dos cargos de Chubb en junio toman las DOS cuotas pendientes de junio; mayo (ya conciliada) → crea nueva",
+      "jun-a · jun-b · null", `${primera?.id} · ${segunda?.id} · ${mayo === null ? "null" : mayo.id}`,
+      primera?.id === "jun-a" && segunda?.id === "jun-b" && mayo === null, "A-FEAT-1302")
   }
 
   // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════
