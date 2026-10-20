@@ -168,7 +168,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
-import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
@@ -6738,13 +6738,19 @@ export function correrCasos(): Resultado[] {
     chequear("Regla → template", "🎯 La regla apunta a Seguro Flota 25/26: un movimiento de ago-26 carga en el 26/27 (renovado) y uno de mar-26 en el 25/26; nunca en Accidentes ni en el de PAM",
       "sf-2627 · sf-2526", `${ago?.id} · ${mar?.id}`, ago?.id === "sf-2627" && mar?.id === "sf-2526", "A-FEAT-1293")
 
-    // MA es anual: Seguro Chalet 2026 → un movimiento de 2027 sin renglón 2027 cae en el elegido (no se inventa).
-    const chalet = { id: "ch-2026", nombre_referencia: "Seguro Chalet", responsable: "MA", año: "2026", periodicidad: "anual", activo: true }
-    const sinRenovar = templateParaFecha(chalet, [chalet], "2027-01-10")
-    const inactivo = templateParaFecha({ ...chalet, activo: false }, [{ ...chalet, activo: false }], "2027-01-10")
-    chequear("Regla → template", "Sin renglón de esa campaña, carga en el elegido; si el elegido está desactivado y no hay otro, no carga (no inventa)",
-      "ch-2026 · null", `${sinRenovar?.id} · ${inactivo === null ? "null" : inactivo.id}`,
-      sinRenovar?.id === "ch-2026" && inactivo === null, "A-FEAT-1293")
+    // 📅 A-DEC-1015 — Orbith → «Internet NZ» de MA existe sólo 2026: un cargo de dic-2025 NO puede caer en el
+    // 2026 (inflaba 2026 y dejaba 2025 sin el gasto). Los cargos del banco (sin presupuesto por campaña) sí.
+    const nz = { id: "nz-2026", nombre_referencia: "Internet NZ", responsable: "MA", año: "2026", periodicidad: "anual", activo: true }
+    const nz2025 = templateParaFecha(nz, [nz], "2025-12-02")
+    const iva = { id: "iva-2026", nombre_referencia: "Iva Bancario", responsable: "MSA", año: "2026", periodicidad: "anual", activo: true, solo_conciliacion: true }
+    const iva2025 = templateParaFecha(iva, [iva], "2025-12-31")
+    const inactivo = templateParaFecha({ ...iva, activo: false }, [{ ...iva, activo: false }], "2025-12-31")
+    chequear("Regla → template", "📅 Sin la campaña 2025, Orbith NO carga en la 2026 (queda en auditar); el IVA del banco sí carga; un template desactivado nunca",
+      "null · iva-2026 · null", `${nz2025 === null ? "null" : nz2025.id} · ${iva2025?.id} · ${inactivo === null ? "null" : inactivo.id}`,
+      nz2025 === null && iva2025?.id === "iva-2026" && inactivo === null, "A-DEC-1015")
+    chequear("Regla → template", "El motivo dice qué campaña falta y de qué template",
+      "Falta la campaña 2025 de «Internet NZ» (MA)…", motivoFaltaCampana(nz, "2025-12-02"),
+      motivoFaltaCampana(nz, "2025-12-02").startsWith("Falta la campaña 2025 de «Internet NZ» (MA)"), "A-DEC-1015")
   }
 
   // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════

@@ -18,7 +18,7 @@ import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { templateParaFecha, detalleDeRegla } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -960,7 +960,13 @@ export function useMotorConciliacion() {
 
               // Si la regla tiene llena_template=true, crear cuota en el template correspondiente
               if (regla.llena_template) {
-                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
+                // 📅 A-DEC-1015 — si no se puede cargar la cuota (falta la campaña), el movimiento NO queda
+                // conciliado de un solo lado: pasa a auditar con el motivo.
+                let motivoSinCuota: string | null = null
+                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento, m => { motivoSinCuota = m })
+                if (!cuotaResult && motivoSinCuota) {
+                  await actualizarMovimientoBD(cuenta, movimiento.id, { estado: 'auditar', motivo_revision: motivoSinCuota })
+                }
                 if (cuotaResult) {
                   // Prioridad: Tab 2 (Tipo A→B) > Tab 1 (codigosRegla ya aplicados) > seccion_regla (cuotaResult)
                   const codigosTab2F2 = await buscarCodigosContableInterno(
@@ -1065,7 +1071,9 @@ export function useMotorConciliacion() {
   const crearCuotaEnTemplate = async (
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
-    movimiento: MovimientoBancario
+    movimiento: MovimientoBancario,
+    /** 📅 A-DEC-1015 — por qué no se cargó la cuota, para que el movimiento quede en auditar. */
+    avisar?: (motivo: string) => void,
   ): Promise<{
     templateId: string; cuotaId: string; responsable?: string | null
     /** 🧲 A-BUG-175 — lo que el movimiento hereda: proveedor, comprobante y centro de costo. */
@@ -1084,13 +1092,15 @@ export function useMotorConciliacion() {
           .eq('id', (regla as any).template_id).maybeSingle()
         if (!elegido) {
           console.warn(`⚠️ La regla «${regla.texto_buscar}» apunta a un template que ya no existe — cuota no creada`)
+          avisar?.(`La regla «${regla.texto_buscar}» apunta a un template que ya no existe: elegí otro en la regla. No se cargó ninguna cuota.`)
           return null
         }
         const { data: familia } = await supabase.from('egresos_sin_factura').select(COLS)
           .eq('nombre_referencia', (elegido as any).nombre_referencia).eq('activo', true)
         const destino = templateParaFecha(elegido as any, (familia || []) as any[], movimiento.fecha)
         if (!destino) {
-          console.warn(`⚠️ El template de la regla «${regla.texto_buscar}» no está activo para ${movimiento.fecha} — cuota no creada`)
+          console.warn(`⚠️ El template de la regla «${regla.texto_buscar}» no tiene campaña para ${movimiento.fecha} — cuota no creada`)
+          avisar?.(motivoFaltaCampana(elegido as any, movimiento.fecha))
           return null
         }
         return await insertarCuotaDeRegla(destino as any, movimiento)

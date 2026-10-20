@@ -7,7 +7,12 @@
  * renovarse seguiría cargando en la campaña vieja.
  *
  * > **La regla apunta a una FAMILIA (nombre + responsable). Se carga en el renglón cuya campaña
- * > corresponde a la fecha del movimiento; si no hay, en el elegido.**
+ * > corresponde a la fecha del movimiento.**
+ *
+ * ⚠️ *Cambió 2026-10-20 (A-DEC-1015)*: si esa campaña **no existe**, antes cargaba en el elegido — y una
+ * cuota de Orbith de 2025 caía en la campaña 2026, sin aviso. Ahora eso sólo vale para los **cargos del
+ * banco** (`solo_conciliacion`: comisión, IVA, percepción), que no se presupuestan por campaña. Para el
+ * resto no se carga: el motor deja el movimiento en auditar diciendo qué campaña falta.
  *
  * La campaña de la fecha sale de `campanaDeFecha` (la misma que usa el alta desde la conciliación).
  */
@@ -20,6 +25,7 @@ export interface TemplateDeFamilia {
   año: string | null
   periodicidad?: string | null
   activo?: boolean | null
+  solo_conciliacion?: boolean | null
 }
 
 const norm = (s: string | null | undefined) => String(s ?? "").trim().toLowerCase()
@@ -28,9 +34,18 @@ const norm = (s: string | null | undefined) => String(s ?? "").trim().toLowerCas
 export const esDeLaFamilia = (elegido: TemplateDeFamilia, t: TemplateDeFamilia) =>
   norm(t.nombre_referencia) === norm(elegido.nombre_referencia) && norm(t.responsable) === norm(elegido.responsable)
 
+/** La campaña que le corresponde a `fecha` en la familia del elegido («2025», «25/26»…). */
+export function campanaParaFecha(elegido: TemplateDeFamilia, fecha: string): string {
+  // Muchos templates viejos no tienen `periodicidad`: se deduce del formato de su campaña («25/26» = jul–jun).
+  const periodicidad: Periodicidad = elegido.periodicidad === "bianual" || (!elegido.periodicidad && String(elegido.año ?? "").includes("/"))
+    ? "bianual" : "anual"
+  return campanaDeFecha(periodicidad, fecha)
+}
+
 /**
- * Elige el renglón: entre los ACTIVOS de la familia, el de la campaña de `fecha`; si ninguno, el elegido
- * si está activo; si tampoco, `null` (el motor no inventa: avisa y no carga).
+ * Elige el renglón: entre los ACTIVOS de la familia, el de la campaña de `fecha`. Si no existe:
+ * - un **cargo del banco** (`solo_conciliacion`) o un template **sin campaña** carga en el elegido;
+ * - cualquier otro → `null`: el motor no inventa, deja el movimiento en auditar (A-DEC-1015).
  */
 export function templateParaFecha(
   elegido: TemplateDeFamilia,
@@ -38,14 +53,18 @@ export function templateParaFecha(
   fecha: string,
 ): TemplateDeFamilia | null {
   const familia = candidatos.filter(t => t.activo !== false && esDeLaFamilia(elegido, t))
-  // Muchos templates viejos no tienen `periodicidad`: se deduce del formato de su campaña («25/26» = jul–jun).
-  const periodicidad: Periodicidad = elegido.periodicidad === "bianual" || (!elegido.periodicidad && String(elegido.año ?? "").includes("/"))
-    ? "bianual" : "anual"
-  const campana = campanaDeFecha(periodicidad, fecha)
+  const campana = campanaParaFecha(elegido, fecha)
   const deLaCampana = familia.find(t => norm(t.año) === norm(campana))
   if (deLaCampana) return deLaCampana
-  if (elegido.activo !== false) return elegido
+  const sinCampana = !String(elegido.año ?? "").trim()
+  if (elegido.activo !== false && (elegido.solo_conciliacion || sinCampana)) return elegido
   return null
+}
+
+/** El motivo de auditar cuando falta la campaña (A-DEC-1015). */
+export function motivoFaltaCampana(elegido: TemplateDeFamilia, fecha: string): string {
+  return `Falta la campaña ${campanaParaFecha(elegido, fecha)} de «${elegido.nombre_referencia}» (${elegido.responsable ?? "?"}): `
+    + `creala (Templates → renovar campaña) y volvé a correr. No se cargó ninguna cuota.`
 }
 
 /**
