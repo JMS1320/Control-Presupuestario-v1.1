@@ -1,6 +1,7 @@
 "use client"
 
 import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
+import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
 import { hoyArgentina } from "@/lib/fechas"
 import { cerrarVentaSiSaldada, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -1083,6 +1084,48 @@ ${texto.trim()}` : texto.trim()
     } catch (err) {
       toast.error('No se pudo vincular el pago: ' + (err as Error).message)
     } finally { setVinculandoNr(null) }
+  }
+
+  /**
+   * 💵 **A-BUG-1307 — completar en pesos los consumos en dólares de un resumen**, con el cambio REAL del
+   * pago: el débito en pesos que pagó los dólares ÷ el «SU PAGO EN USD» del resumen siguiente. Escribe los
+   * dos lados: el movimiento (débito en pesos) y, si está conciliado contra una cuota, la cuota.
+   */
+  const [completandoUsd, setCompletandoUsd] = useState<string | null>(null)
+  const completarPesosUsd = async (nr: string, movs: any[], siguiente: any[] | null) => {
+    const consumos = movs.filter(m => m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen'
+      && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0))
+    const pagoUsd = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos_usd) || 0) > 0)
+    const pagoPesos = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos) || 0) > 0)
+    const r = pesosDeConsumosUsd({
+      consumos: consumos.map(m => ({ id: m.id, usd: Number(m.debitos_usd) || 0 })),
+      usdPagado: Number(pagoUsd?.creditos_usd) || 0,
+      fechaPago: String(pagoUsd?.fecha ?? '').slice(0, 10),
+      pesosPagados: Number(pagoPesos?.creditos) || 0,
+      debitos: debitosTarjeta,
+    })
+    if (!r.ok) { toast.error(r.aviso); return }
+    const lineas = r.pesos.map(p => {
+      const m = consumos.find(c => c.id === p.id)
+      return `• ${m?.descripcion ?? ''}: USD ${Number(m?.debitos_usd).toLocaleString('es-AR')} → ${formatCurrency(p.pesos)}`
+    }).join('\n')
+    if (!window.confirm(`Completar en pesos con el cambio del pago:\n\nDébito del ${new Date(r.debito.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(r.debito.debitos)}\nCambio: ${r.tc.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n${lineas}\n\nSi está conciliado contra una cuota, la cuota toma el mismo importe.`)) return
+    setCompletandoUsd(nr)
+    try {
+      for (const p of r.pesos) {
+        const m = consumos.find(c => c.id === p.id)
+        const { error } = await dbCuenta().from(tablaActiva).update({ debitos: p.pesos }).eq('id', p.id)
+        if (error) throw error
+        actualizarLocal(p.id, { debitos: p.pesos } as any)
+        if (m?.template_cuota_id) {
+          const { error: e2 } = await supabase.from('cuotas_egresos_sin_factura').update({ monto: p.pesos }).eq('id', m.template_cuota_id)
+          if (e2) toast.error(`El movimiento quedó en pesos, pero la cuota no: ${e2.message}`)
+        }
+      }
+      toast.success(`${r.pesos.length} consumo${r.pesos.length === 1 ? '' : 's'} en dólares completado${r.pesos.length === 1 ? '' : 's'} en pesos (cambio ${r.tc.toLocaleString('es-AR')})`)
+    } catch (err) {
+      toast.error('No se pudo completar: ' + (err as Error).message)
+    } finally { setCompletandoUsd(null) }
   }
 
   // Conciliar UN resumen de tarjeta con el motor de la cuenta corriente
@@ -4355,7 +4398,10 @@ ${marca}` : marca
                   const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
                   const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
                   const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
-                  const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+                  // 💵 A-BUG-1307 — los consumos en dólares no están en el total en pesos del resumen: aunque se
+                  // completen en pesos, no entran en la suma viva (si no, el control daría diferencia).
+                  const viva = Math.round(g.movs.filter((m: any) => !((Number(m.debitos_usd) || 0) > 0))
+                    .reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
                   const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
                   const movsOrd = [...g.movs].sort((a: any, b: any) => (Number(a.orden) || 0) - (Number(b.orden) || 0)) // orden del PDF
                   const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length
@@ -4429,6 +4475,20 @@ ${marca}` : marca
                                   onClick={() => vincularPagoResumen(item.nr, String(item.cierre).slice(0, 10), d, p.suPagos.map(x => x.id))}
                                   className="px-2 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">
                                   {vinculandoNr === item.nr ? 'Vinculando…' : 'Vincular pago'}
+                                </button>
+                              )
+                            })()}
+                            {(() => {
+                              // 💵 A-BUG-1307 — consumos en USD todavía sin su importe en pesos
+                              const sinPesos = item.movs.filter((m: any) => m.tipo_fila !== 'pago' && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0)).length
+                              if (!sinPesos) return null
+                              const sig = lista.filter(x => String(x.cierre) > String(item.cierre)).sort((a, b) => String(a.cierre).localeCompare(String(b.cierre)))[0]
+                              return (
+                                <button type="button" disabled={completandoUsd !== null}
+                                  title="Completar en pesos con el cambio real del pago (débito en pesos ÷ SU PAGO EN USD del resumen siguiente)"
+                                  onClick={() => completarPesosUsd(item.nr, item.movs, sig ? sig.movs : null)}
+                                  className="px-2 py-1 rounded border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap">
+                                  {completandoUsd === item.nr ? 'Completando…' : `💵 Pesos de ${sinPesos} en USD`}
                                 </button>
                               )
                             })()}

@@ -175,6 +175,7 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
+import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -6913,6 +6914,26 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "Sin elegir: dos a la misma diferencia, más de $1, un importe en cero, el exacto (lo resuelve la búsqueda normal) o fuera de fecha",
       "null ×5", [empate, lejos, cero, exacto, fueraDeFecha].map(x => x === null ? "null" : "ELIGIÓ").join(" "),
       [empate, lejos, cero, exacto, fueraDeFecha].every(x => x === null), "A-BUG-1305")
+  }
+
+  // ══ 💵 UN CONSUMO EN DÓLARES VALE LO QUE SE DEBITÓ EN PESOS POR ÉL (A-BUG-1307) ════════════════════
+  {
+    // 🧨 vthebestpdf USD 29,95 (resumen 29/01) quedó conciliado por $0. Se pagó el 09/02: «Pago Visa Empresa»
+    // $889.758,62 (los pesos) y otro de $43.128,00 (los dólares) → cambio 1.440.
+    const deb = (id: string, fecha: string, debitos: number) => ({ id, tabla: "public.msa_galicia", fecha, debitos, nro_resumen: null, descripcion: "Pago Visa Empresa" })
+    const debitos = [deb("pesos", "2026-02-09", 889758.62), deb("usd", "2026-02-09", 43128), deb("otro", "2026-01-12", 220250.1)]
+    const r = pesosDeConsumosUsd({ consumos: [{ id: "vthe", usd: 29.95 }], usdPagado: 29.95, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos })
+    chequear("Doble audit", "USD 29,95 pagados con el débito de $43.128,00 → cambio 1.440 y el consumo vale $43.128,00 (no $0)",
+      "1440 · usd · 43128", r.ok ? `${r.tc} · ${r.debito.id} · ${r.pesos[0].pesos}` : r.aviso,
+      r.ok && r.tc === 1440 && r.debito.id === "usd" && r.pesos[0].pesos === 43128, "A-BUG-1307")
+    const dos = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }, { id: "b", usd: 20.01 }], usdPagado: 30.01, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos: [deb("pesos", "2026-02-09", 889758.62), deb("usd", "2026-02-09", 43333.33)] })
+    const suma = dos.ok ? Math.round(dos.pesos.reduce((a, p) => a + p.pesos, 0) * 100) / 100 : 0
+    chequear("Doble audit", "Con dos consumos, la suma en pesos da exactamente el débito (el último absorbe el redondeo)",
+      "43333.33", String(suma), suma === 43333.33, "A-BUG-1307")
+    const ambiguo = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 10, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos: [deb("pesos", "2026-02-09", 889758.62), deb("x", "2026-02-09", 14400), deb("y", "2026-02-09", 500)] })
+    const sinPago = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 0, fechaPago: "", pesosPagados: 0, debitos })
+    chequear("Doble audit", "No adivina: dos débitos candidatos el mismo día, o sin «SU PAGO EN USD» → aviso, nada se escribe",
+      "aviso · aviso", `${ambiguo.ok ? "ELIGIÓ" : "aviso"} · ${sinPago.ok ? "ELIGIÓ" : "aviso"}`, !ambiguo.ok && !sinPago.ok, "A-BUG-1307")
   }
 
   // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════
