@@ -172,7 +172,7 @@ import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
-import { conFechaDeEmision } from "@/lib/conciliacion/pool-tarjeta"
+import { conFechaDeEmision, etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6767,6 +6767,17 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "En la tarjeta, la FC de Medicus se compara por su emisión (21/05 = día del débito) y la cuota de un template sigue con su fecha",
       "2026-05-21 · 2026-05-26", `${pool[0].fecha_estimada} · ${pool[1].fecha_estimada}`,
       pool[0].fecha_estimada === "2026-05-21" && pool[1].fecha_estimada === "2026-05-26", "A-BUG-1298")
+  }
+
+  // ══ 🧾 EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN (A-FEAT-1295) ══════════════════════
+  {
+    // 🧨 Antes la comisión de la VISA quedaba «Comision Cuenta Bancaria MSA - Mayo 2026», y el pago «28/5/2026».
+    const e1 = etiquetaResumenTarjeta("2026-05-28")
+    const e2 = etiquetaResumenTarjeta("2026-05-28T00:00:00+00:00")
+    const e3 = etiquetaResumenTarjeta(null)
+    chequear("Doble audit", "La comisión/IVA/percepción de la tarjeta y su pago dicen «Resumen tarjeta cierre 28/05/2026» (dd/mm/aaaa, sin huso); sin cierre, no inventa",
+      "Resumen tarjeta cierre 28/05/2026 ×2 · null", `${e1} · ${e2} · ${e3}`,
+      e1 === "Resumen tarjeta cierre 28/05/2026" && e2 === e1 && e3 === null, "A-FEAT-1295")
   }
 
   return r

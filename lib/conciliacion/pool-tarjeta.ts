@@ -15,3 +15,17 @@
 export function conFechaDeEmision<T extends { origen?: string | null; fecha_estimada?: string | null; fecha_emision?: string | null }>(pool: T[]): T[] {
   return pool.map(r => (r.origen === "ARCA" && r.fecha_emision ? { ...r, fecha_estimada: r.fecha_emision } : r))
 }
+
+/**
+ * 🧾 **EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN** (A-FEAT-1295, 2026-10-19).
+ *
+ * Usuario: *«¿no debería referir al resumen de tarjeta, que es el comprobante?»*. La comisión, el IVA y
+ * la percepción los factura el banco en el resumen: ése es el papel. Un solo rótulo para todo lo que
+ * remite al resumen —lo que concilia una regla y el pago vinculado—, así se busca y se lee igual.
+ * La fecha va armada a mano (dd/mm/aaaa): `toLocaleDateString` daba «28/5/2026» y depende del huso.
+ */
+export function etiquetaResumenTarjeta(fechaCierre: string | null | undefined): string | null {
+  const d = String(fechaCierre ?? "").slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null
+  return `Resumen tarjeta cierre ${d.split("-").reverse().join("/")}`
+}

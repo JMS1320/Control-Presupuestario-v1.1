@@ -80,6 +80,7 @@ import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -969,7 +970,7 @@ ${texto.trim()}` : texto.trim()
     try {
       const [sch, tabla] = debito.tabla.split('.')
       const cli = sch && sch !== 'public' ? supabase.schema(sch) : supabase
-      const etiqueta = `Resumen tarjeta cierre ${new Date(cierre + 'T12:00:00').toLocaleDateString('es-AR')}`
+      const etiqueta = etiquetaResumenTarjeta(cierre) ?? `Resumen tarjeta ${nr}`  // mismo rótulo que los cargos (A-FEAT-1295)
       const { data: actual } = await cli.from(tabla).select('comprobantes_pagados, categ').eq('id', debito.id).maybeSingle()
       const { error } = await cli.from(tabla)
         .update({ nro_resumen: nr, ...((actual as any)?.comprobantes_pagados ? {} : { comprobantes_pagados: etiqueta }) })
