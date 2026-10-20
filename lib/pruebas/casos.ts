@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp } from "@/lib/gas-pdf/lote"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -1023,6 +1023,23 @@ export function correrCasos(): Resultado[] {
   ]).map(f => f.id).join(",")
   chequear("Buscador de PDFs — qué ofrece el modal", "🔴 Sólo SIN 📎; nunca Portal, No ni VER; sin el histórico. Arriba (y marcadas) Buscar, sin estado y el «Sí» de Ulises sin 📎; NO Mail se ofrece al final",
     "si,bus,nul,nomail", cands, cands === "si,bus,nul,nomail", "A-FEAT-1287")
+
+  // «Confirmada» sólo con link, y el aviso «sin comprobante» ya no cuenta las «No» (usuario 2026-10-21)
+  const faltan = [
+    { id: "no", fc: "No", estado: "pendiente" }, { id: "portal", fc: "Portal", estado: "pendiente" },
+    { id: "bus", fc: "Buscar", estado: "pendiente" }, { id: "si", fc: "Sí", estado: "pendiente" },
+    { id: "ver", fc: "VER", estado: "pendiente" }, { id: "app", fc: "APP", estado: "pendiente", pdf_drive_url: L },
+    { id: "hist", fc: "NO", estado: "historico" },
+  ].filter(faltaComprobante).map(f => f.id).join(",")
+  chequear("Buscador de PDFs — aviso «sin comprobante»", "🔴 Cuenta las que no tienen 📎 (Buscar, Sí de Ulises, VER); NO las «No» (= no corresponde), ni Portal, ni el histórico",
+    "bus,si,ver", faltan, faltan === "bus,si,ver", "A-FEAT-1287")
+  const links = [L, "  " + L + " ", "https://otro.com/x.pdf", "", null, "drive.google.com/file/d/x"].map(u => linkParaConfirmar(u) ? "ok" : "no").join(",")
+  chequear("Buscador de PDFs — Confirmada sólo con link", "🔴 Para dejar una factura Confirmada hace falta un link de Google Drive; sin link (o con otro sitio) no se confirma",
+    "ok,ok,no,no,no,no", links, links === "ok,ok,no,no,no,no", "A-FEAT-1287")
+  const confApp = [{ fc: "APP", pdf_drive_url: L }, { fc: "APP" }, { fc: "Sí", pdf_drive_url: L }, { fc: "VER", pdf_drive_url: L }]
+    .map(f => sePuedeConfirmarApp(f) ? "sí" : "no").join(",")
+  chequear("Buscador de PDFs — confirmar una APP", "🔴 Sólo una APP con su 📎 se confirma directo (queda Confirmada con el mismo archivo); el VER va por la lista de candidatos",
+    "sí,no,no,no", confApp, confApp === "sí,no,no,no", "A-FEAT-1287")
 
   // Rigor del vínculo desde la carpeta (usuario 2026-10-20): con dos archivos no se vincula ninguno.
   const H = (factura_id: string, file_id: string, extra: object = {}) => ({ factura_id, file_id, drive_url: `u-${file_id}`, archivo: `${file_id}.pdf`, ...extra })

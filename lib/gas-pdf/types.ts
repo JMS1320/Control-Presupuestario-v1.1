@@ -45,7 +45,7 @@ export interface GasBuscarRequest {
   denominacion_emisor: string
   email_proveedor: string
   patron_asunto: string              // ej. "Factura" — puede ser ''
-  dias_busqueda: number              // ventana en días (default 7)
+  dias_busqueda: number              // ventana en días desde la emisión (default 30, lo pone la ruta)
   carpeta_drive_id: string           // ID Drive folder (de la empresa) donde archivar
   subcarpetas?: string[]             // ruta de subcarpetas a crear/usar bajo la anterior, ej. ["2025-2026","26-06"]
   recolectores?: { email: string; asunto: string }[]  // catch-all: cada reenviador (Jose/Andrés) con su PROPIO asunto mínimo (Jose "Documento de Jose", Andrés "FC")

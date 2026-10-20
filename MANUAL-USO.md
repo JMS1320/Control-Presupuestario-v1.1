@@ -1338,6 +1338,13 @@ datos**: CUIT, número, importe, **tipo** (factura / nota de crédito / nota de 
 **Abrir** y su motivo. Tocás **«Es ésta»** en el que corresponde y la factura queda **Confirmada** con ese
 archivo. Los que no elegís no se borran.
 
+**Confirmar una APP.** Si revisaste un archivo que vinculó la app, el **✓** verde al lado de **APP** la
+pasa a **Confirmada** con el mismo archivo.
+
+**Vincular a mano.** El aviso **«N facturas sin comprobante (sin 📎)»** arriba de la grilla → **Ver
+detalle**: pegás el link del PDF en Google Drive y tocás **Vincular** → queda **Confirmada** con su 📎.
+**Confirmada siempre lleva archivo**: sin link no se puede poner.
+
 **Mientras corre**, arriba a la derecha aparece un cartel que dice en qué paso está (*«Mirando la carpeta
 del mes…»* o *«Buscando PDFs en el mail…»*). Podés seguir trabajando.
 
@@ -1365,7 +1372,7 @@ archivo. Lo mismo te llega en el **mail resumen**. Con informe, el cartel no se 
 | **Buscar** | falta el archivo: hay que buscarlo | cualquiera (lo que no se marca queda así) |
 | **APP** | la app encontró el archivo y lo validó | la app |
 | **VER** | apareció algo dudoso o más de un candidato: hay que elegir | la app |
-| **Confirmada** | aprobaste un candidato que estaba en VER | vos |
+| **Confirmada** | revisaste el archivo y es ésa (desde VER, desde APP o pegando el link). Siempre con 📎 | vos |
 | **Sí** | Ulises la tiene. Sin 📎, la app igual la busca para vincularla | Ulises |
 | **NO Mail** | se buscó y no apareció; se puede volver a buscar | la app |
 | **Portal** | se baja del portal del proveedor: no se busca | cualquiera |

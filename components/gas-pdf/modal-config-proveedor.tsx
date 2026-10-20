@@ -207,8 +207,8 @@ export function ModalConfigProveedor({ open, onClose, cuitInicial }: Props) {
                         <input
                           type="number"
                           min={1} max={30}
-                          value={Number(getValue(p, 'dias_busqueda') ?? 7)}
-                          onChange={(e) => setEditField(p.id, 'dias_busqueda', parseInt(e.target.value) || 7)}
+                          value={Number(getValue(p, 'dias_busqueda') ?? 30)}
+                          onChange={(e) => setEditField(p.id, 'dias_busqueda', parseInt(e.target.value) || 30)}
                           className="w-12 text-xs border rounded px-1 py-0.5 text-center"
                         />
                       </td>

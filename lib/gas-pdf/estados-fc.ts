@@ -20,7 +20,7 @@ export const ESTADOS_FC: readonly EstadoFc[] = [
   { valor: 'Buscar', significado: 'Falta el archivo: hay que buscarlo', quien: 'cualquiera (lo no marcado queda así)', color: 'bg-gray-100 text-gray-700' },
   { valor: 'APP', significado: 'La app encontró el archivo y lo validó (CUIT, número, monto, tipo y fecha)', quien: 'la app', color: 'bg-blue-100 text-blue-800' },
   { valor: 'VER', significado: 'La app encontró algo dudoso o más de un candidato: hay que elegir o confirmar', quien: 'la app', color: 'bg-yellow-100 text-yellow-800' },
-  { valor: 'Confirmada', significado: 'Aprobaste un candidato que estaba en VER', quien: 'el administrador', color: 'bg-emerald-200 text-emerald-900' },
+  { valor: 'Confirmada', significado: 'Revisaste el archivo y es ésa (desde VER, desde APP o pegando el link). Siempre con 📎', quien: 'el administrador', color: 'bg-emerald-200 text-emerald-900' },
   { valor: 'Sí', significado: 'Ulises la tiene. Si no tiene 📎, la app igual la busca para vincularla', quien: 'Ulises', color: 'bg-green-100 text-green-800' },
   { valor: 'NO Mail', significado: 'Se buscó y no apareció. Se puede volver a buscar', quien: 'la app', color: 'bg-orange-100 text-orange-800' },
   { valor: 'Portal', significado: 'Se baja del portal del proveedor: no se busca ni en la carpeta ni en el mail', quien: 'cualquiera', color: 'bg-purple-100 text-purple-800' },

@@ -52,7 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
@@ -374,6 +374,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [busquedaCateg, setBusquedaCateg] = useState('')
   const [filtroFcPendiente, setFiltroFcPendiente] = useState(false)
   const [mostrarModalMarcarFC, setMostrarModalMarcarFC] = useState(false)
+  const [linksAVincular, setLinksAVincular] = useState<Record<string, string>>({})
 
   // Estados para tabs de navegación
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
@@ -1192,7 +1193,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
     // Filtro por FC pendiente
     if (filtroFcPendiente) {
-      facturasFiltradas = facturasFiltradas.filter(f => f.fc === 'No')
+      facturasFiltradas = facturasFiltradas.filter(faltaComprobante)
     }
 
     setFacturas(facturasFiltradas)
@@ -1553,6 +1554,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     toast.success('Confirmada: la factura quedó vinculada a ese archivo.')
   }
+  // «Confirmada» es el sí del administrador y siempre con archivo (usuario 2026-10-21): desde una APP
+  // (mismo archivo) o pegando el link de Drive en el aviso «sin comprobante». Sin link no se confirma.
+  const confirmarConLink = async (factura: FacturaArca, link: string | null | undefined, preguntar: string) => {
+    const url = linkParaConfirmar(link)
+    if (!url) { toast.error('Hace falta el link del PDF en Google Drive para dejarla Confirmada.'); return }
+    if (!window.confirm(preguntar)) return
+    const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+      .update({ fc: 'Confirmada', pdf_drive_url: url, pdf_estado: 'descargado' }).eq('id', factura.id)
+    if (error) { toast.error('No se pudo guardar: ' + error.message); return }
+    alConfirmarCandidato(factura.id, url)
+  }
 
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
@@ -1591,6 +1603,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               className="text-green-600 hover:text-green-800 disabled:opacity-40 text-xs font-bold leading-none"
             >
               {confirmandoId === factura.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '✓'}
+            </button>
+          )}
+          {sePuedeConfirmarApp(factura) && (
+            <button
+              type="button"
+              title="Revisé el archivo y es ésta → queda Confirmada"
+              onClick={(e) => {
+                e.stopPropagation()
+                confirmarConLink(factura, factura.pdf_drive_url, `¿Confirmás que el archivo vinculado es el de ${factura.denominacion_emisor || 'esta factura'} ${factura.punto_venta}-${factura.numero_desde}? Pasa de APP a Confirmada.`)
+              }}
+              className="text-emerald-600 hover:text-emerald-800 text-xs font-bold leading-none"
+            >
+              ✓
             </button>
           )}
         </div>
@@ -7492,7 +7517,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       {/* Alert FC pendientes */}
       {!loading && !error && (() => {
-        const fcPendientes = facturasOriginales.filter(f => f.fc === 'No')
+        // Sin 📎 y no en Portal / No (usuario 2026-10-21). Antes contaba las «No», que desde el
+        // 2026-10-20 son «no corresponde»: el aviso decía lo contrario de lo que había.
+        const fcPendientes = facturasOriginales.filter(faltaComprobante)
         if (fcPendientes.length === 0) return null
         return (
           <Alert className="border-amber-300 bg-amber-50">
@@ -7501,7 +7528,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-amber-800 font-medium">
-                    {fcPendientes.length} factura{fcPendientes.length !== 1 ? 's' : ''} pendiente{fcPendientes.length !== 1 ? 's' : ''} de recibir comprobante
+                    {fcPendientes.length} factura{fcPendientes.length !== 1 ? 's' : ''} sin comprobante (sin 📎)
                   </span>
                   <label className="flex items-center gap-1.5 cursor-pointer text-xs">
                     <Checkbox
@@ -8439,20 +8466,22 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         </DialogContent>
       </Dialog>
 
-      {/* Modal para marcar FC como recibidas — individual con confirmación */}
+      {/* Modal de facturas sin comprobante: se vinculan con su link y quedan Confirmada (usuario
+          2026-10-21: «yo no podría poner confirmado sin linkear»). Antes «Marcar recibida» ponía «Sí»
+          sin archivo, que es el estado de Ulises, y listaba las «No», que ahora son «no corresponde». */}
       <Dialog open={mostrarModalMarcarFC} onOpenChange={setMostrarModalMarcarFC}>
-        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Facturas pendientes de recibir comprobante</DialogTitle>
+            <DialogTitle>Facturas sin comprobante (sin 📎)</DialogTitle>
             <DialogDescription>
-              Marcá una por una. Cada acción pide confirmación.
+              Pegá el link del PDF en Google Drive y tocá Vincular: queda Confirmada con su 📎. Las que están en VER se resuelven eligiendo el candidato. Para buscarlas solas, usá Buscar PDFs.
             </DialogDescription>
           </DialogHeader>
           <div className="overflow-y-auto flex-1">
             {(() => {
-              const pendientes = facturasOriginales.filter(f => f.fc === 'No')
+              const pendientes = facturasOriginales.filter(faltaComprobante)
               if (pendientes.length === 0) {
-                return <div className="text-center text-gray-500 py-8">No quedan facturas pendientes 🎉</div>
+                return <div className="text-center text-gray-500 py-8">No quedan facturas sin comprobante 🎉</div>
               }
               return (
                 <table className="w-full text-xs border-collapse">
@@ -8460,40 +8489,49 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                     <tr>
                       <th className="text-left p-2">Fecha</th>
                       <th className="text-left p-2">Proveedor</th>
-                      <th className="text-left p-2">CUIT</th>
+                      <th className="text-left p-2">FC</th>
                       <th className="text-right p-2">Monto</th>
-                      <th className="p-2 w-40"></th>
+                      <th className="p-2 w-80"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {pendientes.map(f => (
                       <tr key={f.id} className="hover:bg-gray-50">
                         <td className="p-2">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
-                        <td className="p-2 max-w-[200px] truncate">{f.denominacion_emisor}</td>
-                        <td className="p-2 text-gray-500">{f.cuit}</td>
+                        <td className="p-2 max-w-[200px] truncate" title={f.cuit}>{f.denominacion_emisor} <span className="text-gray-400">{f.punto_venta}-{f.numero_desde}</span></td>
+                        <td className="p-2"><span title={ayudaFc(f.fc ?? '')} className={`px-1.5 py-0.5 rounded ${colorFc(f.fc ?? '')}`}>{f.fc || 'sin estado'}</span></td>
                         <td className="p-2 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })}</td>
                         <td className="p-2 text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-green-400 text-green-700 hover:bg-green-50"
-                            onClick={async () => {
-                              const proveedor = f.denominacion_emisor || f.cuit || 'esta factura'
-                              const monto = (f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })
-                              if (!window.confirm(`¿Marcar como recibido el comprobante de ${proveedor} por ${monto}?`)) return
-                              const { error } = await supabase
-                                .schema(schemaName)
-                                .from('comprobantes_arca')
-                                .update({ fc: 'Sí' })
-                                .eq('id', f.id)
-                              if (error) { alert('Error al actualizar: ' + error.message); return }
-                              setFacturasOriginales(prev => prev.map(x => x.id === f.id ? { ...x, fc: 'Sí' } : x))
-                              setFacturas(prev => prev.map(x => x.id === f.id ? { ...x, fc: 'Sí' } : x))
-                            }}
-                          >
-                            <Check className="mr-1 h-3 w-3" />
-                            Marcar recibida
-                          </Button>
+                          {f.fc === 'VER' ? (
+                            <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-50"
+                              onClick={() => confirmarVer(f)}>
+                              Elegir candidato
+                            </Button>
+                          ) : (
+                            <div className="flex items-center gap-1 justify-end">
+                              <Input
+                                type="text"
+                                placeholder="https://drive.google.com/…"
+                                value={linksAVincular[f.id] ?? ''}
+                                onChange={e => setLinksAVincular(prev => ({ ...prev, [f.id]: e.target.value }))}
+                                className="h-7 text-xs w-52"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-green-400 text-green-700 hover:bg-green-50"
+                                disabled={!linkParaConfirmar(linksAVincular[f.id])}
+                                title={linkParaConfirmar(linksAVincular[f.id]) ? 'Vincular este archivo → Confirmada' : 'Pegá primero el link de Google Drive'}
+                                onClick={async () => {
+                                  const monto = (f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })
+                                  await confirmarConLink(f, linksAVincular[f.id], `¿Vincular ese archivo a ${f.denominacion_emisor || f.cuit || 'esta factura'} por ${monto}? Queda Confirmada.`)
+                                }}
+                              >
+                                <Check className="mr-1 h-3 w-3" />
+                                Vincular
+                              </Button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -10526,9 +10564,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     </TableCell>
                                   )}
                                   <TableCell>
-                                    {f.fc === 'Sí' ? <Badge className="bg-green-100 text-green-700 text-[10px] px-1">Sí</Badge>
-                                      : f.fc === 'No' ? <Badge className="bg-red-100 text-red-700 text-[10px] px-1">No</Badge>
-                                      : f.fc === 'Portal' ? <Badge className="bg-blue-100 text-blue-700 text-[10px] px-1">P</Badge>
+                                    {/* El glosario único de estados FC (A-FEAT-1287): antes sólo pintaba Sí / No / Portal y APP o Confirmada salían «—» */}
+                                    {f.fc ? <Badge title={ayudaFc(f.fc)} className={`${colorFc(f.fc)} text-[10px] px-1`}>{f.fc === 'Portal' ? 'P' : f.fc}</Badge>
                                       : <span className="text-gray-300 text-xs">—</span>}
                                   </TableCell>
                                   <TableCell className="text-xs text-gray-500">{f.fecha_emision?.split('-').reverse().join('/') || '-'}</TableCell>

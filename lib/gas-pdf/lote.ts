@@ -112,6 +112,30 @@ export function candidatosParaBuscar<T extends { fc?: string | null; estado?: st
 }
 
 /**
+ * 📭 Le falta el comprobante (usuario 2026-10-21): no tiene 📎 y no está en Portal, No ni OK. Es la
+ * lista del aviso «sin comprobante» de Facturas ARCA. Antes ese aviso contaba las «No», que desde el
+ * 2026-10-20 quiere decir lo contrario: «no corresponde, no hay que buscarla».
+ */
+export function faltaComprobante(f: { fc?: string | null; estado?: string | null; pdf_drive_url?: string | null }): boolean {
+  return f.estado !== 'historico' && !f.pdf_drive_url && !(f.fc && ['Portal', 'No', 'OK'].includes(f.fc))
+}
+
+/**
+ * ✅ «Confirmada» es el sí del administrador y SIEMPRE con archivo (usuario 2026-10-21: «yo no podría
+ * poner confirmado sin linkear»). Sí = Ulises, sin link · APP = la app, con link · Confirmada = vos,
+ * con link. Devuelve el link limpio si es de Google Drive, o null si no sirve.
+ */
+export function linkParaConfirmar(url: string | null | undefined): string | null {
+  const u = (url ?? '').trim()
+  return /^https:\/\/(drive|docs)\.google\.com\/\S+$/.test(u) ? u : null
+}
+
+/** Una factura en APP con su 📎 se puede confirmar: pasa a «Confirmada» con el mismo archivo. */
+export function sePuedeConfirmarApp(f: { fc?: string | null; pdf_drive_url?: string | null }): boolean {
+  return f.fc === 'APP' && !!linkParaConfirmar(f.pdf_drive_url)
+}
+
+/**
  * 🏷️ Los estados FC que se ponen A MANO (A-FEAT-1287, usuario 2026-10-20). «No» = no hay factura o
  * no corresponde, y lo pone SÓLO el admin: Ulises lo usaba para «no la tengo», que es «Buscar».
  * Si la factura ya tiene un estado automático (APP, VER, NO Mail, Confirmada…), se ofrece tal cual
