@@ -54,6 +54,17 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ 5 tablas nuevas de PÓLIZAS (2026-10-20) — ✅ APLICADAS el 20/10 con JMS presente · ⚠️ aviso POSTERIOR
+
+Para [A-FEAT-1309](PENDIENTES.md#a-feat-1309) (rama `jms/polizas-seguro`): el lector de pólizas de seguro.
+`scripts/89-polizas-seguro.sql` crea `public.polizas_seguro`, `polizas_endosos`, `polizas_cuotas`, `polizas_bienes` y
+`polizas_responsables`. **No toca ninguna tabla existente** salvo 5 filas en `recurso_tablas` (recurso
+`egresos.facturas-msa`, lectura no restringida). RLS con `puede_ver` / `puede_escribir`, nada a `anon` (verificado: 401).
+⚠️ **Este aviso llega DESPUÉS de aplicarlo** — la regla pide antes y se nos pasó. Si choca con algo tuyo de permisos,
+avisá y se ajusta; el deshacer es `scripts/89-polizas-seguro-deshacer.sql`.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — ✅ APLICADA el 20/10 con JMS presente
 
 Para [A-FEAT-1296](PENDIENTES.md#a-feat-1296) (rama `jms/tarjeta-conciliacion`): el **detalle fijo por proveedor**

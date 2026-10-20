@@ -3323,6 +3323,17 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-20 · Pólizas de seguro — 5 tablas nuevas (A-FEAT-1309) — ✅ CORRIDO 2026-10-20 con JMS (vía API de administración; el MCP estaba en read-only)
+
+`scripts/89-polizas-seguro.sql` (+ `-deshacer`, borra las 5 tablas): `polizas_seguro` (póliza, aseguradora, ramo,
+vigencia, póliza anterior; único `(aseguradora, poliza)`) → `polizas_endosos` (endoso = comprobante; `lectura` jsonb =
+la huella cruda, `correcciones` jsonb, `controles`, `comprobante_arca_id` + `comprobante_schema` sin FK; único
+`(poliza_id, endoso)`) → `polizas_cuotas` (plan de cada endoso) y `polizas_bienes` (vehículo por patente / persona por
+DNI, prima, movimiento alta/baja/activa); más `polizas_responsables` (pk `clave` = patente o DNI; responsable contable
+e interno; 5 filas iniciales dichas por el usuario). RLS `puede_ver`/`puede_escribir`, nada a `anon`, `authenticated`
+select/insert/update/delete; `recurso_tablas` → `egresos.facturas-msa`. Verificado: 5 tablas con RLS y 2 políticas,
+anon 401, service 200, 5 responsables.
+
 ### 2026-10-20 · `public.detalles_por_proveedor` — detalle fijo por proveedor (A-FEAT-1296) — ✅ CORRIDO 2026-10-20 con JMS (verificado: 8 columnas)
 
 `scripts/88-detalles-por-proveedor.sql` (+ `-deshacer`): tabla `(id uuid pk, cuit text, detalle text, monto_referencia numeric(16,2), activo boolean, creado_por text, created_at, updated_at)`, índice único `(cuit, lower(detalle))`, RLS `puede_ver`/`puede_escribir`, registrada en `recurso_tablas` (recurso «extracto»). Varios renglones por CUIT = varios suministros; se elige por monto (±30 %).
