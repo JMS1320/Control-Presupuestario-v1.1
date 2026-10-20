@@ -13,7 +13,8 @@
  * cuotas de templates no tienen emisión: siguen con su fecha. La cuenta corriente no pasa por acá.
  */
 export function conFechaDeEmision<T extends { origen?: string | null; fecha_estimada?: string | null; fecha_emision?: string | null }>(pool: T[]): T[] {
-  return pool.map(r => (r.origen === "ARCA" && r.fecha_emision ? { ...r, fecha_estimada: r.fecha_emision } : r))
+  // `__fecha_es_emision` lo lee el motivo (A-FEAT-1298) para decir «emitida N días antes del débito».
+  return pool.map(r => (r.origen === "ARCA" && r.fecha_emision ? { ...r, fecha_estimada: r.fecha_emision, __fecha_es_emision: true } : r))
 }
 
 /**

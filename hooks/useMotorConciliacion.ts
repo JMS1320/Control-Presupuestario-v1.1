@@ -21,6 +21,7 @@ import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { motivoFechaNoExacta } from "@/lib/conciliacion/motivo-fecha"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -405,7 +406,9 @@ export function useMotorConciliacion() {
           match: true,
           cashFlowRow: match,
           requiere_revision: !fechaExacta,
-          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
+          // A-FEAT-1298: decir qué sí coincide (y en la tarjeta, si la factura es anterior al débito)
+          motivo_revision: fechaExacta ? null : motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
         }
       }
     }
@@ -435,7 +438,9 @@ export function useMotorConciliacion() {
           match: true,
           cashFlowRow: match,
           requiere_revision: !fechaExacta,
-          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
+          // A-FEAT-1298: decir qué sí coincide (y en la tarjeta, si la factura es anterior al débito)
+          motivo_revision: fechaExacta ? null : motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
         }
       }
     }

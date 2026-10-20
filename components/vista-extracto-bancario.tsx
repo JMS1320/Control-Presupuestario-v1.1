@@ -82,6 +82,7 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
@@ -110,7 +111,7 @@ function diasDiferencia(f1: string, f2: string): number {
 
 interface PropuestaArca { factura: any; score: number; badges: { texto: string; color: string }[] }
 
-function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[] {
+function generarPropuestasArca(movimiento: any, facturas: any[], esTarjeta = false): PropuestaArca[] {
   const cuitLeyenda = extraerCuitDeTexto(movimiento.leyendas_adicionales_2)
   const leyenda1    = movimiento.leyendas_adicionales_1 || ''
   const descripcion = movimiento.descripcion || ''
@@ -162,7 +163,8 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       if (cuitMatch) score += matchMonto ? 100 : 90
 
       // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
-      const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
+      // A-FEAT-1298: en la tarjeta también se compara con la emisión (se emite y a los pocos días entra al resumen)
+      const fechaRef = (esCompraDebito || esTarjeta) && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
       let matchFecha = false
       let diasDiff   = Infinity
       if (fechaRef) {
@@ -205,6 +207,13 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
 
       if (matchNombre && !badges.find(b => b.texto.includes('CUIT'))) {
         badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
+      }
+
+      // A-FEAT-1298 — en la tarjeta, la emitida pocos días ANTES del débito va primero; la posterior, abajo.
+      if (esTarjeta) {
+        const aj = ajusteTarjetaPorEmision(fechaMov, f.fecha_emision)
+        score += aj.puntos
+        if (aj.sello) badges.push(aj.sello)
       }
 
       return { factura: f, score: Math.round(score), badges }
@@ -5691,7 +5700,7 @@ ${marca}` : marca
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {(() => {
                   const propuestas = movimientoAsignando
-                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles, cuentaActivaObj?.tipo === 'tarjeta')
                     : []
                   const conScore   = propuestas.filter(p => p.score > 0)
                   const sinScore   = propuestas.filter(p => p.score === 0)

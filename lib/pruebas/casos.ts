@@ -174,6 +174,7 @@ import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6845,6 +6846,23 @@ export function correrCasos(): Resultado[] {
     ])
     chequear("Regla → template", "En la regla aparece un solo Seguro Flota de MSA (el más nuevo) y el de PAM aparte: la campaña la decide el movimiento",
       "f2627 · fpam", elegibles.map(t => t.id).join(" · "), elegibles.map(t => t.id).join("|") === "f2627|fpam", "A-BUG-1303")
+  }
+
+  // ══ 🔎 LA PROPUESTA DICE QUÉ COINCIDE Y, EN LA TARJETA, PREFIERE LA EMITIDA ANTES (A-FEAT-1298) ═══
+  {
+    // 🧨 Antes: «Fecha no exacta: 2 días diferencia», sin decir que el importe era exacto.
+    const m1 = motivoFechaNoExacta(2, true)
+    const m2 = motivoFechaNoExacta(-3, true)
+    const m3 = motivoFechaNoExacta(2, false)
+    chequear("Doble audit", "El motivo dice «importe exacto» y, en la tarjeta, si la factura se emitió antes (lo esperado) o después del débito",
+      "antes ✓ · después ⚠️ · fecha estimada", `${m1} | ${m2} | ${m3}`,
+      m1.startsWith("Importe exacto · emitida 2 días antes") && m2.includes("DESPUÉS") && m3 === "Importe exacto · fecha estimada a 2 días del movimiento", "A-FEAT-1298")
+    // Autopistas del Sol 08/04 $6.520,33: dos facturas del mismo importe, emitidas 1/4 y 1/7.
+    const abr = ajusteTarjetaPorEmision("2026-04-08", "2026-04-01")
+    const jul = ajusteTarjetaPorEmision("2026-04-08", "2026-07-01")
+    chequear("Doble audit", "En el Asignar de la tarjeta, la emitida el 1/4 (7 días antes del débito) sube y la del 1/7 (posterior) baja",
+      "+18 «Emitida 7d antes ✓» · -40", `${abr.puntos} «${abr.sello?.texto}» · ${jul.puntos}`,
+      abr.puntos === 18 && abr.sello?.texto === "Emitida 7d antes ✓" && jul.puntos === -40, "A-FEAT-1298")
   }
 
   return r
