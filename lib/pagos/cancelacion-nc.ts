@@ -45,7 +45,7 @@ export const sumarAlDetalle = (
   emisor?: string | null,
   numero?: string | number | null,
 ): string =>
-  // A-BUG-1299: «FC 613071 - MEDICUS …» NO es del usuario, es el derivado guardado de A-DAT-54. Sumarle
+  // A-BUG-1304: «FC 613071 - MEDICUS …» NO es del usuario, es el derivado guardado de A-DAT-54. Sumarle
   // algo lo disfrazaba de texto propio y el motor lo copiaba entero al movimiento. Ése se descarta.
   previo && previo.trim() && !pareceDetalleAutogenerado(previo, emisor, numero) ? `${previo.trim()} · ${nuevo}` : nuevo
 

@@ -18,7 +18,7 @@ export function conFechaDeEmision<T extends { origen?: string | null; fecha_esti
 }
 
 /**
- * 🧾 **EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN** (A-FEAT-1295, 2026-10-19).
+ * 🧾 **EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN** (A-FEAT-1299, 2026-10-19).
  *
  * Usuario: *«¿no debería referir al resumen de tarjeta, que es el comprobante?»*. La comisión, el IVA y
  * la percepción los factura el banco en el resumen: ése es el papel. Un solo rótulo para todo lo que

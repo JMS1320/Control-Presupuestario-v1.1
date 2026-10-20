@@ -6656,7 +6656,7 @@ export function correrCasos(): Resultado[] {
     // El plan de UN par: la factura baja al neto, NO cambia de estado (sigue «crédito») y conserva su detalle.
     const planMay = planCancelacionNC({ tipo: "fc_con_nc", facturas: [pares[2].fc], disponibles: [pares[2].nc], seleccionadas: new Set([pares[2].nc.id]) })
     chequear("NC con tarjeta", "La factura de mayo queda en 807.028,07, sin cambiar de estado, y su detalle autogenerado se reemplaza (lo escrito a mano se conservaría)",
-      "807028.07 · sin estado · «Descuento parcial NC 220552» (el FC N - EMISOR autogenerado se descarta, A-BUG-1299) · NC conciliado",
+      "807028.07 · sin estado · «Descuento parcial NC 220552» (el FC N - EMISOR autogenerado se descarta, A-BUG-1304) · NC conciliado",
       `${planMay[0].cambios.monto_a_abonar} · ${planMay[0].cambios.estado ?? "sin estado"} · «${planMay[0].cambios.detalle}» · NC ${planMay[1].cambios.estado}`,
       planMay[0].cambios.monto_a_abonar === 807028.07 && planMay[0].cambios.estado === undefined
         && planMay[0].cambios.detalle === "Descuento parcial NC 220552"
@@ -6776,7 +6776,7 @@ export function correrCasos(): Resultado[] {
       pool[0].fecha_estimada === "2026-05-21" && pool[1].fecha_estimada === "2026-05-26", "A-BUG-1298")
   }
 
-  // ══ 🧾 EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN (A-FEAT-1295) ══════════════════════
+  // ══ 🧾 EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN (A-FEAT-1299) ══════════════════════
   {
     // 🧨 Antes la comisión de la VISA quedaba «Comision Cuenta Bancaria MSA - Mayo 2026», y el pago «28/5/2026».
     const e1 = etiquetaResumenTarjeta("2026-05-28")
@@ -6784,10 +6784,10 @@ export function correrCasos(): Resultado[] {
     const e3 = etiquetaResumenTarjeta(null)
     chequear("Doble audit", "La comisión/IVA/percepción de la tarjeta y su pago dicen «Resumen tarjeta cierre 28/05/2026» (dd/mm/aaaa, sin huso); sin cierre, no inventa",
       "Resumen tarjeta cierre 28/05/2026 ×2 · null", `${e1} · ${e2} · ${e3}`,
-      e1 === "Resumen tarjeta cierre 28/05/2026" && e2 === e1 && e3 === null, "A-FEAT-1295")
+      e1 === "Resumen tarjeta cierre 28/05/2026" && e2 === e1 && e3 === null, "A-FEAT-1299")
   }
 
-  // ══ ✍️ APLICAR UNA NC NO DISFRAZA EL DETALLE AUTOGENERADO DE TEXTO PROPIO (A-BUG-1299) ═══════════
+  // ══ ✍️ APLICAR UNA NC NO DISFRAZA EL DETALLE AUTOGENERADO DE TEXTO PROPIO (A-BUG-1304) ═══════════
   {
     // 🧨 Medicus: «FC 613071 - MEDICUS …» (derivado guardado, A-DAT-54) + « · Descuento parcial NC 220552» dejó de
     // parecer autogenerado y el motor lo copió entero al movimiento de la tarjeta.
@@ -6796,12 +6796,12 @@ export function correrCasos(): Resultado[] {
     const propio = sumarAlDetalle("Plan familiar", "Descuento parcial NC 220552", emisor, 613071)
     chequear("NC con tarjeta", "Aplicar una NC descarta el «FC N - EMISOR» autogenerado y conserva lo que escribió el usuario",
       "Descuento parcial NC 220552 · Plan familiar · Descuento parcial NC 220552", `${auto} · ${propio}`,
-      auto === "Descuento parcial NC 220552" && propio === "Plan familiar · Descuento parcial NC 220552", "A-BUG-1299")
+      auto === "Descuento parcial NC 220552" && propio === "Plan familiar · Descuento parcial NC 220552", "A-BUG-1304")
     // La variante larga del importador (Coopser): «Factura 1-195585 - EMISOR» también es autogenerada.
     const coop = "COOPERATIVA DE PROVISION DE SERVICIOS ELECTRICOS PUBLICOS Y SOCIALES DE SAN PEDRO LTDA"
     chequear("NC con tarjeta", "«Factura 1-195585 - COOPERATIVA…» se reconoce como autogenerado (no se copia al movimiento); «Luz Casa Porteria» no",
       "true · false", `${pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585)} · ${pareceDetalleAutogenerado("Luz Casa Porteria", coop)}`,
-      pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585) && !pareceDetalleAutogenerado("Luz Casa Porteria", coop), "A-BUG-1299")
+      pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585) && !pareceDetalleAutogenerado("Luz Casa Porteria", coop), "A-BUG-1304")
   }
 
   // ══ 🔢 CÓDIGOS CONTABLE / INTERNO PARA ELEGIR, DE TODAS LAS CUENTAS (A-BUG-1301) ═════════════════

@@ -1053,7 +1053,7 @@ ${texto.trim()}` : texto.trim()
     try {
       const [sch, tabla] = debito.tabla.split('.')
       const cli = sch && sch !== 'public' ? supabase.schema(sch) : supabase
-      const etiqueta = etiquetaResumenTarjeta(cierre) ?? `Resumen tarjeta ${nr}`  // mismo rótulo que los cargos (A-FEAT-1295)
+      const etiqueta = etiquetaResumenTarjeta(cierre) ?? `Resumen tarjeta ${nr}`  // mismo rótulo que los cargos (A-FEAT-1299)
       const { data: actual } = await cli.from(tabla).select('comprobantes_pagados, categ').eq('id', debito.id).maybeSingle()
       const { error } = await cli.from(tabla)
         .update({ nro_resumen: nr, ...((actual as any)?.comprobantes_pagados ? {} : { comprobantes_pagados: etiqueta }) })

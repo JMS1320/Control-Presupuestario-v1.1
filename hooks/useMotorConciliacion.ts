@@ -967,7 +967,7 @@ export function useMotorConciliacion() {
                       comprobantes_pagados: (movimiento as any).comprobantes_pagados,
                       centro_de_costo: (movimiento as any).centro_de_costo },
                     cuotaResult.template,
-                    // A-FEAT-1295 / A-BUG-1302: en la tarjeta, el comprobante de un cargo DEL BANCO es el resumen
+                    // A-FEAT-1299 / A-BUG-1302: en la tarjeta, el comprobante de un cargo DEL BANCO es el resumen
                     comprobanteDeCargoDeTarjeta(cuenta.tipo === 'tarjeta', cuotaResult.template as any, (movimiento as any).fecha_cierre)
                       ?? identificadorDeCuota(
                         { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
