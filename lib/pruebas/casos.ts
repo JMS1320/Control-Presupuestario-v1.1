@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas } from "@/lib/gas-pdf/lote"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -1040,6 +1040,13 @@ export function correrCasos(): Resultado[] {
     .map(f => sePuedeConfirmarApp(f) ? "sí" : "no").join(",")
   chequear("Buscador de PDFs — confirmar una APP", "🔴 Sólo una APP con su 📎 se confirma directo (queda Confirmada con el mismo archivo); el VER va por la lista de candidatos",
     "sí,no,no,no", confApp, confApp === "sí,no,no,no", "A-FEAT-1287")
+  const pedido = textoPedidoFacturas([
+    { fecha_emision: "2026-09-21", proveedor: "ARPOV", comprobante: "Nota de Crédito A 4-33369", imp_total: -33.88 },
+    { fecha_emision: "2026-09-13", proveedor: "JUAREZ MARCELO ALAN", comprobante: "Factura A 2-213", imp_total: 262167.07 },
+  ])
+  const pedidoOk = "Facturas faltantes\n\n13/09/2026 · JUAREZ MARCELO ALAN · Factura A 2-213 · $ 262.167,07\n21/09/2026 · ARPOV · Nota de Crédito A 4-33369 · $ 33,88"
+  chequear("Buscador de PDFs — texto del pedido de facturas", "🔴 Título «Facturas faltantes» y una fila por factura, por fecha: dd/mm/aaaa · proveedor · comprobante · importe en positivo",
+    pedidoOk, pedido, pedido === pedidoOk, "A-FEAT-1287")
 
   // Rigor del vínculo desde la carpeta (usuario 2026-10-20): con dos archivos no se vincula ninguno.
   const H = (factura_id: string, file_id: string, extra: object = {}) => ({ factura_id, file_id, drive_url: `u-${file_id}`, archivo: `${file_id}.pdf`, ...extra })

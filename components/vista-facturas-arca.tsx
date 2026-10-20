@@ -1567,6 +1567,28 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return true
   }
 
+  // «Proveedor Portal» desde el informe del lote (A-FEAT-1287, 2026-10-20): se marca el PROVEEDOR
+  // (las próximas búsquedas lo saltean) y sus facturas del informe que siguen sin 📎 pasan a Portal.
+  const marcarProveedorPortal = async (it: { proveedor: string }, cuit: string): Promise<boolean> => {
+    const delInforme = (progresoPdf?.informe || []).map(i => facturas.find(f => f.id === i.factura_id))
+      .filter((f): f is FacturaArca => !!f && f.cuit === cuit && !f.pdf_drive_url && !['Confirmada', 'APP', 'OK', 'No'].includes(f.fc || ''))
+    if (!window.confirm(`¿${it.proveedor || 'Este proveedor'} manda sus facturas por portal?\n\nQueda marcado como Portal: la búsqueda deja de intentarlo y ${delInforme.length} factura(s) de este informe pasan a Portal.`)) return false
+    const r = await fetch('/api/gas/config-proveedor', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cuit, fc_modo: 'portal' }),
+    })
+    const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+    if (!d.ok) { toast.error('No se pudo marcar el proveedor: ' + (d.error || '')); return false }
+    if (delInforme.length > 0) {
+      const ids = delInforme.map(f => f.id)
+      const { error } = await supabase.schema(schemaName).from('comprobantes_arca').update({ fc: 'Portal' }).in('id', ids)
+      if (error) { toast.error('El proveedor quedó en Portal, pero sus facturas no: ' + error.message); return true }
+      setFacturas(prev => prev.map(f => ids.includes(f.id) ? { ...f, fc: 'Portal' } : f))
+    }
+    toast.success(`${it.proveedor || 'Proveedor'} quedó como Portal`)
+    return true
+  }
+
   // Renderizar valor de celda según el tipo de columna
   const renderizarCelda = (factura: FacturaArca, columna: keyof FacturaArca) => {
     const valor = factura[columna]
@@ -12261,7 +12283,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       {/* 📋 Informe por factura del último lote (A-FEAT-1287) */}
       <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)}
-        onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)} />
+        onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)}
+        datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total, cuit: f.cuit } : undefined }}
+        onPortal={marcarProveedorPortal} />
 
       {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
       <ModalElegirCandidato

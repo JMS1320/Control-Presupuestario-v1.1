@@ -327,3 +327,32 @@ export function subdiariosPresentes(facturas: ReadonlyArray<{ 'año_contable'?: 
   }
   return [...m.values()].sort((a, b) => a.clave === 'sin' ? 1 : b.clave === 'sin' ? -1 : b.clave.localeCompare(a.clave))
 }
+
+// ── El PEDIDO de facturas faltantes (A-FEAT-1287, 2026-10-20) ─────────────────────────────────────
+
+export interface FilaPedido {
+  fecha_emision?: string | null
+  proveedor: string
+  /** «Factura A 2-213» — punto de venta y número sin los ceros de relleno */
+  comprobante: string
+  imp_total?: number | null
+}
+
+/** Las facturas del informe que se pueden reclamar: lo que no se encontró, no tenía dónde buscarse o falló. */
+export const SE_RECLAMA: ReadonlySet<ProcesoInforme> = new Set<ProcesoInforme>(['no_encontrada', 'sin_fuente', 'error', 'otro'])
+
+/**
+ * El texto para pedir las facturas que faltan, listo para pegar en un mail o un WhatsApp:
+ * título y una fila por factura con fecha · proveedor · comprobante · importe total.
+ * El importe va en positivo: una nota de crédito ya se reconoce por el comprobante.
+ */
+export function textoPedidoFacturas(filas: readonly FilaPedido[]): string {
+  const fecha = (f?: string | null) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(f || '')
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : 's/fecha'
+  }
+  const importe = (n?: number | null) => n == null || !isFinite(Number(n)) ? 's/importe'
+    : '$ ' + Math.abs(Number(n)).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const orden = [...filas].sort((a, b) => (a.fecha_emision || '').localeCompare(b.fecha_emision || ''))
+  return ['Facturas faltantes', '', ...orden.map(f => `${fecha(f.fecha_emision)} · ${f.proveedor} · ${f.comprobante} · ${importe(f.imp_total)}`)].join('\n')
+}

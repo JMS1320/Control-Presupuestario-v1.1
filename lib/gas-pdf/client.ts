@@ -111,6 +111,20 @@ export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 600
     if (!r.ok) {
       return { ok: false, factura_id: input.factura_id, error: data.error || `HTTP ${r.status}` }
     }
+    // «No encontrada»: recién ahora que la respuesta llegó se pasa a NO Mail (2º paso). Si falla,
+    // queda como estaba y cuenta como error para reintentar.
+    if (data.ok && data.resultado_gas === 'no_encontrada') {
+      try {
+        const r2 = await fetch('/api/gas/buscar-pdf', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...input, aplicar_no_encontrada: true }),
+        })
+        const d2 = await r2.json().catch(() => ({ ok: false, error: `HTTP ${r2.status}` }))
+        if (!d2.ok) return { ok: false, factura_id: input.factura_id, error: `No se encontró, pero no se pudo dejar en NO Mail: ${d2.error || ''}` }
+      } catch (e) {
+        return { ok: false, factura_id: input.factura_id, error: `No se encontró, pero se cortó la conexión antes de dejarla en NO Mail: ${(e as Error).message}` }
+      }
+    }
     return data
   } catch (err) {
     return { ok: false, factura_id: input.factura_id, error: (err as Error).message || 'Error de red' }

@@ -82,6 +82,9 @@ export interface ApiBuscarPdfInput {
   factura_id: string
   empresa: Empresa
   lote_id?: string  // opcional — agrupa búsquedas del mismo lote
+  /** 2º paso de «no encontrada»: recién cuando la respuesta LLEGÓ al navegador se pasa a NO Mail.
+   *  Si la conexión se corta en el medio, la factura queda como estaba (A-FEAT-1287, 2026-10-20). */
+  aplicar_no_encontrada?: boolean
 }
 
 /** Output del endpoint */

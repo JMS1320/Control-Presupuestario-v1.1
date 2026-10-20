@@ -99,6 +99,18 @@ export async function POST(request: Request) {
       }, { status: 404 })
     }
 
+    // 2º paso de «no encontrada»: el navegador confirma que recibió la respuesta → recién ahí NO Mail.
+    // Si mientras tanto la factura cambió (se vinculó, se marcó Portal/No/OK), no se toca.
+    if (body.aplicar_no_encontrada) {
+      if (factura.pdf_drive_url || ['OK', 'Portal', 'No', 'Confirmada', 'APP', 'VER'].includes(factura.fc)) {
+        return NextResponse.json({ ok: true, factura_id, observaciones: `Sin cambio: la factura ya está en ${factura.fc || 'otro estado'}` })
+      }
+      const { error: errNm } = await supabase.schema(schema).from('comprobantes_arca')
+        .update({ fc: 'NO Mail', pdf_estado: 'no_encontrado' }).eq('id', factura_id)
+      if (errNm) return NextResponse.json({ ok: false, factura_id, error: errNm.message }, { status: 500 })
+      return NextResponse.json({ ok: true, factura_id, fc_nuevo: 'NO Mail' })
+    }
+
     // No re-buscar si ya tiene PDF o estado terminal
     // «No» (no corresponde, lo pone el usuario) tampoco se busca — A-FEAT-1287, 2026-10-20
     if (factura.fc === 'OK' || factura.fc === 'Portal' || factura.fc === 'No') {
@@ -246,12 +258,14 @@ export async function POST(request: Request) {
       : ''
     const observacionesFinal = ((gasResp.observaciones ?? '') + avisoSinMail) || null
 
+    // «No encontrada» NO cambia el estado acá: lo hace el navegador al recibir la respuesta
+    // (`aplicar_no_encontrada`). Si la conexión se corta, la factura queda como estaba.
+    const diferirEstado = gasResp.status === 'no_encontrada'
     await supabase.schema(schema).from('comprobantes_arca').update({
-      fc: fcNuevo,
+      ...(diferirEstado ? {} : { fc: fcNuevo, pdf_estado }),
       // El link se guarda en la factura SOLO si está confirmada (match exacto 'ok'). Para 'revisar'
       // (incierto) no se registra: el candidato queda en el log + mail + carpeta _Revisar hasta confirmar.
       pdf_drive_url: gasResp.status === 'ok' ? (gasResp.drive_url ?? null) : null,
-      pdf_estado,
       pdf_ultimo_intento: ahora,
       pdf_observaciones: observacionesFinal,
     }).eq('id', factura_id)
