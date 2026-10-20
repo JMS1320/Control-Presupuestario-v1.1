@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual } from "@/lib/gas-pdf/lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
@@ -1017,6 +1017,13 @@ export function correrCasos(): Resultado[] {
   ]).map(f => f.id).join(",")
   chequear("Buscador de PDFs — qué ofrece el modal", "🔴 Sin el histórico (SI/NO/PEAJE grises) y con las pendientes («Buscar» o sin estado) arriba",
     "bus,nul,si", cands, cands === "bus,nul,si", "A-FEAT-1287")
+
+  const opsUlises = opcionesFcManual(null, false).map(o => o.valor).join(",")
+  const opsAdmin = opcionesFcManual(null, true).map(o => o.valor).join(",")
+  const opsApp = opcionesFcManual("APP", false).map(o => o.valor).join(",")
+  chequear("Estado FC a mano — quién puede poner «No»", "🔴 Ulises no ve «No» (su «no la tengo» es Buscar); el admin sí; un estado automático (APP) se conserva",
+    "Buscar,Sí,Portal · +No · APP primero", `${opsUlises} · ${opsAdmin} · ${opsApp}`,
+    opsUlises === "Buscar,Sí,Portal" && opsAdmin === "Buscar,Sí,Portal,No" && opsApp === "APP,Buscar,Sí,Portal", "A-FEAT-1287")
 
   // A-FEAT-1268: el tilde del encabezado de PAGOS cuenta contra lo que SE VE.
   const VIS = ["a", "b", "c"]

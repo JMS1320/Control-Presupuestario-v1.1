@@ -16,6 +16,7 @@ import { toast } from "sonner"
  * (§ ♻️ *Centralizar, no duplicar*): si mañana cambia el criterio, cambia en las tres.
  */
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
+import { opcionesFcManual } from "@/lib/gas-pdf/lote"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
 
 // ─── Componente principal ──────────────────────────────────────────────────────
 
-export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PAM' | 'MA' } = {}) {
+export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empresa?: 'MSA' | 'PAM' | 'MA'; esAdmin?: boolean } = {}) {
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [comprobantes, setComprobantes] = useState<ComprobanteArca[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
@@ -500,7 +501,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
       .eq("mes_contable", mes)
       .order("denominacion_emisor")
     if (error) { toast.error("Error cargando facturas: " + error.message); return }
-    setArchivoFacturas((data ?? []).map((f: any) => ({ ...f, fcLocal: f.fc || '' })))
+    setArchivoFacturas((data ?? []).map((f: any) => ({ ...f, fcLocal: f.fc || 'Buscar' })))
   }
 
   async function guardarArchivoFC() {
@@ -508,7 +509,9 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
     try {
       let actualizadas = 0
       for (const f of archivoFacturas) {
-        const fcFinal = f.fcLocal || 'Sí'
+        // A-FEAT-1287: lo que no se marcó queda en «Buscar» (antes se guardaba «Sí» y decía que la
+        // factura estaba cuando nadie la había visto).
+        const fcFinal = f.fcLocal || 'Buscar'
         if (fcFinal !== (f.fc || '')) {
           const { error } = await supabase.schema(schemaName).from("comprobantes_arca")
             .update({ fc: fcFinal }).eq("id", f.id)
@@ -839,7 +842,7 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {archivoFacturas.map((f, idx) => (
-                    <tr key={f.id} className={f.fcLocal ? '' : 'bg-amber-50'}>
+                    <tr key={f.id} className={f.fcLocal === 'Buscar' ? 'bg-amber-50' : ''}>
                       <td className="px-3 py-1.5 whitespace-nowrap text-gray-500">
                         {f.fecha_emision ? new Date(f.fecha_emision + "T00:00:00").toLocaleDateString("es-AR") : "—"}
                       </td>
@@ -849,16 +852,13 @@ export function VistaAsignacionArca({ empresa = 'MSA' }: { empresa?: 'MSA' | 'PA
                       <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium">${fmt(f.imp_total)}</td>
                       <td className="px-3 py-1.5 text-center">
                         <select
-                          className={`border rounded px-2 py-1 text-xs w-[100px] ${!f.fcLocal ? 'border-amber-300 bg-amber-50' : ''}`}
+                          className={`border rounded px-2 py-1 text-xs w-[100px] ${f.fcLocal === 'Buscar' ? 'border-amber-300 bg-amber-50' : ''}`}
                           value={f.fcLocal}
                           onChange={(e) => {
                             setArchivoFacturas(prev => prev.map((x, i) => i === idx ? { ...x, fcLocal: e.target.value } : x))
                           }}
                         >
-                          <option value="">— vacío —</option>
-                          <option value="Sí">Sí</option>
-                          <option value="No">No</option>
-                          <option value="Portal">Portal</option>
+                          {opcionesFcManual(f.fc, esAdmin).map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
                         </select>
                       </td>
                     </tr>

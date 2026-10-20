@@ -52,7 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -8309,10 +8309,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                     ))
                                   }}
                                 >
-                                  <option value="">—</option>
-                                  <option value="Sí">Sí</option>
-                                  <option value="No">No</option>
-                                  <option value="Portal">Portal</option>
+                                  <option value="">— (Buscar)</option>
+                                  {opcionesFcManual(null, !esContable).filter(o => o.valor !== 'Buscar').map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
                                 </select>
                               </td>
                               <td className="p-2">
@@ -8536,7 +8534,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
         {/* Tab Content: Asignación Cuentas */}
         <TabsContent value="asignacion" className="space-y-6">
-          <VistaAsignacionArca empresa={empresa} />
+          <VistaAsignacionArca empresa={empresa} esAdmin={userRole === 'admin'} />
         </TabsContent>
       </Tabs>
 

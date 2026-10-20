@@ -4219,6 +4219,8 @@ el empleado sube los archivos a la carpeta. De ahí el orden **carpeta primero**
 
 🟠 **Correcciones del usuario (2026-10-20):** «Sí» lo pone **Ulises** cuando la encuentra a mano, y va a seguir así → **no** sirve para la confirmación del usuario: hace falta un estado propio para «la confirmé yo» (propuesta: **Confirmada**, sólo admin, al aprobar un VER); hoy confirmar un VER escribe «Sí» y se mezcla con lo de Ulises · ✅ rigor tipo + fecha: de acuerdo (los datos coinciden todos o ninguno) — la fecha se busca en varios formatos y lo que caiga en VER se ve con su motivo en el reporte · «dónde vive» = en el modal Buscar PDFs, una columna con el **subdiario donde está imputada** la factura (mes/año contable; «sin imputar» si no tiene).
 
+✅ **DATO CORREGIDO 2026-10-20 (con OK del usuario: «Pasar a Buscar: 93 de 93»)**: las 93 facturas en «No» (MSA 46 · MA 47) pasaron a «Buscar», por id y sólo si seguían en «No». Foto previa y script de vuelta atrás en el scratchpad de la sesión T3 (`no_list_FOTO_antes_2026-10-20.json`, `no_a_buscar.mjs` con fc 'No'). Ya no queda ninguna en «No». 🧨 **Hallazgo**: la pantalla *Asignación Cuentas → Actualizar Archivo Facturas* (la que usa Ulises) guardaba **«Sí» a todo lo que no se marcaba** — es la causa probable de los «Sí» sin 📎. ✅ **Arreglado**: ahí y en la imputación de la importación, Ulises ve *Buscar (no la tengo)* · *Sí (la tengo)* · *Portal*; «No» sólo el admin; lo no marcado queda en «Buscar»; un estado automático (APP, VER, NO Mail) se conserva.
+
 <a id="a-test-1217"></a>**A-TEST-1217** — se escribe con sus pasos (y «Qué probar vos:») al terminar cada etapa.
 
 ---

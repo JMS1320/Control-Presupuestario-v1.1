@@ -85,3 +85,20 @@ export function candidatosParaBuscar<T extends { fc?: string | null; estado?: st
     .slice()
     .sort((a, b) => Number(esPendienteDeBuscar(b)) - Number(esPendienteDeBuscar(a)))
 }
+
+/**
+ * 🏷️ Los estados FC que se ponen A MANO (A-FEAT-1287, usuario 2026-10-20). «No» = no hay factura o
+ * no corresponde, y lo pone SÓLO el admin: Ulises lo usaba para «no la tengo», que es «Buscar».
+ * Si la factura ya tiene un estado automático (APP, VER, NO Mail, Confirmada…), se ofrece tal cual
+ * para no pisarlo al guardar.
+ */
+export function opcionesFcManual(actual: string | null | undefined, esAdmin: boolean): Array<{ valor: string; rotulo: string }> {
+  const ops = [
+    { valor: 'Buscar', rotulo: 'Buscar (no la tengo)' },
+    { valor: 'Sí', rotulo: 'Sí (la tengo)' },
+    { valor: 'Portal', rotulo: 'Portal' },
+    ...(esAdmin ? [{ valor: 'No', rotulo: 'No (no corresponde)' }] : []),
+  ]
+  if (actual && !ops.some(o => o.valor === actual)) ops.unshift({ valor: actual, rotulo: actual })
+  return ops
+}
