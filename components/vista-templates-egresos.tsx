@@ -36,6 +36,7 @@ import { hayQuePreguntarFechaPago, esEstadoQuePaga } from "@/lib/pagos/preguntar
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
+import { coincideCampana, SIN_CAMPANA } from "@/lib/templates/cuotas-del-template"
 
 interface CuotaEgresoSinFactura {
   id: string
@@ -518,10 +519,9 @@ export function VistaTemplatesEgresos() {
       )
     }
     
-    // Filtro por año
+    // Filtro por campaña — 🔎 A-BUG-1309: es texto («2026», «25/26»), y los abiertos van sin campaña.
     if (anoSeleccionado && anoSeleccionado !== 'todos') {
-      const ano = parseInt(anoSeleccionado)
-      cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.año === ano)
+      cuotasFiltradas = cuotasFiltradas.filter(c => coincideCampana(c.egreso?.año, anoSeleccionado))
     }
     
     // Filtro por activación de templates
@@ -562,7 +562,8 @@ export function VistaTemplatesEgresos() {
   // Obtener valores únicos para los selectores
   const estadosUnicos = [...new Set(cuotasOriginales.map(c => c.estado))].filter(Boolean).sort()
   const tiposRecurrenciaUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.tipo_recurrencia))].filter(Boolean).sort()
-  const anosUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.año))].filter(Boolean).sort((a, b) => b - a)
+  const anosUnicos = [...new Set(cuotasOriginales.map(c => String(c.egreso?.año ?? '').trim()))].filter(Boolean).sort((a, b) => b.localeCompare(a))
+  const haySinCampana = cuotasOriginales.some(c => !String(c.egreso?.año ?? '').trim())
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
@@ -1714,18 +1715,19 @@ export function VistaTemplatesEgresos() {
               
               {/* Selector de año */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">📆 Año</Label>
+                <Label className="text-sm font-medium">📆 Campaña</Label>
                 <Select value={anoSeleccionado} onValueChange={setAnoSeleccionado}>
                   <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Todos los años" />
+                    <SelectValue placeholder="Todas las campañas" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todos los años</SelectItem>
+                    <SelectItem value="todos">Todas las campañas</SelectItem>
                     {anosUnicos.map(ano => (
-                      <SelectItem key={ano} value={ano.toString()}>
+                      <SelectItem key={ano} value={ano}>
                         {ano}
                       </SelectItem>
                     ))}
+                    {haySinCampana && <SelectItem value={SIN_CAMPANA}>Sin campaña (abiertos)</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>

@@ -16,7 +16,7 @@ import { useReglasConciliacion } from "@/hooks/useReglasConciliacion"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { ReglaConciliacion } from "@/types/conciliacion"
 import { ModalCopiarReglas } from "@/components/modal-copiar-reglas"
-import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
+import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
 import { supabase } from "@/lib/supabase"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { unoPorFamilia } from "@/lib/conciliacion/template-de-regla"
@@ -27,12 +27,16 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
   const [cuentaFiltro, setCuentaFiltro] = useState(cuentaBancariaId || 'msa_galicia')
   const [modalCopiarAbierto, setModalCopiarAbierto] = useState(false)
   const [busquedaRegla, setBusquedaRegla] = useState('')   // 🔎 A-FEAT-136
-  // Modal "crear template faltante" — disparado al activar regla o guardar regla con llena_template
+  /**
+   * Template faltante — al ACTIVAR una regla apagada, o al GUARDAR una activa, que llena template sin elegirlo
+   * y no encuentra ninguno de su categoría para esa cuenta.
+   * 🧩 A-FEAT-1302 punto 1 (2026-10-20): abre el MISMO asistente de Templates que el extracto (antes un
+   * modal aparte con pocos campos), así hay una sola forma de crear un template en toda la app.
+   */
   const [modalTemplateFaltante, setModalTemplateFaltante] = useState<{
-    abierto: boolean
     categ: string
     empresaDestino: string
-    motivo: "activar_regla" | "guardar_regla"
+    cuentaBancariaId: string
     onResolve: (creado: boolean) => void
   } | null>(null)
 
@@ -196,10 +200,9 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
       if (!templateExiste) {
         const cuenta = CUENTAS_BANCARIAS.find(c => c.id === datosRegla.cuenta_bancaria_id)
         setModalTemplateFaltante({
-          abierto: true,
           categ: datosRegla.categ,
           empresaDestino: cuenta?.empresa || '',
-          motivo: 'guardar_regla',
+          cuentaBancariaId: datosRegla.cuenta_bancaria_id,
           onResolve: async (creado) => {
             setModalTemplateFaltante(null)
             // Si el usuario no creó el template, guardar con activo=false
@@ -274,10 +277,9 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
     // Falta template → abrir modal
     const cuenta = CUENTAS_BANCARIAS.find(c => c.id === regla.cuenta_bancaria_id)
     setModalTemplateFaltante({
-      abierto: true,
       categ: regla.categ,
       empresaDestino: cuenta?.empresa || '',
-      motivo: 'activar_regla',
+      cuentaBancariaId: regla.cuenta_bancaria_id,
       onResolve: async (creado) => {
         setModalTemplateFaltante(null)
         if (creado) {
@@ -341,17 +343,34 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
         onCompletado={cargarReglas}
       />
 
-      {modalTemplateFaltante && (
-        <ModalCrearTemplateFaltante
-          abierto={modalTemplateFaltante.abierto}
-          categ={modalTemplateFaltante.categ}
-          empresaDestino={modalTemplateFaltante.empresaDestino}
-          motivo={modalTemplateFaltante.motivo}
-          onCerrar={() => modalTemplateFaltante.onResolve(false)}
-          onCreado={() => modalTemplateFaltante.onResolve(true)}
-          onCancelar={() => modalTemplateFaltante.onResolve(false)}
-        />
-      )}
+      <Dialog open={!!modalTemplateFaltante} onOpenChange={(o) => { if (!o) modalTemplateFaltante?.onResolve(false) }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Falta template para esta regla — «{modalTemplateFaltante?.categ}»</DialogTitle>
+          </DialogHeader>
+          {modalTemplateFaltante && (
+            <WizardTemplatesEgresos
+              empresaCuenta={modalTemplateFaltante.empresaDestino || undefined}
+              cuentaBancariaId={modalTemplateFaltante.cuentaBancariaId}
+              // Lo que carga una regla son movimientos automáticos (comisiones, impuestos): abierto por default.
+              inicial={{
+                nombre_referencia: modalTemplateFaltante.categ,
+                categ: modalTemplateFaltante.categ,
+                responsable: modalTemplateFaltante.empresaDestino,
+                tipo_template: 'abierto',
+              }}
+              onCancelar={() => modalTemplateFaltante.onResolve(false)}
+              onCreado={async () => {
+                const { data } = await supabase.from('egresos_sin_factura')
+                  .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora')
+                  .eq('activo', true).order('nombre_referencia')
+                setTemplates((data || []) as unknown as typeof templates)
+                modalTemplateFaltante.onResolve(true)
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Selector cuenta bancaria — solo si no viene del padre */}
       {!cuentaBancariaId && (

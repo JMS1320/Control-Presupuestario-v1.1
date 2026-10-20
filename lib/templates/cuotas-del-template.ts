@@ -120,3 +120,15 @@ export function cuotaPendienteDelMes<T extends { id: string; fecha_estimada?: st
   if (!libres.length) return null
   return [...libres].sort((a, b) => Math.abs((Number(a.monto) || 0) - monto) - Math.abs((Number(b.monto) || 0) - monto))[0]
 }
+
+/**
+ * 🔎 A-BUG-1309 — el filtro «Campaña» de Templates. La campaña es TEXTO («2026», «25/26»); antes se
+ * comparaba con `parseInt(...)` y no daba igual nunca: elegir un año dejaba la lista vacía. Y desde
+ * A-DEC-1016 los abiertos no tienen campaña → opción `SIN_CAMPANA`.
+ */
+export const SIN_CAMPANA = "sin-campana"
+export function coincideCampana(año: string | number | null | undefined, elegido: string): boolean {
+  if (!elegido || elegido === "todos") return true
+  const a = String(año ?? "").trim()
+  return elegido === SIN_CAMPANA ? a === "" : a === elegido
+}

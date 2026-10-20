@@ -170,6 +170,7 @@ import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } 
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
 import { reglasDelTemplateNuevo } from "@/lib/templates/codigos-del-template"
+import { coincideCampana, SIN_CAMPANA } from "@/lib/templates/cuotas-del-template"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
@@ -6794,6 +6795,16 @@ export function correrCasos(): Resultado[] {
     chequear("Códigos del template", "Template nuevo sin origen: lo escrito crea la regla de la cuenta; sin escribir nada no se crea ninguna",
       "1 (LIB) · 0", `${sola.length} (${sola[0]?.codigo_interno}) · ${nada.length}`,
       sola.length === 1 && sola[0].codigo_interno === "LIB" && sola[0].codigo_contable === null && nada.length === 0, "A-FEAT-1302")
+  }
+
+  // ══ 🔎 EL FILTRO «CAMPAÑA» DE TEMPLATES (A-BUG-1309) ════════════════════════════════════════════════
+  {
+    // 🧨 Antes: "2026" === parseInt("2026") → false siempre, y la lista quedaba vacía.
+    const r = [coincideCampana("2026", "2026"), coincideCampana("25/26", "25/26"), coincideCampana("2026", "25/26"),
+      coincideCampana(null, SIN_CAMPANA), coincideCampana("2026", SIN_CAMPANA), coincideCampana(null, "todos")]
+    chequear("Filtro de campaña", "🔎 Elegir «2026» o «25/26» muestra esa campaña; «Sin campaña» muestra los abiertos; «Todas» no filtra",
+      "true true false true false true", r.join(" "),
+      r.join(" ") === "true true false true false true", "A-BUG-1309")
   }
 
   // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════
