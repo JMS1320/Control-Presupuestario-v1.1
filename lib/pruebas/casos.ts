@@ -172,7 +172,7 @@ import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla }
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
-import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
@@ -6905,6 +6905,18 @@ export function correrCasos(): Resultado[] {
     chequear("Detalle fijo", "Sólo se pone si el detalle está vacío o es el autogenerado «Factura 1-N - EMISOR»; lo escrito a mano manda",
       "true · true · false", `${admiteDetalleFijo(null)} · ${admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237)} · ${admiteDetalleFijo("Luz galpón nuevo", emisor)}`,
       admiteDetalleFijo(null) && admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237) && !admiteDetalleFijo("Luz galpón nuevo", emisor), "A-FEAT-1296")
+  }
+
+  // ══ 🧱 LA TARJETA TAMBIÉN BUSCA EN LAS FACTURAS «ANTERIORES» LIBRES (A-DEC-1014) ═════════════════
+  {
+    // 🧨 Resumen 29/01: Coopser 37.577,25 tenía su factura exacta en `anterior` y el motor no la veía.
+    const pool = anterioresLibres([
+      { id: "coop", estado: "anterior" },        // libre → se ofrece
+      { id: "pagadaCC", estado: "anterior" },    // ya atada a un movimiento de la cuenta corriente → no
+      { id: "medicus", estado: "credito" },      // las de crédito, como siempre
+    ], new Set(["pagadaCC"]))
+    chequear("Doble audit", "En la tarjeta se ofrecen las facturas «anteriores» que nadie pagó todavía; una ya atada a otro movimiento no",
+      "coop · medicus", pool.map(f => f.id).join(" · "), pool.map(f => f.id).join("|") === "coop|medicus", "A-DEC-1014")
   }
 
   return r

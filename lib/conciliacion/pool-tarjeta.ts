@@ -43,3 +43,16 @@ export function comprobanteDeCargoDeTarjeta(
 ): string | null {
   return esTarjeta && template?.solo_conciliacion ? etiquetaResumenTarjeta(fechaCierre) : null
 }
+
+/**
+ * 🧱 **A-DEC-1014 — en la tarjeta también se buscan las facturas «anteriores».** Las emitidas hasta el
+ * 30/01/2026 se marcaron en masa `anterior` (históricas, «pagadas antes del sistema»), pero las pagadas con
+ * la tarjeta entran en resúmenes que se concilian ahora: en el del 29/01, 7 de 10 pendientes tenían su
+ * factura exacta ahí (usuario: *«de repente no me está conciliando nada, muchos perfectas»*).
+ *
+ * Una `anterior` que ya está atada a un movimiento de cualquier extracto NO se ofrece: ya tiene su pago.
+ * Al conciliar, el motor la pasa a `conciliado` como a cualquier otra (ahora hay prueba del pago).
+ */
+export function anterioresLibres<T extends { id: string; estado?: string | null }>(facturas: T[], idsYaAtados: Set<string>): T[] {
+  return facturas.filter(f => f.estado !== "anterior" || !idsYaAtados.has(String(f.id)))
+}

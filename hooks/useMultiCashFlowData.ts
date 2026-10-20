@@ -12,6 +12,8 @@ import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
+import { anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
+import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -1522,14 +1524,27 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     const [fcs, cuotas] = await Promise.all([
       supabase.schema(schemaDeEmpresa(empresa)).from('comprobantes_arca')
         .select('*, grupo_pago_id, moneda, tipo_cambio, tc_pago, metodo_pago, fecha_cobro_echeq')
-        .eq('estado', 'credito'),
+        // A-DEC-1014: también las «anteriores» (históricas), salvo las ya atadas a un movimiento
+        .in('estado', ['credito', 'anterior']),
       supabase.from('cuotas_egresos_sin_factura')
         .select('*, egreso:egresos_sin_factura!inner(*)')
         .eq('estado', 'credito').eq('egreso.responsable', empresa),
     ])
     if (fcs.error) console.error('Error cargando facturas pagadas con tarjeta:', fcs.error)
     if (cuotas.error) console.error('Error cargando cuotas pagadas con tarjeta:', cuotas.error)
-    return [...mapearFacturasArca(fcs.data || [], empresa), ...mapearTemplatesEgresos(cuotas.data || [])]
+    const idsAnteriores = (fcs.data || []).filter((f: any) => f.estado === 'anterior').map((f: any) => String(f.id))
+    const yaAtados = new Set<string>()
+    if (idsAnteriores.length) {
+      await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
+        const cli = t.schema === 'public' ? supabase : supabase.schema(t.schema)
+        for (let i = 0; i < idsAnteriores.length; i += 200) {
+          const { data } = await cli.from(t.tabla).select('comprobante_arca_id').in('comprobante_arca_id', idsAnteriores.slice(i, i + 200))
+          for (const r of (data || []) as any[]) yaAtados.add(String(r.comprobante_arca_id))
+        }
+      }))
+    }
+    const facturas = anterioresLibres((fcs.data || []) as any[], yaAtados)
+    return [...mapearFacturasArca(facturas, empresa), ...mapearTemplatesEgresos(cuotas.data || [])]
   }
 
   return {
