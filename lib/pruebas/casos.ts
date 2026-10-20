@@ -175,7 +175,7 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones } from "@/lib/polizas/renglones-pdf"
-import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
+import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
@@ -7040,10 +7040,20 @@ export function correrCasos(): Resultado[] {
       `${a.poliza} · ${a.endoso} · ${a.esNotaCredito ? "NC" : "FC"} · ${a.periodoDesde}→${a.periodoHasta} · ${a.total} · ${a.conceptos.filter(c => !c.esSubtotal).length} conceptos · frena=${ca.frena}`,
       a.poliza === "10183421" && a.endoso === 2 && a.esNotaCredito && a.periodoHasta === "2027-02-06" && a.total === -130899.6 && a.conceptos.filter(c => !c.esSubtotal).length === 7 && !ca.frena, "A-FEAT-1309")
     const repAP = repartoDeLaPoliza(a)
-    chequear("Pólizas", "La nómina distingue baja y activas; Elvio Paz → MA, Vulcano → MSA; el reparto es entre las ACTIVAS (la baja no cuenta)",
-      "baja BARRETO · activas PAZ, VULCANO · MA 50% · MSA 50%",
+    chequear("Pólizas", "La nómina distingue baja y activas; un endoso de BAJA es del que se va (Barreto → MSA), no de los que quedan",
+      "baja BARRETO · activas PAZ, VULCANO · MSA 100%",
       `baja ${a.personas.filter(x => x.movimiento === "baja").map(x => x.nombre.split(" ")[0]).join()} · activas ${a.personas.filter(x => x.movimiento === "activa").map(x => x.nombre.split(" ")[0]).join(", ")} · ${repAP?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
-      repAP?.partes.length === 2 && repAP.partes.every(x => Math.abs(x.proporcion - 0.5) < 1e-9) && responsableDe({ documento: "20276737751" }).responsable === "MA", "A-FEAT-1309")
+      repAP?.partes.length === 1 && repAP.partes[0].responsable === "MSA" && responsableDe({ documento: "20276737751" }).responsable === "MA", "A-FEAT-1309")
+
+    // 🧨 La cuota del consolidado es la SUMA de los endosos: 48.996 = 15.740 (endoso 0, Elvio → MA) +
+    // 33.256 (endoso 1, alta de Barreto y Vulcano → MSA). Repartirla por la nómina activa daba MA un tercio.
+    const persona = (doc: string, nombre: string, movimiento: "alta" | "baja" | "activa") => ({ certificado: 1, documento: doc, nombre, movimiento, sumaAsegurada: null })
+    const e0 = { ...a, endoso: 0, personas: [persona("27673775", "PAZ ELVIO", "activa")], cuotasEndoso: [{ nro: 2, de: 12, vencimiento: "2026-03-06", importe: 15740 }] }
+    const e1 = { ...a, endoso: 1, personas: [persona("33318934", "BARRETO", "alta"), persona("16598383", "VULCANO", "alta"), persona("27673775", "PAZ ELVIO", "activa")], cuotasEndoso: [{ nro: 1, de: 11, vencimiento: "2026-03-06", importe: 33256 }] }
+    const porCuota = repartoDeLasCuotas([e0, e1, e1])?.get("2026-03-06") ?? []
+    chequear("Pólizas", "La cuota 2/12 de Accidentes Personales (48.996) se reparte por endoso: Elvio MA 15.740 · altas MSA 33.256 (un endoso repetido no se cuenta dos veces)",
+      "MSA 33256 · MA 15740", porCuota.map(x => `${x.responsable} ${x.importe}`).join(" · "),
+      porCuota.length === 2 && porCuota.find(x => x.responsable === "MA")?.importe === 15740 && porCuota.find(x => x.responsable === "MSA")?.importe === 33256, "A-FEAT-1309")
 
     // Cotejo contra lo cargado: avisa, no frena. Número = póliza · punto de venta = endoso.
     const bien = cotejarConComprobante(a, { numero: "10183421", punto_venta: "2", total: 130899.6, esNotaCredito: true })

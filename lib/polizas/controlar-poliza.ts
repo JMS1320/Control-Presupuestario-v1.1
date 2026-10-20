@@ -194,12 +194,17 @@ export function repartoDeLaPoliza(p: PolizaLeida, reglas = RESPONSABLES_INICIALE
     base = "prima de cada vehículo"
     for (const v of vehiculos) sumar(responsableDe({ patente: v.patente }, reglas)[eje], v.prima!, nombreVehiculo(v))
   } else {
-    // Las personas vigentes: la nómina activa; si el endoso es sólo una baja, no hay a quién repartir.
-    const activas = p.personas.filter((x: PersonaAsegurada) => x.movimiento === "activa")
-    if (!activas.length) return null
-    const conSuma = activas.every(x => (x.sumaAsegurada ?? 0) > 0)
+    // 🧨 Cada endoso trae el COSTO DE LAS PERSONAS QUE MUEVE: el de alta cobra a los que entran y el de
+    // baja devuelve el de los que salen. Repartir por la nómina activa mezclaba costos: la cuota 2/12 de
+    // la AP 10183421 (48.996) es 15.740 de Elvio (endoso 0) + 33.256 del alta de Barreto y Vulcano
+    // (endoso 1) — repartida por la nómina daba a MA un tercio, y lo de MA son exactamente 15.740.
+    // Sólo el endoso que no mueve a nadie (el 0, una renovación) se reparte por la nómina activa.
+    const movidas = p.personas.filter((x: PersonaAsegurada) => x.movimiento !== "activa")
+    const base_ = movidas.length ? movidas : p.personas.filter((x: PersonaAsegurada) => x.movimiento === "activa")
+    if (!base_.length) return null
+    const conSuma = base_.every(x => (x.sumaAsegurada ?? 0) > 0)
     base = conSuma ? "suma asegurada de cada persona" : "partes iguales por persona"
-    for (const x of activas) sumar(responsableDe({ documento: x.documento }, reglas)[eje], conSuma ? x.sumaAsegurada! : 1, x.nombre)
+    for (const x of base_) sumar(responsableDe({ documento: x.documento }, reglas)[eje], conSuma ? x.sumaAsegurada! : 1, x.nombre)
   }
   const total = [...pesos.values()].reduce((s, x) => s + x.peso, 0)
   if (total <= 0) return null
@@ -218,5 +223,31 @@ export function repartirImporte(importe: number, reparto: RepartoPoliza | null, 
   const out = reparto.partes.map(x => ({ responsable: x.responsable, importe: r2(importe * x.proporcion) }))
   const resto = r2(importe - out.reduce((s, x) => s + x.importe, 0))
   if (resto !== 0) out[0].importe = r2(out[0].importe + resto)
+  return out
+}
+
+/**
+ * El reparto de CADA CUOTA de una póliza, sumando lo que aporta cada endoso. Una cuota del pago
+ * consolidado es la suma de las cuotas de todos los endosos que vencen ese día, y cada endoso se
+ * reparte con lo suyo (sus vehículos o las personas que mueve). Un endoso sin bienes (una nota de
+ * crédito que trae sólo la factura) va al que paga.
+ * Devuelve, por vencimiento, cuánto le toca a cada responsable; las partes suman la cuota exacta.
+ */
+export function repartoDeLasCuotas(endosos: PolizaLeida[], reglas = RESPONSABLES_INICIALES, eje: Eje = "interno"): Map<string, { responsable: Responsable; importe: number }[]> {
+  const vistos = new Set<string>()
+  const porVenc = new Map<string, Map<Responsable, number>>()
+  for (const e of endosos) {
+    const clave = `${e.poliza}|${e.endoso}`
+    if (vistos.has(clave)) continue // el mismo endoso en dos PDF
+    vistos.add(clave)
+    const rep = repartoDeLaPoliza(e, reglas, eje)
+    for (const c of e.cuotasEndoso) {
+      const m = porVenc.get(c.vencimiento) ?? new Map<Responsable, number>()
+      for (const x of repartirImporte(c.importe, rep)) m.set(x.responsable, r2((m.get(x.responsable) ?? 0) + x.importe))
+      porVenc.set(c.vencimiento, m)
+    }
+  }
+  const out = new Map<string, { responsable: Responsable; importe: number }[]>()
+  for (const [v, m] of [...porVenc.entries()].sort()) out.set(v, [...m.entries()].map(([responsable, importe]) => ({ responsable, importe })).filter(x => x.importe !== 0).sort((a, b) => b.importe - a.importe))
   return out
 }
