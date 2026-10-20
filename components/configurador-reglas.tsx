@@ -19,6 +19,7 @@ import { ModalCopiarReglas } from "@/components/modal-copiar-reglas"
 import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
 import { supabase } from "@/lib/supabase"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
+import { unoPorFamilia } from "@/lib/conciliacion/template-de-regla"
 
 export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas, cargarReglas } = useReglasConciliacion()
@@ -640,14 +641,15 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                 const empresaCuenta = CUENTAS_BANCARIAS.find(c => c.id === formulario.cuenta_bancaria_id)?.empresa
                 const q = busquedaTemplate.trim().toLowerCase()
                 const resultados = q
-                  ? templates.filter(t => [t.nombre_referencia, t.cuenta_agrupadora, t.categ, t.responsable]
-                      .some(v => (v || '').toLowerCase().includes(q))).slice(0, 25)
+                  ? unoPorFamilia(templates.filter(t => [t.nombre_referencia, t.cuenta_agrupadora, t.categ, t.responsable]
+                      .some(v => (v || '').toLowerCase().includes(q)))).slice(0, 25)
                   : []
                 return (
                   <div className="space-y-1">
                     {elegido ? (
                       <div className="text-sm rounded border border-blue-200 bg-blue-50 px-2 py-1 flex items-center justify-between gap-2">
-                        <span>→ <b>{elegido.nombre_referencia}</b> · {elegido.responsable} · {elegido.año || 'sin campaña'}</span>
+                        {/* A-BUG-1303: sin la campaña — la regla carga en la campaña de cada movimiento */}
+                        <span>→ <b>{elegido.nombre_referencia}</b> · {elegido.responsable} <span className="text-xs text-gray-500">· carga en la campaña de cada movimiento</span></span>
                         <button type="button" className="text-xs underline" onClick={() => setFormulario(p => ({ ...p, template_id: '' }))}>cambiar</button>
                       </div>
                     ) : formulario.categ ? (
@@ -666,7 +668,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                               <button key={t.id} type="button"
                                 onClick={() => { setFormulario(p => ({ ...p, template_id: t.id })); setBusquedaTemplate('') }}
                                 className="w-full text-left px-2 py-1 text-xs hover:bg-gray-50">
-                                <b>{t.nombre_referencia}</b> · {t.responsable || '—'} · {t.año || 'sin campaña'} · {t.cuenta_agrupadora || 'sin agrupadora'}
+                                <b>{t.nombre_referencia}</b> · {t.responsable || '—'} · {t.cuenta_agrupadora || 'sin agrupadora'}
                               </button>
                             ))}
                           </div>

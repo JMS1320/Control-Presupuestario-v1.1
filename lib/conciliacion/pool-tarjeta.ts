@@ -29,3 +29,16 @@ export function etiquetaResumenTarjeta(fechaCierre: string | null | undefined): 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null
   return `Resumen tarjeta cierre ${d.split("-").reverse().join("/")}`
 }
+
+/**
+ * A-BUG-1302 — el resumen es el comprobante **sólo de los cargos del banco** (templates `solo_conciliacion`:
+ * comisión, IVA, percepción). Chubb u Orbith también se concilian por regla en la tarjeta, pero su papel es
+ * otro (la póliza, el portal): con ellos devuelve `null` y queda el rótulo de la cuota.
+ */
+export function comprobanteDeCargoDeTarjeta(
+  esTarjeta: boolean,
+  template: { solo_conciliacion?: boolean | null } | null | undefined,
+  fechaCierre: string | null | undefined,
+): string | null {
+  return esTarjeta && template?.solo_conciliacion ? etiquetaResumenTarjeta(fechaCierre) : null
+}

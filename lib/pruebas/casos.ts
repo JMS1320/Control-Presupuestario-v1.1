@@ -168,11 +168,11 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
-import { templateParaFecha, campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
-import { conFechaDeEmision, etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -6823,6 +6823,28 @@ export function correrCasos(): Resultado[] {
     ].sort(campanaNuevaPrimero)
     chequear("Regla → template", "En el Asignar, Seguro Flota 26/27 aparece antes que 25/26 y el resto no se mueve",
       "acc · f2627 · f2526", lista.map(t => t.id).join(" · "), lista.map(t => t.id).join("|") === "acc|f2627|f2526", "A-BUG-1300")
+  }
+
+  // ══ 🧾 EL RESUMEN ES EL COMPROBANTE SÓLO DE LOS CARGOS DEL BANCO (A-BUG-1302) ═════════════════════
+  {
+    // 🧨 Chubb y Orbith, conciliados por regla en abril, quedaron «Resumen tarjeta cierre 30/04/2026».
+    const banco = comprobanteDeCargoDeTarjeta(true, { solo_conciliacion: true }, "2026-04-30")
+    const chubb = comprobanteDeCargoDeTarjeta(true, { solo_conciliacion: false }, "2026-04-30")
+    const ctaCte = comprobanteDeCargoDeTarjeta(false, { solo_conciliacion: true }, "2026-04-30")
+    chequear("Doble audit", "La comisión de la tarjeta lleva el resumen; Chubb (póliza) no; en la cuenta corriente, nunca",
+      "Resumen tarjeta cierre 30/04/2026 · null · null", `${banco} · ${chubb} · ${ctaCte}`,
+      banco === "Resumen tarjeta cierre 30/04/2026" && chubb === null && ctaCte === null, "A-BUG-1302")
+  }
+
+  // ══ 📅 AL ELEGIR TEMPLATE EN UNA REGLA, UNO POR FAMILIA (A-BUG-1303) ══════════════════════════════
+  {
+    const elegibles = unoPorFamilia([
+      { id: "f2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26" },
+      { id: "f2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27" },
+      { id: "fpam", nombre_referencia: "Seguro Flota", responsable: "PAM", año: "2026" },
+    ])
+    chequear("Regla → template", "En la regla aparece un solo Seguro Flota de MSA (el más nuevo) y el de PAM aparte: la campaña la decide el movimiento",
+      "f2627 · fpam", elegibles.map(t => t.id).join(" · "), elegibles.map(t => t.id).join("|") === "f2627|fpam", "A-BUG-1303")
   }
 
   return r

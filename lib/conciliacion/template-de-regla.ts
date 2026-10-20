@@ -54,3 +54,20 @@ export function templateParaFecha(
  */
 export const campanaNuevaPrimero = (a: TemplateDeFamilia, b: TemplateDeFamilia): number =>
   esDeLaFamilia(a, b) ? String(b.año ?? "").localeCompare(String(a.año ?? "")) : 0
+
+/**
+ * 📅 A-BUG-1303 — para ELEGIR en una regla, un renglón por familia (la campaña más nueva). La regla sigue
+ * a la familia (`templateParaFecha`), así que elegir 25/26 o 26/27 da lo mismo; mostrar las dos hacía
+ * parecer que la regla quedaba clavada a una campaña (usuario: *«eso va cambiando»*).
+ */
+export function unoPorFamilia<T extends TemplateDeFamilia>(lista: T[]): T[] {
+  // Sin `sort`: `campanaNuevaPrimero` no ordena entre familias distintas. Se elige el mejor de cada una
+  // y se respeta el orden en que aparece la familia por primera vez.
+  const mejor = new Map<string, T>()
+  for (const t of lista) {
+    const k = `${norm(t.nombre_referencia)}|${norm(t.responsable)}`
+    const actual = mejor.get(k)
+    if (!actual || String(t.año ?? "").localeCompare(String(actual.año ?? "")) > 0) mejor.set(k, t)
+  }
+  return [...mejor.values()]
+}

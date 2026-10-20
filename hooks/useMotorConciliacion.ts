@@ -20,7 +20,7 @@ import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
-import { conFechaDeEmision, etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -947,8 +947,8 @@ export function useMotorConciliacion() {
                       comprobantes_pagados: (movimiento as any).comprobantes_pagados,
                       centro_de_costo: (movimiento as any).centro_de_costo },
                     cuotaResult.template,
-                    // A-FEAT-1295: en la tarjeta el comprobante de un cargo es el RESUMEN que lo trae
-                    (cuenta.tipo === 'tarjeta' ? etiquetaResumenTarjeta((movimiento as any).fecha_cierre) : null)
+                    // A-FEAT-1295 / A-BUG-1302: en la tarjeta, el comprobante de un cargo DEL BANCO es el resumen
+                    comprobanteDeCargoDeTarjeta(cuenta.tipo === 'tarjeta', cuotaResult.template as any, (movimiento as any).fecha_cierre)
                       ?? identificadorDeCuota(
                         { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
                         cuotaResult.template ?? {}),
