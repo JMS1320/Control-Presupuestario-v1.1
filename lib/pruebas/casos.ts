@@ -1590,6 +1590,29 @@ export function correrCasos(): Resultado[] {
     "2 casos (ARCA sin, template con)", `${gImp?.total ?? 0} casos`,
     gImp?.total === 2, "A-DAT-45")
 
+  // ── ⚖️ Dos lados (A-FEAT-1301): conciliado el movimiento, conciliado lo atado ─────────────────
+  // 🧨 La tarjeta: 21 facturas en «crédito»/«anterior» con el movimiento conciliado por el «✓ OK».
+  {
+    const dl = [
+      movAud("dl1", { comprobante_arca_id: "f1" }),   // factura en crédito → hallazgo
+      movAud("dl2", { comprobante_arca_id: "f2" }),   // factura en anterior → hallazgo (caso tarjeta)
+      movAud("dl3", { template_cuota_id: "c1" }),     // cuota en anterior (histórico) → NO
+      movAud("dl4", { template_cuota_id: "c2" }),     // cuota pendiente → hallazgo
+      movAud("dl5", { comprobante_arca_id: "f3" }),   // factura conciliada → NO
+    ]
+    const estados = new Map([["dl1", { factura: "credito" }], ["dl2", { factura: "anterior" }],
+      ["dl3", { cuota: "anterior" }], ["dl4", { cuota: "pendiente" }], ["dl5", { factura: "conciliado" }]])
+    const r = auditar({ movimientos: dl, categsDelPlan: PLAN, estadoOrigen: estados })
+    const g = r.grupos.find(x => x.control === "origen-sin-conciliar")
+    const ids = (g?.causas.flatMap(c => c.ejemplos.map(e => e.movimientoId)) ?? []).sort().join(" ")
+    chequear("Audit", "⚖️ Conciliado de un solo lado: la factura en crédito o anterior y la cuota pendiente; la cuota «anterior» del histórico no",
+      "dl1 dl2 dl4", ids, ids === "dl1 dl2 dl4", "A-FEAT-1301")
+    const sinDato = auditar({ movimientos: dl, categsDelPlan: PLAN })
+    chequear("Audit", "Sin el estado de los orígenes, el control dos lados se informa NO verificado (no se da por bueno)",
+      "aparece en no verificado", sinDato.noVerificado.some(s => s.startsWith("Dos lados")) ? "aparece en no verificado" : "no aparece",
+      sinDato.noVerificado.some(s => s.startsWith("Dos lados")), "A-FEAT-1301")
+  }
+
   // ── Agrupar por CAUSA: 152 movimientos son 18 altas, no 152 arreglos ──────────────────────
   const mismaCateg = ["c1", "c2", "c3"].map(id => movAud(id, { categ: "Sueldos", sueldo_pago_id: "s" }))
   const agrup = auditar({ movimientos: mismaCateg, categsDelPlan: PLAN })

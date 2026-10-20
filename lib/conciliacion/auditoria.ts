@@ -41,6 +41,8 @@ export type ControlId =
   | 'sin-proveedor'
   | 'proveedor-incompleto'
   | 'cuadratura'
+  // ⚖️ A-FEAT-1301 — el movimiento está conciliado y su origen no (conciliar escribe en dos lados).
+  | 'origen-sin-conciliar'
   // 🕳️ Los del ORIGEN — A-BUG-172. Ver `EntidadOrigen`.
   | 'origen-template-sin-quien-cobra'
   | 'origen-factura-sin-numero'
@@ -279,6 +281,36 @@ export interface EntradaAuditoria {
    * [A-BUG-172].
    */
   origenes?: EntidadOrigen[]
+  /**
+   * ⚖️ **A-FEAT-1301 — el estado de lo que cada movimiento tiene atado**, por id de movimiento. Para
+   * el control «dos lados» (`MODULO_CONCILIACION.md` § 2.1). Si no viene, se informa no verificado.
+   */
+  estadoOrigen?: Map<string, EstadoDelOrigen>
+}
+
+export interface EstadoDelOrigen {
+  factura?: string | null
+  /** De la cuota, o el peor de los miembros si el vínculo es un grupo de pago. */
+  cuota?: string | null
+  sueldo?: string | null
+}
+
+/**
+ * ⚖️ **A-FEAT-1301 — qué del origen quedó sin conciliar, con el movimiento ya conciliado.**
+ *
+ * 🔑 La excepción: una **cuota** en «anterior» es la carga del histórico jul-25 → ene-26, hecha así a
+ * propósito (A-DEC-1009): no es un desparejo, y marcarla dejaría 533 avisos permanentes en Galicia.
+ * Una **factura** en «anterior» con su movimiento conciliado sí lo es — fue el caso de la tarjeta
+ * (A-BUG-1306: 21 facturas quedaron así por el «✓ OK»).
+ */
+export function ladosDesparejos(e: EstadoDelOrigen | undefined): { lado: 'factura' | 'cuota' | 'sueldo'; estado: string }[] {
+  if (!e) return []
+  const r: { lado: 'factura' | 'cuota' | 'sueldo'; estado: string }[] = []
+  const mal = (s: string | null | undefined) => s != null && norm(s) !== 'conciliado'
+  if (mal(e.factura)) r.push({ lado: 'factura', estado: t(e.factura) || '(vacío)' })
+  if (mal(e.cuota) && norm(e.cuota) !== 'anterior') r.push({ lado: 'cuota', estado: t(e.cuota) || '(vacío)' })
+  if (mal(e.sueldo)) r.push({ lado: 'sueldo', estado: t(e.sueldo) || '(vacío)' })
+  return r
 }
 
 /**
@@ -289,7 +321,7 @@ export interface EntradaAuditoria {
  * número por fila mide el síntoma; el número por causa mide el trabajo.
  */
 export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
-  const { movimientos, categsDelPlan, cuadratura, origenes, repartoEsperado } = entrada
+  const { movimientos, categsDelPlan, cuadratura, origenes, repartoEsperado, estadoOrigen } = entrada
   const conciliados = movimientos.filter(esConciliado)
 
   const porOrigen: Record<Origen, number> = {
@@ -398,6 +430,16 @@ export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
       })
     }
 
+    // ⚖️ A-FEAT-1301 · Conciliar es escribir en dos lados: lo atado también tiene que estar conciliado.
+    for (const d of ladosDesparejos(estadoOrigen?.get(m.id))) {
+      const nombre = d.lado === 'factura' ? 'la factura' : d.lado === 'cuota' ? 'la cuota del template' : 'el pago de sueldo'
+      hallazgos.push({
+        ...base(m), control: 'origen-sin-conciliar',
+        problema: `El movimiento está conciliado y ${nombre} sigue en «${d.estado}»`,
+        causa: `${m.cuenta} · ${d.lado} en «${d.estado}»`,
+      })
+    }
+
     // 8 · El proveedor está lleno cuando el origen lo tiene.
     if (!t(m.proveedor_nombre)) {
       const desdeElOrigen = origen === 'template' || origen === 'sueldo'
@@ -484,6 +526,10 @@ export function auditar(entrada: EntradaAuditoria): ResultadoAuditoria {
     )
   }
 
+  if (!estadoOrigen) {
+    noVerificado.push('Dos lados (movimiento conciliado y su origen también): no se pudo verificar porque no se cargó el estado de las facturas, cuotas y sueldos.')
+  }
+
   if (categsDelPlan.size === 0) {
     noVerificado.push('Categorías contra el plan de cuentas: no se pudo verificar porque el plan vino vacío.')
   }
@@ -512,6 +558,10 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
   'vinculo-doble': {
     titulo: 'Apuntan a dos orígenes a la vez',
     regla: 'Un vínculo por movimiento. La única excepción correcta es ARCA + anticipo: es el cierre normal de un anticipo que después recibió su factura.',
+  },
+  'origen-sin-conciliar': {
+    titulo: '⚖️ Conciliados de un solo lado',
+    regla: 'Conciliar es escribir en dos lados: si el movimiento está conciliado, la factura, la cuota o el pago de sueldo que tiene atado también. Si no, la misma plata figura pagada en el extracto y pendiente del otro lado. Las cuotas en «anterior» del histórico no cuentan.',
   },
   cuadratura: {
     titulo: 'El importe del banco no cuadra con su origen',
@@ -557,7 +607,7 @@ const TITULOS: Record<ControlId, { titulo: string; regla: string }> = {
 
 /** El orden en que se muestran: primero lo que compromete la plata, después lo que compromete la lectura. */
 const ORDEN: ControlId[] = [
-  'sin-vinculo', 'vinculo-doble', 'cuadratura', 'sin-comprobante',
+  'sin-vinculo', 'vinculo-doble', 'origen-sin-conciliar', 'cuadratura', 'sin-comprobante',
   'imputacion', 'detalle-repite', 'categ-fuera-plan', 'sin-proveedor', 'proveedor-incompleto',
   // Los del origen van al final: no son del extracto, pero es donde se arregla lo de arriba.
   'origen-template-sin-quien-cobra', 'origen-factura-sin-numero', 'origen-factura-sin-cuenta',
