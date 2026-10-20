@@ -10,13 +10,43 @@
  *
  * @param diasAntes días entre la fecha de la factura/cuota y el movimiento: positivo = la factura es anterior.
  */
-export function motivoFechaNoExacta(diasAntes: number, fechaEsEmision: boolean): string {
+export function motivoFechaNoExacta(diasAntes: number, fechaEsEmision: boolean, difImporte = 0): string {
   const n = Math.round(Math.abs(diasAntes))
   const dias = `${n} día${n === 1 ? "" : "s"}`
-  if (!fechaEsEmision) return `Importe exacto · fecha estimada a ${dias} del movimiento`
+  // 🪙 A-BUG-1305 — si el importe no es exacto (centavos), se dice cuánto difiere en vez de «exacto».
+  const importe = difImporte
+    ? `Importe difiere ${Math.abs(difImporte).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}`
+    : "Importe exacto"
+  if (n === 0) return `${importe} · misma fecha`
+  if (!fechaEsEmision) return `${importe} · fecha estimada a ${dias} del movimiento`
   return diasAntes > 0
-    ? `Importe exacto · emitida ${dias} antes del débito (lo esperado en la tarjeta)`
-    : `Importe exacto · ⚠️ emitida ${dias} DESPUÉS del débito — revisar`
+    ? `${importe} · emitida ${dias} antes del débito (lo esperado en la tarjeta)`
+    : `${importe} · ⚠️ emitida ${dias} DESPUÉS del débito — revisar`
+}
+
+/**
+ * 🪙 **A-BUG-1305 — un centavo de diferencia no puede esconder una factura perfecta.**
+ *
+ * Caso (2026-10-20, tarjeta VISA MSA): Autopistas Urbanas, débito 16/01 por $7.719,03 y factura del 14/01
+ * por $7.719,02. El motor comparaba el importe por igualdad exacta y no la proponía ni para auditar; la
+ * pantalla Asignar sí («Monto + Fecha»). *«estas nunca me las ofrece ni en auditar pero siempre están
+ * perfectas»*.
+ *
+ * Se usa **sólo cuando no hubo importe exacto**, y lo que encuentra va **siempre a auditar**. Elige la de
+ * menor diferencia; si hay dos con la misma, no elige ninguna (sería adivinar).
+ */
+export const TOLERANCIA_IMPORTE = 1
+
+export function elegirPorImporteCercano<T>(
+  pool: T[], importe: number, importeDe: (cf: T) => number, fechaOk: (cf: T) => boolean, tolerancia = TOLERANCIA_IMPORTE,
+): { cf: T; dif: number } | null {
+  const cands = pool
+    .map(cf => ({ cf, dif: Math.round((importe - importeDe(cf)) * 100) / 100 }))
+    .filter(c => importeDe(c.cf) > 0 && c.dif !== 0 && Math.abs(c.dif) <= tolerancia && fechaOk(c.cf))
+    .sort((a, b) => Math.abs(a.dif) - Math.abs(b.dif))
+  if (!cands.length) return null
+  if (cands.length > 1 && Math.abs(cands[1].dif) === Math.abs(cands[0].dif)) return null
+  return cands[0]
 }
 
 /**

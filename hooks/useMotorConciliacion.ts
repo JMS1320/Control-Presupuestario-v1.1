@@ -21,7 +21,7 @@ import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion
 import { templateParaFecha, detalleDeRegla } from "@/lib/conciliacion/template-de-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
-import { motivoFechaNoExacta } from "@/lib/conciliacion/motivo-fecha"
+import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
@@ -412,6 +412,18 @@ export function useMotorConciliacion() {
             (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
         }
       }
+      // 🪙 A-BUG-1305 — sin importe exacto: hasta $1 de diferencia, siempre a auditar.
+      const cerca = elegirPorImporteCercano(pool, Number(movimiento.debitos), cf => Number(cf.debitos) || 0, cf =>
+        Math.abs(fechaMovimiento.getTime() - new Date(cf.fecha_estimada).getTime()) / 86400000 <= toleranciaDias)
+      if (cerca) {
+        return {
+          match: true,
+          cashFlowRow: cerca.cf,
+          requiere_revision: true,
+          motivo_revision: motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(cerca.cf.fecha_estimada).getTime()) / 86400000, !!cerca.cf.__fecha_es_emision, cerca.dif),
+        }
+      }
     }
 
     // Buscar por créditos
@@ -442,6 +454,18 @@ export function useMotorConciliacion() {
           // A-FEAT-1298: decir qué sí coincide (y en la tarjeta, si la factura es anterior al débito)
           motivo_revision: fechaExacta ? null : motivoFechaNoExacta(
             (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
+        }
+      }
+      // 🪙 A-BUG-1305 — sin importe exacto: hasta $1 de diferencia, siempre a auditar.
+      const cerca = elegirPorImporteCercano(pool, Number(movimiento.creditos), cf => Number(cf.creditos) || 0, cf =>
+        Math.abs(fechaMovimiento.getTime() - new Date(cf.fecha_estimada).getTime()) / 86400000 <= toleranciaDias)
+      if (cerca) {
+        return {
+          match: true,
+          cashFlowRow: cerca.cf,
+          requiere_revision: true,
+          motivo_revision: motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(cerca.cf.fecha_estimada).getTime()) / 86400000, !!cerca.cf.__fecha_es_emision, cerca.dif),
         }
       }
     }

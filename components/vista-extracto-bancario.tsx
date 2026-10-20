@@ -4,6 +4,7 @@ import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib
 import { hoyArgentina } from "@/lib/fechas"
 import { cerrarVentaSiSaldada, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
+import { conciliarOrigenDelMovimiento, schemaDeFactura } from "@/lib/conciliacion/confirmar-origen"
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
@@ -237,6 +238,9 @@ export function VistaExtractoBancario() {
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar' | 'historico'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
+  /** ✓ A-FEAT-1300 — OK masivo: deja a la vista sólo lo «auditar» de lo filtrado, con casillas. */
+  const [modoOkAuditar, setModoOkAuditar] = useState(false)
+  const [aplicandoOkMasivo, setAplicandoOkMasivo] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
 
@@ -848,8 +852,11 @@ ${texto.trim()}` : texto.trim()
       }
     }
 
+    // ✓ A-FEAT-1300 — segundo filtro del OK masivo: sobre lo ya filtrado, sólo lo que está en auditar.
+    if (modoOkAuditar) lista = lista.filter(m => String(m.estado).toLowerCase() === 'auditar')
+
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, modoOkAuditar])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -1227,7 +1234,7 @@ ${texto.trim()}` : texto.trim()
    *   (si no, quedaría en la lista de «sin vincular» con la plata ya contada).
    */
   const [confirmandoOk, setConfirmandoOk] = useState<string | null>(null)
-  const confirmarAuditado = async (movimiento: any) => {
+  const confirmarAuditado = async (movimiento: any, silencioso = false): Promise<boolean> => {
     setConfirmandoOk(movimiento.id)
     try {
       const previa = String(movimiento.nota_operador || '').trim()
@@ -1247,6 +1254,9 @@ ${texto.trim()}` : texto.trim()
       const { error } = await dbCuenta().from(tablaActiva).update(upd).eq('id', movimiento.id)
       if (error) throw error
       actualizarLocal(movimiento.id, upd)
+      // ✓ A-BUG-1306 — la otra mitad: la factura / cuota / sueldo atado pasa a conciliado (antes quedaba sin pagar).
+      const origen = await conciliarOrigenDelMovimiento(supabase as any, movimiento)
+      if (origen.avisos.length) toast.error(`Movimiento conciliado, pero ${origen.avisos.join(' · ')}`)
       // ✅ A-BUG-1247 — con este crédito conciliado, la venta se cierra si su detalle cierra (antes quedaba «a cobrar»).
       let cerrada: string | null = null
       if (movimiento.comprobante_venta_id) {
@@ -1254,11 +1264,36 @@ ${texto.trim()}` : texto.trim()
         // 📝 A-FEAT-1257 — y el detalle dice qué se cobró.
         try { await anotarQueSeCobro(supabase, movimiento.id, movimiento.comprobante_venta_id, schemaVentaCuenta, extractoActivo) } catch { /* se completa después */ }
       }
-      toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
+      if (!silencioso) toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
         + (cerrada ? ` — la venta quedó ${cerrada === 'conciliado' ? 'conciliada' : 'cobrada'}` : ''))
+      return true
     } catch (err) {
       toast.error('No se pudo confirmar: ' + (err as Error).message)
+      return false
     } finally { setConfirmandoOk(null) }
+  }
+
+  /**
+   * ✓ **A-FEAT-1300 — OK masivo de «auditar».** Pedido del usuario 2026-10-20: *«repasar todos los
+   * auditar de un período filtrado… seleccione yo todos los que están bien y les dé el ok a todos
+   * juntos»*, sobre la misma pantalla (no un modal). Es el «✓ OK» de cada fila, uno por uno: no
+   * reescribe detalle, cuenta ni códigos (los puso el motor al dejarlo en auditar) y concilia también
+   * el origen (A-BUG-1306).
+   */
+  const darOkMasivo = async () => {
+    const elegidos = movimientosVisibles.filter(m => seleccionados.has(m.id) && String(m.estado).toLowerCase() === 'auditar')
+    if (!elegidos.length) return
+    if (!window.confirm(`¿Dar OK a ${elegidos.length} movimiento${elegidos.length === 1 ? '' : 's'}?
+
+Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) return
+    setAplicandoOkMasivo(true)
+    let ok = 0
+    try {
+      for (const m of elegidos) if (await confirmarAuditado(m, true)) ok++
+    } finally { setAplicandoOkMasivo(false) }
+    setSeleccionados(new Set())
+    if (ok === elegidos.length) toast.success(`${ok} movimiento${ok === 1 ? '' : 's'} conciliado${ok === 1 ? '' : 's'}`)
+    else toast.error(`Conciliados ${ok} de ${elegidos.length} — los demás siguen en auditar`)
   }
 
   // Aplicar ediciones masivas
@@ -1354,13 +1389,15 @@ ${texto.trim()}` : texto.trim()
                   updateData.centro_costo = editData.centro_de_costo.trim()
                 }
                 
+                // ✓ A-BUG-1306 — en el schema de la empresa de la factura (antes siempre MSA).
+                const schemaFc = (await schemaDeFactura(supabase as any, opcionId)) ?? 'msa'
                 const { error } = await supabase
-                  .schema('msa')
+                  .schema(schemaFc)
                   .from('comprobantes_arca')
                   .update(updateData)
                   .eq('id', opcionId)
                 // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
-                if (!error) await completarFechaPago(supabase, 'msa', [opcionId], movimiento.fecha)
+                if (!error) await completarFechaPago(supabase, schemaFc, [opcionId], movimiento.fecha)
 
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
@@ -1467,58 +1504,9 @@ ${texto.trim()}` : texto.trim()
             const movimiento = movimientos.find(m => m.id === movimientoId) as any
             if (!movimiento) continue
 
-            // Factura ARCA ya vinculada
-            if (movimiento.comprobante_arca_id) {
-              await supabase
-                .schema('msa')
-                .from('comprobantes_arca')
-                .update({ estado: 'conciliado' })
-                .eq('id', movimiento.comprobante_arca_id)
-              // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
-              await completarFechaPago(supabase, 'msa', [movimiento.comprobante_arca_id], movimiento.fecha)
-            }
-
-            // Cuota template ya vinculada
-            if (movimiento.template_cuota_id) {
-              await supabase
-                .from('cuotas_egresos_sin_factura')
-                .update({ estado: 'conciliado' })
-                .eq('id', movimiento.template_cuota_id)
-            }
-
-            /**
-             * 🔗 **A-BUG-176 — si el pago es de un GRUPO, se concilian TODOS sus miembros.**
-             *
-             * El vínculo guarda **el primer miembro** del grupo, y eso es deliberado (A-BUG-41): un
-             * `grupo_pago_id` en `sueldo_pago_id` apuntaría a otra tabla, y desde el primer pago se
-             * llega al grupo. **Eso no se toca.**
-             *
-             * 🧨 Lo que faltaba es la otra mitad: marcar `conciliado` **sólo al primero** deja a los
-             * demás en `pendiente`, así que el mismo pago bancario aparece medio saldado — y los
-             * miembros restantes se vuelven a ofrecer para conciliar contra otra cosa.
-             *
-             * 📌 Caso real: los haberes de $2.699.370 son **3 pagos y 2 beneficiarios**
-             * (Sigot ×2 + Barreto). Sin esto quedarían conciliados $1.487.477 de los tres.
-             */
-            if (movimiento.sueldo_pago_id) {
-              const { data: pagoVinculado } = await supabase
-                .from('sueldos_pagos')
-                .select('id, grupo_pago_id')
-                .eq('id', movimiento.sueldo_pago_id)
-                .maybeSingle()
-
-              if (pagoVinculado?.grupo_pago_id) {
-                await supabase
-                  .from('sueldos_pagos')
-                  .update({ estado: 'conciliado' })
-                  .eq('grupo_pago_id', pagoVinculado.grupo_pago_id)
-              } else {
-                await supabase
-                  .from('sueldos_pagos')
-                  .update({ estado: 'conciliado' })
-                  .eq('id', movimiento.sueldo_pago_id)
-              }
-            }
+            // ✓ A-BUG-1306 — factura (en SU empresa, antes siempre MSA), cuota y sueldo: la misma función que el «✓ OK».
+            const res = await conciliarOrigenDelMovimiento(supabase as any, movimiento)
+            if (res.avisos.length) toast.error(`Movimiento del ${movimiento.fecha}: ${res.avisos.join(' · ')}`)
           }
         }
 
@@ -3582,7 +3570,7 @@ ${marca}` : marca
                   Actualizar
                 </Button>
                 <Button
-                  onClick={() => setModoEdicion(!modoEdicion)}
+                  onClick={() => { setModoEdicion(!modoEdicion); setModoOkAuditar(false) }}
                   variant={modoEdicion ? "destructive" : "outline"}
                   className="flex items-center gap-2"
                 >
@@ -3626,6 +3614,16 @@ ${marca}` : marca
                   }}
                 >
                   Auditar ({estadisticas.auditar})
+                </Button>
+                {/* ✓ A-FEAT-1300 — dar OK a varios «auditar» juntos, en esta misma pantalla. */}
+                <Button
+                  variant={modoOkAuditar ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${modoOkAuditar ? 'bg-green-600 hover:bg-green-700' : 'border-green-400 text-green-700 hover:bg-green-50'}`}
+                  title="Muestra sólo los «auditar» de lo filtrado, con casillas, para darles OK juntos"
+                  onClick={() => { setModoOkAuditar(v => !v); setModoEdicion(false); setSeleccionados(new Set()) }}
+                >
+                  ✓ OK masivo{modoOkAuditar ? ' (salir)' : ''}
                 </Button>
                 {/* 📜 A-DEC-1009 — el extracto histórico (jul-25 → ene-26), cargado sin clasificar. Sólo aparece si hay. */}
                 {estadisticas.historicos > 0 && (
@@ -4037,6 +4035,25 @@ ${marca}` : marca
             {codigosUsados.interno.map(c => <option key={c} value={c} />)}
           </datalist>
 
+          {/* ✓ A-FEAT-1300 — barra del OK masivo */}
+          {modoOkAuditar && (
+            <Card className="border-green-300 bg-green-50">
+              <CardContent className="py-3 flex items-center gap-3 flex-wrap text-sm">
+                <span className="text-green-900">
+                  <b>{movimientosVisibles.length}</b> para auditar en lo filtrado · <b>{seleccionados.size}</b> marcados
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSeleccionados(new Set(movimientosVisibles.map(m => m.id)))}>Todos</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSeleccionados(new Set())}>Ninguno</Button>
+                <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" disabled={!seleccionados.size || aplicandoOkMasivo}
+                  onClick={() => void darOkMasivo()}>
+                  {aplicandoOkMasivo ? 'Aplicando…' : `✓ Dar OK a ${seleccionados.size}`}
+                </Button>
+                <span className="text-xs text-green-800">Es el mismo «✓ OK» de cada fila: no cambia detalle, cuenta ni códigos; concilia también la factura o la cuota.</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => { setModoOkAuditar(false); setSeleccionados(new Set()) }}>Salir</Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Panel de Edición Masiva */}
           {modoEdicion && seleccionados.size > 0 && (
             <Card className="border-blue-200 bg-blue-50">
@@ -4447,7 +4464,7 @@ ${marca}` : marca
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-white border-b">
                       <TableRow>
-                        {modoEdicion && (
+                        {(modoEdicion || modoOkAuditar) && (
                           <TableHead className="w-12">
                             <Checkbox
                               checked={seleccionados.size === movimientosVisibles.length && movimientosVisibles.length > 0}
@@ -4498,7 +4515,7 @@ ${marca}` : marca
                     <TableBody>
                       {movimientosVisibles.map((movimiento) => (
                         <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
-                          {modoEdicion && (
+                          {(modoEdicion || modoOkAuditar) && (
                             <TableCell>
                               <Checkbox
                                 checked={seleccionados.has(movimiento.id)}

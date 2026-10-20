@@ -174,7 +174,7 @@ import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
-import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
+import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -6864,6 +6864,26 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "En el Asignar de la tarjeta, la emitida el 1/4 (7 días antes del débito) sube y la del 1/7 (posterior) baja",
       "+18 «Emitida 7d antes ✓» · -40", `${abr.puntos} «${abr.sello?.texto}» · ${jul.puntos}`,
       abr.puntos === 18 && abr.sello?.texto === "Emitida 7d antes ✓" && jul.puntos === -40, "A-FEAT-1298")
+  }
+
+  // ══ 🪙 UN CENTAVO DE DIFERENCIA NO ESCONDE UNA FACTURA PERFECTA (A-BUG-1305) ═════════════════════
+  {
+    // 🧨 Autopistas Urbanas: débito 16/01 $7.719,03, factura 14/01 $7.719,02 → el motor no la proponía.
+    const ok = (_: any) => true
+    const pool = [{ id: "otra", debitos: 7700 }, { id: "au", debitos: 7719.02 }]
+    const r = elegirPorImporteCercano(pool, 7719.03, cf => cf.debitos, ok)
+    const motivo = r ? motivoFechaNoExacta(2, true, r.dif) : ""
+    chequear("Doble audit", "Autopistas Urbanas $7.719,03 contra factura $7.719,02: el motor la trae y el motivo dice cuánto difiere",
+      "au · Importe difiere $ 0,01 · emitida 2 días antes", `${r?.cf.id} · ${motivo}`,
+      r?.cf.id === "au" && motivo.startsWith("Importe difiere") && motivo.includes("0,01") && motivo.includes("emitida 2 días antes"), "A-BUG-1305")
+    const empate = elegirPorImporteCercano([{ debitos: 100.01 }, { debitos: 99.99 }], 100, cf => cf.debitos, ok)
+    const lejos = elegirPorImporteCercano([{ debitos: 98.5 }], 100, cf => cf.debitos, ok)
+    const cero = elegirPorImporteCercano([{ debitos: 0 }], 0.5, cf => cf.debitos, ok)
+    const exacto = elegirPorImporteCercano([{ debitos: 100 }], 100, cf => cf.debitos, ok)
+    const fueraDeFecha = elegirPorImporteCercano([{ debitos: 99.99 }], 100, cf => cf.debitos, () => false)
+    chequear("Doble audit", "Sin elegir: dos a la misma diferencia, más de $1, un importe en cero, el exacto (lo resuelve la búsqueda normal) o fuera de fecha",
+      "null ×5", [empate, lejos, cero, exacto, fueraDeFecha].map(x => x === null ? "null" : "ELIGIÓ").join(" "),
+      [empate, lejos, cero, exacto, fueraDeFecha].every(x => x === null), "A-BUG-1305")
   }
 
   // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════
