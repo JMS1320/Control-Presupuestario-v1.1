@@ -783,9 +783,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
-  // Todos los mails ya cargados en proveedores (facturación y pagos): se ofrecen al escribir, porque
-  // varios proveedores suelen mandar desde el mismo mail (un estudio, un sistema de facturación).
-  const [mailsConocidos, setMailsConocidos] = useState<string[]>([])
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
 
   // Modal Buscar PDFs: al cambiar el filtro de fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
@@ -2008,20 +2005,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const cargarMailesProveedores = async (cuits: string[]) => {
     const unicos = Array.from(new Set(cuits.filter(Boolean)))
     if (unicos.length === 0) { setProvPorCuit({}); return }
-    const [{ data }, { data: todos }] = await Promise.all([
-      supabase.from('proveedores')
-        .select('id, cuit, email_facturacion, email_pagos, gas_habilitado, fc_modo')
-        .in('cuit', unicos),
-      supabase.from('proveedores').select('email_facturacion, email_pagos'),
-    ])
+    const { data } = await supabase
+      .from('proveedores')
+      .select('id, cuit, email_facturacion, email_pagos, gas_habilitado, fc_modo')
+      .in('cuit', unicos)
     const mapa: Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }> = {}
     ;(data || []).forEach((p: any) => { mapa[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, email_pagos: p.email_pagos, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
     setProvPorCuit(mapa)
     setProvEditMail({})
-    setMailsConocidos(Array.from(new Set((todos || [])
-      .flatMap((p: any) => [p.email_facturacion, p.email_pagos])
-      .map((m: unknown) => String(m ?? '').trim().toLowerCase())
-      .filter(m => m.includes('@')))).sort())
   }
 
   const cuitLimpio = (c: unknown) => String(c ?? '').replace(/[-\s]/g, '')
@@ -8380,7 +8371,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                             className="shrink-0 text-[10px] text-gray-500 underline">otro</button>
                                         </span>
                                       ) : (
-                                        <input type="text" placeholder="mail del proveedor (opcional)" list="mails-conocidos-import"
+                                        <input type="text" placeholder="mail del proveedor (opcional)"
                                           className="border rounded px-1 py-0.5 text-[11px] w-full"
                                           value={provEditMail[cuit] ?? ''}
                                           onChange={(e) => { const v = e.target.value; setProvEditMail(prev => ({ ...prev, [cuit]: v })) }}
@@ -8395,9 +8386,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         })}
                     </tbody>
                   </table>
-                  <datalist id="mails-conocidos-import">
-                    {mailsConocidos.map(m => <option key={m} value={m} />)}
-                  </datalist>
                 </div>
 
                 {/* Resultado de importación */}
@@ -12347,9 +12335,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </div>
                 )}
 
-                <datalist id="mails-conocidos">
-                  {mailsConocidos.map(m => <option key={m} value={m} />)}
-                </datalist>
                 <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
                   {candidatos.length === 0 ? (
                     <p className="text-sm text-gray-500 py-6 text-center">No hay facturas en ese rango.</p>
@@ -12408,7 +12393,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   ) : (
                                   <input
                                     type="email"
-                                    list="mails-conocidos"
                                     value={valorMail}
                                     disabled={buscandoPdfs || guardandoMailCuit === cuit}
                                     placeholder="⚠ sin mail — agregar"
