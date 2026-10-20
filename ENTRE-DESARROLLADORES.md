@@ -54,7 +54,7 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🗃️ Una columna nueva en `public.reglas_conciliacion` (2026-10-19) — aviso ANTES de aplicarla
+### 🗃️ Una columna nueva en `public.reglas_conciliacion` (2026-10-19) — ✅ APLICADA el 19/10 con JMS presente
 
 Para [A-FEAT-1293](PENDIENTES.md#a-feat-1293) (rama `jms/tarjeta-conciliacion`): la regla de conciliación pasa a elegir
 **el template**, no la cuenta (pedido de JMS). **Qué cambia**: `scripts/87` agrega **`template_id uuid` nullable** a

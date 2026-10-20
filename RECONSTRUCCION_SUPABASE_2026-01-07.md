@@ -3323,7 +3323,7 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
-### 2026-10-19 · `reglas_conciliacion.template_id` — la regla elige el template (A-FEAT-1293) — ⏳ SE CORRE CON JMS
+### 2026-10-19 · `reglas_conciliacion.template_id` — la regla elige el template (A-FEAT-1293) — ✅ CORRIDO 2026-10-19 con JMS (verificado: columna uuid nullable, 72 reglas en null)
 
 `scripts/87-reglas-template.sql` (+ `-deshacer`):
 
