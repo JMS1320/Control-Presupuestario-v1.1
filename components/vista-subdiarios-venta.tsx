@@ -26,8 +26,9 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { cargarRetencionesSubdiario } from "@/lib/ventas/retenciones-export-db"
 import {
-  evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarMesesEnviados,
+  evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarEstadoDeLosMeses, type EstadoMes,
 } from "@/lib/subdiarios/estado-ddjj"
+import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -83,10 +84,10 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
   const { carpetaPorDefecto, setCarpetaPorDefecto } = useCarpetaPorDefecto()
   const [generandoReportes, setGenerandoReportes] = useState(false)
 
-  // 📨 A-FEAT-1295: meses enviados al contador que todavía no figuran presentados.
-  const [mesesEnviados, setMesesEnviados] = useState<string[]>([])
+  // 📨 A-FEAT-1295: el estado de cada mes del subdiario (Imputado / Enviado / DDJJ OK).
+  const [estadoMeses, setEstadoMeses] = useState<EstadoMes[] | null>([])
   const recargarMesesEnviados = () => {
-    consultarMesesEnviados(supabase, schemaName, 'comprobantes_venta').then(setMesesEnviados)
+    consultarEstadoDeLosMeses(supabase, schemaName, 'comprobantes_venta').then(setEstadoMeses)
   }
   useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -668,19 +669,14 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* 📨 A-FEAT-1295: lo mandado al contador que todavía no figura presentado */}
-          {mesesEnviados.length > 0 && (
-            <div className="mb-3 rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
-              <span className="font-semibold">📨 Enviados al contador, sin confirmar la presentación:</span>{' '}
-              {mesesEnviados.map((m, i) => (
-                <span key={m}>
-                  {i > 0 && ' · '}
-                  <button className="underline font-mono" onClick={() => setPeriodoConsulta(m)}>{m}</button>
-                </span>
-              ))}
-              <div className="text-xs text-blue-800 mt-1">Tocá el mes y «Consultar período». Cuando el contador te avise que lo presentó, apretá «Confirmar DDJJ».</div>
-            </div>
-          )}
+          {/* 📨 A-FEAT-1295: el estado de cada mes */}
+          <div className="mb-3">
+            <EstadoMesesDDJJ
+              meses={estadoMeses}
+              onElegir={setPeriodoConsulta}
+              ayuda="Tocá un mes y «Consultar período». Cuando el contador te avise que presentó uno enviado, apretá «Confirmar DDJJ»."
+            />
+          </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Período</Label>

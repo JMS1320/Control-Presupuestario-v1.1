@@ -59,8 +59,9 @@ import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
 import { ModalArchivosArca } from "@/components/modal-archivos-arca"
 import {
-  estaProtegido, evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarMesesEnviados,
+  estaProtegido, evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarEstadoDeLosMeses, type EstadoMes,
 } from "@/lib/subdiarios/estado-ddjj"
+import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -391,10 +392,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   
   // Estados para gestión masiva de facturas
   const [mostrarGestionMasiva, setMostrarGestionMasiva] = useState(false)
-  // 📨 A-FEAT-1295: meses enviados al contador que todavía no figuran presentados.
-  const [mesesEnviados, setMesesEnviados] = useState<string[]>([])
+  // 📨 A-FEAT-1295: el estado de cada mes del subdiario (Imputado / Enviado / DDJJ OK).
+  const [estadoMeses, setEstadoMeses] = useState<EstadoMes[] | null>([])
   const recargarMesesEnviados = () => {
-    consultarMesesEnviados(supabase, schemaName, 'comprobantes_arca').then(setMesesEnviados)
+    consultarEstadoDeLosMeses(supabase, schemaName, 'comprobantes_arca').then(setEstadoMeses)
   }
   useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
@@ -6131,19 +6132,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         </CardHeader>
         <CardContent className="space-y-4">
           <TestsDelProceso proceso="subdiarios/estado-ddjj" pantalla="subdiarios" />
-          {/* 📨 A-FEAT-1295: lo mandado al contador que todavía no figura presentado */}
-          {mesesEnviados.length > 0 && (
-            <div className="rounded border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
-              <span className="font-semibold">📨 Enviados al contador, sin confirmar la presentación:</span>{' '}
-              {mesesEnviados.map((m, i) => (
-                <span key={m}>
-                  {i > 0 && ' · '}
-                  <button className="underline font-mono" onClick={() => { setPeriodoConsulta(m); cargarFacturasPeriodo(m) }}>{m}</button>
-                </span>
-              ))}
-              <div className="text-xs text-blue-800 mt-1">Cuando el contador te avise que lo presentó, abrí el mes y apretá «Confirmar DDJJ».</div>
-            </div>
-          )}
+          {/* 📨 A-FEAT-1295: el estado de cada mes */}
+          <EstadoMesesDDJJ
+            meses={estadoMeses}
+            onElegir={m => { setPeriodoConsulta(m); cargarFacturasPeriodo(m) }}
+            ayuda="Tocá un mes para abrirlo. Cuando el contador te avise que presentó uno enviado, apretá «Confirmar DDJJ»."
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Selector período consulta */}
             <div className="space-y-2">

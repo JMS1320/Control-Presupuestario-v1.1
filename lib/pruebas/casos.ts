@@ -59,7 +59,7 @@ import {
 import { añosHastaElProximo } from "@/lib/fechas"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
-import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar } from "@/lib/subdiarios/estado-ddjj"
+import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
@@ -6629,6 +6629,18 @@ export function correrCasos(): Resultado[] {
     ])
     chequear(G, "Lista de enviados sin presentar: ordenada, sin los meses ya presentados ni las filas sin período",
       "12/2025, 09/2026", lista.join(", "), lista.join(", ") === "12/2025, 09/2026", "A-FEAT-1295")
+
+    const tablero = estadoDeLosMeses([
+      { año_contable: 2026, mes_contable: 9, ddjj_iva: "DDJJ OK" },
+      { año_contable: 2026, mes_contable: 9, ddjj_iva: "Imputado" },
+      { año_contable: 2026, mes_contable: 5, ddjj_iva: "Imputado" },
+      { año_contable: 2026, mes_contable: 8, ddjj_iva: "Enviado" },
+      { año_contable: 2026, mes_contable: 7, ddjj_iva: "No" },
+      { año_contable: null, mes_contable: null, ddjj_iva: "No" },
+    ]).map(m => `${m.periodo} ${m.estado}${m.sinMandar ? " +" + m.sinMandar : ""}`).join(" · ")
+    chequear(G, "Tablero de meses: TODOS los meses con su estado (también los presentados), del más viejo al más nuevo; un «No» con mes (Ventas) no cuenta",
+      "05/2026 Imputado · 08/2026 Enviado · 09/2026 DDJJ OK +1", tablero,
+      tablero === "05/2026 Imputado · 08/2026 Enviado · 09/2026 DDJJ OK +1", "A-FEAT-1295")
   }
 
   return r

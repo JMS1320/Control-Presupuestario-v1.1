@@ -1187,9 +1187,11 @@ Las facturas «Imputado» del mes pasan a «Enviado».
 **Cuando el contador te avisa que lo presentó:** apretá **✅ Confirmar DDJJ**. Pasa todo lo «Imputado» y
 lo «Enviado» del mes a «DDJJ OK».
 
-**Para no tener que acordarte:** arriba de Subdiarios aparece un recuadro azul con los meses
-**enviados que todavía no confirmaste**. Tocás el mes y se abre (en Ventas, después apretás
-*Consultar período*).
+**Para no tener que acordarte:** arriba de Subdiarios está el tablero **🗓️ Estado de los meses**,
+con cada mes y su estado: 📝 amarillo = imputado, 📨 azul = enviado al contador, ✅ verde = DDJJ OK.
+Un **+N** naranja al lado del mes avisa que tiene N comprobantes imputados **después** de enviarlo
+(hay que mandárselos al contador). Abajo dice cuántos meses enviados te faltan confirmar. Tocás el
+mes y se abre (en Ventas, después apretás *Consultar período*).
 
 **Qué pasa si querés cambiar algo de un mes enviado o presentado** —sacar una factura, pasarla a otro
 mes, imputar una que llegó tarde, editarla o borrarla—: la app te avisa con un cartel y te pregunta si

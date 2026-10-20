@@ -97,25 +97,49 @@ export function evaluarCambioDDJJ(c: CambioDDJJ): Decision {
   }
 }
 
+type FilaPeriodo = { año_contable: number | null; mes_contable: number | null; ddjj_iva: string | null }
+
+/** Un mes del subdiario y en qué quedó. `sinMandar` = imputados tarde a un mes ya enviado o presentado. */
+export interface EstadoMes {
+  periodo: string
+  estado: EstadoDDJJ
+  comprobantes: number
+  sinMandar: number
+}
+
 /**
- * Los meses enviados al contador que todavía no figuran presentados — para cerrarlos cuando él
- * avise. Recibe las filas `{año_contable, mes_contable, ddjj_iva}` y devuelve `MM/AAAA`, del más
- * viejo al más nuevo. Un mes con algo ya en DDJJ OK no se lista: ya se cerró.
+ * El estado de CADA mes del subdiario, del más viejo al más nuevo — el tablero de arriba de
+ * Subdiarios. Recibe las filas `{año_contable, mes_contable, ddjj_iva}`; las que no tienen mes, o
+ * están en «No», no cuentan (en Ventas un comprobante en «No» puede tener mes cargado).
  */
-export function mesesEnviadosSinPresentar(
-  filas: { año_contable: number | null; mes_contable: number | null; ddjj_iva: string | null }[],
-): string[] {
+export function estadoDeLosMeses(filas: FilaPeriodo[]): EstadoMes[] {
   const porMes = new Map<string, (string | null)[]>()
   for (const f of filas) {
     if (!f.año_contable || !f.mes_contable) continue
+    if (!ESTADOS_IMPUTADOS.includes(f.ddjj_iva as EstadoDDJJ)) continue
     const k = `${f.año_contable}-${String(f.mes_contable).padStart(2, "0")}`
     porMes.set(k, [...(porMes.get(k) ?? []), f.ddjj_iva])
   }
   return [...porMes.entries()]
-    .filter(([, est]) => estadoDelPeriodo(est) === ENVIADO)
-    .map(([k]) => k)
-    .sort()
-    .map(k => `${k.slice(5)}/${k.slice(0, 4)}`)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, est]) => {
+      const estado = estadoDelPeriodo(est) as EstadoDDJJ
+      return {
+        periodo: `${k.slice(5)}/${k.slice(0, 4)}`,
+        estado,
+        comprobantes: est.length,
+        sinMandar: estaProtegido(estado) ? est.filter(e => e === "Imputado").length : 0,
+      }
+    })
+}
+
+/**
+ * Los meses enviados al contador que todavía no figuran presentados — para cerrarlos cuando él
+ * avise. Devuelve `MM/AAAA`, del más viejo al más nuevo. Un mes con algo ya en DDJJ OK no se
+ * lista: ya se cerró.
+ */
+export function mesesEnviadosSinPresentar(filas: FilaPeriodo[]): string[] {
+  return estadoDeLosMeses(filas).filter(m => m.estado === ENVIADO).map(m => m.periodo)
 }
 
 /**
@@ -137,13 +161,23 @@ export async function consultarEstadoPeriodo(
   return estadoDelPeriodo((data ?? []).map((r: any) => r.ddjj_iva))
 }
 
-/** Los meses Enviados sin presentar de una tabla (lee sólo lo enviado o presentado). */
-export async function consultarMesesEnviados(supabase: any, schema: string, tabla: string): Promise<string[]> {
-  const { data, error } = await supabase
-    .schema(schema).from(tabla).select("*")
-    .in("ddjj_iva", [ENVIADO, PRESENTADO])
-  if (error) return []
-  return mesesEnviadosSinPresentar(data ?? [])
+/**
+ * El estado de cada mes de una tabla. Lee de a 1000 (el tope de cada pedido), porque Compras
+ * pasa ese número en un año. Si la lectura falla devuelve `null`: no se muestra un tablero a medias.
+ */
+export async function consultarEstadoDeLosMeses(supabase: any, schema: string, tabla: string): Promise<EstadoMes[] | null> {
+  const filas: FilaPeriodo[] = []
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase
+      .schema(schema).from(tabla).select("*")
+      .in("ddjj_iva", ESTADOS_IMPUTADOS)
+      .order("id")
+      .range(desde, desde + 999)
+    if (error) return null
+    filas.push(...(data ?? []))
+    if (!data || data.length < 1000) break
+  }
+  return estadoDeLosMeses(filas)
 }
 
 /** Pregunta según la decisión: `true` = seguir. Bloquear muestra el motivo y corta. */
