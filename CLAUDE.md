@@ -772,6 +772,42 @@ tener trabajo sin pushear. Es la **pérdida silenciosa de la regla 1 aplicada a 
 variante que **`git status` no delata**: ahí todo se ve perfectamente normal, porque técnicamente lo
 está. Las 13 reglas anteriores protegen archivos, IDs, memoria y recursos — **ninguna cubría en
 dónde caen los commits**.*
+
+**16 · Si las terminales escriben código A LA VEZ: cada una en SU ÁRBOL (`git worktree`).** *(Decisión del
+usuario 2026-10-16: **«yo haré que cada cual trabaje en un árbol distinto»**. Completa a la 15, que es para
+cuando se alternan.)*
+
+Una carpeta propia **cambia qué recaudos hacen falta, no los saca a todos**:
+
+| Ya NO hace falta (era por compartir carpeta) | SIGUE obligando (una carpeta no separa esto) |
+|---|---|
+| tomar archivo por archivo en el tablero (reglas 1 y 10) | **la BD es una sola**: anotar en el tablero ANTES qué tablas se van a escribir, y datos siempre con OK del usuario |
+| la prohibición de `checkout`/`stash`/`reset` y el `git add` de a uno (regla 2) — **dentro del propio árbol** | **los IDs, con MÁS riesgo**: cada rama tiene su copia de `PENDIENTES.md` y no ve las otras hasta el merge → buscar el máximo en **TODAS las ramas** (A-FEAT y A-BUG comparten numeración) y reclamar con fila + commit + push |
+| builds de a uno (regla 3) — cada árbol tiene su `.next/` y `node_modules` | **`memory/` y el tablero son uno solo** para todas (regla 13) |
+| el commit en la rama equivocada (reglas 14 y 15) | **merges a `jms/dia-a-dia` de a uno** y avisando en el tablero; si dos ramas tocan el mismo archivo, el que mergea segundo resuelve |
+| | **la carpeta principal es una terminal más**: las otras no le cambian la rama ni le escriben |
+
+Cómo se arma, al lado de la carpeta del proyecto:
+```bash
+git fetch origin
+git worktree add -b jms/<tema> "../Control-Presupuestario-v1.1-<tema>" origin/jms/dia-a-dia
+git -C "../Control-Presupuestario-v1.1-<tema>" branch --unset-upstream   # que un push no vaya a dia-a-dia
+cd "../Control-Presupuestario-v1.1-<tema>" && npm ci --legacy-peer-deps   # sin el flag falla
+git push -u origin jms/<tema>
+```
+- **`.env.local` no está en git**: se copia de la carpeta principal **sólo con OK del usuario** (tiene claves), y
+  nunca se commitea.
+- **Una rama no se monta en dos árboles a la vez** (git lo impide): la rama de otra se prueba en su Vercel.
+- **El grafo indexa la carpeta principal**, no el árbol: sirve para «quién llama a qué» (la base es la misma);
+  lo propio, con `grep` en el árbol.
+- **Los archivos que el usuario deja** pueden caer en la carpeta del árbol (`- Comunicacion/`) y no en la
+  principal: mirar las dos *(pasó el 2026-10-19)*.
+- Al terminar el tema: todo commiteado y `git worktree remove "../Control-Presupuestario-v1.1-<tema>"`.
+
+*Motivo: con tres terminales escribiendo código a la vez sobre una sola carpeta, las reglas 1-3 convertían cada
+build y cada commit en un turno de espera. Con árboles separados, git vuelve a proteger el código —un choque
+aparece como conflicto de merge, a la vista— y lo único que queda compartido es lo que git no ve: la base, los
+IDs y la memoria.*
 ### 🌙 TRABAJAR SIN SUPERVISIÓN — el acuerdo para una tanda (REGLA)
 *Aprobada por el usuario 2026-10-04 ([A-DEC-1003](PENDIENTES.md#a-dec-1003)): **«¿es posible que
 trabajes sobre varios pendientes con una indicación clara mía pero sin mi supervisión? Para que
