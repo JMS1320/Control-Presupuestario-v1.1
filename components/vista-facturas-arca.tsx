@@ -1556,14 +1556,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
   // «Confirmada» es el sí del administrador y siempre con archivo (usuario 2026-10-21): desde una APP
   // (mismo archivo) o pegando el link de Drive en el aviso «sin comprobante». Sin link no se confirma.
-  const confirmarConLink = async (factura: FacturaArca, link: string | null | undefined, preguntar: string) => {
+  const confirmarConLink = async (factura: Pick<FacturaArca, 'id'>, link: string | null | undefined, preguntar: string): Promise<boolean> => {
     const url = linkParaConfirmar(link)
-    if (!url) { toast.error('Hace falta el link del PDF en Google Drive para dejarla Confirmada.'); return }
-    if (!window.confirm(preguntar)) return
+    if (!url) { toast.error('Hace falta el link del PDF en Google Drive para dejarla Confirmada.'); return false }
+    if (!window.confirm(preguntar)) return false
     const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
       .update({ fc: 'Confirmada', pdf_drive_url: url, pdf_estado: 'descargado' }).eq('id', factura.id)
-    if (error) { toast.error('No se pudo guardar: ' + error.message); return }
+    if (error) { toast.error('No se pudo guardar: ' + error.message); return false }
     alConfirmarCandidato(factura.id, url)
+    return true
   }
 
   // Renderizar valor de celda según el tipo de columna
@@ -12259,7 +12260,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       />
 
       {/* 📋 Informe por factura del último lote (A-FEAT-1287) */}
-      <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)} />
+      <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)}
+        onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)} />
 
       {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
       <ModalElegirCandidato
