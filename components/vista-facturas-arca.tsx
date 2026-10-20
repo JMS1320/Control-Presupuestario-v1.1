@@ -795,7 +795,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
 
-  // Modal Buscar PDFs: al cambiar el filtro de fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
+  // Modal Buscar PDFs: al cambiar el filtro de subdiario/fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
+  // (2026-10-20: el subdiario filtraba pero faltaba acá → mostraba 2 y buscaba 152.)
   // Sin esto, "Hasta"/"Desde" achican la tabla pero las facturas ocultas seguían seleccionadas y se
   // buscaban igual (la búsqueda usa seleccionPdf, no lo visible) → el filtro "no parecía funcionar".
   useEffect(() => {
@@ -816,7 +817,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       prev.forEach(id => { if (visibles.has(id)) next.add(id); else cambio = true })
       return cambio ? next : prev
     })
-  }, [pdfDesde, pdfHasta, filtroTiposPdf, modalBuscarPdf, facturas])
+  }, [pdfDesde, pdfHasta, pdfSubdiario, filtroTiposPdf, modalBuscarPdf, facturas])
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
