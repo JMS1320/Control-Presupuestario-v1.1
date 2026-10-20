@@ -176,6 +176,7 @@ import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta,
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
+import { generarCuotasTemplate, cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -6934,6 +6935,29 @@ export function correrCasos(): Resultado[] {
     const sinPago = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 0, fechaPago: "", pesosPagados: 0, debitos })
     chequear("Doble audit", "No adivina: dos débitos candidatos el mismo día, o sin «SU PAGO EN USD» → aviso, nada se escribe",
       "aviso · aviso", `${ambiguo.ok ? "ELIGIÓ" : "aviso"} · ${sinPago.ok ? "ELIGIÓ" : "aviso"}`, !ambiguo.ok && !sinPago.ok, "A-BUG-1307")
+  }
+
+  // ══ 🧩 EL ASISTENTE DE TEMPLATES DESDE LA CONCILIACIÓN: cuotas de la CAMPAÑA y la del mes (A-FEAT-1302) ══
+  {
+    // 🧨 Antes: siempre ene→dic del año de HOY. Orbith (MA, anual) creado desde un débito del 02/12/2025
+    // tenía que dar 12 cuotas de 2025, no de 2026; y una campaña jul–jun, jul-25→jun-26.
+    const anual = generarCuotasTemplate({ abierto: false, config: { tipo: "mensual", dia_mes: 2 }, montoBase: 83000, campana: "2025", periodicidad: "anual" })
+    const bianual = generarCuotasTemplate({ abierto: false, config: { tipo: "mensual", dia_mes: 31 }, montoBase: 10, campana: "25/26", periodicidad: "bianual" })
+    chequear("Templates", "Mensual anual 2025 → 12 cuotas de 2025, día del movimiento; campaña 25/26 → jul-25 a jun-26, el 31 se ajusta al último día",
+      "12 · 2025-01-02 → 2025-12-02 · 2025-07-31 … 2026-02-28 … 2026-06-30",
+      `${anual.length} · ${anual[0]?.fecha_vencimiento} → ${anual[11]?.fecha_vencimiento} · ${bianual[0]?.fecha_vencimiento} … ${bianual[7]?.fecha_vencimiento} … ${bianual[11]?.fecha_vencimiento}`,
+      anual.length === 12 && anual[0].fecha_vencimiento === "2025-01-02" && anual[11].fecha_vencimiento === "2025-12-02"
+        && bianual[0].fecha_vencimiento === "2025-07-31" && bianual[7].fecha_vencimiento === "2026-02-28" && bianual[11].fecha_vencimiento === "2026-06-30", "A-FEAT-1302")
+    const abierto = generarCuotasTemplate({ abierto: true, config: { tipo: "mensual", dia_mes: 2 }, montoBase: 1, campana: "2025", periodicidad: "anual" })
+    const especificas = generarCuotasTemplate({ abierto: false, config: { tipo: "cuotas_especificas", meses_especificos: [3, 9], dia_default: 10 }, montoBase: 5, campana: "25/26", periodicidad: "bianual" })
+    chequear("Templates", "Abierto (lo cargan los movimientos) → sin cuotas; cuotas específicas mar y sep en 25/26 → sep-25 y mar-26",
+      "0 · 2025-09-10 · 2026-03-10", `${abierto.length} · ${especificas.map(c => c.fecha_vencimiento).join(" · ")}`,
+      abierto.length === 0 && especificas.map(c => c.fecha_vencimiento).join(" · ") === "2025-09-10 · 2026-03-10", "A-FEAT-1302")
+    const cuotas = anual.map((c, i) => ({ id: `c${i + 1}`, fecha_vencimiento: c.fecha_vencimiento }))
+    const elegida = cuotaDelMovimiento(cuotas, "2025-12-02")
+    const ninguna = cuotaDelMovimiento(cuotas, "2026-01-05")
+    chequear("Templates", "🔗 El movimiento del 02/12/2025 se ata a la cuota de diciembre (no se crea una extra); de otro año, ninguna",
+      "c12 · null", `${elegida?.id} · ${ninguna === null ? "null" : ninguna.id}`, elegida?.id === "c12" && ninguna === null, "A-FEAT-1302")
   }
 
   // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════

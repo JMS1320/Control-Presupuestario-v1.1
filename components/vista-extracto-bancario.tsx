@@ -29,7 +29,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
-import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
+import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
+import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
@@ -5635,31 +5636,57 @@ ${marca}` : marca
                   + Crear uno acá
                 </button>
               </div>
-              <ModalCrearTemplateFaltante
-                abierto={modalNuevoTemplate}
-                categ={cuentaNuevoTemplate}
-                empresaDestino={cuentaActivaObj?.empresa || 'MSA'}
-                motivo="conciliacion"
-                fechaMovimiento={(movimientoAsignando as any)?.fecha ? String((movimientoAsignando as any).fecha).slice(0, 10) : undefined}
-                nombreSugerido={(movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim() || undefined}
-                onCerrar={() => setModalNuevoTemplate(false)}
-                onCancelar={() => setModalNuevoTemplate(false)}
-                onCreado={async (templateId) => {
-                  setModalNuevoTemplate(false)
-                  setCrearTemplateAbierto(false)
-                  setCuentaNuevoTemplate('')
-                  const { data } = await supabase
-                    .from('egresos_sin_factura')
-                    .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
-                    .eq('activo', true)
-                    .order('cuenta_agrupadora')
-                    .order('nombre_referencia')
-                  setTemplatesParaAsignar(data || [])
-                  const nuevo = ((data || []) as any[]).find((t: any) => t.id === templateId)  // `año` en el select confunde al parser de tipos
-                  if (nuevo) { setTemplateElegido(nuevo); setCuotaElegida(null); setCuotasExistentes([]); setBusquedaAsignarTemplate(nuevo.nombre_referencia) }
-                  toast.success('Template creado. Revisá y confirmá la asignación.')
-                }}
-              />
+              {/* 🧩 A-FEAT-1302 — el MISMO asistente de Templates, precargado con el movimiento (antes un modal
+                  aparte que creaba el template sin cuotas). Fijo → sus cuotas quedan presupuestadas y el
+                  movimiento se ata a la de su mes; abierto → sin cuotas, las carga cada movimiento. */}
+              <Dialog open={modalNuevoTemplate} onOpenChange={(o) => { if (!o) setModalNuevoTemplate(false) }}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>Crear template desde la conciliación</DialogTitle>
+                  </DialogHeader>
+                  {modalNuevoTemplate && (
+                    <WizardTemplatesEgresos
+                      fechaReferencia={(movimientoAsignando as any)?.fecha ? String((movimientoAsignando as any).fecha).slice(0, 10) : undefined}
+                      empresaCuenta={cuentaActivaObj?.empresa || 'MSA'}
+                      inicial={{
+                        nombre_referencia: (movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim(),
+                        responsable: cuentaActivaObj?.empresa || 'MSA',
+                        monto_base: Number(movimientoAsignando?.debitos) || Number(movimientoAsignando?.creditos) || 0,
+                        ...(cuentaNuevoTemplate ? { categ: cuentaNuevoTemplate } : {}),
+                      }}
+                      onCancelar={() => setModalNuevoTemplate(false)}
+                      onCreado={async (templateId) => {
+                        setModalNuevoTemplate(false)
+                        setCrearTemplateAbierto(false)
+                        setCuentaNuevoTemplate('')
+                        const { data } = await supabase
+                          .from('egresos_sin_factura')
+                          .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
+                          .eq('activo', true)
+                          .order('cuenta_agrupadora')
+                          .order('nombre_referencia')
+                        setTemplatesParaAsignar(data || [])
+                        const nuevo = ((data || []) as any[]).find((t: any) => t.id === templateId)  // `año` en el select confunde al parser de tipos
+                        if (!nuevo) return
+                        setTemplateElegido(nuevo); setCuotaElegida(null); setBusquedaAsignarTemplate(nuevo.nombre_referencia)
+                        // 🔗 Las cuotas recién creadas, y la del mes del movimiento ya elegida: así no se crea una extra.
+                        const { data: cuotas } = await supabase
+                          .from('cuotas_egresos_sin_factura')
+                          .select('id, fecha_vencimiento, fecha_estimada, monto, estado, descripcion, categ, tipo_movimiento')
+                          .eq('egreso_id', templateId)
+                          .not('estado', 'eq', 'conciliado')
+                          .order('fecha_vencimiento', { ascending: true })
+                        setCuotasExistentes(cuotas || [])
+                        const delMes = cuotaDelMovimiento((cuotas || []) as any[], String(movimientoAsignando?.fecha || ''))
+                        if (delMes) setCuotaElegida(delMes)
+                        toast.success(delMes
+                          ? 'Template creado con sus cuotas. Quedó elegida la cuota de este mes: revisá y confirmá la asignación.'
+                          : 'Template creado. Revisá y confirmá la asignación.')
+                      }}
+                    />
+                  )}
+                </DialogContent>
+              </Dialog>
               <Input
                 placeholder="Buscar template por nombre o agrupadora..."
                 value={busquedaAsignarTemplate}
