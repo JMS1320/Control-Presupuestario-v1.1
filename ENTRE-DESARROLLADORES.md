@@ -54,7 +54,7 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — aviso ANTES de aplicarla
+### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — ✅ APLICADA el 20/10 con JMS presente
 
 Para [A-FEAT-1296](PENDIENTES.md#a-feat-1296) (rama `jms/tarjeta-conciliacion`): el **detalle fijo por proveedor**
 que el usuario marca desde la conciliación (cuit, detalle, monto de referencia, activo). **Qué cambia**: `scripts/88`
