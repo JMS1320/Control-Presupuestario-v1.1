@@ -1567,8 +1567,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return true
   }
 
-  // «Proveedor Portal» (A-FEAT-1287, 2026-10-20) — desde la lista de Buscar PDFs (antes de buscar) o
-  // desde el informe: se marca el PROVEEDOR (las próximas búsquedas lo saltean) y sus facturas
+  // «Proveedor Portal» (A-FEAT-1287, 2026-10-20) — desde la lista de Buscar PDFs, antes de buscar
+  // (del informe se sacó a pedido del usuario): se marca el PROVEEDOR (las próximas búsquedas lo saltean) y sus facturas
   // cargadas que siguen sin 📎 pasan a Portal.
   const marcarProveedorPortal = async (it: { proveedor: string }, cuit: string): Promise<boolean> => {
     const delInforme = facturas
@@ -12286,8 +12286,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       {/* 📋 Informe por factura del último lote (A-FEAT-1287) */}
       <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)}
         onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)}
-        datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total, cuit: f.cuit } : undefined }}
-        onPortal={marcarProveedorPortal} />
+        datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total } : undefined }} />
 
       {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
       <ModalElegirCandidato

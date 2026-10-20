@@ -1369,7 +1369,9 @@ Desde el informe también podés:
 - **✓ Confirmar** (en *Bajadas del mail* y *Ya estaban en la carpeta*): abrís el PDF y, si es ésa, pasa de APP a **Confirmada**.
 - **📋 Copiar pedido de facturas**: tildás las que querés reclamar (no encontradas, sin mail, errores) y se copia un texto
   *«Facturas faltantes»* con una fila por factura — fecha · proveedor · comprobante · importe — para pegar en un mail o WhatsApp.
-- **Proveedor Portal**: el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. El mismo botón (**→ Portal**) está en la lista de **Buscar PDFs**, al lado del estado: conviene usarlo **antes** de buscar, para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
+- En el pedido, **Todas** / **Ninguna** tilda o destilda todas las que se pueden reclamar.
+
+**→ Portal** está en la lista de **Buscar PDFs**, al lado del estado (antes de buscar): el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. Sirve para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
 
 Mientras mira la carpeta, el cartel dice qué mes está leyendo y cuántos archivos van. Si se corta la conexión, la factura
 queda como estaba y sale en *Errores* para reintentar.

@@ -17,20 +17,17 @@ interface Props {
   /** ✓ Confirmar desde el informe: lo bajado del mail o tomado de la carpeta queda en APP; abrís el
    *  PDF acá mismo y, si es ésa, pasa a Confirmada. Devuelve true si se guardó. */
   onConfirmar?: (item: ItemInforme, url: string) => Promise<boolean>
-  /** Fecha, importe y CUIT de la factura (para el pedido y para marcar el proveedor como Portal) */
-  datosDe?: (facturaId: string) => { fecha_emision?: string | null; imp_total?: number | null; cuit?: string | null } | undefined
-  /** Marca el PROVEEDOR como Portal (no la factura sola). Devuelve true si se guardó. */
-  onPortal?: (item: ItemInforme, cuit: string) => Promise<boolean>
+  /** Fecha e importe de la factura, para el pedido */
+  datosDe?: (facturaId: string) => { fecha_emision?: string | null; imp_total?: number | null } | undefined
 }
 
 /** Sólo lo que la app vinculó sola (APP) se confirma desde acá: lo «a revisar» tiene su propio paso */
 const SE_CONFIRMA = new Set(['mail', 'carpeta'])
 
-export function InformeLote({ open, informe, onClose, onConfirmar, datosDe, onPortal }: Props) {
+export function InformeLote({ open, informe, onClose, onConfirmar, datosDe }: Props) {
   const grupos = agruparInforme(informe)
   const [confirmadas, setConfirmadas] = useState<Set<string>>(new Set())
   const [aReclamar, setAReclamar] = useState<Set<string>>(new Set())
-  const [cuitsPortal, setCuitsPortal] = useState<Set<string>>(new Set())
   const alternar = (id: string) => setAReclamar(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const copiarPedido = async () => {
     const filas = informe.filter(it => aReclamar.has(it.factura_id)).map(it => {
@@ -57,6 +54,11 @@ export function InformeLote({ open, informe, onClose, onConfirmar, datosDe, onPo
               className="border rounded px-2 py-1 bg-white hover:bg-gray-50 disabled:opacity-40">
               📋 Copiar pedido de facturas ({aReclamar.size})
             </button>
+            <button type="button" className="text-blue-700 underline"
+              onClick={() => setAReclamar(new Set(informe.filter(it => SE_RECLAMA.has(it.proceso)).map(it => it.factura_id)))}>
+              Todas
+            </button>
+            <button type="button" className="text-blue-700 underline" onClick={() => setAReclamar(new Set())}>Ninguna</button>
             <span className="text-gray-500">Tildá las que querés reclamar: se copia un texto con fecha, proveedor, comprobante e importe.</span>
           </div>
         )}
@@ -90,20 +92,6 @@ export function InformeLote({ open, informe, onClose, onConfirmar, datosDe, onPo
                                   if (await onConfirmar(it, it.links[0].url)) setConfirmadas(prev => new Set(prev).add(it.factura_id))
                                 }}>✓ Confirmar</button>
                         )}
-                      </td>
-                      <td className="p-1 whitespace-nowrap">
-                        {(() => {
-                          const cuit = datosDe?.(it.factura_id)?.cuit
-                          if (!onPortal || !cuit || !SE_RECLAMA.has(it.proceso)) return null
-                          if (cuitsPortal.has(cuit)) return <span className="text-gray-600 font-medium">Portal ✓</span>
-                          return (
-                            <button type="button" title="Este proveedor no manda por mail: queda como Portal (todas sus facturas) y la búsqueda deja de intentarlo"
-                              className="border rounded px-1.5 hover:bg-gray-50"
-                              onClick={async () => { if (await onPortal(it, cuit)) setCuitsPortal(prev => new Set(prev).add(cuit)) }}>
-                              Proveedor Portal
-                            </button>
-                          )
-                        })()}
                       </td>
                       <td className="p-1 text-gray-500 break-words">{it.detalle}</td>
                     </tr>
