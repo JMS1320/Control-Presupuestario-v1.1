@@ -71,6 +71,15 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onV
         </button>
       </div>
 
+      {!progreso.finalizado && progreso.fase === 'carpeta' && progreso.carpetaAvance && (
+        <div className="text-xs text-gray-600 mb-2">
+          🗂️ Carpeta {progreso.carpetaAvance.carpeta} ({progreso.carpetaAvance.nroCarpeta} de {progreso.carpetaAvance.totalCarpetas})
+          {' · '}{progreso.carpetaAvance.leidos} archivo{progreso.carpetaAvance.leidos === 1 ? '' : 's'} leído{progreso.carpetaAvance.leidos === 1 ? '' : 's'}
+          {progreso.carpetaAvance.restantes > 0 ? `, faltan ${progreso.carpetaAvance.restantes}` : ''}
+          <div className="text-gray-400">Abre cada PDF sin vincular de la carpeta: puede tardar unos minutos.</div>
+        </div>
+      )}
+
       {/* Barra de progreso */}
       <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
         <div

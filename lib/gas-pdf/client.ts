@@ -52,6 +52,8 @@ export interface ProgresoLote {
   fase?: 'carpeta' | 'mail'
   /** Si la carpeta no se pudo leer: el motivo. Esas facturas igual salen al mail */
   errorCarpeta?: string
+  /** Avance de la etapa carpeta: qué mes está leyendo y cuántos archivos van (el OCR es lento) */
+  carpetaAvance?: { carpeta: string; nroCarpeta: number; totalCarpetas: number; leidos: number; restantes: number }
   actual?: {
     factura_id: string
     resultado?: ApiBuscarPdfOutput
@@ -205,7 +207,8 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   if (opts.facturas && opts.facturas.length > 0) {
     progreso = { ...progreso, fase: 'carpeta' }
     opts.onProgreso?.(progreso)
-    const deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled, loteId)
+    const deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled, loteId,
+      av => { progreso = { ...progreso, carpetaAvance: av }; opts.onProgreso?.(progreso) })
     // Lo resuelto en la carpeta no sale al mail: lo vinculado y lo que quedó a revisar (tiene candidatos)
     pendientes = opts.facturaIds.filter(id => !deCarpeta.vinculadas.has(id) && !deCarpeta.aRevisar.has(id))
     for (const d of deCarpeta.decisiones) {
@@ -284,13 +287,18 @@ export async function vincularDesdeCarpetas(
   facturas: FacturaParaCarpeta[],
   isCancelled?: () => boolean,
   loteId?: string,
+  onAvance?: (av: NonNullable<ProgresoLote['carpetaAvance']>) => void,
 ): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string }> {
   const exactos: HallazgoCarpeta[] = []
   const dudosos: HallazgoCarpeta[] = []
   let error: string | undefined
-  for (const carpeta of agruparPorCarpeta(facturas)) {
+  const carpetas = agruparPorCarpeta(facturas)
+  for (const [nc, carpeta] of carpetas.entries()) {
     if (isCancelled?.()) break
     const skip = new Set<string>()
+    const rotulo = `${String(carpeta.mes).padStart(2, '0')}/${carpeta.anio}`
+    let leidos = 0
+    onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos: 0, restantes: 0 })
     for (let guard = 0; guard < 200; guard++) {
       if (isCancelled?.()) break
       const pedir = async (cuantos: number) => {
@@ -316,6 +324,8 @@ export async function vincularDesdeCarpetas(
       for (const m of (data.matched || []) as HallazgoCarpeta[]) { if (m.file_id) skip.add(m.file_id); exactos.push(m) }
       for (const d of (data.dudosos || []) as HallazgoCarpeta[]) dudosos.push(d)
       for (const h of (data.huerfanos || [])) if (h.file_id) skip.add(h.file_id)
+      leidos += Number(data.procesados) || 0
+      onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos, restantes: Number(data.restantes) || 0 })
       if (data.completo) break
     }
   }
