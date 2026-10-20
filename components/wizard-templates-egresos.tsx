@@ -19,13 +19,15 @@ import { supabase } from "@/lib/supabase"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { campanaDeFecha, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { generarCuotasTemplate } from "@/lib/templates/cuotas-del-template"
-import { reglasDelTemplateNuevo, type ReglaCodigo } from "@/lib/templates/codigos-del-template"
+import { reglasDelTemplateNuevo, filaDelPlanParaTemplate, type ReglaCodigo } from "@/lib/templates/codigos-del-template"
 import { hoyArgentina } from "@/lib/fechas"
 
 // Tipos para el wizard
 interface DatosBasicos {
   tipo_template: 'fijo' | 'abierto'
   es_bidireccional: boolean
+  /** 🏦 Cargo del banco (comisión, impuesto, percepción): no se presupuesta por campaña. */
+  solo_conciliacion: boolean
   es_multi_cuenta: boolean
   categ: string
   /**
@@ -65,6 +67,7 @@ interface TemplateExistente {
   aplica_generacion: boolean | null
   responsable_interno: string | null
   es_bidireccional: boolean | null
+  solo_conciliacion: boolean | null
   configuracion_reglas: any
   cuit_quien_cobra: string | null
   nombre_quien_cobra: string | null
@@ -144,6 +147,7 @@ const MESES = [
 const DATOS_VACIOS: DatosBasicos = {
   tipo_template: 'fijo',
   es_bidireccional: false,
+  solo_conciliacion: false,
   es_multi_cuenta: false,
   categ: '',
   tipo: 'egreso',
@@ -177,6 +181,8 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
   /** Las reglas de códigos del template de origen («Parecido a…» o la campaña que se copia). */
   const [reglasOrigen, setReglasOrigen] = useState<ReglaCodigo[]>([])
   const [copiaAplicada, setCopiaAplicada] = useState(false)
+  /** 🏷️ A-FEAT-1311 — dar de alta la cuenta en el plan al guardar (si no está). Por default, sí. */
+  const [altaEnPlan, setAltaEnPlan] = useState(true)
   const estadoInicial = (): WizardState => {
     const responsable = inicial?.responsable || ''
     // 📅 Desde la conciliación: el día de las cuotas es el del movimiento (se puede cambiar).
@@ -214,7 +220,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
       try {
         const { data } = await supabase
           .from('egresos_sin_factura')
-          .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora, centro_costo, tipo, tipo_template, periodicidad, aplica_generacion, responsable_interno, es_bidireccional, configuracion_reglas, cuit_quien_cobra, nombre_quien_cobra, activo')
+          .select('id, nombre_referencia, responsable, año, categ, cuenta_agrupadora, centro_costo, tipo, tipo_template, periodicidad, aplica_generacion, responsable_interno, es_bidireccional, solo_conciliacion, configuracion_reglas, cuit_quien_cobra, nombre_quien_cobra, activo')
           .order('categ')
 
         if (data) {
@@ -322,6 +328,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
         aplica_generacion: !!t.aplica_generacion,
         responsable_interno: t.responsable_interno || '',
         es_bidireccional: !!t.es_bidireccional,
+        solo_conciliacion: !!t.solo_conciliacion,
       },
       configuracion: t.configuracion_reglas?.tipo ? { ...prev.configuracion, ...t.configuracion_reglas } : prev.configuracion,
     }))
@@ -420,6 +427,7 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
           responsable_interno: state.datos_basicos.responsable_interno.trim() || null,
           tipo_recurrencia: esMultiCuenta ? 'abierto' : (esAbierto ? 'abierto' : state.configuracion.tipo),
           tipo_template: esMultiCuenta ? 'abierto' : state.datos_basicos.tipo_template,
+          solo_conciliacion: esAbierto && state.datos_basicos.solo_conciliacion,
           es_bidireccional: state.datos_basicos.es_bidireccional, // multi-cuenta + bidireccional ahora conviven (cobros con sub-cuentas)
           es_multi_cuenta: esMultiCuenta,
           configuracion_reglas: (esAbierto || esMultiCuenta) ? null : state.configuracion,
@@ -434,6 +442,14 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
         .single()
 
       if (egresoError) throw egresoError
+
+      // 2.a 🏷️ A-FEAT-1311 — la cuenta al plan de cuentas, en el mismo paso (§ 🏷️ de CLAUDE.md).
+      if (categFueraDelPlan && altaEnPlan && !esMultiCuenta) {
+        const fila = filaDelPlanParaTemplate({ categ: state.datos_basicos.categ, tipo: state.datos_basicos.tipo, agrupadora: state.datos_basicos.cuenta_agrupadora })
+        const { error: planErr } = await supabase.from('cuentas_contables').insert(fila)
+        if (planErr) toast.error(`Template creado, pero la cuenta no se dio de alta en el plan: ${planErr.message}`)
+        else setCategsDelPlan(prev => new Set(prev).add(fila.categ.toUpperCase()))
+      }
 
       // 2.b 🏷️ Códigos contable/interno: los del template de origen + lo escrito para la cuenta que paga.
       const reglasNuevas = reglasDelTemplateNuevo({
@@ -680,6 +696,18 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
                 </div>
                 </>)}
 
+                {/* 🏦 A-FEAT-1311 — cargo del banco, en el mismo alta (antes había que marcarlo aparte). */}
+                {state.datos_basicos.tipo_template === 'abierto' && (
+                  <div className="mt-4 flex items-center space-x-2">
+                    <Checkbox id="solo_conciliacion" checked={state.datos_basicos.solo_conciliacion}
+                      onCheckedChange={(checked) => actualizarDatosBasicos('solo_conciliacion', checked === true)} />
+                    <Label htmlFor="solo_conciliacion" className="font-normal">
+                      <span className="font-medium">🏦 Cargo del banco</span>
+                      <span className="text-sm text-gray-500 ml-2">(comisión, impuesto o percepción que cobra el banco: se carga sólo conciliando)</span>
+                    </Label>
+                  </div>
+                )}
+
                 {/* Opción Bidireccional */}
                 <div className="mt-4 flex items-center space-x-2">
                   <Checkbox
@@ -764,9 +792,14 @@ export function WizardTemplatesEgresos({ inicial, fechaReferencia, empresaCuenta
                       Por default, el nombre del template. Escriba para buscar o cree una nueva
                     </p>
                     {categFueraDelPlan && (
-                      <p className="text-xs text-amber-700 mt-1">
-                        ⚠️ «{state.datos_basicos.categ}» no está en el plan de cuentas: el presupuesto no va a saber de qué tipo es. Conviene darla de alta.
-                      </p>
+                      <label className="flex items-start gap-2 text-xs text-amber-800 mt-1 bg-amber-50 border border-amber-200 rounded px-2 py-1 cursor-pointer">
+                        <Checkbox checked={altaEnPlan} onCheckedChange={(v) => setAltaEnPlan(v === true)} className="mt-0.5" />
+                        <span>
+                          «{state.datos_basicos.categ}» no está en el plan de cuentas. <b>Darla de alta al guardar</b>, como
+                          {' '}<b>{state.datos_basicos.tipo}</b>{state.datos_basicos.cuenta_agrupadora ? <> en <b>{state.datos_basicos.cuenta_agrupadora.toUpperCase()}</b></> : ''}
+                          {' '}(el tipo y la agrupadora de abajo). Sin esto el presupuesto no sabe de qué tipo es.
+                        </span>
+                      </label>
                     )}
                   </div>
                 )}

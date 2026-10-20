@@ -169,7 +169,7 @@ import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conv
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
-import { reglasDelTemplateNuevo } from "@/lib/templates/codigos-del-template"
+import { reglasDelTemplateNuevo, filaDelPlanParaTemplate } from "@/lib/templates/codigos-del-template"
 import { coincideCampana, SIN_CAMPANA } from "@/lib/templates/cuotas-del-template"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
@@ -6795,6 +6795,18 @@ export function correrCasos(): Resultado[] {
     chequear("Códigos del template", "Template nuevo sin origen: lo escrito crea la regla de la cuenta; sin escribir nada no se crea ninguna",
       "1 (LIB) · 0", `${sola.length} (${sola[0]?.codigo_interno}) · ${nada.length}`,
       sola.length === 1 && sola[0].codigo_interno === "LIB" && sola[0].codigo_contable === null && nada.length === 0, "A-FEAT-1302")
+  }
+
+  // ══ 🏷️ LA CUENTA DEL TEMPLATE AL PLAN, EN EL MISMO PASO (A-FEAT-1311) ═══════════════════════════════
+  {
+    // Como se cargó a mano IIBB CABA Bancario: tipo egreso, totalizadora IMPUESTOS BANCARIOS, nombre tal cual.
+    const f = filaDelPlanParaTemplate({ categ: " IIBB CABA Bancario ", tipo: "egreso", agrupadora: "Impuestos Bancarios" })
+    const sinAgr = filaDelPlanParaTemplate({ categ: "Otra", tipo: "", agrupadora: "" })
+    chequear("Cuenta al plan", "🏷️ El asistente da de alta la cuenta con el tipo del template y la agrupadora como totalizadora (en mayúsculas, como las del plan)",
+      "IIBB CABA Bancario · egreso · IMPUESTOS BANCARIOS · egreso/null",
+      `${f.categ} · ${f.tipo} · ${f.nombre_totalizadora} · ${sinAgr.tipo}/${sinAgr.nombre_totalizadora}`,
+      f.categ === "IIBB CABA Bancario" && f.cuenta_contable === f.categ && f.tipo === "egreso"
+        && f.nombre_totalizadora === "IMPUESTOS BANCARIOS" && sinAgr.tipo === "egreso" && sinAgr.nombre_totalizadora === null, "A-FEAT-1311")
   }
 
   // ══ 🔎 EL FILTRO «CAMPAÑA» DE TEMPLATES (A-BUG-1309) ════════════════════════════════════════════════

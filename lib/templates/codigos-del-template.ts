@@ -56,3 +56,25 @@ export function reglasDelTemplateNuevo(opts: {
       template_id: templateId,
     }))
 }
+
+/**
+ * 🏷️ **A-FEAT-1311 — la cuenta del template, al plan de cuentas EN EL MISMO PASO.**
+ *
+ * La regla de `CLAUDE.md` § 🏷️ pide que la cuenta de un template exista en el plan con su tipo. El
+ * asistente avisaba «no está en el plan, conviene darla de alta» pero no ofrecía cómo: el usuario no
+ * podía hacerlo (usuario 2026-10-20: *«no debería ser en 2 pasos esto, es una regla, debe ser algo fácil»*).
+ * Ahora el asistente la da de alta al guardar, con el TIPO del template y la AGRUPADORA como totalizadora
+ * (en mayúsculas, como las del plan: «Impuestos Bancarios» → «IMPUESTOS BANCARIOS»).
+ */
+export function filaDelPlanParaTemplate(opts: { categ: string; tipo: string; agrupadora?: string | null }) {
+  const categ = opts.categ.trim()
+  const agrupadora = (opts.agrupadora ?? "").trim()
+  return {
+    categ,
+    cuenta_contable: categ,
+    tipo: opts.tipo || "egreso",
+    activo: true,
+    imputable: true,
+    nombre_totalizadora: agrupadora ? agrupadora.toUpperCase() : null,
+  }
+}
