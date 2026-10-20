@@ -14,6 +14,8 @@
  *   al pagarle. La NC queda `conciliado` con el detalle «Corresponde a descuentos aplicados FC …».
  */
 
+import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
+
 type Cliente = { schema: (s: string) => any }
 
 /** Lo mínimo de un comprobante de ARCA que usa la cancelación. */
@@ -37,8 +39,15 @@ export interface ComprobanteNC {
  * ✍️ **El detalle se respeta**: lo nuevo va al final, nunca en lugar de lo que estaba (regla del usuario
  * «el detalle del usuario se respeta siempre»). Hasta 2026-10-19 la cancelación lo reemplazaba.
  */
-export const sumarAlDetalle = (previo: string | null | undefined, nuevo: string): string =>
-  previo && previo.trim() ? `${previo.trim()} · ${nuevo}` : nuevo
+export const sumarAlDetalle = (
+  previo: string | null | undefined,
+  nuevo: string,
+  emisor?: string | null,
+  numero?: string | number | null,
+): string =>
+  // A-BUG-1299: «FC 613071 - MEDICUS …» NO es del usuario, es el derivado guardado de A-DAT-54. Sumarle
+  // algo lo disfrazaba de texto propio y el motor lo copiaba entero al movimiento. Ése se descarta.
+  previo && previo.trim() && !pareceDetalleAutogenerado(previo, emisor, numero) ? `${previo.trim()} · ${nuevo}` : nuevo
 
 export interface DatosCancelacionNC {
   tipo: 'fc_con_nc' | 'nc_con_descuento'
@@ -116,16 +125,16 @@ export function planCancelacionNC(modal: DatosCancelacionNC): CambioNC[] {
       if (saldoNC <= 0) break
       const montoFC = fc.imp_total
       if (saldoNC >= montoFC) {
-        plan.push({ id: fc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(fc.detalle, `Cancelada con NC ${nrosNC}`) } })
+        plan.push({ id: fc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(fc.detalle, `Cancelada con NC ${nrosNC}`, fc.denominacion_emisor, fc.numero_desde) } })
         saldoNC -= montoFC
       } else {
-        plan.push({ id: fc.id, cambios: { monto_a_abonar: Math.round((montoFC - saldoNC) * 100) / 100, detalle: sumarAlDetalle(fc.detalle, `Descuento parcial NC ${nrosNC}`) } })
+        plan.push({ id: fc.id, cambios: { monto_a_abonar: Math.round((montoFC - saldoNC) * 100) / 100, detalle: sumarAlDetalle(fc.detalle, `Descuento parcial NC ${nrosNC}`, fc.denominacion_emisor, fc.numero_desde) } })
         saldoNC = 0
       }
     }
     const nrosFC = modal.facturas.map(f => f.numero_desde || '').join(', ')
     for (const nc of ncsAplicar) {
-      plan.push({ id: nc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(nc.detalle, `Cancela FC ${nrosFC}`) } })
+      plan.push({ id: nc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(nc.detalle, `Cancela FC ${nrosFC}`, nc.denominacion_emisor, nc.numero_desde) } })
     }
     return plan
   }

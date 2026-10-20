@@ -166,7 +166,7 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
-import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pagos/cancelacion-nc"
+import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
@@ -6652,12 +6652,12 @@ export function correrCasos(): Resultado[] {
 
     // El plan de UN par: la factura baja al neto, NO cambia de estado (sigue «crédito») y conserva su detalle.
     const planMay = planCancelacionNC({ tipo: "fc_con_nc", facturas: [pares[2].fc], disponibles: [pares[2].nc], seleccionadas: new Set([pares[2].nc.id]) })
-    chequear("NC con tarjeta", "La factura de mayo queda en 807.028,07, sin cambiar de estado, y su detalle se CONSERVA con lo nuevo al final",
-      "807028.07 · sin estado · «FC 613071 - MEDICUS · Descuento parcial NC 220552» · NC conciliado",
+    chequear("NC con tarjeta", "La factura de mayo queda en 807.028,07, sin cambiar de estado, y su detalle autogenerado se reemplaza (lo escrito a mano se conservaría)",
+      "807028.07 · sin estado · «Descuento parcial NC 220552» (el FC N - EMISOR autogenerado se descarta, A-BUG-1299) · NC conciliado",
       `${planMay[0].cambios.monto_a_abonar} · ${planMay[0].cambios.estado ?? "sin estado"} · «${planMay[0].cambios.detalle}» · NC ${planMay[1].cambios.estado}`,
       planMay[0].cambios.monto_a_abonar === 807028.07 && planMay[0].cambios.estado === undefined
-        && planMay[0].cambios.detalle === "FC 613071 - MEDICUS · Descuento parcial NC 220552"
-        && planMay[1].cambios.estado === "conciliado" && planMay[1].cambios.detalle === "NC 220552 - MEDICUS · Cancela FC 613071", "A-FEAT-1292")
+        && planMay[0].cambios.detalle === "Descuento parcial NC 220552"
+        && planMay[1].cambios.estado === "conciliado" && planMay[1].cambios.detalle === "Cancela FC 613071", "A-FEAT-1292")
 
     // Una NC sin factura cerca (> 3 días) no se empareja: no se adivina.
     const lejos = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), med("nc", 3, 2, "2026-05-10", -100)])
@@ -6778,6 +6778,18 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "La comisión/IVA/percepción de la tarjeta y su pago dicen «Resumen tarjeta cierre 28/05/2026» (dd/mm/aaaa, sin huso); sin cierre, no inventa",
       "Resumen tarjeta cierre 28/05/2026 ×2 · null", `${e1} · ${e2} · ${e3}`,
       e1 === "Resumen tarjeta cierre 28/05/2026" && e2 === e1 && e3 === null, "A-FEAT-1295")
+  }
+
+  // ══ ✍️ APLICAR UNA NC NO DISFRAZA EL DETALLE AUTOGENERADO DE TEXTO PROPIO (A-BUG-1299) ═══════════
+  {
+    // 🧨 Medicus: «FC 613071 - MEDICUS …» (derivado guardado, A-DAT-54) + « · Descuento parcial NC 220552» dejó de
+    // parecer autogenerado y el motor lo copió entero al movimiento de la tarjeta.
+    const emisor = "MEDICUS SOCIEDAD ANONIMA DE ASISTENCIA MEDICA Y CIENTIFICA"
+    const auto = sumarAlDetalle(`FC 613071 - ${emisor}`, "Descuento parcial NC 220552", emisor, 613071)
+    const propio = sumarAlDetalle("Plan familiar", "Descuento parcial NC 220552", emisor, 613071)
+    chequear("NC con tarjeta", "Aplicar una NC descarta el «FC N - EMISOR» autogenerado y conserva lo que escribió el usuario",
+      "Descuento parcial NC 220552 · Plan familiar · Descuento parcial NC 220552", `${auto} · ${propio}`,
+      auto === "Descuento parcial NC 220552" && propio === "Plan familiar · Descuento parcial NC 220552", "A-BUG-1299")
   }
 
   return r
