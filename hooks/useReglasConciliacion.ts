@@ -172,17 +172,15 @@ export function useReglasConciliacion() {
     }
   }
 
-  // Reordenar reglas (cambiar prioridad)
-  const reordenarReglas = async (reglasReordenadas: ReglaConciliacion[]): Promise<boolean> => {
+  // Reordenar reglas (cambiar prioridad). A-BUG-1295: recibe SÓLO los cambios (id → orden), calculados
+  // dentro de la cuenta por `moverRegla`; antes renumeraba 1..N todas las reglas de la tabla.
+  const reordenarReglas = async (cambios: { id: string; orden: number }[]): Promise<boolean> => {
     try {
-      console.log('🔍 DEBUG reordenarReglas: Actualizando orden...')
-      
-      // Actualizar orden de cada regla
-      const actualizaciones = reglasReordenadas.map((regla, index) => 
+      const actualizaciones = cambios.map(c =>
         supabase
           .from('reglas_conciliacion')
-          .update({ orden: index + 1 })
-          .eq('id', regla.id)
+          .update({ orden: c.orden })
+          .eq('id', c.id)
       )
 
       const resultados = await Promise.all(actualizaciones)

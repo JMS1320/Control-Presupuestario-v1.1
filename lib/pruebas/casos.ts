@@ -169,6 +169,7 @@ import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conv
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
+import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6711,6 +6712,26 @@ export function correrCasos(): Resultado[] {
     chequear("Regla → template", "Sin renglón de esa campaña, carga en el elegido; si el elegido está desactivado y no hay otro, no carga (no inventa)",
       "ch-2026 · null", `${sinRenovar?.id} · ${inactivo === null ? "null" : inactivo.id}`,
       sinRenovar?.id === "ch-2026" && inactivo === null, "A-FEAT-1293")
+  }
+
+  // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════
+  {
+    // La cuenta corriente tiene hasta #43; la tarjeta todavía nada. 🧨 Antes se sugería max(todas)+1 = 44.
+    const ctaCte = [{ id: "cc1", orden: 1 }, { id: "cc43", orden: 43 }]
+    const tarjeta = [{ id: "t1", orden: 1 }, { id: "t2", orden: 2 }]
+    chequear("Orden de reglas", "La 1ª regla de una cuenta sin reglas se propone #1; con #1 y #2 ya cargadas, #3 — sin mirar la #43 de la cuenta corriente",
+      "1 · 3", `${proximoOrden([])} · ${proximoOrden(tarjeta)}`, proximoOrden([]) === 1 && proximoOrden(tarjeta) === 3, "A-BUG-1295")
+
+    // Bajar la #1 de la tarjeta: sólo cambian las dos de la tarjeta. 🧨 Antes se renumeraban las de todas las cuentas.
+    const cambios = moverRegla(tarjeta, "t1", "down")
+    const ok = cambios.length === 2 && cambios.some(c => c.id === "t1" && c.orden === 2) && cambios.some(c => c.id === "t2" && c.orden === 1)
+      && !cambios.some(c => c.id.startsWith("cc"))
+    // Con números repetidos (dos #1) la flecha igual mueve; y la primera no sube.
+    const repetidos = moverRegla([{ id: "a", orden: 1 }, { id: "b", orden: 1 }], "b", "up")
+    const tope = moverRegla(tarjeta, "t1", "up")
+    chequear("Orden de reglas", "Las flechas mueven sólo dentro de la cuenta; con números repetidos igual intercambian; la primera no sube",
+      "t2→1, t1→2 · a→2 (b queda primera) · 0", `${cambios.map(c => `${c.id}→${c.orden}`).join(", ")} · ${repetidos.map(c => `${c.id}→${c.orden}`).join(", ")} · ${tope.length}`,
+      ok && repetidos.length === 1 && repetidos[0].id === "a" && repetidos[0].orden === 2 && tope.length === 0, "A-BUG-1295")
   }
 
   return r

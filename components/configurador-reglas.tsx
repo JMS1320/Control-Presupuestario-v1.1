@@ -18,6 +18,7 @@ import { ReglaConciliacion } from "@/types/conciliacion"
 import { ModalCopiarReglas } from "@/components/modal-copiar-reglas"
 import { ModalCrearTemplateFaltante } from "@/components/modal-crear-template-faltante"
 import { supabase } from "@/lib/supabase"
+import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 
 export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas, cargarReglas } = useReglasConciliacion()
@@ -133,9 +134,8 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
   // Abrir modal para nueva regla
   const abrirModalNueva = () => {
     resetFormulario()
-    // Sugerir próximo orden disponible
-    const maxOrden = Math.max(...reglas.map(r => r.orden), 0)
-    setFormulario(prev => ({ ...prev, orden: String(maxOrden + 1) }))
+    // Sugerir el siguiente orden DE ESTA CUENTA (A-BUG-1295: antes miraba todas y la 1ª de la tarjeta salía #44)
+    setFormulario(prev => ({ ...prev, orden: String(proximoOrden(reglasDeLaCuenta)) }))
     setModalAbierto(true)
   }
 
@@ -287,24 +287,10 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
     })
   }
 
-  // Cambiar orden de regla
+  // Cambiar orden de regla — sólo entre las de la cuenta (A-BUG-1295)
   const cambiarOrden = async (regla: ReglaConciliacion, direccion: 'up' | 'down') => {
-    const reglasOrdenadas = [...reglas].sort((a, b) => a.orden - b.orden)
-    const indiceActual = reglasOrdenadas.findIndex(r => r.id === regla.id)
-    
-    if (direccion === 'up' && indiceActual > 0) {
-      // Intercambiar con anterior
-      const temp = reglasOrdenadas[indiceActual].orden
-      reglasOrdenadas[indiceActual].orden = reglasOrdenadas[indiceActual - 1].orden
-      reglasOrdenadas[indiceActual - 1].orden = temp
-    } else if (direccion === 'down' && indiceActual < reglasOrdenadas.length - 1) {
-      // Intercambiar con siguiente
-      const temp = reglasOrdenadas[indiceActual].orden
-      reglasOrdenadas[indiceActual].orden = reglasOrdenadas[indiceActual + 1].orden
-      reglasOrdenadas[indiceActual + 1].orden = temp
-    }
-
-    await reordenarReglas(reglasOrdenadas)
+    const cambios = moverRegla(reglasDeLaCuenta, regla.id, direccion)
+    if (cambios.length) await reordenarReglas(cambios)
   }
 
   // Badge color por tipo
@@ -513,7 +499,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                       variant="outline"
                       size="sm"
                       onClick={() => cambiarOrden(regla, 'up')}
-                      disabled={regla.orden === 1}
+                      disabled={reglasDeLaCuenta[0]?.id === regla.id}
                     >
                       <ArrowUp className="h-3 w-3" />
                     </Button>
@@ -521,7 +507,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                       variant="outline"
                       size="sm"
                       onClick={() => cambiarOrden(regla, 'down')}
-                      disabled={regla.orden === Math.max(...reglas.map(r => r.orden))}
+                      disabled={reglasDeLaCuenta[reglasDeLaCuenta.length - 1]?.id === regla.id}
                     >
                       <ArrowDown className="h-3 w-3" />
                     </Button>
