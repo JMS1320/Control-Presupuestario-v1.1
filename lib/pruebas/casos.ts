@@ -6790,6 +6790,11 @@ export function correrCasos(): Resultado[] {
     chequear("NC con tarjeta", "Aplicar una NC descarta el «FC N - EMISOR» autogenerado y conserva lo que escribió el usuario",
       "Descuento parcial NC 220552 · Plan familiar · Descuento parcial NC 220552", `${auto} · ${propio}`,
       auto === "Descuento parcial NC 220552" && propio === "Plan familiar · Descuento parcial NC 220552", "A-BUG-1299")
+    // La variante larga del importador (Coopser): «Factura 1-195585 - EMISOR» también es autogenerada.
+    const coop = "COOPERATIVA DE PROVISION DE SERVICIOS ELECTRICOS PUBLICOS Y SOCIALES DE SAN PEDRO LTDA"
+    chequear("NC con tarjeta", "«Factura 1-195585 - COOPERATIVA…» se reconoce como autogenerado (no se copia al movimiento); «Luz Casa Porteria» no",
+      "true · false", `${pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585)} · ${pareceDetalleAutogenerado("Luz Casa Porteria", coop)}`,
+      pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585) && !pareceDetalleAutogenerado("Luz Casa Porteria", coop), "A-BUG-1299")
   }
 
   return r
