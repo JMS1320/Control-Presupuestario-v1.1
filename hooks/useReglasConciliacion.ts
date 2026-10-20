@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { supabase } from "@/lib/supabase"
 import { ReglaConciliacion } from "@/types/conciliacion"
 
@@ -68,19 +69,7 @@ export function useReglasConciliacion() {
       
       const { data, error } = await supabase
         .from('reglas_conciliacion')
-        .insert({
-          orden: nuevaRegla.orden,
-          tipo: nuevaRegla.tipo,
-          columna_busqueda: nuevaRegla.columna_busqueda,
-          texto_buscar: nuevaRegla.texto_buscar,
-          tipo_match: nuevaRegla.tipo_match,
-          categ: nuevaRegla.categ,
-          centro_costo: nuevaRegla.centro_costo,
-          detalle: nuevaRegla.detalle,
-          activo: nuevaRegla.activo,
-          llena_template: nuevaRegla.llena_template,
-          cuenta_bancaria_id: nuevaRegla.cuenta_bancaria_id
-        })
+        .insert(filaNuevaRegla(nuevaRegla))  // A-BUG-1296: antes descartaba template_id
         .select()
 
       if (error) {

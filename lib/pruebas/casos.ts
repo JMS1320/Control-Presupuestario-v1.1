@@ -170,6 +170,7 @@ import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC } from "@/lib/pago
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
+import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6732,6 +6733,16 @@ export function correrCasos(): Resultado[] {
     chequear("Orden de reglas", "Las flechas mueven sólo dentro de la cuenta; con números repetidos igual intercambian; la primera no sube",
       "t2→1, t1→2 · a→2 (b queda primera) · 0", `${cambios.map(c => `${c.id}→${c.orden}`).join(", ")} · ${repetidos.map(c => `${c.id}→${c.orden}`).join(", ")} · ${tope.length}`,
       ok && repetidos.length === 1 && repetidos[0].id === "a" && repetidos[0].orden === 2 && tope.length === 0, "A-BUG-1295")
+  }
+
+  // ══ 🧾 CREAR UNA REGLA GUARDA EL TEMPLATE ELEGIDO (A-BUG-1296) ═══════════════════════════════════
+  {
+    // 🧨 El alta armaba la fila sin template_id: Comision Cuenta Bancaria e Iva Bancario de la VISA quedaron «viejas».
+    const fila = filaNuevaRegla({ orden: 2, tipo: "bancarios", columna_busqueda: "descripcion", texto_buscar: "MANT DE CTA",
+      tipo_match: "contiene", categ: "Comision Cuenta Bancaria", detalle: "", activo: true, llena_template: true,
+      cuenta_bancaria_id: "tarjeta_visa_business_msa", template_id: "tpl-msa" } as any)
+    chequear("Regla → template", "Crear una regla nueva graba el template elegido (antes se perdía y la regla quedaba por cuenta)",
+      "tpl-msa", String(fila.template_id), fila.template_id === "tpl-msa", "A-BUG-1296")
   }
 
   return r
