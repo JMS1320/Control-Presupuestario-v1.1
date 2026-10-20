@@ -81,6 +81,8 @@ import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/p
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -1575,12 +1577,18 @@ ${texto.trim()}` : texto.trim()
   // A-FEAT-03: junta los códigos que ya se usaron en esta cuenta para sugerirlos al imputar
   const cargarCodigosUsados = async () => {
     try {
+      // A-BUG-1301: la cuenta abierta primero, después TODOS los extractos y las reglas de contable/interno.
       const { data } = await dbCuenta().from(tablaActiva).select('contable, interno')
-      const limpiar = (vals: (string | null)[]) =>
-        [...new Set(vals.map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+      const otros = await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
+        const cli = t.schema === 'public' ? supabase : supabase.schema(t.schema)
+        const { data: d } = await cli.from(t.tabla).select('contable, interno').or('contable.not.is.null,interno.not.is.null')
+        return (d || []) as any[]
+      }))
+      const { data: reglasCI } = await supabase.from('reglas_contable_interno').select('codigo_contable, codigo_interno')
+      const filas = [(data || []) as any[], ...otros]
       setCodigosUsados({
-        contable: limpiar((data || []).map((r: any) => r.contable)),
-        interno: limpiar((data || []).map((r: any) => r.interno)),
+        contable: unirCodigos([...filas.map(f => f.map((r: any) => r.contable)), (reglasCI || []).map((r: any) => r.codigo_contable)]),
+        interno: unirCodigos([...filas.map(f => f.map((r: any) => r.interno)), (reglasCI || []).map((r: any) => r.codigo_interno)]),
       })
     } catch (e) {
       console.error('Error cargando códigos usados:', e)

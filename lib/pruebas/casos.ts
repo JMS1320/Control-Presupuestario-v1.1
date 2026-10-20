@@ -173,6 +173,7 @@ import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6795,6 +6796,18 @@ export function correrCasos(): Resultado[] {
     chequear("NC con tarjeta", "«Factura 1-195585 - COOPERATIVA…» se reconoce como autogenerado (no se copia al movimiento); «Luz Casa Porteria» no",
       "true · false", `${pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585)} · ${pareceDetalleAutogenerado("Luz Casa Porteria", coop)}`,
       pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585) && !pareceDetalleAutogenerado("Luz Casa Porteria", coop), "A-BUG-1299")
+  }
+
+  // ══ 🔢 CÓDIGOS CONTABLE / INTERNO PARA ELEGIR, DE TODAS LAS CUENTAS (A-BUG-1301) ═════════════════
+  {
+    // 🧨 La VISA MSA no tenía códigos propios: la lista salía vacía. La cuenta corriente sí (RET 3 MA, DIST MA).
+    const tarjeta: string[] = []
+    const ctaCte = ["RET 3 MA", "DIST MA", "VER", null, "  "]
+    const reglas = ["RET 3 PAM", "Ver"]
+    const lista = unirCodigos([tarjeta, ctaCte, reglas])
+    chequear("Doble audit", "En la tarjeta sin códigos propios, el Asignar ofrece los de la cuenta corriente y las reglas, sin vacíos ni «VER/Ver» repetido",
+      "DIST MA · RET 3 MA · RET 3 PAM · VER", lista.join(" · "),
+      lista.join("|") === "DIST MA|RET 3 MA|RET 3 PAM|VER", "A-BUG-1301")
   }
 
   return r
