@@ -82,6 +82,7 @@ import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
@@ -1850,7 +1851,7 @@ ${texto.trim()}` : texto.trim()
     // Cargar templates abiertos para asignación
     const { data } = await supabase
       .from('egresos_sin_factura')
-      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
       .eq('activo', true)
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
@@ -5459,12 +5460,12 @@ ${marca}` : marca
                   setCuentaNuevoTemplate('')
                   const { data } = await supabase
                     .from('egresos_sin_factura')
-                    .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
+                    .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
                     .eq('activo', true)
                     .order('cuenta_agrupadora')
                     .order('nombre_referencia')
                   setTemplatesParaAsignar(data || [])
-                  const nuevo = (data || []).find((t: any) => t.id === templateId)
+                  const nuevo = ((data || []) as any[]).find((t: any) => t.id === templateId)  // `año` en el select confunde al parser de tipos
                   if (nuevo) { setTemplateElegido(nuevo); setCuotaElegida(null); setCuotasExistentes([]); setBusquedaAsignarTemplate(nuevo.nombre_referencia) }
                   toast.success('Template creado. Revisá y confirmá la asignación.')
                 }}
@@ -5481,6 +5482,8 @@ ${marca}` : marca
                     const q = normalizarBusqueda(busquedaAsignarTemplate)
                     return !q || normalizarBusqueda(t.nombre_referencia).includes(q) || normalizarBusqueda(t.cuenta_agrupadora).includes(q) || normalizarBusqueda(t.categ).includes(q)
                   })
+                  // A-BUG-1300: con el mismo nombre (renovación de campaña), la campaña más nueva primero
+                  .sort((a: any, b: any) => campanaNuevaPrimero(a, b))
                   .map(t => (
                     <div
                       key={t.id}
@@ -5525,6 +5528,7 @@ ${marca}` : marca
                       <div className="text-xs text-gray-500">
                         {t.categ}
                         {t.responsable && <span className="ml-2 text-blue-600">· {t.responsable}</span>}
+                        {(t as any).año && <span className="ml-2 font-medium text-gray-700">· campaña {(t as any).año}</span>}
                       </div>
                     </div>
                   ))}

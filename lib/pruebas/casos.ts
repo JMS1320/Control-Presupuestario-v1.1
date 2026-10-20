@@ -168,7 +168,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
-import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
+import { templateParaFecha, campanaNuevaPrimero } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
@@ -6808,6 +6808,17 @@ export function correrCasos(): Resultado[] {
     chequear("Doble audit", "En la tarjeta sin códigos propios, el Asignar ofrece los de la cuenta corriente y las reglas, sin vacíos ni «VER/Ver» repetido",
       "DIST MA · RET 3 MA · RET 3 PAM · VER", lista.join(" · "),
       lista.join("|") === "DIST MA|RET 3 MA|RET 3 PAM|VER", "A-BUG-1301")
+  }
+
+  // ══ 🗂️ ASIGNAR → TEMPLATE: LAS DOS CAMPAÑAS DE SEGURO FLOTA SE DISTINGUEN (A-BUG-1300) ═══════════
+  {
+    const lista = [
+      { id: "acc", nombre_referencia: "Seguro Accidentes de Trabajo", responsable: "MSA", año: "25/26" },
+      { id: "f2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26" },
+      { id: "f2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27" },
+    ].sort(campanaNuevaPrimero)
+    chequear("Regla → template", "En el Asignar, Seguro Flota 26/27 aparece antes que 25/26 y el resto no se mueve",
+      "acc · f2627 · f2526", lista.map(t => t.id).join(" · "), lista.map(t => t.id).join("|") === "acc|f2627|f2526", "A-BUG-1300")
   }
 
   return r

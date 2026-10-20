@@ -47,3 +47,10 @@ export function templateParaFecha(
   if (elegido.activo !== false) return elegido
   return null
 }
+
+/**
+ * 🗂️ A-BUG-1300 — en una lista de templates, los renglones de la MISMA familia (renovación de campaña)
+ * van con la campaña más nueva primero. El resto conserva su orden (comparador estable: 0).
+ */
+export const campanaNuevaPrimero = (a: TemplateDeFamilia, b: TemplateDeFamilia): number =>
+  esDeLaFamilia(a, b) ? String(b.año ?? "").localeCompare(String(a.año ?? "")) : 0
