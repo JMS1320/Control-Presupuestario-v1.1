@@ -19,6 +19,7 @@ import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrig
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -454,7 +455,8 @@ export function useMotorConciliacion() {
       console.log(`🚀 Iniciando conciliación para ${cuenta.nombre}...`)
 
       // 1. Cargar datos — usar la lista acotada si vino, sino todos los pendientes de la cuenta
-      const movimientos = movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)
+      // A-BUG-1297: el pago y el total del resumen de la tarjeta nunca pasan por el motor, venga de donde venga la lista
+      const movimientos = (movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)).filter(m => esFilaConciliable(m as any))
       if (movimientosOverride) {
         console.log(`🎯 Modo acotado: conciliando solo ${movimientos.length} movimiento(s) filtrado(s)`)
       }

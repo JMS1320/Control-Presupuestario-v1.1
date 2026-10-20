@@ -79,6 +79,7 @@ import { ESTADO_HISTORICO, esHistorico, estadoCuotaAlDesvincular } from "@/lib/c
 import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -768,7 +769,7 @@ ${texto.trim()}` : texto.trim()
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
-    () => movimientosVisibles.filter(m => (m as any).estado === 'pendiente').length,
+    () => movimientosVisibles.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any)).length,
     [movimientosVisibles],
   )
 
@@ -904,7 +905,7 @@ ${texto.trim()}` : texto.trim()
 
     // Acotado o no, sale de `filtrosActivos` — la fuente única. Ver su comentario.
     if (hayFiltros) {
-      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente')
+      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any))
       if (pendientesVisibles.length === 0) {
         alert('No hay movimientos pendientes en lo filtrado. Quitá los filtros para conciliar todo, o ajustalos.')
         return
@@ -923,7 +924,7 @@ ${texto.trim()}` : texto.trim()
       await capturarCorrida(cuenta, pendientesVisibles as any)
     } else {
       setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
-      const antes = movimientos.filter(m => (m as any).estado === 'pendiente')
+      const antes = movimientos.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any))
       await ejecutarConciliacion(cuenta)
       await recargar()
       await capturarCorrida(cuenta, antes as any)

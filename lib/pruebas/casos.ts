@@ -171,6 +171,7 @@ import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtra
 import { templateParaFecha } from "@/lib/conciliacion/template-de-regla"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -6743,6 +6744,16 @@ export function correrCasos(): Resultado[] {
       cuenta_bancaria_id: "tarjeta_visa_business_msa", template_id: "tpl-msa" } as any)
     chequear("Regla → template", "Crear una regla nueva graba el template elegido (antes se perdía y la regla quedaba por cuenta)",
       "tpl-msa", String(fila.template_id), fila.template_id === "tpl-msa", "A-BUG-1296")
+  }
+
+  // ══ 💳 EL PAGO Y EL TOTAL DEL RESUMEN NO PASAN POR EL MOTOR (A-BUG-1297) ═════════════════════════
+  {
+    // Resumen 28/05 de la VISA MSA: 9 consumos pendientes + «SU PAGO EN PESOS» pendiente + la fila del total.
+    // 🧨 El botón naranja contaba y conciliaba 10 (el pago incluido); el del resumen, 9.
+    const filas = [...Array(9)].map(() => ({ tipo_fila: "movimiento" })).concat([{ tipo_fila: "pago" }, { tipo_fila: "resumen" }])
+    const n = filas.filter(esFilaConciliable).length
+    chequear("Doble audit", "Del resumen 28/05 (9 consumos + el pago + el total) pasan al motor 9: el pago se vincula aparte y el total no se concilia; una cuenta sin tipo_fila pasa entera",
+      "9 · true", `${n} · ${esFilaConciliable({})}`, n === 9 && esFilaConciliable({}), "A-BUG-1297")
   }
 
   return r
