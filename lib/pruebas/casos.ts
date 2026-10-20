@@ -175,6 +175,7 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones } from "@/lib/polizas/renglones-pdf"
+import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
@@ -7089,6 +7090,52 @@ export function correrCasos(): Resultado[] {
       `${alondra.contable}/${alondra.interno} · ${rojas.contable}/${rojas.interno} · ${tiguan.contable}/${tiguan.interno} · Flota contable: ${repContableFlota?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
       alondra.contable === "MA" && alondra.interno === "MA" && rojas.contable === "PAM" && tiguan.contable === "MSA" && tiguan.interno === "MA"
         && repContableFlota?.partes.length === 1 && repContableFlota.partes[0].responsable === "MSA", "A-FEAT-1309")
+
+    // «¿Tenemos todas?» — datos reales de la Vida colectivo 670821 y la serie de 12.902 sin póliza.
+    // 🧨 Federación COMPENSA las NC con las cuotas siguientes: la de feb (42.300,55) no se debita porque
+    // la NC de dic (−47.481,60) la cubre. Esperar el débito de la cuota daba «falta el débito» en falso.
+    const vida: CuotaEsperada[] = [
+      { poliza: "670821", vencimiento: "2025-09-10", importe: 245038.54 },
+      { poliza: "670821", vencimiento: "2025-12-01", importe: -47481.6 },
+      { poliza: "670821", vencimiento: "2026-02-10", importe: 42300.55 },
+      { poliza: "670821", vencimiento: "2026-04-10", importe: 34888.08 },
+      { poliza: "670821", vencimiento: "2026-04-10", importe: -82166.7 },
+      { poliza: "670821", vencimiento: "2026-06-10", importe: 28118.58 },
+      { poliza: "10200836", vencimiento: "2026-04-13", importe: 11179 },
+      { poliza: "10200836", vencimiento: "2026-05-13", importe: 11179 },
+      { poliza: "10200836", vencimiento: "2026-10-13", importe: 11179 },
+    ]
+    const banco: MovimientoAseguradora[] = [
+      { id: "vida", fecha: "2025-09-10", debitos: 245038.54, creditos: 0 },
+      { id: "x1", fecha: "2026-02-18", debitos: 12902, creditos: 0 },
+      { id: "ap", fecha: "2026-04-17", debitos: 11179, creditos: 0 },
+      { id: "reint", fecha: "2026-04-20", debitos: 0, creditos: 30000 },
+    ]
+    const ctl = controlarDebitos(vida, banco, { desde: "2025-07-01", hasta: "2026-09-23" })
+    const res = (pol: string, v: string) => ctl.cuotas.find(c => c.poliza === pol && c.vencimiento === v)?.resultado
+    chequear("Pólizas", "Las NC se compensan con las cuotas siguientes: la Vida 670821 sólo se debita la 1ª, y eso está bien (no «falta el débito»)",
+      "ok · nc · compensada · nc · compensada", ["2025-09-10", "2025-12-01", "2026-02-10", "2026-04-10", "2026-06-10"].map(v => res("670821", v)).join(" · "),
+      ["2025-09-10", "2025-12-01", "2026-02-10", "2026-04-10", "2026-06-10"].map(v => res("670821", v)).join(" · ") === "ok · nc · compensada · nc · compensada", "A-FEAT-1309")
+    chequear("Pólizas", "Débito de 12.902 que no es cuota de ninguna póliza = PÓLIZA A CARGAR; cuota vencida sin débito = falta; la futura, a vencer; el reintegro sin NC se marca",
+      "x1 sin-poliza · reint reintegro-sin-nc · may falta-debito · oct a-vencer · abr ok",
+      `x1 ${ctl.movimientos.find(m => m.id === "x1")?.resultado} · reint ${ctl.movimientos.find(m => m.id === "reint")?.resultado} · may ${res("10200836", "2026-05-13")} · oct ${res("10200836", "2026-10-13")} · abr ${res("10200836", "2026-04-13")}`,
+      ctl.movimientos.find(m => m.id === "x1")?.resultado === "sin-poliza" && ctl.movimientos.find(m => m.id === "reint")?.resultado === "reintegro-sin-nc"
+        && res("10200836", "2026-05-13") === "falta-debito" && res("10200836", "2026-10-13") === "a-vencer" && res("10200836", "2026-04-13") === "ok", "A-FEAT-1309")
+    // Póliza con endosos viejos no cargados (Vida 644709: sólo el 7 y el 8): se usa el último consolidado,
+    // y si dice que de la cuota queda menos (6.598,75 de 21.574,03), se espera ese saldo en el banco.
+    const esp644 = cuotasEsperadas([
+      { poliza: "644709", endoso: 8, cuotas: [{ vencimiento: "2025-08-10", importe: 21574.03 }], consolidado: { fecha: "2025-08-11", cuotas: [
+        { vencimiento: "2025-07-10", importe: 34204.07, saldo: 0 }, { vencimiento: "2025-08-10", importe: 21574.03, saldo: 6598.75 }] } },
+    ])
+    const c644 = controlarDebitos(esp644, [{ id: "s", fecha: "2025-08-11", debitos: 6598.75, creditos: 0 }], { desde: "2025-07-01", hasta: "2026-09-23" })
+    chequear("Pólizas", "Endosos incompletos → se usa el consolidado; la cuota compensada sin débito está bien y la de saldo 6.598,75 casa con el débito de ese importe",
+      "compensada · ok 6598.75", c644.cuotas.map(c => c.resultado === "ok" ? `ok ${c.debitado}` : c.resultado).join(" · "),
+      c644.cuotas.map(c => c.resultado === "ok" ? `ok ${c.debitado}` : c.resultado).join(" · ") === "compensada · ok 6598.75", "A-FEAT-1309")
+    chequear("Pólizas", "El movimiento se reconoce por las leyendas adicionales, esté o no conciliado",
+      "true · false", `${esDeLaAseguradora({ leyendas_adicionales_1: "FEDERACION PATRO", leyendas_adicionales_2: "SEGUROS" })} · ${esDeLaAseguradora({ leyendas_adicionales_1: "COOPSER", leyendas_adicionales_2: null })}`,
+      esDeLaAseguradora({ leyendas_adicionales_1: "FEDERACION PATRO" }) && !esDeLaAseguradora({ leyendas_adicionales_1: "COOPSER" })
+        // usada dentro de .filter() (que le pasa el número de fila como 2º argumento) tiene que andar igual
+        && [{ leyendas_adicionales_1: "FEDERACION PATRO" }, { leyendas_adicionales_1: "COOPSER" }].filter(esDeLaAseguradora).length === 1, "A-FEAT-1309")
 
     // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
     const renglones = armarRenglones([
