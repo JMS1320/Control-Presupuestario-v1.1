@@ -39,6 +39,7 @@ import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashfl
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
 import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
 import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
+import { armarPedidoProveedor, haceCuanto } from "@/lib/gas-pdf/pedido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -1133,6 +1134,29 @@ export function correrCasos(): Resultado[] {
   ], new Map([["f5", new Set(["m5"])]]))
   const vistaDecInv = decInv.map(d => `${d.factura_id}:${d.accion}:${d.candidatos.length}`).join(" | ")
   const esperadoDec = "f1:vincular:1 | f2:revisar:2 | f3:revisar:1 | f4:revisar:1"
+  // 📮 Pedir la factura al proveedor (A-FEAT-1313, texto acordado 2026-10-21)
+  const p1 = armarPedidoProveedor("MSA", [{ fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 1234567.89 }])
+  const p2 = armarPedidoProveedor("MSA", [
+    { fecha_emision: "2026-08-01", comprobante: "Nota de Crédito A 9-63", imp_total: -5000 },
+    { fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 1234567.89 },
+  ])
+  const ultPed = ultimasBusquedas([
+    { factura_id: "f1", fecha_hora: "2026-10-10T15:00:00+00:00", resultado: "pedido", observaciones: "[pedido] Borrador del pedido al proveedor" },
+    { factura_id: "f1", fecha_hora: "2026-10-12T15:00:00+00:00", resultado: "pedido", observaciones: "[pedido] Pedida al proveedor por mail" },
+    { factura_id: "f1", fecha_hora: "2026-10-01T15:00:00+00:00", resultado: "no_encontrado", observaciones: "No se encontró" },
+  ]).get("f1")
+  const vistaPed = [
+    p1.asunto,
+    p1.texto.includes("no recibimos la factura:") && p1.texto.includes("(CUIT 30-61778601-6)") && p1.texto.includes("– 15/07/2026 · Factura A 2-484 · $ 1.234.567,89") && p1.texto.includes("¿Nos la podrían mandar"),
+    p2.asunto,
+    p2.texto.includes("no recibimos las facturas:") && p2.texto.indexOf("2-484") < p2.texto.indexOf("9-63") && p2.texto.includes("$ 5.000,00"),
+    `${ultPed?.pedido?.slice(0, 10)} ${ultPed?.pedidoBorrador ? "borrador" : "enviado"} · mail ${ultPed?.mail?.slice(0, 10)}`,
+    [haceCuanto("2026-10-21", "2026-10-21"), haceCuanto("2026-10-20", "2026-10-21"), haceCuanto("2026-10-14", "2026-10-21")].join(" / "),
+  ].join(" | ")
+  const esperadoPed = "Pedido de factura — Martinez Sobrado Agro SRL | true | Pedido de facturas — Martinez Sobrado Agro SRL | true | 2026-10-12 enviado · mail 2026-10-01 | hoy / hace 1 día / hace 7 días"
+  chequear("Buscador de PDFs — pedir la factura al proveedor", "🔴 «no recibimos la factura» (singular/plural), con nuestro CUIT, ordenado por fecha, importe en positivo; el último pedido se ve con su fecha y si quedó en borrador; el pedido no cuenta como búsqueda",
+    esperadoPed, vistaPed, vistaPed === esperadoPed, "A-FEAT-1313")
+
   chequear("Buscador de PDFs — reenvíos: cuándo se vincula", "🔴 La misma regla que la carpeta: vincula sólo con UN archivo exacto y sin dudosos; el mismo PDF reenviado no cuenta doble; si sirve a dos facturas, elige el usuario; lo descartado no vuelve",
     esperadoDec, vistaDecInv, vistaDecInv === esperadoDec, "A-FEAT-1287")
 

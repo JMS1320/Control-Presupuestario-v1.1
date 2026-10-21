@@ -54,6 +54,9 @@ import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
 import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, resumenUltimas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { estadoInventario, type EstadoInventario } from "@/lib/gas-pdf/barrido"
+import { ModalPedirFacturas } from "@/components/gas-pdf/modal-pedir-facturas"
+import { haceCuanto } from "@/lib/gas-pdf/pedido"
+import { diaArgentino } from "@/lib/fechas"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
@@ -795,6 +798,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [ultimasPdf, setUltimasPdf] = useState<Map<string, UltimaBusqueda>>(new Map())
   // Hasta dónde se leyeron los reenvíos (inventario permanente, A-FEAT-1287 2026-10-20)
   const [inventarioPdf, setInventarioPdf] = useState<EstadoInventario | { error: string } | null>(null)
+  // 📮 Pedir la factura al proveedor (A-FEAT-1313): las facturas elegidas, o null si está cerrado
+  const [pedirFacturas, setPedirFacturas] = useState<string[] | null>(null)
+  const [recargaUltimas, setRecargaUltimas] = useState(0)
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
@@ -847,7 +853,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (vivo) setInventarioPdf(inv)
     })()
     return () => { vivo = false }
-  }, [modalBuscarPdf, facturas, schemaName])
+  }, [modalBuscarPdf, facturas, schemaName, recargaUltimas])
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -12341,7 +12347,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       {/* 📋 Informe por factura del último lote (A-FEAT-1287) */}
       <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)}
         onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)}
-        datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total } : undefined }} />
+        datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total } : undefined }}
+        onPedirProveedor={(ids) => setPedirFacturas(ids)} />
+
+      {/* 📮 Pedir la factura al proveedor (A-FEAT-1313) — desde Buscar PDFs o desde el informe */}
+      <ModalPedirFacturas open={!!pedirFacturas} empresa={empresa as 'MSA' | 'PAM' | 'MA'} facturaIds={pedirFacturas || []}
+        onClose={() => setPedirFacturas(null)} onHecho={() => setRecargaUltimas(n => n + 1)} />
 
       {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
       <ModalElegirCandidato
@@ -12569,7 +12580,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                               {(() => {
                                 const u = ultimasPdf.get(f.id)
                                 const dia = (iso?: string) => iso ? new Date(iso).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit' }) : '—'
-                                return <span title="carpeta · mail">🗂️ {dia(u?.carpeta)} · 📧 {dia(u?.mail)}</span>
+                                return <span title="carpeta · mail">🗂️ {dia(u?.carpeta)} · 📧 {dia(u?.mail)}{u?.pedido
+                                  ? <span className="block text-amber-700" title={u.pedidoBorrador ? 'Se armó el borrador del pedido (en Gmail); fijate si lo mandaste' : 'Se le pidió la factura al proveedor por mail'}>📮 {u.pedidoBorrador ? 'borrador' : 'pedida'} {haceCuanto(diaArgentino(new Date(u.pedido)), hoyArgentina())}</span>
+                                  : null}</span>
                               })()}
                             </td>
                             <td className="p-1">
@@ -12645,6 +12658,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       <option value="mail">Sólo mail</option>
                     </select>
                     <Button variant="outline" onClick={() => setModalBuscarPdf(false)}>Cancelar</Button>
+                    <Button variant="outline" disabled={seleccionPdf.size === 0} title="Mandarle (o dejar en borrador) un mail a cada proveedor pidiéndole las facturas elegidas"
+                      onClick={() => setPedirFacturas(Array.from(seleccionPdf))}>
+                      📮 Pedir al proveedor ({seleccionPdf.size})
+                    </Button>
                     <Button
                       disabled={seleccionPdf.size === 0}
                       onClick={async () => {

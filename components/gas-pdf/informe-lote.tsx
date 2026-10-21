@@ -19,12 +19,14 @@ interface Props {
   onConfirmar?: (item: ItemInforme, url: string) => Promise<boolean>
   /** Fecha e importe de la factura, para el pedido */
   datosDe?: (facturaId: string) => { fecha_emision?: string | null; imp_total?: number | null } | undefined
+  /** 📮 Pedirle la factura al proveedor por mail (A-FEAT-1313) */
+  onPedirProveedor?: (facturaIds: string[]) => void
 }
 
 /** Sólo lo que la app vinculó sola (APP) se confirma desde acá: lo «a revisar» tiene su propio paso */
 const SE_CONFIRMA = new Set(['mail', 'carpeta'])
 
-export function InformeLote({ open, informe, onClose, onConfirmar, datosDe }: Props) {
+export function InformeLote({ open, informe, onClose, onConfirmar, datosDe, onPedirProveedor }: Props) {
   const grupos = agruparInforme(informe)
   const [confirmadas, setConfirmadas] = useState<Set<string>>(new Set())
   const [aReclamar, setAReclamar] = useState<Set<string>>(new Set())
@@ -54,12 +56,18 @@ export function InformeLote({ open, informe, onClose, onConfirmar, datosDe }: Pr
               className="border rounded px-2 py-1 bg-white hover:bg-gray-50 disabled:opacity-40">
               📋 Copiar pedido de facturas ({aReclamar.size})
             </button>
+            {onPedirProveedor && (
+              <button type="button" disabled={aReclamar.size === 0} onClick={() => onPedirProveedor([...aReclamar])}
+                className="border rounded px-2 py-1 bg-white hover:bg-gray-50 disabled:opacity-40">
+                📮 Pedir al proveedor ({aReclamar.size})
+              </button>
+            )}
             <button type="button" className="text-blue-700 underline"
               onClick={() => setAReclamar(new Set(informe.filter(it => SE_RECLAMA.has(it.proceso)).map(it => it.factura_id)))}>
               Todas
             </button>
             <button type="button" className="text-blue-700 underline" onClick={() => setAReclamar(new Set())}>Ninguna</button>
-            <span className="text-gray-500">Tildá las que querés reclamar: se copia un texto con fecha, proveedor, comprobante e importe.</span>
+            <span className="text-gray-500">Tildá las que querés reclamar: copiás un texto, o le mandás un mail a cada proveedor.</span>
           </div>
         )}
         <div className="overflow-y-auto flex-1 min-h-0 space-y-4">

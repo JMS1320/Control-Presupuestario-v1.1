@@ -391,12 +391,27 @@ export function esDescartado(c: { drive_url?: string | null; gmail_message_id?: 
 
 /** Sólo cuentan las búsquedas que miraron algo: no los errores, ni «proveedor sin configurar», ni los descartes. */
 const RESULTADOS_DE_BUSQUEDA = new Set(['descargado', 'revisar', 'no_encontrado'])
-export interface UltimaBusqueda { carpeta?: string; mail?: string }
+export interface UltimaBusqueda {
+  carpeta?: string
+  mail?: string
+  /** Cuándo se le pidió la factura al proveedor (A-FEAT-1313), y si quedó sólo como borrador */
+  pedido?: string
+  pedidoBorrador?: boolean
+}
 
 /** Por factura: cuándo se buscó por última vez en la carpeta y cuándo en el mail (instantes ISO). */
 export function ultimasBusquedas(logs: ReadonlyArray<{ factura_id: string; fecha_hora?: string | null; resultado?: string | null; observaciones?: string | null }>): Map<string, UltimaBusqueda> {
   const out = new Map<string, UltimaBusqueda>()
   for (const l of logs) {
+    if (l.fecha_hora && l.resultado === 'pedido') {
+      const u = out.get(l.factura_id) || {}
+      if (!u.pedido || Date.parse(l.fecha_hora) > Date.parse(u.pedido)) {
+        u.pedido = l.fecha_hora
+        u.pedidoBorrador = /borrador/i.test(l.observaciones || '')
+      }
+      out.set(l.factura_id, u)
+      continue
+    }
     if (!l.fecha_hora || !RESULTADOS_DE_BUSQUEDA.has(l.resultado || '')) continue
     const fuente: keyof UltimaBusqueda = (l.observaciones || '').startsWith(PREFIJO_CARPETA) ? 'carpeta' : 'mail'
     const u = out.get(l.factura_id) || {}
