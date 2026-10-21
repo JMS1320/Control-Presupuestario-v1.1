@@ -41,10 +41,11 @@ function carpetaDe(e: Empresa): string | undefined {
 const fechaCorta = (iso?: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
 
 async function fuentes(supabase: any): Promise<FuenteMails[]> {
-  const { data } = await supabase.from('proveedores').select('email_facturacion, patron_asunto').contains('tags', ['recolector'])
+  const { data } = await supabase.from('proveedores').select('email_facturacion, patron_asunto, razon_social, nombre_fantasia').contains('tags', ['recolector'])
   const rec = (data || [])
     .filter((r: any) => r.email_facturacion && r.patron_asunto)
-    .map((r: any) => ({ clave: r.email_facturacion, email: r.email_facturacion, asunto: r.patron_asunto, nombre: `Reenvíos de ${nombreReenviador(r.email_facturacion)}` }))
+    // El nombre de la ficha («Jose», «Andrés»); si no tiene, la parte del mail antes de la @
+    .map((r: any) => ({ clave: r.email_facturacion, email: r.email_facturacion, asunto: r.patron_asunto, nombre: `Reenvíos de ${r.nombre_fantasia || r.razon_social || nombreReenviador(r.email_facturacion)}` }))
   return [...rec, FUENTE_ASUNTO]
 }
 

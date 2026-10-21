@@ -12451,12 +12451,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
       <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
-        <DialogContent className="max-w-5xl h-[92vh] max-h-[92vh] flex flex-col">
-          <DialogHeader>
+        {/* Pantalla completa (usuario 2026-10-22: con la explicación arriba, la lista quedaba en una fila) */}
+        <DialogContent className="max-w-none w-[98vw] h-[96vh] max-h-[96vh] flex flex-col p-4 gap-2">
+          <DialogHeader className="space-y-1">
             <DialogTitle>Buscar PDFs</DialogTitle>
-            <DialogDescription>
+            <DialogDescription asChild>
+              <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none">ℹ️ Cómo busca</summary>
               Sólo aparecen las que no tienen 📎 (nunca las de Portal ni las de No). Vienen marcadas y arriba las de «Buscar», sin estado y las «Sí» de Ulises sin archivo; podés sumar o sacar a mano.
               Primero se mira la carpeta de su subdiario en Drive (si no está imputada, la de su mes de emisión y la del siguiente); lo que no esté, se busca en Gmail. Si aparecen dos archivos para una factura, no se vincula ninguno: queda en VER para que elijas.
+              </details>
             </DialogDescription>
             <LeyendaEstadosFc />
             <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
