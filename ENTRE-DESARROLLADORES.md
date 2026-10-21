@@ -54,6 +54,16 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗃️ Dos columnas nuevas en `public.cuotas_egresos_sin_factura` (2026-10-20) — aviso ANTES de aplicarlas
+
+Para [A-FEAT-1312](PENDIENTES.md#a-feat-1312) (rama `jms/tarjeta-conciliacion`): los consumos en dólares de la tarjeta
+guardan en la cuota el **original en USD y el tipo de cambio** del pago (el extracto queda en dólares, como el papel del
+banco). **Qué cambia**: `scripts/91` agrega **`monto_usd numeric(15,2)`** y **`tipo_cambio numeric(15,4)`**, las dos
+nullable. **No toca RLS, roles, GRANTs ni filas existentes**; ninguna vista lista la tabla por columnas. Se corre con JMS
+presente; hay `-deshacer`. Si tu modelo de permisos necesita otra cosa, avisá.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — ✅ APLICADA el 20/10 con JMS presente
 
 Para [A-FEAT-1296](PENDIENTES.md#a-feat-1296) (rama `jms/tarjeta-conciliacion`): el **detalle fijo por proveedor**
