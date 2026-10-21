@@ -30,11 +30,14 @@ import type {
   SchemaEmpresa,
 } from '@/lib/gas-pdf/types'
 import { gasStatusToFc } from '@/lib/gas-pdf/types'
+import { descartadosDelLog, esDescartado } from '@/lib/gas-pdf/lote'
 import { periodoDeArchivo, subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 
 export const runtime = 'nodejs'
 export const maxDuration = 60 // GAS tarda 5-15s típicamente, margen para reintento
+/** Tope para esperar al GAS, con margen sobre maxDuration para responder y dejar el log */
+const TOPE_GAS_MS = 50_000
 
 function carpetaDriveDefault(empresa: Empresa): string | undefined {
   switch (empresa) {
@@ -231,10 +234,17 @@ export async function POST(request: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(gasRequest),
+        // Por debajo de maxDuration (60 s): así la ruta alcanza a devolver un error EXPLICADO y a dejarlo
+        // en el log, en vez de que la plataforma la mate y el navegador diga «signal is aborted» sin
+        // rastro (Sola Juan Martín NC 9-63, dos veces el 2026-10-20).
+        signal: AbortSignal.timeout(TOPE_GAS_MS),
       })
       gasResp = (await r.json()) as GasBuscarResponse
     } catch (err) {
-      const errorMsg = (err as Error).message || 'Error de red llamando a GAS'
+      const e = err as Error
+      const errorMsg = e.name === 'TimeoutError' || e.name === 'AbortError'
+        ? `El mail tardó más de ${TOPE_GAS_MS / 1000} s y se cortó: este proveedor tiene muchos mails con adjuntos para revisar. No se cambió nada; se puede reintentar o achicar los días de búsqueda del proveedor.`
+        : e.message || 'Error de red llamando a GAS'
       await logBusqueda(supabase, {
         factura_id, schema, lote_id,
         resultado: 'error',
@@ -245,6 +255,28 @@ export async function POST(request: Request) {
         monto_factura: factura.imp_total,
       })
       return NextResponse.json({ ok: false, factura_id, error: errorMsg }, { status: 502 })
+    }
+
+    // «No es ésta» (A-FEAT-1287, usuario 2026-10-20): lo que el usuario ya descartó para esta factura
+    // no se vuelve a ofrecer. Si era lo único que encontró el GAS, cuenta como no encontrada.
+    if (gasResp.status === 'revisar') {
+      const { data: descLog } = await supabase.from('arca_pdf_busqueda_log')
+        .select('resultado, drive_url, gmail_message_id').eq('factura_id', factura_id).eq('resultado', 'descartado')
+      const desc = descartadosDelLog(descLog || [])
+      if (desc.drive.size + desc.mails.size > 0) {
+        if (gasResp.candidatos && gasResp.candidatos.length > 0) {
+          const quedan = gasResp.candidatos.filter(c => !esDescartado(c, desc))
+          if (quedan.length === 0) {
+            gasResp = { ...gasResp, status: 'no_encontrada', candidatos: undefined, drive_url: undefined, gmail_message_id: undefined,
+              observaciones: 'Sólo aparecieron archivos que ya descartaste («No es ésta»).' }
+          } else if (quedan.length !== gasResp.candidatos.length) {
+            gasResp = { ...gasResp, candidatos: quedan, drive_url: quedan[0].drive_url, gmail_message_id: quedan[0].gmail_message_id }
+          }
+        } else if (esDescartado(gasResp, desc)) {
+          gasResp = { ...gasResp, status: 'no_encontrada', drive_url: undefined, gmail_message_id: undefined,
+            observaciones: 'Sólo apareció el archivo que ya descartaste («No es ésta»).' }
+        }
+      }
     }
 
     // ── Procesar respuesta GAS ──

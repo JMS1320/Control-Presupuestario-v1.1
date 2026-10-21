@@ -32,6 +32,11 @@ export interface BuscarPdfLoteOptions {
   isCancelled?: () => boolean
   /** Enviar el mail resumen al cerrar el lote (default true) */
   enviarResumen?: boolean
+  /**
+   * Dónde buscar (usuario 2026-10-20): las dos (default: primero la carpeta, lo que falta al mail),
+   * sólo la carpeta (lo que no está queda como estaba) o sólo el mail.
+   */
+  donde?: 'ambos' | 'carpeta' | 'mail'
 }
 
 export interface ProgresoLote {
@@ -97,7 +102,8 @@ function actualizarProgreso(p: ProgresoLote, out: ApiBuscarPdfOutput): ProgresoL
 }
 
 /** Llama al endpoint para UNA factura */
-export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 60000): Promise<ApiBuscarPdfOutput> {
+// 65 s: más que el tope del servidor (50 s + margen), para que llegue SU error explicado y no un «aborted»
+export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 65000): Promise<ApiBuscarPdfOutput> {
   const ctrl = new AbortController()
   const t = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
@@ -127,7 +133,9 @@ export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 600
     }
     return data
   } catch (err) {
-    return { ok: false, factura_id: input.factura_id, error: (err as Error).message || 'Error de red' }
+    const e = err as Error
+    if (e.name === 'AbortError') return { ok: false, factura_id: input.factura_id, error: `No hubo respuesta en ${timeoutMs / 1000} s; la factura quedó como estaba. Se puede reintentar.` }
+    return { ok: false, factura_id: input.factura_id, error: e.message || 'Error de red' }
   } finally {
     clearTimeout(t)
   }
@@ -209,7 +217,7 @@ async function enviarResumenLote(resultados: ResumenItem[], progreso: ProgresoLo
 export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<ProgresoLote> {
   const loteId = opts.loteId || crypto.randomUUID()
   const delay = opts.delayMs ?? 1500
-  const timeout = opts.timeoutMsPorFactura ?? 60000
+  const timeout = opts.timeoutMsPorFactura ?? 65000
   let progreso = nuevoProgreso(loteId, opts.facturaIds.length)
   const resultados: ResumenItem[] = []
   const informe: ItemInforme[] = []
@@ -217,16 +225,22 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   const debug: DebugItem[] = []   // 1 línea por factura (resultado + observación con queries) para el mail
 
   // ── 1 · Primero la carpeta (A-FEAT-1287) ──
+  const donde = opts.donde ?? 'ambos'
   let pendientes = opts.facturaIds
-  if (opts.facturas && opts.facturas.length > 0) {
+  let deCarpeta: Awaited<ReturnType<typeof vincularDesdeCarpetas>> | null = null
+  if (donde !== 'mail' && opts.facturas && opts.facturas.length > 0) {
     progreso = { ...progreso, fase: 'carpeta' }
     opts.onProgreso?.(progreso)
-    const deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled, loteId,
+    deCarpeta = await vincularDesdeCarpetas(opts.empresa, opts.facturas.filter(f => opts.facturaIds.includes(f.id)), opts.isCancelled, loteId,
       av => { progreso = { ...progreso, carpetaAvance: av }; opts.onProgreso?.(progreso) })
     // Lo resuelto en la carpeta no sale al mail: lo vinculado y lo que quedó a revisar (tiene candidatos)
-    pendientes = opts.facturaIds.filter(id => !deCarpeta.vinculadas.has(id) && !deCarpeta.aRevisar.has(id))
-    for (const d of deCarpeta.decisiones) {
-      if (!deCarpeta.vinculadas.has(d.factura_id) && !deCarpeta.aRevisar.has(d.factura_id)) continue
+    const dcar = deCarpeta
+    pendientes = opts.facturaIds.filter(id => !dcar.vinculadas.has(id) && !dcar.aRevisar.has(id))
+    for (const d0 of deCarpeta.decisiones) {
+      if (!deCarpeta.vinculadas.has(d0.factura_id) && !deCarpeta.aRevisar.has(d0.factura_id)) continue
+      // Sin los candidatos que el usuario ya había descartado («No es ésta»)
+      const dc = deCarpeta
+      const d = { ...d0, candidatos: d0.candidatos.filter(c => !dc.descartados.has(`${d0.factura_id}|${c.drive_url}`)) }
       const f = facturaDe(d.factura_id)
       const item: ItemInforme = {
         factura_id: d.factura_id, factura: rotuloFactura(f, d.factura_id), proveedor: f?.denominacion_emisor || '',
@@ -246,6 +260,23 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     }
     const nV = deCarpeta.vinculadas.size, nR = deCarpeta.aRevisar.size
     progreso = { ...progreso, enCarpeta: nV, paraRevisar: nR, procesadas: nV + nR, errorCarpeta: deCarpeta.error, informe: [...informe] }
+  }
+
+  // Sólo carpeta: lo que no estaba no sale al mail y queda como estaba (usuario 2026-10-20)
+  if (donde === 'carpeta') {
+    let otros = 0, errores = 0
+    for (const id of pendientes) {
+      const f = facturaDe(id)
+      const conError = !deCarpeta || deCarpeta.conError.has(id)
+      if (conError) errores++; else otros++
+      informe.push({
+        factura_id: id, factura: rotuloFactura(f, id), proveedor: f?.denominacion_emisor || '',
+        proceso: conError ? 'error' : 'no_en_carpeta', links: [],
+        detalle: conError ? (deCarpeta?.error || 'No se pudo leer la carpeta') : 'No se buscó en el mail',
+      })
+    }
+    progreso = { ...progreso, procesadas: progreso.total, otros: progreso.otros + otros, errores: progreso.errores + errores, informe: [...informe] }
+    pendientes = []
   }
 
   // ── 2 · Lo que falta, al mail ──
@@ -302,10 +333,12 @@ export async function vincularDesdeCarpetas(
   isCancelled?: () => boolean,
   loteId?: string,
   onAvance?: (av: NonNullable<ProgresoLote['carpetaAvance']>) => void,
-): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string }> {
+): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string; conError: Set<string>; descartados: Set<string> }> {
   const exactos: HallazgoCarpeta[] = []
   const dudosos: HallazgoCarpeta[] = []
   let error: string | undefined
+  // Facturas cuya carpeta no se pudo leer entera: no se puede decir que «no están»
+  const conError = new Set<string>()
   const carpetas = agruparPorCarpeta(facturas)
   for (const [nc, carpeta] of carpetas.entries()) {
     if (isCancelled?.()) break
@@ -332,6 +365,7 @@ export async function vincularDesdeCarpetas(
       if (!data.ok) data = await pedir(1)
       if (!data.ok) {
         error = `Carpeta ${carpeta.mes}/${carpeta.anio}: ${data.error || 'error'}`
+        for (const id of carpeta.ids) conError.add(id)
         break
       }
       if (data.existe === false) break
@@ -347,19 +381,31 @@ export async function vincularDesdeCarpetas(
   const decisiones = decidirVinculosCarpeta(facturas.map(f => f.id), exactos, dudosos)
   const vinculadas = new Set<string>()
   const aRevisar = new Set<string>()
-  if (decisiones.length > 0 && !isCancelled?.()) {
+  const descartados = new Set<string>()
+  // Las que se leyeron enteras y no aparecieron: quedan en el log como búsqueda en carpeta sin
+  // hallazgo (así se ve «última búsqueda en carpeta»). Si se canceló, no se afirma nada.
+  const decididas = new Set(decisiones.map(d => d.factura_id))
+  const sinHallazgo = isCancelled?.() ? [] : facturas.map(f => f.id).filter(id => !decididas.has(id) && !conError.has(id))
+  if ((decisiones.length > 0 || sinHallazgo.length > 0) && !isCancelled?.()) {
     try {
       const r = await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         // anio/mes no se usan al aplicar, pero la ruta los exige
-        body: JSON.stringify({ empresa, anio: 1, mes: 1, aplicar: decisiones, lote_id: loteId }),
+        body: JSON.stringify({ empresa, anio: 1, mes: 1, aplicar: decisiones, sin_hallazgo: sinHallazgo, lote_id: loteId }),
       })
       const data = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
       if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`)
-      for (const d of decisiones) (d.accion === 'vincular' ? vinculadas : aRevisar).add(d.factura_id)
+      // Lo que la ruta efectivamente hizo (puede saltear un archivo que el usuario ya descartó)
+      if (Array.isArray(data.idsVinculadas)) {
+        for (const id of data.idsVinculadas) vinculadas.add(id)
+        for (const id of data.idsARevisar || []) aRevisar.add(id)
+        for (const k of data.descartados || []) descartados.add(k)
+      } else {
+        for (const d of decisiones) (d.accion === 'vincular' ? vinculadas : aRevisar).add(d.factura_id)
+      }
     } catch (e) {
       error = `No se pudo guardar lo encontrado en la carpeta: ${(e as Error).message}`
     }
   }
-  return { vinculadas, aRevisar, decisiones, error }
+  return { vinculadas, aRevisar, decisiones, error, conError, descartados }
 }

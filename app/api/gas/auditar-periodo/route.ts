@@ -89,15 +89,43 @@ interface DudosoItem extends MatchItem { motivos?: string[] }
  * Escribe la factura (sólo si sigue sin 📎) y deja el rastro en el log de búsquedas, con un renglón
  * por candidato para que el ✓ de VER pueda ofrecerlos.
  */
-async function aplicarDecisiones(supabase: any, schema: string, decisiones: DecisionCarpeta[], loteId: string | null) {
-  const ids = decisiones.map(d => d.factura_id)
-  if (ids.length === 0) return { vinculadas: 0, aRevisar: 0 }
+async function aplicarDecisiones(supabase: any, schema: string, decisiones0: DecisionCarpeta[], loteId: string | null, sinHallazgo0: string[] = []) {
+  const ids = [...decisiones0.map(d => d.factura_id), ...sinHallazgo0]
+  const vacio = { vinculadas: 0, aRevisar: 0, idsVinculadas: [] as string[], idsARevisar: [] as string[], descartados: [] as string[] }
+  if (ids.length === 0) return vacio
   const { data: actuales, error } = await supabase.schema(schema).from('comprobantes_arca')
     .select('id, fc, cuit, punto_venta, numero_desde, imp_total, pdf_drive_url').in('id', ids)
   if (error) throw new Error(`Error cargando las facturas a vincular: ${error.message}`)
   const porId = new Map<string, any>((actuales || []).map((f: any) => [f.id, f]))
+
+  // «No es ésta» (A-FEAT-1287): un archivo que el usuario descartó para ESA factura no se vuelve a
+  // vincular ni a ofrecer. Si era lo único que había, para esa factura la carpeta «no lo tiene».
+  const { data: descLog } = await supabase.from('arca_pdf_busqueda_log')
+    .select('factura_id, drive_url').eq('resultado', 'descartado').in('factura_id', ids)
+  const descartados = new Set<string>((descLog || []).map((l: any) => `${l.factura_id}|${l.drive_url}`))
+  const sinHallazgo = [...sinHallazgo0]
+  const decisiones: DecisionCarpeta[] = []
+  for (const d0 of decisiones0) {
+    const vale = (url?: string | null) => !!url && !descartados.has(`${d0.factura_id}|${url}`)
+    if (d0.accion === 'vincular') {
+      if (vale(d0.drive_url)) decisiones.push(d0); else sinHallazgo.push(d0.factura_id)
+      continue
+    }
+    // A revisar: quedan los candidatos no descartados (nunca se sube a «vincular» sola: decide el usuario)
+    const candidatos = d0.candidatos.filter(c => vale(c.drive_url))
+    if (candidatos.length > 0) decisiones.push({ ...d0, candidatos }); else sinHallazgo.push(d0.factura_id)
+  }
+
   const ahora = new Date().toISOString()
   let vinculadas = 0, aRevisar = 0
+  const idsVinculadas: string[] = [], idsARevisar: string[] = []
+  // Búsqueda en carpeta sin hallazgo: sólo el renglón del log (la factura queda como estaba)
+  const filasSin = sinHallazgo.map(id => porId.get(id)).filter((f: any) => f && !f.pdf_drive_url).map((f: any) => ({
+    factura_id: f.id, factura_schema: schema, lote_id: loteId, resultado: 'no_encontrado',
+    cuit_emisor: f.cuit, numero_comprobante: `${f.punto_venta}-${f.numero_desde}`, monto_factura: f.imp_total,
+    observaciones: '[carpeta] No está en la carpeta del mes ni en la del siguiente',
+  }))
+  if (filasSin.length) await supabase.from('arca_pdf_busqueda_log').insert(filasSin)
   for (const d of decisiones) {
     const f = porId.get(d.factura_id)
     if (!f || f.pdf_drive_url) continue   // ya tiene 📎: no se pisa
@@ -113,6 +141,7 @@ async function aplicarDecisiones(supabase: any, schema: string, decisiones: Deci
       if (e) throw new Error(`Error vinculando ${base.numero_comprobante}: ${e.message}`)
       await supabase.from('arca_pdf_busqueda_log').insert({ ...base, resultado: 'descargado', drive_url: d.drive_url, observaciones: `[carpeta] ${d.motivo} — ${d.archivo || ''}` })
       vinculadas++
+      idsVinculadas.push(d.factura_id)
     } else {
       const { error: e } = await supabase.schema(schema).from('comprobantes_arca').update({
         fc: 'VER', pdf_estado: 'revisar', pdf_observaciones: d.motivo, pdf_ultimo_intento: ahora,
@@ -124,9 +153,10 @@ async function aplicarDecisiones(supabase: any, schema: string, decisiones: Deci
         })))
       }
       aRevisar++
+      idsARevisar.push(d.factura_id)
     }
   }
-  return { vinculadas, aRevisar }
+  return { vinculadas, aRevisar, idsVinculadas, idsARevisar, descartados: [...descartados] }
 }
 
 export async function POST(request: Request) {
@@ -150,6 +180,8 @@ export async function POST(request: Request) {
       factura_ids?: string[]
       /** Buscador de PDFs: lo decidido al terminar de leer la carpeta (ver aplicarDecisiones) */
       aplicar?: DecisionCarpeta[]; lote_id?: string
+      /** Las que se leyeron enteras y no aparecieron: sólo dejan su renglón en el log */
+      sin_hallazgo?: string[]
     }
     const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
@@ -161,7 +193,7 @@ export async function POST(request: Request) {
     }
     const schema = schemaDe(empresa)
     if (Array.isArray(body.aplicar)) {
-      const r = await aplicarDecisiones(supabase, schema, body.aplicar, body.lote_id || null)
+      const r = await aplicarDecisiones(supabase, schema, body.aplicar, body.lote_id || null, Array.isArray(body.sin_hallazgo) ? body.sin_hallazgo : [])
       return NextResponse.json({ ok: true, aplicado: true, ...r })
     }
     const periodo = `${anio}-${String(mes).padStart(2, '0')}`

@@ -52,7 +52,7 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, resumenUltimas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
@@ -372,6 +372,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [montoMinimo, setMontoMinimo] = useState('')
   const [montoMaximo, setMontoMaximo] = useState('')
   const [busquedaCateg, setBusquedaCateg] = useState('')
+  // Filtro por Estado FC (usuario 2026-10-20: «ver las de Portal solas, en cada subdiario»)
+  const [filtroEstadoFc, setFiltroEstadoFc] = useState('todos')
   const [filtroFcPendiente, setFiltroFcPendiente] = useState(false)
   const [mostrarModalMarcarFC, setMostrarModalMarcarFC] = useState(false)
   const [linksAVincular, setLinksAVincular] = useState<Record<string, string>>({})
@@ -783,9 +785,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // A-FEAT-1287: el subdiario donde está imputada ('' = todos · 'sin' = sin imputar · '2026-09')
   const [pdfSubdiario, setPdfSubdiario] = useState('')
   // ✓ de VER: elegir entre los candidatos · 📋 informe del último lote
-  const [elegirCandidato, setElegirCandidato] = useState<{ id: string; rotulo: string } | null>(null)
+  const [elegirCandidato, setElegirCandidato] = useState<{ id: string; rotulo: string; fecha_emision?: string | null; imp_total?: number | null } | null>(null)
   const [verInformeLote, setVerInformeLote] = useState(false)
   const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
+  // Dónde buscar (usuario 2026-10-20): carpeta y mail · sólo carpeta · sólo mail
+  const [pdfDonde, setPdfDonde] = useState<'ambos' | 'carpeta' | 'mail'>('ambos')
+  // Última búsqueda de cada factura en la carpeta y en el mail (del historial), para ver hasta dónde se llegó
+  const [ultimasPdf, setUltimasPdf] = useState<Map<string, UltimaBusqueda>>(new Map())
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
@@ -818,6 +824,25 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       return cambio ? next : prev
     })
   }, [pdfDesde, pdfHasta, pdfSubdiario, filtroTiposPdf, modalBuscarPdf, facturas])
+
+  // Al abrir Buscar PDFs: cuándo se buscó cada factura por última vez en la carpeta y en el mail.
+  useEffect(() => {
+    if (!modalBuscarPdf) return
+    const ids = candidatosParaBuscar(facturas).map(f => f.id)
+    let vivo = true
+    ;(async () => {
+      const logs: Array<{ factura_id: string; fecha_hora: string; resultado: string | null; observaciones: string | null }> = []
+      for (let i = 0; i < ids.length; i += 50) {
+        const { data } = await supabase.from('arca_pdf_busqueda_log')
+          .select('factura_id, fecha_hora, resultado, observaciones')
+          .eq('factura_schema', schemaName).in('factura_id', ids.slice(i, i + 50))
+          .order('fecha_hora', { ascending: false }).limit(1000)
+        if (data) logs.push(...(data as typeof logs))
+      }
+      if (vivo) setUltimasPdf(ultimasBusquedas(logs))
+    })()
+    return () => { vivo = false }
+  }, [modalBuscarPdf, facturas, schemaName])
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -1093,7 +1118,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Re-aplicar filtros cuando cambia el filtro FC o el tipo de comprobante
   useEffect(() => {
     aplicarFiltros()
-  }, [filtroFcPendiente, filtroTipoComprobante])
+  }, [filtroFcPendiente, filtroTipoComprobante, filtroEstadoFc])
 
   // Auto-cargar facturas cuando cambia el período de imputación
   useEffect(() => {
@@ -1197,6 +1222,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       facturasFiltradas = facturasFiltradas.filter(faltaComprobante)
     }
 
+    // Filtro por Estado FC (Portal, VER, NO Mail…)
+    if (filtroEstadoFc !== 'todos') {
+      facturasFiltradas = facturasFiltradas.filter(f => (f.fc ?? '(sin estado)') === filtroEstadoFc)
+    }
+
     setFacturas(facturasFiltradas)
   }
   
@@ -1211,6 +1241,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setMontoMinimo('')
     setMontoMaximo('')
     setBusquedaCateg('')
+    setFiltroEstadoFc('todos')
     setFacturas(facturasOriginales)
   }
   
@@ -1548,7 +1579,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // confirmaba a ciegas el último del log y la dejaba en «Sí», que es el estado de Ulises: ahora
   // queda en «Confirmada».
   const confirmarVer = (factura: FacturaArca) => {
-    setElegirCandidato({ id: factura.id, rotulo: `${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}` })
+    setElegirCandidato({ id: factura.id, rotulo: `${factura.denominacion_emisor || ''} ${factura.punto_venta}-${factura.numero_desde}`, fecha_emision: factura.fecha_emision, imp_total: factura.imp_total })
   }
   const alConfirmarCandidato = (facturaId: string, driveUrl: string) => {
     setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
@@ -7455,6 +7486,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 </Select>
               </div>
 
+              {/* Estado FC (Portal, VER, NO Mail…) */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">📎 Estado FC</Label>
+                <Select value={filtroEstadoFc} onValueChange={setFiltroEstadoFc}>
+                  <SelectTrigger className="text-xs">
+                    <SelectValue placeholder="Todos los estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos los estados</SelectItem>
+                    {Array.from(new Set(facturasOriginales.map(f => f.fc ?? '(sin estado)'))).sort().map(fc => (
+                      <SelectItem key={fc} value={fc}>
+                        {fc} ({facturasOriginales.filter(f => (f.fc ?? '(sin estado)') === fc).length})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Búsqueda por CATEG */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">💰 Cuenta Contable</Label>
@@ -12296,6 +12345,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         factura={elegirCandidato}
         onClose={() => setElegirCandidato(null)}
         onConfirmada={alConfirmarCandidato}
+        onDescartada={(id, fcNuevo) => {
+          if (fcNuevo) {
+            setFacturas(prev => prev.map(x => x.id === id ? { ...x, fc: fcNuevo } : x))
+            setFacturasOriginales(prev => prev.map(x => x.id === id ? { ...x, fc: fcNuevo } : x))
+          }
+          toast.success(fcNuevo ? `Descartado. No quedan candidatos: la factura pasó a ${fcNuevo} y se puede volver a buscar.` : 'Descartado. Quedan otros candidatos.')
+        }}
       />
 
       {/* Modal historial búsquedas PDF */}
@@ -12404,6 +12460,32 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </div>
                 )}
 
+                {(() => {
+                  const hora = (iso?: string) => iso ? new Date(iso).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'nunca'
+                  const r = resumenUltimas(candidatos.map(f => f.id), ultimasPdf)
+                  // Las de VER no se ofrecen (tienen candidato): se avisa cuántas hay acá para que no desaparezcan
+                  const enVer = facturas.filter(f => f.fc === 'VER' && !f.pdf_drive_url && f.estado !== 'historico'
+                    && (!pdfSubdiario || subdiarioDe(f).clave === pdfSubdiario)
+                    && (!pdfDesde || (f.fecha_emision || '') >= pdfDesde) && (!pdfHasta || (f.fecha_emision || '') <= pdfHasta))
+                  return (
+                    <div className="text-[11px] text-gray-600 pt-2 space-y-0.5">
+                      {candidatos.length > 0 && (
+                        <p>
+                          <span className="text-gray-500">Última búsqueda de estas {candidatos.length}:</span>{' '}
+                          🗂️ carpeta <b>{hora(r.carpeta)}</b>{r.sinCarpeta > 0 && r.carpeta ? <span className="text-gray-400"> ({r.sinCarpeta} nunca)</span> : null}
+                          {' · '}📧 mail <b>{hora(r.mail)}</b>{r.sinMail > 0 && r.mail ? <span className="text-gray-400"> ({r.sinMail} nunca)</span> : null}
+                        </p>
+                      )}
+                      {enVer.length > 0 && (
+                        <p className="text-amber-700">
+                          ⚠️ {enVer.length} en VER no aparecen acá porque ya tienen un candidato: resolvelas desde el ✓ de la columna FC (Es ésta / No es ésta).
+                          {' '}{enVer.slice(0, 3).map(f => `${f.denominacion_emisor} ${f.punto_venta}-${f.numero_desde}`).join(' · ')}{enVer.length > 3 ? '…' : ''}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
                   {candidatos.length === 0 ? (
                     <p className="text-sm text-gray-500 py-6 text-center">No hay facturas sin 📎 en ese subdiario o rango.</p>
@@ -12417,6 +12499,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           <th className="p-1">Proveedor</th>
                           <th className="p-1 text-right">Importe</th>
                           <th className="p-1">Estado FC</th>
+                          <th className="p-1 whitespace-nowrap" title="Última vez que se buscó en la carpeta del mes / en el mail">Últ. carpeta · mail</th>
                           <th className="p-1 w-[240px]">Mail proveedor</th>
                         </tr>
                       </thead>
@@ -12449,6 +12532,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                   → Portal
                                 </button>
                               )}
+                            </td>
+                            <td className="p-1 whitespace-nowrap text-[10px] text-gray-500">
+                              {(() => {
+                                const u = ultimasPdf.get(f.id)
+                                const dia = (iso?: string) => iso ? new Date(iso).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit' }) : '—'
+                                return <span title="carpeta · mail">🗂️ {dia(u?.carpeta)} · 📧 {dia(u?.mail)}</span>
+                              })()}
                             </td>
                             <td className="p-1">
                               {!prov ? (
@@ -12516,13 +12606,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                   </Button>
                 ) : (
                   <>
+                    <select value={pdfDonde} onChange={e => setPdfDonde(e.target.value as 'ambos' | 'carpeta' | 'mail')}
+                      className="h-9 text-xs border rounded px-2 bg-white" title="Dónde buscar">
+                      <option value="ambos">Carpeta y mail</option>
+                      <option value="carpeta">Sólo carpeta</option>
+                      <option value="mail">Sólo mail</option>
+                    </select>
                     <Button variant="outline" onClick={() => setModalBuscarPdf(false)}>Cancelar</Button>
                     <Button
                       disabled={seleccionPdf.size === 0}
                       onClick={async () => {
                         const ids = Array.from(seleccionPdf)
                         if (ids.length === 0) return
-                        if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\nPrimero se mira la carpeta del mes en Drive (y la del mes siguiente); las que no estén se buscan en tu Gmail (~5-10s cada una).\nCorre en segundo plano.\n\n¿Continuar?`)) return
+                        const comoBusca = pdfDonde === 'carpeta'
+                          ? 'Sólo se mira la carpeta del mes en Drive (y la del mes siguiente). Las que no estén quedan como estaban: no se buscan en el mail.'
+                          : pdfDonde === 'mail'
+                            ? 'Sólo se buscan en tu Gmail (~5-10s cada una), sin mirar la carpeta.'
+                            : 'Primero se mira la carpeta del mes en Drive (y la del mes siguiente); las que no estén se buscan en tu Gmail (~5-10s cada una).'
+                        if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano.\n\n¿Continuar?`)) return
                         cancelarPdfRef.current = false
                         setBuscandoPdfs(true)
                         // Cerrar el modal al arrancar: la búsqueda corre en 2do plano y el avance
@@ -12532,6 +12633,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           const res = await buscarPdfLote({
                             empresa: empresa as 'MSA' | 'PAM' | 'MA',
                             facturaIds: ids,
+                            donde: pdfDonde,
                             // A-FEAT-1287: con el período, el lote mira PRIMERO la carpeta del mes
                             facturas: facturas.filter(f => seleccionPdf.has(f.id)),
                             onProgreso: setProgresoPdf,

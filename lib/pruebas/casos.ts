@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -1080,6 +1080,36 @@ export function correrCasos(): Resultado[] {
   const cl = candidatosDelLog(logs).map(c => `${c.drive_url}${c.deCarpeta ? "🗂" : ""}`).join(",")
   chequear("Buscador de PDFs — el ✓ de VER ofrece los candidatos", "🔴 Los del ÚLTIMO lote, sin repetir; los de búsquedas viejas no; marca cuál ya estaba en la carpeta",
     "b🗂,a", cl, cl === "b🗂,a", "A-FEAT-1287")
+
+  // «No es ésta» (usuario 2026-10-20): lo descartado no se vuelve a ofrecer, ni por archivo ni por mail
+  const logsDesc = [
+    { resultado: "descartado", drive_url: "b", lote_id: "L2", gmail_message_id: null },
+    { resultado: "descartado", drive_url: "otra-copia", lote_id: "L2", gmail_message_id: "M9" },
+    ...logs,
+    { resultado: "revisar", drive_url: "c", lote_id: "L2", gmail_message_id: "M9" },
+  ]
+  const cld = candidatosDelLog(logsDesc).map(c => c.drive_url).join(",")
+  const sinCandVer = candidatosDelLog([{ resultado: "descartado", drive_url: "a", lote_id: "L1" }, { resultado: "revisar", drive_url: "a", lote_id: "L1" }]).length
+  const desc = descartadosDelLog(logsDesc)
+  const vistaDesc = `${cld} | sin candidatos: ${sinCandVer} | mail M9 descartado: ${esDescartado({ drive_url: "nueva", gmail_message_id: "M9" }, desc)} | otro mail: ${esDescartado({ drive_url: "nueva", gmail_message_id: "M1" }, desc)}`
+  chequear("Buscador de PDFs — «No es ésta»", "🔴 El archivo descartado no se ofrece más; si el mail se descartó, otra copia del mismo mail tampoco; descartado el único → no quedan candidatos (la factura sale de VER)",
+    "a | sin candidatos: 0 | mail M9 descartado: true | otro mail: false", vistaDesc,
+    vistaDesc === "a | sin candidatos: 0 | mail M9 descartado: true | otro mail: false", "A-FEAT-1287")
+
+  // Última búsqueda por fuente: carpeta vs. mail, sólo lo que miró algo
+  const ult = ultimasBusquedas([
+    { factura_id: "f1", fecha_hora: "2026-10-20T14:00:00+00:00", resultado: "no_encontrado", observaciones: "[carpeta] No está en la carpeta" },
+    { factura_id: "f1", fecha_hora: "2026-10-19T10:00:00+00:00", resultado: "no_encontrado", observaciones: "No se encontró adjunto" },
+    { factura_id: "f1", fecha_hora: "2026-10-21T10:00:00+00:00", resultado: "error", observaciones: "Token inválido" },
+    { factura_id: "f1", fecha_hora: "2026-10-21T11:00:00+00:00", resultado: "descartado", observaciones: "No es ésta" },
+    { factura_id: "f2", fecha_hora: "2026-10-18T10:00:00+00:00", resultado: "revisar", observaciones: "Posible factura" },
+    { factura_id: "f2", fecha_hora: "2026-10-20T09:00:00+00:00", resultado: "descargado", observaciones: "Coinciden" },
+  ])
+  const res = resumenUltimas(["f1", "f2", "f3"], ult)
+  const vistaUlt = `f1 carpeta ${ult.get("f1")?.carpeta?.slice(0, 10)} mail ${ult.get("f1")?.mail?.slice(0, 10)} · f2 mail ${ult.get("f2")?.mail?.slice(0, 10)} · resumen carpeta ${res.carpeta?.slice(0, 10)} (${res.sinCarpeta} nunca) mail ${res.mail?.slice(0, 10)} (${res.sinMail} nunca)`
+  const esperadoUlt = "f1 carpeta 2026-10-20 mail 2026-10-19 · f2 mail 2026-10-20 · resumen carpeta 2026-10-20 (2 nunca) mail 2026-10-20 (1 nunca)"
+  chequear("Buscador de PDFs — última búsqueda en carpeta y en mail", "🔴 Separa carpeta de mail por el origen; los errores y los descartes no cuentan como búsqueda; cuenta cuántas nunca se buscaron en cada lado",
+    esperadoUlt, vistaUlt, vistaUlt === esperadoUlt, "A-FEAT-1287")
 
   const inf = agruparInforme([
     { factura_id: "1", factura: "FC 1", proveedor: "p", proceso: "no_encontrada", links: [] },

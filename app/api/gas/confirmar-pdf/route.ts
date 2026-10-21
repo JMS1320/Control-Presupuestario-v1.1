@@ -76,6 +76,7 @@ export async function POST(request: Request) {
       .select('drive_url, gmail_message_id, observaciones')
       .eq('factura_id', factura_id)
       .not('drive_url', 'is', null)
+      .neq('resultado', 'descartado')   // el renglón de «No es ésta» también lleva el link
     if (elegido) q = q.eq('drive_url', elegido)
     const { data: log } = await q
       .order('fecha_hora', { ascending: false })

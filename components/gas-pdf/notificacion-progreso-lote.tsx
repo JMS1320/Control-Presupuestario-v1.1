@@ -123,7 +123,7 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onV
         {progreso.otros > 0 && (
           <div className="flex items-center gap-1 col-span-2">
             <span className="text-gray-500 font-bold">·</span>
-            <span>{progreso.otros} sin búsqueda (ej. Portal)</span>
+            <span>{progreso.otros} sin buscar en el mail (Portal, o búsqueda sólo en carpeta)</span>
           </div>
         )}
       </div>

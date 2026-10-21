@@ -237,7 +237,7 @@ export function decidirVinculosCarpeta(
 
 // ── El INFORME del lote (A-FEAT-1287) — por factura, agrupado por proceso, con link ──────────────
 
-export type ProcesoInforme = 'carpeta' | 'mail' | 'revisar' | 'no_encontrada' | 'sin_fuente' | 'otro' | 'error'
+export type ProcesoInforme = 'carpeta' | 'mail' | 'revisar' | 'no_encontrada' | 'no_en_carpeta' | 'sin_fuente' | 'otro' | 'error'
 
 export interface ItemInforme {
   factura_id: string
@@ -256,6 +256,7 @@ export const PROCESOS_INFORME: ReadonlyArray<{ clave: ProcesoInforme; titulo: st
   { clave: 'mail', titulo: '✅ Bajadas del mail', ayuda: 'Se archivaron en la carpeta del mes y se vincularon. Quedan en APP.' },
   { clave: 'revisar', titulo: '⚠️ A revisar', ayuda: 'No se vinculó: hay más de un candidato o falta un dato. Elegí o confirmá desde el ✓ de la columna FC. Quedan en VER.' },
   { clave: 'no_encontrada', titulo: '❌ No encontradas', ayuda: 'Ni en la carpeta ni en el mail. Quedan en NO Mail y se pueden volver a buscar.' },
+  { clave: 'no_en_carpeta', titulo: '🗂️ No están en la carpeta', ayuda: 'Búsqueda sólo en carpeta: no se buscaron en el mail. Quedan como estaban.' },
   { clave: 'sin_fuente', titulo: '✉️ Sin mail del proveedor', ayuda: 'No hubo dónde buscar. Cargá el mail del proveedor y volvé a buscar. Quedan en Buscar.' },
   { clave: 'otro', titulo: '· Sin búsqueda', ayuda: 'Por ejemplo, proveedor de Portal.' },
   { clave: 'error', titulo: '! Errores', ayuda: 'Falló la búsqueda; quedan como estaban y se pueden reintentar.' },
@@ -284,6 +285,8 @@ export interface FilaLogCandidato {
   drive_url: string
   observaciones?: string | null
   deCarpeta: boolean
+  /** El importe que leyó la app en el archivo, si lo pudo leer */
+  monto_pdf?: number | null
 }
 
 /**
@@ -291,8 +294,10 @@ export interface FilaLogCandidato {
  * ÚLTIMO lote en que quedó a revisar (los de búsquedas anteriores ya no cuentan), sin repetir el
  * archivo. El log llega ordenado del más nuevo al más viejo.
  */
-export function candidatosDelLog(logs: ReadonlyArray<{ resultado?: string | null; drive_url?: string | null; lote_id?: string | null; observaciones?: string | null; fecha_hora?: string | null }>): FilaLogCandidato[] {
-  const revisar = logs.filter(l => l.resultado === 'revisar' && l.drive_url)
+export function candidatosDelLog(logs: ReadonlyArray<{ resultado?: string | null; drive_url?: string | null; lote_id?: string | null; observaciones?: string | null; fecha_hora?: string | null; gmail_message_id?: string | null; monto_pdf?: number | string | null }>): FilaLogCandidato[] {
+  // Los que el usuario ya descartó («No es ésta») no se vuelven a ofrecer
+  const descartados = descartadosDelLog(logs)
+  const revisar = logs.filter(l => l.resultado === 'revisar' && l.drive_url && !esDescartado(l, descartados))
   if (revisar.length === 0) return []
   const ultimo = revisar[0]
   const delLote = ultimo.lote_id ? revisar.filter(l => l.lote_id === ultimo.lote_id) : [ultimo]
@@ -302,7 +307,10 @@ export function candidatosDelLog(logs: ReadonlyArray<{ resultado?: string | null
     if (vistos.has(l.drive_url!)) continue
     vistos.add(l.drive_url!)
     const obs = l.observaciones || ''
-    out.push({ drive_url: l.drive_url!, observaciones: obs.replace(/^\[carpeta\]\s*/, ''), deCarpeta: obs.startsWith('[carpeta]') })
+    out.push({
+      drive_url: l.drive_url!, observaciones: obs.replace(/^\[carpeta\]\s*/, ''), deCarpeta: obs.startsWith('[carpeta]'),
+      monto_pdf: l.monto_pdf == null || l.monto_pdf === '' ? null : Number(l.monto_pdf),
+    })
   }
   return out
 }
@@ -355,4 +363,56 @@ export function textoPedidoFacturas(filas: readonly FilaPedido[]): string {
     : '$ ' + Math.abs(Number(n)).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const orden = [...filas].sort((a, b) => (a.fecha_emision || '').localeCompare(b.fecha_emision || ''))
   return ['Facturas faltantes', '', ...orden.map(f => `${fecha(f.fecha_emision)} · ${f.proveedor} · ${f.comprobante} · ${importe(f.imp_total)}`)].join('\n')
+}
+
+// ── «No es ésta» y la última búsqueda por fuente (A-FEAT-1287, usuario 2026-10-20) ─────────────
+
+/** Los renglones del log que salen de la carpeta del mes llevan este prefijo; el resto es del mail. */
+export const PREFIJO_CARPETA = '[carpeta]'
+
+/**
+ * Lo que el usuario descartó para una factura con «No es ésta» (renglón `descartado` del log): el
+ * archivo y, si venía del mail, el mail. No se vuelven a ofrecer como candidatos.
+ */
+export interface Descartados { drive: Set<string>; mails: Set<string> }
+export function descartadosDelLog(logs: ReadonlyArray<{ resultado?: string | null; drive_url?: string | null; gmail_message_id?: string | null }>): Descartados {
+  const d: Descartados = { drive: new Set(), mails: new Set() }
+  for (const l of logs) {
+    if (l.resultado !== 'descartado') continue
+    if (l.drive_url) d.drive.add(l.drive_url)
+    if (l.gmail_message_id) d.mails.add(l.gmail_message_id)
+  }
+  return d
+}
+export function esDescartado(c: { drive_url?: string | null; gmail_message_id?: string | null }, d: Descartados): boolean {
+  return (!!c.drive_url && d.drive.has(c.drive_url)) || (!!c.gmail_message_id && d.mails.has(c.gmail_message_id))
+}
+
+/** Sólo cuentan las búsquedas que miraron algo: no los errores, ni «proveedor sin configurar», ni los descartes. */
+const RESULTADOS_DE_BUSQUEDA = new Set(['descargado', 'revisar', 'no_encontrado'])
+export interface UltimaBusqueda { carpeta?: string; mail?: string }
+
+/** Por factura: cuándo se buscó por última vez en la carpeta y cuándo en el mail (instantes ISO). */
+export function ultimasBusquedas(logs: ReadonlyArray<{ factura_id: string; fecha_hora?: string | null; resultado?: string | null; observaciones?: string | null }>): Map<string, UltimaBusqueda> {
+  const out = new Map<string, UltimaBusqueda>()
+  for (const l of logs) {
+    if (!l.fecha_hora || !RESULTADOS_DE_BUSQUEDA.has(l.resultado || '')) continue
+    const fuente: keyof UltimaBusqueda = (l.observaciones || '').startsWith(PREFIJO_CARPETA) ? 'carpeta' : 'mail'
+    const u = out.get(l.factura_id) || {}
+    const previa = u[fuente]
+    if (!previa || Date.parse(l.fecha_hora) > Date.parse(previa)) u[fuente] = l.fecha_hora
+    out.set(l.factura_id, u)
+  }
+  return out
+}
+
+/** Para un grupo de facturas (lo que se ve en la lista): la búsqueda más reciente por fuente y cuántas nunca se buscaron ahí. */
+export function resumenUltimas(ids: readonly string[], ultimas: ReadonlyMap<string, UltimaBusqueda>): { carpeta?: string; mail?: string; sinCarpeta: number; sinMail: number } {
+  const r: { carpeta?: string; mail?: string; sinCarpeta: number; sinMail: number } = { sinCarpeta: 0, sinMail: 0 }
+  for (const id of ids) {
+    const u = ultimas.get(id)
+    if (u?.carpeta) { if (!r.carpeta || Date.parse(u.carpeta) > Date.parse(r.carpeta)) r.carpeta = u.carpeta } else r.sinCarpeta++
+    if (u?.mail) { if (!r.mail || Date.parse(u.mail) > Date.parse(r.mail)) r.mail = u.mail } else r.sinMail++
+  }
+  return r
 }

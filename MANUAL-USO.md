@@ -1371,6 +1371,12 @@ Desde el informe también podés:
   *«Facturas faltantes»* con una fila por factura — fecha · proveedor · comprobante · importe — para pegar en un mail o WhatsApp.
 - En el pedido, **Todas** / **Ninguna** tilda o destilda todas las que se pueden reclamar.
 
+**Dónde buscar**: al lado de Cancelar elegís **Carpeta y mail** (lo normal), **Sólo carpeta** (lo que no está queda como estaba) o **Sólo mail**. Arriba de la lista se ve **cuándo se buscó por última vez** en la carpeta y en el mail, y en cada fila la columna **Últ. carpeta · mail**. Las facturas en **VER** no se listan (ya tienen un candidato): un aviso dice cuántas hay.
+
+**«No es ésta»**: en una factura en **VER**, el **✓** muestra la factura de ARCA (fecha, importe) y, en cada candidato, el importe que leyó la app. Si el archivo no es, **No es ésta** → motivo (opcional) → **Descartar**. Queda en el historial de búsquedas, ese archivo no se vuelve a ofrecer, y si no queda ningún candidato la factura pasa a **NO Mail** para volver a buscarla. Ningún archivo se borra.
+
+**Filtro Estado FC**: en los filtros de Facturas ARCA, para ver sólo las Portal, VER, NO Mail, etc.
+
 **→ Portal** está en la lista de **Buscar PDFs**, al lado del estado (antes de buscar): el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. Sirve para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
 
 Mientras mira la carpeta, el cartel dice qué mes está leyendo y cuántos archivos van. Si se corta la conexión, la factura
