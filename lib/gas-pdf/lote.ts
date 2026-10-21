@@ -176,9 +176,27 @@ export interface HallazgoCarpeta {
   tambien?: string[]
   /** Por qué es dudoso: «el archivo es nota de crédito…», «no se encontró la fecha…» */
   motivos?: string[]
+  /** Lo que dice el archivo (GAS ≥ 0.19.0): para decidir al revisar sin abrirlo a ciegas */
+  leido?: LeidoDelArchivo
 }
 
-export interface CandidatoArchivo { drive_url: string; archivo: string; motivo: string }
+export interface LeidoDelArchivo { tipo?: string | null; monto?: number | null; fechas?: string[] }
+
+export interface CandidatoArchivo { drive_url: string; archivo: string; motivo: string; leido?: LeidoDelArchivo }
+
+/**
+ * «El archivo dice: factura · $ 1.234,56 · fechas 03/03/2026, 30/03/2026» — lo que se le muestra al
+ * usuario al lado de lo que dice ARCA, cuando un candidato «casi coincide» (usuario 2026-10-21: «sólo
+ * veo el número de factura… no tengo cómo saber si es correcto»).
+ */
+export function textoLeido(l: LeidoDelArchivo | null | undefined): string {
+  if (!l) return ''
+  const partes: string[] = []
+  partes.push(l.tipo || 'tipo no leído')
+  partes.push(l.monto == null ? 'importe no leído' : '$ ' + Math.abs(Number(l.monto)).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+  partes.push(l.fechas && l.fechas.length ? `fecha${l.fechas.length > 1 ? 's' : ''} ${l.fechas.join(', ')}` : 'sin fechas legibles')
+  return 'El archivo dice: ' + partes.join(' · ')
+}
 
 export interface DecisionCarpeta {
   factura_id: string
@@ -229,7 +247,7 @@ export function decidirVinculosCarpeta(
     if (!r) continue
     const candidatos: CandidatoArchivo[] = [
       ...[...r.exactos.values()].map(h => ({ drive_url: h.drive_url, archivo: h.archivo, motivo: 'coinciden los cinco datos' })),
-      ...[...r.dudosos.values()].map(h => ({ drive_url: h.drive_url, archivo: h.archivo, motivo: (h.motivos || []).join(' · ') || 'dudoso' })),
+      ...[...r.dudosos.values()].map(h => ({ drive_url: h.drive_url, archivo: h.archivo, motivo: (h.motivos || []).join(' · ') || 'dudoso', leido: h.leido })),
     ]
     if (candidatos.length === 0) continue
     if (r.exactos.size === 1 && r.dudosos.size === 0 && !r.compartido) {
@@ -257,8 +275,8 @@ export interface ItemInforme {
   factura: string
   proveedor: string
   proceso: ProcesoInforme
-  /** El archivo vinculado, o los candidatos a elegir */
-  links: Array<{ url: string; rotulo: string }>
+  /** El archivo vinculado, o los candidatos a elegir (con lo que dice el archivo, si se leyó) */
+  links: Array<{ url: string; rotulo: string; leido?: string }>
   detalle?: string
 }
 
@@ -359,8 +377,11 @@ export interface FilaPedido {
   imp_total?: number | null
 }
 
-/** Las facturas del informe que se pueden reclamar: lo que no se encontró, no tenía dónde buscarse o falló. */
-export const SE_RECLAMA: ReadonlySet<ProcesoInforme> = new Set<ProcesoInforme>(['no_encontrada', 'sin_fuente', 'error', 'otro'])
+/** Las facturas del informe que se pueden reclamar al proveedor: lo que no se encontró, no tenía dónde buscarse o quedó a revisar. */
+// ⚠️ cambió 2026-10-21 (usuario): un ERROR no se pide, se reintenta («error justamente es error, no
+// quisiera pedirlas sino intentar buscarlas de nuevo»); y SÍ se pueden pedir las a revisar y las que no
+// estaban en la carpeta.
+export const SE_RECLAMA: ReadonlySet<ProcesoInforme> = new Set<ProcesoInforme>(['no_encontrada', 'no_en_carpeta', 'sin_fuente', 'revisar', 'otro'])
 
 /**
  * El texto para pedir las facturas que faltan, listo para pegar en un mail o un WhatsApp:

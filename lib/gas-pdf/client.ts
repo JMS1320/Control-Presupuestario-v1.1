@@ -10,7 +10,7 @@ import type {
   FcEstado,
   ResumenItem,
 } from './types'
-import { agruparPorCarpeta, listasTrasCarpeta, decidirVinculosCarpeta, rotuloFactura, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
+import { agruparPorCarpeta, listasTrasCarpeta, decidirVinculosCarpeta, rotuloFactura, textoLeido, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
 import { cruzarConInventario, barrerReenvios, cerrarNoEncontradas, type AvanceBarrido } from './barrido'
 import { hoyArgentina } from '@/lib/fechas'
 
@@ -59,8 +59,12 @@ export interface ProgresoLote {
   fase?: 'carpeta' | 'inventario' | 'mail' | 'reenvios'
   /** Avance de la lectura de reenvíos (A-FEAT-1287, 2026-10-20) */
   reenviosAvance?: AvanceBarrido
-  /** Si la carpeta no se pudo leer: el motivo. Esas facturas igual salen al mail */
+  /** Si la carpeta no se pudo leer: el motivo. Esas facturas igual salen al mail (salvo «sólo carpeta») */
   errorCarpeta?: string
+  /** Dónde se buscó: para que los carteles y el «reintentar» digan lo que de verdad se hizo */
+  donde?: 'ambos' | 'carpeta' | 'mail'
+  /** Archivos de la carpeta que no se pudieron leer (tardaron demasiado o fallaron): se abren a mano */
+  archivosNoLeidos?: ArchivoNoLeido[]
   /** Avance de la etapa carpeta: qué mes está leyendo y cuántos archivos van (el OCR es lento) */
   carpetaAvance?: { carpeta: string; nroCarpeta: number; totalCarpetas: number; leidos: number; restantes: number }
   actual?: {
@@ -75,6 +79,8 @@ export interface ProgresoLote {
   /** El informe por factura, agrupable por proceso, con el link de cada archivo (A-FEAT-1287) */
   informe?: ItemInforme[]
 }
+
+export interface ArchivoNoLeido { carpeta: string; archivo: string; url: string; motivo: string }
 
 /** Inicia ProgresoLote vacío */
 function nuevoProgreso(loteId: string, total: number): ProgresoLote {
@@ -188,6 +194,20 @@ function aItemInforme(out: ApiBuscarPdfOutput, f: FacturaParaCarpeta | undefined
 
 interface DebugItem { factura?: string; resultado?: string; obs?: string }
 
+/**
+ * Lo del informe que el mail resumen no traía (usuario 2026-10-21: «no muestra las que salieron con
+ * error»): errores, no están en la carpeta, sin terminar y no encontradas, con su motivo. Lo vinculado
+ * y lo a revisar ya van en `resultados`, con el mail de donde vino.
+ */
+function faltantesParaElMail(informe: readonly ItemInforme[], empresa: Empresa): ResumenItem[] {
+  const status: Partial<Record<ItemInforme['proceso'], ResumenItem['status']>> = {
+    error: 'error', no_en_carpeta: 'no_en_carpeta', sin_terminar: 'sin_terminar', no_encontrada: 'no_encontrada', sin_fuente: 'no_encontrada',
+  }
+  return informe.filter(it => status[it.proceso]).map(it => ({
+    empresa, status: status[it.proceso]!, factura: it.factura, proveedor: it.proveedor, observaciones: it.detalle,
+  }))
+}
+
 /** Manda el mail resumen del lote SIEMPRE (aunque 0 hallazgos: incluye totales como instancia de
  *  control + una sección de debug por factura). No rompe el lote si falla, pero REPORTA el estado
  *  (antes se tragaba el error en silencio → imposible saber por qué no llegaba el mail). */
@@ -231,6 +251,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
 
   // ── 1 · Primero la carpeta (A-FEAT-1287) ──
   const donde = opts.donde ?? 'ambos'
+  progreso = { ...progreso, donde }
   let pendientes = opts.facturaIds
   let deCarpeta: Awaited<ReturnType<typeof vincularDesdeCarpetas>> | null = null
   if (donde !== 'mail' && opts.facturas && opts.facturas.length > 0) {
@@ -252,7 +273,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
         proceso: d.accion === 'vincular' ? 'carpeta' : 'revisar',
         links: d.accion === 'vincular' && d.drive_url
           ? [{ url: d.drive_url, rotulo: d.archivo || 'PDF' }]
-          : d.candidatos.map((c, i) => ({ url: c.drive_url, rotulo: d.candidatos.length > 1 ? `candidato ${i + 1}` : 'candidato' })),
+          : d.candidatos.map((c, i) => ({ url: c.drive_url, rotulo: d.candidatos.length > 1 ? `candidato ${i + 1}` : 'candidato', leido: textoLeido(c.leido) || undefined })),
         detalle: d.accion === 'vincular' ? d.archivo : d.motivo,
       }
       informe.push(item)
@@ -264,7 +285,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
       })
     }
     const nV = deCarpeta.vinculadas.size, nR = deCarpeta.aRevisar.size
-    progreso = { ...progreso, enCarpeta: nV, paraRevisar: nR, procesadas: nV + nR, errorCarpeta: deCarpeta.error, informe: [...informe] }
+    progreso = { ...progreso, enCarpeta: nV, paraRevisar: nR, procesadas: nV + nR, errorCarpeta: deCarpeta.error, archivosNoLeidos: deCarpeta.noLeidos, informe: [...informe] }
   }
 
   // Sólo carpeta: lo que no estaba no sale al mail y queda como estaba (usuario 2026-10-20)
@@ -273,11 +294,14 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     for (const id of pendientes) {
       const f = facturaDe(id)
       const conError = !deCarpeta || deCarpeta.conError.has(id)
+      const incompleta = !!deCarpeta?.incompletas.has(id)
       if (conError) errores++; else otros++
       informe.push({
         factura_id: id, factura: rotuloFactura(f, id), proveedor: f?.denominacion_emisor || '',
         proceso: conError ? 'error' : 'no_en_carpeta', links: [],
-        detalle: conError ? (deCarpeta?.error || 'No se pudo leer la carpeta') : 'No se buscó en el mail',
+        detalle: conError ? (deCarpeta?.error || 'No se pudo leer la carpeta')
+          : incompleta ? 'No apareció, pero hay archivos de su carpeta que no se pudieron leer (están al final del informe): puede ser uno de ésos. No se buscó en el mail.'
+            : 'No se buscó en el mail',
       })
     }
     progreso = { ...progreso, procesadas: progreso.total, otros: progreso.otros + otros, errores: progreso.errores + errores, informe: [...informe] }
@@ -391,7 +415,7 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   }
 
   if (opts.enviarResumen !== false) {
-    const res = await enviarResumenLote(resultados, progreso, debug)
+    const res = await enviarResumenLote([...resultados, ...faltantesParaElMail(informe, opts.empresa)], progreso, debug)
     progreso = { ...progreso, resumenEnviado: res.enviado, resumenError: res.error }
   }
   progreso = { ...progreso, finalizado: true, cancelado: opts.isCancelled?.() || undefined }
@@ -416,12 +440,15 @@ export async function vincularDesdeCarpetas(
   isCancelled?: () => boolean,
   loteId?: string,
   onAvance?: (av: NonNullable<ProgresoLote['carpetaAvance']>) => void,
-): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string; conError: Set<string>; descartados: Set<string> }> {
+): Promise<{ vinculadas: Set<string>; aRevisar: Set<string>; decisiones: DecisionCarpeta[]; error?: string; conError: Set<string>; descartados: Set<string>; noLeidos: ArchivoNoLeido[]; incompletas: Set<string> }> {
   const exactos: HallazgoCarpeta[] = []
   const dudosos: HallazgoCarpeta[] = []
   let error: string | undefined
   // Facturas cuya carpeta no se pudo leer entera: no se puede decir que «no están»
   const conError = new Set<string>()
+  // Archivos que no se pudieron leer, y las facturas de esas carpetas: de ésas no se puede afirmar «no está»
+  const noLeidos: ArchivoNoLeido[] = []
+  const incompletas = new Set<string>()
   const carpetas = agruparPorCarpeta(facturas)
   const todos = facturas.map(f => f.id)
   const vinculadas = new Set<string>()
@@ -435,7 +462,7 @@ export async function vincularDesdeCarpetas(
     // Con TODO el lote (un archivo que sirve a otra factura no se vincula solo), pero sólo para las listas
     const decs = decidirVinculosCarpeta(todos, exactos, dudosos).filter(d => enLista.has(d.factura_id))
     const decididas = new Set(decs.map(d => d.factura_id))
-    const sinHallazgo = listas.filter(id => !decididas.has(id))
+    const sinHallazgo = listas.filter(id => !decididas.has(id) && !incompletas.has(id))
     try {
       const r = await fetch('/api/gas/auditar-periodo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -459,44 +486,60 @@ export async function vincularDesdeCarpetas(
   }
   for (const [nc, carpeta] of carpetas.entries()) {
     if (isCancelled?.()) break
-    const skip = new Set<string>()
     const rotulo = `${String(carpeta.mes).padStart(2, '0')}/${carpeta.anio}`
-    let leidos = 0
     onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos: 0, restantes: 0 })
-    for (let guard = 0; guard < 200; guard++) {
+    const pedir = async (extra: Record<string, unknown>) => {
+      try {
+        const r = await fetch('/api/gas/auditar-periodo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa, anio: carpeta.anio, mes: carpeta.mes, factura_ids: carpeta.ids, ...extra }),
+        })
+        const txt = await r.text()
+        try { return JSON.parse(txt) } catch { return { ok: false, error: `HTTP ${r.status} — la respuesta no es JSON: ${txt.slice(0, 160)}` } }
+      } catch (e) {
+        return { ok: false, error: (e as Error).message || 'Error de red' }
+      }
+    }
+    // 1 · Qué archivos hay (sin leerlos), ya sin los vinculados a otra factura. GAS ≥ 0.19.0.
+    const lista = await pedir({ listar: true })
+    if (!lista.ok) {
+      error = `Carpeta ${rotulo}: no se pudo listar (${lista.error || 'error'})`
+      for (const id of carpeta.ids) conError.add(id)
+      continue
+    }
+    // 2 · Se leen EXACTAMENTE esos, de a 3; si una tanda falla, de a uno; el que igual no se puede leer
+    //     se anota y se sigue. Antes, un archivo lento trababa la carpeta entera (3/2026: 49 facturas en error).
+    let pend: Array<{ file_id: string; archivo: string; url: string }> = lista.existe === false ? [] : (lista.archivos || [])
+    let leidos = 0
+    const sumar = (data: any) => {
+      for (const m of (data.matched || []) as HallazgoCarpeta[]) exactos.push(m)
+      for (const d of (data.dudosos || []) as HallazgoCarpeta[]) dudosos.push(d)
+    }
+    while (pend.length > 0) {
       if (isCancelled?.()) break
-      const pedir = async (cuantos: number) => {
-        try {
-          const r = await fetch('/api/gas/auditar-periodo', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ empresa, anio: carpeta.anio, mes: carpeta.mes, factura_ids: carpeta.ids, skip_file_ids: [...skip], max_files: cuantos }),
-          })
-          const txt = await r.text()
-          try { return JSON.parse(txt) } catch { return { ok: false, error: `HTTP ${r.status} — la respuesta no es JSON: ${txt.slice(0, 160)}` } }
-        } catch (e) {
-          return { ok: false, error: (e as Error).message || 'Error de red' }
+      onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos, restantes: pend.length })
+      const tanda = pend.slice(0, 3)
+      const data = await pedir({ file_ids: tanda.map(a => a.file_id) })
+      if (data.ok) sumar(data)
+      else {
+        for (const a of tanda) {
+          if (isCancelled?.()) break
+          const d1 = await pedir({ file_ids: [a.file_id] })
+          if (d1.ok) sumar(d1)
+          else {
+            noLeidos.push({ carpeta: rotulo, archivo: a.archivo, url: a.url, motivo: d1.error || 'no se pudo leer' })
+            for (const id of carpeta.ids) incompletas.add(id)
+          }
         }
       }
-      // Misma tanda que Subdiarios (4) y mismo reintento con 1 si falla
-      let data = await pedir(4)
-      if (!data.ok) data = await pedir(1)
-      if (!data.ok) {
-        error = `Carpeta ${carpeta.mes}/${carpeta.anio}: ${data.error || 'error'}`
-        for (const id of carpeta.ids) conError.add(id)
-        break
-      }
-      if (data.existe === false) break
-      for (const m of (data.matched || []) as HallazgoCarpeta[]) { if (m.file_id) skip.add(m.file_id); exactos.push(m) }
-      for (const d of (data.dudosos || []) as HallazgoCarpeta[]) dudosos.push(d)
-      for (const h of (data.huerfanos || [])) if (h.file_id) skip.add(h.file_id)
-      leidos += Number(data.procesados) || 0
-      onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos, restantes: Number(data.restantes) || 0 })
-      if (data.completo) break
+      leidos += tanda.length
+      pend = pend.slice(tanda.length)
     }
+    onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos, restantes: pend.length })
     // Carpeta terminada (no cortada por cancelación): se aplican las facturas cuya última carpeta era ésta.
     // Las de una carpeta que no se pudo leer no se afirman (siguen al mail con el motivo).
     if (isCancelled?.()) break
     await aplicar(listasTrasCarpeta(carpetas, nc, conError))
   }
-  return { vinculadas, aRevisar, decisiones, error, conError, descartados }
+  return { vinculadas, aRevisar, decisiones, error, conError, descartados, noLeidos, incompletas }
 }

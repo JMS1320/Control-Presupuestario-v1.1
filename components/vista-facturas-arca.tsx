@@ -2054,7 +2054,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Búsqueda de PDFs después del import: la piden las filas tildadas «Buscar PDF» en la imputación
   // (A-FEAT-1287 — antes dependía de NEXT_PUBLIC_GAS_AUTODISPARO_IMPORT, que nunca se prendió).
   // Busca SOLO las facturas recién importadas, primero en la carpeta del mes y después en el mail.
-  const dispararBusquedaPostImport = async (ids: string[]) => {
+  // También el «🔁 Volver a buscar las con error» del informe, con la misma opción de dónde buscar.
+  const dispararBusquedaPostImport = async (ids: string[], donde?: 'ambos' | 'carpeta' | 'mail') => {
     try {
       if (!ids || ids.length === 0) return
       cancelarPdfRef.current = false
@@ -2068,6 +2069,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       await buscarPdfLote({
         empresa: empresa as 'MSA' | 'PAM' | 'MA',
         facturaIds: ids,
+        donde,
         // la «ñ» de `año_contable` confunde al tipado del select: se declara a mano
         facturas: (conPeriodo as unknown as FacturaParaCarpeta[] | null) || undefined,
         onProgreso: setProgresoPdf,
@@ -12348,7 +12350,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       <InformeLote open={verInformeLote} informe={progresoPdf?.informe || []} onClose={() => setVerInformeLote(false)}
         onConfirmar={(it, url) => confirmarConLink({ id: it.factura_id }, url, `¿Confirmás que el archivo es el de ${it.proveedor || 'esta factura'} ${it.factura}? Pasa de APP a Confirmada.`)}
         datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total } : undefined }}
-        onPedirProveedor={(ids) => setPedirFacturas(ids)} />
+        onPedirProveedor={(ids) => setPedirFacturas(ids)}
+        archivosNoLeidos={progresoPdf?.archivosNoLeidos}
+        onElegirCandidato={async (it, url) => {
+          const r = await fetch('/api/gas/confirmar-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ factura_id: it.factura_id, empresa, drive_url: url }) })
+          const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+          if (!d.ok) { toast.error('No se pudo confirmar: ' + (d.error || '')); return false }
+          alConfirmarCandidato(it.factura_id, d.drive_url || url)
+          return true
+        }}
+        onDescartarCandidato={async (it, url) => {
+          const r = await fetch('/api/gas/descartar-candidato', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ factura_id: it.factura_id, empresa, drive_url: url, motivo: 'desde el informe' }) })
+          const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+          if (!d.ok) { toast.error('No se pudo descartar: ' + (d.error || '')); return null }
+          if (d.fc_nuevo) {
+            setFacturas(prev => prev.map(x => x.id === it.factura_id ? { ...x, fc: d.fc_nuevo } : x))
+            setFacturasOriginales(prev => prev.map(x => x.id === it.factura_id ? { ...x, fc: d.fc_nuevo } : x))
+          }
+          toast.success(d.fc_nuevo ? `Descartado. No quedan candidatos: pasó a ${d.fc_nuevo}.` : 'Descartado.')
+          return Number(d.quedan ?? 0)
+        }}
+        onReintentar={(ids) => {
+          const donde = progresoPdf?.donde
+          setVerInformeLote(false)
+          dispararBusquedaPostImport(ids, donde)
+        }} />
 
       {/* 📮 Pedir la factura al proveedor (A-FEAT-1313) — desde Buscar PDFs o desde el informe */}
       <ModalPedirFacturas open={!!pedirFacturas} empresa={empresa as 'MSA' | 'PAM' | 'MA'} facturaIds={pedirFacturas || []}

@@ -17,7 +17,7 @@ const GS = `${B}/gas-buscar-pdf/Main.gs`
 if (!fs.existsSync(GS)) { console.log(`No está ${GS}. Salteado.`); process.exit(0) }
 
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["evaluarCoincidencia", "tipoDocDeDescripcion", "tipoDocDeTexto", "nombreTipoDoc", "fechaEnTexto", "normalizarTexto", "extraerMontosPdf", "facturaCoincide"]
+const necesarias = ["evaluarCoincidencia", "tipoDocDeDescripcion", "tipoDocDeTexto", "nombreTipoDoc", "fechaEnTexto", "fechasDelTexto", "normalizarTexto", "extraerMontosPdf", "facturaCoincide"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -88,6 +88,13 @@ chequear("Tipo de la descripción de ARCA", "FC|NC|ND|FC|null",
   ["Factura B", "Nota de Crédito C", "Nota de Debito A", "Recibo C", ""].map(d => String(g.tipoDocDeDescripcion(d))).join("|"))
 chequear("Tipo leído del archivo", "FC|NC|ND|FC|null",
   ["FACTURA B", "NOTA DE CREDITO B — Factura asociada", "Nota de Débito", "TICKET", "comprobante"].map(t => String(g.tipoDocDeTexto(t))).join("|"))
+
+// ── Lo que dice el archivo (v0.19.0): para revisar sin abrirlo a ciegas ──
+chequear("Fechas leídas del texto (sin repetir, año de 2 cifras, sin días imposibles)", "03/03/2026|30/03/2026|01/04/2026",
+  g.fechasDelTexto("Fecha 03/03/2026 · Vto: 30-03-26 · 03/03/2026 · 45/13/2026 · Período 1.4.2026").join("|"))
+const evLeido = ev("CUIT 20103619115 Factura A 00010-00006115 Fecha 04/03/2026 Total 1068365,63", { cuit: "20103619115", punto_venta: 10, numero_desde: 6115, imp_total: 1068365.63, tipo: "Factura A", fecha_emision: "2026-03-05" })
+chequear("Un dudoso dice lo que leyó: tipo, monto y la fecha que SÍ tiene", "dudoso|factura|1068365.63|04/03/2026",
+  [evLeido.nivel, evLeido.leido?.tipo, evLeido.leido?.monto, (evLeido.leido?.fechas || []).join(",")].join("|"))
 
 const mal = r.filter(x => !x.ok)
 for (const x of r) {

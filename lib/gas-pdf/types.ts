@@ -111,8 +111,8 @@ export interface ApiBuscarPdfOutput {
 /** Un item del resumen del lote (lo arma el cliente, lo envía el GAS) */
 export interface ResumenItem {
   empresa: Empresa
-  /** 'carpeta' = ya estaba archivada y se vinculó sin ir al mail */
-  status: GasStatus | 'carpeta'
+  /** 'carpeta' = ya estaba archivada y se vinculó sin ir al mail · los otros tres, sólo para el mail resumen */
+  status: GasStatus | 'carpeta' | 'no_en_carpeta' | 'sin_terminar'
   factura?: string
   proveedor?: string
   asunto?: string

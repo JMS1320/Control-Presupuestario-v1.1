@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
 import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
 import { armarPedidoProveedor, haceCuanto } from "@/lib/gas-pdf/pedido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
@@ -1143,6 +1143,16 @@ export function correrCasos(): Resultado[] {
   const vistaInc = carpetasInc.map((_, i) => `${i}:[${listasTrasCarpeta(carpetasInc, i, new Set(["err"])).join(",")}]`).join(" ")
   chequear("Buscador de PDFs — carpeta: se vincula a medida que se lee", "🔴 Terminado julio no se decide nada (falta agosto); terminado agosto, la de julio; terminado septiembre, la de agosto; la de una carpeta que falló, nunca",
     "0:[] 1:[jul] 2:[ago]", vistaInc, vistaInc === "0:[] 1:[jul] 2:[ago]", "A-FEAT-1287")
+
+  // A revisar: lo que dice el archivo al lado de ARCA (usuario 2026-10-21: «sólo veo el número de factura»)
+  const vistaLeido = [
+    textoLeido({ tipo: "factura", monto: -1234.5, fechas: ["04/03/2026", "30/03/2026"] }),
+    textoLeido({ tipo: null, monto: null, fechas: [] }),
+    textoLeido(undefined),
+  ].join(" | ")
+  const esperadoLeido = "El archivo dice: factura · $ 1.234,50 · fechas 04/03/2026, 30/03/2026 | El archivo dice: tipo no leído · importe no leído · sin fechas legibles | "
+  chequear("Buscador de PDFs — a revisar: qué dice el archivo", "🔴 Tipo, importe (positivo) y las fechas que SÍ tiene el archivo; lo que no se leyó lo dice",
+    esperadoLeido, vistaLeido, vistaLeido === esperadoLeido, "A-FEAT-1287")
 
   // 📮 Pedir la factura al proveedor (A-FEAT-1313, texto acordado 2026-10-21)
   const p1 = armarPedidoProveedor("MSA", [{ fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 1234567.89 }])

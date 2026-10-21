@@ -41,7 +41,7 @@ function carpetaDe(e: Empresa): string | undefined {
 }
 
 interface MatchItem { factura_id: string; drive_url: string; archivo: string; file_id: string; tambien?: string[] }
-interface DudosoItem extends MatchItem { motivos?: string[] }
+interface DudosoItem extends MatchItem { motivos?: string[]; leido?: { tipo?: string | null; monto?: number | null; fechas?: string[] } }
 
 /**
  * 🔗 Aplica lo que decidió el buscador de PDFs sobre la carpeta (A-FEAT-1287, 2026-10-20). Va en un
@@ -143,6 +143,10 @@ export async function POST(request: Request) {
       aplicar?: DecisionCarpeta[]; lote_id?: string
       /** Las que se leyeron enteras y no aparecieron: sólo dejan su renglón en el log */
       sin_hallazgo?: string[]
+      /** Buscador (GAS ≥ 0.19.0): primero LISTAR los archivos de la carpeta sin leerlos, ya sin los vinculados… */
+      listar?: boolean
+      /** …y después leer EXACTAMENTE estos (de a pocos; uno que se traba no frena a los demás) */
+      file_ids?: string[]
     }
     const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
@@ -208,12 +212,25 @@ export async function POST(request: Request) {
       tipo: f.tipo_comprobante_desc, fecha_emision: f.fecha_emision,
     }))
 
+    // Listar (sin OCR): qué archivos hay en la carpeta que no estén ya vinculados a ninguna factura
+    if (porIds && body.listar) {
+      const l = (await pedirAlGas(url, { _token: token, accion: 'listar', carpeta_drive_id: carpeta, subcarpetas }, 'listar la carpeta')) as {
+        status?: string; existe?: boolean; observaciones?: string; archivos?: Array<{ file_id: string; archivo: string; url: string }>
+      }
+      if (l.status !== 'ok') return NextResponse.json({ ok: false, error: l.observaciones || 'El GAS no pudo listar la carpeta' }, { status: 502 })
+      if (l.existe === false) return NextResponse.json({ ok: true, empresa, periodo, existe: false, archivos: [], ya_vinculados: 0 })
+      const vinc = new Set(skipExtra)
+      const archivos = (l.archivos || []).filter(a => !vinc.has(a.file_id))
+      return NextResponse.json({ ok: true, empresa, periodo, existe: true, archivos, ya_vinculados: (l.archivos || []).length - archivos.length })
+    }
+
     // Una tanda
-    const cuantos = body.max_files || 10
+    const cuantos = body.file_ids?.length || body.max_files || 10
     const audit = (await pedirAlGas(url, {
       _token: token, accion: 'auditar', empresa, periodo,
       carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
       skip_file_ids: [...(body.skip_file_ids || []), ...skipExtra], max_files: cuantos,
+      ...(Array.isArray(body.file_ids) ? { solo_file_ids: body.file_ids } : {}),
     }, `tanda de ${cuantos} archivo(s)`)) as {
       status?: string; existe?: boolean; observaciones?: string
       matched?: MatchItem[]; dudosos?: DudosoItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]

@@ -143,7 +143,7 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onV
 
       {progreso.errorCarpeta && (
         <div className="mt-2 text-[11px] text-orange-700 bg-orange-50 border border-orange-200 rounded p-2">
-          🗂️ No se pudo leer una carpeta — esas facturas se buscaron igual en el mail. {progreso.errorCarpeta}
+          🗂️ No se pudo leer una carpeta{progreso.donde === 'carpeta' ? ' — esas facturas quedaron como estaban (búsqueda sólo en carpeta).' : ' — esas facturas se buscaron igual en el mail.'} {progreso.errorCarpeta}
         </div>
       )}
 
