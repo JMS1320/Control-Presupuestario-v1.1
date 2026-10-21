@@ -57,6 +57,7 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -7102,6 +7103,38 @@ export function correrCasos(): Resultado[] {
     ], new Set(["pagadaCC"]))
     chequear("Doble audit", "En la tarjeta se ofrecen las facturas «anteriores» que nadie pagó todavía; una ya atada a otro movimiento no",
       "coop · medicus", pool.map(f => f.id).join(" · "), pool.map(f => f.id).join("|") === "coop|medicus", "A-DEC-1014")
+  }
+
+  // ══ 🧾 IMPUESTOS VENCIDOS O PRÓXIMOS A VENCER — aviso en Principal (A-FEAT-1319) ═══════════════
+  {
+    const tpl = (o: Partial<CuotaImpuesto["template"]> = {}): CuotaImpuesto["template"] => ({
+      nombre_referencia: "Inmobiliario Casco", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", categ: "Impuesto inmobiliario", alertas: "30 dias antes", ...o,
+    })
+    const cuota = (id: string, estado: string, venc: string | null, o: Partial<CuotaImpuesto> = {}): CuotaImpuesto =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto: 1000, template: tpl(), ...o })
+    const hoy = "2026-10-21"
+    const r = impuestosAAvisar([
+      cuota("vencido", "pendiente", "2026-10-10"),
+      cuota("pagar", "pagar", "2026-09-30"),
+      cuota("pagado", "pagado", "2026-10-01"),
+      cuota("debito", "debito", "2026-10-01"),                          // débito automático = pagado
+      cuota("en30", "pendiente", "2026-11-20"),                         // 30 días antes → entra
+      cuota("en31", "pendiente", "2026-11-21"),                         // fuera de la anticipación
+      cuota("iibb10", "pendiente", "2026-11-05", { template: tpl({ alertas: null, nombre_referencia: "IIBB" }) }), // 15 días, aviso por defecto 10 → no
+      cuota("iibb9", "pendiente", "2026-10-30", { template: tpl({ alertas: null, nombre_referencia: "IIBB" }) }),  // 9 días → sí
+      cuota("estimada", "pendiente", null, { fecha_estimada: "2026-10-15" }), // sin vencimiento: usa la estimada
+      cuota("luz", "pendiente", "2026-10-01", { template: tpl({ cuenta_agrupadora: "Servicios", nombre_referencia: "Luz" }) }), // no es impuesto
+      cuota("banco", "pendiente", "2026-10-01", { template: tpl({ solo_conciliacion: true }) }), // se cobra solo en el banco
+    ], hoy)
+    chequear("Impuestos", "Vencidos sin pagar (pendiente o pagar, también con fecha estimada); pagados, débito automático, servicios y sólo-conciliación no avisan",
+      "pagar · vencido · estimada", r.vencidos.map(x => x.id).join(" · "),
+      r.vencidos.map(x => x.id).join(" · ") === "pagar · vencido · estimada", "A-FEAT-1319")
+    chequear("Impuestos", "Próximos: cada template avisa con SU anticipación («30 dias antes»); sin dato, 10 días",
+      "iibb9 · en30", r.proximos.map(x => x.id).join(" · "),
+      r.proximos.map(x => x.id).join(" · ") === "iibb9 · en30", "A-FEAT-1319")
+    chequear("Impuestos", "Días de aviso: «15 dias antes» → 15 · vacío → 10 · y el vencido dice hace cuántos días",
+      "15 · 10 · -11", `${diasDeAviso("15 dias antes")} · ${diasDeAviso(null)} · ${r.vencidos.find(x => x.id === "vencido")?.dias}`,
+      diasDeAviso("15 dias antes") === 15 && diasDeAviso(null) === 10 && r.vencidos.find(x => x.id === "vencido")?.dias === -11, "A-FEAT-1319")
   }
 
   return r

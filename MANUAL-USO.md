@@ -5467,6 +5467,20 @@ Para que el **precio de cada compra** sea el real (el de la factura), con el des
 
 → A-TEST-1187
 
+### 🧾 Impuestos vencidos o por vencer (Principal) *(2026-10-21)*
+
+Es el **primer aviso de Principal**, arriba de todo. Muestra las cuotas de **impuestos** (los templates cuya
+cuenta agrupadora es «Impuestos …») que siguen **sin pagar** —en «pendiente» o «pagar»—:
+- 🛑 **en rojo, las vencidas**, con hace cuántos días venció cada una;
+- ⏰ **en amarillo, las que vencen pronto**. Cada impuesto avisa con la anticipación que tiene cargada su
+  template en *Alertas* («10 / 15 / 30 días antes»); si no tiene nada, 10 días.
+
+Si ya pagaste algo que aparece acá, **marcá la cuota como pagada** en *Egresos → Egresos sin Factura* y deja de
+aparecer. Las cuotas en «débito» (débito automático) se dan por pagadas. Si no hay nada vencido ni por vencer,
+queda una sola línea verde.
+
+→ A-TEST-1223
+
 ### 💱 NC esperadas por diferencia de cambio (Principal)
 
 Cuando pagás una factura en dólares a un TC distinto del suyo, el proveedor te debe una **NC** (pagaste a menos) o vos le debés una **ND**. La tarjeta **«NC esperadas por diferencia de cambio»** de Principal muestra cuánto se espera de cada proveedor (total USD × diferencia de TC) hasta que llega; cuando la importás de ARCA la reconoce sola y pasa a «ya llegaron». Si tu inicio está configurado, agregala desde el configurador.
