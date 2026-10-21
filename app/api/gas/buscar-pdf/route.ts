@@ -176,7 +176,9 @@ export async function POST(request: Request) {
       .map((r) => ({ email: r.email_facturacion as string, asunto: r.patron_asunto as string }))
     const puedeProveedor = !!(proveedor.gas_habilitado && proveedor.email_facturacion)
 
-    if (!puedeProveedor && recolectores.length === 0) {
+    // Buscando la RESPUESTA a un pedido, hay dónde buscar aunque el proveedor no tenga mail: las
+    // respuestas a nuestro «Pedido de factura» (A-FEAT-1313)
+    if (!puedeProveedor && recolectores.length === 0 && !body.respuesta_desde) {
       // Ni el proveedor está configurado, ni hay recolectores → no hay dónde buscar
       await supabase.schema(schema).from('comprobantes_arca')
         .update({
@@ -227,6 +229,7 @@ export async function POST(request: Request) {
       carpeta_drive_id: carpetaId,
       subcarpetas: (() => { const { anio, mes } = periodoDeArchivo(factura); return subcarpetasDelMes(empresa, anio, mes) })(),
       recolectores,                                  // catch-all: cada reenviador con su propio asunto (Jose/Andrés)
+      ...(body.respuesta_desde ? { respuesta_desde: body.respuesta_desde } : {}),
     }
 
     let gasResp: GasBuscarResponse

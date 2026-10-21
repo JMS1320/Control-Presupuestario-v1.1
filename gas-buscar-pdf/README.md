@@ -13,7 +13,8 @@ acceso a TU Gmail / TU Drive.
 > `pedir_factura` (mail al proveedor, borrador o envío; la firma viene escrita en el texto que arma la app).
 > Los reenvíos ya no se leen factura por factura: la app los recorre una vez por tramos de días y guarda lo leído
 > (`arca_pdf_inventario`, script 90). Acciones nuevas: `inventario_listar`, `inventario_leer`, `evaluar` (la regla de
-> 5 datos sobre textos ya leídos) y `guardar_adjunto`. Además: tope de 40 s en la búsqueda por factura («búsqueda
+> 5 datos sobre textos ya leídos) y `guardar_adjunto`. Del 22/10: `auditar` con `solo_file_ids` / `devolver_texto` (registro del
+> archivo digital) y la búsqueda por factura con `respuesta_desde` (la respuesta del proveedor a un pedido). Además: tope de 40 s en la búsqueda por factura («búsqueda
 > incompleta»), a Gmail se le piden sólo mails con PDF o imagen, y un PDF legible de otro comprobante ya no se
 > informa como «ilegible».
 

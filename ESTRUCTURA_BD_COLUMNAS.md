@@ -28,6 +28,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, gmail_message_id text, adjunto_idx int, hash text, nombre_archivo text, tamano int, remitente text, asunto text, fecha_mail tstz, recolector text, estado text ('leido'|'ilegible'|'copia'|'error'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text` · único `(gmail_message_id, adjunto_idx)`
 > `recolector` = la fuente: el mail del reenviador o `asunto:factura`. `copia` = el mismo archivo (hash) ya leído en otro mail. Los `error` se reintentan.
 
+### arca_pdf_archivo_digital  (2026-10-22, script 92 — A-FEAT-1287)
+`id uuid, file_id text UNIQUE, empresa text, carpeta text («2025-2026/26-03»), nombre_archivo text, url text, estado text ('leido'|'ilegible'|'error'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text`
+
 ### arca_pdf_barrido_tramo  (2026-10-20, script 90)
 `id uuid, recolector text, desde date, hasta date (inclusive), mails int, adjuntos int, hecho_at tstz, hecho_por text`
 

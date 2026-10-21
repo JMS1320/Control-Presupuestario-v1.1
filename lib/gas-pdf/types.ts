@@ -49,6 +49,7 @@ export interface GasBuscarRequest {
   carpeta_drive_id: string           // ID Drive folder (de la empresa) donde archivar
   subcarpetas?: string[]             // ruta de subcarpetas a crear/usar bajo la anterior, ej. ["2025-2026","26-06"]
   recolectores?: { email: string; asunto: string }[]  // catch-all: cada reenviador (Jose/Andrés) con su PROPIO asunto mínimo (Jose "Documento de Jose", Andrés "FC")
+  respuesta_desde?: string  // GAS ≥ 0.19.0: buscar la respuesta a un pedido de factura desde ese día
 }
 
 /** Respuesta del GAS Web App */
@@ -88,6 +89,9 @@ export interface ApiBuscarPdfInput {
   /** Buscar SÓLO en el mail del proveedor: los reenvíos se leen aparte, una vez, con el inventario
    *  (`lib/gas-pdf/barrido.ts`, A-FEAT-1287 2026-10-20). Sin esto, cada factura los vuelve a leer. */
   sin_reenvios?: boolean
+  /** «Nos mandó la factura» (A-FEAT-1313): buscar desde el día del pedido (AAAA-MM-DD) hasta hoy, en el
+   *  mail del proveedor y en las respuestas a nuestro «Pedido de factura» */
+  respuesta_desde?: string
 }
 
 /** Output del endpoint */

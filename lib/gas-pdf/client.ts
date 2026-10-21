@@ -39,6 +39,11 @@ export interface BuscarPdfLoteOptions {
    * sólo la carpeta (lo que no está queda como estaba) o sólo el mail.
    */
   donde?: 'ambos' | 'carpeta' | 'mail'
+  /**
+   * «Nos mandó la factura» (A-FEAT-1313): sólo el mail, desde el día en que se pidió cada una
+   * (`pedidoDe`: factura → AAAA-MM-DD) hasta hoy. Sin carpeta ni reenvíos; si no llegó, queda como estaba.
+   */
+  respuesta?: { pedidoDe: Record<string, string> }
 }
 
 export interface ProgresoLote {
@@ -248,6 +253,35 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
   const informe: ItemInforme[] = []
   const facturaDe = (id: string) => opts.facturas?.find(f => f.id === id)
   const debug: DebugItem[] = []   // 1 línea por factura (resultado + observación con queries) para el mail
+
+  // ── «Nos mandó la factura»: sólo la respuesta, desde el día del pedido ──
+  if (opts.respuesta) {
+    progreso = { ...progreso, fase: 'mail' }
+    opts.onProgreso?.(progreso)
+    for (let i = 0; i < opts.facturaIds.length; i++) {
+      if (opts.isCancelled?.()) { progreso = { ...progreso, cancelado: true }; break }
+      const id = opts.facturaIds[i]
+      const desde = opts.respuesta.pedidoDe[id]
+      const out = await buscarPdfFactura({ factura_id: id, empresa: opts.empresa, lote_id: loteId, sin_reenvios: true, respuesta_desde: desde }, timeout)
+      if (out.ok && (out.resultado_gas === 'no_encontrada' || out.fc_nuevo === 'Buscar')) {
+        const f = facturaDe(id)
+        informe.push({ factura_id: id, factura: out.factura_label || rotuloFactura(f, id), proveedor: out.proveedor || f?.denominacion_emisor || '', proceso: 'sin_respuesta', links: [],
+          detalle: `Se buscó desde el ${desde ? desde.split('-').reverse().join('/') : 'pedido'}: todavía no llegó` })
+        progreso = { ...progreso, procesadas: progreso.procesadas + 1, otros: progreso.otros + 1, informe: [...informe] }
+      } else {
+        progreso = actualizarProgreso(progreso, out)
+        const item = aResumenItem(out, opts.empresa)
+        if (item) resultados.push(item)
+        informe.push(aItemInforme(out, facturaDe(id)))
+        progreso = { ...progreso, informe: [...informe] }
+      }
+      opts.onProgreso?.(progreso)
+      if (i < opts.facturaIds.length - 1 && delay > 0) await new Promise(res => setTimeout(res, delay))
+    }
+    progreso = { ...progreso, finalizado: true }
+    opts.onProgreso?.(progreso)
+    return progreso
+  }
 
   // ── 1 · Primero la carpeta (A-FEAT-1287) ──
   const donde = opts.donde ?? 'ambos'

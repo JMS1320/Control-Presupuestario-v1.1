@@ -1600,6 +1600,29 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     toast.success('Confirmada: la factura quedó vinculada a ese archivo.')
   }
+  // 📨 «Nos mandó la factura» (A-FEAT-1313): busca la respuesta desde el día del pedido, sólo en el mail
+  const buscarRespuestas = async (ids: string[]) => {
+    const pedidoDe: Record<string, string> = {}
+    for (const id of ids) { const p = ultimasPdf.get(id)?.pedido; if (p) pedidoDe[id] = diaArgentino(new Date(p)) }
+    const conPedido = ids.filter(id => pedidoDe[id])
+    if (conPedido.length === 0) { toast.error('Ninguna de éstas tiene un pedido al proveedor registrado.'); return }
+    cancelarPdfRef.current = false
+    setBuscandoPdfs(true)
+    setModalBuscarPdf(false)
+    try {
+      await buscarPdfLote({
+        empresa: empresa as 'MSA' | 'PAM' | 'MA', facturaIds: conPedido, respuesta: { pedidoDe },
+        facturas: facturas.filter(f => conPedido.includes(f.id)), onProgreso: setProgresoPdf, delayMs: 1000,
+        isCancelled: () => cancelarPdfRef.current, enviarResumen: false,
+      })
+      await cargarFacturas()
+    } catch (err) {
+      toast.error('Error buscando las respuestas: ' + (err as Error).message)
+    } finally {
+      setBuscandoPdfs(false)
+    }
+  }
+
   // «Es ésta» / «No es ésta» sobre un candidato, desde el informe o desde «A confirmar» (A-FEAT-1287)
   const elegirCandidatoUrl = async (facturaId: string, url: string): Promise<boolean> => {
     const r = await fetch('/api/gas/confirmar-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -12635,7 +12658,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                                 const u = ultimasPdf.get(f.id)
                                 const dia = (iso?: string) => iso ? new Date(iso).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit' }) : '—'
                                 return <span title="carpeta · mail">🗂️ {dia(u?.carpeta)} · 📧 {dia(u?.mail)}{u?.pedido
-                                  ? <span className="block text-amber-700" title={u.pedidoBorrador ? 'Se armó el borrador del pedido (en Gmail); fijate si lo mandaste' : 'Se le pidió la factura al proveedor por mail'}>📮 {u.pedidoBorrador ? 'borrador' : 'pedida'} {haceCuanto(diaArgentino(new Date(u.pedido)), hoyArgentina())}</span>
+                                  ? <span className="block text-amber-700" title={u.pedidoBorrador ? 'Se armó el borrador del pedido (en Gmail); fijate si lo mandaste' : 'Se le pidió la factura al proveedor por mail'}>📮 {u.pedidoBorrador ? 'borrador' : 'pedida'} {haceCuanto(diaArgentino(new Date(u.pedido)), hoyArgentina())}
+                                      {' '}<button type="button" className="underline text-blue-700" disabled={buscandoPdfs}
+                                        title="Nos mandó la factura: buscarla en el mail desde el día del pedido (del proveedor o respondiendo a nuestro pedido)"
+                                        onClick={() => buscarRespuestas([f.id])}>📨 ¿llegó?</button></span>
                                   : null}</span>
                               })()}
                             </td>
@@ -12716,6 +12742,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       onClick={() => setPedirFacturas(Array.from(seleccionPdf))}>
                       📮 Pedir al proveedor ({seleccionPdf.size})
                     </Button>
+                    {(() => {
+                      const pedidas = Array.from(seleccionPdf).filter(id => ultimasPdf.get(id)?.pedido)
+                      return pedidas.length > 0 ? (
+                        <Button variant="outline" disabled={buscandoPdfs} title="Nos mandaron las facturas: buscarlas en el mail desde el día de cada pedido"
+                          onClick={() => buscarRespuestas(pedidas)}>
+                          📨 ¿Llegaron? ({pedidas.length})
+                        </Button>
+                      ) : null
+                    })()}
                     <Button
                       disabled={seleccionPdf.size === 0 || pdfVista === 'confirmar'}
                       onClick={async () => {

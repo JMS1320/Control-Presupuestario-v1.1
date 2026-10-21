@@ -1377,6 +1377,10 @@ Desde el informe también podés:
 
 **Filtro Estado FC**: en los filtros de Facturas ARCA, para ver sólo las Portal, VER, NO Mail, etc.
 
+**📨 «Nos mandó la factura»**: si pediste una factura y el proveedor contestó, en Buscar PDFs tocá **📨 ¿llegó?** al lado de *📮 pedida* (o tildá varias y **📨 ¿Llegaron?**). La app la busca en el mail desde el día del pedido, en los mails del proveedor y en cualquier respuesta a tu «Pedido de factura». Si todavía no llegó, queda como estaba.
+
+**Dónde mira en Drive**: una factura **imputada** se busca sólo en la carpeta de su subdiario; una **sin imputar**, en la de su mes de emisión y la del siguiente. Lo que la app lee de cada carpeta queda guardado: la próxima vez no lo vuelve a leer, y si una factura está guardada en otra carpeta, te avisa en **VER** cuál es.
+
 **👀 A confirmar**: en **Buscar PDFs**, el botón **👀 A confirmar (N)** muestra sólo las facturas que esperan tu sí, con el mismo subdiario y fechas: las **VER** (la app encontró uno o más archivos y no eligió: abrís cada uno, ves lo que dice al lado de lo que dice ARCA, y tocás **Es ésta** o **No es ésta**) y las **APP** (la app ya vinculó uno: abrís el PDF y **Confirmar**). Lo mismo se puede hacer desde el informe al terminar una búsqueda.
 
 **📮 Pedir la factura al proveedor**: en **Buscar PDFs** tildá las facturas y tocá **📮 Pedir al proveedor** (o, al terminar una búsqueda, desde el informe: tildá las *No encontradas*). Se arma **un mail por proveedor** con todas sus facturas (*«…en ARCA figuran estos comprobantes a nuestro nombre y no recibimos las facturas…»*), que sale de la casilla de la empresa firmado *Jose Martinez Sobrado* (con *Martinez Sobrado Agro SRL* debajo si es de MSA). Con **ver el mail** lo leés antes; **Crear borradores** los deja en Gmail para revisarlos y mandarlos vos, **Enviar** los manda directo. Los proveedores sin mail cargado aparecen aparte. Después, la lista de Buscar PDFs muestra **📮 pedida hace N días** (o *borrador*, si quedó sin mandar).
