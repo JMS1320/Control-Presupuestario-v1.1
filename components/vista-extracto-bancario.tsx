@@ -1,7 +1,7 @@
 "use client"
 
 import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
-import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
+import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
 import { hoyArgentina } from "@/lib/fechas"
 import { cerrarVentaSiSaldada, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -1106,13 +1106,39 @@ ${texto.trim()}` : texto.trim()
 
   /**
    * 💵 **A-BUG-1307 — completar en pesos los consumos en dólares de un resumen**, con el cambio REAL del
-   * pago: el débito en pesos que pagó los dólares ÷ el «SU PAGO EN USD» del resumen siguiente. Escribe los
-   * dos lados: el movimiento (débito en pesos) y, si está conciliado contra una cuota, la cuota.
+   * pago: el débito en pesos que pagó los dólares ÷ el «SU PAGO EN USD» del resumen siguiente.
+   * ⚠️ Cambió 2026-10-20 (A-FEAT-1312, usuario: *«no diría que se conviertan en pesos en el extracto sino
+   * en el template con una nueva columna de TC»*): escribe **sólo la cuota** (monto en pesos + monto_usd +
+   * tipo_cambio). El movimiento del extracto queda en dólares, como el papel del banco.
    */
   const [completandoUsd, setCompletandoUsd] = useState<string | null>(null)
+  /** 💵 A-FEAT-1312 — las cuotas de los consumos en USD (para mostrar los pesos y el TC, y saber cuáles faltan). */
+  const [cuotasUsd, setCuotasUsd] = useState<Record<string, { monto: number; monto_usd: number | null; tipo_cambio: number | null }>>({})
+  useEffect(() => {
+    const ids = Array.from(new Set((movimientos as any[])
+      .filter(m => ((Number(m.debitos_usd) || 0) > 0 || (Number(m.creditos_usd) || 0) > 0) && m.template_cuota_id)
+      .map(m => m.template_cuota_id as string)))
+    if (!ids.length) { setCuotasUsd({}); return }
+    let vivo = true
+    supabase.from('cuotas_egresos_sin_factura').select('id, monto, monto_usd, tipo_cambio').in('id', ids)
+      .then(({ data }) => {
+        if (!vivo) return
+        const m: Record<string, any> = {}
+        for (const c of (data ?? []) as any[]) m[c.id] = { monto: Number(c.monto) || 0, monto_usd: c.monto_usd != null ? Number(c.monto_usd) : null, tipo_cambio: c.tipo_cambio != null ? Number(c.tipo_cambio) : null }
+        setCuotasUsd(m)
+      })
+    return () => { vivo = false }
+  }, [movimientos])
   const completarPesosUsd = async (nr: string, movs: any[], siguiente: any[] | null) => {
+    // Todos los consumos en USD del resumen entran al cálculo (el último absorbe el redondeo contra el
+    // débito); se escriben sólo las cuotas que todavía no tienen su TC.
     const consumos = movs.filter(m => m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen'
       && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0))
+    const sinCuota = consumos.filter(m => !m.template_cuota_id)
+    if (sinCuota.length) {
+      toast.error(`Primero conciliá ${sinCuota.length === 1 ? 'el consumo' : `los ${sinCuota.length} consumos`} en dólares contra su template: los pesos y el TC se guardan en la cuota. (${sinCuota.map(m => m.descripcion).join(' · ')})`)
+      return
+    }
     const pagoUsd = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos_usd) || 0) > 0)
     const pagoPesos = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos) || 0) > 0)
     const r = pesosDeConsumosUsd({
@@ -1127,20 +1153,24 @@ ${texto.trim()}` : texto.trim()
       const m = consumos.find(c => c.id === p.id)
       return `• ${m?.descripcion ?? ''}: USD ${Number(m?.debitos_usd).toLocaleString('es-AR')} → ${formatCurrency(p.pesos)}`
     }).join('\n')
-    if (!window.confirm(`Completar en pesos con el cambio del pago:\n\nDébito del ${new Date(r.debito.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(r.debito.debitos)}\nCambio: ${r.tc.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n${lineas}\n\nSi está conciliado contra una cuota, la cuota toma el mismo importe.`)) return
+    const aEscribir = r.pesos.filter(p => {
+      const m = consumos.find(c => c.id === p.id)
+      return !(cuotasUsd[m?.template_cuota_id]?.tipo_cambio)
+    })
+    if (!aEscribir.length) { toast.info('Las cuotas de estos consumos ya tienen su TC.'); return }
+    if (!window.confirm(`Pesos y TC de los consumos en dólares, con el cambio del pago:\n\nDébito del ${new Date(r.debito.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(r.debito.debitos)}\nCambio: ${r.tc.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n${lineas}\n\nSe guarda en la CUOTA de cada uno (USD, TC y pesos). El extracto queda en dólares.`)) return
     setCompletandoUsd(nr)
     try {
-      for (const p of r.pesos) {
-        const m = consumos.find(c => c.id === p.id)
-        const { error } = await dbCuenta().from(tablaActiva).update({ debitos: p.pesos }).eq('id', p.id)
+      const nuevas: typeof cuotasUsd = {}
+      for (const p of aEscribir) {
+        const m = consumos.find(c => c.id === p.id)!
+        const fila = cuotaDeConsumoUsd(p.pesos, Number(m.debitos_usd) || 0)
+        const { error } = await supabase.from('cuotas_egresos_sin_factura').update(fila).eq('id', m.template_cuota_id)
         if (error) throw error
-        actualizarLocal(p.id, { debitos: p.pesos } as any)
-        if (m?.template_cuota_id) {
-          const { error: e2 } = await supabase.from('cuotas_egresos_sin_factura').update({ monto: p.pesos }).eq('id', m.template_cuota_id)
-          if (e2) toast.error(`El movimiento quedó en pesos, pero la cuota no: ${e2.message}`)
-        }
+        nuevas[m.template_cuota_id] = fila
       }
-      toast.success(`${r.pesos.length} consumo${r.pesos.length === 1 ? '' : 's'} en dólares completado${r.pesos.length === 1 ? '' : 's'} en pesos (cambio ${r.tc.toLocaleString('es-AR')})`)
+      setCuotasUsd(prev => ({ ...prev, ...nuevas }))
+      toast.success(`${aEscribir.length} cuota${aEscribir.length === 1 ? '' : 's'} en dólares con sus pesos y TC (cambio ${r.tc.toLocaleString('es-AR')})`)
     } catch (err) {
       toast.error('No se pudo completar: ' + (err as Error).message)
     } finally { setCompletandoUsd(null) }
@@ -4519,13 +4549,14 @@ ${marca}` : marca
                               )
                             })()}
                             {(() => {
-                              // 💵 A-BUG-1307 — consumos en USD todavía sin su importe en pesos
-                              const sinPesos = item.movs.filter((m: any) => m.tipo_fila !== 'pago' && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0)).length
+                              // 💵 A-BUG-1307 / A-FEAT-1312 — consumos en USD cuya cuota todavía no tiene su TC
+                              const sinPesos = item.movs.filter((m: any) => m.tipo_fila !== 'pago' && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0)
+                                && !(m.template_cuota_id && cuotasUsd[m.template_cuota_id]?.tipo_cambio)).length
                               if (!sinPesos) return null
                               const sig = lista.filter(x => String(x.cierre) > String(item.cierre)).sort((a, b) => String(a.cierre).localeCompare(String(b.cierre)))[0]
                               return (
                                 <button type="button" disabled={completandoUsd !== null}
-                                  title="Completar en pesos con el cambio real del pago (débito en pesos ÷ SU PAGO EN USD del resumen siguiente)"
+                                  title="Pesos y TC en la cuota, con el cambio real del pago (débito en pesos ÷ SU PAGO EN USD del resumen siguiente). El extracto queda en dólares."
                                   onClick={() => completarPesosUsd(item.nr, item.movs, sig ? sig.movs : null)}
                                   className="px-2 py-1 rounded border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap">
                                   {completandoUsd === item.nr ? 'Completando…' : `💵 Pesos de ${sinPesos} en USD`}
@@ -4630,10 +4661,10 @@ ${marca}` : marca
                             {movimiento.descripcion}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movimiento.debitos > 0 ? formatCurrency(movimiento.debitos) : '-'}
+                            {movimiento.debitos > 0 ? formatCurrency(movimiento.debitos) : <ImporteUsd usd={(movimiento as any).debitos_usd} cuota={cuotasUsd[(movimiento as any).template_cuota_id]} />}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : '-'}
+                            {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : <ImporteUsd usd={(movimiento as any).creditos_usd} />}
                           </TableCell>
                           {col('saldo') && (
                             <TableCell className="text-right font-mono">
@@ -6492,6 +6523,23 @@ function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa
         </span>
       ))}
       {esOtra && <span className="text-[10px] leading-4 text-amber-600" title="Se registrará como retiro">⇄</span>}
+    </span>
+  )
+}
+
+/**
+ * 💵 A-FEAT-1312 — un importe en DÓLARES del extracto se muestra en dólares (como el papel del banco).
+ * Si su cuota ya tiene TC, abajo y en chico: los pesos y el cambio — de dónde salen.
+ */
+function ImporteUsd({ usd, cuota }: { usd: any; cuota?: { monto: number; tipo_cambio: number | null } }) {
+  const n = Number(usd) || 0
+  if (!(n > 0)) return <>-</>
+  return (
+    <span className="inline-flex flex-col items-end leading-tight" title="Importe original en dólares. Los pesos y el TC van en la cuota del template.">
+      <span className="text-emerald-700">USD {n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      {cuota?.tipo_cambio
+        ? <span className="text-[10px] text-gray-500">${cuota.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · TC {cuota.tipo_cambio.toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
+        : <span className="text-[10px] text-amber-600">sin TC</span>}
     </span>
   )
 }

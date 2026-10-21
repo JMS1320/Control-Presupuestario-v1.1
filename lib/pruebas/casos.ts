@@ -177,7 +177,7 @@ import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
-import { pesosDeConsumosUsd } from "@/lib/conciliacion/consumos-usd"
+import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
 import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
@@ -6999,6 +6999,16 @@ export function correrCasos(): Resultado[] {
     const sinPago = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 0, fechaPago: "", pesosPagados: 0, debitos })
     chequear("Doble audit", "No adivina: dos débitos candidatos el mismo día, o sin «SU PAGO EN USD» → aviso, nada se escribe",
       "aviso · aviso", `${ambiguo.ok ? "ELIGIÓ" : "aviso"} · ${sinPago.ok ? "ELIGIÓ" : "aviso"}`, !ambiguo.ok && !sinPago.ok, "A-BUG-1307")
+
+    // 💵 A-FEAT-1312 — la cuota guarda USD + TC y el extracto queda en dólares. Diciembre: Dropbox USD 119,88 +
+    // vthebestpdf USD 29,95 = SU PAGO EN USD 149,83; con un débito que no da cambio redondo, el último absorbe el
+    // redondeo y aun así cada cuota cumple monto = monto_usd × tipo_cambio (al centavo).
+    const dic = pesosDeConsumosUsd({ consumos: [{ id: "dropbox", usd: 119.88 }, { id: "vthe", usd: 29.95 }], usdPagado: 149.83, fechaPago: "2026-01-12", pesosPagados: 929356.67, debitos: [deb("pesos", "2026-01-12", 929356.67), deb("usd", "2026-01-12", 216003.27)] })
+    const filas = dic.ok ? dic.pesos.map(p => cuotaDeConsumoUsd(p.pesos, p.id === "dropbox" ? 119.88 : 29.95)) : []
+    const cierran = filas.length === 2 && filas.every(f => f.tipo_cambio != null && Math.abs(f.monto_usd * f.tipo_cambio - f.monto) < 0.01)
+    const sumaDic = Math.round(filas.reduce((a, f) => a + f.monto, 0) * 100) / 100
+    chequear("Doble audit", "Cuota en USD: guarda USD y TC, cada una cumple USD × TC = pesos y entre las dos suman el débito",
+      "cierran · 216003.27", `${cierran ? "cierran" : "NO cierran"} · ${sumaDic}`, cierran && sumaDic === 216003.27, "A-FEAT-1312")
   }
 
   // ══ 🧩 EL ASISTENTE DE TEMPLATES DESDE LA CONCILIACIÓN: cuotas de la CAMPAÑA y la del mes (A-FEAT-1302) ══

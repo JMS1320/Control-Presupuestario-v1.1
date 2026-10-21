@@ -3323,6 +3323,10 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-20 · `cuotas_egresos_sin_factura.monto_usd` + `tipo_cambio` — consumos USD de la tarjeta (A-FEAT-1312) — ✅ CORRIDO 2026-10-20 con JMS (verificado con `explain update`)
+
+`scripts/91-cuotas-usd-tc.sql` (+ `-deshacer`): `add column monto_usd numeric(15,2)`, `add column tipo_cambio numeric(15,4)`, las dos nullable, con comentario. Aditivo: no toca filas, RLS ni GRANTs; ninguna vista lista la tabla por columnas.
+
 ### 2026-10-20 · `public.detalles_por_proveedor` — detalle fijo por proveedor (A-FEAT-1296) — ✅ CORRIDO 2026-10-20 con JMS (verificado: 8 columnas)
 
 `scripts/88-detalles-por-proveedor.sql` (+ `-deshacer`): tabla `(id uuid pk, cuit text, detalle text, monto_referencia numeric(16,2), activo boolean, creado_por text, created_at, updated_at)`, índice único `(cuit, lower(detalle))`, RLS `puede_ver`/`puede_escribir`, registrada en `recurso_tablas` (recurso «extracto»). Varios renglones por CUIT = varios suministros; se elige por monto (±30 %).

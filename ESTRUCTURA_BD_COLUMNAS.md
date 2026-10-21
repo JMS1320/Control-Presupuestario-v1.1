@@ -33,7 +33,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, categ text, cuenta_contable text, tipo USER-DEFINED(enum), activo boolean, created_at tstz, nro_cuenta text, imputable boolean, cta_totalizadora text, nombre_totalizadora text, cambio_nombre_cta text, grupo_cuenta text`
 
 ### cuotas_egresos_sin_factura
-`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, fecha_pago date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean`
+`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, fecha_pago date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean, monto_usd numeric(15,2), tipo_cambio numeric(15,4)`
+
+> `monto_usd` + `tipo_cambio` (2026-10-20, script 91, A-FEAT-1312): consumo en dólares de la tarjeta — el original en USD y el cambio real del pago; `monto` (pesos) = `monto_usd × tipo_cambio`. El extracto de la tarjeta queda en dólares (`debitos_usd`), sin pesos. Null = cuota en pesos.
 
 > `fecha_pago` (2026-07-04): fecha real de pago, separada del vencimiento firme. Editable en Vista Pagos / Cash Flow; propaga a `fecha_estimada`. Venc solo editable vía RPC `actualizar_venc_cuota` (desde Egresos sin Factura). Ver PENDIENTES A-TEST-06.
 

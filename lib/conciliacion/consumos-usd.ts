@@ -57,3 +57,12 @@ export function pesosDeConsumosUsd(entrada: {
   }
   return { ok: true, tc: r2(tc), debito, pesos }
 }
+
+/**
+ * 💵 **A-FEAT-1312 — lo que se guarda en la CUOTA de un consumo en USD** (el extracto queda en dólares).
+ * El TC es el de esa cuota (pesos ÷ USD, 4 decimales), así `monto_usd × tipo_cambio` da su `monto` también
+ * en la que absorbió el redondeo del débito.
+ */
+export function cuotaDeConsumoUsd(pesos: number, usd: number) {
+  return { monto: pesos, monto_usd: usd, tipo_cambio: usd > 0 ? Math.round((pesos / usd) * 10000) / 10000 : null }
+}
