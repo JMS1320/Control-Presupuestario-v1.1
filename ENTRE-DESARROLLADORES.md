@@ -54,7 +54,7 @@ son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🗃️ Dos columnas nuevas en `public.cuotas_egresos_sin_factura` (2026-10-20) — aviso ANTES de aplicarlas
+### 🗃️ Dos columnas nuevas en `public.cuotas_egresos_sin_factura` (2026-10-20) — ✅ APLICADAS el 20/10 con JMS presente
 
 Para [A-FEAT-1312](PENDIENTES.md#a-feat-1312) (rama `jms/tarjeta-conciliacion`): los consumos en dólares de la tarjeta
 guardan en la cuota el **original en USD y el tipo de cambio** del pago (el extracto queda en dólares, como el papel del
