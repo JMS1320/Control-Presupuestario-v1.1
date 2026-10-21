@@ -1199,6 +1199,20 @@ Debajo de los botones hay una fila **🗂️ Archivo digital** con tres chips �
 Es el mismo gesto que los chips de **Estado** y **Origen** del Cash Flow, y que la fila **Tipos** del
 buscador de PDFs. ⚠️ Sin probar todavía → A-TEST-1178
 
+#### 🔎 Buscar en el subdiario *(2026-10-22)*
+
+Debajo de los botones hay un **buscador**: escribí un proveedor, un CUIT, un número o un importe (ej. *colomac*, *132220*) y la tabla queda sólo con lo que coincide. En **PDFs sin vincular** busca también en el nombre del archivo y en **lo que dice el PDF**, si la app ya lo leyó. No importan las mayúsculas ni los acentos, y los números se encuentran sin guiones ni puntos.
+
+#### 🗂️ El veredicto de cada PDF sin vincular *(2026-10-22)*
+
+Cada PDF sin vincular tiene un **veredicto** para cuando ya sabés qué es y no se va a vincular: **🚫 No informada en ARCA** · **📂 Va en otra carpeta** · **📄 No es factura** · **♊ Duplicado** · **⏳ Pendiente**, con una nota (ej. *va en 02/2026*). Queda guardado con quién y cuándo, y el título del panel dice cuántos siguen **sin resolver**. Se puede cambiar o sacar cuando quieras.
+
+Lo que **🔗 Vincular PDFs** lee queda guardado en el **registro del archivo digital** (el mismo que usa el buscador de PDFs): la próxima vez se sabe qué dice cada archivo sin volver a abrirlo.
+
+#### 📒 Asientos Contables *(2026-10-22)*
+
+Para las facturas **no informadas en ARCA** que **no van al subdiario de IVA**: en **Imputar Facturas** tildalas y tocá **📒 A Asientos Contables** (o en **Gestionar Facturas**, estado *📒 Asientos Contables*). Salen de los subdiarios y del Libro IVA, y van a la solapa **Asientos Contables** de los **Papeles de trabajo del balance**, en el ejercicio de su fecha de emisión, para que el contador las registre con asientos. El botón **📒 Asientos Contables** muestra todas; **↩ Sacar** devuelve una a sin imputar. ⚠️ Sin probar todavía → A-TEST-1222
+
 > ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
 > vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
 > se reportó como un bug del sistema que no existía.
@@ -2738,6 +2752,8 @@ abajo de todo.
 2. Poné el **año de cierre**. Para el balance 25/26 de MSA es **2026**.
 3. **Armar el libro.** Abajo te dice el ejercicio, los totales y si cierra o no.
 4. **Bajar el Excel.**
+
+📒 **Asientos Contables** *(2026-10-22)*: las facturas que mandaste a *Asientos Contables* desde Subdiarios no están en ningún subdiario; van en su propia solapa, con las del ejercicio **por fecha de emisión** y su total. Abajo del botón te dice cuántas son. → A-TEST-1222
 
 ### 🔑 Lo único que hay que entender
 

@@ -3618,6 +3618,10 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-22 · VEREDICTO del archivo digital (script 93) — A-FEAT-1287
+
+Cuatro columnas en `arca_pdf_archivo_digital`: `veredicto` (con check de los 5 valores), `veredicto_nota`, `veredicto_at`, `veredicto_por`. Aditivo. Script `scripts/93-veredicto-archivo-digital.sql` (deshacer: `93-…-deshacer.sql`). ⏳ **SIN correr** al escribir esto: espera el OK del usuario.
+
 ### 2026-10-22 · REGISTRO del archivo digital (`arca_pdf_archivo_digital`) — A-FEAT-1287
 
 Lo leído (OCR) de cada PDF sin vincular de las carpetas de Drive, con su carpeta: no se relee, y una

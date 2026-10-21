@@ -29,7 +29,8 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 > `recolector` = la fuente: el mail del reenviador o `asunto:factura`. `copia` = el mismo archivo (hash) ya leído en otro mail. Los `error` se reintentan.
 
 ### arca_pdf_archivo_digital  (2026-10-22, script 92 — A-FEAT-1287)
-`id uuid, file_id text UNIQUE, empresa text, carpeta text («2025-2026/26-03»), nombre_archivo text, url text, estado text ('leido'|'ilegible'|'error'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text`
+`id uuid, file_id text UNIQUE, empresa text, carpeta text («2025-2026/26-03»), nombre_archivo text, url text, estado text ('leido'|'ilegible'|'error'|'sin_leer'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text`
+> **Script 93 (2026-10-22, SIN correr al escribir esto)**: + `veredicto text` (check: `no_informada`|`otra_carpeta`|`no_es_factura`|`duplicado`|`pendiente`), `veredicto_nota text`, `veredicto_at tstz`, `veredicto_por text` — el veredicto a mano de un PDF sin vincular. `estado='sin_leer'` = registrado al darle veredicto sin haberlo leído (salió de «Contar»).
 
 ### arca_pdf_barrido_tramo  (2026-10-20, script 90)
 `id uuid, recolector text, desde date, hasta date (inclusive), mails int, adjuntos int, hecho_at tstz, hecho_por text`

@@ -83,7 +83,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `arca_pdf_busqueda_log` | ✅ | — | Log búsqueda automática de PDFs (GAS). ⚠️ cambió: decía ❌ — tiene RLS `puede_ver`/`puede_escribir` (verificado 2026-10-20). |
 | `arca_pdf_inventario` | ✅ | — | Inventario de adjuntos de los reenvíos y de los mails con «factura/FC/fac» en el asunto: lo que leyó el OCR de cada PDF, una vez para siempre (A-FEAT-1287, script 90). |
 | `arca_pdf_barrido_tramo` | ✅ | — | Qué días de mail de cada fuente ya se leyeron enteros («hasta dónde se llegó»). Script 90. |
-| `arca_pdf_archivo_digital` | ✅ | — | Registro del archivo digital: lo que leyó el OCR de cada PDF **sin vincular** de una carpeta de Drive, con su carpeta. No se relee, y sirve para encontrar una factura archivada en otra carpeta (A-FEAT-1287, script **92**). |
+| `arca_pdf_archivo_digital` | ✅ | — | Registro del archivo digital: lo que leyó el OCR de cada PDF **sin vincular** de una carpeta de Drive, con su carpeta. No se relee, y sirve para encontrar una factura archivada en otra carpeta (A-FEAT-1287, script **92**). Desde 2026-10-22 lo llena también «Vincular PDFs» de Subdiarios, y lleva el **veredicto** a mano de cada PDF sin vincular (script **93**). |
 | **vistas** `sueldos_*` (×6) | — | — | Módulo sueldos expuesto como **vistas**: campanas, empleados, componentes_salario, cuentas_empleado, periodos, pagos. |
 
 ### `msa` — contable/fiscal MSA
@@ -331,7 +331,7 @@ En las tablas de movimiento, al conciliar se llenan (según contra qué se conci
 ### 4.3 Estados típicos
 - Facturas ARCA `estado`: `pendiente`, `pagar`, `credito` (pagada con tarjeta), `conciliado`, `anterior`, `cuotas`, `debito`, `externo`.
 - Movimiento bancario `estado`: `pendiente`, `conciliado`, `auditar`, `total` (fila resumen de tarjeta).
-- `ddjj_iva`: `No`, `Imputado`, `DDJJ OK` (DEFAULT `No`, cambiado desde `Pendiente` post-reconstrucción).
+- `ddjj_iva`: `No`, `Imputado`, `DDJJ OK` (DEFAULT `No`, cambiado desde `Pendiente` post-reconstrucción). ⚠️ **cambió 2026-10-22**: también **`Asiento contable`** — factura no informada en ARCA que no va al subdiario: **sin `año_contable` ni `mes_contable`**, sale en la solapa *Asientos Contables* de los Papeles del balance por su fecha de emisión (A-FEAT-1318, `lib/balance/asientos-contables.ts`).
 
 ---
 
