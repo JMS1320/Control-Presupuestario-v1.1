@@ -10,7 +10,7 @@ import type {
   FcEstado,
   ResumenItem,
 } from './types'
-import { agruparPorCarpeta, listasTrasCarpeta, decidirVinculosCarpeta, rotuloFactura, textoLeido, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
+import { agruparPorCarpeta, listasTrasCarpeta, decidirVinculosCarpeta, decisionArchivadaEnOtra, rotuloFactura, textoLeido, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
 import { cruzarConInventario, barrerReenvios, cerrarNoEncontradas, type AvanceBarrido } from './barrido'
 import { hoyArgentina } from '@/lib/fechas'
 
@@ -462,6 +462,24 @@ export async function vincularDesdeCarpetas(
     // Con TODO el lote (un archivo que sirve a otra factura no se vincula solo), pero sólo para las listas
     const decs = decidirVinculosCarpeta(todos, exactos, dudosos).filter(d => enLista.has(d.factura_id))
     const decididas = new Set(decs.map(d => d.factura_id))
+    // ¿Archivada en OTRA carpeta? (registro del archivo digital, sin leer nada). Queda a revisar con
+    // el aviso: la imputación manda, así que no se vincula sola (usuario 2026-10-22).
+    const faltan = listas.filter(id => !decididas.has(id))
+    if (faltan.length > 0) {
+      const anio = carpetas[0]?.anio || 1, mes = carpetas[0]?.mes || 1
+      try {
+        const r = await fetch('/api/gas/auditar-periodo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa, anio, mes, factura_ids: faltan, buscar_otras: true }),
+        })
+        const d = await r.json().catch(() => ({ ok: false }))
+        const hallazgos = d.ok ? (d.hallazgos || []) : []
+        for (const fid of faltan) {
+          const dec = decisionArchivadaEnOtra(fid, hallazgos)
+          if (dec) { decs.push(dec); decididas.add(fid) }
+        }
+      } catch { /* sin registro: sigue como «no está en la carpeta» */ }
+    }
     const sinHallazgo = listas.filter(id => !decididas.has(id) && !incompletas.has(id))
     try {
       const r = await fetch('/api/gas/auditar-periodo', {
@@ -514,6 +532,14 @@ export async function vincularDesdeCarpetas(
     const sumar = (data: any) => {
       for (const m of (data.matched || []) as HallazgoCarpeta[]) exactos.push(m)
       for (const d of (data.dudosos || []) as HallazgoCarpeta[]) dudosos.push(d)
+    }
+    // Los ya leídos en otra búsqueda (registro del archivo digital): se cruzan con lo guardado, sin leerlos
+    const enRegistro: string[] = lista.en_registro || []
+    for (let i = 0; i < enRegistro.length; i += 50) {
+      if (isCancelled?.()) break
+      const d = await pedir({ cruzar_registro: true, file_ids: enRegistro.slice(i, i + 50) })
+      if (d.ok) sumar(d)
+      else pend = [...pend, ...enRegistro.slice(i, i + 50).map(id => ({ file_id: id, archivo: id, url: '' }))]   // si falla, se leen
     }
     while (pend.length > 0) {
       if (isCancelled?.()) break

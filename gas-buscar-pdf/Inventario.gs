@@ -142,7 +142,7 @@ function evaluarTextos(body) {
     for (var j = 0; j < facturas.length; j++) {
       var ev = evaluarCoincidencia(textos[i].texto, facturas[j])
       if (ev.nivel === 'no') continue
-      out.push({ id: textos[i].id, factura_id: facturas[j].factura_id, nivel: ev.nivel, motivos: ev.motivos, monto: ev.montoExtraido })
+      out.push({ id: textos[i].id, factura_id: facturas[j].factura_id, nivel: ev.nivel, motivos: ev.motivos, monto: ev.montoExtraido, base: ev.base, leido: ev.leido })
     }
   }
   return responseJson({ status: 'ok', evaluaciones: out })

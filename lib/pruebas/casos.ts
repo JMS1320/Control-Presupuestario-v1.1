@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, decisionArchivadaEnOtra, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
 import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
 import { armarPedidoProveedor, haceCuanto } from "@/lib/gas-pdf/pedido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
@@ -1143,6 +1143,16 @@ export function correrCasos(): Resultado[] {
   const vistaInc = carpetasInc.map((_, i) => `${i}:[${listasTrasCarpeta(carpetasInc, i, new Set(["err"])).join(",")}]`).join(" ")
   chequear("Buscador de PDFs — carpeta: se vincula a medida que se lee", "🔴 Terminado julio no se decide nada (falta agosto); terminado agosto, la de julio; terminado septiembre, la de agosto; la de una carpeta que falló, nunca",
     "0:[] 1:[jul] 2:[ago]", vistaInc, vistaInc === "0:[] 1:[jul] 2:[ago]", "A-FEAT-1287")
+
+  // Registro del archivo digital: archivada en OTRA carpeta → a revisar con el aviso, nunca vinculada sola
+  const decOtra = decisionArchivadaEnOtra("f1", [
+    { factura_id: "f1", drive_url: "u-dud", archivo: "02-03 - X.pdf", carpeta: "2025-2026/26-02", nivel: "dudoso", motivos: ["no se encontró la fecha 05/03/2026"] },
+    { factura_id: "f1", drive_url: "u-ex", archivo: "02-05 - X.pdf", carpeta: "2025-2026/26-02", nivel: "exacto" },
+    { factura_id: "f2", drive_url: "u-otra", archivo: "y.pdf", carpeta: "2025-2026/26-01", nivel: "exacto" },
+  ])
+  const vistaOtra = `${decOtra?.accion} · ${decOtra?.candidatos.map(c => c.drive_url).join(",")} · ${decOtra?.motivo.includes("2025-2026/26-02") ? "dice la carpeta" : "NO dice la carpeta"} · sin hallazgo: ${decisionArchivadaEnOtra("f3", [])}`
+  chequear("Buscador de PDFs — archivada en otra carpeta", "🔴 Queda A REVISAR (nunca se vincula sola: la imputación manda), el exacto primero, sólo los de esa factura, y dice en qué carpeta está",
+    "revisar · u-ex,u-dud · dice la carpeta · sin hallazgo: null", vistaOtra, vistaOtra === "revisar · u-ex,u-dud · dice la carpeta · sin hallazgo: null", "A-FEAT-1287")
 
   // A revisar: lo que dice el archivo al lado de ARCA (usuario 2026-10-21: «sólo veo el número de factura»)
   const vistaLeido = [

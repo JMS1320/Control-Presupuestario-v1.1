@@ -59,6 +59,26 @@ export function listasTrasCarpeta(carpetas: ReadonlyArray<{ ids: readonly string
   return (carpetas[nc]?.ids || []).filter(id => ultima.get(id) === nc && !conError.has(id))
 }
 
+/** Un archivo del registro del archivo digital que coincide con una factura, en OTRA carpeta. */
+export interface HallazgoOtraCarpeta { factura_id: string; drive_url: string; archivo: string; carpeta: string; nivel: 'exacto' | 'dudoso'; motivos?: string[]; leido?: LeidoDelArchivo }
+
+/**
+ * Una factura que no apareció en la carpeta de su subdiario pero SÍ en otra (registro del archivo
+ * digital, usuario 2026-10-22): queda **a revisar**, nunca se vincula sola — la imputación manda y el
+ * archivo está mal guardado. Hasta 3 candidatos, los exactos primero.
+ */
+export function decisionArchivadaEnOtra(factura_id: string, hallazgos: readonly HallazgoOtraCarpeta[]): DecisionCarpeta | null {
+  const hs = hallazgos.filter(h => h.factura_id === factura_id)
+    .sort((a, b) => (a.nivel === 'exacto' ? 0 : 1) - (b.nivel === 'exacto' ? 0 : 1))
+  if (hs.length === 0) return null
+  const candidatos: CandidatoArchivo[] = hs.slice(0, 3).map(h => ({
+    drive_url: h.drive_url, archivo: h.archivo, leido: h.leido,
+    motivo: `está archivada en la carpeta ${h.carpeta}, no en la de su subdiario${h.nivel === 'dudoso' && h.motivos?.length ? ' · ' + h.motivos.join(' · ') : ''}`,
+  }))
+  const carpetas = [...new Set(hs.map(h => h.carpeta))].join(', ')
+  return { factura_id, accion: 'revisar', candidatos, motivo: `Está archivada en otra carpeta (${carpetas}): fijate si es ésta y movela a la de su subdiario` }
+}
+
 /** Los contadores del lote que entran en el control. */
 export interface ContadoresLote {
   total: number

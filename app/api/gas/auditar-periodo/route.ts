@@ -10,7 +10,7 @@
 import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
-import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
+import { subcarpetasDelMes, periodoDeArchivo } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { fcAlVincularDesdeCarpeta, textoLeido, type DecisionCarpeta } from '@/lib/gas-pdf/lote'
 import { pedirAlGas as pedirAlGasCon } from '@/lib/gas-pdf/gas-http'
@@ -28,6 +28,31 @@ export const maxDuration = 60
  */
 const TOPE_GAS_MS = 45_000
 const pedirAlGas = (url: string, payload: unknown, etiqueta: string) => pedirAlGasCon(url, payload, etiqueta, TOPE_GAS_MS)
+
+/**
+ * La regla de los 5 datos (en el GAS, acción `evaluar`) sobre archivos del REGISTRO, ya leídos: devuelve
+ * lo mismo que una tanda de `auditar` (matched con `tambien`, dudosos con base completa y lo leído).
+ */
+async function evaluarRegistro(url: string, token: string, regs: Array<{ file_id: string; nombre_archivo?: string | null; url?: string | null; texto?: string | null }>, facturas: unknown[]) {
+  const matched: MatchItem[] = []
+  const dudosos: DudosoItem[] = []
+  if (regs.length === 0 || facturas.length === 0) return { matched, dudosos, huerfanos: [] as unknown[] }
+  const ev = await pedirAlGas(url, { _token: token, accion: 'evaluar', textos: regs.map(r => ({ id: r.file_id, texto: r.texto || '' })), facturas }, 'cruzar el registro')
+  if (ev.status !== 'ok') throw new Error(ev.observaciones || 'El GAS no pudo evaluar el registro (¿está subida la 0.19.0?)')
+  const porArchivo = new Map(regs.map(r => [r.file_id, r]))
+  const exactas = new Map<string, string[]>()
+  for (const e of (ev.evaluaciones || []) as Array<{ id: string; factura_id: string; nivel: string; motivos: string[]; base?: boolean; leido?: DudosoItem['leido'] }>) {
+    const r = porArchivo.get(e.id)
+    if (!r) continue
+    if (e.nivel === 'exacto') { if (!exactas.has(e.id)) exactas.set(e.id, []); exactas.get(e.id)!.push(e.factura_id) }
+    else if (e.nivel === 'dudoso' && e.base) dudosos.push({ factura_id: e.factura_id, drive_url: r.url || '', archivo: r.nombre_archivo || '', file_id: e.id, motivos: e.motivos, leido: e.leido })
+  }
+  for (const [fid, ids] of exactas) {
+    const r = porArchivo.get(fid)!
+    matched.push({ factura_id: ids[0], tambien: ids.slice(1), drive_url: r.url || '', archivo: r.nombre_archivo || '', file_id: fid })
+  }
+  return { matched, dudosos, huerfanos: [] as unknown[] }
+}
 
 function schemaDe(e: Empresa): string {
   return e === 'PAM' ? 'pam' : e === 'MA' ? 'ma' : 'msa'
@@ -148,6 +173,10 @@ export async function POST(request: Request) {
       listar?: boolean
       /** …y después leer EXACTAMENTE estos (de a pocos; uno que se traba no frena a los demás) */
       file_ids?: string[]
+      /** Registro del archivo digital (2026-10-22): cruzar estos archivos YA LEÍDOS sin volver a leerlos */
+      cruzar_registro?: boolean
+      /** …y buscar estas facturas en el registro de las OTRAS carpetas (archivadas donde no van) */
+      buscar_otras?: boolean
     }
     const { empresa, anio, mes } = body
     if (!empresa || !anio || !mes) {
@@ -192,6 +221,31 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({ ok: false, error: `Error cargando facturas: ${error.message}` }, { status: 500 })
     }
+    // ¿Está archivada en OTRA carpeta? Sólo en el registro (lo ya leído), sin OCR: para las que no
+    // aparecieron en la suya. Devuelve los hallazgos con su carpeta; el cliente los deja a revisar.
+    if (porIds && body.buscar_otras) {
+      const { data: fs, error: errF } = await supabase.schema(schema).from('comprobantes_arca').select('*').in('id', body.factura_ids!)
+      if (errF) return NextResponse.json({ ok: false, error: errF.message }, { status: 500 })
+      const propias = new Map<string, string>()
+      for (const f of fs || []) { const p = periodoDeArchivo(f); propias.set(f.id, subcarpetasDelMes(empresa, p.anio, p.mes).join('/')) }
+      const regs: any[] = []
+      for (const cuit of [...new Set((fs || []).map((f: any) => String(f.cuit || '').replace(/\D/g, '')).filter((c: string) => c.length === 11))]) {
+        const { data } = await supabase.from('arca_pdf_archivo_digital').select('file_id, nombre_archivo, url, texto, carpeta')
+          .eq('empresa', empresa).eq('estado', 'leido').like('texto_digitos', `%${cuit}%`).limit(100)
+        regs.push(...(data || []))
+      }
+      if (regs.length === 0) return NextResponse.json({ ok: true, hallazgos: [] })
+      const payloadF = (fs || []).map((f: any) => ({ factura_id: f.id, cuit: f.cuit, punto_venta: f.punto_venta, numero_desde: f.numero_desde, imp_total: f.imp_total, tipo: f.tipo_comprobante_desc, fecha_emision: f.fecha_emision }))
+      const r = await evaluarRegistro(url, token, regs, payloadF)
+      const carpetaDe = new Map(regs.map(x => [x.file_id, x.carpeta]))
+      const hallazgos = [
+        ...r.matched.flatMap(m => [m.factura_id, ...(m.tambien || [])].map(id => ({ ...m, factura_id: id, nivel: 'exacto', motivos: [] as string[] }))),
+        ...r.dudosos.map(d => ({ ...d, nivel: 'dudoso' })),
+      ].map(h => ({ ...h, carpeta: carpetaDe.get(h.file_id) || '?' }))
+        .filter(h => h.carpeta !== propias.get(h.factura_id))   // en su propia carpeta ya se miró
+      return NextResponse.json({ ok: true, hallazgos })
+    }
+
     const skipExtra: string[] = []
     if (porIds) {
       const { data: vinculadas, error: errV } = await supabase.schema(schema).from('comprobantes_arca')
@@ -221,8 +275,29 @@ export async function POST(request: Request) {
       if (l.status !== 'ok') return NextResponse.json({ ok: false, error: l.observaciones || 'El GAS no pudo listar la carpeta' }, { status: 502 })
       if (l.existe === false) return NextResponse.json({ ok: true, empresa, periodo, existe: false, archivos: [], ya_vinculados: 0 })
       const vinc = new Set(skipExtra)
-      const archivos = (l.archivos || []).filter(a => !vinc.has(a.file_id))
-      return NextResponse.json({ ok: true, empresa, periodo, existe: true, archivos, ya_vinculados: (l.archivos || []).length - archivos.length })
+      const sinVincular = (l.archivos || []).filter(a => !vinc.has(a.file_id))
+      // Lo que ya se leyó otra vez (registro del archivo digital) no se vuelve a leer: se cruza con lo guardado
+      const enRegistro = new Set<string>()
+      for (let i = 0; i < sinVincular.length; i += 100) {
+        const { data } = await supabase.from('arca_pdf_archivo_digital').select('file_id')
+          .in('file_id', sinVincular.slice(i, i + 100).map(a => a.file_id)).eq('estado', 'leido')
+        for (const r of data || []) enRegistro.add(r.file_id)
+      }
+      return NextResponse.json({
+        ok: true, empresa, periodo, existe: true,
+        archivos: sinVincular.filter(a => !enRegistro.has(a.file_id)),
+        en_registro: [...enRegistro],
+        ya_vinculados: (l.archivos || []).length - sinVincular.length,
+      })
+    }
+
+    // Cruzar archivos YA LEÍDOS (registro) contra las facturas de esta carpeta, sin OCR
+    if (porIds && body.cruzar_registro && Array.isArray(body.file_ids)) {
+      const { data: regs, error: errR } = await supabase.from('arca_pdf_archivo_digital')
+        .select('file_id, nombre_archivo, url, texto').in('file_id', body.file_ids.slice(0, 100)).eq('estado', 'leido')
+      if (errR) return NextResponse.json({ ok: false, error: `No se pudo leer el registro: ${errR.message}` }, { status: 500 })
+      const r = await evaluarRegistro(url, token, regs || [], payload)
+      return NextResponse.json({ ok: true, empresa, periodo, existe: true, ...r, procesados: (regs || []).length, restantes: 0, completo: true })
     }
 
     // Una tanda
@@ -231,8 +306,9 @@ export async function POST(request: Request) {
       _token: token, accion: 'auditar', empresa, periodo,
       carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
       skip_file_ids: [...(body.skip_file_ids || []), ...skipExtra], max_files: cuantos,
-      ...(Array.isArray(body.file_ids) ? { solo_file_ids: body.file_ids } : {}),
+      ...(Array.isArray(body.file_ids) ? { solo_file_ids: body.file_ids, devolver_texto: porIds } : {}),
     }, `tanda de ${cuantos} archivo(s)`)) as {
+      textos?: Array<{ file_id: string; archivo: string; url: string; texto: string; error?: string }>
       status?: string; existe?: boolean; observaciones?: string
       matched?: MatchItem[]; dudosos?: DudosoItem[]; huerfanos?: { archivo: string; url: string; file_id: string; chars?: number; ocr_error?: string }[]
       procesados?: number; restantes?: number; completo?: boolean
@@ -240,6 +316,18 @@ export async function POST(request: Request) {
 
     if (audit.existe === false) {
       return NextResponse.json({ ok: true, empresa, periodo, existe: false, observaciones: audit.observaciones, completo: true, total_facturas: payload.length, matched: [], huerfanos: [], sin_pdf: [] })
+    }
+
+    // Registro del archivo digital: lo leído queda guardado con su carpeta (no se vuelve a leer, y sirve
+    // para encontrar una factura archivada donde no va). Si falla el guardado, la búsqueda sigue igual.
+    if (porIds && Array.isArray(audit.textos) && audit.textos.length > 0) {
+      const ahora = new Date().toISOString()
+      await supabase.from('arca_pdf_archivo_digital').upsert(audit.textos.map(t => ({
+        file_id: t.file_id, empresa, carpeta: subcarpetas.join('/'), nombre_archivo: t.archivo, url: t.url,
+        estado: t.error ? 'error' : (String(t.texto || '').length < 40 ? 'ilegible' : 'leido'),
+        chars: String(t.texto || '').length, texto: t.texto || null, texto_digitos: String(t.texto || '').replace(/\D/g, '') || null,
+        observaciones: t.error ? `No se pudo leer: ${t.error}` : null, leido_at: ahora, leido_por: sesion.user.email || null,
+      })), { onConflict: 'file_id' })
     }
 
     // Buscador de PDFs: NO se escribe tanda por tanda. Se devuelve lo hallado y el cliente decide al
