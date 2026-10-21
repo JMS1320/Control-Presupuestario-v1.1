@@ -70,7 +70,7 @@ export function ModalPedirFacturas({ open, empresa, facturaIds, onClose, onHecho
           body: JSON.stringify({ accion: modo, empresa, factura_ids: m.facturas.map(f => f.id) }),
         })
         const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
-        setEstados(prev => ({ ...prev, [m.cuit]: d.ok ? { tipo: 'ok', modo, aviso: [d.aviso, d.error_registro ? `No quedó en el historial: ${d.error_registro}` : ''].filter(Boolean).join(' · ') } : { tipo: 'error', error: d.error || 'error' } }))
+        setEstados(prev => ({ ...prev, [m.cuit]: d.ok ? { tipo: 'ok', modo, aviso: d.error_registro ? `No quedó en el historial: ${d.error_registro}` : undefined } : { tipo: 'error', error: d.error || 'error' } }))
       } catch (e) {
         setEstados(prev => ({ ...prev, [m.cuit]: { tipo: 'error', error: (e as Error).message } }))
       }
@@ -86,7 +86,7 @@ export function ModalPedirFacturas({ open, empresa, facturaIds, onClose, onHecho
         <DialogHeader>
           <DialogTitle>📮 Pedir la factura al proveedor</DialogTitle>
           <DialogDescription>
-            Un mail nuevo por proveedor, desde la casilla de la empresa y con su firma. Elegí si quedan como borrador en Gmail o se envían.
+            Un mail nuevo por proveedor, desde la casilla de la empresa, firmado Jose Martinez Sobrado · Martinez Sobrado Agro SRL. Elegí si quedan como borrador en Gmail o se envían.
           </DialogDescription>
         </DialogHeader>
         {error && <p className="text-sm text-red-700">No se pudo armar el pedido: {error}</p>}
@@ -113,7 +113,6 @@ export function ModalPedirFacturas({ open, empresa, facturaIds, onClose, onHecho
                         <div className="mt-1 bg-gray-50 border rounded p-2">
                           <div className="text-gray-500">Asunto: <span className="text-gray-800">{m.asunto}</span></div>
                           <pre className="whitespace-pre-wrap font-sans mt-1">{m.texto}</pre>
-                          <div className="text-gray-400 mt-1">— y la firma de la casilla</div>
                         </div>
                       )}
                     </div>

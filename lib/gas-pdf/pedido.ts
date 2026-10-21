@@ -2,8 +2,9 @@
  * 📮 El mail para PEDIRLE la factura al proveedor (A-FEAT-1313 — texto acordado con el usuario 2026-10-21).
  *
  * Un mail por proveedor con todas sus facturas que faltan. Es un mail NUEVO (no una respuesta) y sale
- * de la casilla donde corre el programa de Google — la misma que busca las facturas. La firma la pone
- * el GAS: la lee de la configuración de Gmail de esa casilla (Apps Script no la agrega sola).
+ * de la casilla donde corre el programa de Google — la misma que busca las facturas (la de MSA).
+ * La FIRMA va en el texto (usuario 2026-10-21: «Jose Martinez Sobrado» y debajo «Martinez Sobrado Agro
+ * SRL»): Apps Script no agrega la firma de Gmail sola, y escribirla acá la deja a la vista en la vista previa.
  *
  * Pieza pura: la prueba `npm run probar`, y la usa la ruta para la vista previa y para el envío, así
  * lo que se ve es exactamente lo que sale.
@@ -29,6 +30,9 @@ const cuitConGuiones = (c?: string | null) => {
   const d = String(c || '').replace(/\D/g, '')
   return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : d
 }
+/** La firma del pedido, renglón por renglón (usuario 2026-10-21) */
+export const FIRMA_PEDIDO = ['Jose Martinez Sobrado', 'Martinez Sobrado Agro SRL']
+
 const escaparHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 /** Asunto, texto y HTML del pedido. Singular o plural según cuántas facturas sean. */
@@ -44,6 +48,7 @@ export function armarPedidoProveedor(empresa: Empresa, facturas: readonly Factur
     lineas.join('\n'),
     `¿Nos ${varias ? 'las' : 'la'} podrían mandar a este mail? Si ya ${varias ? 'las' : 'la'} enviaron, les pedimos que ${varias ? 'las' : 'la'} reenvíen, por favor.`,
     'Muchas gracias.',
+    FIRMA_PEDIDO.join('\n'),
   ]
   return {
     asunto: `Pedido de ${varias ? 'facturas' : 'factura'} — ${nombre}`,

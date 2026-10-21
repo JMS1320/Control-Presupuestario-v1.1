@@ -85,12 +85,12 @@ export async function POST(request: Request) {
       const g = await pedirAlGas(url, { _token: token, accion: 'pedir_factura', modo: body.accion, para: m.para, asunto: m.asunto, texto: m.texto, html: m.html }, 'pedir factura', 45_000)
       if (g.status !== 'ok') return NextResponse.json({ ok: false, error: g.observaciones || 'El GAS no pudo armar el mail (¿está subida la versión 0.19.0?)' }, { status: 502 })
       // Queda en el historial de cada factura: «pedida al proveedor hace N días»
-      const obs = `[pedido] ${body.accion === 'enviar' ? 'Pedida al proveedor por mail' : 'Borrador del pedido al proveedor (en Gmail, sin enviar)'} a ${m.para} por ${sesion.user.email || 'usuario'}${g.con_firma ? '' : ' — sin firma'}`
+      const obs = `[pedido] ${body.accion === 'enviar' ? 'Pedida al proveedor por mail' : 'Borrador del pedido al proveedor (en Gmail, sin enviar)'} a ${m.para} por ${sesion.user.email || 'usuario'}`
       const { error } = await supabase.from('arca_pdf_busqueda_log').insert(facturas.map(f => ({
         factura_id: f.id, factura_schema: schema, resultado: 'pedido', observaciones: obs,
         cuit_emisor: f.cuit, numero_comprobante: `${f.punto_venta}-${f.numero_desde}`, monto_factura: f.imp_total,
       })))
-      return NextResponse.json({ ok: true, modo: body.accion, con_firma: !!g.con_firma, aviso: g.aviso || '', error_registro: error?.message })
+      return NextResponse.json({ ok: true, modo: body.accion, error_registro: error?.message })
     }
 
     return NextResponse.json({ ok: false, error: `Acción desconocida: ${body.accion}` }, { status: 400 })

@@ -9,8 +9,8 @@ acceso a TU Gmail / TU Drive.
 ## Versión actual: **v0.19.0** (verificable con un GET a la URL `/exec` → `{version}`)
 
 > **0.19.0 (2026-10-20/21, A-FEAT-1287 y A-FEAT-1313)** — ⚠️ **dos archivos NUEVOS, `Inventario.gs` y `Pedido.gs`, y `appsscript.json`
-> cambió (permisos nuevos `gmail.compose` y `gmail.settings.basic`): al desplegar, Google pide aceptarlos.** `Pedido.gs` = acción
-> `pedir_factura` (mail al proveedor, borrador o envío, con la firma de Gmail de la casilla, que Apps Script no agrega sola).
+> cambió (permiso nuevo `gmail.compose`, para los borradores): al desplegar, Google pide aceptarlo.** `Pedido.gs` = acción
+> `pedir_factura` (mail al proveedor, borrador o envío; la firma viene escrita en el texto que arma la app).
 > Los reenvíos ya no se leen factura por factura: la app los recorre una vez por tramos de días y guarda lo leído
 > (`arca_pdf_inventario`, script 90). Acciones nuevas: `inventario_listar`, `inventario_leer`, `evaluar` (la regla de
 > 5 datos sobre textos ya leídos) y `guardar_adjunto`. Además: tope de 40 s en la búsqueda por factura («búsqueda

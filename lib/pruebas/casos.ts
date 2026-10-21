@@ -1147,7 +1147,7 @@ export function correrCasos(): Resultado[] {
   ]).get("f1")
   const vistaPed = [
     p1.asunto,
-    p1.texto.includes("no recibimos la factura:") && p1.texto.includes("(CUIT 30-61778601-6)") && p1.texto.includes("– 15/07/2026 · Factura A 2-484 · $ 1.234.567,89") && p1.texto.includes("¿Nos la podrían mandar"),
+    p1.texto.includes("no recibimos la factura:") && p1.texto.includes("(CUIT 30-61778601-6)") && p1.texto.includes("– 15/07/2026 · Factura A 2-484 · $ 1.234.567,89") && p1.texto.includes("¿Nos la podrían mandar") && p1.texto.endsWith("Muchas gracias.\n\nJose Martinez Sobrado\nMartinez Sobrado Agro SRL"),
     p2.asunto,
     p2.texto.includes("no recibimos las facturas:") && p2.texto.indexOf("2-484") < p2.texto.indexOf("9-63") && p2.texto.includes("$ 5.000,00"),
     `${ultPed?.pedido?.slice(0, 10)} ${ultPed?.pedidoBorrador ? "borrador" : "enviado"} · mail ${ultPed?.mail?.slice(0, 10)}`,
