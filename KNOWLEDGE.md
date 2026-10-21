@@ -211,6 +211,15 @@ positivos; (3) pedía el `return` en la misma línea del `if`, así que **no vio
 
 🔑 **Un control se prueba contra el código que tenía que agarrar, no contra el arreglado.**
 
+## 📧 Buscador de PDFs — lo aprendido el 20-21/10 `#gas #gmail #drive #ocr #2026-10-21`
+
+- **Leer el mismo PDF una vez por factura no escala.** Los reenvíos de Jose/Andrés no se filtran por proveedor: cada factura releía todo desde su emisión hasta hoy y una sola ya no entraba en el minuto (Sola NC 9-63). Se resolvió con un **inventario permanente** (`arca_pdf_inventario`): cada adjunto se lee una vez y se cruza muchas. → [A-FEAT-1287](PENDIENTES.md#a-feat-1287)
+- **Una tanda que recorre la carpeta entera hasta «el próximo sin leer» se traba para siempre** si ése es lento: siempre es el mismo. Pasó con 3/2026 (49 facturas en error). Se lista la carpeta una vez y se leen archivos **por id**; el que falla se anota y se sigue.
+- **Aplicar al final de todo pierde todo si se corta.** Se decide y vincula cada factura apenas se leyeron sus dos carpetas (su mes y el siguiente): la regla de «dos candidatos → ninguno» se sigue cumpliendo.
+- **Apps Script no agrega la firma de Gmail** (ni a borradores ni a envíos). Para el pedido al proveedor la firma va escrita en el texto (`FIRMA_PEDIDO`).
+- **«Ilegible» no es «no coincide».** Un PDF del mail del proveedor que se leyó bien pero es otro número se informaba como «ilegible» (Massaglia 2-484). Se distingue por si se leyó el CUIT.
+- **MCP de Supabase en read-only**: cambiar `.mcp.json` no alcanza — la conexión abierta no lo relee hasta `/mcp` → Reconnect, y eso lo hace el usuario. Volverlo a `--read-only` después y reconectar.
+
 ## ⚠️ **REGLA IMPORTANTE NUEVA ETAPA:**
 **Al retomar objetivos**: Siempre reconfirmar qué está "terminado" vs "pendiente" para evitar complicaciones. El estado puede haber cambiado desde última documentación.
 

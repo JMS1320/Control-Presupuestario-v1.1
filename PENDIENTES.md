@@ -12,6 +12,8 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 14 de octubre (todo en `desarrollo`, salvo la tarjeta)
 
+> ↻ **Al 21/10 (T3, rama `jms/facturas-gmail` SIN mergear)**: el **buscador de PDFs** se prueba en el preview de esa rama siguiendo **[A-TEST-1217](#a-test-1217) pasos (1)–(22)**. 🔴 **Antes**: subir el programa de Google **0.19.0** (`Main.gs` + los nuevos `Inventario.gs` y `Pedido.gs` + `appsscript.json`, acepta el permiso de borradores). El script 90 ya está corrido. Lo primero a probar: **(21)** reintentar las 49 de marzo y **(22)** 👀 A confirmar.
+>
 > ↻ **Al 14/10 (cierre) TODO lo de abajo está en `desarrollo`** (`787a571`): las filas 21-39 (notas de la app del 13/10), 40-42 (retenciones del subdiario, Cobros y retenciones de PAM y MA —la base ya está lista—, 3 decimales en la liquidación de hacienda) y 43 (varios echeqs + Excel de emisión). Ya probado y ✅: el IVA a mano de la liquidación y los echeqs completos (flujo con BRIKI y el Excel aceptado por el banco, 15/10).
 >
 > ↻ **Al 11/10 se sumaron dos filas (19 y 20)**: los pendientes de los papeles y la **planilla de asistencia**, las dos ya en `desarrollo`. La carga del histórico (rama `jms/historico-templates`) no se prueba en la app: se revisa en los Excel de la carpeta Balance.
