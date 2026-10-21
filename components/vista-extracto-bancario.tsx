@@ -826,16 +826,12 @@ ${texto.trim()}` : texto.trim()
       ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
       : base
     const q = normalizarBusqueda(busqueda)
-    if (q) {
-      lista = lista.filter(m => {
-        const mm = m as any
-        return [
-          mm.descripcion, mm.categ, mm.detalle, mm.contable, mm.interno, mm.origen,
-          mm.observaciones_cliente, mm.numero_de_comprobante, mm.nota_operador,
-          mm.leyendas_adicionales_1, mm.leyendas_adicionales_2,
-        ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
-      })
-    }
+    const coincideBusqueda = (m: any) => !q || [
+      m.descripcion, m.categ, m.detalle, m.contable, m.interno, m.origen,
+      m.observaciones_cliente, m.numero_de_comprobante, m.nota_operador,
+      m.leyendas_adicionales_1, m.leyendas_adicionales_2,
+    ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
+    if (q) lista = lista.filter(coincideBusqueda)
 
     // Filtro por contraparte. Sale del selector de proveedores, así que el CUIT es **el del
     // maestro** y no un texto tipeado: dos proveedores distintos que se llamen parecido ya no se
@@ -843,18 +839,17 @@ ${texto.trim()}` : texto.trim()
     // elegido no tiene CUIT cargado, se cae al nombre.
     const cuitFiltro = (filtroProveedor.cuit || '').replace(/[-.\s]/g, '')
     const nombreFiltro = normalizarBusqueda(filtroProveedor.nombre || '')
-    if (cuitFiltro || nombreFiltro) {
-      lista = lista.filter(m => {
-        const mm = m as any
-        if (cuitFiltro) {
-          const cuitMov = String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '')
-          if (cuitMov && cuitMov === cuitFiltro) return true
-        }
-        if (!nombreFiltro) return false
-        return [mm.proveedor_nombre, mm.leyendas_adicionales_1]
-          .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(nombreFiltro))
-      })
+    const coincideProveedor = (mm: any) => {
+      if (!cuitFiltro && !nombreFiltro) return true
+      if (cuitFiltro) {
+        const cuitMov = String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '')
+        if (cuitMov && cuitMov === cuitFiltro) return true
+      }
+      if (!nombreFiltro) return false
+      return [mm.proveedor_nombre, mm.leyendas_adicionales_1]
+        .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(nombreFiltro))
     }
+    if (cuitFiltro || nombreFiltro) lista = lista.filter(coincideProveedor)
 
     // Las filas de la última corrida del motor se muestran SIEMPRE, aunque los filtros
     // client-side ya no las alcancen, hasta que el usuario apriete Actualizar.
@@ -862,9 +857,14 @@ ${texto.trim()}` : texto.trim()
     // tienen que ser las mismas filas de la lista para que el checkbox de revisado y los botones
     // respondan. Y se reordena todo junto por `orden` descendente, igual que el servidor — con el
     // prepend anterior las recién conciliadas salían arriba y la grilla quedaba desordenada.
+    // ⚠️ A-BUG-1314 (2026-10-20): la excepción es para que no se vayan al cambiar de estado o de categ
+    // (dejan de ser «Pendientes» / «sin categ»), NO para saltear lo que el usuario escribe después: la
+    // búsqueda y la contraparte se respetan. Antes, después de conciliar, «Buscar en descripción» no
+    // filtraba nada — volvían todas las filas de la corrida.
     if (idsCorrida.size > 0) {
       const yaEstan = new Set(lista.map(m => m.id))
-      const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id))
+      const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id)
+        && coincideBusqueda(m) && coincideProveedor(m))
       if (faltantes.length > 0) {
         lista = [...lista, ...faltantes]
           .sort((a, b) => (Number((b as any).orden) || 0) - (Number((a as any).orden) || 0))
