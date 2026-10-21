@@ -46,6 +46,18 @@ export function agruparPorCarpeta(facturas: readonly FacturaParaCarpeta[]): Arra
   return [...porMes.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v)
 }
 
+/**
+ * Las facturas que quedan LISTAS para decidir al terminar la carpeta número `nc`: las que ya no
+ * aparecen en ninguna carpeta posterior (su mes y el siguiente están leídos), salvo las de una
+ * carpeta que no se pudo leer. Así se vincula a medida que se lee (usuario 2026-10-21) sin romper
+ * la regla de «dos candidatos → ninguno»: cuando se decide, ya se vio todo lo que le corresponde.
+ */
+export function listasTrasCarpeta(carpetas: ReadonlyArray<{ ids: readonly string[] }>, nc: number, conError: ReadonlySet<string> = new Set()): string[] {
+  const ultima = new Map<string, number>()
+  carpetas.forEach((c, i) => { for (const id of c.ids) ultima.set(id, i) })
+  return (carpetas[nc]?.ids || []).filter(id => ultima.get(id) === nc && !conError.has(id))
+}
+
 /** Los contadores del lote que entran en el control. */
 export interface ContadoresLote {
   total: number

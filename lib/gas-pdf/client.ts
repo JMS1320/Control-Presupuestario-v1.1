@@ -10,7 +10,7 @@ import type {
   FcEstado,
   ResumenItem,
 } from './types'
-import { agruparPorCarpeta, decidirVinculosCarpeta, rotuloFactura, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
+import { agruparPorCarpeta, listasTrasCarpeta, decidirVinculosCarpeta, rotuloFactura, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
 import { cruzarConInventario, barrerReenvios, cerrarNoEncontradas, type AvanceBarrido } from './barrido'
 import { hoyArgentina } from '@/lib/fechas'
 
@@ -404,9 +404,11 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
  * archivado. Usa el mismo lector que el «🔗 Vincular PDFs» de Subdiarios, con la regla de 2026-10-20:
  * CUIT + número + monto + **tipo + fecha**.
  *
- * ⚠️ Lee la carpeta ENTERA antes de vincular: recién al final se sabe si una factura tiene un archivo
- * o dos, y con dos no se vincula ninguno (`decidirVinculosCarpeta`). Nunca rompe el lote: si una
- * carpeta no se puede leer, esas facturas siguen al mail y el motivo queda en `error`.
+ * ⚠️ Una factura se decide recién cuando se leyeron ENTERAS sus dos carpetas (su mes y el siguiente):
+ * ahí ya se sabe si tiene un archivo o dos, y con dos no se vincula ninguno (`decidirVinculosCarpeta`).
+ * Y se aplica EN ESE MOMENTO, no al final de todas las carpetas (usuario 2026-10-21): antes, una corrida
+ * larga que se cortaba perdía todo lo leído; ahora un corte sólo pierde la carpeta en curso.
+ * Nunca rompe el lote: si una carpeta no se puede leer, esas facturas siguen al mail y el motivo queda en `error`.
  */
 export async function vincularDesdeCarpetas(
   empresa: Empresa,
@@ -421,6 +423,40 @@ export async function vincularDesdeCarpetas(
   // Facturas cuya carpeta no se pudo leer entera: no se puede decir que «no están»
   const conError = new Set<string>()
   const carpetas = agruparPorCarpeta(facturas)
+  const todos = facturas.map(f => f.id)
+  const vinculadas = new Set<string>()
+  const aRevisar = new Set<string>()
+  const descartados = new Set<string>()
+  const decisiones: DecisionCarpeta[] = []
+  // Decide y aplica las facturas que ya tienen sus carpetas leídas
+  const aplicar = async (listas: string[]) => {
+    if (listas.length === 0) return
+    const enLista = new Set(listas)
+    // Con TODO el lote (un archivo que sirve a otra factura no se vincula solo), pero sólo para las listas
+    const decs = decidirVinculosCarpeta(todos, exactos, dudosos).filter(d => enLista.has(d.factura_id))
+    const decididas = new Set(decs.map(d => d.factura_id))
+    const sinHallazgo = listas.filter(id => !decididas.has(id))
+    try {
+      const r = await fetch('/api/gas/auditar-periodo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // anio/mes no se usan al aplicar, pero la ruta los exige
+        body: JSON.stringify({ empresa, anio: 1, mes: 1, aplicar: decs, sin_hallazgo: sinHallazgo, lote_id: loteId }),
+      })
+      const data = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`)
+      decisiones.push(...decs)
+      // Lo que la ruta efectivamente hizo (puede saltear un archivo que el usuario ya descartó)
+      if (Array.isArray(data.idsVinculadas)) {
+        for (const id of data.idsVinculadas) vinculadas.add(id)
+        for (const id of data.idsARevisar || []) aRevisar.add(id)
+        for (const k of data.descartados || []) descartados.add(k)
+      } else {
+        for (const d of decs) (d.accion === 'vincular' ? vinculadas : aRevisar).add(d.factura_id)
+      }
+    } catch (e) {
+      error = `No se pudo guardar lo encontrado en la carpeta: ${(e as Error).message}`
+    }
+  }
   for (const [nc, carpeta] of carpetas.entries()) {
     if (isCancelled?.()) break
     const skip = new Set<string>()
@@ -457,36 +493,10 @@ export async function vincularDesdeCarpetas(
       onAvance?.({ carpeta: rotulo, nroCarpeta: nc + 1, totalCarpetas: carpetas.length, leidos, restantes: Number(data.restantes) || 0 })
       if (data.completo) break
     }
-  }
-
-  const decisiones = decidirVinculosCarpeta(facturas.map(f => f.id), exactos, dudosos)
-  const vinculadas = new Set<string>()
-  const aRevisar = new Set<string>()
-  const descartados = new Set<string>()
-  // Las que se leyeron enteras y no aparecieron: quedan en el log como búsqueda en carpeta sin
-  // hallazgo (así se ve «última búsqueda en carpeta»). Si se canceló, no se afirma nada.
-  const decididas = new Set(decisiones.map(d => d.factura_id))
-  const sinHallazgo = isCancelled?.() ? [] : facturas.map(f => f.id).filter(id => !decididas.has(id) && !conError.has(id))
-  if ((decisiones.length > 0 || sinHallazgo.length > 0) && !isCancelled?.()) {
-    try {
-      const r = await fetch('/api/gas/auditar-periodo', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        // anio/mes no se usan al aplicar, pero la ruta los exige
-        body: JSON.stringify({ empresa, anio: 1, mes: 1, aplicar: decisiones, sin_hallazgo: sinHallazgo, lote_id: loteId }),
-      })
-      const data = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
-      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`)
-      // Lo que la ruta efectivamente hizo (puede saltear un archivo que el usuario ya descartó)
-      if (Array.isArray(data.idsVinculadas)) {
-        for (const id of data.idsVinculadas) vinculadas.add(id)
-        for (const id of data.idsARevisar || []) aRevisar.add(id)
-        for (const k of data.descartados || []) descartados.add(k)
-      } else {
-        for (const d of decisiones) (d.accion === 'vincular' ? vinculadas : aRevisar).add(d.factura_id)
-      }
-    } catch (e) {
-      error = `No se pudo guardar lo encontrado en la carpeta: ${(e as Error).message}`
-    }
+    // Carpeta terminada (no cortada por cancelación): se aplican las facturas cuya última carpeta era ésta.
+    // Las de una carpeta que no se pudo leer no se afirman (siguen al mail con el motivo).
+    if (isCancelled?.()) break
+    await aplicar(listasTrasCarpeta(carpetas, nc, conError))
   }
   return { vinculadas, aRevisar, decisiones, error, conError, descartados }
 }

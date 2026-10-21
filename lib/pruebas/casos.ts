@@ -37,7 +37,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
 import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
 import { armarPedidoProveedor, haceCuanto } from "@/lib/gas-pdf/pedido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
@@ -1134,6 +1134,16 @@ export function correrCasos(): Resultado[] {
   ], new Map([["f5", new Set(["m5"])]]))
   const vistaDecInv = decInv.map(d => `${d.factura_id}:${d.accion}:${d.candidatos.length}`).join(" | ")
   const esperadoDec = "f1:vincular:1 | f2:revisar:2 | f3:revisar:1 | f4:revisar:1"
+  // Vincular a medida que se lee la carpeta (usuario 2026-10-21): una factura se decide cuando se leyeron sus DOS carpetas
+  const carpetasInc = agruparPorCarpeta([
+    { id: "jul", fecha_emision: "2026-07-10" },            // carpetas 26-07 y 26-08
+    { id: "ago", fecha_emision: "2026-08-05" },            // carpetas 26-08 y 26-09
+    { id: "err", fecha_emision: "2026-07-20" },            // como jul, pero su carpeta falló
+  ])
+  const vistaInc = carpetasInc.map((_, i) => `${i}:[${listasTrasCarpeta(carpetasInc, i, new Set(["err"])).join(",")}]`).join(" ")
+  chequear("Buscador de PDFs — carpeta: se vincula a medida que se lee", "🔴 Terminado julio no se decide nada (falta agosto); terminado agosto, la de julio; terminado septiembre, la de agosto; la de una carpeta que falló, nunca",
+    "0:[] 1:[jul] 2:[ago]", vistaInc, vistaInc === "0:[] 1:[jul] 2:[ago]", "A-FEAT-1287")
+
   // 📮 Pedir la factura al proveedor (A-FEAT-1313, texto acordado 2026-10-21)
   const p1 = armarPedidoProveedor("MSA", [{ fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 1234567.89 }])
   const p2 = armarPedidoProveedor("MSA", [
