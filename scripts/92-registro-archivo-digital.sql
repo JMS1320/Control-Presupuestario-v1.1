@@ -1,4 +1,4 @@
--- 91 · Registro del ARCHIVO DIGITAL (A-FEAT-1287, pedido del usuario 2026-10-22)
+-- 92 · Registro del ARCHIVO DIGITAL (A-FEAT-1287, pedido del usuario 2026-10-22)
 --
 -- «que haya un registro como del mail pero del archivo digital… cuando mira un pdf sin vincular que no
 -- corresponde, le toma los datos y lo guarda… esto puede ayudar si una fc se guardó mal».
