@@ -3620,7 +3620,7 @@ ALTER TABLE public.reglas_ctas_import_arca
 
 ### 2026-10-22 · VEREDICTO del archivo digital (script 93) — A-FEAT-1287
 
-Cuatro columnas en `arca_pdf_archivo_digital`: `veredicto` (con check de los 5 valores), `veredicto_nota`, `veredicto_at`, `veredicto_por`. Aditivo. Script `scripts/93-veredicto-archivo-digital.sql` (deshacer: `93-…-deshacer.sql`). ⏳ **SIN correr** al escribir esto: espera el OK del usuario.
+Cuatro columnas en `arca_pdf_archivo_digital`: `veredicto` (con check de los 5 valores), `veredicto_nota`, `veredicto_at`, `veredicto_por`. Aditivo. Script `scripts/93-veredicto-archivo-digital.sql` (deshacer: `93-…-deshacer.sql`). ✅ **Corrido 2026-10-22** con OK del usuario; verificado (4 columnas, el check, y `EXPLAIN UPDATE` sin escribir datos).
 
 ### 2026-10-22 · REGISTRO del archivo digital (`arca_pdf_archivo_digital`) — A-FEAT-1287
 
