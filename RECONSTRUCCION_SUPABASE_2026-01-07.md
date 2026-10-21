@@ -3622,7 +3622,7 @@ ALTER TABLE public.reglas_ctas_import_arca
 
 Cada adjunto de los reenvíos (y de los mails con «factura / FC / fac» en el asunto) se lee **una vez** y lo
 que dice queda guardado; las facturas se cruzan contra eso sin volver a leer. Script `scripts/90-inventario-reenvios-pdf.sql`
-(deshacer: `90-…-deshacer.sql`, borra lo leído). Las dos tablas con RLS `puede_ver`/`puede_escribir`, sin recurso
+(deshacer: `90-…-deshacer.sql`, borra lo leído). ✅ **Corrido 2026-10-21** y verificado con `EXPLAIN INSERT` sin escribir datos. Las dos tablas con RLS `puede_ver`/`puede_escribir`, sin recurso
 propio en `recurso_tablas` (igual que `arca_pdf_busqueda_log`), `authenticated` con permisos y `anon` sin nada.
 
 ### **2026-06-28: `gmail_message_id` en `arca_pdf_busqueda_log` (GAS PDF — Confirmar etiqueta el mail)**
