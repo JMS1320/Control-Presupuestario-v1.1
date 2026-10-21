@@ -3622,7 +3622,7 @@ ALTER TABLE public.reglas_ctas_import_arca
 
 Lo leído (OCR) de cada PDF sin vincular de las carpetas de Drive, con su carpeta: no se relee, y una
 factura archivada en otra carpeta aparece a revisar. Script `scripts/92-registro-archivo-digital.sql`
-(deshacer: `92-…-deshacer.sql`). ⚠️ Era el 91 y se renumeró: el 91 ya lo usa `jms/tarjeta-conciliacion`.
+(deshacer: `92-…-deshacer.sql`). ✅ **Corrido 2026-10-22** y verificado con `EXPLAIN INSERT … ON CONFLICT` sin escribir datos. ⚠️ Era el 91 y se renumeró: el 91 ya lo usa `jms/tarjeta-conciliacion`.
 Mismos permisos que el inventario de los reenvíos.
 
 ### 2026-10-20 · INVENTARIO de los reenvíos (`arca_pdf_inventario` + `arca_pdf_barrido_tramo`) — A-FEAT-1287
