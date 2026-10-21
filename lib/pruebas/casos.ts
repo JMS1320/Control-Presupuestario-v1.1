@@ -6809,14 +6809,14 @@ export function correrCasos(): Resultado[] {
         && f.nombre_totalizadora === "IMPUESTOS BANCARIOS" && sinAgr.tipo === "egreso" && sinAgr.nombre_totalizadora === null, "A-FEAT-1311")
   }
 
-  // ══ 🔎 EL FILTRO «CAMPAÑA» DE TEMPLATES (A-BUG-1309) ════════════════════════════════════════════════
+  // ══ 🔎 EL FILTRO «CAMPAÑA» DE TEMPLATES (A-BUG-1317) ════════════════════════════════════════════════
   {
     // 🧨 Antes: "2026" === parseInt("2026") → false siempre, y la lista quedaba vacía.
     const r = [coincideCampana("2026", "2026"), coincideCampana("25/26", "25/26"), coincideCampana("2026", "25/26"),
       coincideCampana(null, SIN_CAMPANA), coincideCampana("2026", SIN_CAMPANA), coincideCampana(null, "todos")]
     chequear("Filtro de campaña", "🔎 Elegir «2026» o «25/26» muestra esa campaña; «Sin campaña» muestra los abiertos; «Todas» no filtra",
       "true true false true false true", r.join(" "),
-      r.join(" ") === "true true false true false true", "A-BUG-1309")
+      r.join(" ") === "true true false true false true", "A-BUG-1317")
   }
 
   // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════

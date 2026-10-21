@@ -524,7 +524,7 @@ export function VistaTemplatesEgresos() {
       )
     }
     
-    // Filtro por campaña — 🔎 A-BUG-1309: es texto («2026», «25/26»), y los abiertos van sin campaña.
+    // Filtro por campaña — 🔎 A-BUG-1317: es texto («2026», «25/26»), y los abiertos van sin campaña.
     if (anoSeleccionado && anoSeleccionado !== 'todos') {
       cuotasFiltradas = cuotasFiltradas.filter(c => coincideCampana(c.egreso?.año, anoSeleccionado))
     }
