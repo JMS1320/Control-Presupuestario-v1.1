@@ -55,6 +55,7 @@ import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
 import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, resumenUltimas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { estadoInventario, type EstadoInventario } from "@/lib/gas-pdf/barrido"
 import { ModalPedirFacturas } from "@/components/gas-pdf/modal-pedir-facturas"
+import { PanelAConfirmar } from "@/components/gas-pdf/panel-a-confirmar"
 import { haceCuanto } from "@/lib/gas-pdf/pedido"
 import { diaArgentino } from "@/lib/fechas"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
@@ -800,6 +801,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [inventarioPdf, setInventarioPdf] = useState<EstadoInventario | { error: string } | null>(null)
   // 📮 Pedir la factura al proveedor (A-FEAT-1313): las facturas elegidas, o null si está cerrado
   const [pedirFacturas, setPedirFacturas] = useState<string[] | null>(null)
+  // 👀 Buscar PDFs en modo «A confirmar» (usuario 2026-10-21): sólo las VER y APP, para decir sí o no
+  const [pdfVista, setPdfVista] = useState<'buscar' | 'confirmar'>('buscar')
   const [recargaUltimas, setRecargaUltimas] = useState(0)
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
@@ -1596,6 +1599,27 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     toast.success('Confirmada: la factura quedó vinculada a ese archivo.')
+  }
+  // «Es ésta» / «No es ésta» sobre un candidato, desde el informe o desde «A confirmar» (A-FEAT-1287)
+  const elegirCandidatoUrl = async (facturaId: string, url: string): Promise<boolean> => {
+    const r = await fetch('/api/gas/confirmar-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ factura_id: facturaId, empresa, drive_url: url }) })
+    const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+    if (!d.ok) { toast.error('No se pudo confirmar: ' + (d.error || '')); return false }
+    alConfirmarCandidato(facturaId, d.drive_url || url)
+    return true
+  }
+  const descartarCandidatoUrl = async (facturaId: string, url: string, motivo: string): Promise<number | null> => {
+    const r = await fetch('/api/gas/descartar-candidato', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ factura_id: facturaId, empresa, drive_url: url, motivo }) })
+    const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+    if (!d.ok) { toast.error('No se pudo descartar: ' + (d.error || '')); return null }
+    if (d.fc_nuevo) {
+      setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: d.fc_nuevo } : x))
+      setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: d.fc_nuevo } : x))
+    }
+    toast.success(d.fc_nuevo ? `Descartado. No quedan candidatos: pasó a ${d.fc_nuevo}.` : 'Descartado.')
+    return Number(d.quedan ?? 0)
   }
   // «Confirmada» es el sí del administrador y siempre con archivo (usuario 2026-10-21): desde una APP
   // (mismo archivo) o pegando el link de Drive en el aviso «sin comprobante». Sin link no se confirma.
@@ -12352,26 +12376,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         datosDe={(id) => { const f = facturas.find(x => x.id === id); return f ? { fecha_emision: f.fecha_emision, imp_total: f.imp_total } : undefined }}
         onPedirProveedor={(ids) => setPedirFacturas(ids)}
         archivosNoLeidos={progresoPdf?.archivosNoLeidos}
-        onElegirCandidato={async (it, url) => {
-          const r = await fetch('/api/gas/confirmar-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ factura_id: it.factura_id, empresa, drive_url: url }) })
-          const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
-          if (!d.ok) { toast.error('No se pudo confirmar: ' + (d.error || '')); return false }
-          alConfirmarCandidato(it.factura_id, d.drive_url || url)
-          return true
-        }}
-        onDescartarCandidato={async (it, url) => {
-          const r = await fetch('/api/gas/descartar-candidato', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ factura_id: it.factura_id, empresa, drive_url: url, motivo: 'desde el informe' }) })
-          const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
-          if (!d.ok) { toast.error('No se pudo descartar: ' + (d.error || '')); return null }
-          if (d.fc_nuevo) {
-            setFacturas(prev => prev.map(x => x.id === it.factura_id ? { ...x, fc: d.fc_nuevo } : x))
-            setFacturasOriginales(prev => prev.map(x => x.id === it.factura_id ? { ...x, fc: d.fc_nuevo } : x))
-          }
-          toast.success(d.fc_nuevo ? `Descartado. No quedan candidatos: pasó a ${d.fc_nuevo}.` : 'Descartado.')
-          return Number(d.quedan ?? 0)
-        }}
+        onElegirCandidato={(it, url) => elegirCandidatoUrl(it.factura_id, url)}
+        onDescartarCandidato={(it, url) => descartarCandidatoUrl(it.factura_id, url, 'desde el informe')}
         onReintentar={(ids) => {
           const donde = progresoPdf?.donde
           setVerInformeLote(false)
@@ -12451,11 +12457,24 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             const candidatos = filtroTiposPdf.size === 0
               ? candidatosFecha
               : candidatosFecha.filter(f => filtroTiposPdf.has(f.fc ?? '(sin estado)'))
+            const aConfirmar = facturas.filter(f => {
+              const fe = f.fecha_emision || ''
+              if (f.estado === 'historico') return false
+              if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
+              if (pdfDesde && fe < pdfDesde) return false
+              if (pdfHasta && fe > pdfHasta) return false
+              return (f.fc === 'VER' && !f.pdf_drive_url) || (f.fc === 'APP' && !!f.pdf_drive_url)
+            })
             const fcBadge = (fc: string | null) =>
               <span title={ayudaFc(fc)} className={`px-1.5 py-0.5 rounded text-[10px] ${colorFc(fc)}`}>{fc ?? '(sin estado)'}</span>
             return (
               <>
                 <div className="flex flex-wrap items-end gap-3 border-b pb-3">
+                  <Button size="sm" variant={pdfVista === 'confirmar' ? 'default' : 'outline'} className="h-8"
+                    title="Ver sólo las que esperan tu sí: VER (elegir el archivo) y APP (confirmar el que vinculó la app)"
+                    onClick={() => setPdfVista(v => v === 'confirmar' ? 'buscar' : 'confirmar')}>
+                    👀 A confirmar ({aConfirmar.length})
+                  </Button>
                   <div>
                     <label className="text-xs text-gray-500 block mb-0.5">Subdiario</label>
                     <select value={pdfSubdiario} onChange={e => setPdfSubdiario(e.target.value)} disabled={buscandoPdfs}
@@ -12549,7 +12568,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       )}
                       {enVer.length > 0 && (
                         <p className="text-amber-700">
-                          ⚠️ {enVer.length} en VER no aparecen acá porque ya tienen un candidato: resolvelas desde el ✓ de la columna FC (Es ésta / No es ésta).
+                          ⚠️ {enVer.length} en VER no aparecen acá porque ya tienen un candidato: resolvelas con <b>👀 A confirmar</b> (Es ésta / No es ésta).
                           {' '}{enVer.slice(0, 3).map(f => `${f.denominacion_emisor} ${f.punto_venta}-${f.numero_desde}`).join(' · ')}{enVer.length > 3 ? '…' : ''}
                         </p>
                       )}
@@ -12558,7 +12577,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 })()}
 
                 <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
-                  {candidatos.length === 0 ? (
+                  {pdfVista === 'confirmar' ? (
+                    <PanelAConfirmar
+                      facturas={aConfirmar.map(f => ({ id: f.id, rotulo: `${f.tipo_comprobante_desc || 'FC'} ${f.punto_venta}-${f.numero_desde}`, proveedor: f.denominacion_emisor || '',
+                        fc: f.fc ?? null, fecha_emision: f.fecha_emision, imp_total: f.imp_total, pdf_drive_url: f.pdf_drive_url }))}
+                      onElegir={elegirCandidatoUrl}
+                      onDescartar={(id, url) => descartarCandidatoUrl(id, url, 'desde A confirmar')}
+                      onConfirmarApp={(id, url) => confirmarConLink({ id }, url, '¿Abriste el PDF y es ésta? Pasa de APP a Confirmada con el mismo archivo.')} />
+                  ) : candidatos.length === 0 ? (
                     <p className="text-sm text-gray-500 py-6 text-center">No hay facturas sin 📎 en ese subdiario o rango.</p>
                   ) : (
                     <table className="w-full text-xs">
@@ -12691,7 +12717,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                       📮 Pedir al proveedor ({seleccionPdf.size})
                     </Button>
                     <Button
-                      disabled={seleccionPdf.size === 0}
+                      disabled={seleccionPdf.size === 0 || pdfVista === 'confirmar'}
                       onClick={async () => {
                         const ids = Array.from(seleccionPdf)
                         if (ids.length === 0) return

@@ -12,7 +12,7 @@ import { clienteUsuario } from "@/lib/supabase-usuario"
 import type { Empresa } from '@/lib/gas-pdf/types'
 import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
-import { fcAlVincularDesdeCarpeta, type DecisionCarpeta } from '@/lib/gas-pdf/lote'
+import { fcAlVincularDesdeCarpeta, textoLeido, type DecisionCarpeta } from '@/lib/gas-pdf/lote'
 import { pedirAlGas as pedirAlGasCon } from '@/lib/gas-pdf/gas-http'
 
 export const runtime = 'nodejs'
@@ -110,7 +110,8 @@ async function aplicarDecisiones(supabase: any, schema: string, decisiones0: Dec
       if (e) throw new Error(`Error marcando a revisar ${base.numero_comprobante}: ${e.message}`)
       if (d.candidatos.length) {
         await supabase.from('arca_pdf_busqueda_log').insert(d.candidatos.map(c => ({
-          ...base, resultado: 'revisar', drive_url: c.drive_url, observaciones: `[carpeta] ${c.motivo} — ${c.archivo}`,
+          ...base, resultado: 'revisar', drive_url: c.drive_url, monto_pdf: c.leido?.monto ?? null,
+          observaciones: `[carpeta] ${c.motivo} — ${c.archivo}${c.leido ? ` · ${textoLeido(c.leido)}` : ''}`,
         })))
       }
       aRevisar++
