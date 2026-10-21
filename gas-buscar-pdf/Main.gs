@@ -20,7 +20,7 @@
  *   - El mismo token está en env del backend (GAS_AUTH_TOKEN)
  */
 
-const VERSION = '0.18.0'  // 0.18.0 = A-FEAT-1287 RIGOR: un archivo es de la factura si coinciden CUIT + numero + monto + TIPO (FC/NC/ND) + FECHA. Si coinciden los tres primeros y falla tipo o fecha, queda A REVISAR con el motivo -- nunca se descarta. Vino de un caso real: una nota de credito se tomo por la factura. La carpeta devuelve TODAS las facturas que un archivo cumple (no la primera) y los dudosos aparte, para que la app no vincule cuando hay dos candidatos. El mail devuelve todos los candidatos a revisar (sin repetir el mismo adjunto reenviado dos veces) para que el usuario elija. El resumen suma la pila 'ya estaban en la carpeta' con su link. | 0.17.0 = A-FEAT-1287: el mail resumen del buscador cuenta las que YA ESTABAN en la carpeta (el lote mira la carpeta antes de salir al mail) y las que no se buscaron por falta del mail del proveedor. | 0.16.0 = A-BUG-129: CACHE DE DRIVE. Cada 'existe este archivo?' es un viaje a Google, y se hacian DOS POR LINK: 62 viajes para 31 boletas, 20-30 segundos de puro preguntar -- mas caro que bajar los PDFs, que era lo que parecia el problema. Ahora los nombres de cada carpeta se leen UNA vez por corrida. Y recien con eso tiene sentido darle mas tiempo: la ruta pasa de 45s a 55s. | 0.15.0 = A-BUG-128: PRIMERO EL NOMBRE, DESPUES LA DESCARGA. Se bajaba el PDF entero y recien al final se preguntaba si ya estaba, asi que cada re-corrida volvia a traer todo lo ya archivado para tirarlo -- con 31 boletas y 35s de presupuesto, cada pasada avanzaba ~10 y pagaba de nuevo las anteriores. El nombre sale de la TABLA DEL MAIL, no del archivo, asi que se puede saber antes de bajar. Mismo error que A-BUG-125, en el otro extremo del bucle. | 0.14.1 = la carpeta replica EXACTAMENTE como archiva el usuario, incluido el 'MSA - viene PAM': si la boleta es de una empresa pero llego en el mail de otra, la carpeta lo dice. Yo las habia fundido en una sola (el dueño) y me corrigio: son dos situaciones distintas al momento de pagar. Una boleta que llega por los dos lados queda en las dos carpetas, y asi la duplicacion se ve en el Drive y no solo en el informe. | 0.14.0 = los archivos se nombran con LA CONVENCION DEL USUARIO ('2026 - Inmob - Cuota 3 - Tango Parra 1.pdf') y se guardan en una SUBCARPETA POR RESPONSABLE (MSA / PAM / MA / _Sin asignar). El GAS no puede saber ni el nombre del campo ni el dueño -- viven en egresos_sin_factura -- asi que el mapa partida -> {nombre, responsable} viaja en el pedido desde la app. El dedup pasa a mirar la subcarpeta y no la raiz. | 0.13.0 = A-BUG-126 y A-BUG-127, los dos vistos en la corrida real del 08/09. 126: ARBA envuelve TODOS los links del mail en su rastreador lt.php -- tambien los del pie -- asi que se bajaban 4 de mas por mail (~25 descargas al pedo, y por eso se acababa el tiempo). Ahora se toman solo los anclados en 'Ingresar', y de paso la cantidad de links COINCIDE con la de filas de la tabla. 127: ARBA no siempre manda el nombre del archivo, y el nombre de emergencia numeraba POR POSICION dentro del mail ('ARBA 2026-C3 - 1.pdf'), asi que el 1 de un mail y el 1 de otro colisionaban y la segunda boleta se salteaba como 'ya estaba' -- el defecto de A-BUG-120 entrando por la puerta de al lado. Ahora el nombre lleva la partida (o el CUIT), y distingue complementario y aviso de debito. | 0.12.0 = A-BUG-125: 'Ver que hay' ya NO baja ningun PDF -- bajaba todos igual y recien despues miraba si tenia que guardarlos, asi que el paso que existe para mirar antes de tocar nada era tan caro como hacerlo de verdad, y moria por timeout. Ahora informa desde la TABLA del cuerpo del mail, que es gratis y dice mas. Ademas: la bajada real tiene presupuesto de tiempo y devuelve 'quedaron N' en vez de morir muda (volver a correrla continua, el dedup es por nombre), y la ventana de dias se pasa desde la pantalla. | 0.11.0 = A-FEAT-107: lee la TABLA del cuerpo del mail (objeto imponible + importe) y se la adjunta a cada PDF bajado. Es un SEGUNDO camino al mismo numero, independiente del PDF; y para el complementario -que no trae partida en el nombre del archivo- es la unica via de saber a que corresponde. Avisa cuando la cantidad de filas no coincide con la de links. | 0.10.2 = avisa cuando la busqueda llega al tope de 50 conversaciones: sin eso 'baje 40' sobre 40 encontradas y sobre 200 que habia es la misma frase y significan cosas distintas | 0.10.1 = FIX del nombre de archivo: ARBA nombra sus PDFs con la partida pero SIN el periodo (Deuda-Inmobiliario-0990158819-R.pdf), asi que el dedup por nombre salteaba la boleta de la cuota siguiente creyendo que ya estaba -- una boleta distinta, perdida en silencio. Ahora el nombre lleva la FECHA DEL MAIL adelante, y el indice desempata cuando un mail trae dos boletas de la misma partida | 0.10.0 = acción 'boletas_arba': baja del mail las boletas de ARBA siguiendo el link (que NO pide login: es un rastreador que redirige a un PDF público) y las archiva en Drive con dedup por nombre. Con solo_contar:true informa sin guardar nada. ⚠️ NO toca los templates: el importe de la boleta se guarda al lado y el usuario decide cuál aplicar | 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
+const VERSION = '0.19.0'  // 0.19.0 = A-FEAT-1287 INVENTARIO DE LOS REENVIOS: los reenvios de Jose y Andres ya no se leen factura por factura (el mismo PDF se leia una vez por factura y la busqueda no entraba en el minuto: Sola NC 9-63). La app los recorre UNA vez por tramos de dias y guarda lo leido; acciones nuevas inventario_listar / inventario_leer / evaluar / guardar_adjunto (archivo Inventario.gs). Ademas: la busqueda por factura tiene tope de 40 s (devuelve 'busqueda incompleta', nunca 'no encontrada'); a Gmail se le piden solo mails con PDF o imagen; y un archivo LEGIBLE de otro comprobante ya no se informa como 'ilegible' (Massaglia 2-484): solo va a revisar por 'no se pudo leer' si de verdad no se leyo el CUIT. | 0.18.0 = A-FEAT-1287 RIGOR: un archivo es de la factura si coinciden CUIT + numero + monto + TIPO (FC/NC/ND) + FECHA. Si coinciden los tres primeros y falla tipo o fecha, queda A REVISAR con el motivo -- nunca se descarta. Vino de un caso real: una nota de credito se tomo por la factura. La carpeta devuelve TODAS las facturas que un archivo cumple (no la primera) y los dudosos aparte, para que la app no vincule cuando hay dos candidatos. El mail devuelve todos los candidatos a revisar (sin repetir el mismo adjunto reenviado dos veces) para que el usuario elija. El resumen suma la pila 'ya estaban en la carpeta' con su link. | 0.17.0 = A-FEAT-1287: el mail resumen del buscador cuenta las que YA ESTABAN en la carpeta (el lote mira la carpeta antes de salir al mail) y las que no se buscaron por falta del mail del proveedor. | 0.16.0 = A-BUG-129: CACHE DE DRIVE. Cada 'existe este archivo?' es un viaje a Google, y se hacian DOS POR LINK: 62 viajes para 31 boletas, 20-30 segundos de puro preguntar -- mas caro que bajar los PDFs, que era lo que parecia el problema. Ahora los nombres de cada carpeta se leen UNA vez por corrida. Y recien con eso tiene sentido darle mas tiempo: la ruta pasa de 45s a 55s. | 0.15.0 = A-BUG-128: PRIMERO EL NOMBRE, DESPUES LA DESCARGA. Se bajaba el PDF entero y recien al final se preguntaba si ya estaba, asi que cada re-corrida volvia a traer todo lo ya archivado para tirarlo -- con 31 boletas y 35s de presupuesto, cada pasada avanzaba ~10 y pagaba de nuevo las anteriores. El nombre sale de la TABLA DEL MAIL, no del archivo, asi que se puede saber antes de bajar. Mismo error que A-BUG-125, en el otro extremo del bucle. | 0.14.1 = la carpeta replica EXACTAMENTE como archiva el usuario, incluido el 'MSA - viene PAM': si la boleta es de una empresa pero llego en el mail de otra, la carpeta lo dice. Yo las habia fundido en una sola (el dueño) y me corrigio: son dos situaciones distintas al momento de pagar. Una boleta que llega por los dos lados queda en las dos carpetas, y asi la duplicacion se ve en el Drive y no solo en el informe. | 0.14.0 = los archivos se nombran con LA CONVENCION DEL USUARIO ('2026 - Inmob - Cuota 3 - Tango Parra 1.pdf') y se guardan en una SUBCARPETA POR RESPONSABLE (MSA / PAM / MA / _Sin asignar). El GAS no puede saber ni el nombre del campo ni el dueño -- viven en egresos_sin_factura -- asi que el mapa partida -> {nombre, responsable} viaja en el pedido desde la app. El dedup pasa a mirar la subcarpeta y no la raiz. | 0.13.0 = A-BUG-126 y A-BUG-127, los dos vistos en la corrida real del 08/09. 126: ARBA envuelve TODOS los links del mail en su rastreador lt.php -- tambien los del pie -- asi que se bajaban 4 de mas por mail (~25 descargas al pedo, y por eso se acababa el tiempo). Ahora se toman solo los anclados en 'Ingresar', y de paso la cantidad de links COINCIDE con la de filas de la tabla. 127: ARBA no siempre manda el nombre del archivo, y el nombre de emergencia numeraba POR POSICION dentro del mail ('ARBA 2026-C3 - 1.pdf'), asi que el 1 de un mail y el 1 de otro colisionaban y la segunda boleta se salteaba como 'ya estaba' -- el defecto de A-BUG-120 entrando por la puerta de al lado. Ahora el nombre lleva la partida (o el CUIT), y distingue complementario y aviso de debito. | 0.12.0 = A-BUG-125: 'Ver que hay' ya NO baja ningun PDF -- bajaba todos igual y recien despues miraba si tenia que guardarlos, asi que el paso que existe para mirar antes de tocar nada era tan caro como hacerlo de verdad, y moria por timeout. Ahora informa desde la TABLA del cuerpo del mail, que es gratis y dice mas. Ademas: la bajada real tiene presupuesto de tiempo y devuelve 'quedaron N' en vez de morir muda (volver a correrla continua, el dedup es por nombre), y la ventana de dias se pasa desde la pantalla. | 0.11.0 = A-FEAT-107: lee la TABLA del cuerpo del mail (objeto imponible + importe) y se la adjunta a cada PDF bajado. Es un SEGUNDO camino al mismo numero, independiente del PDF; y para el complementario -que no trae partida en el nombre del archivo- es la unica via de saber a que corresponde. Avisa cuando la cantidad de filas no coincide con la de links. | 0.10.2 = avisa cuando la busqueda llega al tope de 50 conversaciones: sin eso 'baje 40' sobre 40 encontradas y sobre 200 que habia es la misma frase y significan cosas distintas | 0.10.1 = FIX del nombre de archivo: ARBA nombra sus PDFs con la partida pero SIN el periodo (Deuda-Inmobiliario-0990158819-R.pdf), asi que el dedup por nombre salteaba la boleta de la cuota siguiente creyendo que ya estaba -- una boleta distinta, perdida en silencio. Ahora el nombre lleva la FECHA DEL MAIL adelante, y el indice desempata cuando un mail trae dos boletas de la misma partida | 0.10.0 = acción 'boletas_arba': baja del mail las boletas de ARBA siguiendo el link (que NO pide login: es un rastreador que redirige a un PDF público) y las archiva en Drive con dedup por nombre. Con solo_contar:true informa sin guardar nada. ⚠️ NO toca los templates: el importe de la boleta se guarda al lado y el usuario decide cuál aplicar | 0.9.18 = el mail del BUSCADOR separa "a revisar" (llegó, no validó) de "no encontrada" (no llegó) -- antes iban juntas y se resuelven distinto --, agrupa las no encontradas por MOTIVO, y suma la sección "🔧 Para que no se repita" con los proveedores que fallaron más de una vez en la corrida (mail sin cargar / asunto cambiado) | 0.9.17 = el mail de supervisión sirve para ACTUAR: las faltantes van agrupadas por MOTIVO (Portal / no se busca / debería llegar por mail) y cada huérfano trae su candidata ⭐ por nombre+fecha | 0.9.16 = el mail de supervisión muestra la sección "✅ Vinculadas" (proveedor·nº·monto·link), no solo Sin PDF y Huérfanos | 0.9.15 = FIX extraerMontosPdf: lee montos con Y SIN separadores de miles ("1312600,00" como ARCA, antes capturaba "600,00") → el chequeo de monto v0.9.14 ya no rechaza facturas estándar. También mejora el match del buscador en vivo (usa la misma función) | 0.9.14 = auditoría: facturaCoincide ahora EXIGE el MONTO (valor absoluto, tol $1) además de CUIT+número → corta falsos positivos (ej. archivo de NC matcheaba una FC por compartir CUIT) | 0.9.13 = acción 'listar' (enumera archivos de la carpeta SIN OCR → conciliar saldos huérfanos/faltantes rápido) | 0.9.12 = acción 'renombrar' (cambiar nombre de un PDF huérfano por id, sin mover) | 0.9.11 = auditoría: ignora no-documentos (xlsx) + asunto/encabezado del mail "Supervisión de facturas en archivo digital (subdiarios)" (en vez de "Auditoría") | 0.9.10 = FIX OCR DEFINITIVO: extracción 100% vía REST de Drive (UrlFetchApp + token), sin el servicio avanzado "Drive" (daba "Drive is not defined") ni DocumentApp. Sin servicios a habilitar ni scopes nuevos | 0.9.9 = (intento) robusto a Drive API v2/v3 — no alcanzó: el servicio no estaba habilitado | patrón nro ARCA "00002021" + auditoría reporta chars OCR por archivo | 0.9.8 = adjunto del mail OFICIAL del proveedor que no valida (OCR pobre) va a _Revisar en vez de no_encontrada + motivo de descarte detallado en debug | 0.9.7 = Confirmar VER también etiqueta 'Facturas Descargadas' + marca leído el mail (vía gmail_message_id guardado en la búsqueda) | 0.9.6 = resolverDestinatario con cascada: body → Script Property RESUMEN_DESTINATARIO → getEffectiveUser (scope userinfo.email) → getActiveUser | 0.9.5 = FIX mail resumen: getEffectiveUser (getActiveUser daba "" con Access:Anyone → "no recipient") | 0.9.4 = mail resumen con sección DEBUG por factura (queries + threads + resultado) | 0.9.3 = prioriza por nombre + corta al 1er match | 0.9.2 = ventana reenvíos hasta hoy | 0.9.1 = mail siempre | 0.9.0 = audit tandas | 0.8.0 = confirmar | 0.7.0 = auditar | 0.6.0 = sin confirmar conserva nombre | 0.5.0 = tipo/ext | 0.4.0 = asunto por-recolector | 0.3.0 = OCR + soft-match | 0.2.0 = catch-all
 
 /**
  * Ping de versión (GET): abrir la URL del Web App en el navegador para verificar qué versión está desplegada.
@@ -30,7 +30,7 @@ function doGet(e) {
   return responseJson({
     status: 'ok',
     version: VERSION,
-    capacidades: ['buscar', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar', 'renombrar', 'listar'],
+    capacidades: ['buscar', 'inventario-reenvios', 'catch-all-reenvios', 'etiquetar-leido', 'auto-archivado', 'mail-resumen', 'ocr-imagenes', 'soft-match', 'auditar', 'confirmar', 'renombrar', 'listar'],
     mensaje: 'GAS Buscador PDF facturas — vivo. Confirmar VER etiqueta + marca leído el mail.'
   })
 }
@@ -95,6 +95,13 @@ function doPost(e) {
       return listarArchivos(body)
     }
 
+    // Inventario de los reenvíos (v0.19.0, Inventario.gs): listar un tramo, leer adjuntos, evaluar
+    // textos ya leídos contra facturas, y guardar un adjunto elegido.
+    if (body.accion === 'inventario_listar') return inventarioListar(body)
+    if (body.accion === 'inventario_leer') return inventarioLeer(body)
+    if (body.accion === 'evaluar') return evaluarTextos(body)
+    if (body.accion === 'guardar_adjunto') return guardarAdjunto(body)
+
     const required = ['factura_id', 'cuit_emisor', 'punto_venta', 'numero_desde', 'tipo_comprobante_desc', 'fecha_emision', 'imp_total', 'denominacion_emisor', 'email_proveedor', 'patron_asunto', 'dias_busqueda', 'carpeta_drive_id']
     for (const k of required) {
       if (body[k] === undefined || body[k] === null) {
@@ -109,7 +116,7 @@ function doPost(e) {
     const resultadoBusqueda = buscarEnGmail(body)
 
     // ── 4. Procesar candidatos ──
-    const verificados = verificarCandidatos(resultadoBusqueda.candidatos, body)
+    const verificados = verificarCandidatos(resultadoBusqueda.candidatos, body, startTime)
 
     // ── 5. Decidir resultado ──
     if (verificados.exactos.length === 1) {
@@ -159,6 +166,16 @@ function doPost(e) {
       })
     }
 
+    // Tope de tiempo (v0.19.0): si no alcanzó a leer todo y no encontró nada, NO es «no encontrada» —
+    // es una búsqueda incompleta. La factura queda como estaba y se puede reintentar.
+    if (verificados.incompleto) {
+      return responseJson({
+        status: 'error',
+        observaciones: 'Búsqueda incompleta: en ' + Math.round(TOPE_LECTURA_MS / 1000) + ' s se leyeron ' + verificados.leidos + ' de ' + resultadoBusqueda.candidatos.length + ' adjuntos sin encontrarla. La factura quedó como estaba.',
+        tiempo_ms: Date.now() - startTime
+      })
+    }
+
     // Soft-match: ningún match validado, pero hay un adjunto en un mail cuyo ASUNTO nombra al
     // proveedor (ej. "Documento de Jose FC Luminatus") → muy probablemente ES la factura pero no
     // se pudo validar (foto ilegible / OCR pobre / número no detectado). Dejar 'revisar' con
@@ -197,7 +214,7 @@ function doPost(e) {
     // No encontrado
     return responseJson({
       status: 'no_encontrada',
-      observaciones: `No se encontró adjunto que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} adjuntos analizados. Queries: ${(resultadoBusqueda.queries || []).join('  ||  ')}`,
+      observaciones: `No se encontró adjunto que coincida. Búsqueda Gmail: ${resultadoBusqueda.threadsCant} threads / ${resultadoBusqueda.candidatos.length} adjuntos analizados.${otrosComprobantes(verificados.descartados)} Queries: ${(resultadoBusqueda.queries || []).join('  ||  ')}`,
       tiempo_ms: Date.now() - startTime
     })
 
@@ -211,6 +228,14 @@ function doPost(e) {
   }
 }
 
+// Sólo mails con PDF o imagen (v0.19.0). Antes se pedía cualquier adjunto y se filtraba después: un
+// mail con un Excel no se leía, pero ocupaba lugar en el tope de 50 conversaciones.
+const FILTRO_ADJUNTOS = 'has:attachment {filename:pdf filename:jpg filename:jpeg filename:png filename:heic filename:webp filename:tif filename:tiff filename:gif}'
+
+// Tope para leer adjuntos en la búsqueda POR FACTURA: la ruta corta a los 50 s, así que a los 40 s se
+// deja de leer y se devuelve «búsqueda incompleta» (v0.19.0).
+const TOPE_LECTURA_MS = 40000
+
 /**
  * Búsqueda Gmail con los operadores nativos.
  * Devuelve { threadsCant, candidatos: [{thread, mensaje, attachment}] }
@@ -222,12 +247,12 @@ function buscarEnGmail(body) {
   const fechaHasta = new Date(fechaEmision)
   fechaHasta.setDate(fechaHasta.getDate() + (body.dias_busqueda || 7))
   // has:attachment (cualquier adjunto: PDF o imagen/foto de WhatsApp). El filtro por tipo se hace al juntar candidatos.
-  const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} has:attachment`
+  const rango = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(fechaHasta)} ${FILTRO_ADJUNTOS}`
 
   // REENVÍOS: la fecha del mail NO es la de emisión — el usuario reenvía cuando quiere (días/semanas
   // después). Por eso el catch-all busca desde un poco antes de la emisión hasta HOY (mañana, exclusivo).
   const manana = new Date(); manana.setDate(manana.getDate() + 1)
-  const rangoRecolector = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(manana)} has:attachment`
+  const rangoRecolector = `after:${formatDateGmail(fechaDesde)} before:${formatDateGmail(manana)} ${FILTRO_ADJUNTOS}`
 
   const candidatos = []
   const queries = []   // para debug en el mail resumen
@@ -306,7 +331,10 @@ function normalizarTexto(s) {
  *   - dudosos: CUIT + nro y falla monto, tipo o fecha → a revisar con el motivo
  *   - descartados: no matchean CUIT o nro
  */
-function verificarCandidatos(candidatos, body) {
+function verificarCandidatos(candidatos, body, t0) {
+  const inicio = t0 || Date.now()
+  let incompleto = false
+  let leidos = 0
   const exactos = []
   const dudosos = []
   const descartados = []
@@ -326,6 +354,8 @@ function verificarCandidatos(candidatos, body) {
   }
 
   for (const cand of candidatos) {
+    // Cada lectura tarda 6-10 s: no se empieza una nueva pasado el tope
+    if (Date.now() - inicio > TOPE_LECTURA_MS) { incompleto = true; break }
     try {
       let hash = ''
       try { hash = cand.attachment.getHash() } catch (e) { hash = '' }
@@ -334,8 +364,14 @@ function verificarCandidatos(candidatos, body) {
         vistos[hash] = true
       }
       const texto = extraerTextoPdf(cand.attachment)
+      leidos++
       const ev = evaluarCoincidencia(texto, factura)
       cand._montoExtraido = ev.montoExtraido
+      // ¿Se pudo leer? Si el CUIT del proveedor está en el texto, el archivo es LEGIBLE: si no coincide,
+      // es otro comprobante, no un PDF ilegible (Massaglia 2-484, 2026-10-20).
+      cand._chars = String(texto || '').length
+      cand._legible = ev.motivos.indexOf('no está el CUIT') < 0
+      cand._motivos = ev.motivos
 
       if (ev.nivel === 'exacto') {
         cand._observaciones = 'Coinciden CUIT + número + monto + tipo + fecha (PDF=' + ev.montoExtraido + ')'
@@ -344,7 +380,7 @@ function verificarCandidatos(candidatos, body) {
         // cumpla sólo puede ser una copia del mismo comprobante (las copias exactas ya se saltean
         // por hash). Seguir leyendo todos los adjuntos de meses de reenvíos no entra en el tiempo.
         Logger.log('Match exacto → corto (no analizo el resto)')
-        return { exactos, dudosos, descartados }
+        return { exactos, dudosos, descartados, incompleto: false, leidos }
       }
       if (ev.nivel === 'dudoso') {
         cand._observaciones = 'A revisar: ' + ev.motivos.join(' · ')
@@ -360,8 +396,8 @@ function verificarCandidatos(candidatos, body) {
     }
   }
 
-  Logger.log(`Verificados: ${exactos.length} exactos, ${dudosos.length} dudosos, ${descartados.length} descartados`)
-  return { exactos, dudosos, descartados }
+  Logger.log(`Verificados: ${exactos.length} exactos, ${dudosos.length} dudosos, ${descartados.length} descartados${incompleto ? ' (INCOMPLETO por tiempo)' : ''}`)
+  return { exactos, dudosos, descartados, incompleto: incompleto && exactos.length === 0 && dudosos.length === 0, leidos }
 }
 
 // ── RIGOR DEL VÍNCULO (v0.18.0, A-FEAT-1287) ─────────────────────────────────────────────────
@@ -517,6 +553,7 @@ function encontrarSospechoso(descartados, body) {
   const palabras = normalizarTexto(body.denominacion_emisor || '').split(/\s+/).filter(function (w) { return w.length >= 4 })
   if (palabras.length === 0) return null
   for (var i = 0; i < descartados.length; i++) {
+    if (descartados[i]._legible) continue   // se leyó bien y es otro comprobante: no es «posible factura»
     const asunto = normalizarTexto(descartados[i].asunto || '')
     for (var j = 0; j < palabras.length; j++) {
       if (asunto.indexOf(palabras[j]) >= 0) return descartados[i]
@@ -529,7 +566,8 @@ function encontrarSospechoso(descartados, body) {
 // Si hay varios adjuntos (ej. logo de la firma + la factura), prefiere PDF y el más grande
 // (el logo suele ser una imagen chica) para no archivar el adjunto equivocado. null si no hay.
 function elegirDirectoProveedor(descartados) {
-  const dir = descartados.filter(function (c) { return c._directoProveedor })
+  // Sólo los que NO se pudieron leer: uno legible de otro número es otro comprobante (Massaglia 2-484)
+  const dir = descartados.filter(function (c) { return c._directoProveedor && !c._legible })
   if (dir.length === 0) return null
   const pdfs = dir.filter(function (c) { return /\.pdf$/i.test(c.attachment.getName()) })
   const pool = pdfs.length > 0 ? pdfs : dir
@@ -539,6 +577,18 @@ function elegirDirectoProveedor(descartados) {
     return sb - sa
   })
   return pool[0]
+}
+
+// Para el «no encontrada»: qué archivos se leyeron bien pero eran OTRO comprobante del proveedor,
+// así el usuario ve por qué no se tomaron (antes decía «ilegible» aunque se hubiera leído perfecto).
+function otrosComprobantes(descartados) {
+  const leg = (descartados || []).filter(function (c) { return c._legible })
+  if (leg.length === 0) return ''
+  const nombres = leg.slice(0, 3).map(function (c) {
+    const n = c.attachment && c.attachment.getName ? c.attachment.getName() : 'archivo'
+    return '«' + n + '» (' + (c._motivos || []).join(', ') + ')'
+  })
+  return ' Se leyeron bien pero son otro comprobante: ' + nombres.join(' · ') + (leg.length > 3 ? ' y ' + (leg.length - 3) + ' más' : '') + '.'
 }
 
 // ¿El asunto o el nombre del archivo del candidato NOMBRA al proveedor? (palabra ≥4 letras).

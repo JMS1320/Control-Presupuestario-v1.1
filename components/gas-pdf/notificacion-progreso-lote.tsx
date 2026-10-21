@@ -63,7 +63,10 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onV
           )}
           <span className="text-sm font-semibold">
             {progreso.finalizado ? 'Búsqueda completada'
-              : progreso.fase === 'carpeta' ? 'Mirando la carpeta del mes en Drive…' : 'Buscando PDFs en el mail…'}
+              : progreso.fase === 'carpeta' ? 'Mirando la carpeta del mes en Drive…'
+                : progreso.fase === 'inventario' ? 'Cruzando con los reenvíos ya leídos…'
+                  : progreso.fase === 'reenvios' ? 'Leyendo los reenvíos (una sola vez)…'
+                    : 'Buscando en el mail del proveedor…'}
           </span>
         </div>
         <button onClick={() => { setVisible(false); onCerrar() }} className="text-gray-400 hover:text-gray-600">
@@ -77,6 +80,16 @@ export function NotificacionProgresoLote({ progreso, onCerrar, onVerDetalle, onV
           {' · '}{progreso.carpetaAvance.leidos} archivo{progreso.carpetaAvance.leidos === 1 ? '' : 's'} leído{progreso.carpetaAvance.leidos === 1 ? '' : 's'}
           {progreso.carpetaAvance.restantes > 0 ? `, faltan ${progreso.carpetaAvance.restantes}` : ''}
           <div className="text-gray-400">Abre cada PDF sin vincular de la carpeta: puede tardar unos minutos.</div>
+        </div>
+      )}
+
+      {!progreso.finalizado && progreso.fase === 'reenvios' && progreso.reenviosAvance && (
+        <div className="text-xs text-gray-600 mb-2">
+          📨 {progreso.reenviosAvance.reenviador}: mails del {progreso.reenviosAvance.tramo.desde.split('-').reverse().join('/')} al {progreso.reenviosAvance.tramo.hasta.split('-').reverse().join('/')}
+          {' · '}{progreso.reenviosAvance.leidos} adjunto{progreso.reenviosAvance.leidos === 1 ? '' : 's'} leído{progreso.reenviosAvance.leidos === 1 ? '' : 's'}
+          {progreso.reenviosAvance.porLeer > 0 ? `, faltan ${progreso.reenviosAvance.porLeer}` : ''}
+          {progreso.reenviosAvance.encontradas > 0 ? ` · ${progreso.reenviosAvance.encontradas} encontrada${progreso.reenviosAvance.encontradas === 1 ? '' : 's'}` : ''}
+          <div className="text-gray-400">Va de hoy hacia atrás. Lo leído queda guardado: la próxima vez no se vuelve a leer.</div>
         </div>
       )}
 

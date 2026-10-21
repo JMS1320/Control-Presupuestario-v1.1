@@ -38,6 +38,7 @@ import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cr
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
 import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
+import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
@@ -1110,6 +1111,30 @@ export function correrCasos(): Resultado[] {
   const esperadoUlt = "f1 carpeta 2026-10-20 mail 2026-10-19 · f2 mail 2026-10-20 · resumen carpeta 2026-10-20 (2 nunca) mail 2026-10-20 (1 nunca)"
   chequear("Buscador de PDFs — última búsqueda en carpeta y en mail", "🔴 Separa carpeta de mail por el origen; los errores y los descartes no cuentan como búsqueda; cuenta cuántas nunca se buscaron en cada lado",
     esperadoUlt, vistaUlt, vistaUlt === esperadoUlt, "A-FEAT-1287")
+
+  // Inventario de los reenvíos (usuario 2026-10-20): se lee una vez, de hoy hacia atrás, sólo lo que falta
+  const tr = (ts: Array<{ desde: string; hasta: string }>) => ts.map(t => `${t.desde.slice(5)}~${t.hasta.slice(5)}`).join(",")
+  const vistaVent = [
+    tr(ventanasPendientes("2026-10-01", "2026-10-20", [{ desde: "2026-10-10", hasta: "2026-10-14" }], 7)),
+    tr(bloquesLeidos([{ desde: "2026-10-06", hasta: "2026-10-09" }, { desde: "2026-10-12", hasta: "2026-10-15" }, { desde: "2026-10-01", hasta: "2026-10-05" }])),
+    tr(partirTramo({ desde: "2026-10-01", hasta: "2026-10-08" })),
+    desdeParaBarrer([{ fecha_emision: "2026-03-05" }, { fecha_emision: "2026-01-10" }, {}]),
+  ].join(" | ")
+  const esperadoVent = "10-15~10-20,10-03~10-09,10-01~10-02 | 10-12~10-15,10-01~10-09 | 10-05~10-08,10-01~10-04 | 2026-01-08"
+  chequear("Buscador de PDFs — reenvíos: qué días faltan leer", "🔴 De hoy hacia atrás, en ventanas de 7 días, salteando lo ya leído; lo leído se muestra en bloques continuos; desde la emisión más vieja con 2 días de margen",
+    esperadoVent, vistaVent, vistaVent === esperadoVent, "A-FEAT-1287")
+
+  const ev = (factura_id: string, hash: string, msg: string, nivel: "exacto" | "dudoso") => ({ inventario_id: `${hash}-${msg}`, hash, gmail_message_id: msg, factura_id, nivel, motivos: nivel === "dudoso" ? ["no se encontró la fecha"] : [] })
+  const decInv = decidirDesdeInventario([
+    ev("f1", "h1", "m1", "exacto"), ev("f1", "h1", "m2", "exacto"),          // el mismo PDF reenviado dos veces = uno
+    ev("f2", "h2", "m3", "exacto"), ev("f2", "h3", "m4", "dudoso"),          // uno exacto + uno dudoso → elige el usuario
+    ev("f3", "h4", "m6", "exacto"), ev("f4", "h4", "m6", "exacto"),          // un archivo que sirve a dos facturas → ninguna sola
+    ev("f5", "h5", "m5", "dudoso"),                                           // descartado por el usuario («No es ésta»)
+  ], new Map([["f5", new Set(["m5"])]]))
+  const vistaDecInv = decInv.map(d => `${d.factura_id}:${d.accion}:${d.candidatos.length}`).join(" | ")
+  const esperadoDec = "f1:vincular:1 | f2:revisar:2 | f3:revisar:1 | f4:revisar:1"
+  chequear("Buscador de PDFs — reenvíos: cuándo se vincula", "🔴 La misma regla que la carpeta: vincula sólo con UN archivo exacto y sin dudosos; el mismo PDF reenviado no cuenta doble; si sirve a dos facturas, elige el usuario; lo descartado no vuelve",
+    esperadoDec, vistaDecInv, vistaDecInv === esperadoDec, "A-FEAT-1287")
 
   const inf = agruparInforme([
     { factura_id: "1", factura: "FC 1", proveedor: "p", proceso: "no_encontrada", links: [] },

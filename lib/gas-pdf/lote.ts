@@ -237,7 +237,7 @@ export function decidirVinculosCarpeta(
 
 // ── El INFORME del lote (A-FEAT-1287) — por factura, agrupado por proceso, con link ──────────────
 
-export type ProcesoInforme = 'carpeta' | 'mail' | 'revisar' | 'no_encontrada' | 'no_en_carpeta' | 'sin_fuente' | 'otro' | 'error'
+export type ProcesoInforme = 'carpeta' | 'mail' | 'revisar' | 'no_encontrada' | 'no_en_carpeta' | 'sin_terminar' | 'sin_fuente' | 'otro' | 'error'
 
 export interface ItemInforme {
   factura_id: string
@@ -253,10 +253,11 @@ export interface ItemInforme {
 /** Los grupos del informe, en el orden en que se leen: lo resuelto, lo que pide algo, lo que falta. */
 export const PROCESOS_INFORME: ReadonlyArray<{ clave: ProcesoInforme; titulo: string; ayuda: string }> = [
   { clave: 'carpeta', titulo: '🗂️ Ya estaban en la carpeta', ayuda: 'Se vincularon sin ir al mail. Quedan en APP.' },
-  { clave: 'mail', titulo: '✅ Bajadas del mail', ayuda: 'Se archivaron en la carpeta del mes y se vincularon. Quedan en APP.' },
+  { clave: 'mail', titulo: '✅ Bajadas del mail', ayuda: 'Del mail del proveedor o de un reenvío: se archivaron en la carpeta del mes y se vincularon. Quedan en APP.' },
   { clave: 'revisar', titulo: '⚠️ A revisar', ayuda: 'No se vinculó: hay más de un candidato o falta un dato. Elegí o confirmá desde el ✓ de la columna FC. Quedan en VER.' },
   { clave: 'no_encontrada', titulo: '❌ No encontradas', ayuda: 'Ni en la carpeta ni en el mail. Quedan en NO Mail y se pueden volver a buscar.' },
   { clave: 'no_en_carpeta', titulo: '🗂️ No están en la carpeta', ayuda: 'Búsqueda sólo en carpeta: no se buscaron en el mail. Quedan como estaban.' },
+  { clave: 'sin_terminar', titulo: '⏸️ Lectura de reenvíos sin terminar', ayuda: 'No estaban en el mail del proveedor y la lectura de los reenvíos no llegó al final. Quedan como estaban: al volver a buscar sigue donde quedó.' },
   { clave: 'sin_fuente', titulo: '✉️ Sin mail del proveedor', ayuda: 'No hubo dónde buscar. Cargá el mail del proveedor y volvé a buscar. Quedan en Buscar.' },
   { clave: 'otro', titulo: '· Sin búsqueda', ayuda: 'Por ejemplo, proveedor de Portal.' },
   { clave: 'error', titulo: '! Errores', ayuda: 'Falló la búsqueda; quedan como estaban y se pueden reintentar.' },

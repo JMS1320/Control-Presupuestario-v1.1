@@ -85,6 +85,9 @@ export interface ApiBuscarPdfInput {
   /** 2º paso de «no encontrada»: recién cuando la respuesta LLEGÓ al navegador se pasa a NO Mail.
    *  Si la conexión se corta en el medio, la factura queda como estaba (A-FEAT-1287, 2026-10-20). */
   aplicar_no_encontrada?: boolean
+  /** Buscar SÓLO en el mail del proveedor: los reenvíos se leen aparte, una vez, con el inventario
+   *  (`lib/gas-pdf/barrido.ts`, A-FEAT-1287 2026-10-20). Sin esto, cada factura los vuelve a leer. */
+  sin_reenvios?: boolean
 }
 
 /** Output del endpoint */

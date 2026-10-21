@@ -170,7 +170,8 @@ export async function POST(request: Request) {
     // configurado — por eso se consultan acá, antes del gate. La app los pasa al GAS (no hardcode).
     const { data: recolectoresData } = await supabase
       .from('proveedores').select('email_facturacion, patron_asunto').contains('tags', ['recolector'])
-    const recolectores = (recolectoresData || [])
+    // Con `sin_reenvios` los reenvíos no se miran acá: los lee el inventario una sola vez (barrido.ts)
+    const recolectores = body.sin_reenvios ? [] : (recolectoresData || [])
       .filter((r) => r.email_facturacion && r.email_facturacion !== proveedor.email_facturacion && r.patron_asunto)
       .map((r) => ({ email: r.email_facturacion as string, asunto: r.patron_asunto as string }))
     const puedeProveedor = !!(proveedor.gas_habilitado && proveedor.email_facturacion)
@@ -285,14 +286,16 @@ export async function POST(request: Request) {
 
     // Propuesta 2 (aviso mínimo): proveedor sin mail propio y no se encontró → avisar que solo se
     // buscó por reenvíos y que puede cargar el mail en "Config PDFs" para búsqueda directa.
-    const avisoSinMail = (!puedeProveedor && gasResp.status === 'no_encontrada')
+    const avisoSinMail = (!puedeProveedor && gasResp.status === 'no_encontrada' && !body.sin_reenvios)
       ? ' ⚠️ Proveedor sin mail propio: solo se buscó por reenvíos. Cargá su mail en "Config PDFs" para búsqueda directa.'
       : ''
     const observacionesFinal = ((gasResp.observaciones ?? '') + avisoSinMail) || null
 
     // «No encontrada» NO cambia el estado acá: lo hace el navegador al recibir la respuesta
     // (`aplicar_no_encontrada`). Si la conexión se corta, la factura queda como estaba.
-    const diferirEstado = gasResp.status === 'no_encontrada'
+    // Un error (p. ej. «búsqueda incompleta» por tiempo, GAS ≥ 0.19.0) tampoco cambia el estado: no se
+    // sabe si está o no, así que queda como estaba y se puede reintentar.
+    const diferirEstado = gasResp.status === 'no_encontrada' || gasResp.status === 'error'
     await supabase.schema(schema).from('comprobantes_arca').update({
       ...(diferirEstado ? {} : { fc: fcNuevo, pdf_estado }),
       // El link se guarda en la factura SOLO si está confirmada (match exacto 'ok'). Para 'revisar'

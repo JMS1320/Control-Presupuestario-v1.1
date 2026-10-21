@@ -53,6 +53,7 @@ import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedo
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
 import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, resumenUltimas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { estadoInventario, type EstadoInventario } from "@/lib/gas-pdf/barrido"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
@@ -792,6 +793,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [pdfDonde, setPdfDonde] = useState<'ambos' | 'carpeta' | 'mail'>('ambos')
   // Última búsqueda de cada factura en la carpeta y en el mail (del historial), para ver hasta dónde se llegó
   const [ultimasPdf, setUltimasPdf] = useState<Map<string, UltimaBusqueda>>(new Map())
+  // Hasta dónde se leyeron los reenvíos (inventario permanente, A-FEAT-1287 2026-10-20)
+  const [inventarioPdf, setInventarioPdf] = useState<EstadoInventario | { error: string } | null>(null)
   const cancelarPdfRef = useRef(false)
   // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
   // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
@@ -840,6 +843,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         if (data) logs.push(...(data as typeof logs))
       }
       if (vivo) setUltimasPdf(ultimasBusquedas(logs))
+      const inv = await estadoInventario()
+      if (vivo) setInventarioPdf(inv)
     })()
     return () => { vivo = false }
   }, [modalBuscarPdf, facturas, schemaName])
@@ -12476,6 +12481,33 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           {' · '}📧 mail <b>{hora(r.mail)}</b>{r.sinMail > 0 && r.mail ? <span className="text-gray-400"> ({r.sinMail} nunca)</span> : null}
                         </p>
                       )}
+                      {inventarioPdf && 'error' in inventarioPdf && (
+                        <p className="text-gray-400">📨 Reenvíos: no se pudo leer lo ya leído ({inventarioPdf.error})</p>
+                      )}
+                      {inventarioPdf && !('error' in inventarioPdf) && (
+                        <div>
+                          <span className="text-gray-500">📨 Ya leído (no se vuelve a leer):</span>{' '}
+                          {inventarioPdf.reenviadores.map((rv, i) => {
+                            const b = rv.bloques[0]
+                            const d = (iso: string) => iso.split('-').reverse().map((x, k) => k === 2 ? x.slice(2) : x).join('/')
+                            return <span key={rv.clave}>{i > 0 ? ' · ' : ''}{rv.nombre} <b>{b ? `${d(b.desde)} → ${d(b.hasta)}` : 'nunca'}</b>{rv.bloques.length > 1 ? <span className="text-gray-400"> (+{rv.bloques.length - 1} tramo{rv.bloques.length > 2 ? 's' : ''} más viejo{rv.bloques.length > 2 ? 's' : ''})</span> : null}</span>
+                          })}
+                          {' · '}{inventarioPdf.adjuntos} adjunto{inventarioPdf.adjuntos === 1 ? '' : 's'} guardado{inventarioPdf.adjuntos === 1 ? '' : 's'}
+                          {inventarioPdf.ilegibles > 0 && (
+                            <details className="inline-block ml-1">
+                              <summary className="inline cursor-pointer text-amber-700 underline">{inventarioPdf.ilegibles} ilegible{inventarioPdf.ilegibles === 1 ? '' : 's'}</summary>
+                              <ul className="mt-1 ml-3 list-disc">
+                                {inventarioPdf.ilegiblesLista.map(x => (
+                                  <li key={x.gmail_message_id + (x.nombre_archivo || '')}>
+                                    <a className="text-blue-600 underline" href={`https://mail.google.com/mail/u/0/#all/${x.gmail_message_id}`} target="_blank" rel="noreferrer">{x.nombre_archivo || 'adjunto'}</a>
+                                    {' '}<span className="text-gray-400">{(x.fecha_mail || '').slice(0, 10).split('-').reverse().join('/')} · {x.chars ?? 0} caracteres</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                        </div>
+                      )}
                       {enVer.length > 0 && (
                         <p className="text-amber-700">
                           ⚠️ {enVer.length} en VER no aparecen acá porque ya tienen un candidato: resolvelas desde el ✓ de la columna FC (Es ésta / No es ésta).
@@ -12621,8 +12653,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         const comoBusca = pdfDonde === 'carpeta'
                           ? 'Sólo se mira la carpeta del mes en Drive (y la del mes siguiente). Las que no estén quedan como estaban: no se buscan en el mail.'
                           : pdfDonde === 'mail'
-                            ? 'Sólo se buscan en tu Gmail (~5-10s cada una), sin mirar la carpeta.'
-                            : 'Primero se mira la carpeta del mes en Drive (y la del mes siguiente); las que no estén se buscan en tu Gmail (~5-10s cada una).'
+                            ? 'Sólo el mail, sin mirar la carpeta: primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
+                            : 'Primero la carpeta del mes en Drive (y la del siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
                         if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano.\n\n¿Continuar?`)) return
                         cancelarPdfRef.current = false
                         setBuscandoPdfs(true)

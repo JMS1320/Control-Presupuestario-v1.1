@@ -13,6 +13,7 @@ import type { Empresa } from '@/lib/gas-pdf/types'
 import { subcarpetasDelMes } from '@/lib/facturas/vincular-archivo'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { fcAlVincularDesdeCarpeta, type DecisionCarpeta } from '@/lib/gas-pdf/lote'
+import { pedirAlGas as pedirAlGasCon } from '@/lib/gas-pdf/gas-http'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -26,47 +27,7 @@ export const maxDuration = 60
  * "falló" y "falló porque el OCR de N archivos no entró en el tiempo disponible".
  */
 const TOPE_GAS_MS = 45_000
-
-/**
- * Habla con el GAS y devuelve su JSON, o tira un error que se entiende solo.
- *
- * Las tres formas de fallar que se veían todas igual —tiempo agotado, HTTP no-200, y respuesta que
- * no es JSON (el GAS devuelve HTML cuando hay problema de permisos o redirección)— ahora dicen cuál
- * fue. El cuerpo se lee como texto primero justamente para poder mostrar el HTML recortado en vez
- * de un `Unexpected token < in JSON`, que no le sirve a nadie.
- */
-async function pedirAlGas(url: string, payload: unknown, etiqueta: string): Promise<any> {
-  let r: Response
-  try {
-    r = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(TOPE_GAS_MS),
-    })
-  } catch (e) {
-    const err = e as Error
-    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
-      throw new Error(
-        `El GAS no respondió en ${TOPE_GAS_MS / 1000}s (${etiqueta}). ` +
-        `Suele ser el OCR: probá con menos archivos por tanda.`
-      )
-    }
-    throw new Error(`No se pudo contactar al GAS (${etiqueta}): ${err.message}`)
-  }
-
-  const txt = await r.text()
-  if (!r.ok) {
-    throw new Error(`El GAS respondió HTTP ${r.status} (${etiqueta}): ${txt.slice(0, 200)}`)
-  }
-  try {
-    return JSON.parse(txt)
-  } catch {
-    throw new Error(
-      `El GAS no devolvió JSON (${etiqueta}). Suele ser permisos o una redirección del despliegue. ` +
-      `Empieza con: ${txt.slice(0, 160)}`
-    )
-  }
-}
+const pedirAlGas = (url: string, payload: unknown, etiqueta: string) => pedirAlGasCon(url, payload, etiqueta, TOPE_GAS_MS)
 
 function schemaDe(e: Empresa): string {
   return e === 'PAM' ? 'pam' : e === 'MA' ? 'ma' : 'msa'

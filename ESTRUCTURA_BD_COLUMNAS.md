@@ -21,7 +21,15 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, fecha_hora tstz, user_role varchar, empresa varchar, tipo varchar, fecha_desde date, fecha_hasta date, comprobantes_descargados int, comprobantes_importados int, duplicados int, errores int, status varchar, error_mensaje text, created_at tstz`
 
 ### arca_pdf_busqueda_log
-`id uuid, factura_id uuid, factura_schema varchar, lote_id uuid, fecha_hora tstz, resultado varchar, drive_url varchar, observaciones text, tiempo_ejecucion_ms int, cuit_emisor varchar, numero_comprobante varchar, monto_factura numeric, monto_pdf numeric`
+`id uuid, factura_id uuid, factura_schema varchar, lote_id uuid, fecha_hora tstz, resultado varchar, drive_url varchar, observaciones text, tiempo_ejecucion_ms int, cuit_emisor varchar, numero_comprobante varchar, monto_factura numeric, monto_pdf numeric, gmail_message_id text`
+> `resultado` (sin CHECK): descargado · revisar · no_encontrado · error · pendiente · **descartado** («No es ésta»). Prefijo en `observaciones`: `[carpeta]` / `[reenvío]`; sin prefijo = mail del proveedor.
+
+### arca_pdf_inventario  (2026-10-20, script 90 — A-FEAT-1287)
+`id uuid, gmail_message_id text, adjunto_idx int, hash text, nombre_archivo text, tamano int, remitente text, asunto text, fecha_mail tstz, recolector text, estado text ('leido'|'ilegible'|'copia'|'error'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text` · único `(gmail_message_id, adjunto_idx)`
+> `recolector` = la fuente: el mail del reenviador o `asunto:factura`. `copia` = el mismo archivo (hash) ya leído en otro mail. Los `error` se reintentan.
+
+### arca_pdf_barrido_tramo  (2026-10-20, script 90)
+`id uuid, recolector text, desde date, hasta date (inclusive), mails int, adjuntos int, hecho_at tstz, hecho_por text`
 
 ### centros_costo
 `id uuid, nombre varchar, activo boolean, created_at tstz`

@@ -11,6 +11,8 @@ import type {
   ResumenItem,
 } from './types'
 import { agruparPorCarpeta, decidirVinculosCarpeta, rotuloFactura, type FacturaParaCarpeta, type HallazgoCarpeta, type DecisionCarpeta, type ItemInforme } from './lote'
+import { cruzarConInventario, barrerReenvios, cerrarNoEncontradas, type AvanceBarrido } from './barrido'
+import { hoyArgentina } from '@/lib/fechas'
 
 export interface BuscarPdfLoteOptions {
   empresa: Empresa
@@ -53,8 +55,10 @@ export interface ProgresoLote {
   sinFuente: number
   /** Otro desenlace sin búsqueda (ej. proveedor de Portal) */
   otros: number
-  /** En qué paso está: mirando la carpeta o buscando en el mail */
-  fase?: 'carpeta' | 'mail'
+  /** En qué paso está: carpeta, inventario de reenvíos ya leídos, mail del proveedor, o leyendo reenvíos */
+  fase?: 'carpeta' | 'inventario' | 'mail' | 'reenvios'
+  /** Avance de la lectura de reenvíos (A-FEAT-1287, 2026-10-20) */
+  reenviosAvance?: AvanceBarrido
   /** Si la carpeta no se pudo leer: el motivo. Esas facturas igual salen al mail */
   errorCarpeta?: string
   /** Avance de la etapa carpeta: qué mes está leyendo y cuántos archivos van (el OCR es lento) */
@@ -118,8 +122,9 @@ export async function buscarPdfFactura(input: ApiBuscarPdfInput, timeoutMs = 650
       return { ok: false, factura_id: input.factura_id, error: data.error || `HTTP ${r.status}` }
     }
     // «No encontrada»: recién ahora que la respuesta llegó se pasa a NO Mail (2º paso). Si falla,
-    // queda como estaba y cuenta como error para reintentar.
-    if (data.ok && data.resultado_gas === 'no_encontrada') {
+    // queda como estaba y cuenta como error para reintentar. Con `sin_reenvios` todavía falta leer los
+    // reenvíos: el NO Mail lo decide el lote al terminar (barrido.ts).
+    if (data.ok && data.resultado_gas === 'no_encontrada' && !input.sin_reenvios) {
       try {
         const r2 = await fetch('/api/gas/buscar-pdf', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -279,12 +284,50 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     pendientes = []
   }
 
-  // ── 2 · Lo que falta, al mail ──
+  // Lo resuelto desde el inventario o los reenvíos: al informe, al mail resumen y a los contadores
+  const registrar = (items: ItemInforme[]) => {
+    for (const it of items) {
+      informe.push(it)
+      resultados.push({ empresa: opts.empresa, status: it.proceso === 'mail' ? 'ok' : 'revisar', factura: it.factura, proveedor: it.proveedor,
+        drive_url: it.links[0]?.url, observaciones: `Reenvío: ${it.detalle || ''}`,
+        candidatos: it.links.length > 1 ? it.links.map(l => ({ drive_url: l.url, observaciones: l.rotulo })) : undefined })
+      debug.push({ factura: it.factura, resultado: it.proceso === 'mail' ? 'ok (reenvío)' : 'revisar (reenvío)', obs: it.detalle })
+      progreso = { ...progreso, procesadas: progreso.procesadas + 1,
+        encontradas: progreso.encontradas + (it.proceso === 'mail' ? 1 : 0), paraRevisar: progreso.paraRevisar + (it.proceso === 'revisar' ? 1 : 0) }
+    }
+    progreso = { ...progreso, informe: [...informe] }
+  }
+  // Las que todavía no se resolvieron y quedaron sin terminar (cancelación o lectura cortada)
+  const sinTerminar = (ids: string[], detalle: string) => {
+    for (const id of ids) {
+      const f = facturaDe(id)
+      informe.push({ factura_id: id, factura: rotuloFactura(f, id), proveedor: f?.denominacion_emisor || '', proceso: 'sin_terminar', links: [], detalle })
+    }
+    progreso = { ...progreso, procesadas: progreso.procesadas + ids.length, otros: progreso.otros + ids.length, informe: [...informe] }
+  }
+  const facturasDe = (ids: string[]) => ids.map(id => facturaDe(id) || ({ id } as FacturaParaCarpeta))
+
+  // ── 2 · El inventario: lo que ya se leyó de los reenvíos, sin leer nada (A-FEAT-1287) ──
+  if (pendientes.length > 0) {
+    progreso = { ...progreso, fase: 'inventario' }
+    opts.onProgreso?.(progreso)
+    const c = await cruzarConInventario(opts.empresa, facturasDe(pendientes), loteId)
+    if (c.resueltas.length > 0) {
+      registrar(c.resueltas)
+      const ya = new Set(c.resueltas.map(r => r.factura_id))
+      pendientes = pendientes.filter(id => !ya.has(id))
+    }
+    if (c.error) debug.push({ factura: '(inventario)', resultado: 'error', obs: c.error })
+  }
+
+  // ── 3 · El mail del PROVEEDOR, factura por factura (los reenvíos van aparte, en el 4) ──
+  const paraReenvios: string[] = []
   progreso = { ...progreso, fase: 'mail' }
   opts.onProgreso?.(progreso)
   for (let i = 0; i < pendientes.length; i++) {
     // Cancelación: si el caller pide cortar, frenamos antes de procesar la siguiente
     if (opts.isCancelled?.()) {
+      sinTerminar([...paraReenvios, ...pendientes.slice(i)], 'Se canceló la búsqueda: quedó como estaba')
       progreso = { ...progreso, cancelado: true, finalizado: true }
       if (opts.enviarResumen !== false) {
         const res = await enviarResumenLote(resultados, progreso, debug)
@@ -294,7 +337,14 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
       return progreso
     }
     const facturaId = pendientes[i]
-    const out = await buscarPdfFactura({ factura_id: facturaId, empresa: opts.empresa, lote_id: loteId }, timeout)
+    const out = await buscarPdfFactura({ factura_id: facturaId, empresa: opts.empresa, lote_id: loteId, sin_reenvios: true }, timeout)
+    // No estaba en el mail del proveedor (o no tiene mail): todavía faltan los reenvíos
+    if (out.ok && (out.resultado_gas === 'no_encontrada' || out.fc_nuevo === 'Buscar')) {
+      paraReenvios.push(facturaId)
+      debug.push({ factura: out.factura_label, resultado: 'no en el mail del proveedor', obs: out.observaciones })
+      if (i < pendientes.length - 1 && delay > 0) await new Promise(res => setTimeout(res, delay))
+      continue
+    }
     progreso = actualizarProgreso(progreso, out)
     const item = aResumenItem(out, opts.empresa)
     if (item) resultados.push(item)
@@ -309,11 +359,42 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
     }
   }
 
+  // ── 4 · Los REENVÍOS: se leen una sola vez desde la emisión más vieja hasta hoy, y lo leído queda ──
+  if (paraReenvios.length > 0) {
+    progreso = { ...progreso, fase: 'reenvios' }
+    opts.onProgreso?.(progreso)
+    const b = await barrerReenvios({
+      empresa: opts.empresa, facturas: facturasDe(paraReenvios), loteId, hoy: hoyArgentina(), isCancelled: opts.isCancelled,
+      onAvance: a => { progreso = { ...progreso, reenviosAvance: a }; opts.onProgreso?.(progreso) },
+    })
+    registrar(b.resueltas)
+    const ya = new Set(b.resueltas.map(r => r.factura_id))
+    const restantes = paraReenvios.filter(id => !ya.has(id))
+    if (b.error) debug.push({ factura: '(reenvíos)', resultado: 'error', obs: b.error })
+    if (restantes.length > 0 && b.completo && !opts.isCancelled?.()) {
+      // Leído todo: recién ahora se puede decir que no está → NO Mail
+      const desde = b.leidoDesde ? b.leidoDesde.split('-').reverse().join('/') : ''
+      const detalle = `No está en el mail del proveedor, ni en los reenvíos, ni en los mails con factura en el asunto${desde ? ` (leídos desde el ${desde})` : ''}`
+      const r = await cerrarNoEncontradas(opts.empresa, restantes, loteId, true, detalle)
+      const aplicadas = new Set(r.aplicadas)
+      for (const id of restantes) {
+        const f = facturaDe(id)
+        const ok = aplicadas.has(id)
+        informe.push({ factura_id: id, factura: rotuloFactura(f, id), proveedor: f?.denominacion_emisor || '', proceso: ok ? 'no_encontrada' : 'error', links: [],
+          detalle: ok ? detalle : `No se encontró, pero no se pudo dejar en NO Mail: ${r.error || 'cambió mientras tanto'}` })
+      }
+      progreso = { ...progreso, procesadas: progreso.procesadas + restantes.length,
+        noEncontradas: progreso.noEncontradas + aplicadas.size, errores: progreso.errores + (restantes.length - aplicadas.size), informe: [...informe] }
+    } else if (restantes.length > 0) {
+      sinTerminar(restantes, opts.isCancelled?.() ? 'Se canceló la lectura de los reenvíos: quedó como estaba' : `La lectura de los reenvíos no terminó${b.error ? ` (${b.error})` : ''}: quedó como estaba, al volver a buscar sigue donde quedó`)
+    }
+  }
+
   if (opts.enviarResumen !== false) {
     const res = await enviarResumenLote(resultados, progreso, debug)
     progreso = { ...progreso, resumenEnviado: res.enviado, resumenError: res.error }
   }
-  progreso = { ...progreso, finalizado: true }
+  progreso = { ...progreso, finalizado: true, cancelado: opts.isCancelled?.() || undefined }
   opts.onProgreso?.(progreso)
   return progreso
 }

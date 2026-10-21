@@ -3618,6 +3618,13 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-20 · INVENTARIO de los reenvíos (`arca_pdf_inventario` + `arca_pdf_barrido_tramo`) — A-FEAT-1287
+
+Cada adjunto de los reenvíos (y de los mails con «factura / FC / fac» en el asunto) se lee **una vez** y lo
+que dice queda guardado; las facturas se cruzan contra eso sin volver a leer. Script `scripts/90-inventario-reenvios-pdf.sql`
+(deshacer: `90-…-deshacer.sql`, borra lo leído). Las dos tablas con RLS `puede_ver`/`puede_escribir`, sin recurso
+propio en `recurso_tablas` (igual que `arca_pdf_busqueda_log`), `authenticated` con permisos y `anon` sin nada.
+
 ### **2026-06-28: `gmail_message_id` en `arca_pdf_busqueda_log` (GAS PDF — Confirmar etiqueta el mail)**
 
 Para que al **Confirmar** una factura en VER/`_Revisar` el GAS pueda etiquetar (`Facturas Descargadas`) + marcar leído el mail de Gmail —igual que el match exacto—, hay que persistir el id del mensaje de Gmail entre la búsqueda (soft-match) y la confirmación (otra request, días después). Se guarda en el log de búsqueda, junto al `drive_url` del candidato. Aditivo, nullable, bajo riesgo (tabla de auditoría). GAS v0.9.7.

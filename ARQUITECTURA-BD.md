@@ -80,7 +80,9 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `tipos_sicore_config` | ✅ | — | Config tipos SICORE (alícuota, mínimo, régimen). |
 | `lotes_transferencias` | ❌ | — | Histórico de lotes de pago Galicia (Excel). |
 | `arca_descargas_log` | ✅ | — | Log descargas automáticas portal ARCA. |
-| `arca_pdf_busqueda_log` | ❌ | — | Log búsqueda automática de PDFs (GAS). |
+| `arca_pdf_busqueda_log` | ✅ | — | Log búsqueda automática de PDFs (GAS). ⚠️ cambió: decía ❌ — tiene RLS `puede_ver`/`puede_escribir` (verificado 2026-10-20). |
+| `arca_pdf_inventario` | ✅ | — | Inventario de adjuntos de los reenvíos y de los mails con «factura/FC/fac» en el asunto: lo que leyó el OCR de cada PDF, una vez para siempre (A-FEAT-1287, script 90). |
+| `arca_pdf_barrido_tramo` | ✅ | — | Qué días de mail de cada fuente ya se leyeron enteros («hasta dónde se llegó»). Script 90. |
 | **vistas** `sueldos_*` (×6) | — | — | Módulo sueldos expuesto como **vistas**: campanas, empleados, componentes_salario, cuentas_empleado, periodos, pagos. |
 
 ### `msa` — contable/fiscal MSA

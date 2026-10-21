@@ -1377,6 +1377,8 @@ Desde el informe también podés:
 
 **Filtro Estado FC**: en los filtros de Facturas ARCA, para ver sólo las Portal, VER, NO Mail, etc.
 
+**Los reenvíos se leen una sola vez**: el mail del **proveedor** se busca factura por factura. Lo que no está ahí se busca en los **reenvíos de Jose y Andrés** y en **cualquier mail con «factura», «FC» o «fac» en el asunto**: se leen desde la emisión más vieja de las que faltan hasta hoy, de lo más nuevo a lo más viejo, y **cada PDF leído queda guardado** — la próxima búsqueda no lo vuelve a leer y lo cruza al instante. En **Buscar PDFs**, la línea **📨 Ya leído** dice hasta qué fecha se leyó cada fuente y cuántos PDF no se pudieron leer (con el link al mail). Si cancelás o la lectura no termina, las facturas quedan como estaban y la próxima vez sigue donde quedó; recién cuando se leyó todo, las que no aparecieron pasan a **NO Mail**.
+
 **→ Portal** está en la lista de **Buscar PDFs**, al lado del estado (antes de buscar): el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. Sirve para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
 
 Mientras mira la carpeta, el cartel dice qué mes está leyendo y cuántos archivos van. Si se corta la conexión, la factura

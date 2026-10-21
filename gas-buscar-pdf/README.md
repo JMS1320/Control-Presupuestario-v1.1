@@ -6,7 +6,14 @@ informados por ARCA, y archiva el PDF en Drive.
 Vive **fuera** de la app Next.js — corre en tu cuenta Google porque necesita
 acceso a TU Gmail / TU Drive.
 
-## Versión actual: **v0.18.0** (verificable con un GET a la URL `/exec` → `{version}`)
+## Versión actual: **v0.19.0** (verificable con un GET a la URL `/exec` → `{version}`)
+
+> **0.19.0 (2026-10-20, A-FEAT-1287)** — ⚠️ **archivo NUEVO `Inventario.gs`: hay que subirlo junto con `Main.gs`.**
+> Los reenvíos ya no se leen factura por factura: la app los recorre una vez por tramos de días y guarda lo leído
+> (`arca_pdf_inventario`, script 90). Acciones nuevas: `inventario_listar`, `inventario_leer`, `evaluar` (la regla de
+> 5 datos sobre textos ya leídos) y `guardar_adjunto`. Además: tope de 40 s en la búsqueda por factura («búsqueda
+> incompleta»), a Gmail se le piden sólo mails con PDF o imagen, y un PDF legible de otro comprobante ya no se
+> informa como «ilegible».
 
 > **0.18.0 (2026-10-20, A-FEAT-1287)** — un archivo es de la factura si coinciden **CUIT + número + monto + tipo + fecha**
 > (`evaluarCoincidencia`, la misma para carpeta y mail); si fallan tipo o fecha queda a revisar con el motivo. Con más de un
@@ -190,7 +197,8 @@ y aceptá los permisos nuevos. Si no, las funciones que usan ese scope fallan
 (`You do not have permission to call Session.getEffectiveUser`).
 
 > **Sin clasp**: si no usás `clasp push`, el flujo manual equivalente es: en el editor GAS,
-> **pegar `Main.gs`** (y `appsscript.json` si cambió) → guardar → Deploy versión nueva.
+> **pegar `Main.gs`** (y `appsscript.json` si cambió) → guardar → Deploy versión nueva. Desde 0.19.0 también
+> **`Inventario.gs`** (en el editor: ➕ Archivo → Script → nombre `Inventario`, pegar, guardar).
 
 ## Variables de entorno necesarias en Vercel
 
