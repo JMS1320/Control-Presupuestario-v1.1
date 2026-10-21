@@ -30,8 +30,13 @@ const cuitConGuiones = (c?: string | null) => {
   const d = String(c || '').replace(/\D/g, '')
   return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : d
 }
-/** La firma del pedido, renglón por renglón (usuario 2026-10-21) */
-export const FIRMA_PEDIDO = ['Jose Martinez Sobrado', 'Martinez Sobrado Agro SRL']
+/** La firma del pedido, renglón por renglón (usuario 2026-10-21). MSA firma con la empresa debajo;
+ *  PAM y MA, sólo el nombre (usuario 2026-10-22: «si son de PAM o MA simplemente firmo yo sin la empresa»). */
+export const FIRMA_PEDIDO: Record<Empresa, string[]> = {
+  MSA: ['Jose Martinez Sobrado', 'Martinez Sobrado Agro SRL'],
+  PAM: ['Jose Martinez Sobrado'],
+  MA: ['Jose Martinez Sobrado'],
+}
 
 const escaparHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
@@ -48,7 +53,7 @@ export function armarPedidoProveedor(empresa: Empresa, facturas: readonly Factur
     lineas.join('\n'),
     `¿Nos ${varias ? 'las' : 'la'} podrían mandar a este mail? Si ya ${varias ? 'las' : 'la'} enviaron, les pedimos que ${varias ? 'las' : 'la'} reenvíen, por favor.`,
     'Muchas gracias.',
-    FIRMA_PEDIDO.join('\n'),
+    FIRMA_PEDIDO[empresa].join('\n'),
   ]
   return {
     asunto: `Pedido de ${varias ? 'facturas' : 'factura'} — ${nombre}`,

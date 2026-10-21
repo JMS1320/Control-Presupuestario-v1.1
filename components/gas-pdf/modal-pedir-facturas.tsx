@@ -86,7 +86,7 @@ export function ModalPedirFacturas({ open, empresa, facturaIds, onClose, onHecho
         <DialogHeader>
           <DialogTitle>📮 Pedir la factura al proveedor</DialogTitle>
           <DialogDescription>
-            Un mail nuevo por proveedor, desde la casilla de la empresa, firmado Jose Martinez Sobrado · Martinez Sobrado Agro SRL. Elegí si quedan como borrador en Gmail o se envían.
+            Un mail nuevo por proveedor, desde la casilla de la empresa, firmado Jose Martinez Sobrado (y debajo Martinez Sobrado Agro SRL si es de MSA). Elegí si quedan como borrador en Gmail o se envían.
           </DialogDescription>
         </DialogHeader>
         {error && <p className="text-sm text-red-700">No se pudo armar el pedido: {error}</p>}

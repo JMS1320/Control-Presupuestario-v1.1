@@ -30,8 +30,9 @@ export function rotuloFactura(f: Partial<FacturaParaCarpeta> | undefined, id = '
 }
 
 /**
- * Las carpetas a recorrer, en orden de mes, con las facturas que pueden estar en cada una. Una
- * factura aparece en DOS (su mes y el siguiente); las que ya tienen PDF no se buscan.
+ * Las carpetas a recorrer, en orden de mes, con las facturas que pueden estar en cada una. La imputada
+ * aparece en UNA (su subdiario); la sin imputar en DOS (su mes de emisión y el siguiente) — ver
+ * `mesesDondeBuscar`, ⚠️ cambió 2026-10-22. Las que ya tienen PDF no se buscan.
  */
 export function agruparPorCarpeta(facturas: readonly FacturaParaCarpeta[]): Array<{ anio: number; mes: number; ids: string[] }> {
   const porMes = new Map<string, { anio: number; mes: number; ids: string[] }>()
@@ -48,7 +49,7 @@ export function agruparPorCarpeta(facturas: readonly FacturaParaCarpeta[]): Arra
 
 /**
  * Las facturas que quedan LISTAS para decidir al terminar la carpeta número `nc`: las que ya no
- * aparecen en ninguna carpeta posterior (su mes y el siguiente están leídos), salvo las de una
+ * aparecen en ninguna carpeta posterior (todas las suyas están leídas), salvo las de una
  * carpeta que no se pudo leer. Así se vincula a medida que se lee (usuario 2026-10-21) sin romper
  * la regla de «dos candidatos → ninguno»: cuando se decide, ya se vio todo lo que le corresponde.
  */

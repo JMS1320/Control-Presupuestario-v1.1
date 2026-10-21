@@ -73,14 +73,18 @@ export function subcarpetasDelMes(empresa: 'MSA' | 'PAM' | 'MA', anio: number, m
 }
 
 /**
- * 🔎 Dónde puede estar YA archivada una factura (A-FEAT-1287): el mes de `periodoDeArchivo` **y el
- * siguiente**. Una factura de fin de mes suele imputarse al otro, y el empleado la guarda donde va
- * contablemente; sin mirar el siguiente, se la saldría a buscar al mail teniéndola en Drive
- * (decisión del usuario 2026-10-16).
+ * 🔎 Dónde puede estar YA archivada una factura (A-FEAT-1287):
+ * - **imputada** → SÓLO la carpeta de su subdiario. La imputación es la verdad (usuario 2026-10-22:
+ *   *«está mal que la app busque en 2 carpetas cuando está imputada en 1… debemos tomar como verdad
+ *   eso y si hay algún error de archivo deberá saltar por otro lado»*); el «otro lado» es el registro
+ *   del archivo digital, que avisa si la factura está guardada en otra carpeta.
+ * - **sin imputar** → el mes de emisión **y el siguiente**: todavía no se sabe a cuál va.
+ * ⚠️ cambió 2026-10-22: hasta acá eran siempre las dos (decisión del 2026-10-16).
  */
 export function mesesDondeBuscar(factura: Record<string, unknown>): Array<{ anio: number; mes: number }> {
-  const { anio, mes } = periodoDeArchivo(factura)
+  const { anio, mes, imputada } = periodoDeArchivo(factura)
   if (!anio || !mes) return []
+  if (imputada) return [{ anio, mes }]
   const sig = mes === 12 ? { anio: anio + 1, mes: 1 } : { anio, mes: mes + 1 }
   return [{ anio, mes }, sig]
 }

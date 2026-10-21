@@ -424,11 +424,11 @@ export async function buscarPdfLote(opts: BuscarPdfLoteOptions): Promise<Progres
 }
 
 /**
- * 🗂️ Mira las carpetas del mes de cada factura (y la del siguiente) y vincula lo que ya está
+ * 🗂️ Mira la carpeta de cada factura (la de su subdiario; sin imputar, su mes y el siguiente) y vincula lo que ya está
  * archivado. Usa el mismo lector que el «🔗 Vincular PDFs» de Subdiarios, con la regla de 2026-10-20:
  * CUIT + número + monto + **tipo + fecha**.
  *
- * ⚠️ Una factura se decide recién cuando se leyeron ENTERAS sus dos carpetas (su mes y el siguiente):
+ * ⚠️ Una factura se decide recién cuando se leyeron ENTERAS sus carpetas (una si está imputada, dos si no):
  * ahí ya se sabe si tiene un archivo o dos, y con dos no se vincula ninguno (`decidirVinculosCarpeta`).
  * Y se aplica EN ESE MOMENTO, no al final de todas las carpetas (usuario 2026-10-21): antes, una corrida
  * larga que se cortaba perdía todo lo leído; ahora un corte sólo pierde la carpeta en curso.

@@ -12433,7 +12433,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <DialogTitle>Buscar PDFs</DialogTitle>
             <DialogDescription>
               Sólo aparecen las que no tienen 📎 (nunca las de Portal ni las de No). Vienen marcadas y arriba las de «Buscar», sin estado y las «Sí» de Ulises sin archivo; podés sumar o sacar a mano.
-              Primero se mira la carpeta del mes en Drive (y la del siguiente); lo que no esté, se busca en Gmail. Si aparecen dos archivos para una factura, no se vincula ninguno: queda en VER para que elijas.
+              Primero se mira la carpeta de su subdiario en Drive (si no está imputada, la de su mes de emisión y la del siguiente); lo que no esté, se busca en Gmail. Si aparecen dos archivos para una factura, no se vincula ninguno: queda en VER para que elijas.
             </DialogDescription>
             <LeyendaEstadosFc />
             <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
@@ -12722,10 +12722,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         const ids = Array.from(seleccionPdf)
                         if (ids.length === 0) return
                         const comoBusca = pdfDonde === 'carpeta'
-                          ? 'Sólo se mira la carpeta del mes en Drive (y la del mes siguiente). Las que no estén quedan como estaban: no se buscan en el mail.'
+                          ? 'Sólo se mira la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente). Las que no estén quedan como estaban: no se buscan en el mail.'
                           : pdfDonde === 'mail'
                             ? 'Sólo el mail, sin mirar la carpeta: primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
-                            : 'Primero la carpeta del mes en Drive (y la del siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
+                            : 'Primero la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
                         if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano.\n\n¿Continuar?`)) return
                         cancelarPdfRef.current = false
                         setBuscandoPdfs(true)

@@ -985,16 +985,16 @@ export function correrCasos(): Resultado[] {
     "u3⭐ · u1 · u2", ordenados.map(a => a.url + (a.sugerido ? "⭐" : "")).join(" · "),
     ordenados[0].url === "u3" && ordenados[0].sugerido && ordenados.filter(a => a.sugerido).length === 1 && ordenados.length === 3, "A-FEAT-1276")
 
-  // A-FEAT-1287: el buscador de PDFs mira primero la carpeta del mes y la del siguiente.
+  // A-FEAT-1287: el buscador de PDFs mira primero la carpeta (imputada: sólo su subdiario — 2026-10-22; sin imputar: su mes y el siguiente).
   const carpetas = agruparPorCarpeta([
     { id: "dic", "año_contable": null, mes_contable: null, fecha_emision: "2025-12-30" },
     { id: "imp", "año_contable": 2026, mes_contable: 1, fecha_emision: "2025-12-15" },
     { id: "ya", "año_contable": null, mes_contable: null, fecha_emision: "2025-12-01", pdf_drive_url: "https://drive.google.com/x" },
   ])
   const vistaCarpetas = carpetas.map(c => `${c.anio}-${c.mes}:${c.ids.join("+")}`).join(" · ")
-  chequear("Buscador de PDFs — carpeta primero", "🔴 Cada factura se busca en SU mes y en el SIGUIENTE (diciembre pasa a enero del año que viene); la imputada usa el mes contable; la que ya tiene PDF no se busca",
-    "2025-12:dic · 2026-1:dic+imp · 2026-2:imp", vistaCarpetas,
-    vistaCarpetas === "2025-12:dic · 2026-1:dic+imp · 2026-2:imp", "A-FEAT-1287")
+  chequear("Buscador de PDFs — carpeta primero", "🔴 La IMPUTADA se busca sólo en la carpeta de su subdiario (usuario 2026-10-22); la sin imputar, en su mes de emisión y el SIGUIENTE (diciembre pasa a enero); la que ya tiene PDF no se busca",
+    "2025-12:dic · 2026-1:dic+imp", vistaCarpetas,
+    vistaCarpetas === "2025-12:dic · 2026-1:dic+imp", "A-FEAT-1287")
   chequear("Buscador de PDFs — carpeta primero", "La carpeta del mes: MSA por campaña (corta el 1/7), PAM y MA por año",
     "2025-2026/26-06 · 2026-2027/26-07 · 2026/26-07",
     `${subcarpetasDelMes("MSA", 2026, 6).join("/")} · ${subcarpetasDelMes("MSA", 2026, 7).join("/")} · ${subcarpetasDelMes("PAM", 2026, 7).join("/")}`,
@@ -1160,6 +1160,7 @@ export function correrCasos(): Resultado[] {
     { fecha_emision: "2026-08-01", comprobante: "Nota de Crédito A 9-63", imp_total: -5000 },
     { fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 1234567.89 },
   ])
+  const pPam = armarPedidoProveedor("PAM", [{ fecha_emision: "2026-07-15", comprobante: "Factura A 2-484", imp_total: 100 }])
   const ultPed = ultimasBusquedas([
     { factura_id: "f1", fecha_hora: "2026-10-10T15:00:00+00:00", resultado: "pedido", observaciones: "[pedido] Borrador del pedido al proveedor" },
     { factura_id: "f1", fecha_hora: "2026-10-12T15:00:00+00:00", resultado: "pedido", observaciones: "[pedido] Pedida al proveedor por mail" },
@@ -1170,10 +1171,11 @@ export function correrCasos(): Resultado[] {
     p1.texto.includes("no recibimos la factura:") && p1.texto.includes("(CUIT 30-61778601-6)") && p1.texto.includes("– 15/07/2026 · Factura A 2-484 · $ 1.234.567,89") && p1.texto.includes("¿Nos la podrían mandar") && p1.texto.endsWith("Muchas gracias.\n\nJose Martinez Sobrado\nMartinez Sobrado Agro SRL"),
     p2.asunto,
     p2.texto.includes("no recibimos las facturas:") && p2.texto.indexOf("2-484") < p2.texto.indexOf("9-63") && p2.texto.includes("$ 5.000,00"),
+    pPam.texto.endsWith("Muchas gracias.\n\nJose Martinez Sobrado") && pPam.texto.includes("Les escribimos de Sucesión de Plácido Alberto Martínez"),
     `${ultPed?.pedido?.slice(0, 10)} ${ultPed?.pedidoBorrador ? "borrador" : "enviado"} · mail ${ultPed?.mail?.slice(0, 10)}`,
     [haceCuanto("2026-10-21", "2026-10-21"), haceCuanto("2026-10-20", "2026-10-21"), haceCuanto("2026-10-14", "2026-10-21")].join(" / "),
   ].join(" | ")
-  const esperadoPed = "Pedido de factura — Martinez Sobrado Agro SRL | true | Pedido de facturas — Martinez Sobrado Agro SRL | true | 2026-10-12 enviado · mail 2026-10-01 | hoy / hace 1 día / hace 7 días"
+  const esperadoPed = "Pedido de factura — Martinez Sobrado Agro SRL | true | Pedido de facturas — Martinez Sobrado Agro SRL | true | true | 2026-10-12 enviado · mail 2026-10-01 | hoy / hace 1 día / hace 7 días"
   chequear("Buscador de PDFs — pedir la factura al proveedor", "🔴 «no recibimos la factura» (singular/plural), con nuestro CUIT, ordenado por fecha, importe en positivo; el último pedido se ve con su fecha y si quedó en borrador; el pedido no cuenta como búsqueda",
     esperadoPed, vistaPed, vistaPed === esperadoPed, "A-FEAT-1313")
 
