@@ -306,7 +306,10 @@ export async function POST(request: Request) {
       _token: token, accion: 'auditar', empresa, periodo,
       carpeta_drive_id: carpeta, subcarpetas, facturas: payload,
       skip_file_ids: [...(body.skip_file_ids || []), ...skipExtra], max_files: cuantos,
-      ...(Array.isArray(body.file_ids) ? { solo_file_ids: body.file_ids, devolver_texto: porIds } : {}),
+      ...(Array.isArray(body.file_ids) ? { solo_file_ids: body.file_ids } : {}),
+      // Registro del archivo digital: lo leído vuelve SIEMPRE, también desde «Vincular PDFs» de Subdiarios
+      // (usuario 2026-10-22: «los registros… se deberían llenar también con el procesamiento de Subdiarios»)
+      devolver_texto: true,
     }, `tanda de ${cuantos} archivo(s)`)) as {
       textos?: Array<{ file_id: string; archivo: string; url: string; texto: string; error?: string }>
       status?: string; existe?: boolean; observaciones?: string
@@ -320,7 +323,8 @@ export async function POST(request: Request) {
 
     // Registro del archivo digital: lo leído queda guardado con su carpeta (no se vuelve a leer, y sirve
     // para encontrar una factura archivada donde no va). Si falla el guardado, la búsqueda sigue igual.
-    if (porIds && Array.isArray(audit.textos) && audit.textos.length > 0) {
+    // Desde el buscador Y desde Subdiarios (A-FEAT-1287, 2026-10-22). El upsert no toca el veredicto.
+    if (Array.isArray(audit.textos) && audit.textos.length > 0) {
       const ahora = new Date().toISOString()
       await supabase.from('arca_pdf_archivo_digital').upsert(audit.textos.map(t => ({
         file_id: t.file_id, empresa, carpeta: subcarpetas.join('/'), nombre_archivo: t.archivo, url: t.url,

@@ -36,6 +36,8 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
+import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
   armarChequesDados, armarAnticiposAlCierre,
@@ -103,6 +105,11 @@ export function PapelesDeBalance() {
   const [sueldos, setSueldos] = useState<SueldosDelEjercicio | null>(null)
   /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
   const [cuentasCorrientes, setCuentasCorrientes] = useState<PapelDeCuentasCorrientes | null>(null)
+  /**
+   * 📒 «Asientos Contables» (A-FEAT-1318): las facturas no informadas en ARCA que no van al subdiario.
+   * `null` = no se pudo leer (la solapa no sale, y se avisa); `[]` = se leyó y no hay.
+   */
+  const [asientosContables, setAsientosContables] = useState<AsientoLibroDiario[] | null>(null)
 
   const generar = async () => {
     setCargando(true)
@@ -114,6 +121,7 @@ export function PapelesDeBalance() {
     setBancarios(null)
     setSueldos(null)
     setCuentasCorrientes(null)
+    setAsientosContables(null)
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -149,6 +157,20 @@ export function PapelesDeBalance() {
       ]
       const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej)
       setLibro(armado)
+
+      /**
+       * 📒 **Asientos Contables** (A-FEAT-1318). No tienen subdiario —por eso la consulta de arriba,
+       * que va por año contable, no los trae— y pertenecen al ejercicio por su fecha de emisión.
+       * En su propio `try`: si falla, el libro sale igual y se avisa que la solapa no va.
+       */
+      try {
+        const { data, error } = await supabase.schema(empresa.schema).from("comprobantes_arca")
+          .select("*").eq("ddjj_iva", ESTADO_ASIENTO_CONTABLE)
+        if (error) throw new Error(error.message)
+        setAsientosContables(asientosContablesDelEjercicio((data ?? []) as Record<string, unknown>[], ej))
+      } catch (e) {
+        toast.warning("No se pudieron leer las facturas de «Asientos Contables»: el Excel sale sin esa solapa.")
+      }
 
       /**
        * 💳 **Cuentas a pagar y a cobrar al cierre.**
@@ -527,6 +549,7 @@ export function PapelesDeBalance() {
                 sueldos ?? undefined,
                 cuentasCorrientes ?? undefined,
                 pendientes,
+                asientosContables ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
@@ -536,6 +559,16 @@ export function PapelesDeBalance() {
 
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
+
+        {libro && asientosContables && (
+          <p className="text-xs text-muted-foreground">
+            📒 <strong>Asientos Contables</strong> (no informadas en ARCA, fuera del subdiario):{" "}
+            {asientosContables.length === 0
+              ? "ninguna en este ejercicio."
+              : <>{asientosContables.length} factura(s) por $ {asientosContables.reduce((s, a) => s + a.total, 0)
+                  .toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — van en su solapa del Excel.</>}
+          </p>
+        )}
 
         <p className="text-xs text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 mt-0.5 shrink-0" />

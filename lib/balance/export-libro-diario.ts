@@ -971,6 +971,36 @@ const COLS_CUENTAS_CORRIENTES: Columna[] = [
  * 🚫 Y abajo va el bloque de **cheques en cartera diciendo que no hay registro**. Omitirlo se leería
  * como *«no había»*, que no es lo mismo que *«no lo sabemos»*.
  */
+/**
+ * 📒 «Asientos Contables» (A-FEAT-1318): las facturas no informadas en ARCA que no entraron en ningún
+ * subdiario, para que el contador las registre con asientos. Del ejercicio por su fecha de emisión.
+ */
+export function hojaDeAsientosContables(asientos: AsientoLibroDiario[], etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`ASIENTOS CONTABLES — ejercicio ${etiqueta}`])
+  f.push(["Facturas NO informadas en ARCA que no van al subdiario de IVA: se registran con asientos contables."])
+  f.push(["No están en ningún subdiario (ni en el Libro IVA): pertenecen al ejercicio por su fecha de emisión."])
+  f.push([])
+  hojaDeAsientos(asientos).forEach(r => f.push(r))
+  if (asientos.length > 0) {
+    // La fila 5 es la cabecera, así que el detalle arranca en la 6. Columnas H..M = Neto … Total.
+    const desde = 6
+    const hasta = 5 + asientos.length
+    const suma = (k: keyof AsientoLibroDiario) => money(asientos.reduce((s, a) => s + (Number(a[k]) || 0), 0))
+    f.push(["", "", "", "", "", "", "TOTAL",
+      conFormula(`SUM(H${desde}:H${hasta})`, suma("neto_gravado")),
+      conFormula(`SUM(I${desde}:I${hasta})`, suma("no_gravado")),
+      conFormula(`SUM(J${desde}:J${hasta})`, suma("exento")),
+      conFormula(`SUM(K${desde}:K${hasta})`, suma("otros_tributos")),
+      conFormula(`SUM(L${desde}:L${hasta})`, suma("iva")),
+      conFormula(`SUM(M${desde}:M${hasta})`, suma("total"))])
+  } else {
+    f.push([])
+    f.push(["NO HAY facturas en «Asientos Contables» en este ejercicio."])
+  }
+  return f
+}
+
 function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`PROVISIÓN DE COBROS — ejercicio ${etiqueta}`])
@@ -1735,6 +1765,8 @@ export function armarWorkbook(
   cuentasCorrientes?: PapelDeCuentasCorrientes,
   /** 📌 Los pendientes a revisar que anotó el usuario en la pantalla (A-FEAT-1258). */
   pendientes?: PendienteBalance[],
+  /** 📒 Las facturas de «Asientos Contables» del ejercicio (A-FEAT-1318). */
+  asientosContables?: AsientoLibroDiario[],
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1805,6 +1837,10 @@ export function armarWorkbook(
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
+  // 📒 A-FEAT-1318 — también SIEMPRE cuando la pantalla la pudo leer: vacía dice «no hay».
+  if (asientosContables) {
+    hoja(wb, "Asientos Contables", hojaDeAsientosContables(asientosContables, libro.ejercicio.etiqueta), COLS_ASIENTOS)
+  }
   // 👷 Los sueldos van pegados a los templates: son las dos partes que NO salen de comprobantes.
   if (sueldos) {
     hoja(wb, "13 Sueldos", hojaDeSueldos(sueldos, libro.ejercicio.etiqueta), COLS_SUELDOS)
@@ -1880,9 +1916,10 @@ export function descargarLibroDiario(
   sueldos?: Parameters<typeof armarWorkbook>[8],
   cuentasCorrientes?: Parameters<typeof armarWorkbook>[9],
   pendientes?: PendienteBalance[],
+  asientosContables?: AsientoLibroDiario[],
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes)
+    bancarios, sueldos, cuentasCorrientes, pendientes, asientosContables)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

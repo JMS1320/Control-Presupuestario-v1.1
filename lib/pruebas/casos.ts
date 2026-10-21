@@ -188,6 +188,9 @@ import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, reso
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
+import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
+import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
+import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
@@ -1145,6 +1148,37 @@ export function correrCasos(): Resultado[] {
     "0:[] 1:[jul] 2:[ago]", vistaInc, vistaInc === "0:[] 1:[jul] 2:[ago]", "A-FEAT-1287")
 
   // Registro del archivo digital: archivada en OTRA carpeta → a revisar con el aviso, nunca vinculada sola
+  // 🔎 Buscador de Subdiarios: sin acentos ni mayúsculas, todas las palabras, números sin separadores
+  const buscar = (q: string) => coincideBusqueda(q, ["COLOMAC S.A.", "0013-2220", "1.234.567,50", "PDF: Hernández Fc A"])
+  const vistaBuscar = [buscar("colomac"), buscar("hernandez fc"), buscar("132220"), buscar("1234567,50"), buscar("colomac buspack"), buscar(""), coincideBusqueda("00132220", ["0013", "2220"])].join(",")
+  chequear("Subdiarios — buscador", "🔴 «colomac» encuentra COLOMAC, «hernandez» a Hernández, un número sin separadores encuentra 0013-2220 y 1.234.567,50; todas las palabras tienen que estar; no inventa números pegando dos textos",
+    "true,true,true,true,false,true,false", vistaBuscar, vistaBuscar === "true,true,true,true,false,true,false", "A-FEAT-1287")
+  const vistaVer = [veredictoResuelve(null), veredictoResuelve("pendiente"), veredictoResuelve("no_informada")].join(",")
+  chequear("Subdiarios — veredicto", "«Pendiente» y sin veredicto siguen abiertos; los demás lo resuelven", "false,false,true", vistaVer, vistaVer === "false,false,true", "A-FEAT-1287")
+
+  // 📒 Asientos Contables: del ejercicio por fecha de emisión, sólo las marcadas, sin subdiario
+  {
+    const ej = armarEjercicio(2026, 6) // MSA 25/26: 01/07/2025 → 30/06/2026
+    const f = (id: string, ddjj: string, fecha: string, total: number) => ({ id, ddjj_iva: ddjj, fecha_emision: fecha, imp_total: total, imp_neto_gravado: total / 1.21, iva: total - total / 1.21, "año_contable": null, mes_contable: null, denominacion_emisor: "COLOMAC" })
+    const as = asientosContablesDelEjercicio([
+      f("b", ESTADO_ASIENTO_CONTABLE, "2026-03-10", 121), f("a", ESTADO_ASIENTO_CONTABLE, "2025-07-01", 242),
+      f("fuera", ESTADO_ASIENTO_CONTABLE, "2026-07-01", 1), f("antes", ESTADO_ASIENTO_CONTABLE, "2025-06-30", 1),
+      f("imputada", "Imputado", "2026-03-10", 1), f("sinimputar", "No", "2026-03-10", 1),
+    ], ej)
+    const vistaAs = `${as.map(a => a.id).join(",")} · ${as[0]?.subdiario} · ${CAMBIO_A_ASIENTO_CONTABLE.mes_contable}`
+    chequear("Asientos Contables — del ejercicio", "🔴 Sólo las marcadas «Asiento contable», con fecha entre 01/07/2025 y 30/06/2026 (los bordes adentro), por fecha; dicen «Asientos Contables» en vez de subdiario y se guardan sin mes contable",
+      "a,b · Asientos Contables · null", vistaAs, vistaAs === "a,b · Asientos Contables · null", "A-FEAT-1318")
+    const hoja = hojaDeAsientosContables(as, "25/26")
+    const totalFila = hoja[hoja.length - 1] as unknown[]
+    const celdaTotal = totalFila[12] as { v?: number; f?: string } | number
+    const valorTotal = typeof celdaTotal === "number" ? celdaTotal : celdaTotal?.v
+    const formula = typeof celdaTotal === "number" ? "" : celdaTotal?.f
+    const vacia = hojaDeAsientosContables([], "25/26").some(r => String((r as unknown[])[0] ?? "").startsWith("NO HAY"))
+    const vistaHoja = `${totalFila[6]} · ${valorTotal} · ${formula} · vacía dice no hay: ${vacia}`
+    chequear("Asientos Contables — solapa del balance", "La solapa termina con el TOTAL (fórmula SUMA sobre el detalle, mismo valor que la suma) y vacía dice «NO HAY»",
+      "TOTAL · 363 · SUM(M6:M7) · vacía dice no hay: true", vistaHoja, vistaHoja === "TOTAL · 363 · SUM(M6:M7) · vacía dice no hay: true", "A-FEAT-1318")
+  }
+
   const decOtra = decisionArchivadaEnOtra("f1", [
     { factura_id: "f1", drive_url: "u-dud", archivo: "02-03 - X.pdf", carpeta: "2025-2026/26-02", nivel: "dudoso", motivos: ["no se encontró la fecha 05/03/2026"] },
     { factura_id: "f1", drive_url: "u-ex", archivo: "02-05 - X.pdf", carpeta: "2025-2026/26-02", nivel: "exacto" },

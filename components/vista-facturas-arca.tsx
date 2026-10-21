@@ -58,6 +58,7 @@ import { ModalPedirFacturas } from "@/components/gas-pdf/modal-pedir-facturas"
 import { PanelAConfirmar } from "@/components/gas-pdf/panel-a-confirmar"
 import { haceCuanto } from "@/lib/gas-pdf/pedido"
 import { diaArgentino } from "@/lib/fechas"
+import { ESTADO_ASIENTO_CONTABLE, NOMBRE_ASIENTOS_CONTABLES, CAMBIO_A_ASIENTO_CONTABLE, CAMBIO_DESDE_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
@@ -70,7 +71,8 @@ import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subd
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
-import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo } from "@/lib/facturas/vincular-archivo"
+import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
+import { VEREDICTOS, etiquetaVeredicto, veredictoResuelve, coincideBusqueda, type Veredicto } from "@/lib/gas-pdf/veredicto"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
@@ -395,6 +397,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<string>>(new Set())
   const [facturasPeriodo, setFacturasPeriodo] = useState<FacturaArca[]>([])
   const [facturasImputacion, setFacturasImputacion] = useState<FacturaArca[]>([])
+  // 📒 «Asientos Contables» (A-FEAT-1318): la lista abierta (null = cerrada)
+  const [asientosContables, setAsientosContables] = useState<FacturaArca[] | null>(null)
   const [subtotales, setSubtotales] = useState<any>(null)
   const [cargandoSubdiarios, setCargandoSubdiarios] = useState(false)
   
@@ -416,6 +420,12 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // todas sus filas SON facturas sueltas, así que no manda `origen` ni `facturas_agrupadas`.
   const categoriaArchivo = (f: FacturaArca): 'con' | 'falta' | 'portal' =>
     estadoArchivoDigital(f) as 'con' | 'falta' | 'portal'
+  /** 🔎 Dónde busca el buscador de Subdiarios en una factura. */
+  const textosDeFactura = (f: FacturaArca): unknown[] => [
+    f.denominacion_emisor, f.cuit, `${f.punto_venta}-${f.numero_desde}`, f.numero_desde, f.tipo_comprobante_desc,
+    f.imp_total, (Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    f.detalle, f.cuenta_contable,
+  ]
   // Supervisión del archivo digital del período (corre la auditoría OCR en 2do plano, no bloquea).
   const [supervisandoArchivo, setSupervisandoArchivo] = useState(false)
   /**
@@ -449,6 +459,45 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const { porRegistro: revisionesFactura, recargar: recargarRevisiones } = useRevisionesDe(schemaName, 'comprobantes_arca')
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
+  /**
+   * 🔎 Buscador de Subdiarios (usuario 2026-10-22: «así yo busco rápido colomac»): filtra la tabla del
+   * período y los PDF sin vincular — en éstos busca también en lo que dice el PDF, si ya se leyó.
+   */
+  const [buscarSubdiario, setBuscarSubdiario] = useState('')
+  /**
+   * 🗂️ Lo que el registro del archivo digital sabe de cada PDF sin vincular (clave = file_id): lo leído
+   * y el VEREDICTO a mano (A-FEAT-1287, script 93). Sin el script 93 no hay veredicto, y el panel lo dice.
+   */
+  const [registroHuerfanos, setRegistroHuerfanos] = useState<Record<string, {
+    file_id: string; estado?: string; texto?: string | null
+    veredicto?: string | null; veredicto_nota?: string | null; veredicto_at?: string | null; veredicto_por?: string | null
+  }>>({})
+  const [veredictoDisponible, setVeredictoDisponible] = useState(true)
+  const [notaVeredicto, setNotaVeredicto] = useState<Record<string, string>>({})
+  const fileIdDeUrl = (url?: string | null) => { const m = String(url || '').match(/[-\w]{25,}/); return m ? m[0] : null }
+  useEffect(() => {
+    const ids = huerfanosSupervision.map(h => fileIdDeUrl(h.url)).filter(Boolean) as string[]
+    if (ids.length === 0) { setRegistroHuerfanos({}); return }
+    let vigente = true
+    ;(async () => {
+      const filas: any[] = []
+      let conVeredicto = true
+      for (let i = 0; i < ids.length; i += 100) {
+        const lote = ids.slice(i, i + 100)
+        let r: any = await supabase.from('arca_pdf_archivo_digital')
+          .select('file_id, estado, texto, veredicto, veredicto_nota, veredicto_at, veredicto_por').in('file_id', lote)
+        if (r.error) {   // sin el script 93: se lee lo que haya, sin veredicto
+          conVeredicto = false
+          r = await supabase.from('arca_pdf_archivo_digital').select('file_id, estado, texto').in('file_id', lote)
+        }
+        filas.push(...(r.data || []))
+      }
+      if (!vigente) return
+      setVeredictoDisponible(conVeredicto)
+      setRegistroHuerfanos(Object.fromEntries(filas.map(f => [f.file_id, f])))
+    })()
+    return () => { vigente = false }
+  }, [huerfanosSupervision])
   // Capa 2: factura elegida por el usuario para vincular cada huérfano (clave = url del PDF).
   const [vinculoHuerfanoSel, setVinculoHuerfanoSel] = useState<Record<string, string>>({})
   /**
@@ -2371,6 +2420,36 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   /**
+   * 🗂️ El veredicto a mano de un PDF sin vincular (A-FEAT-1287, usuario 2026-10-22). Se guarda en el
+   * registro del archivo digital; si el PDF todavía no se leyó (salió de «Contar»), se registra ahí
+   * mismo como «sin leer». `null` = sacar el veredicto.
+   */
+  const guardarVeredicto = async (h: { archivo: string; url: string }, v: Veredicto | null) => {
+    const fid = fileIdDeUrl(h.url)
+    if (!fid) { toast.error('No se pudo sacar el identificador del archivo de su link.'); return }
+    const { data: u } = await supabase.auth.getUser()
+    const nota = (notaVeredicto[h.url] ?? registroHuerfanos[fid]?.veredicto_nota ?? '').trim() || null
+    const fila = {
+      veredicto: v, veredicto_nota: v ? nota : null,
+      veredicto_at: v ? new Date().toISOString() : null, veredicto_por: v ? (u.user?.email || null) : null,
+    }
+    const up = await supabase.from('arca_pdf_archivo_digital').update(fila).eq('file_id', fid).select('file_id')
+    if (up.error) { toast.error('No se guardó el veredicto: ' + up.error.message); return }
+    if ((up.data || []).length === 0) {
+      const [mesStr, anioStr] = (periodoConsulta || '').split('/')
+      const ins = await supabase.from('arca_pdf_archivo_digital').insert({
+        file_id: fid, empresa,
+        carpeta: (parseInt(anioStr) && parseInt(mesStr)) ? subcarpetasDelMes(empresa as 'MSA' | 'PAM' | 'MA', parseInt(anioStr), parseInt(mesStr)).join('/') : null,
+        nombre_archivo: h.archivo, url: h.url, estado: 'sin_leer', ...fila,
+      })
+      if (ins.error) { toast.error('No se guardó el veredicto: ' + ins.error.message); return }
+    }
+    setRegistroHuerfanos(prev => ({ ...prev, [fid]: { ...(prev[fid] || { file_id: fid, estado: 'sin_leer' }), ...fila } }))
+    setNotaVeredicto(prev => { const n = { ...prev }; delete n[h.url]; return n })
+    toast.success(v ? `Veredicto: ${etiquetaVeredicto(v)}` : 'Veredicto sacado.')
+  }
+
+  /**
    * El motivo por el que una factura no tiene PDF. Es lo que decide QUE HACER con ella, y por eso
    * el mail las agrupa asi: de 17 faltantes, 7 se bajan del portal y 2 no se buscan -- el trabajo
    * real eran 8. Sin el motivo, una lista de 17 parece 17 pendientes.
@@ -2650,6 +2729,71 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       console.error('Error en imputación:', error)
       alert('Error al imputar facturas')
     }
+  }
+
+  /**
+   * 📒 Mandar facturas a «Asientos Contables» (A-FEAT-1318, usuario 2026-10-22): las no informadas en
+   * ARCA que no van al subdiario de IVA. Quedan sin mes contable (no entran en ningún subdiario ni en
+   * el Libro IVA) y salen en la solapa «Asientos Contables» de los Papeles del balance.
+   */
+  const mandarAAsientosContables = async (ids: string[]) => {
+    if (ids.length === 0) return
+    const sel = [...facturasImputacion, ...facturasPeriodo].filter(f => ids.includes(f.id))
+    const deArca = new Set(sel.filter(f => f.origen_factura === 'ARCA').map(f => f.id)).size
+    const declaradas = new Set(sel.filter(f => f.ddjj_iva === 'DDJJ OK').map(f => f.id)).size
+    if (declaradas > 0 && userRole !== 'admin') {
+      toast.error(`${declaradas} de las elegidas ya tienen la DDJJ presentada: no se pueden mover.`)
+      return
+    }
+    const ok = window.confirm(
+      `¿Mandar ${ids.length} factura(s) a «${NOMBRE_ASIENTOS_CONTABLES}»?
+
+` +
+      `No entran en ningún subdiario ni en el Libro IVA: salen en la solapa «${NOMBRE_ASIENTOS_CONTABLES}» de los ` +
+      `Papeles del balance, en el ejercicio de su fecha de emisión, para que el contador las registre con asientos.` +
+      (deArca > 0 ? `
+
+⚠️ ${deArca} vienen de ARCA (están informadas): esas normalmente van al subdiario.` : '') +
+      (declaradas > 0 ? `
+
+⚠️ ${declaradas} ya tienen la DDJJ presentada.` : '')
+    )
+    if (!ok) return
+    try {
+      for (let i = 0; i < ids.length; i += 20) {
+        const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+          .update(CAMBIO_A_ASIENTO_CONTABLE).in('id', ids.slice(i, i + 20))
+        if (error) throw error
+      }
+      toast.success(`${ids.length} factura(s) en «${NOMBRE_ASIENTOS_CONTABLES}».`)
+      setFacturasSeleccionadas(new Set())
+      setFacturasSeleccionadasGestion(new Set())
+      setFacturasImputacion(prev => prev.filter(f => !ids.includes(f.id)))
+      if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
+      if (asientosContables) await verAsientosContables()
+    } catch (e) {
+      toast.error('No se pudieron mover: ' + (e as Error).message)
+    }
+  }
+
+  /** La lista de «Asientos Contables» de la empresa (todas, la más nueva primero). */
+  const verAsientosContables = async () => {
+    const { data, error } = await supabase.schema(schemaName).from('comprobantes_arca')
+      .select('*').eq('ddjj_iva', ESTADO_ASIENTO_CONTABLE).order('fecha_emision', { ascending: false })
+    if (error) { toast.error('No se pudo leer «Asientos Contables»: ' + error.message); return }
+    setAsientosContables((data || []) as FacturaArca[])
+  }
+
+  /** Devolver una factura de «Asientos Contables» a sin imputar (para imputarla a un subdiario). */
+  const sacarDeAsientosContables = async (f: FacturaArca) => {
+    if (!window.confirm(`¿Sacar ${f.denominacion_emisor} ${f.punto_venta}-${f.numero_desde} de «${NOMBRE_ASIENTOS_CONTABLES}»?
+
+Queda sin imputar, para imputarla a un subdiario.`)) return
+    const { error } = await supabase.schema(schemaName).from('comprobantes_arca')
+      .update(CAMBIO_DESDE_ASIENTO_CONTABLE).eq('id', f.id).eq('ddjj_iva', ESTADO_ASIENTO_CONTABLE)
+    if (error) { toast.error('No se pudo: ' + error.message); return }
+    toast.success('Quedó sin imputar.')
+    await verAsientosContables()
   }
 
   const confirmarDDJJ = async () => {
@@ -3439,15 +3583,16 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       if (nuevoEstadoDDJJ && nuevoEstadoDDJJ !== 'sin-cambios') {
         updateData.ddjj_iva = nuevoEstadoDDJJ
 
-        // Si se cambia a "No", limpiar año_contable y mes_contable
-        if (nuevoEstadoDDJJ === 'No') {
+        // Si se cambia a "No" o a «Asientos Contables» (A-FEAT-1318), limpiar año_contable y mes_contable
+        if (nuevoEstadoDDJJ === 'No' || nuevoEstadoDDJJ === ESTADO_ASIENTO_CONTABLE) {
           updateData.año_contable = null
           updateData.mes_contable = null
           console.log('🧹 Limpiando año_contable y mes_contable por cambio a "No"')
         }
       }
 
-      if (nuevoPeriodo && nuevoPeriodo !== 'sin-cambios') {
+      // «Asientos Contables» no tiene período: si además se eligió uno, manda el destino (A-FEAT-1318)
+      if (nuevoPeriodo && nuevoPeriodo !== 'sin-cambios' && nuevoEstadoDDJJ !== ESTADO_ASIENTO_CONTABLE) {
         const [mes, año] = nuevoPeriodo.split('/')
         updateData.mes_contable = parseInt(mes)
         updateData.año_contable = parseInt(año)
@@ -6310,6 +6455,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 >
                   Imputar Facturas
                 </Button>
+                {/* 📒 A-FEAT-1318 */}
+                <Button variant="outline" className="w-full" onClick={verAsientosContables}
+                  title="Las facturas no informadas en ARCA que no van al subdiario: se exportan en los Papeles del balance para registrarlas con asientos">
+                  📒 {NOMBRE_ASIENTOS_CONTABLES}
+                </Button>
                 
                 {/* Botón Confirmar DDJJ - solo si hay facturas "Imputado" */}
                 {periodoConsulta && facturasPeriodo.some(f => f.ddjj_iva === 'Imputado') && (
@@ -6533,6 +6683,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               </div>
             </div>
 
+            {/* 🔎 Buscador de Subdiarios (A-FEAT-1287, usuario 2026-10-22) */}
+            <div className="mt-2 flex items-center gap-2">
+              <Input value={buscarSubdiario} onChange={e => setBuscarSubdiario(e.target.value)}
+                placeholder="🔎 Buscar: proveedor, CUIT, número, importe… (también en lo que dice cada PDF sin vincular)"
+                className="h-8 text-sm max-w-xl" />
+              {buscarSubdiario.trim() && (
+                <>
+                  <span className="text-xs text-muted-foreground">
+                    {facturasPeriodo.filter(f => coincideBusqueda(buscarSubdiario, textosDeFactura(f))).length} factura(s)
+                    {huerfanosSupervision.length > 0 && <> · {huerfanosSupervision.filter(h => coincideBusqueda(buscarSubdiario, [h.archivo, registroHuerfanos[fileIdDeUrl(h.url) || '']?.texto])).length} PDF sin vincular</>}
+                  </span>
+                  <button type="button" className="text-xs text-blue-600 underline" onClick={() => setBuscarSubdiario('')}>limpiar</button>
+                </>
+              )}
+            </div>
             <TestsDelProceso proceso="egresos/archivo-digital" pantalla="egresos" />
             {/* ⏳ A-FEAT-1262 — nota del usuario 2026-10-13: «¿corre por detrás y puedo seguir trabajando
                 en otra cosa? Debería avisar si es así porque me dio miedo abortar el proceso». */}
@@ -6660,6 +6825,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                 <TableBody>
                   {facturasPeriodo
                     .filter(factura => filtroArchivoPdf.size === 0 || filtroArchivoPdf.has(categoriaArchivo(factura)))
+                    .filter(factura => coincideBusqueda(buscarSubdiario, textosDeFactura(factura)))
                     .map(factura => {
                     const tc = Number(factura.tipo_cambio) || 1
                     const esUSD = factura.moneda === 'USD' || tc > 1.01
@@ -6810,6 +6976,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                         <SelectItem value="No">No</SelectItem>
                         <SelectItem value="Imputado">Imputado</SelectItem>
                         <SelectItem value="DDJJ OK">DDJJ OK</SelectItem>
+                        <SelectItem value={ESTADO_ASIENTO_CONTABLE}>📒 {NOMBRE_ASIENTOS_CONTABLES} (sale del subdiario)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -6854,7 +7021,19 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       {huerfanosSupervision.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">🖼️ PDFs sin vincular ({huerfanosSupervision.length})</CardTitle>
+            <CardTitle className="text-base">
+              🖼️ PDFs sin vincular ({huerfanosSupervision.length})
+              {veredictoDisponible && (() => {
+                const abiertos = huerfanosSupervision.filter(h => !veredictoResuelve(registroHuerfanos[fileIdDeUrl(h.url) || '']?.veredicto)).length
+                return <span className={`ml-2 text-sm font-normal ${abiertos ? 'text-amber-700' : 'text-green-700'}`}>{abiertos ? `· ${abiertos} sin resolver` : '· todos con veredicto ✓'}</span>
+              })()}
+            </CardTitle>
+            {!veredictoDisponible && (
+              <p className="text-xs text-amber-700">⚠️ El veredicto a mano todavía no está habilitado en la base (falta el script 93).</p>
+            )}
+            {buscarSubdiario.trim() && (
+              <p className="text-xs text-blue-700">🔎 Filtrado por «{buscarSubdiario.trim()}» (nombre del archivo y lo que dice el PDF, si ya se leyó).</p>
+            )}
             {origenListado === 'contar' ? (
               <p className="text-sm text-amber-700">
                 ⚠️ Estos archivos <strong>todavía no se intentaron vincular</strong>: «Contar» no abre
@@ -6871,8 +7050,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           </CardHeader>
           <CardContent>
             <ul className="space-y-1.5 text-sm max-h-80 overflow-auto">
-              {huerfanosSupervision.map((h, i) => {
+              {huerfanosSupervision.filter(h => coincideBusqueda(buscarSubdiario, [h.archivo, registroHuerfanos[fileIdDeUrl(h.url) || '']?.texto])).map((h, i) => {
                 const candidatos = sugerirFacturasHuerfano(h.archivo)
+                const reg = registroHuerfanos[fileIdDeUrl(h.url) || '']
                 const faltantes = facturasPeriodo.filter(f => !f.pdf_drive_url)
                 const sugeridosIds = new Set(candidatos.map(c => c.id))
                 const selId = vinculoHuerfanoSel[h.url] ?? candidatos[0]?.id ?? ''
@@ -6940,6 +7120,28 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
                           Vincular
                         </Button>
                       </>
+                    )}
+                    {/* 🗂️ Veredicto a mano (A-FEAT-1287): queda en el registro del archivo digital */}
+                    {veredictoDisponible && (
+                      <span className="flex items-center gap-1 flex-wrap">
+                        <span className="text-xs text-gray-500">· veredicto:</span>
+                        <select value={reg?.veredicto || ''}
+                          onChange={e => guardarVeredicto(h, (e.target.value || null) as Veredicto | null)}
+                          className={`text-xs border rounded px-1 py-0.5 ${reg?.veredicto ? 'bg-amber-50 border-amber-300' : ''}`}>
+                          <option value="">— sin veredicto —</option>
+                          {VEREDICTOS.map(v => <option key={v.valor} value={v.valor} title={v.ayuda}>{v.etiqueta}</option>)}
+                        </select>
+                        <input value={notaVeredicto[h.url] ?? reg?.veredicto_nota ?? ''}
+                          onChange={e => setNotaVeredicto(prev => ({ ...prev, [h.url]: e.target.value }))}
+                          onBlur={() => { if (reg?.veredicto && notaVeredicto[h.url] !== undefined) guardarVeredicto(h, reg.veredicto as Veredicto) }}
+                          placeholder="nota (ej. va en 02/2026)" className="text-xs border rounded px-1 py-0.5 w-[180px]" />
+                        {reg?.veredicto_at && (
+                          <span className="text-[11px] text-gray-400">{reg.veredicto_por ? `${String(reg.veredicto_por).split('@')[0]} · ` : ''}{formatearFecha(diaArgentino(new Date(reg.veredicto_at)))}</span>
+                        )}
+                      </span>
+                    )}
+                    {reg?.veredicto && (
+                      <p className="w-full text-[11px] text-amber-800">{VEREDICTOS.find(v => v.valor === reg.veredicto)?.ayuda}</p>
                     )}
                     {/*
                       Vista previa del archivo, acá mismo. Se usa el visor de Drive por file_id
@@ -8870,12 +9072,61 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             <Button variant="outline" onClick={() => setMostrarModalImputar(false)}>
               Cancelar
             </Button>
+            <Button variant="outline" disabled={facturasSeleccionadas.size === 0}
+              title="No informadas en ARCA que no van al subdiario de IVA: salen en los Papeles del balance para registrarlas con asientos"
+              onClick={() => mandarAAsientosContables(Array.from(facturasSeleccionadas))}>
+              📒 A {NOMBRE_ASIENTOS_CONTABLES} ({facturasSeleccionadas.size})
+            </Button>
             <Button 
               onClick={ejecutarImputacion}
               disabled={facturasSeleccionadas.size === 0 || !periodoImputacion}
             >
               Imputar {facturasSeleccionadas.size} Facturas
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 📒 «Asientos Contables» (A-FEAT-1318) */}
+      <Dialog open={asientosContables !== null} onOpenChange={(o) => { if (!o) setAsientosContables(null) }}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>📒 {NOMBRE_ASIENTOS_CONTABLES} — {empresa}</DialogTitle>
+            <DialogDescription>
+              Facturas no informadas en ARCA que no van al subdiario de IVA. No están en ningún subdiario ni en el
+              Libro IVA: salen en la solapa «{NOMBRE_ASIENTOS_CONTABLES}» de los Papeles del balance (del ejercicio de su
+              fecha de emisión) para que el contador las registre con asientos. Se mandan acá desde «Imputar Facturas»
+              o desde «Gestionar Facturas».
+            </DialogDescription>
+          </DialogHeader>
+          {asientosContables && asientosContables.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay ninguna todavía.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead><TableHead>Proveedor</TableHead><TableHead>Comprobante</TableHead>
+                  <TableHead className="text-right">Total</TableHead><TableHead>PDF</TableHead><TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(asientosContables || []).map(f => (
+                  <TableRow key={f.id}>
+                    <TableCell>{formatearFecha(f.fecha_emision)}</TableCell>
+                    <TableCell className="max-w-56 truncate">{f.denominacion_emisor}</TableCell>
+                    <TableCell className="whitespace-nowrap">{f.tipo_comprobante_desc || f.tipo_comprobante} {f.punto_venta}-{f.numero_desde}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">${(Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+                    <TableCell>{f.pdf_drive_url ? <a href={f.pdf_drive_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">📎</a> : '—'}</TableCell>
+                    <TableCell>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => sacarDeAsientosContables(f)}>↩ Sacar</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAsientosContables(null)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
