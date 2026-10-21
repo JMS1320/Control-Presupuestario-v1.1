@@ -2783,6 +2783,23 @@ pago* o *por vencer*.
 
 ⚠️ Sin probar todavía → A-TEST-1183
 
+**Varios resúmenes juntos.** Tildá la casilla de cada resumen que quieras: la tabla muestra sólo
+ésos y el **Conciliar** de arriba corre sobre todos juntos. **Quitar selección** o *Limpiar filtros* lo
+deshace. Después de conciliar podés escribir en **Buscar en descripción** para ir haciendo los
+parecidos de a tandas (por ejemplo «corredores»).
+
+**Consumos en dólares.** En la tabla se ven en **USD** (en verde), como en el resumen del banco; abajo
+dice «sin TC» hasta que tengan su cambio. Conciliá el consumo contra su template y después apretá
+**💵 Pesos de N en USD** en el renglón del resumen: toma el cambio real del pago (el débito en pesos ÷
+el «SU PAGO EN USD» del resumen siguiente) y lo guarda **en la cuota** — USD, TC y pesos. El extracto
+queda en dólares. En **Templates**, la grilla de cuotas muestra las columnas **USD** y **TC**.
+
+**Falta la campaña.** Si un movimiento queda en *auditar* con «Falta la campaña…», la fila ofrece
+**📅 Crear campaña**: crea la campaña que falta copiando la más reciente. Después volvé a correr
+**Conciliar**.
+
+⚠️ Sin probar todavía → A-FEAT-1310 (guía 0.f) · A-FEAT-1312 (guía 0.g) · A-BUG-1314 (guía 0.h)
+
 ## 📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*
 
 Es **tu** balance, aparte del del contador: activo menos pasivo al cierre, contra el cierre anterior,

@@ -2687,3 +2687,22 @@ pantalla del segundo factor, el helper corta con un mensaje que lo explica.
 📌 La suite **no escribe datos del negocio**: abre, mira y lee. La única escritura es **crear la
 sesión** al loguearse. Los specs que sí escriben llevan `.escribe.spec.ts` y **no corren** con
 `npm run ui` (ver `playwright.config.ts`).
+
+## El libro IVA PRESENTADO como control de lo cargado — anatomía del zip de ARCA `#iva #arca #control #balance #2026-10-21`
+
+**Qué es**: ARCA deja bajar, por período, `libro_iva_periodo_AAAAMM_original.zip` con `comprobantes_compras.csv`,
+`comprobantes_ventas.csv` (los dos en **latin-1, separados por `;`**, montos con coma decimal), `libro_iva.xml` (los
+totales de la presentación: crédito fiscal computable, exento, etc.) y el `.xsd`. Es **lo informado**, y el usuario
+fijó (2026-10-21) que **es lo que tiene que estar en la app**: toda diferencia es un error de la app, y lo no informado
+se lista aparte para el balance.
+
+**Cómo se cruza**: por **subdiario** (`año/mes_contable`), no por fecha de la factura — una factura de diciembre puede
+estar en el subdiario de enero. Y por **datos**, no por formato: número + importe; si el punto de venta o el número están
+tipeados distinto (pasó con las pólizas: «PV 0» por «PV 1», un dígito de más), por emisor + fecha + importe. Las NC
+vienen positivas en el CSV y negativas en la app → valor absoluto.
+
+**Lo que destapó la primera corrida** (ejercicio 25/26 de MSA): 11 de 12 meses cierran exacto; diciembre tenía 8
+comprobantes en el subdiario que **no se informaron en ningún período** ([A-DAT-61](PENDIENTES.md#a-dat-61)), y 4
+facturas **en USD** que la app guarda en dólares y el libro diario sumaba sin el TC ([A-BUG-1316](PENDIENTES.md#a-bug-1316)).
+
+**El script**: `scripts/control_iva_presentado_vs_app.py "<carpeta de zips>" "<salida.xlsx>"` — sólo lectura.
