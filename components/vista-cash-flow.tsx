@@ -58,6 +58,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
@@ -305,6 +306,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [cambiarEstadoLote, setCambiarEstadoLote] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
+  // 🏦 A-FEAT-1321 — de qué cuenta salió el pago. '' = no tocar (cada fila queda como estaba).
+  const [pagadoDesdeLote, setPagadoDesdeLote] = useState('')
   const [procesandoLote, setProcesandoLote] = useState(false)
   /**
    * ¿Está corriendo el «✅ Confirmar y pasar a Pagar» del modal de SICORE? (A-BUG-146)
@@ -330,7 +333,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
   const [tipoMovimiento, setTipoMovimiento] = useState<'egreso' | 'ingreso'>('egreso')
-  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+  const [nuevaCuota, setNuevaCuota] = useState({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente', medio: 'banco' })
   const [busquedaTemplatesPM, setBusquedaTemplatesPM] = useState('')
   const [cuentasContablesOpciones, setCuentasContablesOpciones] = useState<{categ: string, nombre_totalizadora: string | null}[]>([])
   const [guardandoNuevaCuota, setGuardandoNuevaCuota] = useState(false)
@@ -1628,6 +1631,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setCambiarEstadoLote(true)
     setValorFechaLote('')
     setValorEstadoLote('pagado')
+    setPagadoDesdeLote('')
     setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
   }
 
@@ -1647,7 +1651,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    * Va antes que la búsqueda a propósito: primero se acota el universo, después se busca adentro.
    */
   const datosPorMedio = medioPagoFiltro && medioPagoFiltro !== 'todos'
-    ? data.filter(fila => (fila.medio_pago || 'banco') === medioPagoFiltro)
+    ? data.filter(fila => pasaFiltroMedio(fila.medio_pago, medioPagoFiltro))   // A-FEAT-1321: «banco» incluye las cuentas puntuales
     : data
 
   // Filtrar datos según origen seleccionado en modo PAGOS
@@ -2114,6 +2118,21 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
    * recién después se preguntaba por SICORE: si el usuario cancelaba, el lote quedaba aplicado a
    * medias (A-BUG-20).
    */
+  /**
+   * 🏦 **A-FEAT-1321 — «Pagado desde»**: si en la barra se eligió una cuenta, va a `medio_pago` de cada
+   * factura y cuota del lote. Se agrega AL FINAL de las actualizaciones a propósito: si una falla
+   * (ej. una factura de PAM antes de `scripts/95`), lo que ya se guardó —estado y fecha— queda.
+   * Sueldos, anticipos y ventas no tienen este dato en el Cash Flow: se avisa y no se tocan.
+   */
+  const agregarPagadoDesde = (actualizaciones: Array<{ id: string, origen: CashFlowRow['origen'], campo: string, valor: any }>, filas: CashFlowRow[]) => {
+    if (!pagadoDesdeLote || !cambiarEstadoLote || !ESTADOS_QUE_PAGAN.concat('echeq').includes(valorEstadoLote)) return
+    const conDato = filas.filter(f => f.origen === 'ARCA' || f.origen === 'TEMPLATE')
+    conDato.filter(f => (f.medio_pago || 'banco') !== pagadoDesdeLote)
+      .forEach(f => actualizaciones.push({ id: f.id, origen: f.origen, campo: 'medio_pago', valor: pagadoDesdeLote }))
+    const sinDato = filas.length - conDato.length
+    if (sinDato > 0) toast.info(`«Pagado desde» sólo se guarda en facturas y cuotas de templates: ${sinDato} registro(s) quedaron sin ese dato.`)
+  }
+
   const ejecutarLote = async (modoFecha: 'elegida' | 'estimadas' | 'ninguna', fechaElegida: string) => {
     setProcesandoLote(true)
 
@@ -2185,6 +2204,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         const arcaFacturas = lote.facturasModal
         const noArca = lote.templates
         noArca.forEach(f => actualizaciones.push({ id: f.id, origen: f.origen as 'ARCA' | 'TEMPLATE', campo: 'estado', valor: 'echeq' }))
+        agregarPagadoDesde(actualizaciones, [...noArca, ...arcaFacturas])
         if (actualizaciones.length > 0) await actualizarBatch(actualizaciones)
         if (arcaFacturas.length > 0) {
           // Abrir el modal echeq UNA vez; al confirmar, confirmarEcheqCF procesa la cola (cada FC calcula su SICORE).
@@ -2293,6 +2313,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           }
         }
       }
+
+      agregarPagadoDesde(actualizaciones, todasFilas)
 
       // ⚠️ Si hay facturas para SICORE **no se escribe nada todavía**: primero se pregunta.
       // Así «Cancelar» puede abortar de verdad en vez de dejar medio lote aplicado (A-BUG-20).
@@ -2437,7 +2459,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setTemplateSeleccionado(null)
     setPasoModal('seleccionar')
     setTipoMovimiento('egreso')
-    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+    setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente', medio: 'banco' })
     setBusquedaTemplatesPM('')
     setMostrarBancarios(false)
     setModalPagoManual(true)
@@ -2486,6 +2508,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           descripcion: descripcionFinal,
           estado: nuevaCuota.estado || 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
+          medio_pago: nuevaCuota.medio || 'banco',   // A-FEAT-1321 — pagado desde
           ...(categCuota ? { categ: categCuota } : {})
         })
 
@@ -2498,7 +2521,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setModalPagoManual(false)
       setTemplateSeleccionado(null)
       setTipoMovimiento('egreso')
-      setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente' })
+      setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente', medio: 'banco' })
       setBusquedaTemplatesPM('')
       await cargarDatos()
     } catch (error) {
@@ -3939,6 +3962,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               {e}
             </span>
           ))}
+          {(() => {
+            // 🏦 A-FEAT-1321 — se pagó desde una cuenta puntual: se dice, para no buscarlo en el banco propio.
+            const m = marcaPagadoDesde(fila.medio_pago, empresas)
+            return m ? (
+              <span className={`rounded border px-1 text-[10px] leading-4 ${m.deOtraEmpresa ? 'bg-orange-100 text-orange-800 border-orange-300 font-semibold' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                title={m.deOtraEmpresa ? `Pagado ${m.texto}: no lo busques en el banco de ${empresas.join('/') || 'la empresa'}` : `Pagado ${m.texto}`}>
+                🏦 {m.texto}
+              </span>
+            ) : null
+          })()}
         </div>
       )
     }
@@ -4384,6 +4417,24 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                             <SelectItem key={estado.value} value={estado.value}>
                               {estado.label}
                             </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* 🏦 A-FEAT-1321 — de qué cuenta salió la plata, para no buscarla en el banco equivocado */}
+                  {cambiarEstadoLote && ESTADOS_QUE_PAGAN.concat('echeq').includes(valorEstadoLote) && (
+                    <div className="flex items-center gap-2" title="Si pagaste desde otra cuenta (ej. MA paga algo de MSA), elegila: queda marcado en la fila hasta que se concilie">
+                      <Label className="text-sm">Pagado desde:</Label>
+                      <Select value={pagadoDesdeLote || 'sin-cambiar'} onValueChange={v => setPagadoDesdeLote(v === 'sin-cambiar' ? '' : v)}>
+                        <SelectTrigger className="w-52">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sin-cambiar">— como está —</SelectItem>
+                          {OPCIONES_PAGADO_DESDE.map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.rotulo}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -5690,6 +5741,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     <SelectItem value="preparado">Preparado</SelectItem>
                     <SelectItem value="pagado">Pagado</SelectItem>
                     <SelectItem value="echeq">ECHEQ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 🏦 A-FEAT-1321 — de qué cuenta sale (o salió) la plata */}
+              <div className="space-y-2">
+                <Label htmlFor="medio-pago-cf">Pagado desde</Label>
+                <Select value={nuevaCuota.medio} onValueChange={(v) => setNuevaCuota(prev => ({ ...prev, medio: v }))}>
+                  <SelectTrigger id="medio-pago-cf">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {OPCIONES_PAGADO_DESDE.map(c => <SelectItem key={c.id} value={c.id}>{c.rotulo}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

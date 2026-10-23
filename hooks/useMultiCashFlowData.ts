@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase"
 import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
+import { pasaFiltroMedio } from "@/lib/pagos/pagado-desde"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
@@ -173,7 +174,7 @@ export interface CashFlowRow {
   facturas_agrupadas?: number   // > 1 indica fila de grupo
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
   // Medio de pago
-  medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
+  medio_pago?: string           // 'banco' | una cuenta puntual ('ma_galicia'…, A-FEAT-1321) | 'caja_general' | 'caja_ams' | 'caja_sigot'
   // Para extracto: texto limpio de comprobantes (sin proveedor mezclado)
   comprobante_display?: string | null
   // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
@@ -811,9 +812,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       }
 
       // Filtro por medio de pago
-      if (filtros.medioPago && filtros.medioPago !== 'todos') {
-        if ((fila.medio_pago || 'banco') !== filtros.medioPago) return false
-      }
+      // A-FEAT-1321: «banco» incluye lo pagado desde una cuenta bancaria puntual (ej. MA Galicia)
+      if (!pasaFiltroMedio(fila.medio_pago, filtros.medioPago)) return false
 
       return true
     })

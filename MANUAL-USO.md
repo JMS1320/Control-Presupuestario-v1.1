@@ -2752,6 +2752,20 @@ decidir. Dice *"Todavía no se guardó nada"* porque es literal.
 | **Pagar sin retener** | guarda el estado, sin retención |
 | **Cancelar — no tocar nada** | 🔑 **aborta todo**, incluidas las que no llevan SICORE |
 
+### 🏦 Pagado desde — cuando pagaste desde otra cuenta *(2026-10-23)*
+Al lado del estado aparece **Pagado desde**. Si no lo tocás (*— como está —*) cada fila queda como
+estaba. Si pagaste desde otra cuenta —por ejemplo, **MA pagó algo de MSA**— elegí la cuenta antes de
+**Aplicar**: queda anotado en cada factura y cuota del lote.
+
+En la grilla, al lado de la empresa, aparece **🏦 desde MA Galicia** (en naranja si la cuenta es de
+otra empresa). Así, cuando mirás el banco de MSA y el pago no está, ya sabés por qué.
+
+Lo mismo se elige en **Pago manual** (Cash Flow y Egresos sin Factura), donde antes decía *Medio de
+pago*. El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
+que de otra cuenta.
+
+→ A-TEST-1226
+
 ### 🔑 Sin fecha de pago no hay SICORE
 Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de pago**. Si una
 factura califica por monto pero no tiene fecha de pago, se guarda **sin retención** y te avisa

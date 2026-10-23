@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { format } from "date-fns"
 import { TemplateTestSuite } from "@/components/template-test-suite"
@@ -2273,16 +2274,14 @@ export function VistaTemplatesEgresos() {
 
               {/* Medio de pago */}
               <div className="space-y-2">
-                <Label>Medio de Pago</Label>
+                <Label>Pagado desde</Label>
                 <Select value={medioPagoManual} onValueChange={setMedioPagoManual}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="banco">Banco</SelectItem>
-                    <SelectItem value="caja_general">Caja General</SelectItem>
-                    <SelectItem value="caja_ams">Caja AMS</SelectItem>
-                    <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                    {/* A-FEAT-1321: además del banco propio y las cajas, una cuenta puntual (ej. MA paga algo de MSA) */}
+                    {OPCIONES_PAGADO_DESDE.map(c => <SelectItem key={c.id} value={c.id}>{c.rotulo}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

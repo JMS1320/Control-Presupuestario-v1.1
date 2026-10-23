@@ -64,6 +64,7 @@ import { añosHastaElProximo } from "@/lib/fechas"
 import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
 import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -7885,6 +7886,23 @@ export function correrCasos(): Resultado[] {
     chequear("Pago manual", "La fecha del modal va a «fecha de pago» (y a la estimada, que ordena el Cash Flow); el vencimiento queda vacío",
       "pago 2026-10-23 · estimada 2026-10-23 · venc null", `pago ${f.fecha_pago} · estimada ${f.fecha_estimada} · venc ${f.fecha_vencimiento}`,
       f.fecha_pago === "2026-10-23" && f.fecha_estimada === "2026-10-23" && f.fecha_vencimiento === null, "A-BUG-1325")
+  }
+
+  // ══ 🏦 «PAGADO DESDE» (A-FEAT-1321) ═════════════════════════════════════════════════════════
+  {
+    chequear("Pagado desde", "Pagado desde MA Galicia SIGUE siendo un pago por banco: el filtro «banco» lo muestra y el de caja no",
+      "true · true · false · true", `${esBanco("ma_galicia")} · ${pasaFiltroMedio("ma_galicia", "banco")} · ${pasaFiltroMedio("ma_galicia", "caja_general")} · ${pasaFiltroMedio(null, "banco")}`,
+      esBanco("ma_galicia") && pasaFiltroMedio("ma_galicia", "banco") && !pasaFiltroMedio("ma_galicia", "caja_general") && pasaFiltroMedio(null, "banco")
+        && !esBanco("caja_sigot") && pasaFiltroMedio("caja_sigot", "caja_sigot") && pasaFiltroMedio("caja_sigot", "todos"), "A-FEAT-1321")
+    const otra = marcaPagadoDesde("ma_galicia", ["MSA"])
+    const propia = marcaPagadoDesde("pam_galicia_cc", ["PAM"])
+    chequear("Pagado desde", "La marca de la fila: una cuota de MSA pagada desde MA Galicia avisa fuerte; PAM desde su CC, suave; banco propio o caja, nada",
+      "desde MA Galicia (otra) · desde PAM Galicia CC (propia) · null · null",
+      `${otra?.texto} (${otra?.deOtraEmpresa ? "otra" : "propia"}) · ${propia?.texto} (${propia?.deOtraEmpresa ? "otra" : "propia"}) · ${marcaPagadoDesde("banco", ["MSA"])} · ${marcaPagadoDesde("caja_ams", ["MSA"])}`,
+      otra?.deOtraEmpresa === true && propia?.deOtraEmpresa === false && marcaPagadoDesde("banco", ["MSA"]) === null && marcaPagadoDesde("caja_ams", ["MSA"]) === null, "A-FEAT-1321")
+    chequear("Pagado desde", "Las opciones: primero el banco propio, después las 4 cuentas Galicia y las 3 cajas (las mismas ids que el motor de conciliación)",
+      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
+      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
   }
 
   return r
