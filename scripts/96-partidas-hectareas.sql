@@ -6,7 +6,8 @@
 -- Red Vial: `partida_red_vial` lleva el número con el que identifica la MUNICIPALIDAD (columna
 -- «CUENTA» de la solapa RED VIAL: Tango Parra 1 → 52948), no la partida inmobiliaria — aclaración del
 -- usuario 2026-10-23: «para la municipalidad se identifican con ese nro y no con la partida
--- inmobiliaria». Rojas (otro municipio) no tiene cuenta en la planilla → queda vacía.
+-- inmobiliaria». Rojas (otro municipio) no tiene cuenta en la planilla: el usuario la dio después
+-- (2026-10-23, «rojas boleta 12934»).
 -- Las Quintas: la solapa trae 50479 (16,6 ha) y 50481 (8,4 ha); se asignaron por hectáreas.
 --
 -- Por qué en `public.partidas` (A-DEC-36): es el maestro de la ficha eterna de la partida; las
@@ -28,7 +29,7 @@ select v.campo, v.establecimiento, v.parcela, v.partida, v.red_vial, v.has,
        'Planilla: ' || v.en_planilla || ' · [script 96] cargado 2026-10-23 desde INMOBILIARIO RED VIAL AUTOMOTOR 2026 - v2.xlsx', true
 from (values
   -- MSA — Rojas
-  ('Rojas',             'Rojas',          '1228 C', '090-016369-0', null,    245.17,  'LA CRIOLLA'),
+  ('Rojas',             'Rojas',          '1228 C', '090-016369-0', '12934', 245.17,  'LA CRIOLLA'),
   -- MSA — Nazarenas
   ('Tango Parra 1',     'Nazarenas',      '1191 W', '099-015883-5', '52948', 17.23,   'TANGO - E. PARRA'),
   ('Tango Parra 2',     'Nazarenas',      '1191 Y', '099-015885-1', '52950', 19.35,   'TANGO - E. PARRA'),
@@ -52,6 +53,10 @@ from (values
   ('Quinta Rosello 2',  'Quinta Rosello', null,     '099-001846-4', '50481', 8.437,   'SAN PEDRO QUINTA ROSELLO')
 ) as v(campo, establecimiento, parcela, partida, red_vial, has, en_planilla)
 where not exists (select 1 from public.partidas p where p.partida_inmobiliario = v.partida);
+
+-- Por si el script ya se había corrido sin el número de Rojas: lo completa sin pisar uno existente.
+update public.partidas set partida_red_vial = '12934'
+where partida_inmobiliario = '090-016369-0' and partida_red_vial is null and observaciones like '%[script 96]%';
 
 -- Control (sin escribir): 19 partidas · MSA 394,07 ha · PAM Nazarenas 445,93 ha · total 901,2304 ha
 -- select count(*), sum(has_totales) from public.partidas where observaciones like '%[script 96]%';
