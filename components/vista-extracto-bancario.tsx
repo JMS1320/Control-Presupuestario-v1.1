@@ -1,8 +1,12 @@
 "use client"
 
+import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
+import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
+import { hoyArgentina } from "@/lib/fechas"
 import { cerrarVentaSiSaldada, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
-import React, { useState, useEffect, useMemo, useRef } from "react"
+import { conciliarOrigenDelMovimiento, schemaDeFactura } from "@/lib/conciliacion/confirmar-origen"
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
@@ -25,6 +29,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
+import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -70,9 +78,18 @@ import { proveedorDelMovimiento, extraerCuitBancario } from "@/lib/conciliacion/
 import { motivosParaPreguntar } from "@/lib/conciliacion/cruce-empresa"
 import { detalleCompleto } from "@/lib/templates/identificador-cuota"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
+import { ESTADO_HISTORICO, esHistorico, estadoCuotaAlDesvincular } from "@/lib/conciliacion/estado-historico"
 import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
+import { cargarDetallesFijos, aplicarDetalleFijo, marcarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
+import { elegirDetalleFijo, type DetalleFijo } from "@/lib/conciliacion/detalle-fijo"
+import { campanaNuevaPrimero, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
+import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -99,7 +116,7 @@ function diasDiferencia(f1: string, f2: string): number {
 
 interface PropuestaArca { factura: any; score: number; badges: { texto: string; color: string }[] }
 
-function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[] {
+function generarPropuestasArca(movimiento: any, facturas: any[], esTarjeta = false): PropuestaArca[] {
   const cuitLeyenda = extraerCuitDeTexto(movimiento.leyendas_adicionales_2)
   const leyenda1    = movimiento.leyendas_adicionales_1 || ''
   const descripcion = movimiento.descripcion || ''
@@ -151,7 +168,8 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
       if (cuitMatch) score += matchMonto ? 100 : 90
 
       // ── 3. FECHA (terciario) ─────────────────────────────────────────────────
-      const fechaRef = esCompraDebito && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
+      // A-FEAT-1298: en la tarjeta también se compara con la emisión (se emite y a los pocos días entra al resumen)
+      const fechaRef = (esCompraDebito || esTarjeta) && f.fecha_emision ? f.fecha_emision : f.fecha_estimada
       let matchFecha = false
       let diasDiff   = Infinity
       if (fechaRef) {
@@ -196,6 +214,13 @@ function generarPropuestasArca(movimiento: any, facturas: any[]): PropuestaArca[
         badges.push({ texto: 'Nombre similar', color: 'bg-orange-100 text-orange-700' })
       }
 
+      // A-FEAT-1298 — en la tarjeta, la emitida pocos días ANTES del débito va primero; la posterior, abajo.
+      if (esTarjeta) {
+        const aj = ajusteTarjetaPorEmision(fechaMov, f.fecha_emision)
+        score += aj.puntos
+        if (aj.sello) badges.push(aj.sello)
+      }
+
       return { factura: f, score: Math.round(score), badges }
     })
     .filter((p): p is PropuestaArca => p !== null && p.score > 0)
@@ -213,8 +238,11 @@ export function VistaExtractoBancario() {
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
   const [selectorAbierto, setSelectorAbierto] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar'>('Todos')
+  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar' | 'historico'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)
+  /** ✓ A-FEAT-1300 — OK masivo: deja a la vista sólo lo «auditar» de lo filtrado, con casillas. */
+  const [modoOkAuditar, setModoOkAuditar] = useState(false)
+  const [aplicandoOkMasivo, setAplicandoOkMasivo] = useState(false)
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState("")
 
@@ -263,6 +291,10 @@ export function VistaExtractoBancario() {
   // Edición inline detalle
   const [editandoDetalleId, setEditandoDetalleId] = useState<string | null>(null)
   const [editandoDetalleVal, setEditandoDetalleVal] = useState('')
+  /** 🏷️ A-FEAT-1296 — el tilde «usar siempre para este proveedor» de la celda Detalle, y los fijos marcados. */
+  const [fijarDetalle, setFijarDetalle] = useState(false)
+  const [detallesFijos, setDetallesFijos] = useState<DetalleFijo[]>([])
+  const [cuitPorFactura, setCuitPorFactura] = useState<Map<string, { cuit: string; schema: string }>>(new Map())
 
   // Estados para Combobox avanzado
   const [comboboxAbierto, setComboboxAbierto] = useState<{[key: string]: boolean}>({})
@@ -421,6 +453,16 @@ export function VistaExtractoBancario() {
   const [sueldosParaAsignar, setSueldosParaAsignar] = useState<any[]>([])
   const [gruposParaAsignar, setGruposParaAsignar] = useState<any[]>([])
   const [templateElegido, setTemplateElegido] = useState<any>(null)
+  /**
+   * 🧩 A-DEC-1002 — crear el template DESDE la conciliación, sin ir a Templates. Primero se elige la
+   * cuenta del plan (la regla 🏷️: un template no se crea con una categoría que no existe), después se
+   * confirma en el mismo modal que usan las reglas.
+   */
+  const [crearTemplateAbierto, setCrearTemplateAbierto] = useState(false)
+  const [cuentaNuevoTemplate, setCuentaNuevoTemplate] = useState<string>('')
+  const [modalNuevoTemplate, setModalNuevoTemplate] = useState(false)
+  /** 🔁 A-FEAT-1302 punto 3 — el template cuya campaña falta: el asistente lo copia con la del movimiento. */
+  const [copiarDeTemplate, setCopiarDeTemplate] = useState<string | null>(null)
   const [arcaElegida, setArcaElegida] = useState<any>(null)
   const [sueldoElegido, setSueldoElegido] = useState<any>(null)
   const [grupoElegido, setGrupoElegido] = useState<any>(null)
@@ -466,6 +508,38 @@ export function VistaExtractoBancario() {
   const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
   const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
+
+  /**
+   * 💳 A-DEC-1002 — la tarjeta por RESUMEN: el lote que se mira (filtra la tabla de abajo, que es la
+   * misma que la de la cuenta corriente) y los débitos de la cuenta corriente que pagan cada resumen.
+   */
+  const [resumenFiltro, setResumenFiltro] = useState<string | null>(null)
+  /**
+   * ☑️ A-FEAT-1310 — VARIOS resúmenes elegidos con su casilla, para conciliarlos juntos con el «Conciliar»
+   * de arriba, como alternativa al filtro de fechas (usuario 2026-10-20: *«seleccionar los resúmenes que
+   * quiero conciliar para conciliarlos juntos con el botón de arriba en vez de usar selector de fechas»*).
+   * Es un filtro más: acota la tabla y entra en `filtrosActivos`, así el botón corre SÓLO sobre ellos.
+   */
+  const [resumenesElegidos, setResumenesElegidos] = useState<Set<string>>(new Set())
+  const [debitosTarjeta, setDebitosTarjeta] = useState<DebitoCtaCte[]>([])
+  const [vinculandoNr, setVinculandoNr] = useState<string | null>(null)
+  useEffect(() => { setResumenFiltro(null); setResumenesElegidos(new Set()) }, [tablaActiva, schemaActivo])
+  const cargarDebitosTarjeta = useCallback(async () => {
+    if (cuentaActivaObj?.tipo !== 'tarjeta') { setDebitosTarjeta([]); return }
+    const bancos = CUENTAS_BANCARIAS.filter(c => c.empresa === cuentaActivaObj.empresa && (c.tipo ?? 'banco') === 'banco')
+    const todos: DebitoCtaCte[] = []
+    for (const b of bancos) {
+      const cli = b.schema_bd && b.schema_bd !== 'public' ? supabase.schema(b.schema_bd) : supabase
+      const { data, error } = await cli.from(b.tabla_bd)
+        .select('id, fecha, debitos, descripcion, nro_resumen')
+        .gt('debitos', 0)
+        .or('nro_resumen.not.is.null,categ.ilike.%tarjeta%,descripcion.ilike.%visa%')
+      if (error) { console.error('No se pudieron leer los pagos de tarjeta en', b.tabla_bd, error); continue }
+      for (const d of (data || []) as any[]) todos.push({ id: d.id, tabla: `${b.schema_bd || 'public'}.${b.tabla_bd}`, fecha: d.fecha, debitos: Number(d.debitos) || 0, nro_resumen: d.nro_resumen ?? null, descripcion: d.descripcion ?? null })
+    }
+    setDebitosTarjeta(todos)
+  }, [cuentaActivaObj?.tipo, cuentaActivaObj?.empresa])
+  useEffect(() => { void cargarDebitosTarjeta() }, [cargarDebitosTarjeta])
 
   /**
    * 🔁 **A-BUG-158** — el detalle escrito acá viaja a la cuota conciliada.
@@ -561,6 +635,71 @@ ${texto.trim()}` : texto.trim()
       toast.success(`${ids.length} nota(s) borrada(s)`)
     }
   }
+
+  /**
+   * 🏷️ **A-FEAT-1296 — guardar el Detalle de un movimiento.** Además de la cuota del template (como siempre),
+   * ahora llega a **la factura** atada (el detalle es un dato multivista: antes «Luz Casco NZ Total» quedaba
+   * en el extracto y no en la factura). Con el tilde, queda como detalle fijo del proveedor.
+   */
+  const guardarDetalleCelda = async (movimiento: any, valor: string, fijar: boolean) => {
+    await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
+      .from(tablaActiva).update({ detalle: valor }).eq('id', movimiento.id)
+    actualizarLocal(movimiento.id, { detalle: valor })
+    await propagarDetalleAlTemplate(movimiento, valor)
+    if (!movimiento.comprobante_arca_id) return
+    const fac = cuitPorFactura.get(movimiento.comprobante_arca_id) ?? await buscarFacturaDelMovimiento(movimiento.comprobante_arca_id)
+    if (!fac) return
+    const { error } = await supabase.schema(fac.schema).from('comprobantes_arca').update({ detalle: valor.trim() || null }).eq('id', movimiento.comprobante_arca_id)
+    if (error) toast.error('El detalle se guardó en el extracto pero NO llegó a la factura', { description: error.message })
+    if (fijar && valor.trim()) {
+      const err = await marcarDetalleFijo(supabase as any, fac.cuit, valor, Number(movimiento.debitos) || Number(movimiento.creditos) || 0)
+      if (err) toast.error('No se pudo guardar como detalle fijo', { description: err })
+      else {
+        toast.success(`«${valor.trim()}» queda como detalle fijo de ${movimiento.proveedor_nombre || 'este proveedor'}`)
+        setDetallesFijos(await cargarDetallesFijos(supabase as any))
+      }
+    }
+  }
+
+  /** El CUIT y el schema de la factura atada a un movimiento (puede ser de otra empresa que la cuenta). */
+  const buscarFacturaDelMovimiento = async (facturaId: string): Promise<{ cuit: string; schema: string } | null> => {
+    for (const empresa of EMPRESAS) {
+      const schema = schemaDeEmpresa(empresa)
+      const { data } = await supabase.schema(schema).from('comprobantes_arca').select('cuit').eq('id', facturaId).maybeSingle()
+      if (data) return { cuit: String((data as any).cuit || ''), schema }
+    }
+    return null
+  }
+
+  /** Dejar de usar un detalle fijo (el 📌 de la celda). No se borra: queda inactivo, con su historia. */
+  const desactivarDetalleFijo = async (f: DetalleFijo) => {
+    if (!window.confirm(`¿Dejar de usar «${f.detalle}» como detalle fijo?\n\nLo ya conciliado no cambia.`)) return
+    const { error } = await supabase.from('detalles_por_proveedor').update({ activo: false, updated_at: new Date().toISOString() }).eq('id', f.id)
+    if (error) { toast.error('No se pudo desactivar', { description: error.message }); return }
+    setDetallesFijos(await cargarDetallesFijos(supabase as any))
+  }
+
+  // Los fijos se cargan al entrar; si la tabla no existe todavía (script 88), queda vacío y nada cambia.
+  useEffect(() => { void cargarDetallesFijos(supabase as any).then(setDetallesFijos) }, [])
+
+  // Para sugerir: el CUIT de las facturas de los movimientos SIN detalle (sólo si hay fijos marcados).
+  useEffect(() => {
+    if (!detallesFijos.length) return
+    const ids = [...new Set((movimientos as any[]).filter(m => m.comprobante_arca_id && !(m.detalle || '').trim()).map(m => m.comprobante_arca_id as string))]
+      .filter(id => !cuitPorFactura.has(id))
+    if (!ids.length) return
+    void (async () => {
+      const nuevo = new Map(cuitPorFactura)
+      for (const empresa of EMPRESAS) {
+        const schema = schemaDeEmpresa(empresa)
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data } = await supabase.schema(schema).from('comprobantes_arca').select('id, cuit').in('id', ids.slice(i, i + 200))
+          for (const f of (data || []) as any[]) nuevo.set(f.id, { cuit: String(f.cuit || ''), schema })
+        }
+      }
+      setCuitPorFactura(nuevo)
+    })()
+  }, [movimientos, detallesFijos])
 
   const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
     const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
@@ -658,30 +797,41 @@ ${texto.trim()}` : texto.trim()
     if (filtroSentido !== 'todos') items.push(ETIQUETA_SENTIDO[filtroSentido])
     if (busquedaNota.trim()) items.push(`nota dice "${busquedaNota.trim()}"`)
     if (filtroCategEspecial) items.push(filtroCategEspecial === 'invalida' ? 'categ inválida' : 'sin categ')
+    // 🧨 A-BUG-1291 — el resumen de la tarjeta acotaba la TABLA pero no estaba acá, así que «Conciliar»
+    // con un resumen elegido corría el motor sobre TODOS los pendientes de la tarjeta (2024 → hoy).
+    if (resumenFiltro) {
+      const cierre = (movimientos.find(m => (m as any).nro_resumen === resumenFiltro) as any)?.fecha_cierre
+      items.push(`resumen ${cierre ? fmt(String(cierre).slice(0, 10)) : resumenFiltro}`)
+    }
+    if (resumenesElegidos.size > 0) {
+      const cierres = [...resumenesElegidos].map(nr => {
+        const c = (movimientos.find(m => (m as any).nro_resumen === nr) as any)?.fecha_cierre
+        return c ? fmt(String(c).slice(0, 10)) : nr.slice(-6)
+      })
+      items.push(`${resumenesElegidos.size} resumen(es): ${cierres.join(', ')}`)
+    }
     return items
   }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
-      filtroSentido])
+      filtroSentido, resumenFiltro, resumenesElegidos, movimientos])
 
   const hayFiltros = filtrosActivos.length > 0
 
   const movimientosVisibles = useMemo(() => {
     // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
-    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen')
+    const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen'
+      && (!resumenFiltro || (m as any).nro_resumen === resumenFiltro)
+      && (resumenesElegidos.size === 0 || resumenesElegidos.has((m as any).nro_resumen)))
     let lista = categsFiltro
       ? base.filter(m => categsFiltro.has(m.categ || '(sin categ)'))
       : base
     const q = normalizarBusqueda(busqueda)
-    if (q) {
-      lista = lista.filter(m => {
-        const mm = m as any
-        return [
-          mm.descripcion, mm.categ, mm.detalle, mm.contable, mm.interno, mm.origen,
-          mm.observaciones_cliente, mm.numero_de_comprobante, mm.nota_operador,
-          mm.leyendas_adicionales_1, mm.leyendas_adicionales_2,
-        ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
-      })
-    }
+    const coincideBusqueda = (m: any) => !q || [
+      m.descripcion, m.categ, m.detalle, m.contable, m.interno, m.origen,
+      m.observaciones_cliente, m.numero_de_comprobante, m.nota_operador,
+      m.leyendas_adicionales_1, m.leyendas_adicionales_2,
+    ].some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(q))
+    if (q) lista = lista.filter(coincideBusqueda)
 
     // Filtro por contraparte. Sale del selector de proveedores, así que el CUIT es **el del
     // maestro** y no un texto tipeado: dos proveedores distintos que se llamen parecido ya no se
@@ -689,18 +839,17 @@ ${texto.trim()}` : texto.trim()
     // elegido no tiene CUIT cargado, se cae al nombre.
     const cuitFiltro = (filtroProveedor.cuit || '').replace(/[-.\s]/g, '')
     const nombreFiltro = normalizarBusqueda(filtroProveedor.nombre || '')
-    if (cuitFiltro || nombreFiltro) {
-      lista = lista.filter(m => {
-        const mm = m as any
-        if (cuitFiltro) {
-          const cuitMov = String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '')
-          if (cuitMov && cuitMov === cuitFiltro) return true
-        }
-        if (!nombreFiltro) return false
-        return [mm.proveedor_nombre, mm.leyendas_adicionales_1]
-          .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(nombreFiltro))
-      })
+    const coincideProveedor = (mm: any) => {
+      if (!cuitFiltro && !nombreFiltro) return true
+      if (cuitFiltro) {
+        const cuitMov = String(mm.leyendas_adicionales_2 ?? '').replace(/[-.\s]/g, '')
+        if (cuitMov && cuitMov === cuitFiltro) return true
+      }
+      if (!nombreFiltro) return false
+      return [mm.proveedor_nombre, mm.leyendas_adicionales_1]
+        .some(c => normalizarBusqueda(c == null ? '' : String(c)).includes(nombreFiltro))
     }
+    if (cuitFiltro || nombreFiltro) lista = lista.filter(coincideProveedor)
 
     // Las filas de la última corrida del motor se muestran SIEMPRE, aunque los filtros
     // client-side ya no las alcancen, hasta que el usuario apriete Actualizar.
@@ -708,21 +857,29 @@ ${texto.trim()}` : texto.trim()
     // tienen que ser las mismas filas de la lista para que el checkbox de revisado y los botones
     // respondan. Y se reordena todo junto por `orden` descendente, igual que el servidor — con el
     // prepend anterior las recién conciliadas salían arriba y la grilla quedaba desordenada.
+    // ⚠️ A-BUG-1314 (2026-10-20): la excepción es para que no se vayan al cambiar de estado o de categ
+    // (dejan de ser «Pendientes» / «sin categ»), NO para saltear lo que el usuario escribe después: la
+    // búsqueda y la contraparte se respetan. Antes, después de conciliar, «Buscar en descripción» no
+    // filtraba nada — volvían todas las filas de la corrida.
     if (idsCorrida.size > 0) {
       const yaEstan = new Set(lista.map(m => m.id))
-      const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id))
+      const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id)
+        && coincideBusqueda(m) && coincideProveedor(m))
       if (faltantes.length > 0) {
         lista = [...lista, ...faltantes]
           .sort((a, b) => (Number((b as any).orden) || 0) - (Number((a as any).orden) || 0))
       }
     }
 
+    // ✓ A-FEAT-1300 — segundo filtro del OK masivo: sobre lo ya filtrado, sólo lo que está en auditar.
+    if (modoOkAuditar) lista = lista.filter(m => String(m.estado).toLowerCase() === 'auditar')
+
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
-    () => movimientosVisibles.filter(m => (m as any).estado === 'pendiente').length,
+    () => movimientosVisibles.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any)).length,
     [movimientosVisibles],
   )
 
@@ -858,7 +1015,7 @@ ${texto.trim()}` : texto.trim()
 
     // Acotado o no, sale de `filtrosActivos` — la fuente única. Ver su comentario.
     if (hayFiltros) {
-      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente')
+      const pendientesVisibles = movimientosVisibles.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any))
       if (pendientesVisibles.length === 0) {
         alert('No hay movimientos pendientes en lo filtrado. Quitá los filtros para conciliar todo, o ajustalos.')
         return
@@ -877,7 +1034,7 @@ ${texto.trim()}` : texto.trim()
       await capturarCorrida(cuenta, pendientesVisibles as any)
     } else {
       setInfoLote({ scope: 'todos', cuenta: cuenta.nombre, solicitados: 0 })
-      const antes = movimientos.filter(m => (m as any).estado === 'pendiente')
+      const antes = movimientos.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any))
       await ejecutarConciliacion(cuenta)
       await recargar()
       await capturarCorrida(cuenta, antes as any)
@@ -912,7 +1069,114 @@ ${texto.trim()}` : texto.trim()
     recargar()
   }
 
-  // Conciliar UN resumen de tarjeta: (1) auto-match contra facturas crédito por monto, (2) motor de reglas con el resto
+  /**
+   * 💳 **Vincular el pago de un resumen** (A-DEC-1002): el débito de la cuenta corriente queda con el
+   * `nro_resumen`, y el «SU PAGO» del resumen siguiente se concilia contra ese mismo débito. Lo escribe
+   * el usuario con el botón; si los importes no coinciden igual se vincula y el panel lo avisa.
+   */
+  const vincularPagoResumen = async (nr: string, cierre: string, debito: DebitoCtaCte, suPagoIds: string[]) => {
+    setVinculandoNr(nr)
+    try {
+      const [sch, tabla] = debito.tabla.split('.')
+      const cli = sch && sch !== 'public' ? supabase.schema(sch) : supabase
+      const etiqueta = etiquetaResumenTarjeta(cierre) ?? `Resumen tarjeta ${nr}`  // mismo rótulo que los cargos (A-FEAT-1299)
+      const { data: actual } = await cli.from(tabla).select('comprobantes_pagados, categ').eq('id', debito.id).maybeSingle()
+      const { error } = await cli.from(tabla)
+        .update({ nro_resumen: nr, ...((actual as any)?.comprobantes_pagados ? {} : { comprobantes_pagados: etiqueta }) })
+        .eq('id', debito.id)
+      if (error) throw error
+      if (suPagoIds.length) {
+        const upd = {
+          estado: 'conciliado',
+          categ: (actual as any)?.categ || null,
+          proveedor_nombre: 'Pago desde cuenta corriente',
+          comprobantes_pagados: etiqueta,
+          detalle: null,
+        }
+        const { error: e2 } = await dbCuenta().from(tablaActiva).update(upd).in('id', suPagoIds)
+        if (e2) throw e2
+        suPagoIds.forEach(id => actualizarLocal(id, upd))
+      }
+      toast.success(`Pago vinculado al resumen del ${new Date(cierre + 'T12:00:00').toLocaleDateString('es-AR')}`)
+      await cargarDebitosTarjeta()
+    } catch (err) {
+      toast.error('No se pudo vincular el pago: ' + (err as Error).message)
+    } finally { setVinculandoNr(null) }
+  }
+
+  /**
+   * 💵 **A-BUG-1307 — completar en pesos los consumos en dólares de un resumen**, con el cambio REAL del
+   * pago: el débito en pesos que pagó los dólares ÷ el «SU PAGO EN USD» del resumen siguiente.
+   * ⚠️ Cambió 2026-10-20 (A-FEAT-1312, usuario: *«no diría que se conviertan en pesos en el extracto sino
+   * en el template con una nueva columna de TC»*): escribe **sólo la cuota** (monto en pesos + monto_usd +
+   * tipo_cambio). El movimiento del extracto queda en dólares, como el papel del banco.
+   */
+  const [completandoUsd, setCompletandoUsd] = useState<string | null>(null)
+  /** 💵 A-FEAT-1312 — las cuotas de los consumos en USD (para mostrar los pesos y el TC, y saber cuáles faltan). */
+  const [cuotasUsd, setCuotasUsd] = useState<Record<string, { monto: number; monto_usd: number | null; tipo_cambio: number | null }>>({})
+  useEffect(() => {
+    const ids = Array.from(new Set((movimientos as any[])
+      .filter(m => ((Number(m.debitos_usd) || 0) > 0 || (Number(m.creditos_usd) || 0) > 0) && m.template_cuota_id)
+      .map(m => m.template_cuota_id as string)))
+    if (!ids.length) { setCuotasUsd({}); return }
+    let vivo = true
+    supabase.from('cuotas_egresos_sin_factura').select('id, monto, monto_usd, tipo_cambio').in('id', ids)
+      .then(({ data }) => {
+        if (!vivo) return
+        const m: Record<string, any> = {}
+        for (const c of (data ?? []) as any[]) m[c.id] = { monto: Number(c.monto) || 0, monto_usd: c.monto_usd != null ? Number(c.monto_usd) : null, tipo_cambio: c.tipo_cambio != null ? Number(c.tipo_cambio) : null }
+        setCuotasUsd(m)
+      })
+    return () => { vivo = false }
+  }, [movimientos])
+  const completarPesosUsd = async (nr: string, movs: any[], siguiente: any[] | null) => {
+    // Todos los consumos en USD del resumen entran al cálculo (el último absorbe el redondeo contra el
+    // débito); se escriben sólo las cuotas que todavía no tienen su TC.
+    const consumos = movs.filter(m => m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen'
+      && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0))
+    const sinCuota = consumos.filter(m => !m.template_cuota_id)
+    if (sinCuota.length) {
+      toast.error(`Primero conciliá ${sinCuota.length === 1 ? 'el consumo' : `los ${sinCuota.length} consumos`} en dólares contra su template: los pesos y el TC se guardan en la cuota. (${sinCuota.map(m => m.descripcion).join(' · ')})`)
+      return
+    }
+    const pagoUsd = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos_usd) || 0) > 0)
+    const pagoPesos = (siguiente ?? []).find(m => m.tipo_fila === 'pago' && (Number(m.creditos) || 0) > 0)
+    const r = pesosDeConsumosUsd({
+      consumos: consumos.map(m => ({ id: m.id, usd: Number(m.debitos_usd) || 0 })),
+      usdPagado: Number(pagoUsd?.creditos_usd) || 0,
+      fechaPago: String(pagoUsd?.fecha ?? '').slice(0, 10),
+      pesosPagados: Number(pagoPesos?.creditos) || 0,
+      debitos: debitosTarjeta,
+    })
+    if (!r.ok) { toast.error(r.aviso); return }
+    const lineas = r.pesos.map(p => {
+      const m = consumos.find(c => c.id === p.id)
+      return `• ${m?.descripcion ?? ''}: USD ${Number(m?.debitos_usd).toLocaleString('es-AR')} → ${formatCurrency(p.pesos)}`
+    }).join('\n')
+    const aEscribir = r.pesos.filter(p => {
+      const m = consumos.find(c => c.id === p.id)
+      return !(cuotasUsd[m?.template_cuota_id]?.tipo_cambio)
+    })
+    if (!aEscribir.length) { toast.info('Las cuotas de estos consumos ya tienen su TC.'); return }
+    if (!window.confirm(`Pesos y TC de los consumos en dólares, con el cambio del pago:\n\nDébito del ${new Date(r.debito.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(r.debito.debitos)}\nCambio: ${r.tc.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\n${lineas}\n\nSe guarda en la CUOTA de cada uno (USD, TC y pesos). El extracto queda en dólares.`)) return
+    setCompletandoUsd(nr)
+    try {
+      const nuevas: typeof cuotasUsd = {}
+      for (const p of aEscribir) {
+        const m = consumos.find(c => c.id === p.id)!
+        const fila = cuotaDeConsumoUsd(p.pesos, Number(m.debitos_usd) || 0)
+        const { error } = await supabase.from('cuotas_egresos_sin_factura').update(fila).eq('id', m.template_cuota_id)
+        if (error) throw error
+        nuevas[m.template_cuota_id] = fila
+      }
+      setCuotasUsd(prev => ({ ...prev, ...nuevas }))
+      toast.success(`${aEscribir.length} cuota${aEscribir.length === 1 ? '' : 's'} en dólares con sus pesos y TC (cambio ${r.tc.toLocaleString('es-AR')})`)
+    } catch (err) {
+      toast.error('No se pudo completar: ' + (err as Error).message)
+    } finally { setCompletandoUsd(null) }
+  }
+
+  // Conciliar UN resumen de tarjeta con el motor de la cuenta corriente
   const conciliarResumen = async (nr: string, cierre?: string) => {
     if (!cuentaSeleccionada) return
     const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
@@ -922,61 +1186,23 @@ ${texto.trim()}` : texto.trim()
       alert('No hay movimientos pendientes para conciliar en este resumen.')
       return
     }
-    const etiqueta = cierre ? new Date(cierre).toLocaleDateString('es-AR') : nr.slice(-6)
+    const etiqueta = cierre ? String(cierre).slice(0, 10).split('-').reverse().join('/') : nr.slice(-6)
+    // El botón del renglón graba directo en la base: se confirma como el Conciliar general (usuario 2026-10-19).
+    const ok = window.confirm(
+      `Se conciliarán los ${pend.length} movimiento(s) pendiente(s) del resumen ${etiqueta}.\n\n`
+      + `El resto de la tarjeta NO se toca.\n\n¿Continuar?`
+    )
+    if (!ok) return
     setConciliandoNr(nr)
     try {
-      // 1) Auto-conciliar contra facturas en estado 'credito' por monto (tolerancia centavos)
-      const { data: facturas } = await supabase.schema('msa')
-        .from('comprobantes_arca')
-        .select('id, cuit, imp_total, cuenta_contable, nro_cuenta, denominacion_emisor')
-        .eq('estado', 'credito')
-      let pool = [...(facturas || [])]
-      const matchedIds = new Set<string>()
-      let conc = 0, amb = 0
-      for (const m of pend) {
-        const d = Number(m.debitos) || 0
-        if (d <= 0) continue
-        const cands = pool.filter((f: any) => Math.abs((Number(f.imp_total) || 0) - d) <= 1)
-        if (cands.length === 1) {
-          const f: any = cands[0]
-          const cuit = (f.cuit || '').replace(/[-\s]/g, '')
-          const { data: prov } = cuit
-            ? await supabase.from('proveedores').select('razon_social').eq('cuit', cuit).maybeSingle()
-            : { data: null }
-          const upd: Record<string, any> = {
-            comprobante_arca_id: f.id,
-            detalle: null,
-            estado: 'conciliado',
-            proveedor_nombre: prov?.razon_social || f.denominacion_emisor || null,
-            comprobantes_pagados: f.denominacion_emisor || null,
-          }
-          if (f.cuenta_contable) upd.categ = f.cuenta_contable
-          if (f.nro_cuenta) upd.nro_cuenta = f.nro_cuenta
-          const { error: errMov } = await dbCuenta().from(tablaActiva).update(upd).eq('id', m.id)
-          if (errMov) { console.error('Error conciliando movimiento tarjeta:', errMov); continue } // no concilia si falla el update
-          await supabase.schema('msa').from('comprobantes_arca')
-            .update({ estado: 'conciliado', fecha_vencimiento: m.fecha, monto_a_abonar: d })
-            .eq('id', f.id)
-          actualizarLocal(m.id, upd)
-          pool = pool.filter((x: any) => x.id !== f.id)
-          matchedIds.add(m.id)
-          conc++
-        } else if (cands.length > 1) {
-          amb++
-        }
-      }
-
-      // 2) Motor de reglas sobre lo que quedó pendiente
-      const restantes = pend.filter((m: any) => !matchedIds.has(m.id))
-      setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: restantes.length })
-      if (restantes.length > 0) await ejecutarConciliacion(cuenta, restantes as any)
+      /**
+       * ⚠️ Cambió 2026-10-03 (A-DEC-1002): el resumen se concilia con **el mismo motor** que la cuenta
+       * corriente —facturas y templates (primero lo pagado con tarjeta), anticipos, sueldos y reglas—.
+       * Hasta acá tenía un buscador propio de facturas antes del motor, con otra forma de registrar.
+       */
+      setInfoLote({ scope: 'filtrado', cuenta: `${cuenta.nombre} · resumen ${etiqueta}`, solicitados: pend.length })
+      await ejecutarConciliacion(cuenta, pend as any)
       recargar()
-      alert(
-        `Resumen ${etiqueta}:\n` +
-        `✅ ${conc} conciliada(s) contra factura crédito\n` +
-        (amb ? `⚠️ ${amb} con varias facturas del mismo monto (resolver a mano)\n` : '') +
-        `— ${restantes.length} pasaron al motor de reglas`
-      )
     } finally {
       setConciliandoNr(null)
     }
@@ -1099,7 +1325,13 @@ ${texto.trim()}` : texto.trim()
    *   (si no, quedaría en la lista de «sin vincular» con la plata ya contada).
    */
   const [confirmandoOk, setConfirmandoOk] = useState<string | null>(null)
-  const confirmarAuditado = async (movimiento: any) => {
+  const confirmarAuditado = async (movimiento: any, silencioso = false): Promise<boolean> => {
+    // 📅 A-FEAT-1302 — «Falta la campaña»: no tiene cuota atada. Darle OK lo concilia de UN SOLO LADO
+    // (§ 2.1 de MODULO_CONCILIACION): hay que crear la campaña y asignarlo.
+    if (faltaCampanaDelMotivo(movimiento.motivo_revision)) {
+      if (!silencioso) toast.error('Falta la campaña: no tiene cuota para conciliar. Usá «📅 Crear campaña».')
+      return false
+    }
     setConfirmandoOk(movimiento.id)
     try {
       const previa = String(movimiento.nota_operador || '').trim()
@@ -1119,6 +1351,9 @@ ${texto.trim()}` : texto.trim()
       const { error } = await dbCuenta().from(tablaActiva).update(upd).eq('id', movimiento.id)
       if (error) throw error
       actualizarLocal(movimiento.id, upd)
+      // ✓ A-BUG-1306 — la otra mitad: la factura / cuota / sueldo atado pasa a conciliado (antes quedaba sin pagar).
+      const origen = await conciliarOrigenDelMovimiento(supabase as any, movimiento)
+      if (origen.avisos.length) toast.error(`Movimiento conciliado, pero ${origen.avisos.join(' · ')}`)
       // ✅ A-BUG-1247 — con este crédito conciliado, la venta se cierra si su detalle cierra (antes quedaba «a cobrar»).
       let cerrada: string | null = null
       if (movimiento.comprobante_venta_id) {
@@ -1126,11 +1361,36 @@ ${texto.trim()}` : texto.trim()
         // 📝 A-FEAT-1257 — y el detalle dice qué se cobró.
         try { await anotarQueSeCobro(supabase, movimiento.id, movimiento.comprobante_venta_id, schemaVentaCuenta, extractoActivo) } catch { /* se completa después */ }
       }
-      toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
+      if (!silencioso) toast.success('Movimiento conciliado' + (upd.anticipo_id ? ' — y su pago a cuenta quedó vinculado' : '')
         + (cerrada ? ` — la venta quedó ${cerrada === 'conciliado' ? 'conciliada' : 'cobrada'}` : ''))
+      return true
     } catch (err) {
       toast.error('No se pudo confirmar: ' + (err as Error).message)
+      return false
     } finally { setConfirmandoOk(null) }
+  }
+
+  /**
+   * ✓ **A-FEAT-1300 — OK masivo de «auditar».** Pedido del usuario 2026-10-20: *«repasar todos los
+   * auditar de un período filtrado… seleccione yo todos los que están bien y les dé el ok a todos
+   * juntos»*, sobre la misma pantalla (no un modal). Es el «✓ OK» de cada fila, uno por uno: no
+   * reescribe detalle, cuenta ni códigos (los puso el motor al dejarlo en auditar) y concilia también
+   * el origen (A-BUG-1306).
+   */
+  const darOkMasivo = async () => {
+    const elegidos = movimientosVisibles.filter(m => seleccionados.has(m.id) && String(m.estado).toLowerCase() === 'auditar')
+    if (!elegidos.length) return
+    if (!window.confirm(`¿Dar OK a ${elegidos.length} movimiento${elegidos.length === 1 ? '' : 's'}?
+
+Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) return
+    setAplicandoOkMasivo(true)
+    let ok = 0
+    try {
+      for (const m of elegidos) if (await confirmarAuditado(m, true)) ok++
+    } finally { setAplicandoOkMasivo(false) }
+    setSeleccionados(new Set())
+    if (ok === elegidos.length) toast.success(`${ok} movimiento${ok === 1 ? '' : 's'} conciliado${ok === 1 ? '' : 's'}`)
+    else toast.error(`Conciliados ${ok} de ${elegidos.length} — los demás siguen en auditar`)
   }
 
   // Aplicar ediciones masivas
@@ -1226,13 +1486,15 @@ ${texto.trim()}` : texto.trim()
                   updateData.centro_costo = editData.centro_de_costo.trim()
                 }
                 
+                // ✓ A-BUG-1306 — en el schema de la empresa de la factura (antes siempre MSA).
+                const schemaFc = (await schemaDeFactura(supabase as any, opcionId)) ?? 'msa'
                 const { error } = await supabase
-                  .schema('msa')
+                  .schema(schemaFc)
                   .from('comprobantes_arca')
                   .update(updateData)
                   .eq('id', opcionId)
                 // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
-                if (!error) await completarFechaPago(supabase, 'msa', [opcionId], movimiento.fecha)
+                if (!error) await completarFechaPago(supabase, schemaFc, [opcionId], movimiento.fecha)
 
                 if (error) {
                   console.error('Error actualizando factura ARCA:', error)
@@ -1339,58 +1601,9 @@ ${texto.trim()}` : texto.trim()
             const movimiento = movimientos.find(m => m.id === movimientoId) as any
             if (!movimiento) continue
 
-            // Factura ARCA ya vinculada
-            if (movimiento.comprobante_arca_id) {
-              await supabase
-                .schema('msa')
-                .from('comprobantes_arca')
-                .update({ estado: 'conciliado' })
-                .eq('id', movimiento.comprobante_arca_id)
-              // 📅 A-BUG-191 — la fecha de pago es la del movimiento (completa, no pisa).
-              await completarFechaPago(supabase, 'msa', [movimiento.comprobante_arca_id], movimiento.fecha)
-            }
-
-            // Cuota template ya vinculada
-            if (movimiento.template_cuota_id) {
-              await supabase
-                .from('cuotas_egresos_sin_factura')
-                .update({ estado: 'conciliado' })
-                .eq('id', movimiento.template_cuota_id)
-            }
-
-            /**
-             * 🔗 **A-BUG-176 — si el pago es de un GRUPO, se concilian TODOS sus miembros.**
-             *
-             * El vínculo guarda **el primer miembro** del grupo, y eso es deliberado (A-BUG-41): un
-             * `grupo_pago_id` en `sueldo_pago_id` apuntaría a otra tabla, y desde el primer pago se
-             * llega al grupo. **Eso no se toca.**
-             *
-             * 🧨 Lo que faltaba es la otra mitad: marcar `conciliado` **sólo al primero** deja a los
-             * demás en `pendiente`, así que el mismo pago bancario aparece medio saldado — y los
-             * miembros restantes se vuelven a ofrecer para conciliar contra otra cosa.
-             *
-             * 📌 Caso real: los haberes de $2.699.370 son **3 pagos y 2 beneficiarios**
-             * (Sigot ×2 + Barreto). Sin esto quedarían conciliados $1.487.477 de los tres.
-             */
-            if (movimiento.sueldo_pago_id) {
-              const { data: pagoVinculado } = await supabase
-                .from('sueldos_pagos')
-                .select('id, grupo_pago_id')
-                .eq('id', movimiento.sueldo_pago_id)
-                .maybeSingle()
-
-              if (pagoVinculado?.grupo_pago_id) {
-                await supabase
-                  .from('sueldos_pagos')
-                  .update({ estado: 'conciliado' })
-                  .eq('grupo_pago_id', pagoVinculado.grupo_pago_id)
-              } else {
-                await supabase
-                  .from('sueldos_pagos')
-                  .update({ estado: 'conciliado' })
-                  .eq('id', movimiento.sueldo_pago_id)
-              }
-            }
+            // ✓ A-BUG-1306 — factura (en SU empresa, antes siempre MSA), cuota y sueldo: la misma función que el «✓ OK».
+            const res = await conciliarOrigenDelMovimiento(supabase as any, movimiento)
+            if (res.avisos.length) toast.error(`Movimiento del ${movimiento.fecha}: ${res.avisos.join(' · ')}`)
           }
         }
 
@@ -1530,12 +1743,18 @@ ${texto.trim()}` : texto.trim()
   // A-FEAT-03: junta los códigos que ya se usaron en esta cuenta para sugerirlos al imputar
   const cargarCodigosUsados = async () => {
     try {
+      // A-BUG-1301: la cuenta abierta primero, después TODOS los extractos y las reglas de contable/interno.
       const { data } = await dbCuenta().from(tablaActiva).select('contable, interno')
-      const limpiar = (vals: (string | null)[]) =>
-        [...new Set(vals.map(v => (v || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'))
+      const otros = await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
+        const cli = t.schema === 'public' ? supabase : supabase.schema(t.schema)
+        const { data: d } = await cli.from(t.tabla).select('contable, interno').or('contable.not.is.null,interno.not.is.null')
+        return (d || []) as any[]
+      }))
+      const { data: reglasCI } = await supabase.from('reglas_contable_interno').select('codigo_contable, codigo_interno')
+      const filas = [(data || []) as any[], ...otros]
       setCodigosUsados({
-        contable: limpiar((data || []).map((r: any) => r.contable)),
-        interno: limpiar((data || []).map((r: any) => r.interno)),
+        contable: unirCodigos([...filas.map(f => f.map((r: any) => r.contable)), (reglasCI || []).map((r: any) => r.codigo_contable)]),
+        interno: unirCodigos([...filas.map(f => f.map((r: any) => r.interno)), (reglasCI || []).map((r: any) => r.codigo_interno)]),
       })
     } catch (e) {
       console.error('Error cargando códigos usados:', e)
@@ -1797,7 +2016,7 @@ ${texto.trim()}` : texto.trim()
     // Cargar templates abiertos para asignación
     const { data } = await supabase
       .from('egresos_sin_factura')
-      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta')
+      .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
       .eq('activo', true)
       .order('cuenta_agrupadora')
       .order('nombre_referencia')
@@ -2002,6 +2221,14 @@ ${texto.trim()}` : texto.trim()
     if (!anterior) return null
     // Si es la MISMA cuota que se está eligiendo, no hay nada que soltar.
     if (cuotaNuevaId && cuotaNuevaId === anterior) return null
+
+    // 🛡️ A-DEC-1009 — una cuota «anterior» (histórico jul-25 → ene-26) no vuelve al Cash Flow al
+    // soltarla: sigue «anterior». Antes revivía como pendiente un pago de hace meses.
+    const { data: actual } = await supabase.from('cuotas_egresos_sin_factura').select('estado, monto').eq('id', anterior).maybeSingle()
+    if (actual && estadoCuotaAlDesvincular(actual.estado) === 'anterior') {
+      const montoAnt = Number(actual.monto || 0)
+      return `ℹ️ La cuota que estaba vinculada antes ($${montoAnt.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}) es del histórico: se soltó el vínculo y sigue como «anterior» (no vuelve al Cash Flow).`
+    }
 
     const { data, error } = await supabase
       .from('cuotas_egresos_sin_factura')
@@ -2234,7 +2461,7 @@ ${texto.trim()}` : texto.trim()
         const { data: facturaCompleta } = await supabase
           .schema(schemaFactura)
           .from('comprobantes_arca')
-          .select('cuenta_contable, nro_cuenta')
+          .select('cuenta_contable, nro_cuenta, detalle, numero_desde, denominacion_emisor')
           .eq('id', arcaElegida.id)
           .maybeSingle()
         const cuentaContable = facturaCompleta?.cuenta_contable || null  // nombre descriptivo → categ
@@ -2296,6 +2523,18 @@ ${marca}` : marca
          * ✅ **Lo que el usuario escribió a mano se respeta siempre** — eso no cambia.
          */
         updateArca.detalle = movimientoAsignando.detalle?.trim() || null
+        // 🏷️ A-FEAT-1296 — sin detalle propio, el detalle fijo del proveedor (va también a la factura)
+        if (!updateArca.detalle) {
+          const fijos = await cargarDetallesFijos(supabase as any)
+          if (fijos.length) {
+            updateArca.detalle = await aplicarDetalleFijo(supabase as any, fijos, {
+              facturaId: arcaElegida.id, tabla: schemaFactura, cuit: arcaElegida.cuit,
+              monto: Number(movimientoAsignando.debitos) || Number(movimientoAsignando.creditos) || 0,
+              detalleFactura: (facturaCompleta as any)?.detalle, emisor: (facturaCompleta as any)?.denominacion_emisor,
+              numero: (facturaCompleta as any)?.numero_desde,
+            })
+          }
+        }
         if (cuentaContable) updateArca.categ = cuentaContable
         if (nroCuenta) updateArca.nro_cuenta = nroCuenta
         if (contableManual.trim()) updateArca.contable = contableManual.trim()
@@ -2955,6 +3194,8 @@ ${marca}` : marca
      */
     setFiltroRevisado('todas')
     setFiltroNota('todas')
+    setResumenesElegidos(new Set())
+    setResumenFiltro(null) // A-BUG-1291: ahora es un filtro más, se limpia con los otros
     setFiltroSentido('todos')   // A-FEAT-1224 — si quedara puesto, es el bug A-BUG-155 otra vez
 
     // Reset completo: acá SÍ va el objeto mínimo — se limpió todo, no hay nada que preservar.
@@ -3310,6 +3551,9 @@ ${marca}` : marca
             </Card>
           </div>
 
+          {/* 🧪 Los tests del extracto histórico (A-DEC-1009), donde se prueba. */}
+          <TestsDelProceso proceso="extracto/historico" pantalla="extracto" />
+
           {/* Alerta CATEG inválida — valores que no corresponden a ninguna cuenta contable ni template */}
           {movimientosCategInvalida.length > 0 && (
             <Alert className="border-amber-300 bg-amber-50">
@@ -3363,6 +3607,7 @@ ${marca}` : marca
                     <SelectItem value="conciliado">Conciliados</SelectItem>
                     <SelectItem value="pendiente">Pendientes</SelectItem>
                     <SelectItem value="auditar">Para Auditar</SelectItem>
+                    <SelectItem value={ESTADO_HISTORICO}>Históricos (sin clasificar)</SelectItem>
                   </SelectContent>
                 </Select>
 
@@ -3423,7 +3668,7 @@ ${marca}` : marca
                   Actualizar
                 </Button>
                 <Button
-                  onClick={() => setModoEdicion(!modoEdicion)}
+                  onClick={() => { setModoEdicion(!modoEdicion); setModoOkAuditar(false) }}
                   variant={modoEdicion ? "destructive" : "outline"}
                   className="flex items-center gap-2"
                 >
@@ -3468,6 +3713,32 @@ ${marca}` : marca
                 >
                   Auditar ({estadisticas.auditar})
                 </Button>
+                {/* ✓ A-FEAT-1300 — dar OK a varios «auditar» juntos, en esta misma pantalla. */}
+                <Button
+                  variant={modoOkAuditar ? "default" : "outline"}
+                  size="sm"
+                  className={`h-7 text-xs px-2 ${modoOkAuditar ? 'bg-green-600 hover:bg-green-700' : 'border-green-400 text-green-700 hover:bg-green-50'}`}
+                  title="Muestra sólo los «auditar» de lo filtrado, con casillas, para darles OK juntos"
+                  onClick={() => { setModoOkAuditar(v => !v); setModoEdicion(false); setSeleccionados(new Set()) }}
+                >
+                  ✓ OK masivo{modoOkAuditar ? ' (salir)' : ''}
+                </Button>
+                {/* 📜 A-DEC-1009 — el extracto histórico (jul-25 → ene-26), cargado sin clasificar. Sólo aparece si hay. */}
+                {estadisticas.historicos > 0 && (
+                  <Button
+                    variant={filtroEstado === ESTADO_HISTORICO && !filtroCategEspecial ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs px-2"
+                    title="Movimientos del extracto histórico cargados sin clasificar: no entran en ningún número hasta que se revisa su lote"
+                    onClick={() => {
+                      setFiltroEstado(ESTADO_HISTORICO)
+                      setFiltroCategEspecial(null)
+                      cargarMovimientos(construirFiltros({ estado: ESTADO_HISTORICO }))
+                    }}
+                  >
+                    Históricos ({estadisticas.historicos})
+                  </Button>
+                )}
                 <Button
                   variant={filtroCategEspecial === 'invalida' ? "default" : "outline"}
                   size="sm"
@@ -3862,6 +4133,25 @@ ${marca}` : marca
             {codigosUsados.interno.map(c => <option key={c} value={c} />)}
           </datalist>
 
+          {/* ✓ A-FEAT-1300 — barra del OK masivo */}
+          {modoOkAuditar && (
+            <Card className="border-green-300 bg-green-50">
+              <CardContent className="py-3 flex items-center gap-3 flex-wrap text-sm">
+                <span className="text-green-900">
+                  <b>{movimientosVisibles.length}</b> para auditar en lo filtrado · <b>{seleccionados.size}</b> marcados
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSeleccionados(new Set(movimientosVisibles.map(m => m.id)))}>Todos</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSeleccionados(new Set())}>Ninguno</Button>
+                <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" disabled={!seleccionados.size || aplicandoOkMasivo}
+                  onClick={() => void darOkMasivo()}>
+                  {aplicandoOkMasivo ? 'Aplicando…' : `✓ Dar OK a ${seleccionados.size}`}
+                </Button>
+                <span className="text-xs text-green-800">Es el mismo «✓ OK» de cada fila: no cambia detalle, cuenta ni códigos; concilia también la factura o la cuota.</span>
+                <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => { setModoOkAuditar(false); setSeleccionados(new Set()) }}>Salir</Button>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Panel de Edición Masiva */}
           {modoEdicion && seleccionados.size > 0 && (
             <Card className="border-blue-200 bg-blue-50">
@@ -3902,6 +4192,7 @@ ${marca}` : marca
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="auditar">Auditar</SelectItem>
                         <SelectItem value="pendiente">Pendiente</SelectItem>
+                        <SelectItem value={ESTADO_HISTORICO}>Histórico (sin clasificar)</SelectItem>
                       </SelectContent>
                     </Select>
 
@@ -4162,23 +4453,79 @@ ${marca}` : marca
                   const total = g.resumen ? Number(g.resumen.debitos) || 0 : null
                   const saldoAnt = g.resumen ? Number(g.resumen.creditos) || 0 : null
                   const oficial = (total != null && saldoAnt != null) ? Math.round((total - saldoAnt) * 100) / 100 : null
-                  const viva = Math.round(g.movs.reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
+                  // 💵 A-BUG-1307 — los consumos en dólares no están en el total en pesos del resumen: aunque se
+                  // completen en pesos, no entran en la suma viva (si no, el control daría diferencia).
+                  const viva = Math.round(g.movs.filter((m: any) => !((Number(m.debitos_usd) || 0) > 0))
+                    .reduce((s, m) => s + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0) * 100) / 100
                   const dif = oficial != null ? Math.round((oficial - viva) * 100) / 100 : null
                   const movsOrd = [...g.movs].sort((a: any, b: any) => (Number(a.orden) || 0) - (Number(b.orden) || 0)) // orden del PDF
                   const pendientes = g.movs.filter((m: any) => m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length
                   return { nr, total, viva, dif, movs: movsOrd, pendientes, cierre: g.resumen?.fecha_cierre || g.movs[0]?.fecha_cierre || '' }
                 }).sort((a, b) => String(b.cierre).localeCompare(String(a.cierre)))
                 if (lista.length === 0) return null
+                // 💳 El pago de cada resumen y su control de tres caminos (A-DEC-1002).
+                const pagos = pagosDeResumenes(
+                  lista.filter(x => x.total != null && x.cierre).map(x => ({
+                    nr: x.nr, cierre: String(x.cierre).slice(0, 10),
+                    vencimiento: (grupos.get(x.nr)?.resumen?.fecha_vencimiento as string | null) ?? null,
+                    total: x.total as number,
+                  })),
+                  debitosTarjeta,
+                  (movimientos as any[]).filter(m => m.tipo_fila === 'pago').map(m => ({ id: m.id, nr: m.nro_resumen, creditos: Number(m.creditos) || 0, estado: m.estado })),
+                  hoyArgentina(),
+                )
                 return (
                   <div className="mb-4 space-y-1">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control)</p>
+                    <TestsDelProceso proceso="extracto/tarjeta" pantalla="extracto" />
+                    {/* 🧾 A-FEAT-1292 — NC pagadas con tarjeta: aplicadas, el motor encuentra la factura por su neto */}
+                    {cuentaActivaObj?.empresa && <AvisoNcTarjeta empresa={cuentaActivaObj.empresa} />}
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Resúmenes (total del mes · suma en vivo · control · conciliado · pago)</p>
+                    {resumenFiltro && (
+                      <p className="text-xs text-blue-700">
+                        La tabla muestra sólo el resumen elegido. <button type="button" className="underline" onClick={() => setResumenFiltro(null)}>Ver todos</button>
+                      </p>
+                    )}
+                    {/* ☑️ A-FEAT-1310 — varios resúmenes juntos con el «Conciliar» de arriba. */}
+                    {resumenesElegidos.size > 0 ? (
+                      <p className="text-xs text-blue-800 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+                        ☑️ <b>{resumenesElegidos.size} resumen(es) elegido(s)</b>, con {(movimientos as any[]).filter(m => resumenesElegidos.has(m.nro_resumen) && m.estado === 'pendiente' && m.tipo_fila !== 'pago' && m.tipo_fila !== 'resumen').length} pendiente(s):
+                        la tabla muestra sólo ésos y el <b>Conciliar</b> de arriba corre sobre ellos juntos.{' '}
+                        <button type="button" className="underline" onClick={() => setResumenesElegidos(new Set())}>Quitar selección</button>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400">Tildá varios resúmenes para conciliarlos juntos con el Conciliar de arriba (en vez de filtrar por fechas).</p>
+                    )}
                     {lista.map(item => {
                       const ok = item.dif != null && Math.abs(item.dif) < 0.5
                       return (
                         <div key={item.nr} className="border rounded flex items-center justify-between px-3 py-2 text-sm">
                           <span className="flex items-center gap-2">
-                            <span className="font-medium">{item.cierre ? new Date(item.cierre).toLocaleDateString('es-AR') : item.nr.slice(-6)}</span>
+                            <input type="checkbox" className="h-4 w-4 cursor-pointer" title="Elegir este resumen para conciliarlo junto con otros (Conciliar de arriba)"
+                              checked={resumenesElegidos.has(item.nr)}
+                              onChange={() => setResumenesElegidos(prev => {
+                                const s = new Set(prev); if (s.has(item.nr)) s.delete(item.nr); else s.add(item.nr); return s
+                              })} />
+                            <button type="button" title="Ver sólo los movimientos de este resumen en la tabla de abajo"
+                              onClick={() => setResumenFiltro(f => f === item.nr ? null : item.nr)}
+                              className={`font-medium underline-offset-2 hover:underline ${resumenFiltro === item.nr ? 'text-blue-700 underline' : ''}`}>
+                              {item.cierre ? String(item.cierre).slice(0, 10).split('-').reverse().join('/') : item.nr.slice(-6)}
+                            </button>
                             <span className="text-gray-400 text-xs">{item.movs.length} mov.</span>
+                            {(() => {
+                              const consumos = item.movs.filter((m: any) => m.tipo_fila !== 'pago')
+                              const listos = consumos.filter((m: any) => m.estado === 'conciliado').length
+                              return <span className={`text-xs ${listos === consumos.length ? 'text-green-600' : 'text-gray-500'}`}>conciliado {listos}/{consumos.length}</span>
+                            })()}
+                            {(() => {
+                              const p = pagos.get(item.nr)
+                              if (!p) return null
+                              const color = p.estado === 'pagado' ? 'text-green-600' : (p.estado === 'con_diferencia' || p.estado === 'vencido_sin_pago') ? 'text-red-600' : p.estado === 'propuesto' ? 'text-blue-700' : 'text-gray-500'
+                              return (
+                                <span className={`text-xs ${color}`} title={p.avisos.join('\n') || undefined}>
+                                  · {ETIQUETA_ESTADO_PAGO[p.estado]}{p.avisos.length > 0 && ` (${p.avisos.length})`}
+                                </span>
+                              )
+                            })()}
                           </span>
                           <span className="flex items-center gap-3 text-xs">
                             <span>Total: <b>{item.total != null ? formatCurrency(item.total) : '—'}</b></span>
@@ -4188,6 +4535,34 @@ ${marca}` : marca
                               : ok
                                 ? <span className="text-green-600 font-medium">✓ control OK</span>
                                 : <span className="text-red-600 font-medium">⚠ dif {formatCurrency(item.dif)}</span>}
+                            {(() => {
+                              const p = pagos.get(item.nr)
+                              if (!p?.propuesto) return null
+                              const d = p.propuesto
+                              return (
+                                <button type="button" disabled={vinculandoNr !== null}
+                                  title={`Débito del ${new Date(d.fecha + 'T12:00:00').toLocaleDateString('es-AR')} en la cuenta corriente: ${formatCurrency(d.debitos)}`}
+                                  onClick={() => vincularPagoResumen(item.nr, String(item.cierre).slice(0, 10), d, p.suPagos.map(x => x.id))}
+                                  className="px-2 py-1 rounded border border-blue-600 text-blue-700 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">
+                                  {vinculandoNr === item.nr ? 'Vinculando…' : 'Vincular pago'}
+                                </button>
+                              )
+                            })()}
+                            {(() => {
+                              // 💵 A-BUG-1307 / A-FEAT-1312 — consumos en USD cuya cuota todavía no tiene su TC
+                              const sinPesos = item.movs.filter((m: any) => m.tipo_fila !== 'pago' && (Number(m.debitos_usd) || 0) > 0 && !((Number(m.debitos) || 0) > 0)
+                                && !(m.template_cuota_id && cuotasUsd[m.template_cuota_id]?.tipo_cambio)).length
+                              if (!sinPesos) return null
+                              const sig = lista.filter(x => String(x.cierre) > String(item.cierre)).sort((a, b) => String(a.cierre).localeCompare(String(b.cierre)))[0]
+                              return (
+                                <button type="button" disabled={completandoUsd !== null}
+                                  title="Pesos y TC en la cuota, con el cambio real del pago (débito en pesos ÷ SU PAGO EN USD del resumen siguiente). El extracto queda en dólares."
+                                  onClick={() => completarPesosUsd(item.nr, item.movs, sig ? sig.movs : null)}
+                                  className="px-2 py-1 rounded border border-emerald-600 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap">
+                                  {completandoUsd === item.nr ? 'Completando…' : `💵 Pesos de ${sinPesos} en USD`}
+                                </button>
+                              )
+                            })()}
                             {item.pendientes > 0 && (
                               <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
                                 onClick={() => conciliarResumen(item.nr, item.cierre)}
@@ -4220,7 +4595,7 @@ ${marca}` : marca
                   <Table>
                     <TableHeader className="sticky top-0 z-10 bg-white border-b">
                       <TableRow>
-                        {modoEdicion && (
+                        {(modoEdicion || modoOkAuditar) && (
                           <TableHead className="w-12">
                             <Checkbox
                               checked={seleccionados.size === movimientosVisibles.length && movimientosVisibles.length > 0}
@@ -4271,7 +4646,7 @@ ${marca}` : marca
                     <TableBody>
                       {movimientosVisibles.map((movimiento) => (
                         <TableRow key={movimiento.id} className={!movimiento.revisado ? 'bg-red-50/60' : ''}>
-                          {modoEdicion && (
+                          {(modoEdicion || modoOkAuditar) && (
                             <TableCell>
                               <Checkbox
                                 checked={seleccionados.has(movimiento.id)}
@@ -4286,10 +4661,10 @@ ${marca}` : marca
                             {movimiento.descripcion}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movimiento.debitos > 0 ? formatCurrency(movimiento.debitos) : '-'}
+                            {movimiento.debitos > 0 ? formatCurrency(movimiento.debitos) : <ImporteUsd usd={(movimiento as any).debitos_usd} cuota={cuotasUsd[(movimiento as any).template_cuota_id]} />}
                           </TableCell>
                           <TableCell className="text-right font-mono">
-                            {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : '-'}
+                            {movimiento.creditos > 0 ? formatCurrency(movimiento.creditos) : <ImporteUsd usd={(movimiento as any).creditos_usd} />}
                           </TableCell>
                           {col('saldo') && (
                             <TableCell className="text-right font-mono">
@@ -4312,8 +4687,9 @@ ${marca}` : marca
                               movimiento.estado === 'conciliado' ? 'default' :
                               movimiento.estado === 'auditar' ? 'secondary' :
                               'outline'
-                            }>
-                              {movimiento.estado}
+                            } className={esHistorico(movimiento.estado) ? 'text-gray-500 border-dashed' : undefined}
+                              title={esHistorico(movimiento.estado) ? 'Extracto histórico sin clasificar: no entra en ningún número hasta que se revisa su lote' : undefined}>
+                              {esHistorico(movimiento.estado) ? 'histórico' : movimiento.estado}
                             </Badge>
                           </TableCell>
                           {col('detalle') && (
@@ -4327,32 +4703,53 @@ ${marca}` : marca
                                   onChange={(e) => setEditandoDetalleVal(e.target.value)}
                                   onKeyDown={async (e) => {
                                     if (e.key === 'Enter') {
-                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
-                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
+                                      await guardarDetalleCelda(movimiento, editandoDetalleVal, fijarDetalle)
                                       setEditandoDetalleId(null)
                                     }
                                     if (e.key === 'Escape') setEditandoDetalleId(null)
                                   }}
                                   onBlur={async () => {
-                                    if (editandoDetalleVal !== (movimiento.detalle || '')) {
-                                      await (schemaActivo && schemaActivo !== 'public' ? supabase.schema(schemaActivo) : supabase)
-                                        .from(tablaActiva).update({ detalle: editandoDetalleVal }).eq('id', movimiento.id)
-                                      actualizarLocal(movimiento.id, { detalle: editandoDetalleVal })
-                                      await propagarDetalleAlTemplate(movimiento, editandoDetalleVal)
+                                    if (editandoDetalleVal !== (movimiento.detalle || '') || fijarDetalle) {
+                                      await guardarDetalleCelda(movimiento, editandoDetalleVal, fijarDetalle)
                                     }
                                     setEditandoDetalleId(null)
                                   }}
                                 />
-                              ) : (
-                                <span
-                                  className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
-                                  title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
-                                  onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || '') }}
-                                >
-                                  {movimiento.detalle || <span className="text-gray-300">—</span>}
-                                </span>
+                              ) : (() => {
+                                // 🏷️ A-FEAT-1296 — 📌 si es un detalle fijo; 💡 si está vacío y hay uno para sugerir.
+                                const det = (movimiento.detalle || '').trim()
+                                const fijo = det ? detallesFijos.find(f => f.detalle.trim().toLowerCase() === det.toLowerCase()) : undefined
+                                const fac = !det && (movimiento as any).comprobante_arca_id ? cuitPorFactura.get((movimiento as any).comprobante_arca_id) : undefined
+                                const sug = fac ? elegirDetalleFijo(detallesFijos, fac.cuit, Number(movimiento.debitos) || Number(movimiento.creditos) || 0) : null
+                                const sugerencias = sug ? (sug.elegido ? [sug.elegido] : sug.sugeridos.slice(0, 2)) : []
+                                return (
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <span
+                                      className="cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded truncate block"
+                                      title={movimiento.detalle ? `${movimiento.detalle} — click para editar` : 'Click para agregar detalle'}
+                                      onClick={() => { setEditandoDetalleId(movimiento.id); setEditandoDetalleVal(movimiento.detalle || ''); setFijarDetalle(false) }}
+                                    >
+                                      {movimiento.detalle || (sugerencias.length ? null : <span className="text-gray-300">—</span>)}
+                                    </span>
+                                    {fijo && (
+                                      <button type="button" title="Detalle fijo de este proveedor — click para dejar de usarlo"
+                                        className="text-[10px] shrink-0" onClick={() => desactivarDetalleFijo(fijo)}>📌</button>
+                                    )}
+                                    {sugerencias.map(s => (
+                                      <button key={s.id} type="button" title="Detalle fijo de este proveedor — click para ponerlo"
+                                        className="text-[10px] shrink-0 rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 truncate max-w-[140px]"
+                                        onClick={() => guardarDetalleCelda(movimiento, s.detalle, false)}>💡 {s.detalle}</button>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                              {editandoDetalleId === movimiento.id && (movimiento as any).comprobante_arca_id && (
+                                // onMouseDown + preventDefault: el tilde no le saca el foco al campo (si no, el blur guarda antes).
+                                <label className="flex items-center gap-1 text-[10px] text-gray-500 mt-0.5 cursor-pointer select-none"
+                                  onMouseDown={e => { e.preventDefault(); setFijarDetalle(v => !v) }}>
+                                  <input type="checkbox" readOnly checked={fijarDetalle} className="h-3 w-3" />
+                                  Usar siempre para {movimiento.proveedor_nombre || 'este proveedor'}
+                                </label>
                               )}
                             </TableCell>
                           )}
@@ -4371,7 +4768,15 @@ ${marca}` : marca
                               <div className="flex items-center gap-1">
                                 <span className="truncate" title={movimiento.motivo_revision || ''}>{movimiento.motivo_revision || '-'}</span>
                                 {/* ✅ Un movimiento «para revisar» se da por bueno de un click. */}
-                                {String(movimiento.estado).toLowerCase() === 'auditar' && (
+                                {/* 📅 A-FEAT-1302 — falta la campaña: en vez del OK (que lo dejaría conciliado sin
+                                    cuota), el botón que la crea — abre Asignar → Template, donde está el asistente. */}
+                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (
+                                  <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-amber-800 border-amber-400 bg-amber-50 shrink-0"
+                                    title="Crea la campaña que falta (copiando el template) y le asigna la cuota de su mes"
+                                    onClick={(e) => { e.stopPropagation(); void abrirModalAsignar(movimiento) }}>
+                                    📅 Crear campaña
+                                  </Button>
+                                ) : String(movimiento.estado).toLowerCase() === 'auditar' && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-green-700 border-green-300 shrink-0"
                                     disabled={confirmandoOk === movimiento.id}
                                     title="Darlo por bueno: pasa a conciliado y el motivo queda en la nota"
@@ -5301,6 +5706,93 @@ ${marca}` : marca
 
             {/* Tab Template */}
             <TabsContent value="template" className="space-y-3 mt-3">
+              {/* 🔁 A-FEAT-1302 punto 3 — el motor lo dejó en auditar porque falta la campaña de su template
+                  (A-DEC-1015): se crea ahí mismo, copiando el template, y el movimiento se ata a la cuota de su mes. */}
+              {(() => {
+                const falta = faltaCampanaDelMotivo((movimientoAsignando as any)?.motivo_revision)
+                if (!falta) return null
+                const n = (s: any) => String(s ?? '').trim().toLowerCase()
+                const familia = (templatesParaAsignar as any[])
+                  .filter(t => n(t.nombre_referencia) === n(falta.nombre) && n(t.responsable) === n(falta.responsable))
+                  .sort((a, b) => String(b.año ?? '').localeCompare(String(a.año ?? '')))
+                const yaExiste = familia.some(t => n(t.año) === n(falta.campana))
+                return (
+                  <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 space-y-1">
+                    <div>📅 Falta la campaña <b>{falta.campana}</b> de «{falta.nombre}» ({falta.responsable}).</div>
+                    {yaExiste ? (
+                      <div>Ya existe: elegila en la lista de abajo.</div>
+                    ) : familia[0] ? (
+                      <Button size="sm" className="h-7 text-xs" onClick={() => { setCopiarDeTemplate(familia[0].id); setModalNuevoTemplate(true) }}>
+                        Crear campaña {falta.campana} (copia de la {familia[0].año || 'sin campaña'})
+                      </Button>
+                    ) : (
+                      <div>No encuentro el template «{falta.nombre}» activo: crealo con «+ Crear uno acá».</div>
+                    )}
+                  </div>
+                )
+              })()}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-500">¿No está el template?</span>
+                {/* 🧩 A-FEAT-1294 — abre directo el formulario COMPLETO (ver lo existente, «parecido a…», entero
+                    o nada). Ya no pide antes una cuenta del plan: la cuenta es, por default, el nombre del template. */}
+                <button type="button" className="text-blue-700 underline" onClick={() => setModalNuevoTemplate(true)}>
+                  + Crear uno acá
+                </button>
+              </div>
+              {/* 🧩 A-FEAT-1302 — el MISMO asistente de Templates, precargado con el movimiento (antes un modal
+                  aparte que creaba el template sin cuotas). Fijo → sus cuotas quedan presupuestadas y el
+                  movimiento se ata a la de su mes; abierto → sin cuotas, las carga cada movimiento. */}
+              <Dialog open={modalNuevoTemplate} onOpenChange={(o) => { if (!o) { setModalNuevoTemplate(false); setCopiarDeTemplate(null) } }}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>{copiarDeTemplate ? 'Crear la campaña que falta' : 'Crear template desde la conciliación'}</DialogTitle>
+                  </DialogHeader>
+                  {modalNuevoTemplate && (
+                    <WizardTemplatesEgresos
+                      fechaReferencia={(movimientoAsignando as any)?.fecha ? String((movimientoAsignando as any).fecha).slice(0, 10) : undefined}
+                      empresaCuenta={cuentaActivaObj?.empresa || 'MSA'}
+                      cuentaBancariaId={cuentaActivaObj?.id}
+                      copiarDe={copiarDeTemplate || undefined}
+                      inicial={{
+                        nombre_referencia: (movimientoAsignando?.descripcion || '').replace(/\s+\d[\d-]{5,}\s*$/, '').trim(),
+                        responsable: cuentaActivaObj?.empresa || 'MSA',
+                        monto_base: Number(movimientoAsignando?.debitos) || Number(movimientoAsignando?.creditos) || 0,
+                        ...(cuentaNuevoTemplate ? { categ: cuentaNuevoTemplate } : {}),
+                      }}
+                      onCancelar={() => { setModalNuevoTemplate(false); setCopiarDeTemplate(null) }}
+                      onCreado={async (templateId) => {
+                        setModalNuevoTemplate(false)
+                        setCopiarDeTemplate(null)
+                        setCrearTemplateAbierto(false)
+                        setCuentaNuevoTemplate('')
+                        const { data } = await supabase
+                          .from('egresos_sin_factura')
+                          .select('id, nombre_referencia, categ, cuenta_agrupadora, responsable, es_bidireccional, es_multi_cuenta, año')
+                          .eq('activo', true)
+                          .order('cuenta_agrupadora')
+                          .order('nombre_referencia')
+                        setTemplatesParaAsignar(data || [])
+                        const nuevo = ((data || []) as any[]).find((t: any) => t.id === templateId)  // `año` en el select confunde al parser de tipos
+                        if (!nuevo) return
+                        setTemplateElegido(nuevo); setCuotaElegida(null); setBusquedaAsignarTemplate(nuevo.nombre_referencia)
+                        // 🔗 Las cuotas recién creadas, y la del mes del movimiento ya elegida: así no se crea una extra.
+                        const { data: cuotas } = await supabase
+                          .from('cuotas_egresos_sin_factura')
+                          .select('id, fecha_vencimiento, fecha_estimada, monto, estado, descripcion, categ, tipo_movimiento')
+                          .eq('egreso_id', templateId)
+                          .not('estado', 'eq', 'conciliado')
+                          .order('fecha_vencimiento', { ascending: true })
+                        setCuotasExistentes(cuotas || [])
+                        const delMes = cuotaDelMovimiento((cuotas || []) as any[], String(movimientoAsignando?.fecha || ''))
+                        if (delMes) setCuotaElegida(delMes)
+                        toast.success(delMes
+                          ? 'Template creado con sus cuotas. Quedó elegida la cuota de este mes: revisá y confirmá la asignación.'
+                          : 'Template creado. Revisá y confirmá la asignación.')
+                      }}
+                    />
+                  )}
+                </DialogContent>
+              </Dialog>
               <Input
                 placeholder="Buscar template por nombre o agrupadora..."
                 value={busquedaAsignarTemplate}
@@ -5313,6 +5805,8 @@ ${marca}` : marca
                     const q = normalizarBusqueda(busquedaAsignarTemplate)
                     return !q || normalizarBusqueda(t.nombre_referencia).includes(q) || normalizarBusqueda(t.cuenta_agrupadora).includes(q) || normalizarBusqueda(t.categ).includes(q)
                   })
+                  // A-BUG-1300: con el mismo nombre (renovación de campaña), la campaña más nueva primero
+                  .sort((a: any, b: any) => campanaNuevaPrimero(a, b))
                   .map(t => (
                     <div
                       key={t.id}
@@ -5357,6 +5851,7 @@ ${marca}` : marca
                       <div className="text-xs text-gray-500">
                         {t.categ}
                         {t.responsable && <span className="ml-2 text-blue-600">· {t.responsable}</span>}
+                        {(t as any).año && <span className="ml-2 font-medium text-gray-700">· campaña {(t as any).año}</span>}
                       </div>
                     </div>
                   ))}
@@ -5519,7 +6014,7 @@ ${marca}` : marca
               <div className="max-h-72 overflow-y-auto space-y-1">
                 {(() => {
                   const propuestas = movimientoAsignando
-                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles)
+                    ? generarPropuestasArca(movimientoAsignando, facturasDisponibles, cuentaActivaObj?.tipo === 'tarjeta')
                     : []
                   const conScore   = propuestas.filter(p => p.score > 0)
                   const sinScore   = propuestas.filter(p => p.score === 0)
@@ -6028,6 +6523,23 @@ function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa
         </span>
       ))}
       {esOtra && <span className="text-[10px] leading-4 text-amber-600" title="Se registrará como retiro">⇄</span>}
+    </span>
+  )
+}
+
+/**
+ * 💵 A-FEAT-1312 — un importe en DÓLARES del extracto se muestra en dólares (como el papel del banco).
+ * Si su cuota ya tiene TC, abajo y en chico: los pesos y el cambio — de dónde salen.
+ */
+function ImporteUsd({ usd, cuota }: { usd: any; cuota?: { monto: number; tipo_cambio: number | null } }) {
+  const n = Number(usd) || 0
+  if (!(n > 0)) return <>-</>
+  return (
+    <span className="inline-flex flex-col items-end leading-tight" title="Importe original en dólares. Los pesos y el TC van en la cuota del template.">
+      <span className="text-emerald-700">USD {n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      {cuota?.tipo_cambio
+        ? <span className="text-[10px] text-gray-500">${cuota.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · TC {cuota.tipo_cambio.toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
+        : <span className="text-[10px] text-amber-600">sin TC</span>}
     </span>
   )
 }

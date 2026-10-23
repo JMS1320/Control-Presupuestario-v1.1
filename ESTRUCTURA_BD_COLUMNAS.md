@@ -33,7 +33,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 `id uuid, categ text, cuenta_contable text, tipo USER-DEFINED(enum), activo boolean, created_at tstz, nro_cuenta text, imputable boolean, cta_totalizadora text, nombre_totalizadora text, cambio_nombre_cta text, grupo_cuenta text`
 
 ### cuotas_egresos_sin_factura
-`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, fecha_pago date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean`
+`id uuid, egreso_id uuid→egresos_sin_factura, numero_cuota int, fecha_vencimiento date, fecha_estimada date, fecha_pago date, monto numeric, estado varchar, descripcion text, detalle text, cuenta_contable text, centro_costo text, created_at tstz, updated_at tstz, mes int, tipo_movimiento varchar, grupo_pago_id uuid→msa.grupos_pago, medio_pago text, categ varchar, visible_contable boolean, monto_usd numeric(15,2), tipo_cambio numeric(15,4)`
+
+> `monto_usd` + `tipo_cambio` (2026-10-20, script 91, A-FEAT-1312): consumo en dólares de la tarjeta — el original en USD y el cambio real del pago; `monto` (pesos) = `monto_usd × tipo_cambio`. El extracto de la tarjeta queda en dólares (`debitos_usd`), sin pesos. Null = cuota en pesos.
 
 > `fecha_pago` (2026-07-04): fecha real de pago, separada del vencimiento firme. Editable en Vista Pagos / Cash Flow; propaga a `fecha_estimada`. Venc solo editable vía RPC `actualizar_venc_cuota` (desde Egresos sin Factura). Ver PENDIENTES A-TEST-06.
 
@@ -60,11 +62,14 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### msa_galicia · pam_galicia · pam_galicia_cc  (extractos cta cte — misma estructura)
 `fecha date, descripcion text, origen text, debitos numeric, creditos numeric, grupo_de_conceptos text, concepto text, numero_de_terminal text, observaciones_cliente text, numero_de_comprobante text, leyendas_adicionales_1..4 text, tipo_de_movimiento text, saldo numeric, control numeric, categ text, detalle text, contable text, interno text, centro_de_costo text, cuenta text, orden numeric, id uuid, estado text, motivo_revision text, comprobante_arca_id uuid, nro_cuenta varchar, template_id uuid, template_cuota_id uuid, sueldo_pago_id uuid, revisado boolean, nota_operador text, anticipo_id uuid, proveedor_nombre varchar, comprobantes_pagados text`
 
+### detalles_por_proveedor
+`id uuid, cuit text, detalle text, monto_referencia numeric(16,2), activo boolean, creado_por text, created_at tstz, updated_at tstz` _(2026-10-20, script 88, A-FEAT-1296: detalle fijo por proveedor; varios renglones = varios suministros, se elige por monto)_
+
 ### proveedores
 `id uuid, cuit varchar, razon_social varchar, nombre_fantasia varchar, activo boolean, cbu varchar, alias_cbu varchar, banco varchar, tipo_cuenta varchar, moneda_cuenta varchar, ultimo_uso_bancario tstz, email_pagos varchar, email_facturacion varchar, telefono varchar, contacto_nombre varchar, notas text, tags ARRAY, empresa_principal varchar, created_at tstz, updated_at tstz, es_proveedor boolean, es_cliente boolean, fc_modo varchar, patron_asunto varchar, dias_busqueda int, carpeta_drive_id varchar, gas_habilitado boolean, pdf_ultimo_intento tstz, mensaje_transferencia varchar`
 
 ### reglas_conciliacion
-`id uuid, orden int, tipo text, columna_busqueda text, texto_buscar text, tipo_match text, categ text, centro_costo text, detalle text, activo boolean, created_at tstz, updated_at tstz, llena_template boolean, cuenta_bancaria_id varchar, codigo_contable varchar, codigo_interno varchar`
+`id uuid, orden int, tipo text, columna_busqueda text, texto_buscar text, tipo_match text, categ text, centro_costo text, detalle text, activo boolean, created_at tstz, updated_at tstz, llena_template boolean, cuenta_bancaria_id varchar, codigo_contable varchar, codigo_interno varchar, template_id uuid` _(**`template_id`** 2026-10-19, script 87, A-FEAT-1293: el template que eligió el usuario; null = va por categ)_
 
 ### reglas_contable_interno
 `id uuid, orden int, activo boolean, created_at tstz, updated_at tstz, cuenta_bancaria_id varchar, tipo_regla varchar, template_id uuid, responsable varchar, codigo_contable varchar, codigo_interno varchar, descripcion varchar, empleado_id uuid`
@@ -105,6 +110,7 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 - **ventas**: `id uuid, cuit_cliente varchar, denominacion_cliente varchar, fecha_operacion date, grano varchar, toneladas numeric, modo_precio varchar, precio_usd numeric, tc numeric, precio_pesos numeric, alicuota_iva numeric, comision_neto numeric, comision_alicuota_iva numeric, almacenaje_neto numeric, almacenaje_alicuota_iva numeric, observaciones text, created_at tstz, updated_at tstz`
 - **ventas_comprobantes** (N:N): `venta_id uuid→ventas, comprobante_id uuid→comprobantes_venta, created_at tstz`
 > ⚠️ **Cambió 2026-10-01:** `msa.comprobantes_venta` tiene **60 columnas** — las 53 de abajo más `cabezas numeric, hacienda_lineas jsonb, redondeo numeric, nro_guia text, dte text, plazos jsonb` y `correcciones jsonb` (la huella), para la liquidación de **hacienda** (tipo 60, A-FEAT-1225). **PAM y MA siguen en 53, a propósito**: no venden hacienda (decisión del usuario).
+> ⚠️ **Cambió 2026-10-03 (scripts/77):** `public.msa_galicia`, `public.pam_galicia`, `public.pam_galicia_cc` y `ma.ma_galicia` suman **`nro_resumen varchar(30)`**: el débito que paga un resumen de tarjeta queda atado a ese resumen (mismo nombre que en las tablas de tarjeta). A-DEC-1002.
 > ⚠️ **Cambió 2026-10-03 (scripts/75):** tablas nuevas **`public.balance_fotos`** (`id, empresa, fecha_cierre, tc, tc_fuente, notas, created_at, updated_at`; único empresa+fecha) y **`public.balance_foto_valores`** (`id, foto_id→balance_fotos, renglon, version, importe, origen, valor_sistema, detalle, updated_at`; único foto+renglón+versión). El balance propio (A-FEAT-1190); el catálogo de renglones vive en `lib/balance/balance-propio.ts`.
 > ⚠️ **Cambió 2026-10-02 (scripts/73):** tabla nueva **`msa.echeqs_terceros`** — forma de `msa.caja_general` (`like … including all`) + `anticipo_id uuid` (único, FK a `anticipos_proveedores`) + `comprobante_venta_id uuid` (FK). El «extracto» de los echeqs de clientes (A-FEAT-1230).
 > ⚠️ **Cambió 2026-10-02 (scripts/72):** `public.anticipos_proveedores` suma **`endosado_en_id uuid`** (FK a la misma tabla: el pago al proveedor que se canceló endosando un cheque de tercero) y `estado_pago` admite **`en_cartera`** (A-FEAT-1229).

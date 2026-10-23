@@ -57,6 +57,8 @@ import {
   type CabezaNuestra, type CabezaRomaneo,
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
+import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
+import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
@@ -138,6 +140,7 @@ import {
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
@@ -166,7 +169,24 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
-import { planCancelacionNC, esNotaCreditoArca } from "@/lib/pagos/cancelacion-nc"
+import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
+import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
+import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
+import { reglasDelTemplateNuevo, filaDelPlanParaTemplate } from "@/lib/templates/codigos-del-template"
+import { coincideCampana, SIN_CAMPANA } from "@/lib/templates/cuotas-del-template"
+import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
+import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
+import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
+import { armarRenglones } from "@/lib/polizas/renglones-pdf"
+import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
+import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
+import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
+import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
+import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
+import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
+import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
   copiarEsquemaCuotas, anioInicioCampania, correrAnios, validarCuotas, planificarCuotas, filaDesdeGuardada,
@@ -182,6 +202,8 @@ import {
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
+import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
@@ -1578,6 +1600,29 @@ export function correrCasos(): Resultado[] {
   chequear("Audit", "🚩 Sólo ARCA lleva número de cuenta: el template SIN número está BIEN",
     "2 casos (ARCA sin, template con)", `${gImp?.total ?? 0} casos`,
     gImp?.total === 2, "A-DAT-45")
+
+  // ── ⚖️ Dos lados (A-FEAT-1301): conciliado el movimiento, conciliado lo atado ─────────────────
+  // 🧨 La tarjeta: 21 facturas en «crédito»/«anterior» con el movimiento conciliado por el «✓ OK».
+  {
+    const dl = [
+      movAud("dl1", { comprobante_arca_id: "f1" }),   // factura en crédito → hallazgo
+      movAud("dl2", { comprobante_arca_id: "f2" }),   // factura en anterior → hallazgo (caso tarjeta)
+      movAud("dl3", { template_cuota_id: "c1" }),     // cuota en anterior (histórico) → NO
+      movAud("dl4", { template_cuota_id: "c2" }),     // cuota pendiente → hallazgo
+      movAud("dl5", { comprobante_arca_id: "f3" }),   // factura conciliada → NO
+    ]
+    const estados = new Map([["dl1", { factura: "credito" }], ["dl2", { factura: "anterior" }],
+      ["dl3", { cuota: "anterior" }], ["dl4", { cuota: "pendiente" }], ["dl5", { factura: "conciliado" }]])
+    const r = auditar({ movimientos: dl, categsDelPlan: PLAN, estadoOrigen: estados })
+    const g = r.grupos.find(x => x.control === "origen-sin-conciliar")
+    const ids = (g?.causas.flatMap(c => c.ejemplos.map(e => e.movimientoId)) ?? []).sort().join(" ")
+    chequear("Audit", "⚖️ Conciliado de un solo lado: la factura en crédito o anterior y la cuota pendiente; la cuota «anterior» del histórico no",
+      "dl1 dl2 dl4", ids, ids === "dl1 dl2 dl4", "A-FEAT-1301")
+    const sinDato = auditar({ movimientos: dl, categsDelPlan: PLAN })
+    chequear("Audit", "Sin el estado de los orígenes, el control dos lados se informa NO verificado (no se da por bueno)",
+      "aparece en no verificado", sinDato.noVerificado.some(s => s.startsWith("Dos lados")) ? "aparece en no verificado" : "no aparece",
+      sinDato.noVerificado.some(s => s.startsWith("Dos lados")), "A-FEAT-1301")
+  }
 
   // ── Agrupar por CAUSA: 152 movimientos son 18 altas, no 152 arreglos ──────────────────────
   const mismaCateg = ["c1", "c2", "c3"].map(id => movAud(id, { categ: "Sueldos", sueldo_pago_id: "s" }))
@@ -3757,6 +3802,45 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · templates", "🧮 El detalle y el resumen por mes dan EXACTAMENTE lo mismo",
       `${sumaDetalle}`, `${muchas.totalDebitos}`,
       Math.abs(sumaDetalle - muchas.totalDebitos) < 0.01, "A-FEAT-1184")
+
+    // 🧨 A-BUG-1289 — el caso real: Rojas 2026 tiene «Anual» (desactivado, estimado en $20.941.123)
+    //    y «Cuota» (la que se paga). Antes el libro sumaba las dos y el inmobiliario salía doble.
+    const rojas = armarTemplatesDelEjercicio([
+      { ...base, id: "anual", concepto: "Inmobiliario Anual Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-08", estado: "desactivado", monto: 20941123 },
+      { ...base, id: "c1", concepto: "Inmobiliario Cuota Rojas", categ: "Impuesto inmobiliario", fecha: "2026-03-17", estado: "conciliado", monto: 2096673.6 },
+    ], ej)
+    chequear("Balance · templates", "🛑 Una cuota DESACTIVADA no es gasto: queda afuera del total y en su lista",
+      "gasto 2096673.6 · 1 no incluida por 20941123",
+      `gasto ${rojas.totalDebitos} · ${rojas.noIncluidas?.length ?? "?"} no incluida por ${rojas.totalNoIncluidas ?? "?"}`,
+      rojas.totalDebitos === 2096673.6 && rojas.noIncluidas?.length === 1 && rojas.totalNoIncluidas === 20941123, "A-BUG-1289")
+
+    // 💳 Una cuota PENDIENTE del ejercicio es gasto (venció) Y deuda al cierre, como una factura impaga.
+    const impaga = armarTemplatesDelEjercicio([
+      { ...base, id: "p", fecha: "2026-05-10", estado: "pendiente", monto: 45843.7 },
+      { ...base, id: "q", fecha: "2026-04-10", estado: "conciliado", monto: 1000 },
+    ], ej)
+    chequear("Balance · templates", "💳 Una cuota PENDIENTE sigue en el gasto y además es deuda al cierre",
+      "gasto 46843.7 · deuda 45843.7 (1 cuota)",
+      `gasto ${impaga.totalDebitos} · deuda ${impaga.totalImpagas ?? "?"} (${impaga.impagasAlCierre?.length ?? "?"} cuota)`,
+      impaga.totalDebitos === 46843.7 && impaga.totalImpagas === 45843.7 && impaga.impagasAlCierre?.length === 1, "A-BUG-1289")
+
+    // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
+    //    $7.115.206,05; uno anulado no suma, y los de otra empresa u otro ejercicio no se mezclan.
+    const aj = (id: string, concepto: string, monto: number, extra: Record<string, unknown> = {}) => ({
+      id, empresa: "MSA", anio_cierre: 2026, accion: "saldo_anterior", concepto, categ: "Impuesto inmobiliario",
+      monto, motivo: "Saldo que dejó el balance 2025", origen_anio_cierre: 2025, created_at: "2026-10-18", anulado_at: null, ...extra })
+    const saldos = saldosDelEjercicioAnterior([
+      aj("a", "Inmobiliario MSA 2025", 3154059.75),
+      aj("b", "Complementario MSA 2025", 1519054.8, { categ: "Impuesto inmobiliario Complementario" }),
+      aj("c", "Red Vial Rojas 2025", 2442091.5, { categ: "Impuesto Red Vial" }),
+      aj("d", "cargado de más", 999, { anulado_at: "2026-10-18" }),
+      aj("e", "de PAM", 500, { empresa: "PAM" }),
+      aj("f", "de otro ejercicio", 700, { anio_cierre: 2027 }),
+    ], "MSA", 2026)
+    chequear("Balance · saldos ej. anterior", "✍️ Suman los vigentes del ejercicio; el anulado y los ajenos no",
+      "3 vigentes · total 7115206.05 · 1 anulado",
+      `${saldos.vigentes.length} vigentes · total ${saldos.total} · ${saldos.anulados.length} anulado`,
+      saldos.vigentes.length === 3 && saldos.total === 7115206.05 && saldos.anulados.length === 1, "A-FEAT-1207")
   }
 
   /**
@@ -6343,6 +6427,35 @@ export function correrCasos(): Resultado[] {
   }
 
 
+  // ══ El pago de cada resumen de tarjeta (A-DEC-1002) — con los números reales de MSA ════════
+  {
+    const res = [
+      { nr: "R04", cierre: "2026-04-30", vencimiento: "2026-05-11", total: 2030886.25 },
+      { nr: "R05", cierre: "2026-05-28", vencimiento: "2026-06-08", total: 2047532.73 },
+    ]
+    const deb = [
+      { id: "d1", tabla: "public.msa_galicia", fecha: "2026-05-11", debitos: 2030886.25, nro_resumen: null, descripcion: "Pago Visa Empresa" },
+      { id: "d2", tabla: "public.msa_galicia", fecha: "2026-06-08", debitos: 2047532.73, nro_resumen: null, descripcion: "Pago Visa Empresa" },
+    ]
+    const su = [{ id: "s1", nr: "R05", creditos: 2030886.25, estado: "pendiente" }]
+    const p1 = pagosDeResumenes(res, deb, su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Sin vincular: cada resumen encuentra SU débito (por importe y fecha) y lo propone",
+      "R04→d1 · R05→d2", `R04→${p1.get("R04")?.propuesto?.id} · R05→${p1.get("R05")?.propuesto?.id}`,
+      p1.get("R04")?.estado === "propuesto" && p1.get("R04")?.propuesto?.id === "d1" && p1.get("R05")?.propuesto?.id === "d2", "A-DEC-1002")
+    const p2 = pagosDeResumenes(res, deb.map(d => d.id === "d1" ? { ...d, nro_resumen: "R04" } : d), su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Vinculado: total del resumen = débito = SU PAGO del siguiente → pagado, sin avisos",
+      "pagado · 0 avisos", `${p2.get("R04")?.estado} · ${p2.get("R04")?.avisos.length} avisos`,
+      p2.get("R04")?.estado === "pagado" && p2.get("R04")?.avisos.length === 0, "A-DEC-1002")
+    const p3 = pagosDeResumenes(res, deb.map(d => d.id === "d1" ? { ...d, nro_resumen: "R04", debitos: 2000000 } : d), su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Pagado de menos: se vincula igual y AVISA las dos diferencias (contra el total y contra el SU PAGO)",
+      "con_diferencia · 2 avisos", `${p3.get("R04")?.estado} · ${p3.get("R04")?.avisos.length} avisos`,
+      p3.get("R04")?.estado === "con_diferencia" && p3.get("R04")?.avisos.length === 2, "A-DEC-1002")
+    const p4 = pagosDeResumenes([...res, { nr: "R06", cierre: "2026-06-25", vencimiento: "2026-07-06", total: 1900000 }], deb, su, "2026-10-03")
+    chequear("Tarjeta — pago del resumen", "Un resumen vencido sin débito en la cuenta corriente se marca y se dice",
+      "vencido_sin_pago", String(p4.get("R06")?.estado), p4.get("R06")?.estado === "vencido_sin_pago" && (p4.get("R06")?.avisos.length ?? 0) === 1, "A-DEC-1002")
+  }
+
+
   // ══ Cash Flow: tipo de comprobante, número y ventana hacia atrás (A-FEAT-170 / A-FEAT-1237) ══
   {
     const et = [
@@ -6476,6 +6589,28 @@ export function correrCasos(): Resultado[] {
     chequear("Asistencia — llenar con F y jornal", "«Llenar con F» pone F en los 17 vacíos sin tocar lo marcado; el jornalero suma 10,5 días y cobra 10,5 × 60.000",
       "F 17 · completo · 10,5 días · 630000", `F ${Object.keys(resto).length} · ${r.completo ? "completo" : "incompleto"} · ${String(r.diasTrabajados).replace(".", ",")} días · ${bruto}`,
       Object.keys(resto).length === 17 && Object.values(resto).every(m => m === "F") && r.completo && r.diasTrabajados === 10.5 && bruto === 630000, "A-FEAT-1259")
+  }
+
+  // ══ 📜 Extracto histórico jul-25 → ene-26 (A-DEC-1009) ══════════════════════════════════════════
+  {
+    // 🧨 Antes, desvincular devolvía SIEMPRE la cuota a «pendiente»: una cuota «anterior» revivía en el Cash Flow.
+    const antesSiempre = (_e: string) => "pendiente"
+    chequear("Extracto histórico", "🧨 Desvincular un movimiento de una cuota «anterior» la deja «anterior» (antes volvía a pendiente y reaparecía en el Cash Flow); una conciliada sí vuelve a pendiente",
+      "anterior · pendiente · pendiente · antes: pendiente", `${estadoCuotaAlDesvincular("anterior")} · ${estadoCuotaAlDesvincular("conciliado")} · ${estadoCuotaAlDesvincular(null)} · antes: ${antesSiempre("anterior")}`,
+      estadoCuotaAlDesvincular("anterior") === "anterior" && estadoCuotaAlDesvincular(" Anterior ") === "anterior" && estadoCuotaAlDesvincular("conciliado") === "pendiente" && estadoCuotaAlDesvincular(null) === "pendiente", "A-DEC-1009")
+    const filas = [
+      { estado: "conciliado", categ: "Expensas Libertad", revisado: true },
+      { estado: "pendiente", categ: null, revisado: false },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "historico", categ: null, revisado: null },
+      { estado: "auditar", categ: "", revisado: true },
+    ]
+    const e = contarEstadisticasExtracto(filas)
+    // 🧨 Antes «Sin CATEG» contaba también los históricos (que no tienen categoría hasta revisar su lote).
+    const sinCategAntes = filas.filter(m => !m.categ || m.categ === "").length
+    chequear("Extracto histórico", "🧨 Los históricos se cuentan aparte y no inflan «Sin CATEG» ni «sin revisar» (antes Sin CATEG daba 4 con 2 históricos)",
+      "total 5 · históricos 2 · sin categ 2 · sin revisar 1 · antes 4", `total ${e.total} · históricos ${e.historicos} · sin categ ${e.sin_categ} · sin revisar ${e.sin_revisar} · antes ${sinCategAntes}`,
+      e.total === 5 && e.historicos === 2 && e.sin_categ === 2 && e.sin_revisar === 1 && e.conciliados === 1 && e.pendientes === 1 && e.auditar === 1 && sinCategAntes === 4 && esHistorico("Historico") && !esHistorico("pendiente"), "A-DEC-1009")
   }
 
   // ══ El bruto de un período: una sola fórmula (A-FEAT-1259) ══════════════════════════════════════
@@ -6641,6 +6776,746 @@ export function correrCasos(): Resultado[] {
     chequear(G, "Tablero de meses: TODOS los meses con su estado (también los presentados), del más viejo al más nuevo; un «No» con mes (Ventas) no cuenta",
       "05/2026 Imputado · 08/2026 Enviado · 09/2026 DDJJ OK +1", tablero,
       tablero === "05/2026 Imputado · 08/2026 Enviado · 09/2026 DDJJ OK +1", "A-FEAT-1295")
+  }
+
+  // ══ 🔁 DOBLE AUDIT: lo que está a auditar en un extracto no se concilia solo desde otro (A-BUG-1290) ══
+  {
+    // Buscador de juguete con la regla del motor: mismo importe; fecha exacta = conciliado, si no, a auditar.
+    const movTarjeta = { debitos: 571179.49, fecha: "2026-07-05" }
+    const buscarJuguete = (pool: any[]) => {
+      const f = pool.find(c => c.debitos === movTarjeta.debitos)
+      return f ? { match: true, cashFlowRow: f, requiere_revision: f.fecha_estimada !== movTarjeta.fecha, motivo_revision: null as string | null }
+               : { match: false, requiere_revision: false, motivo_revision: null as string | null }
+    }
+    const cuotaJulio = { id: "cuota-seguro-julio", debitos: 571179.49, fecha_estimada: "2026-07-05" }
+    const cuotaAgosto = { id: "cuota-seguro-agosto", debitos: 571179.49, fecha_estimada: "2026-07-05" }
+    const enAuditar = new Map<string, VinculoEnAuditar>([["cuota-seguro-julio", { que: "extracto de la cuenta corriente de MSA", fecha: "2026-07-02" }]])
+
+    // 🧨 El caso real: con el código viejo (buscar directo) la cuota de julio, YA atada al débito del 02/07
+    //    a auditar, se conciliaba sola por coincidir importe y fecha.
+    const viejo = buscarJuguete([cuotaJulio])
+    const nuevo = buscarConDobleAudit(buscarJuguete, [cuotaJulio], enAuditar)
+    chequear("Doble audit", "🧨 Seguro Flota: la cuota de julio ya está a auditar en la cta cte → desde la tarjeta queda A AUDITAR, aunque coincida en todo (antes se conciliaba sola)",
+      "antes conciliado · ahora auditar con «Doble audit … 02/07 … cuenta corriente»",
+      `antes ${viejo.requiere_revision ? "auditar" : "conciliado"} · ahora ${nuevo.requiere_revision ? "auditar" : "conciliado"} con «${nuevo.motivo_revision}»`,
+      viejo.requiere_revision === false && nuevo.match && nuevo.requiere_revision === true
+        && String(nuevo.motivo_revision).startsWith("Doble audit") && String(nuevo.motivo_revision).includes("02/07/2026")
+        && String(nuevo.motivo_revision).includes("cuenta corriente de MSA"), "A-BUG-1290")
+
+    // La libre gana: si otra cuota del mismo importe está libre, se toma ésa y se concilia normal.
+    const conLibre = buscarConDobleAudit(buscarJuguete, [cuotaJulio, cuotaAgosto], enAuditar)
+    chequear("Doble audit", "Si hay una candidata LIBRE del mismo importe, gana la libre (la que está en audit no se toca)",
+      "cuota-seguro-agosto · conciliado", `${conLibre.cashFlowRow?.id} · ${conLibre.requiere_revision ? "auditar" : "conciliado"}`,
+      conLibre.cashFlowRow?.id === "cuota-seguro-agosto" && conLibre.requiere_revision === false, "A-BUG-1290")
+
+    // Sin nada a auditar, el motor se comporta igual que antes.
+    const sinAudit = buscarConDobleAudit(buscarJuguete, [cuotaJulio], new Map())
+    chequear("Doble audit", "Sin vínculos a auditar el resultado es el de siempre",
+      "cuota-seguro-julio · conciliado", `${sinAudit.cashFlowRow?.id} · ${sinAudit.requiere_revision ? "auditar" : "conciliado"}`,
+      sinAudit.cashFlowRow?.id === "cuota-seguro-julio" && sinAudit.requiere_revision === false, "A-BUG-1290")
+
+    // Si no coincide nada, no inventa: sigue sin match.
+    const nada = buscarConDobleAudit(buscarJuguete, [{ id: "otra", debitos: 1, fecha_estimada: "2026-07-05" }], enAuditar)
+    chequear("Doble audit", "Si nada coincide, sigue sin match", "sin match", nada.match ? "match" : "sin match", !nada.match, "A-BUG-1290")
+  }
+
+  // ══ 💳 NC PAGADAS CON TARJETA, emparejadas con su factura (A-FEAT-1292) ═══════════════════════════
+  {
+    // Los comprobantes reales de Medicus en «crédito» (mar, abr y may 2026), fijos acá.
+    const med = (id: string, tipo: number, nro: number, fecha: string, total: number) =>
+      ({ id, cuit: "30546741253", tipo_comprobante: tipo, numero_desde: nro, denominacion_emisor: "MEDICUS",
+         imp_total: total, fecha_emision: fecha, detalle: `${tipo === 1 ? "FC" : "NC"} ${nro} - MEDICUS` })
+    const comp = [
+      med("fc-mar", 1, 609033, "2026-03-19", 830356.25), med("nc-mar", 3, 218470, "2026-03-19", -43088.28),
+      med("fc-abr", 1, 611162, "2026-04-22", 814342.23), med("nc-abr", 3, 219622, "2026-04-23", -42218.32),
+      med("fc-may", 1, 613071, "2026-05-21", 850818.25), med("nc-may", 3, 220552, "2026-05-21", -43790.18),
+    ]
+    const pares = paresCreditoNC(comp)
+    // 🧨 Con el modal de siempre (todo junto), las 3 NC se descontaban de la PRIMERA factura.
+    const todoJunto = planCancelacionNC({ tipo: "fc_con_nc", facturas: comp.filter(c => c.tipo_comprobante === 1),
+      disponibles: comp.filter(c => c.tipo_comprobante === 3), seleccionadas: new Set(["nc-mar", "nc-abr", "nc-may"]) })
+    chequear("NC con tarjeta", "🧨 Medicus: cada NC va con SU factura (neto = lo que cobra la tarjeta: 787.267,97 · 772.123,91 · 807.028,07); todo junto bajaba sólo la de marzo",
+      "fc-mar 787267.97 · fc-abr 772123.91 · fc-may 807028.07 · todo junto: fc-mar 701259.47",
+      `${pares.map(p => `${p.fc.id} ${p.neto}`).join(" · ")} · todo junto: ${todoJunto[0].id} ${todoJunto[0].cambios.monto_a_abonar}`,
+      pares.length === 3 && pares[0].fc.id === "fc-mar" && pares[0].neto === 787267.97 && pares[1].fc.id === "fc-abr" && pares[1].nc.id === "nc-abr"
+        && pares[1].neto === 772123.91 && pares[2].neto === 807028.07 && todoJunto[0].cambios.monto_a_abonar === 701259.47, "A-FEAT-1292")
+
+    // El plan de UN par: la factura baja al neto, NO cambia de estado (sigue «crédito») y conserva su detalle.
+    const planMay = planCancelacionNC({ tipo: "fc_con_nc", facturas: [pares[2].fc], disponibles: [pares[2].nc], seleccionadas: new Set([pares[2].nc.id]) })
+    chequear("NC con tarjeta", "La factura de mayo queda en 807.028,07, sin cambiar de estado, y su detalle autogenerado se reemplaza (lo escrito a mano se conservaría)",
+      "807028.07 · sin estado · «Descuento parcial NC 220552» (el FC N - EMISOR autogenerado se descarta, A-BUG-1304) · NC conciliado",
+      `${planMay[0].cambios.monto_a_abonar} · ${planMay[0].cambios.estado ?? "sin estado"} · «${planMay[0].cambios.detalle}» · NC ${planMay[1].cambios.estado}`,
+      planMay[0].cambios.monto_a_abonar === 807028.07 && planMay[0].cambios.estado === undefined
+        && planMay[0].cambios.detalle === "Descuento parcial NC 220552"
+        && planMay[1].cambios.estado === "conciliado" && planMay[1].cambios.detalle === "Cancela FC 613071", "A-FEAT-1292")
+
+    // Una NC sin factura cerca (> 3 días) no se empareja: no se adivina.
+    const lejos = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), med("nc", 3, 2, "2026-05-10", -100)])
+    // Y otro proveedor tampoco, aunque sea el mismo día.
+    const otroCuit = paresCreditoNC([med("fc", 1, 1, "2026-05-01", 1000), { ...med("nc", 3, 2, "2026-05-01", -100), cuit: "20111111112" }])
+    chequear("NC con tarjeta", "Una NC sin factura del mismo proveedor a ≤ 3 días queda sin emparejar",
+      "0 · 0", `${lejos.length} · ${otroCuit.length}`, lejos.length === 0 && otroCuit.length === 0, "A-FEAT-1292")
+  }
+
+  // ══ 🧩 CREAR TEMPLATE DESDE LA CONCILIACIÓN: entero o nada (A-FEAT-1294) ══════════════════════════
+  {
+    // La campaña sale de la fecha del MOVIMIENTO: Chubb de MA (anual) el 26/05/2026 → «2026»; un consumo
+    // de MSA (campaña jul–jun) del 15/10/2025 → «25/26», y uno del 15/03/2026 → también «25/26».
+    chequear("Template desde la conciliación", "La campaña sale de la periodicidad y la fecha del movimiento (anual → 2026; jul–jun → 25/26 a ambos lados del año)",
+      "2026 · 25/26 · 25/26 · 26/27 · MA anual · MSA bianual",
+      `${campanaDeFecha("anual", "2026-05-26")} · ${campanaDeFecha("bianual", "2025-10-15")} · ${campanaDeFecha("bianual", "2026-03-15")} · ${campanaDeFecha("bianual", "2026-07-01")} · MA ${periodicidadDeEmpresa("MA")} · MSA ${periodicidadDeEmpresa("MSA")}`,
+      campanaDeFecha("anual", "2026-05-26") === "2026" && campanaDeFecha("bianual", "2025-10-15") === "25/26"
+        && campanaDeFecha("bianual", "2026-03-15") === "25/26" && campanaDeFecha("bianual", "2026-07-01") === "26/27"
+        && periodicidadDeEmpresa("MA") === "anual" && periodicidadDeEmpresa("MSA") === "bianual", "A-FEAT-1294")
+
+    // Entero o nada: sin agrupadora no se crea (antes el «+ Crear uno acá» lo creaba sin agrupadora).
+    const chubb = { nombre_referencia: "Seguro Chalet", categ: "Seguro Chalet", responsable: "MA", cuenta_agrupadora: "Seguros",
+      periodicidad: "anual" as const, año: "2026", tipo: "egreso", aplica_generacion: true, nombre_quien_cobra: "CHUBB SEGUROS" }
+    // 🧨 A-FEAT-1297: sin «quién cobra» Seguro Chalet se creó sin proveedor y el movimiento quedó sin él.
+    chequear("Template desde la conciliación", "Sin «quién cobra» no se crea (el nombre alcanza, el CUIT es opcional)",
+      "quién cobra · nada", `${faltantesTemplateNuevo({ ...chubb, nombre_quien_cobra: " " }).join(",")} · ${faltantesTemplateNuevo({ ...chubb, cuit_quien_cobra: null }).join(",") || "nada"}`,
+      faltantesTemplateNuevo({ ...chubb, nombre_quien_cobra: " " }).join(",") === "quién cobra" && faltantesTemplateNuevo({ ...chubb, cuit_quien_cobra: null }).length === 0, "A-FEAT-1297")
+    chequear("Template desde la conciliación", "🛑 Entero o nada: completo se puede; sin agrupadora o sin cuenta, no",
+      "completo: nada falta · sin agrupadora: agrupadora · sin cuenta: cuenta",
+      `completo: ${faltantesTemplateNuevo(chubb).join(",") || "nada falta"} · sin agrupadora: ${faltantesTemplateNuevo({ ...chubb, cuenta_agrupadora: " " }).join(",")} · sin cuenta: ${faltantesTemplateNuevo({ ...chubb, categ: "" }).join(",")}`,
+      faltantesTemplateNuevo(chubb).length === 0 && faltantesTemplateNuevo({ ...chubb, cuenta_agrupadora: " " }).join(",") === "agrupadora"
+        && faltantesTemplateNuevo({ ...chubb, categ: "" }).join(",") === "cuenta", "A-FEAT-1294")
+
+    // Chubb es de MA y lo paga la tarjeta de MSA: se avisa (no se frena).
+    chequear("Template desde la conciliación", "Un template de otra empresa que la cuenta que paga se avisa (MA pagado por MSA); la misma empresa no",
+      "true · false", `${esDeOtraEmpresa("MA", "MSA")} · ${esDeOtraEmpresa("msa", "MSA")}`,
+      esDeOtraEmpresa("MA", "MSA") && !esDeOtraEmpresa("msa", "MSA"), "A-FEAT-1294")
+  }
+
+  // ══ 🎯 LA REGLA ELIGE EL TEMPLATE, y sigue a su familia al renovarse (A-FEAT-1293) ══════════════════
+  {
+    // Seguro Flota de MSA: la regla se creó apuntando al renglón 25/26. Un movimiento de agosto 2026 tiene que
+    // cargar en el 26/27 (la campaña se renovó), uno de marzo 2026 en el 25/26.
+    const flota2526 = { id: "sf-2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26", periodicidad: null, activo: true }
+    const flota2627 = { id: "sf-2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27", periodicidad: null, activo: true }
+    const accidentes = { id: "acc", nombre_referencia: "Seguro Accidentes de Trabajo", responsable: "MSA", año: "26/27", periodicidad: null, activo: true }
+    const otraEmpresa = { id: "sf-pam", nombre_referencia: "Seguro Flota", responsable: "PAM", año: "26/27", periodicidad: null, activo: true }
+    const todos = [flota2526, flota2627, accidentes, otraEmpresa]
+    const ago = templateParaFecha(flota2526, todos, "2026-08-04")
+    const mar = templateParaFecha(flota2526, todos, "2026-03-04")
+    // 🧨 Con el camino viejo (por cuenta + empresa) se tomaba EL PRIMERO de la cuenta: podía ser Accidentes.
+    chequear("Regla → template", "🎯 La regla apunta a Seguro Flota 25/26: un movimiento de ago-26 carga en el 26/27 (renovado) y uno de mar-26 en el 25/26; nunca en Accidentes ni en el de PAM",
+      "sf-2627 · sf-2526", `${ago?.id} · ${mar?.id}`, ago?.id === "sf-2627" && mar?.id === "sf-2526", "A-FEAT-1293")
+
+    // 📅 A-DEC-1015 — Orbith → «Internet NZ» de MA existe sólo 2026: un cargo de dic-2025 NO puede caer en el
+    // 2026 (inflaba 2026 y dejaba 2025 sin el gasto). Los cargos del banco (sin presupuesto por campaña) sí.
+    const nz = { id: "nz-2026", nombre_referencia: "Internet NZ", responsable: "MA", año: "2026", periodicidad: "anual", activo: true }
+    const nz2025 = templateParaFecha(nz, [nz], "2025-12-02")
+    const iva = { id: "iva-2026", nombre_referencia: "Iva Bancario", responsable: "MSA", año: "2026", periodicidad: "anual", activo: true, solo_conciliacion: true }
+    const iva2025 = templateParaFecha(iva, [iva], "2025-12-31")
+    const inactivo = templateParaFecha({ ...iva, activo: false }, [{ ...iva, activo: false }], "2025-12-31")
+    chequear("Regla → template", "📅 Sin la campaña 2025, Orbith NO carga en la 2026 (queda en auditar); el IVA del banco sí carga; un template desactivado nunca",
+      "null · iva-2026 · null", `${nz2025 === null ? "null" : nz2025.id} · ${iva2025?.id} · ${inactivo === null ? "null" : inactivo.id}`,
+      nz2025 === null && iva2025?.id === "iva-2026" && inactivo === null, "A-DEC-1015")
+    chequear("Regla → template", "El motivo dice qué campaña falta y de qué template",
+      "Falta la campaña 2025 de «Internet NZ» (MA)…", motivoFaltaCampana(nz, "2025-12-02"),
+      motivoFaltaCampana(nz, "2025-12-02").startsWith("Falta la campaña 2025 de «Internet NZ» (MA)"), "A-DEC-1015")
+
+    // 🔁 A-FEAT-1302 punto 3 — del motivo sale qué campaña crear (el botón del auditar). Otro motivo → nada.
+    const falta = faltaCampanaDelMotivo(motivoFaltaCampana({ ...nz, nombre_referencia: "Seguro (Chalet)" }, "2025-12-02"))
+    chequear("Regla → template", "🔁 El auditar lee del motivo qué campaña falta y de qué template (aunque el nombre tenga paréntesis); un motivo de importe no ofrece nada",
+      "2025 · Seguro (Chalet) · MA · null", `${falta?.campana} · ${falta?.nombre} · ${falta?.responsable} · ${faltaCampanaDelMotivo("Importe difiere $ 0,01")}`,
+      falta?.campana === "2025" && falta?.nombre === "Seguro (Chalet)" && falta?.responsable === "MA"
+        && faltaCampanaDelMotivo("Importe difiere $ 0,01") === null, "A-FEAT-1302")
+
+    // 📅 A-DEC-1016 — un abierto SIN campaña carga en sí mismo, en cualquier fecha (no queda en auditar).
+    const pf = { id: "pf", nombre_referencia: "Plazo Fijo Banco Galicia", responsable: "MSA", año: null, periodicidad: "anual", activo: true }
+    const pf2025 = templateParaFecha(pf, [pf], "2025-08-01")
+    chequear("Regla → template", "📅 Un abierto sin campaña (Plazo Fijo) carga en él mismo aunque el movimiento sea de 2025",
+      "pf", `${pf2025?.id}`, pf2025?.id === "pf", "A-DEC-1016")
+  }
+
+  // ══ 🏷️ LOS CÓDIGOS CONTABLE/INTERNO DE UN TEMPLATE NUEVO (A-FEAT-1302 punto 2) ═══════════════════════
+  {
+    const origen = [
+      { cuenta_bancaria_id: "msa_galicia", codigo_contable: "RET 3 MA", codigo_interno: "Gasto MSA", orden: 4 },
+      { cuenta_bancaria_id: "tarjeta_visa", codigo_contable: "RET 3 MA", codigo_interno: null },
+      { cuenta_bancaria_id: "pam_galicia", codigo_contable: "", codigo_interno: "", activo: true },
+    ]
+    // Copia: las 2 con código, al template nuevo; la vacía no (no aporta nada).
+    const copia = reglasDelTemplateNuevo({ origen, templateId: "nuevo" })
+    chequear("Códigos del template", "🏷️ «Parecido a…» copia los códigos de cada cuenta al template nuevo (una regla vacía no se copia)",
+      "2 reglas · nuevo · especifica", `${copia.length} reglas · ${copia[0]?.template_id} · ${copia[0]?.tipo_regla}`,
+      copia.length === 2 && copia.every(r => r.template_id === "nuevo" && r.tipo_regla === "especifica"), "A-FEAT-1302")
+    // Lo escrito pisa SÓLO la cuenta que paga y sólo el campo escrito (interno vacío = el copiado).
+    const pisada = reglasDelTemplateNuevo({ origen, templateId: "nuevo", cuentaBancariaId: "msa_galicia", contable: "Desglosar" })
+    const g = pisada.find(r => r.cuenta_bancaria_id === "msa_galicia")
+    const t = pisada.find(r => r.cuenta_bancaria_id === "tarjeta_visa")
+    chequear("Códigos del template", "✍️ Lo escrito en el asistente pisa la cuenta que paga (sólo el campo escrito); las otras cuentas quedan como el origen",
+      "Desglosar / Gasto MSA · RET 3 MA", `${g?.codigo_contable} / ${g?.codigo_interno} · ${t?.codigo_contable}`,
+      g?.codigo_contable === "Desglosar" && g?.codigo_interno === "Gasto MSA" && t?.codigo_contable === "RET 3 MA", "A-FEAT-1302")
+    // Sin origen, con códigos escritos: una regla nueva para la cuenta. Sin nada: ninguna.
+    const sola = reglasDelTemplateNuevo({ origen: [], templateId: "x", cuentaBancariaId: "msa_galicia", interno: "LIB" })
+    const nada = reglasDelTemplateNuevo({ origen: [], templateId: "x", cuentaBancariaId: "msa_galicia" })
+    chequear("Códigos del template", "Template nuevo sin origen: lo escrito crea la regla de la cuenta; sin escribir nada no se crea ninguna",
+      "1 (LIB) · 0", `${sola.length} (${sola[0]?.codigo_interno}) · ${nada.length}`,
+      sola.length === 1 && sola[0].codigo_interno === "LIB" && sola[0].codigo_contable === null && nada.length === 0, "A-FEAT-1302")
+  }
+
+  // ══ 🏷️ LA CUENTA DEL TEMPLATE AL PLAN, EN EL MISMO PASO (A-FEAT-1311) ═══════════════════════════════
+  {
+    // Como se cargó a mano IIBB CABA Bancario: tipo egreso, totalizadora IMPUESTOS BANCARIOS, nombre tal cual.
+    const f = filaDelPlanParaTemplate({ categ: " IIBB CABA Bancario ", tipo: "egreso", agrupadora: "Impuestos Bancarios" })
+    const sinAgr = filaDelPlanParaTemplate({ categ: "Otra", tipo: "", agrupadora: "" })
+    chequear("Cuenta al plan", "🏷️ El asistente da de alta la cuenta con el tipo del template y la agrupadora como totalizadora (en mayúsculas, como las del plan)",
+      "IIBB CABA Bancario · egreso · IMPUESTOS BANCARIOS · egreso/null",
+      `${f.categ} · ${f.tipo} · ${f.nombre_totalizadora} · ${sinAgr.tipo}/${sinAgr.nombre_totalizadora}`,
+      f.categ === "IIBB CABA Bancario" && f.cuenta_contable === f.categ && f.tipo === "egreso"
+        && f.nombre_totalizadora === "IMPUESTOS BANCARIOS" && sinAgr.tipo === "egreso" && sinAgr.nombre_totalizadora === null, "A-FEAT-1311")
+  }
+
+  // ══ 🔎 EL FILTRO «CAMPAÑA» DE TEMPLATES (A-BUG-1317) ════════════════════════════════════════════════
+  {
+    // 🧨 Antes: "2026" === parseInt("2026") → false siempre, y la lista quedaba vacía.
+    const r = [coincideCampana("2026", "2026"), coincideCampana("25/26", "25/26"), coincideCampana("2026", "25/26"),
+      coincideCampana(null, SIN_CAMPANA), coincideCampana("2026", SIN_CAMPANA), coincideCampana(null, "todos")]
+    chequear("Filtro de campaña", "🔎 Elegir «2026» o «25/26» muestra esa campaña; «Sin campaña» muestra los abiertos; «Todas» no filtra",
+      "true true false true false true", r.join(" "),
+      r.join(" ") === "true true false true false true", "A-BUG-1317")
+  }
+
+  // ══ 🔢 EL ORDEN DE LAS REGLAS ES POR CUENTA (A-BUG-1295) ═════════════════════════════════════════
+  {
+    // La cuenta corriente tiene hasta #43; la tarjeta todavía nada. 🧨 Antes se sugería max(todas)+1 = 44.
+    const ctaCte = [{ id: "cc1", orden: 1 }, { id: "cc43", orden: 43 }]
+    const tarjeta = [{ id: "t1", orden: 1 }, { id: "t2", orden: 2 }]
+    chequear("Orden de reglas", "La 1ª regla de una cuenta sin reglas se propone #1; con #1 y #2 ya cargadas, #3 — sin mirar la #43 de la cuenta corriente",
+      "1 · 3", `${proximoOrden([])} · ${proximoOrden(tarjeta)}`, proximoOrden([]) === 1 && proximoOrden(tarjeta) === 3, "A-BUG-1295")
+
+    // Bajar la #1 de la tarjeta: sólo cambian las dos de la tarjeta. 🧨 Antes se renumeraban las de todas las cuentas.
+    const cambios = moverRegla(tarjeta, "t1", "down")
+    const ok = cambios.length === 2 && cambios.some(c => c.id === "t1" && c.orden === 2) && cambios.some(c => c.id === "t2" && c.orden === 1)
+      && !cambios.some(c => c.id.startsWith("cc"))
+    // Con números repetidos (dos #1) la flecha igual mueve; y la primera no sube.
+    const repetidos = moverRegla([{ id: "a", orden: 1 }, { id: "b", orden: 1 }], "b", "up")
+    const tope = moverRegla(tarjeta, "t1", "up")
+    chequear("Orden de reglas", "Las flechas mueven sólo dentro de la cuenta; con números repetidos igual intercambian; la primera no sube",
+      "t2→1, t1→2 · a→2 (b queda primera) · 0", `${cambios.map(c => `${c.id}→${c.orden}`).join(", ")} · ${repetidos.map(c => `${c.id}→${c.orden}`).join(", ")} · ${tope.length}`,
+      ok && repetidos.length === 1 && repetidos[0].id === "a" && repetidos[0].orden === 2 && tope.length === 0, "A-BUG-1295")
+  }
+
+  // ══ 🧾 CREAR UNA REGLA GUARDA EL TEMPLATE ELEGIDO (A-BUG-1296) ═══════════════════════════════════
+  {
+    // 🧨 El alta armaba la fila sin template_id: Comision Cuenta Bancaria e Iva Bancario de la VISA quedaron «viejas».
+    const fila = filaNuevaRegla({ orden: 2, tipo: "bancarios", columna_busqueda: "descripcion", texto_buscar: "MANT DE CTA",
+      tipo_match: "contiene", categ: "Comision Cuenta Bancaria", detalle: "", activo: true, llena_template: true,
+      cuenta_bancaria_id: "tarjeta_visa_business_msa", template_id: "tpl-msa" } as any)
+    chequear("Regla → template", "Crear una regla nueva graba el template elegido (antes se perdía y la regla quedaba por cuenta)",
+      "tpl-msa", String(fila.template_id), fila.template_id === "tpl-msa", "A-BUG-1296")
+  }
+
+  // ══ 💳 EL PAGO Y EL TOTAL DEL RESUMEN NO PASAN POR EL MOTOR (A-BUG-1297) ═════════════════════════
+  {
+    // Resumen 28/05 de la VISA MSA: 9 consumos pendientes + «SU PAGO EN PESOS» pendiente + la fila del total.
+    // 🧨 El botón naranja contaba y conciliaba 10 (el pago incluido); el del resumen, 9.
+    const filas = [...Array(9)].map(() => ({ tipo_fila: "movimiento" })).concat([{ tipo_fila: "pago" }, { tipo_fila: "resumen" }])
+    const n = filas.filter(esFilaConciliable).length
+    chequear("Doble audit", "Del resumen 28/05 (9 consumos + el pago + el total) pasan al motor 9: el pago se vincula aparte y el total no se concilia; una cuenta sin tipo_fila pasa entera",
+      "9 · true", `${n} · ${esFilaConciliable({})}`, n === 9 && esFilaConciliable({}), "A-BUG-1297")
+  }
+
+  // ══ 📅 EN LA TARJETA, LA FACTURA SE COMPARA POR SU EMISIÓN (A-BUG-1298) ═══════════════════════════
+  {
+    // Medicus: FC emitida 21/05, estimada 05/06; el débito de la tarjeta es del 21/05. 🧨 Antes: 15 días → auditar.
+    const pool = conFechaDeEmision([
+      { id: "fc", origen: "ARCA", fecha_emision: "2026-05-21", fecha_estimada: "2026-06-05" },
+      { id: "cuota", origen: "TEMPLATE", fecha_emision: null, fecha_estimada: "2026-05-26" },
+    ])
+    chequear("Doble audit", "En la tarjeta, la FC de Medicus se compara por su emisión (21/05 = día del débito) y la cuota de un template sigue con su fecha",
+      "2026-05-21 · 2026-05-26", `${pool[0].fecha_estimada} · ${pool[1].fecha_estimada}`,
+      pool[0].fecha_estimada === "2026-05-21" && pool[1].fecha_estimada === "2026-05-26", "A-BUG-1298")
+  }
+
+  // ══ 🧾 EL COMPROBANTE DE UN CARGO DE LA TARJETA ES EL RESUMEN (A-FEAT-1299) ══════════════════════
+  {
+    // 🧨 Antes la comisión de la VISA quedaba «Comision Cuenta Bancaria MSA - Mayo 2026», y el pago «28/5/2026».
+    const e1 = etiquetaResumenTarjeta("2026-05-28")
+    const e2 = etiquetaResumenTarjeta("2026-05-28T00:00:00+00:00")
+    const e3 = etiquetaResumenTarjeta(null)
+    chequear("Doble audit", "La comisión/IVA/percepción de la tarjeta y su pago dicen «Resumen tarjeta cierre 28/05/2026» (dd/mm/aaaa, sin huso); sin cierre, no inventa",
+      "Resumen tarjeta cierre 28/05/2026 ×2 · null", `${e1} · ${e2} · ${e3}`,
+      e1 === "Resumen tarjeta cierre 28/05/2026" && e2 === e1 && e3 === null, "A-FEAT-1299")
+  }
+
+  // ══ ✍️ APLICAR UNA NC NO DISFRAZA EL DETALLE AUTOGENERADO DE TEXTO PROPIO (A-BUG-1304) ═══════════
+  {
+    // 🧨 Medicus: «FC 613071 - MEDICUS …» (derivado guardado, A-DAT-54) + « · Descuento parcial NC 220552» dejó de
+    // parecer autogenerado y el motor lo copió entero al movimiento de la tarjeta.
+    const emisor = "MEDICUS SOCIEDAD ANONIMA DE ASISTENCIA MEDICA Y CIENTIFICA"
+    const auto = sumarAlDetalle(`FC 613071 - ${emisor}`, "Descuento parcial NC 220552", emisor, 613071)
+    const propio = sumarAlDetalle("Plan familiar", "Descuento parcial NC 220552", emisor, 613071)
+    chequear("NC con tarjeta", "Aplicar una NC descarta el «FC N - EMISOR» autogenerado y conserva lo que escribió el usuario",
+      "Descuento parcial NC 220552 · Plan familiar · Descuento parcial NC 220552", `${auto} · ${propio}`,
+      auto === "Descuento parcial NC 220552" && propio === "Plan familiar · Descuento parcial NC 220552", "A-BUG-1304")
+    // La variante larga del importador (Coopser): «Factura 1-195585 - EMISOR» también es autogenerada.
+    const coop = "COOPERATIVA DE PROVISION DE SERVICIOS ELECTRICOS PUBLICOS Y SOCIALES DE SAN PEDRO LTDA"
+    chequear("NC con tarjeta", "«Factura 1-195585 - COOPERATIVA…» se reconoce como autogenerado (no se copia al movimiento); «Luz Casa Porteria» no",
+      "true · false", `${pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585)} · ${pareceDetalleAutogenerado("Luz Casa Porteria", coop)}`,
+      pareceDetalleAutogenerado(`Factura 1-195585 - ${coop}`, coop, 195585) && !pareceDetalleAutogenerado("Luz Casa Porteria", coop), "A-BUG-1304")
+  }
+
+  // ══ 🔢 CÓDIGOS CONTABLE / INTERNO PARA ELEGIR, DE TODAS LAS CUENTAS (A-BUG-1301) ═════════════════
+  {
+    // 🧨 La VISA MSA no tenía códigos propios: la lista salía vacía. La cuenta corriente sí (RET 3 MA, DIST MA).
+    const tarjeta: string[] = []
+    const ctaCte = ["RET 3 MA", "DIST MA", "VER", null, "  "]
+    const reglas = ["RET 3 PAM", "Ver"]
+    const lista = unirCodigos([tarjeta, ctaCte, reglas])
+    chequear("Doble audit", "En la tarjeta sin códigos propios, el Asignar ofrece los de la cuenta corriente y las reglas, sin vacíos ni «VER/Ver» repetido",
+      "DIST MA · RET 3 MA · RET 3 PAM · VER", lista.join(" · "),
+      lista.join("|") === "DIST MA|RET 3 MA|RET 3 PAM|VER", "A-BUG-1301")
+  }
+
+  // ══ 🗂️ ASIGNAR → TEMPLATE: LAS DOS CAMPAÑAS DE SEGURO FLOTA SE DISTINGUEN (A-BUG-1300) ═══════════
+  {
+    const lista = [
+      { id: "acc", nombre_referencia: "Seguro Accidentes de Trabajo", responsable: "MSA", año: "25/26" },
+      { id: "f2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26" },
+      { id: "f2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27" },
+    ].sort(campanaNuevaPrimero)
+    chequear("Regla → template", "En el Asignar, Seguro Flota 26/27 aparece antes que 25/26 y el resto no se mueve",
+      "acc · f2627 · f2526", lista.map(t => t.id).join(" · "), lista.map(t => t.id).join("|") === "acc|f2627|f2526", "A-BUG-1300")
+  }
+
+  // ══ 🧾 EL RESUMEN ES EL COMPROBANTE SÓLO DE LOS CARGOS DEL BANCO (A-BUG-1302) ═════════════════════
+  {
+    // 🧨 Chubb y Orbith, conciliados por regla en abril, quedaron «Resumen tarjeta cierre 30/04/2026».
+    const banco = comprobanteDeCargoDeTarjeta(true, { solo_conciliacion: true }, "2026-04-30")
+    const chubb = comprobanteDeCargoDeTarjeta(true, { solo_conciliacion: false }, "2026-04-30")
+    const ctaCte = comprobanteDeCargoDeTarjeta(false, { solo_conciliacion: true }, "2026-04-30")
+    chequear("Doble audit", "La comisión de la tarjeta lleva el resumen; Chubb (póliza) no; en la cuenta corriente, nunca",
+      "Resumen tarjeta cierre 30/04/2026 · null · null", `${banco} · ${chubb} · ${ctaCte}`,
+      banco === "Resumen tarjeta cierre 30/04/2026" && chubb === null && ctaCte === null, "A-BUG-1302")
+  }
+
+  // ══ 📅 AL ELEGIR TEMPLATE EN UNA REGLA, UNO POR FAMILIA (A-BUG-1303) ══════════════════════════════
+  {
+    const elegibles = unoPorFamilia([
+      { id: "f2526", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "25/26" },
+      { id: "f2627", nombre_referencia: "Seguro Flota", responsable: "MSA", año: "26/27" },
+      { id: "fpam", nombre_referencia: "Seguro Flota", responsable: "PAM", año: "2026" },
+    ])
+    chequear("Regla → template", "En la regla aparece un solo Seguro Flota de MSA (el más nuevo) y el de PAM aparte: la campaña la decide el movimiento",
+      "f2627 · fpam", elegibles.map(t => t.id).join(" · "), elegibles.map(t => t.id).join("|") === "f2627|fpam", "A-BUG-1303")
+  }
+
+  // ══ 🔎 LA PROPUESTA DICE QUÉ COINCIDE Y, EN LA TARJETA, PREFIERE LA EMITIDA ANTES (A-FEAT-1298) ═══
+  {
+    // 🧨 Antes: «Fecha no exacta: 2 días diferencia», sin decir que el importe era exacto.
+    const m1 = motivoFechaNoExacta(2, true)
+    const m2 = motivoFechaNoExacta(-3, true)
+    const m3 = motivoFechaNoExacta(2, false)
+    chequear("Doble audit", "El motivo dice «importe exacto» y, en la tarjeta, si la factura se emitió antes (lo esperado) o después del débito",
+      "antes ✓ · después ⚠️ · fecha estimada", `${m1} | ${m2} | ${m3}`,
+      m1.startsWith("Importe exacto · emitida 2 días antes") && m2.includes("DESPUÉS") && m3 === "Importe exacto · fecha estimada a 2 días del movimiento", "A-FEAT-1298")
+    // Autopistas del Sol 08/04 $6.520,33: dos facturas del mismo importe, emitidas 1/4 y 1/7.
+    const abr = ajusteTarjetaPorEmision("2026-04-08", "2026-04-01")
+    const jul = ajusteTarjetaPorEmision("2026-04-08", "2026-07-01")
+    chequear("Doble audit", "En el Asignar de la tarjeta, la emitida el 1/4 (7 días antes del débito) sube y la del 1/7 (posterior) baja",
+      "+18 «Emitida 7d antes ✓» · -40", `${abr.puntos} «${abr.sello?.texto}» · ${jul.puntos}`,
+      abr.puntos === 18 && abr.sello?.texto === "Emitida 7d antes ✓" && jul.puntos === -40, "A-FEAT-1298")
+  }
+
+  // ══ 🪙 UN CENTAVO DE DIFERENCIA NO ESCONDE UNA FACTURA PERFECTA (A-BUG-1305) ═════════════════════
+  {
+    // 🧨 Autopistas Urbanas: débito 16/01 $7.719,03, factura 14/01 $7.719,02 → el motor no la proponía.
+    const ok = (_: any) => true
+    const pool = [{ id: "otra", debitos: 7700 }, { id: "au", debitos: 7719.02 }]
+    const r = elegirPorImporteCercano(pool, 7719.03, cf => cf.debitos, ok)
+    const motivo = r ? motivoFechaNoExacta(2, true, r.dif) : ""
+    chequear("Doble audit", "Autopistas Urbanas $7.719,03 contra factura $7.719,02: el motor la trae y el motivo dice cuánto difiere",
+      "au · Importe difiere $ 0,01 · emitida 2 días antes", `${r?.cf.id} · ${motivo}`,
+      r?.cf.id === "au" && motivo.startsWith("Importe difiere") && motivo.includes("0,01") && motivo.includes("emitida 2 días antes"), "A-BUG-1305")
+    const empate = elegirPorImporteCercano([{ debitos: 100.01 }, { debitos: 99.99 }], 100, cf => cf.debitos, ok)
+    const lejos = elegirPorImporteCercano([{ debitos: 98.5 }], 100, cf => cf.debitos, ok)
+    const cero = elegirPorImporteCercano([{ debitos: 0 }], 0.5, cf => cf.debitos, ok)
+    const exacto = elegirPorImporteCercano([{ debitos: 100 }], 100, cf => cf.debitos, ok)
+    const fueraDeFecha = elegirPorImporteCercano([{ debitos: 99.99 }], 100, cf => cf.debitos, () => false)
+    chequear("Doble audit", "Sin elegir: dos a la misma diferencia, más de $1, un importe en cero, el exacto (lo resuelve la búsqueda normal) o fuera de fecha",
+      "null ×5", [empate, lejos, cero, exacto, fueraDeFecha].map(x => x === null ? "null" : "ELIGIÓ").join(" "),
+      [empate, lejos, cero, exacto, fueraDeFecha].every(x => x === null), "A-BUG-1305")
+  }
+
+  // ══ 💵 UN CONSUMO EN DÓLARES VALE LO QUE SE DEBITÓ EN PESOS POR ÉL (A-BUG-1307) ════════════════════
+  {
+    // 🧨 vthebestpdf USD 29,95 (resumen 29/01) quedó conciliado por $0. Se pagó el 09/02: «Pago Visa Empresa»
+    // $889.758,62 (los pesos) y otro de $43.128,00 (los dólares) → cambio 1.440.
+    const deb = (id: string, fecha: string, debitos: number) => ({ id, tabla: "public.msa_galicia", fecha, debitos, nro_resumen: null, descripcion: "Pago Visa Empresa" })
+    const debitos = [deb("pesos", "2026-02-09", 889758.62), deb("usd", "2026-02-09", 43128), deb("otro", "2026-01-12", 220250.1)]
+    const r = pesosDeConsumosUsd({ consumos: [{ id: "vthe", usd: 29.95 }], usdPagado: 29.95, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos })
+    chequear("Doble audit", "USD 29,95 pagados con el débito de $43.128,00 → cambio 1.440 y el consumo vale $43.128,00 (no $0)",
+      "1440 · usd · 43128", r.ok ? `${r.tc} · ${r.debito.id} · ${r.pesos[0].pesos}` : r.aviso,
+      r.ok && r.tc === 1440 && r.debito.id === "usd" && r.pesos[0].pesos === 43128, "A-BUG-1307")
+    const dos = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }, { id: "b", usd: 20.01 }], usdPagado: 30.01, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos: [deb("pesos", "2026-02-09", 889758.62), deb("usd", "2026-02-09", 43333.33)] })
+    const suma = dos.ok ? Math.round(dos.pesos.reduce((a, p) => a + p.pesos, 0) * 100) / 100 : 0
+    chequear("Doble audit", "Con dos consumos, la suma en pesos da exactamente el débito (el último absorbe el redondeo)",
+      "43333.33", String(suma), suma === 43333.33, "A-BUG-1307")
+    const ambiguo = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 10, fechaPago: "2026-02-09", pesosPagados: 889758.62, debitos: [deb("pesos", "2026-02-09", 889758.62), deb("x", "2026-02-09", 14400), deb("y", "2026-02-09", 500)] })
+    const sinPago = pesosDeConsumosUsd({ consumos: [{ id: "a", usd: 10 }], usdPagado: 0, fechaPago: "", pesosPagados: 0, debitos })
+    chequear("Doble audit", "No adivina: dos débitos candidatos el mismo día, o sin «SU PAGO EN USD» → aviso, nada se escribe",
+      "aviso · aviso", `${ambiguo.ok ? "ELIGIÓ" : "aviso"} · ${sinPago.ok ? "ELIGIÓ" : "aviso"}`, !ambiguo.ok && !sinPago.ok, "A-BUG-1307")
+
+    // 💵 A-FEAT-1312 — la cuota guarda USD + TC y el extracto queda en dólares. Diciembre: Dropbox USD 119,88 +
+    // vthebestpdf USD 29,95 = SU PAGO EN USD 149,83; con un débito que no da cambio redondo, el último absorbe el
+    // redondeo y aun así cada cuota cumple monto = monto_usd × tipo_cambio (al centavo).
+    const dic = pesosDeConsumosUsd({ consumos: [{ id: "dropbox", usd: 119.88 }, { id: "vthe", usd: 29.95 }], usdPagado: 149.83, fechaPago: "2026-01-12", pesosPagados: 929356.67, debitos: [deb("pesos", "2026-01-12", 929356.67), deb("usd", "2026-01-12", 216003.27)] })
+    const filas = dic.ok ? dic.pesos.map(p => cuotaDeConsumoUsd(p.pesos, p.id === "dropbox" ? 119.88 : 29.95)) : []
+    const cierran = filas.length === 2 && filas.every(f => f.tipo_cambio != null && Math.abs(f.monto_usd * f.tipo_cambio - f.monto) < 0.01)
+    const sumaDic = Math.round(filas.reduce((a, f) => a + f.monto, 0) * 100) / 100
+    chequear("Doble audit", "Cuota en USD: guarda USD y TC, cada una cumple USD × TC = pesos y entre las dos suman el débito",
+      "cierran · 216003.27", `${cierran ? "cierran" : "NO cierran"} · ${sumaDic}`, cierran && sumaDic === 216003.27, "A-FEAT-1312")
+  }
+
+  // ══ 🧩 EL ASISTENTE DE TEMPLATES DESDE LA CONCILIACIÓN: cuotas de la CAMPAÑA y la del mes (A-FEAT-1302) ══
+  {
+    // 🧨 Antes: siempre ene→dic del año de HOY. Orbith (MA, anual) creado desde un débito del 02/12/2025
+    // tenía que dar 12 cuotas de 2025, no de 2026; y una campaña jul–jun, jul-25→jun-26.
+    const anual = generarCuotasTemplate({ abierto: false, config: { tipo: "mensual", dia_mes: 2 }, montoBase: 83000, campana: "2025", periodicidad: "anual" })
+    const bianual = generarCuotasTemplate({ abierto: false, config: { tipo: "mensual", dia_mes: 31 }, montoBase: 10, campana: "25/26", periodicidad: "bianual" })
+    chequear("Templates", "Mensual anual 2025 → 12 cuotas de 2025, día del movimiento; campaña 25/26 → jul-25 a jun-26, el 31 se ajusta al último día",
+      "12 · 2025-01-02 → 2025-12-02 · 2025-07-31 … 2026-02-28 … 2026-06-30",
+      `${anual.length} · ${anual[0]?.fecha_vencimiento} → ${anual[11]?.fecha_vencimiento} · ${bianual[0]?.fecha_vencimiento} … ${bianual[7]?.fecha_vencimiento} … ${bianual[11]?.fecha_vencimiento}`,
+      anual.length === 12 && anual[0].fecha_vencimiento === "2025-01-02" && anual[11].fecha_vencimiento === "2025-12-02"
+        && bianual[0].fecha_vencimiento === "2025-07-31" && bianual[7].fecha_vencimiento === "2026-02-28" && bianual[11].fecha_vencimiento === "2026-06-30", "A-FEAT-1302")
+    const abierto = generarCuotasTemplate({ abierto: true, config: { tipo: "mensual", dia_mes: 2 }, montoBase: 1, campana: "2025", periodicidad: "anual" })
+    const especificas = generarCuotasTemplate({ abierto: false, config: { tipo: "cuotas_especificas", meses_especificos: [3, 9], dia_default: 10 }, montoBase: 5, campana: "25/26", periodicidad: "bianual" })
+    chequear("Templates", "Abierto (lo cargan los movimientos) → sin cuotas; cuotas específicas mar y sep en 25/26 → sep-25 y mar-26",
+      "0 · 2025-09-10 · 2026-03-10", `${abierto.length} · ${especificas.map(c => c.fecha_vencimiento).join(" · ")}`,
+      abierto.length === 0 && especificas.map(c => c.fecha_vencimiento).join(" · ") === "2025-09-10 · 2026-03-10", "A-FEAT-1302")
+    const cuotas = anual.map((c, i) => ({ id: `c${i + 1}`, fecha_vencimiento: c.fecha_vencimiento }))
+    const elegida = cuotaDelMovimiento(cuotas, "2025-12-02")
+    const ninguna = cuotaDelMovimiento(cuotas, "2026-01-05")
+    chequear("Templates", "🔗 El movimiento del 02/12/2025 se ata a la cuota de diciembre (no se crea una extra); de otro año, ninguna",
+      "c12 · null", `${elegida?.id} · ${ninguna === null ? "null" : ninguna.id}`, elegida?.id === "c12" && ninguna === null, "A-FEAT-1302")
+  }
+
+  // ══ 🔗 LA REGLA CONCILIA LA CUOTA PENDIENTE DEL MES, NO CREA OTRA (A-FEAT-1302) ═══════════════════════
+  {
+    // 🧨 Con las cuotas jun–dic de Seguro Chalet cargadas, conciliar junio insertaba una nueva: mes duplicado.
+    const chalet = [
+      { id: "jun-a", fecha_vencimiento: "2026-06-26", monto: 121636.43, estado: "pendiente" },
+      { id: "jun-b", fecha_vencimiento: "2026-06-26", monto: 121636.43, estado: "pendiente" },
+      { id: "jul-a", fecha_vencimiento: "2026-07-26", monto: 121636.43, estado: "pendiente" },
+      { id: "may-a", fecha_vencimiento: "2026-05-26", monto: 121636.43, estado: "conciliado" },
+    ]
+    const primera = cuotaPendienteDelMes(chalet, "2026-06-25", 121636.43)
+    const segunda = cuotaPendienteDelMes(chalet.filter(c => c.id !== primera?.id), "2026-06-25", 121636.43)
+    const mayo = cuotaPendienteDelMes(chalet, "2026-05-26", 121636.43)
+    chequear("Templates", "Dos cargos de Chubb en junio toman las DOS cuotas pendientes de junio; mayo (ya conciliada) → crea nueva",
+      "jun-a · jun-b · null", `${primera?.id} · ${segunda?.id} · ${mayo === null ? "null" : mayo.id}`,
+      primera?.id === "jun-a" && segunda?.id === "jun-b" && mayo === null, "A-FEAT-1302")
+  }
+
+  // ══ ✍️ EL DETALLE DE UNA REGLA NUEVA SE COPIA AUNQUE REPITA LA CUENTA (A-DEC-1012) ════════════════
+  {
+    // 🧨 Chubb de abril: la regla decía «Seguro Chalet», la cuenta también → se descartaba y la cuota quedaba
+    // con la descripción del banco «CHUBB SEGUROS 0000002962727-014-000».
+    const nueva = detalleDeRegla({ detalle: "Seguro Chalet", categ: "Seguro Chalet", template_id: "tpl" })
+    const vieja = detalleDeRegla({ detalle: "Comision Transferencias", categ: "Comision Transferencias", template_id: null })
+    const viejaAporta = detalleDeRegla({ detalle: "Percepcion de IVA Tarjeta", categ: "Percepcion IVA", template_id: null })
+    chequear("Regla → template", "Regla nueva: el detalle se copia aunque repita la cuenta; regla vieja: sólo si aporta (A-FEAT-138)",
+      "Seguro Chalet · null · Percepcion de IVA Tarjeta", `${nueva} · ${vieja} · ${viejaAporta}`,
+      nueva === "Seguro Chalet" && vieja === null && viejaAporta === "Percepcion de IVA Tarjeta", "A-DEC-1012")
+  }
+
+  // ══ 🏷️ DETALLE FIJO POR PROVEEDOR (A-FEAT-1296) ═══════════════════════════════════════════════════
+  {
+    const COOP = "30545813556", TEL = "30639453738"
+    const fijos = [
+      { id: "casco", cuit: COOP, detalle: "Luz Casco NZ Total", monto_referencia: 603027.68, activo: true },
+      { id: "port", cuit: COOP, detalle: "Luz Casa Porteria", monto_referencia: 56011.27, activo: true },
+      { id: "tel", cuit: TEL, detalle: "Flota Celulares", monto_referencia: 164259.82, activo: true },
+      { id: "viejo", cuit: TEL, detalle: "Celulares viejo", monto_referencia: null, activo: false },
+    ]
+    // Coopser de abril: 625.411,63 (casco) y 67.292,55 (portería) — los montos cambian pero guardan relación.
+    const casco = elegirDetalleFijo(fijos, "30-54581355-6", 625411.63)
+    const port = elegirDetalleFijo(fijos, COOP, 67292.55)
+    const tel = elegirDetalleFijo(fijos, TEL, 999999)
+    chequear("Detalle fijo", "Coopser elige el suministro por monto (casco / portería); Telecom con un solo fijo activo lo usa aunque el monto cambie",
+      "Luz Casco NZ Total · Luz Casa Porteria · Flota Celulares", `${casco.elegido?.detalle} · ${port.elegido?.detalle} · ${tel.elegido?.detalle}`,
+      casco.elegido?.id === "casco" && port.elegido?.id === "port" && tel.elegido?.id === "tel", "A-FEAT-1296")
+    // Un monto que no se parece a ninguno no elige: sugiere los dos.
+    const raro = elegirDetalleFijo(fijos, COOP, 300000)
+    const nada = elegirDetalleFijo(fijos, "20111111112", 1000)
+    chequear("Detalle fijo", "Si el monto no se parece a ningún suministro, no elige y sugiere; un proveedor sin fijos no devuelve nada",
+      "null + 2 sugeridos · null + 0", `${raro.elegido?.id ?? "null"} + ${raro.sugeridos.length} sugeridos · ${nada.elegido?.id ?? "null"} + ${nada.sugeridos.length}`,
+      raro.elegido === null && raro.sugeridos.length === 2 && nada.elegido === null && nada.sugeridos.length === 0, "A-FEAT-1296")
+    // Nunca pisa lo del usuario; el autogenerado sí se reemplaza.
+    const emisor = "COOPERATIVA DE PROVISION DE SERVICIOS ELECTRICOS PUBLICOS Y SOCIALES DE SAN PEDRO LTDA"
+    chequear("Detalle fijo", "Sólo se pone si el detalle está vacío o es el autogenerado «Factura 1-N - EMISOR»; lo escrito a mano manda",
+      "true · true · false", `${admiteDetalleFijo(null)} · ${admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237)} · ${admiteDetalleFijo("Luz galpón nuevo", emisor)}`,
+      admiteDetalleFijo(null) && admiteDetalleFijo(`Factura 1-194237 - ${emisor}`, emisor, 194237) && !admiteDetalleFijo("Luz galpón nuevo", emisor), "A-FEAT-1296")
+  }
+
+  // ══ 🧱 LA TARJETA TAMBIÉN BUSCA EN LAS FACTURAS «ANTERIORES» LIBRES (A-DEC-1014) ═════════════════
+  {
+    // 🧨 Resumen 29/01: Coopser 37.577,25 tenía su factura exacta en `anterior` y el motor no la veía.
+    const pool = anterioresLibres([
+      { id: "coop", estado: "anterior" },        // libre → se ofrece
+      { id: "pagadaCC", estado: "anterior" },    // ya atada a un movimiento de la cuenta corriente → no
+      { id: "medicus", estado: "credito" },      // las de crédito, como siempre
+    ], new Set(["pagadaCC"]))
+    chequear("Doble audit", "En la tarjeta se ofrecen las facturas «anteriores» que nadie pagó todavía; una ya atada a otro movimiento no",
+      "coop · medicus", pool.map(f => f.id).join(" · "), pool.map(f => f.id).join("|") === "coop|medicus", "A-DEC-1014")
+  }
+
+  // ══ 🛡️ PÓLIZAS DE SEGURO — lector, controles y reparto (A-FEAT-1309) ═══════════════════════════
+  {
+    // Textos REALES (recortados) de los PDFs de Federación Patronal del 2026, ya en renglones.
+    const FLOTA = [
+      "FRENTE DE PÓLIZA  Póliza impresa el dia  24-07-2026",
+      "SECCIÓN  AUTOMOTORES  PRODUCTO  AUTOMOTORES  PÓLIZA  35881289",
+      "Desde 12:00 Hs. del 29-07-2026  Hasta 12:00 Hs. del 29-07-2027",
+      "Endoso  Lugar de emisión  CÓDIGO POSTAL  2930",
+      "0  La Plata, Buenos Aires, Argentina  PROVINCIA  BUENOS AIRES",
+      "Póliza anterior  Fecha de emisión  CONDICIÓN DE IVA  INSCRIPTO",
+      "CUIT/DNI  30617786016 /",
+      "34160783  22-07-2026",
+      "PLAN DE PAGO DEL ENDOSO  PERÍODO FACTURADO",
+      "NÚMERO  VENCIMIENTO  IMPORTE  Números de Inscripción:",
+      "29-07-2026  29-01-2027",
+      "1/12  01-08-2026  $  556,094.00",
+      "2/12  01-09-2026  $  556,094.00",
+      "LIQUIDACION DEL PREMIO",
+      "3/12  01-10-2026  $  556,094.00",
+      "4/12  01-11-2026  $  556,094.00",
+      "PRIMA",
+      "5/12  01-12-2026  $  556,094.00",
+      "$  2,477,346.66",
+      "6/12  01-01-2027  $  556,094.09",
+      "I.V.A.  SELLADO  OTROS IMP. Y TASAS",
+      "$  627,502.00  $  39,564.00  $  39,218.88",
+      "PREMIO DEL ENDOSO",
+      "$  3,320,876.54",
+      "TOTAL:  $  3,336,564.09  MONEDA CONTRATO  TEA  CARGO FINANCIERO",
+      "PESOS  30.00%  $  137,245.00",
+      "FEDERACIÓN PATRONAL SEGUROS S.A.U.,CUIT: 33-70736658-9",
+      "Póliza  35881289 / 10  Póliza  35881289 /10",
+      "Modelo  VW TIGUAN 2.0 TSI EXCLUSIVE TIP L/12  Vigencia desde",
+      "Año  2012  Plan Pago  EN CASO DE SINIESTRO",
+      "Patente  LMW911  del conductor.",
+      "Póliza  35881289 / 13  Póliza  35881289 /13",
+      "Modelo  VW GOL TREND 1.6 5 P.  Vigencia desde",
+      "Año  2012  Plan Pago",
+      "Patente  LFO201  del conductor.",
+      "Póliza  35881289 / 4  Póliza  35881289 /4",
+      "Modelo  DEUTZ AGCO ALLIS  Vigencia desde",
+      "Año  2004  Plan Pago",
+      "Patente  AAA111  del conductor.",
+      "CERTIFICADO:  4",
+      "PREMIO:  1,448,236.19",
+      "CERTIFICADO:  10",
+      "PREMIO:  1,478,549.78",
+      "CERTIFICADO:  13  Pag.  26",
+      "PREMIO:  409,778.13",
+    ].join("\n")
+    const f = parsearPoliza(FLOTA)
+    // 🧨 La prima del frente comparte renglón con las cuotas: leer la de la cuota daba 556.094.
+    chequear("Pólizas", "Frente de la Flota: póliza, endoso 0, póliza anterior, vigencia, total y la PRIMA (no la cuota que está al lado)",
+      "35881289 · 0 · 34160783 · 2026-07-29→2027-07-29 · 3336564.09 · prima 2477346.66 · TEA 30 · cargo 137245",
+      `${f.poliza} · ${f.endoso} · ${f.polizaAnterior} · ${f.vigenciaDesde}→${f.vigenciaHasta} · ${f.total} · prima ${f.frente?.prima} · TEA ${f.frente?.tea} · cargo ${f.frente?.cargoFinanciero}`,
+      f.poliza === "35881289" && f.endoso === 0 && f.polizaAnterior === "34160783" && f.vigenciaDesde === "2026-07-29" && f.total === 3336564.09 && f.frente?.prima === 2477346.66 && f.frente?.cargoFinanciero === 137245, "A-FEAT-1309")
+    chequear("Pólizas", "Las 6 cuotas del endoso suman el total; el AAA111 (maquinaria sin patente) no se toma como patente",
+      "6 cuotas · última 556094.09 · cert 4 sin patente",
+      `${f.cuotasEndoso.length} cuotas · última ${f.cuotasEndoso.at(-1)?.importe} · cert 4 ${f.vehiculos.find(v => v.certificado === 4)?.patente ?? "sin patente"}`,
+      f.cuotasEndoso.length === 6 && f.cuotasEndoso.at(-1)?.importe === 556094.09 && f.vehiculos.find(v => v.certificado === 4)?.patente === null, "A-FEAT-1309")
+    const cf = controlarPoliza(f)
+    chequear("Pólizas", "Integridad de la Flota: cuotas = total y primas de los vehículos = total → no frena",
+      "frena=false", `frena=${cf.frena} (${cf.integridad.map(c => c.que + (c.ok ? " ✓" : " ✗")).join(", ")})`, !cf.frena && cf.integridad.length === 2, "A-FEAT-1309")
+
+    // El reparto: Tiguan → MA, Gol → JMS, el resto MSA, por la prima de cada vehículo.
+    const rep = repartoDeLaPoliza(f)
+    const cuota = repartirImporte(556094, rep)
+    const de = (r: string) => cuota.find(x => x.responsable === r)?.importe
+    const sumaCuota = Math.round(cuota.reduce((s, x) => s + x.importe, 0) * 100) / 100
+    chequear("Pólizas", "Reparto de la cuota de $556.094 de la Flota por la prima de cada vehículo — las partes suman exacto la cuota",
+      "MA 246424.96 · MSA 241372.69 · JMS 68296.35 · suma 556094",
+      `MA ${de("MA")} · MSA ${de("MSA")} · JMS ${de("JMS")} · suma ${sumaCuota}`,
+      rep?.base === "prima de cada vehículo" && sumaCuota === 556094 && de("MA") === 246424.96 && de("JMS") === 68296.35 && de("MSA") === 241372.69, "A-FEAT-1309")
+
+    // Si las primas no suman el total, el papel se contradice (o se leyó mal): FRENA.
+    const roto = controlarPoliza({ ...f, vehiculos: f.vehiculos.map(v => v.certificado === 10 ? { ...v, prima: 1478549.87 } : v) })
+    chequear("Pólizas", "Una prima mal leída (dígitos invertidos) hace que las primas no sumen el total → frena",
+      "frena=true", `frena=${roto.frena}`, roto.frena, "A-FEAT-1309")
+
+    // La factura original de una BAJA de Accidentes Personales: nota de crédito, conceptos que cierran.
+    const AP = [
+      "FACTURA ORIGINAL",
+      "SECCIÓN  12 - ACCIDENTES PERSONALES  PRODUCTO  A.P. PRESTACIONAL  PÓLIZA 10183421",
+      "Asegurado  Domicilio  Fecha de Emisión",
+      "SAN MANUEL S R L  ESTANCIA NAZARENA N* S/N  07-05-2026",
+      "CUIT/ DNI  Localidad  Endoso",
+      "30617786016 /  SAN PEDRO (BS. AS.)  2",
+      "IVA  Provincia  Período Facturado Desde",
+      "INSCRIPTO  BUENOS AIRES  07-05-2026",
+      "Asegurado nro.  Código Postal  Período Facturado Hasta",
+      "3938413  2930  06-02-2027",
+      "PLAN DE PAGO DEL ENDOSO  LIQUIDACIÓN DE PREMIO Y OTROS CONCEPTOS",
+      "NRO.  VENCIMIENTO  IMPORTE  PRIMA  $  -95,170.11",
+      "1/2  06-06-2026  $  -65,449.80",
+      "RECARGOS  $  -8,793.72",
+      "2/2  06-07-2026  $  -65,449.80  SUBTOTAL GRAVADO (PRECIO SIN IMPUESTOS)  $  -103,963.83",
+      "IVA  $  -21,832.40",
+      "SUB-TOTAL  $  -125,796.23",
+      "PERCEPCION IVA  $  -3,118.91",
+      "PERCEPCION IIBB BUENOS AIRES  $  -840.86",
+      "TASA SUPERINTENDENCIA  $  -623.78",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES  $  -519.82",
+      "MONTO TOTAL DEL PREMIO  $  -130,899.60",
+      "BAJA PERSONAL",
+      "Cert.  Documento  Apellido y Nombre  FE NACIMIENTO  BENEFICIARIO",
+      "3  DNI  33318934  BARRETO WILSON SEVERIANO  25-09-1988  CONTRATANTE/TOMADOR",
+      "NOMINA ACTIVA",
+      "Cert.  Documento  Apellido y Nombre  FE NACIMIENTO  BENEFICIARIO",
+      "1  DNI  27673775  PAZ ELVIO CRESENCIO  27-07-1978  CONTRATANTE/TOMADOR",
+      "2  DNI  16598383  VULCANO HERIBERTO FABIAN  25-11-1964  CONTRATANTE/TOMADOR",
+    ].join("\n")
+    const a = parsearPoliza(AP)
+    const ca = controlarPoliza(a)
+    chequear("Pólizas", "Baja de Accidentes Personales: endoso 2, nota de crédito, período, 7 conceptos que suman el total, subtotales que cierran",
+      "10183421 · 2 · NC · 2026-05-07→2027-02-06 · -130899.6 · 7 conceptos · frena=false",
+      `${a.poliza} · ${a.endoso} · ${a.esNotaCredito ? "NC" : "FC"} · ${a.periodoDesde}→${a.periodoHasta} · ${a.total} · ${a.conceptos.filter(c => !c.esSubtotal).length} conceptos · frena=${ca.frena}`,
+      a.poliza === "10183421" && a.endoso === 2 && a.esNotaCredito && a.periodoHasta === "2027-02-06" && a.total === -130899.6 && a.conceptos.filter(c => !c.esSubtotal).length === 7 && !ca.frena, "A-FEAT-1309")
+    const repAP = repartoDeLaPoliza(a)
+    chequear("Pólizas", "La nómina distingue baja y activas; un endoso de BAJA es del que se va (Barreto → MSA), no de los que quedan",
+      "baja BARRETO · activas PAZ, VULCANO · MSA 100%",
+      `baja ${a.personas.filter(x => x.movimiento === "baja").map(x => x.nombre.split(" ")[0]).join()} · activas ${a.personas.filter(x => x.movimiento === "activa").map(x => x.nombre.split(" ")[0]).join(", ")} · ${repAP?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
+      repAP?.partes.length === 1 && repAP.partes[0].responsable === "MSA" && responsableDe({ documento: "20276737751" }).responsable === "MA", "A-FEAT-1309")
+
+    // 🧨 La cuota del consolidado es la SUMA de los endosos: 48.996 = 15.740 (endoso 0, Elvio → MA) +
+    // 33.256 (endoso 1, alta de Barreto y Vulcano → MSA). Repartirla por la nómina activa daba MA un tercio.
+    const persona = (doc: string, nombre: string, movimiento: "alta" | "baja" | "activa") => ({ certificado: 1, documento: doc, nombre, movimiento, sumaAsegurada: null })
+    const e0 = { ...a, endoso: 0, personas: [persona("27673775", "PAZ ELVIO", "activa")], cuotasEndoso: [{ nro: 2, de: 12, vencimiento: "2026-03-06", importe: 15740 }] }
+    const e1 = { ...a, endoso: 1, personas: [persona("33318934", "BARRETO", "alta"), persona("16598383", "VULCANO", "alta"), persona("27673775", "PAZ ELVIO", "activa")], cuotasEndoso: [{ nro: 1, de: 11, vencimiento: "2026-03-06", importe: 33256 }] }
+    const porCuota = repartoDeLasCuotas([e0, e1, e1])?.get("2026-03-06") ?? []
+    chequear("Pólizas", "La cuota 2/12 de Accidentes Personales (48.996) se reparte por endoso: Elvio MA 15.740 · altas MSA 33.256 (un endoso repetido no se cuenta dos veces)",
+      "MSA 33256 · MA 15740", porCuota.map(x => `${x.responsable} ${x.importe}`).join(" · "),
+      porCuota.length === 2 && porCuota.find(x => x.responsable === "MA")?.importe === 15740 && porCuota.find(x => x.responsable === "MSA")?.importe === 33256, "A-FEAT-1309")
+
+    // Cotejo contra lo cargado: avisa, no frena. Número = póliza · punto de venta = endoso.
+    const bien = cotejarConComprobante(a, { numero: "10183421", punto_venta: "2", total: 130899.6, esNotaCredito: true })
+    const mal = cotejarConComprobante(a, { numero: "10183422", punto_venta: "2", total: 130899.6, esNotaCredito: false })
+    chequear("Pólizas", "Cotejo con el comprobante cargado: la NC bien cargada no avisa; con otro número y como factura, dos avisos",
+      "0 · 2", `${bien.length} · ${mal.length}`, bien.length === 0 && mal.length === 2, "A-FEAT-1309")
+
+    // 🧨 Rótulo huérfano (Flota 07/2025): el importe de la CONTRIBUCIÓN quedó en el renglón de TOTALES y
+    // su rótulo abajo. Descartarlo dejaba la factura sin cerrar por $13.439,15 (y frenaba).
+    const huerf = parsearPoliza([
+      "FACTURA ORIGINAL",
+      "SECCIÓN  AUTOMOTORES  PRODUCTO  AUTOMOTORES  PÓLIZA  34160783",
+      "PLAN DE PAGO DEL ENDOSO  LIQUIDACIÓN DE PREMIO Y OTROS CONCEPTOS",
+      "NRO.  VENCIMIENTO  IMPORTE  PRIMA  $  100,000.00",
+      "1/1  01-08-2025  $  134,439.15",
+      "IVA  $  21,000.00",
+      "TOTALES:  $  134,439.15  $  13,439.15",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES",
+      "MONTO TOTAL DEL PREMIO  $  134,439.15",
+    ].join("\n"))
+    chequear("Pólizas", "Un importe cuyo rótulo quedó en el renglón de abajo se toma con ese rótulo y la factura cierra",
+      "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES 13439.15 · frena=false",
+      `${huerf.conceptos.at(-1)?.concepto} ${huerf.conceptos.at(-1)?.importe} · frena=${controlarPoliza(huerf).frena}`,
+      huerf.conceptos.at(-1)?.concepto === "CONTRIBUCIÓN INSTITUTO DE SERVICIOS SOCIALES" && !controlarPoliza(huerf).frena, "A-FEAT-1309")
+
+    // Los dos ejes (usuario 2026-10-20): Alondra contable e interno MA, Rojas Celia PAM, Tiguan contable MSA / interno MA.
+    const alondra = responsableDe({ documento: "47926088" })
+    const rojas = responsableDe({ documento: "27203615362" })
+    const tiguan = responsableDe({ patente: "LMW911" })
+    const repContableFlota = repartoDeLaPoliza(f, undefined, "contable")
+    chequear("Pólizas", "Responsable contable e interno por bien; la Flota por eje CONTABLE es toda MSA (el reparto interno es otro eje)",
+      "MA/MA · PAM/PAM · MSA/MA · Flota contable: MSA 100%",
+      `${alondra.contable}/${alondra.interno} · ${rojas.contable}/${rojas.interno} · ${tiguan.contable}/${tiguan.interno} · Flota contable: ${repContableFlota?.partes.map(x => `${x.responsable} ${Math.round(x.proporcion * 100)}%`).join(" · ")}`,
+      alondra.contable === "MA" && alondra.interno === "MA" && rojas.contable === "PAM" && tiguan.contable === "MSA" && tiguan.interno === "MA"
+        && repContableFlota?.partes.length === 1 && repContableFlota.partes[0].responsable === "MSA", "A-FEAT-1309")
+
+    // «¿Tenemos todas?» — datos reales de la Vida colectivo 670821 y la serie de 12.902 sin póliza.
+    // 🧨 Federación COMPENSA las NC con las cuotas siguientes: la de feb (42.300,55) no se debita porque
+    // la NC de dic (−47.481,60) la cubre. Esperar el débito de la cuota daba «falta el débito» en falso.
+    const vida: CuotaEsperada[] = [
+      { poliza: "670821", vencimiento: "2025-09-10", importe: 245038.54 },
+      { poliza: "670821", vencimiento: "2025-12-01", importe: -47481.6 },
+      { poliza: "670821", vencimiento: "2026-02-10", importe: 42300.55 },
+      { poliza: "670821", vencimiento: "2026-04-10", importe: 34888.08 },
+      { poliza: "670821", vencimiento: "2026-04-10", importe: -82166.7 },
+      { poliza: "670821", vencimiento: "2026-06-10", importe: 28118.58 },
+      { poliza: "10200836", vencimiento: "2026-04-13", importe: 11179 },
+      { poliza: "10200836", vencimiento: "2026-05-13", importe: 11179 },
+      { poliza: "10200836", vencimiento: "2026-10-13", importe: 11179 },
+    ]
+    const banco: MovimientoAseguradora[] = [
+      { id: "vida", fecha: "2025-09-10", debitos: 245038.54, creditos: 0 },
+      { id: "x1", fecha: "2026-02-18", debitos: 12902, creditos: 0 },
+      { id: "ap", fecha: "2026-04-17", debitos: 11179, creditos: 0 },
+      { id: "reint", fecha: "2026-04-20", debitos: 0, creditos: 30000 },
+    ]
+    const ctl = controlarDebitos(vida, banco, { desde: "2025-07-01", hasta: "2026-09-23" })
+    const res = (pol: string, v: string) => ctl.cuotas.find(c => c.poliza === pol && c.vencimiento === v)?.resultado
+    chequear("Pólizas", "Las NC se compensan con las cuotas siguientes: la Vida 670821 sólo se debita la 1ª, y eso está bien (no «falta el débito»)",
+      "ok · nc · compensada · nc · compensada", ["2025-09-10", "2025-12-01", "2026-02-10", "2026-04-10", "2026-06-10"].map(v => res("670821", v)).join(" · "),
+      ["2025-09-10", "2025-12-01", "2026-02-10", "2026-04-10", "2026-06-10"].map(v => res("670821", v)).join(" · ") === "ok · nc · compensada · nc · compensada", "A-FEAT-1309")
+    chequear("Pólizas", "Débito de 12.902 que no es cuota de ninguna póliza = PÓLIZA A CARGAR; cuota vencida sin débito = falta; la futura, a vencer; el reintegro sin NC se marca",
+      "x1 sin-poliza · reint reintegro-sin-nc · may falta-debito · oct a-vencer · abr ok",
+      `x1 ${ctl.movimientos.find(m => m.id === "x1")?.resultado} · reint ${ctl.movimientos.find(m => m.id === "reint")?.resultado} · may ${res("10200836", "2026-05-13")} · oct ${res("10200836", "2026-10-13")} · abr ${res("10200836", "2026-04-13")}`,
+      ctl.movimientos.find(m => m.id === "x1")?.resultado === "sin-poliza" && ctl.movimientos.find(m => m.id === "reint")?.resultado === "reintegro-sin-nc"
+        && res("10200836", "2026-05-13") === "falta-debito" && res("10200836", "2026-10-13") === "a-vencer" && res("10200836", "2026-04-13") === "ok", "A-FEAT-1309")
+    // Póliza con endosos viejos no cargados (Vida 644709: sólo el 7 y el 8): se usa el último consolidado,
+    // y si dice que de la cuota queda menos (6.598,75 de 21.574,03), se espera ese saldo en el banco.
+    const esp644 = cuotasEsperadas([
+      { poliza: "644709", endoso: 8, cuotas: [{ vencimiento: "2025-08-10", importe: 21574.03 }], consolidado: { fecha: "2025-08-11", cuotas: [
+        { vencimiento: "2025-07-10", importe: 34204.07, saldo: 0 }, { vencimiento: "2025-08-10", importe: 21574.03, saldo: 6598.75 }] } },
+    ])
+    const c644 = controlarDebitos(esp644, [{ id: "s", fecha: "2025-08-11", debitos: 6598.75, creditos: 0 }], { desde: "2025-07-01", hasta: "2026-09-23" })
+    chequear("Pólizas", "Endosos incompletos → se usa el consolidado; la cuota compensada sin débito está bien y la de saldo 6.598,75 casa con el débito de ese importe",
+      "compensada · ok 6598.75", c644.cuotas.map(c => c.resultado === "ok" ? `ok ${c.debitado}` : c.resultado).join(" · "),
+      c644.cuotas.map(c => c.resultado === "ok" ? `ok ${c.debitado}` : c.resultado).join(" · ") === "compensada · ok 6598.75", "A-FEAT-1309")
+    chequear("Pólizas", "El movimiento se reconoce por las leyendas adicionales, esté o no conciliado",
+      "true · false", `${esDeLaAseguradora({ leyendas_adicionales_1: "FEDERACION PATRO", leyendas_adicionales_2: "SEGUROS" })} · ${esDeLaAseguradora({ leyendas_adicionales_1: "COOPSER", leyendas_adicionales_2: null })}`,
+      esDeLaAseguradora({ leyendas_adicionales_1: "FEDERACION PATRO" }) && !esDeLaAseguradora({ leyendas_adicionales_1: "COOPSER" })
+        // usada dentro de .filter() (que le pasa el número de fila como 2º argumento) tiene que andar igual
+        && [{ leyendas_adicionales_1: "FEDERACION PATRO" }, { leyendas_adicionales_1: "COOPSER" }].filter(esDeLaAseguradora).length === 1, "A-FEAT-1309")
+
+    // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
+    const renglones = armarRenglones([
+      { s: "$", x: 300, y: 500, h: 8 }, { s: "627,502.00", x: 310, y: 500.5, h: 8 },
+      { s: "PRIMA", x: 100, y: 520, h: 8 }, { s: "I.V.A.", x: 100, y: 500, h: 8 },
+    ])
+    chequear("Pólizas", "Los textos del PDF se arman en renglones por su altura (medio punto de diferencia sigue siendo el mismo renglón)",
+      "PRIMA | I.V.A.  $  627,502.00", renglones.join(" | "), renglones.join(" | ") === "PRIMA | I.V.A.  $  627,502.00", "A-FEAT-1309")
+  }
+  // ══ 🧾 IMPUESTOS VENCIDOS O PRÓXIMOS A VENCER — aviso en Principal (A-FEAT-1319) ═══════════════
+  {
+    const tpl = (o: Partial<CuotaImpuesto["template"]> = {}): CuotaImpuesto["template"] => ({
+      nombre_referencia: "Inmobiliario Casco", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", categ: "Impuesto inmobiliario", alertas: "30 dias antes", ...o,
+    })
+    const cuota = (id: string, estado: string, venc: string | null, o: Partial<CuotaImpuesto> = {}): CuotaImpuesto =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto: 1000, template: tpl(), ...o })
+    const hoy = "2026-10-21"
+    const r = impuestosAAvisar([
+      cuota("vencido", "pendiente", "2026-10-10"),
+      cuota("pagar", "pagar", "2026-09-30"),
+      cuota("pagado", "pagado", "2026-10-01"),
+      cuota("debito", "debito", "2026-10-01"),                          // débito automático = pagado
+      cuota("en30", "pendiente", "2026-11-20"),                         // 30 días antes → entra
+      cuota("en31", "pendiente", "2026-11-21"),                         // fuera de la anticipación
+      cuota("iibb10", "pendiente", "2026-11-05", { template: tpl({ alertas: null, nombre_referencia: "IIBB" }) }), // 15 días, aviso por defecto 10 → no
+      cuota("iibb9", "pendiente", "2026-10-30", { template: tpl({ alertas: null, nombre_referencia: "IIBB" }) }),  // 9 días → sí
+      cuota("estimada", "pendiente", null, { fecha_estimada: "2026-10-15" }), // sin vencimiento: usa la estimada
+      cuota("luz", "pendiente", "2026-10-01", { template: tpl({ cuenta_agrupadora: "Servicios", nombre_referencia: "Luz" }) }), // no es impuesto
+      cuota("banco", "pendiente", "2026-10-01", { template: tpl({ solo_conciliacion: true }) }), // se cobra solo en el banco
+    ], hoy)
+    chequear("Impuestos", "Vencidos sin pagar (pendiente o pagar, también con fecha estimada); pagados, débito automático, servicios y sólo-conciliación no avisan",
+      "pagar · vencido · estimada", r.vencidos.map(x => x.id).join(" · "),
+      r.vencidos.map(x => x.id).join(" · ") === "pagar · vencido · estimada", "A-FEAT-1319")
+    chequear("Impuestos", "Próximos: cada template avisa con SU anticipación («30 dias antes»); sin dato, 10 días",
+      "iibb9 · en30", r.proximos.map(x => x.id).join(" · "),
+      r.proximos.map(x => x.id).join(" · ") === "iibb9 · en30", "A-FEAT-1319")
+    chequear("Impuestos", "Días de aviso: «15 dias antes» → 15 · vacío → 10 · y el vencido dice hace cuántos días",
+      "15 · 10 · -11", `${diasDeAviso("15 dias antes")} · ${diasDeAviso(null)} · ${r.vencidos.find(x => x.id === "vencido")?.dias}`,
+      diasDeAviso("15 dias antes") === 15 && diasDeAviso(null) === 10 && r.vencidos.find(x => x.id === "vencido")?.dias === -11, "A-FEAT-1319")
   }
 
   return r

@@ -141,7 +141,7 @@ export function PanelAuditoriaConciliacion() {
       // Cuadratura: el vínculo señala una cuota **o** un grupo de pago. Si no se contemplan los
       // grupos, el control reporta rotos todos los pagos agrupados — que fue A-BUG-156.
       const cuotas = await traerTodo((d, h) =>
-        supabase.from("cuotas_egresos_sin_factura").select("id, monto, grupo_pago_id").range(d, h))
+        supabase.from("cuotas_egresos_sin_factura").select("id, monto, grupo_pago_id, estado").range(d, h))
       const porCuota = new Map<string, number>()
       const porGrupo = new Map<string, number>()
       for (const c of cuotas) {
@@ -218,7 +218,7 @@ export function PanelAuditoriaConciliacion() {
        */
       const pagosSueldoPrev = await traerTodo((d, h) => supabase
         .from("sueldos_pagos")
-        .select("id, monto, grupo_pago_id, empleado:sueldos_empleados(nombre)")
+        .select("id, monto, grupo_pago_id, estado, empleado:sueldos_empleados(nombre)")
         .range(d, h))
       const gruposSueldo = new Map<string, any[]>()
       for (const p of pagosSueldoPrev) {
@@ -239,7 +239,44 @@ export function PanelAuditoriaConciliacion() {
         }
       }
 
-      const resultado = auditar({ movimientos: movimientosDelRango, categsDelPlan, cuadratura, origenes, repartoEsperado })
+      /**
+       * ⚖️ A-FEAT-1301 — el estado de lo atado a cada movimiento conciliado (control «dos lados»).
+       * Las facturas se leen por id y en las 3 empresas: una de PAM o MA puede estar atada a una
+       * cuenta de MSA. Las cuotas y los sueldos ya están cargados arriba.
+       */
+      const estadoCuota = new Map<string, string | null>()
+      const peorDelGrupo = new Map<string, string | null>()
+      for (const c of cuotas as any[]) {
+        estadoCuota.set(String(c.id), c.estado ?? null)
+        const g = c.grupo_pago_id ? String(c.grupo_pago_id) : null
+        if (g && String(c.estado ?? '').toLowerCase() !== 'conciliado') peorDelGrupo.set(g, c.estado ?? null)
+        else if (g && !peorDelGrupo.has(g)) peorDelGrupo.set(g, c.estado ?? null)
+      }
+      const conciliadosDelRango = movimientosDelRango.filter(m => String(m.estado ?? '').toLowerCase() === 'conciliado')
+      const idsFactura = [...new Set(conciliadosDelRango.map(m => m.comprobante_arca_id).filter(Boolean) as string[])]
+      const estadoFactura = new Map<string, string | null>()
+      for (const sch of ['msa', 'pam', 'ma']) {
+        for (let i = 0; i < idsFactura.length; i += 200) {
+          const { data } = await supabase.schema(sch as any).from('comprobantes_arca')
+            .select('id, estado').in('id', idsFactura.slice(i, i + 200))
+          for (const f of (data || []) as any[]) estadoFactura.set(String(f.id), f.estado ?? null)
+        }
+      }
+      const estadoOrigen = new Map<string, { factura?: string | null; cuota?: string | null; sueldo?: string | null }>()
+      for (const m of conciliadosDelRango) {
+        const e: { factura?: string | null; cuota?: string | null; sueldo?: string | null } = {}
+        if (m.comprobante_arca_id && estadoFactura.has(m.comprobante_arca_id)) e.factura = estadoFactura.get(m.comprobante_arca_id)
+        const c = m.template_cuota_id ? String(m.template_cuota_id) : null
+        if (c) e.cuota = peorDelGrupo.has(c) ? peorDelGrupo.get(c) : estadoCuota.get(c)
+        const s: any = m.sueldo_pago_id ? pagoPorId.get(String(m.sueldo_pago_id)) : null
+        if (s) {
+          const hermanos: any[] = s.grupo_pago_id ? gruposSueldo.get(String(s.grupo_pago_id)) ?? [s] : [s]
+          e.sueldo = (hermanos.find((h: any) => String(h.estado ?? '').toLowerCase() !== 'conciliado') ?? s).estado ?? null
+        }
+        estadoOrigen.set(m.id, e)
+      }
+
+      const resultado = auditar({ movimientos: movimientosDelRango, categsDelPlan, cuadratura, origenes, repartoEsperado, estadoOrigen })
       if (hayRango) {
         resultado.noVerificado.push(
           'Las FACTURAS de ARCA no se auditaron: al filtrar por fecha se miran sólo los movimientos ' +

@@ -6,9 +6,10 @@ import type { UserRole } from "@/lib/auth/roles"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Receipt, FileText, Building2 } from "lucide-react"
+import { Receipt, FileText, Building2, ShieldCheck } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
+import { VistaSeguros } from "./vista-seguros"
 
 export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
@@ -35,7 +36,7 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
         </CardHeader>
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               {puedeVer("egresos.facturas-msa") && (
 <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
@@ -58,6 +59,12 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
 <TabsTrigger value="templates" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Egresos sin Factura
+              </TabsTrigger>
+)}
+              {puedeVer("egresos.seguros") && (
+<TabsTrigger value="seguros" className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4" />
+                Seguros
               </TabsTrigger>
 )}
             </TabsList>
@@ -84,6 +91,12 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
               <TabsContent value="templates" className="space-y-4">
 <SoloLectura recurso="egresos.templates">
                 <VistaTemplatesEgresos />
+              </SoloLectura>
+</TabsContent>
+
+              <TabsContent value="seguros" className="space-y-4">
+<SoloLectura recurso="egresos.seguros">
+                <VistaSeguros />
               </SoloLectura>
 </TabsContent>
             </div>

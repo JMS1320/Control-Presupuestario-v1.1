@@ -17,6 +17,13 @@ import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
+import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
+import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
+import { cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
+import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
+import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
+import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 
 // Configuración de cuentas bancarias y cajas
@@ -136,7 +143,7 @@ export function useMotorConciliacion() {
   const [error, setError] = useState<string | null>(null)
   const [resultados, setResultados] = useState<any>(null)
 
-  const { data: cashFlowData, cargarDatos: recargarCashFlow } = useMultiCashFlowData()
+  const { data: cashFlowData, cargarDatos: recargarCashFlow, cargarPagadoConTarjeta } = useMultiCashFlowData()
   const { cargarReglasActivas } = useReglasConciliacion()
 
   // Helper: valor contable/interno es válido si no está vacío ni es "No Lleva"
@@ -401,7 +408,21 @@ export function useMotorConciliacion() {
           match: true,
           cashFlowRow: match,
           requiere_revision: !fechaExacta,
-          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
+          // A-FEAT-1298: decir qué sí coincide (y en la tarjeta, si la factura es anterior al débito)
+          motivo_revision: fechaExacta ? null : motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
+        }
+      }
+      // 🪙 A-BUG-1305 — sin importe exacto: hasta $1 de diferencia, siempre a auditar.
+      const cerca = elegirPorImporteCercano(pool, Number(movimiento.debitos), cf => Number(cf.debitos) || 0, cf =>
+        Math.abs(fechaMovimiento.getTime() - new Date(cf.fecha_estimada).getTime()) / 86400000 <= toleranciaDias)
+      if (cerca) {
+        return {
+          match: true,
+          cashFlowRow: cerca.cf,
+          requiere_revision: true,
+          motivo_revision: motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(cerca.cf.fecha_estimada).getTime()) / 86400000, !!cerca.cf.__fecha_es_emision, cerca.dif),
         }
       }
     }
@@ -431,7 +452,21 @@ export function useMotorConciliacion() {
           match: true,
           cashFlowRow: match,
           requiere_revision: !fechaExacta,
-          motivo_revision: fechaExacta ? null : `Fecha no exacta: ${Math.round(diferenciaDias)} días diferencia`
+          // A-FEAT-1298: decir qué sí coincide (y en la tarjeta, si la factura es anterior al débito)
+          motivo_revision: fechaExacta ? null : motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(match.fecha_estimada).getTime()) / 86400000, !!match.__fecha_es_emision)
+        }
+      }
+      // 🪙 A-BUG-1305 — sin importe exacto: hasta $1 de diferencia, siempre a auditar.
+      const cerca = elegirPorImporteCercano(pool, Number(movimiento.creditos), cf => Number(cf.creditos) || 0, cf =>
+        Math.abs(fechaMovimiento.getTime() - new Date(cf.fecha_estimada).getTime()) / 86400000 <= toleranciaDias)
+      if (cerca) {
+        return {
+          match: true,
+          cashFlowRow: cerca.cf,
+          requiere_revision: true,
+          motivo_revision: motivoFechaNoExacta(
+            (fechaMovimiento.getTime() - new Date(cerca.cf.fecha_estimada).getTime()) / 86400000, !!cerca.cf.__fecha_es_emision, cerca.dif),
         }
       }
     }
@@ -452,7 +487,8 @@ export function useMotorConciliacion() {
       console.log(`🚀 Iniciando conciliación para ${cuenta.nombre}...`)
 
       // 1. Cargar datos — usar la lista acotada si vino, sino todos los pendientes de la cuenta
-      const movimientos = movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)
+      // A-BUG-1297: el pago y el total del resumen de la tarjeta nunca pasan por el motor, venga de donde venga la lista
+      const movimientos = (movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)).filter(m => esFilaConciliable(m as any))
       if (movimientosOverride) {
         console.log(`🎯 Modo acotado: conciliando solo ${movimientos.length} movimiento(s) filtrado(s)`)
       }
@@ -464,6 +500,31 @@ export function useMotorConciliacion() {
       // pago de sueldo en la BD, se corrió el motor sin refrescar, y no lo encontró porque en la
       // foto seguía conciliado. Ver A-BUG-37.
       const datosCF = (await recargarCashFlow()) ?? cashFlowData
+      /**
+       * 💳 **Una tarjeta busca primero en lo pagado CON TARJETA** (facturas y cuotas en `credito`) y
+       * después en el resto del Cash Flow — el mismo motor, con el pool que le corresponde a la cuenta
+       * (A-DEC-1002). Antes la tarjeta tenía su propio buscador de facturas antes de llegar acá.
+       */
+      // A-BUG-1298: las facturas pagadas con tarjeta se comparan por su fecha de emisión, no por la estimada
+      const poolTarjeta = cuenta.tipo === 'tarjeta' ? conFechaDeEmision(await cargarPagadoConTarjeta(cuenta.empresa)) : []
+      /**
+       * 🔒 **Lo que ya se usó en esta corrida no se ofrece otra vez.** Sin esto, dos movimientos del
+       * mismo importe —los dos cargos de Chubb del mismo día— podían conciliarse contra la MISMA
+       * factura. El buscador propio de la tarjeta lo cuidaba; ahora lo cuida el motor, para todas las
+       * cuentas.
+       */
+      const usadosEnCorrida = new Set<string>()
+      const sinUsar = (filas: typeof datosCF) => filas.filter(f => !usadosEnCorrida.has(String(f.id)))
+      /**
+       * 🔁 **Doble audit (A-BUG-1290)**: lo que ya está atado a un movimiento A AUDITAR en cualquier
+       * extracto se puede proponer, pero nunca se concilia solo — y si hay una candidata libre, gana
+       * la libre. Ver `lib/conciliacion/doble-audit.ts`.
+       */
+      const { enAuditar, tablasQueFallaron: tablasSinLeer } = await cargarVinculosEnAuditar(supabase)
+      const detallesFijos = await cargarDetallesFijos(supabase as any)  // A-FEAT-1296
+      if (tablasSinLeer.length) console.warn(`⚠️ Doble audit: no se pudieron leer ${tablasSinLeer.join(', ')}`)
+      const buscar = (mov: MovimientoBancario, pool: typeof datosCF) =>
+        buscarConDobleAudit((p: any[]) => buscarMatchCashFlow(mov, p, cuenta.empresa), sinUsar(pool), enAuditar)
 
       console.log(`📊 Datos cargados:`)
       console.log(`- Movimientos bancarios: ${movimientos.length}`)
@@ -489,8 +550,10 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          const matchCF = buscarMatchCashFlow(movimiento, datosCF, cuenta.empresa)
+          let matchCF = poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false }
+          if (!matchCF.match) matchCF = buscar(movimiento, datosCF)
           if (matchCF.match) {
+            usadosEnCorrida.add(String(matchCF.cashFlowRow.id))
             resultado = {
               movimiento_id: movimiento.id,
               tipo_match: 'cash_flow',
@@ -635,6 +698,19 @@ export function useMotorConciliacion() {
               provDesdeMaestro,
               (movimiento as any).detalle,   // lo que el usuario ya escribió nunca se pisa
             )
+            // 🏷️ A-FEAT-1296 — sin detalle propio, el detalle fijo del proveedor (va también a la factura)
+            if (!columnas.detalle && matchCF.cashFlowRow.origen === 'ARCA' && detallesFijos.length) {
+              const fijo = await aplicarDetalleFijo(supabase as any, detallesFijos, {
+                facturaId: String(matchCF.cashFlowRow.id),
+                tabla: String(matchCF.cashFlowRow.origen_tabla || `${String(cuenta.empresa).toLowerCase()}.comprobantes_arca`),
+                cuit: matchCF.cashFlowRow.cuit_proveedor,
+                monto: Number(movimiento.debitos) || Number(movimiento.creditos) || 0,
+                detalleFactura: (matchCF.cashFlowRow as any).detalle_usuario,
+                emisor: (matchCF.cashFlowRow as any).nombre_proveedor,
+                numero: (matchCF.cashFlowRow as any).numero_desde,
+              })
+              if (fijo) columnas.detalle = fijo
+            }
 
             /**
              * 🏷️ A-BUG-1247 — un cobro de VENTA toma la imputación de la venta (cuenta, número, centro),
@@ -872,7 +948,7 @@ export function useMotorConciliacion() {
               await actualizarMovimientoBD(cuenta, movimiento.id, {
                 categ: extraAnticipo.categ || regla.categ,
                 centro_de_costo: regla.centro_costo,
-                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleQueAporta(regla.detalle, regla.categ),
+                detalle: extraAnticipo.detalle || (movimiento as any).detalle || detalleDeRegla(regla as any),
                 estado: estadoRegla,
                 motivo_revision: motivoRegla,
                 proveedor_nombre: provNombreRegla,
@@ -885,7 +961,13 @@ export function useMotorConciliacion() {
 
               // Si la regla tiene llena_template=true, crear cuota en el template correspondiente
               if (regla.llena_template) {
-                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento)
+                // 📅 A-DEC-1015 — si no se puede cargar la cuota (falta la campaña), el movimiento NO queda
+                // conciliado de un solo lado: pasa a auditar con el motivo.
+                let motivoSinCuota: string | null = null
+                const cuotaResult = await crearCuotaEnTemplate(cuenta, regla, movimiento, m => { motivoSinCuota = m })
+                if (!cuotaResult && motivoSinCuota) {
+                  await actualizarMovimientoBD(cuenta, movimiento.id, { estado: 'auditar', motivo_revision: motivoSinCuota })
+                }
                 if (cuotaResult) {
                   // Prioridad: Tab 2 (Tipo A→B) > Tab 1 (codigosRegla ya aplicados) > seccion_regla (cuotaResult)
                   const codigosTab2F2 = await buscarCodigosContableInterno(
@@ -916,9 +998,11 @@ export function useMotorConciliacion() {
                       comprobantes_pagados: (movimiento as any).comprobantes_pagados,
                       centro_de_costo: (movimiento as any).centro_de_costo },
                     cuotaResult.template,
-                    identificadorDeCuota(
-                      { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
-                      cuotaResult.template ?? {}),
+                    // A-FEAT-1299 / A-BUG-1302: en la tarjeta, el comprobante de un cargo DEL BANCO es el resumen
+                    comprobanteDeCargoDeTarjeta(cuenta.tipo === 'tarjeta', cuotaResult.template as any, (movimiento as any).fecha_cierre)
+                      ?? identificadorDeCuota(
+                        { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
+                        cuotaResult.template ?? {}),
                     provNombreRegla,
                   )
 
@@ -988,7 +1072,9 @@ export function useMotorConciliacion() {
   const crearCuotaEnTemplate = async (
     cuenta: CuentaBancaria,
     regla: ReglaConciliacion,
-    movimiento: MovimientoBancario
+    movimiento: MovimientoBancario,
+    /** 📅 A-DEC-1015 — por qué no se cargó la cuota, para que el movimiento quede en auditar. */
+    avisar?: (motivo: string) => void,
   ): Promise<{
     templateId: string; cuotaId: string; responsable?: string | null
     /** 🧲 A-BUG-175 — lo que el movimiento hereda: proveedor, comprobante y centro de costo. */
@@ -996,6 +1082,31 @@ export function useMotorConciliacion() {
     fechaCuota?: string | null
   } | null> => {
     try {
+      /**
+       * 🎯 A-FEAT-1293 — si la regla ELIGIÓ un template, se carga en ése (o en el de su familia cuya
+       * campaña corresponde a la fecha del movimiento). El camino por `categ` de abajo queda para las
+       * reglas viejas, que no tienen template elegido.
+       */
+      if ((regla as any).template_id) {
+        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra'
+        const { data: elegido } = await supabase.from('egresos_sin_factura').select(COLS)
+          .eq('id', (regla as any).template_id).maybeSingle()
+        if (!elegido) {
+          console.warn(`⚠️ La regla «${regla.texto_buscar}» apunta a un template que ya no existe — cuota no creada`)
+          avisar?.(`La regla «${regla.texto_buscar}» apunta a un template que ya no existe: elegí otro en la regla. No se cargó ninguna cuota.`)
+          return null
+        }
+        const { data: familia } = await supabase.from('egresos_sin_factura').select(COLS)
+          .eq('nombre_referencia', (elegido as any).nombre_referencia).eq('activo', true)
+        const destino = templateParaFecha(elegido as any, (familia || []) as any[], movimiento.fecha)
+        if (!destino) {
+          console.warn(`⚠️ El template de la regla «${regla.texto_buscar}» no tiene campaña para ${movimiento.fecha} — cuota no creada`)
+          avisar?.(motivoFaltaCampana(elegido as any, movimiento.fecha))
+          return null
+        }
+        return await insertarCuotaDeRegla(destino as any, movimiento)
+      }
+
       // Buscar templates activos con categ coincidente
       const { data: templates } = await supabase
         .from('egresos_sin_factura')
@@ -1035,9 +1146,51 @@ export function useMotorConciliacion() {
         if (coincide) template = coincide
       }
 
+      return await insertarCuotaDeRegla(template as any, movimiento)
+
+    } catch (err) {
+      console.error('Error en crearCuotaEnTemplate:', err)
+      return null
+    }
+
+    /** La cuota conciliada en el template ya elegido — la usan los dos caminos de arriba (A-FEAT-1293). */
+    async function insertarCuotaDeRegla(template: any, movimiento: MovimientoBancario) {
       // Determinar tipo_movimiento y monto desde el extracto
       const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
       const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
+
+      // 🔗 A-FEAT-1302 — si el template ya tiene la cuota PENDIENTE de este mes (cronograma cargado), se
+      // concilia ésa con el importe y la fecha reales; crear otra dejaba el mes duplicado.
+      const { data: delTemplate } = await supabase
+        .from('cuotas_egresos_sin_factura')
+        .select('id, fecha_estimada, fecha_vencimiento, monto, estado, detalle')
+        .eq('egreso_id', template.id)
+        .eq('estado', 'pendiente')
+      const pendiente = cuotaPendienteDelMes((delTemplate || []) as any[], movimiento.fecha, Number(monto) || 0)
+      if (pendiente) {
+        const { error: eUp } = await supabase
+          .from('cuotas_egresos_sin_factura')
+          .update({
+            fecha_vencimiento: movimiento.fecha,
+            fecha_estimada: movimiento.fecha,
+            fecha_pago: movimiento.fecha,
+            monto,
+            estado: 'conciliado',
+            tipo_movimiento: tipoMovimiento,
+            ...((pendiente as any).detalle ? {} : { detalle: detalleDeRegla(regla as any) || movimiento.descripcion || null }),
+          })
+          .eq('id', pendiente.id)
+        if (!eUp) {
+          return {
+            templateId: template.id as string,
+            cuotaId: pendiente.id as string,
+            responsable: (template as any).responsable ?? null,
+            template: template as TemplateOrigen,
+            fechaCuota: movimiento.fecha ?? null,
+          }
+        }
+        console.error('No se pudo conciliar la cuota pendiente del mes; se crea una nueva:', eUp)
+      }
 
       // Crear cuota con estado conciliado directamente
       const { data: cuota, error } = await supabase
@@ -1062,7 +1215,7 @@ export function useMotorConciliacion() {
            * cuya CATEG ya dice eso. Es la duplicación que prohíbe § 30.1 de `MODULO_CONCILIACION.md`.
            * **Vacío es la respuesta correcta** cuando no hay nada que agregar.
            */
-          detalle: detalleQueAporta(regla.detalle, regla.categ) || movimiento.descripcion || null
+          detalle: detalleDeRegla(regla as any) || movimiento.descripcion || null
         })
         .select('id')
         .single()
@@ -1072,20 +1225,16 @@ export function useMotorConciliacion() {
         return null
       }
 
-      console.log(`✅ Cuota creada en template "${regla.categ}" (${tipoMovimiento} $${monto})`)
+      console.log(`✅ Cuota creada en template "${template.nombre_referencia ?? regla.categ}" (${tipoMovimiento} $${monto})`)
       return {
-        templateId: template.id,
-        cuotaId: cuota.id,
+        templateId: template.id as string,
+        cuotaId: cuota.id as string,
         responsable: (template as any).responsable ?? null,
         // 🧲 A-BUG-175 — el template entero y la fecha de la cuota viajan de vuelta: son lo que el
         //    movimiento necesita para heredar proveedor, comprobante y centro de costo.
         template: template as TemplateOrigen,
         fechaCuota: (cuota as any)?.fecha_estimada ?? movimiento.fecha ?? null,
       }
-
-    } catch (err) {
-      console.error('Error en crearCuotaEnTemplate:', err)
-      return null
     }
   }
 
