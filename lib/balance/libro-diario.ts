@@ -34,6 +34,7 @@ import {
   verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS, TIPOS_SIN_CREDITO_VENTAS,
   type ResultadoCuadratura, type FilaSubdiario,
 } from "@/lib/subdiarios/cuadratura"
+import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
 import {
   claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
   type Ejercicio, type Subdiario,
@@ -64,6 +65,16 @@ export interface AsientoLibroDiario {
   cuenta_contable: string
   nro_cuenta: string
   centro_costo: string
+  /**
+   * 💵 Moneda del comprobante con el código de ARCA (`PES`, `DOL`…). Vacío = pesos.
+   * ⚠️ Los importes de arriba van SIEMPRE en pesos: si la factura es en otra moneda ya vienen
+   * multiplicados por `tipo_cambio`, igual que en el subdiario y en la DDJJ (A-BUG-1316).
+   */
+  moneda?: string
+  /** Cotización con la que se pasó a pesos. 1 en pesos. */
+  tipo_cambio?: number
+  /** El total como figura en la factura, en su moneda. Sólo para mostrar. */
+  total_moneda_original?: number
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -188,7 +199,16 @@ export function tipoDesdeTexto(v: unknown): number | null {
 
 /** `msa.comprobantes_arca` → asiento. */
 export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
+  /**
+   * 💵 A-BUG-1316: `comprobantes_arca` guarda los importes de una factura en dólares EN DÓLARES.
+   * El libro diario es la copia del subdiario presentado en la DDJJ, que va en pesos — se convierte
+   * con la cotización de la propia factura, la misma que ARCA informa y que usa el subdiario.
+   */
+  const moneda = monedaArca(f.moneda == null ? null : String(f.moneda))
+  const tc = moneda === "PES" ? 1 : (n(f.tipo_cambio) || 1)
+  const p = (v: unknown) => n(v) * tc
   return {
+    moneda, tipo_cambio: tc, total_moneda_original: n(f.imp_total),
     id: s(f.id), fuente: "arca",
     subdiario: claveSubdiario(f["año_contable"] as number, f.mes_contable as number),
     fecha: f.fecha_emision ? s(f.fecha_emision).slice(0, 10) : null,
@@ -196,9 +216,9 @@ export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
     punto_venta: f.punto_venta == null ? null : Number(f.punto_venta),
     numero: f.numero_desde == null ? null : Number(f.numero_desde),
     cuit: s(f.cuit), denominacion: s(f.denominacion_emisor),
-    neto_gravado: n(f.imp_neto_gravado), no_gravado: n(f.imp_neto_no_gravado),
-    exento: n(f.imp_op_exentas), otros_tributos: n(f.otros_tributos),
-    iva: n(f.iva), total: n(f.imp_total),
+    neto_gravado: p(f.imp_neto_gravado), no_gravado: p(f.imp_neto_no_gravado),
+    exento: p(f.imp_op_exentas), otros_tributos: p(f.otros_tributos),
+    iva: p(f.iva), total: p(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
   }

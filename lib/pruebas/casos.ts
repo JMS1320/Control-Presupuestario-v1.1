@@ -152,7 +152,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -3924,6 +3924,45 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · libro diario", "⚠️ Un comprobante sin subdiario no se pierde: queda aparte",
       "1 sin subdiario", `${conHuerfano.sinSubdiario.length} sin subdiario`,
       conHuerfano.sinSubdiario.length === 1, "A-FEAT-1184")
+  }
+  /**
+   * 💵 **LAS FACTURAS EN DÓLARES ENTRAN AL LIBRO DIARIO EN PESOS — A-BUG-1316.**
+   *
+   * Caso REAL: Almacén Veterinario FC 3-2014 del 23/02/2026, USD 3.213,58 a 1.390. En la DDJJ de
+   * IVA presentada figura por $4.466.876,20 (neto $3.854.470 · IVA $612.406,20). El libro diario es
+   * la copia de ese subdiario, así que tiene que dar lo mismo. Con el código viejo entraba por 3.213,58.
+   */
+  {
+    const usd = desdeArca({
+      id: "av-2014", "año_contable": 2026, mes_contable: 2, fecha_emision: "2026-02-23",
+      tipo_comprobante: 1, punto_venta: 3, numero_desde: 2014, cuit: "30714441082",
+      denominacion_emisor: "ALMACEN VETERINARIO S.R.L.", moneda: "USD", tipo_cambio: "1390.00",
+      imp_neto_gravado: "2773.00", imp_neto_no_gravado: "0", imp_op_exentas: "0",
+      otros_tributos: "0", iva: "440.58", imp_total: "3213.58",
+    })
+    const r2 = (x: number) => Math.round(x * 100) / 100
+    chequear("Balance · libro diario", "💵 Una factura en USD entra en PESOS, como en la DDJJ",
+      "4466876.2", String(r2(usd.total)), r2(usd.total) === 4466876.2, "A-BUG-1316")
+    chequear("Balance · libro diario", "Y convierte también neto e IVA, no sólo el total",
+      "3854470 · 612406.2", `${r2(usd.neto_gravado)} · ${r2(usd.iva)}`,
+      r2(usd.neto_gravado) === 3854470 && r2(usd.iva) === 612406.2, "A-BUG-1316")
+    chequear("Balance · libro diario", "La moneda y la cotización quedan a la vista",
+      "DOL · 1390 · USD 3213.58", `${usd.moneda} · ${usd.tipo_cambio} · USD ${usd.total_moneda_original}`,
+      usd.moneda === "DOL" && usd.tipo_cambio === 1390 && usd.total_moneda_original === 3213.58, "A-BUG-1316")
+
+    const pesos = desdeArca({ id: "p1", moneda: "$", tipo_cambio: "1.00", imp_total: "121", iva: "21", imp_neto_gravado: "100" })
+    chequear("Balance · libro diario", "Una factura en pesos queda igual (no se multiplica por nada)",
+      "121 · PES", `${pesos.total} · ${pesos.moneda}`, pesos.total === 121 && pesos.moneda === "PES", "A-BUG-1316")
+
+    // ⚠️ Pesos con una cotización cargada por error: NO se multiplica (manda la moneda, no el TC).
+    const pesosConTc = desdeArca({ id: "p2", moneda: "PES", tipo_cambio: "1390", imp_total: "121" })
+    chequear("Balance · libro diario", "⚠️ Pesos con una cotización cargada por error no se infla",
+      "121", String(pesosConTc.total), pesosConTc.total === 121, "A-BUG-1316")
+
+    const filaExcel = hojaDeAsientosContables([usd], "25/26").find(f => f[6] === "ALMACEN VETERINARIO S.R.L.") ?? []
+    chequear("Balance · export", "El Excel muestra Total en pesos y, al final, USD · 1390 · 3213,58",
+      "4466876.2 | USD | 1390 | 3213.58", `${filaExcel[12]} | ${filaExcel[17]} | ${filaExcel[18]} | ${filaExcel[19]}`,
+      filaExcel[12] === 4466876.2 && filaExcel[17] === "USD" && filaExcel[18] === 1390 && filaExcel[19] === 3213.58, "A-BUG-1316")
   }
   /**
    * 🔤 **El tipo de comprobante del HISTÓRICO es texto libre — A-FEAT-1184.**

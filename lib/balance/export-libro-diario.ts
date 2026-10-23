@@ -55,8 +55,12 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
     "Cuenta contable", "Nro cuenta", "Centro de costo", "Origen del dato",
+    // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
+    // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
+    "Moneda", "Tipo de cambio", "Total en moneda original",
   ]]
   for (const a of asientos) {
+    const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
     filas.push([
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
@@ -64,6 +68,9 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
       money(a.otros_tributos), money(a.iva), money(a.total),
       a.cuenta_contable, a.nro_cuenta, a.centro_costo,
       a.fuente === "historico" ? "sistema anterior" : a.fuente === "arca" ? "ARCA" : "ventas",
+      enOtraMoneda ? (a.moneda === "DOL" ? "USD" : a.moneda) : "$",
+      enOtraMoneda ? a.tipo_cambio ?? "" : "",
+      enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
     ])
   }
   return filas
@@ -1402,6 +1409,9 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 12 },                    // Nro cuenta
   { ancho: 18 },                    // Centro de costo
   { ancho: 17 },                    // Origen del dato
+  { ancho: 8 },                     // Moneda
+  { ancho: 10, z: COEFICIENTE },    // Tipo de cambio
+  { ancho: 16, z: MONEDA },         // Total en moneda original
 ]
 
 /**
