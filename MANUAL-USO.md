@@ -1213,6 +1213,14 @@ Lo que **🔗 Vincular PDFs** lee queda guardado en el **registro del archivo di
 
 Para las facturas **no informadas en ARCA** que **no van al subdiario de IVA**: en **Imputar Facturas** tildalas y tocá **📒 A Asientos Contables** (o en **Gestionar Facturas**, estado *📒 Asientos Contables*). Salen de los subdiarios y del Libro IVA, y van a la solapa **Asientos Contables** de los **Papeles de trabajo del balance**, en el ejercicio de su fecha de emisión, para que el contador las registre con asientos. El botón **📒 Asientos Contables** muestra todas; **↩ Sacar** devuelve una a sin imputar. ⚠️ Sin probar todavía → A-TEST-1222
 
+#### 📄 Cargar como factura un PDF sin vincular *(2026-10-23)*
+
+Para un PDF que **no está en ARCA** (ej. un tique de Colomac): en **PDFs sin vincular** tocá **📄 Cargar como factura**. Se abre el PDF a la izquierda y a la derecha los datos que la app **leyó del archivo**: CUIT, proveedor, tipo, punto de venta y número, fecha, total y —en las A— neto e IVA. Corregí lo que haga falta (lo que no pudo leer te lo dice arriba). Si el CUIT ya está en proveedores, el nombre sale de ahí.
+
+Abajo se ve si **las partes suman el total**; si no, no deja grabar — casi siempre la diferencia son percepciones: el botón **«poner la diferencia en otros tributos»** la pasa. En las B y C sólo se carga el total, como las guarda ARCA.
+
+Elegí **a dónde va**: **📒 Asientos Contables** o **sin imputar** (para imputarla después a un subdiario) y **Grabar factura**. Queda como **No Informada**, ya vinculada a su PDF; el proveedor se da de alta si no estaba. Lo que corregiste a mano queda anotado en la factura. ⚠️ Sin probar todavía → A-TEST-1222
+
 > ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
 > vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
 > se reportó como un bug del sistema que no existía.
