@@ -40,6 +40,23 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ 3 tablas nuevas y columnas del buscador de PDFs (2026-10-21 → 23) — ✅ APLICADAS con JMS presente · ⚠️ aviso POSTERIOR
+
+Para [A-FEAT-1287](PENDIENTES.md#a-feat-1287) / [A-FEAT-1318](PENDIENTES.md#a-feat-1318) (rama `jms/facturas-gmail`, todavía
+sin mergear → [A-OP-25](PENDIENTES.md#a-op-25)). ⚠️ **Este aviso llega DESPUÉS de aplicarlos** — la regla pide antes y se nos
+pasó en las cuatro corridas.
+- `scripts/90` → **`public.arca_pdf_inventario`** y **`public.arca_pdf_barrido_tramo`** (lo ya leído de los reenvíos de mail).
+- `scripts/92` → **`public.arca_pdf_archivo_digital`** (cada PDF de las carpetas de Drive que se leyó, con su texto).
+- `scripts/93` y `94` → columnas nuevas en esa misma tabla (veredicto a mano; la factura que se cargó desde el PDF y lo
+  corregido). Nullable, sin tocar filas.
+
+**Permisos**: las tres con RLS por `puede_ver` / `puede_escribir`, GRANT sólo a `authenticated`, nada a `anon` (verificado
+23/10). **No tienen fila en `recurso_tablas`**, así que hoy las ve y escribe cualquier usuario con rol. Si querés que
+cuelguen de un recurso (¿el de facturas de egresos?), es tuyo decidirlo. **No toca ninguna tabla existente.** Cada script
+tiene su `-deshacer`.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🌿 Tus ramas ya mergeadas (2026-10-14) — las borrás vos si querés
 
 Hicimos limpieza de ramas: JMS borró las suyas que ya estaban 100 % en `desarrollo`. **Las tuyas no las
