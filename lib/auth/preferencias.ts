@@ -61,6 +61,12 @@ export type Preferencias = {
    * `null` = las de siempre. Disperso: sólo lo que tocó (ver `lib/cashflow/columnas-usuario.ts`).
    */
   columnasCashFlow: ColumnasUsuario | null
+  /**
+   * 🧾 El orden de las filas de la Planilla de impuestos, como las dejó arrastrándolas (A-FEAT-1320):
+   * *«si veo algo muy poco importante arriba lo arrastro hacia abajo y eso ya lo recuerda»*.
+   * `null` = el orden de siempre (por empresa y por impuesto).
+   */
+  ordenImpuestos: string[] | null
 }
 
 /**
@@ -80,6 +86,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   widgets: null,
   widgetsTamano: {},
   columnasCashFlow: null,
+  ordenImpuestos: null,
 }
 
 /**
@@ -132,5 +139,8 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
       : null,
     widgetsTamano: leerTamanos(p.widgetsTamano),
     columnasCashFlow: leerColumnasUsuario(p.columnasCashFlow),
+    ordenImpuestos: Array.isArray(p.ordenImpuestos)
+      ? (p.ordenImpuestos as unknown[]).filter((k): k is string => typeof k === "string")
+      : null,
   }
 }

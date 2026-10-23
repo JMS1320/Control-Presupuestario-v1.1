@@ -2721,6 +2721,28 @@ Cuando abrís un proceso que tiene algo pendiente de probar, arriba del modal ap
 📌 Lo que respondas va a los **comentarios del pendiente**, que Claude lee al abrir sesión. Es el
 mismo canal que ya usabas desde el panel de Pendientes.
 
+## 🧾 Egresos sin Factura → Planilla de impuestos *(2026-10-23)*
+
+El botón rojo **🧾 Planilla de impuestos** abre el reporte de todos los impuestos de un **año
+calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte de los impuestos»*.
+
+- **Arriba**: el mismo aviso de vencidos y por vencer que en Principal.
+- **El año**: abre en el actual; con las flechas pasás al anterior o al siguiente.
+- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…). Cada cuota
+  aparece en el mes en que vence, con su color: **verde lleno** conciliada, **verde claro** pagada,
+  **punteada gris** sin pagar (lo presupuestado), **punteada roja** vencida sin pagar. Pasando el
+  mouse se ve el detalle de la cuota.
+- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón.
+- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, por empresa y el
+  total del año. Si las cuentas cierran, arriba dice **✓ control**.
+- **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
+  **Orden de siempre** lo vuelve atrás.
+- **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
+
+Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre; la planilla sólo lee.
+
+→ A-TEST-1227
+
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.

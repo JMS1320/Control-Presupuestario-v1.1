@@ -25,6 +25,7 @@ import { supabase } from "@/lib/supabase"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { PlanillaImpuestos } from "@/components/planilla-impuestos"
 import { format } from "date-fns"
 import { TemplateTestSuite } from "@/components/template-test-suite"
 import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
@@ -186,6 +187,7 @@ export function VistaTemplatesEgresos() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
+  const [mostrarPlanillaImpuestos, setMostrarPlanillaImpuestos] = useState(false)
   const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string}[]>([])
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
@@ -1480,6 +1482,15 @@ export function VistaTemplatesEgresos() {
             Renovar campaña
           </Button>
 
+          {/* 🧾 A-FEAT-1320 — Planilla de impuestos: el año entero, pagado / adeudado / futuro */}
+          <Button
+            onClick={() => setMostrarPlanillaImpuestos(true)}
+            variant="outline"
+            className="border-red-500 text-red-700 hover:bg-red-50"
+          >
+            🧾 Planilla de impuestos
+          </Button>
+
           {/* Botón Pago Manual - Templates Abiertos */}
           <Button
             onClick={abrirModalPagoManual}
@@ -2170,6 +2181,8 @@ export function VistaTemplatesEgresos() {
       </Dialog>
 
       {/* Modal Pago Manual - Templates Abiertos */}
+      <PlanillaImpuestos open={mostrarPlanillaImpuestos} onOpenChange={setMostrarPlanillaImpuestos} />
+
       <Dialog open={modalPagoManual} onOpenChange={setModalPagoManual}>
         <DialogContent className="max-w-md">
           <DialogHeader>

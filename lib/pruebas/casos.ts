@@ -65,6 +65,7 @@ import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuest
 import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -7903,6 +7904,55 @@ export function correrCasos(): Resultado[] {
     chequear("Pagado desde", "Las opciones: primero el banco propio, después las 4 cuentas Galicia y las 3 cajas (las mismas ids que el motor de conciliación)",
       "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
       OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
+  }
+
+  // ══ 🧾 PLANILLA DE IMPUESTOS (A-FEAT-1320) ══════════════════════════════════════════════════
+  {
+    const tpl = (nombre: string, categ: string, resp = "MSA", o: Partial<CuotaPlanilla["template"]> = {}): CuotaPlanilla["template"] =>
+      ({ nombre_referencia: nombre, categ, responsable: resp, cuenta_agrupadora: "Impuestos Rurales", activo: true, ...o })
+    const c = (id: string, estado: string, venc: string | null, monto: number, t: CuotaPlanilla["template"], o: Partial<CuotaPlanilla> = {}): CuotaPlanilla =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto, template: t, ...o })
+    const rojas = tpl("Inmobiliario Cuota Rojas", "Impuesto inmobiliario")
+    const cholo = tpl("Inmobiliario Cuota Cholo 1", "Impuesto inmobiliario")
+    const rv = tpl("Red Vial Cuota Rojas", "Impuesto Red Vial")
+    const uatre = tpl("UATRE", "Impuestos Laborales ARCA", "MSA", { cuenta_agrupadora: "Impuestos General" })
+    const pam = tpl("Inmobiliario Cuota Ombu", "Impuesto inmobiliario", "PAM")
+    const p = armarPlanilla([
+      c("r1", "conciliado", "2026-02-10", 100, rojas), c("r2", "pagado", "2026-05-10", 100, rojas),
+      c("r3", "pendiente", "2026-08-10", 110, rojas), c("r4", "pagar", "2026-11-10", 120, rojas),
+      c("ch1", "anterior", "2026-02-12", 50, cholo),
+      c("rv1", "debito", "2026-03-01", 30, rv),
+      c("u1", "pendiente", null, 40, uatre, { fecha_estimada: "2026-12-15" }),   // sin vencimiento: la estimada
+      c("p1", "pendiente", "2026-02-10", 70, pam),
+      c("x25", "pagado", "2025-12-10", 999, rojas),                            // otro año
+      c("des", "desactivado", "2026-04-10", 999, rojas),                       // no entra
+      c("inact", "pendiente", "2026-04-10", 999, tpl("Inmobiliario Anual Lima", "Impuesto inmobiliario", "MA", { activo: false })), // template dado de baja, sin pagar → no
+      c("banco", "pendiente", "2026-04-10", 999, tpl("Sellos Bancario", "Impuestos ARCA", "MSA", { cuenta_agrupadora: "Impuestos Bancarios", solo_conciliacion: true })),
+    ], 2026, "2026-10-23")
+    const fila = (cl: string) => p.filas.find(f => f.clave === cl)
+    const inm = fila("Inmobiliario|MSA")
+    chequear("Planilla impuestos", "Una fila por impuesto y empresa: las partidas del inmobiliario se juntan (Rojas + Cholo 1); Red Vial, UATRE y el de PAM aparte; lo de otro año, desactivado, de template dado de baja o sólo-banco no entra",
+      "Inmobiliario|MSA · Red Vial|MSA · UATRE|MSA · Inmobiliario|PAM", p.filas.map(f => f.clave).join(" · "),
+      p.filas.map(f => f.clave).sort().join(" · ") === ["Inmobiliario|MSA", "Red Vial|MSA", "UATRE|MSA", "Inmobiliario|PAM"].sort().join(" · ") && inm?.templates.length === 2, "A-FEAT-1320")
+    chequear("Planilla impuestos", "Pagado (conciliado + pagado + anterior) / adeudado (sin pagar vencido al 23/10) / futuro; febrero tiene las dos cuotas del inmobiliario",
+      "pagado 250 · adeudado 110 · futuro 120 · total 480 · feb 2", `pagado ${inm?.pagado} · adeudado ${inm?.adeudado} · futuro ${inm?.futuro} · total ${inm?.total} · feb ${inm?.meses[1].length}`,
+      inm?.pagado === 250 && inm?.adeudado === 110 && inm?.futuro === 120 && inm?.total === 480 && inm?.meses[1].length === 2, "A-FEAT-1320")
+    chequear("Planilla impuestos", "Totales por empresa y generales; el control (meses = total) cierra; los años con datos incluyen 2025 para las flechas",
+      "MSA 550 · PAM 70 · total 620 · control ok · años 2025,2026",
+      `MSA ${p.porEmpresa.find(e => e.empresa === "MSA")?.total} · PAM ${p.porEmpresa.find(e => e.empresa === "PAM")?.total} · total ${p.totales.total} · control ${p.control.cierra ? "ok" : "MAL"} · años ${p.aniosConDatos.join(",")}`,
+      p.porEmpresa.find(e => e.empresa === "MSA")?.total === 550 && p.porEmpresa.find(e => e.empresa === "PAM")?.total === 70 && p.totales.total === 620 && p.control.cierra && p.aniosConDatos.join(",") === "2025,2026", "A-FEAT-1320")
+    chequear("Planilla impuestos", "Nombre de la fila: por categ para los de partida/vehículo; por nombre sin «Cuota»/«Anual» para el resto",
+      "Inmobiliario Complementario · Automotores · IIBB Mensual MSA · Autonomos MA",
+      [impuestoDeTemplate(tpl("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario")), impuestoDeTemplate(tpl("Imp Automotores Gol 2012 Anual", "Impuesto Automotores")),
+        impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")), impuestoDeTemplate(tpl("Autonomos MA", "Impuestos Laborales ARCA"))].join(" · "),
+      impuestoDeTemplate(tpl("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario")) === "Inmobiliario Complementario"
+        && impuestoDeTemplate(tpl("Imp Automotores Gol 2012 Anual", "Impuesto Automotores")) === "Automotores"
+        && impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")) === "IIBB Mensual MSA", "A-FEAT-1320")
+    // Se guarda la lista COMPLETA de lo que se veía al soltar (ver `soltar` en la planilla).
+    const ord = ordenarFilas(p.filas, ["UATRE|MSA", "ya-no-existe", "Inmobiliario|PAM", "Inmobiliario|MSA", "Red Vial|MSA"]).map(f => f.clave)
+    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
+      "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
+      ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
   }
 
   return r
