@@ -22,6 +22,8 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
+import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { format } from "date-fns"
 import { TemplateTestSuite } from "@/components/template-test-suite"
 import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
@@ -964,8 +966,7 @@ export function VistaTemplatesEgresos() {
         .from('cuotas_egresos_sin_factura')
         .insert({
           egreso_id: templateSeleccionado,
-          fecha_estimada: nuevaCuota.fecha,
-          fecha_vencimiento: nuevaCuota.fecha,
+          ...fechasDePagoManual(nuevaCuota.fecha),   // A-BUG-1325: es la fecha de PAGO, no el vencimiento
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           // 🪪 A-FEAT-138 — lo que el usuario escribe va a `detalle`; la etiqueta se genera.
           detalle: descripcionFinal,
@@ -2181,6 +2182,7 @@ export function VistaTemplatesEgresos() {
               }
             </DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="templates/pago-manual" pantalla="templates" />
 
           {/* Paso 1: Seleccionar template */}
           {pasoModal === 'seleccionar' && (
@@ -2286,7 +2288,7 @@ export function VistaTemplatesEgresos() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fecha-pago">Fecha</Label>
+                <Label htmlFor="fecha-pago">Fecha de pago</Label>
                 <Input
                   id="fecha-pago"
                   type="date"

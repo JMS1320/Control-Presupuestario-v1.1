@@ -57,7 +57,8 @@ import { Loader2, Receipt, Calendar, TrendingUp, TrendingDown, DollarSign, Filte
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
-import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
 import { ModalValidarCateg } from "./modal-validar-categ"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -1653,19 +1654,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Filtro rápido por búsqueda (client-side, siempre activo)
   const datosConBusqueda = busquedaRapida.trim()
     ? datosPorMedio.filter(fila => {
-        const q = normalizarBusqueda(busquedaRapida).replace(/\./g, '')
         const normalizarMonto = (n: number) => n > 0
           ? n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\./g, '')
           : ''
+        // A-FEAT-1324: por palabras, no por frase — «red vial rojas» encuentra «Red Vial Cuota Rojas».
         return (
-          normalizarBusqueda(fila.nombre_proveedor).includes(q) ||
-          normalizarBusqueda(fila.cuit_proveedor).includes(q) ||
-          normalizarBusqueda(fila.categ).includes(q) ||
-          normalizarBusqueda(fila.detalle).includes(q) ||
-          normalizarBusqueda(fila.comprobante_display || '').includes(q) ||
-          coincideNumeroComprobante(fila, busquedaRapida) ||   // A-FEAT-170: buscar por número
-          normalizarMonto(fila.debitos).includes(q) ||
-          normalizarMonto(fila.creditos).includes(q)
+          coincidePorPalabras([
+            fila.nombre_proveedor, fila.cuit_proveedor, fila.categ, fila.detalle,
+            fila.comprobante_display || '', normalizarMonto(fila.debitos), normalizarMonto(fila.creditos),
+          ], busquedaRapida) ||
+          coincideNumeroComprobante(fila, busquedaRapida)      // A-FEAT-170: buscar por número
         )
       })
     : datosPorMedio
@@ -2483,8 +2481,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         .from('cuotas_egresos_sin_factura')
         .insert({
           egreso_id: templateSeleccionado,
-          fecha_estimada: nuevaCuota.fecha,
-          fecha_vencimiento: nuevaCuota.fecha,
+          ...fechasDePagoManual(nuevaCuota.fecha),   // A-BUG-1325: es la fecha de PAGO, no el vencimiento
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           descripcion: descripcionFinal,
           estado: nuevaCuota.estado || 'pendiente',
@@ -5389,11 +5386,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           {pasoModal === 'seleccionar' && (() => {
             const matchTemplate = (t: typeof templatesAbiertos[number]) => {
               if (!busquedaTemplatesPM.trim()) return true
-              const q = normalizarBusqueda(busquedaTemplatesPM)
-              const texto = normalizarBusqueda(
-                `${t.nombre_referencia} ${t.categ || ''} ${t.cuenta_agrupadora || ''} ${t.responsable || ''}`
-              )
-              return texto.includes(q)
+              // A-FEAT-1324: por palabras, como el buscador de la grilla
+              return coincidePorPalabras([t.nombre_referencia, t.categ, t.cuenta_agrupadora, t.responsable], busquedaTemplatesPM)
             }
             const templatesUso = templatesAbiertos.filter(t => !t.solo_conciliacion && matchTemplate(t))
             const templatesBancarios = templatesAbiertos.filter(t => t.solo_conciliacion && matchTemplate(t))
@@ -5551,7 +5545,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               })()}
 
               <div className="space-y-2">
-                <Label htmlFor="fecha-pago-cf">Fecha</Label>
+                <Label htmlFor="fecha-pago-cf">Fecha de pago</Label>
                 <Input
                   id="fecha-pago-cf"
                   type="date"

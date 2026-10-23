@@ -62,6 +62,8 @@ import {
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
 import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
+import { coincidePorPalabras } from "@/lib/normalizar-texto"
+import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -7863,6 +7865,26 @@ export function correrCasos(): Resultado[] {
     chequear("Impuestos", "Días de aviso: «15 dias antes» → 15 · vacío → 10 · y el vencido dice hace cuántos días",
       "15 · 10 · -11", `${diasDeAviso("15 dias antes")} · ${diasDeAviso(null)} · ${r.vencidos.find(x => x.id === "vencido")?.dias}`,
       diasDeAviso("15 dias antes") === 15 && diasDeAviso(null) === 10 && r.vencidos.find(x => x.id === "vencido")?.dias === -11, "A-FEAT-1319")
+  }
+
+  // ══ 🔎 BUSCADOR DEL CASH FLOW POR PALABRAS (A-FEAT-1324) ═══════════════════════════════════
+  {
+    const fila = ["Red Vial Cuota Rojas", "Municipalidad de Rojas", "Impuesto Red Vial", "1234567,89"]
+    const b = (q: string) => coincidePorPalabras(fila, q)
+    chequear("Buscador", "«red vial rojas» encuentra «Red Vial Cuota Rojas» (palabras en cualquier orden y con otras en el medio); también sin tildes y con mayúsculas",
+      "true · true · true", `${b("red vial rojas")} · ${b("ROJAS vial")} · ${b("munícipalidad")}`,
+      b("red vial rojas") && b("ROJAS vial") && b("munícipalidad"), "A-FEAT-1324")
+    chequear("Buscador", "Si UNA palabra no está en ningún campo, no aparece; el monto con puntos de miles sigue encontrándose; búsqueda vacía = todo",
+      "false · true · true", `${b("red vial salto")} · ${b("1.234.567,89")} · ${b("   ")}`,
+      !b("red vial salto") && b("1.234.567,89") && b("   "), "A-FEAT-1324")
+  }
+
+  // ══ 📅 PAGO MANUAL: LA FECHA ES DE PAGO, NO DE VENCIMIENTO (A-BUG-1325) ═══════════════════════
+  {
+    const f = fechasDePagoManual("2026-10-23")
+    chequear("Pago manual", "La fecha del modal va a «fecha de pago» (y a la estimada, que ordena el Cash Flow); el vencimiento queda vacío",
+      "pago 2026-10-23 · estimada 2026-10-23 · venc null", `pago ${f.fecha_pago} · estimada ${f.fecha_estimada} · venc ${f.fecha_vencimiento}`,
+      f.fecha_pago === "2026-10-23" && f.fecha_estimada === "2026-10-23" && f.fecha_vencimiento === null, "A-BUG-1325")
   }
 
   return r
