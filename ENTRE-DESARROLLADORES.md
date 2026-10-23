@@ -79,6 +79,10 @@ Para [A-FEAT-1309](PENDIENTES.md#a-feat-1309) (rama `jms/polizas-seguro`): el le
 `egresos.facturas-msa`, lectura no restringida). RLS con `puede_ver` / `puede_escribir`, nada a `anon` (verificado: 401).
 ⚠️ **Este aviso llega DESPUÉS de aplicarlo** — la regla pide antes y se nos pasó. Si choca con algo tuyo de permisos,
 avisá y se ajusta; el deshacer es `scripts/89-polizas-seguro-deshacer.sql`.
+🔀 **23/10: el código ya está en `desarrollo`** (`jms/polizas-seguro` + `jms/alerta-impuestos`). Lo que toca tu territorio: un
+recurso nuevo **`egresos.seguros`** en `lib/auth/recursos.ts` (la 5ª pestaña de Egresos; `npm run verificar:recursos` OK)
+y el aviso de impuestos de Principal, que **sólo lee** `cuotas_egresos_sin_factura` + `egresos_sin_factura` con la sesión
+del usuario (sin service key, sin tablas nuevas).
 
 📌 Borrá esta entrada cuando la leas.
 
