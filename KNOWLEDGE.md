@@ -218,6 +218,7 @@ positivos; (3) pedía el `return` en la misma línea del `if`, así que **no vio
 - **Aplicar al final de todo pierde todo si se corta.** Se decide y vincula cada factura apenas se leyeron sus carpetas (desde el 22/10: la imputada, sólo la de su subdiario; la sin imputar, su mes y el siguiente): la regla de «dos candidatos → ninguno» se sigue cumpliendo.
 - **Apps Script no agrega la firma de Gmail** (ni a borradores ni a envíos). Para el pedido al proveedor la firma va escrita en el texto (`FIRMA_PEDIDO`).
 - **«Ilegible» no es «no coincide».** Un PDF del mail del proveedor que se leyó bien pero es otro número se informaba como «ilegible» (Massaglia 2-484). Se distingue por si se leyó el CUIT.
+- **Sacar todos los espacios para «limpiar» el OCR pega renglones** *(2026-10-23)*. La regla de la fecha quitaba todo espacio para tolerar «05 / 03 / 2026», y en Río Tala el renglón del período («03/2026») quedaba pegado a la emisión («02/03/2026») → «03/202602/03/2026»: la fecha tenía un dígito adelante y no contaba. Se juntan sólo los espacios **alrededor** del separador. Mismo día: el número **4+4 pegado** («00132220» = 0013-2220) y la fecha **pegada a la hora** («30-03-2617:27:56»). Los tres con el texto real guardado en el registro del archivo digital — **para un hueco de la regla, el caso sale de ahí**.
 - **MCP de Supabase en read-only**: cambiar `.mcp.json` no alcanza — la conexión abierta no lo relee hasta `/mcp` → Reconnect, y eso lo hace el usuario. Volverlo a `--read-only` después y reconectar.
 
 ## ⚠️ **REGLA IMPORTANTE NUEVA ETAPA:**
