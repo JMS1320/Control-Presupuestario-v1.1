@@ -12,6 +12,7 @@ import { ModalPendientes } from "./modal-pendientes"
 import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertaEcheqsEnFecha } from "./alerta-echeqs-en-fecha"
+import { AlertaImpuestos } from "./alerta-impuestos"
 import { AlertasFcVenta } from "./alertas-fc-venta"
 import { PanelRevisiones } from "./panel-revisiones"
 import { PanelPruebas } from "./panel-pruebas"
@@ -175,6 +176,10 @@ export function VistaPrincipal() {
           sola. Cada elemento tiene que ganarse el lugar; estos dos no lo hacían, y ocupaban ~90px
           de alto arriba de todo, que es el lugar más caro de la pantalla. */}
       <h1 className="titulo-pantalla text-gray-900">Principal</h1>
+
+      {/* 🧾 Impuestos vencidos sin pagar o por vencer (A-FEAT-1319). Primero y arriba de todo, a pedido
+          del usuario: «el primer warning, más a la vista». */}
+      <AlertaImpuestos />
 
       {/* Barra superior con IPC */}
       <div className="flex items-center gap-4 mb-8">

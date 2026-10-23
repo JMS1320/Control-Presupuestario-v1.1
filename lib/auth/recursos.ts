@@ -66,6 +66,8 @@ export const RECURSOS: Recurso[] = [
   { id: "egresos.facturas-pam", seccion: "egresos", etiqueta: "Facturas PAM",        tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.facturas-ma",  seccion: "egresos", etiqueta: "Facturas MA",         tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.templates",    seccion: "egresos", etiqueta: "Egresos sin Factura", tipo: "pestana", archivo: EGRESOS },
+  // A-FEAT-1309: pólizas de seguro y el control «¿tenemos todas?» contra el extracto.
+  { id: "egresos.seguros",      seccion: "egresos", etiqueta: "Seguros",             tipo: "pestana", archivo: EGRESOS },
 
   // ── Extracto Bancario ────────────────────────────────────────────────────────────────────
   { id: "extracto.movimientos", seccion: "extracto", etiqueta: "Movimientos", tipo: "pestana", archivo: EXTRACTO },

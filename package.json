@@ -14,6 +14,7 @@
     "verificar-hooks": "npx tsx scripts/verificar-hooks.mts",
     "probar:romaneo": "node --experimental-strip-types scripts/probar-romaneo.mts",
     "probar:boletas": "node --experimental-strip-types scripts/probar-boletas.mts",
+    "probar:polizas": "node --experimental-strip-types scripts/probar-polizas.mts",
     "probar:arba": "node --experimental-strip-types scripts/probar-arba-descarga.mts",
     "probar:coincidencia": "node --experimental-strip-types scripts/probar-coincidencia-fc.mts",
     "probar:mag": "node --experimental-strip-types scripts/probar-mag.mts",

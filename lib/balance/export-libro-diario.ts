@@ -34,11 +34,12 @@ import type {
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
+import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import type { TemplatesDelEjercicio } from "./templates-libro"
+import type { TemplatesDelEjercicio, CuotaTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
@@ -413,7 +414,11 @@ const COLS_POR_CUENTA: Columna[] = [
  * 🧮 **Y abajo van los tres bloques de lo que NO se pudo determinar**, con sus totales. No son un
  * apéndice: son la parte que dice hasta dónde llega lo que el papel afirma.
  */
-function hojaDeCuentas(c: CuentasAlCierre, titulo: string, fechaCierre: string): unknown[][] {
+function hojaDeCuentas(
+  c: CuentasAlCierre, titulo: string, fechaCierre: string,
+  /** 💳 Sólo en «a pagar»: las cuotas de templates impagas al cierre (A-BUG-1289). */
+  templatesImpagos?: { cuotas: CuotaTemplate[]; total: number },
+): unknown[][] {
   const f: unknown[][] = []
   f.push([titulo])
   f.push([`Al ${fechaCierre}`])
@@ -447,6 +452,26 @@ function hojaDeCuentas(c: CuentasAlCierre, titulo: string, fechaCierre: string):
     ])
   } else {
     f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "", 0])
+  }
+  /**
+   * 💳 **Las cuotas de templates impagas: deuda igual que las facturas** (usuario 2026-10-18). Van en
+   * su propio bloque —no tienen tipo, punto de venta ni CUIT— y el TOTAL DEUDA suma los dos con fórmula.
+   */
+  if (templatesImpagos && templatesImpagos.cuotas.length > 0) {
+    const nTotFacturas = f.length
+    f.push([])
+    f.push(["CUOTAS DE TEMPLATES IMPAGAS AL CIERRE — son deuda igual que las facturas"])
+    const d = f.length + 1
+    for (const q of templatesImpagos.cuotas) {
+      f.push(["Template", q.fecha ?? "", "", "", "", "", `${q.concepto}${q.proveedor ? " — " + q.proveedor : ""}`,
+        "", "", "", "", "", money(q.monto), q.categ, q.estado, "", "no se pagó (cuota de template)"])
+    }
+    const h = f.length
+    const nTotTpl = f.length + 1
+    f.push(["", "", "", "", "", "", "TOTAL TEMPLATES", "", "", "", "", "",
+      conFormula(`SUM(M${d}:M${h})`, templatesImpagos.total)])
+    f.push(["", "", "", "", "", "", "TOTAL DEUDA AL CIERRE (facturas + templates)", "", "", "", "", "",
+      conFormula(`M${nTotFacturas}+M${nTotTpl}`, Math.round((c.total + templatesImpagos.total) * 100) / 100)])
   }
   f.push([])
 
@@ -1397,6 +1422,23 @@ function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
   }
   f.push([])
   f.push(["TOTAL", "", "", "", "", "", "", "", "", money(t.totalDebitos), money(t.totalCreditos)])
+  // 💳 A-BUG-1289: las impagas están en el total (vencieron en el ejercicio) y además son deuda.
+  if (t.impagasAlCierre.length > 0) {
+    f.push([])
+    f.push([`IMPAGAS AL CIERRE: ${t.impagasAlCierre.length} cuota(s) por ${money(t.totalImpagas)}. Estan en el total`])
+    f.push(["de arriba (son gasto del ejercicio) y ademas figuran como deuda en «04 Cuentas a pagar»."])
+  }
+  // 🛑 A-BUG-1289: las desactivadas NO son gasto, pero se listan — nada se descarta en silencio.
+  if (t.noIncluidas.length > 0) {
+    f.push([])
+    f.push([`NO INCLUIDAS — ${t.noIncluidas.length} cuota(s) DESACTIVADAS por ${money(t.totalNoIncluidas)}`])
+    f.push(["No son gasto: se eligio la otra forma de pago (ej. en cuotas en vez de anual) y su importe"])
+    f.push(["suele ser una estimacion. No estan en el total de arriba."])
+    for (const c of t.noIncluidas) {
+      f.push([c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
+        c.centro_costo, c.responsable, c.estado, money(c.monto), ""])
+    }
+  }
   return f
 }
 
@@ -1765,6 +1807,8 @@ export function armarWorkbook(
   cuentasCorrientes?: PapelDeCuentasCorrientes,
   /** 📌 Los pendientes a revisar que anotó el usuario en la pantalla (A-FEAT-1258). */
   pendientes?: PendienteBalance[],
+  /** ✍️ Los saldos del ejercicio anterior: gasto de este ejercicio (A-FEAT-1207). */
+  saldosAnteriores?: SaldosAnteriores,
   /** 📒 Las facturas de «Asientos Contables» del ejercicio (A-FEAT-1318). */
   asientosContables?: AsientoLibroDiario[],
 ): XLSX.WorkBook {
@@ -1813,7 +1857,9 @@ export function armarWorkbook(
   if (cuentas?.pagar) {
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
-        libro.ejercicio.fechaCierre), COLS_CUENTAS)
+        libro.ejercicio.fechaCierre,
+        templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined),
+      COLS_CUENTAS)
   }
   if (cuentas?.cheques) {
     hoja(wb, "04.1 Cheques dados",
@@ -1855,6 +1901,17 @@ export function armarWorkbook(
     hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
       COLS_TEMPLATES_POR_MES(templates.columnas.length))
+  }
+  // ✍️ A-FEAT-1207 — va pegada a los templates: es gasto del ejercicio que no viene de una cuota.
+  if (saldosAnteriores && (saldosAnteriores.vigentes.length > 0 || saldosAnteriores.anulados.length > 0)) {
+    const filas = hojaDeSaldosAnteriores(saldosAnteriores, libro.ejercicio.etiqueta)
+    if (templates) {
+      filas.push([])
+      filas.push(["GASTO DE TEMPLATES DEL EJERCICIO", "cuotas (solapa Templates, neto)", money(templates.totalDebitos - templates.totalCreditos)])
+      filas.push(["", "+ saldos del ejercicio anterior", saldosAnteriores.total])
+      filas.push(["", "= total", money(templates.totalDebitos - templates.totalCreditos + saldosAnteriores.total)])
+    }
+    hoja(wb, "Saldos ej. anterior", filas)
   }
   if (hacienda) {
     hoja(wb, "02 Hacienda",
@@ -1916,10 +1973,11 @@ export function descargarLibroDiario(
   sueldos?: Parameters<typeof armarWorkbook>[8],
   cuentasCorrientes?: Parameters<typeof armarWorkbook>[9],
   pendientes?: PendienteBalance[],
+  saldosAnteriores?: SaldosAnteriores,
   asientosContables?: AsientoLibroDiario[],
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, asientosContables)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

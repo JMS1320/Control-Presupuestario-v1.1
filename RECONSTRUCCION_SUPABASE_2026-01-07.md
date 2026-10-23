@@ -3323,6 +3323,36 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-20 · `cuotas_egresos_sin_factura.monto_usd` + `tipo_cambio` — consumos USD de la tarjeta (A-FEAT-1312) — ✅ CORRIDO 2026-10-20 con JMS (verificado con `explain update`)
+
+`scripts/91-cuotas-usd-tc.sql` (+ `-deshacer`): `add column monto_usd numeric(15,2)`, `add column tipo_cambio numeric(15,4)`, las dos nullable, con comentario. Aditivo: no toca filas, RLS ni GRANTs; ninguna vista lista la tabla por columnas.
+
+### 2026-10-20 · Pólizas de seguro — 5 tablas nuevas (A-FEAT-1309) — ✅ CORRIDO 2026-10-20 con JMS (vía API de administración; el MCP estaba en read-only)
+
+`scripts/89-polizas-seguro.sql` (+ `-deshacer`, borra las 5 tablas): `polizas_seguro` (póliza, aseguradora, ramo,
+vigencia, póliza anterior; único `(aseguradora, poliza)`) → `polizas_endosos` (endoso = comprobante; `lectura` jsonb =
+la huella cruda, `correcciones` jsonb, `controles`, `comprobante_arca_id` + `comprobante_schema` sin FK; único
+`(poliza_id, endoso)`) → `polizas_cuotas` (plan de cada endoso) y `polizas_bienes` (vehículo por patente / persona por
+DNI, prima, movimiento alta/baja/activa); más `polizas_responsables` (pk `clave` = patente o DNI; responsable contable
+e interno; 5 filas iniciales dichas por el usuario). RLS `puede_ver`/`puede_escribir`, nada a `anon`, `authenticated`
+select/insert/update/delete; `recurso_tablas` → `egresos.facturas-msa`. Verificado: 5 tablas con RLS y 2 políticas,
+anon 401, service 200, 5 responsables.
+
+### 2026-10-20 · `public.detalles_por_proveedor` — detalle fijo por proveedor (A-FEAT-1296) — ✅ CORRIDO 2026-10-20 con JMS (verificado: 8 columnas)
+
+`scripts/88-detalles-por-proveedor.sql` (+ `-deshacer`): tabla `(id uuid pk, cuit text, detalle text, monto_referencia numeric(16,2), activo boolean, creado_por text, created_at, updated_at)`, índice único `(cuit, lower(detalle))`, RLS `puede_ver`/`puede_escribir`, registrada en `recurso_tablas` (recurso «extracto»). Varios renglones por CUIT = varios suministros; se elige por monto (±30 %).
+
+### 2026-10-19 · `reglas_conciliacion.template_id` — la regla elige el template (A-FEAT-1293) — ✅ CORRIDO 2026-10-19 con JMS (verificado: columna uuid nullable, 72 reglas en null)
+
+`scripts/87-reglas-template.sql` (+ `-deshacer`):
+
+```sql
+alter table public.reglas_conciliacion
+  add column if not exists template_id uuid references public.egresos_sin_factura(id) on delete set null;
+```
+
+Null = regla vieja (va por `categ` + empresa, como siempre). Con valor, el motor carga en ese template o en el de su familia (nombre + responsable) cuya campaña corresponde a la fecha del movimiento (`lib/conciliacion/template-de-regla.ts`).
+
 ### 2026-09-30 · `sueldos.periodos.cuota_alimentaria` + su vista (A-FEAT-1213)
 
 ```sql
@@ -12817,6 +12847,22 @@ venta, cuentas con %) al lado de lo que dejó el usuario. Forma: `HuellaLiq` en 
 Sólo MSA. Verificado: MSA 59 → **60** columnas, PAM y MA en 53; escritura probada con `EXPLAIN UPDATE` como
 `authenticated`, sin escribir datos.
 
+### 2026-10-18 · `public.ajustes_balance` — A-FEAT-1207, versión chica (✅ corrido 2026-10-18)
+
+Script `scripts/86-ajustes-balance.sql` (deshacer: `86-…-deshacer.sql`, borra la tabla). Tabla nueva para los ajustes
+del balance; hoy se usa sólo `accion = 'saldo_anterior'` (lo que el balance anterior dejó para tomar como gasto en
+éste). Motivo obligatorio (check), un ajuste se **anula** (`anulado_at` + `anulado_motivo`), no se borra. RLS con
+`puede_ver` / `puede_escribir`, nada a `anon`, `authenticated` select/insert/update; `recurso_tablas` → `extracto`
+con lectura restringida (igual que `balance_pendientes`). Corrido vía MCP con el usuario presente; verificado: RLS
+activa, 2 políticas, 1 fila en `recurso_tablas`. Primeras 3 filas: MSA 2026, $7.115.206,05. Avisado a Javier.
+
+### 2026-10-15 · estado «historico» en `public.msa_galicia` — A-DEC-1009 (✅ corrido 2026-10-15)
+
+Script `scripts/85-extracto-estado-historico.sql` (deshacer: `85-…-deshacer.sql`, falla si quedó alguna fila
+«historico»). Sólo amplía el check `msa_galicia_estado_check`: conciliado / pendiente / auditar (+ mayúsculas)
+**+ `historico`**. Es el estado del extracto jul-2025 → ene-2026 cargado sin clasificar (A-DAT-68): no entra
+al motor (que toma sólo `pendiente`) ni a ningún número (sin `categ`). Aditivo, no toca filas.
+
 ### 2026-10-14 · Cobros y retenciones recibidas para PAM y MA — A-FEAT-1219 · A-FEAT-24
 
 Script `scripts/84-cobros-pam-ma.sql` (deshacer: `84-…-deshacer.sql`, frena si ya hay certificados o cobros
@@ -12889,6 +12935,16 @@ Script `scripts/78-moneda-compras-insumos.sql` (deshacer: `78-moneda-compras-ins
 `costo_unitario` **sigue en pesos** (lo leen consumo, margen y el panel de entregas); las columnas nuevas
 guardan el original y el TC, que se cargan al vincular la factura. Sin vistas (la tabla se expone directa).
 Verificado con `EXPLAIN UPDATE` sobre las tres columnas, sin escribir datos. Avisado a Javier antes.
+
+### 2026-10-03 · EL PAGO DE LA TARJETA ATADO A SU RESUMEN (`nro_resumen` en los extractos) — A-DEC-1002
+
+```sql
+ALTER TABLE public.msa_galicia    ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE public.pam_galicia    ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE public.pam_galicia_cc ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+ALTER TABLE ma.ma_galicia         ADD COLUMN IF NOT EXISTS nro_resumen varchar(30);
+```
+Script `scripts/77-pago-de-resumen-tarjeta.sql` (deshacer: `-deshacer.sql`). Avisado a Javier antes. Verificado con `EXPLAIN UPDATE` como `authenticated`.
 
 ### 2026-10-03 · EL BALANCE PROPIO (`public.balance_fotos` + `public.balance_foto_valores`) — A-FEAT-1190
 

@@ -120,7 +120,8 @@ export function pareceDetalleAutogenerado(
   const antes = d.slice(0, d.length - e.length).trim().replace(/[-–—·|]+$/, '').trim()
   // Lo que queda adelante tiene que ser sólo la etiqueta del comprobante: `FC 482`, `T82 12800`.
   // `FC 482`, `NC 15`, `T82 12800` — la abreviatura puede traer dígitos pegados (`T82`).
-  if (!/^[A-Za-z]{1,3}\d{0,4}(\s+\d+)?$/.test(antes)) return false
+  // A-BUG-1304: también la variante larga del importador, «Factura 1-195585 - EMISOR» (Coopser).
+  if (!/^[A-Za-z]{1,3}\d{0,4}(\s+\d+)?$/.test(antes) && !/^(factura|nota de cr[eé]dito|nota de d[eé]bito)\s+\d+-\d+$/i.test(antes)) return false
   // Y si se sabe el número, que sea ése.
   if (numero != null && String(numero).trim() && !antes.includes(String(numero).trim())) return false
   return true

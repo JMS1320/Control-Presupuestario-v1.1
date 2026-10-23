@@ -44,6 +44,7 @@
 - [💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*](#cash-flow-pagos-pagar-un-lote-nuevo-2026-08-10-sin-testear)
 - [📒 Reportes → Papeles de trabajo del balance *(2026-09-28)*](#reportes-papeles-de-trabajo-del-balance-2026-09-28)
 - [📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*](#reportes-balance-propio-activo-menos-pasivo-2026-10-03)
+- [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
@@ -1168,6 +1169,81 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.
+
+### 📨 El estado de un mes: Imputado → Enviado al contador → DDJJ OK *(Compras y Ventas)*
+
+Cada factura del subdiario tiene un **Estado DDJJ**. Vale igual en **Egresos → Subdiarios** (Compras) y
+en **Ingresos → Subdiarios** (Ventas):
+
+| Estado | Qué significa | Quién puede moverla |
+|---|---|---|
+| **No** | sin imputar a ningún mes | cualquiera |
+| **Imputado** | está en el subdiario de un mes, que todavía estás armando | cualquiera |
+| **📨 Enviado** | ya le mandaste ese mes al contador | **sólo vos (admin), con advertencia** |
+| **DDJJ OK** | el contador te avisó que lo presentó | **sólo vos (admin), con advertencia** |
+
+**Cuando le mandás el subdiario al contador:** abrí el mes y apretá **📨 Marcar enviado al contador**.
+Las facturas «Imputado» del mes pasan a «Enviado».
+
+**Cuando el contador te avisa que lo presentó:** apretá **✅ Confirmar DDJJ**. Pasa todo lo «Imputado» y
+lo «Enviado» del mes a «DDJJ OK».
+
+**Para no tener que acordarte:** arriba de Subdiarios está el tablero **🗓️ Estado de los meses**,
+con cada mes y su estado: 📝 amarillo = imputado, 📨 azul = enviado al contador, ✅ verde = DDJJ OK.
+Un **+N** naranja al lado del mes avisa que tiene N comprobantes imputados **después** de enviarlo
+(hay que mandárselos al contador). Abajo dice cuántos meses enviados te faltan confirmar. Tocás el
+mes y se abre (en Ventas, después apretás *Consultar período*).
+
+**Qué pasa si querés cambiar algo de un mes enviado o presentado** —sacar una factura, pasarla a otro
+mes, imputar una que llegó tarde, editarla o borrarla—: la app te avisa con un cartel y te pregunta si
+seguís. Si seguís, acordate de avisarle al contador. El rol contable (Ulises) no puede: le aparece un
+candado.
+
+Una factura que imputás tarde a un mes ya enviado queda en «Imputado» (no «Enviado»): así se ve cuál
+le falta mandar. Volvé a apretar **📨 Marcar enviado** cuando se la mandes.
+
+**Para sacar una factura de un mes (desimputar), en Compras:** **🔧 Gestionar Facturas** → marcás las facturas →
+**Estado DDJJ = «No»** → **✅ Aplicar Cambios**. El período se borra solo: dejá *Período* en «Sin
+cambios» (si elegís un mes ahí, la vuelve a dejar imputada a ese mes).
+
+⚠️ Sin probar todavía → A-TEST-1220
+
+### 📤 Archivos para ARCA — el Libro IVA Compras para importar en IVA Simple *(sólo MSA)*
+
+**Para qué sirve.** Para cargar en **IVA Simple** (Portal IVA) las facturas del mes **de una vez**, con un
+archivo, en vez de una por una. Sirve sobre todo para lo que ARCA no trae solo: los tickets, lo
+imputado a otro mes que el de su fecha, lo cargado a mano.
+
+**Dónde:** Egresos → Facturas → **Subdiarios** → *Consultar período* → elegís el período → botón
+**📤 Archivos para ARCA**, debajo de *📊 Generar PDF + Excel*. Sólo aparece en **MSA** (PAM y MA no
+están inscriptas en IVA).
+
+**Qué hace:**
+1. Toma **lo imputado a ese mes** en el subdiario: las mismas facturas que el PDF y el Excel.
+2. Te muestra el **control**: lo que dice el archivo contra lo que dice el subdiario (comprobantes, total,
+   neto, IVA, no gravado, exento, otros tributos). Si cierra, ✓ verde. Si no cierra, **no deja descargar**:
+   sería un error de la app.
+3. Si hay comprobantes raros (un tipo 0, un IVA sin separar por alícuota, un total que no da la suma de
+   sus partes), los lista en amarillo. **Salen igual en el archivo**: es para que los mires.
+4. **📥 Descargar A y B** baja 4 archivos de texto a la carpeta que elijas:
+   - `ARCA COMPRAS AA-MM A - COMPROBANTES.txt` y `… A - ALICUOTAS.txt` → formato de 2023.
+   - `ARCA COMPRAS AA-MM B - COMPROBANTES.txt` y `… B - ALICUOTAS.txt` → con el campo nuevo de ARCA.
+
+**En IVA Simple:** Libro Compras → importar → subís el par de **comprobantes** y **alícuotas** de una
+versión, y elegís *«los importes están expresados en la moneda original del comprobante»*. Probá
+primero la **A**; si el portal se queja del largo de los renglones, usá la **B**.
+
+**Qué va en el archivo:** los datos tal como están en la app, sin tocarlos. *Otros tributos* va a *Otros
+tributos*; las Facturas C llevan sólo el total; el tipo de documento es siempre CUIT; las notas de
+crédito van en positivo (el tipo de comprobante ya dice que restan).
+
+**Si ARCA rechaza algunos:** te deja bajar un archivo de errores (`registros_con_errores_….csv`) con el
+número de renglón de cada uno. El rechazo más común es *«El comprobante ya fue declarado en otro
+período»*: ese comprobante **ya lo presentaste** en otro mes. Casi siempre quiere decir que en la app está
+**cargado dos veces** (por ejemplo, una vez a mano y otra traído de ARCA con otro tipo de comprobante). Buscalo
+por número en Facturas ARCA: si aparece dos veces, dejá la que vino de ARCA y borrá la cargada a mano.
+
+⚠️ Sin probar del todo → A-TEST-1216 *(el formato A ya lo aceptó ARCA el 19/10)*
 
 ### 🗂️ Archivo digital — vincular cada factura con su PDF ✅ *(reescrito 2026-09-03)*
 
@@ -2795,6 +2871,32 @@ en la solapa de **provisión**. No hay que marcar nada a mano.
 | **05 Provisión** | los que son del ejercicio por fecha pero entraron después |
 | **Sin subdiario** | los que no tienen período asignado. **Si tiene filas, hay que imputarlos** |
 
+### 🧾 Templates: qué cuotas cuentan como gasto y cuáles como deuda *(2026-10-18)*
+
+- **Las cuotas desactivadas no son gasto.** Cuando un impuesto se puede pagar anual o en cuotas y
+  elegiste una forma, la otra queda desactivada: el libro **no la suma** y la lista al pie de la
+  solapa **Templates**, bajo «NO INCLUIDAS», con su total.
+- **Las cuotas impagas del ejercicio son gasto y además deuda**, igual que una factura impaga: siguen
+  en el total de **Templates** y aparecen también en **04 Cuentas a pagar**, en el bloque «Cuotas de
+  templates impagas al cierre», con el **total deuda al cierre** (facturas + templates).
+- En la pantalla, el recuadro de templates dice cuántas quedaron afuera y cuántas son deuda.
+
+→ A-TEST-1218
+
+### ✍️ Saldos del ejercicio anterior *(2026-10-18)*
+
+Lo que el balance anterior dejó para tomar como gasto en éste. Ejemplo: el inmobiliario 2025 se pagó anual en
+abril; el balance 24/25 tomó la mitad y la otra mitad es gasto del 25/26.
+
+1. En el cuadro **«✍️ Saldos del ejercicio anterior»** (abajo de «Pendientes a revisar») apretá **+ Anotar un saldo**.
+2. Poné el **concepto**, el **importe** (con coma decimal), la **cuenta** del gasto y, si querés, el motivo
+   (por defecto: «Saldo que dejó el balance» del año anterior). **Anotar saldo.**
+3. Suma al gasto del ejercicio: el recuadro de templates lo dice, y el Excel trae la solapa **«Saldos ej. anterior»**
+   con el total y el **gasto de templates del ejercicio = cuotas + saldos**.
+4. Si te equivocaste, **anular** con un motivo: deja de sumar y queda listado como anulado.
+
+→ A-TEST-1219
+
 ### 🚦 Cuándo te frena y cuándo sólo te avisa
 
 **Te frena** —dice *«todavía no se puede entregar»*— sólo cuando el sistema **se contradice a sí
@@ -2896,6 +2998,48 @@ Al aplicar, se escribe en la cuota del template **sólo el monto y el vencimient
 app cuando quieras verificar un importe, sin salir a buscar el archivo.
 
 ⚠️ Sin probar todavía → A-TEST-1167
+
+## 💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*
+
+En **Extracto**, elegí la tarjeta (abajo, *Tarjetas de Crédito*). Arriba aparece un renglón por
+**resumen**, con su control y tres datos: **total** del resumen contra la **suma** de sus consumos,
+cuántos están **conciliados** (por ejemplo *conciliado 3/17*) y el estado del **pago**.
+
+1. **Importar** el PDF del resumen (como siempre). Importar no concilia: es otra acción.
+2. **Conciliar (N)** en el renglón del resumen: corre **el mismo motor que la cuenta corriente** —
+   primero contra lo que marcaste como pagado con tarjeta (facturas y cuotas en *crédito*), después
+   contra el resto: facturas, templates, anticipos, sueldos y reglas.
+3. **Tocá la fecha** del resumen y la tabla de abajo muestra **sólo ese resumen**: lo que quedó lo
+   asignás a mano con el mismo modal de siempre.
+4. **¿No está el template?** En el modal de asignar, solapa **Template**, apretá **+ Crear uno acá**:
+   elegís la cuenta del plan, confirmás el nombre (viene el del movimiento, por ejemplo *CHUBB
+   SEGUROS*) y queda creado y elegido. Vale igual para la cuenta corriente y las cajas.
+5. **Vincular pago**: si el débito «Pago Visa Empresa» de la cuenta corriente coincide con el total
+   del resumen, el renglón ofrece **Vincular pago**. Al apretarlo, el débito queda atado a ese resumen
+   y el «SU PAGO» del resumen siguiente se concilia contra él.
+
+**El estado del pago** dice: *✓ pagado* (total = débito = SU PAGO del siguiente), *⚠ pagado con
+diferencia* (pasando el mouse ves cuánto y contra qué), *pago encontrado — vincular*, *⚠ vencido, sin
+pago* o *por vencer*.
+
+⚠️ Sin probar todavía → A-TEST-1183
+
+**Varios resúmenes juntos.** Tildá la casilla de cada resumen que quieras: la tabla muestra sólo
+ésos y el **Conciliar** de arriba corre sobre todos juntos. **Quitar selección** o *Limpiar filtros* lo
+deshace. Después de conciliar podés escribir en **Buscar en descripción** para ir haciendo los
+parecidos de a tandas (por ejemplo «corredores»).
+
+**Consumos en dólares.** En la tabla se ven en **USD** (en verde), como en el resumen del banco; abajo
+dice «sin TC» hasta que tengan su cambio. Conciliá el consumo contra su template y después apretá
+**💵 Pesos de N en USD** en el renglón del resumen: toma el cambio real del pago (el débito en pesos ÷
+el «SU PAGO EN USD» del resumen siguiente) y lo guarda **en la cuota** — USD, TC y pesos. El extracto
+queda en dólares. En **Templates**, la grilla de cuotas muestra las columnas **USD** y **TC**.
+
+**Falta la campaña.** Si un movimiento queda en *auditar* con «Falta la campaña…», la fila ofrece
+**📅 Crear campaña**: crea la campaña que falta copiando la más reciente. Después volvé a correr
+**Conciliar**.
+
+⚠️ Sin probar todavía → A-FEAT-1310 (guía 0.f) · A-FEAT-1312 (guía 0.g) · A-BUG-1314 (guía 0.h)
 
 ## 📸 Reportes → Balance propio (activo menos pasivo) *(2026-10-03)*
 
@@ -3053,6 +3197,31 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 
 ⚠️ Sin probar todavía → A-TEST-1174
 
+
+## 🛡️ Egresos → Seguros *(2026-10-20)*
+
+Es el lugar para ver **las pólizas de seguro** y controlar que **estén todas cargadas**.
+
+**El cuadro de arriba — «¿Tenemos todas las pólizas?»** cruza las cuotas de las pólizas procesadas con los
+movimientos de Federación Patronal del extracto. Los movimientos se buscan por las **leyendas adicionales**
+(«FEDERACION PATRO»), así que aparecen **aunque no estén conciliados**. Lo que te marca:
+- **Débitos sin póliza** → Federación debitó algo que no es cuota de ninguna póliza cargada: **falta cargar una póliza**.
+- **Cuotas vencidas sin débito** → la cuota venció y no se debitó: o hubo un problema con el débito, o la póliza se dio de baja y falta la nota de crédito.
+- **Otro importe** → se debitó distinto de lo que dice la póliza: suele ser un endoso que no se cargó.
+- **Reintegros sin nota de crédito** → Federación devolvió plata que ninguna NC explica.
+
+Las **notas de crédito no se devuelven**: Federación las descuenta de las cuotas siguientes. Por eso una cuota
+sin débito puede estar bien («compensada con una NC»).
+
+**Abajo, las pólizas procesadas.** Tocando una se ven sus endosos (cada uno es un comprobante), lo asegurado
+(vehículos con su prima, personas con su alta o baja) y las cuotas con el **reparto** de cada una entre
+MSA, MA, PAM y JMS. Cada vehículo o persona tiene un **responsable contable** y uno **interno**: se cambian ahí
+mismo y valen para todas las pólizas donde aparezca (van por patente o DNI). Lo que no tiene responsable es de MSA.
+
+📌 Cómo entra una póliza: hoy se cargaron las del subdiario 25/26 y 26/27. Lo próximo es que la app la lea sola
+**al vincular el PDF a su factura** (espera el buscador de PDFs).
+
+→ A-TEST-1221
 
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
 
@@ -3687,6 +3856,21 @@ nota y en color cuando sí).
 de todo el extracto, no de las filas que entraron por el límite.
 
 ⚠️ Sin probar por vos todavía → `A-TEST-117`.
+
+## 📜 Extracto → los movimientos históricos *(2026-10-15)*
+
+El extracto de MSA de **julio 2025 a enero 2026** se carga entero como **histórico**, para tener la
+cadena de saldos y el saldo de inicio del ejercicio. Entra **sin clasificar**: sin categoría y sin
+códigos, con tu planilla (CATEG, detalle, contable, interno) en la nota del movimiento.
+
+- En **Filtros rápidos** aparece **«Históricos (n)»** cuando hay alguno: muestra sólo esos. Su estado
+  se ve como **«histórico»**, en gris.
+- **No entran en ningún número** (dashboard, papeles) hasta que se revisa su lote y se vinculan a su
+  cuota. **«Sin CATEG»** no los cuenta: no tener categoría es su estado normal hasta entonces.
+- Si reasignás un movimiento que estaba vinculado a una **cuota «anterior»**, la cuota **sigue
+  «anterior»**: no vuelve al Cash Flow.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1215`.
 
 ## ↕️ Extracto → sólo débitos o sólo créditos *(2026-10-01)*
 
@@ -5548,6 +5732,20 @@ Para que el **precio de cada compra** sea el real (el de la factura), con el des
 5. **Vincular**: el precio de cada compra pasa a ser el real, en pesos al TC, con el dólar guardado al lado; el pactado y el % quedan anotados en el vínculo. Si el insumo no tenía costo en el stock, toma éste.
 
 → A-TEST-1187
+
+### 🧾 Impuestos vencidos o por vencer (Principal) *(2026-10-21)*
+
+Es el **primer aviso de Principal**, arriba de todo. Muestra las cuotas de **impuestos** (los templates cuya
+cuenta agrupadora es «Impuestos …») que siguen **sin pagar** —en «pendiente» o «pagar»—:
+- 🛑 **en rojo, las vencidas**, con hace cuántos días venció cada una;
+- ⏰ **en amarillo, las que vencen pronto**. Cada impuesto avisa con la anticipación que tiene cargada su
+  template en *Alertas* («10 / 15 / 30 días antes»); si no tiene nada, 10 días.
+
+Si ya pagaste algo que aparece acá, **marcá la cuota como pagada** en *Egresos → Egresos sin Factura* y deja de
+aparecer. Las cuotas en «débito» (débito automático) se dan por pagadas. Si no hay nada vencido ni por vencer,
+queda una sola línea verde.
+
+→ A-TEST-1223
 
 ### 💱 NC esperadas por diferencia de cambio (Principal)
 

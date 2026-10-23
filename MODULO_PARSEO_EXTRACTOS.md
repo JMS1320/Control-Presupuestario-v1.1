@@ -289,6 +289,8 @@ exactamente la misma lógica que el importador, así que re-parsear algo bien im
 - **Nunca escribe en `concepto` ni en `observaciones_cliente`**, ni en los campos de la conciliación
   (`categ`, `detalle`, `contable`, `interno`, estado).
 
+⏳ **El formato 2025 del banco no tiene reglas** *(visto 2026-10-18, histórico PAM)*: en 2025 el Galicia escribía distinto (`DEB AUTOM DE SERV`, `ING BRUTOS S/ CRED`, sin puntos), así que de los 250 movimientos de la CA de PAM cargados como histórico ~200 quedaron **sin desglose** (grupo «Otros»). No se perdió nada: el texto entero está en `concepto`. Cuando haya reglas para esas formas, se re-parsean desde acá filtrando los históricos — el re-parseo no toca la conciliación. → [A-DEC-1010](PENDIENTES.md#a-dec-1010)
+
 ---
 
 ## 📊 Estado al 2026-09-25

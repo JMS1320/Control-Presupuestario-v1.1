@@ -42,8 +42,8 @@
 
 ### 🗃️ 3 tablas nuevas y columnas del buscador de PDFs (2026-10-21 → 23) — ✅ APLICADAS con JMS presente · ⚠️ aviso POSTERIOR
 
-Para [A-FEAT-1287](PENDIENTES.md#a-feat-1287) / [A-FEAT-1318](PENDIENTES.md#a-feat-1318) (rama `jms/facturas-gmail`, todavía
-sin mergear → [A-OP-25](PENDIENTES.md#a-op-25)). ⚠️ **Este aviso llega DESPUÉS de aplicarlos** — la regla pide antes y se nos
+Para [A-FEAT-1287](PENDIENTES.md#a-feat-1287) / [A-FEAT-1318](PENDIENTES.md#a-feat-1318) (rama `jms/facturas-gmail`, ✅ **mergeada
+a `desarrollo` el 23/10** → [A-OP-25](PENDIENTES.md#a-op-25): con esto te llega también el código que las usa). ⚠️ **Este aviso llega DESPUÉS de aplicarlos** — la regla pide antes y se nos
 pasó en las cuatro corridas.
 - `scripts/90` → **`public.arca_pdf_inventario`** y **`public.arca_pdf_barrido_tramo`** (lo ya leído de los reenvíos de mail).
 - `scripts/92` → **`public.arca_pdf_archivo_digital`** (cada PDF de las carpetas de Drive que se leyó, con su texto).
@@ -54,6 +54,28 @@ pasó en las cuatro corridas.
 23/10). **No tienen fila en `recurso_tablas`**, así que hoy las ve y escribe cualquier usuario con rol. Si querés que
 cuelguen de un recurso (¿el de facturas de egresos?), es tuyo decidirlo. **No toca ninguna tabla existente.** Cada script
 tiene su `-deshacer`.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🔐 Subdiarios de IVA: un estado nuevo y lo que el rol `contable` ya no puede hacer (2026-10-23)
+
+Entra a `desarrollo` con `jms/iva-archivo-arca` ([A-FEAT-1295](PENDIENTES.md#a-feat-1295)). **No toca la base**: ni
+estructura, ni RLS, ni roles, ni GRANTs. Lo que cambia es **lógica de la app según el rol**, y te lo aviso porque es tu terreno:
+- `ddjj_iva` (`comprobantes_arca` y `comprobantes_venta`) admite un valor nuevo, **`Enviado`** (no hay CHECK, así que no hizo falta script).
+- Sobre lo `Enviado` o `DDJJ OK`, **sólo `admin`** puede imputar, mover, editar o borrar (con advertencia). El rol **`contable`
+  queda bloqueado** (decisión de JMS). **Confirmar DDJJ de Compras pasa a ser sólo de `admin`** (antes lo podía cualquiera).
+- La regla vive en un solo lugar: `lib/subdiarios/estado-ddjj.ts` → `evaluarCambioDDJJ({ esAdmin })`; el `esAdmin` sale de
+  `userRole === 'admin'` como en el resto de la pantalla. Si tu modelo de permisos va a reemplazar ese chequeo, éste es un
+  lugar más para enchufarlo.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🔀 `desarrollo` avanzó 127 commits (2026-10-23) — trae los cambios de base de abajo
+
+Se mergeó `jms/dia-a-dia` → `desarrollo` (fast-forward hasta `b5be470`; `main` sin tocar). Los avisos 🗃️ del 15/10 al
+20/10 (scripts **85, 86, 87, 88 y 91**) ya estaban **aplicados en la base** antes del merge: con esto te llega también el
+código que los usa. Ninguno toca RLS de tablas existentes; las dos tablas nuevas (`ajustes_balance`,
+`detalles_por_proveedor`) tienen su fila en `recurso_tablas`. Si al traer `desarrollo` algo de permisos no te cierra, avisá.
 
 📌 Borrá esta entrada cuando la leas.
 
@@ -68,6 +90,71 @@ dejala.
 ➕ También se borró `vercel/react-server-components-cve-*` (la creó el bot de Vercel en enero para subir
 Next 15.2.4 → 15.2.8; la app ya está en 16.1.1). Y queda **sin mergear a propósito** `jms/vistas-seguras`:
 son tus scripts de A-SEC-12 (66/67), esperando tu evaluación.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Dos columnas nuevas en `public.cuotas_egresos_sin_factura` (2026-10-20) — ✅ APLICADAS el 20/10 con JMS presente
+
+Para [A-FEAT-1312](PENDIENTES.md#a-feat-1312) (rama `jms/tarjeta-conciliacion`): los consumos en dólares de la tarjeta
+guardan en la cuota el **original en USD y el tipo de cambio** del pago (el extracto queda en dólares, como el papel del
+banco). **Qué cambia**: `scripts/91` agrega **`monto_usd numeric(15,2)`** y **`tipo_cambio numeric(15,4)`**, las dos
+nullable. **No toca RLS, roles, GRANTs ni filas existentes**; ninguna vista lista la tabla por columnas. Se corre con JMS
+presente; hay `-deshacer`. Si tu modelo de permisos necesita otra cosa, avisá.
+
+### 🗃️ 5 tablas nuevas de PÓLIZAS (2026-10-20) — ✅ APLICADAS el 20/10 con JMS presente · ⚠️ aviso POSTERIOR
+
+Para [A-FEAT-1309](PENDIENTES.md#a-feat-1309) (rama `jms/polizas-seguro`): el lector de pólizas de seguro.
+`scripts/89-polizas-seguro.sql` crea `public.polizas_seguro`, `polizas_endosos`, `polizas_cuotas`, `polizas_bienes` y
+`polizas_responsables`. **No toca ninguna tabla existente** salvo 5 filas en `recurso_tablas` (recurso
+`egresos.facturas-msa`, lectura no restringida). RLS con `puede_ver` / `puede_escribir`, nada a `anon` (verificado: 401).
+⚠️ **Este aviso llega DESPUÉS de aplicarlo** — la regla pide antes y se nos pasó. Si choca con algo tuyo de permisos,
+avisá y se ajusta; el deshacer es `scripts/89-polizas-seguro-deshacer.sql`.
+🔀 **23/10: el código ya está en `desarrollo`** (`jms/polizas-seguro` + `jms/alerta-impuestos`). Lo que toca tu territorio: un
+recurso nuevo **`egresos.seguros`** en `lib/auth/recursos.ts` (la 5ª pestaña de Egresos; `npm run verificar:recursos` OK)
+y el aviso de impuestos de Principal, que **sólo lee** `cuotas_egresos_sin_factura` + `egresos_sin_factura` con la sesión
+del usuario (sin service key, sin tablas nuevas).
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Tabla nueva `public.detalles_por_proveedor` (2026-10-20) — ✅ APLICADA el 20/10 con JMS presente
+
+Para [A-FEAT-1296](PENDIENTES.md#a-feat-1296) (rama `jms/tarjeta-conciliacion`): el **detalle fijo por proveedor**
+que el usuario marca desde la conciliación (cuit, detalle, monto de referencia, activo). **Qué cambia**: `scripts/88`
+crea la tabla con RLS por `puede_ver` / `puede_escribir`, `revoke` a `anon`, `grant select, insert, update` a
+`authenticated`, y la registra en `recurso_tablas` con recurso **«extracto»** (`restringe_lectura = false`) — mismo
+patrón que `ajustes_balance` (script 86). No toca tablas ni filas existentes. Se corre con JMS presente; hay
+`-deshacer`. Si tu modelo de permisos necesita otra cosa, avisá antes.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Una columna nueva en `public.reglas_conciliacion` (2026-10-19) — ✅ APLICADA el 19/10 con JMS presente
+
+Para [A-FEAT-1293](PENDIENTES.md#a-feat-1293) (rama `jms/tarjeta-conciliacion`): la regla de conciliación pasa a elegir
+**el template**, no la cuenta (pedido de JMS). **Qué cambia**: `scripts/87` agrega **`template_id uuid` nullable** a
+`public.reglas_conciliacion`, con FK a `egresos_sin_factura(id) on delete set null`. **No toca RLS, roles, GRANTs ni
+filas existentes** (las reglas de hoy quedan con `null` y siguen funcionando por cuenta, como hasta ahora). Se corre
+con JMS presente; hay `-deshacer`. Si tu modelo de permisos mapea columnas o necesita algo para esto, avisá antes.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Tabla nueva `public.ajustes_balance` (2026-10-18) — aviso ANTES de aplicarla
+
+`scripts/86-ajustes-balance.sql` (+ `-deshacer`), para [A-FEAT-1207](PENDIENTES.md#a-feat-1207) en versión chica: los
+**saldos del ejercicio anterior** que el balance toma como gasto (rama `jms/saldos-ejercicio-anterior`). **Qué cambia**:
+una tabla nueva, con **RLS igual a `balance_pendientes`** (políticas `puede_ver` / `puede_escribir`, sin `anon`,
+`authenticated` select/insert/update, `service_role` all) y su fila en `recurso_tablas` → recurso **`extracto`**,
+**lectura restringida** (el rol `contable` no la ve, como el balance propio). No toca tablas existentes. ✅ **Corrido 2026-10-18** con JMS presente
+(RLS activa, 2 políticas, recurso mapeado). Si tu modelo de permisos necesita algo más para una tabla nueva, avisá.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🗃️ Nuevo estado «historico» en `public.msa_galicia` (2026-10-15) — aviso ANTES de aplicarlo
+
+`scripts/85-extracto-estado-historico.sql` (+ `-deshacer`), para [A-DEC-1009](PENDIENTES.md#a-dec-1009) /
+[A-DAT-68](PENDIENTES.md#a-dat-68): el extracto de MSA jul-2025 → ene-2026 se va a cargar entero como histórico.
+**Qué cambia**: sólo el check `msa_galicia_estado_check`, que pasa a admitir también `historico`. Aditivo, no toca
+filas, sin RLS ni permisos nuevos. ✅ **Corrido 2026-10-15** con JMS presente (1.032 filas intactas). Si algo tuyo filtra por
+`estado` del extracto (conciliado/pendiente/auditar), avisá: los históricos no son pendientes ni entran al motor.
 
 📌 Borrá esta entrada cuando la leas.
 
@@ -449,6 +536,13 @@ toca filas, permisos, RLS ni roles, y la vista `public.ventas_unificadas` **no s
 aviso después**, por lo mismo: JMS autorizó la tanda entera antes de irse. Sólo agrega un valor permitido;
 no toca filas, permisos, RLS ni vistas. Si en tu rama hay algo que enumere los estados de pago de un
 anticipo, sumale `endosado`.
+
+## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/77` (aviso ANTES): una columna en los extractos
+
+`nro_resumen varchar(30)` en `public.msa_galicia`, `public.pam_galicia`, `public.pam_galicia_cc` y
+`ma.ma_galicia`: el débito que paga un resumen de tarjeta queda atado a ese resumen (A-DEC-1002). Mismo
+nombre que en las tablas de tarjeta. **No toca RLS, roles ni permisos.** Rama `jms/tarjeta-conciliacion`.
+🔙 `scripts/77-pago-de-resumen-tarjeta-deshacer.sql`.
 
 ## 📨 2026-10-03 · PARA JAVIER — VOY A CORRER `scripts/75` (aviso ANTES): dos tablas NUEVAS con RLS
 

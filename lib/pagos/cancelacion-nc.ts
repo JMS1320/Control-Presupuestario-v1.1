@@ -14,6 +14,8 @@
  *   al pagarle. La NC queda `conciliado` con el detalle «Corresponde a descuentos aplicados FC …».
  */
 
+import { pareceDetalleAutogenerado } from "@/lib/conciliacion/columnas-extracto"
+
 type Cliente = { schema: (s: string) => any }
 
 /** Lo mínimo de un comprobante de ARCA que usa la cancelación. */
@@ -28,7 +30,24 @@ export interface ComprobanteNC {
   descuento_aplicado?: number | null
   grupo_pago_id?: string | null
   fecha_estimada?: string | null
+  /** Lo que ya dice el comprobante: la cancelación lo CONSERVA y agrega al final (A-FEAT-1292). */
+  detalle?: string | null
+  fecha_emision?: string | null
 }
+
+/**
+ * ✍️ **El detalle se respeta**: lo nuevo va al final, nunca en lugar de lo que estaba (regla del usuario
+ * «el detalle del usuario se respeta siempre»). Hasta 2026-10-19 la cancelación lo reemplazaba.
+ */
+export const sumarAlDetalle = (
+  previo: string | null | undefined,
+  nuevo: string,
+  emisor?: string | null,
+  numero?: string | number | null,
+): string =>
+  // A-BUG-1304: «FC 613071 - MEDICUS …» NO es del usuario, es el derivado guardado de A-DAT-54. Sumarle
+  // algo lo disfrazaba de texto propio y el motor lo copiaba entero al movimiento. Ése se descarta.
+  previo && previo.trim() && !pareceDetalleAutogenerado(previo, emisor, numero) ? `${previo.trim()} · ${nuevo}` : nuevo
 
 export interface DatosCancelacionNC {
   tipo: 'fc_con_nc' | 'nc_con_descuento'
@@ -50,7 +69,7 @@ export const esNotaCreditoArca = (tipo: number | null | undefined) => TIPOS_NC.i
  */
 export async function armarCancelacionPorCuit(supabase: Cliente, schemaName: string, cuit: string): Promise<DatosCancelacionNC | null> {
   const { data, error } = await supabase.schema(schemaName).from('comprobantes_arca')
-    .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado, descuento_aplicado, grupo_pago_id, fecha_estimada')
+    .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado, descuento_aplicado, grupo_pago_id, fecha_estimada, detalle')
     .eq('cuit', cuit).in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
   if (error) throw error
   const todos = (data || []) as ComprobanteNC[]
@@ -106,20 +125,21 @@ export function planCancelacionNC(modal: DatosCancelacionNC): CambioNC[] {
       if (saldoNC <= 0) break
       const montoFC = fc.imp_total
       if (saldoNC >= montoFC) {
-        plan.push({ id: fc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: `Cancelada con NC ${nrosNC}` } })
+        plan.push({ id: fc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(fc.detalle, `Cancelada con NC ${nrosNC}`, fc.denominacion_emisor, fc.numero_desde) } })
         saldoNC -= montoFC
       } else {
-        plan.push({ id: fc.id, cambios: { monto_a_abonar: montoFC - saldoNC, detalle: `Descuento parcial NC ${nrosNC}` } })
+        plan.push({ id: fc.id, cambios: { monto_a_abonar: Math.round((montoFC - saldoNC) * 100) / 100, detalle: sumarAlDetalle(fc.detalle, `Descuento parcial NC ${nrosNC}`, fc.denominacion_emisor, fc.numero_desde) } })
         saldoNC = 0
       }
     }
     const nrosFC = modal.facturas.map(f => f.numero_desde || '').join(', ')
     for (const nc of ncsAplicar) {
-      plan.push({ id: nc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: `Cancela FC ${nrosFC}` } })
+      plan.push({ id: nc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: sumarAlDetalle(nc.detalle, `Cancela FC ${nrosFC}`, nc.denominacion_emisor, nc.numero_desde) } })
     }
     return plan
   }
-  // Escenario B
+  // Escenario B — ⚠️ su detalle NO se suma: «Corresponde a descuentos aplicados FC …» es una MARCA que
+  // `facturasConDescuentoParaNC` busca con `like '…%'`. Si quedara al final, el grupo reaparecería.
   const fcsMatchear = modal.disponibles.filter(fc => modal.seleccionadas.has(fc.id))
   for (const nc of modal.facturas) {
     plan.push({ id: nc.id, cambios: { estado: 'conciliado', monto_a_abonar: 0, detalle: `Corresponde a descuentos aplicados FC ${fcsMatchear.map(f => f.numero_desde || '').join(', ')}` } })
@@ -141,3 +161,60 @@ export async function aplicarCancelacionNC(supabase: Cliente, schemaName: string
     : `${modal.facturas.length} NC conciliada(s) contra descuentos`
   return { mensaje, idsAfectados: plan.map(c => c.id) }
 }
+
+/**
+ * 💳 **NOTAS DE CRÉDITO PAGADAS CON TARJETA, emparejadas con su factura** (A-FEAT-1292, 2026-10-19).
+ *
+ * Caso que lo originó: Medicus cobra por tarjeta **factura − nota de crédito** cada mes (21/05: $850.818,25
+ * − $43.790,18 = $807.028,07) y el motor busca UN comprobante por importe. Aplicando la NC, la factura
+ * baja su `monto_a_abonar` al neto y el motor de la tarjeta (que busca por ese monto) la encuentra solo.
+ *
+ * 🛑 **Por qué emparejar y no juntar todo** como hace `armarCancelacionPorCuit`: Medicus tiene una
+ * factura y una NC **por mes** (8 pares al 19/10). Juntándolas, las 8 NC se descontaban de la primera
+ * factura. Cada NC va con la factura del mismo proveedor emitida más cerca, dentro de `diasMax`.
+ * Una NC sin factura cerca no se empareja: se deja para hacerla a mano (nada se adivina).
+ */
+export interface ParCreditoNC { fc: ComprobanteNC; nc: ComprobanteNC; neto: number; dias: number }
+
+const diasEntre = (a?: string | null, b?: string | null): number | null => {
+  if (!a || !b) return null
+  const ms = Math.abs(new Date(String(a).slice(0, 10)).getTime() - new Date(String(b).slice(0, 10)).getTime())
+  return Number.isFinite(ms) ? Math.round(ms / 86400000) : null
+}
+
+export function paresCreditoNC(comprobantes: ComprobanteNC[], diasMax = 3): ParCreditoNC[] {
+  const ncs = comprobantes.filter(c => esNotaCreditoArca(c.tipo_comprobante))
+  const fcs = comprobantes.filter(c => !esNotaCreditoArca(c.tipo_comprobante))
+  const usadas = new Set<string>()
+  const pares: ParCreditoNC[] = []
+  for (const nc of [...ncs].sort((a, b) => String(a.fecha_emision).localeCompare(String(b.fecha_emision)))) {
+    let mejor: { fc: ComprobanteNC; dias: number } | null = null
+    for (const fc of fcs) {
+      if (usadas.has(fc.id) || fc.cuit !== nc.cuit) continue
+      const d = diasEntre(fc.fecha_emision, nc.fecha_emision)
+      if (d === null || d > diasMax) continue
+      if (!mejor || d < mejor.dias) mejor = { fc, dias: d }
+    }
+    if (!mejor) continue
+    usadas.add(mejor.fc.id)
+    pares.push({ fc: mejor.fc, nc, dias: mejor.dias, neto: Math.round((mejor.fc.imp_total - Math.abs(nc.imp_total)) * 100) / 100 })
+  }
+  return pares.sort((a, b) => String(a.fc.fecha_emision).localeCompare(String(b.fc.fecha_emision)))
+}
+
+/** Los pares de la base: facturas y NC en «crédito» (pagadas con tarjeta) de una empresa. */
+export async function buscarParesCreditoNC(supabase: Cliente, schemaName: string): Promise<ParCreditoNC[]> {
+  const { data, error } = await supabase.schema(schemaName).from('comprobantes_arca')
+    .select('id, cuit, tipo_comprobante, numero_desde, denominacion_emisor, imp_total, estado, fecha_estimada, fecha_emision, detalle')
+    .eq('estado', 'credito')
+  if (error) throw error
+  return paresCreditoNC((data || []) as ComprobanteNC[])
+}
+
+/** Aplica UN par con la misma lógica de siempre (`planCancelacionNC` escenario A). */
+export async function aplicarParCreditoNC(supabase: Cliente, schemaName: string, par: ParCreditoNC) {
+  return aplicarCancelacionNC(supabase, schemaName, {
+    tipo: 'fc_con_nc', facturas: [par.fc], disponibles: [par.nc], seleccionadas: new Set([par.nc.id]),
+  })
+}
+

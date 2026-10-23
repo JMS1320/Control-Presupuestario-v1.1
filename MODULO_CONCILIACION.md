@@ -105,6 +105,50 @@ orden          INT
 - Los estados se pueden cambiar manualmente en cualquier momento
 - No existe estado "archivado" ni "definitivo" — son siempre editables
 - `'auditar'` significa: el motor encontró un match probable pero necesita revisión humana
+- ⚠️ *Cambió 2026-10-20 (A-BUG-1305)*: además de «fecha ±5 días + monto», también va a `'auditar'` un
+  **monto que difiere hasta $1** (centavos de redondeo del emisor) dentro de esos 5 días. Nunca a conciliado
+  directo; el motivo dice cuánto difiere.
+
+### 2.1 — ⚖️ CONCILIAR ES ESCRIBIR EN DOS LADOS, SIEMPRE (regla, 2026-10-20)
+
+*Pedido del usuario al aparecer A-BUG-1306: **«esto siempre es un trabajo de ambos lados, por favor dejalo
+bien documentado. la conciliación tiene que registrar siempre por lo menos en dos lados»**.*
+
+> **Un movimiento no pasa a `conciliado` solo. En el mismo acto pasa también lo que tiene atado: la
+> factura (en el schema de SU empresa, con su fecha de pago), la cuota del template o el pago de sueldo.**
+
+| Lado | Qué se escribe | Dónde |
+|---|---|---|
+| **1 · el movimiento** | `estado = conciliado`, el vínculo (`comprobante_arca_id` / `template_cuota_id` / `sueldo_pago_id`) y sus columnas (detalle, proveedor, comprobante, códigos) | la tabla del extracto (`msa_galicia`, `msa.tarjeta_visa_business`, …) |
+| **2 · el origen** | `estado = conciliado`; en una factura además `fecha_pago` = fecha del movimiento (**completa, no pisa**, A-BUG-191); en un grupo de sueldos, todo el grupo (A-BUG-176) | `<schema>.comprobantes_arca`, `cuotas_egresos_sin_factura`, `sueldos_pagos` |
+
+- **`'auditar'` escribe sólo el lado 1** (el vínculo y las columnas) y deja el origen como estaba: todavía
+  no es seguro. **El lado 2 lo escribe la confirmación.** Por eso toda forma de confirmar tiene que
+  hacerlo, y es donde se había perdido.
+- 📍 **Una sola función para el lado 2 al confirmar**: `lib/conciliacion/confirmar-origen.ts` →
+  `conciliarOrigenDelMovimiento`. La usan el **«✓ OK»** de cada fila, el **✓ OK masivo** (A-FEAT-1300) y la
+  **edición masiva con estado Conciliado**. El motor, cuando concilia directo, hace lo mismo por su cuenta
+  (`useMotorConciliacion.ts`, bloque «Actualizar estado de la cuota/factura origen»).
+- **Si el lado 2 falla, se muestra** («Movimiento conciliado, pero la factura…»). Nunca se calla.
+
+🧨 **El caso que la originó**: el «✓ OK» cambiaba sólo el movimiento. En la tarjeta VISA MSA quedaron
+**21 facturas** en «crédito»/«anterior» sin fecha de pago con su movimiento conciliado (05/01 → 21/05).
+Corregidas el 2026-10-20 con foto previa. Y la edición masiva escribía la factura **siempre en MSA**: una de
+PAM o MA quedaba igual sin conciliar.
+
+🧮 **El control** (sólo lectura): movimientos `conciliado` cuyo origen no lo está.
+```sql
+with f as (select id, estado from msa.comprobantes_arca union all select id, estado from pam.comprobantes_arca
+           union all select id, estado from ma.comprobantes_arca)
+select count(*) filter (where f.estado <> 'conciliado') facturas, count(*) filter (where c.estado <> 'conciliado') cuotas
+from msa.tarjeta_visa_business m            -- repetir por cada tabla de extracto
+left join f on f.id = m.comprobante_arca_id
+left join public.cuotas_egresos_sin_factura c on c.id = m.template_cuota_id
+where m.estado = 'conciliado';
+```
+Medido 2026-10-20 después del arreglo: tarjeta **0 / 0**; Galicia facturas **0**, cuotas **533** — todas del
+**histórico** jul-25 → ene-26, que se cargó con la cuota en `'anterior'` a propósito (A-DEC-1009/1010).
+**No es un desparejo**: el control tiene que excluir `'anterior'` en ese período, o lo va a marcar siempre.
 
 ---
 
@@ -140,6 +184,16 @@ if (cf.debitos === movimiento.debitos) {
 ```
 
 **Importante:** el match es por monto exacto contra el AGREGADO del Cash Flow, no contra una factura individual.
+
+> ⚠️ **Cambió 2026-10-03 (A-DEC-1002) — un solo motor para todas las cuentas, también la TARJETA.**
+> - El Cash Flow deja afuera lo pagado con tarjeta (estado `credito`), así que la tarjeta tenía un
+>   **buscador propio de facturas** antes del motor. Ya no: para una cuenta `tipo = 'tarjeta'` el motor
+>   busca **primero** en lo pagado con tarjeta de su empresa (`cargarPagadoConTarjeta` en
+>   `useMultiCashFlowData`: facturas y cuotas en `credito`) y **después** en el resto del Cash Flow.
+> - **Lo usado en una corrida no se ofrece otra vez** (`usadosEnCorrida`): antes dos movimientos del
+>   mismo importe podían conciliarse contra la misma fila. Vale para todas las cuentas.
+> - El pago del resumen se ata al débito de la cuenta corriente por `nro_resumen` — ver
+>   `lib/conciliacion/pago-tarjeta.ts`.
 
 ### Fase 2: Reglas de Conciliación
 

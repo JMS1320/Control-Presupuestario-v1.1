@@ -36,6 +36,7 @@ import { hayQuePreguntarFechaPago, esEstadoQuePaga } from "@/lib/pagos/preguntar
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
+import { coincideCampana, SIN_CAMPANA } from "@/lib/templates/cuotas-del-template"
 
 interface CuotaEgresoSinFactura {
   id: string
@@ -44,6 +45,8 @@ interface CuotaEgresoSinFactura {
   fecha_vencimiento: string | null
   fecha_pago: string | null
   monto: number
+  monto_usd?: number | null     // A-FEAT-1312 — original en dólares (consumo USD de la tarjeta)
+  tipo_cambio?: number | null   // A-FEAT-1312 — cambio del pago: monto = monto_usd × tipo_cambio
   descripcion: string | null
   estado: string
   detalle?: string | null       // A-FEAT-137 — lo que escribe el usuario
@@ -75,6 +78,9 @@ const COLUMNAS_CONFIG = {
   fecha_vencimiento: { label: "Fecha Vencimiento", visible: true, width: "150px" },
   fecha_pago: { label: "Fecha Pago", visible: true, width: "130px" },
   monto: { label: "Monto", visible: true, width: "130px" },
+  // 💵 A-FEAT-1312 — los consumos en dólares: el original y el cambio con que se pasó a pesos.
+  monto_usd: { label: "USD", visible: true, width: "100px" },
+  tipo_cambio: { label: "TC", visible: true, width: "90px" },
   // 💪 A-FEAT-137 — las dos, y son cosas distintas:
   //   descripcion = el IDENTIFICADOR (hoy guardado; se va a generar — ver A-DAT-37)
   //   detalle     = lo que escribe el usuario, y lo que llega del Extracto al conciliar
@@ -518,10 +524,9 @@ export function VistaTemplatesEgresos() {
       )
     }
     
-    // Filtro por año
+    // Filtro por campaña — 🔎 A-BUG-1317: es texto («2026», «25/26»), y los abiertos van sin campaña.
     if (anoSeleccionado && anoSeleccionado !== 'todos') {
-      const ano = parseInt(anoSeleccionado)
-      cuotasFiltradas = cuotasFiltradas.filter(c => c.egreso?.año === ano)
+      cuotasFiltradas = cuotasFiltradas.filter(c => coincideCampana(c.egreso?.año, anoSeleccionado))
     }
     
     // Filtro por activación de templates
@@ -562,7 +567,8 @@ export function VistaTemplatesEgresos() {
   // Obtener valores únicos para los selectores
   const estadosUnicos = [...new Set(cuotasOriginales.map(c => c.estado))].filter(Boolean).sort()
   const tiposRecurrenciaUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.tipo_recurrencia))].filter(Boolean).sort()
-  const anosUnicos = [...new Set(cuotasOriginales.map(c => c.egreso?.año))].filter(Boolean).sort((a, b) => b - a)
+  const anosUnicos = [...new Set(cuotasOriginales.map(c => String(c.egreso?.año ?? '').trim()))].filter(Boolean).sort((a, b) => b.localeCompare(a))
+  const haySinCampana = cuotasOriginales.some(c => !String(c.egreso?.año ?? '').trim())
 
   // Definir campos editables para templates - incluye cuotas y egresos padre
   const camposEditables = [
@@ -1248,6 +1254,12 @@ export function VistaTemplatesEgresos() {
         
         case 'monto':
           return formatearNumero(valor as number)
+
+        case 'monto_usd':
+          return <span className="text-emerald-700">USD {Number(valor).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+
+        case 'tipo_cambio':
+          return <span className="text-gray-600">{Number(valor).toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
         
         case 'categ': {
           const esCuotaPropia = !!(cuota as any).categ
@@ -1714,18 +1726,19 @@ export function VistaTemplatesEgresos() {
               
               {/* Selector de año */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">📆 Año</Label>
+                <Label className="text-sm font-medium">📆 Campaña</Label>
                 <Select value={anoSeleccionado} onValueChange={setAnoSeleccionado}>
                   <SelectTrigger className="text-xs">
-                    <SelectValue placeholder="Todos los años" />
+                    <SelectValue placeholder="Todas las campañas" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todos">Todos los años</SelectItem>
+                    <SelectItem value="todos">Todas las campañas</SelectItem>
                     {anosUnicos.map(ano => (
-                      <SelectItem key={ano} value={ano.toString()}>
+                      <SelectItem key={ano} value={ano}>
                         {ano}
                       </SelectItem>
                     ))}
+                    {haySinCampana && <SelectItem value={SIN_CAMPANA}>Sin campaña (abiertos)</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
