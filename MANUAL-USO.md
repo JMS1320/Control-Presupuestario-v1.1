@@ -1225,14 +1225,22 @@ Elegí **a dónde va**: **📒 Asientos Contables** o **sin imputar** (para impu
 
 Debajo de la tabla del período aparece **❌ Facturas sin PDF** con las facturas del subdiario a las que les falta el archivo (las mismas del chip «❌ faltantes»). Cada una muestra si **ya se le pidió al proveedor** (📮 *pedida hace N días*, o *borrador* si quedó en Gmail sin mandar) y cuándo se buscó por última vez en el mail.
 
-Vienen tildadas las que se pueden buscar (las **FC No** u **OK** se ven en gris y no se buscan; las **VER** se confirman en Buscar PDFs → 👀 A confirmar). Con el buscador de arriba puesto, los botones actúan sólo sobre lo que se ve:
+Vienen tildadas las que se pueden buscar (las **FC No** u **OK** se ven en gris y no se buscan; las **VER** se resuelven en **👀 A confirmar**, justo arriba). Con el buscador de arriba puesto, los botones actúan sólo sobre lo que se ve:
 
 - **📋 Copiar pedido** — copia la lista (fecha, proveedor, comprobante, importe) para pegarla en un mail o un mensaje a quien las tenga.
 - **📮 Pedir al proveedor** — un mail por proveedor con sus facturas; elegís **borrador** o **enviar**. Los proveedores sin mail cargado se avisan aparte.
 - **📨 ¿Llegaron?** (o **📨 ¿llegó?** en la fila) — el proveedor dice que la mandó: la busca en el mail desde el día del pedido.
 - **📧 Buscar en el mail** — busca el PDF en el mail del proveedor y en los reenvíos. La carpeta no se mira: eso lo hace **🔗 Vincular PDFs**.
 
-Las búsquedas corren en segundo plano: el avance y el informe (con lo encontrado para confirmar) quedan en el cartel de arriba a la derecha, igual que en Buscar PDFs. ⚠️ Sin probar todavía → A-TEST-1222
+Las búsquedas corren en segundo plano: el avance y el informe (con lo encontrado para confirmar) quedan en el cartel de arriba a la derecha. En cada fila también está el **mail del proveedor** (verlo, cargarlo, o **usar** el de pagos que sugiere) y **→ Portal** para los proveedores que facturan por portal. ⚠️ Sin probar todavía → A-TEST-1222
+
+#### 👀 A confirmar *(2026-10-23)*
+
+Arriba de *Facturas sin PDF* aparece **👀 A confirmar (N)** con las facturas del mes que esperan tu sí: las **VER** (la app encontró uno o más archivos y no eligió: abrís cada uno, ves lo que dice al lado de lo que dice ARCA, y tocás **Es ésta** o **No es ésta**) y las **APP** (la app ya vinculó uno: abrís el PDF y **Confirmar**). Las dos quedan **Confirmada**. ⚠️ Sin probar todavía → A-TEST-1222
+
+#### 🧾 Y lo que no está imputado
+
+Subdiarios muestra un mes contable. Las facturas **sin imputar** (o si querés trabajar varios meses juntos) están en **Facturas ARCA → aviso «N facturas sin comprobante» → Ver detalle**: la misma lista, con los mismos botones, más el link para vincular a mano. Ahí **🔎 Buscar** mira primero la carpeta (la del mes de emisión y la del siguiente) y después el mail.
 
 > ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
 > vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
@@ -1337,20 +1345,16 @@ siempre, aunque después no toques nada — y éste es la foto final.)*
 
 ### 📧 Buscador de PDFs — que cada factura encuentre su PDF *(2026-10-16)*
 
-**Dónde:** Egresos → Facturas → botón **Buscar PDFs** (arriba, junto a Importar).
+> ⚠️ **cambió 2026-10-23 — la pantalla «Buscar PDFs» se retiró.** Lo de esta sección (cómo busca, cómo decide que un archivo es de una factura, el informe, VER/APP, los estados) **sigue igual**; lo que cambió es **desde dónde se dispara**: lo **imputado**, desde **Subdiarios** (*❌ Facturas sin PDF* y *👀 A confirmar*, abajo de la tabla del mes); lo **sin imputar** o de **varios meses**, desde **Facturas ARCA → aviso «Facturas sin comprobante» → Ver detalle**. Las dos listas son la misma: tildes, 📋 copiar pedido, 📮 pedir al proveedor, 📨 ¿llegó?, buscar, mail del proveedor y → Portal.
+
+**Dónde:** ~~Egresos → Facturas → botón **Buscar PDFs**~~ → **Subdiarios** (lo imputado) o **Facturas sin comprobante** (lo demás).
 
 **Para qué sirve.** Que no tengas que salir a buscar el PDF de cada factura. Elegís las facturas y el
 buscador hace dos cosas, **en este orden**:
 
-**Qué facturas te ofrece.** Sólo las que **no tienen 📎** — nunca las de **Portal** ni las de **No**, y
-tampoco las que están en **VER** (esas ya tienen candidatos: se resuelven con el ✓). Vienen marcadas y
-arriba las de **Buscar**, las sin estado y las **Sí** de Ulises que todavía no tienen archivo; las **NO
-Mail** aparecen sin marcar, por si querés volver a buscarlas.
-
-**Cómo elegirlas.** Arriba hay un selector **Subdiario** (el mes donde está imputada, o *sin imputar*) y
-dos fechas de emisión **opcionales**, para las que todavía no están en un subdiario. La lista tiene una
-columna **Subdiario** que dice dónde está imputada cada una. El link *«¿Qué significa cada estado FC?»*
-abre la leyenda.
+**Qué facturas te ofrece.** Las que **no tienen 📎**. Vienen tildadas las que se pueden buscar; las de
+**No**, **OK** y **VER** se ven en gris (VER ya tiene candidatos: se resuelve en *👀 A confirmar* o con el ✓).
+En *Facturas sin comprobante*, debajo de cada comprobante dice dónde está imputada (o *sin imputar*).
 
 1. **Mira la carpeta del mes en Drive** —la del mes donde está imputada, o la de emisión si todavía no
    la imputaste— **y también la del mes siguiente**. Si el PDF ya está (porque alguien lo subió), lo
@@ -1406,23 +1410,23 @@ Desde el informe también podés:
   *«Facturas faltantes»* con una fila por factura — fecha · proveedor · comprobante · importe — para pegar en un mail o WhatsApp.
 - En el pedido, **Todas** / **Ninguna** tilda o destilda todas las que se pueden reclamar.
 
-**Dónde buscar**: al lado de Cancelar elegís **Carpeta y mail** (lo normal), **Sólo carpeta** (lo que no está queda como estaba) o **Sólo mail**. Arriba de la lista se ve **cuándo se buscó por última vez** en la carpeta y en el mail, y en cada fila la columna **Últ. carpeta · mail**. Las facturas en **VER** no se listan (ya tienen un candidato): un aviso dice cuántas hay.
+**Dónde busca** *(⚠️ cambió 2026-10-23: ya no se elige)*: desde **Subdiarios**, **sólo el mail** (la carpeta del mes la mira **🔗 Vincular PDFs**); desde **Facturas sin comprobante**, **carpeta y mail**. En cada fila, la columna **Último mail** dice cuándo se buscó por última vez.
 
 **«No es ésta»**: en una factura en **VER**, el **✓** muestra la factura de ARCA (fecha, importe) y, en cada candidato, el importe que leyó la app. Si el archivo no es, **No es ésta** → motivo (opcional) → **Descartar**. Queda en el historial de búsquedas, ese archivo no se vuelve a ofrecer, y si no queda ningún candidato la factura pasa a **NO Mail** para volver a buscarla. Ningún archivo se borra.
 
 **Filtro Estado FC**: en los filtros de Facturas ARCA, para ver sólo las Portal, VER, NO Mail, etc.
 
-**📨 «Nos mandó la factura»**: si pediste una factura y el proveedor contestó, en Buscar PDFs tocá **📨 ¿llegó?** al lado de *📮 pedida* (o tildá varias y **📨 ¿Llegaron?**). La app la busca en el mail desde el día del pedido, en los mails del proveedor y en cualquier respuesta a tu «Pedido de factura». Si todavía no llegó, queda como estaba.
+**📨 «Nos mandó la factura»**: si pediste una factura y el proveedor contestó, en la lista de facturas sin PDF tocá **📨 ¿llegó?** al lado de *📮 pedida* (o tildá varias y **📨 ¿Llegaron?**). La app la busca en el mail desde el día del pedido, en los mails del proveedor y en cualquier respuesta a tu «Pedido de factura». Si todavía no llegó, queda como estaba.
 
 **Dónde mira en Drive**: una factura **imputada** se busca sólo en la carpeta de su subdiario; una **sin imputar**, en la de su mes de emisión y la del siguiente. Lo que la app lee de cada carpeta queda guardado: la próxima vez no lo vuelve a leer, y si una factura está guardada en otra carpeta, te avisa en **VER** cuál es.
 
-**👀 A confirmar**: en **Buscar PDFs**, el botón **👀 A confirmar (N)** muestra sólo las facturas que esperan tu sí, con el mismo subdiario y fechas: las **VER** (la app encontró uno o más archivos y no eligió: abrís cada uno, ves lo que dice al lado de lo que dice ARCA, y tocás **Es ésta** o **No es ésta**) y las **APP** (la app ya vinculó uno: abrís el PDF y **Confirmar**). Lo mismo se puede hacer desde el informe al terminar una búsqueda.
+**👀 A confirmar**: en **Subdiarios**, el recuadro **👀 A confirmar (N)** muestra las facturas del mes que esperan tu sí: las **VER** (la app encontró uno o más archivos y no eligió: abrís cada uno, ves lo que dice al lado de lo que dice ARCA, y tocás **Es ésta** o **No es ésta**) y las **APP** (la app ya vinculó uno: abrís el PDF y **Confirmar**). Lo mismo se puede hacer desde el informe al terminar una búsqueda.
 
-**📮 Pedir la factura al proveedor**: en **Buscar PDFs** tildá las facturas y tocá **📮 Pedir al proveedor** (o, al terminar una búsqueda, desde el informe: tildá las *No encontradas*). Se arma **un mail por proveedor** con todas sus facturas (*«…en ARCA figuran estos comprobantes a nuestro nombre y no recibimos las facturas…»*), que sale de la casilla de la empresa firmado *Jose Martinez Sobrado* (con *Martinez Sobrado Agro SRL* debajo si es de MSA). Con **ver el mail** lo leés antes; **Crear borradores** los deja en Gmail para revisarlos y mandarlos vos, **Enviar** los manda directo. Los proveedores sin mail cargado aparecen aparte. Después, la lista de Buscar PDFs muestra **📮 pedida hace N días** (o *borrador*, si quedó sin mandar).
+**📮 Pedir la factura al proveedor**: en la lista de facturas sin PDF (Subdiarios o *sin comprobante*) tildá las facturas y tocá **📮 Pedir al proveedor** (o, al terminar una búsqueda, desde el informe: tildá las *No encontradas*). Se arma **un mail por proveedor** con todas sus facturas (*«…en ARCA figuran estos comprobantes a nuestro nombre y no recibimos las facturas…»*), que sale de la casilla de la empresa firmado *Jose Martinez Sobrado* (con *Martinez Sobrado Agro SRL* debajo si es de MSA). Con **ver el mail** lo leés antes; **Crear borradores** los deja en Gmail para revisarlos y mandarlos vos, **Enviar** los manda directo. Los proveedores sin mail cargado aparecen aparte. Después, la lista muestra **📮 pedida hace N días** (o *borrador*, si quedó sin mandar).
 
-**Los reenvíos se leen una sola vez**: el mail del **proveedor** se busca factura por factura. Lo que no está ahí se busca en los **reenvíos de Jose y Andrés** y en **cualquier mail con «factura», «FC» o «fac» en el asunto**: se leen desde la emisión más vieja de las que faltan hasta hoy, de lo más nuevo a lo más viejo, y **cada PDF leído queda guardado** — la próxima búsqueda no lo vuelve a leer y lo cruza al instante. En **Buscar PDFs**, la línea **📨 Ya leído** dice hasta qué fecha se leyó cada fuente y cuántos PDF no se pudieron leer (con el link al mail). Si cancelás o la lectura no termina, las facturas quedan como estaban y la próxima vez sigue donde quedó; recién cuando se leyó todo, las que no aparecieron pasan a **NO Mail**.
+**Los reenvíos se leen una sola vez**: el mail del **proveedor** se busca factura por factura. Lo que no está ahí se busca en los **reenvíos de Jose y Andrés** y en **cualquier mail con «factura», «FC» o «fac» en el asunto**: se leen desde la emisión más vieja de las que faltan hasta hoy, de lo más nuevo a lo más viejo, y **cada PDF leído queda guardado** — la próxima búsqueda no lo vuelve a leer y lo cruza al instante. Arriba de la lista de facturas sin PDF, la línea **📨 Ya leído** dice hasta qué fecha se leyó cada fuente y cuántos PDF no se pudieron leer (con el link al mail). Si cancelás o la lectura no termina, las facturas quedan como estaban y la próxima vez sigue donde quedó; recién cuando se leyó todo, las que no aparecieron pasan a **NO Mail**.
 
-**→ Portal** está en la lista de **Buscar PDFs**, al lado del estado (antes de buscar): el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. Sirve para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
+**→ Portal** está en la lista de facturas sin PDF, al lado del proveedor: el proveedor queda como Portal (la búsqueda deja de intentarlo) y sus facturas sin 📎 pasan a Portal. Sirve para no buscar de gusto lo que llega por portal (bancos, por ejemplo).
 
 Mientras mira la carpeta, el cartel dice qué mes está leyendo y cuántos archivos van. Si se corta la conexión, la factura
 queda como estaba y sale en *Errores* para reintentar.
