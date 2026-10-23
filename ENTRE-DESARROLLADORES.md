@@ -40,6 +40,18 @@
 
 ## 📨 PARA JAVIER
 
+### 🔑 Propuesta de diseño de accesos POR TAREA y POR PERSONA (2026-10-23) — sólo papel, no toca nada
+
+Para [A-FEAT-1322](PENDIENTES.md#a-feat-1322). **No hay código ni cambios en la base**: es una propuesta que JMS todavía
+tiene que contestar. Te la aviso **antes** porque, si se aprueba, toca tu terreno: `lib/auth/recursos.ts` (un tipo nuevo
+`tarea`), `public.roles` (un rol «cerrado» donde lo no declarado nace apagado, y crear rol desde la app = [A-FEAT-171](PENDIENTES.md#a-feat-171)),
+un registro de cambios por trigger en la base, y tus scripts **66/67** de `jms/vistas-seguras` propuestos como paso previo a dar
+cuentas en celulares. Página: https://claude.ai/artifact/WFrDNJ7ZGC8N9UnKqxTvPG (privada de JMS; pedile que te la comparta).
+De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» siguen sacando el autor de las rutas viejas
+(`getRoleFromRoute`) y lo guardan vacío.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ 3 tablas nuevas y columnas del buscador de PDFs (2026-10-21 → 23) — ✅ APLICADAS con JMS presente · ⚠️ aviso POSTERIOR
 
 Para [A-FEAT-1287](PENDIENTES.md#a-feat-1287) / [A-FEAT-1318](PENDIENTES.md#a-feat-1318) (rama `jms/facturas-gmail`, ✅ **mergeada
