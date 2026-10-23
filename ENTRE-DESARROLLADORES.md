@@ -40,6 +40,15 @@
 
 ## 📨 PARA JAVIER
 
+### 🔀 `desarrollo` avanzó 127 commits (2026-10-23) — trae los cambios de base de abajo
+
+Se mergeó `jms/dia-a-dia` → `desarrollo` (fast-forward hasta `b5be470`; `main` sin tocar). Los avisos 🗃️ del 15/10 al
+20/10 (scripts **85, 86, 87, 88 y 91**) ya estaban **aplicados en la base** antes del merge: con esto te llega también el
+código que los usa. Ninguno toca RLS de tablas existentes; las dos tablas nuevas (`ajustes_balance`,
+`detalles_por_proveedor`) tienen su fila en `recurso_tablas`. Si al traer `desarrollo` algo de permisos no te cierra, avisá.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🌿 Tus ramas ya mergeadas (2026-10-14) — las borrás vos si querés
 
 Hicimos limpieza de ramas: JMS borró las suyas que ya estaban 100 % en `desarrollo`. **Las tuyas no las
