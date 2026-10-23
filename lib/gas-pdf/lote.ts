@@ -130,7 +130,7 @@ export const esPendienteDeBuscar = (f: { fc?: string | null; pdf_drive_url?: str
 export const FC_QUE_NO_SE_BUSCAN: ReadonlySet<string> = new Set(['Portal', 'No', 'OK', 'VER'])
 
 /**
- * Las facturas que ofrece el modal Buscar PDFs:
+ * Las facturas que ofrecía el modal Buscar PDFs (retirado 2026-10-23; queda para los casos):
  * - **sólo las que no tienen 📎** — lo que ya está vinculado no se busca;
  * - sin las de Portal, No, OK y VER (ver `FC_QUE_NO_SE_BUSCAN`);
  * - sin el histórico (comprobantes_historico, con fc «SI» / «NO» / «PEAJE» — no es un comprobante de

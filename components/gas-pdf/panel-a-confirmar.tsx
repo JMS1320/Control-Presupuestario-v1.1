@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 👀 «A confirmar» dentro de Buscar PDFs (usuario 2026-10-21: «un filtro de las que están a confirmar…
+ * 👀 «A confirmar» — en Subdiarios desde 2026-10-23 (antes en Buscar PDFs, retirada) (usuario 2026-10-21: «un filtro de las que están a confirmar…
  * para ver sólo esas y ya verlas y decir sí o no»).
  *
  * Dos clases, las dos esperan el sí del usuario:

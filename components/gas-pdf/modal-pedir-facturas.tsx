@@ -6,7 +6,7 @@
  * Muestra los mails tal cual van a salir —uno por proveedor, con todas sus facturas— y deja elegir:
  * **Crear borradores** (quedan en Gmail para revisarlos y mandarlos) o **Enviar**. Las facturas de
  * proveedores sin mail cargado se listan aparte: desde acá no se pueden pedir.
- * Cada pedido queda en el historial de la factura, y la lista de Buscar PDFs muestra «pedida hace N días».
+ * Cada pedido queda en el historial de la factura, y la lista de facturas sin PDF muestra «pedida hace N días».
  */
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'

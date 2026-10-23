@@ -3,7 +3,7 @@
 
 import { ModalVincularCompras } from "./modal-vincular-compras"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
-import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
+import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
@@ -52,12 +52,12 @@ import { ModalHistorialPdf } from "@/components/gas-pdf/modal-historial-pdf"
 import { ModalConfigProveedor } from "@/components/gas-pdf/modal-config-proveedor"
 import { ModalAuditarPeriodo } from "@/components/gas-pdf/modal-auditar-periodo"
 import { buscarPdfLote, type ProgresoLote } from "@/lib/gas-pdf/client"
-import { idsParaBuscarTrasImportar, candidatosParaBuscar, esPendienteDeBuscar, opcionesFcManual, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, resumenUltimas, textoPedidoFacturas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
+import { idsParaBuscarTrasImportar, opcionesFcManual, subdiarioDe, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, ultimasBusquedas, type UltimaBusqueda, type FacturaParaCarpeta } from "@/lib/gas-pdf/lote"
 import { estadoInventario, type EstadoInventario } from "@/lib/gas-pdf/barrido"
 import { ModalPedirFacturas } from "@/components/gas-pdf/modal-pedir-facturas"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
+import { PanelFacturasSinPdf } from "@/components/gas-pdf/panel-facturas-sin-pdf"
 import { PanelAConfirmar } from "@/components/gas-pdf/panel-a-confirmar"
-import { haceCuanto } from "@/lib/gas-pdf/pedido"
 import { diaArgentino } from "@/lib/fechas"
 import { ESTADO_ASIENTO_CONTABLE, NOMBRE_ASIENTOS_CONTABLES, CAMBIO_A_ASIENTO_CONTABLE, CAMBIO_DESDE_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
@@ -835,96 +835,38 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [modalConfigProveedorPdf, setModalConfigProveedorPdf] = useState<{ open: boolean; cuit?: string | null }>({ open: false })
   const [auditarPeriodoOpen, setAuditarPeriodoOpen] = useState(false)
   const [confirmandoId, setConfirmandoId] = useState<string | null>(null)
-  // Modal de búsqueda de PDFs con selección (individual / todo-nada / rango fechas) + cancelar
-  const [modalBuscarPdf, setModalBuscarPdf] = useState(false)
-  const [seleccionPdf, setSeleccionPdf] = useState<Set<string>>(new Set())
-  const [pdfDesde, setPdfDesde] = useState('')
-  const [pdfHasta, setPdfHasta] = useState('')
-  // A-FEAT-1287: el subdiario donde está imputada ('' = todos · 'sin' = sin imputar · '2026-09')
-  const [pdfSubdiario, setPdfSubdiario] = useState('')
+  // 🔎 La pantalla «Buscar PDFs» se RETIRÓ el 2026-10-23 (usuario, opción 1): lo imputado se pide y se
+  // busca desde Subdiarios y todo lo demás desde «Facturas sin comprobante» (PanelFacturasSinPdf).
   // ✓ de VER: elegir entre los candidatos · 📋 informe del último lote
   const [elegirCandidato, setElegirCandidato] = useState<{ id: string; rotulo: string; fecha_emision?: string | null; imp_total?: number | null } | null>(null)
   const [verInformeLote, setVerInformeLote] = useState(false)
-  const [filtroTiposPdf, setFiltroTiposPdf] = useState<Set<string>>(new Set()) // chips por estado FC (vacío = todos)
-  // Dónde buscar (usuario 2026-10-20): carpeta y mail · sólo carpeta · sólo mail
-  const [pdfDonde, setPdfDonde] = useState<'ambos' | 'carpeta' | 'mail'>('ambos')
-  // Última búsqueda de cada factura en la carpeta y en el mail (del historial), para ver hasta dónde se llegó
-  const [ultimasPdf, setUltimasPdf] = useState<Map<string, UltimaBusqueda>>(new Map())
   // Hasta dónde se leyeron los reenvíos (inventario permanente, A-FEAT-1287 2026-10-20)
   const [inventarioPdf, setInventarioPdf] = useState<EstadoInventario | { error: string } | null>(null)
   // 📮 Pedir la factura al proveedor (A-FEAT-1313): las facturas elegidas, o null si está cerrado
   const [pedirFacturas, setPedirFacturas] = useState<string[] | null>(null)
-  // 👀 Buscar PDFs en modo «A confirmar» (usuario 2026-10-21): sólo las VER y APP, para decir sí o no
-  const [pdfVista, setPdfVista] = useState<'buscar' | 'confirmar'>('buscar')
-  const [recargaUltimas, setRecargaUltimas] = useState(0)
   const cancelarPdfRef = useRef(false)
-  // Mail del proveedor dentro del modal Buscar PDFs: ver / cargar el que falta + guardar.
-  // Mapa por CUIT (varias FC comparten proveedor). prov = lo persistido; provEditMail = edición en curso.
+  // Mail del proveedor por CUIT (varias FC comparten proveedor): lo usan la imputación de la importación
+  // (provEditMail = lo que se carga ahí) y la lista de facturas sin PDF.
   /** 🧾 A-BUG-1244 — la factura que se está vinculando con sus compras de insumos. */
   const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
 
-  // Modal Buscar PDFs: al cambiar el filtro de subdiario/fechas/tipos, podar la SELECCIÓN a lo que quedó visible.
-  // (2026-10-20: el subdiario filtraba pero faltaba acá → mostraba 2 y buscaba 152.)
-  // Sin esto, "Hasta"/"Desde" achican la tabla pero las facturas ocultas seguían seleccionadas y se
-  // buscaban igual (la búsqueda usa seleccionPdf, no lo visible) → el filtro "no parecía funcionar".
-  useEffect(() => {
-    if (!modalBuscarPdf) return
-    const visibles = new Set(
-      facturas.filter(f => {
-        const fe = f.fecha_emision || ''
-        if (pdfDesde && fe < pdfDesde) return false
-        if (pdfHasta && fe > pdfHasta) return false
-        if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
-        if (filtroTiposPdf.size > 0 && !filtroTiposPdf.has(f.fc ?? '(sin estado)')) return false
-        return true
-      }).map(f => f.id)
-    )
-    setSeleccionPdf(prev => {
-      let cambio = false
-      const next = new Set<string>()
-      prev.forEach(id => { if (visibles.has(id)) next.add(id); else cambio = true })
-      return cambio ? next : prev
-    })
-  }, [pdfDesde, pdfHasta, pdfSubdiario, filtroTiposPdf, modalBuscarPdf, facturas])
-
-  // Al abrir Buscar PDFs: cuándo se buscó cada factura por última vez en la carpeta y en el mail.
-  useEffect(() => {
-    if (!modalBuscarPdf) return
-    const ids = candidatosParaBuscar(facturas).map(f => f.id)
-    let vivo = true
-    ;(async () => {
-      const logs: Array<{ factura_id: string; fecha_hora: string; resultado: string | null; observaciones: string | null }> = []
-      for (let i = 0; i < ids.length; i += 50) {
-        const { data } = await supabase.from('arca_pdf_busqueda_log')
-          .select('factura_id, fecha_hora, resultado, observaciones')
-          .eq('factura_schema', schemaName).in('factura_id', ids.slice(i, i + 50))
-          .order('fecha_hora', { ascending: false }).limit(1000)
-        if (data) logs.push(...(data as typeof logs))
-      }
-      if (vivo) setUltimasPdf(ultimasBusquedas(logs))
-      const inv = await estadoInventario()
-      if (vivo) setInventarioPdf(inv)
-    })()
-    return () => { vivo = false }
-  }, [modalBuscarPdf, facturas, schemaName, recargaUltimas])
-
   /**
-   * ❌ FACTURAS SIN PDF DEL SUBDIARIO — pedirlas y buscarlas en el mail desde Subdiarios (paso 4 de la
-   * centralización, A-FEAT-1287; usuario 2026-10-23: «seguí con pedidos y mail desde Subdiarios»).
-   * El pedido y la última búsqueda de cada una salen del mismo historial que usa Buscar PDFs.
+   * ❌ FACTURAS SIN PDF — pedirlas y buscarlas (A-FEAT-1287). Desde 2026-10-23 viven en dos lugares con
+   * la MISMA lista (`PanelFacturasSinPdf`): **Subdiarios** (las del mes contable) y **Facturas sin
+   * comprobante** (todas, también las sin imputar). El pedido y la última búsqueda de cada una salen del
+   * historial de búsquedas; el mail de cada proveedor, del maestro.
    */
-  const [ultimasSubdiario, setUltimasSubdiario] = useState<Map<string, UltimaBusqueda>>(new Map())
-  const [recargaUltimasSub, setRecargaUltimasSub] = useState(0)
-  /** Las tildadas en «Facturas sin PDF»; null = las que entran en la búsqueda (el default) */
-  const [seleccionFaltantes, setSeleccionFaltantes] = useState<Set<string> | null>(null)
-  const idsFaltantesPeriodo = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta').map(f => f.id).join(',')
-  useEffect(() => { setSeleccionFaltantes(null) }, [idsFaltantesPeriodo])
+  const [ultimasSinPdf, setUltimasSinPdf] = useState<Map<string, UltimaBusqueda>>(new Map())
+  const [recargaUltimasSinPdf, setRecargaUltimasSinPdf] = useState(0)
+  const idsFaltantesPeriodo = facturasPeriodo.filter(f => categoriaArchivo(f) === 'falta').map(f => f.id)
+  const idsSinComprobante = mostrarModalMarcarFC ? facturasOriginales.filter(faltaComprobante).map(f => f.id) : []
+  const claveSinPdf = Array.from(new Set([...idsFaltantesPeriodo, ...idsSinComprobante])).sort().join(',')
   useEffect(() => {
-    const ids = idsFaltantesPeriodo ? idsFaltantesPeriodo.split(',') : []
-    if (ids.length === 0) { setUltimasSubdiario(new Map()); return }
+    const ids = claveSinPdf ? claveSinPdf.split(',') : []
+    if (ids.length === 0) { setUltimasSinPdf(new Map()); return }
     let vivo = true
     ;(async () => {
       const logs: Array<{ factura_id: string; fecha_hora: string; resultado: string | null; observaciones: string | null }> = []
@@ -935,10 +877,38 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           .order('fecha_hora', { ascending: false }).limit(1000)
         if (data) logs.push(...(data as typeof logs))
       }
-      if (vivo) setUltimasSubdiario(ultimasBusquedas(logs))
+      if (vivo) setUltimasSinPdf(ultimasBusquedas(logs))
     })()
     return () => { vivo = false }
-  }, [idsFaltantesPeriodo, schemaName, recargaUltimasSub])
+  }, [claveSinPdf, schemaName, recargaUltimasSinPdf])
+  const idsSinPdf = new Set(claveSinPdf ? claveSinPdf.split(',') : [])
+  const claveCuitsSinPdf = Array.from(new Set([...facturasPeriodo, ...facturasOriginales]
+    .filter(f => idsSinPdf.has(f.id)).map(f => String(f.cuit || '').replace(/\D/g, '')).filter(Boolean))).sort().join(',')
+  useEffect(() => {
+    const cuits = claveCuitsSinPdf ? claveCuitsSinPdf.split(',') : []
+    if (cuits.length === 0) return
+    let vivo = true
+    ;(async () => {
+      const { data } = await supabase.from('proveedores')
+        .select('id, cuit, email_facturacion, email_pagos, gas_habilitado, fc_modo').in('cuit', cuits)
+      if (!vivo || !data) return
+      // Se SUMA a lo cargado: la imputación de la importación usa el mismo mapa
+      setProvPorCuit(prev => {
+        const n = { ...prev }
+        ;(data as any[]).forEach(p => { n[p.cuit] = { id: p.id, email_facturacion: p.email_facturacion, email_pagos: p.email_pagos, gas_habilitado: p.gas_habilitado, fc_modo: p.fc_modo } })
+        return n
+      })
+    })()
+    return () => { vivo = false }
+  }, [claveCuitsSinPdf])
+  // Lo ya leído de los reenvíos, para mostrarlo con la lista
+  const haySinPdf = claveSinPdf !== ''
+  useEffect(() => {
+    if (!haySinPdf) return
+    let vivo = true
+    estadoInventario().then(inv => { if (vivo) setInventarioPdf(inv) }).catch(() => {})
+    return () => { vivo = false }
+  }, [haySinPdf, recargaUltimasSinPdf])
 
   // Módulo lotes de transferencias Galicia
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
@@ -1680,60 +1650,77 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const alConfirmarCandidato = (facturaId: string, driveUrl: string) => {
     setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
+    setFacturasPeriodo(prev => prev.map(x => x.id === facturaId ? { ...x, fc: 'Confirmada', pdf_drive_url: driveUrl } : x))
     toast.success('Confirmada: la factura quedó vinculada a ese archivo.')
   }
-  // 📨 «Nos mandó la factura» (A-FEAT-1313): busca la respuesta desde el día del pedido, sólo en el mail
-  const buscarRespuestas = async (ids: string[]) => {
-    const pedidoDe: Record<string, string> = {}
-    for (const id of ids) { const p = ultimasPdf.get(id)?.pedido; if (p) pedidoDe[id] = diaArgentino(new Date(p)) }
-    const conPedido = ids.filter(id => pedidoDe[id])
-    if (conPedido.length === 0) { toast.error('Ninguna de éstas tiene un pedido al proveedor registrado.'); return }
-    cancelarPdfRef.current = false
-    setBuscandoPdfs(true)
-    setModalBuscarPdf(false)
-    try {
-      await buscarPdfLote({
-        empresa: empresa as 'MSA' | 'PAM' | 'MA', facturaIds: conPedido, respuesta: { pedidoDe },
-        facturas: facturas.filter(f => conPedido.includes(f.id)), onProgreso: setProgresoPdf, delayMs: 1000,
-        isCancelled: () => cancelarPdfRef.current, enviarResumen: false,
-      })
-      await cargarFacturas()
-    } catch (err) {
-      toast.error('Error buscando las respuestas: ' + (err as Error).message)
-    } finally {
-      setBuscandoPdfs(false)
-    }
+  // 📨 Lo ya leído de los reenvíos (no se vuelve a leer) y los adjuntos ilegibles — con la lista de sin PDF
+  const renglonReenvios = () => {
+    if (!inventarioPdf) return null
+    if ('error' in inventarioPdf) return <p className="text-[11px] text-gray-400">📨 Reenvíos: no se pudo leer lo ya leído ({inventarioPdf.error})</p>
+    const d = (iso: string) => iso.split('-').reverse().map((x, k) => k === 2 ? x.slice(2) : x).join('/')
+    return (
+      <div className="text-[11px] text-gray-600">
+        <span className="text-gray-500">📨 Ya leído de los reenvíos (no se vuelve a leer):</span>{' '}
+        {inventarioPdf.reenviadores.map((rv, i) => {
+          const b = rv.bloques[0]
+          return <span key={rv.clave}>{i > 0 ? ' · ' : ''}{rv.nombre} <b>{b ? `${d(b.desde)} → ${d(b.hasta)}` : 'nunca'}</b>{rv.bloques.length > 1 ? <span className="text-gray-400"> (+{rv.bloques.length - 1} tramo{rv.bloques.length > 2 ? 's' : ''} más viejo{rv.bloques.length > 2 ? 's' : ''})</span> : null}</span>
+        })}
+        {' · '}{inventarioPdf.adjuntos} adjunto{inventarioPdf.adjuntos === 1 ? '' : 's'} guardado{inventarioPdf.adjuntos === 1 ? '' : 's'}
+        {inventarioPdf.ilegibles > 0 && (
+          <details className="inline-block ml-1">
+            <summary className="inline cursor-pointer text-amber-700 underline">{inventarioPdf.ilegibles} ilegible{inventarioPdf.ilegibles === 1 ? '' : 's'}</summary>
+            <ul className="mt-1 ml-3 list-disc">
+              {inventarioPdf.ilegiblesLista.map(x => (
+                <li key={x.gmail_message_id + (x.nombre_archivo || '')}>
+                  <a className="text-blue-600 underline" href={`https://mail.google.com/mail/u/0/#all/${x.gmail_message_id}`} target="_blank" rel="noreferrer">{x.nombre_archivo || 'adjunto'}</a>
+                  {' '}<span className="text-gray-400">{(x.fecha_mail || '').slice(0, 10).split('-').reverse().join('/')} · {x.chars ?? 0} caracteres</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    )
   }
-
-  // ❌ Desde Subdiarios: buscar en el MAIL las facturas sin PDF del período. La carpeta no se mira: de
-  // eso se encarga «🔗 Vincular PDFs» en la misma pantalla. El avance y el informe, en el cartel flotante.
-  const buscarFaltantesEnMail = async (ids: string[]) => {
+  // ❌ Las facturas sin PDF, de Subdiarios o de «sin comprobante», por id
+  const facturaSinPdf = (id: string) => facturasPeriodo.find(f => f.id === id) ?? facturasOriginales.find(f => f.id === id)
+  const refrescarTrasBuscar = async () => {
+    if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
+    await cargarFacturas()
+  }
+  /**
+   * ❌ Buscar el PDF de facturas sin PDF. Desde Subdiarios, sólo el MAIL (la carpeta es «🔗 Vincular
+   * PDFs»); desde «sin comprobante», CARPETA Y MAIL (la sin imputar: su mes de emisión y el siguiente).
+   * Corre en 2do plano: el avance y el informe, en el cartel flotante.
+   */
+  const buscarSinPdf = async (ids: string[], donde: 'mail' | 'ambos') => {
     if (ids.length === 0) return
-    if (!window.confirm(`Vas a buscar en el mail el PDF de ${ids.length} factura(s) de este subdiario.\n`
-      + 'La carpeta no se mira (eso es «🔗 Vincular PDFs»): primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron.\n'
-      + 'Corre en segundo plano: el avance y el informe quedan en el cartel de arriba a la derecha.\n\n¿Continuar?')) return
+    const comoBusca = donde === 'mail'
+      ? 'La carpeta no se mira (eso es «🔗 Vincular PDFs»): primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron.'
+      : 'Primero la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron.'
+    if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano: el avance y el informe quedan en el cartel de arriba a la derecha.\n\n¿Continuar?`)) return
     cancelarPdfRef.current = false
     setBuscandoPdfs(true)
     try {
       const res = await buscarPdfLote({
-        empresa: empresa as 'MSA' | 'PAM' | 'MA', facturaIds: ids, donde: 'mail',
-        facturas: facturasPeriodo.filter(f => ids.includes(f.id)), onProgreso: setProgresoPdf, delayMs: 1500,
+        empresa: empresa as 'MSA' | 'PAM' | 'MA', facturaIds: ids, donde,
+        facturas: ids.map(facturaSinPdf).filter(Boolean) as FacturaArca[], onProgreso: setProgresoPdf, delayMs: 1500,
         isCancelled: () => cancelarPdfRef.current,
       })
-      await cargarFacturasPeriodo(periodoConsulta)
+      await refrescarTrasBuscar()
       if (res.resumenError) toast.error('Búsqueda lista, pero el mail resumen NO se envió: ' + res.resumenError)
       else if (res.resumenEnviado) toast.success('Búsqueda lista. Mail resumen enviado.')
     } catch (err) {
-      toast.error('Error buscando en el mail: ' + (err as Error).message)
+      toast.error('Error en la búsqueda: ' + (err as Error).message)
     } finally {
       setBuscandoPdfs(false)
-      setRecargaUltimasSub(n => n + 1)
+      setRecargaUltimasSinPdf(n => n + 1)
     }
   }
-  // ❌ Desde Subdiarios: «nos mandó la factura» — la respuesta al pedido, desde el día del pedido
-  const buscarRespuestasSubdiario = async (ids: string[]) => {
+  // 📨 «Nos mandó la factura» (A-FEAT-1313): la respuesta al pedido, sólo en el mail y desde el día del pedido
+  const buscarRespuestasSinPdf = async (ids: string[]) => {
     const pedidoDe: Record<string, string> = {}
-    for (const id of ids) { const p = ultimasSubdiario.get(id)?.pedido; if (p) pedidoDe[id] = diaArgentino(new Date(p)) }
+    for (const id of ids) { const p = ultimasSinPdf.get(id)?.pedido; if (p) pedidoDe[id] = diaArgentino(new Date(p)) }
     const conPedido = ids.filter(id => pedidoDe[id])
     if (conPedido.length === 0) { toast.error('Ninguna de éstas tiene un pedido al proveedor registrado.'); return }
     cancelarPdfRef.current = false
@@ -1741,15 +1728,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     try {
       await buscarPdfLote({
         empresa: empresa as 'MSA' | 'PAM' | 'MA', facturaIds: conPedido, respuesta: { pedidoDe },
-        facturas: facturasPeriodo.filter(f => conPedido.includes(f.id)), onProgreso: setProgresoPdf, delayMs: 1000,
+        facturas: conPedido.map(facturaSinPdf).filter(Boolean) as FacturaArca[], onProgreso: setProgresoPdf, delayMs: 1000,
         isCancelled: () => cancelarPdfRef.current, enviarResumen: false,
       })
-      await cargarFacturasPeriodo(periodoConsulta)
+      await refrescarTrasBuscar()
     } catch (err) {
       toast.error('Error buscando las respuestas: ' + (err as Error).message)
     } finally {
       setBuscandoPdfs(false)
-      setRecargaUltimasSub(n => n + 1)
+      setRecargaUltimasSinPdf(n => n + 1)
     }
   }
 
@@ -1770,6 +1757,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (d.fc_nuevo) {
       setFacturas(prev => prev.map(x => x.id === facturaId ? { ...x, fc: d.fc_nuevo } : x))
       setFacturasOriginales(prev => prev.map(x => x.id === facturaId ? { ...x, fc: d.fc_nuevo } : x))
+      setFacturasPeriodo(prev => prev.map(x => x.id === facturaId ? { ...x, fc: d.fc_nuevo } : x))
     }
     toast.success(d.fc_nuevo ? `Descartado. No quedan candidatos: pasó a ${d.fc_nuevo}.` : 'Descartado.')
     return Number(d.quedan ?? 0)
@@ -1787,28 +1775,30 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     return true
   }
 
-  // «Proveedor Portal» (A-FEAT-1287, 2026-10-20) — desde la lista de Buscar PDFs, antes de buscar
-  // (del informe se sacó a pedido del usuario): se marca el PROVEEDOR (las próximas búsquedas lo saltean) y sus facturas
-  // cargadas que siguen sin 📎 pasan a Portal.
-  const marcarProveedorPortal = async (it: { proveedor: string }, cuit: string): Promise<boolean> => {
-    const delInforme = facturas
-      .filter(f => f.cuit === cuit && f.estado !== 'historico' && !f.pdf_drive_url && !['Confirmada', 'APP', 'OK', 'No', 'Portal'].includes(f.fc || ''))
-    if (!window.confirm(`¿${it.proveedor || 'Este proveedor'} manda sus facturas por portal?\n\nQueda marcado como Portal: la búsqueda deja de intentarlo y ${delInforme.length} factura(s) suya(s) sin 📎 pasan a Portal.`)) return false
+  // «Proveedor Portal» (A-FEAT-1287, 2026-10-20) — desde la lista de facturas sin PDF (Subdiarios o «sin
+  // comprobante»; antes, Buscar PDFs): se marca el PROVEEDOR (las próximas búsquedas lo saltean) y sus
+  // facturas cargadas que siguen sin 📎 pasan a Portal.
+  const marcarProveedorPortal = async (cuit: string, proveedor: string): Promise<void> => {
+    const porId = new Map<string, FacturaArca>()
+    ;[...facturasOriginales, ...facturasPeriodo].forEach(f => porId.set(f.id, f))
+    const suyas = Array.from(porId.values())
+      .filter(f => String(f.cuit || '').replace(/\D/g, '') === cuit && f.estado !== 'historico' && !f.pdf_drive_url && !['Confirmada', 'APP', 'OK', 'No', 'Portal'].includes(f.fc || ''))
+    if (!window.confirm(`¿${proveedor || 'Este proveedor'} manda sus facturas por portal?\n\nQueda marcado como Portal: la búsqueda deja de intentarlo y ${suyas.length} factura(s) suya(s) sin 📎 pasan a Portal.`)) return
     const r = await fetch('/api/gas/config-proveedor', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cuit, fc_modo: 'portal' }),
     })
     const d = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
-    if (!d.ok) { toast.error('No se pudo marcar el proveedor: ' + (d.error || '')); return false }
-    if (delInforme.length > 0) {
-      const ids = delInforme.map(f => f.id)
+    if (!d.ok) { toast.error('No se pudo marcar el proveedor: ' + (d.error || '')); return }
+    if (suyas.length > 0) {
+      const ids = suyas.map(f => f.id)
       const { error } = await supabase.schema(schemaName).from('comprobantes_arca').update({ fc: 'Portal' }).in('id', ids)
-      if (error) { toast.error('El proveedor quedó en Portal, pero sus facturas no: ' + error.message); return true }
-      setFacturas(prev => prev.map(f => ids.includes(f.id) ? { ...f, fc: 'Portal' } : f))
-      setSeleccionPdf(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n })
+      if (error) { toast.error('El proveedor quedó en Portal, pero sus facturas no: ' + error.message); return }
+      const aPortal = (prev: FacturaArca[]) => prev.map(f => ids.includes(f.id) ? { ...f, fc: 'Portal' } : f)
+      setFacturas(aPortal); setFacturasOriginales(aPortal); setFacturasPeriodo(aPortal)
     }
-    toast.success(`${it.proveedor || 'Proveedor'} quedó como Portal`)
-    return true
+    setProvPorCuit(prev => prev[cuit] ? { ...prev, [cuit]: { ...prev[cuit], fc_modo: 'portal' } } : prev)
+    toast.success(`${proveedor || 'Proveedor'} quedó como Portal`)
   }
 
   // Renderizar valor de celda según el tipo de columna
@@ -2262,7 +2252,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   // Carga el mail (y estado GAS) de los proveedores de las facturas visibles, indexado por CUIT.
-  // Se llama al abrir el modal Buscar PDFs para mostrar/editar el mail ahí mismo.
+  // Se llama al importar, para mostrar/editar el mail en la imputación.
   const cargarMailesProveedores = async (cuits: string[]) => {
     const unicos = Array.from(new Set(cuits.filter(Boolean)))
     if (unicos.length === 0) { setProvPorCuit({}); return }
@@ -2311,14 +2301,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     if (fallas.length > 0) toast.error('No se guardó el mail de: ' + fallas.join(' · '), { duration: 20000 })
   }
 
-  // Guarda el mail del proveedor (por CUIT) desde el modal Buscar PDFs vía el endpoint de config.
+  // Guarda el mail del proveedor (por CUIT) desde la lista de facturas sin PDF vía el endpoint de config.
   // Si el proveedor no tenía mail, además lo habilita para búsqueda (gas_habilitado + fc_modo='mail')
   // para que el mail recién cargado se use de verdad; si no, quedaría cosmético.
   // `valor` = la sugerencia aceptada con «usar» (A-FEAT-1287): se guarda directo, sin pasar por el input.
-  const guardarMailProveedor = async (cuit: string, valor?: string) => {
+  const guardarMailProveedor = async (cuit: string, valor: string): Promise<boolean> => {
     const prov = provPorCuit[cuit]
-    if (!prov) { toast.error('No existe el proveedor para ese CUIT (cargalo en Config PDFs)'); return }
-    const nuevo = (valor ?? provEditMail[cuit] ?? '').trim()
+    if (!prov) { toast.error('No existe el proveedor para ese CUIT (cargalo en Config PDFs)'); return false }
+    const nuevo = valor.trim()
     const eraVacio = !prov.email_facturacion
     setGuardandoMailCuit(cuit)
     try {
@@ -2329,12 +2319,13 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         body: JSON.stringify(payload),
       })
       const d = await r.json()
-      if (!d.ok) { toast.error('Error guardando mail: ' + (d.error || '')); return }
+      if (!d.ok) { toast.error('Error guardando mail: ' + (d.error || '')); return false }
       setProvPorCuit(prev => ({ ...prev, [cuit]: { ...prev[cuit], email_facturacion: nuevo || null, ...(nuevo && eraVacio ? { gas_habilitado: true, fc_modo: 'mail' } : {}) } }))
-      setProvEditMail(prev => { const n = { ...prev }; delete n[cuit]; return n })
       toast.success(nuevo && eraVacio ? 'Mail guardado y proveedor habilitado para búsqueda.' : 'Mail del proveedor guardado.')
+      return true
     } catch (e) {
       toast.error('Error de red: ' + (e as Error).message)
+      return false
     } finally {
       setGuardandoMailCuit(null)
     }
@@ -7098,35 +7089,39 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         </Card>
       )}
 
-      {/* ❌ Facturas sin PDF del período: pedirlas y buscarlas en el mail desde acá (paso 4, 2026-10-23) */}
-      {facturasPeriodo.length > 0 && (() => {
-        const { filas, pedidas, buscables } = faltantesDelSubdiario(facturasPeriodo, ultimasSubdiario, hoyArgentina())
+      {/* 👀 A confirmar del período: VER (elegir el archivo) y APP (confirmar el que vinculó la app) —
+          venía de Buscar PDFs, retirada 2026-10-23 */}
+      {(() => {
+        const aConfirmar = facturasPeriodo.filter(f => ((f.fc === 'VER' && !f.pdf_drive_url) || (f.fc === 'APP' && !!f.pdf_drive_url))
+          && coincideBusqueda(buscarSubdiario, textosDeFactura(f)))
+        if (aConfirmar.length === 0) return null
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">👀 A confirmar ({aConfirmar.length})</CardTitle>
+              <p data-ayuda className="text-sm text-muted-foreground">
+                Esperan tu sí: <strong>VER</strong> tiene uno o más archivos posibles y la app no eligió; <strong>APP</strong> ya tiene
+                el archivo que vinculó la app. Abrí el PDF y decí si es ésa: queda <strong>Confirmada</strong>.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <PanelAConfirmar
+                facturas={aConfirmar.map(f => ({ id: f.id, rotulo: `${f.tipo_comprobante_desc || 'FC'} ${f.punto_venta}-${f.numero_desde}`, proveedor: f.denominacion_emisor || '',
+                  fc: f.fc ?? null, fecha_emision: f.fecha_emision, imp_total: f.imp_total, pdf_drive_url: f.pdf_drive_url }))}
+                onElegir={elegirCandidatoUrl}
+                onDescartar={(id, url) => descartarCandidatoUrl(id, url, 'desde Subdiarios')}
+                onConfirmarApp={(id, url) => confirmarConLink({ id }, url, '¿Abriste el PDF y es ésta? Pasa de APP a Confirmada con el mismo archivo.')} />
+            </CardContent>
+          </Card>
+        )
+      })()}
+
+      {/* ❌ Facturas sin PDF del período: pedirlas y buscarlas en el mail desde acá (2026-10-23) */}
+      {facturasPeriodo.length > 0 && !esContable && (() => {
+        const { filas, pedidas } = faltantesDelSubdiario(facturasPeriodo, ultimasSinPdf, hoyArgentina())
         if (filas.length === 0) return null
-        const sel = seleccionFaltantes ?? new Set(buscables)
         const visibles = filas.filter(f => coincideBusqueda(buscarSubdiario, [f.proveedor, f.cuit, f.comprobante, f.imp_total,
           (Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })]))
-        // Las acciones van sobre lo tildado QUE SE VE: con el buscador puesto, no se pide algo que no está en pantalla
-        const elegidas = visibles.filter(f => sel.has(f.id))
-        const idsElegidas = elegidas.map(f => f.id)
-        const pedidasElegidas = idsElegidas.filter(id => pedidas.includes(id))
-        const buscablesElegidas = elegidas.filter(f => f.buscable).map(f => f.id)
-        const todas = visibles.length > 0 && visibles.every(f => sel.has(f.id))
-        const alternar = (id: string) => setSeleccionFaltantes(prev => {
-          const n = new Set(prev ?? buscables); if (n.has(id)) n.delete(id); else n.add(id); return n
-        })
-        const alternarTodas = () => setSeleccionFaltantes(prev => {
-          const n = new Set(prev ?? buscables); visibles.forEach(f => { if (todas) n.delete(f.id); else n.add(f.id) }); return n
-        })
-        const copiarPedido = async () => {
-          try {
-            await navigator.clipboard.writeText(textoPedidoFacturas(elegidas.map(f => ({
-              fecha_emision: f.fecha_emision, imp_total: f.imp_total, proveedor: f.proveedor, comprobante: f.comprobante }))))
-            toast.success(`Pedido copiado (${elegidas.length} factura${elegidas.length === 1 ? '' : 's'}). Pegalo donde quieras.`)
-          } catch {
-            toast.error('El navegador no dejó copiar al portapapeles.')
-          }
-        }
-        const fechaAR = (iso?: string | null) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—'
         return (
           <Card>
             <CardHeader>
@@ -7137,74 +7132,17 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               <p data-ayuda className="text-sm text-muted-foreground">
                 Las que están en el subdiario y les falta el PDF (las mismas del chip «❌ faltantes»). Tildá las que quieras y
                 pedilas — <strong>📋 copiar</strong> arma el texto para mandárselo a quien sea, <strong>📮</strong> le escribe a cada
-                proveedor desde el mail — o buscalas en el mail. Lo que encuentra queda vinculado como en Buscar PDFs.
+                proveedor desde el mail — o buscalas en el mail. Lo encontrado queda en APP para confirmar.
               </p>
               {buscarSubdiario.trim() && (
-                <p className="text-xs text-blue-700">🔎 Filtrado por «{buscarSubdiario.trim()}»: {visibles.length} de {filas.length}.</p>
+                <p className="text-xs text-blue-700">🔎 Filtrado por «{buscarSubdiario.trim()}»: {visibles.length} de {filas.length}. Los botones actúan sobre lo que se ve.</p>
               )}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Button variant="outline" size="sm" disabled={elegidas.length === 0} onClick={copiarPedido}
-                  title="Copia la lista de facturas que faltan (fecha, proveedor, comprobante, importe) para pegarla en un mail o un mensaje">
-                  📋 Copiar pedido ({elegidas.length})
-                </Button>
-                <Button variant="outline" size="sm" disabled={elegidas.length === 0 || buscandoPdfs} onClick={() => setPedirFacturas(idsElegidas)}
-                  title="Un mail por proveedor pidiéndole sus facturas: elegís si queda como borrador en Gmail o se envía">
-                  📮 Pedir al proveedor ({elegidas.length})
-                </Button>
-                <Button variant="outline" size="sm" disabled={pedidasElegidas.length === 0 || buscandoPdfs} onClick={() => buscarRespuestasSubdiario(pedidasElegidas)}
-                  title="Nos mandaron las facturas pedidas: buscarlas en el mail desde el día de cada pedido">
-                  📨 ¿Llegaron? ({pedidasElegidas.length})
-                </Button>
-                <Button size="sm" disabled={buscablesElegidas.length === 0 || buscandoPdfs} onClick={() => buscarFaltantesEnMail(buscablesElegidas)}
-                  title="Buscar el PDF en el mail (del proveedor y en los reenvíos). La carpeta la mira «🔗 Vincular PDFs»">
-                  {buscandoPdfs ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Search className="h-4 w-4 mr-1" />}
-                  📧 Buscar en el mail ({buscablesElegidas.length})
-                </Button>
-                {buscandoPdfs && <span className="text-xs text-blue-700">Hay una búsqueda corriendo: el avance está en el cartel de arriba a la derecha.</span>}
-              </div>
+              {renglonReenvios()}
             </CardHeader>
             <CardContent>
-              <div className="overflow-auto max-h-80">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white border-b text-xs text-muted-foreground">
-                    <tr>
-                      <th className="p-1 w-8"><input type="checkbox" checked={todas} onChange={alternarTodas} title="Tildar / destildar todas las que se ven" /></th>
-                      <th className="p-1 text-left">Fecha</th>
-                      <th className="p-1 text-left">Proveedor</th>
-                      <th className="p-1 text-left">Comprobante</th>
-                      <th className="p-1 text-right">Total</th>
-                      <th className="p-1 text-left">Pedido</th>
-                      <th className="p-1 text-left">Último mail</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibles.map(f => (
-                      <tr key={f.id} className={`border-b ${f.buscable ? '' : 'text-gray-400'}`}>
-                        <td className="p-1"><input type="checkbox" checked={sel.has(f.id)} onChange={() => alternar(f.id)} /></td>
-                        <td className="p-1 whitespace-nowrap">{fechaAR(f.fecha_emision)}</td>
-                        <td className="p-1">{f.proveedor}</td>
-                        <td className="p-1 whitespace-nowrap">
-                          {f.comprobante}
-                          {!f.buscable && <span className="ml-1 text-[10px] px-1 rounded border border-gray-300"
-                            title={f.fc === 'VER' ? 'Tiene candidatos para confirmar: eso se hace en Buscar PDFs → 👀 A confirmar' : `FC «${f.fc}»: no se busca`}>FC {f.fc}</span>}
-                        </td>
-                        <td className="p-1 text-right whitespace-nowrap">{(Number(f.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="p-1 whitespace-nowrap text-xs">
-                          {f.pedido ? (
-                            <span className="text-amber-700" title={f.pedido.borrador ? 'Se armó el borrador del pedido (en Gmail): fijate si lo mandaste' : 'Se le pidió la factura al proveedor por mail'}>
-                              📮 {f.pedido.borrador ? 'borrador' : 'pedida'} {f.pedido.hace}{' '}
-                              <button type="button" className="underline text-blue-700" disabled={buscandoPdfs}
-                                title="Nos mandó la factura: buscarla en el mail desde el día del pedido"
-                                onClick={() => buscarRespuestasSubdiario([f.id])}>📨 ¿llegó?</button>
-                            </span>
-                          ) : <span className="text-gray-400">—</span>}
-                        </td>
-                        <td className="p-1 whitespace-nowrap text-xs text-gray-500">{f.ultimoMail ? fechaAR(f.ultimoMail) : 'nunca'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <PanelFacturasSinPdf filas={visibles} dondeBusca="mail" buscando={buscandoPdfs} proveedores={provPorCuit}
+                onGuardarMail={guardarMailProveedor} onPortal={marcarProveedorPortal}
+                onPedir={ids => setPedirFacturas(ids)} onLlegaron={buscarRespuestasSinPdf} onBuscar={ids => buscarSinPdf(ids, 'mail')} />
             </CardContent>
           </Card>
         )
@@ -7612,26 +7550,6 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             {/* Búsqueda de PDFs vía GAS (solo admin) */}
             {!esContable && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Pre-seleccionar solo las auto-buscables (Buscar / null). El usuario puede
-                    // agregar/quitar a mano (incluso forzar NO Mail / No) desde el modal.
-                    const auto = candidatosParaBuscar(facturas).filter(esPendienteDeBuscar).map(f => f.id)
-                    setSeleccionPdf(new Set(auto))
-                    setPdfDesde('')
-                    setPdfHasta('')
-                    setPdfSubdiario('')
-                    setFiltroTiposPdf(new Set())
-                    setModalBuscarPdf(true)
-                    cargarMailesProveedores(facturas.map(f => f.cuit))
-                  }}
-                  disabled={buscandoPdfs}
-                  title="Elegir qué facturas buscar (selección, rango de fechas)"
-                >
-                  {buscandoPdfs ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                  Buscar PDFs
-                </Button>
                 <Button
                   variant="outline"
                   onClick={() => setModalHistorialPdf({ open: true })}
@@ -9007,12 +8925,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           2026-10-21: «yo no podría poner confirmado sin linkear»). Antes «Marcar recibida» ponía «Sí»
           sin archivo, que es el estado de Ulises, y listaba las «No», que ahora son «no corresponde». */}
       <Dialog open={mostrarModalMarcarFC} onOpenChange={setMostrarModalMarcarFC}>
-        <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col">
+        <DialogContent className="max-w-none w-[96vw] max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Facturas sin comprobante (sin 📎)</DialogTitle>
             <DialogDescription>
-              Pegá el link del PDF en Google Drive y tocá Vincular: queda Confirmada con su 📎. Las que están en VER se resuelven eligiendo el candidato. Para buscarlas solas, usá Buscar PDFs.
+              Todas las que no tienen PDF, de cualquier mes y estén o no imputadas. Tildá y pedilas o buscalas (primero la carpeta de su subdiario —sin imputar: su mes de emisión y el siguiente— y después el mail), o pegá el link del PDF en Google Drive y tocá Vincular: queda Confirmada con su 📎. Las que están en VER se resuelven eligiendo el candidato.
             </DialogDescription>
+            {renglonReenvios()}
           </DialogHeader>
           <div className="overflow-y-auto flex-1">
             {(() => {
@@ -9020,60 +8939,49 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               if (pendientes.length === 0) {
                 return <div className="text-center text-gray-500 py-8">No quedan facturas sin comprobante 🎉</div>
               }
+              const { filas } = faltantesDelSubdiario(pendientes, ultimasSinPdf, hoyArgentina())
+              const porId = new Map(pendientes.map(f => [f.id, f]))
               return (
-                <table className="w-full text-xs border-collapse">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="text-left p-2">Fecha</th>
-                      <th className="text-left p-2">Proveedor</th>
-                      <th className="text-left p-2">FC</th>
-                      <th className="text-right p-2">Monto</th>
-                      <th className="p-2 w-80"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {pendientes.map(f => (
-                      <tr key={f.id} className="hover:bg-gray-50">
-                        <td className="p-2">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
-                        <td className="p-2 max-w-[200px] truncate" title={f.cuit}>{f.denominacion_emisor} <span className="text-gray-400">{f.punto_venta}-{f.numero_desde}</span></td>
-                        <td className="p-2"><span title={ayudaFc(f.fc ?? '')} className={`px-1.5 py-0.5 rounded ${colorFc(f.fc ?? '')}`}>{f.fc || 'sin estado'}</span></td>
-                        <td className="p-2 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })}</td>
-                        <td className="p-2 text-right">
-                          {f.fc === 'VER' ? (
-                            <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-50"
-                              onClick={() => confirmarVer(f)}>
-                              Elegir candidato
-                            </Button>
-                          ) : (
-                            <div className="flex items-center gap-1 justify-end">
-                              <Input
-                                type="text"
-                                placeholder="https://drive.google.com/…"
-                                value={linksAVincular[f.id] ?? ''}
-                                onChange={e => setLinksAVincular(prev => ({ ...prev, [f.id]: e.target.value }))}
-                                className="h-7 text-xs w-52"
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-green-400 text-green-700 hover:bg-green-50"
-                                disabled={!linkParaConfirmar(linksAVincular[f.id])}
-                                title={linkParaConfirmar(linksAVincular[f.id]) ? 'Vincular este archivo → Confirmada' : 'Pegá primero el link de Google Drive'}
-                                onClick={async () => {
-                                  const monto = (f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })
-                                  await confirmarConLink(f, linksAVincular[f.id], `¿Vincular ese archivo a ${f.denominacion_emisor || f.cuit || 'esta factura'} por ${monto}? Queda Confirmada.`)
-                                }}
-                              >
-                                <Check className="mr-1 h-3 w-3" />
-                                Vincular
-                              </Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <PanelFacturasSinPdf filas={filas} dondeBusca="ambos" buscando={buscandoPdfs} proveedores={provPorCuit}
+                  rotuloDe={id => { const f = porId.get(id); return f ? subdiarioDe(f).rotulo : null }}
+                  onGuardarMail={guardarMailProveedor} onPortal={marcarProveedorPortal}
+                  onPedir={ids => setPedirFacturas(ids)}
+                  onLlegaron={ids => { setMostrarModalMarcarFC(false); buscarRespuestasSinPdf(ids) }}
+                  onBuscar={ids => { setMostrarModalMarcarFC(false); buscarSinPdf(ids, 'ambos') }}
+                  accionFila={id => {
+                    const f = porId.get(id)
+                    if (!f) return null
+                    return f.fc === 'VER' ? (
+                      <Button size="sm" variant="outline" className="border-green-400 text-green-700 hover:bg-green-50"
+                        onClick={() => confirmarVer(f)}>
+                        Elegir candidato
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1 justify-end">
+                        <Input
+                          type="text"
+                          placeholder="https://drive.google.com/…"
+                          value={linksAVincular[f.id] ?? ''}
+                          onChange={e => setLinksAVincular(prev => ({ ...prev, [f.id]: e.target.value }))}
+                          className="h-7 text-xs w-52"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-green-400 text-green-700 hover:bg-green-50"
+                          disabled={!linkParaConfirmar(linksAVincular[f.id])}
+                          title={linkParaConfirmar(linksAVincular[f.id]) ? 'Vincular este archivo → Confirmada' : 'Pegá primero el link de Google Drive'}
+                          onClick={async () => {
+                            const monto = (f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, style: 'currency', currency: 'ARS' })
+                            await confirmarConLink(f, linksAVincular[f.id], `¿Vincular ese archivo a ${f.denominacion_emisor || f.cuit || 'esta factura'} por ${monto}? Queda Confirmada.`)
+                          }}
+                        >
+                          <Check className="mr-1 h-3 w-3" />
+                          Vincular
+                        </Button>
+                      </div>
+                    )
+                  }} />
               )
             })()}
           </div>
@@ -9086,7 +8994,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
 
         {/* Tab Content: Subdiarios */}
         <TabsContent value="subdiarios" className="space-y-6">
-          <SubdiariosContent />
+          {/* Se LLAMA, no se monta como <SubdiariosContent />: es una función nueva en cada render, y montada
+              React la desarmaba entera cada vez (el buscador perdía el cursor y las listas sus tildes). No usa hooks. */}
+          {SubdiariosContent()}
         </TabsContent>
 
         {/* Tab Content: Histórico */}
@@ -12871,9 +12781,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           dispararBusquedaPostImport(ids, donde)
         }} />
 
-      {/* 📮 Pedir la factura al proveedor (A-FEAT-1313) — desde Buscar PDFs o desde el informe */}
+      {/* 📮 Pedir la factura al proveedor (A-FEAT-1313) — desde la lista de sin PDF o desde el informe */}
       <ModalPedirFacturas open={!!pedirFacturas} empresa={empresa as 'MSA' | 'PAM' | 'MA'} facturaIds={pedirFacturas || []}
-        onClose={() => setPedirFacturas(null)} onHecho={() => { setRecargaUltimas(n => n + 1); setRecargaUltimasSub(n => n + 1) }} />
+        onClose={() => setPedirFacturas(null)} onHecho={() => setRecargaUltimasSinPdf(n => n + 1)} />
 
       {/* ✓ de VER: elegir entre los candidatos (A-FEAT-1287) */}
       <ModalElegirCandidato
@@ -12912,364 +12822,6 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         open={auditarPeriodoOpen}
         onClose={() => setAuditarPeriodoOpen(false)}
       />
-
-      {/* Modal buscar PDFs — selección individual / todo-nada / rango fechas + cancelar */}
-      <Dialog open={modalBuscarPdf} onOpenChange={(o) => { if (!buscandoPdfs) setModalBuscarPdf(o) }}>
-        {/* Pantalla completa (usuario 2026-10-22: con la explicación arriba, la lista quedaba en una fila) */}
-        <DialogContent className="max-w-none w-[98vw] h-[96vh] max-h-[96vh] flex flex-col p-4 gap-2">
-          <DialogHeader className="space-y-1">
-            <DialogTitle>Buscar PDFs</DialogTitle>
-            <DialogDescription asChild>
-              <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer select-none">ℹ️ Cómo busca</summary>
-              Sólo aparecen las que no tienen 📎 (nunca las de Portal ni las de No). Vienen marcadas y arriba las de «Buscar», sin estado y las «Sí» de Ulises sin archivo; podés sumar o sacar a mano.
-              Primero se mira la carpeta de su subdiario en Drive (si no está imputada, la de su mes de emisión y la del siguiente); lo que no esté, se busca en Gmail. Si aparecen dos archivos para una factura, no se vincula ninguno: queda en VER para que elijas.
-              </details>
-            </DialogDescription>
-            <LeyendaEstadosFc />
-            <TestsDelProceso proceso="egresos/buscar-pdf" pantalla="egresos" />
-          </DialogHeader>
-
-          {(() => {
-            // Sin el histórico y con las pendientes primero → candidatosParaBuscar (A-FEAT-1287).
-            const esPendiente = esPendienteDeBuscar
-            const ofrecidas = candidatosParaBuscar(facturas)
-            // Selector por SUBDIARIO (dónde está imputada) + fechas opcionales para las que no lo están
-            const subdiarios = subdiariosPresentes(ofrecidas)
-            const candidatosFecha = ofrecidas.filter(f => {
-              const fe = f.fecha_emision || ''
-              if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
-              if (pdfDesde && fe < pdfDesde) return false
-              if (pdfHasta && fe > pdfHasta) return false
-              return true
-            })
-            const tiposPresentes = Array.from(new Set(candidatosFecha.map(f => f.fc ?? '(sin estado)')))
-            // candidatos = lo visible (acotado por chips de tipo). Todas/Ninguna/lista operan sobre esto.
-            const candidatos = filtroTiposPdf.size === 0
-              ? candidatosFecha
-              : candidatosFecha.filter(f => filtroTiposPdf.has(f.fc ?? '(sin estado)'))
-            const aConfirmar = facturas.filter(f => {
-              const fe = f.fecha_emision || ''
-              if (f.estado === 'historico') return false
-              if (pdfSubdiario && subdiarioDe(f).clave !== pdfSubdiario) return false
-              if (pdfDesde && fe < pdfDesde) return false
-              if (pdfHasta && fe > pdfHasta) return false
-              return (f.fc === 'VER' && !f.pdf_drive_url) || (f.fc === 'APP' && !!f.pdf_drive_url)
-            })
-            const fcBadge = (fc: string | null) =>
-              <span title={ayudaFc(fc)} className={`px-1.5 py-0.5 rounded text-[10px] ${colorFc(fc)}`}>{fc ?? '(sin estado)'}</span>
-            return (
-              <>
-                <div className="flex flex-wrap items-end gap-3 border-b pb-3">
-                  <Button size="sm" variant={pdfVista === 'confirmar' ? 'default' : 'outline'} className="h-8"
-                    title="Ver sólo las que esperan tu sí: VER (elegir el archivo) y APP (confirmar el que vinculó la app)"
-                    onClick={() => setPdfVista(v => v === 'confirmar' ? 'buscar' : 'confirmar')}>
-                    👀 A confirmar ({aConfirmar.length})
-                  </Button>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-0.5">Subdiario</label>
-                    <select value={pdfSubdiario} onChange={e => setPdfSubdiario(e.target.value)} disabled={buscandoPdfs}
-                      className="h-8 text-xs border rounded px-1 bg-white">
-                      <option value="">Todos ({ofrecidas.length})</option>
-                      {subdiarios.map(s => <option key={s.clave} value={s.clave}>{s.rotulo} ({s.cantidad})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-0.5">Desde (emisión, opcional)</label>
-                    <Input type="date" value={pdfDesde} onChange={e => setPdfDesde(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 block mb-0.5">Hasta (emisión, opcional)</label>
-                    <Input type="date" value={pdfHasta} onChange={e => setPdfHasta(e.target.value)} className="h-8 text-xs" disabled={buscandoPdfs} />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
-                      onClick={() => setSeleccionPdf(new Set(candidatos.map(f => f.id)))}>Todas ({candidatos.length})</Button>
-                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
-                      onClick={() => setSeleccionPdf(new Set())}>Ninguna</Button>
-                    <Button size="sm" variant="outline" disabled={buscandoPdfs}
-                      onClick={() => setSeleccionPdf(new Set(candidatos.filter(esPendiente).map(f => f.id)))} title="Buscar, sin estado y Sí sin 📎">Solo pendientes</Button>
-                  </div>
-                </div>
-
-                {tiposPresentes.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-2 pb-1">
-                    <span className="text-xs text-gray-400 mr-1">Tipos:</span>
-                    {tiposPresentes.map(tipo => {
-                      const activo = filtroTiposPdf.has(tipo)
-                      return (
-                        <button key={tipo} type="button" disabled={buscandoPdfs} title={tituloChip(tipo)}
-                          onClick={(ev) => toggleChip(setFiltroTiposPdf, tipo, esSoloEste(ev))}
-                          className={`px-2 py-0.5 rounded text-[11px] border ${activo ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-                          {tipo}
-                        </button>
-                      )
-                    })}
-                    {filtroTiposPdf.size > 0 && (
-                      <button type="button" className="text-[11px] text-gray-500 underline ml-1" onClick={() => setFiltroTiposPdf(new Set())}>limpiar</button>
-                    )}
-                    {tiposPresentes.length > 1 && (
-                      <span className="ml-1 text-[10px] text-gray-400">{PISTA_CTRL_CLICK}</span>
-                    )}
-                  </div>
-                )}
-
-                {(() => {
-                  const hora = (iso?: string) => iso ? new Date(iso).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'nunca'
-                  const r = resumenUltimas(candidatos.map(f => f.id), ultimasPdf)
-                  // Las de VER no se ofrecen (tienen candidato): se avisa cuántas hay acá para que no desaparezcan
-                  const enVer = facturas.filter(f => f.fc === 'VER' && !f.pdf_drive_url && f.estado !== 'historico'
-                    && (!pdfSubdiario || subdiarioDe(f).clave === pdfSubdiario)
-                    && (!pdfDesde || (f.fecha_emision || '') >= pdfDesde) && (!pdfHasta || (f.fecha_emision || '') <= pdfHasta))
-                  return (
-                    <div className="text-[11px] text-gray-600 pt-2 space-y-0.5">
-                      {candidatos.length > 0 && (
-                        <p>
-                          <span className="text-gray-500">Última búsqueda de estas {candidatos.length}:</span>{' '}
-                          🗂️ carpeta <b>{hora(r.carpeta)}</b>{r.sinCarpeta > 0 && r.carpeta ? <span className="text-gray-400"> ({r.sinCarpeta} nunca)</span> : null}
-                          {' · '}📧 mail <b>{hora(r.mail)}</b>{r.sinMail > 0 && r.mail ? <span className="text-gray-400"> ({r.sinMail} nunca)</span> : null}
-                        </p>
-                      )}
-                      {inventarioPdf && 'error' in inventarioPdf && (
-                        <p className="text-gray-400">📨 Reenvíos: no se pudo leer lo ya leído ({inventarioPdf.error})</p>
-                      )}
-                      {inventarioPdf && !('error' in inventarioPdf) && (
-                        <div>
-                          <span className="text-gray-500">📨 Ya leído (no se vuelve a leer):</span>{' '}
-                          {inventarioPdf.reenviadores.map((rv, i) => {
-                            const b = rv.bloques[0]
-                            const d = (iso: string) => iso.split('-').reverse().map((x, k) => k === 2 ? x.slice(2) : x).join('/')
-                            return <span key={rv.clave}>{i > 0 ? ' · ' : ''}{rv.nombre} <b>{b ? `${d(b.desde)} → ${d(b.hasta)}` : 'nunca'}</b>{rv.bloques.length > 1 ? <span className="text-gray-400"> (+{rv.bloques.length - 1} tramo{rv.bloques.length > 2 ? 's' : ''} más viejo{rv.bloques.length > 2 ? 's' : ''})</span> : null}</span>
-                          })}
-                          {' · '}{inventarioPdf.adjuntos} adjunto{inventarioPdf.adjuntos === 1 ? '' : 's'} guardado{inventarioPdf.adjuntos === 1 ? '' : 's'}
-                          {inventarioPdf.ilegibles > 0 && (
-                            <details className="inline-block ml-1">
-                              <summary className="inline cursor-pointer text-amber-700 underline">{inventarioPdf.ilegibles} ilegible{inventarioPdf.ilegibles === 1 ? '' : 's'}</summary>
-                              <ul className="mt-1 ml-3 list-disc">
-                                {inventarioPdf.ilegiblesLista.map(x => (
-                                  <li key={x.gmail_message_id + (x.nombre_archivo || '')}>
-                                    <a className="text-blue-600 underline" href={`https://mail.google.com/mail/u/0/#all/${x.gmail_message_id}`} target="_blank" rel="noreferrer">{x.nombre_archivo || 'adjunto'}</a>
-                                    {' '}<span className="text-gray-400">{(x.fecha_mail || '').slice(0, 10).split('-').reverse().join('/')} · {x.chars ?? 0} caracteres</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </details>
-                          )}
-                        </div>
-                      )}
-                      {enVer.length > 0 && (
-                        <p className="text-amber-700">
-                          ⚠️ {enVer.length} en VER no aparecen acá porque ya tienen un candidato: resolvelas con <b>👀 A confirmar</b> (Es ésta / No es ésta).
-                          {' '}{enVer.slice(0, 3).map(f => `${f.denominacion_emisor} ${f.punto_venta}-${f.numero_desde}`).join(' · ')}{enVer.length > 3 ? '…' : ''}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                <div className="overflow-y-auto flex-1 min-h-0 -mx-1 px-1">
-                  {pdfVista === 'confirmar' ? (
-                    <PanelAConfirmar
-                      facturas={aConfirmar.map(f => ({ id: f.id, rotulo: `${f.tipo_comprobante_desc || 'FC'} ${f.punto_venta}-${f.numero_desde}`, proveedor: f.denominacion_emisor || '',
-                        fc: f.fc ?? null, fecha_emision: f.fecha_emision, imp_total: f.imp_total, pdf_drive_url: f.pdf_drive_url }))}
-                      onElegir={elegirCandidatoUrl}
-                      onDescartar={(id, url) => descartarCandidatoUrl(id, url, 'desde A confirmar')}
-                      onConfirmarApp={(id, url) => confirmarConLink({ id }, url, '¿Abriste el PDF y es ésta? Pasa de APP a Confirmada con el mismo archivo.')} />
-                  ) : candidatos.length === 0 ? (
-                    <p className="text-sm text-gray-500 py-6 text-center">No hay facturas sin 📎 en ese subdiario o rango.</p>
-                  ) : (
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-white border-b">
-                        <tr className="text-left text-gray-500">
-                          <th className="p-1 w-8"></th>
-                          <th className="p-1">Emisión</th>
-                          <th className="p-1" title="Dónde está imputada (mes contable)">Subdiario</th>
-                          <th className="p-1">Proveedor</th>
-                          <th className="p-1 text-right">Importe</th>
-                          <th className="p-1">Estado FC</th>
-                          <th className="p-1 whitespace-nowrap" title="Última vez que se buscó en la carpeta del mes / en el mail">Últ. carpeta · mail</th>
-                          <th className="p-1 w-[240px]">Mail proveedor</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {candidatos.map(f => {
-                          const cuit = f.cuit
-                          const prov = provPorCuit[cuit]
-                          const editando = provEditMail[cuit] !== undefined
-                          const valorMail = editando ? provEditMail[cuit] : (prov?.email_facturacion ?? '')
-                          const cambiado = editando && (provEditMail[cuit] ?? '') !== (prov?.email_facturacion ?? '')
-                          return (
-                          <tr key={f.id} className="border-b hover:bg-gray-50">
-                            <td className="p-1">
-                              <Checkbox checked={seleccionPdf.has(f.id)} disabled={buscandoPdfs}
-                                onCheckedChange={(c) => {
-                                  setSeleccionPdf(prev => { const n = new Set(prev); if (c) n.add(f.id); else n.delete(f.id); return n })
-                                }} />
-                            </td>
-                            <td className="p-1">{f.fecha_emision?.split('-').reverse().join('/') || '—'}</td>
-                            <td className={`p-1 whitespace-nowrap ${subdiarioDe(f).clave === 'sin' ? 'text-gray-400 italic' : ''}`}>{subdiarioDe(f).rotulo}</td>
-                            <td className="p-1 max-w-[220px] truncate">{f.denominacion_emisor}</td>
-                            <td className="p-1 text-right">{(f.imp_total || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}</td>
-                            <td className="p-1 whitespace-nowrap">
-                              {fcBadge(f.fc)}
-                              {prov && (
-                                <button type="button" disabled={buscandoPdfs}
-                                  title="Este proveedor factura por portal: queda como Portal con todas sus facturas sin 📎, y no se busca"
-                                  onClick={() => marcarProveedorPortal({ proveedor: f.denominacion_emisor || '' }, cuit)}
-                                  className="ml-1 text-[10px] px-1 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
-                                  → Portal
-                                </button>
-                              )}
-                            </td>
-                            <td className="p-1 whitespace-nowrap text-[10px] text-gray-500">
-                              {(() => {
-                                const u = ultimasPdf.get(f.id)
-                                const dia = (iso?: string) => iso ? new Date(iso).toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit' }) : '—'
-                                return <span title="carpeta · mail">🗂️ {dia(u?.carpeta)} · 📧 {dia(u?.mail)}{u?.pedido
-                                  ? <span className="block text-amber-700" title={u.pedidoBorrador ? 'Se armó el borrador del pedido (en Gmail); fijate si lo mandaste' : 'Se le pidió la factura al proveedor por mail'}>📮 {u.pedidoBorrador ? 'borrador' : 'pedida'} {haceCuanto(diaArgentino(new Date(u.pedido)), hoyArgentina())}
-                                      {' '}<button type="button" className="underline text-blue-700" disabled={buscandoPdfs}
-                                        title="Nos mandó la factura: buscarla en el mail desde el día del pedido (del proveedor o respondiendo a nuestro pedido)"
-                                        onClick={() => buscarRespuestas([f.id])}>📨 ¿llegó?</button></span>
-                                  : null}</span>
-                              })()}
-                            </td>
-                            <td className="p-1">
-                              {!prov ? (
-                                <span className="text-[10px] text-gray-400 italic" title="No existe el proveedor en la BD. Cargalo desde 'Config PDFs'.">sin proveedor</span>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  {/* 💡 Sugerencia: el mail de PAGOS del mismo proveedor. Sólo se usa con «usar»
-                                      (queda guardado como mail de facturas); sin ese OK, no se busca. */}
-                                  {!valorMail && !editando && prov.email_pagos ? (
-                                    <>
-                                      <span className="text-[10px] text-gray-500 truncate flex-1" title={`Es el mail de PAGOS de este proveedor. Si lo usás, queda guardado como mail de facturas.`}>
-                                        💡 {prov.email_pagos} <span className="text-gray-400">(de pagos)</span>
-                                      </span>
-                                      <button type="button" disabled={buscandoPdfs || guardandoMailCuit === cuit}
-                                        onClick={() => guardarMailProveedor(cuit, prov.email_pagos!)}
-                                        className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50">
-                                        {guardandoMailCuit === cuit ? <Loader2 className="h-3 w-3 animate-spin" /> : 'usar'}
-                                      </button>
-                                      <button type="button" title="Escribir otro mail"
-                                        onClick={() => setProvEditMail(prev => ({ ...prev, [cuit]: '' }))}
-                                        className="shrink-0 text-[10px] text-gray-500 underline">otro</button>
-                                    </>
-                                  ) : (
-                                  <input
-                                    type="email"
-                                    value={valorMail}
-                                    disabled={buscandoPdfs || guardandoMailCuit === cuit}
-                                    placeholder="⚠ sin mail — agregar"
-                                    onChange={(e) => setProvEditMail(prev => ({ ...prev, [cuit]: e.target.value }))}
-                                    className={`w-full text-[11px] border rounded px-1 py-0.5 ${!valorMail ? 'border-orange-300 placeholder-orange-500' : 'border-gray-200'}`}
-                                  />
-                                  )}
-                                  {cambiado && (
-                                    <button type="button" title="Guardar mail"
-                                      disabled={guardandoMailCuit === cuit}
-                                      onClick={() => guardarMailProveedor(cuit)}
-                                      className="shrink-0 text-blue-600 hover:text-blue-800">
-                                      {guardandoMailCuit === cuit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                    </button>
-                                  )}
-                                  {!cambiado && prov.email_facturacion && !prov.gas_habilitado && (
-                                    <span className="shrink-0 text-[9px] text-orange-500" title="Tiene mail pero GAS está deshabilitado para este proveedor (no se busca por su mail). Habilitalo en Config PDFs.">GAS off</span>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                          </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </>
-            )
-          })()}
-
-          <DialogFooter className="border-t pt-3">
-            <div className="flex items-center justify-between w-full gap-3">
-              <span className="text-xs text-gray-500">{seleccionPdf.size} seleccionada(s)</span>
-              <div className="flex gap-2">
-                {buscandoPdfs ? (
-                  <Button variant="destructive" onClick={() => { cancelarPdfRef.current = true }}>
-                    Cancelar búsqueda
-                  </Button>
-                ) : (
-                  <>
-                    <select value={pdfDonde} onChange={e => setPdfDonde(e.target.value as 'ambos' | 'carpeta' | 'mail')}
-                      className="h-9 text-xs border rounded px-2 bg-white" title="Dónde buscar">
-                      <option value="ambos">Carpeta y mail</option>
-                      <option value="carpeta">Sólo carpeta</option>
-                      <option value="mail">Sólo mail</option>
-                    </select>
-                    <Button variant="outline" onClick={() => setModalBuscarPdf(false)}>Cancelar</Button>
-                    <Button variant="outline" disabled={seleccionPdf.size === 0} title="Mandarle (o dejar en borrador) un mail a cada proveedor pidiéndole las facturas elegidas"
-                      onClick={() => setPedirFacturas(Array.from(seleccionPdf))}>
-                      📮 Pedir al proveedor ({seleccionPdf.size})
-                    </Button>
-                    {(() => {
-                      const pedidas = Array.from(seleccionPdf).filter(id => ultimasPdf.get(id)?.pedido)
-                      return pedidas.length > 0 ? (
-                        <Button variant="outline" disabled={buscandoPdfs} title="Nos mandaron las facturas: buscarlas en el mail desde el día de cada pedido"
-                          onClick={() => buscarRespuestas(pedidas)}>
-                          📨 ¿Llegaron? ({pedidas.length})
-                        </Button>
-                      ) : null
-                    })()}
-                    <Button
-                      disabled={seleccionPdf.size === 0 || pdfVista === 'confirmar'}
-                      onClick={async () => {
-                        const ids = Array.from(seleccionPdf)
-                        if (ids.length === 0) return
-                        const comoBusca = pdfDonde === 'carpeta'
-                          ? 'Sólo se mira la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente). Las que no estén quedan como estaban: no se buscan en el mail.'
-                          : pdfDonde === 'mail'
-                            ? 'Sólo el mail, sin mirar la carpeta: primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
-                            : 'Primero la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final se leen los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron (una sola vez; lo leído queda guardado).'
-                        if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano.\n\n¿Continuar?`)) return
-                        cancelarPdfRef.current = false
-                        setBuscandoPdfs(true)
-                        // Cerrar el modal al arrancar: la búsqueda corre en 2do plano y el avance
-                        // se ve en la notificación flotante (con su propio botón Cancelar).
-                        setModalBuscarPdf(false)
-                        try {
-                          const res = await buscarPdfLote({
-                            empresa: empresa as 'MSA' | 'PAM' | 'MA',
-                            facturaIds: ids,
-                            donde: pdfDonde,
-                            // A-FEAT-1287: con el período, el lote mira PRIMERO la carpeta del mes
-                            facturas: facturas.filter(f => seleccionPdf.has(f.id)),
-                            onProgreso: setProgresoPdf,
-                            delayMs: 1500,
-                            isCancelled: () => cancelarPdfRef.current,
-                          })
-                          await cargarFacturas()
-                          // Reportar el envío del mail resumen (antes fallaba en silencio).
-                          if (res.resumenError) {
-                            toast.error('Búsqueda lista, pero el mail resumen NO se envió: ' + res.resumenError)
-                          } else if (res.resumenEnviado) {
-                            toast.success('Búsqueda lista. Mail resumen enviado.')
-                          }
-                        } catch (err) {
-                          toast.error('Error en lote: ' + (err as Error).message)
-                        } finally {
-                          setBuscandoPdfs(false)
-                        }
-                      }}
-                    >
-                      <Search className="mr-2 h-4 w-4" />
-                      Buscar {seleccionPdf.size > 0 ? `(${seleccionPdf.size})` : ''}
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Modal exportar lote a Excel banco Galicia */}
       <ModalExportarLote
