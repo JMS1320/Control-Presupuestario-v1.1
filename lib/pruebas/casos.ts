@@ -67,7 +67,7 @@ import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
-import { armarPapel, campoDeTemplate, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
+import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -8031,6 +8031,20 @@ export function correrCasos(): Resultado[] {
       `${campoDeTemplate("Inmobiliario Cuota Tango Parra 1")} · ${campoDeTemplate("Red Vial Lima Cuota")} · ${campoDeTemplate("Imp Automotores Gol 2012 Anual")} · has ${hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"]}/${hectareasDe([], [{ nombre_partida: "Tango Parra 1", has: 17.23 }])["campo:tango parra 1"]}`,
       campoDeTemplate("Inmobiliario Cuota Tango Parra 1") === "Tango Parra 1" && campoDeTemplate("Red Vial Lima Cuota") === "Lima" && campoDeTemplate("Imp Automotores Gol 2012 Anual") === "Gol 2012"
         && hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"] === 245.17, "A-FEAT-1320")
+    {
+      // El maestro de partidas (scripts/96): Red Vial no tiene partida en el template → se cruza por nombre,
+      // y muestra el número de la MUNICIPALIDAD (la «cuenta»), no la partida inmobiliaria.
+      const maestro = [{ campo: "Tango Parra 1", partida_inmobiliario: "099-015883-5", partida_red_vial: "52948", has_totales: 17.23 }]
+      const has = hectareasDe(maestro, [])
+      const rv = cuentasRedVialDe(maestro)
+      const tpl = { categ: "Impuesto Red Vial", nombre_referencia: "Red Vial Cuota Tango Parra 1", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", solo_conciliacion: false, activo: true, partida_arba: null }
+      const q = (venc: string, monto: number) => ({ estado: "pagado", monto, fecha_vencimiento: venc, fecha_estimada: venc, template: tpl }) as any
+      const pv = armarPapel("red-vial", [q("2026-03-05", 1000), q("2026-06-05", 1000)], 2026, [], has, rv)
+      const fila = pv.bloques[0]?.filas[0]
+      chequear("Papel inmobiliario", "Red Vial toma las hectáreas del maestro por NOMBRE (su template no tiene partida) y muestra el número de la municipalidad",
+        "Tango Parra 1 · 52948 · 17,23 ha · 116,08/ha", `${fila?.campo} · ${fila?.partida} · ${fila?.has?.toLocaleString("es-AR")} ha · ${fila?.costoHa?.toLocaleString("es-AR")}/ha`,
+        fila?.partida === "52948" && fila?.has === 17.23 && fila?.costoHa === 116.08, "A-FEAT-1320")
+    }
   }
 
   return r

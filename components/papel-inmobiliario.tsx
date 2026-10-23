@@ -33,11 +33,12 @@ export interface PropsPapel {
   cuotas: CuotaPlanilla[]
   tcs: TipoCambio[]
   hectareas: Record<string, number>
+  cuentasRedVial?: Record<string, string>
   /** El total de esas mismas filas en la Planilla, para el control (por año y tipo). */
   totalEnPlanilla: (tipo: TipoPapel, anio: number) => number
 }
 
-export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial, cuotas, tcs, hectareas, totalEnPlanilla }: PropsPapel) {
+export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial, cuotas, tcs, hectareas, cuentasRedVial, totalEnPlanilla }: PropsPapel) {
   const [tipo, setTipo] = useState<TipoPapel>(tipoInicial)
   const [anio, setAnio] = useState(anioInicial)
   const [abiertoCon, setAbiertoCon] = useState<string>("")
@@ -45,7 +46,7 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
   const clave = `${open}|${tipoInicial}|${anioInicial}`
   if (open && abiertoCon !== clave) { setAbiertoCon(clave); setTipo(tipoInicial); setAnio(anioInicial) }
 
-  const papel = useMemo(() => armarPapel(tipo, cuotas as any, anio, tcs, hectareas), [tipo, cuotas, anio, tcs, hectareas])
+  const papel = useMemo(() => armarPapel(tipo, cuotas as any, anio, tcs, hectareas, cuentasRedVial), [tipo, cuotas, anio, tcs, hectareas, cuentasRedVial])
   const enPlanilla = totalEnPlanilla(tipo, anio)
   const cierra = Math.abs(enPlanilla - papel.total) <= 0.01
 

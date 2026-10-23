@@ -2746,8 +2746,9 @@ al lado de esas filas. Es el papel con el formato de tu planilla: por empresa, u
 partida, el total del año anterior, el total en cuotas, el aumento, cada cuota con su vencimiento y el
 costo anual en $ y en U$S (con el TC promedio de los meses de las cuotas). El complementario va al final
 de cada empresa. Arriba dice si cierra con la planilla (✓ control). El **Excel** lleva las fórmulas y una
-fila CONTROL que tiene que dar 0. Las columnas por hectárea se llenan cuando estén cargadas las hectáreas
-de cada partida.
+fila CONTROL que tiene que dar 0. Las hectáreas y el costo por hectárea salen del maestro de partidas
+(cargado desde tu planilla). En la solapa **Red Vial**, la columna de partida muestra el **número de la
+municipalidad** (ej. Tango Parra 1 → 52948), que es con el que te identifica el municipio.
 
 → A-TEST-1227 · A-TEST-1229
 

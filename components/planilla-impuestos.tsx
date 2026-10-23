@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { PapelInmobiliario } from "@/components/papel-inmobiliario"
-import { hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
+import { cuentasRedVialDe, hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { ChevronDown, ChevronLeft, ChevronRight, Download, GripVertical, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -74,6 +74,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
   const [papel, setPapel] = useState<TipoPapel | null>(null)
   const [tcs, setTcs] = useState<TipoCambio[]>([])
   const [hectareas, setHectareas] = useState<Record<string, number>>({})
+  const [cuentasRedVial, setCuentasRedVial] = useState<Record<string, string>>({})
 
   const cargar = useCallback(async () => {
     setError(null)
@@ -87,9 +88,12 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     // sale igual sin esas columnas.
     supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real").then(({ data }) => setTcs((data ?? []) as TipoCambio[]))
     Promise.all([
-      supabase.from("partidas").select("partida_inmobiliario, partida_red_vial, has_totales, has_productivas"),
+      supabase.from("partidas").select("campo, partida_inmobiliario, partida_red_vial, has_totales, has_productivas"),
       supabase.from("campo_partidas").select("nombre_partida, nro_partida, has"),
-    ]).then(([p, c]) => setHectareas(hectareasDe((p.data ?? []) as any[], (c.data ?? []) as any[])))
+    ]).then(([p, c]) => {
+      setHectareas(hectareasDe((p.data ?? []) as any[], (c.data ?? []) as any[]))
+      setCuentasRedVial(cuentasRedVialDe((p.data ?? []) as any[]))
+    })
   }, [open, cargar])
 
   /** El total de las filas de un papel en la Planilla de un año: el control del detalle. */
@@ -238,7 +242,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
       </DialogContent>
       {cuotas && (
         <PapelInmobiliario open={papel !== null} onOpenChange={v => { if (!v) setPapel(null) }} tipoInicial={papel ?? "inmobiliario"}
-          anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} totalEnPlanilla={totalEnPlanilla} />
+          anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} cuentasRedVial={cuentasRedVial} totalEnPlanilla={totalEnPlanilla} />
       )}
     </Dialog>
   )
