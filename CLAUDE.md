@@ -377,8 +377,15 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 ### 🔧 Git
 > **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
 > merge lo autoriza el usuario **después** de confirmar el testing.
-> **📍 Acá:** la rama de trabajo de JMS es **`jms/dia-a-dia`**, la de integración **`desarrollo`** y
-> la de producción **`main`**, con auto-deploy de Vercel (por eso mergear a `main` = publicar).
+> **📍 Acá:** cada tema en su rama **`jms/<tema>`**, que se mergea **directo a `desarrollo`** (donde
+> prueba JMS); **`main`** es lo que usan los demás usuarios, con auto-deploy de Vercel (por eso
+> mergear a `main` = publicar).
+
+⚠️ **Cambió 2026-10-23 — se saca `jms/dia-a-dia` del medio.** Usuario: *«mi rama de trabajo será
+siempre desarrollo y la de los usuarios main»*, y confirmó *«estaba ok directamente trabajar en
+desarrollo»*. Las ramas de tema salen de `desarrollo` y vuelven a `desarrollo`. `jms/dia-a-dia`
+queda igualada a `desarrollo` y sólo se usa para un commit suelto sin tema. Lo que sigue abajo
+(el esquema de 2026-09-02) vale con esa corrección → [A-DEC-1017](PENDIENTES.md#a-dec-1017).
 
 ⚠️ **Cambio de rumbo 2026-09-02** — hasta esa fecha la regla decía *"pushear siempre a `desarrollo`"*.
 **Ya no.** Desde que hay un segundo desarrollador (Javier, en seguridad y logueo), cada uno tiene su
@@ -390,9 +397,10 @@ jms/dia-a-dia ─┐
 javier/…      ─┘   (integración)
 ```
 
-- **Pushear SIEMPRE a `jms/dia-a-dia`.** Nunca commitear directo a `desarrollo` ni a `main`.
-  Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **`jms/dia-a-dia`**.
-- Los **dos** merges los autoriza el usuario: `jms/dia-a-dia → desarrollo` y `desarrollo → main`
+- **Pushear SIEMPRE a la rama del tema** (`jms/<tema>`). Nunca commitear directo a `desarrollo` ni a
+  `main`. Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **la rama del tema en
+  curso** (o `jms/dia-a-dia` si no hay tema).
+- Los **dos** merges los autoriza el usuario: `jms/<tema> → desarrollo` y `desarrollo → main`
   (este último sólo con el testing confirmado, como siempre).
 - La rama de Javier la crea y la nombra **él**. Al 2026-09-02 todavía no existe en el remoto.
   No adivinar el nombre: `git for-each-ref refs/remotes/origin` lo dice, pero **sólo después de que
@@ -423,7 +431,7 @@ podemos abrir ramas para cada mini cosa»*. Con la regla vieja se abrieron **sei
 
 - **Se declara, no se asume**: `git branch --show-current` y decirlo en voz alta *antes* del primer
   `Edit`. Si la rama actual es de otro tema, **se crea la del tema nuevo** y se dice el nombre.
-- **Una rama por tema GRANDE, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
+- **Una rama por tema GRANDE, colgando de `desarrollo`** *(hasta 2026-10-23 decía `jms/dia-a-dia`)*, y se borra al mergear. *(Esto se había decidido
   el 2026-09-04 y no obligó a nadie — ver el motivo abajo.)*
 - 🧊 **Un tema que se EVALÚA y no se construye también termina en una rama, y se pushea.** No hacer
   el desarrollo **no es no dejar nada**: queda el ítem en `PENDIENTES.md` con su ID, en estado *futuro
