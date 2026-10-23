@@ -193,6 +193,7 @@ import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
+import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
@@ -1219,6 +1220,30 @@ export function correrCasos(): Resultado[] {
     const vU = `${huella.map(x => `${x.campo} ${x.leido}→${x.cargado}`).join(";")} · NC ${nc.imp_total} ${nc.iva} · ${split.neto21}+${split.neto105}`
     chequear("Cargar desde el PDF — huella", "La huella guarda sólo el campo corregido con lo leído y lo cargado; una NC se graba en negativo; con IVA de las dos alícuotas el neto se reparte por el IVA",
       "total 66950.36→69950.36 · NC -100 -21 · 100+100", vU, vU === "total 66950.36→69950.36 · NC -100 -21 · 100+100", "A-FEAT-1318")
+  }
+
+  // ❌ Facturas sin PDF del subdiario: pedirlas y buscarlas en el mail desde Subdiarios (A-FEAT-1287 paso 4,
+  // usuario 2026-10-23). Son las mismas del chip «❌ faltantes» (sin las de PDF ni las de Portal); las «No» se
+  // listan pero no se buscan; el pedido se cuenta en DÍA ARGENTINO (un borrador a las 22:30 del 22 es «hace 1 día» el 23).
+  {
+    const base = { tipo_comprobante_desc: "Factura B", punto_venta: 41, imp_total: 100, estado: "pendiente" }
+    const fs = [
+      { ...base, id: "A", denominacion_emisor: "Rigo", numero_desde: 1, pdf_drive_url: "https://drive/x", fc: "Confirmada" },
+      { ...base, id: "B", denominacion_emisor: "Telecom", numero_desde: 2, fc: "Portal" },
+      { ...base, id: "C", denominacion_emisor: "Colomac", numero_desde: 3, fc: "Buscar", fecha_emision: "2026-03-11" },
+      { ...base, id: "D", denominacion_emisor: "Andreani", numero_desde: 4, fc: "No" },
+      { ...base, id: "E", denominacion_emisor: "Buspack", numero_desde: 5, fc: null },
+    ]
+    const ult = new Map([
+      ["C", { pedido: "2026-10-20T15:00:00Z" }],
+      ["E", { pedido: "2026-10-23T01:30:00Z", pedidoBorrador: true, mail: "2026-10-21T12:00:00Z" }],
+    ])
+    const r = faltantesDelSubdiario(fs, ult, "2026-10-23")
+    const e = r.filas.find(f => f.id === "E"), c = r.filas.find(f => f.id === "C"), d = r.filas.find(f => f.id === "D")
+    const vF = `${r.filas.map(f => f.id).join(",")} · pedidas ${r.pedidas.join(",")} · buscables ${r.buscables.join(",")} · E ${e?.pedido?.borrador ? "borrador" : "pedida"} ${e?.pedido?.hace} mail ${e?.ultimoMail} · C ${c?.pedido?.hace} ${c?.comprobante} · D ${d?.buscable}`
+    const esperado = "D,E,C · pedidas E,C · buscables E,C · E borrador hace 1 día mail 2026-10-21 · C hace 3 días Factura B 41-3 · D false"
+    chequear("Subdiarios — facturas sin PDF", "Lista las del chip «faltantes» (sin PDF ni Portal) ordenadas por proveedor, con el pedido en día argentino y sin buscar las «No»",
+      esperado, vF, vF === esperado, "A-FEAT-1287")
   }
 
   const decOtra = decisionArchivadaEnOtra("f1", [
