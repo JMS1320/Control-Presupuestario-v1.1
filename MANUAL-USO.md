@@ -2957,6 +2957,31 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 ⚠️ Sin probar todavía → A-TEST-1174
 
 
+## 🛡️ Egresos → Seguros *(2026-10-20)*
+
+Es el lugar para ver **las pólizas de seguro** y controlar que **estén todas cargadas**.
+
+**El cuadro de arriba — «¿Tenemos todas las pólizas?»** cruza las cuotas de las pólizas procesadas con los
+movimientos de Federación Patronal del extracto. Los movimientos se buscan por las **leyendas adicionales**
+(«FEDERACION PATRO»), así que aparecen **aunque no estén conciliados**. Lo que te marca:
+- **Débitos sin póliza** → Federación debitó algo que no es cuota de ninguna póliza cargada: **falta cargar una póliza**.
+- **Cuotas vencidas sin débito** → la cuota venció y no se debitó: o hubo un problema con el débito, o la póliza se dio de baja y falta la nota de crédito.
+- **Otro importe** → se debitó distinto de lo que dice la póliza: suele ser un endoso que no se cargó.
+- **Reintegros sin nota de crédito** → Federación devolvió plata que ninguna NC explica.
+
+Las **notas de crédito no se devuelven**: Federación las descuenta de las cuotas siguientes. Por eso una cuota
+sin débito puede estar bien («compensada con una NC»).
+
+**Abajo, las pólizas procesadas.** Tocando una se ven sus endosos (cada uno es un comprobante), lo asegurado
+(vehículos con su prima, personas con su alta o baja) y las cuotas con el **reparto** de cada una entre
+MSA, MA, PAM y JMS. Cada vehículo o persona tiene un **responsable contable** y uno **interno**: se cambian ahí
+mismo y valen para todas las pólizas donde aparezca (van por patente o DNI). Lo que no tiene responsable es de MSA.
+
+📌 Cómo entra una póliza: hoy se cargaron las del subdiario 25/26 y 26/27. Lo próximo es que la app la lea sola
+**al vincular el PDF a su factura** (espera el buscador de PDFs).
+
+→ A-TEST-1221
+
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
 
 Es la pantalla para **imputar rápido** las facturas que todavía no tienen cuenta contable — las que

@@ -2706,3 +2706,45 @@ comprobantes en el subdiario que **no se informaron en ningún período** ([A-DA
 facturas **en USD** que la app guarda en dólares y el libro diario sumaba sin el TC ([A-BUG-1316](PENDIENTES.md#a-bug-1316)).
 
 **El script**: `scripts/control_iva_presentado_vs_app.py "<carpeta de zips>" "<salida.xlsx>"` — sólo lectura.
+
+## 🛡️ Pólizas de Federación Patronal — cómo se leen y cómo se cobran `#seguros #pdf #extracto #2026-10-20`
+
+Lo aprendido al construir el lector y el control de [A-FEAT-1309](PENDIENTES.md#a-feat-1309) — vale para
+cualquier PDF de seguros y para cualquier proveedor que cobre por débito automático.
+
+**1 · Un PDF de póliza se lee en RENGLONES, no con `extractText`.** `unpdf.extractText` devuelve los textos en
+el orden en que el PDF los dibuja: en la Flota los rótulos de la liquidación (`I.V.A.`, `SELLADO`) salían
+treinta renglones lejos de sus importes. `lib/polizas/renglones-pdf.ts` los agrupa por altura (`y`) y los
+ordena por `x`, con doble espacio entre columnas — queda como el `pdftotext -layout`. Dos trampas de ese
+formato, ya cubiertas con caso: la columna de **cuotas comparte renglón** con la liquidación (debajo de
+«PRIMA» hay una cuota, no la prima), y un importe puede quedar en el renglón de `TOTALES:` con **su rótulo
+un renglón abajo** (la contribución de $13.439,15 de la Flota 07/2025). Descartarlo deja la factura sin
+cerrar: por eso **un importe sin rótulo nunca se tira**, se nombra «CONCEPTO SIN RÓTULO» y se avisa.
+
+**2 · El PDF trae cuatro partes y casi nunca todas**: factura original (la liquidación renglón por renglón,
+que **cierra sola**: conceptos = total), frente de póliza (vigencia, endoso, póliza anterior, cargo
+financiero), **pago consolidado** (todas las cuotas vivas con su saldo) y certificados / nómina (vehículos
+con su prima, personas con alta / baja / activa).
+
+**3 · Las notas de crédito NO se reintegran: Federación las COMPENSA** contra las cuotas siguientes de la
+misma póliza. Vida colectivo 670821: de cinco cuotas sólo se debitó la primera; la NC de dic (−47.481,60)
+se comió la de feb, etc. Un control que espere un débito por cuota marca faltantes falsos — hay que
+arrastrar el saldo a favor (`lib/polizas/control-debitos.ts`). Y el **saldo** que informa el consolidado es
+lo que queda por cobrar **después** de compensar (Vida 644709: cuota de 21.574,03, saldo 6.598,75, débito de
+6.598,75 el mismo día del consolidado).
+
+**4 · Cada endoso trae el costo de LO QUE MUEVE.** El de alta cobra a los que entran, el de baja devuelve el
+del que sale; una cuota del consolidado es la **suma de los endosos** que vencen ese día. Repartir la cuota
+por la nómina activa está mal: la cuota de 48.996 de Accidentes Personales es 15.740 de Elvio + 33.256 del
+alta de Barreto y Vulcano, no un tercio cada uno.
+
+**5 · En el extracto, la aseguradora se reconoce por las LEYENDAS ADICIONALES** (`FEDERACION PATRO` /
+`SEGUROS`), estén o no conciliados — la descripción es genérica («Deb. Autom. De Serv.»). ⚠️ La leyenda viene
+**cortada**: buscar `patronal` no encuentra nada; hay que buscar `federac`.
+
+**6 · Al cargar a mano la factura de una póliza, la convención es número = póliza y punto de venta =
+endoso** (el endoso 0 va como 1). Las que entran desde ARCA traen en cambio el número fiscal (`38-734`).
+
+**7 · Trampa de JavaScript que pasó acá**: una función usada como `lista.filter(f)` recibe el **número de
+fila** como segundo argumento. `esDeLaAseguradora(m, patron = /…/)` se rompía porque `patron` pasaba a ser
+el índice. Las funciones pensadas para `filter`/`map` llevan **un solo parámetro**.
