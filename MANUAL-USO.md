@@ -1221,6 +1221,19 @@ Abajo se ve si **las partes suman el total**; si no, no deja grabar — casi sie
 
 Elegí **a dónde va**: **📒 Asientos Contables** o **sin imputar** (para imputarla después a un subdiario) y **Grabar factura**. Queda como **No Informada**, ya vinculada a su PDF; el proveedor se da de alta si no estaba. Lo que corregiste a mano queda anotado en la factura. ⚠️ Sin probar todavía → A-TEST-1222
 
+#### ❌ Facturas sin PDF: pedirlas y buscarlas en el mail *(2026-10-23)*
+
+Debajo de la tabla del período aparece **❌ Facturas sin PDF** con las facturas del subdiario a las que les falta el archivo (las mismas del chip «❌ faltantes»). Cada una muestra si **ya se le pidió al proveedor** (📮 *pedida hace N días*, o *borrador* si quedó en Gmail sin mandar) y cuándo se buscó por última vez en el mail.
+
+Vienen tildadas las que se pueden buscar (las **FC No** u **OK** se ven en gris y no se buscan; las **VER** se confirman en Buscar PDFs → 👀 A confirmar). Con el buscador de arriba puesto, los botones actúan sólo sobre lo que se ve:
+
+- **📋 Copiar pedido** — copia la lista (fecha, proveedor, comprobante, importe) para pegarla en un mail o un mensaje a quien las tenga.
+- **📮 Pedir al proveedor** — un mail por proveedor con sus facturas; elegís **borrador** o **enviar**. Los proveedores sin mail cargado se avisan aparte.
+- **📨 ¿Llegaron?** (o **📨 ¿llegó?** en la fila) — el proveedor dice que la mandó: la busca en el mail desde el día del pedido.
+- **📧 Buscar en el mail** — busca el PDF en el mail del proveedor y en los reenvíos. La carpeta no se mira: eso lo hace **🔗 Vincular PDFs**.
+
+Las búsquedas corren en segundo plano: el avance y el informe (con lo encontrado para confirmar) quedan en el cartel de arriba a la derecha, igual que en Buscar PDFs. ⚠️ Sin probar todavía → A-TEST-1222
+
 > ⚠️ **El error más fácil de cometer.** «Contar» **no vincula**. Si lo corrés y ves todo *«sin
 > vincular»*, no está fallando nada: nadie miró los archivos todavía. Pasó de verdad el 2026-09-03 y
 > se reportó como un bug del sistema que no existía.
