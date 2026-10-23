@@ -5136,7 +5136,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                           fila.estado === 'echeq' ? 'bg-emerald-100 border-l-4 border-emerald-500' :
                           esUSD ? 'bg-amber-50' :
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
-                        }`}
+                        }${fila.origen_tabla === 'public.cuotas_arrendamiento' ? ' opacity-50 italic' : ''}`}
+                        title={fila.origen_tabla === 'public.cuotas_arrendamiento' ? 'Cuota de arrendamiento NO FIJADA: importe estimado con el precio y el TC de la base (no se concilia)' : undefined}
                       >
                         {/* Checkbox solo en modo PAGOS — fijo, ver la nota del encabezado */}
                         {modoPagos && (

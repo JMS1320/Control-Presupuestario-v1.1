@@ -2743,6 +2743,19 @@ Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre
 
 → A-TEST-1227
 
+## 🌾 Cash Flow → los cobros de arrendamiento todavía sin pesos *(2026-10-23)*
+
+- **Cuota fijada en dólares, sin TC todavía**: aparece con su importe estimado = toneladas × precio
+  fijado × el **TC de la tabla de tipos de cambio** del mes de cobro (si ese mes no está cargado, el
+  último que haya). El detalle dice *«TC estimado a $X»*. Cuando se fija el TC, pasa al importe real.
+- **Cuota sin precio fijado**: aparece en un renglón **transparente y en itálica**, en estado
+  **presupuestado**, con el precio de la soja de su posición × el TC de la base. Si se fijó una parte,
+  aparece sólo lo que falta. Sólo se muestran las que se cobran de hoy en adelante.
+- Estas filas son estimaciones: **no se concilian** y no se marcan desde el Cash Flow (se manejan en
+  Ingresos → Arrendamientos). Cargando TC y precios de soja en la base, se recalculan solas.
+
+→ A-TEST-1228
+
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.

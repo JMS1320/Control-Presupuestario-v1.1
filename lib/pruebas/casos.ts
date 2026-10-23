@@ -66,6 +66,7 @@ import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -7953,6 +7954,35 @@ export function correrCasos(): Resultado[] {
     chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
       "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
       ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
+  }
+
+  // ══ 🌾 COBROS DE ARRENDAMIENTO SIN PESOS EN EL CASH FLOW (A-FEAT-1328) ═══════════════════════
+  {
+    // La base al 23/10: TC cargado sólo en ago y sep; soja por posición.
+    const tcs = [{ anio: 2026, mes: 8, tc_presupuestado: 1450, tc_real: null }, { anio: 2026, mes: 9, tc_presupuestado: 1500, tc_real: null }]
+    const precios = [{ grano: "soja", anio: 2026, mes: 11, precio_usd: 375 }, { grano: "soja", anio: 2027, mes: 5, precio_usd: 360 }]
+    // Cuota 2 de Sanpa: 159,72 tn fijadas a U$S 365, cobro 10/11, sin TC.
+    const fijada = importeDeVenta({ modo: "matba", cantidad: 159.72, precio_usd: 365, tc: null, precio_pesos: null, monto_pesos: null, fecha_cobro: "2026-11-10" }, tcs)
+    chequear("Arrendamiento en Cash Flow", "Cuota fijada sin TC (Sanpa 10/11): ya no queda en $0 — 159,72 tn × U$S 365 × TC 1.500 (el último cargado, sep) y lo dice",
+      "87446700 · estimado · TC estimado a $1.500 (último cargado: sep-26) · U$S 365/tn", `${Math.round(fijada.monto)} · ${fijada.estimado ? "estimado" : "cierto"} · ${fijada.aviso}`,
+      Math.round(fijada.monto) === 87446700 && fijada.estimado && fijada.aviso === "TC estimado a $1.500 (último cargado: sep-26) · U$S 365/tn", "A-FEAT-1328")
+    const cerrada = importeDeVenta({ modo: "pizarra", cantidad: 159.72, precio_usd: null, tc: null, precio_pesos: 490000, monto_pesos: 78262800, fecha_cobro: "2026-07-31" }, tcs)
+    const sinTc = importeDeVenta({ modo: "matba", cantidad: 10, precio_usd: 365, tc: null, precio_pesos: null, monto_pesos: null, fecha_cobro: "2026-11-10" }, [])
+    chequear("Arrendamiento en Cash Flow", "Con los pesos cerrados se usan ésos, sin aviso; sin ningún TC en la base no se inventa: queda en 0 y lo dice",
+      "78262800 sin aviso · 0 con aviso", `${cerrada.monto} ${cerrada.aviso ? "con" : "sin"} aviso · ${sinTc.monto} ${sinTc.aviso ? "con" : "sin"} aviso`,
+      cerrada.monto === 78262800 && !cerrada.aviso && !cerrada.estimado && sinTc.monto === 0 && !!sinTc.aviso, "A-FEAT-1328")
+    const contrato = { id: "c1", empresa: "MSA", campania: "26/27", centro_costo: "Rojas", cliente_cuit: "30712200622", cliente_nombre: "Sanpa Semillas SA", has: 242, qq_ha_total: 24, grano: "soja", cuenta_contable: null, activo: true, notas: null }
+    const cuota = (id: string, n: number, qq: number, fecha: string, pa: number, pm: number) => ({ id, contrato_id: "c1", numero_cuota: n, qq_ha_cuota: qq, fecha_cobro_estimada: fecha, posicion_anio: pa, posicion_mes: pm,
+      fecha_cobro_original: null, posicion_orig_anio: null, posicion_orig_mes: null, estado: "presupuestado" as const, precio_usd_override: null, precio_pesos_override: null, notas: null })
+    const nf = cuotasNoFijadas([contrato], [
+      cuota("q2", 2, 6.6, "2026-11-10", 2026, 11),          // 159,72 tn, todas fijadas → no va
+      cuota("q5", 5, 4.667769, "2027-05-10", 2027, 5),     // sin fijar → va entera
+      cuota("q6", 6, 2, "2027-11-10", 2027, 11),           // fijada en parte (20 de 48,4 tn) → va el saldo
+      cuota("q0", 1, 6.6, "2025-11-20", 2025, 11),         // sin fijar pero con fecha PASADA → no se proyecta
+    ], [{ cuota_id: "q2", tons: 159.72 }, { cuota_id: "q6", tons: 20 }], precios, tcs, "2026-10-23")
+    chequear("Arrendamiento en Cash Flow", "No fijadas: va lo que falta fijar de cada cuota (la 2 está toda fijada; la 6, sólo el saldo de 28,4 tn), con soja de la posición × TC de la base; la de fecha pasada no se proyecta",
+      "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · "),
+      nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · ") === "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", "A-FEAT-1328")
   }
 
   return r
