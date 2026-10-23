@@ -40,6 +40,19 @@
 
 ## 📨 PARA JAVIER
 
+### 🔐 Subdiarios de IVA: un estado nuevo y lo que el rol `contable` ya no puede hacer (2026-10-23)
+
+Entra a `desarrollo` con `jms/iva-archivo-arca` ([A-FEAT-1295](PENDIENTES.md#a-feat-1295)). **No toca la base**: ni
+estructura, ni RLS, ni roles, ni GRANTs. Lo que cambia es **lógica de la app según el rol**, y te lo aviso porque es tu terreno:
+- `ddjj_iva` (`comprobantes_arca` y `comprobantes_venta`) admite un valor nuevo, **`Enviado`** (no hay CHECK, así que no hizo falta script).
+- Sobre lo `Enviado` o `DDJJ OK`, **sólo `admin`** puede imputar, mover, editar o borrar (con advertencia). El rol **`contable`
+  queda bloqueado** (decisión de JMS). **Confirmar DDJJ de Compras pasa a ser sólo de `admin`** (antes lo podía cualquiera).
+- La regla vive en un solo lugar: `lib/subdiarios/estado-ddjj.ts` → `evaluarCambioDDJJ({ esAdmin })`; el `esAdmin` sale de
+  `userRole === 'admin'` como en el resto de la pantalla. Si tu modelo de permisos va a reemplazar ese chequeo, éste es un
+  lugar más para enchufarlo.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🔀 `desarrollo` avanzó 127 commits (2026-10-23) — trae los cambios de base de abajo
 
 Se mergeó `jms/dia-a-dia` → `desarrollo` (fast-forward hasta `b5be470`; `main` sin tocar). Los avisos 🗃️ del 15/10 al

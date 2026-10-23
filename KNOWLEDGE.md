@@ -782,6 +782,13 @@ Los demás importadores leen el serial (`cellDates:false`) y **no** hacen el tru
 **Estado**: workaround manual OK. **PENDIENTE**: que el export de la app genere el TXT con **punto** directamente (hoy usa coma) → ver PENDIENTES. Detalle en `memory/project_sicore_error_importacion_arca.md`.
 
 
+## IVA Simple — importar el Libro IVA Compras por archivo de texto `#arca #iva #import #2026-10-19`
+**Contexto**: la app arma los archivos COMPROBANTES + ALÍCUOTAS del Libro IVA Compras (📤 Archivos para ARCA, sólo MSA) y el usuario los importa en IVA Simple → Libro Compras, eligiendo *«los importes están expresados en la moneda original del comprobante»*.
+**Lo confirmado (prueba real del usuario, octubre 2026)**: el **formato A (325 caracteres, el de 2023)** lo acepta. El largo del registro no es problema.
+**Lo que ARCA controla solo**: rechaza un comprobante **ya incluido en la presentación de otro período**, con *«El comprobante ya fue declarado en otro período. Se incluyó en la presentación del período MM/AAAA»*. Los rechazos vienen en `registros_con_errores_tarea_NNN.csv` (`;`, Latin-1), con el número de línea del archivo. ⚠️ **Un rechazo así casi siempre es un DUPLICADO en la app**, no un error del archivo — caso: el mismo papel cargado a mano como Factura A y traído de ARCA como Liquidación de Servicios Públicos (tipo 17) → [A-BUG-1299](PENDIENTES.md#a-bug-1299).
+**Lo que ARCA devuelve de lo aceptado**: un Excel «Comprobantes de Compras - CUIT …» con fecha, tipo, punto de venta, número, CUIT, neto, no gravado, exento, IVA y total — sirve de **control** contra el subdiario (pieza 4: el mismo número por dos caminos).
+**Pendiente de saber**: si lo importado se suma o reemplaza a lo precargado; si la versión B (340) entra; cómo trata las B y las sin CAE → [A-TEST-1216](PENDIENTES.md#a-test-1216). Diseño y decisiones → `MODULO_ARCA.md` § 📤.
+
 ## MCP Windows NPX Problems - RESUELTO `#mcp #windows #npx #2025-08-14`
 **Contexto**: Herramientas MCP no aparecen tras múltiples reinicios Claude Code
 **Síntomas**: 

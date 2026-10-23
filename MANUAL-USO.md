@@ -1237,7 +1237,13 @@ primero la **A**; si el portal se queja del largo de los renglones, usá la **B*
 tributos*; las Facturas C llevan sólo el total; el tipo de documento es siempre CUIT; las notas de
 crédito van en positivo (el tipo de comprobante ya dice que restan).
 
-⚠️ Sin probar todavía → A-TEST-1216
+**Si ARCA rechaza algunos:** te deja bajar un archivo de errores (`registros_con_errores_….csv`) con el
+número de renglón de cada uno. El rechazo más común es *«El comprobante ya fue declarado en otro
+período»*: ese comprobante **ya lo presentaste** en otro mes. Casi siempre quiere decir que en la app está
+**cargado dos veces** (por ejemplo, una vez a mano y otra traído de ARCA con otro tipo de comprobante). Buscalo
+por número en Facturas ARCA: si aparece dos veces, dejá la que vino de ARCA y borrá la cargada a mano.
+
+⚠️ Sin probar del todo → A-TEST-1216 *(el formato A ya lo aceptó ARCA el 19/10)*
 
 ### 🗂️ Archivo digital — vincular cada factura con su PDF ✅ *(reescrito 2026-09-03)*
 

@@ -331,7 +331,7 @@ En las tablas de movimiento, al conciliar se llenan (según contra qué se conci
 ### 4.3 Estados típicos
 - Facturas ARCA `estado`: `pendiente`, `pagar`, `credito` (pagada con tarjeta), `conciliado`, `anterior`, `cuotas`, `debito`, `externo`.
 - Movimiento bancario `estado`: `pendiente`, `conciliado`, `auditar`, `total` (fila resumen de tarjeta).
-- `ddjj_iva`: `No`, `Imputado`, `DDJJ OK` (DEFAULT `No`, cambiado desde `Pendiente` post-reconstrucción).
+- `ddjj_iva` (en `{schema}.comprobantes_arca` y `{schema}.comprobantes_venta`): `No` → `Imputado` → **`Enviado`** → `DDJJ OK` (DEFAULT `No`, cambiado desde `Pendiente` post-reconstrucción). ⚠️ **Cambió 2026-10-19**: se sumó **`Enviado`** (= el subdiario se le mandó al contador, todavía no presentado) — [A-FEAT-1295](PENDIENTES.md#a-feat-1295). **No hay CHECK constraint**: el valor nuevo no tocó la estructura. Va junto con `año_contable` / `mes_contable` (el mes del subdiario); en Compras «No» deja el mes en null, en **Ventas un comprobante en «No» puede tener mes cargado**. El **estado de un MES** es el más avanzado de sus comprobantes, y quién puede mover qué lo decide **una sola función**: `lib/subdiarios/estado-ddjj.ts` → `evaluarCambioDDJJ` (detalle en `MODULO_ARCA.md` § 📨).
 
 ---
 
