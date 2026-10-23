@@ -194,6 +194,40 @@ Y desde el editor GAS:
 el deployment existente. Si creás un deployment nuevo desde cero, la URL cambia
 y tenés que actualizar el env var.
 
+## 🤖 Que lo suba y lo publique Claude *(propuesto 2026-10-23 — SIN ARMAR, espera la decisión del usuario → [A-OP-26](../PENDIENTES.md#a-op-26))*
+
+Pregunta del usuario (23/10, después de subir a mano la 0.19.1): *«¿tú podrías actualizar el GAS si tuviéramos un MCP?
+¿cómo te puedo dar el acceso así como codificás Supabase?»*. **No hace falta un MCP**: es el mismo `clasp` de arriba,
+corrido por Claude desde la terminal en vez de por el usuario. Lo que cambia es **quién aprieta**, y por eso lleva
+resguardos que la guía de arriba no necesitaba.
+
+**Una sola vez, el usuario:**
+1. Activa la API de Apps Script en https://script.google.com/home/usersettings (*Google Apps Script API → Activado*). Sin
+   esto `clasp push` falla con *«User has not enabled the Apps Script API»*.
+2. Inicia sesión: en el chat de Claude Code escribe `! npx @google/clasp login` y acepta en el navegador con la **cuenta
+   dueña del programa** (la de MSA, donde corre el buscador). El token queda en `~/.clasprc.json`, **fuera del repo**.
+3. Le pasa a Claude el **Script ID** (*⚙️ Configuración del proyecto*) y el **ID de la implementación** de la `/exec`
+   (*Implementar → Gestionar implementaciones*). Con el Script ID se arma `gas-buscar-pdf/.clasp.json` desde el
+   `.example` (está en `.gitignore`: no se commitea).
+
+**Cada vez, Claude — y en este orden:**
+1. **Bajar antes de subir.** `clasp pull` a una carpeta APARTE (nunca sobre `gas-buscar-pdf/`) y comparar con el repo.
+   🛑 **`clasp push` reemplaza TODOS los archivos del proyecto por los de la carpeta: un archivo que esté en Google y no en
+   el repo SE BORRA.** Si aparece alguno así (editado a mano en el editor, de otro proyecto), se para y se le pregunta al
+   usuario — es la regla de GAS/Drive *nunca destruir* (CLAUDE.md § 🛑).
+2. **Pedir permiso** diciendo qué versión sube y qué cambia, como con la base. El permiso de una subida no vale para la
+   siguiente.
+3. `clasp push` y probar contra la **`/dev`** (ver arriba: corre lo último subido sin publicar).
+4. **Publicar en la MISMA implementación**, para que la dirección `/exec` no cambie y Vercel no se entere:
+   `clasp deploy -i <ID de la implementación> -d "0.19.x — qué cambió"`. 🛑 **Nunca `clasp deploy` sin `-i`**: crea una
+   implementación nueva con OTRA dirección, y la app sigue llamando a la vieja.
+5. **Verificar**: abrir la `/exec` (GET) y ver que `version` diga la nueva. Recién ahí se dice «subido».
+6. Si cambió `appsscript.json` (permisos nuevos), **eso lo hace el usuario**: abrir la `/exec` o correr una función y
+   aceptar. Claude no puede aceptar permisos de Google por él.
+
+**Qué NO se automatiza**: los Script Properties (`GAS_AUTH_TOKEN`, `RESUMEN_DESTINATARIO`) y las variables de Vercel.
+Son secretos y se quedan donde están.
+
 ⚠️ **Si el cambio agregó scopes** (`appsscript.json` cambió — ej. `userinfo.email` en v0.9.6):
 la próxima ejecución pide **re-autorizar**. Corré una función desde el editor (o abrí el `/exec`)
 y aceptá los permisos nuevos. Si no, las funciones que usan ese scope fallan
