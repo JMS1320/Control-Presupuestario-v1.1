@@ -31,7 +31,7 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### arca_pdf_archivo_digital  (2026-10-22, script 92 — A-FEAT-1287)
 `id uuid, file_id text UNIQUE, empresa text, carpeta text («2025-2026/26-03»), nombre_archivo text, url text, estado text ('leido'|'ilegible'|'error'|'sin_leer'), chars int, texto text, texto_digitos text, observaciones text, leido_at tstz, leido_por text`
 > **Script 93 (✅ corrido 2026-10-22)**: + `veredicto text` (check: `no_informada`|`otra_carpeta`|`no_es_factura`|`duplicado`|`pendiente`), `veredicto_nota text`, `veredicto_at tstz`, `veredicto_por text` — el veredicto a mano de un PDF sin vincular. `estado='sin_leer'` = registrado al darle veredicto sin haberlo leído (salió de «Contar»).
-> **Script 94 (2026-10-23, ⏳ SIN correr al escribir esto)**: + `comprobante_id uuid`, `comprobante_empresa text`, `carga_leido jsonb`, `carga_correcciones jsonb` (`[{campo, leido, cargado}]`), `cargado_at tstz`, `cargado_por text` — la huella de una factura cargada desde este PDF (A-FEAT-1318). Sin el script, la huella queda en texto en `comprobantes_arca.pdf_observaciones`.
+> **Script 94 (✅ corrido 2026-10-23)**: + `comprobante_id uuid`, `comprobante_empresa text`, `carga_leido jsonb`, `carga_correcciones jsonb` (`[{campo, leido, cargado}]`), `cargado_at tstz`, `cargado_por text` — la huella de una factura cargada desde este PDF (A-FEAT-1318). La huella queda además, siempre, en texto en `comprobantes_arca.pdf_observaciones`.
 
 ### arca_pdf_barrido_tramo  (2026-10-20, script 90)
 `id uuid, recolector text, desde date, hasta date (inclusive), mails int, adjuntos int, hecho_at tstz, hecho_por text`

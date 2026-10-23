@@ -3620,7 +3620,7 @@ ALTER TABLE public.reglas_ctas_import_arca
 
 ### 2026-10-23 · HUELLA de la carga desde el PDF (script 94) — A-FEAT-1318
 
-Seis columnas en `arca_pdf_archivo_digital`: `comprobante_id`, `comprobante_empresa`, `carga_leido`, `carga_correcciones`, `cargado_at`, `cargado_por`. Aditivo. Script `scripts/94-carga-desde-pdf-archivo-digital.sql` (deshacer: `94-…-deshacer.sql`). ⏳ **SIN correr** al escribir esto: espera el OK del usuario.
+Seis columnas en `arca_pdf_archivo_digital`: `comprobante_id`, `comprobante_empresa`, `carga_leido`, `carga_correcciones`, `cargado_at`, `cargado_por`. Aditivo. Script `scripts/94-carga-desde-pdf-archivo-digital.sql` (deshacer: `94-…-deshacer.sql`). ✅ **Corrido 2026-10-23** con OK del usuario (verificado: las 6 columnas existen y el `UPDATE` de la app planea bien).
 
 ### 2026-10-22 · VEREDICTO del archivo digital (script 93) — A-FEAT-1287
 
