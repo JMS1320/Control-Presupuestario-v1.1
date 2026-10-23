@@ -17,7 +17,7 @@ const GS = `${B}/gas-buscar-pdf/Main.gs`
 if (!fs.existsSync(GS)) { console.log(`No está ${GS}. Salteado.`); process.exit(0) }
 
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["evaluarCoincidencia", "tipoDocDeDescripcion", "tipoDocDeTexto", "nombreTipoDoc", "fechaEnTexto", "fechasDelTexto", "normalizarTexto", "extraerMontosPdf", "facturaCoincide"]
+const necesarias = ["evaluarCoincidencia", "numeroPegado", "tipoDocDeDescripcion", "tipoDocDeTexto", "nombreTipoDoc", "fechaEnTexto", "fechasDelTexto", "normalizarTexto", "extraerMontosPdf", "facturaCoincide"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -95,6 +95,48 @@ chequear("Fechas leídas del texto (sin repetir, año de 2 cifras, sin días imp
 const evLeido = ev("CUIT 20103619115 Factura A 00010-00006115 Fecha 04/03/2026 Total 1068365,63", { cuit: "20103619115", punto_venta: 10, numero_desde: 6115, imp_total: 1068365.63, tipo: "Factura A", fecha_emision: "2026-03-05" })
 chequear("Un dudoso dice lo que leyó: tipo, monto y la fecha que SÍ tiene", "dudoso|factura|1068365.63|04/03/2026",
   [evLeido.nivel, evLeido.leido?.tipo, evLeido.leido?.monto, (evLeido.leido?.fechas || []).join(",")].join("|"))
+
+// ── Dos huecos vistos en marzo 2026, con el TEXTO REAL del registro del archivo digital (2026-10-23) ──
+// Río Tala imprime el número todo junto: «00132220» = punto de venta 0013 + número 2220 (4+4 dígitos), y
+// factura dos líneas por mes con números seguidos (2220 y 2221, mismo importe y fecha).
+const textoRioTala = `COOPERATIVA DE PROVISION DE AGUA POTABLE Y OTROS SERV. PUBLICOS DE RIO TALA LTDA.
+SERVICIO TELEFONICO
+CUIT: 30-61580376-2 INGRESOS BRUTOS EXENTO
+DNRP: 61580376
+00132220
+498193
+actura No:
+03/2026
+02/03/2026
+Fecha de Emisión:
+30-61778601-6
+13.717,98
+Sr. Usuario:Usted tiene el derecho a reclamar una indemnización si le factur mos sumas o conceptos indebidos o le reclamamos el pago de facturas ya abonadas.
+Total Factura
+13.717,98`
+const RT = { cuit: "30615803762", punto_venta: 13, numero_desde: 2220, imp_total: 13717.98, tipo: "Factura A", fecha_emision: "2026-03-02" }
+chequear("Río Tala: el número 4+4 pegado («00132220») es el 13-2220 → exacto", "exacto", nivel(textoRioTala, RT) + (nivel(textoRioTala, RT) === "exacto" ? "" : " " + ev(textoRioTala, RT).motivos.join(" | ")))
+chequear("Río Tala: la otra línea del mes (13-2221) NO es este archivo", "no", nivel(textoRioTala, { ...RT, numero_desde: 2221 }))
+chequear("Número pegado sólo como renglón suelto: dentro de un número más largo no vale", "false|true|true",
+  [g.numeroPegado("CAE 7700132220123", 13, 2220), g.numeroPegado("Nro 001300002220", 13, 2220), g.numeroPegado("0001300002220", 13, 2220)].map(String).join("|"))
+// Hernández imprime la fecha pegada a la hora: «Fecha30-03-2617:27:56» = 30/03/26 a las 17:27.
+const textoHernandez = `VETERINARIA HERNANDEZ
+HERNANDEZ CRISTOBAL MATIAS PIO BARTOLOMEMITRE1571
+CUIT:20224765658
+A
+Factura
+Nº 0101-00000109
+IniciodeActividades:01∕12∕2000 Fecha30-03-2617:27:56
+MARTINEZSOBRADOAGRO S.R.
+30617786016
+Subtotal 295041,33 Impuestos 61958,69 Descuento 0,00 TOTAL 357000,00
+CAE86139599390860
+Vto.CAE20260409`
+const HZ = { cuit: "20224765658", punto_venta: 101, numero_desde: 109, imp_total: 357000.02, tipo: "Factura A", fecha_emision: "2026-03-30" }
+chequear("Hernández: la fecha pegada a la hora («30-03-2617:27:56») es el 30/03/2026 → exacto", "exacto", nivel(textoHernandez, HZ))
+chequear("…y lo que se le muestra al revisar es 30/03/2026, no «30/03/2617»", "30/03/2026", g.fechasDelTexto("Fecha30-03-2617:27:56").join("|"))
+chequear("Fecha pegada a la hora: otro día sigue sin valer, y un año de 4 cifras pegado tampoco se corta", "false|false",
+  [g.fechaEnTexto("Fecha29-03-2617:27:56", "2026-03-30"), g.fechaEnTexto("30-03-2026", "2020-03-30")].map(String).join("|"))
 
 const mal = r.filter(x => !x.ok)
 for (const x of r) {
