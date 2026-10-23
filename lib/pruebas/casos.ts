@@ -67,6 +67,7 @@ import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
+import { armarPapel, campoDeTemplate, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -7983,6 +7984,53 @@ export function correrCasos(): Resultado[] {
     chequear("Arrendamiento en Cash Flow", "No fijadas: va lo que falta fijar de cada cuota (la 2 está toda fijada; la 6, sólo el saldo de 28,4 tn), con soja de la posición × TC de la base; la de fecha pasada no se proyecta",
       "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · "),
       nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · ") === "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", "A-FEAT-1328")
+  }
+
+  // ══ 🏛️ DETALLE DE INMOBILIARIO / RED VIAL / AUTOMOTORES (A-FEAT-1320 punto 5) ════════════════
+  {
+    const t = (nombre: string, categ: string, resp: string, partida: string | null = null, activo = true) =>
+      ({ nombre_referencia: nombre, categ, responsable: resp, cuenta_agrupadora: "Impuestos Rurales", activo, partida_arba: partida })
+    const c = (id: string, estado: string, venc: string, monto: number, tpl: ReturnType<typeof t>) =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto, template: tpl })
+    const rojas = t("Inmobiliario Cuota Rojas", "Impuesto inmobiliario", "MSA", "090-016369-0")
+    const rojas25 = t("Inmobiliario Cuota Rojas", "Impuesto inmobiliario", "MSA", "090-016369-0", false)
+    const cholo = t("Inmobiliario Cuota Cholo 1", "Impuesto inmobiliario", "MSA", "099-010611-8")
+    const comp = t("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario", "MSA")
+    const casco = t("Inmobiliario Cuota Casco", "Impuesto inmobiliario", "PAM", "099-006595-0")
+    const rv = t("Red Vial Cuota Rojas", "Impuesto Red Vial", "MSA")
+    const cuotas = [
+      c("a1", "pagado", "2025-03-10", 500, rojas25), c("a2", "pagado", "2025-06-10", 500, rojas25),   // año anterior: 4 cuotas, 2.000
+      c("a3", "pagado", "2025-09-10", 500, rojas25), c("a4", "pagado", "2025-11-10", 500, rojas25),
+      c("z1", "pagado", "2025-11-10", 50, casco),                                                       // Casco 2025: 1 cuota sola de 4 → incompleto
+      c("b1", "conciliado", "2026-03-17", 600, rojas), c("b2", "pagado", "2026-06-11", 600, rojas), c("b3", "pendiente", "2026-09-13", 600, rojas), c("b4", "pendiente", "2026-11-13", 600, rojas),
+      c("h1", "pagado", "2026-03-17", 100, cholo),
+      c("k1", "pagado", "2026-03-17", 300, comp),
+      c("p1", "pagado", "2026-03-17", 500, casco), c("p2", "pendiente", "2026-09-13", 500, casco),
+      c("r1", "pagado", "2026-03-17", 999, rv),   // es de Red Vial: no va al papel del inmobiliario
+    ]
+    const tcs = [{ anio: 2026, mes: 3, tc_presupuestado: 1300, tc_real: null }, { anio: 2026, mes: 6, tc_presupuestado: 1300, tc_real: null },
+      { anio: 2026, mes: 9, tc_presupuestado: 1500, tc_real: null }, { anio: 2026, mes: 11, tc_presupuestado: 1600, tc_real: null }]
+    const p = armarPapel("inmobiliario", cuotas as any, 2026, tcs, { "090-016369-0": 245.17 })
+    const msa = p.bloques.find(b => b.empresa === "MSA")
+    const fr = msa?.filas.find(f => f.campo === "Rojas")
+    chequear("Papel inmobiliario", "Por empresa y campo, el complementario al final; Rojas: 4 cuotas, total 2.400 contra 2.000 del año anterior (+20 %); Red Vial no entra",
+      "MSA: Cholo 1 · Rojas · Complementario | PAM: Casco · Rojas 2400 vs 2000 (+20%) · 4 cuotas",
+      `MSA: ${msa?.filas.map(f => f.campo).join(" · ")} | PAM: ${p.bloques.find(b => b.empresa === "PAM")?.filas.map(f => f.campo).join(" · ")} · Rojas ${fr?.costoAnual} vs ${fr?.totalAnterior} (+${Math.round((fr?.aumento ?? 0) * 100)}%) · ${fr?.cuotas.length} cuotas`,
+      msa?.filas.map(f => f.campo).join(" · ") === "Cholo 1 · Rojas · Complementario" && fr?.costoAnual === 2400 && fr?.totalAnterior === 2000
+        && Math.round((fr?.aumento ?? 0) * 100) === 20 && fr?.cuotas.length === 4 && p.total === 3800, "A-FEAT-1320")
+    chequear("Papel inmobiliario", "TC promedio de los meses de las cuotas (como el «TC promedio» de su planilla) y costo por hectárea cuando hay hectáreas; sin hectáreas, vacío y avisa",
+      "Rojas x ha 9.79 · U$S con TC prom. · falta has (Cholo 1, Casco)",
+      `Rojas x ha ${fr?.costoHa} · U$S ${fr?.costoUsd ? "con TC prom." : "—"} · falta has (${p.faltaHas ? "Cholo 1, Casco" : "no"})`,
+      fr?.costoHa === 9.79 && !!fr?.costoUsd && p.faltaHas && !!p.tcPromedio && p.tcPromedio > 1300 && p.tcPromedio < 1600, "A-FEAT-1320")
+    const fc = p.bloques.find(b => b.empresa === "PAM")?.filas.find(f => f.campo === "Casco")
+    chequear("Papel inmobiliario", "Si en la app el año anterior tiene menos cuotas que este (el histórico arranca en jul-25), el aumento NO se calcula: se marca incompleto",
+      "Casco: incompleto, sin aumento", `Casco: ${fc?.anteriorIncompleto ? "incompleto" : "completo"}, ${fc?.aumento == null ? "sin aumento" : "aumento " + fc?.aumento}`,
+      fc?.anteriorIncompleto === true && fc?.aumento == null && fr?.anteriorIncompleto === false, "A-FEAT-1320")
+    chequear("Papel inmobiliario", "El campo sale del nombre del template; las hectáreas se toman de cualquiera de los dos maestros (por partida o por nombre)",
+      "Tango Parra 1 · Lima · Gol 2012 · has 245.17/17.23",
+      `${campoDeTemplate("Inmobiliario Cuota Tango Parra 1")} · ${campoDeTemplate("Red Vial Lima Cuota")} · ${campoDeTemplate("Imp Automotores Gol 2012 Anual")} · has ${hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"]}/${hectareasDe([], [{ nombre_partida: "Tango Parra 1", has: 17.23 }])["campo:tango parra 1"]}`,
+      campoDeTemplate("Inmobiliario Cuota Tango Parra 1") === "Tango Parra 1" && campoDeTemplate("Red Vial Lima Cuota") === "Lima" && campoDeTemplate("Imp Automotores Gol 2012 Anual") === "Gol 2012"
+        && hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"] === 245.17, "A-FEAT-1320")
   }
 
   return r

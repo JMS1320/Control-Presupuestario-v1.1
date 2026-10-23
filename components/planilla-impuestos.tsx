@@ -25,6 +25,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { PapelInmobiliario } from "@/components/papel-inmobiliario"
+import { hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
+import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { ChevronDown, ChevronLeft, ChevronRight, Download, GripVertical, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -43,7 +46,7 @@ function claseCuota(c: CeldaCuota): string {
 }
 const ROTULO: Record<string, string> = { conciliada: "conciliada", pagada: "pagada", "sin-pagar": "sin pagar (presupuestada)" }
 
-const SELECT = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo)"
+const SELECT = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo,partida_arba)"
 
 async function cargarCuotas(): Promise<CuotaPlanilla[]> {
   const todas: CuotaPlanilla[] = []
@@ -67,6 +70,10 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
   const [orden, setOrden] = useState<string[]>([])
   const [arrastrando, setArrastrando] = useState<string | null>(null)
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set())
+  // 🏛️ Punto (5): el detalle de inmobiliario / Red Vial / automotores con el formato de su planilla.
+  const [papel, setPapel] = useState<TipoPapel | null>(null)
+  const [tcs, setTcs] = useState<TipoCambio[]>([])
+  const [hectareas, setHectareas] = useState<Record<string, number>>({})
 
   const cargar = useCallback(async () => {
     setError(null)
@@ -76,7 +83,21 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     if (!open) return
     void cargar()
     supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenImpuestos ?? []))
+    // Para el detalle: TC (columna U$S) y hectáreas (columnas por ha). Si no se pueden leer, el detalle
+    // sale igual sin esas columnas.
+    supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real").then(({ data }) => setTcs((data ?? []) as TipoCambio[]))
+    Promise.all([
+      supabase.from("partidas").select("partida_inmobiliario, partida_red_vial, has_totales, has_productivas"),
+      supabase.from("campo_partidas").select("nombre_partida, nro_partida, has"),
+    ]).then(([p, c]) => setHectareas(hectareasDe((p.data ?? []) as any[], (c.data ?? []) as any[])))
   }, [open, cargar])
+
+  /** El total de las filas de un papel en la Planilla de un año: el control del detalle. */
+  const totalEnPlanilla = useCallback((tipo: TipoPapel, a: number) => {
+    if (!cuotas) return 0
+    const deTipo = (cuotas.filter(c => papelDeTemplate(c.template.categ)?.papel === tipo))
+    return armarPlanilla(deTipo, a, hoy).totales.total
+  }, [cuotas, hoy])
 
   const planilla = useMemo(() => cuotas ? armarPlanilla(cuotas, anio, hoy) : null, [cuotas, anio, hoy])
   const filas = useMemo(() => planilla ? ordenarFilas(planilla.filas, orden) : [], [planilla, orden])
@@ -131,6 +152,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
             </span>
             <span className="ml-auto flex gap-2">
               {orden.length > 0 && <Button size="sm" variant="ghost" onClick={restablecerOrden}>Orden de siempre</Button>}
+              <Button size="sm" variant="outline" onClick={() => setPapel("inmobiliario")} disabled={!cuotas}>🏛️ Inmobiliario · Red Vial · Automotores</Button>
               <Button size="sm" variant="outline" onClick={exportar} disabled={!planilla || !!sinDatos}><Download className="mr-1 h-4 w-4" />Excel</Button>
             </span>
           </DialogTitle>
@@ -183,6 +205,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
                   <tbody>
                     {filas.map(f => (
                       <FilaImpuesto key={f.clave} f={f} abierta={abiertas.has(f.clave)} arrastrada={arrastrando === f.clave}
+                        abrirPapel={PAPEL_DE_IMPUESTO[f.impuesto] ? () => setPapel(PAPEL_DE_IMPUESTO[f.impuesto]) : undefined}
                         alternar={() => setAbiertas(s => { const n = new Set(s); if (n.has(f.clave)) n.delete(f.clave); else n.add(f.clave); return n })}
                         alEmpezar={() => setArrastrando(f.clave)} alSoltar={() => void soltar(f.clave)} />
                     ))}
@@ -213,8 +236,16 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
           </>
         )}
       </DialogContent>
+      {cuotas && (
+        <PapelInmobiliario open={papel !== null} onOpenChange={v => { if (!v) setPapel(null) }} tipoInicial={papel ?? "inmobiliario"}
+          anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} totalEnPlanilla={totalEnPlanilla} />
+      )}
     </Dialog>
   )
+}
+
+const PAPEL_DE_IMPUESTO: Record<string, TipoPapel> = {
+  "Inmobiliario": "inmobiliario", "Inmobiliario Complementario": "inmobiliario", "Red Vial": "red-vial", "Automotores": "automotores",
 }
 
 function Cuotas({ cuotas }: { cuotas: CeldaCuota[] }) {
@@ -230,8 +261,8 @@ function Cuotas({ cuotas }: { cuotas: CeldaCuota[] }) {
   )
 }
 
-function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar }: {
-  f: FilaPlanilla; abierta: boolean; arrastrada: boolean; alternar: () => void; alEmpezar: () => void; alSoltar: () => void
+function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar, abrirPapel }: {
+  f: FilaPlanilla; abierta: boolean; arrastrada: boolean; alternar: () => void; alEmpezar: () => void; alSoltar: () => void; abrirPapel?: () => void
 }) {
   // El desglose por template (partida, vehículo…): lo mismo, una fila por cada uno.
   const porTemplate = abierta ? f.templates.map(t => ({ t, meses: f.meses.map(m => m.filter(c => c.template === t)) })) : []
@@ -245,6 +276,7 @@ function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar }:
             {abierta ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{f.impuesto}
             {f.templates.length > 1 && <span className="text-[10px] text-gray-400">({f.templates.length})</span>}
           </button>
+          {abrirPapel && <button className="ml-1 text-[11px] text-blue-700 hover:underline" onClick={abrirPapel} title="Ver el detalle con el formato de la planilla">🏛️ detalle</button>}
         </td>
         <td className="px-2 py-1">{f.empresa}</td>
         {f.meses.map((m, i) => <td key={i} className="min-w-[3.5rem] px-0.5 py-1"><Cuotas cuotas={m} /></td>)}

@@ -2741,7 +2741,15 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
 
 Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre; la planilla sólo lee.
 
-→ A-TEST-1227
+**🏛️ El detalle de inmobiliario, Red Vial y automotores** — botón arriba de la planilla, o **🏛️ detalle**
+al lado de esas filas. Es el papel con el formato de tu planilla: por empresa, una fila por campo con su
+partida, el total del año anterior, el total en cuotas, el aumento, cada cuota con su vencimiento y el
+costo anual en $ y en U$S (con el TC promedio de los meses de las cuotas). El complementario va al final
+de cada empresa. Arriba dice si cierra con la planilla (✓ control). El **Excel** lleva las fórmulas y una
+fila CONTROL que tiene que dar 0. Las columnas por hectárea se llenan cuando estén cargadas las hectáreas
+de cada partida.
+
+→ A-TEST-1227 · A-TEST-1229
 
 ## 🌾 Cash Flow → los cobros de arrendamiento todavía sin pesos *(2026-10-23)*
 
