@@ -4,6 +4,7 @@ import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
+import { calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores } from "@/lib/facturas/alta-factura"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -120,69 +121,8 @@ function convertirFecha(valor: string | number | null | undefined): string | nul
   }
 }
 
-/**
- * Calcula fecha estimada (fecha_emision + 15 días)
- */
-function calcularFechaEstimada(fechaEmision: string | null): string | null {
-  if (!fechaEmision) return null
-  
-  try {
-    const fecha = new Date(fechaEmision)
-    fecha.setDate(fecha.getDate() + 15)
-    return fecha.toISOString().split('T')[0] // Formato YYYY-MM-DD
-  } catch {
-    return null
-  }
-}
-
-/**
- * Busca regla de asignación automática por CUIT
- * Si existe regla, devuelve cuenta_contable y estado a asignar
- */
-async function buscarReglaCuit(cuit: string): Promise<{cuenta_contable: string | null, estado: string, fc: string | null}> {
-  try {
-    const { data, error } = await supabase
-      .from('reglas_ctas_import_arca')
-      .select('cuenta_contable, estado, fc')
-      .eq('cuit', cuit)
-      .eq('activo', true)
-      .single()
-
-    if (error || !data) {
-      // No hay regla para este CUIT - usar valores por defecto
-      return { cuenta_contable: null, estado: 'pendiente', fc: null }
-    }
-
-    console.log(`📋 Regla encontrada para CUIT ${cuit}: cuenta=${data.cuenta_contable}, estado=${data.estado}, fc=${data.fc || '(default Buscar)'}`)
-    return { cuenta_contable: data.cuenta_contable, estado: data.estado, fc: data.fc ?? null }
-  } catch (err) {
-    console.error(`❌ Error buscando regla CUIT ${cuit}:`, err)
-    return { cuenta_contable: null, estado: 'pendiente', fc: null }
-  }
-}
-
-/**
- * Obtiene información del tipo de comprobante desde la tabla AFIP
- */
-async function obtenerTipoComprobante(codigo: number): Promise<{descripcion: string, es_nota_credito: boolean}> {
-  try {
-    const { data, error } = await supabase
-      .from('tipos_comprobante_afip')
-      .select('descripcion, es_nota_credito')
-      .eq('codigo', codigo)
-      .single()
-    
-    if (error) {
-      console.warn(`⚠️ Tipo comprobante ${codigo} no encontrado en BD:`, error.message)
-      return { descripcion: `Código ${codigo}`, es_nota_credito: false }
-    }
-    
-    return data
-  } catch (err) {
-    console.error(`❌ Error consultando tipo comprobante ${codigo}:`, err)
-    return { descripcion: `Código ${codigo}`, es_nota_credito: false }
-  }
-}
+// calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC y asegurarProveedores
+// viven en lib/facturas/alta-factura.ts: los comparte la carga de una factura desde su PDF (A-FEAT-1318).
 
 /**
  * Mapea una fila del CSV/Excel de ARCA a la estructura de la base de datos
@@ -204,7 +144,7 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     esFormatoExcel ? fila["Tipo"] : fila["Tipo de Comprobante"]
   ) || 0
   
-  const tipoInfo = await obtenerTipoComprobante(tipoComprobanteNumero)
+  const tipoInfo = await obtenerTipoComprobante(supabase, tipoComprobanteNumero)
   
   console.log(`📝 Tipo ${tipoComprobanteNumero}: ${tipoInfo.descripcion} ${tipoInfo.es_nota_credito ? '(NEGATIVO)' : '(POSITIVO)'}`)
 
@@ -281,30 +221,11 @@ async function mapearFilaCSVaBBDD(fila: any, nombreArchivo: string) {
     }
   }
   
-  // CONVERSIÓN A NEGATIVO PARA NOTAS DE CRÉDITO
-  if (tipoInfo.es_nota_credito) {
-    console.log('⚠️ Convirtiendo Nota de Crédito a valores negativos')
-    
-    // Lista de TODOS los campos monetarios que deben ser negativos
-    const camposMonetarios = [
-      'imp_neto_gravado', 'imp_neto_no_gravado', 'imp_op_exentas', 
-      'imp_otros_tributos', 'imp_total_iva', 'imp_total',
-      'otros_tributos', 'iva',
-      'neto_grav_iva_0', 'iva_2_5', 'neto_grav_iva_2_5', 'iva_5', 'neto_grav_iva_5',
-      'iva_10_5', 'neto_grav_iva_10_5', 'iva_21', 'neto_grav_iva_21', 
-      'iva_27', 'neto_grav_iva_27'
-    ]
-    
-    // Convertir todos los campos monetarios a negativos
-    camposMonetarios.forEach(campo => {
-      if (camposIVA[campo] && typeof camposIVA[campo] === 'number' && camposIVA[campo] > 0) {
-        camposIVA[campo] = -camposIVA[campo]
-      }
-    })
-  }
-  
+  // CONVERSIÓN A NEGATIVO PARA NOTAS DE CRÉDITO (todos los campos de plata)
+  camposIVA = aNegativoSiNC(camposIVA, tipoInfo.es_nota_credito)
+
   // Buscar regla de asignación automática por CUIT
-  const reglaCuit = await buscarReglaCuit(datosBasicos.cuit)
+  const reglaCuit = await buscarReglaCuit(supabase, datosBasicos.cuit)
 
   // Combinar datos básicos + IVA + campos sistema
   const resultado = {
@@ -664,28 +585,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // Auto-crear proveedores faltantes (en bloque, NO rompe el import si falla)
-    let proveedoresCreados = 0
-    try {
-      const cuits = Array.from(proveedoresVistos.keys())
-      if (cuits.length > 0) {
-        const { data: existentes } = await supabase
-          .from('proveedores')
-          .select('cuit')
-          .in('cuit', cuits)
-        const setExistentes = new Set((existentes || []).map((p: any) => p.cuit))
-        const nuevos = cuits
-          .filter(c => !setExistentes.has(c))
-          .map(c => ({ cuit: c, razon_social: proveedoresVistos.get(c) || c, fc_modo: 'sin_config' }))
-        if (nuevos.length > 0) {
-          const { error: errProv } = await supabase.from('proveedores').insert(nuevos)
-          if (errProv) console.error('⚠️ Error auto-creando proveedores:', errProv.message)
-          else { proveedoresCreados = nuevos.length; console.log(`👥 Proveedores auto-creados: ${proveedoresCreados}`) }
-        }
-      }
-    } catch (e) {
-      console.error('⚠️ Auto-creación de proveedores falló (import OK igual):', e)
-    }
+    // Auto-crear proveedores faltantes (upsert: también marca es_proveedor). NO rompe el import si falla.
+    const altaProv = await asegurarProveedores(supabase, proveedoresVistos)
+    const proveedoresCreados = altaProv.creados
+    if (altaProv.error) console.error('⚠️ Auto-creación de proveedores falló (import OK igual):', altaProv.error)
 
     // Preparar respuesta con resumen de la importación
     const mensaje = `✅ Importación completada: ${filasImportadas} facturas nuevas importadas, ${filasIgnoradas} ya existían` +

@@ -12,7 +12,7 @@ export type Veredicto = 'no_informada' | 'otra_carpeta' | 'no_es_factura' | 'dup
 
 /** Los veredictos, en el orden en que se ofrecen, con lo que se le dice al usuario. */
 export const VEREDICTOS: ReadonlyArray<{ valor: Veredicto; etiqueta: string; ayuda: string }> = [
-  { valor: 'no_informada', etiqueta: '🚫 No informada en ARCA', ayuda: 'El proveedor no la informó en ARCA: cargala como «No Informada» y mandala a 📒 Asientos Contables (o imputala, si va al subdiario).' },
+  { valor: 'no_informada', etiqueta: '🚫 No informada en ARCA', ayuda: 'El proveedor no la informó en ARCA: tocá «📄 Cargar como factura» y mandala a 📒 Asientos Contables (o dejala sin imputar, si va al subdiario).' },
   { valor: 'otra_carpeta', etiqueta: '📂 Va en otra carpeta', ayuda: 'Es de otro mes o de otra empresa: anotá cuál en la nota.' },
   { valor: 'no_es_factura', etiqueta: '📄 No es factura', ayuda: 'Remito, resumen, recibo u otro papel que no se vincula.' },
   { valor: 'duplicado', etiqueta: '♊ Duplicado', ayuda: 'Es una copia de otro archivo ya vinculado.' },

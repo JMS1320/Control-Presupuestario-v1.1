@@ -73,6 +73,7 @@ import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
 import { VEREDICTOS, etiquetaVeredicto, veredictoResuelve, coincideBusqueda, type Veredicto } from "@/lib/gas-pdf/veredicto"
+import { ModalCargarDesdePdf, type ArchivoACargar } from "@/components/gas-pdf/modal-cargar-desde-pdf"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
@@ -474,6 +475,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }>>({})
   const [veredictoDisponible, setVeredictoDisponible] = useState(true)
   const [notaVeredicto, setNotaVeredicto] = useState<Record<string, string>>({})
+  // 📄➡️🧾 Cargar un PDF sin vincular como factura No Informada (A-FEAT-1318, 2026-10-23)
+  const [cargarPdf, setCargarPdf] = useState<ArchivoACargar | null>(null)
   const fileIdDeUrl = (url?: string | null) => { const m = String(url || '').match(/[-\w]{25,}/); return m ? m[0] : null }
   useEffect(() => {
     const ids = huerfanosSupervision.map(h => fileIdDeUrl(h.url)).filter(Boolean) as string[]
@@ -7140,6 +7143,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         )}
                       </span>
                     )}
+                    {/* 📄➡️🧾 Cargarlo como factura No Informada (A-FEAT-1318): para los que no están en ARCA */}
+                    <Button size="sm" variant="outline"
+                      className={`h-6 text-xs px-2 ${reg?.veredicto === 'no_informada' ? 'border-amber-400 bg-amber-50' : ''}`}
+                      title="Cargarlo como factura No Informada con los datos que la app leyó del PDF (sin armar un Excel)"
+                      onClick={() => setCargarPdf({ nombre: h.archivo, url: h.url, file_id: fileIdDeUrl(h.url), texto: reg?.texto ?? null })}>
+                      📄 Cargar como factura
+                    </Button>
                     {reg?.veredicto && (
                       <p className="w-full text-[11px] text-amber-800">{VEREDICTOS.find(v => v.valor === reg.veredicto)?.ayuda}</p>
                     )}
@@ -12312,6 +12322,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
 
       {/* Modal Reglas de Importación */}
       <ModalReglasImport open={mostrarReglasImport} onClose={() => setMostrarReglasImport(false)} />
+
+      {/* 📄➡️🧾 Cargar un PDF sin vincular como factura No Informada (A-FEAT-1318) */}
+      <ModalCargarDesdePdf
+        archivo={cargarPdf}
+        empresa={empresa as 'MSA' | 'PAM' | 'MA'}
+        onClose={() => setCargarPdf(null)}
+        onCargada={async () => {
+          const url = cargarPdf?.url
+          setCargarPdf(null)
+          if (url) setHuerfanosSupervision(prev => prev.filter(x => x.url !== url))
+          if (periodoConsulta) await cargarFacturasPeriodo(periodoConsulta)
+        }}
+      />
 
       {/* Modal Cancelación FC/NC — mudado a su propio componente (A-FEAT-1232) */}
       {modalCancelacionNC && (

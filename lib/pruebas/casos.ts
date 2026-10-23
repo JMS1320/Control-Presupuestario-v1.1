@@ -191,6 +191,8 @@ import {
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
+import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
+import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
@@ -1177,6 +1179,46 @@ export function correrCasos(): Resultado[] {
     const vistaHoja = `${totalFila[6]} · ${valorTotal} · ${formula} · vacía dice no hay: ${vacia}`
     chequear("Asientos Contables — solapa del balance", "La solapa termina con el TOTAL (fórmula SUMA sobre el detalle, mismo valor que la suma) y vacía dice «NO HAY»",
       "TOTAL · 363 · SUM(M6:M7) · vacía dice no hay: true", vistaHoja, vistaHoja === "TOTAL · 363 · SUM(M6:M7) · vacía dice no hay: true", "A-FEAT-1318")
+  }
+
+  // 📄➡️🧾 Cargar una factura desde su PDF (A-FEAT-1318, 2026-10-23). Textos REALES del registro del
+  // archivo digital (MSA, marzo 2026), recortados a las líneas que importan.
+  {
+    const COLOMAC = "COLORMAC S.R.L.\r\nC.U.I.T. Nro.: 30707834834\r\nIns. Brutos: C.M.:901-3070783483-4 (601) Recoleta II\r\nInicio de Actividades: 01/12/2001 IVA Responsable Inscripto\r\nCód. 082 TIQUE FACTURA \"B\"\r\nFecha: 11/03/2026\r\n(40100) Mercedes Areco\r\nD.N.I.: 2066824611\r\nNO 00041-00023206\r\nHora: 15:37:02\r\n1.000/37087.0000\r\n16082 CETOL BELLEZA NATURAL 1 LITR (21.00)\r\n37087.00\r\nTOTAL\r\n66950.36\r\nIVA Contenido\r\n11619.48"
+    const HERNANDEZ = "VETERINARIA HERNANDEZ \r\nCUIT:20224765658 \r\nA \r\nFactura \r\nNº 0101-00000109 \r\nIniciodeActividades:01∕12∕2000 Fecha30-03-2617:27:56 \r\nIngresosBrutos:20-22476565-8 \r\nMARTINEZSOBRADOAGRO S.R. \r\n30617786016 \r\n0000-00000000 \r\nSubtotal 295041,33 Impuestos 61958,69 Descuento 0,00 TOTAL 357000,00 \r\nIIBB:0,00-Percep.IVA:0,00-IVA:61958,69-Imp.Internos:0,00 \r\nCAE86139599390860"
+    const RIGO_NC = "NOTA DE CRÉDITO   \r\nN° 0004 - 00000401 \r\nFecha: 09/03/2026 \r\nRIGO MATIAS Y RIGO RAUL S.H \r\nA\r\nCOD: 03\r\nC.U.I.T.: 30-71067955-6 \r\nFecha de inicio: 04/2005 \r\n30-61778601-6 \r\nP. NETO BONIF. P. UNIT TOTAL \r\n1,00 descuento 5% por pago transferencia 17.717,38 0,00 % 17.717,38 17.717,38 \r\nSUBTOTAL 17.717,38 IVA 21,0 3.720,65 IVA 10,5 0,00 \r\nTOTAL $21.438,03 \r\nVTO CAE:\r\n19/03/2026"
+    const MEDICUS = "SAN MANUEL SRL. \r\nCODIGO N: \r\nA \r\n01 \r\n19/03/2026 \r\nFACTURA \r\nA-0013-00609033   1 1 \r\n(1016) CAPITAL FEDERAL RESPONSABLE INSCRIPTO 30-61778601-6\r\n 830,356.25\r\n10/04/2026 \r\nCUOTA BASICA 790,815.47 PERC IIBB BA CAT.24X 39,540.78 \r\n3054677131401001386128384948117202603296"
+    const c = leerFacturaDelTexto(COLOMAC)
+    const vC = `${c.cuit} · ${c.tipo} · ${c.puntoVenta}-${c.numero} · ${c.fecha} · ${c.total} · ${c.denominacion} · neto ${c.neto}`
+    chequear("Cargar desde el PDF — Colomac", "Tique factura B (foto): CUIT, código 082, número 00041-00023206, la fecha rotulada (no la de inicio de actividades) y el TOTAL; en B no se lee neto",
+      "30707834834 · 82 · 41-23206 · 2026-03-11 · 66950.36 · COLORMAC S.R.L. · neto null", vC, vC === "30707834834 · 82 · 41-23206 · 2026-03-11 · 66950.36 · COLORMAC S.R.L. · neto null", "A-FEAT-1318")
+    const h = leerFacturaDelTexto(HERNANDEZ)
+    const vH = `${h.cuit} · ${h.tipo} · ${h.puntoVenta}-${h.numero} · ${h.fecha} · ${h.total} · ${h.neto} · ${h.iva21} · receptor ${h.receptorCuit}`
+    chequear("Cargar desde el PDF — Hernández", "🔴 La fecha pegada a la hora («30-03-2617:27») es 30/03/2026; el IVA sin alícuota se ubica en 21 % por el neto; nuestro CUIT es el receptor, no el emisor",
+      "20224765658 · 1 · 101-109 · 2026-03-30 · 357000 · 295041.33 · 61958.69 · receptor 30617786016", vH, vH === "20224765658 · 1 · 101-109 · 2026-03-30 · 357000 · 295041.33 · 61958.69 · receptor 30617786016", "A-FEAT-1318")
+    const r = leerFacturaDelTexto(RIGO_NC)
+    const m = leerFacturaDelTexto(MEDICUS)
+    const vR = `${r.tipo} · ${r.puntoVenta}-${r.numero} · ${r.total} · ${r.neto}+${r.iva21} | ${m.cuit} · ${m.noLeido.join("/")} · ${m.puntoVenta}-${m.numero} · ${m.total}`
+    chequear("Cargar desde el PDF — NC y sin CUIT", "Rigo: NC A (COD 03), el TOTAL es el importe y no el «TOTAL» del encabezado de la tabla. Medicus: sólo trae nuestro CUIT → el del proveedor queda sin leer (nunca toma el propio)",
+      "3 · 4-401 · 21438.03 · 17717.38+3720.65 | null · CUIT del proveedor · 13-609033 · 830356.25", vR, vR === "3 · 4-401 · 21438.03 · 17717.38+3720.65 | null · CUIT del proveedor · 13-609033 · 830356.25", "A-FEAT-1318")
+    const vI = [cuitValido("30707834834"), cuitValido("30707834835"), parsearImporte("1,234.56"), parsearImporte("1.234,56"), parsearImporte("-43,088.28")].join(",")
+    chequear("Cargar desde el PDF — CUIT e importes", "El dígito verificador separa un CUIT de un número cualquiera; los importes se leen con coma o punto decimal",
+      "true,false,1234.56,1234.56,-43088.28", vI, vI === "true,false,1234.56,1234.56,-43088.28", "A-FEAT-1318")
+    // El control de la carga (frena: una factura cuyas partes no suman su total se contradice)
+    const base = { neto21: 100, iva21: 21, neto105: 0, iva105: 0, noGravado: 0, exento: 0, otrosTributos: 0, total: 121 }
+    const k1 = controlDeLaCarga(base, true), k2 = controlDeLaCarga({ ...base, total: 130 }, true), k3 = controlDeLaCarga({ ...base, total: 66950.36 }, false)
+    const camposB = camposDeLaCarga({ ...base, total: 66950.36, cuit: "30707834834", denominacion: "X", tipo: 82, puntoVenta: 41, numero: 23206, fecha: "2026-03-11", cae: null }, false)
+    const vK = `${k1.cierra} · ${k2.cierra} ${k2.diferencia} · B ${k3.aplica} ${k3.cierra} · B neto ${camposB.imp_neto_gravado} total ${camposB.imp_total}`
+    chequear("Cargar desde el PDF — control", "🔴 A: 100+21 = 121 cierra; con total 130 no (diferencia 9) y no se graba. B/C: sólo el total, como ARCA (neto en 0)",
+      "true · false 9 · B false true · B neto 0 total 66950.36", vK, vK === "true · false 9 · B false true · B neto 0 total 66950.36", "A-FEAT-1318")
+    // La huella: sólo lo que cambió, con las dos puntas. Y la NC se guarda en negativo.
+    const leidoC = precargaDesdeLectura(c)
+    const huella = huellaDeLaCarga(leidoC as any, { ...leidoC, total: 69950.36 } as any)
+    const nc = aNegativoSiNC({ imp_total: 100, iva: 21, cuit: "x" }, true)
+    const split = precargaDesdeLectura({ ...h, neto: 200, iva21: 21, iva105: 10.5 })
+    const vU = `${huella.map(x => `${x.campo} ${x.leido}→${x.cargado}`).join(";")} · NC ${nc.imp_total} ${nc.iva} · ${split.neto21}+${split.neto105}`
+    chequear("Cargar desde el PDF — huella", "La huella guarda sólo el campo corregido con lo leído y lo cargado; una NC se graba en negativo; con IVA de las dos alícuotas el neto se reparte por el IVA",
+      "total 66950.36→69950.36 · NC -100 -21 · 100+100", vU, vU === "total 66950.36→69950.36 · NC -100 -21 · 100+100", "A-FEAT-1318")
   }
 
   const decOtra = decisionArchivadaEnOtra("f1", [
