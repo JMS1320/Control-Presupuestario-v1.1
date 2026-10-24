@@ -52,7 +52,7 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ⏳ AVISO PREVIO, todavía NO se corrió
+### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo): 5 roles, los 5 en `false`
 
 Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre después nace apagado para ese rol).
 `scripts/99-roles-cerrado.sql` agrega **`cerrado boolean not null default false`**. **Todos los roles quedan en
