@@ -3434,6 +3434,7 @@ el balance (sí el margen por actividad, que es otra cosa).
    (el histórico hasta noviembre). Le queda al usuario **mover 4 y cargar 4 en oct-26** →
    [A-DAT-61](#a-dat-61). Hasta entonces el control contra lo presentado marca diciembre en rojo.
 1b. **4 facturas de diciembre con cuenta distinta** (2 sin cuenta en la app) → [A-DAT-89](#a-dat-89).
+1c. **2 tickets de combustible de ARCA cuyas partes no suman el total: $ 34.092,11** (Pan American 5370-3944 del 12/02/2026 y Petrolnor 5-28683 del 13/03/2026): ARCA trae «otros tributos» en 0 y el total incluye los impuestos al combustible sin discriminar. **Verlo con el contador** y decidir si la diferencia va a «otros tributos» (sin crédito). Hasta entonces la apertura de compras de la hoja Control marca NO CUADRA → [A-BUG-1341](#a-bug-1341). *(usuario 2026-10-24: «quedó este tema a revisar y debe ser pendiente de balance»)*
 2. **Qué entra en «total de ventas»**: granos, hacienda, arrendamientos → [A-DEC-33](#a-dec-33). Sin
    eso el control de ventas no se puede escribir.
 3. **Confirmar la lectura de `template`** — si es *lo que NO entra por subdiario* (que es lo que la
