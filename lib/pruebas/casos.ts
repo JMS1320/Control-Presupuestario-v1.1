@@ -227,7 +227,8 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates } from "@/lib/balance/export-libro-diario"
+import { juntarTandas } from "@/lib/supabase-paginado"
 import * as XLSXcasos from "xlsx"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -8341,6 +8342,23 @@ export function correrCasos(): Resultado[] {
   }
 
   {
+    // ── La base entrega 1000 filas por consulta: se trae por tandas (A-BUG-1339) ──
+    const universo = Array.from({ length: 2046 }, (_, i) => i)
+    const todo = juntarTandas((d, h) => universo.slice(d, h + 1))
+    const vt = `${todo.filas.length} filas en ${todo.tandas} tandas · ${new Set(todo.filas).size === todo.filas.length ? "sin repetidas" : "con repetidas"}`
+    chequear("Balance", "Traer todo: 2046 cuotas llegan enteras (antes llegaban 1000 y la solapa Templates salía con meses vacíos)",
+      "2046 filas en 3 tandas · sin repetidas", vt, vt === "2046 filas en 3 tandas · sin repetidas", "A-BUG-1339")
+    const exacto = juntarTandas((d, h) => universo.slice(0, 1000).slice(d, h + 1))
+    const ve = `${exacto.filas.length} filas en ${exacto.tandas} tandas`
+    chequear("Balance", "Traer todo: si son justo 1000, pide una tanda más para confirmar que no hay más (el caso del banco jul→mar)",
+      "1000 filas en 2 tandas", ve, ve === "1000 filas en 2 tandas", "A-BUG-1339")
+    const cuotaT = (responsable: string, fecha: string, concepto: string) => ({ id: concepto, fecha, concepto, proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable, estado: "pagado", monto: 1 })
+    const filasT = hojaDeTemplates({ detalle: [cuotaT("PAM", "2025-08-01", "b"), cuotaT("MSA", "2026-01-01", "c"), cuotaT("MSA", "2025-07-01", "a"), cuotaT("", "2025-07-01", "z")],
+      porMes: [], columnas: [], sinCategoria: [], sinFecha: [], noIncluidas: [], totalNoIncluidas: 0, impagasAlCierre: [], totalImpagas: 0, totalDebitos: 4, totalCreditos: 0 } as any)
+    const orden = filasT.slice(1, 5).map(r => `${r[7] || "(sin)"} ${r[1]}`).join(" · ")
+    chequear("Balance", "Solapa Templates: ordenada por responsable y por fecha; los sin responsable al final",
+      "MSA a · MSA c · PAM b · (sin) z", orden, orden === "MSA a · MSA c · PAM b · (sin) z", "A-FEAT-1338")
+
     // ── Lo que carga el usuario en el balance se guarda (A-FEAT-1337 paso 1) ──
     const base1337 = { empresa: "MSA", anio_cierre: 2026, papel: "hacienda.precio", clave: "Vaca" }
     const primera = armarFilaDato(base1337, " 1.250.000,50 ", null, "jms", "2026-10-24T15:00:00Z")

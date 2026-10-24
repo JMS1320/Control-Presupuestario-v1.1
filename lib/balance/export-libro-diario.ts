@@ -1488,12 +1488,19 @@ const COLS_ASIENTOS: Columna[] = [
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
  * *«replicar formato de libro diario con los templates»*.
  */
-function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
+export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = [[
     "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
     "Centro de costo", "Responsable", "Estado", "Débito", "Crédito",
   ]]
-  for (const c of t.detalle) {
+  // Ordenado por responsable y, dentro de cada uno, por fecha — como «Templates por mes» (usuario 2026-10-24:
+  // «las 2 deben estar ordenadas por responsable»).
+  const ordenadas = [...t.detalle].sort((a, b) =>
+    Number(!a.responsable) - Number(!b.responsable)          // los sin responsable, al final
+    || (a.responsable || "").localeCompare(b.responsable || "", "es")
+    ||(a.fecha ?? "").localeCompare(b.fecha ?? "")
+    || a.concepto.localeCompare(b.concepto, "es"))
+  for (const c of ordenadas) {
     f.push([
       c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
       c.centro_costo, c.responsable, c.estado,

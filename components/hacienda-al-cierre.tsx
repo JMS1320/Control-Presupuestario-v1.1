@@ -22,6 +22,7 @@
  */
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react"
@@ -162,10 +163,11 @@ export function HaciendaAlCierre({
        * ⚖️ Las pesadas hasta el cierre. Se traen con su categoría porque el peso se proyecta
        * **por categoría**, no por animal (A-FEAT-1187).
        */
-      const { data: pes } = await supabase
+      // 📄 A-BUG-1339: 990 pesadas hoy — por tandas, para que no se corte en 1000 sin avisar.
+      const { data: pes } = await traerTodo((d, h) => supabase
         .schema("productivo").from("pesadas_terneros")
         .select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))")
-        .lte("fecha", ejercicio.fechaCierre)
+        .lte("fecha", ejercicio.fechaCierre).order("id").range(d, h))
 
       // La ganancia diaria CARGADA, para poder compararla con la medida y avisar si difieren.
       const { data: lotesGan } = await supabase
