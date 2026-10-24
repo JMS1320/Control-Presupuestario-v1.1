@@ -4,6 +4,7 @@ import { useState } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import type { UserRole } from "@/lib/auth/roles"
 import { Permisable } from "@/components/modo-permisos"
+import { usePrimeraVisible } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Receipt, FileText, Building2, ShieldCheck } from "lucide-react"
@@ -13,7 +14,10 @@ import { VistaSeguros } from "./vista-seguros"
 
 export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
-  const [tabActiva, setTabActiva] = useState("facturas-msa")
+  // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
+  const primeraVisible = usePrimeraVisible()
+  const [tabActiva, setTabActiva] = useState(() =>
+    primeraVisible(["egresos.facturas-msa", "egresos.facturas-pam", "egresos.facturas-ma", "egresos.templates", "egresos.seguros"]))
 
   return (
     <div className="space-y-6">

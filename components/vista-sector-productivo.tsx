@@ -10,6 +10,7 @@ import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { Permisable } from "@/components/modo-permisos"
+import { usePrimeraVisible } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -936,7 +937,10 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
 
 export function VistaSectorProductivo() {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
-  const [tabActiva, setTabActiva] = useState("hacienda")
+  // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
+  const primeraVisible = usePrimeraVisible()
+  const [tabActiva, setTabActiva] = useState(() => primeraVisible([
+    "productivo.hacienda", "productivo.evolucion", "productivo.cria", "productivo.recria", "productivo.insumos", "productivo.lotes"]))
 
   return (
     <div className="space-y-4">
@@ -3548,7 +3552,9 @@ function TabHacienda() {
 // ============================================================
 
 function TabInsumos() {
-  const [subTab, setSubTab] = useState("stock")
+  // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
+  const primeraVisible = usePrimeraVisible()
+  const [subTab, setSubTab] = useState(() => primeraVisible(["productivo.stock", "productivo.ordenes", "productivo.compras"]))
   // A-FEAT-169. Va acá y no en el componente de arriba: Stock, Órdenes y Compras son SUB-pestañas
   // de Insumos, no hermanas de Hacienda — viven en otro componente del mismo archivo.
 

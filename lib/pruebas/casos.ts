@@ -61,6 +61,7 @@ import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
+import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8319,6 +8320,37 @@ export function correrCasos(): Resultado[] {
     const vq = `${mpSinEgresos.secciones.length} · ${Object.keys(cuerpoGuardar("ulises", mpSinEgresos).permisos).length}`
     chequear("Accesos", "Modo permisos: apagar una sección no deja restricciones colgadas de esa sección",
       "0 · 0", vq, vq === "0 · 0", "A-FEAT-1334")
+
+    // ── Permiso por cuenta del Extracto (A-FEAT-1336) ──
+    // Ulises: rol cerrado con Extracto → Importar y sólo MSA cuenta corriente + VISA MSA.
+    const ctUlises = { secciones: ["extracto"], cerrado: true, permisos: {
+      "extracto.importar": "escritura", "extracto.cuenta.msa_galicia": "escritura", "extracto.cuenta.tarjeta_visa_business_msa": "escritura" } }
+    const ctEf = nivelesEfectivos(ctUlises)
+    const vct = [ctEf["extracto.importar"], ctEf["extracto.movimientos"], ctEf["extracto.cuenta.msa_galicia"],
+      ctEf["extracto.cuenta.tarjeta_visa_business_msa"], ctEf["extracto.cuenta.pam_galicia"], ctEf["extracto.cuenta.caja_general"]].join(" · ")
+    chequear("Accesos", "Cuentas: un rol cerrado con Importar + MSA CC + VISA MSA ve sólo esas dos cuentas, y Movimientos apagado",
+      "escritura · ninguno · escritura · escritura · ninguno · ninguno", vct,
+      vct === "escritura · ninguno · escritura · escritura · ninguno · ninguno", "A-FEAT-1336")
+
+    const vsv = [motivoCuentaBloqueada(ctEf, "msa_galicia") ?? "pasa", motivoCuentaBloqueada(ctEf, "tarjeta_visa_business_msa") ?? "pasa",
+      motivoCuentaBloqueada(ctEf, "pam_galicia_cc") ? "frena" : "pasa",
+      motivoCuentaBloqueada(nivelesEfectivos({ secciones: ["extracto"], permisos: {} }), "pam_galicia_cc") ?? "pasa",
+      motivoCuentaBloqueada(nivelesEfectivos({ secciones: ["importar"], permisos: {}, cerrado: true }), "pam_galicia_cc") ?? "pasa",
+      motivoCuentaBloqueada({ "extracto.cuenta.ma_galicia": "lectura" }, "ma_galicia") ? "frena" : "pasa"].join(" · ")
+    chequear("Accesos", "Cuentas (servidor): importar en una cuenta apagada se frena; un rol abierto o sin Extracto pasa como siempre; sólo lectura frena",
+      "pasa · pasa · frena · pasa · pasa · frena", vsv, vsv === "pasa · pasa · frena · pasa · pasa · frena", "A-FEAT-1336")
+
+    const ctRegistradas = RECURSOS_PERMISABLES.filter((r) => r.tipo === "cuenta").map((r) => r.id.replace("extracto.cuenta.", ""))
+    const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
+    chequear("Accesos", "Cuentas: las 11 cuentas del Extracto están registradas como permisables",
+      "11 · están", vreg, vreg === "11 · están", "A-FEAT-1336")
+
+    // En el modo permisos: prender una cuenta de un rol vacío prende Extracto, pero no Importar ni otras cuentas.
+    const ctModo = alternarRecurso(borradorDe({ secciones: [], permisos: {}, cerrado: true }), "extracto.cuenta.msa_galicia")
+    const vmo = [ctModo.secciones.join(","), nivelEnBorrador(ctModo, "extracto.cuenta.msa_galicia"),
+      nivelEnBorrador(ctModo, "extracto.cuenta.pam_galicia"), nivelEnBorrador(ctModo, "extracto.importar")].join(" · ")
+    chequear("Accesos", "Cuentas en el modo permisos: prender MSA en un rol vacío prende Extracto y sólo esa cuenta",
+      "extracto · escritura · ninguno · ninguno", vmo, vmo === "extracto · escritura · ninguno · ninguno", "A-FEAT-1336")
   }
 
   return r

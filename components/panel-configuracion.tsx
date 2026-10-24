@@ -554,7 +554,7 @@ function PanelRoles() {
                                         {r.etiqueta}
                                         {r.tipo !== "pestana" && (
                                           <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
-                                            acción
+                                            {r.tipo === "cuenta" ? "cuenta" : "acción"}
                                           </span>
                                         )}
                                         {/*
@@ -888,7 +888,7 @@ function PanelPermisos() {
                         <span className={rec.padre ? "ml-4 border-l pl-2" : ""}>
                           ↳ {rec.etiqueta}
                           {rec.tipo !== "pestana" && (
-                            <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">acción</span>
+                            <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">{rec.tipo === "cuenta" ? "cuenta" : "acción"}</span>
                           )}
                         </span>
                       </td>

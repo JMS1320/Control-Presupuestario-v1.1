@@ -1083,8 +1083,15 @@ en el rol, **🖱️ Editar sobre la pantalla**. Se abre la app con una barra vi
 - **Nada se aplica hasta Guardar.** La barra cuenta los cambios; **Descartar** vuelve a lo guardado y
   **Salir** te lleva a Roles (si quedó algo sin guardar, pregunta).
 
+**Las cuentas del Extracto** también se prenden de a una: abrí el selector de cuenta (arriba en Extracto) y
+cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las cuentas que le prendiste, en
+todas las solapas, y la app no lo deja importar en las otras. Ej.: para Ulises, Importar + MSA Galicia CC +
+VISA Business MSA.
+
 Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
 se elige en la lista de Editar permisos.
+
+⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
 ⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
 
