@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, claveDeTipo, mismoTipo, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -202,7 +202,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   useEffect(() => { cargar() }, [cargar])
 
   const reglasDe = useCallback(
-    (tipo: string) => reglas.filter(r => r.tipo_movimiento.toUpperCase() === tipo.toUpperCase()),
+    (tipo: string) => reglas.filter(r => mismoTipo(r.tipo_movimiento, tipo)),
     [reglas]
   )
 
@@ -311,13 +311,13 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           const igual = reciclable && reciclable.campo_destino === campo && reciclable.tipo_regla === modo
           if (igual) return
           filas.push({ tipo: t.tipo.toUpperCase(), firma: f.firma, linea: i + 1, campo, modo, existente: reciclable })
-          tiposTocados.add(t.tipo.toUpperCase())
+          tiposTocados.add(claveDeTipo(t.tipo))
         })
       }
     }
     // Las reglas viejas SIN subtipo de esos tipos se van: si quedaran, seguirían aplicándose a
     // todos los subtipos, que es exactamente la causa de A-BUG-1200.
-    const genericasABorrar = reglas.filter(r => !r.firma_forma && tiposTocados.has(r.tipo_movimiento.toUpperCase()))
+    const genericasABorrar = reglas.filter(r => !r.firma_forma && tiposTocados.has(claveDeTipo(r.tipo_movimiento)))
     return { filas, paraElUsuario, tipos: tiposTocados.size, genericasABorrar }
   }, [tipos, reglas, reglasDeSubtipo])
 
@@ -446,7 +446,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
    */
   const equivalenciaDe = useCallback((tipo: string, firma: string) => {
     const suyas = reglasOtra.filter(r =>
-      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() &&
+      mismoTipo(r.tipo_movimiento, tipo) &&
       r.firma_forma === firma)
     if (suyas.length === 0) return null
     // Todas revisadas, o no se ofrece
@@ -467,7 +467,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       .map(r => `${r.tipo_regla}|${r.numero_linea ?? ""}|${r.campo_destino ?? ""}`)
       .sort().join(" · ")
     const propias = reglas.filter(r =>
-      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() && r.firma_forma === firma)
+      mismoTipo(r.tipo_movimiento, tipo) && r.firma_forma === firma)
     const igual = propias.length > 0 && huella(propias) === huella(suyas)
 
     return { origen: CUENTAS_CA.find(c => c.id === id) ?? { id, nombre: id }, reglas: suyas, igual }
@@ -712,8 +712,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const equivalencias = tipos.flatMap(t => t.subtipos.map(f => equivalenciaDe(t.tipo, f.firma))).filter(Boolean)
   const conEquivalencia = equivalencias.length
   const yaIguales = equivalencias.filter(e => e!.igual).length
-  const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
-  const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
+  const tiposPresentes = new Set(tipos.map(t => claveDeTipo(t.tipo)))
+  const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(claveDeTipo(r.tipo_movimiento)))
 
   /** El bloque de líneas del ejemplo, numerado. */
   const Ejemplo = ({ lineas }: { lineas: string[] }) => (

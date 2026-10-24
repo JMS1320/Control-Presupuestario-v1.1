@@ -222,7 +222,7 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -8401,6 +8401,20 @@ export function correrCasos(): Resultado[] {
       evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "" })].map(String).join(" · ")
     chequear("Conciliación", "Reglas por descripción y por monto siguen igual; una regla con el texto vacío no coincide con todo",
       "true · true · false", vdesc, vdesc === "true · true · false", "A-BUG-1344")
+
+    // ── Tipos de parseo: sin puntos y sin número de cheque son el mismo tipo (A-FEAT-1347) ──
+    // Tipos reales de la caja de ahorro de PAM, como los manda el banco.
+    const vk = [claveDeTipo("DEB. AUTOM. DE SERV.") === claveDeTipo("DEB AUTOM DE SERV"), claveDeTipo("ING. BRUTOS S/ CRED") === claveDeTipo("ING BRUTOS S/ CRED"),
+      claveDeTipo("GDE ECHEQ   Q03521175 BOL77388704") === claveDeTipo("GDE ECHEQ   Q96578776 BOL78477425"),
+      claveDeTipo("IMP CRE LEY 25413"), claveDeTipo("COMPRA DEBITO") === claveDeTipo("COMPRA CON DEBITO")].map(String).join(" · ")
+    chequear("Parseo", "Tipo de movimiento: un punto no es diferencia; dos echeq con distinto número son el mismo tipo; «LEY 25413» queda; COMPRA DEBITO ≠ COMPRA CON DEBITO",
+      "true · true · true · IMP CRE LEY 25413 · false", vk, vk === "true · true · true · IMP CRE LEY 25413 · false", "A-FEAT-1347")
+    const mapaPuntos = { "DEB AUTOM DE SERV": [{ campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 2, grupo_de_conceptos: "000083" }] }
+    const rawPuntos = "DEB. AUTOM. DE SERV.\nEDENOR"
+    const vp = [tipoDeMovimiento(rawPuntos), String(tieneReglaPropia(rawPuntos, mapaPuntos)), parsearMovimiento(rawPuntos, mapaPuntos).grupo_de_conceptos,
+      parsearMovimiento(rawPuntos, mapaPuntos).descripcion].join(" · ")
+    chequear("Parseo", "Un movimiento escrito con puntos usa la regla escrita sin puntos; la descripción guardada sigue siendo la del banco",
+      "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", vp, vp === "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", "A-FEAT-1347")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]

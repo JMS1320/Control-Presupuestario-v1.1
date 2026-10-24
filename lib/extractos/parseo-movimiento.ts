@@ -266,11 +266,12 @@ export function resolverReglas(
   lineas: string[],
   mapaReglas: MapaReglas,
 ): { reglas: ReglaParseo[]; subtipoNuevo: boolean } {
-  const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
-  // El match del tipo es EXACTO (ignorando mayúsculas). Por eso `COMPRA DEBITO` no encuentra
-  // la regla de `COMPRA CON DEBITO`: para el sistema son dos tipos distintos.
-  const claveExacta = Object.keys(mapaReglas).find((k) => k.toUpperCase() === tipoLinea1)
-  const delTipo = claveExacta ? mapaReglas[claveExacta] : mapaReglas["*"] ?? []
+  // El tipo se compara por su CLAVE (`claveDeTipo`): sin puntos y sin números de cheque. Sigue
+  // siendo distinto `COMPRA DEBITO` de `COMPRA CON DEBITO` — eso no es una diferencia de escritura.
+  // Si hay reglas guardadas bajo dos escrituras del mismo tipo, valen las de las dos.
+  const clave = claveDeTipo(lineas[0])
+  const claves = clave ? Object.keys(mapaReglas).filter((k) => k !== "*" && claveDeTipo(k) === clave) : []
+  const delTipo = claves.length > 0 ? claves.flatMap((k) => mapaReglas[k]) : mapaReglas["*"] ?? []
 
   const firma = firmaDeMovimiento(lineas)
   const genericas = delTipo.filter((r) => !r.firma_forma)
@@ -290,16 +291,47 @@ export function esSubtipoNuevo(raw: string | null | undefined, mapaReglas: MapaR
   return resolverReglas(lineas, mapaReglas).subtipoNuevo
 }
 
-/** El tipo de movimiento de un texto crudo: su primera línea, normalizada. */
+/**
+ * 🔑 **LA CLAVE DEL TIPO — dos escrituras del mismo tipo son UN tipo** (A-FEAT-1347).
+ *
+ * El banco cambió el formato y el mismo tipo llega escrito de dos maneras: `DEB AUTOM DE SERV` y
+ * `DEB. AUTOM. DE SERV.`, `ING BRUTOS S/ CRED` y `ING. BRUTOS S/ CRED`. Y los cheques traen su
+ * número adentro del tipo (`GDE ECHEQ   Q03521175 BOL77388704`), así que cada cheque nuevo era
+ * un tipo nuevo sin regla. Criterio del usuario 2026-10-24: *«si la única diferencia es un punto
+ * no es diferencia. Para echeqs comparar sin el nro de echeq también»*.
+ *
+ * - mayúsculas, **sin puntos**, espacios de más colapsados;
+ * - **sin las palabras con 7 o más dígitos** (número de cheque o de boleta: `Q03521175`,
+ *   `BOL77388704`, `96578776`). Con 7 y no con 5, para no comerse `IMP CRE LEY 25413`.
+ *
+ * 📌 Sólo cambia **cómo se agrupa y con qué regla se compara**. La `descripcion` que se guarda
+ * sigue siendo la línea tal cual vino del banco, así que las reglas de conciliación no cambian.
+ */
+export function claveDeTipo(linea: string | null | undefined): string {
+  return String(linea ?? "")
+    .toUpperCase()
+    .replace(/\./g, " ")
+    .split(/\s+/)
+    .filter((w) => w !== "" && (w.match(/\d/g)?.length ?? 0) < 7)
+    .join(" ")
+}
+
+/** El tipo de movimiento de un texto crudo: la CLAVE de su primera línea (ver `claveDeTipo`). */
 export function tipoDeMovimiento(raw: string | null | undefined): string {
-  return splitMovimiento(String(raw ?? ""))[0]?.toUpperCase() ?? ""
+  return claveDeTipo(splitMovimiento(String(raw ?? ""))[0])
+}
+
+/** ¿Dos tipos son el mismo? Compara las claves, no el texto. */
+export function mismoTipo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = claveDeTipo(a)
+  return ka !== "" && ka === claveDeTipo(b)
 }
 
 /** ¿Existe una regla propia para este tipo? (el comodín `*` no cuenta como propia) */
 export function tieneReglaPropia(raw: string | null | undefined, mapaReglas: MapaReglas): boolean {
   const tipo = tipoDeMovimiento(raw)
   if (!tipo) return false
-  return Object.keys(mapaReglas).some((k) => k !== "*" && k.toUpperCase() === tipo)
+  return Object.keys(mapaReglas).some((k) => k !== "*" && claveDeTipo(k) === tipo)
 }
 
 /** Carga las reglas activas de una cuenta, agrupadas por tipo de movimiento. */
