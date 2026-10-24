@@ -36,7 +36,6 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, NotebookPen, Camera, Check, X, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { getRoleFromRoute } from "@/config/access-routes"
 import {
   instalarCinta, mirarCinta, confirmarCorte, reiniciarCorte, type EventoDiagnostico,
 } from "@/lib/cinta-diagnostico"
@@ -84,7 +83,8 @@ function rutaActual(): string {
 async function rolActual(): Promise<string | null> {
   const { data } = await supabase.auth.getUser()
   const rol = data.user?.app_metadata?.role
-  return rol === "admin" || rol === "contable" ? rol : null
+  // Cualquier rol de `public.roles`, no sólo los dos de antes (un rol «ulises» quedaba en null).
+  return typeof rol === "string" && rol.trim() ? rol : null
 }
 
 /**

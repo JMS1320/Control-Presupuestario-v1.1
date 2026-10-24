@@ -10,6 +10,8 @@
  */
 import { NextResponse } from 'next/server'
 import { supabaseAdmin, faltaConfiguracionAdmin } from '@/lib/supabase-admin'
+import { createClientServer } from '@/lib/supabase-server'
+import { etiquetaPersona } from '@/lib/auth/identidad'
 
 export const runtime = 'nodejs'
 
@@ -57,6 +59,17 @@ export async function PATCH(request: Request) {
     }
 
     /**
+     * QUIÉN escribe sale de la SESIÓN, no del cuerpo del pedido (A-BUG-1327). Antes lo mandaba la
+     * pantalla, sacado de la URL, y desde el login real llegaba vacío. Lo del cuerpo queda sólo
+     * como respaldo si no hubiera sesión legible.
+     */
+    let quien: string | null = null
+    try {
+      const { data } = await (await createClientServer()).auth.getUser()
+      quien = etiquetaPersona(data.user)
+    } catch { /* sin sesión legible: se usa lo que vino */ }
+
+    /**
      * Agregar al seguimiento — la marca crece mientras se entiende el problema.
      *
      * Se **agrega**, nunca se pisa: `motivo` queda como la sospecha inicial, que a veces resulta
@@ -76,7 +89,7 @@ export async function PATCH(request: Request) {
       const previo = Array.isArray(actual?.seguimiento) ? actual.seguimiento : []
       const { error } = await supabaseAdmin
         .from('revisiones')
-        .update({ seguimiento: [...previo, { fecha: new Date().toISOString(), texto, autor: body.autor || null }] })
+        .update({ seguimiento: [...previo, { fecha: new Date().toISOString(), texto, autor: quien ?? body.autor ?? null }] })
         .eq('id', body.id)
       if (error) throw error
       return NextResponse.json({ ok: true })
@@ -95,7 +108,7 @@ export async function PATCH(request: Request) {
       .update({
         estado,
         resolucion,
-        resuelto_por: body.resuelto_por || null,
+        resuelto_por: quien ?? body.resuelto_por ?? null,
         resuelto_at: new Date().toISOString(),
       })
       .eq('id', body.id)

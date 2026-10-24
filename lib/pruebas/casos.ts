@@ -55,6 +55,11 @@ import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
+import { facturasRestringidas } from "@/lib/auth/roles"
+import { etiquetaPersona } from "@/lib/auth/identidad"
+import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
+import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
+import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8225,6 +8230,74 @@ export function correrCasos(): Resultado[] {
         "Tango Parra 1 · 52948 · 17,23 ha · 116,08/ha", `${fila?.campo} · ${fila?.partida} · ${fila?.has?.toLocaleString("es-AR")} ha · ${fila?.costoHa?.toLocaleString("es-AR")}/ha`,
         fila?.partida === "52948" && fila?.has === 17.23 && fila?.costoHa === 116.08, "A-FEAT-1320")
     }
+  }
+
+  // ── Accesos por tarea, etapa 1 (A-FEAT-1322) ──────────────────────────────────────────────
+  {
+    const m = ["admin", "socio", "productivo", "contable", "ulises", "pruebas"].map(r => `${r}:${facturasRestringidas(r) ? "restringido" : "completo"}`).join(" · ")
+    chequear("Accesos", "Facturas: los roles que ya existían quedan igual (admin, socio y productivo completos; contable restringido) y un rol NUEVO entra restringido como Ulises, no como admin",
+      "admin:completo · socio:completo · productivo:completo · contable:restringido · ulises:restringido · pruebas:restringido", m,
+      m === "admin:completo · socio:completo · productivo:completo · contable:restringido · ulises:restringido · pruebas:restringido", "A-FEAT-1322")
+    const u = (meta: Record<string, unknown>, email?: string) => ({ id: "x", app_metadata: { role: "contable" }, user_metadata: meta, email, aud: "", created_at: "" }) as any
+    const e = [etiquetaPersona(u({ nombre: "Ulises" }, "u@x.com")), etiquetaPersona(u({ full_name: "Ulises G" }, "u@x.com")), etiquetaPersona(u({}, "u@x.com")), etiquetaPersona(null)].map(String).join(" | ")
+    chequear("Accesos", "Las marcas «para revisar» guardan la PERSONA (su nombre, o su mail si no tiene), nunca el rol",
+      "Ulises | Ulises G | u@x.com | null", e, e === "Ulises | Ulises G | u@x.com | null", "A-BUG-1327")
+
+    const roles = [
+      { id: "admin", secciones: ["egresos", "sueldos"], exige_2fa: true, permisos: {} as Record<string, string> },
+      { id: "pruebas", secciones: ["egresos"], exige_2fa: false, permisos: { "egresos.templates": "ninguno" } as Record<string, string> },
+    ]
+    const c = armarRolNuevo({ nombre: "Ulises", copiarDe: "pruebas" }, roles)
+    const fila = c.ok ? c.fila : null
+    // Es COPIA: tocar el original después no mueve el nuevo.
+    roles[1].secciones.push("sueldos"); roles[1].permisos["egresos.seguros"] = "ninguno"
+    const vista = fila ? `${fila.id} · ${fila.secciones.join("+")} · ${Object.keys(fila.permisos).join("+")} · sistema:${fila.es_sistema}` : "error"
+    chequear("Accesos", "Crear rol copiando de pruebas: copia secciones y lo destildado, nunca es de sistema, y cambiar pruebas después no lo mueve",
+      "ulises · egresos · egresos.templates · sistema:false", vista, vista === "ulises · egresos · egresos.templates · sistema:false", "A-FEAT-171")
+    const errores = [
+      armarRolNuevo({ nombre: "PRUEBAS" }, roles), armarRolNuevo({ nombre: "x" }, roles), armarRolNuevo({ nombre: "enrique", copiarDe: "nadie" }, roles),
+    ].map(x => x.ok ? "ok" : "rechaza").join(" · ")
+    const vacio = armarRolNuevo({ nombre: "Enrique Pérez" }, roles)
+    const v = `${errores} · ${normalizarIdRol("Enrique Pérez")} · ${vacio.ok ? vacio.fila.secciones.length : "?"}`
+    chequear("Accesos", "Crear rol: rechaza un nombre repetido (sin importar mayúsculas), uno muy corto y copiar de un rol que no existe; sin rol de origen nace VACÍO",
+      "rechaza · rechaza · rechaza · enrique-perez · 0", v, v === "rechaza · rechaza · rechaza · enrique-perez · 0", "A-FEAT-171")
+
+    // ── Rol cerrado (A-FEAT-1333) ──
+    const abierto = { secciones: ["egresos"], permisos: { "egresos.templates": "ninguno" } }
+    const sinCambio = JSON.stringify(nivelesEfectivos(abierto)) + " · " + JSON.stringify(nivelesEfectivos({ ...abierto, cerrado: false }))
+    chequear("Accesos", "Rol cerrado: un rol ABIERTO (todos los de hoy, o sin la columna) se lee exactamente igual que antes",
+      '{"egresos.templates":"ninguno"} · {"egresos.templates":"ninguno"}', sinCambio,
+      sinCambio === '{"egresos.templates":"ninguno"} · {"egresos.templates":"ninguno"}', "A-FEAT-1333")
+
+    const cerradoEf = nivelesEfectivos({
+      secciones: ["egresos"], permisos: { "egresos.facturas-msa": "escritura", "egresos.templates": "lectura" }, cerrado: true,
+    })
+    const vc = [cerradoEf["egresos.facturas-msa"], cerradoEf["egresos.templates"], cerradoEf["egresos.subdiarios"],
+      Object.keys(cerradoEf).some((k) => !k.startsWith("egresos.")) ? "se mete en otra sección" : "sólo egresos"].join(" · ")
+    chequear("Accesos", "Rol cerrado: ve sólo lo que tiene tildado; lo que no figura en su lista (como una solapa registrada después) nace APAGADO",
+      "escritura · lectura · ninguno · sólo egresos", vc, vc === "escritura · lectura · ninguno · sólo egresos", "A-FEAT-1333")
+
+    // Pasar de abierto a cerrado y volver no cambia lo que ve en ese momento.
+    const secc = ["egresos", "productivo"]
+    const orig = { secciones: secc, permisos: { "egresos.templates": "ninguno", "egresos.seguros": "lectura" } as Record<string, string> }
+    const comoCerrado = { secciones: secc, permisos: permisosAGuardar(excepcionesParaEditar(orig), secc, true), cerrado: true }
+    const efCerrado = nivelesEfectivos(comoCerrado)
+    const distintos = RECURSOS_PERMISABLES.filter((r) => secc.includes(r.seccion))
+      .filter((r) => (orig.permisos[r.id] ?? "escritura") !== (efCerrado[r.id] ?? "escritura")).length
+    const deVuelta = permisosAGuardar(excepcionesParaEditar(comoCerrado), secc, false)
+    const ida = `${distintos} distintos · vuelta ${JSON.stringify(deVuelta) === JSON.stringify(orig.permisos) ? "igual" : JSON.stringify(deVuelta)}`
+    chequear("Accesos", "Rol cerrado: pasar un rol de abierto a cerrado y volver no cambia nada de lo que ve hoy",
+      "0 distintos · vuelta igual", ida, ida === "0 distintos · vuelta igual", "A-FEAT-1333")
+
+    const base = { id: "pruebas", secciones: ["egresos"], exige_2fa: false, permisos: {} as Record<string, string> }
+    const copiaCerrada = armarRolNuevo({ nombre: "enrique" }, [])
+    const deCerrado = armarRolNuevo({ nombre: "ulises", copiarDe: "pruebas" }, [{ ...base, cerrado: true }])
+    const sinColumna = armarRolNuevo({ nombre: "ulises", copiarDe: "pruebas" }, [base])
+    const vcopia = [deCerrado.ok ? String(deCerrado.fila.cerrado) : "error",
+      sinColumna.ok ? ("cerrado" in sinColumna.fila ? "manda la columna" : "no la manda") : "error",
+      copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
+    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
+      "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
   }
 
   return r

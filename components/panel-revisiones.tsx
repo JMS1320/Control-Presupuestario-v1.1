@@ -19,13 +19,8 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Flag, CheckCircle2, Loader2, AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
-import { getRoleFromRoute } from "@/config/access-routes"
 import type { RevisionAbierta } from "@/components/boton-revision"
 
-function rolActual(): string | null {
-  if (typeof window === "undefined") return null
-  return getRoleFromRoute(window.location.pathname.split("/").filter(Boolean)[0] ?? "")
-}
 
 function cuando(iso: string): string {
   const d = new Date(iso)
@@ -91,7 +86,7 @@ export function PanelRevisiones() {
       const r = await fetch("/api/revisiones", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: detalle.id, seguimiento: nuevoSeguimiento.trim(), autor: rolActual() }),
+        body: JSON.stringify({ id: detalle.id, seguimiento: nuevoSeguimiento.trim() }),
       })
       const j = await r.json()
       if (!j.ok) throw new Error(j.error || "no se pudo agregar")
@@ -118,7 +113,7 @@ export function PanelRevisiones() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: cerrando.id, estado, resolucion: resolucion.trim(), resuelto_por: rolActual(),
+          id: cerrando.id, estado, resolucion: resolucion.trim(), // quién la cierra lo pone el servidor (A-BUG-1327)
         }),
       })
       const j = await r.json()
