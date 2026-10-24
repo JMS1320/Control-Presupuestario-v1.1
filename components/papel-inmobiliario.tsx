@@ -11,12 +11,16 @@
  * Sólo lectura. El Excel lleva las fórmulas de la planilla (aumento, totales, U$S, por hectárea y el
  * CONTROL que tiene que dar cero), para que se pueda seguir trabajando sobre él.
  */
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import * as XLSX from "xlsx"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight, Download } from "lucide-react"
-import { armarPapel, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
+import { ChevronLeft, ChevronRight, Download, GripVertical } from "lucide-react"
+import { armarPapel, ordenarPapel, moverPartida, clavePartida, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
 import type { CuotaPlanilla } from "@/lib/impuestos/planilla"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 
@@ -46,7 +50,33 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
   const clave = `${open}|${tipoInicial}|${anioInicial}`
   if (open && abiertoCon !== clave) { setAbiertoCon(clave); setTipo(tipoInicial); setAnio(anioInicial) }
 
-  const papel = useMemo(() => armarPapel(tipo, cuotas as any, anio, tcs, hectareas, cuentasRedVial), [tipo, cuotas, anio, tcs, hectareas, cuentasRedVial])
+  // ↕️ Orden de las partidas: uno solo para Inmobiliario y Red Vial (son las mismas). Automotores, alfabético.
+  const [orden, setOrden] = useState<string[]>([])
+  const [arrastrando, setArrastrando] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open) return
+    supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenPartidas ?? []))
+  }, [open])
+  const ordenable = tipo !== "automotores"
+  const papel = useMemo(() => {
+    const p = armarPapel(tipo, cuotas as any, anio, tcs, hectareas, cuentasRedVial)
+    return ordenable ? ordenarPapel(p, orden) : p
+  }, [tipo, cuotas, anio, tcs, hectareas, cuentasRedVial, orden, ordenable])
+  const soltar = async (destino: string) => {
+    const desde = arrastrando
+    setArrastrando(null)
+    if (!desde || desde === destino) return
+    const visibles = papel.bloques.flatMap(b => b.filas.filter(f => !f.complementario).map(clavePartida))
+    const nuevo = moverPartida(orden, visibles, desde, destino)
+    setOrden(nuevo)
+    const { error: e } = await guardarPreferencias({ ordenPartidas: nuevo })
+    if (e) toast.error(`El orden se ve, pero no se pudo guardar: ${e}`)
+  }
+  const restablecer = async () => {
+    setOrden([])
+    const { error: e } = await guardarPreferencias({ ordenPartidas: null })
+    if (e) toast.error(`No se pudo guardar: ${e}`)
+  }
   const enPlanilla = totalEnPlanilla(tipo, anio)
   const cierra = Math.abs(enPlanilla - papel.total) <= 0.01
 
@@ -66,7 +96,8 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
                 <Button key={t} size="sm" variant={t === tipo ? "default" : "outline"} onClick={() => setTipo(t)}>{TITULO_PAPEL[t]}</Button>
               ))}
             </span>
-            <Button size="sm" variant="outline" className="ml-auto" onClick={() => exportarPapel(papel)} disabled={papel.bloques.length === 0}>
+            {ordenable && orden.length > 0 && <Button size="sm" variant="ghost" className="ml-auto" onClick={restablecer} title="Vuelve al orden alfabético (en Inmobiliario y en Red Vial)">Orden de siempre</Button>}
+            <Button size="sm" variant="outline" className={ordenable && orden.length > 0 ? "" : "ml-auto"} onClick={() => exportarPapel(papel)} disabled={papel.bloques.length === 0}>
               <Download className="mr-1 h-4 w-4" />Excel
             </Button>
           </DialogTitle>
@@ -96,6 +127,7 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
             <table className="w-full border-collapse text-xs">
               <thead className="sticky top-0 z-10 bg-slate-100">
                 <tr>
+                  <th className="w-5" />
                   <th className="px-2 py-1 text-left">Campo</th>
                   <th className="px-2 py-1 text-left">Partida</th>
                   <th className="px-2 py-1 text-right">Has</th>
@@ -112,10 +144,11 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
               </thead>
               <tbody>
                 {papel.bloques.map(b => (
-                  <BloqueFilas key={b.empresa} b={b} anio={anio} max={papel.maxCuotas} />
+                  <BloqueFilas key={b.empresa} b={b} anio={anio} max={papel.maxCuotas}
+                    arrastre={ordenable ? { arrastrando, empezar: setArrastrando, soltar: k => void soltar(k) } : undefined} />
                 ))}
                 <tr className="border-t-2 border-slate-500 bg-slate-100 text-sm font-bold">
-                  <td className="px-2 py-1" colSpan={3}>TOTAL {papel.bloques.map(b => b.empresa).join(" + ")}</td>
+                  <td className="px-2 py-1" colSpan={4}>TOTAL {papel.bloques.map(b => b.empresa).join(" + ")}</td>
                   <td className="px-2 py-1 text-right">{plata(papel.totalAnterior)}</td>
                   <td colSpan={2} />
                   <td className="px-2 py-1 text-right">{papel.bloques.some(b => b.filas.some(f => f.anteriorIncompleto || (f.totalAnterior === 0 && f.costoAnual > 0))) ? "—" : pct(papel.totalAnterior > 0 ? papel.total / papel.totalAnterior - 1 : null)}</td>
@@ -134,12 +167,21 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
   )
 }
 
-function BloqueFilas({ b, anio, max }: { b: Papel["bloques"][number]; anio: number; max: number }) {
+type Arrastre = { arrastrando: string | null; empezar: (k: string) => void; soltar: (k: string) => void }
+function BloqueFilas({ b, anio, max, arrastre }: { b: Papel["bloques"][number]; anio: number; max: number; arrastre?: Arrastre }) {
   return (
     <>
-      <tr className="bg-slate-50"><td colSpan={11 + max} className="px-2 py-1 text-sm font-semibold">{b.empresa}</td></tr>
+      <tr className="bg-slate-50"><td colSpan={12 + max} className="px-2 py-1 text-sm font-semibold">{b.empresa}</td></tr>
       {b.filas.map(f => (
-        <tr key={`${f.campo}|${f.partida}`} className={`border-t ${f.complementario ? "bg-amber-50/50 font-medium" : ""}`}>
+        <tr key={`${f.campo}|${f.partida}`}
+          className={`border-t ${f.complementario ? "bg-amber-50/50 font-medium" : ""} ${arrastre?.arrastrando === clavePartida(f) ? "opacity-40" : ""}`}
+          draggable={!!arrastre && !f.complementario}
+          onDragStart={() => arrastre?.empezar(clavePartida(f))}
+          onDragOver={e => { if (arrastre && !f.complementario) e.preventDefault() }}
+          onDrop={e => { e.preventDefault(); if (!f.complementario) arrastre?.soltar(clavePartida(f)) }}>
+          <td className="px-0.5 py-1 text-slate-400">
+            {arrastre && !f.complementario && <span className="cursor-grab" title="Arrastrá para ordenar (vale para Inmobiliario y Red Vial)"><GripVertical className="h-4 w-4" /></span>}
+          </td>
           <td className="px-2 py-1">{f.campo}</td>
           <td className="px-2 py-1 font-mono text-[11px]">{f.partida ?? ""}</td>
           <td className="px-2 py-1 text-right text-gray-400">{f.has ?? "—"}</td>
@@ -163,7 +205,7 @@ function BloqueFilas({ b, anio, max }: { b: Papel["bloques"][number]; anio: numb
         </tr>
       ))}
       <tr className="border-t bg-slate-100 font-semibold">
-        <td className="px-2 py-1" colSpan={3}>TOTAL {b.empresa}</td>
+        <td className="px-2 py-1" colSpan={4}>TOTAL {b.empresa}</td>
         <td className="px-2 py-1 text-right">{plata(b.totalAnterior)}</td>
         <td colSpan={2} />
         <td className="px-2 py-1 text-right">{b.filas.some(f => f.anteriorIncompleto || (f.totalAnterior === 0 && f.costoAnual > 0)) ? "—" : pct(b.totalAnterior > 0 ? b.total / b.totalAnterior - 1 : null)}</td>
@@ -173,7 +215,7 @@ function BloqueFilas({ b, anio, max }: { b: Papel["bloques"][number]; anio: numb
         <td className="px-2 py-1 text-right">{plata(b.totalUsd)}</td>
         <td />
       </tr>
-      <tr><td colSpan={11 + max} className="h-2" /></tr>
+      <tr><td colSpan={12 + max} className="h-2" /></tr>
     </>
   )
 }

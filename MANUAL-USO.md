@@ -2747,7 +2747,7 @@ mismo canal que ya usabas desde el panel de Pendientes.
 El botón rojo **🧾 Planilla de impuestos** abre el reporte de todos los impuestos de un **año
 calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte de los impuestos»*.
 
-- **Arriba**: el aviso de vencidos y por vencer de Principal, en un renglón (click para desplegarlo).
+- **Arriba**: el aviso de vencidos y por vencer de Principal, en un renglón (click para desplegarlo). En esta pantalla no aparece el cartel de pruebas pendientes, para dejarle lugar a la grilla.
 - **El año**: abre en el actual; con las flechas pasás al anterior o al siguiente.
 - **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…), como una
   planilla: **un número por mes**, completo y sin decimales, que suma las cuotas que vencen ese mes.
@@ -2761,7 +2761,7 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
   en los totales; está para poder revisarlo.
 - **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón, también un número por mes. El 🏛️ al lado abre el detalle con el formato de tu planilla.
 - **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, fijo al pie, el total
-  de cada mes por empresa y el del año. Si las cuentas cierran, arriba dice **✓ control**.
+  de cada mes por empresa y el del año (al final de la grilla, no fijos). Si las cuentas cierran, arriba dice **✓ control**.
 - **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
   **Orden de siempre** lo vuelve atrás.
 - **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
@@ -2776,6 +2776,9 @@ de cada empresa. Arriba dice si cierra con la planilla (✓ control). El **Excel
 fila CONTROL que tiene que dar 0. Las hectáreas y el costo por hectárea salen del maestro de partidas
 (cargado desde tu planilla). En la solapa **Red Vial**, la columna de partida muestra el **número de la
 municipalidad** (ej. Tango Parra 1 → 52948), que es con el que te identifica el municipio.
+**Ordenar las partidas**: arrastrá una fila desde la manija ⋮⋮. El orden es **uno solo para Inmobiliario y
+Red Vial** (son las mismas partidas): lo que acomodes en una solapa se ve igual en la otra, y queda guardado
+en tu cuenta. **Orden de siempre** vuelve al alfabético. El complementario queda siempre al final.
 
 → A-TEST-1227 · A-TEST-1229
 

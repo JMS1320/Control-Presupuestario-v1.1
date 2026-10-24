@@ -73,7 +73,7 @@ import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
-import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
+import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -8235,6 +8235,24 @@ export function correrCasos(): Resultado[] {
       chequear("Papel inmobiliario", "Red Vial toma las hectáreas del maestro por NOMBRE (su template no tiene partida) y muestra el número de la municipalidad",
         "Tango Parra 1 · 52948 · 17,23 ha · 116,08/ha", `${fila?.campo} · ${fila?.partida} · ${fila?.has?.toLocaleString("es-AR")} ha · ${fila?.costoHa?.toLocaleString("es-AR")}/ha`,
         fila?.partida === "52948" && fila?.has === 17.23 && fila?.costoHa === 116.08, "A-FEAT-1320")
+    }
+    {
+      // ↕️ El orden de las partidas es UNO para Inmobiliario y Red Vial (usuario 24/10): mismo campo, misma clave.
+      const tplDe = (cat: string, n: string, comp = false) => ({ categ: cat, nombre_referencia: n, responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", solo_conciliacion: false, activo: true, partida_arba: comp ? "COMPLEMENTARIO" : null })
+      const q = (t: any) => ({ estado: "pagado", monto: 10, fecha_vencimiento: "2026-03-05", fecha_estimada: null, template: t }) as any
+      const inm = armarPapel("inmobiliario", ["Anexo", "Casco", "Rojas"].map(c => q(tplDe("Impuesto inmobiliario", `Inmobiliario Cuota ${c}`))), 2026, [], {}, {})
+      const red = armarPapel("red-vial", ["Anexo", "Casco", "Rojas"].map(c => q(tplDe("Impuesto Red Vial", `Red Vial Cuota ${c}`))), 2026, [], {}, {})
+      // El usuario arrastra Rojas arriba de Anexo en INMOBILIARIO…
+      const orden = moverPartida([], inm.bloques[0].filas.map(clavePartida), "rojas", "anexo")
+      const vInm = ordenarPapel(inm, orden).bloques[0].filas.map(f => f.campo).join(",")
+      const vRed = ordenarPapel(red, orden).bloques[0].filas.map(f => f.campo).join(",")
+      // …y una partida guardada que no se ve (otro año) no pierde su lugar al mover otra.
+      const orden2 = moverPartida(["tapera", "rojas", "anexo", "casco"], ["rojas", "anexo", "casco"], "casco", "rojas")
+      chequear("Papel inmobiliario", "Ordenar las partidas en Inmobiliario ordena también Red Vial (misma clave: el campo); lo guardado que no se ve conserva su lugar; sin orden, alfabético",
+        "Rojas,Anexo,Casco · Rojas,Anexo,Casco · tapera,casco,rojas,anexo · Anexo,Casco,Rojas",
+        `${vInm} · ${vRed} · ${orden2.join(",")} · ${ordenarPapel(red, []).bloques[0].filas.map(f => f.campo).join(",")}`,
+        vInm === "Rojas,Anexo,Casco" && vRed === "Rojas,Anexo,Casco" && orden2.join(",") === "tapera,casco,rojas,anexo"
+          && ordenarPapel(red, []).bloques[0].filas.map(f => f.campo).join(",") === "Anexo,Casco,Rojas", "A-FEAT-1320")
     }
   }
 

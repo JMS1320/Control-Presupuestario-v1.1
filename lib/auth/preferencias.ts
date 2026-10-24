@@ -67,6 +67,11 @@ export type Preferencias = {
    * `null` = el orden de siempre (por empresa y por impuesto).
    */
   ordenImpuestos: string[] | null
+  /**
+   * ↕️ El orden de las partidas en el detalle de Inmobiliario y Red Vial — UNO para los dos, porque son
+   * las mismas partidas (usuario 2026-10-24). Clave = el campo en minúsculas. `null` = alfabético.
+   */
+  ordenPartidas: string[] | null
 }
 
 /**
@@ -87,6 +92,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   widgetsTamano: {},
   columnasCashFlow: null,
   ordenImpuestos: null,
+  ordenPartidas: null,
 }
 
 /**
@@ -141,6 +147,9 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     columnasCashFlow: leerColumnasUsuario(p.columnasCashFlow),
     ordenImpuestos: Array.isArray(p.ordenImpuestos)
       ? (p.ordenImpuestos as unknown[]).filter((k): k is string => typeof k === "string")
+      : null,
+    ordenPartidas: Array.isArray(p.ordenPartidas)
+      ? (p.ordenPartidas as unknown[]).filter((k): k is string => typeof k === "string")
       : null,
   }
 }

@@ -24,7 +24,6 @@ import { armarPlanilla, ordenarFilas, moverFila, resumenMes, type EstadoCelda, t
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
-import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { PapelInmobiliario } from "@/components/papel-inmobiliario"
 import { cuentasRedVialDe, hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
@@ -173,7 +172,6 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
             Año calendario: cada cuota cae en el mes de su vencimiento; la celda suma las del mes (pasá el mouse para verlas). Arrastrá las filas para ordenarlas.
           </DialogDescription>
         </DialogHeader>
-        <TestsDelProceso proceso="egresos/impuestos" pantalla="egresos" />
 
         <AlertaImpuestos compacta />
 
@@ -232,7 +230,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
                         alEmpezar={() => setArrastrando(f.clave)} alSoltar={() => void soltar(f.clave)} />
                     ))}
                   </tbody>
-                  <tfoot className="sticky bottom-0 bg-slate-50 font-semibold">
+                  <tfoot className="bg-slate-50 font-semibold">
                     {planilla.porEmpresa.map(e => (
                       <tr key={e.empresa} className="border-t">
                         <td /><td className="px-2 py-1">Total</td><td className="px-2 py-1">{e.empresa}</td>
