@@ -115,6 +115,29 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
     c.compras.ok ? (c.compras.soloRedondeo ? "cuadra, con residuo de redondeo" : "cuadra") : "NO CUADRA"])
   f.push([])
 
+  // 🧾 Segundo camino: cada subdiario de compras contra lo presentado a ARCA (A-DAT-61).
+  if (c.contraPresentado) {
+    const mal = c.contraPresentado.filter(x => !x.ok).length
+    f.push([mal === 0
+      ? "COMPRAS vs. LO PRESENTADO A ARCA — los 12 subdiarios coinciden"
+      : `COMPRAS vs. LO PRESENTADO A ARCA — ${mal} subdiario(s) NO coinciden`])
+    f.push(["Subdiario", "App: comprobantes", "App: total", "Presentado: comprobantes", "Presentado: total", "Diferencia", ""])
+    for (const x of c.contraPresentado) {
+      f.push([x.subdiario, x.app.comprobantes, money(x.app.total),
+        x.presentado?.comprobantes ?? "sin dato", x.presentado ? money(x.presentado.total) : "sin dato",
+        money(x.diferenciaTotal), x.ok ? "coincide" : "NO COINCIDE"])
+    }
+    f.push([])
+  } else {
+    f.push(["COMPRAS vs. LO PRESENTADO A ARCA — no hay dato de lo presentado para esta empresa: no se controló."])
+    f.push([])
+  }
+  if (libro.historicoSuperado.length > 0) {
+    f.push([`Sistema anterior: ${libro.historicoSuperado.length} comprobante(s) con subdiario posterior a noviembre 2025 NO se cuentan`
+      + " — para esos meses manda la app. Siguen guardados en el histórico."])
+    f.push([])
+  }
+
   if (c.subdiariosDuplicados.length > 0) {
     const nombreFuente = (x: string) =>
       x === "historico" ? "sistema anterior" : x === "arca" ? "ARCA" : x

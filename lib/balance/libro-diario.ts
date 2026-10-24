@@ -35,6 +35,7 @@ import {
   type ResultadoCuadratura, type FilaSubdiario,
 } from "@/lib/subdiarios/cuadratura"
 import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
+import { compararConPresentado, type FilaContraPresentado, type Presentado } from "./presentado-arca"
 import {
   claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
   type Ejercicio, type Subdiario,
@@ -104,6 +105,7 @@ export interface SubdiarioDuplicado {
    * histórico, que tiene **4 más** —una NC de Federación Patronal y 3 tickets— - por $86.613, que
    * es exactamente la diferencia. O sea: **el histórico contiene a ARCA**, y la decisión es
    * quedarse con el histórico.
+   * ⚠️ cambió 2026-10-23: se decidió que manda la APP (ver `ULTIMO_SUBDIARIO_HISTORICO`).
    */
   soloEn: Array<{
     fuente: FuenteAsiento
@@ -111,8 +113,27 @@ export interface SubdiarioDuplicado {
   }>
 }
 
+/**
+ * 🗄️ **Hasta qué subdiario vale el histórico** (A-DAT-61, decidido por el usuario 2026-10-23).
+ *
+ * El sistema anterior (`msa.comprobantes_historico`) cubre **julio a noviembre de 2025**. Diciembre
+ * entró **dos veces** por accidente —histórico y app— y se decidió que **manda la app**: es la copia
+ * viva, con pagos, conciliaciones y PDFs (10 de diciembre ya estaban conciliadas, y descartarlas
+ * rompía esos vínculos). Lo del histórico de diciembre en adelante **no se borra**: queda como
+ * archivo de lo que tenía el sistema anterior, y el libro lo informa aparte como «superado».
+ *
+ * ⚠️ Cambió el criterio del 28/09 («manda el histórico»), que ya no se podía aplicar sin romper los
+ * vínculos de la app.
+ */
+export const ULTIMO_SUBDIARIO_HISTORICO = "2025-11"
+
 export interface LibroDiario {
   ejercicio: Ejercicio
+  /**
+   * Comprobantes del histórico con subdiario POSTERIOR a `ULTIMO_SUBDIARIO_HISTORICO`: no entran al
+   * libro porque para esos meses manda la app. Se informan, no se descartan en silencio.
+   */
+  historicoSuperado: AsientoLibroDiario[]
   compras: AsientoLibroDiario[]
   ventas: AsientoLibroDiario[]
   /** Del ejercicio por fecha, pero entraron en un subdiario POSTERIOR: van al papel 05. */
@@ -144,6 +165,11 @@ export interface LibroDiario {
      * **podrían faltar** en el libro. Los otros son del mes en curso y no tocan el balance.
      */
     sinSubdiarioQueAfectan: AsientoLibroDiario[]
+    /**
+     * 🧾 Compras de cada subdiario contra lo PRESENTADO a ARCA (segundo camino). `null` si no hay
+     * dato de lo presentado para esta empresa: se dice que no se pudo controlar.
+     */
+    contraPresentado: FilaContraPresentado[] | null
     /** true sólo si NADA impide entregar el papel. */
     sePuedeEntregar: boolean
     /** Por qué no, en el idioma del usuario. Vacío si se puede. */
@@ -361,6 +387,8 @@ export function armarLibroDiario(
   comprasCrudas: AsientoLibroDiario[],
   ventasCrudas: AsientoLibroDiario[],
   ej: Ejercicio,
+  /** Lo presentado a ARCA por subdiario (compras), si se conoce → `PRESENTADO_ARCA_COMPRAS`. */
+  presentado?: Record<string, Presentado>,
 ): LibroDiario {
   const clasificar = (todos: AsientoLibroDiario[]) => {
     const delEjercicio: AsientoLibroDiario[] = []
@@ -376,7 +404,11 @@ export function armarLibroDiario(
     return { delEjercicio, provisiones, sinSubdiario }
   }
 
-  const c = clasificar(comprasCrudas)
+  // 🗄️ El histórico vale hasta ULTIMO_SUBDIARIO_HISTORICO; después manda la app (A-DAT-61).
+  const historicoSuperado = comprasCrudas.filter(a =>
+    a.fuente === "historico" && !!a.subdiario && a.subdiario > ULTIMO_SUBDIARIO_HISTORICO)
+  const superados = new Set(historicoSuperado)
+  const c = clasificar(comprasCrudas.filter(a => !superados.has(a)))
   const v = clasificar(ventasCrudas)
 
   const subdiariosDuplicados = detectarSubdiariosDuplicados(c.delEjercicio)
@@ -416,6 +448,28 @@ export function armarLibroDiario(
     motivos.push("En ventas, las partes de los comprobantes no suman su propio total.")
   }
 
+  /**
+   * 🧾 Contra lo presentado. El usuario lo fijó así: lo que está en la app y no en la DDJJ (o al
+   * revés) es un error de la app a corregir, y mientras esté el papel no se entrega — pero el Excel
+   * se baja igual para poder ver dónde está.
+   */
+  const clavesEj = ej.subdiarios.map(x => claveSubdiario(x.anio, x.mes))
+  // Sin ningún dato de lo presentado para ESTE ejercicio no hay control (se dice); con datos
+  // parciales, el mes que falta sale «sin dato» y cuenta como no controlado.
+  const contraPresentado = presentado && clavesEj.some(k => presentado[k])
+    ? compararConPresentado(c.delEjercicio, clavesEj, presentado)
+    : null
+  const noCoinciden = (contraPresentado ?? []).filter(f => !f.ok)
+  if (noCoinciden.length > 0) {
+    motivos.push(
+      `${noCoinciden.length} subdiario(s) de compras no coinciden con lo presentado a ARCA: ` +
+      noCoinciden.map(f => f.presentado
+        ? `${f.subdiario} (app ${f.app.comprobantes} por $${f.app.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}, ` +
+          `presentado ${f.presentado.comprobantes} por $${f.presentado.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })})`
+        : `${f.subdiario} (sin dato de lo presentado)`).join(" · ") + ".",
+    )
+  }
+
   const sinSubdiario = [...c.sinSubdiario, ...v.sinSubdiario]
   // Sólo preocupan los que podrían ser del ejercicio. Sin fecha no se puede descartar, así que
   // entran: ante la duda, se muestra (§ 🧮 nada se descarta en silencio).
@@ -423,6 +477,7 @@ export function armarLibroDiario(
 
   return {
     ejercicio: ej,
+    historicoSuperado,
     compras: c.delEjercicio,
     ventas: v.delEjercicio,
     provisiones: [...c.provisiones, ...v.provisiones],
@@ -430,7 +485,7 @@ export function armarLibroDiario(
     controles: {
       compras: controlCompras,
       ventas: controlVentas,
-      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan,
+      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan, contraPresentado,
       sePuedeEntregar: motivos.length === 0,
       motivos,
     },

@@ -31,7 +31,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, Info } from "lucide-react"
 import { toast } from "sonner"
 import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
-import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type LibroDiario } from "@/lib/balance/libro-diario"
+import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIARIO_HISTORICO, type LibroDiario } from "@/lib/balance/libro-diario"
+import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
@@ -160,7 +161,7 @@ export function PapelesDeBalance() {
         ...(arca.data ?? []).map(desdeArca),
         ...(historico.data ?? []).map(desdeHistorico),
       ]
-      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej)
+      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id])
       setLibro(armado)
 
       /**
@@ -640,6 +641,40 @@ export function PapelesDeBalance() {
                 <p className="text-xs">
                   El Excel se baja igual, para poder ver dónde está el problema.
                 </p>
+              </div>
+            )}
+
+            {/* 🧾 Segundo camino: cada subdiario de compras contra lo presentado a ARCA (A-DAT-61). */}
+            {c.contraPresentado ? (
+              <details className="text-xs border rounded p-2" open={c.contraPresentado.some(f => !f.ok)}>
+                <summary className="cursor-pointer text-sm">
+                  {c.contraPresentado.every(f => f.ok)
+                    ? <span className="text-emerald-700">✓ Las compras de los 12 subdiarios coinciden con lo presentado a ARCA</span>
+                    : <span className="text-red-700 font-semibold">⚠️ {c.contraPresentado.filter(f => !f.ok).length} subdiario(s) de compras no coinciden con lo presentado a ARCA</span>}
+                </summary>
+                <table className="mt-2 w-full font-mono">
+                  <thead><tr className="text-muted-foreground">
+                    <th className="text-left">Subdiario</th><th className="text-right">App</th><th className="text-right">Presentado</th><th className="text-right">Diferencia</th>
+                  </tr></thead>
+                  <tbody>
+                    {c.contraPresentado.map(f => (
+                      <tr key={f.subdiario} className={f.ok ? "" : "text-red-700 font-semibold"}>
+                        <td>{f.subdiario}</td>
+                        <td className="text-right">{f.app.comprobantes} · ${fmt(f.app.total)}</td>
+                        <td className="text-right">{f.presentado ? `${f.presentado.comprobantes} · $${fmt(f.presentado.total)}` : "sin dato"}</td>
+                        <td className="text-right">{f.ok ? "✓" : `${f.diferenciaComprobantes > 0 ? "+" : ""}${f.diferenciaComprobantes} · $${fmt(f.diferenciaTotal)}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            ) : (
+              <div className="text-xs text-muted-foreground">No hay dato de lo presentado a ARCA para esta empresa: las compras no se controlan contra la DDJJ.</div>
+            )}
+            {libro.historicoSuperado.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                🗄️ {libro.historicoSuperado.length} comprobante(s) del sistema anterior con subdiario posterior a {ULTIMO_SUBDIARIO_HISTORICO} no se cuentan:
+                para esos meses manda la app. Siguen guardados en el histórico, no se borró nada.
               </div>
             )}
 

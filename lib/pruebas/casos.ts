@@ -149,6 +149,7 @@ import {
 } from "@/lib/sicore/clave-certificado"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
+import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
@@ -3888,15 +3889,56 @@ export function correrCasos(): Resultado[] {
       dup[0]?.porFuente.find(f => f.fuente === "historico")?.total === 242 &&
       dup[0]?.porFuente.find(f => f.fuente === "arca")?.total === 121, "A-DAT-61")
 
-    const libro = armarLibroDiario(conDiciembreDoble, [], ej)
+    // ⚠️ cambió 2026-10-23: diciembre ya no sirve de ejemplo de mes duplicado — el histórico de
+    // diciembre en adelante queda «superado» (manda la app). El duplicado se prueba con octubre.
+    const conOctubreDoble = [
+      comp({ fuente: "historico", subdiario: "2025-10", numero: 10, total: 121 }),
+      comp({ fuente: "arca", subdiario: "2025-10", numero: 12, total: 121 }),
+    ]
+    const libro = armarLibroDiario(conOctubreDoble, [], ej)
     chequear("Balance · libro diario", "🛑 Con un mes duplicado, el papel NO se puede entregar",
       "frena", libro.controles.sePuedeEntregar ? "deja pasar" : "frena",
       libro.controles.sePuedeEntregar === false, "A-DAT-61")
 
     chequear("Balance · libro diario", "Y el motivo se dice en castellano, no en códigos",
       "menciona el subdiario",
-      libro.controles.motivos.join(" ").includes("2025-12") ? "menciona el subdiario" : "no lo menciona",
-      libro.controles.motivos.join(" ").includes("2025-12"), "A-DAT-61")
+      libro.controles.motivos.join(" ").includes("2025-10") ? "menciona el subdiario" : "no lo menciona",
+      libro.controles.motivos.join(" ").includes("2025-10"), "A-DAT-61")
+
+    // 🗄️ A-DAT-61 (usuario 23/10): de diciembre 2025 en adelante manda la app; el histórico se informa aparte.
+    const conDic = armarLibroDiario(conDiciembreDoble, [], ej)
+    chequear("Balance · libro diario", "🗄️ Diciembre en las dos fuentes: el del histórico queda «superado» y no se cuenta",
+      "2 superados · dic = 1 de ARCA · sin duplicados",
+      `${conDic.historicoSuperado.length} superados · dic = ${conDic.compras.filter(a => a.subdiario === "2025-12").length} de ${conDic.compras.filter(a => a.subdiario === "2025-12").map(a => a.fuente).join(",") === "arca" ? "ARCA" : "?"} · ${conDic.controles.subdiariosDuplicados.length === 0 ? "sin duplicados" : "duplicado"}`,
+      conDic.historicoSuperado.length === 2 && conDic.compras.filter(a => a.subdiario === "2025-12").length === 1
+        && conDic.compras.find(a => a.subdiario === "2025-12")?.fuente === "arca" && conDic.controles.subdiariosDuplicados.length === 0, "A-DAT-61")
+    const novHist = armarLibroDiario([comp({ fuente: "historico", subdiario: "2025-11", numero: 5 })], [], ej)
+    chequear("Balance · libro diario", "Y el histórico de noviembre SÍ cuenta (es el último mes del sistema anterior)",
+      "1 en el libro · 0 superados", `${novHist.compras.length} en el libro · ${novHist.historicoSuperado.length} superados`,
+      novHist.compras.length === 1 && novHist.historicoSuperado.length === 0, "A-DAT-61")
+
+    // 🧾 Contra lo presentado a ARCA (segundo camino).
+    const presentadoDic = { "2025-12": { comprobantes: 1, total: 121 } }
+    const igual = armarLibroDiario([comp({ subdiario: "2025-12", numero: 1, total: 121 })], [], ej, presentadoDic)
+    const fDic = igual.controles.contraPresentado?.find(f => f.subdiario === "2025-12")
+    chequear("Balance · libro diario", "🧾 Diciembre igual a lo presentado → coincide",
+      "coincide", fDic?.ok ? "coincide" : "no coincide", fDic?.ok === true, "A-DAT-61")
+    const deMas = armarLibroDiario([comp({ subdiario: "2025-12", numero: 1, total: 121 }), comp({ subdiario: "2025-12", numero: 2, total: 50 })], [], ej, presentadoDic)
+    const fMas = deMas.controles.contraPresentado?.find(f => f.subdiario === "2025-12")
+    chequear("Balance · libro diario", "🧾 Una de más en la app (las de Coopser / Río Tala) → no coincide, dice +1 y $50, y no se entrega",
+      "+1 · 50 · frena", `${fMas?.diferenciaComprobantes != null && fMas.diferenciaComprobantes > 0 ? "+" : ""}${fMas?.diferenciaComprobantes} · ${fMas?.diferenciaTotal} · ${deMas.controles.sePuedeEntregar ? "deja pasar" : "frena"}`,
+      fMas?.ok === false && fMas.diferenciaComprobantes === 1 && fMas.diferenciaTotal === 50
+        && !deMas.controles.sePuedeEntregar && deMas.controles.motivos.join(" ").includes("presentado"), "A-DAT-61")
+    chequear("Balance · libro diario", "Sin dato de lo presentado para el ejercicio, no hay control (y no inventa errores)",
+      "sin control", armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [], ej, { "2030-01": { comprobantes: 1, total: 1 } }).controles.contraPresentado === null ? "sin control" : "controló",
+      armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [], ej, { "2030-01": { comprobantes: 1, total: 1 } }).controles.contraPresentado === null, "A-DAT-61")
+    // Dato real: diciembre 2025 de MSA = lo presentado (36) + las 4 de Coopser y Río Tala que no se declararon.
+    const p = PRESENTADO_ARCA_COMPRAS.MSA["2025-12"]
+    const real = compararConPresentado(
+      [{ subdiario: "2025-12", total: p.total }, ...[41697.45, 518801.15, 9999.98, 10011.99].map(t => ({ subdiario: "2025-12", total: t }))],
+      ["2025-12"], { "2025-12": { comprobantes: 5, total: p.total } })[0]
+    chequear("Balance · libro diario", "🧾 Caso real: diciembre de MSA con las 4 sin declarar da $580.510,57 de más",
+      "580510.57", String(real.diferenciaTotal), real.diferenciaTotal === 580510.57 && p.comprobantes === 36 && p.total === 15813686.35, "A-DAT-61")
 
     // Un mismo comprobante dos veces (misma identidad) tambien frena.
     const repetido = [comp({ numero: 77 }), comp({ numero: 77, fuente: "historico", subdiario: "2026-01" })]

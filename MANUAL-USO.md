@@ -47,6 +47,7 @@
 - [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*](#papeles-de-balance-compras-contra-lo-presentado-a-arca-2026-10-23)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
 - [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
 - [💵 Papeles de balance → cheques dados, anticipos y provisión de cobros *(2026-09-30)*](#papeles-de-balance-cheques-dados-anticipos-y-provisión-de-cobros-2026-09-30)
@@ -3153,6 +3154,18 @@ con el dólar BNA importado a esa fecha.
   **«Actualizar la versión Sistema de la foto»**.
 
 ⚠️ Sin probar todavía → A-TEST-1182
+
+## 🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*
+
+En **Reportes → Papeles de balance**, debajo del aviso general, hay un renglón que compara las compras de **cada uno de los 12 subdiarios** con lo que se presentó a ARCA en la DDJJ de IVA (cantidad de comprobantes y total en pesos).
+
+- **✓ verde**: los 12 coinciden.
+- **⚠️ rojo, desplegado**: alguno no coincide. La tabla dice qué mes, cuánto suma la app, cuánto se presentó y la diferencia. Mientras haya un mes en rojo, el libro dice «Todavía no se puede entregar», pero el Excel se baja igual (la solapa **Control** trae la misma tabla).
+- **Diciembre 2025** sale de la app. Lo que el sistema anterior tenía de diciembre en adelante queda guardado y no se cuenta: hay una línea que dice cuántos son.
+
+Para corregir una diferencia, se mueve o se carga la factura en su subdiario. Una factura del ejercicio imputada en un subdiario posterior pasa sola a **Provisión**.
+
+⚠️ Sin probar todavía → A-TEST-1233
 
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
 
