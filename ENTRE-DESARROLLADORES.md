@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🗃️ Una columna nueva en `public.proveedores` (2026-10-24) — aviso ANTES de aplicarla
+### 🗃️ Una columna nueva en `public.proveedores` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo)
 
 Para [A-FEAT-1332](PENDIENTES.md#a-feat-1332) (control de cantidad de facturas de los proveedores fijos, en Papeles de
 balance): `scripts/98` agrega **`facturas_por_mes smallint`**, nullable (null = no es fijo), con un CHECK 1–31.
