@@ -40,6 +40,13 @@
 
 ## 📨 PARA JAVIER
 
+### 🗃️ Una columna nueva en `public.proveedores` (2026-10-24) — aviso ANTES de aplicarla
+
+Para [A-FEAT-1332](PENDIENTES.md#a-feat-1332) (control de cantidad de facturas de los proveedores fijos, en Papeles de
+balance): `scripts/98` agrega **`facturas_por_mes smallint`**, nullable (null = no es fijo), con un CHECK 1–31.
+**No toca RLS, roles, GRANTs ni filas existentes**; la única vista que lee `proveedores` (`presupuesto_historia_cuentas`)
+no la lista para escribir. Se aplica con JMS presente; hay `-deshacer`. Si tu modelo de permisos necesita otra cosa, avisá.
+
 ### 🗃️ 3 tablas nuevas y columnas del buscador de PDFs (2026-10-21 → 23) — ✅ APLICADAS con JMS presente · ⚠️ aviso POSTERIOR
 
 Para [A-FEAT-1287](PENDIENTES.md#a-feat-1287) / [A-FEAT-1318](PENDIENTES.md#a-feat-1318) (rama `jms/facturas-gmail`, ✅ **mergeada
