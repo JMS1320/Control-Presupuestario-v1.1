@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import type { UserRole } from "@/lib/auth/roles"
 import { usePuedeVer } from "@/components/contexto-permisos"
@@ -15,6 +15,11 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
   const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("facturas-msa")
+  // 🔗 Un link puede pedir la solapa (`?tab=templates`, ej. desde la Planilla de impuestos).
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab")
+    if (t && ["facturas-msa", "facturas-pam", "facturas-ma", "templates", "seguros"].includes(t)) setTabActiva(t)
+  }, [])
 
   return (
     <div className="space-y-6">

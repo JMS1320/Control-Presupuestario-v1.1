@@ -2765,6 +2765,12 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
 - **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
   **Orden de siempre** lo vuelve atrás.
 - **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
+- **↗ al lado del nombre** (en la fila o en cada partida desplegada): abre **Egresos sin Factura en una
+  pestaña nueva**, filtrado por esos templates, para editar las cuotas (por ejemplo, pasar a conciliadas las
+  de $0). La planilla queda abierta en la otra pestaña. Arriba de templates se ve **🔗 Filtrado desde la
+  planilla**; la ✕ quita el filtro.
+- **Actualizar**: vuelve a leer las cuotas. Igual, **al volver a la pestaña** la planilla se recarga sola, y
+  la de templates abierta con ↗ también (salvo que estés editando una celda).
 
 Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre; la planilla sólo lee.
 

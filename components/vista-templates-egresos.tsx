@@ -1,6 +1,7 @@
 "use client"
 
 
+import { templatesDelLink } from "@/lib/impuestos/planilla"
 import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect } from "react"
@@ -152,6 +153,12 @@ export function VistaTemplatesEgresos() {
   const [anoSeleccionado, setAnoSeleccionado] = useState('todos')
   const [filtroActivacion, setFiltroActivacion] = useState<'activos' | 'inactivos' | 'todos'>('activos')
   const [mostrarDesactivados, setMostrarDesactivados] = useState(false)
+  // 🔗 Templates pedidos por link (Planilla de impuestos → pestaña nueva). Filtra por id y sobrevive a Actualizar.
+  const [templatesLink, setTemplatesLink] = useState<string[]>([])
+  useEffect(() => {
+    const ids = templatesDelLink(window.location.search)
+    if (ids.length) { setTemplatesLink(ids); setFiltroActivacion('todos') }
+  }, [])
   
   // Estados para edición inline
   const [modoEdicion, setModoEdicion] = useState(false)
@@ -448,6 +455,11 @@ export function VistaTemplatesEgresos() {
   const aplicarFiltros = () => {
     let cuotasFiltradas = [...cuotasOriginales]
 
+    if (templatesLink.length) {
+      const set = new Set(templatesLink)
+      cuotasFiltradas = cuotasFiltradas.filter(c => set.has(c.egreso?.id ?? c.egreso_id))
+    }
+
     // Búsqueda rápida multi-campo
     if (busquedaRapida.trim()) {
       const q = normalizarBusqueda(busquedaRapida)
@@ -569,6 +581,21 @@ export function VistaTemplatesEgresos() {
       aplicarFiltros()
     }
   }, [busquedaRapida])
+
+  // 🔗 Con filtro del link: se reaplica cada vez que se recargan las cuotas (Actualizar no lo pierde).
+  useEffect(() => {
+    if (templatesLink.length && cuotasOriginales.length > 0) aplicarFiltros()
+  }, [cuotasOriginales, templatesLink, filtroActivacion])
+
+  // 🔄 Al volver a esta pestaña (ej. después de tocar algo en la planilla), recarga sola — salvo que
+  // estés editando una celda, para no pisarte lo que escribís. Sólo cuando vino por link.
+  const editando = modoEdicion && !!celdaEnEdicion
+  useEffect(() => {
+    if (!templatesLink.length) return
+    const alVolver = () => { if (document.visibilityState === 'visible' && !editando) void cargarCuotas() }
+    document.addEventListener('visibilitychange', alVolver)
+    return () => document.removeEventListener('visibilitychange', alVolver)
+  }, [templatesLink, editando])
 
   // Obtener valores únicos para los selectores
   const estadosUnicos = [...new Set(cuotasOriginales.map(c => c.estado))].filter(Boolean).sort()
@@ -1433,6 +1460,14 @@ export function VistaTemplatesEgresos() {
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? "Salir Edición" : "Modo Edición"}
           </Button>
+
+          {templatesLink.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-800">
+              🔗 Filtrado desde la planilla de impuestos: {templatesLink.length} template(s)
+              <button className="ml-1 rounded px-1 hover:bg-blue-100" title="Ver todos los templates"
+                onClick={() => { setTemplatesLink([]); window.history.replaceState(null, '', '/?seccion=egresos&tab=templates'); setCuotas(cuotasOriginales) }}>✕</button>
+            </span>
+          )}
 
           {/* Botón actualizar */}
           <Button

@@ -71,7 +71,7 @@ import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
-import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
@@ -8140,6 +8140,19 @@ export function correrCasos(): Resultado[] {
     chequear("Planilla impuestos", "programado y echeq cuentan como pagados pero se marcan (raro en un impuesto); el ABL compartido «PAM/MA/Duhau» va a MA",
       "raras e1,pr1 (2) · pagado 60 · ABL|MA", `raras ${raras.join(",")} (${p2.raras}) · pagado ${p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado} · ${p2.filas.find(f => f.impuesto === "ABL")?.clave}`,
       raras.join(",") === "e1,pr1" && p2.raras === 2 && p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado === 60 && p2.filas.find(f => f.impuesto === "ABL")?.clave === "ABL|MA", "A-FEAT-1320")
+    // 🔗 Link a Egresos sin Factura en pestaña nueva, filtrado por los ids de los templates de la fila (usuario 24/10).
+    {
+      const conId = (n: string, id: string) => tpl(n, "Impuesto inmobiliario", "MSA", { id })
+      const pl = armarPlanilla([c("a", "pendiente", "2026-03-10", 1, conId("Inmobiliario Cuota Rojas", "t-rojas")), c("b", "pendiente", "2026-04-10", 1, conId("Inmobiliario Cuota Rojas", "t-rojas")),
+        c("d", "pagado", "2026-03-10", 1, conId("Inmobiliario Cuota Casco", "t-casco"))], 2026, "2026-10-23")
+      const ids = Object.values(pl.filas[0].ids).sort()
+      const url = linkTemplates([...ids, "t-rojas"])
+      const vuelta = templatesDelLink(url.slice(url.indexOf("?"))).sort()
+      chequear("Planilla impuestos", "El link de una fila lleva los ids de SUS templates (sin repetir) y la pantalla de templates los lee igual; sin ids, sin filtro",
+        "t-casco,t-rojas · seccion=egresos&tab=templates · vuelta t-casco,t-rojas · vacío []", `${ids.join(",")} · ${url.includes("seccion=egresos&tab=templates") ? "seccion=egresos&tab=templates" : url} · vuelta ${vuelta.join(",")} · vacío [${templatesDelLink(linkTemplates([]).slice(1)).join(",")}]`,
+        ids.join(",") === "t-casco,t-rojas" && url.includes("seccion=egresos&tab=templates") && vuelta.join(",") === "t-casco,t-rojas" && url.split("t-rojas").length === 2
+          && templatesDelLink(linkTemplates([]).slice(1)).length === 0, "A-FEAT-1320")
+    }
     // Planilla tipo Excel (usuario 24/10): una celda = la suma del mes, con el color de lo que más importa.
     const feb = resumenMes(inm!.meses[1]), ago = resumenMes(inm!.meses[7]), mar = resumenMes(p2.filas.find(f => f.clave === "Inmobiliario|MSA")!.meses[2])
     const mixto = resumenMes([...inm!.meses[1], ...inm!.meses[7]])

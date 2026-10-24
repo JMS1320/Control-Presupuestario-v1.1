@@ -20,14 +20,14 @@ import { supabase } from "@/lib/supabase"
 import { hoyArgentina } from "@/lib/fechas"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
-import { armarPlanilla, ordenarFilas, moverFila, resumenMes, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, ordenarFilas, moverFila, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { PapelInmobiliario } from "@/components/papel-inmobiliario"
 import { cuentasRedVialDe, hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
-import { ChevronDown, ChevronLeft, ChevronRight, Download, GripVertical, Loader2 } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, GripVertical, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
@@ -83,6 +83,13 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     setError(null)
     try { setCuotas(await cargarCuotas()) } catch (e) { setError((e as Error).message) }
   }, [])
+  // 🔄 Al volver a esta pestaña (ej. después de editar en Egresos sin Factura), recarga sola.
+  useEffect(() => {
+    if (!open) return
+    const alVolver = () => { if (document.visibilityState === "visible") void cargar() }
+    document.addEventListener("visibilitychange", alVolver)
+    return () => document.removeEventListener("visibilitychange", alVolver)
+  }, [open, cargar])
   useEffect(() => {
     if (!open) return
     void cargar()
@@ -164,6 +171,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
             </span>
             <span className="ml-auto flex gap-2">
               {orden.length > 0 && <Button size="sm" variant="ghost" onClick={restablecerOrden}>Orden de siempre</Button>}
+              <Button size="sm" variant="outline" onClick={() => void cargar()} title="Vuelve a leer las cuotas (también lo hace solo al volver a esta pestaña)"><RefreshCw className="mr-1 h-4 w-4" />Actualizar</Button>
               <Button size="sm" variant="outline" onClick={() => setPapel("inmobiliario")} disabled={!cuotas}>🏛️ Inmobiliario · Red Vial · Automotores</Button>
               <Button size="sm" variant="outline" onClick={exportar} disabled={!planilla || !!sinDatos}><Download className="mr-1 h-4 w-4" />Excel</Button>
             </span>
@@ -292,6 +300,17 @@ const PAPEL_DE_IMPUESTO: Record<string, TipoPapel> = {
   "Inmobiliario": "inmobiliario", "Inmobiliario Complementario": "inmobiliario", "Red Vial": "red-vial", "Automotores": "automotores",
 }
 
+/** 🔗 Abre Egresos sin Factura en una pestaña NUEVA, filtrado por esos templates (la planilla queda a la vista). */
+function AbrirTemplates({ ids }: { ids: string[] }) {
+  if (!ids.length) return null
+  return (
+    <button className="ml-1 inline-flex align-middle text-blue-700 hover:text-blue-900" title={`Abrir ${ids.length > 1 ? `sus ${ids.length} templates` : "el template"} en Egresos sin Factura (pestaña nueva)`}
+      onClick={e => { e.stopPropagation(); window.open(linkTemplates(ids), "_blank", "noopener") }}>
+      <ExternalLink className="h-3 w-3" />
+    </button>
+  )
+}
+
 /** Una celda = un número: la suma de las cuotas del mes. El detalle de cada cuota va en el tooltip. */
 function CeldaMes({ cuotas }: { cuotas: CeldaCuota[] }) {
   const r = resumenMes(cuotas)
@@ -321,6 +340,7 @@ function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar, a
             {abierta ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}{f.impuesto}
             {f.templates.length > 1 && <span className="text-[10px] text-gray-400">({f.templates.length})</span>}
           </button>
+          <AbrirTemplates ids={Object.values(f.ids)} />
           {abrirPapel && <button className="ml-1 text-[11px] text-blue-700 hover:underline" onClick={abrirPapel} title="Ver el detalle con el formato de la planilla">🏛️</button>}
         </td>
         <td className="px-2 py-1">{f.empresa}</td>
@@ -332,7 +352,7 @@ function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar, a
       </tr>
       {porTemplate.map(({ t, meses }) => (
         <tr key={t} className="bg-slate-50/60 text-[11px] text-gray-600">
-          <td /><td className="whitespace-nowrap py-0.5 pl-6 pr-2" colSpan={2}>{t}</td>
+          <td /><td className="whitespace-nowrap py-0.5 pl-6 pr-2" colSpan={2}>{t}{f.ids[t] && <AbrirTemplates ids={[f.ids[t]]} />}</td>
           {meses.map((m, i) => <CeldaMes key={i} cuotas={m} />)}
           <td colSpan={4} className="border-l px-2 text-right">{entero(meses.flat().reduce((s, c) => s + c.monto, 0))}</td>
         </tr>

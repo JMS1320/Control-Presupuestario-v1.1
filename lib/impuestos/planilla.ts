@@ -75,6 +75,25 @@ export interface FilaPlanilla {
   total: number
   /** Los templates que forman la fila (para el detalle). */
   templates: string[]
+  /** nombre del template → su id, para abrirlo en Egresos sin Factura (link a pestaña nueva). */
+  ids: Record<string, string>
+}
+
+/**
+ * 🔗 Link a **Egresos sin Factura** filtrado por esos templates (usuario 2026-10-24: *«apretar sobre un
+ * impuesto me lleve a un nuevo link a templates con ese template filtrado para ver sus cuotas… en link
+ * nuevo así quedo con dos pantallas a la vista»*). Se abre en pestaña nueva: la planilla no se pierde.
+ * Filtra por **id** (no por nombre): una fila junta varios templates y un nombre puede ser parte de otro.
+ */
+export function linkTemplates(ids: readonly string[]): string {
+  const limpios = [...new Set(ids.filter(Boolean))]
+  return `/?seccion=egresos&tab=templates${limpios.length ? `&templates=${limpios.map(encodeURIComponent).join(",")}` : ""}`
+}
+
+/** Lee los ids del link (`?templates=a,b`). Vacío = sin filtro. */
+export function templatesDelLink(search: string): string[] {
+  const v = new URLSearchParams(search).get("templates")
+  return v ? [...new Set(v.split(",").map(s => s.trim()).filter(Boolean))] : []
 }
 
 export interface Planilla {
@@ -177,13 +196,14 @@ export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string
     const destino = deBaja ? bajas : filas
     let fila = destino.get(clave)
     if (!fila) {
-      fila = { clave, impuesto, empresa, meses: Array.from({ length: 12 }, () => []), pagado: 0, adeudado: 0, futuro: 0, total: 0, templates: [] }
+      fila = { clave, impuesto, empresa, meses: Array.from({ length: 12 }, () => []), pagado: 0, adeudado: 0, futuro: 0, total: 0, templates: [], ids: {} }
       destino.set(clave, fila)
     }
     const rara = ESTADOS_RAROS.has(String(c.estado ?? "").trim().toLowerCase())
     if (rara) raras++
     const nombreTpl = c.template.nombre_referencia ?? impuesto
     if (!fila.templates.includes(nombreTpl)) fila.templates.push(nombreTpl)
+    if (c.template.id && !fila.ids[nombreTpl]) fila.ids[nombreTpl] = c.template.id
     const monto = Number(c.monto ?? 0)
     const vencida = estado === "sin-pagar" && venc < hoy
     fila.meses[Number(venc.slice(5, 7)) - 1].push({
