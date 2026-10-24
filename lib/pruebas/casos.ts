@@ -64,6 +64,7 @@ import { añosHastaElProximo } from "@/lib/fechas"
 import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
 import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
@@ -7889,6 +7890,13 @@ export function correrCasos(): Resultado[] {
     chequear("Pago manual", "La fecha del modal va a «fecha de pago» (y a la estimada, que ordena el Cash Flow); el vencimiento queda vacío",
       "pago 2026-10-23 · estimada 2026-10-23 · venc null", `pago ${f.fecha_pago} · estimada ${f.fecha_estimada} · venc ${f.fecha_vencimiento}`,
       f.fecha_pago === "2026-10-23" && f.fecha_estimada === "2026-10-23" && f.fecha_vencimiento === null, "A-BUG-1325")
+    const guia = camposDePagoManual("  Guía municipal 7 vacas + 3 toros ", { nombre_referencia: "Guías Municipales", categ: "CZ Ganadera" }) as Record<string, unknown>
+    const vacio = camposDePagoManual("", { nombre_referencia: "Guías Municipales" })
+    const fci = camposDePagoManual("x", { nombre_referencia: "FCI Galicia", categ: "FCI", es_bidireccional: true }, "ingreso")
+    chequear("Pago manual", "Lo que escribís va al DETALLE (no a la columna vieja «descripción»), igual en Cash Flow y Egresos sin Factura",
+      "detalle «Guía municipal 7 vacas + 3 toros» · sin descripcion · vacío → «Guías Municipales - Manual» · FCI → «Rescate FCI Galicia»",
+      `detalle «${guia.detalle}» · ${"descripcion" in guia ? "CON descripcion" : "sin descripcion"} · vacío → «${vacio.detalle}» · FCI → «${fci.detalle}»`,
+      guia.detalle === "Guía municipal 7 vacas + 3 toros" && !("descripcion" in guia) && vacio.detalle === "Guías Municipales - Manual" && fci.detalle === "Rescate FCI Galicia", "A-FEAT-1326")
   }
 
   // ══ 🏦 «PAGADO DESDE» (A-FEAT-1321) ═════════════════════════════════════════════════════════
@@ -7955,6 +7963,20 @@ export function correrCasos(): Resultado[] {
     chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
       "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
       ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
+    // Los tres criterios que confirmó el usuario el 23/10.
+    const baja = p.desactivadas
+    chequear("Planilla impuestos", "Lo sin pagar de un template dado de baja NO suma, pero se muestra aparte (colapsado) para poder chequearlo",
+      "1 fila aparte: Inmobiliario|MA $999 · total sigue 620", `${baja.length} fila aparte: ${baja.map(f => `${f.clave} $${f.total}`).join(", ")} · total sigue ${p.totales.total}`,
+      baja.length === 1 && baja[0].clave === "Inmobiliario|MA" && baja[0].total === 999 && p.totales.total === 620 && !p.aniosConDatos.includes(2027), "A-FEAT-1320")
+    const abl = tpl("ABL Chalet", "ABL", "PAM/MA/Duhau", { cuenta_agrupadora: "Impuestos Urbanos" })
+    const p2 = armarPlanilla([
+      c("e1", "echeq", "2026-03-10", 10, rojas), c("pr1", "programado", "2026-04-10", 20, rojas), c("ok1", "pagado", "2026-05-10", 30, rojas),
+      c("abl1", "pagado", "2026-03-01", 5, abl),
+    ], 2026, "2026-10-23")
+    const raras = p2.filas.flatMap(f => f.meses.flat()).filter(x => x.rara).map(x => x.id).sort()
+    chequear("Planilla impuestos", "programado y echeq cuentan como pagados pero se marcan (raro en un impuesto); el ABL compartido «PAM/MA/Duhau» va a MA",
+      "raras e1,pr1 (2) · pagado 60 · ABL|MA", `raras ${raras.join(",")} (${p2.raras}) · pagado ${p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado} · ${p2.filas.find(f => f.impuesto === "ABL")?.clave}`,
+      raras.join(",") === "e1,pr1" && p2.raras === 2 && p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado === 60 && p2.filas.find(f => f.impuesto === "ABL")?.clave === "ABL|MA", "A-FEAT-1320")
   }
 
   // ══ 🌾 COBROS DE ARRENDAMIENTO SIN PESOS EN EL CASH FLOW (A-FEAT-1328) ═══════════════════════

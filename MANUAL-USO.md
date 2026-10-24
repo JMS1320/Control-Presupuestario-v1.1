@@ -2732,6 +2732,11 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
   aparece en el mes en que vence, con su color: **verde lleno** conciliada, **verde claro** pagada,
   **punteada gris** sin pagar (lo presupuestado), **punteada roja** vencida sin pagar. Pasando el
   mouse se ve el detalle de la cuota.
+- **Naranja con borde**: una cuota en **programado** o **echeq**. Cuenta como pagada, pero en un
+  impuesto es raro (suele ser un pago que no se terminó de cerrar): arriba aparece un aviso con cuántas hay.
+- El **ABL compartido** (PAM/MA/Duhau) se muestra en **MA**.
+- **Templates dados de baja**: lo que quedó sin pagar va abajo, en un desplegable cerrado. **No suma**
+  en los totales; está para poder revisarlo.
 - **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón.
 - **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, por empresa y el
   total del año. Si las cuentas cierran, arriba dice **✓ control**.
@@ -2753,6 +2758,10 @@ municipalidad** (ej. Tango Parra 1 → 52948), que es con el que te identifica e
 → A-TEST-1227 · A-TEST-1229
 
 ## 🌾 Cash Flow → los cobros de arrendamiento todavía sin pesos *(2026-10-23)*
+
+**💱 Precios y TC** (botón al lado de *Actualizar*): abre la misma tabla de precios de granos, tipo de
+cambio, IPC y hacienda que usa el Presupuesto. Lo que cargues ahí cambia las estimaciones de abajo; al
+cerrar, el Cash Flow se recalcula solo. → A-TEST-1231
 
 - **Cuota fijada en dólares, sin TC todavía**: aparece con su importe estimado = toneladas × precio
   fijado × el **TC de la tabla de tipos de cambio** del mes de cobro (si ese mes no está cargado, el
@@ -2805,7 +2814,8 @@ En la grilla, al lado de la empresa, aparece **🏦 desde MA Galicia** (en naran
 otra empresa). Así, cuando mirás el banco de MSA y el pago no está, ya sabés por qué.
 
 Lo mismo se elige en **Pago manual** (Cash Flow y Egresos sin Factura), donde antes decía *Medio de
-pago*. El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
+pago*. En el mismo modal, lo que escribís en **Detalle** queda como detalle de la cuota (antes, desde el
+Cash Flow iba a otra columna y no siempre se veía). El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
 que de otra cuenta.
 
 → A-TEST-1226
