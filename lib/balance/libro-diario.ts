@@ -37,7 +37,7 @@ import {
 import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
 import { compararConPresentado, type FilaContraPresentado, type Presentado } from "./presentado-arca"
 import {
-  claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
+  armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
   type Ejercicio, type Subdiario,
 } from "./ejercicio"
 
@@ -76,6 +76,11 @@ export interface AsientoLibroDiario {
   tipo_cambio?: number
   /** El total como figura en la factura, en su moneda. Sólo para mostrar. */
   total_moneda_original?: number
+  /**
+   * ✍️ Sólo en una provisión **puesta a mano** (A-FEAT-1331): el motivo que escribió el usuario. Si
+   * está, la factura entró a la provisión por decisión suya y no por la regla de la fecha.
+   */
+  provision_motivo?: string
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -136,8 +141,18 @@ export interface LibroDiario {
   historicoSuperado: AsientoLibroDiario[]
   compras: AsientoLibroDiario[]
   ventas: AsientoLibroDiario[]
-  /** Del ejercicio por fecha, pero entraron en un subdiario POSTERIOR: van al papel 05. */
+  /**
+   * Del ejercicio por fecha, pero entraron en un subdiario POSTERIOR: van al papel 05. Incluye las
+   * **puestas a mano** (fecha posterior al cierre, con `provision_motivo`) — A-FEAT-1331.
+   */
   provisiones: AsientoLibroDiario[]
+  /**
+   * 📋 La provisión del EJERCICIO ANTERIOR (compras): la misma regla aplicada al año anterior más las
+   * que se pusieron a mano para ese año. **Sólo se lista, no se resta** — usuario 2026-10-23: *«el
+   * detalle de provisión que se genera muestra lo de balance anterior y lo de este. el contador lo
+   * maneja»*.
+   */
+  provisionesEjercicioAnterior: AsientoLibroDiario[]
   /**
    * Comprobantes sin `año_contable`/`mes_contable`: no se sabe en qué subdiario van.
    *
@@ -389,6 +404,12 @@ export function armarLibroDiario(
   ej: Ejercicio,
   /** Lo presentado a ARCA por subdiario (compras), si se conoce → `PRESENTADO_ARCA_COMPRAS`. */
   presentado?: Record<string, Presentado>,
+  /**
+   * ✍️ Provisiones puestas a mano (A-FEAT-1331): facturas de fecha POSTERIOR al cierre que el usuario
+   * dice que son del ejercicio, cada una con su `provision_motivo`. `anterior` = las de ese tipo que
+   * se pusieron para el ejercicio anterior (sólo para listarlas).
+   */
+  manuales?: { esteEjercicio: AsientoLibroDiario[]; anterior: AsientoLibroDiario[] },
 ): LibroDiario {
   const clasificar = (todos: AsientoLibroDiario[]) => {
     const delEjercicio: AsientoLibroDiario[] = []
@@ -475,12 +496,29 @@ export function armarLibroDiario(
   // entran: ante la duda, se muestra (§ 🧮 nada se descarta en silencio).
   const sinSubdiarioQueAfectan = sinSubdiario.filter(a => !a.fecha || a.fecha <= ej.fechaCierre)
 
+  // ✍️ Las puestas a mano se suman a la provisión; si una ya entraba por la regla, no se duplica.
+  const unirManuales = (auto: AsientoLibroDiario[], man: AsientoLibroDiario[]) => {
+    const ids = new Set(auto.map(a => a.id))
+    return [...auto, ...man.filter(m => !ids.has(m.id))]
+  }
+  const provisiones = unirManuales([...c.provisiones, ...v.provisiones], manuales?.esteEjercicio ?? [])
+
+  // 📋 La del ejercicio anterior, con la misma regla: sólo compras (el papel 05), sólo para listar.
+  const ejAnterior = armarEjercicio(ej.anioCierre - 1, ej.mesCierre)
+  const provAnteriorAuto = comprasCrudas.filter(a => {
+    if (superados.has(a) || !a.subdiario) return false
+    const [anio, mes] = a.subdiario.split("-").map(Number)
+    return esProvision(a.fecha, anio, mes, ejAnterior)
+  })
+  const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, manuales?.anterior ?? [])
+
   return {
     ejercicio: ej,
     historicoSuperado,
+    provisionesEjercicioAnterior,
     compras: c.delEjercicio,
     ventas: v.delEjercicio,
-    provisiones: [...c.provisiones, ...v.provisiones],
+    provisiones,
     sinSubdiario,
     controles: {
       compras: controlCompras,

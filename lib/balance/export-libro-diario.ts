@@ -21,7 +21,7 @@
 import * as XLSX from "xlsx"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
-import { nombreSubdiario } from "./ejercicio"
+import { armarEjercicio, nombreSubdiario } from "./ejercicio"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
@@ -74,6 +74,36 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
     ])
   }
   return filas
+}
+
+/**
+ * 🧾 Papel 05 — PROVISIÓN DE FACTURAS (A-FEAT-1331). Arriba la de ESTE ejercicio (la que suma a su
+ * gasto), con cómo entró cada una: por la regla (fecha del ejercicio, subdiario posterior) o puesta a
+ * mano con su motivo. Abajo la del ejercicio ANTERIOR, **sólo informativa** — no se resta: *«el
+ * contador lo maneja»* (usuario 2026-10-23).
+ */
+function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string): unknown[][] {
+  const conMotivo = (lista: AsientoLibroDiario[]) => {
+    const t = hojaDeAsientos(lista)
+    t[0] = [...t[0], "Cómo entró a provisión", "Motivo"]
+    lista.forEach((a, i) => {
+      t[i + 1] = [...t[i + 1],
+        a.provision_motivo ? "puesta a mano" : `fecha del ejercicio, subdiario ${a.subdiario || "—"}`,
+        a.provision_motivo ?? ""]
+    })
+    return t
+  }
+  const total = (l: AsientoLibroDiario[]) => money(l.reduce((s, a) => s + a.total, 0))
+  const f: unknown[][] = [
+    [`PROVISIÓN DE FACTURAS — ejercicio ${etiqueta} (suman al gasto de este ejercicio)`],
+    [`${este.length} comprobante(s) · total ${total(este).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
+    ...conMotivo(este),
+    [],
+    [`PROVISIÓN DEL EJERCICIO ANTERIOR — ${etiquetaAnterior} (sólo informativa: NO se resta)`],
+    [`${anterior.length} comprobante(s) · total ${total(anterior).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
+    ...conMotivo(anterior),
+  ]
+  return f
 }
 
 /** La solapa que se abre primero: qué se puede entregar y qué no. */
@@ -1884,7 +1914,9 @@ export function armarWorkbook(
    */
   const provisionCompras = libro.provisiones.filter(a => a.fuente !== "venta")
   const provisionVentas = libro.provisiones.filter(a => a.fuente === "venta")
-  hoja(wb, "05 Provision", hojaDeAsientos(provisionCompras), COLS_ASIENTOS)
+  hoja(wb, "05 Provision", hojaDeProvision(provisionCompras, libro.provisionesEjercicioAnterior,
+    libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta),
+    [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
   if (cuentas?.pagar) {

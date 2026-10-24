@@ -265,7 +265,9 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     numero: "05", papel: "Provisión de facturas (compras)",
     estado: "completo",
     queTiene: `${pesos(provCompras.reduce((s, a) => s + a.total, 0))} · ${provCompras.length} comprobante(s) `
-      + "con fecha anterior al cierre que entraron en subdiarios posteriores",
+      + "con fecha anterior al cierre que entraron en subdiarios posteriores"
+      + (provCompras.some(a => a.provision_motivo) ? ` (${provCompras.filter(a => a.provision_motivo).length} puesta(s) a mano, con motivo)` : "")
+      + ` · se lista también la del ejercicio anterior: ${libro.provisionesEjercicioAnterior.length} comprobante(s), sin restar`,
     queFalta: "",
     solapa: "05 Provision",
     bloqueante: false,

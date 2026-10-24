@@ -3167,6 +3167,18 @@ Para corregir una diferencia, se mueve o se carga la factura en su subdiario. Un
 
 ⚠️ Sin probar todavía → A-TEST-1233
 
+### ✍️ Provisionar a mano una factura posterior al cierre
+
+La provisión se arma sola con las facturas **con fecha del ejercicio** que se imputaron en un subdiario posterior. Para una factura **con fecha posterior al cierre** que igual es de este ejercicio (por ejemplo, un servicio puntual de junio facturado en julio):
+
+1. En el cuadro **✍️ Provisión puesta a mano**, tocá **+ Provisionar una factura posterior al cierre**.
+2. Buscá por proveedor o número y elegí la factura.
+3. Escribí **por qué** (si lo dejás vacío queda «Facturación de un servicio brindado en el ejercicio …») y tocá **Provisionar**.
+
+Sale en la solapa **05 Provision** marcada «puesta a mano», con el motivo. Para sacarla, **anular** con un motivo: no se borra. Debajo, en la misma solapa, va **la provisión del ejercicio anterior**, sólo para que la vea el contador: no se resta.
+
+⚠️ Sin probar todavía → A-TEST-1234
+
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
 
 El Excel que se baja de **Reportes → Papeles de trabajo del balance** abre con la solapa

@@ -3972,6 +3972,36 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · libro diario", "⚠️ Un comprobante sin subdiario no se pierde: queda aparte",
       "1 sin subdiario", `${conHuerfano.sinSubdiario.length} sin subdiario`,
       conHuerfano.sinSubdiario.length === 1, "A-FEAT-1184")
+
+    // ✍️ A-FEAT-1331 — provisión puesta a mano: fecha POSTERIOR al cierre, con motivo.
+    const manual = comp({ id: "m1", subdiario: "2026-08", numero: 300, fecha: "2026-07-15", total: 500, provision_motivo: "servicio de junio" })
+    const conManual = armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 }), manual], [], ej, undefined,
+      { esteEjercicio: [manual], anterior: [] })
+    chequear("Balance · provisión", "✍️ Una factura de fecha posterior al cierre, puesta a mano, entra a la provisión con su motivo",
+      "1 provisión · servicio de junio",
+      `${conManual.provisiones.length} provisión · ${conManual.provisiones[0]?.provision_motivo ?? "-"}`,
+      conManual.provisiones.length === 1 && conManual.provisiones[0].provision_motivo === "servicio de junio", "A-FEAT-1331")
+    const sinMarca = armarLibroDiario([comp({ subdiario: "2026-08", numero: 300, fecha: "2026-07-15" })], [], ej)
+    chequear("Balance · provisión", "Y sin marcarla, la misma factura NO es provisión (la regla de la fecha no la toma)",
+      "0", String(sinMarca.provisiones.length), sinMarca.provisiones.length === 0, "A-FEAT-1331")
+    const autoYManual = comp({ id: "a1", subdiario: "2026-07", numero: 2, fecha: "2026-06-23" })
+    const sinDoble = armarLibroDiario([autoYManual], [], ej, undefined, { esteEjercicio: [{ ...autoYManual, provision_motivo: "x" }], anterior: [] })
+    chequear("Balance · provisión", "Si una ya entraba por la regla y además se marcó a mano, no se cuenta dos veces",
+      "1", String(sinDoble.provisiones.length), sinDoble.provisiones.length === 1, "A-FEAT-1331")
+
+    // 📋 La del ejercicio ANTERIOR: se lista, no se resta.
+    const delAnterior = comp({ id: "h1", fuente: "historico", subdiario: "2025-08", numero: 9, fecha: "2025-06-25", total: 1000 })
+    const conAnterior = armarLibroDiario([delAnterior], [], ej)
+    chequear("Balance · provisión", "📋 Una factura del 24/25 (fecha ≤ 30/06/2025) en el subdiario de ago-25 se lista como provisión del ejercicio anterior",
+      "1 anterior", `${conAnterior.provisionesEjercicioAnterior.length} anterior`,
+      conAnterior.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
+    chequear("Balance · provisión", "Y NO se resta: sigue sumando en las compras del 25/26 (el contador lo maneja)",
+      "1 compra · total 1000", `${conAnterior.compras.length} compra · total ${conAnterior.controles.compras.totalGeneral}`,
+      conAnterior.compras.length === 1 && conAnterior.controles.compras.totalGeneral === 1000, "A-FEAT-1331")
+    const manualAnt = comp({ id: "m0", subdiario: "", numero: 77, fecha: "2025-07-10", provision_motivo: "del 24/25" })
+    const conManualAnt = armarLibroDiario([], [], ej, undefined, { esteEjercicio: [], anterior: [manualAnt] })
+    chequear("Balance · provisión", "Las puestas a mano para el ejercicio anterior también se listan ahí",
+      "1", String(conManualAnt.provisionesEjercicioAnterior.length), conManualAnt.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
   }
   /**
    * 💵 **LAS FACTURAS EN DÓLARES ENTRAN AL LIBRO DIARIO EN PESOS — A-BUG-1316.**

@@ -22,6 +22,7 @@
  */
 import { PendientesBalance } from "./pendientes-balance"
 import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
+import { ProvisionManual, tablaFacturas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useMemo, useState } from "react"
@@ -161,7 +162,34 @@ export function PapelesDeBalance() {
         ...(arca.data ?? []).map(desdeArca),
         ...(historico.data ?? []).map(desdeHistorico),
       ]
-      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id])
+      /**
+       * ✍️ Provisiones puestas a mano (A-FEAT-1331): facturas de fecha posterior al cierre que el
+       * usuario dijo que son del ejercicio — las de éste y las del anterior (para listarlas).
+       * Si fallan, el libro sale igual y se avisa.
+       */
+      const manuales = { esteEjercicio: [] as AsientoLibroDiario[], anterior: [] as AsientoLibroDiario[] }
+      try {
+        const { data: incl, error: eIncl } = await supabase.from("ajustes_balance").select("*")
+          .eq("empresa", empresa.id).eq("accion", "incluir").eq("tabla", tablaFacturas(empresa.schema))
+          .in("anio_cierre", [anioCierre, anioCierre - 1]).is("anulado_at", null)
+        if (eIncl) throw new Error(eIncl.message)
+        const ajustesIncl = (incl ?? []) as AjusteBalance[]
+        const ids = ajustesIncl.map(a => a.registro_id).filter((x): x is string => !!x)
+        if (ids.length > 0) {
+          const { data: fs, error: eFs } = await supabase.schema(empresa.schema).from("comprobantes_arca").select("*").in("id", ids)
+          if (eFs) throw new Error(eFs.message)
+          const porId = new Map((fs ?? []).map(f => [String((f as Record<string, unknown>).id), f as Record<string, unknown>]))
+          for (const a of ajustesIncl) {
+            const f = a.registro_id ? porId.get(a.registro_id) : undefined
+            if (!f) { toast.warning(`Una provisión a mano apunta a una factura que no se encontró: ${a.concepto}`); continue }
+            const asiento = { ...desdeArca(f), provision_motivo: a.motivo }
+            ;(a.anio_cierre === anioCierre ? manuales.esteEjercicio : manuales.anterior).push(asiento)
+          }
+        }
+      } catch (e) {
+        toast.warning("No se pudieron leer las provisiones puestas a mano: " + (e as Error).message)
+      }
+      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id], manuales)
       setLibro(armado)
 
       /**
@@ -569,6 +597,11 @@ export function PapelesDeBalance() {
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
         <SaldosEjercicioAnterior empresa={empresa.id} anioCierre={anioCierre} onCambio={setAjustes} />
+        {/* ✍️ A-FEAT-1331 — facturas de fecha posterior al cierre que son de este ejercicio. */}
+        <ProvisionManual empresa={empresa.id} schema={empresa.schema} anioCierre={anioCierre}
+          fechaCierre={armarEjercicio(anioCierre, empresa.mesCierre).fechaCierre}
+          etiqueta={armarEjercicio(anioCierre, empresa.mesCierre).etiqueta}
+          onCambio={() => { if (libro) generar() }} />
 
         {libro && asientosContables && (
           <p className="text-xs text-muted-foreground">
