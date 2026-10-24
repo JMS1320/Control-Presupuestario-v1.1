@@ -230,6 +230,7 @@ import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENT
 import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
 import * as XLSXcasos from "xlsx"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
+import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
@@ -8340,6 +8341,25 @@ export function correrCasos(): Resultado[] {
   }
 
   {
+    // ── Lo que carga el usuario en el balance se guarda (A-FEAT-1337 paso 1) ──
+    const base1337 = { empresa: "MSA", anio_cierre: 2026, papel: "hacienda.precio", clave: "Vaca" }
+    const primera = armarFilaDato(base1337, " 1.250.000,50 ", null, "jms", "2026-10-24T15:00:00Z")
+    const v1 = primera ? `${primera.texto} · ${primera.valor} · historial ${primera.historial.length} · ${primera.actualizado_por}` : "no guarda"
+    chequear("Balance", "Datos del balance: la primera carga guarda lo escrito, el número leído en es-AR y quién lo cargó",
+      "1.250.000,50 · 1250000.5 · historial 0 · jms", v1, v1 === "1.250.000,50 · 1250000.5 · historial 0 · jms", "A-FEAT-1337")
+    const igual = armarFilaDato(base1337, "1.250.000,50", primera, "jms", "2026-10-24T15:01:00Z")
+    chequear("Balance", "Datos del balance: si la casilla no cambió no se escribe de más", "no escribe", igual === null ? "no escribe" : "escribe",
+      igual === null, "A-FEAT-1337")
+    const segunda = armarFilaDato(base1337, "", primera, "ulises", "2026-10-25T10:00:00Z")
+    const v2 = segunda ? `texto ${segunda.texto} · valor ${segunda.valor} · historial ${segunda.historial.map(h => `${h.texto} (${h.por})`).join(", ")}` : "no guarda"
+    chequear("Balance", "Datos del balance: vaciar una casilla NO borra la fila — queda vacía y el historial guarda lo que había y quién",
+      "texto null · valor null · historial 1.250.000,50 (jms)", v2, v2 === "texto null · valor null · historial 1.250.000,50 (jms)", "A-FEAT-1337")
+    const vn = [leerNumero("12,5"), leerNumero("abc"), leerNumero("   ")].map(String).join(" · ")
+    chequear("Balance", "Datos del balance: un texto ilegible o vacío es «no lo sé» (null), nunca cero", "12.5 · null · null", vn, vn === "12.5 · null · null", "A-FEAT-1337")
+    const sinT = textoEstadoGuardado("sin tabla", null)
+    chequear("Balance", "Datos del balance: sin el script 100 la pantalla avisa que NO se guarda (no rompe)", "avisa", sinT.includes("NO se guarda") ? "avisa" : sinT,
+      sinT.includes("NO se guarda"), "A-FEAT-1337")
+
     // ── Presentación del Excel del balance (A-FEAT-1338) ──
     const ws = XLSXcasos.utils.aoa_to_sheet([
       ["COMPRAS vs. LO PRESENTADO A ARCA"],

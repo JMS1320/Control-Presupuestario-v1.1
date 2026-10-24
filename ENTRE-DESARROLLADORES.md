@@ -52,6 +52,18 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🗄️ Una tabla nueva: `public.balance_datos_usuario` (2026-10-24) — ⏳ AVISO PREVIO, todavía NO se corrió
+
+Para [A-FEAT-1337](PENDIENTES.md#a-feat-1337): lo que JMS carga a mano en los papeles del balance (precios de hacienda, cuadre de granos,
+cuotapartes) se guarda al escribirlo. `scripts/100-balance-datos-usuario.sql` crea **una tabla nueva** y no toca ninguna existente salvo
+**1 fila en `recurso_tablas`** (recurso `extracto`, `restringe_lectura = true`, igual que `ajustes_balance` del script 86).
+- RLS `ver_segun_permiso` / `escribir_segun_permiso` con `puede_ver` / `puede_escribir`; `revoke` a `anon`; `authenticated` con
+  select/insert/update (**sin delete**); el rol `contable` no la ve.
+- Se frena si la tabla ya existe y la deja marcada `[script 100]`; el deshacer comprueba la marca y que esté **vacía** antes de borrar.
+- Código: `lib/balance/datos-usuario.ts`; si la tabla no está, la pantalla avisa y anda como antes.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo): 5 roles, los 5 en `false`
 
 Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre después nace apagado para ese rol).

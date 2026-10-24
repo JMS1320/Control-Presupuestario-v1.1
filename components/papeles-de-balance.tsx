@@ -832,7 +832,7 @@ export function PapelesDeBalance() {
 
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}
-            <HaciendaAlCierre ejercicio={libro.ejercicio} onDatos={setHacienda} />
+            <HaciendaAlCierre empresa={empresa.id} ejercicio={libro.ejercicio} onDatos={setHacienda} />
 
             {bancarios?.impuestoCheque && (() => {
               const ic = bancarios.impuestoCheque
