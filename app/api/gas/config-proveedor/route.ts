@@ -36,6 +36,8 @@ const CAMPOS_PERMITIDOS = [
   'es_proveedor', 'es_cliente',
   // Resto de los datos bancarios (CBU y alias ya estaban arriba)
   'banco', 'tipo_cuenta', 'moneda_cuenta', 'mensaje_transferencia',
+  // 🔢 Proveedor fijo: cuántas facturas trae por mes (A-FEAT-1332). null = no es fijo.
+  'facturas_por_mes',
 ]
 
 export async function GET(request: Request) {

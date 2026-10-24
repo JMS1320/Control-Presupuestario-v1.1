@@ -36,6 +36,7 @@ import {
 } from "@/lib/subdiarios/cuadratura"
 import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
 import { compararConPresentado, type FilaContraPresentado, type Presentado } from "./presentado-arca"
+import { controlarFacturasFijas, mesesTerminados, type FilaFacturasFijas, type ProveedorFijo } from "./facturas-fijas"
 import {
   armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
   type Ejercicio, type Subdiario,
@@ -81,6 +82,8 @@ export interface AsientoLibroDiario {
    * está, la factura entró a la provisión por decisión suya y no por la regla de la fecha.
    */
   provision_motivo?: string
+  /** Sólo ARCA: true si se cargó a mano («No Informada»). Para el control de cantidad (A-FEAT-1332). */
+  no_informada?: boolean
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -185,6 +188,11 @@ export interface LibroDiario {
      * dato de lo presentado para esta empresa: se dice que no se pudo controlar.
      */
     contraPresentado: FilaContraPresentado[] | null
+    /**
+     * 🔢 Proveedores fijos: ¿están todas sus facturas, mes por mes? (A-FEAT-1332). **Avisa, no frena.**
+     * `null` si no se pasó la lista de fijos. Durante el año, sólo los meses ya terminados.
+     */
+    facturasFijas: FilaFacturasFijas[] | null
     /** true sólo si NADA impide entregar el papel. */
     sePuedeEntregar: boolean
     /** Por qué no, en el idioma del usuario. Vacío si se puede. */
@@ -239,6 +247,22 @@ export function tipoDesdeTexto(v: unknown): number | null {
 }
 
 /** `msa.comprobantes_arca` → asiento. */
+/**
+ * ¿La factura se cargó A MANO (no vino de «Mis Comprobantes» de ARCA)? Para el control de cantidad.
+ *
+ * `origen_factura` lo dice cuando está («ARCA» / «No Informada»), pero las cargadas antes de que
+ * existiera la columna lo tienen vacío: ahí manda el **archivo de origen** — lo bajado de ARCA se
+ * llama «Mis Comprobantes Recibidos…», salvo el que el usuario armó a mano con «no afip» en el nombre.
+ * Caso que lo pidió (2026-10-24): Río Tala, toda a mano, salía «ARCA» porque las viejas no tenían marca.
+ */
+export function cargadaAMano(f: Record<string, unknown>): boolean {
+  if (f.origen_factura === "No Informada") return true
+  if (f.origen_factura === "ARCA") return false
+  const archivo = String(f.archivo_origen ?? "").trim()
+  if (!archivo) return false
+  return !/^mis comprobantes recibidos/i.test(archivo) || /no\s*afip/i.test(archivo)
+}
+
 export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
   /**
    * 💵 A-BUG-1316: `comprobantes_arca` guarda los importes de una factura en dólares EN DÓLARES.
@@ -262,6 +286,7 @@ export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
     iva: p(f.iva), total: p(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
+    no_informada: cargadaAMano(f),
   }
 }
 
@@ -410,6 +435,8 @@ export function armarLibroDiario(
    * se pusieron para el ejercicio anterior (sólo para listarlas).
    */
   manuales?: { esteEjercicio: AsientoLibroDiario[]; anterior: AsientoLibroDiario[] },
+  /** 🔢 Los proveedores fijos y el día de hoy (argentino), para el control de cantidad. */
+  fijos?: { proveedores: ProveedorFijo[]; hoy: string },
 ): LibroDiario {
   const clasificar = (todos: AsientoLibroDiario[]) => {
     const delEjercicio: AsientoLibroDiario[] = []
@@ -512,6 +539,15 @@ export function armarLibroDiario(
   })
   const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, manuales?.anterior ?? [])
 
+  // 🔢 Control de cantidad: lo que es gasto del ejercicio = sus 12 subdiarios + lo provisionado.
+  const facturasFijas = fijos
+    ? controlarFacturasFijas(
+        [...c.delEjercicio, ...provisiones.filter(a => a.fuente !== "venta")],
+        fijos.proveedores,
+        mesesTerminados(clavesEj, fijos.hoy),
+      )
+    : null
+
   return {
     ejercicio: ej,
     historicoSuperado,
@@ -523,7 +559,7 @@ export function armarLibroDiario(
     controles: {
       compras: controlCompras,
       ventas: controlVentas,
-      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan, contraPresentado,
+      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan, contraPresentado, facturasFijas,
       sePuedeEntregar: motivos.length === 0,
       motivos,
     },

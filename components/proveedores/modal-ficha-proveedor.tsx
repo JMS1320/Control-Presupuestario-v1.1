@@ -73,7 +73,7 @@ const ETIQUETA_VIA: Record<string, { texto: string; clase: string }> = {
 /** Campos editables, agrupados como se muestran. `tipo` define el input. */
 const SECCIONES: Array<{
   titulo: string
-  campos: Array<{ campo: string; label: string; tipo?: 'texto' | 'bool' | 'tags' | 'largo' }>
+  campos: Array<{ campo: string; label: string; tipo?: 'texto' | 'bool' | 'tags' | 'largo' | 'numero' }>
 }> = [
   {
     titulo: 'Identidad',
@@ -115,6 +115,13 @@ const SECCIONES: Array<{
       { campo: 'patron_asunto', label: 'Patrón de asunto' },
       { campo: 'dias_busqueda', label: 'Días de búsqueda' },
       { campo: 'gas_habilitado', label: 'Búsqueda habilitada', tipo: 'bool' },
+    ],
+  },
+  {
+    // 🔢 A-FEAT-1332 — el balance controla que estén todas sus facturas, mes por mes. Vacío = no es fijo.
+    titulo: 'Proveedor fijo',
+    campos: [
+      { campo: 'facturas_por_mes', label: 'Facturas por mes', tipo: 'numero' },
     ],
   },
 ]
@@ -667,7 +674,7 @@ function mostrar(v: any): string {
 }
 
 function CampoEditable({ tipo, valor, onChange }: {
-  tipo?: 'texto' | 'bool' | 'tags' | 'largo'
+  tipo?: 'texto' | 'bool' | 'tags' | 'largo' | 'numero'
   valor: any
   onChange: (v: any) => void
 }) {
@@ -683,6 +690,16 @@ function CampoEditable({ tipo, valor, onChange }: {
         value={Array.isArray(valor) ? valor.join(', ') : (valor ?? '')}
         onChange={e => onChange(
           e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+    )
+  }
+  if (tipo === 'numero') {
+    return (
+      <Input type="text" inputMode="numeric" className="h-7 w-20 text-xs" placeholder="no es fijo"
+        value={valor ?? ''}
+        onChange={e => {
+          const d = e.target.value.replace(/\D/g, '')
+          onChange(d === '' ? null : Number(d))
+        }} />
     )
   }
   return (

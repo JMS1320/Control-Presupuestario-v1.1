@@ -34,6 +34,7 @@ import { toast } from "sonner"
 import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "@/lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIARIO_HISTORICO, type LibroDiario } from "@/lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
+import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
@@ -189,7 +190,25 @@ export function PapelesDeBalance() {
       } catch (e) {
         toast.warning("No se pudieron leer las provisiones puestas a mano: " + (e as Error).message)
       }
-      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id], manuales)
+      /**
+       * 🔢 Los proveedores fijos (A-FEAT-1332): cuántas facturas trae cada uno por mes, de su ficha.
+       * Si falla, el libro sale igual sin ese control y se avisa.
+       */
+      let fijos: { proveedores: ProveedorFijo[]; hoy: string } | undefined
+      try {
+        const { data: provs, error: eProv } = await supabase.from("proveedores")
+          .select("cuit, razon_social, facturas_por_mes").not("facturas_por_mes", "is", null)
+        if (eProv) throw new Error(eProv.message)
+        fijos = {
+          hoy: hoyArgentina(),
+          proveedores: (provs ?? []).map(p => ({
+            cuit: String(p.cuit ?? ""), nombre: String(p.razon_social ?? ""), facturasPorMes: Number(p.facturas_por_mes),
+          })),
+        }
+      } catch (e) {
+        toast.warning("No se pudo leer la lista de proveedores fijos: el control de cantidad no sale. " + (e as Error).message)
+      }
+      const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id], manuales, fijos)
       setLibro(armado)
 
       /**
@@ -704,6 +723,36 @@ export function PapelesDeBalance() {
             ) : (
               <div className="text-xs text-muted-foreground">No hay dato de lo presentado a ARCA para esta empresa: las compras no se controlan contra la DDJJ.</div>
             )}
+            {/* 🔢 Proveedores fijos: ¿están todas sus facturas? Avisa, no frena (A-FEAT-1332). */}
+            {c.facturasFijas && c.facturasFijas.length > 0 && (() => {
+              const filas = c.facturasFijas.filter(f => f.hay + f.conFechaAnterior + f.repetidas > 0 || f.esperado > 0)
+              const mal = filas.filter(f => !f.ok)
+              const meses = filas[0]?.mesesContados ?? 0
+              return (
+                <details className="text-xs border rounded p-2" open={mal.length > 0}>
+                  <summary className="cursor-pointer text-sm">
+                    {mal.length === 0
+                      ? <span className="text-emerald-700">✓ Proveedores fijos: están todas las facturas ({filas.length} proveedores, {meses} meses)</span>
+                      : <span className="text-amber-800 font-semibold">⚠️ Proveedores fijos: {mal.length} de {filas.length} no tienen la cantidad esperada ({meses} meses contados)</span>}
+                  </summary>
+                  <p className="mt-1 text-muted-foreground">
+                    Cuenta lo que es gasto del ejercicio (subdiarios + provisión), por la fecha de la factura y sólo los meses ya terminados.
+                    Cuántas trae cada uno se edita en la ficha del proveedor. Es un aviso: no frena el libro.
+                  </p>
+                  <table className="mt-1 w-full">
+                    <tbody>
+                      {[...mal.sort((a, b) => Number(b.aMano) - Number(a.aMano)), ...filas.filter(f => f.ok)].map(f => (
+                        <tr key={f.cuit} className={f.ok ? "" : f.aMano ? "text-red-700 font-semibold" : "text-amber-800"}>
+                          <td className="pr-2">{f.ok ? "✓" : "⚠️"} {f.nombre}{f.aMano ? " · a mano" : ""}</td>
+                          <td className="pr-2 font-mono">{f.facturasPorMes}/mes</td>
+                          <td>{explicarFila(f)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              )
+            })()}
             {libro.historicoSuperado.length > 0 && (
               <div className="text-xs text-muted-foreground">
                 🗄️ {libro.historicoSuperado.length} comprobante(s) del sistema anterior con subdiario posterior a {ULTIMO_SUBDIARIO_HISTORICO} no se cuentan:

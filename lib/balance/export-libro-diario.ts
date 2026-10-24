@@ -22,6 +22,7 @@ import * as XLSX from "xlsx"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { armarEjercicio, nombreSubdiario } from "./ejercicio"
+import { explicarFila } from "./facturas-fijas"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
@@ -160,6 +161,19 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
     f.push([])
   } else {
     f.push(["COMPRAS vs. LO PRESENTADO A ARCA — no hay dato de lo presentado para esta empresa: no se controló."])
+    f.push([])
+  }
+  // 🔢 Proveedores fijos (A-FEAT-1332): aviso, no frena.
+  if (c.facturasFijas && c.facturasFijas.length > 0) {
+    const mal = c.facturasFijas.filter(x => !x.ok).length
+    f.push([mal === 0
+      ? `PROVEEDORES FIJOS — están todas las facturas (${c.facturasFijas[0].mesesContados} meses contados)`
+      : `PROVEEDORES FIJOS — ${mal} no tienen la cantidad esperada (aviso, no frena; ${c.facturasFijas[0].mesesContados} meses contados)`])
+    f.push(["Proveedor", "CUIT", "Por mes", "Esperadas", "Hay", "Carga", "Detalle"])
+    for (const x of c.facturasFijas) {
+      f.push([x.nombre, x.cuit, x.facturasPorMes, x.esperado, x.hay, x.aMano ? "a mano" : "ARCA",
+        x.ok ? "coincide" : explicarFila(x)])
+    }
     f.push([])
   }
   if (libro.historicoSuperado.length > 0) {

@@ -3179,6 +3179,14 @@ Sale en la solapa **05 Provision** marcada «puesta a mano», con el motivo. Par
 
 ⚠️ Sin probar todavía → A-TEST-1234
 
+### 🔢 Proveedores fijos: ¿están todas las facturas?
+
+Al **armar el libro** aparece el renglón **Proveedores fijos**: para cada proveedor que factura todos los meses, cuántas facturas debería haber en el ejercicio y cuántas hay, con los meses que tienen de menos o de más y las repetidas. Las que se cargan a mano van en rojo, porque son las que se olvidan. Es un **aviso**: no impide entregar el libro. Si lo armás durante el año, cuenta sólo los meses ya terminados.
+
+**Cuántas trae cada uno por mes** se pone en la **ficha del proveedor**, sección **Proveedor fijo → Facturas por mes**. Vacío = no es fijo (no se controla).
+
+⚠️ Sin probar todavía → A-TEST-1235
+
 ## 🗂️ Papeles de balance → la solapa «00 Indice», que es la que hay que leer primero *(2026-09-29)*
 
 El Excel que se baja de **Reportes → Papeles de trabajo del balance** abre con la solapa

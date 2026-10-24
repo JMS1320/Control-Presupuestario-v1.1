@@ -150,6 +150,7 @@ import {
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
+import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
@@ -159,7 +160,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, cargadaAMano,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -4002,6 +4003,52 @@ export function correrCasos(): Resultado[] {
     const conManualAnt = armarLibroDiario([], [], ej, undefined, { esteEjercicio: [], anterior: [manualAnt] })
     chequear("Balance · provisión", "Las puestas a mano para el ejercicio anterior también se listan ahí",
       "1", String(conManualAnt.provisionesEjercicioAnterior.length), conManualAnt.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
+
+    // 🔢 A-FEAT-1332 — control de cantidad de los proveedores fijos (casos auditados por el usuario).
+    const doce = ej.subdiarios.map(x => claveSubdiario(x.anio, x.mes))
+    const fac = (cuit: string, fecha: string, numero: number, tipo = 11, no_informada?: boolean) =>
+      ({ cuit, fecha, punto_venta: 1, numero, tipo, no_informada })
+    const mesesAFechas = (cuit: string, porMes: number, desde = 1, tipo = 11, noInf?: boolean) =>
+      doce.flatMap((m, i) => Array.from({ length: porMes }, (_, j) => fac(cuit, `${m}-1${j}`, desde + i * 10 + j, tipo, noInf)))
+    const ulises = [fac("20443732145", "2025-07-01", 28), ...mesesAFechas("20443732145", 1, 30)]
+    const [fUl] = controlarFacturasFijas(ulises, [{ cuit: "20443732145", nombre: "SANCHEZ ULISES", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "🔢 12 del período + la de junio facturada el 1/7 → 13 de 12, julio con 2: no cierra y lo dice",
+      "13 de 12 · con más: jul-25 (2)", explicarFila(fUl),
+      !fUl.ok && fUl.hay === 13 && explicarFila(fUl) === "13 de 12 · con más: jul-25 (2)", "A-FEAT-1332")
+    const sf = mesesAFechas("33717253219", 1).filter(f => !f.fecha.startsWith("2025-07"))
+    const [fSf] = controlarFacturasFijas(sf, [{ cuit: "33-71725321-9", nombre: "SMART FARMING", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Smart Farming sin julio → 11 de 12, «con menos: jul-25» (CUIT con guiones igual matchea)",
+      "11 de 12 · con menos: jul-25 (0)", explicarFila(fSf), fSf.hay === 11 && explicarFila(fSf) === "11 de 12 · con menos: jul-25 (0)", "A-FEAT-1332")
+    const medicus = [...mesesAFechas("30546771314", 1, 1, 6), ...mesesAFechas("30546771314", 1, 1, 8)]
+    const [fMe] = controlarFacturasFijas(medicus, [{ cuit: "30546771314", nombre: "MEDICUS", facturasPorMes: 2 }], doce)
+    chequear("Balance · proveedores fijos", "Medicus: factura + NC con el mismo número no son repetidas → 24 de 24",
+      "24 de 24", explicarFila(fMe), fMe.ok && fMe.hay === 24, "A-FEAT-1332")
+    const conRep = [...mesesAFechas("30639453738", 1), fac("30639453738", "2025-12-10", 51)]
+    const [fRep] = controlarFacturasFijas(conRep, [{ cuit: "30639453738", nombre: "TELECOM", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Una cargada dos veces (mismo número) se cuenta como repetida, no como factura",
+      "12 · 1 repetida · no cierra", `${fRep.hay} · ${fRep.repetidas} repetida · ${fRep.ok ? "cierra" : "no cierra"}`,
+      fRep.hay === 12 && fRep.repetidas === 1 && !fRep.ok, "A-FEAT-1332")
+    chequear("Balance · proveedores fijos", "Durante el año cuenta sólo los meses terminados: el 15/10/2025 → jul, ago y sep",
+      "2025-07,2025-08,2025-09", mesesTerminados(doce, "2025-10-15").join(","),
+      mesesTerminados(doce, "2025-10-15").join(",") === "2025-07,2025-08,2025-09", "A-FEAT-1332")
+    const [fTala] = controlarFacturasFijas(mesesAFechas("30615803762", 2, 1, 1, true), [{ cuit: "30615803762", nombre: "RIO TALA", facturasPorMes: 2 }], doce)
+    chequear("Balance · proveedores fijos", "Si la mayoría se carga a mano, el proveedor sale «a mano» (va en rojo)",
+      "a mano · 24 de 24", `${fTala.aMano ? "a mano" : "ARCA"} · ${explicarFila(fTala)}`, fTala.aMano && fTala.ok, "A-FEAT-1332")
+    const [fAfa] = controlarFacturasFijas([...mesesAFechas("30525718626", 1, 1, 1, false), fac("30525718626", "2026-04-28", 999, 332, true)],
+      [{ cuit: "30525718626", nombre: "AFA", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Una sola cargada a mano no lo vuelve «a mano» (corrección del usuario: AFA sí informa ARCA)",
+      "ARCA", fAfa.aMano ? "a mano" : "ARCA", !fAfa.aMano, "A-FEAT-1332")
+    const casosArchivo: Array<[Record<string, unknown>, boolean, string]> = [
+      [{ origen_factura: "No Informada" }, true, "marcada No Informada"],
+      [{ origen_factura: "ARCA", archivo_origen: "otros comprobantes No AFIP.xlsx" }, false, "marcada ARCA (manda la marca)"],
+      [{ origen_factura: null, archivo_origen: "Mis Comprobantes Recibidos - CUIT 30617786016 - 25-12.xlsx" }, false, "bajada de Mis Comprobantes"],
+      [{ origen_factura: null, archivo_origen: "Mis Comprobantes Recibidos - CUIT 30617786016 - no afip.xlsx" }, true, "Mis Comprobantes… no afip"],
+      [{ origen_factura: null, archivo_origen: "- comprobantes Coop Tala - CUIT 30617786016.xlsx" }, true, "archivo armado a mano"],
+    ]
+    for (const [f, esperado, nombre] of casosArchivo) {
+      chequear("Balance · proveedores fijos", `¿A mano? ${nombre} → ${esperado ? "sí" : "no"}`,
+        esperado ? "sí" : "no", cargadaAMano(f) ? "sí" : "no", cargadaAMano(f) === esperado, "A-FEAT-1332")
+    }
   }
   /**
    * 💵 **LAS FACTURAS EN DÓLARES ENTRAN AL LIBRO DIARIO EN PESOS — A-BUG-1316.**
