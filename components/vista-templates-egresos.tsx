@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { PlanillaImpuestos } from "@/components/planilla-impuestos"
@@ -954,14 +955,8 @@ export function VistaTemplatesEgresos() {
 
     const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
 
-    // Generar descripción automática para FCI o usar la ingresada
-    let descripcionFinal = nuevaCuota.descripcion
-    if (template?.es_bidireccional && template?.categ === 'FCI') {
-      const tipoLabel = tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate'
-      descripcionFinal = `${tipoLabel} ${template.nombre_referencia}`
-    } else if (!descripcionFinal) {
-      descripcionFinal = `${template?.nombre_referencia || 'Pago'} - Manual`
-    }
+    // A-FEAT-1326 — lo escrito va al Detalle (misma función en los dos modales).
+    const { detalle: descripcionFinal } = camposDePagoManual(nuevaCuota.descripcion, template, tipoMovimiento as 'egreso' | 'ingreso')
 
     setGuardandoNuevaCuota(true)
     try {
@@ -2332,11 +2327,11 @@ export function VistaTemplatesEgresos() {
                 }
                 return (
                   <div className="space-y-2">
-                    <Label htmlFor="descripcion-pago">Descripción (opcional)</Label>
+                    <Label htmlFor="descripcion-pago">Detalle (opcional)</Label>
                     <Input
                       id="descripcion-pago"
                       type="text"
-                      placeholder="Descripción del pago..."
+                      placeholder="Ej.: Guía municipal 7 vacas + 3 toros"
                       value={nuevaCuota.descripcion}
                       onChange={(e) => setNuevaCuota(prev => ({ ...prev, descripcion: e.target.value }))}
                     />
